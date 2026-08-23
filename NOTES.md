@@ -1503,6 +1503,33 @@ Three different things get called "permissions"; keep them apart
   Runtime-native flags (`--allowedTools`/`--disallowedTools`, grok
   `--allow/--deny`, codex `-a`) are **L0: politeness** — the polite
   refusal in front of the wall, never counted as enforcement.
+- **Read-only text tools: measured, not assumed (rangerhq-kbvm).**
+  Verified live on claude **2.1.241** against an empty settings file, in
+  both `--permission-mode default` and `auto`: claude's built-in
+  read-only classifier already runs `grep`, `sed -n`, `head`, `tail`,
+  `wc` and `cat` — flags and all — with no prompt and no allow rule, and
+  it **decomposes** a command on `|` and `&&` and decides each stage on
+  its own (`cd . && awk … | head -1` is three decisions, not one). So a
+  fleet-floor entry for those six buys **zero** prompts today. What still
+  reaches the auto-mode failsafe is `awk` in every form — 168 of the
+  12,690 Bash calls in the three fleet repos' transcripts (1.3%) — any
+  pipeline containing it, and any real `>` redirect. Two corrections to
+  the prefix-match folklore, both verified: rules match **on tokens**, so
+  `Bash(sed -n:*)` refuses `sed -ni '1p' f` (`-ni` is not the token
+  `-n`) — but it *does* admit `sed -n -i.bak 's/…/…/' f`, which with `-n`
+  truncates the file to nothing; and an allow rule is not the last word,
+  because under `Bash(awk:*)` claude still refuses `awk
+  'BEGIN{system("…")}'` and `awk -f prog.awk`, its own injection check
+  firing first. `Bash(sed:*)` unqualified, by contrast, runs `sed -i` and
+  edits the file — so the `-n` in the rule is doing real work even though
+  it does not close the hole. Net: the seven lines are worth adding as a
+  **pin**, not as a saving — they hold the friction down if a CLI upgrade
+  narrows the built-in list, which would otherwise put the 10,468 calls
+  (82%) that touch one of the seven back in front of the failsafe. The
+  `sed -n -i` residual is accepted on 5w6's posture (`Write` is allowed
+  unconditionally, `go test`/`make` are arbitrary exec), and no pattern
+  can close it: the matcher cannot express "no `-i` anywhere in the
+  argv".
 - **The wall is L1–L3, ours, on every runtime.** Rendered fresh from the
   PID at every launch: **L1** PATH shims for every shell-verb deny
   (`Bash(git push:*)` → `gates/<persona>/bin/git` refuses, logs to
