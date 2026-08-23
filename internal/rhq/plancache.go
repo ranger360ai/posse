@@ -145,6 +145,26 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 	return u, now, nil
 }
 
+// Line is the reading as a person reads it: `plan windows: 5h 42% · 7d
+// 61%`, plus how old the snapshot is once that is worth saying. One
+// rendering for the tail of `posse cost` and for `posse cost --plan`, so a
+// persona greps the same bytes either way.
+//
+// The age matters more than it looks: a shared snapshot (rangerhq-tdy8) is
+// routinely minutes old, and a number presented as newer than it is, is the
+// one way this display can lie.
+func (c *PlanCache) Line(maxAge time.Duration) (string, error) {
+	u, at, err := c.Read(maxAge)
+	if err != nil {
+		return "", err
+	}
+	age := ""
+	if d := c.now().Sub(at); d >= time.Minute {
+		age = fmt.Sprintf(", read %s ago", BlindFor(d))
+	}
+	return fmt.Sprintf("plan windows: %s%s", u.Line(), age), nil
+}
+
 // planCooldown turns a Retry-After into how long every process waits.
 func planCooldown(d time.Duration) time.Duration {
 	switch {

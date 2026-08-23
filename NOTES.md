@@ -435,7 +435,13 @@ staring at a rate limit.
   `overflow.log`.
 - **Display** `posse cost` ends with the current reading and the cockpit
   header carries `5h 42% · 7d 61%` (refreshed every 2 min, off the event
-  loop). Current reading only, no history; never a guessed number. An empty
+  loop). `posse cost --plan` is that one line on its own, without the
+  transcript scan — the form a fleet persona or a shell asks in, since
+  `Bash(posse:*)` is already granted and the windows are the number every
+  plan question starts from (rangerhq-p3z). It reads the same shared
+  snapshot at the same TTL, so asking costs the endpoint nothing extra;
+  unlike the footer it is **not** silent when the reading is unavailable —
+  the reading is the whole output, so it exits 1 and says why. Current reading only, no history; never a guessed number. An empty
   segment used to mean *either* "unreadable" or "no guard configured", which
   is what let a blind guard hide; so when the thresholds **are** set and the
   last read failed, the header says `5h — · guard blind 14m` instead
@@ -1325,7 +1331,7 @@ such: `blocked-honestly` is a dispatch-side outcome, and
 `designs-implemented-unchanged` / `spec-clarity` need a comment scan —
 neither is computed yet.
 
-`posse cost [--since <date>] [--project <substr>]` is ADR 0003 §4's
+`posse cost [--since <date>] [--project <substr>] | --plan` is ADR 0003 §4's
 accounting: the analyst's `bead-cost.py` method in Go. Claude Code transcripts
 (`~/.claude/projects/*/*.jsonl`) are segmented by the dispatcher's "Work
 beads issue <id>" prompts; assistant records are deduped by message id
@@ -1344,7 +1350,9 @@ pass is not attributable until dispatch records a pass id
 and the day total in the footer (rescanned every 30s off the event
 loop). The metric `cost-per-closed-bead` has a scorecard answerer for
 h2c — `posse cost` by bead id against closes — so a PID that declares it
-reads as `computed`.
+reads as `computed`. `--plan` skips all of the above and prints only the
+plan's own rate windows (the plan-guard section has the reading); it takes
+no other flags, because there is nothing for a date or a project to select.
 
 `posse agent new <name>` scaffolds the PID shape — every frontmatter key
 present (lists empty, commented hints), every body heading in contract

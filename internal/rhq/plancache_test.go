@@ -440,3 +440,48 @@ func TestPlanReaderRateLimited(t *testing.T) {
 		})
 	}
 }
+
+// The one rendering both `posse cost` and `posse cost --plan` print
+// (rangerhq-p3z). A fresh reading says only the numbers; a snapshot the
+// caller accepted as stale says how stale — the number must never be
+// presented as newer than it is.
+func TestPlanCacheLineSaysHowOldTheReadingIs(t *testing.T) {
+	r := newCacheRig(t)
+
+	line, err := r.caller("cost").Line(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "plan windows: 5h 42% · 7d 61%"; line != want {
+		t.Errorf("a fresh reading is just the numbers: got %q, want %q", line, want)
+	}
+
+	r.at(3 * time.Minute)
+	line, err = r.caller("cost").Line(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "plan windows: 5h 42% · 7d 61%, read 3m ago"; line != want {
+		t.Errorf("a cache hit must carry its age: got %q, want %q", line, want)
+	}
+	if got := r.hits(); got != 1 {
+		t.Errorf("both lines came off one request, got %d", got)
+	}
+}
+
+// A read that fails renders nothing at all — the caller decides whether
+// silence or an exit code is the right answer, and there is no half line
+// with a missing number in it.
+func TestPlanCacheLineRendersNothingOnAFailedRead(t *testing.T) {
+	r := newCacheRig(t)
+	c := r.caller("cost")
+	c.Reader = &PlanReader{URL: deadURL(t), Token: func() (string, error) { return fakeToken, nil }}
+
+	line, err := c.Line(5 * time.Minute)
+	if err == nil {
+		t.Fatalf("an unreadable endpoint is an error, got line %q", line)
+	}
+	if line != "" {
+		t.Errorf("a failed read renders no line, got %q", line)
+	}
+}

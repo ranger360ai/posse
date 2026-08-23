@@ -688,35 +688,29 @@ func main() {
 	case "cost":
 		// API-equivalent spend per bead from Claude Code transcripts (ADR
 		// 0003 §4) — read-only; codex/grok reported as uncounted.
-		since := time.Time{}
-		project := ""
-		rest := args
-		for len(rest) > 0 {
-			switch rest[0] {
-			case "--since":
-				if len(rest) < 2 {
-					die(rhq.Die("--since needs a date (YYYY-MM-DD or RFC3339)"))
-				}
-				t, err := time.Parse(time.RFC3339, rest[1])
-				if err != nil {
-					t, err = time.ParseInLocation("2006-01-02", rest[1], time.Local)
-				}
-				if err != nil {
-					die(rhq.Die("--since: %v", err))
-				}
-				since = t
-				rest = rest[2:]
-			case "--project":
-				if len(rest) < 2 {
-					die(rhq.Die("--project needs a path substring"))
-				}
-				project = rest[1]
-				rest = rest[2:]
-			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
-			}
+		o, err := parseCostFlags(args)
+		if err != nil {
+			die(err)
 		}
-		rep := rhq.ScanCosts(project, since)
+		if o.plan {
+			// The windows on their own (rangerhq-p3z): the reading a fleet
+			// persona or a guard actually wants, without the transcript
+			// scan that the rest of this command is. Same shared snapshot
+			// and the same TTL as the footer below — asking this way costs
+			// the endpoint nothing extra.
+			//
+			// Unlike the footer, this one is not allowed to be silent: the
+			// reading IS the output, so an unreadable one is a failed
+			// command, not an empty line. The errors are generic by
+			// construction (planusage.go) — they never quote the token.
+			line, err := a.PlanCache("cost").Line(a.PlanUsageTTL(os.Stderr))
+			if err != nil {
+				die(err)
+			}
+			fmt.Fprintln(out, line)
+			break
+		}
+		rep := rhq.ScanCosts(o.project, o.since)
 		// Dial E's caps, for the footer: what the numbers above are measured
 		// against (rangerhq-25p). Reading them here never enforces anything.
 		rep.PassCap, rep.DayCap = a.BudgetCaps(os.Stderr)
@@ -732,12 +726,8 @@ func main() {
 		// is one of the three pollers that made the endpoint 429. A reading
 		// a few minutes old is still the reading; say its age when it has
 		// one, so the number is never presented as newer than it is.
-		if u, at, err := a.PlanCache("cost").Read(a.PlanUsageTTL(os.Stderr)); err == nil {
-			age := ""
-			if d := time.Since(at); d >= time.Minute {
-				age = fmt.Sprintf(", read %s ago", rhq.BlindFor(d))
-			}
-			fmt.Fprintf(out, "plan windows: %s%s (the plan's own rate limits — the real budget; dollars above are API-equivalent)\n", u.Line(), age)
+		if line, err := a.PlanCache("cost").Line(a.PlanUsageTTL(os.Stderr)); err == nil {
+			fmt.Fprintf(out, "%s (the plan's own rate limits — the real budget; dollars above are API-equivalent)\n", line)
 		}
 
 	case "scorecard":
@@ -1104,6 +1094,55 @@ func joinComma(s []string) string {
 	return out
 }
 
+// costOpts is what `posse cost` was asked for. It returns an error rather
+// than calling die() so the flag contract is testable without a subprocess
+// — the reading behind --plan is not (it wants the operator's keychain).
+type costOpts struct {
+	since   time.Time
+	project string
+	plan    bool
+}
+
+func parseCostFlags(args []string) (costOpts, error) {
+	var o costOpts
+	rest := args
+	for len(rest) > 0 {
+		switch rest[0] {
+		case "--since":
+			if len(rest) < 2 {
+				return o, rhq.Die("--since needs a date (YYYY-MM-DD or RFC3339)")
+			}
+			t, err := time.Parse(time.RFC3339, rest[1])
+			if err != nil {
+				t, err = time.ParseInLocation("2006-01-02", rest[1], time.Local)
+			}
+			if err != nil {
+				return o, rhq.Die("--since: %v", err)
+			}
+			o.since = t
+			rest = rest[2:]
+		case "--project":
+			if len(rest) < 2 {
+				return o, rhq.Die("--project needs a path substring")
+			}
+			o.project = rest[1]
+			rest = rest[2:]
+		case "--plan":
+			o.plan = true
+			rest = rest[1:]
+		default:
+			return o, rhq.Die("unknown flag: %s", rest[0])
+		}
+	}
+	// --plan prints one reading and never scans a transcript, so the
+	// selectors have nothing to select. Refusing beats ignoring: a caller
+	// who wrote `--plan --since` believes the date did something.
+	if o.plan && (!o.since.IsZero() || o.project != "") {
+		return costOpts{}, rhq.Die("--plan takes no other flags")
+	}
+	return o, nil
+}
+
 func parseNewFlags(args []string) rhq.NewSessionOpts {
 	o := rhq.NewSessionOpts{Name: args[0]}
 	rest := args[1:]
@@ -1275,6 +1314,8 @@ catalog:
                                  tier/persona/day; codex/grok reported as uncounted;
                                  plus the plan's 5h/7d windows when readable
                                  and the budget_pass:/budget_day: caps in force
+  posse cost --plan              just the plan's 5h/7d windows, no transcript scan
+                                 (shared reading; exits 1 when unreadable)
   posse agent new <name>         scaffold a persona (PID shape) and open it in $EDITOR
   posse agent edit <name>        open an existing persona in $EDITOR
   posse agent check [<name>|--all]  lint PIDs against the ADR 0001 contract (exit 1 on findings)
