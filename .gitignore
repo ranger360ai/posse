@@ -4,3 +4,4 @@
 .beads/interactions.jsonl
 /bin/posse-release
 /dist/
+.beads/
