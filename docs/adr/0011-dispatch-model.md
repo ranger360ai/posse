@@ -1,6 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
-*Status: accepted 2026-08-20 · owner: architect*
+*Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder) ·
+owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -71,6 +72,21 @@ kernel-owned, no staleness class. Hold time is bounded by `-n` ×
 (create + StartupWait) — low minutes at `-n 3` (**measured** in current
 pass output); flock overhead itself **assumed** negligible.
 
+*(Amended 2026-08-23: the enumeration above was written from what
+dispatch launches, and there are three holders, not two. The verify-after
+sweep (ADR 0006 §3) is the one write a pass makes* before *its fire
+loop, and its dedupe is two check-then-act pairs bd cannot make atomic —
+read the watermark … write it, and dependents-list … create, with no
+create-if-absent to fold the second into one call — so two launchers
+starting within the same second both saw a close as new and both filed
+for it: the duplicate-verify incident Appendix A cites, repro pinned in
+the launch-lock QA tests. The sweep now takes and drops the lock inside
+its own call — Run's two acquisitions are sequential, never nested — and
+its hold time is a `bd list --all` per repo plus a create per new close,
+not the `-n` × (create + StartupWait) bound above, which is the fire
+loop's. The invariant is unchanged; only its list of where it applies
+was short.)*
+
 **2. Prune must prove death, not infer it** *(folds the meta-sweep-race
 bead)*. `Sessions()` may delete a meta only when (a) its `launched:` is
 older than a grace (5m — younger is exactly the race window) **and**
@@ -111,6 +127,10 @@ retires.
   half.
 - Operator's view: unchanged — `posse list` and the cockpit read as today.
   New surface: one line when a second launcher waits, naming the holder.
+  *(Amended 2026-08-23: not quite unchanged — `posse ready` files by the
+  same rule as the sweep, so it is a lock waiter too and queues behind a
+  live fire loop. If that wait is ever judged too expensive, that is a
+  design question and comes back here — not a hold-time tweak.)*
 - Metric: dispatch bugs per week whose root is a store disagreement —
   expect ~zero for the three named classes; substrate-dialect
   discoveries continue at their own rate and are not this ADR's to fix.
@@ -174,7 +194,8 @@ flock(2)'s lock belongs to the open file description and dies when the
 last fd closes, so release *is* death and no staleness class exists
 (man7; DDIA ch. 8). What flock does NOT give us, said plainly: it is
 **advisory** — only paths that take it are serialized, and the
-duplicate-verify incident (verify-after runs before the lock) is live
+duplicate-verify incident (verify-after filed before the lock existed to
+it; brought inside the perimeter 2026-08-23, §1 amendment) is live
 proof that the perimeter, not the mechanism, is where this fails; it
 names **no holder** — the stamped pid is a courtesy the code correctly
 reads for nothing; it is **single-host, local-filesystem only** — on
