@@ -47,6 +47,20 @@ func need(args []string, n int, usage string) []string {
 	return args
 }
 
+// validCount reads a dispatch flag argument that must be a plain
+// non-negative count. -n and --timeout were the two flags in that switch
+// that dropped strconv's error (rangerhq-ytkl), and both read 0 as "no
+// limit": -n 0 is no cap on a pass (Dispatcher.Run), --timeout 0 waits as
+// long as herdr will. So `-n three`, `-n 3x` and `-n ""` all parsed as 0
+// and turned the one flag whose job is to bound a pass into an unbounded
+// one, silently. A negative count read the same way — fireLoop caps only
+// on max > 0. Every other flag there dies on bad input; these two now do
+// too, and 0 stays the deliberate escape hatch.
+func validCount(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && n >= 0
+}
+
 // argLead is need's reading of the first argument, without the exits.
 func argLead(args []string) (rest []string, help bool) {
 	if len(args) == 0 {
@@ -522,14 +536,14 @@ func main() {
 				personaF = rest[1]
 				rest = rest[2:]
 			case "-n":
-				if len(rest) < 2 {
-					die(rhq.Die("-n needs a count"))
+				if len(rest) < 2 || !validCount(rest[1]) {
+					die(rhq.Die("-n needs a count (0 = no cap)"))
 				}
 				maxN, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
 			case "--timeout":
-				if len(rest) < 2 {
-					die(rhq.Die("--timeout needs a value (ms)"))
+				if len(rest) < 2 || !validCount(rest[1]) {
+					die(rhq.Die("--timeout needs a value in ms (0 = herdr default)"))
 				}
 				d.PromptWaitMS, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
@@ -1252,7 +1266,9 @@ dispatch (beads):
                                  report closed/blocked/review per bead
                                  (-n caps launch attempts, failures included,
                                  taking beads in priority then age order;
-                                 operator questions cost no attempt)
+                                 operator questions cost no attempt; -n 0 is
+                                 no cap, and anything that is not a count is
+                                 refused rather than read as 0)
       --timeout <ms>           one --wait leg (default 15m): when it runs out
                                  and the agent is still working, the wait is
                                  extended and the claim kept
