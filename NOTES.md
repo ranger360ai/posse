@@ -1319,6 +1319,71 @@ so, and the parity rule is what makes it honest when one does. Sessions carry `R
 show `🎭name@runtime/tier` when either differs from claude/strong. Dial
 A in `examples/agents`: architect/security/product `strong`, the rest
 `standard`.
+
+**Tier availability preflight (rangerhq-oay).** A tier is a name and the
+launch turns it into a model id — but until this landed, nothing asked
+whether the account can run that id. It came from a real morning: access
+to the strongest model disappeared from the operator's own session, and a
+persona resolving `tier: strong` would have gone on launching while the
+CLI quietly served something else, with `posse cost` filing the spend
+under whatever tier the substitute belongs to and no line anywhere saying
+why. So `planLaunch` now checks, once per launch, on the pair it has just
+resolved: `App.TierPreflight` (modelavail.go), before the parity check, so
+what the wall and a PID's `tier_floor:` rule on is the pair that would
+really launch. Unavailable prints one line — `richard: tier strong wants
+claude-fable-5 — unavailable, falling back to claude-opus-5` — writes
+`fallback:` into the session meta (so `posse list` and the cockpit wear
+`⤵️fallback` beside a `@runtime/tier` tag that now names the substitute),
+and dispatch reads that meta back so the work prompt tells the persona the
+tier it is actually thinking at. `posse cost` needed no change and that is
+the point: `TierForModel` reads the model out of the transcript, so the
+spend was always counted honestly — what was missing was anyone knowing.
+
+The probe is `GET api.anthropic.com/v1/models` with the same credential
+the plan guard reads, zero tokens, shared through
+`$RHQ_HOME/state/model-catalog.json` behind `model_probe_ttl:` (default
+1h) exactly as `plan-usage.json` is — so a fleet pass costs at most one
+request per TTL. Verified live 2026-08-23: the OAuth credential is
+accepted there (the route exists and answers 401 unauthenticated;
+`/api/oauth/models`, the shape the plan guard's endpoint would suggest, is
+a 404), and the catalog it returns is the ten ids this account can use,
+including all three the claude tier table names.
+
+Three rules make it safe to leave on by default. **It fails open in one
+direction only**: a catalog that was actually read and does not contain
+the model is the ONLY thing that moves a launch — an unreadable
+credential, an unreachable endpoint, a 429, an empty answer or a runtime
+with no model mapping are all *unknown*, and unknown launches exactly what
+it was asked to launch, silently. A preflight that guessed "unavailable"
+would silently downgrade the whole shop, which is the failure it exists to
+prevent one level up. **It never refuses**: rule (3) from the operator —
+"a degraded model is worse than nothing" is their judgement, and the place
+they record it in advance is `tier_floor:`, which still bites, on the
+substituted pair. **Where a tier lands is config, not code**:
+`tier_fallback:` is a one-level map whose key is a persona name or a tier
+name (persona wins) and whose value is a tier (drop a tier on the same
+runtime), a runtime (hop runtimes at the same tier), or `none`. The
+per-persona half is rangerhq-u2p's requirement — a lane whose fallback
+from the strongest model may be a different runtime rather than a cheaper
+model. The default is `strong` → `standard`, and unlike `tier_by_label:`
+above, naming one key does NOT take that default away from everyone else:
+the operator's rule is that everyone falls back, so one persona line must
+not be able to switch the rest of the shop off. `model_preflight: false`
+turns the whole thing off; `posse gates <persona>` prints the verdict per
+runtime, which is how you tell "the strong model is gone" from "the probe
+never answers on this box" without launching anything.
+
+Two consequences worth knowing. A session's meta records the tier it
+*actually* launched at, the way `cage:` records the cage it got — so
+`posse relaunch` and `RelaunchAgent` replay the substitute, and a session
+degraded during an outage stays there until it is recreated after the
+model returns. And the test seam is `App.ModelLister` (nil =
+`NewModelLister`), the twin of `Dispatcher.Plan`: `newTestBackend` hands
+every test an unconfigured one, which reads no credential and reaches no
+network and is therefore also the fail-open path. Tests that want the
+preflight to *do* something seed `state/model-catalog.json` — a reading
+off a seeded snapshot with an unconfigured lister proves it never asked
+anyone.
 `posse scorecard [<persona>]` makes the PID metrics observable from bd
 data, read-only (rangerhq-h2c): per persona, closed / reopened / open /
 held (in_progress) / blocked, median age at close, and beads filed

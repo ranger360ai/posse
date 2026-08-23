@@ -824,6 +824,15 @@ func main() {
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, rhq.AbbrevHome(cwd))
 		for _, rn := range a.ListRuntimes() {
 			if rt, err := a.LoadRuntime(rn); err == nil {
+				// Every other input to a launch is on this machine; this one
+				// is the ACCOUNT's (rangerhq-oay). It leads the runtime's
+				// block because it is a property of the runtime, not of a
+				// cage tier — and it is here so the operator can tell "the
+				// strong model is gone" from "the probe never answers on this
+				// box" without launching anything.
+				if line := a.PreflightReport(ag.Name, rn, tier, os.Stderr); line != "" {
+					fmt.Fprintf(out, "  %s\n", line)
+				}
 				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.DefaultCage, tier, cwd).String())
 				if rhq.AvailableCages[rhq.CageSeatbelt] {
 					fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.CageSeatbelt, tier, cwd).String())

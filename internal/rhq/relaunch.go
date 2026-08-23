@@ -354,6 +354,9 @@ func describePlan(o NewSessionOpts, p *launchPlan) string {
 	if p.Degraded != "" {
 		parts = append(parts, "DEGRADED: "+p.Degraded)
 	}
+	if p.Fallback != "" {
+		parts = append(parts, "FALLBACK: "+p.Fallback)
+	}
 	return strings.Join(parts, ", ")
 }
 

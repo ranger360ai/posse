@@ -31,11 +31,16 @@ type HerdrBackend struct {
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
-	w := b.Warn
-	if w == nil {
-		w = os.Stderr
+	fmt.Fprintf(b.warnWriter(), format, args...)
+}
+
+// warnWriter is the same stream warn writes to, for the callees that take
+// an io.Writer to report a config typo on (App.ModelProbeTTL).
+func (b *HerdrBackend) warnWriter() io.Writer {
+	if b.Warn == nil {
+		return os.Stderr
 	}
-	fmt.Fprintf(w, format, args...)
+	return b.Warn
 }
 
 type NewSessionOpts struct {
@@ -78,6 +83,7 @@ type HerdrMeta struct {
 	Cage      string    // cage tier the session got (ADR 0002 §4)
 	Sockets   string    // container: host sockets the PID declared and the cage mounted ("" = none)
 	Degraded  string    // "; "-joined gates the wall does not realize here ("" = full parity)
+	Fallback  string    // the availability preflight's line when the tier did not get its model ("" = it did) — rangerhq-oay
 	Crew      bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
 	Socket    string    // the herdr server this session was created against (see SocketID)
 	Gen       string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
@@ -172,6 +178,7 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Cage:      YamlGet(p, "cage"),
 		Sockets:   YamlGet(p, "sockets"),
 		Degraded:  YamlGet(p, "degraded"),
+		Fallback:  YamlGet(p, "fallback"),
 		Crew:      YamlGet(p, "crew") == "true",
 		Socket:    YamlGet(p, "socket"),
 		Gen:       YamlGet(p, "gen"),
@@ -226,6 +233,13 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if m.Degraded != "" {
 		fmt.Fprintf(&s, "degraded: %s\n", m.Degraded)
 	}
+	// What the account would not serve, and what ran instead (rangerhq-oay).
+	// A session whose tier silently became a cheaper model is the one thing
+	// the listing could not show, and the tier: above already names the
+	// substitute — this is the line that says it was a substitute.
+	if m.Fallback != "" {
+		fmt.Fprintf(&s, "fallback: %s\n", m.Fallback)
+	}
 	if m.Crew {
 		fmt.Fprintf(&s, "crew: true\n")
 	}
@@ -245,6 +259,14 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 
 // CrewTag is what a crew session wears in `posse list` and the cockpit.
 const CrewTag = "👤"
+
+// FallbackTag is what a session wears when the model its tier named was not
+// available on the account and the launch substituted another (ADR 0003 §1,
+// rangerhq-oay). It rides BESIDE the @runtime/tier tag rather than replacing
+// it, because that tag already names the substitute: the session really is
+// running at what it says, and this is the mark that says it was not asked
+// for. `fallback:` in the session meta carries the whole line.
+const FallbackTag = "⤵️fallback"
 
 // EnvPersona is set in every persona session's env by CreateSession: its
 // presence in *posse's own* env means posse was run by a persona, not by the
@@ -316,6 +338,7 @@ type HerdrSession struct {
 	Cage        string // persona sessions: cage tier
 	Sockets     string // persona sessions: host sockets the cage mounted ("" = none)
 	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
+	Fallback    string // persona sessions: the tier's model was unavailable and this is what ran instead ("" = it got what it asked for)
 	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
 	Dir         string // working directory (from meta; "" for foreign sessions)
 	Agent       string
@@ -444,7 +467,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
-			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Crew: m.Crew, Dir: m.Dir,
+			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, Crew: m.Crew, Dir: m.Dir,
 			Status: status(ws), Focused: ws.Focused,
 		})
 	}
@@ -866,6 +889,7 @@ type launchPlan struct {
 	Cage     string
 	Sockets  string
 	Degraded string
+	Fallback string // the availability preflight's line ("" = the tier got the model it asked for)
 }
 
 // planLaunch resolves a launch without touching herdr: persona, runtime,
@@ -896,7 +920,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	var ag *AgentFile
 	var rt *Runtime
 	caged := false // the session really runs inside the L4 cage (ADR 0002 §3)
-	runtime, tier, gatesDir, cage, degraded := "", "", "", "", ""
+	runtime, tier, gatesDir, cage, degraded, fallback := "", "", "", "", "", ""
 	if o.Agent != "" {
 		var err error
 		if ag, err = a.LoadAgent(o.Agent); err != nil {
@@ -916,6 +940,21 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		tier = a.ResolveTier(o.Tier, ag)
 		if !ValidTier(tier) {
 			return nil, Die("unknown tier %q (strong | standard | fast)", tier)
+		}
+		// Availability preflight (rangerhq-oay, modelavail.go): the tier is
+		// resolved, so the model id it names is known — ask whether this
+		// account can actually run it, and substitute per `tier_fallback:`
+		// when it cannot. Loud, never silent, and never a refusal of its
+		// own (rule 3). It runs BEFORE the parity check on purpose: what
+		// the wall and the PID's tier_floor: must rule on is the pair that
+		// would really launch, not the one that was asked for.
+		if pf := a.TierPreflight(o.Agent, runtime, tier, b.warnWriter()); pf.Fell() {
+			fallback = pf.Line
+			b.warn("posse: %s\n", pf.Line)
+			runtime, tier = pf.Runtime, pf.Tier
+			if rt, err = a.LoadRuntime(runtime); err != nil {
+				return nil, err
+			}
 		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
@@ -1087,6 +1126,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	return &launchPlan{
 		Dir: dir, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
 		Runtime: runtime, Tier: tier, Cage: cage, Sockets: sockets, Degraded: degraded,
+		Fallback: fallback,
 	}, nil
 }
 
@@ -1108,7 +1148,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 	meta := &HerdrMeta{
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
-		Dir: p.Dir, Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Crew: o.Crew,
+		Dir: p.Dir, Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Crew: o.Crew,
 		// Which server, and which generation of it, issued this workspace
 		// id — the id alone identifies nothing across a restart or a
 		// handoff (rangerhq-yt1p).
@@ -1375,6 +1415,9 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 			}
 			if s.Degraded != "" {
 				line += "  ⚠️degraded"
+			}
+			if s.Fallback != "" {
+				line += "  " + FallbackTag
 			}
 		}
 		if s.Crew {

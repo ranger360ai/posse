@@ -83,6 +83,40 @@ default_emoji: ⚙️
 #   security: strong
 #   adr: strong
 
+# Where a tier goes when the model it names is NOT AVAILABLE on this
+# account (rangerhq-oay). A tier is a name; the launch turns it into a
+# model id; nothing before this asked whether the account can run that id.
+# When it cannot, the launch says so in one line naming persona, tier,
+# wanted model and substitute, records `fallback:` in the session meta
+# (visible in `posse list` and the cockpit), and runs the substitute. It
+# NEVER refuses over availability — "a degraded model is worse than
+# nothing" is your call, and `tier_floor:` on a PID is where you record it
+# in advance.
+#
+# KEY: a persona name or a tier name (persona wins). VALUE: a tier name
+# (drop a tier on the same runtime), a runtime name (hop runtimes at the
+# same tier), or `none` (no substitute — run the unavailable model and say
+# so). The default is strong -> standard, which on claude is the strongest
+# model falling to the mid one, and unlike `tier_by_label:` above, naming
+# one key here does NOT take that default away from everyone else.
+# tier_fallback:
+#   strong: standard        # the default, written out
+#   <persona>: codex        # this lane's fallback is a different runtime
+#
+# The check itself. It reads the account's model catalog with the same
+# credential the plan guard uses, costs no tokens, and shares one reading
+# through $RHQ_HOME/state/model-catalog.json — so a fleet pass costs at
+# most one request per TTL. Everything about it fails OPEN: an unreadable
+# credential, an unreachable endpoint or an answer posse does not
+# understand all mean "unknown", and unknown launches the tier exactly as
+# asked. Only a catalog that was actually read, and that does not contain
+# the model, moves anything.
+#
+# `posse gates <persona>` prints the verdict per runtime — run it once to
+# see whether the probe answers at all on your box before trusting it.
+# model_preflight: false    # turn the check off entirely (default: on)
+# model_probe_ttl: 1h       # how long one reading is shared; 0 = every launch asks
+
 # ─── the queue ───────────────────────────────────────────────────────────────
 # Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate
 # unblocked work from each listed repo's bd database (repos without one are

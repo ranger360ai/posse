@@ -32,6 +32,14 @@ type App struct {
 	EnvsDir    string
 	StateDir   string
 	AgentsDir  string
+	// ModelLister is the account's model catalog reader (modelavail.go).
+	// nil = NewModelLister, which is what every real launch uses; it is a
+	// field for the same reason Dispatcher.Plan is one — so a test can hand
+	// the availability preflight a fake endpoint instead of the operator's
+	// keychain and the live API. A zero-value lister answers "not
+	// configured", which the preflight reads as UNKNOWN and launches on,
+	// so the hermetic default is also the fail-open one.
+	ModelLister *ModelLister
 }
 
 func NewApp() *App {

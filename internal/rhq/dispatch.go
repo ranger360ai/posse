@@ -1110,6 +1110,14 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	if err != nil {
 		return nil, err
 	}
+	// What the account would actually serve. The work prompt tells the
+	// persona which tier it is thinking at (promptContext), so a header
+	// naming a model the session is not running is the exact lie this
+	// preflight exists to kill (rangerhq-oay).
+	if rt, tr, fell := d.effectiveTier(session, runtime, tier); fell != "" {
+		fmt.Fprintf(d.Out, "! %-14s %s\n", is.ID, fell)
+		runtime, tier, tierWhy = rt, tr, "fallback"
+	}
 	// The overflow marker, and only when there is one: a launch on the
 	// persona's own runtime reads exactly as it always did, and a bead the
 	// plan guard moved says so on the line it was prompted on — the same
@@ -1269,6 +1277,25 @@ func (d *Dispatcher) tierRefusal(ag *AgentFile, runtime, tier string) error {
 		return nil
 	}
 	return d.App.CheckTier(ag, rt, ResolveCage(d.Cage, ag), tier, d.AllowDegraded)
+}
+
+// effectiveTier reads back what the session was really created at. The
+// availability preflight (modelavail.go) runs inside the launch, where the
+// model id is known and where the meta is written; dispatch learns its
+// verdict from that meta rather than probing again, so the catalog is read
+// once per TTL and the loud line is printed once per launch.
+//
+// It answers only for a session whose meta records a `fallback:` — the
+// footprint of this one fact and nothing more. A found session's tier is
+// still reported as the bead's resolved tier exactly as it always was;
+// whether THAT is honest for a session created at another tier is a
+// different question and not this bead's.
+func (d *Dispatcher) effectiveTier(session, runtime, tier string) (string, string, string) {
+	m, ok := d.HB.readMeta(session)
+	if !ok || m.Fallback == "" {
+		return runtime, tier, ""
+	}
+	return m.Runtime, m.Tier, m.Fallback
 }
 
 func hasLabel(labels []string, want string) bool {
@@ -1497,7 +1524,12 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := d.HB.H.AgentPrompt(target, workPrompt(is, d.App.promptContext(d.Bd, is, d.sessionRuntime(ag), tier, ag)), false, 0); err != nil {
+	launchRuntime := d.sessionRuntime(ag)
+	if rt, tr, fell := d.effectiveTier(session, launchRuntime, tier); fell != "" {
+		fmt.Fprintf(d.Out, "! %-14s %s\n", is.ID, fell)
+		launchRuntime, tier = rt, tr
+	}
+	if _, err := d.HB.H.AgentPrompt(target, workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, ag)), false, 0); err != nil {
 		return "", d.unclaimAfterPromptFailure(is, persona, resumed, err)
 	}
 	d.notePrompted(session)
