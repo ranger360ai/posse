@@ -964,6 +964,21 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			busy[slot] = true
 			continue
 		}
+		// The holder join (ADR 0004 §2): a bead this persona already holds
+		// is joined to its live session by the bead's own Dial F name, then
+		// the pre-Dial-F slot. Walked once — the skip below and the resume
+		// that overrides it are two answers about the SAME session, and
+		// deciding them from different names is what left `--resume`
+		// launching a twin beside an idle slot holder (rangerhq-v330).
+		held := ""
+		if is.Status == "in_progress" && is.Assignee == persona {
+			for _, name := range []string{session, slot} {
+				if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
+					held = name
+					break
+				}
+			}
+		}
 		// An in_progress bead whose own session (or the pre-Dial-F persona
 		// session) is alive with an agent that has settled: the persona
 		// stopped on it — blocked and said so, or waiting on a human — and
@@ -971,18 +986,17 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// Only an interrupted run resumes by itself (no session, or its
 		// agent gone → the launch creates/relaunches and the claim-held path
 		// resumes); otherwise the operator asks with --resume (rangerhq-zom).
-		if is.Status == "in_progress" && is.Assignee == persona && !d.Resume {
-			held := ""
-			for _, name := range []string{session, slot} {
-				if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
-					held = name
-					break
-				}
-			}
-			if held != "" {
-				fmt.Fprintf(d.Out, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, held)
-				continue
-			}
+		if held != "" && !d.Resume {
+			fmt.Fprintf(d.Out, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, held)
+			continue
+		}
+		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
+		// §3) — the semantics the cockpit's `d` key realizes through
+		// LaunchBead. Re-prompt means THIS session, not a fresh Dial F one
+		// beside it; with no live holder the Dial F name stands and the
+		// launch creates it.
+		if held != "" {
+			session = held
 		}
 		ag, _ := d.App.LoadAgent(persona)
 		tier, tierWhy := d.App.BeadTier(d.Tier, is.BdIssue, ag)

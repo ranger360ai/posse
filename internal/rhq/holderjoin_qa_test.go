@@ -322,10 +322,10 @@ func TestCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
 }
 
 // Run --resume is the semantics ADR 0004 §3 says cockpit `d` has. LaunchBead
-// was fixed; fire() still always launches SessionForBead. An idle slot holder
-// then gets a twin.
+// was fixed under rangerhq-lwx; fireLoop still always launched
+// SessionForBead, so an idle slot holder got a twin (rangerhq-v330). Live
+// regression test now — the pass fires into the holder the join names.
 func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
-	t.Skip("rangerhq-v330: Run --resume still creates SessionForBead beside an idle slot holder")
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -350,5 +350,46 @@ func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("want 1 resumed into the slot, got n=%d:\n%s", n, out)
+	}
+	// The other half of the fix: not-twinning is not enough — the pass has
+	// to have re-prompted THE HOLDER. w1 is the slot's pane; a skip would
+	// satisfy the twin check alone.
+	if !strings.Contains(log, "agent prompt w1:p1") {
+		t.Errorf("the idle slot holder was not re-prompted (n=%d):\n%s\n%s", n, out, log)
+	}
+	if strings.Contains(out, "creating session "+dial) {
+		t.Errorf("the pass announced a Dial F session for a slot-held bead:\n%s", out)
+	}
+	if !strings.Contains(out, "→ "+slot) {
+		t.Errorf("the pass did not report prompting the slot %s:\n%s", slot, out)
+	}
+}
+
+// The residual half of the same disagreement, found fixing rangerhq-v330 and
+// filed as ranger-base-6bu: the slot session is alive but its AGENT is gone.
+// LaunchBead picks the holder by Resolve success alone, so the bare slot is
+// the holder and the agent is relaunched in place. fireLoop's walk also
+// requires a status, because it feeds the rangerhq-zom stopped-on-purpose
+// skip — which must not fire on an agentless session — so --resume finds no
+// holder and the Dial F name stands.
+func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
+	t.Skip("ranger-base-6bu: --resume still twins an agentless slot holder")
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.Resume = true
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+		`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
+	slot := SessionFor("ranger", repo)
+	mustCreate(t, b, NewSessionOpts{Name: slot, Dir: repo, Agent: "ranger"})
+	// No agent anywhere: the session is a bare shell.
+	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
+	agentPerLaunch(t, fake)
+
+	n, _ := d.Run("", "", 0)
+	out, log := dispatcherOut(d), calls(t, fake)
+	if dial := SessionForBead("ranger", repo, "a-1"); strings.Contains(log, "workspace create --label "+dial) {
+		t.Errorf("--resume created a Dial F twin beside the agentless slot holder %s (n=%d):\n%s\n%s", slot, n, out, log)
 	}
 }
