@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Verify a posse binary's session-meta prune guard against the LIVE herdr,
+# without risking a single fleet meta (rangerhq-m15, the promote gate for
+# rangerhq-8fq / abb2716).
+#
+# Usage: scripts/verify-prune-guard.sh [path-to-posse]      (default: $(command -v posse))
+#        scripts/verify-prune-guard.sh bin/posse-release    # the promote candidate
+#
+# The rig is one scratch RHQ_HOME under $TMPDIR holding four planted metas:
+#   ghost-foreign     records a socket this server is not     -> must be KEPT
+#   ghost-socketless  records no socket at all                -> must be KEPT (abb2716)
+#   <label>           names a workspace this server DOES hold, under that
+#                     workspace's own label                   -> must be LISTED,
+#                     and gets socket: and gen: stamped on it (the abb2716
+#                     backfill, plus rangerhq-yt1p's generation fence)
+#   ghost-stranger    names that SAME live workspace under a name that is not
+#                     its label                               -> must be KEPT
+#                     and NOT listed (rangerhq-yt1p): the id answers alive for
+#                     somebody else's workspace, which proves nothing about
+#                     this session, and listing it would put the name on a
+#                     stranger's pane.
+# Both ghosts name workspace ids herdr does not have, and every planted
+# launched: stamp is two hours old, so they are past PruneGrace and clear of
+# the rangerhq-9nso grace arm — what is left under test is the socket guard
+# and the identity check.
+#
+# Safe direction, and only this direction: RHQ_HOME is scratch on the process
+# WE run, so every write lands in the scratch home; herdr is only ever read
+# (workspace list + a workspace-alive query per absent meta). The rangerhq-snd
+# wipe was the reverse — a real RHQ_HOME against a scratch socket.
+#
+# A pre-abb2716 binary (the fleet's 757e13d) fails this: it prunes
+# ghost-socketless, because its different-socket arm was gated on
+# m.Socket != "" and so could never fire for a meta that records none.
+set -uo pipefail
+
+RHQ=${1:-$(command -v posse)}
+[ -x "$RHQ" ] || { echo "verify-prune-guard: not executable: ${RHQ:-<none>}"; exit 2; }
+command -v herdr >/dev/null || { echo "verify-prune-guard: herdr not on PATH"; exit 2; }
+
+sock=${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}
+[ -S "$sock" ] || { echo "verify-prune-guard: no herdr socket at $sock"; exit 2; }
+
+# A workspace this server really holds, for the backfill arm — and its LABEL,
+# because since rangerhq-yt1p a meta is only that workspace's if it wears its
+# name (a workspace id alone is re-issued across a server restart or handoff).
+# The label has to be usable as a session name, since that is what the meta's
+# filename is.
+read -r live label < <(herdr workspace list 2>/dev/null | python3 -c '
+import json, re, sys
+for w in json.load(sys.stdin)["result"]["workspaces"]:
+    if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_-]*", w.get("label") or ""):
+        print(w["workspace_id"], w["label"])
+        break
+' 2>/dev/null)
+[ -n "${live:-}" ] || { echo "verify-prune-guard: herdr holds no workspace with a session-shaped label; nothing to test the backfill against"; exit 2; }
+
+home=$(mktemp -d "${TMPDIR:-/tmp}/posse-prune-guard.XXXXXX")
+trap 'rm -rf "$home"' EXIT
+metas=$home/state/herdr
+mkdir -p "$metas"
+
+old=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc)-d.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
+printf 'name: ghost-foreign\nworkspace: w404\npane: w404:p1\nemoji: G\nagent: developer\nruntime: claude\nlaunched: %s\nsocket: /tmp/not-this-server/herdr.sock\n' "$old" > "$metas/ghost-foreign.yaml"
+printf 'name: ghost-socketless\nworkspace: w405\npane: w405:p1\nemoji: G\nagent: qa\nruntime: claude\nlaunched: %s\n' "$old" > "$metas/ghost-socketless.yaml"
+printf 'name: %s\nworkspace: %s\npane: %s:p1\nemoji: G\nagent: architect\nruntime: claude\nlaunched: %s\n' "$label" "$live" "$live" "$old" > "$metas/$label.yaml"
+printf 'name: ghost-stranger\nworkspace: %s\npane: %s:p1\nemoji: G\nagent: devops\nruntime: claude\nlaunched: %s\nsocket: %s\n' "$live" "$live" "$old" "$sock" > "$metas/ghost-stranger.yaml"
+
+echo "verify-prune-guard: $RHQ ($("$RHQ" version 2>/dev/null))"
+echo "  herdr socket : $sock"
+echo "  live space   : $live ($label)"
+echo "  scratch home : $home"
+echo
+
+out=$(RHQ_HOME=$home HERDR_SOCKET_PATH=$sock "$RHQ" list 2>&1)
+printf '%s\n\n' "$out"
+
+fail=0
+check() { # check <label> <condition-result> <detail>
+  if [ "$2" = 0 ]; then printf '  OK   %s\n' "$1"
+  else printf '  FAIL %s — %s\n' "$1" "$3"; fail=1; fi
+}
+
+[ -f "$metas/ghost-socketless.yaml" ]; check "socket-less meta kept (abb2716)" $? "PRUNED — this binary predates abb2716"
+[ -f "$metas/ghost-foreign.yaml" ];    check "foreign-socket meta kept (9ac4a16)" $? "PRUNED — the different-socket arm is not firing"
+printf '%s\n' "$out" | grep -q '2 session meta file(s) kept, not listed'
+check "both refusals reported on stderr" $? "expected a '2 ... kept, not listed' warning"
+listing=$(printf '%s\n' "$out" | awk '/^HERDR SESSIONS/{on=1;next} on')
+printf '%s\n' "$listing" | grep -q " $label\( \|$\)"
+check "live-workspace meta listed" $? "$label missing from the listing itself"
+grep -q "^socket: $sock\$" "$metas/$label.yaml"
+check "socket: backfilled onto the live meta (abb2716)" $? "no backfill — the meta would stay unprunable forever"
+grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"
+check "gen: backfilled onto the live meta (rangerhq-yt1p)" $? "no generation stamped — the next restart cannot tell a rename from a re-issued id"
+grep -q "^launched: $old\$" "$metas/$label.yaml"
+check "backfill preserved launched:" $? "the rewrite dropped fields it should have kept"
+
+# rangerhq-yt1p: the same live workspace, claimed by a meta whose name is not
+# its label. Liveness is proven and identity is not, so the file stays and the
+# session does not appear — a listing there would address a stranger's pane.
+[ -f "$metas/ghost-stranger.yaml" ]
+check "stranger-id meta kept (rangerhq-yt1p)" $? "PRUNED — a live workspace's id is not a licence to delete another meta"
+printf '%s\n' "$listing" | grep -q 'ghost-stranger'
+if [ $? = 0 ]; then check "stranger-id meta not listed (rangerhq-yt1p)" 1 "listed under a workspace labelled '$label' — a prompt would land in somebody else's pane"; else check "stranger-id meta not listed (rangerhq-yt1p)" 0; fi
+printf '%s\n' "$out" | grep -q 'another workspace holds the id they recorded'
+check "the re-issued id is reported with its repair" $? "no warning naming the identity mismatch"
+if [ -f "$metas/ghost-socketless.yaml" ]; then
+  ! grep -q '^socket:' "$metas/ghost-socketless.yaml"
+  check "no socket guessed for an absent workspace" $? "stamped a socket it had no proof of"
+else
+  printf '  SKIP %s\n' "no socket guessed for an absent workspace (meta was pruned)"
+fi
+
+echo
+if [ $fail = 0 ]; then echo "verify-prune-guard: PASS"; else echo "verify-prune-guard: FAIL"; fi
+exit $fail

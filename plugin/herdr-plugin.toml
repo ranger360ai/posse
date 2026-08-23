@@ -1,0 +1,31 @@
+# posse herdr plugin — the cockpit as a native herdr surface.
+# Setup: make install && make link-plugin
+# Commands run with cwd = plugin root; ./bin/posse is a symlink (made by
+# `make link-plugin`, gitignored) to the installed binary, so the popup runs a
+# known build regardless of PATH — never the dev bin/posse-go.
+
+id = "posse.cockpit"
+name = "posse"
+version = "0.3.0"
+min_herdr_version = "0.8.0"
+description = "Ranger work-system cockpit: sessions with live agent state, ready beads"
+platforms = ["macos", "linux"]
+
+[[panes]]
+id = "cockpit"
+title = "🤠 posse"
+placement = "popup"
+width = "70%"
+height = "70%"
+command = ["./bin/posse", "cockpit"]
+
+[[actions]]
+id = "list"
+title = "posse: list sessions"
+command = ["./bin/posse", "list"]
+
+# Scheduled dispatch (rangerhq-snd): herdr runs this once per server start.
+# It is a no-op unless the instance config carries `autostart_interval:` —
+# the arm switch. See plugin/autostart.sh.
+[[startup]]
+command = ["bash", "autostart.sh", "--startup"]

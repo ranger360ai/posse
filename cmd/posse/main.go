@@ -1,0 +1,1297 @@
+// posse — the Ranger work-system harness, herdr-native.
+// Sessions are herdr workspaces; work comes from beads (bd); personas, env
+// sets, and recipes are posse's own. The tmux-era implementation lives on
+// the tmux-reference branch.
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ranger360ai/posse/internal/rhq"
+)
+
+func die(err error) {
+	fmt.Fprintf(os.Stderr, "posse: %v\n", err)
+	os.Exit(1)
+}
+
+// need enforces a subcommand's positional arity, and first settles what a
+// leading argument that looks like a flag means (rangerhq-qv5):
+//
+//	-h / --help   print this subcommand's usage and exit 0 — it used to be
+//	              taken as the positional name, so `posse new --help` created
+//	              a herdr workspace called '--help'
+//	--            ends that reading, so a name that starts with a dash is
+//	              still reachable: `posse kill -- --help` kills such a session
+//
+// It returns the args with the separator removed; callers read positionals
+// from the returned slice.
+func need(args []string, n int, usage string) []string {
+	args, help := argLead(args)
+	if help {
+		fmt.Fprintf(os.Stdout, "usage: %s\n", usage)
+		os.Exit(0)
+	}
+	if len(args) < n {
+		die(rhq.Die("usage: %s", usage))
+	}
+	return args
+}
+
+// argLead is need's reading of the first argument, without the exits.
+func argLead(args []string) (rest []string, help bool) {
+	if len(args) == 0 {
+		return args, false
+	}
+	switch args[0] {
+	case "--":
+		return args[1:], false
+	case "-h", "--help":
+		return args, true
+	}
+	return args, false
+}
+
+func main() {
+	// Second entry point (rangerhq-1k1): this binary is also the argv0
+	// launcher a caged pane runs. `state/cages/<persona>/bin/claude` is a
+	// symlink to it, and with this flag it execs the engine with argv[0]
+	// reset to the runtime's name — the only way herdr identifies an agent
+	// through the container boundary. It never returns on success, and it
+	// reads no config, so it is the first thing main does.
+	if rhq.IsCageLaunch(os.Args) {
+		die(rhq.RunCageLaunch(os.Args))
+	}
+	// Third entry point (rangerhq-9d0): the egress watcher the launcher
+	// forks just before that exec. It outlives the launcher on purpose —
+	// the cage's route comes down when the engine's process does — and, like
+	// the launcher, it reads no config.
+	// Unlike the launcher, this one RETURNS on success — the cage it was
+	// watching is over — so it must not go through die(), which exists for
+	// a call that only ever comes back to report a failure.
+	if rhq.IsCageReap(os.Args) {
+		if err := rhq.RunCageReap(os.Args); err != nil {
+			die(err)
+		}
+		return
+	}
+	a := rhq.NewApp()
+	hb := rhq.NewHerdrBackend(a)
+	args := os.Args[1:]
+	cmd := "help"
+	if len(args) > 0 {
+		cmd, args = args[0], args[1:]
+	}
+	out := os.Stdout
+
+	switch cmd {
+	case "list", "ls":
+		if err := hb.CmdList(out); err != nil {
+			die(err)
+		}
+
+	case "new":
+		args = need(args, 1, `posse new <name> [--dir <path>] [--env-file <name>]... [--cmd "..."] [--emoji <e>] [--agent <name>]`)
+		o := parseNewFlags(args)
+		// ADR 0008: a session the operator made by hand is one they made to
+		// talk to — dispatch leaves it alone until they release it.
+		o.Crew = true
+		if err := hb.CreateSession(o); err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "created %s (herdr workspace, background)\n", o.Name)
+
+	case "attach", "up", "local", "focus":
+		args = need(args, 1, "posse attach <name>")
+		if (cmd == "up" || cmd == "local") && !hb.HasSession(args[0]) {
+			if err := hb.CreateSession(rhq.NewSessionOpts{Name: args[0], Crew: true}); err != nil {
+				die(err)
+			}
+		}
+		if err := hb.FocusSession(args[0]); err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "focused %s (in herdr)\n", args[0])
+
+	case "recipe":
+		args = need(args, 1, "posse recipe <name>")
+		if err := hb.LaunchRecipe(out, args[0]); err != nil {
+			die(err)
+		}
+
+	case "relaunch":
+		// Session refresh: land the plane, close the workspace, recreate it
+		// from the same meta (rangerhq-dxq).
+		args = need(args, 1, "posse relaunch <name> [--no-land] [--timeout <interval>]")
+		o := rhq.RelaunchOpts{Name: args[0]}
+		rest := args[1:]
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--no-land":
+				o.NoLand, rest = true, rest[1:]
+			case "--timeout":
+				if len(rest) < 2 {
+					die(rhq.Die("--timeout needs an interval (10m, 90s, or seconds)"))
+				}
+				iv, err := rhq.ParseInterval(rest[1])
+				if err != nil {
+					die(err)
+				}
+				o.Timeout, rest = iv, rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		if err := hb.RelaunchSession(out, o); err != nil {
+			die(err)
+		}
+
+	case "kill":
+		args = need(args, 1, "posse kill <name>")
+		if err := hb.KillSession(args[0]); err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "killed %s\n", args[0])
+
+	case "prompt":
+		// The dispatch primitive: submit work to a session's agent.
+		args = need(args, 2, `posse prompt <name> "<text>" [--wait] [--timeout <ms>]`)
+		name, text := args[0], args[1]
+		wait, timeout := false, 0
+		rest := args[2:]
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--wait":
+				wait, rest = true, rest[1:]
+			case "--timeout":
+				if len(rest) < 2 {
+					die(rhq.Die("--timeout needs a value (ms)"))
+				}
+				timeout, _ = strconv.Atoi(rest[1])
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		target, err := hb.AgentTarget(name)
+		if err != nil {
+			die(err)
+		}
+		res, err := hb.H.AgentPrompt(target, text, wait, timeout)
+		if err != nil {
+			die(err)
+		}
+		// The operator starting a conversation makes the session crew; a
+		// persona's prompt marks nothing (ADR 0008). After the prompt took,
+		// so a failed prompt is not a conversation.
+		hb.MarkCrewOnOperatorPrompt(name)
+		fmt.Fprintf(out, "%s\n", res)
+
+	case "crew":
+		// ADR 0008: hand a session to the operator (dispatch skips it) or
+		// give it back to the fleet.
+		args = need(args, 1, "posse crew <name> [--off]")
+		crew := true
+		for _, a := range args[1:] {
+			if a != "--off" {
+				die(rhq.Die("unknown flag: %s", a))
+			}
+			crew = false
+		}
+		if err := hb.SetCrew(args[0], crew); err != nil {
+			die(err)
+		}
+		if crew {
+			fmt.Fprintf(out, "%s is crew (yours) — dispatch skips it\n", args[0])
+		} else {
+			fmt.Fprintf(out, "%s is fleet — dispatch may use it\n", args[0])
+		}
+
+	case "wait":
+		args = need(args, 1, "posse wait <name> [--until <state>]... [--timeout <ms>]")
+		name := args[0]
+		var until []string
+		timeout := 0
+		rest := args[1:]
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--until":
+				if len(rest) < 2 {
+					die(rhq.Die("--until needs a state"))
+				}
+				until = append(until, rest[1])
+				rest = rest[2:]
+			case "--timeout":
+				if len(rest) < 2 {
+					die(rhq.Die("--timeout needs a value (ms)"))
+				}
+				timeout, _ = strconv.Atoi(rest[1])
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		target, err := hb.AgentTarget(name)
+		if err != nil {
+			die(err)
+		}
+		res, err := hb.H.AgentWait(target, until, timeout)
+		if err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "%s\n", res)
+
+	case "peek":
+		args = need(args, 1, "posse peek <name> [<lines>]")
+		s, err := hb.Resolve(args[0])
+		if err != nil {
+			die(err)
+		}
+		if s.PaneID == "" {
+			die(rhq.Die("session %s has no recorded pane (created outside posse)", args[0]))
+		}
+		lines := 0
+		if len(args) > 1 {
+			lines, _ = strconv.Atoi(args[1])
+		}
+		text, err := hb.H.PaneRead(s.PaneID, lines)
+		if err != nil {
+			die(err)
+		}
+		fmt.Fprintln(out, text)
+
+	case "ready":
+		// Head of the dispatch loop: unblocked work. With --dir, one repo;
+		// without, aggregated across the config `beads:` list (else cwd).
+		dir, assignee := "", ""
+		rest := args
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--dir":
+				if len(rest) < 2 {
+					die(rhq.Die("--dir needs a path"))
+				}
+				dir = rhq.ExpandTilde(rest[1])
+				rest = rest[2:]
+			case "--assignee", "--as":
+				if len(rest) < 2 {
+					die(rhq.Die("%s needs a name", rest[0]))
+				}
+				assignee = rest[1]
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		bd := needBd()
+		// verify-after (ADR 0006 §3): the same rule the dispatch pass runs,
+		// so an operator looking at ready work sees the verify beads the
+		// last round of closes earned.
+		verifyDirs := a.BeadsDirs()
+		if dir != "" {
+			verifyDirs = []string{dir}
+		}
+		a.VerifyAfter(bd, verifyDirs, out, os.Stderr)
+		var issues []rhq.RepoIssue
+		if dir != "" {
+			single, err := bd.Ready(dir, assignee)
+			if err != nil {
+				die(err)
+			}
+			for _, is := range single {
+				issues = append(issues, rhq.RepoIssue{BdIssue: is, Dir: dir})
+			}
+		} else {
+			var failed []error
+			issues, failed = bd.ReadyAll(a, assignee)
+			// A repo the scan could not read has an unknown queue, not an
+			// empty one (rangerhq-llse) — say which, and never print "no
+			// ready work" when the scan is why the list is empty.
+			for _, err := range failed {
+				fmt.Fprintf(os.Stderr, "ready scan failed: %v\n", err)
+			}
+			if len(issues) == 0 && len(failed) > 0 {
+				die(rhq.Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed)))
+			}
+		}
+		if len(issues) == 0 {
+			fmt.Fprintln(out, "no ready work")
+			break
+		}
+		for _, is := range issues {
+			who := is.Assignee
+			if who == "" {
+				who = "unassigned"
+			}
+			fmt.Fprintf(out, "%-14s p%d  %-12s %-40s %s\n", is.ID, is.Priority, who, is.Title, rhq.AbbrevHome(is.Dir))
+		}
+
+	case "beads":
+		// posse beads check — the bead-loss alarm (rangerhq-fuom). bd's
+		// auto-import deletes rows from the database on a git-history
+		// signal and logs nothing when it does, so the git census of
+		// .beads/issues.jsonl is the only witness. --record moves what it
+		// finds into .beads/deleted.jsonl, which is the record a deletion
+		// owes and the last copy of the bead itself.
+		args = need(args, 1, "posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]")
+		if args[0] != "check" {
+			die(rhq.Die("usage: posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]"))
+		}
+		dir, reason, who := "", "", os.Getenv("BD_ACTOR")
+		rest := args[1:]
+		for len(rest) > 0 {
+			if len(rest) < 2 {
+				die(rhq.Die("%s needs a value", rest[0]))
+			}
+			switch rest[0] {
+			case "--dir":
+				dir = rhq.ExpandTilde(rest[1])
+			case "--record":
+				reason = rest[1]
+			case "--as":
+				who = rest[1]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+			rest = rest[2:]
+		}
+		bd := needBd()
+		dirs := a.BeadsDirs()
+		if dir != "" {
+			dirs = []string{dir}
+		}
+		found := 0
+		for _, d := range dirs {
+			lost, err := rhq.LostBeads(bd, d)
+			if err != nil {
+				die(err)
+			}
+			if len(lost) == 0 {
+				continue
+			}
+			found += len(lost)
+			for _, lb := range lost {
+				fmt.Fprintf(out, "%-14s %-12s %-10s dropped %s by %s  %s\n",
+					lb.ID, lb.Status, lb.Assignee,
+					lb.When.Format("2006-01-02 15:04"), lb.Commit[:min(8, len(lb.Commit))],
+					rhq.AbbrevHome(d))
+				fmt.Fprintf(out, "               %s\n", lb.Title)
+			}
+			if reason != "" {
+				if who == "" {
+					who = "operator"
+				}
+				if err := rhq.RecordDeletions(d, reason, who, lost, time.Now()); err != nil {
+					die(err)
+				}
+				// Not necessarily under d: a .beads/redirect puts the
+				// ledger in the repo whose git tracks it.
+				fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), rhq.AbbrevHome(rhq.DeletionLedgerPath(d)))
+			}
+		}
+		if found == 0 {
+			fmt.Fprintln(out, "no lost beads: every id git ever carried still resolves")
+			break
+		}
+		if reason == "" {
+			// Non-zero so an instance repo can run this in CI, the way
+			// `posse agent check` reports PID findings.
+			os.Exit(1)
+		}
+
+	case "claim", "done":
+		// posse claim <id> [--as <persona>] [--dir <repo>] — atomic claim;
+		// posse done <id> ... — close. --as sets the bd actor (persona name).
+		args = need(args, 1, "posse "+cmd+" <id> [--as <persona>] [--dir <repo>]")
+		id := args[0]
+		dir, actor := "", ""
+		rest := args[1:]
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--dir":
+				if len(rest) < 2 {
+					die(rhq.Die("--dir needs a path"))
+				}
+				dir = rhq.ExpandTilde(rest[1])
+				rest = rest[2:]
+			case "--as":
+				if len(rest) < 2 {
+					die(rhq.Die("--as needs a persona name"))
+				}
+				actor = rest[1]
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		bd := needBd()
+		var err error
+		verb := "closed"
+		if cmd == "claim" {
+			var resumed bool
+			resumed, err = bd.Claim(dir, id, actor)
+			verb = "claimed"
+			if resumed {
+				verb = "resumed"
+			}
+		} else {
+			err = bd.Close(dir, id, actor)
+		}
+		if err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "%s %s\n", verb, id)
+
+	case "dispatch":
+		// One pass of the harness core: route ready beads to personas.
+		d := rhq.NewDispatcher(a, hb, out)
+		dirF, personaF, maxN := "", "", 0
+		var watch, watchMax time.Duration
+		rest := args
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--dry-run":
+				d.DryRun = true
+				rest = rest[1:]
+			case "--resume":
+				d.Resume = true
+				rest = rest[1:]
+			case "--runtime":
+				if len(rest) < 2 {
+					die(rhq.Die("--runtime needs a name (claude, codex, grok, or runtimes/<name>.yaml)"))
+				}
+				if _, err := a.LoadRuntime(rest[1]); err != nil {
+					die(err)
+				}
+				d.Runtime = rest[1]
+				rest = rest[2:]
+			case "--tier":
+				if len(rest) < 2 || !rhq.ValidTier(rest[1]) {
+					die(rhq.Die("--tier needs strong, standard, or fast"))
+				}
+				d.Tier = rest[1]
+				rest = rest[2:]
+			case "--allow-degraded":
+				d.AllowDegraded = true
+				rest = rest[1:]
+			case "--cage":
+				if len(rest) < 2 || !rhq.ValidCage(rest[1]) {
+					die(rhq.Die("--cage needs shims, seatbelt, or container"))
+				}
+				d.Cage = rest[1]
+				rest = rest[2:]
+			case "--watch":
+				if len(rest) < 2 {
+					die(rhq.Die("--watch needs an interval (30s, 2m, or seconds)"))
+				}
+				iv, err := rhq.ParseInterval(rest[1])
+				if err != nil {
+					die(err)
+				}
+				watch = iv
+				rest = rest[2:]
+			case "--max-interval":
+				if len(rest) < 2 {
+					die(rhq.Die("--max-interval needs an interval"))
+				}
+				iv, err := rhq.ParseInterval(rest[1])
+				if err != nil {
+					die(err)
+				}
+				watchMax = iv
+				rest = rest[2:]
+			case "--dir":
+				if len(rest) < 2 {
+					die(rhq.Die("--dir needs a path"))
+				}
+				dirF = rhq.ExpandTilde(rest[1])
+				rest = rest[2:]
+			case "--persona":
+				if len(rest) < 2 {
+					die(rhq.Die("--persona needs a name"))
+				}
+				personaF = rest[1]
+				rest = rest[2:]
+			case "-n":
+				if len(rest) < 2 {
+					die(rhq.Die("-n needs a count"))
+				}
+				maxN, _ = strconv.Atoi(rest[1])
+				rest = rest[2:]
+			case "--timeout":
+				if len(rest) < 2 {
+					die(rhq.Die("--timeout needs a value (ms)"))
+				}
+				d.PromptWaitMS, _ = strconv.Atoi(rest[1])
+				rest = rest[2:]
+			case "--ceiling":
+				if len(rest) < 2 {
+					die(rhq.Die("--ceiling needs an interval (2h, 90m, or seconds)"))
+				}
+				iv, err := rhq.ParseInterval(rest[1])
+				if err != nil {
+					die(err)
+				}
+				d.WaitCeiling = iv
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		if !d.Bd.Available() {
+			die(rhq.Die("bd not found in PATH"))
+		}
+		if watch > 0 {
+			// Continuous passes with quiet-pass backoff; SIGINT/SIGTERM end
+			// the loop between passes (a pass in flight finishes first).
+			if watchMax == 0 {
+				watchMax = 8 * watch
+			}
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			passes := d.Watch(ctx, dirF, personaF, maxN, watch, watchMax)
+			stop()
+			fmt.Fprintf(out, "watch stopped after %d pass(es)\n", passes)
+			return
+		}
+		n, err := d.Run(dirF, personaF, maxN)
+		if err != nil {
+			die(err)
+		}
+		verb := "dispatched"
+		if d.DryRun {
+			verb = "routable"
+		}
+		fmt.Fprintf(out, "%d bead(s) %s\n", n, verb)
+
+	case "cockpit":
+		if err := runCockpit(a, hb, out); err != nil {
+			die(err)
+		}
+
+	case "envs":
+		for _, n := range a.ListEnvSets() {
+			vars, _ := a.EnvSetVars(n)
+			keys := make([]string, 0, len(vars))
+			for _, v := range vars {
+				keys = append(keys, v.Key) // names only — never values
+			}
+			fmt.Fprintf(out, "%s  (%s)\n", n, joinComma(keys))
+		}
+
+	case "env":
+		// Env-set management: files edited in $EDITOR, never echoed.
+		args = need(args, 2, "posse env <edit|rm> <name>   (edit creates if missing)")
+		sub, name := args[0], args[1]
+		switch sub {
+		case "edit", "new":
+			if !rhq.ValidName(name) {
+				die(rhq.Die("bad env set name '%s'", name))
+			}
+			p, err := a.EnsureEnvSet(name)
+			if err != nil {
+				die(err)
+			}
+			if err := execEditor(p); err != nil {
+				die(err)
+			}
+		case "rm", "delete":
+			if err := a.DeleteEnvSet(name); err != nil {
+				die(err)
+			}
+			fmt.Fprintf(out, "deleted env set %s\n", name)
+		default:
+			die(rhq.Die("usage: posse env <edit|rm> <name>"))
+		}
+
+	case "memory", "orders":
+		// Persona-private memory: open the persona's ORDERS.md in $EDITOR.
+		args = need(args, 1, "posse memory <persona>")
+		ag, err := a.LoadAgent(args[0])
+		if err != nil {
+			die(err)
+		}
+		if err := ag.EnsureMemoryDir(); err != nil {
+			die(err)
+		}
+		if err := execEditor(ag.MemoryDir + "/ORDERS.md"); err != nil {
+			die(err)
+		}
+
+	case "agent":
+		// Persona files: `agent new` scaffolds the PID shape (ADR 0001) and
+		// opens it in $EDITOR; `agent edit` opens an existing one.
+		args = need(args, 1, "posse agent <new|edit|check> <name>   (check: --all lints every persona)")
+		sub := args[0]
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		switch sub {
+		case "check":
+			// Lint PIDs against the ADR 0001 contract; non-zero on findings
+			// so an instance repo can run it in CI.
+			names := []string{name}
+			if name == "" || name == "--all" {
+				names = a.ListAgents()
+			}
+			findings := 0
+			for _, n := range names {
+				fs, ws, err := a.CheckAgent(n)
+				if err != nil {
+					die(err)
+				}
+				for _, f := range fs {
+					fmt.Fprintf(out, "%s: %s\n", n, f)
+				}
+				for _, w := range ws {
+					fmt.Fprintf(out, "%s: warning: %s\n", n, w)
+				}
+				findings += len(fs)
+			}
+			if findings > 0 {
+				fmt.Fprintf(out, "%d finding(s) in %d persona(s)\n", findings, len(names))
+				os.Exit(1)
+			}
+			fmt.Fprintf(out, "%d persona(s) match the PID contract\n", len(names))
+		case "new", "edit":
+			args = need(args, 2, "posse agent <new|edit> <name>")
+			var p string
+			var err error
+			if sub == "new" {
+				p, err = a.ScaffoldAgent(name)
+			} else {
+				var ag *rhq.AgentFile
+				ag, err = a.LoadAgent(name)
+				if ag != nil {
+					p = ag.Path
+				}
+			}
+			if err != nil {
+				die(err)
+			}
+			if err := execEditor(p); err != nil {
+				die(err)
+			}
+		default:
+			die(rhq.Die("usage: posse agent <new|edit|check> <name>"))
+		}
+
+	case "cost":
+		// API-equivalent spend per bead from Claude Code transcripts (ADR
+		// 0003 §4) — read-only; codex/grok reported as uncounted.
+		since := time.Time{}
+		project := ""
+		rest := args
+		for len(rest) > 0 {
+			switch rest[0] {
+			case "--since":
+				if len(rest) < 2 {
+					die(rhq.Die("--since needs a date (YYYY-MM-DD or RFC3339)"))
+				}
+				t, err := time.Parse(time.RFC3339, rest[1])
+				if err != nil {
+					t, err = time.ParseInLocation("2006-01-02", rest[1], time.Local)
+				}
+				if err != nil {
+					die(rhq.Die("--since: %v", err))
+				}
+				since = t
+				rest = rest[2:]
+			case "--project":
+				if len(rest) < 2 {
+					die(rhq.Die("--project needs a path substring"))
+				}
+				project = rest[1]
+				rest = rest[2:]
+			default:
+				die(rhq.Die("unknown flag: %s", rest[0]))
+			}
+		}
+		rep := rhq.ScanCosts(project, since)
+		// Dial E's caps, for the footer: what the numbers above are measured
+		// against (rangerhq-25p). Reading them here never enforces anything.
+		rep.PassCap, rep.DayCap = a.BudgetCaps(os.Stderr)
+		if bd := rhq.NewBd(); bd.Available() {
+			rep.AttributePersonas(a, bd)
+		}
+		rep.CountUncounted(hb)
+		rep.Print(out)
+		// The plan's own rate windows (rangerhq-jgm) — the constraint the
+		// dollars above are a proxy for. Current reading only, no history;
+		// silent when the keychain or endpoint is unreadable.
+		// Through the shared cache (rangerhq-tdy8) — `posse cost` in a loop
+		// is one of the three pollers that made the endpoint 429. A reading
+		// a few minutes old is still the reading; say its age when it has
+		// one, so the number is never presented as newer than it is.
+		if u, at, err := a.PlanCache("cost").Read(a.PlanUsageTTL(os.Stderr)); err == nil {
+			age := ""
+			if d := time.Since(at); d >= time.Minute {
+				age = fmt.Sprintf(", read %s ago", rhq.BlindFor(d))
+			}
+			fmt.Fprintf(out, "plan windows: %s%s (the plan's own rate limits — the real budget; dollars above are API-equivalent)\n", u.Line(), age)
+		}
+
+	case "scorecard":
+		// Per-persona outcome metrics from bd data — read-only.
+		if len(args) >= 1 && args[0] == "--catalog" {
+			// The derived metric catalog (ADR 0001 amendment): a vocabulary
+			// check over the PIDs, so it needs no bd.
+			if err := a.MetricCatalogReport(out); err != nil {
+				die(err)
+			}
+			break
+		}
+		persona := ""
+		if len(args) >= 2 && args[0] == "--persona" {
+			persona = args[1]
+		} else if len(args) == 1 {
+			persona = args[0]
+		}
+		if !rhq.NewBd().Available() {
+			die(rhq.Die("bd not found in PATH"))
+		}
+		if err := a.Scorecard(rhq.NewBd(), out, persona); err != nil {
+			die(err)
+		}
+
+	case "agents":
+		for _, n := range a.ListAgents() {
+			if ag, err := a.LoadAgent(n); err == nil {
+				fmt.Fprintf(out, "🎭 %s  %s  [%s/%s]\n", n, ag.Description, a.ResolveRuntime("", ag), a.ResolveTier("", ag))
+			}
+		}
+
+	case "gates":
+		// Inspect a persona's L1 gates (shims rendered from its deny: and
+		// the refusals log — state, not memory), or install the L3 hook.
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] | posse gates wrap <persona> -- <cmd>")
+		// The inner command of a container launch (ADR 0002 §3,
+		// rangerhq-6so): rendered onto the engine's line by the host and run
+		// by the image's own Linux posse, never typed by hand. It renders
+		// gates/<persona>/ against the image's PATH and shell and becomes the
+		// runtime behind them, so on success it does not return.
+		if args[0] == "wrap" {
+			// Not `die(RunGatesWrap(…))`: die() exits whatever it is handed,
+			// and --probe returns nil on purpose — that nil is the answer the
+			// host's parity check reads.
+			if err := rhq.RunGatesWrap(args[1:], out); err != nil {
+				die(err)
+			}
+			return
+		}
+		if args[0] == "install-hooks" {
+			dir := "."
+			if len(args) > 1 {
+				dir = rhq.ExpandTilde(args[1])
+			}
+			p, err := rhq.InstallPrePushHook(dir)
+			if err != nil {
+				die(err)
+			}
+			fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", rhq.AbbrevHome(p))
+			// The shared-index guard is the second L3 hook and a separate
+			// slot: a foreign hook in one must not cost the other, so its
+			// failure is reported and the command still succeeds.
+			c, vis, src, cerr := a.InstallCommitGuardHook(dir)
+			if cerr != nil {
+				fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
+				return
+			}
+			fmt.Fprintf(out, "installed %s (refuses an unqualified git commit when RHQ_PERSONA is set — the index is shared; rangerhq-lmq9)\n", rhq.AbbrevHome(c))
+			// The same slot carries the beads visibility guard, and its
+			// verdict is stamped into the file — so say which one was
+			// stamped and where it came from, or an operator has to read a
+			// hook to find out whether their db is guarded (rangerhq-hrz).
+			fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
+			if vis == rhq.VisibilityPublic {
+				fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", rhq.AbbrevHome(dir))
+			}
+			return
+		}
+		ag, err := a.LoadAgent(args[0])
+		if err != nil {
+			die(err)
+		}
+		gatesDir, binDir, gateShell, err := a.RenderGates(ag.Name, ag.Deny)
+		if err != nil {
+			die(err)
+		}
+		tier := a.ResolveTier("", ag)
+		// The matrix is read here for a launch *somewhere*, so it is computed
+		// for the cwd: that is the only directory this command knows, and the
+		// one part of the check that depends on a directory (a runtime that
+		// reads the session dir's own config) is invisible otherwise.
+		cwd, _ := os.Getwd()
+		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, rhq.AbbrevHome(cwd))
+		for _, rn := range a.ListRuntimes() {
+			if rt, err := a.LoadRuntime(rn); err == nil {
+				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.DefaultCage, tier, cwd).String())
+				if rhq.AvailableCages[rhq.CageSeatbelt] {
+					fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.CageSeatbelt, tier, cwd).String())
+				}
+			}
+		}
+		fmt.Fprintf(out, "%s\n", rhq.AbbrevHome(gatesDir))
+		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", rhq.AbbrevHome(gateShell))
+		if rhq.ResolveCage("", ag) == rhq.CageSeatbelt && rhq.AvailableCages[rhq.CageSeatbelt] {
+			if prof, err := a.RenderSeatbelt(ag, cwd); err == nil {
+				fmt.Fprintf(out, "  seatbelt.sb rendered for cwd %s (writable set below):\n", rhq.AbbrevHome(cwd))
+				for _, w := range rhq.SeatbeltWritable(ag, cwd, gatesDir) {
+					fmt.Fprintf(out, "    w %s\n", rhq.AbbrevHome(w))
+				}
+				_ = prof
+			}
+		}
+		rules := rhq.ParseShimRules(ag.Deny)
+		if len(rules) == 0 {
+			fmt.Fprintln(out, "  no shell-verb denies → no shims (Edit/Write/WebFetch-class denies are other layers')")
+		}
+		ents, _ := os.ReadDir(binDir)
+		for _, e := range ents {
+			var rs []string
+			for _, r := range rules[e.Name()] {
+				rs = append(rs, r.Rule)
+			}
+			fmt.Fprintf(out, "  bin/%-12s %s\n", e.Name(), strings.Join(rs, ", "))
+		}
+		if b, err := os.ReadFile(gatesDir + "/refusals.log"); err == nil && len(b) > 0 {
+			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+			if len(lines) > 10 {
+				lines = lines[len(lines)-10:]
+			}
+			fmt.Fprintf(out, "  refusals.log (last %d):\n", len(lines))
+			for _, ln := range lines {
+				fmt.Fprintf(out, "    %s\n", ln)
+			}
+		} else {
+			fmt.Fprintln(out, "  refusals.log: empty")
+		}
+
+	case "cage":
+		// The L4 tier's own surface (ADR 0002 §3, rangerhq-9fv): which engine
+		// and image the host would launch with, how to build the image, and
+		// — for a persona — the exact line a caged launch would type.
+		if len(args) > 0 && args[0] == "down" {
+			// The way back from a watcher that died with its pane
+			// (rangerhq-9d0): every rendered launch plan for this persona,
+			// its route taken down. Safe when nothing is up.
+			if len(args) < 2 {
+				die(rhq.Die("usage: posse cage down <persona>"))
+			}
+			n, err := a.TearDownCageEgress(args[1], out)
+			if err != nil {
+				die(err)
+			}
+			if n == 0 {
+				fmt.Fprintf(out, "no rendered cage launch for %s — nothing to take down\n", args[1])
+			}
+			return
+		}
+		if len(args) > 0 && args[0] == "build" {
+			src, runtimes := ".", ""
+			for i := 1; i < len(args); i++ {
+				switch args[i] {
+				case "--runtimes":
+					if i+1 >= len(args) {
+						die(rhq.Die("--runtimes needs an npm package list, e.g. \"@anthropic-ai/claude-code @openai/codex\""))
+					}
+					i++
+					runtimes = args[i]
+				default:
+					src = rhq.ExpandTilde(args[i])
+				}
+			}
+			if abs, err := filepath.Abs(src); err == nil {
+				src = abs
+			}
+			if err := a.BuildCageImage(src, runtimes, os.Stdout); err != nil {
+				die(err)
+			}
+			return
+		}
+		engine := a.ResolveEngine()
+		e, err := a.LoadEngine(engine)
+		if err != nil {
+			die(err)
+		}
+		image := a.CageImage()
+		state := "engine binary not on PATH — cage: container is unavailable on this host"
+		switch {
+		case a.ContainerAvailable() && a.CageImageBuilt(e, image):
+			state = "ready"
+		case a.ContainerAvailable():
+			state = "image not built — run `posse cage build`"
+		}
+		fmt.Fprintf(out, "engine %s (%s) · image %s · %s\n", e.Name, e.Binary(), image, state)
+		fmt.Fprintf(out, "  %s\n", e.Command)
+		if len(args) == 0 {
+			fmt.Fprintf(out, "engines: %s (built-in docker; %s/<name>.yaml, config default_engine:)\n",
+				strings.Join(a.ListEngines(), ", "), rhq.AbbrevHome(a.CagesDir()))
+			return
+		}
+		ag, err := a.LoadAgent(args[0])
+		if err != nil {
+			die(err)
+		}
+		rt, err := a.LoadRuntime(a.ResolveRuntime("", ag))
+		if err != nil {
+			die(err)
+		}
+		cwd, _ := os.Getwd()
+		fmt.Fprintf(out, "%s at cage container in %s — what crosses the boundary:\n", ag.Name, rhq.AbbrevHome(cwd))
+		for _, m := range a.CageMounts(ag, e, cwd) {
+			mode := "rw"
+			if m.RO {
+				mode = "ro"
+			}
+			fmt.Fprintf(out, "  mount %s %-46s → %-20s %s\n", mode, rhq.AbbrevHome(m.Src), m.Dst, m.Why)
+		}
+		fmt.Fprintf(out, "  env   names forwarded (values stay out of the typed line): %s\n",
+			strings.Join(rhq.CageEnvNames(nil), " "))
+		if cred := rhq.CageCredential(rt); cred != "" {
+			fmt.Fprintf(out, "  auth  %s must be in the session env (rangerhq-kiz)\n", cred)
+		}
+		fmt.Fprintf(out, "  home  %s seeded for %s\n", rhq.AbbrevHome(a.CageHome(ag.Name)), rt.Name)
+		// The inner wall (rangerhq-6so). Printed as what it is: a question
+		// asked of the image, whose answer decides whether the tier may claim
+		// a shell-verb deny at all.
+		if a.CageInnerGatesReady(e, image) {
+			fmt.Fprintf(out, "  gates rendered INSIDE by `%s` → %s (image PATH and shell; refusals mount out to %s)\n",
+				strings.Join(rhq.GatesWrapArgv(ag.Name, rt), " "), rhq.CageGatesDir(ag.Name),
+				rhq.AbbrevHome(a.RefusalsLogPath(ag.Name)))
+		} else {
+			fmt.Fprintf(out, "  gates ⚠️  image %s answers no to `posse gates wrap %s` — no Linux posse in it, so L1/L3 do not cross and every shell-verb deny is unrealized here (run `posse cage build`)\n", image, rhq.GatesWrapProbe)
+		}
+		for _, m := range rhq.CageSockets {
+			state := "not mounted (default — a caged persona holding it can prompt or close every other pane)"
+			if rhq.CageSocketTag(ag) != "" && strings.Contains(","+rhq.CageSocketTag(ag)+",", ","+m+",") {
+				state = "MOUNTED — the PID declared it; meta and the cockpit mark the cage " + rhq.CageTag(rhq.CageContainer, rhq.CageSocketTag(ag))
+			}
+			fmt.Fprintf(out, "  sock  %s: %s\n", m, state)
+		}
+		// The egress route (ADR 0002 §3 L4, rangerhq-9d0). Printed for every
+		// caged persona, not only one with an `egress:` list: at this tier
+		// the container's only route out IS the proxy, and the effective
+		// allowlist — the runtime's hosts plus the PID's — is the thing the
+		// operator most needs to read before launching.
+		hosts, bad := rhq.EgressHosts(ag, rt)
+		if e.NetCreate == "" {
+			fmt.Fprintf(out, "  egress engine %s spells no route (net_create:/proxy_up:) — `egress:` is unrealizable on it\n", e.Name)
+		} else {
+			fmt.Fprintf(out, "  egress --internal network + CONNECT proxy on %s:%d; allowed: %s\n",
+				rhq.EgressHost, rhq.EgressPort, strings.Join(hosts, " "))
+			fmt.Fprintf(out, "        (%s's own hosts are always added; denials land in %s)\n",
+				rt.Name, rhq.AbbrevHome(filepath.Join(a.GatesDir(ag.Name), "refusals.log")))
+		}
+		for _, b := range bad {
+			fmt.Fprintf(out, "  egress ⚠️  %q is not a host — the proxy matches the CONNECT authority; the launch refuses on it\n", b)
+		}
+		// What the pane actually runs, and why it is not the engine itself:
+		// herdr reads the pane's argv0, so a caged session is only visible
+		// as an agent behind a launcher named for the runtime (rangerhq-1k1).
+		fmt.Fprintf(out, "  argv0 %s → this posse, which execs %s with argv[0]=%s (herdr identifies the session by that name)\n",
+			rhq.AbbrevHome(a.CageLauncher(ag.Name, rt.Exe())), e.Binary(), rt.Exe())
+
+	case "runtimes":
+		for _, n := range a.ListRuntimes() {
+			rt, err := a.LoadRuntime(n)
+			if err != nil {
+				continue
+			}
+			kind := "template-only (gates go to the wall)"
+			if rt.Builtin {
+				kind = "built-in"
+			}
+			models := []string{}
+			for _, t := range rhq.Tiers {
+				if id := rt.Model(t); id != "" {
+					models = append(models, t+"="+id)
+				}
+			}
+			tiers := "tiers: runtime default"
+			if len(models) > 0 {
+				tiers = "tiers: " + strings.Join(models, " ")
+			}
+			fmt.Fprintf(out, "%s %-8s %s · %s\n    %s\n", a.EmojiExact(n), n, kind, tiers, rt.Command)
+		}
+
+	case "skills":
+		// ADR 0007 §1: the directory is the registry — this is `ls` with the
+		// PIDs that bind each name, plus the names a PID declares that
+		// nothing answers (which `posse agent check` reports as a finding).
+		if len(args) > 0 && args[0] != "list" {
+			die(rhq.Die("usage: posse skills [list]"))
+		}
+		bound := a.SkillBindings()
+		fmt.Fprintf(out, "%s — skills bound by PIDs (materialized per runtime at launch)\n", rhq.AbbrevHome(a.SkillsDir()))
+		present := map[string]bool{}
+		for _, n := range a.ListSkills() {
+			present[n] = true
+			who := "bound by no PID"
+			if pids := bound[n]; len(pids) > 0 {
+				who = strings.Join(pids, ", ")
+			}
+			fmt.Fprintf(out, "  %-24s %s\n", n, who)
+		}
+		var missing []string
+		for n := range bound {
+			if !present[n] {
+				missing = append(missing, n)
+			}
+		}
+		sort.Strings(missing)
+		for _, n := range missing {
+			fmt.Fprintf(out, "  ! %-22s declared by %s — no %s/SKILL.md (posse agent check)\n", n, strings.Join(bound[n], ", "), n)
+		}
+
+	case "recipes":
+		for _, n := range a.ListRecipes() {
+			if r, err := a.LoadRecipe(n); err == nil {
+				fmt.Fprintf(out, "%s %s  %s\n", r.Emoji, n, r.Purpose)
+			}
+		}
+
+	case "init":
+		if err := a.CmdInit(out); err != nil {
+			die(err)
+		}
+
+	case "help", "-h", "--help":
+		help()
+	case "version", "--version":
+		fmt.Fprintf(out, "posse %s (herdr-native)\n", rhq.VersionString())
+	default:
+		die(rhq.Die("unknown command: %s (try: posse help)", cmd))
+	}
+}
+
+func needBd() rhq.Bd {
+	bd := rhq.NewBd()
+	if !bd.Available() {
+		die(rhq.Die("bd not found in PATH (brew install beads or see github.com/steveyegge/beads)"))
+	}
+	return bd
+}
+
+// execEditor replaces this process with $EDITOR on the file — the file is
+// never read or echoed by posse itself (env sets hold secrets).
+func execEditor(path string) error {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	quoted := "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+	return syscall.Exec("/bin/sh", []string{"sh", "-c", editor + " " + quoted}, os.Environ())
+}
+
+func joinComma(s []string) string {
+	out := ""
+	for i, v := range s {
+		if i > 0 {
+			out += ", "
+		}
+		out += v
+	}
+	return out
+}
+
+func parseNewFlags(args []string) rhq.NewSessionOpts {
+	o := rhq.NewSessionOpts{Name: args[0]}
+	rest := args[1:]
+	for len(rest) > 0 {
+		flagArg := func() string {
+			if len(rest) < 2 {
+				die(rhq.Die("flag %s needs a value", rest[0]))
+			}
+			v := rest[1]
+			rest = rest[2:]
+			return v
+		}
+		switch rest[0] {
+		case "--dir":
+			o.Dir = flagArg()
+		case "--env-file":
+			o.Envs = append(o.Envs, flagArg())
+		case "--cmd":
+			o.Cmd = flagArg()
+		case "--emoji":
+			o.Emoji = flagArg()
+		case "--agent":
+			o.Agent = flagArg()
+		case "--runtime":
+			o.Runtime = flagArg()
+		case "--tier":
+			o.Tier = flagArg()
+			if !rhq.ValidTier(o.Tier) {
+				die(rhq.Die("--tier must be strong, standard, or fast"))
+			}
+		case "--allow-degraded":
+			o.AllowDegraded = true
+			rest = rest[1:]
+		case "--cage":
+			o.Cage = flagArg()
+			if !rhq.ValidCage(o.Cage) {
+				die(rhq.Die("--cage must be shims, seatbelt, or container"))
+			}
+		default:
+			die(rhq.Die("unknown flag: %s", rest[0]))
+		}
+	}
+	return o
+}
+
+func help() {
+	fmt.Print(`posse — the Ranger work-system harness (herdr-native)
+
+A subcommand that takes a <name> prints its own usage for -h/--help, and
+reads a literal -- as the end of flags (posse kill -- -oddly-named).
+
+sessions (herdr workspaces):
+  posse list                     sessions with live agent state (working/blocked/idle)
+  posse new <name> [opts]        create a background session
+      --dir <path>  --env-file <name> (repeatable)  --cmd "..."  --agent <name>  --emoji <e>
+      --runtime <claude|codex|grok|name>   launch profile for the persona (over its PID runtime:)
+      --tier <strong|standard|fast>        model tier for the persona (over its PID tier:)
+      --allow-degraded                     launch even if the wall cannot realize every PID gate here (marked)
+      --cage <shims|seatbelt|container>    wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
+  posse attach <name>            focus its workspace in herdr (alias: focus)
+  posse up <name>                create-or-focus (alias: local)
+  posse recipe <name>            launch a saved recipe (~/.config/rhq/recipes)
+  posse relaunch <name>          refresh a session in place: check the recreate
+                                 first (a refusal here costs nothing), land the
+                                 plane (one bounded turn to write lessons down
+                                 and commit), kill, recreate from the same
+                                 persona/dir/envs
+      --no-land                skip the landing turn (dead or wedged sessions)
+      --timeout <interval>     bound on the landing turn (default 10m)
+  posse kill <name>              close the workspace
+  posse crew <name> [--off]      mark a session as yours (👤) so dispatch leaves it
+                                 alone, or --off to give it back to the fleet
+                                 (ADR 0008; posse new and recipes are crew already,
+                                 and prompting one by hand marks it)
+
+dispatch (beads):
+  posse prompt <name> "<text>" [--wait] [--timeout <ms>]
+                                 submit work to the session's agent
+  posse wait <name> [--until <state>]...   wait for idle|done|blocked
+  posse peek <name> [<lines>]    read the session's terminal tail
+  posse ready [--dir <repo>] [--as <persona>]
+                                 unblocked work (config beads: repos, or --dir);
+                                 files the verify beads the last closes earned
+                                 (verify_labels:, ADR 0006 §3)
+  posse beads check [--dir <repo>] [--record "<reason>"] [--as <who>]
+                                 beads git ever carried that bd can no longer
+                                 resolve — bd's auto-import deletes rows on a
+                                 git-history signal and logs nothing when it
+                                 does (rangerhq-fuom). Non-zero on findings;
+                                 --record owns them in .beads/deleted.jsonl,
+                                 which keeps the bead's last JSONL line
+  posse claim <id> [--as <persona>] [--dir <repo>]   atomically claim an issue
+  posse done  <id> [--as <persona>] [--dir <repo>]   close an issue
+  posse dispatch [--dry-run] [--dir <repo>] [--persona <p>] [-n <max>] [--timeout <ms>]
+                                 one pass: file verify beads for closes that
+                                 earned one, then route ready beads to personas —
+                                 find-or-create session, claim, prompt --wait,
+                                 report closed/blocked/review per bead
+                                 (-n caps launch attempts, failures included,
+                                 taking beads in priority then age order;
+                                 operator questions cost no attempt)
+      --timeout <ms>           one --wait leg (default 15m): when it runs out
+                                 and the agent is still working, the wait is
+                                 extended and the claim kept
+      --ceiling <interval>     stop waiting on one bead after this long
+                                 (default 4h) — the claim is still kept
+      --runtime <name>         launch profile for sessions created this pass
+      --tier <name>            model tier for sessions created this pass
+      --allow-degraded         launch sessions whose gates the wall cannot fully realize (marked; never on its own)
+      --cage <tier>            wall tier for sessions created this pass
+      --resume                 re-prompt in_progress beads whose persona
+                                 session is alive and idle, and take them
+                                 before fresh work (default: only interrupted
+                                 runs resume — no live agent)
+      --watch <interval> [--max-interval <i>]   keep passing: sleep between
+                                 passes, quiet passes double the sleep up to
+                                 max (default 8× interval); ctrl-c stops
+                                 the loop stamps state/dispatch-watch.pid while
+                                 it runs, so the autostart hook can tell it
+                                 from a herdr-restored husk
+                               config plan_guard_5h:/plan_guard_7d: (percent)
+                                 skip a pass above the plan's rate windows;
+                                 unset = off, unreadable = no-op — except under
+                                 --watch, where plan_guard_blind_max: (10m,
+                                 0 = never) skips passes once the last good
+                                 reading is that old, until one succeeds
+                               config plan_guard_overflow:/_cap: (ADR 0010)
+                                 a tripped guard runs the pass and sends the
+                                 beads that can move to this runtime instead —
+                                 parity-clean there, not strong, PID not
+                                 overflow: false — capped at N beads per
+                                 rolling 7d ($StateDir/overflow.log); the cap
+                                 is required, and a blind guard never
+                                 overflows. Beads whose own runtime is not on
+                                 the guarded meter launch ungated
+                               config budget_pass:/budget_day: (API-equiv $)
+                                 ADR 0003 Dial E: at 80% of a window a standard
+                                 session steps down to fast (parity permitting,
+                                 never below tier_floor: or a pinned tier), at
+                                 100% dispatch stops with a line per bead;
+                                 both unset = dormant, nothing is even scanned
+
+catalog:
+  posse envs                     list env sets (key names only)
+  posse env edit|rm <name>       manage an env set ($EDITOR; created if missing)
+  posse agents                   list personas
+  posse runtimes                 list launch profiles (claude/codex/grok + runtimes/*.yaml)
+  posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
+  posse gates <persona>          the persona's L1 gate shims (from deny:) and refusals.log
+  posse gates install-hooks [dir]   L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
+                                    and prepare-commit-msg refusing an unqualified commit under RHQ_PERSONA
+                                    plus ops-class content added to .beads/*.jsonl in a repo that
+                                    config beads_visibility: does not mark private (unmarked = public)
+  posse cage [<persona>]         L4: the container engine, its image, and what a
+                                 caged launch of that persona would mount and forward
+  posse cage build [dir] [--runtimes "<npm pkgs>"]
+                                 build the cage image from a posse checkout
+  posse cage down <persona>      take down that persona's egress networks and proxies
+                                 (the launch's own watcher does this when a cage exits)
+                                 (cross-builds the Linux posse and bd it carries)
+  posse scorecard [<persona>]    per-persona outcome metrics from bd data
+                                 (closed/reopened/held/blocked, age at close,
+                                 filed/rejected; each PID metric id computed, or
+                                 declared with what bd would need)
+  posse scorecard --catalog      the derived metric catalog: every id the PIDs
+                                 and config metric_ids: declare, computed or not
+  posse cost [--since <date>] [--project <substr>]
+                                 API-equiv $ per bead from claude transcripts, by
+                                 tier/persona/day; codex/grok reported as uncounted;
+                                 plus the plan's 5h/7d windows when readable
+                                 and the budget_pass:/budget_day: caps in force
+  posse agent new <name>         scaffold a persona (PID shape) and open it in $EDITOR
+  posse agent edit <name>        open an existing persona in $EDITOR
+  posse agent check [<name>|--all]  lint PIDs against the ADR 0001 contract (exit 1 on findings)
+  posse memory <persona>         edit the persona's standing orders ($EDITOR)
+  posse recipes                  list recipes
+  posse init                     seed ~/.config/rhq from the built-in examples
+                                 (examples/ beside the binary wins, for dev builds)
+
+cockpit (herdr plugin pane — make link-plugin):
+  posse cockpit                  interactive oversight: sessions blocked-first +
+                                 ready beads; enter focus · p prompt · v peek ·
+                                 x kill · c claim · q quit
+
+environment:
+  RHQ_HOME       config dir (default ~/.config/rhq)
+  RHQ_HERDR_BIN  herdr binary override (testing)
+  RHQ_BD_BIN     bd binary override (testing)
+  RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing)
+`)
+}

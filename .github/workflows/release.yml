@@ -1,0 +1,90 @@
+# Cut a posse release: build the four artifacts, render the Homebrew formula,
+# and stage them on a GitHub Release (rangerhq-i0n0).
+#
+# Trigger: pushing a tag `vX.Y.Z`. That push is the operator's — nothing here
+# fires on a branch commit, and nothing here touches ranger360ai/homebrew-tap.
+#
+# THE RELEASE IS CREATED AS A DRAFT, ON PURPOSE. A published GitHub Release is
+# an outward-facing act and the last human check on what leaves the machine
+# (crew guardrail 4); the operator reviews the four tarballs and presses
+# Publish. Flip `--draft` off below only as a deliberate decision, in a commit
+# that says so.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing tag to (re)build, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: write   # gh release create; nothing else
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: scripts/release-artifacts.sh builds HEAD in a temp
+      # worktree and scripts/audit-silent-reverts.sh walks every commit. A
+      # shallow clone makes both of them wrong rather than loud.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      - name: resolve the tag
+        id: tag
+        run: |
+          tag="${{ inputs.tag }}"
+          [ -n "$tag" ] || tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            v[0-9]*) ;;
+            *) echo "release: refusing to build a non-version ref: $tag" >&2; exit 1 ;;
+          esac
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse "$tag^{commit}")" >>"$GITHUB_OUTPUT"
+
+      - name: vet
+        run: go vet ./...
+
+      # The repo's own gate, not a lighter one. `make test` is `go test ./...`
+      # plus the silent-revert audit — the detector for the failure class a
+      # green suite does not report (rangerhq-8rtf). A release that skips it
+      # ships the one bug nobody would find.
+      - name: test
+        run: make test
+
+      - name: build artifacts
+        run: scripts/release-artifacts.sh --rev "${{ steps.tag.outputs.sha }}" --version "${{ steps.tag.outputs.tag }}"
+
+      # Rendered here rather than hand-written in the tap, and attached to the
+      # release so the operator copies a file instead of transcribing four
+      # sha256s. See docs/runbooks/release.md.
+      - name: render the Homebrew formula
+        run: scripts/tap-formula.sh --version "${{ steps.tag.outputs.tag }}" --checksums dist/checksums.txt --out dist/posse.rb
+
+      - name: draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --draft \
+            --title "posse ${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            --target "${{ steps.tag.outputs.sha }}" \
+            dist/posse_*.tar.gz dist/checksums.txt dist/posse.rb
+
+      - name: what happens next
+        run: |
+          echo "Draft release ${{ steps.tag.outputs.tag }} staged. Two operator steps remain:"
+          echo "  1. review and Publish the draft on GitHub"
+          echo "  2. copy dist/posse.rb into ranger360ai/homebrew-tap as Formula/posse.rb and push"
+          echo "See docs/runbooks/release.md."

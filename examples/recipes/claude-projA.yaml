@@ -1,0 +1,7 @@
+# Recipe: a Claude Code session in project A.
+# Launch with: posse recipe claude-projA
+name: claude-projA
+dir: ~/code/projA
+env_files: [default]
+command: null               # null = just a shell; the emoji map still tags it ✳️
+emoji: ✳️

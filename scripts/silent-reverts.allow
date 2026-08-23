@@ -1,0 +1,12 @@
+# Triaged hits from scripts/audit-silent-reverts.sh — one `<sha> <reason>` per
+# line. A commit listed here is a content rollback we have LOOKED AT and
+# accepted. Anything not listed fails the audit; clearing it means writing the
+# reason down, not deleting the line.
+#
+# Format: 7-char sha, whitespace, one-line reason.
+
+dcca7b5 THE INCIDENT (rangerhq-8rtf). Silently reverted ef8d35f, a landed P1 fix, for 3h52m15s with its regression pin re-skipped. Cause: ef8d35f was committed from a private GIT_INDEX_FILE, leaving the shared .git/index holding pre-fix blobs; this bd sync committed them back. Re-landed byte-identical by 1cc432e. Left on main deliberately - rewriting history is the operator's call.
+1cc432e The REPAIR of dcca7b5, not a defect. Re-lands ef8d35f's diff byte-identical, so it reads as a rollback of dcca7b5 and is flagged by construction. Its own message shows the author believed this was uncommitted leftover work rather than a revert - which is the evidence that nobody knew.
+21653f9 Benign, pre-crew. The documented herdr-native architecture pivot (35 files, -4387 lines, tmux implementation moved to the tmux-reference branch). examples/config.yaml returns to an older shape because slot_preference was removed - herdr owns layout now. Single author, deliberate, described in the commit message.
+9daf91f Benign, and the deletion IS the point of the commit. `.beads/interactions.jsonl` (a bd runtime log) was deliberately untracked so activity stops accumulating into a public repo; the same commit adds it to .gitignore and writes the privacy model into NOTES.md. Verified: still gitignored (.gitignore:4), still absent from HEAD. Flagged only because the deletion rule (rangerhq-ypn1) cannot know a removal was the intent.
+631bda7 Benign. The rhq -> posse command rename (rangerhq-tyay). Four of its deletions are renames that also EDIT the file, so they are not exact-blob moves and the move exception does not cover them; `git show -M` names all four as renames and cmd/posse/{cockpit_test.go,gateschain_qa_test.go,main.go,main_test.go} exist at HEAD. Nothing was lost, the content moved one directory over.

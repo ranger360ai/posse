@@ -1,0 +1,1422 @@
+package rhq
+
+// The herdr backend: posse session semantics over herdr workspaces.
+//
+//   posse session        →  herdr workspace (label = session name)
+//   session dir        →  workspace cwd
+//   env sets           →  per-workspace env injection (workspace create --env)
+//   command / persona  →  typed into the root pane's shell (pane run)
+//   active / status    →  herdr's live agent state: working | blocked | idle
+//
+// Everything posse knows about a session (emoji, env-set names, persona,
+// and which workspace/pane herdr gave it) lives in a flat-YAML meta file
+// under state/herdr/ — never in the multiplexer, so herdr stays swappable.
+// Workspaces created outside posse still show up in listings (no meta file,
+// fallback emoji); meta files whose workspace died are pruned on read.
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+)
+
+type HerdrBackend struct {
+	App  *App
+	H    Herdr
+	Warn io.Writer // where degraded-launch notices go (nil = stderr)
+}
+
+func (b *HerdrBackend) warn(format string, args ...any) {
+	w := b.Warn
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintf(w, format, args...)
+}
+
+type NewSessionOpts struct {
+	Name    string
+	Dir     string   // "" → config default_dir → $HOME
+	Cmd     string   // typed into the root pane's shell, not wrapped
+	Emoji   string   // "" → emoji map
+	Envs    []string // "" list → config default_env if that file exists
+	Agent   string   // persona name; its command wins over Cmd
+	Runtime string   // launch profile override (CLI --runtime / recipe runtime:) — over the PID's own
+	Tier    string   // model tier override (CLI --tier / dispatch) — over the PID's tier: (ADR 0003)
+	// AllowDegraded launches even when the parity check finds gates no wall
+	// layer realizes on this runtime × cage; the session is marked degraded.
+	// Never set by dispatch on its own (ADR 0002 §4).
+	AllowDegraded bool
+	Cage          string // cage tier override (CLI --cage / dispatch) — over the PID's cage:
+	// Crew marks the session as one the operator made to talk to, so
+	// dispatch leaves it alone (ADR 0008). `posse new` and recipes set it;
+	// dispatch's own CreateSession never does.
+	Crew bool
+}
+
+func NewHerdrBackend(a *App) *HerdrBackend {
+	return &HerdrBackend{App: a, H: NewHerdr()}
+}
+
+// ─── meta files ──────────────────────────────────────────────────────────────
+
+type HerdrMeta struct {
+	Name      string
+	Workspace string
+	Pane      string // root pane at creation — where the command was typed
+	Emoji     string
+	Envs      string // env-set names ("a+b") — names only, never values
+	Agent     string
+	Runtime   string    // launch profile the persona command was rendered for (ADR 0002)
+	Tier      string    // model tier it was rendered at (ADR 0003)
+	Dir       string    // working directory the session was created in (seatbelt re-render on relaunch)
+	Cmd       string    // raw --cmd, sessions without a persona only (persona lines are re-rendered, never replayed)
+	Cage      string    // cage tier the session got (ADR 0002 §4)
+	Sockets   string    // container: host sockets the PID declared and the cage mounted ("" = none)
+	Degraded  string    // "; "-joined gates the wall does not realize here ("" = full parity)
+	Crew      bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
+	Socket    string    // the herdr server this session was created against (see SocketID)
+	Gen       string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
+	Launched  time.Time // when the persona/recipe command was last typed into Pane
+}
+
+// SocketID names the herdr server a session belongs to: $HERDR_SOCKET_PATH,
+// or "" for herdr's default socket. It is recorded in the meta so a pass
+// talking to a *different* herdr — a named session, a scratch server, a
+// socket exported for one command — can tell "this workspace died" apart
+// from "I am asking the wrong server" (rangerhq-snd).
+func SocketID() string { return os.Getenv("HERDR_SOCKET_PATH") }
+
+// ServerGen names the herdr server *process* posse is talking to: the device
+// and inode of its api socket file. herdr recreates that file — new inode,
+// new btime — on both a restart and a live handoff, and those are exactly
+// the moments its workspace-id allocator is recomputed as max(live id)+1
+// (measured, rangerhq-6bg7). So a workspace id is only comparable inside one
+// generation, and this is the fence that says which one issued it. Purely
+// local: one stat(2), no herdr call, on a path posse already records.
+//
+// "" means the generation is unknown — the socket cannot be named, or is not
+// there — and unknown is never read as a match (notOurWorkspace).
+func ServerGen() string {
+	p := herdrSocketPath()
+	if p == "" {
+		return ""
+	}
+	st, err := os.Stat(p)
+	if err != nil {
+		return ""
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", sys.Dev, sys.Ino)
+}
+
+// herdrSocketPath names the api socket file posse's herdr calls go to, or ""
+// when it cannot be named for certain. The asymmetry is deliberate: an
+// unnameable socket costs the generation fence (unknown, so nothing is
+// trusted), while a wrongly named one would forge it.
+//
+// HERDR_SOCKET_PATH is exact. Without it herdr resolves the socket itself,
+// and the two layouts it uses are ones this shop has measured rather than
+// guessed: ~/.config/herdr/herdr.sock for the default server, and
+// ~/.config/herdr/sessions/<name>/herdr.sock for a named session
+// (rangerhq-6bg7's scratch server ran on one). A HERDR_SESSION with no
+// socket path is therefore resolved, not defaulted — pointing at the default
+// server's socket there would fence against a server posse is not talking to.
+//
+// This is NOT rangerhq-y4z: the socket *comparison* in cannotAnswerFor still
+// reads SocketID() exactly as it did, and "" still compares unequal to the
+// default path there. This resolves a path to stat, nothing else.
+func herdrSocketPath() string {
+	if p := SocketID(); p != "" {
+		return ExpandTilde(p)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	if s := os.Getenv("HERDR_SESSION"); s != "" {
+		return filepath.Join(home, ".config", "herdr", "sessions", s, "herdr.sock")
+	}
+	return filepath.Join(home, ".config", "herdr", "herdr.sock")
+}
+
+func (b *HerdrBackend) metaDir() string { return filepath.Join(b.App.StateDir, "herdr") }
+
+func (b *HerdrBackend) metaPath(name string) string {
+	return filepath.Join(b.metaDir(), name+".yaml")
+}
+
+func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
+	p := b.metaPath(name)
+	if _, err := os.Stat(p); err != nil {
+		return nil, false
+	}
+	return &HerdrMeta{
+		Name:      name,
+		Workspace: YamlGet(p, "workspace"),
+		Pane:      YamlGet(p, "pane"),
+		Emoji:     YamlGet(p, "emoji"),
+		Envs:      YamlGet(p, "envs"),
+		Agent:     YamlGet(p, "agent"),
+		Runtime:   YamlGet(p, "runtime"),
+		Tier:      YamlGet(p, "tier"),
+		Dir:       YamlGet(p, "dir"),
+		Cmd:       YamlGet(p, "cmd"),
+		Cage:      YamlGet(p, "cage"),
+		Sockets:   YamlGet(p, "sockets"),
+		Degraded:  YamlGet(p, "degraded"),
+		Crew:      YamlGet(p, "crew") == "true",
+		Socket:    YamlGet(p, "socket"),
+		Gen:       YamlGet(p, "gen"),
+		Launched:  parseLaunched(YamlGet(p, "launched")),
+	}, true
+}
+
+func parseLaunched(s string) time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{} // legacy meta: never recorded → old enough for anything
+	}
+	return t
+}
+
+func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
+	if err := os.MkdirAll(b.metaDir(), 0o755); err != nil {
+		return err
+	}
+	var s strings.Builder
+	fmt.Fprintf(&s, "name: %s\n", m.Name)
+	fmt.Fprintf(&s, "workspace: %s\n", m.Workspace)
+	fmt.Fprintf(&s, "pane: %s\n", m.Pane)
+	fmt.Fprintf(&s, "emoji: %s\n", m.Emoji)
+	if m.Envs != "" {
+		fmt.Fprintf(&s, "envs: %s\n", m.Envs)
+	}
+	if m.Agent != "" {
+		fmt.Fprintf(&s, "agent: %s\n", m.Agent)
+	}
+	if m.Runtime != "" {
+		fmt.Fprintf(&s, "runtime: %s\n", m.Runtime)
+	}
+	if m.Tier != "" {
+		fmt.Fprintf(&s, "tier: %s\n", m.Tier)
+	}
+	if m.Dir != "" {
+		fmt.Fprintf(&s, "dir: %s\n", m.Dir)
+	}
+	if m.Cmd != "" {
+		fmt.Fprintf(&s, "cmd: %s\n", m.Cmd)
+	}
+	if m.Cage != "" {
+		fmt.Fprintf(&s, "cage: %s\n", m.Cage)
+	}
+	// What the cage was opened for, recorded because it is a claim the tier
+	// gives away: a caged persona holding the herdr socket can prompt or
+	// close every other pane (ADR 0002 §3).
+	if m.Sockets != "" {
+		fmt.Fprintf(&s, "sockets: %s\n", m.Sockets)
+	}
+	if m.Degraded != "" {
+		fmt.Fprintf(&s, "degraded: %s\n", m.Degraded)
+	}
+	if m.Crew {
+		fmt.Fprintf(&s, "crew: true\n")
+	}
+	if m.Socket != "" {
+		fmt.Fprintf(&s, "socket: %s\n", m.Socket)
+	}
+	if m.Gen != "" {
+		fmt.Fprintf(&s, "gen: %s\n", m.Gen)
+	}
+	if !m.Launched.IsZero() {
+		fmt.Fprintf(&s, "launched: %s\n", m.Launched.UTC().Format(time.RFC3339Nano))
+	}
+	return os.WriteFile(b.metaPath(m.Name), []byte(s.String()), 0o644)
+}
+
+// ─── the crew marker (ADR 0008) ───────────────────────────────────────────────
+
+// CrewTag is what a crew session wears in `posse list` and the cockpit.
+const CrewTag = "👤"
+
+// EnvPersona is set in every persona session's env by CreateSession: its
+// presence in *posse's own* env means posse was run by a persona, not by the
+// operator.
+const EnvPersona = "RHQ_PERSONA"
+
+// SetCrew marks a session as the operator's conversation — dispatch then
+// treats it as if it did not exist — or releases it back to the fleet
+// (ADR 0008). The mark lives in the session meta, so it dies with the
+// session and a session posse did not create cannot carry one.
+func (b *HerdrBackend) SetCrew(name string, crew bool) error {
+	if !b.HasSession(name) {
+		return Die("no such session: %s", name)
+	}
+	m, ok := b.readMeta(name)
+	if !ok {
+		return Die("%s was not created by posse (no session meta) — nothing to mark crew", name)
+	}
+	if m.Crew == crew {
+		return nil
+	}
+	m.Crew = crew
+	return b.writeMeta(m)
+}
+
+// MarkCrew records that the operator just started a conversation with this
+// session (cockpit `p`). Best effort by design: a prompt must never fail
+// over its marker, and a foreign workspace has no meta to mark.
+func (b *HerdrBackend) MarkCrew(name string) {
+	if m, ok := b.readMeta(name); ok && !m.Crew {
+		m.Crew = true
+		_ = b.writeMeta(m)
+	}
+}
+
+// MarkCrewOnOperatorPrompt is `posse prompt`'s half of the same rule: the
+// operator's shell has no RHQ_PERSONA, a persona's session does. So a
+// person starting a conversation marks the session crew, and a persona
+// handing work to another persona (an orchestrator persona) marks nothing —
+// otherwise the dispatch primitive would quietly retire the fleet.
+func (b *HerdrBackend) MarkCrewOnOperatorPrompt(name string) {
+	if os.Getenv(EnvPersona) != "" {
+		return
+	}
+	b.MarkCrew(name)
+}
+
+func (b *HerdrBackend) metaNames() []string {
+	ents, _ := os.ReadDir(b.metaDir())
+	var out []string
+	for _, e := range ents {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+			out = append(out, strings.TrimSuffix(e.Name(), ".yaml"))
+		}
+	}
+	return out
+}
+
+// ─── sessions ────────────────────────────────────────────────────────────────
+
+type HerdrSession struct {
+	Name        string
+	WorkspaceID string
+	PaneID      string // "" for workspaces not created by posse
+	Emoji       string
+	Envs        string
+	Runtime     string // persona sessions: the launch profile (ADR 0002)
+	Tier        string // persona sessions: the model tier (ADR 0003)
+	Cage        string // persona sessions: cage tier
+	Sockets     string // persona sessions: host sockets the cage mounted ("" = none)
+	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
+	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
+	Dir         string // working directory (from meta; "" for foreign sessions)
+	Agent       string
+	Status      string // herdr agent state; "" when no agent detected
+	Focused     bool
+	Foreign     bool // exists in herdr but wasn't created by posse
+}
+
+// Sessions merges herdr's live workspace list with the meta files. Meta
+// files pointing at dead workspaces are pruned; foreign workspaces are
+// listed under their label so the cockpit shows the whole herd.
+func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
+	wss, err := b.H.Workspaces()
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]HerdrWorkspace{}
+	for _, ws := range wss {
+		byID[ws.WorkspaceID] = ws
+	}
+
+	// herdr reports workspace agent_status "unknown" even for plain shells;
+	// only show a status when herdr actually detects an agent in there.
+	agents, err := b.H.Agents()
+	if err != nil {
+		return nil, err
+	}
+	hasAgent := map[string]bool{}
+	for _, ag := range agents {
+		hasAgent[ag.WorkspaceID] = true
+	}
+	status := func(ws HerdrWorkspace) string {
+		if !hasAgent[ws.WorkspaceID] {
+			return ""
+		}
+		return ws.AgentStatus
+	}
+
+	// Pruning is destructive and unrecoverable: the meta file is everything
+	// posse knows about a session (persona, env sets, crew mark, workspace and
+	// pane ids), and state/ is deliberately outside git. Two situations look
+	// exactly like "every workspace died" and never are (rangerhq-snd, where
+	// a pass with the real RHQ_HOME talked to a scratch herdr and deleted the
+	// whole fleet's metas in one read):
+	//
+	//   - an empty workspace listing — a herdr that just came up, or one that
+	//     never held these sessions at all;
+	//   - a different herdr server — the meta was written against another
+	//     socket, so this server's listing says nothing about it;
+	//   - a meta with no socket recorded at all — written before the field
+	//     existed, or by a binary that predates it. Nothing on disk says this
+	//     server ever held that workspace, and absence of evidence that it
+	//     lived here is not evidence that it died (rangerhq-8fq: without this
+	//     arm the guard cannot fire for any meta written before it landed,
+	//     and rangerhq-snd replays against a scratch server that holds one
+	//     workspace of its own).
+	//
+	// All three refuse and say so on stderr; the session is left out of the
+	// listing (its workspace is not here, and claiming a status would be a
+	// lie) and its meta kept. A genuinely dead workspace is pruned by the
+	// next read against its own server.
+	//
+	// Past the socket guards, absence from the listing is still only a
+	// snapshot, and prunable() makes it prove death before any delete
+	// (ADR 0011 §2, rangerhq-9nso).
+	sock, gen := SocketID(), ServerGen()
+	kept := 0
+	var spared []string    // missing from the listing, but not proven dead — with why
+	var strangers []string // in the listing under an id another workspace now holds
+	var recipes []string   // metas naming no workspace: the session is gone, its recipe kept
+	var out []HerdrSession
+	claimed := map[string]bool{} // workspace ids owned by a meta file
+	for _, name := range b.metaNames() {
+		m, ok := b.readMeta(name)
+		if !ok {
+			continue
+		}
+		// A meta naming no workspace is not a session that might be alive
+		// somewhere — it is a recipe deliberately left behind by a relaunch
+		// whose recreate failed after the kill (rangerhq-v52t). It has
+		// nothing to be listed as and nothing to prove dead, so it is
+		// reported as what it is rather than through the guards below.
+		if m.Workspace == "" {
+			recipes = append(recipes, name)
+			continue
+		}
+		ws, live := byID[m.Workspace]
+		// Present in the listing is not the same as ours. herdr recycles
+		// workspace ids across a server restart and a handoff, and the ids
+		// it hands out again are precisely the ones stale metas hold
+		// (rangerhq-6bg7) — so a listing row matching this meta's id can be
+		// a stranger's workspace. Listing the session over it would put its
+		// name on somebody else's pane, and every addressing path (Resolve,
+		// AgentTarget, KillSession) reads this listing: a prompting pass
+		// would then type into that pane, and `posse kill` would close it.
+		//
+		// So it is left out of the listing and its file is KEPT, exactly
+		// like a spared meta: "not mine" must never mean "delete the meta"
+		// (rangerhq-yt1p). The id is left unclaimed, so the workspace itself
+		// is still listed — under its own meta, or as foreign.
+		if live {
+			if why := notOurWorkspace(m, ws, gen); why != "" {
+				strangers = append(strangers, fmt.Sprintf("%s: %s", name, why))
+				continue
+			}
+		}
+		if !live {
+			// m.Socket == "" is the prune's own arm, and only the prune's:
+			// refusing to DELETE an unstamped meta costs a kept file, so it
+			// is worth paying for the pre-field metas it covers. The write
+			// cannot pay it — see mustNotOrphan (rangerhq-jeu2).
+			if m.Socket == "" || cannotAnswerFor(m, sock, len(wss)) != "" {
+				kept++
+				continue
+			}
+			dead, why := b.prunable(m, gen)
+			if !dead {
+				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
+				continue
+			}
+			os.Remove(b.metaPath(name)) // workspace died — stale meta
+			continue
+		}
+		claimed[m.Workspace] = true
+		b.backfillServer(m, ws, sock, gen)
+		out = append(out, HerdrSession{
+			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
+			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
+			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Crew: m.Crew, Dir: m.Dir,
+			Status: status(ws), Focused: ws.Focused,
+		})
+	}
+	for _, ws := range wss {
+		if claimed[ws.WorkspaceID] {
+			continue
+		}
+		name := ws.Label
+		if name == "" {
+			name = ws.WorkspaceID
+		}
+		out = append(out, HerdrSession{
+			Name: name, WorkspaceID: ws.WorkspaceID,
+			Emoji: FallbackEmoji, Status: status(ws),
+			Focused: ws.Focused, Foreign: true,
+		})
+	}
+	if kept > 0 {
+		b.warn("posse: %d session meta file(s) kept, not listed: this herdr (%s) does not hold their workspaces\n",
+			kept, socketLabel(sock))
+	}
+	if len(spared) > 0 {
+		b.warn("posse: %d session meta file(s) kept, not listed: missing from this listing but not dead (rangerhq-9nso) — %s\n",
+			len(spared), strings.Join(spared, "; "))
+	}
+	if len(strangers) > 0 {
+		b.warn("posse: %d session meta file(s) kept, not listed: another workspace holds the id they recorded, so the name would address a stranger's pane (rangerhq-yt1p) — %s\n"+
+			"  repair by matching each meta's filename against the workspace `label` in `herdr workspace list --json` and rewriting workspace:/pane: to it (NOTES, handoff post-flight), or delete the meta in %s to discard the session\n",
+			len(strangers), strings.Join(strangers, "; "), b.metaDir())
+	}
+	if len(recipes) > 0 {
+		b.warn("posse: %d session(s) closed without a replacement, recipe kept: %s — rebuild with `posse relaunch <name>`, or delete %s to discard\n",
+			len(recipes), strings.Join(recipes, ", "), b.metaDir())
+	}
+	sortHerdrSessions(out)
+	return out, nil
+}
+
+// PruneGrace is how long a meta is immune to the inferential prune: a
+// workspace created less than this ago may legitimately be missing from a
+// listing another process took before it existed. Five minutes is far wider
+// than the observed race (a create-to-listing window of seconds) and far
+// narrower than any interval over which a workspace's death goes unnoticed
+// — the next read prunes it.
+const PruneGrace = 5 * time.Minute
+
+// prunable decides whether a meta whose workspace is missing from the
+// listing may be deleted. It is called only after the socket guards above
+// have established that this server is the one that would know.
+//
+// cannotAnswerFor reports why THIS herdr server is not the one that would
+// know whether m's workspace is alive, or "" when it is. A per-id query is
+// only evidence about a session when the server being asked is the server
+// that holds it; otherwise its truthful workspace_not_found is an answer
+// about an id it never held, and no evidence at all about the session
+// (rangerhq-8fq).
+//
+// Both halves of the meta rule ask through here — the prune before it may
+// delete a meta (Sessions), and the create before it may overwrite one
+// (mustNotOrphan). They used to disagree: on the identical board the delete
+// kept the file and the create destroyed it one line later (rangerhq-jeu2).
+// One predicate is what keeps them from drifting apart again.
+//
+// What the two callers DO with a refusal is not the same, and cannot be. On
+// the delete side "this server cannot know" means keep the file — doing
+// nothing is already safe. On the write side doing nothing means refusing
+// the create, because proceeding is what destroys the record.
+//
+// The prune keeps one class this does not name: a meta with no socket
+// recorded at all. That arm is about a meta written before the field
+// existed, where nothing on disk says this server ever held the workspace —
+// and refusing to delete such a file costs a kept file. It is applied at the
+// prune's call site, not here, because on the write side it is not true: see
+// mustNotOrphan.
+func cannotAnswerFor(m *HerdrMeta, sock string, listed int) string {
+	switch {
+	case listed == 0:
+		return fmt.Sprintf("this herdr (%s) lists no workspaces at all — a server that just came up, or one that never held this session (rangerhq-snd)", socketLabel(sock))
+	case m.Socket != sock:
+		return fmt.Sprintf("the meta was written against %s and this pass is talking to %s", socketLabel(m.Socket), socketLabel(sock))
+	}
+	return ""
+}
+
+// notOurWorkspace reports why the workspace herdr just answered with is not
+// the one m recorded — "" when nothing here disproves it.
+//
+// This is the identity half of the two questions a per-id query conflates
+// (ADR 0011's liveness-vs-identity canon, in its pid-recycling shape): that
+// an id answers proves A workspace holds it, never that it is the one the
+// meta recorded. herdr's allocator is max(live id)+1, recomputed from the
+// live set at every server process start — a restart and a handoff both —
+// so every id above the live high-water is free real estate on the far side,
+// and that is exactly the set of ids stale metas hold (rangerhq-6bg7).
+//
+// Two anchors, and neither works alone:
+//
+//   - the LABEL. posse creates every workspace with --label <session name>
+//     (CreateWorkspace) and the meta's filename is that name, so a workspace
+//     whose label is not the meta's name is not the meta's workspace. Not
+//     conclusive on its own: renaming a workspace in herdr breaks the label
+//     without changing whose workspace it is.
+//   - the GENERATION. Within one server process an id is never re-issued
+//     (measured, same probe). So when the meta's gen: is this server's, the
+//     id cannot have been recycled, and a label mismatch can only be a
+//     rename — the workspace is still ours, and calling it a stranger would
+//     hide a live session from its own name.
+//
+// Across a generation boundary the two readings — renamed, or recycled to a
+// stranger — leave identical evidence, and herdr offers no third anchor:
+// `workspace get` carries no creation time, `api snapshot` no server pid or
+// boot id, and terminal_id / the root pane's shell_pid are regenerated when
+// a pane's terminal is rebuilt, so they call a legitimately restored
+// workspace a stranger. The ambiguous case therefore reads as "not proven
+// ours", which every caller answers by doing nothing to the file. An unknown
+// generation — a meta written before the field, or a pass that cannot name
+// its socket — is ambiguous in the same way and is never read as a match:
+// the absent-socket arm the prune already takes, applied to the fence.
+//
+// An empty label is not evidence of a stranger. Positive evidence only: a
+// herdr that stopped reporting labels would otherwise turn the entire fleet
+// into strangers in one release, and unlabelled workspaces are not the ones
+// posse's own creates hand out.
+func notOurWorkspace(m *HerdrMeta, ws HerdrWorkspace, gen string) string {
+	if ws.Label == "" || ws.Label == m.Name {
+		return ""
+	}
+	if gen != "" && m.Gen == gen {
+		return "" // same server generation: ids are not re-issued, so this is a rename
+	}
+	return fmt.Sprintf("workspace %s is labelled %q, not %q, and %s — herdr re-issues workspace ids across a server restart or handoff (rangerhq-6bg7)",
+		m.Workspace, ws.Label, m.Name, genLabel(m.Gen, gen))
+}
+
+// genLabel says how much the fence knows, in the voice of a warning line.
+func genLabel(metaGen, gen string) string {
+	switch {
+	case metaGen == "" || gen == "":
+		return "which server generation issued that id is unrecorded"
+	default:
+		return "the id was issued by another generation of this herdr server"
+	}
+}
+
+// idEvidence asks this herdr server about the workspace id m recorded and
+// says what the answer proves about m's *session*. Both halves of the meta
+// rule ask through here — the prune before it may delete a meta, and the
+// create before it may overwrite one — because they used to disagree on the
+// identical board (rangerhq-jeu2), and one predicate is what keeps them from
+// drifting apart again. What the two callers DO with a refusal is not the
+// same and cannot be: on the delete side "not proven dead" means keep the
+// file, on the write side it means refuse, because there proceeding is what
+// destroys the record.
+//
+//   - dead: herdr's own workspace_not_found. A workspace never changes its
+//     id while it exists — the ids that survive a restart or a handoff are
+//     the live ones, unchanged (rangerhq-6bg7) — so an id nothing holds is a
+//     session that is gone, in this generation and any other.
+//   - not dead: why says what the answer proved instead — alive and ours,
+//     alive and a stranger's, or no answer at all. Silence is never death
+//     (ADR 0011 §2).
+func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why string) {
+	if m.Workspace == "" {
+		return false, "it names no workspace, and absence of a name is not death"
+	}
+	ws, found, err := b.H.WorkspaceGet(m.Workspace)
+	if err != nil {
+		return false, fmt.Sprintf("herdr did not answer for workspace %s (%v), and silence is not evidence", m.Workspace, err)
+	}
+	if !found {
+		return true, ""
+	}
+	if stranger := notOurWorkspace(m, ws, gen); stranger != "" {
+		return false, stranger
+	}
+	return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
+}
+
+// The listing is a snapshot, and rangerhq-9nso is what happens when a
+// snapshot is read as a fact about another store: three concurrent dispatch
+// passes, each holding a workspace list taken before the others' workspaces
+// existed, deleted each other's fresh metas — live sessions with running
+// agents lost their identity, and with it the pane a prompting pass needs.
+// So a prune must prove death, never infer it (ADR 0011 §2):
+//
+//   - (a) a meta younger than PruneGrace is never pruned. This is the whole
+//     of the observed window, and it costs nothing: dispatch stamps
+//     launched: before it types the command, so the race window is covered
+//     by the file's own record.
+//   - (d) absence is confirmed by asking herdr for that workspace by id,
+//     now. A meta with no workspace recorded, or a query that errors, or a
+//     workspace that answers: all keep the file. Only herdr saying
+//     workspace_not_found is death.
+//
+// A meta with no launched: (written before the field, or a session created
+// with no command) passes (a) — nothing on disk says it is young — and
+// rests entirely on (d), which is the stronger guard anyway.
+//
+// (d) is asked through idEvidence, the predicate the create side asks too.
+// A workspace that answers keeps the file whether it is ours or a stranger
+// squatting a recycled id; the reason is carried out so the listing's
+// warning can say which, since only one of the two is repairable.
+func (b *HerdrBackend) prunable(m *HerdrMeta, gen string) (dead bool, why string) {
+	if time.Since(m.Launched) < PruneGrace {
+		return false, fmt.Sprintf("its meta is younger than the %s prune grace", PruneGrace)
+	}
+	return b.idEvidence(m, gen)
+}
+
+// backfillServer records which herdr server — and which generation of it —
+// a meta belongs to, the moment this pass finds its workspace live: holding
+// the workspace is the proof the meta file never carried. Without it a meta
+// written before `socket:` existed is refused forever (it is never pruned,
+// and every listing repeats the refusal) until its session is recreated one
+// at a time — so the guard above and this are one fix, not two
+// (rangerhq-8fq). `gen:` is the same story one field later: every meta
+// written before it exists carries none, and a restart or handoff makes even
+// a stamped one stale.
+//
+// Only a pass that knows a concrete socket can stamp one: SocketID() == ""
+// means herdr's default server, which on disk cannot be told apart from
+// "nothing recorded" — that identity is rangerhq-y4z's to fix, and until it
+// does, a meta whose session was created outside a herdr pane stays
+// unstamped, and so unprunable.
+//
+// The generation is stamped only on POSITIVE identity — the workspace this
+// server holds under that id wears the meta's own name as its label. The
+// weaker readings notOurWorkspace tolerates (an unlabelled workspace: no
+// evidence either way) must not stamp, because a forged fence is worse than
+// an absent one: it would make the next generation trust a recycled id.
+// Best effort, like the socket half: a listing must never fail over a
+// bookkeeping write.
+func (b *HerdrBackend) backfillServer(m *HerdrMeta, ws HerdrWorkspace, sock, gen string) {
+	stampSock := m.Socket == "" && sock != ""
+	stampGen := gen != "" && m.Gen != gen && ws.Label == m.Name
+	if !stampSock && !stampGen {
+		return
+	}
+	if stampSock {
+		m.Socket = sock
+	}
+	if stampGen {
+		m.Gen = gen
+	}
+	_ = b.writeMeta(m)
+}
+
+func socketLabel(sock string) string {
+	if sock == "" {
+		return "default socket"
+	}
+	return sock
+}
+
+func sortHerdrSessions(s []HerdrSession) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j].Name < s[j-1].Name; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}
+
+// Resolve finds one session by name: posse-created first (meta file), then
+// foreign workspaces by label. Ambiguous foreign labels are an error.
+func (b *HerdrBackend) Resolve(name string) (*HerdrSession, error) {
+	sessions, err := b.Sessions()
+	if err != nil {
+		return nil, err
+	}
+	var found *HerdrSession
+	for i := range sessions {
+		if sessions[i].Name != name {
+			continue
+		}
+		if !sessions[i].Foreign {
+			return &sessions[i], nil
+		}
+		if found != nil {
+			return nil, Die("label '%s' matches several herdr workspaces (%s, %s) — rename one in herdr", name, found.WorkspaceID, sessions[i].WorkspaceID)
+		}
+		found = &sessions[i]
+	}
+	if found == nil {
+		return nil, Die("no such session: %s", name)
+	}
+	return found, nil
+}
+
+func (b *HerdrBackend) HasSession(name string) bool {
+	s, err := b.Resolve(name)
+	return err == nil && s != nil
+}
+
+// mustNotOrphan is rangerhq-9nso's rule applied to the destructive *write*
+// beside the destructive delete it hardened. HasSession answers out of
+// Sessions(), and a meta whose workspace is missing from that listing
+// snapshot is deliberately left OUT of the listing — spared, but invisible
+// (9nso's own scope note). So a racing pass reads "no such session",
+// creates a SECOND workspace under the same label, and writeMeta()s over
+// the only record of the first: nothing on disk names that workspace any
+// more, posse can no longer address it by name, it shows up as a foreign row,
+// and the pane a prompting pass needs is gone while its agent keeps
+// running. state/ is outside git, so the overwrite is exactly as
+// unrecoverable as the os.Remove 9nso closed (rangerhq-cpeh).
+//
+// Same fact, same evidence, asked the same way: a per-id query answered
+// now, never a listing. Only herdr's own workspace_not_found makes a name's
+// meta free real estate. A workspace that answers is a live session and
+// refuses the create. A query that errors is silence, and inferring death
+// from silence is the move ADR 0011 §2 forbids on the delete side — so it
+// refuses too, which is also the recoverable direction: a refused create is
+// an error message, an overwrite is a lost session.
+//
+// The prune's 5m grace (guard (a)) is deliberately NOT applied here. It
+// exists because absence from a listing is weak evidence about a young
+// workspace; this asks herdr directly, so a session whose workspace really
+// did die a minute ago may be recreated under its name at once, as always.
+//
+// The launch lock (rangerhq-tzdf, ADR 0011 §1) closes this window for two
+// dispatch passes, which re-read a fresh listing inside the lock. It does
+// not cover an operator's `posse new` racing a pass — that takes no lock —
+// and it is a serialization, not a guard on the write itself.
+func (b *HerdrBackend) mustNotOrphan(name string) error {
+	m, ok := b.readMeta(name)
+	if !ok || m.Workspace == "" {
+		return nil // no record, or one naming no workspace: nothing to orphan
+	}
+	// Same evidence, asked the same way — which means asked of the same
+	// server. The prune reaches its per-id query only behind the socket
+	// guards, and prunable()'s own comment says it is "called only after the
+	// socket guards above have established that this server is the one that
+	// would know". Without them here the create asked whatever herdr posse
+	// happens to be pointed at now about a workspace the meta may say
+	// plainly belongs to another server, and read that server's truthful
+	// not_found as free real estate: on the identical board the prune kept
+	// the file and the create overwrote it one line later, destroying the
+	// only record of a session alive elsewhere (rangerhq-jeu2).
+	//
+	// The listing is fetched only to ask whether it is EMPTY. It is never
+	// consulted for whether this workspace is in it — that is the snapshot
+	// read as a fact about another store, which is the whole of ADR 0011 §2.
+	// A name with no meta, or one naming no workspace, has already returned
+	// above, so the ordinary create still pays nothing.
+	//
+	// One arm of the prune's is deliberately NOT taken: an unstamped meta is
+	// refused there and asked about here, when this pass is unstamped too.
+	// It is not the copy-paste gap it looks like. Every create stamps
+	// Socket: SocketID(), so socket: "" says the meta was written by a pass
+	// that was itself on the default server — the server being asked. That
+	// is evidence the two name the SAME server, not absence of evidence, and
+	// reading it as two servers is rangerhq-y4z's misfire. On the prune side
+	// that misfire costs a kept file. Here it would cost every name: `posse`
+	// from a plain terminal has HERDR_SOCKET_PATH unset, so it writes and
+	// reads unstamped metas, and a dead session's name could never be reused
+	// without deleting its meta by hand. A meta unstamped against a NAMED
+	// socket still refuses — that is the mismatch arm, and it is the arm the
+	// repro walks. What stays open is the pre-field legacy meta on a
+	// multi-server board; rangerhq-y4z closes it by making "" and the default
+	// path one server, at which point this arm can be taken verbatim.
+	sock := SocketID()
+	wss, lerr := b.H.Workspaces()
+	if lerr != nil {
+		return Die("session '%s' has a meta naming workspace %s and this herdr did not list its workspaces (%v) — refusing to overwrite the only record of a session that may still be alive (remove %s by hand if it is stale)", name, m.Workspace, lerr, b.metaPath(name))
+	}
+	if why := cannotAnswerFor(m, sock, len(wss)); why != "" {
+		return Die("session '%s' has a meta naming workspace %s and %s — refusing to overwrite the only record of a session that may be alive on another herdr; the prune keeps this same file for the same reason (rangerhq-8fq). Point posse at the herdr that holds it, or remove %s by hand.", name, m.Workspace, why, b.metaPath(name))
+	}
+	// The per-id query, through the predicate the prune asks — including its
+	// identity arm. An id that answers alive is not this session unless the
+	// workspace wearing it is (rangerhq-yt1p): herdr re-issues ids across a
+	// restart and a handoff, so a stranger's workspace can answer for the id
+	// this meta records. That answer proves nothing about the session, and
+	// "proves nothing" on the write side is a refusal — the same board where
+	// the prune keeps the file (rangerhq-jeu2).
+	//
+	// It refuses rather than repairing the meta onto the label-matched
+	// workspace. A repair is only ever right when the session is alive under
+	// a different id, and a workspace does not change its id while it
+	// exists; the operator's post-flight repair (NOTES) stays a deliberate,
+	// visible act, and a refusal costs a retry where a wrong repair would
+	// point the name at a workspace nobody proved was the session's.
+	dead, why := b.idEvidence(m, ServerGen())
+	if dead {
+		return nil
+	}
+	return Die("session '%s' has a session meta and %s — refusing to overwrite the only record of a session that may still be alive (try: posse attach %s, or posse list; if it really is stale, remove %s by hand)",
+		name, why, name, b.metaPath(name))
+}
+
+// nameFree is the trio of guards every create passes: a usable name, no
+// live session already wearing it, and no meta this create would orphan.
+// Relaunch runs it too — after its kill, which is the only moment the name
+// is free — so the guards live here rather than inside CreateSession.
+func (b *HerdrBackend) nameFree(name string) error {
+	if !ValidName(name) {
+		return Die("bad session name '%s' (letters, digits, - and _; may not start with -)", name)
+	}
+	if b.HasSession(name) {
+		return Die("session '%s' already exists (try: posse attach %s)", name, name)
+	}
+	return b.mustNotOrphan(name)
+}
+
+// launchPlan is everything a launch resolves before herdr is touched: the
+// command line to type, the environment to inject, and the meta fields that
+// describe what was resolved. Splitting it out is what lets a caller about
+// to destroy something prove the replacement is buildable BEFORE the
+// destructive step, and then build it from the very plan it verified —
+// relaunch's kill-before-recreate lost sessions to a recreate that could
+// never have succeeded (rangerhq-v52t).
+type launchPlan struct {
+	Dir      string
+	Cmd      string
+	Emoji    string
+	Envs     []string
+	Vars     []EnvVar
+	Runtime  string
+	Tier     string
+	Cage     string
+	Sockets  string
+	Degraded string
+}
+
+// planLaunch resolves a launch without touching herdr: persona, runtime,
+// tier, cage, parity, skills, seatbelt, gates, env sets, working directory.
+// Every refusal a launch can raise for reasons that are knowable in advance
+// is raised here. Its side effects are the renders a launch always redoes
+// (gates, skills, seatbelt profiles, the memory dir) — idempotent by
+// design, so planning twice costs nothing and changes nothing.
+func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
+	a := b.App
+	a.TightenEnvPerms(os.Stderr) // every launch re-asserts 700/600 on envs/
+
+	dir := o.Dir
+	if dir == "" {
+		dir = a.CfgGet("default_dir", os.Getenv("HOME"))
+	}
+	dir = ExpandTilde(dir)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return nil, Die("directory not found: %s", dir)
+	}
+
+	emoji := o.Emoji
+	if emoji == "" {
+		emoji = a.EmojiFor(o.Name)
+	}
+
+	cmd := o.Cmd
+	var ag *AgentFile
+	var rt *Runtime
+	caged := false // the session really runs inside the L4 cage (ADR 0002 §3)
+	runtime, tier, gatesDir, cage, degraded := "", "", "", "", ""
+	if o.Agent != "" {
+		var err error
+		if ag, err = a.LoadAgent(o.Agent); err != nil {
+			return nil, err
+		}
+		if err := ag.EnsureMemoryDir(); err != nil {
+			return nil, err
+		}
+		// Runtime: CLI/recipe override > PID runtime: > config default >
+		// claude. The PID's own command: applies only on its own runtime.
+		own := a.ResolveRuntime("", ag)
+		runtime = a.ResolveRuntime(o.Runtime, ag)
+		rt, err = a.LoadRuntime(runtime)
+		if err != nil {
+			return nil, err
+		}
+		tier = a.ResolveTier(o.Tier, ag)
+		if !ValidTier(tier) {
+			return nil, Die("unknown tier %q (strong | standard | fast)", tier)
+		}
+		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
+		// best available tier (shims today); the PID may demand more. Any
+		// gate no wall layer realizes refuses the launch unless degradation
+		// was allowed explicitly — then it launches marked.
+		if ag.Cage != "" && !ValidCage(ag.Cage) {
+			return nil, Die("%s: cage: %q is not shims | seatbelt | container", o.Agent, ag.Cage)
+		}
+		if o.Cage != "" && !ValidCage(o.Cage) {
+			return nil, Die("--cage %q is not shims | seatbelt | container", o.Cage)
+		}
+		// `sockets:` is a container-tier key and an opt-in, not a gate: a
+		// name that is known is mounted and recorded, a name that is not is
+		// a PID error here rather than a silent no-op inside (ADR 0002 §5).
+		if err := CheckSockets(ag); err != nil {
+			return nil, err
+		}
+		if ag.TierFloor != "" && !ValidTier(ag.TierFloor) {
+			return nil, Die("%s: tier_floor: %q is not strong | standard | fast", o.Agent, ag.TierFloor)
+		}
+		cage = ResolveCage(o.Cage, ag)
+		// A container tier this host cannot provide is a degradation like
+		// any other: refused, or launched on the host and marked. What it
+		// never is, is a launch that pretends to be caged.
+		caged = cage == CageContainer && a.ContainerAvailable()
+		parity := a.CheckParityIn(ag, rt, cage, tier, dir)
+		if len(parity.Degraded) > 0 {
+			// ADR 0003 §3: at fast the operator's consent is not on offer —
+			// the wall is the only thing left holding the PID's gates.
+			if !o.AllowDegraded || parity.NoDegrade {
+				return nil, degradedError{parity}
+			}
+			degraded = strings.Join(parity.Degraded, "; ")
+			b.warn("posse: %s launches DEGRADED on %s @ %s — %s\n", o.Name, rt.Name, cage, degraded)
+		}
+		// Skills (ADR 0007 §2): rendered fresh here, like the gates — the
+		// tree {skills} points at for claude, the session dir's
+		// .agents/skills/ links for codex and grok. A name that resolves to
+		// nothing refuses the launch rather than binding a dangling symlink.
+		if _, err := a.RenderSkillsFor(ag, rt, dir); err != nil {
+			return nil, err
+		}
+		cmd = ag.RenderCommandFor(rt, own, tier)
+		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
+		// rendered from the PID; the outer shell expands $(cat {file}) first.
+		if cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
+			prof, err := a.RenderSeatbelt(ag, dir)
+			if err != nil {
+				return nil, err
+			}
+			cmd = SeatbeltPrefix(prof) + cmd
+		}
+		// L1 gates (ADR 0002 §3, ADR 0009): shims rendered fresh from deny:,
+		// PATH prefixed on the typed line and SHELL/GROK_SHELL pointed at the
+		// gate shell — every persona session, every runtime. Not at the
+		// container tier: those shims exec host paths and that gate shell is
+		// the host's zsh, so typing them in front of the engine would put a
+		// dead wall on the line. The cage renders its own inside instead —
+		// `posse gates wrap` on the engine's inner line (cageinner.go).
+		if !caged {
+			cmd, gatesDir, _, err = a.WrapWithGates(o.Agent, rt, ag.Deny, cmd)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// The cage renders its own inside, so the var the session's tools
+			// read — the pre-push hook above all, which appends its refusal to
+			// $RHQ_GATES_DIR/refusals.log — has to name the path they will
+			// find them at. That path is the image's, not the host's; the one
+			// file behind it that is the host's is mounted there (CageMounts).
+			gatesDir = CageGatesDir(o.Agent)
+		}
+		// L3, always on: the pre-push hook goes into the session's repo when
+		// the PID denies git push and the repo has no hook (ours is replaced,
+		// a foreign one is left alone and the launch proceeds — L1 still
+		// stands). Writes only inside .git/hooks.
+		if deniesGitPush(ag.Deny) {
+			InstallPrePushHook(dir) // best effort; a non-repo dir is fine
+		}
+		// The commit guard is not keyed on a deny rule: what makes an
+		// unqualified commit unsafe is the tree the session is dispatched
+		// into, which every persona shares, not anything the PID says
+		// (rangerhq-lmq9). It keys on RHQ_PERSONA at run time, so the
+		// operator's own commits in the same tree are untouched. The same
+		// hook carries the beads visibility guard, stamped here from config
+		// `beads_visibility:` — which is what keeps that stamp live: a mark
+		// the operator changes is in force on the next launch into the repo
+		// (rangerhq-hrz).
+		a.InstallCommitGuardHook(dir) // best effort; foreign hook = left alone
+		if emoji == "" || emoji == a.EmojiFor(o.Name) {
+			if e := a.EmojiExact(runtime); e != "" {
+				emoji = e // the cockpit shows what the persona runs on
+			}
+		}
+	}
+
+	// Env sets: explicit ones (--env-file, recipe env_files) always; the
+	// persona's own `envs:` list on top for persona sessions. Config
+	// default_env is applied only to sessions without a persona — an env
+	// set is readable by the agent in that session (and by every tool it
+	// runs), so what an autonomous persona receives must be an explicit
+	// choice, never a silent default (rangerhq-f2b).
+	envs := append([]string(nil), o.Envs...)
+	if ag != nil {
+		envs = append(envs, ag.Envs...)
+	} else if len(envs) == 0 {
+		if defenv := a.CfgGet("default_env", ""); defenv != "" {
+			if _, err := os.Stat(filepath.Join(a.EnvsDir, defenv+".env")); err == nil {
+				envs = []string{defenv}
+			}
+		}
+	}
+	envs = dedupeStrings(envs)
+	var vars []EnvVar
+	for _, n := range envs {
+		vs, err := a.EnvSetVars(n)
+		if err != nil {
+			return nil, err
+		}
+		vars = append(vars, vs...)
+	}
+
+	if ag != nil {
+		// The persona's durable identity rides the environment: BD_ACTOR
+		// makes every bd call inside the session attribute to the persona
+		// (claims, closes, mail), and the memory dir is there for tooling.
+		vars = append(vars,
+			EnvVar{"BD_ACTOR", o.Agent},
+			EnvVar{EnvPersona, o.Agent},
+			EnvVar{"RHQ_PERSONA_DIR", ag.MemoryDir},
+			EnvVar{"RHQ_RUNTIME", runtime},
+			EnvVar{"RHQ_TIER", tier},
+			EnvVar{"RHQ_GATES_DIR", gatesDir},
+			EnvVar{"RHQ_CAGE", cage},
+			// ADR 0007 §2's exit hatch: even a runtime posse cannot point
+			// at the skills can be told where they are, by the PID's body or
+			// by a wrapper.
+			EnvVar{"RHQ_SKILLS_DIR", a.SkillsDir()},
+		)
+		if len(ag.Skills) > 0 {
+			vars = append(vars, EnvVar{"RHQ_SKILLS", strings.Join(ag.Skills, "\n")})
+		}
+		// The PID's tool lists also ride the env (newline-joined) — ADR
+		// 0001's exit hatch: {allow}/{deny} render for claude's flags, and
+		// a wrapper for any other runtime applies these its own way.
+		if len(ag.Allow) > 0 {
+			vars = append(vars, EnvVar{"RHQ_TOOLS_ALLOW", strings.Join(ag.Allow, "\n")})
+		}
+		if len(ag.Deny) > 0 {
+			vars = append(vars, EnvVar{"RHQ_TOOLS_DENY", strings.Join(ag.Deny, "\n")})
+		}
+	}
+
+	// L4: the runtime command becomes the *inner* command of an engine
+	// template (cage.go). Last, so the env names it forwards are the ones
+	// the session actually gets — the operator's container credential
+	// included, which is the precondition this refuses without.
+	if caged {
+		var err error
+		if cmd, err = a.WrapInCage(ag, rt, o.Name, dir, cmd, CageEnvNames(vars)); err != nil {
+			return nil, err
+		}
+	}
+
+	sockets := ""
+	if ag != nil && caged {
+		sockets = CageSocketTag(ag)
+	}
+	return &launchPlan{
+		Dir: dir, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
+		Runtime: runtime, Tier: tier, Cage: cage, Sockets: sockets, Degraded: degraded,
+	}, nil
+}
+
+// startPlanned turns a verified plan into a live session: the workspace,
+// the meta that records it, and the command typed into its root pane. This
+// is the whole creative half of a launch — everything past it has already
+// been decided by planLaunch. Callers guard the name with nameFree first;
+// relaunch does so after its kill.
+//
+// It returns the workspace it created even when it then fails, because a
+// caller cleaning up after a partial launch must be able to tell "nothing
+// exists" from "a workspace is up and something later went wrong" — the
+// second is not a state to write over (rangerhq-v52t).
+func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, error) {
+	wsID, rootPane, err := b.H.CreateWorkspace(o.Name, p.Dir, p.Vars)
+	if err != nil {
+		return "", err
+	}
+	meta := &HerdrMeta{
+		Name: o.Name, Workspace: wsID, Pane: rootPane,
+		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
+		Dir: p.Dir, Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Crew: o.Crew,
+		// Which server, and which generation of it, issued this workspace
+		// id — the id alone identifies nothing across a restart or a
+		// handoff (rangerhq-yt1p).
+		Socket: SocketID(), Gen: ServerGen(),
+	}
+	if o.Agent == "" {
+		// A persona's line is re-rendered from the PID at every launch; a
+		// plain session's --cmd exists nowhere else, so relaunch needs it
+		// recorded (flat-YAML: one line, no " #").
+		meta.Cmd = o.Cmd
+	}
+	if p.Cmd != "" {
+		meta.Launched = time.Now()
+	}
+	if err := b.writeMeta(meta); err != nil {
+		return wsID, err
+	}
+	if p.Cmd != "" {
+		if err := b.H.PaneRun(rootPane, p.Cmd); err != nil {
+			return wsID, err
+		}
+	}
+	return wsID, nil
+}
+
+// CreateSession mirrors the tmux CreateSession contract (defaults, env sets,
+// persona precedence) on the herdr backend: guard the name, resolve the
+// launch, start it.
+func (b *HerdrBackend) CreateSession(o NewSessionOpts) error {
+	if err := b.nameFree(o.Name); err != nil {
+		return err
+	}
+	p, err := b.planLaunch(o)
+	if err != nil {
+		return err
+	}
+	_, err = b.startPlanned(o, p)
+	return err
+}
+
+// RelaunchAgent re-types the persona command into a live session's root
+// pane after its agent process has gone (crash, /exit, the operator closing
+// the CLI): the herdr workspace survives as a bare shell that still carries
+// the launch env (BD_ACTOR, RHQ_PERSONA_DIR, tool lists), so re-running the
+// command there is a full persona restart without a new workspace
+// (rangerhq-vk2). Refuses — returns false, nil — when the session is not an
+// posse persona session, when herdr currently detects an agent in it, or when
+// the last launch is younger than grace: a CLI that is still starting up is
+// invisible to detection for a few seconds, and typing a second command
+// into it would land inside its input box.
+func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, error) {
+	m, ok := b.readMeta(name)
+	if !ok || m.Agent == "" || m.Pane == "" {
+		return false, nil
+	}
+	if time.Since(m.Launched) < grace {
+		return false, nil
+	}
+	// A pane id is only as good as the workspace id it hangs off: herdr
+	// re-issues those across a restart and a handoff, so the pane a stale
+	// meta remembers can be a stranger's (rangerhq-yt1p). Sessions() leaves
+	// such a meta out of the listing — but resolving the NAME does not ask
+	// that question. Resolve falls back to FOREIGN workspaces by label, and
+	// herdr auto-labels a workspace basename(cwd), so an unrelated namesake
+	// answers for a session whose own meta was just dropped as a stranger's:
+	// the guard passes on w99 while the pane still points at w1
+	// (rangerhq-w4zp). So the row must be this meta's own, and the command
+	// goes into ITS pane — a guard only guards the line it precedes
+	// (rangerhq-i2g9), and the way to keep that true is for the guard and
+	// the action to name one workspace, not two.
+	//
+	// !Foreign is the arm that fires on the namesake, and it is the only one
+	// a test can reach: notOurWorkspace() reads label == name as ours, so a
+	// FOREIGN row named `name` can never carry this meta's workspace id, and
+	// the two arms cannot disagree on any board one listing can produce. The
+	// id comparison covers the board a listing cannot show — the meta being
+	// rewritten between the readMeta above and the read inside Sessions()
+	// (mustNotOrphan's race, rangerhq-jeu2/cpeh). There s.PaneID would be a
+	// pane the rest of this function's m — agent, runtime, cage, envs, and
+	// the writeMeta below — no longer describes, so it refuses and lets the
+	// next pass read one consistent meta.
+	//
+	// It costs one listing on a path that only runs when a persona's CLI has
+	// already died; typing a persona command into somebody else's pane costs
+	// their session, and AgentTarget's error does not tell the two apart.
+	s, err := b.Resolve(name)
+	if err != nil || s.Foreign || s.WorkspaceID != m.Workspace {
+		return false, nil
+	}
+	if _, err := b.AgentTarget(name); err == nil {
+		return false, nil // an agent is there after all
+	}
+	ag, err := b.App.LoadAgent(m.Agent)
+	if err != nil {
+		return false, err
+	}
+	if err := ag.EnsureMemoryDir(); err != nil {
+		return false, err
+	}
+	// Same runtime the session was created for (an override at creation
+	// must survive a crash restart), rendered exactly as CreateSession did.
+	rt, err := b.App.LoadRuntime(m.Runtime)
+	if err != nil {
+		return false, err
+	}
+	m.Launched = time.Now()
+	if err := b.writeMeta(m); err != nil {
+		return false, err
+	}
+	tier := m.Tier
+	if tier == "" {
+		tier = b.App.ResolveTier("", ag)
+	}
+	if _, err := b.App.RenderSkillsFor(ag, rt, m.Dir); err != nil {
+		return false, err
+	}
+	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier)
+	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
+		prof, err := b.App.RenderSeatbelt(ag, m.Dir)
+		if err != nil {
+			return false, err
+		}
+		inner = SeatbeltPrefix(prof) + inner
+	}
+	// Same shape as CreateSession, and for the same reason: at the container
+	// tier the wall is rendered inside the cage, so the host's gate prefix
+	// never goes on the line. The workspace still carries the launch env, so
+	// the engine's `-e NAME` forwards find the same values they did then;
+	// the env sets are re-read for their names (and for the credential
+	// check, which must refuse a relaunch exactly as it refused the launch).
+	cmd := inner
+	if m.Cage == CageContainer && b.App.ContainerAvailable() {
+		var vars []EnvVar
+		for _, n := range strings.Split(m.Envs, "+") {
+			if n == "" {
+				continue
+			}
+			vs, err := b.App.EnvSetVars(n)
+			if err != nil {
+				return false, err
+			}
+			vars = append(vars, vs...)
+		}
+		if cmd, err = b.App.WrapInCage(ag, rt, m.Name, m.Dir, inner, CageEnvNames(vars)); err != nil {
+			return false, err
+		}
+	} else if cmd, _, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {
+		return false, err
+	}
+	if err := b.H.PaneRun(s.PaneID, cmd); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// runtimeTierTag is the listing suffix for a persona session: "" for the
+// defaults (claude/strong), else "@runtime/tier" so the cockpit shows what
+// the persona runs on and at what spend (ADR 0002/0003).
+func RuntimeTierTag(runtime, tier string) string {
+	if (runtime == "" || runtime == DefaultRuntime) && (tier == "" || tier == DefaultTier) {
+		return ""
+	}
+	if runtime == "" {
+		runtime = DefaultRuntime
+	}
+	if tier == "" {
+		tier = DefaultTier
+	}
+	return "@" + runtime + "/" + tier
+}
+
+func dedupeStrings(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range in {
+		if x != "" && !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func (b *HerdrBackend) KillSession(name string) error {
+	s, err := b.Resolve(name)
+	if err != nil {
+		return err
+	}
+	if err := b.H.CloseWorkspace(s.WorkspaceID); err != nil {
+		return err
+	}
+	if !s.Foreign {
+		os.Remove(b.metaPath(name))
+	}
+	return nil
+}
+
+// FocusSession is the herdr twin of attach: re-aim the herdr UI at the
+// session's workspace (meaningful when you're looking at herdr).
+func (b *HerdrBackend) FocusSession(name string) error {
+	s, err := b.Resolve(name)
+	if err != nil {
+		return err
+	}
+	return b.H.FocusWorkspace(s.WorkspaceID)
+}
+
+// AgentTarget picks the promptable target for a session: the pane of the
+// agent herdr has detected inside its workspace (root pane preferred, for
+// sessions with several agents). This is the dispatch loop's addressing.
+func (b *HerdrBackend) AgentTarget(name string) (string, error) {
+	s, err := b.Resolve(name)
+	if err != nil {
+		return "", err
+	}
+	agents, err := b.H.Agents()
+	if err != nil {
+		return "", err
+	}
+	var first string
+	for _, ag := range agents {
+		if ag.WorkspaceID != s.WorkspaceID {
+			continue
+		}
+		if s.PaneID != "" && ag.PaneID == s.PaneID {
+			return ag.PaneID, nil
+		}
+		if first == "" {
+			first = ag.PaneID
+		}
+	}
+	if first == "" {
+		return "", Die("no agent detected in session %s (herdr sees no claude/codex/... there yet)", name)
+	}
+	return first, nil
+}
+
+// ─── CLI bodies ──────────────────────────────────────────────────────────────
+
+func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error {
+	sessions, err := b.Sessions()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "HERDR SESSIONS\n")
+	if len(sessions) == 0 {
+		fmt.Fprintf(w, "  (none)\n")
+		return nil
+	}
+	for _, s := range sessions {
+		mark := "○"
+		if s.Focused {
+			mark = "●"
+		}
+		status := s.Status
+		if status == "" {
+			status = "-"
+		}
+		line := fmt.Sprintf("  %s %s %s  %s", mark, s.Emoji, s.Name, status)
+		if s.Agent != "" {
+			line += "  🎭" + s.Agent + RuntimeTierTag(s.Runtime, s.Tier)
+			if tag := CageTag(s.Cage, s.Sockets); tag != "" {
+				line += "  " + tag
+			}
+			if s.Degraded != "" {
+				line += "  ⚠️degraded"
+			}
+		}
+		if s.Crew {
+			line += "  " + CrewTag
+		}
+		if s.Envs != "" {
+			line += "  🔑" + s.Envs // names only — never values
+		}
+		if s.Foreign {
+			line += "  (herdr)"
+		}
+		fmt.Fprintf(w, "%s\n", line)
+	}
+	return nil
+}
+
+// LaunchRecipe is the herdr twin of the tmux LaunchRecipe: same messages,
+// but slot preferences don't exist here — herdr owns layout.
+func (b *HerdrBackend) LaunchRecipe(w interface{ Write([]byte) (int, error) }, rname string) error {
+	r, err := b.App.LoadRecipe(rname)
+	if err != nil {
+		return err
+	}
+	if b.HasSession(r.Name) {
+		fmt.Fprintf(w, "session %s already exists — reusing it\n", r.Name)
+		return nil
+	}
+	err = b.CreateSession(NewSessionOpts{
+		Name: r.Name, Dir: r.Dir, Cmd: r.Command,
+		Emoji: r.Emoji, Envs: r.EnvFiles, Agent: r.Agent, Runtime: r.Runtime, Tier: r.Tier,
+		// A recipe is the operator launching something to sit in (ADR 0008).
+		Crew: true,
+	})
+	if err != nil {
+		return err
+	}
+	m, _ := b.readMeta(r.Name)
+	emoji := ""
+	if m != nil {
+		emoji = m.Emoji
+	}
+	fmt.Fprintf(w, "launched recipe %s → session %s %s\n", rname, emoji, r.Name)
+	fmt.Fprintf(w, "focus it with: posse attach %s\n", r.Name)
+	return nil
+}

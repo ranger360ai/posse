@@ -1,0 +1,295 @@
+# posse config — flat YAML subset (scalars, one-level maps, lists; see NOTES.md)
+#
+# `posse init` copies this file verbatim into $RHQ_HOME, so it is the seed
+# every fresh instance starts from. Everything below is either a harness
+# default or commented out: the shipped file names no crew, no operator, no
+# machine, and no plan — those are yours to write in.
+#
+# TO ARM DISPATCH ON A FRESH INSTANCE, in order:
+#   1. `beads:`          — the repo(s) whose bd queue dispatch reads.
+#   2. `agents/*.md`     — the PIDs it can route to (`posse init` seeds
+#                          examples; `posse agent new <name>` scaffolds one).
+#                          Routing is by label: a bead's label must match
+#                          some PID's `labels:`, or set `default_persona:`.
+#   3. `operator:`       — who a persona's ASK question beads are filed at.
+#   4. `plan_guard_*` / `budget_*` — the ceilings. Arming an unattended loop
+#                          without one of these is arming a token loop
+#                          nobody is watching.
+#   5. `posse dispatch --dry-run` — routes and reports, launches nothing.
+#      Then `posse dispatch -n 1` by hand before anything unattended.
+#   6. `autostart_interval:` — LAST. Presence of that one key is the arm
+#                          switch for the scheduled loop (see the block at
+#                          the bottom).
+
+# ─── session defaults ────────────────────────────────────────────────────────
+# Fallbacks used by `posse new` / `posse local` / recipes when a field is omitted.
+default_dir: ~
+default_env: default        # envs/default.env for plain sessions with no --env-file; persona sessions get only their PID envs: (+ explicit env-files)
+default_emoji: ⚙️
+# default_runtime: claude   # launch profile for PIDs that name none (claude | codex | grok | runtimes/<name>.yaml)
+# default_engine: docker    # container engine for cage: container (built-in docker; or cages/<name>.yaml)
+# cage_image: posse-cage:latest  # the image `posse cage build` writes and a caged launch runs
+
+# ─── who ─────────────────────────────────────────────────────────────────────
+# The human. Assignee for the ASK question beads a persona files when only
+# you can answer (ADR 0005); unset files them unassigned.
+# operator: <your bd username>
+#
+# The instance's exception handler — the one persona dispatch never hires
+# (ADR 0018). She is not a lane: a bead assigned to her is unroutable and
+# says so, her PID is skipped in label routing, and naming her as
+# `default_persona:` is reported as a config error. No flag overrides it;
+# you reach her in her own crew session, which dispatch already leaves
+# alone. Coordinator authority — session direction and `git push` — is a
+# single-writer resource, so it exists only in a session a human opened.
+# Unset (the default) = no coordinator = none of the above; the engine
+# ships carrying no crew name.
+# coordinator: <persona name>
+
+# ─── routing ─────────────────────────────────────────────────────────────────
+# Dispatch picks a persona per bead: explicit assignee > label match against
+# each PID's `labels:` > this. Unset means an unroutable bead is reported and
+# skipped rather than handed to a lane that did not ask for it — which is the
+# safe default, so set this only once you have a generalist PID that can
+# honestly take anything. Naming the coordinator here is a config error.
+# default_persona: developer
+
+# Repo-root files named in every work prompt when present (ADR 0005) — the
+# orientation a persona is told to read before it touches anything. Omit the
+# key for the default shown here; a present-but-empty key names none.
+# orientation:
+#   - AGENTS.md
+#   - DIRECTION.md
+#   - NOTES.md
+
+# ─── tiering (ADR 0003) ──────────────────────────────────────────────────────
+# Precedence: --tier > a bead's `tier:<x>` label > tier_by_label below > the
+# PID's `tier:` > default_tier > strong.
+# default_tier: strong      # model tier for PIDs that name none (strong | standard | fast)
+#                           # a tier of `fast` launches only where the wall realizes every PID gate
+#                           # (--allow-degraded is never accepted there), and never below a PID's tier_floor:
+#
+# Bead label → tier at dispatch, which wins over the PID: the shape of the
+# work says more about the model it needs than the title of whoever does it.
+# Omit the key for the ADR default shown here; a present-but-empty key turns
+# label tiering off entirely.
+# tier_by_label:
+#   doc: fast
+#   groom: fast
+#   triage: fast
+#   scaffold: fast
+#   hygiene: fast
+#   architecture: strong
+#   security: strong
+#   adr: strong
+
+# ─── the queue ───────────────────────────────────────────────────────────────
+# Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate
+# unblocked work from each listed repo's bd database (repos without one are
+# skipped quietly). Unset = the current directory.
+#
+# Aggregation is local-only and each repo's beads keep THAT REPO'S
+# visibility: nothing here mixes databases or moves a bead between them, and
+# a private repo listed beside a public one stays private. A bead's repo is
+# also its dispatch cwd — the session's working directory, the commit tree,
+# and where verify-after greps for the implementing commit — so list the
+# working copy the work actually lands in.
+# beads:
+#   - ~/code/projA
+#   - ~/code/projB
+
+# Which of those repos are PUBLIC — the visibility guard's only input
+# (rangerhq-hrz). `posse gates install-hooks <repo>`, and every persona
+# launch into a repo, stamp its prepare-commit-msg hook with the answer;
+# in a public repo the hook refuses a commit that ADDS instance-ops
+# content to `.beads/*.jsonl` — dollar figures, plan names, live
+# plan_guard_*/budget_*/autostart_* values, credential locations — naming
+# the pattern and the rule (NOTES.md, "Privacy model": bead CLASS, not
+# codebase, picks the repo).
+#
+# UNMARKED IS PUBLIC. That is the point of the key: a repo you add and
+# forget is guarded, not silently exempt. Only an explicit `private` buys
+# the exemption — a typo'd path, an unreadable config and a value that is
+# neither word all come back public. The way through a refusal is to
+# re-file the bead in the private db and cite its id from the public one;
+# the override is `RHQ_VISIBILITY_OVERRIDE=i-mean-it`, typed by the
+# operator, never handed to a session.
+#
+# It is a lint, not a boundary — the boundary is the routing rule plus the
+# repo's visibility. It exists so a mis-routed bead is a refusal at commit
+# time instead of a public artifact.
+# beads_visibility:
+#   ~/code/projA: public
+#   ~/code/projB: private
+
+# Workspace roots — the TUI's directory picker offers each root plus its
+# immediate subdirectories (real, existing directories only).
+dirs:
+  - ~/code
+  - ~/src
+  - ~/notes
+
+# ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
+# The one handoff the harness files itself: a closed bead with one of these
+# labels and no `qa` dependent earns `verify: <title>` -l qa, assigned below,
+# linked discovered-from the close. The key absent means `code, devops`; the
+# key present but empty turns it off (and then bd is not asked at all). The
+# first sweep of a repo files nothing: it seeds the watermark in
+# $RHQ_HOME/state/verify-after.<repo>.
+#
+# `verify_assignee:` is the ONLY source of the assignee — the harness ships
+# no crew, so an unset key files the verify bead unassigned. That is ready
+# work anyone can claim, rather than work parked on a persona you do not
+# have. Name your QA lane's PID here once it exists.
+# verify_labels: [code, devops]
+# verify_assignee: qa
+
+# ─── plan-utilization guard ──────────────────────────────────────────────────
+# Percent of the subscription plan's rolling rate windows above which `posse
+# dispatch` skips the whole pass, so the fleet leaves headroom for the person
+# at the keyboard. Both unset by default: no guard, and no request to any
+# usage endpoint at all.
+#
+# APPLIES WHEN YOUR PROVIDER ADAPTER IS THE SHIPPED ANTHROPIC ONE. The guard
+# is two halves (ADR 0012 D1/D4): the mechanism — skip a pass above a
+# threshold, fail closed when blind and unattended — is the harness's; the
+# reading is a provider adapter's. The one adapter shipped today reads the
+# Claude Code OAuth token from the macOS keychain and asks Anthropic's usage
+# endpoint. On a provider with no adapter these keys have nothing to read and
+# the guard is cleanly off, one explicit line — set your ceilings with
+# `budget_pass:`/`budget_day:` below instead.
+#
+# If the credential or the endpoint is unreadable the guard fails open (one
+# stderr line): the fleet never halts on a monitoring failure while a human
+# is watching it. Set the thresholds from your own plan's headroom, not from
+# these numbers — they are shapes, not recommendations.
+# plan_guard_5h: 70          # skip the pass above 70% of the 5-hour window
+# plan_guard_7d: 85          # skip the pass above 85% of the 7-day window
+#
+# How long an UNATTENDED pass (`posse dispatch --watch`) may keep running with
+# no successful reading, measured from the last one and seeded at loop start.
+# Past it the pass is skipped, and keeps being skipped until one reading
+# succeeds — which resets the clock and lets that same pass run. Hand-run
+# passes are never affected: their stderr line has a witness.
+#
+# Default 10m. The rationale, not a measurement: a fleet at full fan-out
+# burns the 5h window at a roughly steady rate, so the gap between your
+# threshold and the rate limit itself buys a bounded number of minutes of
+# *blind* dispatch; the default spends about a third of that gap and keeps
+# the rest. Measure your own burn against your own threshold and set this
+# from those two numbers. **0 = never fail closed** — the escape hatch.
+# plan_guard_blind_max: 10m  # 30s, 5m, bare seconds, or 0 to disable
+#
+# How long one reading of those windows is shared before anybody asks the
+# endpoint again. GET /api/oauth/usage is a metering endpoint, not a
+# firehose: the cockpit polling it every 2m all day, plus one request per
+# dispatch pass, plus one per `posse cost`, is how it came back 429 for
+# three hours straight — with the guard blind and the unattended loop
+# failing closed for all of it (rangerhq-tdy8). So all three read one
+# snapshot in $RHQ_HOME/state/plan-usage.json and only refresh it past this
+# age, which caps the whole instance at ~12 requests/hour. The guard never
+# decides on a reading older than half `plan_guard_blind_max:`, whatever
+# this says. Default 5m; **0 = no sharing**, every caller asks for itself.
+# Retry-After is honoured across processes either way, and every request
+# that actually goes out is logged to $RHQ_HOME/state/plan-usage.log — that
+# file is the evidence for whether a 429 storm is your own polling.
+# plan_usage_ttl: 5m         # 30s, 5m, bare seconds, or 0 to disable
+#
+# Overflow (ADR 0010) — instead of skipping the whole pass when the guard
+# trips, run it and send the beads that can move to a SECOND pool at equal
+# posture and tier. Unset = the whole-pass skip above, unchanged. A bead
+# moves only if the target's parity check is clean for its PID (no
+# --allow-degraded here, ever — this is dispatch's own choice), its tier is
+# not `strong` (judged work never moves), and the PID has not said
+# `overflow: false`. A bead whose own runtime is not on the guarded meter is
+# launched ungated, tripped guard or not. Only sessions this pass creates
+# move; a found session and an explicit --runtime keep what they have.
+# The cap is REQUIRED: a runtime here without one is overflow off, one
+# stderr line per pass. It counts beads sent to that runtime in a ROLLING 7
+# days, ledgered append-only in $RHQ_HOME/state/overflow.log — the second
+# pool has no meter to read, so the cap stands in for one. Start in single
+# digits for a calibration week and raise it only on the pool provider's own
+# usage display. A BLIND guard never overflows: no reading, no judgement.
+# plan_guard_overflow: codex      # runtime name; unset = skip the pass
+# plan_guard_overflow_cap: 5      # beads to that runtime per rolling 7 days
+
+# ─── budget caps (ADR 0003 Dial E) ───────────────────────────────────────────
+# API-equivalent dollars, measured by the same method as `posse cost`.
+# `budget_pass:` is the spend of the beads one dispatch pass fires, from the
+# moment it starts; `budget_day:` is the local calendar day's bead spend
+# (interactive sessions are in neither — Dial G keeps them visible and
+# ungated). Both unset by default and then Dial E is dormant: no scan, no
+# arithmetic, exactly today's behaviour.
+#   at  80% of the tightest window a session whose tier resolved to
+#       `standard` by default runs at `fast` instead — never `strong`, never
+#       a tier pinned by --tier or a `tier:<x>` label, never below a PID's
+#       tier_floor:, and never where the wall would not realize every gate
+#       at fast (ADR 0012 D4 §3 admits no --allow-degraded there);
+#   at 100% dispatch stops, one line per bead it did not launch.
+# When plan_guard_* above is configured, the plan's 5h/7d utilization joins
+# the comparison as a third and fourth window — the soft landing before the
+# guard's hard skip.
+#
+# There is no recommended number: set these from a week of your own `posse
+# cost` output, at the point where a pass costs more than you would have
+# spent on the same work by hand. Unlike the plan guard these need no
+# provider adapter beyond the cost one, so they are the ceiling to reach for
+# when your runtime has no usage endpoint.
+# budget_pass: <dollars per pass>
+# budget_day: <dollars per day>
+
+# ─── scheduled dispatch (autostart) ──────────────────────────────────────────
+# The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs
+# `posse dispatch --watch` in a workspace, once per herdr server start. The
+# loop lives where you can see it (cockpit row, `posse peek`, one `x` to kill),
+# it cannot start in a world with no herdr socket, and it dies when herdr
+# does. "Survives reboot" means "comes back when herdr does".
+#
+# DISARMED BY DEFAULT, AND THE DISARM IS A COMMENT. Presence of the
+# `autostart_interval:` key — not its value — is the arm switch, which is why
+# it ships commented out and why disarming is done by commenting it out again
+# rather than by setting some off-value. Nothing else in this file starts a
+# process on its own.
+#
+# Arm it last, and in this order: a dry-run pass, then a hand-run pass, then
+# `autostart_dry_run: true` for a cycle, then live. The plan guard or the
+# budget caps above are what keep an unattended loop off your ceiling; the
+# guard also fails closed here after plan_guard_blind_max: without a reading,
+# because this loop is the one with no witness.
+#
+# Log: $RHQ_HOME/state/dispatch-watch.log, beside dispatch-watch.pid.
+# autostart_interval: 5m       # base pass interval (30s, 5m, or bare seconds) — THE ARM SWITCH
+# autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval)
+# autostart_max_beads: 3       # -n, launch attempts per pass. A cap is ALWAYS present:
+#                              # absent key = 3, and 0 (unbounded) only ever by saying so —
+#                              # an armed loop must never fire the whole ready queue by omission
+# autostart_dry_run: true      # passes route and report, dispatch nothing
+# autostart_session: dispatch  # herdr session name (default: dispatch)
+# autostart_dir: ~             # session cwd (default: $HOME)
+
+# ─── metrics ─────────────────────────────────────────────────────────────────
+# The scorecard vocabulary is derived, not declared: the union of every PID's
+# `metrics:` (a persona naming how it is judged is the source of truth) plus
+# any ids listed here. Use this only for an id no PID claims yet — the linter
+# checks the vocabulary stays one spelling, and `posse scorecard --catalog`
+# says which ids it can actually compute.
+# metric_ids:
+#   - closed-no-reopen
+#   - suite-green-on-close
+
+# ─── emoji ───────────────────────────────────────────────────────────────────
+# Session name → emoji (exact match first, then substring match).
+# A recipe's explicit `emoji:` always wins over this map.
+# No brand emojis exist for the coding agents — these are the nearest glyphs:
+# ✳️ Claude (Anthropic's starburst), 🪢 Codex (OpenAI's knot), ✖️ Grok (the X).
+emoji:
+  claude: ✳️
+  codex: 🪢
+  grok: ✖️
+  shell: 🐚
+  api: 🔌
+  web: 🌐
+  db: 🗄️
+  test: 🧪
+  scratch: 🗒️
+  notes: 📓

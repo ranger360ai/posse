@@ -1,0 +1,1007 @@
+package rhq
+
+// Gates L1 (ADR 0002 §3): the wall for shell-verb denies, outside any
+// runtime. At every persona launch the PID's deny: rules of the shape
+// Bash(<cmd> <prefix>:*) / Bash(<cmd> <prefix>) / Bash(<cmd>) are rendered
+// into RHQ_HOME/state/gates/<persona>/bin/<cmd> — a POSIX sh shim that
+// refuses when argv matches (message, exit 1, a line in refusals.log) and
+// otherwise execs the real binary resolved at render time. Rendered fresh
+// each launch: the PID is the source of truth, nothing hand-edited there
+// survives. The shim dir is prepended ON THE TYPED COMMAND LINE
+// (PATH=<bin>:$PATH <cmd>) rather than in the workspace env, because macOS
+// path_helper reorders PATH when the pane shell starts. On every runtime,
+// claude included: --disallowedTools is the polite refusal in front of the
+// shim's hard one (L0Spellings widens the PID's deny list so it fires on
+// the same argv this shim does — rangerhq-3mc). Known holes are why L3
+// (pre-push hook, rangerhq-8s4) exists for git push: /usr/bin/git,
+// command -p, and a *git alias* — `git p` where the operator's gitconfig
+// says alias.p = push reaches the shim as the token `p`, and resolving it
+// would mean running `git config --get alias.<tok>` per invocation, in
+// POSIX sh, against whatever repo the options point at. L3 catches it in
+// hooked repos; elsewhere it is the seatbelt/container tier's, not this
+// matcher's.
+//
+// A deny naming a subcommand (Bash(git push:*)) is NOT matched at argv[1]:
+// git and its kind accept global options before the subcommand, so
+// `git -C <repo> push` walked straight past a positional matcher and out
+// of every repo without our pre-push hook (rangerhq-2zm). The shim skips
+// the command's leading global options — consuming the values of the ones
+// that take a separate argument, from a per-command table — and matches
+// the first non-option token. Commands with no table are matched
+// best-effort and parity says so rather than claiming the gate.
+//
+// EVERY LAYER HERE MATCHES ON THE TYPED WORD, so a command with two names
+// on PATH is two commands to this matcher. `posse` currently has one:
+// `make install` puts an `rhq` symlink beside it for instance continuity
+// across the rename (rangerhq-tyay), and a rule spelled Bash(posse …) does
+// not fire on `rhq …`. Nothing in the PIDs denies either spelling today —
+// the only PID that names it at all is an allow: — so this is a note, not
+// a hole. It becomes one the moment a PID denies the harness by name:
+// spell such a rule BOTH ways until the operator retires the symlink.
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// shimRule is one deny rule as the shim sees it: the words that must lead
+// argv (after the command), whether the match is exact (no further args)
+// or a prefix (`:*`), an optional qualifier that makes the match NEGATIVE,
+// and the original rule text for the message.
+type shimRule struct {
+	Words  []string
+	Exact  bool
+	Unless string // `... unless <tok>`: refuse unless argv carries <tok> with an operand
+	Rule   string
+}
+
+// Verb reports whether the rule keys on a subcommand — its first word is a
+// plain token, not an option. Those are matched after the command's global
+// options are skipped; rules that lead with an option (Bash(rm -rf /)) are
+// a literal argv prefix and are matched where they are written.
+func (r shimRule) Verb() bool {
+	return len(r.Words) > 0 && !strings.HasPrefix(r.Words[0], "-")
+}
+
+// globalValueOpts lists, per command, the options that may appear BEFORE
+// the subcommand AND take their value as a separate argument — the ones
+// that must be consumed in pairs or the value is mistaken for the
+// subcommand (`git -C <repo> push`). Options taking `--opt=value`, and
+// boolean ones (-p, --no-pager, --bare, --literal-pathspecs…), need no
+// entry: any other leading `-token` is skipped singly.
+//
+// `git --exec-path` is deliberately absent: bare, it prints and exits
+// without consuming the next word, so treating it as a pair would hide a
+// following `push` from the matcher.
+var globalValueOpts = map[string][]string{
+	"git": {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"},
+}
+
+// matcherFor names how the shim matches r for cmd, and reports whether
+// that matcher realizes the rule faithfully — what parity may claim.
+func matcherFor(cmd string, r shimRule) (kind string, faithful bool) {
+	switch {
+	case len(r.Words) == 0:
+		return "whole verb", true
+	case !r.Verb():
+		return "literal argv prefix", true
+	case r.Unless != "" && globalValueOpts[cmd] != nil:
+		return "subcommand, option-aware, negative match", true
+	case globalValueOpts[cmd] != nil:
+		return "subcommand, option-aware", true
+	default:
+		return "subcommand, best-effort", false
+	}
+}
+
+// ParseShimRules groups the shell-verb denies by command. Rules that are
+// not Bash(...) — Edit, Write, WebFetch, mcp__* — are other layers'.
+func ParseShimRules(deny []string) map[string][]shimRule {
+	out := map[string][]shimRule{}
+	for _, r := range deny {
+		if !strings.HasPrefix(r, "Bash(") || !strings.HasSuffix(r, ")") {
+			continue
+		}
+		body := strings.TrimSuffix(strings.TrimPrefix(r, "Bash("), ")")
+		exact := true
+		if strings.HasSuffix(body, ":*") {
+			body = strings.TrimSuffix(body, ":*")
+			exact = false
+		}
+		words := strings.Fields(body)
+		if len(words) == 0 || !ValidName(strings.ReplaceAll(words[0], ".", "-")) {
+			continue // not a plain command name; nothing to shim
+		}
+		cmd := words[0]
+		rule := shimRule{Words: words[1:], Exact: exact, Rule: r}
+		// A NEGATIVE rule: `Bash(git commit unless --)` refuses `git commit`
+		// UNLESS argv carries `--` with at least one word after it. The
+		// operand matters — `git commit --` with an empty pathspec commits
+		// the shared index like the bare form does (measured, rangerhq-lmq9).
+		// It is inherently a prefix match: `git commit -m x` must be caught.
+		if n := len(rule.Words); n >= 3 && rule.Words[n-2] == "unless" {
+			rule.Unless = rule.Words[n-1]
+			rule.Words = rule.Words[:n-2]
+			rule.Exact = false
+		}
+		if len(rule.Words) == 0 {
+			rule.Exact = false // Bash(cmd) / Bash(cmd:*): the whole verb
+		}
+		out[cmd] = append(out[cmd], rule)
+	}
+	return out
+}
+
+// L0Spellings widens a PID's deny list into the rule spellings a
+// claude-dialect matcher (claude --disallowedTools) needs in order to
+// refuse the same argv the L1 shim does. L0 is politeness, never the wall
+// (ADR 0002 §3) — but a polite refusal that fires on `git push` and not on
+// `git -C <repo> push` is the friction the design meant to provide going
+// missing exactly where it is wanted (rangerhq-3mc).
+//
+// Claude matches a Bash rule three ways (verified on claude 2.1.234, and
+// the CLI's own `--disallowedTools` splitter does not split inside the
+// parens, so a rule with spaces reaches the matcher whole):
+//
+//	Bash(git push)    exact    — the whole command, and nothing else
+//	Bash(git push:*)  prefix   — a literal prefix of the command string
+//	Bash(git * push)  wildcard — `*` is `.*` over the whole string,
+//	                             anchored both ends, whitespace collapsed
+//
+// The prefix form is why the option spellings walk past: `git -C x push`
+// does not start with `git push`. So each subcommand rule also gets its
+// option-blind wildcard pair, `<cmd> -* <words>` and `<cmd> -* <words> *`
+// — a leading option, anything, then the words as their own tokens. The
+// pair rather than one `<words>*`: keeping the token boundary explicit is
+// what leaves `git --no-pager log -- push.txt` and `git -c … commit -m
+// "push it"` alone (both verified running, along with the nine option
+// spellings verified refused).
+//
+// A whole-verb rule (Bash(bd)) is the other half of the same miss: claude
+// reads it as *exact*, so `bd show x` walks past a rule the shim reads as
+// the whole verb. It gets `Bash(<cmd>:*)` alongside.
+//
+// Only deny lists go through this. Widening an allow list would grant more
+// than the PID says; allow is friction, and stays the PID's words.
+//
+// And only claude's realizer calls it. Grok speaks the same dialect — the
+// wildcard included — but matches a *shell-parsed* segment, quotes off, so
+// the pair there also refuses `git -C <r> log --author "push me"`; the
+// false positive costs more than the politeness buys, and L1 is the wall
+// on grok either way (rangerhq-625).
+func L0Spellings(deny []string) []string {
+	out := make([]string, 0, len(deny))
+	seen := map[string]bool{}
+	add := func(rule string) {
+		if !seen[rule] {
+			seen[rule] = true
+			out = append(out, rule)
+		}
+	}
+	for _, rule := range deny {
+		cmd := shimCommand(rule)
+		if cmd == "" {
+			add(rule) // Edit, Write, mcp__*, or not a plain command name
+			continue
+		}
+		r := ParseShimRules([]string{rule})[cmd][0]
+		// A negative rule (`Bash(git commit unless --)`) has no spelling in
+		// claude's dialect at all — it has no negation — and the rule text
+		// itself would reach the matcher as a literal, matching nothing. What
+		// CAN be said is the shapes that are unsafe whatever follows: the bare
+		// form and the bare form behind global options, both EXACT so they
+		// cannot swallow a commit that does carry the qualifier. Anything
+		// longer might be the safe form, and refusing it at L0 would refuse
+		// the very form the wall is pointing at.
+		if r.Unless != "" {
+			words := strings.Join(r.Words, " ")
+			add("Bash(" + cmd + " " + words + ")")
+			add("Bash(" + cmd + " -* " + words + ")")
+			continue
+		}
+		add(rule)
+		switch {
+		case len(r.Words) == 0:
+			add("Bash(" + cmd + ":*)")
+		case r.Verb():
+			base := cmd + " -* " + strings.Join(r.Words, " ")
+			add("Bash(" + base + ")")
+			if !r.Exact {
+				add("Bash(" + base + " *)")
+			}
+		}
+		// A rule leading with an option (Bash(rm -rf /)) is a literal argv
+		// prefix in both matchers — it is already spelled where it means.
+	}
+	return out
+}
+
+// GatesDir is RHQ_HOME/state/gates/<persona>.
+func (a *App) GatesDir(persona string) string {
+	return filepath.Join(a.StateDir, "gates", persona)
+}
+
+// RenderGates writes the persona's shims and gate shell fresh and returns
+// the gates dir, its bin dir and the gate shell's path. Existing shims are
+// removed first so a rule dropped from the PID stops being enforced.
+// refusals.log and shell.log are kept across renders.
+func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shell string, err error) {
+	gatesDir = a.GatesDir(persona)
+	binDir = filepath.Join(gatesDir, "bin")
+	if err := os.RemoveAll(binDir); err != nil {
+		return "", "", "", err
+	}
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return "", "", "", err
+	}
+	rules := ParseShimRules(deny)
+	cmds := make([]string, 0, len(rules))
+	for c := range rules {
+		cmds = append(cmds, c)
+	}
+	sort.Strings(cmds)
+	log := filepath.Join(gatesDir, "refusals.log")
+	for _, c := range cmds {
+		real := resolveOutside(c, binDir)
+		script := renderShim(persona, c, real, log, rules[c])
+		if err := os.WriteFile(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
+			return "", "", "", err
+		}
+	}
+	shell, err = renderGateShell(persona, gatesDir, binDir)
+	if err != nil {
+		return "", "", "", err
+	}
+	return gatesDir, binDir, shell, nil
+}
+
+// PathOutsideGates is $PATH with binDir and every other posse gates bin dir
+// dropped — the search path for the real binaries the shims stand in front
+// of. Also how a process gets out from behind its own session's wall: the
+// test suite runs inside a persona pane, and its git-push tests were being
+// answered by that session's own L1 shim instead of by the code under test
+// (rangerhq-8sd). Pass "" when there is no shim dir of one's own to drop.
+func PathOutsideGates(binDir string) string {
+	var keep []string
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p == "" || p == binDir || strings.Contains(p, string(filepath.Separator)+"gates"+string(filepath.Separator)) {
+			continue
+		}
+		keep = append(keep, p)
+	}
+	return strings.Join(keep, string(os.PathListSeparator))
+}
+
+// resolveOutside finds cmd on PATH ignoring binDir (and any other posse
+// gates bin) — the real binary the shim execs. "" when not found: the shim
+// then searches PATH itself at run time, still skipping its own dir.
+func resolveOutside(cmd, binDir string) string {
+	old := os.Getenv("PATH")
+	os.Setenv("PATH", PathOutsideGates(binDir))
+	defer os.Setenv("PATH", old)
+	real, err := exec.LookPath(cmd)
+	if err != nil {
+		return ""
+	}
+	if abs, err := filepath.Abs(real); err == nil {
+		return abs
+	}
+	return real
+}
+
+func shQuote(s string) string { return shellQuote(s) }
+
+// ruleHint is the second line of the refusal for a NEGATIVE rule: the form
+// that is not refused, spelled out of the rule itself. Derived rather than
+// written per rule so the grammar stays general — the git-specific advice
+// ("-F -", "not '.'") belongs to the git-specific L3 hook, not here.
+func ruleHint(cmd string, r shimRule) string {
+	if r.Unless == "" {
+		return ""
+	}
+	words := strings.Join(r.Words, " ")
+	if words != "" {
+		words += " "
+	}
+	return fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
+}
+
+// setVars renders the assignment of the refusal's two variables for r.
+func setVars(cmd string, r shimRule) string {
+	return fmt.Sprintf("RHQ_GATE_RULE=%s; RHQ_GATE_HINT=%s", shQuote(r.Rule), shQuote(ruleHint(cmd, r)))
+}
+
+// ruleCond renders the test for one rule against the positional params in
+// scope (the raw argv, or what is left after the globals are skipped).
+func ruleCond(r shimRule) string {
+	conds := []string{}
+	for i, w := range r.Words {
+		conds = append(conds, fmt.Sprintf("[ \"$%d\" = %s ]", i+1, shQuote(w)))
+	}
+	if r.Exact {
+		conds = append(conds, fmt.Sprintf("[ \"$#\" -eq %d ]", len(r.Words)))
+	}
+	if r.Unless != "" {
+		conds = append(conds, fmt.Sprintf("! posse_qualified %s \"$@\"", shQuote(r.Unless)))
+	}
+	if len(conds) == 0 {
+		return "true"
+	}
+	return strings.Join(conds, " && ")
+}
+
+// renderShim writes the POSIX sh shim for one command.
+func renderShim(persona, cmd, real, log string, rules []shimRule) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n", persona)
+	fmt.Fprintf(&b, "RHQ_GATE_LOG=%s\n", shQuote(log))
+	fmt.Fprintf(&b, "posse_refuse() {\n  echo \"refused by posse gate: %s $* (deny: $RHQ_GATE_RULE)\" >&2\n", cmd)
+	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && echo \"$RHQ_GATE_HINT\" >&2\n")
+	fmt.Fprintf(&b, "  echo \"$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ) %s $* (deny: $RHQ_GATE_RULE)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", cmd)
+	// A negative rule needs one helper: does argv carry the qualifier WITH
+	// an operand? The bare token is not enough — `git commit --` with an
+	// empty pathspec commits the shared index exactly like the bare form
+	// (measured, rangerhq-lmq9).
+	for _, r := range rules {
+		if r.Unless == "" {
+			continue
+		}
+		b.WriteString("posse_qualified() {\n  posse_q=$1; shift\n  while [ $# -gt 0 ]; do\n    if [ \"$1\" = \"$posse_q\" ]; then\n      [ $# -gt 1 ] && return 0\n      return 1\n    fi\n    shift\n  done\n  return 1\n}\n")
+		break
+	}
+	// Rules that lead with an option are a literal argv prefix: matched
+	// where they are written. Rules that name a subcommand are matched
+	// after the command's global options are skipped (rangerhq-2zm).
+	var verbs []shimRule
+	for _, r := range rules {
+		if r.Verb() {
+			verbs = append(verbs, r)
+			continue
+		}
+		fmt.Fprintf(&b, "if %s; then %s; posse_refuse \"$@\"; fi\n", ruleCond(r), setVars(cmd, r))
+	}
+	if len(verbs) > 0 {
+		fmt.Fprintf(&b, "# Skip %s's leading global options, then match the first non-option\n", cmd)
+		b.WriteString("# token: 'git -C <repo> push' is still a push (rangerhq-2zm).\n")
+		b.WriteString("posse_verb_match() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+		if pairs := globalValueOpts[cmd]; len(pairs) > 0 {
+			quoted := make([]string, 0, len(pairs))
+			for _, o := range pairs {
+				quoted = append(quoted, shQuote(o))
+			}
+			fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || break\n        shift 2 ;;\n", strings.Join(quoted, "|"))
+		}
+		b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
+		for _, r := range verbs {
+			fmt.Fprintf(&b, "  if %s; then %s; return 0; fi\n", ruleCond(r), setVars(cmd, r))
+		}
+		b.WriteString("  return 0\n}\n")
+		// Called directly, not through $(...): the matcher sets the rule and
+		// its hint as globals, and a subshell would drop them. `shift` inside
+		// a function touches only that function's positional params.
+		b.WriteString("posse_verb_match \"$@\"\n")
+		b.WriteString("if [ -n \"$RHQ_GATE_RULE\" ]; then posse_refuse \"$@\"; fi\n")
+	}
+	if real != "" {
+		fmt.Fprintf(&b, "exec %s \"$@\"\n", shQuote(real))
+	} else {
+		// Not on PATH at render time: search at run time, skipping our own dir.
+		fmt.Fprintf(&b, "self=$(cd \"$(dirname \"$0\")\" && pwd)\nIFS=:\nfor d in $PATH; do\n  [ \"$d\" = \"$self\" ] && continue\n  if [ -x \"$d/%s\" ]; then unset IFS; exec \"$d/%s\" \"$@\"; fi\ndone\necho \"posse gate: %s: real binary not found\" >&2\nexit 127\n", cmd, cmd, cmd)
+	}
+	return b.String()
+}
+
+// ─── The gate shell (ADR 0009) ───────────────────────────────────────────────
+
+// A runtime that re-execs a *login* shell per command (grok 1.0.5) hands
+// PATH to macOS path_helper, which demotes the gates dir below /usr/bin —
+// the typed prefix of ADR 0002 §3 is undone before the command runs and
+// the shim never fires (rangerhq-vjl). So the shell itself becomes ours:
+// next to the shims we render RHQ_HOME/state/gates/<persona>/shell/<base>,
+// a POSIX sh wrapper that guards PATH inside the -c string (and inside a
+// runtime's user-command slot, which runs after the snapshot replay) and
+// then execs the real shell. The typed line points SHELL/GROK_SHELL at it
+// on every runtime — uniform, so a future runtime that starts snapshotting
+// a login shell inherits the fix instead of a silent regression.
+//
+// The guard tests PRECEDENCE, not presence. A presence test reads as the
+// idempotent spelling, and ADR 0009 §1 wrote it that way, but it is a
+// no-op exactly when it is needed: the typed line already puts the gates
+// dir on PATH, so path_helper *demotes* it rather than dropping it, and
+// `command -v git` still answered /usr/bin/git in a live grok session with
+// the wrapper installed (rangerhq-e43). Re-prepending when the dir is not
+// already first costs at most a duplicate entry, which PATH lookup ignores.
+//
+// A mis-parse is a LOUD failure (the persona's shell breaks), never a
+// silent bypass. Runtime.NoGateShell (gate_shell: false) is the exit hatch
+// for a runtime that chokes on a wrapper; parity then falls back to
+// unrealized for Bash(...) denies there.
+
+// gateShellScript is docs/adr/0009-gate-shell.probe.sh — the shape verified
+// on grok 1.0.5, claude and codex 0.147 — with three placeholders rendered
+// per persona. Keep it in step with the probe rather than re-deriving it.
+const gateShellScript = `#!/bin/sh
+# posse gate shell for __PERSONA__ — rendered at launch from the PID; do not edit (ADR 0009).
+# Stands in for the login shell a runtime re-execs.
+G=__GATES_BIN__   # rendered: RHQ_HOME/state/gates/<persona>/bin
+REAL=__REAL__
+LOG=__GATES_DIR__/shell.log
+PRE="case \"\$PATH:\" in \"$G\":*) ;; *) PATH=\"$G:\$PATH\";; esac; export PATH; "
+# The guard asserts the gates dir is FIRST, not merely present: the typed line
+# already puts it on PATH, so path_helper (via /etc/zprofile, which runs before
+# this -c string) demotes it below /usr/bin instead of dropping it (rangerhq-e43).
+# Walk argv like the shell does: leading -x/+x words are options (-o/-O/+o/+O
+# and --rcfile/--init-file consume a value; '--' ends them). If a -c was
+# seen, the first operand is the command string: prefix it. If the operand
+# after that (argv0) is '--', the next one is grok's user-command slot: prefix
+# it too, so the guard runs after the snapshot replay. Everything else passes.
+n=$#; i=0; st=opts; cflag=0
+while [ $i -lt $n ]; do
+  a=$1; shift; i=$((i+1))
+  case $st in
+    opts)
+      case "$a" in
+        --) st=str ;;
+        -o|+o|-O|+O|--rcfile|--init-file) st=optval ;;
+        -[!-]*) case "${a#-}" in *[!a-zA-Z]*) ;; *c*) cflag=1;; esac ;;
+        --*|+*) ;;
+        *) if [ $cflag -eq 1 ]; then a="$PRE$a"; st=argv0; else st=done; fi ;;
+      esac ;;
+    optval) st=opts ;;
+    str)  if [ $cflag -eq 1 ]; then a="$PRE$a"; st=argv0; else st=done; fi ;;
+    argv0) if [ "$a" = "--" ]; then st=usercmd; else st=done; fi ;;
+    usercmd) a="case \"\$PATH:\" in \"$G\":*) ;; *) echo \"\$(date -u +%Y-%m-%dT%H:%M:%SZ) gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '$LOG' 2>/dev/null;; esac; $PRE$a"; st=done ;;
+    done) ;;
+  esac
+  set -- "$@" "$a"
+done
+exec "$REAL" "$@"
+`
+
+// realShell resolves the shell the gate wrapper execs and the basename it
+// must be installed under: $SHELL when it is a bash or zsh that is really
+// there, else the first of zsh/bash on PATH, else /bin/sh. The basename
+// matters — a runtime that picks its snapshot dialect from the shell's
+// name (grok does) must still pick right through the wrapper.
+//
+// The search is not decoration. At `cage: container` this same renderer
+// runs INSIDE the image (rangerhq-6so), where $SHELL is unset and
+// /bin/zsh does not exist — and a wrapper whose REAL cannot be exec'd is a
+// dead gate shell, which is a shell verb that is not refused. Resolution
+// happens where the binaries are, on both sides of the boundary; the host
+// keeps its old answer because $SHELL is set there and /bin/zsh exists.
+func realShell(binDir string) (real, base string) {
+	if s := os.Getenv("SHELL"); s != "" {
+		switch b := filepath.Base(s); b {
+		case "bash", "zsh":
+			if st, err := os.Stat(s); err == nil && !st.IsDir() {
+				return s, b
+			}
+		}
+	}
+	for _, b := range []string{"zsh", "bash"} {
+		if p := resolveOutside(b, binDir); p != "" {
+			return p, b
+		}
+	}
+	// Every image has /bin/sh, and the wrapper script is POSIX sh — so this
+	// is a working gate shell, not a placeholder. It costs the dialect a
+	// runtime might infer from the name, which is why it is last.
+	return "/bin/sh", "sh"
+}
+
+// renderGateShell writes gates/<persona>/shell/<basename> and returns its
+// path. The dir is cleared first, so a wrapper left by a different $SHELL
+// does not linger.
+func renderGateShell(persona, gatesDir, binDir string) (string, error) {
+	dir := filepath.Join(gatesDir, "shell")
+	if err := os.RemoveAll(dir); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	real, base := realShell(binDir)
+	script := strings.NewReplacer(
+		"__PERSONA__", persona,
+		"__GATES_BIN__", shQuote(binDir),
+		"__REAL__", shQuote(real),
+		"__GATES_DIR__", shQuote(gatesDir),
+	).Replace(gateShellScript)
+	p := filepath.Join(dir, base)
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// GatePrefix is what goes in front of the typed persona command so the
+// shims win the PATH race: PATH=<bin>:$PATH, plus SHELL/GROK_SHELL pointing
+// at the gate shell (ADR 0009 §2) so a runtime that re-execs a login shell
+// re-execs ours. shell == "" (Runtime.NoGateShell) drops the two vars.
+func GatePrefix(binDir, shell string) string {
+	p := "PATH=" + shQuote(binDir) + `:"$PATH" `
+	if shell != "" {
+		p += "SHELL=" + shQuote(shell) + " GROK_SHELL=" + shQuote(shell) + " "
+	}
+	return p
+}
+
+// WrapWithGates renders the persona's gates and returns the command with
+// the gate prefix typed in front, plus the gates dir for RHQ_GATES_DIR and
+// the gate shell's path. The wrapper is rendered whatever the runtime; rt
+// only decides whether the typed line points SHELL/GROK_SHELL at it
+// (Runtime.NoGateShell drops them — ADR 0009 §2). rt may be nil.
+func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd string) (wrapped, gatesDir, shell string, err error) {
+	gatesDir, binDir, shell, err := a.RenderGates(persona, deny)
+	if err != nil {
+		return "", "", "", err
+	}
+	typed := shell
+	if rt != nil && rt.NoGateShell {
+		typed = ""
+	}
+	return GatePrefix(binDir, typed) + cmd, gatesDir, shell, nil
+}
+
+// ─── L3: git pre-push hook ───────────────────────────────────────────────────
+
+// prePushMarker identifies our hook so install replaces its own and never
+// a foreign one.
+const prePushMarker = "# posse-gate"
+
+// legacyPrePushMarker / legacySharedIndexMarker are the pre-rename
+// spellings (rangerhq-tyay). Ownership is a question about a file written
+// by an EARLIER binary, so it cannot be asked in the new vocabulary alone:
+// a repo hooked before the rename carries `# rhq-gate`, and matching only
+// the new marker would make `posse gates install-hooks` refuse it as a
+// stranger's hook and hookInstalled report the L3 wall missing on a repo
+// that has it. Recognized, therefore replaced in place; the hook written
+// back always wears the new marker, so this is a one-way door per repo.
+const (
+	legacyPrePushMarker     = "# rhq-gate"
+	legacySharedIndexMarker = "# rhq-gate shared-index"
+)
+
+// ownsHook reports whether body is one of ours — this hook's marker in
+// either spelling. Matched longest-first is unnecessary: each slot is
+// asked only about its own marker pair, and no hook carries the other's.
+func ownsHook(body, marker, legacy string) bool {
+	return strings.Contains(body, marker) || strings.Contains(body, legacy)
+}
+
+// PrePushHook is the L3 wall for the one verb that is a hard risk line:
+// a pre-push hook that refuses when RHQ_TOOLS_DENY (newline-separated,
+// exported into every persona session by CreateSession) carries a rule
+// matching git push — Bash(git push:*), Bash(git push --force:*),
+// Bash(git:*), Bash(git). Catches /usr/bin/git push, subprocess pushes,
+// and anything that dodged the L1 shim but kept the env. It cannot see
+// through `env -i` (nothing in-process can); that is the container tier's.
+const PrePushHook = `#!/bin/sh
+` + prePushMarker + ` — installed by posse gates install-hooks; refuses git push in persona
+# sessions whose PID denies it (RHQ_TOOLS_DENY). Foreign hooks are never
+# overwritten; remove this file to uninstall. ADR 0002 §3 (rangerhq-8s4).
+[ -n "$RHQ_TOOLS_DENY" ] || exit 0
+# Split the rules with a for-loop over IFS=newline, NOT with
+# 'printf | while read': the right side of a pipeline is a subshell, so the
+# refusal's 'exit 1' would exit only the subshell and reach git solely by
+# being the script's last statement. One line appended after it printed the
+# refusal and exited 0 — git pushed (rangerhq-kk6e). 'set -f' keeps the ':*'
+# in a rule from globbing; every path out of here exits explicitly, so
+# appended text is inert whatever the verdict.
+set -f
+IFS='
+'
+for rule in $RHQ_TOOLS_DENY; do
+  body=${rule#Bash(}
+  [ "$body" = "$rule" ] && continue
+  body=${body%)}
+  body=${body%:\*}
+  case "$body" in
+    git|"git push"|"git push "*)
+      echo "refused by posse gate: git push (deny: $rule) — pre-push hook, session ${RHQ_PERSONA:-?}" >&2
+      if [ -n "$RHQ_GATES_DIR" ]; then
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) git push [pre-push hook] (deny: $rule)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+      fi
+      exit 1
+      ;;
+  esac
+done
+exit 0
+`
+
+// hooksDir is the repo's common hooks dir — common, so a worktree gets the
+// hooks of the repo it belongs to rather than none.
+func hooksDir(dir string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		return "", Die("%s is not a git repository", dir)
+	}
+	gitDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	return filepath.Join(gitDir, "hooks"), nil
+}
+
+// chainDispatcher renders the only chaining form that holds when the slot
+// is already taken by a foreign hook: each hook in its own file, ours run
+// as its OWN PROCESS with its exit status checked. Never "append ours to
+// theirs" — our refusal exits, so nothing after it would run anyway, and
+// the appended form used to discard the refusal outright while still
+// printing it (rangerhq-kk6e). Same words as INSTALL.md §9, which walks
+// both slots at once; this names the one slot that refused.
+func chainDispatcher(dir, hooks, slot string) string {
+	// git feeds pre-push the ref list on stdin. Ours does not read it;
+	// keeping ours off it leaves it intact for the hook we exec into.
+	stdin, probe := "", `t=$(mktemp); RHQ_PERSONA=probe ./`+slot+` "$t"; echo $?; rm -f "$t"`
+	if slot == "pre-push" {
+		stdin = " </dev/null"
+		probe = `RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
+  sh -c 'printf "refs/heads/main a refs/heads/main b\n" | ./` + slot + ` origin x'; echo $?`
+	}
+	// Flush-left and cd'd into the hooks dir on purpose: this is meant to
+	// be pasted, and an indented heredoc body would write a shebang with
+	// leading spaces and never reach its terminator.
+	return fmt.Sprintf(`Chain it — each hook in its own file, ours dispatched first and its exit
+status checked (INSTALL.md §9). Appending to ours is not a chain: our
+refusal is an exit, so nothing pasted after it runs.
+
+cd %[1]s
+mv %[2]s theirs-%[2]s
+posse gates install-hooks %[3]s
+mv %[2]s posse-%[2]s
+cat > %[2]s <<'EOF'
+#!/bin/sh
+d=$(dirname "$0")
+"$d/posse-%[2]s" "$@"%[4]s || exit $?
+exec "$d/theirs-%[2]s" "$@"
+EOF
+chmod +x %[2]s
+
+Then verify by running the slot, not by reading it — from that same dir:
+
+%[5]s
+
+It must print "refused by posse gate" and exit 1. A slot that prints the
+refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), stdin, probe)
+}
+
+// installHook writes one of our hooks into the repo at dir and returns its
+// path. Refuses to overwrite a hook that is not ours; replaces ours in
+// place (ADR 0002 §3: foreign hooks are never overwritten).
+func installHook(dir, slot, marker, legacy, script string) (string, error) {
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		return "", err
+	}
+	p := filepath.Join(hooks, slot)
+	if b, err := os.ReadFile(p); err == nil && !ownsHook(string(b), marker, legacy) {
+		return "", Die("%s exists and is not a posse hook — not overwriting.\n%s", AbbrevHome(p), chainDispatcher(dir, hooks, slot))
+	}
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// hookInstalled reports whether the repo at dir carries our hook in slot.
+func hookInstalled(dir, slot, marker, legacy string) bool {
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		return false
+	}
+	b, err := os.ReadFile(filepath.Join(hooks, slot))
+	return err == nil && ownsHook(string(b), marker, legacy)
+}
+
+// InstallPrePushHook writes the hook into the repo at dir (its common git
+// dir, so worktrees share it). Returns the hook path. Refuses to overwrite
+// a hook that is not ours; replaces ours in place.
+func InstallPrePushHook(dir string) (string, error) {
+	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook)
+}
+
+// PrePushHookInstalled reports whether the repo at dir has our hook.
+func PrePushHookInstalled(dir string) bool {
+	return hookInstalled(dir, "pre-push", prePushMarker, legacyPrePushMarker)
+}
+
+// deniesGitPush reports whether the PID's deny list carries a rule the
+// pre-push hook would act on.
+func deniesGitPush(deny []string) bool {
+	for cmd, rules := range ParseShimRules(deny) {
+		if cmd != "git" {
+			continue
+		}
+		for _, r := range rules {
+			if len(r.Words) == 0 || r.Words[0] == "push" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────
+
+// sharedIndexMarker identifies our prepare-commit-msg hook. The slot now
+// carries two walls — the beads visibility guard and the shared-index guard
+// — and the marker still says `shared-index` ON PURPOSE: ownership is a
+// question about a file an EARLIER binary wrote, and a repo hooked before
+// this bead carries this exact string. Renaming the value would convert
+// every already-hooked repo into a repo we refuse to touch, which is the
+// rangerhq-tyay lesson learned twice. The name of the const may move; the
+// string may not.
+const sharedIndexMarker = "# posse-gate shared-index"
+
+// sharedIndexBody is the second half of the prepare-commit-msg hook (the
+// beads visibility guard above it is the first): the L3 wall for the
+// failure rangerhq-nyqj measured: every persona the loop dispatches gets the SAME checkout, so
+// the repo is one working tree and one .git/index shared by the crew, and
+// an unqualified commit takes whatever anyone else has staged. It has
+// happened: a routine `bd sync:` commit that carried eight files another
+// persona had staged for a different bead.
+//
+// The discriminator is GIT_INDEX_FILE, and the obvious test is wrong
+// (measured against all four forms, twice, independently):
+//
+//	git add … && git commit    .git/index                  sweeps
+//	git commit -- <paths>      .git/next-index-<pid>.lock   safe
+//	git commit -a              .git/index.lock              SWEEPS, worst
+//	git commit --  (no paths)  .git/index                  sweeps
+//
+// So the name has to be `next-index-*` specifically: "is it a temporary
+// index" waves `-a` through, and `-a` takes every persona's modified
+// tracked file. The empty pathspec is why the L1 grammar's `unless`
+// requires an operand too.
+//
+// AND THE NAME IS NOT ENOUGH — rangerhq-cqq1. GIT_INDEX_FILE is the
+// caller's environment variable, so a glob on its name is a wall one
+// spelling wide: `GIT_INDEX_FILE=$(mktemp -d)/next-index-mine` was refused
+// as `…/index` and waved through as `…/next-index-mine`, same recipe,
+// landing the commit and leaving the shared index stale — rangerhq-8rtf end
+// to end, under a persona. The exemption now asks what git actually does,
+// measured (git 2.39.3, main repo and linked worktree): the temp index is
+// an absolute path, it lives in `git rev-parse --git-dir` (the PER-WORKTREE
+// dir, not the common one — verified in a linked worktree), and it is named
+// for git's own pid. So: basename `next-index-<digits>[.lock]`, and its
+// directory, resolved with `pwd -P`, equal to the resolved git dir.
+//
+// NOT the pid itself, tempting as it is — measured, the hook's $PPID is
+// git's pid and matches the filename exactly, which would close the class
+// outright. It cannot be used: under the hook chain INSTALL.md documents
+// (a dispatcher that runs `"$d/posse-prepare-commit-msg" "$@"`) the gate is
+// the dispatcher's child, so its $PPID is the wrapper, not git — verified.
+// A pid check would refuse the crew's only safe route in every chained
+// install. Location + name shape is the tight end of what is safe here.
+//
+// The residual, stated plainly: `GIT_INDEX_FILE=$GIT_DIR/next-index-1` is
+// still exempt, and still leaves the shared index stale. That is a private
+// index deliberately placed inside the repo's own git dir, not a temp file
+// that happens to be spelled right — one is a decision, the other was an
+// accident waiting on a glob.
+//
+// THE SLOT IS prepare-commit-msg, NOT pre-commit, for two measured reasons.
+// pre-commit is bd's flush hook — worktree-aware, reinstalled by bd — and
+// ADR 0002 §3 says a foreign hook is never overwritten; a wall a third-party
+// tool silently replaces on its next install is not a wall. And
+// `git commit --no-verify` skips pre-commit while prepare-commit-msg still
+// runs, so this slot is the stronger of the two. Both verified.
+//
+// Keyed on RHQ_PERSONA, like the pre-push gate keys on RHQ_TOOLS_DENY: the
+// operator's own commits in the same tree are untouched.
+//
+// Commits git drives itself (merge, cherry-pick, revert, rebase, squash)
+// are let through: git refuses a pathspec during those outright ("cannot do
+// a partial commit during a merge"), so refusing them would leave no way
+// through rather than a safer one. `git commit --amend` is NOT one of them
+// — it takes a pathspec and sweeps without one, so it is refused.
+const sharedIndexBody = `
+# ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
+[ -n "$RHQ_PERSONA" ] || exit 0
+# Commits git drives itself cannot take a pathspec at all.
+case "$2" in
+  merge|squash) exit 0 ;;
+esac
+posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+for posse_f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+  if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
+done
+# Only a genuine path-limited commit gets a next-index-<pid> temporary index;
+# 'git commit -a' gets .git/index.lock, which is a temporary index too.
+# The NAME does not settle it: GIT_INDEX_FILE is the caller's to spell, and
+# <tmpdir>/next-index-mine walked straight through the earlier glob
+# (rangerhq-cqq1). git makes its own inside $GIT_DIR and names it after its
+# own pid, so require the LOCATION and the pid shape as well — an exemption
+# that is a fact about git rather than about a string.
+posse_idx="${GIT_INDEX_FILE:-}"
+posse_base="${posse_idx##*/}"
+posse_dir="${posse_idx%/*}"
+if [ "$posse_dir" = "$posse_idx" ]; then posse_dir="."; fi
+posse_idxdir=$(CDPATH= cd -P -- "$posse_dir" 2>/dev/null && pwd -P)
+posse_realdir=$(CDPATH= cd -P -- "$posse_gitdir" 2>/dev/null && pwd -P)
+posse_pid="${posse_base#next-index-}"
+posse_pid="${posse_pid%.lock}"
+case "$posse_base" in
+  next-index-*)
+    case "$posse_pid" in
+      ''|*[!0-9]*) ;;
+      *)
+        if [ -n "$posse_idxdir" ] && [ -n "$posse_realdir" ] &&
+           [ "$posse_idxdir" = "$posse_realdir" ]; then exit 0; fi
+        ;;
+    esac
+    ;;
+esac
+# Name the form. git's own index and its two lock files live in $GIT_DIR;
+# anything else GIT_INDEX_FILE points at is a hand-rolled private index,
+# and saying so beats calling it "an unqualified git commit".
+posse_form="an unqualified git commit"
+if [ -n "$posse_idx" ] && [ -n "$posse_realdir" ]; then
+  if [ "$posse_idxdir" = "$posse_realdir" ]; then
+    case "$posse_base" in
+      index) ;;
+      index.lock) posse_form="git commit -a" ;;
+      *) posse_form="a commit from a private GIT_INDEX_FILE" ;;
+    esac
+  else
+    posse_form="a commit from a private GIT_INDEX_FILE"
+  fi
+fi
+{
+  echo "refused by posse gate: $posse_form — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+  echo "This working tree's .git/index is shared by every persona (rangerhq-nyqj):"
+  echo "an unqualified commit takes whatever anyone else has staged, and -a takes"
+  echo "every persona's modified tracked file."
+  echo "  safe form: git commit -F - -- <paths>"
+  echo "  name your own paths, not '.' — a pathspec of '.' sweeps the tree too."
+  if [ "$posse_form" = "a commit from a private GIT_INDEX_FILE" ]; then
+    echo "A private index also leaves the shared .git/index holding the PRE-FIX blobs"
+    echo "for every path you just committed, so the next unqualified commit reverts"
+    echo "you silently (rangerhq-8rtf). Naming it next-index-* does not change that."
+  fi
+} >&2
+if [ -n "$RHQ_GATES_DIR" ]; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $posse_form [prepare-commit-msg hook] (shared index)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+fi
+exit 1
+`
+
+// commitGuardHead is the hook's shebang and its marker line — the two lines
+// that decide ownership, kept away from either wall's body.
+const commitGuardHead = `#!/bin/sh
+` + sharedIndexMarker + ` — installed by posse gates install-hooks. Two walls in
+# one slot: the beads visibility guard (rangerhq-hrz) and the shared-index
+# commit guard (rangerhq-lmq9). Foreign hooks are never overwritten; remove
+# this file to uninstall. ADR 0002 §3.
+`
+
+// visibilityGuardBody renders the first wall against a repo whose beads db
+// carries the given visibility. THE VERDICT IS STAMPED AT INSTALL TIME
+// rather than read at commit time, and that is a deliberate trade: the hook
+// is POSIX sh and the config is flat-YAML, so a commit-time read would mean
+// a second parser in a second language — the one thing NOTES.md says this
+// repo stopped doing. It is stamped fresh by `posse gates install-hooks`
+// AND by every persona launch into the repo (herdrback.go), so a mark the
+// operator changes is live on the next dispatch; a repo nobody launches
+// into keeps the mark it was hooked with, and the hook says which one it is.
+//
+// The block always renders, gated on the stamp, so the hook FILE is the
+// record of what it was stamped with — a human reads it and knows.
+func visibilityGuardBody(visibility string) string {
+	var checks strings.Builder
+	for _, p := range OpsPatterns {
+		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
+	}
+	return `
+# ─── the beads visibility guard (rangerhq-hrz) ────────────────────────────
+# A bead belongs in a public repo's db only when any deployer of this
+# software could have written it; everything describing ONE deployment goes
+# in that instance's private db (NOTES.md, "Privacy model"). This is a
+# pattern lint, not a boundary — same class as the allowlist. The boundary
+# is the routing rule plus repo visibility; the lint exists so a mis-routed
+# bead is a refusal at commit time instead of a public artifact.
+#
+# The slot is prepare-commit-msg and not pre-commit for the reason the wall
+# below documents: pre-commit is bd's own flush hook, reinstalled silently
+# by bd, and a wall a third-party tool replaces on its next install is not
+# a wall. This one also survives --no-verify.
+posse_beads_visibility=` + shQuote(visibility) + `
+if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
+  # Compare against HEAD, or against the empty tree in a repo with no
+  # commit yet — a first commit is exactly when a db arrives whole.
+  posse_base=$(git hash-object -t tree /dev/null 2>/dev/null)
+  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_base=HEAD; fi
+  # ADDED lines only, and every .beads jsonl: the db and the deletion ledger
+  # beside it (rangerhq-fuom), which holds whole bead records and inherits
+  # the repo's visibility exactly as the db does. GIT_INDEX_FILE is
+  # inherited, so this reads the same index the commit will.
+  posse_added=$(git diff --cached -U0 "$posse_base" -- '.beads/*.jsonl' 2>/dev/null |
+    grep '^+' | grep -v '^+++')
+  if [ -n "$posse_added" ]; then
+    posse_bad=''
+    # A function, not a 'while read' over a pipeline: the right side of a
+    # pipeline is a subshell and the assignment would not survive it — the
+    # rangerhq-kk6e lesson, which cost a push.
+    posse_check() {
+      posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
+      [ -n "$posse_m" ] || return 0
+      posse_bad="$posse_bad  $1: $2
+    matched: $posse_m
+"
+    }
+` + checks.String() + `    if [ -n "$posse_bad" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: visibility guard OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class content is going into a public repo's beads db" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) beads visibility guard OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: ops-class content in a public repo's beads db — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(VisibilityRule) + `
+          echo "matched in the staged .beads/*.jsonl additions:"
+          printf '%s' "$posse_bad"
+          echo ` + shQuote(VisibilityWayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) beads visibility guard [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+  fi
+fi
+`
+}
+
+// CommitGuardHook is the whole prepare-commit-msg hook for a repo whose
+// beads db carries the given visibility: the visibility guard first (it
+// applies to the operator's commits too — a mis-routed bead is a public
+// artifact whoever typed it), then the shared-index guard, which keys on
+// RHQ_PERSONA because the shared tree is a fleet problem, not the
+// operator's.
+func CommitGuardHook(visibility string) string {
+	return commitGuardHead + visibilityGuardBody(visibility) + sharedIndexBody
+}
+
+// InstallCommitGuardHook writes the guard into the repo at dir (its common
+// git dir, so worktrees share it), stamped with what config says about that
+// repo's beads db. Refuses to overwrite a foreign prepare-commit-msg;
+// replaces ours in place. Returns the hook path and the visibility it
+// stamped, so the caller can say which wall the operator just got.
+func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
+	visibility, source = a.BeadsVisibility(dir)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility))
+	return path, visibility, source, err
+}
+
+// CommitGuardHookInstalled reports whether the repo at dir has it.
+func CommitGuardHookInstalled(dir string) bool {
+	return hookInstalled(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker)
+}
+
+// deniesUnqualifiedCommit reports whether the PID's deny list carries the
+// L1 half of the same wall — a negative `git commit` rule. The hook itself
+// is not keyed on it (the shared tree, not the PID, is what makes the
+// commit unsafe); parity reads this to name the second layer.
+func deniesUnqualifiedCommit(deny []string) bool {
+	for _, r := range ParseShimRules(deny)["git"] {
+		if r.Unless != "" && len(r.Words) > 0 && r.Words[0] == "commit" {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,21 @@
+╭─────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.147.0)                      │
+│                                                 │
+│ model:     gpt-5.6-sol   /model to change       │
+│ directory: /private/tmp/…/scratchpad/repro-repo │
+╰─────────────────────────────────────────────────╯
+
+  Tip: Try the Desktop app. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true
+
+
+  Select Model and Effort
+  Access legacy models by running codex -m <model_name> or in your config.toml
+
+› 1. gpt-5.6-sol (current)  Latest frontier agentic coding model.
+  2. gpt-5.6-terra          Balanced agentic coding model for everyday work.
+  3. gpt-5.6-luna           Fast and affordable agentic coding model.
+  4. gpt-5.5                Frontier model for complex coding, research, and real-world work.
+  5. gpt-5.4                Strong model for everyday coding.
+  6. gpt-5.4-mini           Small, fast, and cost-efficient model for simpler coding tasks.
+
+  Press enter to confirm or esc to go back

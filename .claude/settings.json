@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "Bash(bd show:*)",
+      "Bash(bd ready:*)",
+      "Bash(bd list:*)",
+      "Bash(bd create:*)",
+      "Bash(bd update:*)",
+      "Bash(bd close:*)",
+      "Bash(bd comments:*)",
+      "Bash(bd dep:*)",
+      "Bash(bd remember:*)",
+      "Bash(bd prime:*)",
+      "Bash(bd sync:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(make:*)",
+      "Bash(bin/posse-go list:*)",
+      "Bash(bin/posse-go ready:*)",
+      "Bash(bin/posse-go peek:*)",
+      "Bash(bin/posse-go claim:*)",
+      "Bash(bin/posse-go done:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(bd sync --full:*)",
+      "Bash(bd daemon:*)",
+      "Bash(bd hooks:*)",
+      "Bash(bd delete:*)",
+      "Bash(bd import:*)",
+      "Bash(bd init:*)",
+      "Bash(bd migrate:*)",
+      "Bash(bd repair:*)",
+      "Bash(bd rename-prefix:*)",
+      "Bash(bd federation:*)",
+      "Bash(bd config set:*)",
+      "Bash(make install:*)",
+      "Bash(make deploy:*)",
+      "Edit(.claude/**)"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+# The fleet's grok version pin — rangerhq-y7jr.
+#
+# These keys, and only these keys, are what posse requires in the operator's
+# ~/.grok/config.toml. This file is NOT installed over that config: config.toml
+# also carries the operator's own preferences AND is rewritten by grok itself
+# (dismissed_version, marketplace.*), so copying it would clobber both.
+# `make verify-grok-pin` asserts the live config still matches what is here.
+#
+# WHY. grok shipped with `[cli] auto_update = true` + `installer = "internal"`,
+# so ~/.grok/bin/grok (a symlink into ~/.grok/downloads/) can roll forward with
+# no review — including the long-lived leader process, which downloads a new
+# binary and relaunches itself mid-life ("Leader auto-update: v<x> installed
+# successfully", xai-grok-update/src/auto_update.rs). Several fleet-critical
+# grok behaviours are version-verified, not contractual; see the re-audit list
+# in NOTES.md "grok substrate". An unreviewed roll-forward silently retires
+# those findings.
+#
+# LIFTING THE PIN is an operator action, and it is gated on the security
+# lane re-running
+# that list against the new build. Runbook: NOTES.md, "grok substrate: pinned
+# at 1.0.5".
+
+posse_pinned_version = "1.0.5"   # grok --version at the time of the pin
+
+[cli]
+# Persistent kill for the update check and the leader's self-update.
+auto_update = false
+
+# The belt. A soft ceiling: the updater caps its target here and never installs
+# above it, even if auto_update is flipped back on by /settings, a managed-config
+# push, or a hand edit. Soft bounds NEVER block startup, so this cannot strand a
+# pane — it only refuses to move. Raise it deliberately, with the re-audit done.
+maximum_version = "1.0.5"
+
+# Deliberately NOT set: required_maximum_version. That one is a hard bound —
+# grok refuses to START above it — which turns an unreviewed upgrade into a
+# fleet-wide outage rather than a no-op. It is the stronger gate and it is the
+# operator's call, not the devops lane's: rangerhq-iy3y.
+#
+# Deliberately NOT set: minimum_version / required_minimum_version. Those are
+# anti-downgrade floors; a floor is the wrong direction for a pin and would
+# block rolling back to a known-good build.

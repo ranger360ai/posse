@@ -1,0 +1,6 @@
+# Recipe: throwaway shell in $HOME, no env sets.
+name: scratch
+dir: ~
+env_files: []
+command: null
+emoji: 🗒️

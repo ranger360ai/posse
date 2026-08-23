@@ -1,0 +1,13 @@
+╭─────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.147.0)                      │
+│                                                 │
+│ model:     gpt-5.6-sol   /model to change       │
+│ directory: /private/tmp/…/scratchpad/repro-repo │
+╰─────────────────────────────────────────────────╯
+
+  Tip: Try the Desktop app. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true
+
+
+› Write tests for @filename
+
+  gpt-5.6-sol default · /private/tmp/claude-501/-Users-x-src-posse/a31f01c7-26f6-4e01-81c7-9810a40c72c7/scratchpad/repro-repo

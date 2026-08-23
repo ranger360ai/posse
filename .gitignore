@@ -1,0 +1,6 @@
+/bin/posse-go
+/plugin/bin/
+.claude/settings.local.json
+.beads/interactions.jsonl
+/bin/posse-release
+/dist/

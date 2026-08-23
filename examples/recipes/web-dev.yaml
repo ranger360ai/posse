@@ -1,0 +1,6 @@
+# Recipe: dev server session.
+name: web-dev
+dir: ~/code/projA
+env_files: [default, projA]
+command: npm run dev
+emoji: 🌐

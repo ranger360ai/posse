@@ -1,0 +1,22 @@
+
+  /private/tmp/claude-501/-Users-x-src-posse/a3…
+
+  New worktree                               ctrl+w
+  Resume session                             ctrl+s
+  Changelog
+  Quit                                       ctrl+q
+
+  Grok 4.6 is here!
+
+  Help improve Grok              [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to
+  retain coding data, e.g., prompts, traces, &
+  metrics, for training and debugging purposes.
+  Change anytime via settings.
+  Read Terms and Privacy Policy.
+
+  ╭───────────────────────────────────────────────╮
+  │ ❯                                             │
+  ╰──────────── Grok 4.6 (high) · always-approve ─╯
+
+                         Grok Build  1.0.5 [stable]
