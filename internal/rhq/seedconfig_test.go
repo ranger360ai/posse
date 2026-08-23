@@ -90,3 +90,45 @@ func TestSeedConfigNamesNoMachine(t *testing.T) {
 		}
 	}
 }
+
+// The two lists above are hand-maintained, which is the failure mode they
+// were meant to prevent: a key added to the seed by a later bead is armable
+// and silently uncovered. `plan_usage_ttl:` and `beads_visibility:` both
+// arrived that way and could be shipped armed with the suite green
+// (rangerhq-fpv9). So the real guard is inverted — enumerate the handful of
+// keys the seed is ALLOWED to declare, and let everything else fail by
+// default. A new key then has exactly two ways past this test: ship it
+// commented out, or say here, on purpose, that a fresh instance sets it.
+func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
+	cfg := seedConfigPath(t)
+
+	live := map[string]bool{
+		"default_dir":   true, // session cosmetics — no dispatch behaviour
+		"default_env":   true,
+		"default_emoji": true,
+		"dirs":          true, // the picker's roots
+		"emoji":         true, // session name → glyph
+	}
+
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A declared key is one at column 0: `# key:` is documentation, `key:`
+	// is configuration. That is the same rule YamlGet/yamlHasKey apply, so
+	// this test sees exactly what the harness sees.
+	for _, ln := range strings.Split(string(b), "\n") {
+		i := strings.Index(ln, ":")
+		if i <= 0 || ln[0] == ' ' || ln[0] == '\t' || ln[0] == '#' {
+			continue
+		}
+		key := ln[:i]
+		if strings.ContainsAny(key, " \t") {
+			continue
+		}
+		if !live[key] {
+			t.Errorf("seed config declares %s: — a fresh instance must ship it commented out, "+
+				"or add it to `live` here and say why arming it by default is right", key)
+		}
+	}
+}
