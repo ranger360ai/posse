@@ -25,6 +25,8 @@ comes from the repo's beads database (`posse ready`). The cockpit
 the ready queue beneath. See [DIRECTION.md](DIRECTION.md) for the
 architecture and [NOTES.md](NOTES.md) for how it works.
 
+Persona design credits the [DISCOVER framework](https://discover-framework.ai/): the Persona Intent Document ([ADR 0001](docs/adr/0001-persona-intent-documents.md)) takes its name and its persona · intent · tools · guardrails · metrics binding from that framework's Specify artifact.
+
 The original Ghostty + tmux session manager (bash + Go, launcher TUI, 2×2
 grid) lives on the **tmux-reference** branch, kept working as the reference
 implementation.

@@ -6,6 +6,16 @@
 > developed in; incident citations reference that instance's history.
 > Persona names are restated as roles; the amendment that aligned this
 > contract with that instance's signed-off PIDs is folded into the body.
+>
+> **Provenance.** The artifact this ADR defines — the Persona Intent
+> Document, both the name and the binding of persona, intent, tools,
+> guardrails, and metrics into one document — follows the Specify-phase
+> artifact of the DISCOVER framework (<https://discover-framework.ai/>,
+> "ICPD v2.0 — Intent-Centered Persona Design", published anonymously).
+> The intent inventory this ADR's Context cites was produced with that
+> framework's Discover and Identify phases. The document format itself —
+> flat-YAML frontmatter, the fixed body headings, the plain-file
+> constraint, the tool-rule semantics — is this project's own.
 
 ## Context
 
