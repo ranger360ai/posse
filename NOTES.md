@@ -1653,6 +1653,17 @@ Three different things get called "permissions"; keep them apart
   tool-name denies are realized by no tier: an allowlist has nothing to
   say about a stdio MCP server, which is a child process inside the cage.
   Below those tiers such gates are **unrealized**, and the launcher says so.
+  And **`(deny file-write*)` denies writes, nothing else**: the profile
+  carries no `mach-lookup`/IPC denies, so L2 stops no *read* by a session
+  of anything its user can read — the macOS keychain included, because
+  `security` asks `securityd` out-of-process and the item's own ACL, not
+  the sandbox, answers. A deny aimed at a **read-only** tool is therefore
+  realized by **L1 alone** below the container tier — which is still worth
+  declaring, because L1 is the only layer that refuses deterministically
+  *and* writes a line to `refusals.log`. Read it as a tripwire, not a
+  wall: L1 matches the typed word, so `/usr/bin/<cmd>`, `sh -c`, and an
+  exec by an allowlisted build tool all walk past it (the documented class
+  in the `gates.go` header). The wall for a read stays L4.
 - **Enforcement parity — refuse, or degrade out loud (`parity.go`).** At
   every persona launch `CheckParity` computes, for (runtime × cage),
   which PID gates at least one wall layer realizes. Anything unrealized
