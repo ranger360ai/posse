@@ -34,8 +34,14 @@ implementation.
 ## Requirements
 
 - [herdr](https://herdr.dev) ≥ 0.8 with its server running
-- [beads](https://github.com/steveyegge/beads) (`bd`) for the work graph
+- [beads](https://github.com/steveyegge/beads) (`bd`) for the work graph —
+  **0.49.1 exactly**; brew's `beads` is 1.2.x and does not read
+  `.beads/beads.db` at all
 - Go ≥ 1.26 to build (`make build`); one Go dependency (`golang.org/x/term`)
+
+Neither substrate ships with posse and neither is optional — `posse new`
+dies on its first call without herdr. [INSTALL.md §1](INSTALL.md) is where to
+get both, pins and reasons included.
 
 ## Quick start
 
@@ -45,18 +51,39 @@ queue, first dispatch — is [INSTALL.md](INSTALL.md). The short form:
 ```sh
 make build                       # dev build of the working tree → bin/posse-go
 make install                     # clean build of HEAD, then promote → ~/.local/bin/posse
-./bin/posse-go init              # seed $RHQ_HOME (default ~/.config/rhq) from examples/
-                                 # — must be the repo build: init finds ../examples
+posse init                       # seed $RHQ_HOME (default ~/.config/rhq) from the
+                                 # examples: examples/ beside the binary when there
+                                 # is one, else the copy embedded at build time
 posse new myproj --dir ~/code/myproj --cmd claude
 posse list                       # live agent state per session
 posse prompt myproj "fix the failing test" --wait
 make link-plugin                 # register the cockpit with herdr (runs the installed posse)
 ```
 
-`posse version` prints `0.3.0+<sha>[-dirty]`, and the cockpit header shows the
-same, so "which build is live" is one glance. `make build` never touches the
-live binary; only `make install` does, and that target is denied to fleet
-personas in `.claude/settings.json` — a human promotes.
+Without a checkout the binary installs from the module path — and lands in a
+directory your shell does not search:
+
+```sh
+go install github.com/ranger360ai/posse/cmd/posse@latest
+export PATH="$(go env GOPATH)/bin:$PATH"   # ← where the line above wrote it
+posse init
+```
+
+`go install` writes to `$GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is
+unset — normally `~/go/bin`, which is on no default macOS or Linux `PATH`.
+Skip that second line and the very next command is `zsh: command not found:
+posse`, with the install itself having exited 0. Put it in your shell's rc
+file, not just the current shell. That binary carries the seed tree embedded,
+so `posse init` needs no repo beside it; the module carries no release tag
+yet, so `@latest` resolves to a commit pseudo-version and `posse version`
+reports `0.3.0+dev`. `make install` stays the path for a fleet, because its
+build has a commit to name.
+
+`posse version` prints `0.3.0+<sha>[-dirty]` for a build made here, and the
+cockpit header shows the same, so "which build is live" is one glance. `make
+build` never touches the live binary; only `make install` does, and that
+target is denied to fleet personas in `.claude/settings.json` — a human
+promotes.
 
 Personas share this checkout, so the working tree usually holds somebody's
 unfinished edits. `make install` therefore never builds the working tree: it
