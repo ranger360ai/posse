@@ -339,17 +339,17 @@ func (b Bd) Comment(dir, id, text, actor string) error {
 
 // ─── multi-repo aggregation ──────────────────────────────────────────────────
 
-// BeadsDirs is where ready work is gathered from: the config `beads:` list
-// (repos with a bd database), else the current directory.
+// BeadsDirs is where ready work is gathered from: every configured `beads:`
+// path, or the current directory when the key is absent. Configured paths are
+// kept even when they cannot be resolved so ReadyAll can report their queues
+// as unknown; dropping them here can silently turn an all-missing list into
+// the caller's cwd. A present-but-empty list names no repos.
 func (a *App) BeadsDirs() []string {
 	var out []string
 	for _, d := range YamlList(a.ConfigPath, "beads") {
-		d = ExpandTilde(d)
-		if st, err := os.Stat(d); err == nil && st.IsDir() {
-			out = append(out, d)
-		}
+		out = append(out, ExpandTilde(d))
 	}
-	if len(out) == 0 {
+	if len(out) == 0 && !yamlHasKey(a.ConfigPath, "beads") {
 		out = append(out, "")
 	}
 	return out

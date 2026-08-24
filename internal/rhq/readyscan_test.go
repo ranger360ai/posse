@@ -111,3 +111,74 @@ func TestPassRefusesToCallAFailedScanAnEmptyQueue(t *testing.T) {
 		t.Errorf("a failed scan must never read as an empty queue:\n%s", dispatcherOut(d))
 	}
 }
+
+// Configured repos that do not exist are failed scans too. Dropping them
+// before ReadyAll sees them used to turn an all-missing list into the empty
+// string sentinel, which made bd inherit the caller's unrelated cwd.
+func TestPassRefusesMissingConfiguredReposInsteadOfScanningCWD(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	root := t.TempDir()
+	missingA := filepath.Join(root, "missing-a")
+	missingB := filepath.Join(root, "missing-b")
+	scanConfig(t, b.App, missingA, missingB)
+
+	n, err := d.Run("", "", 0)
+	if n != 0 {
+		t.Errorf("nothing is dispatchable from missing repos: %d", n)
+	}
+	if err == nil || !strings.Contains(err.Error(), "unknown, not empty") {
+		t.Fatalf("missing configured repos must fail the pass as an unknown queue: %v\n%s", err, dispatcherOut(d))
+	}
+	out := dispatcherOut(d)
+	for _, path := range []string{missingA, missingB} {
+		if !strings.Contains(out, path) {
+			t.Errorf("the failed scan must name %s:\n%s", path, out)
+		}
+	}
+	if strings.Contains(out, "no ready work") {
+		t.Errorf("missing configured repos must never fall through to cwd:\n%s", out)
+	}
+}
+
+// A missing entry beside a readable repo must stay visible. Filtering it out
+// made a partial queue look complete even though work in one repo was unknown.
+func TestReadyAllReportsMissingRepoBesideReadableOne(t *testing.T) {
+	b, _ := newTestBackend(t)
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+
+	good := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
+	missing := filepath.Join(t.TempDir(), "missing")
+	scanConfig(t, b.App, good, missing)
+
+	issues, failed := bd.ReadyAll(b.App, "")
+	if len(issues) != 1 || issues[0].ID != "a-1" {
+		t.Errorf("the readable repo still reports its work: %+v", issues)
+	}
+	if len(failed) != 1 {
+		t.Fatalf("want the missing repo reported once, got %v", failed)
+	}
+	var se ScanError
+	if !errors.As(failed[0], &se) || se.Dir != missing {
+		t.Errorf("the missing repo scan must name its configured path: %v", failed[0])
+	}
+}
+
+func TestBeadsDirsUsesCWDOnlyWhenKeyIsAbsent(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := os.WriteFile(b.App.ConfigPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirs := b.App.BeadsDirs(); len(dirs) != 1 || dirs[0] != "" {
+		t.Fatalf("an absent beads key must use cwd, got %q", dirs)
+	}
+
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirs := b.App.BeadsDirs(); len(dirs) != 0 {
+		t.Fatalf("an explicitly empty beads list must name no repos, got %q", dirs)
+	}
+}

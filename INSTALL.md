@@ -255,7 +255,7 @@ dirs:
   - ~/src
 
 # The queue. `posse ready`, the cockpit and dispatch aggregate these repos'
-# bd databases. A repo with no bd database is skipped quietly.
+# bd databases. A missing or unreadable repo is named as a failed scan.
 beads:
   - ~/src/<your-work-repo>
 

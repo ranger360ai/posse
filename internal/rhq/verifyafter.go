@@ -146,7 +146,7 @@ func (a *App) VerifyAfter(bd Bd, dirs []string, out, errw io.Writer) int {
 func (a *App) verifyAfterRepo(bd Bd, dir string, labels []string, out, errw io.Writer) int {
 	issues, err := bd.ListAll(dir)
 	if err != nil {
-		return 0 // no database here, same silence as ReadyAll
+		return 0 // no database here; ReadyAll names it during the queue scan
 	}
 	wmPath := a.verifyWatermarkPath(dir)
 	mark, seeded := readVerifyWatermark(wmPath)

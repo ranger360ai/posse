@@ -97,7 +97,8 @@ carries both the retry (`posse relaunch <name>`) and the hand-rebuilt
   blank screen rows from the bottom).
 - `posse ready [--dir] [--as]` — unblocked work via `bd ready --json` (the
   `Bd` runner in `internal/rhq/beads.go`). Without `--dir` it aggregates
-  across the config `beads:` repo list, skipping repos with no database.
+  across the config `beads:` repo list; missing or unreadable repos are named
+  as failed scans while readable repos still report their work.
 - `posse crew <name> [--off]` — hand a session to the operator or back to the
   fleet (ADR 0008). **A crew session is one the operator talks to, and
   dispatch treats it as if it did not exist** — never prompted, never

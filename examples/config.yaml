@@ -119,8 +119,9 @@ default_emoji: ⚙️
 
 # ─── the queue ───────────────────────────────────────────────────────────────
 # Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate
-# unblocked work from each listed repo's bd database (repos without one are
-# skipped quietly). Unset = the current directory.
+# unblocked work from each listed repo's bd database. A path that is missing
+# or unreadable is named as a failed scan. Unset = the current directory;
+# an explicitly empty list names no repos.
 #
 # Aggregation is local-only and each repo's beads keep THAT REPO'S
 # visibility: nothing here mixes databases or moves a bead between them, and
