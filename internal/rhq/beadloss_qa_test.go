@@ -419,3 +419,122 @@ func TestLedgerOwnsALaterLossThroughARedirect(t *testing.T) {
 		t.Fatalf("a second loss through the redirect is a new loss: %+v", again)
 	}
 }
+
+// The D3-C alarm is a dispatch-pass line, not a helper return. The unit
+// test (TestLostBeadsFollowsTheBeadsRedirect) calls WarnLostBeads directly;
+// the pass-level pin (TestDispatchPassRingsTheBeadLossAlarmUnderDryRun)
+// uses a repo that tracks its own jsonl. Together they still go green if
+// Dispatcher.Run walks dir/.beads itself. This is the cut-over shape:
+// beads: names a working copy whose .beads holds only a redirect.
+func TestDispatchPassRingsBeadLossThroughRedirect(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.DryRun = true
+	writePersona(t, b.App, "ranger", "[go]")
+
+	store := qblRepo(t)
+	qblCommit(t, store, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
+	qblCommit(t, store, "q-2 gone", qblLine("q-1", "open"))
+
+	work := qblRepo(t)
+	qblRedirect(t, work, filepath.Join(store, beadsDirName))
+	qblLive(t, work, "q-1")
+	if err := os.WriteFile(filepath.Join(work, "fake-ready.json"),
+		[]byte(`[{"id":"q-1","title":"t","labels":["go"]}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+work+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var errb strings.Builder
+	d.Err = &errb
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatalf("the alarm must never gate the pass: %v", err)
+	}
+	if !strings.Contains(errb.String(), "bead-loss: q-2") {
+		t.Errorf("a dispatch pass over a redirected beads: dir must name the store's loss, got:\n%s", errb.String())
+	}
+	if n != 1 {
+		t.Errorf("the pass still dispatches its ready work, got n=%d\n%s", n, dispatcherOut(d))
+	}
+}
+
+// gitBead runs from inside the resolved .beads so a target that is not at
+// its repo root still has a cwd-relative pathspec. The unit tests all put
+// .beads at the root; this is the case that justified the cwd choice.
+func TestLostBeadsFollowsRedirectIntoNestedBeadsDir(t *testing.T) {
+	newTestBackend(t)
+	store := qblRepo(t)
+	nested := filepath.Join(store, "extra", beadsDirName)
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(lines ...string) {
+		t.Helper()
+		body := ""
+		for _, l := range lines {
+			body += l + "\n"
+		}
+		if err := os.WriteFile(filepath.Join(nested, beadsJSONL), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		qblGit(t, store, "add", "-A")
+	}
+	write(qblLine("n-1", "open"), qblLine("n-2", "open"))
+	qblGit(t, store, "commit", "-q", "-m", "nested two")
+	write(qblLine("n-1", "open"))
+	qblGit(t, store, "commit", "-q", "-m", "nested drop n-2")
+
+	work := qblRepo(t)
+	qblRedirect(t, work, nested)
+	qblLive(t, work, "n-1")
+	lost := qblLost(t, work)
+	if len(lost) != 1 || lost[0].ID != "n-2" {
+		t.Fatalf("census must walk extra/.beads from inside it: %+v", lost)
+	}
+}
+
+func TestBeadsHomeDoesNotHangOnARedirectCycle(t *testing.T) {
+	a := qblRepo(t)
+	b := qblRepo(t)
+	qblRedirect(t, a, filepath.Join(b, beadsDirName))
+	qblRedirect(t, b, filepath.Join(a, beadsDirName))
+	done := make(chan string, 1)
+	go func() { done <- beadsHome(a) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a redirect cycle hung beadsHome")
+	}
+}
+
+func TestBeadsHomeDoesNotExpandTildeInRedirect(t *testing.T) {
+	repo := qblRepo(t)
+	qblRedirect(t, repo, "~/no-such-beads")
+	got := beadsHome(repo)
+	want := filepath.Join(repo, beadsDirName)
+	if got != want {
+		t.Fatalf("a ~ redirect is dangling for bd and for us: got %q want %q", got, want)
+	}
+}
+
+// bd 0.49.1 refuses a second hop ("redirect chains not allowed, ignoring
+// redirect in <first-hop>/.beads") and reads the first target as a normal
+// .beads dir. beadsHome follows up to 8 hops, so the census walks a store
+// bd is not using and ListAll against real bd errors. D3-C is one hop and
+// is not this. Un-skip when ranger-base-7kw closes.
+func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
+	t.Skip("ranger-base-7kw: beadsHome follows redirect chains bd 0.49.1 ignores")
+	store := qblRepo(t)
+	mid := qblRepo(t)
+	work := qblRepo(t)
+	qblRedirect(t, mid, filepath.Join(store, beadsDirName))
+	qblRedirect(t, work, filepath.Join(mid, beadsDirName))
+	got := beadsHome(work)
+	want := filepath.Join(mid, beadsDirName)
+	if got != want {
+		t.Fatalf("bd ignores a redirect in the target; beadsHome followed to %s, want first hop %s", got, want)
+	}
+}
