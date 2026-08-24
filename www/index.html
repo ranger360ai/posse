@@ -345,11 +345,13 @@
 
   <section class="rise">
     <pre class="terminal"><code><span class="ps1">$</span> go install github.com/ranger360ai/posse/cmd/posse@latest
+<span class="ps1">$</span> export PATH="$(go env GOPATH)/bin:$PATH"   <span class="cmt"># ← where it landed</span>
+<span class="ps1">$</span> posse init
 
 <span class="ps1">$</span> posse new myproj --dir ~/code/myproj --cmd claude
 <span class="ps1">$</span> posse prompt myproj "fix the failing test" --wait
 <span class="ps1">$</span> posse cockpit   <span class="cmt"># the whole crew at a glance, blocked-first</span></code></pre>
-    <p class="terminal-caption">requires herdr &amp; beads — see the readme</p>
+    <p class="terminal-caption">put that export in your rc file, not just this session &middot; requires herdr &amp; beads — see the readme</p>
   </section>
 
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
