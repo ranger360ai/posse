@@ -941,31 +941,96 @@ func TestGateShellGuardsTheReplayedPATH(t *testing.T) {
 	}
 }
 
-// $SHELL that is neither bash nor zsh falls back to /bin/zsh under that
-// name, and a wrapper left by a previous $SHELL does not linger.
+// realShell's contract, in its own words: "$SHELL when it is a bash or zsh
+// that is really there, else the first of zsh/bash on PATH, else /bin/sh".
+//
+// This asserted macOS's filesystem layout instead — REAL='/bin/zsh' — and so
+// failed on Linux in both configurations, whether the image ships zsh
+// (/usr/bin/zsh) or does not ship it at all (ranger-base-gaf). The product
+// code was right and is unchanged.
+//
+// The PATH search is the part that most needed pinning and had no test at
+// all: the same renderer runs INSIDE a cage image, where $SHELL is unset and
+// /bin/zsh does not exist (rangerhq-6so), and a wrapper whose REAL cannot be
+// exec'd is a dead gate shell. A literal path cannot express that case. So
+// the search gets a PATH this test owns, and every arm of the contract has
+// one answer on every platform.
 func TestGateShellRealShellResolution(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
-	fake := filepath.Join(t.TempDir(), "bash")
-	os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755)
-	t.Setenv("SHELL", fake)
-	gatesDir, _, sh, err := a.RenderGates("developer", nil)
-	if err != nil || filepath.Base(sh) != "bash" {
-		t.Fatalf("bash $SHELL must render a bash-named wrapper: %q %v", sh, err)
+
+	pathDir := t.TempDir()
+	t.Setenv("PATH", pathDir)
+	install := func(name string) string {
+		t.Helper()
+		p := filepath.Join(pathDir, name)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
 	}
+	var gatesDir string
+	render := func(shell string) string {
+		t.Helper()
+		t.Setenv("SHELL", shell)
+		d, _, sh, err := a.RenderGates("developer", nil)
+		if err != nil {
+			t.Fatalf("$SHELL=%q: %v", shell, err)
+		}
+		gatesDir = d
+		return sh
+	}
+	// The two halves of one promise: the wrapper execs that shell, and is
+	// installed under its name — a runtime that infers its snapshot dialect
+	// from the shell's name (grok does) reads the name through the wrapper.
+	execs := func(wrapper, real string) {
+		t.Helper()
+		if got, want := filepath.Base(wrapper), filepath.Base(real); got != want {
+			t.Errorf("wrapper is named %q, must carry the resolved shell's own name %q", got, want)
+		}
+		b, err := os.ReadFile(wrapper)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "REAL="+shQuote(real)) {
+			t.Errorf("wrapper must exec %s:\n%s", real, b)
+		}
+	}
+
+	// $SHELL wins when it names a bash or zsh that is really there — even one
+	// nothing on PATH would have found.
+	own := filepath.Join(t.TempDir(), "bash")
+	if err := os.WriteFile(own, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fromShell := render(own)
+	execs(fromShell, own)
+
+	// A $SHELL that is neither, and an unset one, fall through to the PATH
+	// search — which prefers zsh to bash, in that order.
+	zsh, bash := install("zsh"), install("bash")
 	for _, s := range []string{filepath.Join(t.TempDir(), "fish"), ""} {
-		t.Setenv("SHELL", s)
-		_, _, sh2, err := a.RenderGates("developer", nil)
-		if err != nil || filepath.Base(sh2) != "zsh" {
-			t.Fatalf("$SHELL=%q must fall back to zsh: %q %v", s, sh2, err)
-		}
-		if b, _ := os.ReadFile(sh2); !strings.Contains(string(b), "REAL='/bin/zsh'") {
-			t.Errorf("$SHELL=%q must exec /bin/zsh:\n%s", s, b)
-		}
-		if _, err := os.Stat(sh); err == nil {
+		execs(render(s), zsh)
+		if _, err := os.Stat(fromShell); err == nil {
 			t.Error("a wrapper from a previous $SHELL must not survive a re-render")
 		}
 	}
+
+	// zsh gone, bash still there: the second choice, not the last resort.
+	if err := os.Remove(zsh); err != nil {
+		t.Fatal(err)
+	}
+	execs(render(""), bash)
+
+	// Neither on PATH: the cage image this search exists for. Every image has
+	// /bin/sh and the wrapper script is POSIX sh, so this is a working gate
+	// shell rather than a placeholder — it costs only the dialect a runtime
+	// might infer from the name, which is why it is last.
+	if err := os.Remove(bash); err != nil {
+		t.Fatal(err)
+	}
+	execs(render(""), "/bin/sh")
+
 	if _, err := os.Stat(filepath.Join(gatesDir, "shell")); err != nil {
 		t.Errorf("shell dir: %v", err)
 	}
