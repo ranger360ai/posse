@@ -1,0 +1,186 @@
+# RUNBOOK — cutting a posse release
+
+The maintainer's procedure for `vX.Y.Z`: four tarballs, a GitHub Release,
+and the Homebrew formula that `brew install ranger360ai/tap/posse` resolves.
+Deployers do not need this file — they need `INSTALL.md`. This is the other
+side of INSTALL.md step 2.
+
+Five things in this repo point here (`Makefile`, `INSTALL.md` §15,
+`scripts/tap-formula.sh`, and `.github/workflows/release.yml` twice), because
+the machinery deliberately stops short of publishing anything.
+
+**What is automated:** pushing a `vX.Y.Z` tag fires
+`.github/workflows/release.yml`, which vets, runs `make test`, builds the four
+tarballs, renders the formula, and stages a **draft** release.
+
+**What is not, on purpose:** publishing that draft and pushing the formula to
+the tap are outward-facing acts (crew guardrail 4) and stay in the operator's
+hands. Nothing in CI touches `ranger360ai/homebrew-tap`.
+
+---
+
+## The one irreversible step
+
+**The tag.** Everything else here can be redone; a version number cannot be
+reused. The Go module proxy caches `vX.Y.Z` immutably on first fetch, so a tag
+that shipped a bad build is spent even if you delete it. A tag that fires a
+workflow which dies before `build artifacts` burns the number and produces no
+release at all.
+
+So the preconditions below are not a formality. Check them; the delay costs
+nothing and a burned version is permanent.
+
+---
+
+## Preconditions — all of them, before the tag
+
+**1. The version in the source already equals the tag.**
+
+```sh
+$ grep 'Version ' internal/rhq/app.go
+```
+**Verify:** `Version = "X.Y.Z"` matches the `vX.Y.Z` you are about to cut.
+`internal/rhq.Version` is a `const` — it cannot be stamped from outside, and
+`scripts/release-artifacts.sh` refuses a build where the two disagree, because
+a binary whose `posse version` contradicts its own download URL is worse than
+no release. **Bumping a release is therefore: edit `app.go`, merge, then tag —
+in that order.**
+
+**2. The tag lands on a commit that is on `origin/main`.**
+
+```sh
+$ git fetch origin && git log --oneline -1 origin/main
+$ git rev-list --left-right --count origin/main...HEAD
+```
+**Verify:** the right-hand number is `0`. A local commit ahead of `origin/main`
+is not a taggable commit — CI checks out what GitHub has, not what your working
+tree has.
+
+**3. `make test` is green ON LINUX, at that exact commit.**
+
+CI is `ubuntu-latest`. Darwin-green proves nothing about it: this repo has
+never had CI on branch pushes, so the release workflow is the first thing to
+run these tests on Linux — on a tag, where failure costs the version number.
+Two real bugs (`ranger-base-fjj`, `ranger-base-gaf`) were found exactly here.
+
+```sh
+$ docker run --rm -u 1000:1000 -e HOME=/tmp -e GOCACHE=/tmp/gocache \
+    -e GOMODCACHE=/tmp/gomod -e GOFLAGS=-buildvcs=false \
+    -v "$PWD":/repo -w /repo golang:1.26 \
+    sh -c 'git config --global --add safe.directory /repo; go vet ./... && make test'
+```
+**Verify:** exit 0, both packages `ok`, and `silent-revert audit: N commits, 0
+untriaged`. Run it against a **clean clone of the commit being tagged**, not a
+dirty working tree.
+
+> **`-u` IS NOT OPTIONAL.** Without it the container runs as root, root bypasses
+> file permission bits, and `TestBackfillDoesNotFailTheListing` fails with
+> "read-only meta was rewritten" because the test's read-only premise cannot
+> hold. That failure is an artifact of the run, not a defect. A root run reports
+> a bug that does not exist, and someone reverts a good commit over it.
+
+`make test`, not `go test ./...`: `make test` also runs the silent-revert audit,
+which is the detector for the failure class a green suite does not report
+(`rangerhq-8rtf`), and it is what the workflow runs.
+
+**4. Optionally, rehearse the build itself** — the workflow's remaining steps,
+on Linux, at the same commit:
+
+```sh
+$ scripts/release-artifacts.sh --rev <sha> --version vX.Y.Z
+$ scripts/tap-formula.sh --version vX.Y.Z --checksums dist/checksums.txt --out dist/posse.rb
+$ (cd dist && sha256sum -c checksums.txt)
+```
+Neither script tags, publishes, or talks to GitHub; both write `dist/` and stop.
+
+---
+
+## Step 0 — push the tag
+
+```sh
+$ git tag vX.Y.Z <the sha from precondition 2>
+$ git push origin vX.Y.Z
+```
+
+This fires the workflow. **Watch it.** It must reach `Draft release vX.Y.Z
+staged.` If it dies before `build artifacts`, the version number is spent — fix
+forward to the next patch, do not re-cut.
+
+## Step 1 — publish the draft *(operator)*
+
+`github.com/ranger360ai/posse/releases` → the `vX.Y.Z` **draft**.
+
+Six assets must be present before you press Publish:
+
+```
+posse_X.Y.Z_darwin_arm64.tar.gz    posse_X.Y.Z_darwin_amd64.tar.gz
+posse_X.Y.Z_linux_arm64.tar.gz     posse_X.Y.Z_linux_amd64.tar.gz
+checksums.txt                      posse.rb
+```
+
+Nothing is downloadable until you publish — and the formula's URLs 404 until
+you do, which makes step 3 fail in a way that looks like a bad formula.
+
+## Step 2 — create the tap *(operator, once ever)*
+
+A new **public** repo, owner `ranger360ai`, named **exactly**:
+
+```
+homebrew-tap        ->  github.com/ranger360ai/homebrew-tap
+```
+
+The name is not a preference. `brew install <owner>/tap/<formula>` expands
+`<owner>/tap` to `<owner>/homebrew-tap`. Any other name — `tap`,
+`homebrew-posse`, `posse-tap` — and INSTALL.md step 2 keeps failing with
+`Error: Failure while executing tap`, which never says the tap does not exist.
+
+## Step 3 — commit the formula *(operator)*
+
+**Download `posse.rb` from the published release. Do not regenerate it
+locally.** The tarball sha256s are not reproducible — gzip stamps a timestamp,
+so two runs of the same commit differ — and the only `posse.rb` whose hashes
+match the *uploaded* tarballs is the one built in that same workflow run. A
+regenerated formula installs fine on the machine that made it and fails
+checksum verification everywhere else.
+
+```sh
+$ git clone https://github.com/ranger360ai/homebrew-tap
+$ cd homebrew-tap && mkdir -p Formula
+$ cp ~/Downloads/posse.rb Formula/posse.rb
+$ git add Formula/posse.rb && git commit -m "posse X.Y.Z" && git push
+```
+
+The directory must be `Formula/` and the file `posse.rb` — brew resolves the
+formula name from the filename.
+
+## Step 4 — prove it, on a machine that is not the one that built it
+
+```sh
+$ brew install ranger360ai/tap/posse
+$ posse version
+```
+**Verify:** `posse X.Y.Z+<sha>`. This is the same command INSTALL.md step 2
+gives a deployer; until it passes here, that step is advertising something that
+does not work.
+
+**If it fails: fix forward to the next patch version. Do not delete and re-cut
+the tag.** The Go proxy's cache is immutable and not ours to purge.
+
+---
+
+## What is still unproven from a developer machine
+
+Stated plainly, so nobody mistakes this runbook for a guarantee:
+
+- **`gh release create`** is GitHub state and is never exercised locally.
+  `permissions: contents: write` covers it, `gh` is preinstalled on
+  `ubuntu-latest`, and `--generate-notes` works with no prior release — read,
+  not run.
+- **linux/amd64.** Local Linux rehearsal on an Apple-silicon machine is
+  linux/**arm64**; GitHub's `ubuntu-latest` is amd64. The release cross-compiles
+  all four targets from one host regardless, but the *suite* has not been run on
+  linux/amd64 anywhere but CI.
+- **`workflow_dispatch` tests a different commit than it builds** — the workflow
+  checks out with no `ref:`, so re-running a failed release from the branch vets
+  and tests `main` while building the *tag*. Tracked as `ranger-base-dbe`. On a
+  tag push, which is the path above, the two are the same commit.

@@ -77,6 +77,12 @@ promote, and `posse init` seeds an instance from the examples embedded in
 the binary (ADR 0012 D5). The cockpit plugin still wants the checkout, so
 come back to step 3 when you want it.
 
+If brew answers `Error: Failure while executing tap` or `Repository not
+found`, **the tap is not published yet** — it exists only once a release has
+been cut, and the error never says so. Nothing on your machine is broken and
+there is nothing here to debug: take the checkout path below, which needs Go
+and nothing else. (Maintainers: `docs/runbooks/release.md`.)
+
 Homebrew installs the binary and **nothing else**: herdr and the pinned bd
 in step 1 are still yours to install, and `brew install beads` is still the
 wrong one. The formula says so in its caveats.
