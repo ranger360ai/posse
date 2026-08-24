@@ -97,13 +97,51 @@ type HerdrMeta struct {
 // from "I am asking the wrong server" (rangerhq-snd).
 func SocketID() string { return os.Getenv("HERDR_SOCKET_PATH") }
 
-// ServerGen names the herdr server *process* posse is talking to: the device
-// and inode of its api socket file. herdr recreates that file — new inode,
-// new btime — on both a restart and a live handoff, and those are exactly
-// the moments its workspace-id allocator is recomputed as max(live id)+1
+// ServerGen names the herdr server *generation* posse is talking to: the
+// device, inode and bind time of its api socket file. herdr recreates that
+// file on both a restart and a live handoff, and those are exactly the
+// moments its workspace-id allocator is recomputed as max(live id)+1
 // (measured, rangerhq-6bg7). So a workspace id is only comparable inside one
 // generation, and this is the fence that says which one issued it. Purely
 // local: one stat(2), no herdr call, on a path posse already records.
+//
+// THE TIME IS LOAD-BEARING, and its absence shipped as a defect in the linux
+// builds (ranger-base-fjj). This fence read dev:ino alone, above a comment
+// asserting that a recreated file gets a new inode. That is an APFS fact,
+// not a portable one: Linux hands the just-freed inode straight back.
+// Measured in a golang:1.26 container, unlink and recreate at the same path:
+//
+//	overlayfs (and the ext4 under it)	66:587500 -> 66:587500	recycled
+//	tmpfs				95:3     -> 95:4		not recycled
+//	APFS				...072   -> ...073	not recycled
+//
+// so on Linux a restart did not move the fence, and a fence that does not
+// move fails OPEN — it reads a stranger's workspace as ours and clears the
+// meta, which is the incident it was built to prevent (rangerhq-yt1p).
+// Intermittently, too: inode reuse is opportunistic, so the guard worked
+// until it did not.
+//
+// A socket file's mtime is the moment it was bound and never moves again —
+// nothing writes to a socket, and herdr's own socket on a server up since
+// the 10th still reads the 10th. So two generations now name the same token
+// only if the inode was recycled AND both sockets were bound inside one
+// filesystem timestamp tick (the kernel stamps these from a coarse clock —
+// 1ms on a CONFIG_HZ=1000 runner). A false grant additionally requires a
+// meta stamped with the earlier generation, so that tick would have to
+// contain a whole posse pass: a herdr round trip and a meta write. It does
+// not fit.
+//
+// mtime and not btime, deliberately. For a file nothing ever writes to they
+// are the same instant, so btime discriminates no better — and it is the one
+// of the two that is not always there (statx leaves STATX_BTIME unset on
+// NFS, and the container above reports it on overlayfs only because ext4
+// backs it). Falling back to "unknown" on those filesystems would retire the
+// rename arm of notOurWorkspace for no gain in soundness.
+//
+// A timestamp that moves for some unrelated reason costs nothing: an
+// unrecognised generation reads as "not proven ours", which every caller
+// answers by doing nothing to the file. This fence's failure direction is
+// refusal, never a delete.
 //
 // "" means the generation is unknown — the socket cannot be named, or is not
 // there — and unknown is never read as a match (notOurWorkspace).
@@ -120,7 +158,17 @@ func ServerGen() string {
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("%d:%d", sys.Dev, sys.Ino)
+	return genToken(fmt.Sprintf("%d:%d", sys.Dev, sys.Ino), st.ModTime())
+}
+
+// genToken renders one generation from the api socket's file identity and
+// the moment it was bound. It is split out from the stat so that the case
+// which broke this fence — the same device and inode, a later bind — is
+// pinned by a test on every platform, including the one whose filesystem
+// will not reproduce it. The defect shipped because every test of it ran on
+// a filesystem that hid it (ranger-base-fjj).
+func genToken(file string, bound time.Time) string {
+	return fmt.Sprintf("%s:%d", file, bound.UnixNano())
 }
 
 // herdrSocketPath names the api socket file posse's herdr calls go to, or ""

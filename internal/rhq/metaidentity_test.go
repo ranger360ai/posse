@@ -39,14 +39,35 @@ func idProbeSocket(t *testing.T) string {
 }
 
 // newGeneration recreates the api socket file the way a herdr restart or a
-// live handoff does: same path, new inode (measured, rangerhq-6bg7).
+// live handoff does: the same path, bound again.
+//
+// The BIND TIME is set here rather than left to the filesystem, and that is
+// the fixture half of ranger-base-fjj. Two measured reasons. Linux hands
+// back the inode of the file just unlinked, so on ext4 and overlayfs the
+// path and inode are identical on both sides of a restart and cannot
+// separate the generations by themselves. And file timestamps come from the
+// kernel's coarse clock — 1ms on a CONFIG_HZ=1000 runner, more elsewhere —
+// so a recreate this fast can land in the same tick as the file it replaced.
+// A real restart is a server startup apart; sleeping to imitate that would
+// buy a flaky test and nothing else, so the interval is stated instead.
 func newGeneration(t *testing.T, sock string) {
 	t.Helper()
+	bound := genEpoch
+	if st, err := os.Stat(sock); err == nil {
+		bound = st.ModTime().Add(time.Minute) // the server that just died was up a while
+	}
 	os.Remove(sock)
 	if err := os.WriteFile(sock, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chtimes(sock, bound, bound); err != nil {
+		t.Fatal(err)
+	}
 }
+
+// genEpoch is when a test's first server generation bound its socket. Fixed,
+// so a failure reads the same on two runs and on two platforms.
+var genEpoch = time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
 
 func hideFromTheListing(t *testing.T, fake string, ids ...string) {
 	t.Helper()
@@ -91,6 +112,26 @@ func TestServerGenFencesOneServerProcess(t *testing.T) {
 	os.Remove(sock)
 	if gone := ServerGen(); gone != "" {
 		t.Errorf("a socket that is not there must not name a generation, got %q", gone)
+	}
+}
+
+// The linux shape of ranger-base-fjj, pinned where every platform runs it.
+// A real recreate cannot express this case on APFS — the filesystem refuses
+// to hand the inode back — and that is exactly why the defect shipped: the
+// fence was only ever exercised where its assumption happened to hold. So
+// the token is asked the question directly.
+func TestGenTokenSeparatesAGenerationThatRecycledTheInode(t *testing.T) {
+	// Both sides measured in a golang:1.26 container, unlink and recreate:
+	// the inode came back, and the coarse clock stamped both files alike.
+	const recycled = "66:587500"
+	bound := time.Unix(1787577362, 616440001)
+
+	first := genToken(recycled, bound)
+	if again := genToken(recycled, bound); again != first {
+		t.Errorf("one socket named two generations: %q → %q", first, again)
+	}
+	if rebound := genToken(recycled, bound.Add(time.Second)); rebound == first {
+		t.Errorf("a recycled inode bound again named the same generation (%q) — the fence is inert, and an inert fence is rangerhq-yt1p", rebound)
 	}
 }
 
