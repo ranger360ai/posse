@@ -1,0 +1,49 @@
+# Serve www/ at https://posse.bot/ via GitHub Pages (rangerhq-q472).
+#
+# Why a workflow and not a /docs source: docs/ is the ADR tree. Pointing Pages
+# at it would publish fourteen ADRs as the website and wedge the landing page
+# in among them. This publishes www/ and nothing else.
+#
+# There is no build step. www/index.html is a single self-contained file; this
+# workflow uploads the directory as-is. If that stops being true, the build
+# goes here — not into a second copy of the page.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "www/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a queued run waits rather than racing the live site.
+# Not cancel-in-progress: a half-finished deploy is worse than a slow one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # www/CNAME carries the custom domain into the artifact so the apex
+      # survives a redeploy instead of depending on repo settings alone.
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
