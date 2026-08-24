@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-grok-pin audit-silent-reverts release-artifacts tap-formula
+.PHONY: build release install deploy test vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -178,3 +178,25 @@ verify-grok-pin:
 # the flag; it also plants a plain move and asserts silence.
 audit-silent-reverts:
 	scripts/audit-silent-reverts.sh
+
+# ---------------------------------------------------------------------------
+# clean-room test environment (ranger-base-5zh)
+#
+# A throwaway Debian container with a DEFAULT PATH and nothing from this
+# project — the machine on which the PUBLIC install story gets tested. Its
+# value is in what it does NOT contain: ~/go/bin is deliberately NOT on PATH
+# in there, because that omission is the P1 under test (ranger-base-253).
+# `make cleanroom-verify` asserts that and every other guarantee; run it
+# before a test pass. Full runbook: etc/cleanroom/README.md.
+# ---------------------------------------------------------------------------
+cleanroom:
+	scripts/cleanroom.sh start
+
+cleanroom-verify:
+	scripts/cleanroom.sh verify
+
+cleanroom-shell:
+	scripts/cleanroom.sh shell
+
+cleanroom-reset:
+	scripts/cleanroom.sh reset
