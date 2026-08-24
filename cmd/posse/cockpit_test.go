@@ -144,6 +144,18 @@ func TestCockpitCrewTagAndFooter(t *testing.T) {
 	}
 }
 
+func TestCockpitTurnFailureOverridesIdlePresentation(t *testing.T) {
+	c := &cockpit{sessions: []rhq.HerdrSession{{
+		Name: "hoover-posse-6ne", Agent: "hoover", Status: "idle",
+		TurnFailure: "You've reached your Fable 5 limit.",
+	}}}
+	got := stripANSI(renderRow(row{kind: rowItem, cols: c.sessionCols(c.sessions[0])}, 100, false))
+	if !strings.Contains(got, "⛔") || !strings.Contains(got, "failed") ||
+		!strings.Contains(got, rhq.TurnFailureTag) || strings.Contains(got, "idle") {
+		t.Errorf("turn failure rendered as a healthy idle session: %q", got)
+	}
+}
+
 // ─── ADR 0004: the row model, width-aware columns, scrolling ────────────────
 
 var updateGolden = flag.Bool("update", false, "rewrite the cockpit golden files")

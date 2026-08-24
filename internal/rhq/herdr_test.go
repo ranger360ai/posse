@@ -1052,6 +1052,7 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	d.StartupWait = 2 * time.Second
 	d.StatusGrace = 50 * time.Millisecond
 	d.Poll = 10 * time.Millisecond
+	d.TurnOutcome = func(string, string, time.Time) (string, bool) { return "", false }
 	return d
 }
 

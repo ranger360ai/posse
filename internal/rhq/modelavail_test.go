@@ -14,6 +14,7 @@ package rhq
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,6 +38,10 @@ type catalogServer struct {
 	retry  string
 	pages  [][]string
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func newCatalogServer(t *testing.T, pages ...[]string) *catalogServer {
 	t.Helper()
@@ -179,6 +184,43 @@ func TestModelCacheSharesOneReading(t *testing.T) {
 	}
 	if cs.hits.Load() != 2 {
 		t.Errorf("a stale snapshot must cost exactly one refresh, got %d requests", cs.hits.Load())
+	}
+	log, err := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.log"))
+	if err != nil {
+		t.Fatalf("catalog requests must leave an observable log: %v", err)
+	}
+	if got := strings.Count(string(log), "preflight ok models=1"); got != 2 {
+		t.Errorf("cache hits must not be logged as probe attempts; got %d real reads:\n%s", got, log)
+	}
+}
+
+func TestModelCacheLogsAnUnreadableCatalogWithoutTheCredential(t *testing.T) {
+	a := preflightApp(t)
+	a.ModelLister = &ModelLister{
+		URL:   "https://models.invalid/v1/models",
+		Token: func() (string, error) { return fakeToken, nil },
+		HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Status:     "401 Unauthorized",
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		})},
+	}
+
+	if _, ok := a.ModelCache().Models(time.Hour); ok {
+		t.Fatal("a 401 is unknown, not a catalog")
+	}
+	log, err := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.log"))
+	if err != nil {
+		t.Fatalf("the failed read was silent: %v", err)
+	}
+	got := string(log)
+	if !strings.Contains(got, "preflight failed: model list endpoint returned 401 Unauthorized") {
+		t.Errorf("failed read not named:\n%s", got)
+	}
+	if strings.Contains(got, fakeToken) {
+		t.Errorf("catalog log contains the credential: %s", got)
 	}
 }
 

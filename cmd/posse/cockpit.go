@@ -1186,6 +1186,9 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 		mark, color = "○", aYlw
 	}
 	status := s.Status
+	if s.TurnFailure != "" {
+		mark, color, status = "⛔", aRed, "failed"
+	}
 	if status == "" {
 		status = "shell"
 	}
@@ -1205,6 +1208,9 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 		// says that tier is not the one its PID asked for (rangerhq-oay).
 		if s.Fallback != "" {
 			name += " " + rhq.FallbackTag
+		}
+		if s.TurnFailure != "" {
+			name += " " + rhq.TurnFailureTag
 		}
 	}
 	if s.Crew {

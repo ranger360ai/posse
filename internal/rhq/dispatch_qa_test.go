@@ -244,6 +244,57 @@ func TestDispatchAgentStoppedWithoutClosing(t *testing.T) {
 	}
 }
 
+func TestDispatchMarksAProviderRefusalAsTurnFailure(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	idleClaude(t, fake)
+	const refusal = "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model."
+	d.TurnOutcome = func(dir, bead string, since time.Time) (string, bool) {
+		if dir != repo || bead != "a-1" || since.IsZero() {
+			t.Fatalf("turn failure lookup = %q %q %v", dir, bead, since)
+		}
+		return refusal, true
+	}
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 1 || !strings.Contains(out, "Claude refused the first turn") ||
+		!strings.Contains(out, "no work ran") || strings.Contains(out, "review") {
+		t.Errorf("provider refusal was presented as an ordinary settle, n=%d:\n%s", n, out)
+	}
+	session := SessionForBead("ranger", repo, "a-1")
+	m, ok := b.readMeta(session)
+	if !ok || m.TurnFailure != refusal {
+		t.Fatalf("turn failure not persisted: %+v", m)
+	}
+	var list strings.Builder
+	if err := b.CmdList(&list); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(list.String(), TurnFailureTag) {
+		t.Errorf("settled failed session looks healthy in posse list:\n%s", list.String())
+	}
+
+	// The marker describes the last observed turn, not the rest of the
+	// session's lifetime: after the allotment resets, a healthy first answer
+	// on --resume clears it.
+	d.Resume = true
+	d.TurnOutcome = func(string, string, time.Time) (string, bool) { return "", true }
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := b.readMeta(session); m.TurnFailure != "" {
+		t.Errorf("healthy resumed turn left a stale failure marker: %+v", m)
+	}
+}
+
 // A prompt error that says the prompt never landed (agent_not_ready,
 // agent_prompt_stalled) fails that bead and the pass moves on — it must not
 // abort the whole pass. rangerhq-81d: the bead is unclaimed again, and the

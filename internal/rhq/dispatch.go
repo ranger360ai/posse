@@ -65,6 +65,10 @@ type Dispatcher struct {
 	// transcripts under ~/.claude/projects). Injected by tests, which have
 	// no transcripts to scan.
 	Spend func(since time.Time) *CostReport
+	// TurnOutcome reads the runtime-owned outcome of one settled turn. nil =
+	// scan Claude transcripts; tests inject a hermetic answer. The bool says
+	// an outcome was observed; an empty message is a healthy first answer.
+	TurnOutcome func(dir, bead string, since time.Time) (string, bool)
 
 	DryRun        bool
 	Resume        bool          // re-prompt in_progress beads even when the holder's session is alive and idle
@@ -1102,6 +1106,7 @@ type pendingBead struct {
 	persona string
 	session string
 	target  string // the agent pane — re-waited when a --wait leg times out
+	runtime string // transcript adapter for the launched session
 	// resumed: the bead was already this persona's when the pass picked it
 	// up, so a hand-back keeps the assignee.
 	resumed  bool
@@ -1143,7 +1148,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	fmt.Fprintf(d.Out, "· %-14s → %s  (prompted, %s via %s)%s\n", is.ID, session, tier, tierWhy, over)
 	ag, _ := d.App.LoadAgent(persona)
 	prompt := workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, ag))
-	p := &pendingBead{is: is, persona: persona, session: session, target: target, resumed: resumed, result: make(chan promptResult, 1), prompted: time.Now()}
+	p := &pendingBead{is: is, persona: persona, session: session, target: target, runtime: runtime, resumed: resumed, result: make(chan promptResult, 1), prompted: time.Now()}
 	go func() {
 		res, err := d.HB.H.AgentPrompt(target, prompt, true, d.PromptWaitMS)
 		p.result <- promptResult{res, err}
@@ -1207,6 +1212,22 @@ wait:
 
 	// The agent settling is not success — the bead's own status is.
 	after, showErr := d.Bd.Show(p.is.Dir, p.is.ID)
+	if (showErr != nil || after.Status != "closed") && p.runtime == DefaultRuntime {
+		find := d.TurnOutcome
+		if find == nil {
+			find = FindClaudeTurnOutcome
+		}
+		if message, observed := find(p.is.Dir, p.is.ID, p.prompted); observed {
+			if err := d.HB.MarkTurnFailure(p.session, message); err != nil {
+				fmt.Fprintf(d.errw(), "posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
+			}
+			if message != "" {
+				fmt.Fprintf(d.Out, "⛔ %-14s Claude refused the first turn: %s — no work ran; relaunch %s at another tier\n",
+					p.is.ID, message, p.session)
+				return false, nil
+			}
+		}
+	}
 	switch {
 	case showErr == nil && after.Status == "closed":
 		fmt.Fprintf(d.Out, "✓ %-14s closed by %s\n", p.is.ID, p.persona)

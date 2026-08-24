@@ -266,7 +266,7 @@ func (c *PlanCache) logRead(now time.Time, err error) {
 	}
 	f.WriteString(line)
 	f.Close()
-	c.trimLog()
+	trimReadLog(c.Log)
 }
 
 // statusCode is "429" out of "429 Too Many Requests" — the log wants the
@@ -278,15 +278,15 @@ func statusCode(status string) string {
 	return "?"
 }
 
-// trimLog keeps the newest planLogKeep lines once the file passes
-// planLogMax. Newest, because the question this file answers is always
-// about the last few hours.
-func (c *PlanCache) trimLog() {
-	st, err := os.Stat(c.Log)
+// trimReadLog keeps the newest planLogKeep lines once a provider-probe log
+// passes planLogMax. Newest, because both logs answer questions about the
+// last few hours.
+func trimReadLog(path string) {
+	st, err := os.Stat(path)
 	if err != nil || st.Size() <= planLogMax {
 		return
 	}
-	f, err := os.Open(c.Log)
+	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
@@ -303,12 +303,12 @@ func (c *PlanCache) trimLog() {
 	if err := sc.Err(); err != nil {
 		return
 	}
-	if err := os.WriteFile(c.Log+".tmp", []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		os.Remove(c.Log + ".tmp")
+	if err := os.WriteFile(path+".tmp", []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		os.Remove(path + ".tmp")
 		return
 	}
-	if err := os.Rename(c.Log+".tmp", c.Log); err != nil {
-		os.Remove(c.Log + ".tmp")
+	if err := os.Rename(path+".tmp", path); err != nil {
+		os.Remove(path + ".tmp")
 	}
 }
 

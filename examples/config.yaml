@@ -105,12 +105,15 @@ default_emoji: ⚙️
 #
 # The check itself. It reads the account's model catalog with the same
 # credential the plan guard uses, costs no tokens, and shares one reading
-# through $RHQ_HOME/state/model-catalog.json — so a fleet pass costs at
-# most one request per TTL. Everything about it fails OPEN: an unreadable
+# through $RHQ_HOME/state/model-catalog.json — so a successful reading is
+# reused for the TTL (rate-limit cooldowns are shared too). Everything
+# about it fails OPEN: an unreadable
 # credential, an unreachable endpoint or an answer posse does not
 # understand all mean "unknown", and unknown launches the tier exactly as
 # asked. Only a catalog that was actually read, and that does not contain
 # the model, moves anything.
+# Every probe attempt (including a 401 or empty answer) is recorded generically
+# in $RHQ_HOME/state/model-catalog.log; credentials and headers never are.
 #
 # `posse gates <persona>` prints the verdict per runtime — run it once to
 # see whether the probe answers at all on your box before trusting it.

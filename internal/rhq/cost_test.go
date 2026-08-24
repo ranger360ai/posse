@@ -1,6 +1,7 @@
 package rhq
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -98,6 +99,56 @@ func TestScanTranscript(t *testing.T) {
 	if len(segs) != 1 || segs[0].Bead != "x-2" {
 		t.Errorf("since filter: %+v", segs)
 	}
+}
+
+func TestScanClaudeTurnOutcomeReadsOnlyTheSyntheticAssistantOutcome(t *testing.T) {
+	dir := t.TempDir()
+	limit := "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model."
+	since := time.Date(2026, 8, 24, 12, 27, 41, 0, time.UTC)
+
+	t.Run("provider refusal", func(t *testing.T) {
+		p := writeTranscript(t, dir, "limit.jsonl",
+			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":"Work beads issue ranger-base-6ne: do the work"}}`,
+			`{"type":"assistant","timestamp":"2026-08-24T12:27:42.680Z","message":{"model":"<synthetic>","content":[{"type":"text","text":`+fmt.Sprintf("%q", limit)+`}]}}`,
+		)
+		if got, ok := scanClaudeTurnOutcome(p, "ranger-base-6ne", since); !ok || got != limit {
+			t.Fatalf("failure = %q, %v", got, ok)
+		}
+	})
+
+	t.Run("quoted in bead data", func(t *testing.T) {
+		p := writeTranscript(t, dir, "quoted.jsonl",
+			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":`+fmt.Sprintf("%q", "Work beads issue ranger-base-1cc: production said "+limit)+`}}`,
+			`{"type":"assistant","timestamp":"2026-08-24T12:27:43Z","message":{"model":"claude-fable-5","content":[{"type":"text","text":"I will investigate."}]}}`,
+		)
+		if got, observed := scanClaudeTurnOutcome(p, "ranger-base-1cc", since); !observed || got != "" {
+			t.Fatalf("healthy assistant outcome = %q, observed %v", got, observed)
+		}
+	})
+
+	t.Run("wrong bead", func(t *testing.T) {
+		p := filepath.Join(dir, "limit.jsonl")
+		if got, ok := scanClaudeTurnOutcome(p, "ranger-base-other", since); ok {
+			t.Fatalf("another bead's failure leaked across dispatches: %q", got)
+		}
+	})
+
+	t.Run("project lookup", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		projectDir := "/Users/example/src/posse"
+		transcripts := filepath.Join(home, ".claude", "projects", "-Users-example-src-posse")
+		if err := os.MkdirAll(transcripts, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeTranscript(t, transcripts, "session.jsonl",
+			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":"Work beads issue ranger-base-6ne: do the work"}}`,
+			`{"type":"assistant","timestamp":"2026-08-24T12:27:42.680Z","message":{"model":"<synthetic>","content":[{"type":"text","text":`+fmt.Sprintf("%q", limit)+`}]}}`,
+		)
+		if got, observed := FindClaudeTurnOutcome(projectDir, "ranger-base-6ne", since); !observed || got != limit {
+			t.Fatalf("project outcome = %q, observed %v", got, observed)
+		}
+	})
 }
 
 func TestCostReportGroupsAndPrint(t *testing.T) {

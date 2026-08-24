@@ -19,8 +19,8 @@ package rhq
 //  1. The probe is the cheapest honest one on the box. Anthropic's model
 //     list is a zero-token GET, read with the same credential the plan
 //     guard already reads (planusage.go) and shared through a snapshot in
-//     state/ with a TTL — so a fleet pass costs at most one request per
-//     TTL, not one per bead.
+//     state/ with a TTL. Successful readings and rate-limit cooldowns are
+//     shared across the fleet; other failures stay UNKNOWN and may retry.
 //  2. Unavailable is LOUD: one line naming persona, tier, wanted model and
 //     substitute, `fallback:` in the session meta so `posse list` and the
 //     cockpit show it, and the tier column of `posse cost` already counts
@@ -43,7 +43,9 @@ package rhq
 // demotes anything. An unreadable credential, an unreachable endpoint, a
 // rate limit, an empty answer, a runtime whose models posse cannot name —
 // all of those are UNKNOWN, and unknown launches exactly what it was asked
-// to launch, silently. A preflight that guesses "unavailable" would
+// to launch. The request outcome is recorded in state/model-catalog.log so
+// UNKNOWN is diagnosable without changing that launch. A preflight that
+// guesses "unavailable" would
 // silently downgrade the whole shop, which is the failure it exists to
 // prevent, one level up.
 
@@ -211,6 +213,8 @@ type modelEntry struct {
 // ModelCache is the instance's one reading of the catalog.
 type ModelCache struct {
 	Path   string // "" = no sharing, every ask is a request
+	Log    string // catalog-probe log; "" = no log
+	Caller string
 	Lister *ModelLister
 	Now    func() time.Time
 }
@@ -220,7 +224,10 @@ func (a *App) ModelCache() *ModelCache {
 	if l == nil {
 		l = NewModelLister()
 	}
-	return &ModelCache{Path: filepath.Join(a.StateDir, "model-catalog.json"), Lister: l}
+	return &ModelCache{
+		Path: filepath.Join(a.StateDir, "model-catalog.json"),
+		Log:  filepath.Join(a.StateDir, "model-catalog.log"), Caller: "preflight", Lister: l,
+	}
 }
 
 func (c *ModelCache) now() time.Time {
@@ -250,6 +257,7 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 		l = NewModelLister()
 	}
 	ids, err := l.List()
+	c.logRead(now, ids, err)
 	if err != nil {
 		var rl *RateLimit
 		if errors.As(err, &rl) {
@@ -265,6 +273,43 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 	}
 	c.store(modelEntry{At: now, Models: ids})
 	return ids, true
+}
+
+// logRead makes the UNKNOWN side of the preflight observable. Before this
+// log, a successful catalog read containing the wanted model and a 401 that
+// left no snapshot had the same visible launch outcome: no line at all.
+// Errors from ModelLister are deliberately generic and never carry the
+// credential or a header, so they are safe to quote here.
+func (c *ModelCache) logRead(now time.Time, ids []string, err error) {
+	if c.Log == "" {
+		return
+	}
+	caller := c.Caller
+	if caller == "" {
+		caller = "-"
+	}
+	outcome := fmt.Sprintf("ok models=%d", len(ids))
+	if err != nil {
+		var rl *RateLimit
+		if errors.As(err, &rl) {
+			outcome = fmt.Sprintf("%s cooldown=%s", statusCode(rl.Status), BlindFor(modelCooldown(rl.RetryAfter)))
+		} else {
+			outcome = "failed: " + err.Error()
+		}
+	} else if len(ids) == 0 {
+		outcome = "failed: model list returned an empty catalog"
+	}
+	line := fmt.Sprintf("%s %s %s\n", now.UTC().Format(time.RFC3339), caller, outcome)
+	if err := os.MkdirAll(filepath.Dir(c.Log), 0o755); err != nil {
+		return
+	}
+	f, ferr := os.OpenFile(c.Log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if ferr != nil {
+		return
+	}
+	f.WriteString(line)
+	f.Close()
+	trimReadLog(c.Log)
 }
 
 func modelCooldown(d time.Duration) time.Duration {

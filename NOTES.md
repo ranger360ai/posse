@@ -1343,19 +1343,33 @@ spend was always counted honestly — what was missing was anyone knowing.
 The probe is `GET api.anthropic.com/v1/models` with the same credential
 the plan guard reads, zero tokens, shared through
 `$RHQ_HOME/state/model-catalog.json` behind `model_probe_ttl:` (default
-1h) exactly as `plan-usage.json` is — so a fleet pass costs at most one
-request per TTL. Verified live 2026-08-23: the OAuth credential is
+1h) exactly as `plan-usage.json` is — a successful reading is reused for
+the TTL, and rate-limit cooldowns are shared across processes. Other failed
+attempts remain UNKNOWN and may be retried by the next launch. Verified live
+2026-08-23: the OAuth credential is
 accepted there (the route exists and answers 401 unauthenticated;
 `/api/oauth/models`, the shape the plan guard's endpoint would suggest, is
 a 404), and the catalog it returns is the ten ids this account can use,
-including all three the claude tier table names.
+including all three the claude tier table names. A later installed-binary
+launch on the same account produced no snapshot at all; before the request
+log below, that launch left no evidence distinguishing credential context,
+HTTP response, transport failure, or an empty answer.
+
+Every cache miss that attempts a probe appends a generic outcome to
+`$RHQ_HOME/state/model-catalog.log` (`ok models=N`, HTTP failure, empty
+catalog, or cooldown); cache hits append nothing, and the log is bounded on
+the same policy as `plan-usage.log`. It never records the credential or a
+header. This is the evidence for UNKNOWN: a launch still fails open, but a
+missing `model-catalog.json` no longer leaves "model available" and "probe
+could not authenticate" observationally identical.
 
 Three rules make it safe to leave on by default. **It fails open in one
 direction only**: a catalog that was actually read and does not contain
 the model is the ONLY thing that moves a launch — an unreadable
 credential, an unreachable endpoint, a 429, an empty answer or a runtime
 with no model mapping are all *unknown*, and unknown launches exactly what
-it was asked to launch, silently. A preflight that guessed "unavailable"
+it was asked to launch without a launch warning (the request outcome remains
+in `model-catalog.log`). A preflight that guessed "unavailable"
 would silently downgrade the whole shop, which is the failure it exists to
 prevent one level up. **It never refuses**: rule (3) from the operator —
 "a degraded model is worse than nothing" is their judgement, and the place
@@ -1385,6 +1399,21 @@ network and is therefore also the fail-open path. Tests that want the
 preflight to *do* something seed `state/model-catalog.json` — a reading
 off a seeded snapshot with an unconfigured lister proves it never asked
 anyone.
+
+Catalog membership and plan allotment are different facts. On 2026-08-24 a
+strong-tier Claude session returned a synthetic assistant message saying
+its Fable allotment was exhausted, then settled `idle` without doing work;
+the model can remain in `/v1/models` throughout that condition. Dispatch now
+checks the matching Claude transcript after a turn settles. That exact
+provider refusal writes `turn_failure:` into the session meta, prints a loud
+"no work ran" line, marks `posse list` with `🛑turn-failed`, and renders the
+cockpit row red as `failed` instead of healthy `idle`. It does not guess a
+fallback or replay the prompt: changing tiers remains an operator decision,
+and the claimed bead stays attached to the failed session until that
+decision is made. A later dispatched turn whose first assistant answer is
+healthy clears the marker. The matching keys on the transcript's assistant
+record after `Work beads issue <id>`, not on pane text, because bead data
+may quote the provider message verbatim.
 `posse scorecard [<persona>]` makes the PID metrics observable from bd
 data, read-only (rangerhq-h2c): per persona, closed / reopened / open /
 held (in_progress) / blocked, median age at close, and beads filed

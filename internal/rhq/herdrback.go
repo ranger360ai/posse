@@ -70,24 +70,25 @@ func NewHerdrBackend(a *App) *HerdrBackend {
 // ─── meta files ──────────────────────────────────────────────────────────────
 
 type HerdrMeta struct {
-	Name      string
-	Workspace string
-	Pane      string // root pane at creation — where the command was typed
-	Emoji     string
-	Envs      string // env-set names ("a+b") — names only, never values
-	Agent     string
-	Runtime   string    // launch profile the persona command was rendered for (ADR 0002)
-	Tier      string    // model tier it was rendered at (ADR 0003)
-	Dir       string    // working directory the session was created in (seatbelt re-render on relaunch)
-	Cmd       string    // raw --cmd, sessions without a persona only (persona lines are re-rendered, never replayed)
-	Cage      string    // cage tier the session got (ADR 0002 §4)
-	Sockets   string    // container: host sockets the PID declared and the cage mounted ("" = none)
-	Degraded  string    // "; "-joined gates the wall does not realize here ("" = full parity)
-	Fallback  string    // the availability preflight's line when the tier did not get its model ("" = it did) — rangerhq-oay
-	Crew      bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
-	Socket    string    // the herdr server this session was created against (see SocketID)
-	Gen       string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
-	Launched  time.Time // when the persona/recipe command was last typed into Pane
+	Name        string
+	Workspace   string
+	Pane        string // root pane at creation — where the command was typed
+	Emoji       string
+	Envs        string // env-set names ("a+b") — names only, never values
+	Agent       string
+	Runtime     string    // launch profile the persona command was rendered for (ADR 0002)
+	Tier        string    // model tier it was rendered at (ADR 0003)
+	Dir         string    // working directory the session was created in (seatbelt re-render on relaunch)
+	Cmd         string    // raw --cmd, sessions without a persona only (persona lines are re-rendered, never replayed)
+	Cage        string    // cage tier the session got (ADR 0002 §4)
+	Sockets     string    // container: host sockets the PID declared and the cage mounted ("" = none)
+	Degraded    string    // "; "-joined gates the wall does not realize here ("" = full parity)
+	Fallback    string    // the availability preflight's line when the tier did not get its model ("" = it did) — rangerhq-oay
+	TurnFailure string    // provider refused the dispatch turn before model work began ("" = none observed)
+	Crew        bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
+	Socket      string    // the herdr server this session was created against (see SocketID)
+	Gen         string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
+	Launched    time.Time // when the persona/recipe command was last typed into Pane
 }
 
 // SocketID names the herdr server a session belongs to: $HERDR_SOCKET_PATH,
@@ -213,24 +214,25 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		return nil, false
 	}
 	return &HerdrMeta{
-		Name:      name,
-		Workspace: YamlGet(p, "workspace"),
-		Pane:      YamlGet(p, "pane"),
-		Emoji:     YamlGet(p, "emoji"),
-		Envs:      YamlGet(p, "envs"),
-		Agent:     YamlGet(p, "agent"),
-		Runtime:   YamlGet(p, "runtime"),
-		Tier:      YamlGet(p, "tier"),
-		Dir:       YamlGet(p, "dir"),
-		Cmd:       YamlGet(p, "cmd"),
-		Cage:      YamlGet(p, "cage"),
-		Sockets:   YamlGet(p, "sockets"),
-		Degraded:  YamlGet(p, "degraded"),
-		Fallback:  YamlGet(p, "fallback"),
-		Crew:      YamlGet(p, "crew") == "true",
-		Socket:    YamlGet(p, "socket"),
-		Gen:       YamlGet(p, "gen"),
-		Launched:  parseLaunched(YamlGet(p, "launched")),
+		Name:        name,
+		Workspace:   YamlGet(p, "workspace"),
+		Pane:        YamlGet(p, "pane"),
+		Emoji:       YamlGet(p, "emoji"),
+		Envs:        YamlGet(p, "envs"),
+		Agent:       YamlGet(p, "agent"),
+		Runtime:     YamlGet(p, "runtime"),
+		Tier:        YamlGet(p, "tier"),
+		Dir:         YamlGet(p, "dir"),
+		Cmd:         YamlGet(p, "cmd"),
+		Cage:        YamlGet(p, "cage"),
+		Sockets:     YamlGet(p, "sockets"),
+		Degraded:    YamlGet(p, "degraded"),
+		Fallback:    YamlGet(p, "fallback"),
+		TurnFailure: YamlGet(p, "turn_failure"),
+		Crew:        YamlGet(p, "crew") == "true",
+		Socket:      YamlGet(p, "socket"),
+		Gen:         YamlGet(p, "gen"),
+		Launched:    parseLaunched(YamlGet(p, "launched")),
 	}, true
 }
 
@@ -288,6 +290,12 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if m.Fallback != "" {
 		fmt.Fprintf(&s, "fallback: %s\n", m.Fallback)
 	}
+	// A live CLI can settle idle after the provider refused the turn before
+	// any model ran. Keep that outcome beside the live status so a later
+	// listing does not present the session as healthy.
+	if m.TurnFailure != "" {
+		fmt.Fprintf(&s, "turn_failure: %s\n", m.TurnFailure)
+	}
 	if m.Crew {
 		fmt.Fprintf(&s, "crew: true\n")
 	}
@@ -315,6 +323,11 @@ const CrewTag = "👤"
 // running at what it says, and this is the mark that says it was not asked
 // for. `fallback:` in the session meta carries the whole line.
 const FallbackTag = "⤵️fallback"
+
+// TurnFailureTag marks a live session whose provider refused its dispatch
+// turn before model work began. Herdr's idle/done status remains true of the
+// CLI process; this tag carries the separate work outcome.
+const TurnFailureTag = "🛑turn-failed"
 
 // EnvPersona is set in every persona session's env by CreateSession: its
 // presence in *posse's own* env means posse was run by a persona, not by the
@@ -362,6 +375,22 @@ func (b *HerdrBackend) MarkCrewOnOperatorPrompt(name string) {
 	b.MarkCrew(name)
 }
 
+// MarkTurnFailure persists a provider refusal found after a dispatch turn
+// settles, or clears the marker when message is empty and a later first
+// answer proves work can run again. It is an outcome marker, not a liveness
+// override: the CLI really is still idle and may be inspected normally.
+func (b *HerdrBackend) MarkTurnFailure(name, message string) error {
+	m, ok := b.readMeta(name)
+	if !ok {
+		return Die("no session meta for %s", name)
+	}
+	if m.TurnFailure == message {
+		return nil
+	}
+	m.TurnFailure = message
+	return b.writeMeta(m)
+}
+
 func (b *HerdrBackend) metaNames() []string {
 	ents, _ := os.ReadDir(b.metaDir())
 	var out []string
@@ -387,6 +416,7 @@ type HerdrSession struct {
 	Sockets     string // persona sessions: host sockets the cage mounted ("" = none)
 	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
 	Fallback    string // persona sessions: the tier's model was unavailable and this is what ran instead ("" = it got what it asked for)
+	TurnFailure string // provider refused the dispatch turn before model work began
 	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
 	Dir         string // working directory (from meta; "" for foreign sessions)
 	Agent       string
@@ -515,7 +545,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
-			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, Crew: m.Crew, Dir: m.Dir,
+			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Crew: m.Crew, Dir: m.Dir,
 			Status: status(ws), Focused: ws.Focused,
 		})
 	}
@@ -1466,6 +1496,9 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 			}
 			if s.Fallback != "" {
 				line += "  " + FallbackTag
+			}
+			if s.TurnFailure != "" {
+				line += "  " + TurnFailureTag
 			}
 		}
 		if s.Crew {
