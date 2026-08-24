@@ -88,7 +88,12 @@ mkdir -p "$OUT"
 
 # Same discipline as scripts/clean-build.sh, and for the same reason: personas
 # share this checkout, so the working tree is never what ships.
-tmp=$(mktemp -d -t posse-release)
+# Explicit template, not `mktemp -t <prefix>`: the -t form is BSD, and GNU
+# coreutils rejects a template with no X's ("too few X's in template"). This
+# script runs on ubuntu-latest in .github/workflows/release.yml, so the BSD
+# spelling failed only in CI, on a tag, where it is most expensive to discover.
+# Same form as scripts/verify-prune-guard.sh.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-release.XXXXXX")
 src=$tmp/src
 cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :

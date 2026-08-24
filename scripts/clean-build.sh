@@ -44,7 +44,10 @@ if [ -n "$dirty" ]; then
 	echo "  commit them first if they belong in the installed binary." >&2
 fi
 
-tmp=$(mktemp -d -t posse-clean-build)
+# Explicit template — `mktemp -t <prefix>` is BSD-only and GNU coreutils
+# rejects it, which would break `make release`/`make install` for any Linux
+# reader following INSTALL.md. Same form as scripts/verify-prune-guard.sh.
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-clean-build.XXXXXX")
 src=$tmp/src # git worktree add refuses an existing directory
 cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
