@@ -28,6 +28,79 @@ func TestParseShimRules(t *testing.T) {
 	}
 }
 
+// Bash(security:*) is the crew-wide keychain-CLI tripwire (ranger-base-khu).
+// The PID spelling is `:*` with no extra words; that must parse as the whole
+// verb (same as Bash(bd)), or the rendered shim is not an unconditional refuse.
+func TestParseShimRulesSecurityStarIsWholeVerb(t *testing.T) {
+	rules := ParseShimRules([]string{"Bash(git push:*)", "Bash(security:*)"})
+	r, ok := rules["security"]
+	if !ok || len(r) != 1 {
+		t.Fatalf("security rule missing: %+v", rules)
+	}
+	if len(r[0].Words) != 0 || r[0].Exact || r[0].Rule != "Bash(security:*)" {
+		t.Errorf("Bash(security:*) must be whole-verb: %+v", r[0])
+	}
+	if kind, faithful := matcherFor("security", r[0]); kind != "whole verb" || !faithful {
+		t.Errorf("matcherFor: %q %v", kind, faithful)
+	}
+	got := L0Spellings([]string{"Bash(security:*)"})
+	if strings.Join(got, " ") != "Bash(security:*)" {
+		t.Errorf("L0Spellings must not duplicate an already-starred whole verb: %q", got)
+	}
+}
+
+func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	leaked := filepath.Join(t.TempDir(), "leaked")
+	realBin := t.TempDir()
+	os.WriteFile(filepath.Join(realBin, "security"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755)
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	gatesDir, binDir, _, err := a.RenderGates("laurie", []string{"Bash(git push:*)", "Bash(security:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(binDir, "security")
+	body, _ := os.ReadFile(shim)
+	if !strings.Contains(string(body), "if true; then") || !strings.Contains(string(body), "posse_refuse") {
+		t.Errorf("whole-verb shim must refuse unconditionally:\n%s", body)
+	}
+	run := func(args ...string) (string, int) {
+		cmd := exec.Command(shim, args...)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("run %v: %v", args, err)
+		}
+		return string(out), code
+	}
+	for _, args := range [][]string{
+		{},
+		{"help"},
+		{"-h"},
+		{"find-generic-password", "-s", "Claude Code-credentials", "-w"},
+		{"dump-keychain"},
+	} {
+		out, code := run(args...)
+		if code != 1 || !strings.Contains(out, "deny: Bash(security:*)") || !strings.Contains(out, "refused by posse gate: security") {
+			t.Errorf("argv %q: code=%d out=%q", args, code, out)
+		}
+	}
+	if _, err := os.Stat(leaked); err == nil {
+		t.Error("shim exec'd the real security binary")
+	}
+	logb, _ := os.ReadFile(filepath.Join(gatesDir, "refusals.log"))
+	if !strings.Contains(string(logb), "find-generic-password") || !strings.Contains(string(logb), "deny: Bash(security:*)") {
+		t.Errorf("refusals.log: %q", logb)
+	}
+}
+
 // The rendered shim refuses matching argv (message, exit 1, refusals.log)
 // and execs the real binary otherwise; PATH prefix on the typed line.
 func TestRenderedShimRefusesAndPasses(t *testing.T) {
