@@ -175,6 +175,11 @@
   }
   .terminal .ps1 { color: var(--ember); user-select: none; }
   .terminal .cmt { color: var(--lantern-dim); }
+  .terminal a {
+    color: var(--ember);
+    border-bottom: 1px solid rgba(224,122,78,.45);
+  }
+  .terminal a:hover { border-bottom-color: var(--ember); }
   .terminal-caption {
     font-family: var(--mono);
     font-size: 11px;
@@ -344,14 +349,17 @@
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
 
   <section class="rise">
-    <pre class="terminal"><code><span class="ps1">$</span> go install github.com/ranger360ai/posse/cmd/posse@latest
-<span class="ps1">$</span> export PATH="$(go env GOPATH)/bin:$PATH"   <span class="cmt"># ← where it landed</span>
+    <pre class="terminal"><code><span class="ps1">$</span> brew tap ranger360ai/tap
+<span class="cmt"># the next line grants this one formula, not the tap</span>
+<span class="cmt"># — <a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md#2-get-the-harness-and-build-it">what brew is asking, and how to revoke it</a></span>
+<span class="ps1">$</span> brew trust --formula ranger360ai/tap/posse
+<span class="ps1">$</span> brew install ranger360ai/tap/posse
 <span class="ps1">$</span> posse init
 
 <span class="ps1">$</span> posse new myproj --dir ~/code/myproj --cmd claude
 <span class="ps1">$</span> posse prompt myproj "fix the failing test" --wait
 <span class="ps1">$</span> posse cockpit   <span class="cmt"># the whole crew at a glance, blocked-first</span></code></pre>
-    <p class="terminal-caption">put that export in your rc file, not just this session &middot; requires herdr &amp; beads — see the readme</p>
+    <p class="terminal-caption">a release binary — no go needed &middot; still needs herdr &amp; beads &middot; from source: see the readme</p>
   </section>
 
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
