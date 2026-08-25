@@ -11,9 +11,11 @@ package rhq
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +180,136 @@ func TestCageLauncherIsABinaryOutsideTheGates(t *testing.T) {
 	}
 	if IsCageLaunch([]string{"posse", "list"}) || !IsCageLaunch([]string{"claude", CageLaunchFlag, "x"}) {
 		t.Error("IsCageLaunch reads the flag, not the name")
+	}
+}
+
+// The launcher is named for the *runtime*, not the first word of the PID's
+// command: or of the inner line. A PID free to write `env FOO=1 claude …`
+// would otherwise hand herdr argv0=env and disappear from agent list
+// (rangerhq-1k1).
+func TestCageLauncherNameComesFromRuntimeNotInnerCommand(t *testing.T) {
+	a := cageApp(t)
+	ag := cageAgent(t, a, "command: env FOO=1 claude --model x\n")
+	rt, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Exe() != "claude" {
+		t.Fatalf("Exe() reads the runtime template, not the PID command: %q", rt.Exe())
+	}
+	line, err := a.WrapInCage(ag, rt, "s1", t.TempDir(), "env FOO=1 claude --model x", []string{"CLAUDE_CODE_OAUTH_TOKEN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, plan := cageLaunchArgs(t, line)
+	if filepath.Base(launcher) != "claude" {
+		t.Errorf("the pane must run a launcher named claude, not %s", filepath.Base(launcher))
+	}
+	var got CageLaunchPlan
+	b, err := os.ReadFile(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Argv[0] != "claude" {
+		t.Errorf("argv[0] must be claude, not the inner command's first word: %q", got.Argv)
+	}
+	if !strings.Contains(got.Argv[len(got.Argv)-1], "env FOO=1 claude") {
+		t.Errorf("the inner command still rides inside the cage: %q", got.Argv)
+	}
+}
+
+func TestCageLauncherFollowsEveryBuiltinRuntime(t *testing.T) {
+	a := cageApp(t)
+	for _, name := range []string{"claude", "codex", "grok"} {
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if rt.Exe() != name {
+			t.Errorf("%s: Exe()=%q — herdr matches manifests on that name", name, rt.Exe())
+		}
+		path, err := a.RenderCageLauncher("p", rt.Exe())
+		if err != nil {
+			t.Fatalf("%s launcher: %v", name, err)
+		}
+		if filepath.Base(path) != name {
+			t.Errorf("%s launcher basename %s", name, path)
+		}
+	}
+}
+
+func TestCageLauncherRejectsHostileExeNames(t *testing.T) {
+	a := cageApp(t)
+	for _, name := range []string{
+		"", ".", "..", "-claude", "foo/bar", "../claude",
+		"claude;rm", "env FOO", "claude claude",
+	} {
+		if _, err := a.RenderCageLauncher("p", name); err == nil {
+			t.Errorf("%q must refuse — it cannot be a pane argv0 herdr will match", name)
+		}
+	}
+}
+
+// Live pin: the hermetic exec test uses the test binary as the engine, so it
+// cannot see docker reset argv0. herdr identifies by argv0; if the docker
+// client re-execs as `docker`, a caged session is agent_not_found again.
+//
+//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveCageLauncherExecsDockerAsClaude -v
+func TestLiveCageLauncherExecsDockerAsClaude(t *testing.T) {
+	if os.Getenv("RHQ_LIVE_DOCKER") == "" {
+		t.Skip("set RHQ_LIVE_DOCKER=1 (needs docker; asserts argv0=claude on a real docker client)")
+	}
+	docker, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("docker not on PATH")
+	}
+	if exec.Command(docker, "image", "inspect", "alpine:latest").Run() != nil {
+		t.Skip("alpine:latest is not present")
+	}
+	a := cageApp(t)
+	launcher, err := a.RenderCageLauncher("p", "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("qa1k1%d", os.Getpid())
+	planPath := a.CageArgvFile("p", "live")
+	b, err := json.Marshal(CageLaunchPlan{
+		Path: docker,
+		Argv: []string{"claude", "run", "--rm", "--name", name, "alpine", "sleep", "30"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, append(b, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(launcher, CageLaunchFlag, planPath)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = exec.Command(docker, "rm", "-f", name).Run()
+	}()
+	var ps string
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("ps", "-p", strconv.Itoa(cmd.Process.Pid), "-o", "comm=,args=").Output()
+		if err == nil && strings.Contains(string(out), "sleep") {
+			ps = strings.TrimSpace(string(out))
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if ps == "" {
+		t.Fatal("the launcher never became a long-running docker client")
+	}
+	if !strings.HasPrefix(ps, "claude") {
+		t.Errorf("docker client must keep argv0=claude so herdr can see the pane, got %q", ps)
 	}
 }
 
