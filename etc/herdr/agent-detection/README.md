@@ -103,11 +103,20 @@ pane and a bare `Grok Build  1.0.5` on the next — 7sbo saw the bare form,
 1xsj saw the tagged form twice the next day, so the tag is a **race** (grok
 resolves its channel asynchronously), not a per-machine variant. Requiring
 it drops the rule at random. Both variants are pinned:
-`testdata/grok/idle-startup-splash{,-plain-footer}.txt`.
+`testdata/grok/idle-startup-splash{,-plain-footer}.txt`. A third, live
+2026-08-25 capture (`idle-startup-splash-no-consent-banner.txt`) has the
+tagged footer, extra changelog/tip lines, and **no** consent banner — the
+banner is not always drawn; the menu + footer still must match.
+
+`verify-detection` requires those splash fixtures to resolve to rule id
+`startup_splash`, not just state `idle`. After rangerhq-1xsj the state is
+the same as herdr's fallback, so a state-only check is vacuous: deleting
+the rule still reads idle (rangerhq-uglc).
 
 **Deliberately not keyed on the consent banner.** That banner survives into
 a live, prompt-accepting composer; keying on it would strand every grok pane
 forever. `testdata/grok/idle-composer-with-consent-banner.txt` pins it.
+The live splash above pins the other direction: a splash with no banner.
 
 `startupScreenDismissals` in `internal/rhq/dispatch.go` still presses Esc at
 this rule id when a pane reports blocked — a branch this state change makes

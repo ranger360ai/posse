@@ -16,8 +16,12 @@
 # codex's was the dangerous hole: no rule matched, and detection fell through
 # to default_known_agent_idle_fallback, which for a KNOWN agent resolves to
 # `idle` — a prompt typed into a modal. grok's rule ends up at the same state
-# as that fallback on purpose, so what it buys is a NAMED, fixture-pinned
-# answer that fails loudly if the screen ever becomes a real modal.
+# as that fallback on purpose, so the *state* encoded in idle-startup-splash*.txt
+# is the same answer herdr would give with the rule deleted. After rangerhq-1xsj
+# that is not a pin: a missing rule is still idle, via the fallback 37c closed.
+# testdata/grok/*startup-splash* must therefore resolve to rule id
+# startup_splash, not `none` / default_known_agent_idle_fallback (rangerhq-uglc).
+# The state check still fails loudly if the screen ever becomes a real modal.
 #
 # Run after `make install-detection`, and again after any `herdr update`:
 # herdr refreshes remote manifests in the background AND ships bundled ones
@@ -47,11 +51,26 @@ for agent in "${agents[@]}"; do
     out=$(herdr agent explain --file "$f" --agent "$agent" 2>&1)
     got=$(printf '%s\n' "$out" | awk -F': ' '/^state/{print $2; exit}')
     rule=$(printf '%s\n' "$out" | awk -F': ' '/^rule/{print $2; exit}')
+    rule_id=${rule%% *}
     n=$((n + 1))
-    if [ "$got" = "$want" ]; then
+    why=
+    if [ "$got" != "$want" ]; then
+      why=state
+    fi
+    # Splash fixtures are idle on purpose (rangerhq-1xsj). Without a named-rule
+    # check, deleting startup_splash still goes green: herdr falls through to
+    # default_known_agent_idle_fallback, which is the original 37c hole.
+    case "$agent/$base" in
+      grok/*startup-splash*)
+        if [ "$rule_id" != "startup_splash" ]; then
+          why="${why:+$why,}rule"
+        fi
+        ;;
+    esac
+    if [ -z "$why" ]; then
       printf '%-8s %-38s %-8s %-8s %s\n' "$agent" "$base" "$want" "$got" "${rule:-—}"
     else
-      printf '%-8s %-38s %-8s %-8s %s   <-- FAIL\n' "$agent" "$base" "$want" "${got:-?}" "${rule:-—}"
+      printf '%-8s %-38s %-8s %-8s %s   <-- FAIL (%s)\n' "$agent" "$base" "$want" "${got:-?}" "${rule:-—}" "$why"
       fail=$((fail + 1))
     fi
   done
