@@ -48,17 +48,22 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 
 func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// breakPs shadows `ps` with one that cannot answer, which is what the hook
-// meets on a slim image, under a sandbox that denies process inspection, or
-// with a restricted PATH. Shadowing beats un-setting PATH: the hook still
-// needs sed, head and the rest to get as far as the probe.
-func (w *hookWorld) breakPs(t *testing.T) {
+// fakePs shadows `ps` with a script. Shadowing beats un-setting PATH: the
+// hook still needs sed, head and the rest to get as far as the probe.
+func (w *hookWorld) fakePs(t *testing.T, script string) {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte("#!/bin/sh\nexit 127\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	w.path = dir
+}
+
+// breakPs is the mugy environment: `ps` cannot answer at all (slim image,
+// sandbox that denies process inspection, restricted PATH).
+func (w *hookWorld) breakPs(t *testing.T) {
+	t.Helper()
+	w.fakePs(t, "#!/bin/sh\nexit 127\n")
 }
 
 // psCanReadArgv reports whether this box's `ps` can name a process by pid.
@@ -277,6 +282,66 @@ func TestAutostartStandsDownWhenPsCannotAnswer(t *testing.T) {
 	// A failed scan says so (rangerhq-llse): standing down on a pid nothing
 	// could identify is not the same fact as standing down on a confirmed
 	// loop, and the operator is the one who can tell them apart.
+	if !strings.Contains(r.out, "could not identify") {
+		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
+	}
+}
+
+// Same invariant as TestAutostartStandsDownWhenPsCannotAnswer, other arm of
+// the probe: `ps` exits 0 and prints nothing. That is not a refutation — it
+// is silence — and `[ -z "$argv" ]` is the only thing that treats it as
+// one. Exit 127 never reaches that arm.
+func TestAutostartStandsDownWhenPsPrintsNothing(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.sessionExists(t)
+	pid := liveArgv(t, "posse dispatch --watch 30s")
+	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
+		t.Fatal(err)
+	}
+	w.fakePs(t, "#!/bin/sh\nexit 0\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
+	}
+	if r.calls != "" {
+		t.Errorf("an empty probe must not replace a live loop:\n%s", r.calls)
+	}
+	if !strings.Contains(r.out, "left alone") {
+		t.Errorf("want the hook to say it stood down:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "could not identify") {
+		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
+	}
+}
+
+// rangerhq-wnnd: loop_alive treats a successful `ps` whose stdout is only
+// spaces/tabs as a *refutation* (`*dispatch*` misses, return 1) and
+// kill-and-replaces a pid that answered kill -0. Empty and exit-127 are
+// silence; whitespace is not `[ -z ]`. The argv probe's mugy contract is
+// that it can only refute, never assert death — a column of blanks is not
+// a name. This box's /bin/ps does not pad `command=`; the shim is the
+// same shape as mugy's 127 environment.
+func TestAutostartStandsDownWhenPsPrintsOnlyWhitespace(t *testing.T) {
+	t.Skip("ranger-base-rmc: loop_alive treats whitespace-only ps output as a refutation and replaces a live pid")
+	w := newHookWorld(t, armed)
+	w.sessionExists(t)
+	pid := liveArgv(t, "posse dispatch --watch 30s")
+	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
+		t.Fatal(err)
+	}
+	w.fakePs(t, "#!/bin/sh\nprintf '    \\n'\nexit 0\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
+	}
+	if r.calls != "" {
+		t.Errorf("a whitespace-only probe must not replace a live loop:\n%s", r.calls)
+	}
+	if !strings.Contains(r.out, "left alone") {
+		t.Errorf("want the hook to say it stood down:\n%s", r.out)
+	}
 	if !strings.Contains(r.out, "could not identify") {
 		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
 	}
