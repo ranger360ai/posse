@@ -288,9 +288,9 @@ func TestSeedCageHome(t *testing.T) {
 }
 
 // The tier lands in pieces, and the ADR's rule is that the strongest cage
-// is never the one that silently loses `git push`. rangerhq-6so renders
-// L1/L3 inside and mounts the repo :ro, so those gates are claimed here —
-// but only when the IMAGE can answer for the render; and the gate no tier
+// is never the one that silently loses `git push`. rangerhq-6so renders L1
+// inside and mounts the repo :ro; L3 rides the repo mount but is claimed
+// only by CheckParityIn after executing that repo's hook. The gate no tier
 // realizes (a stdio MCP server, which never leaves the cage) is still
 // refused however strong the tier's name is.
 func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
@@ -312,10 +312,11 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 	}
 	// The tiers are cumulative in gates realized (ADR 0002 §3): the shell
 	// verb keeps its shim, rendered inside, and Edit/Write is the mount
-	// boundary that replaces L2.
+	// boundary that replaces L2. This directory-independent check does not
+	// claim an unprobed pre-push hook.
 	if !strings.Contains(p.Realized["Bash(git push:*)"], "rendered inside the cage") ||
-		!strings.Contains(p.Realized["Bash(git push:*)"], "pre-push hook") {
-		t.Errorf("the shell verb is realized inside the cage, L1 and L3: %+v", p.Realized)
+		strings.Contains(p.Realized["Bash(git push:*)"], "pre-push hook") {
+		t.Errorf("the shell verb is realized by L1 here; unprobed L3 must be absent: %+v", p.Realized)
 	}
 	if !strings.Contains(p.Realized["Edit"], ":ro") || !strings.Contains(p.Realized["Write"], ":ro") {
 		t.Errorf("Edit/Write are the mount boundary at this tier: %+v", p.Realized)
