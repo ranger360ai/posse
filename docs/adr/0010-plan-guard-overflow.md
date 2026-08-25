@@ -1,6 +1,7 @@
 # ADR 0010 — Plan-guard overflow: a second pool when the metered window is hot
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
+(ADR 0013: the skip is per-bead, including when blind)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -113,6 +114,24 @@ blind skip is a *park*: nothing claimed, nothing spent on any pool, and
 the first good reading resumes normal service including overflow.
 Ledger consequence: a blind pass writes nothing to `overflow.log`.
 
+*(Amended 2026-08-24, ADR 0013 §3.)* §1 already moved a *threshold trip*
+per bead, so an off-meter launch is not skipped because somebody else's
+window is hot. The **blind** skip in this section was still a whole-pass
+stop, and that is the other way a pass dies: an unreadable on-meter
+credential parked an off-meter drain (ranger-base-ri4). The rule is now
+the same grain as §1, for both stops:
+
+```
+off the guarded meter                 → launch, even if the guard is blind
+on-meter and blind                    → skip this bead (park; never overflow)
+on-meter and over threshold           → §1 ladder (overflow / skip)
+```
+
+The pass always runs. A pass whose every bead skipped is a quiet pass
+and `--watch` backs off on that. `plan_guard_blind_max: 0` is not the
+way to keep off-meter work alive. Overflow remains a judgement on a
+reading; "blind never overflows" stands.
+
 ## Consequences
 
 - `dispatch.go`: runtime becomes per-launch (`fire`/`launchSession`/
@@ -122,7 +141,8 @@ Ledger consequence: a blind pass writes nothing to `overflow.log`.
 - Config: `plan_guard_overflow:`, `plan_guard_overflow_cap:`; PID
   `overflow: false`. Dispatch docs, `examples/config.yaml`.
 - Fixes in passing: launches on runtimes off the guarded meter are no
-  longer skipped by that meter.
+  longer skipped by that meter. *(ADR 0013: this was true of a
+  threshold trip only; the blind skip is now the same grain.)*
 - Not enabled by anything here: no value set until the operator has
   sized the overflow pool and confirmed that any pay-per-use billing on
   it is off — a cap in beads is a brake, not a bill guard.

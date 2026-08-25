@@ -1,6 +1,7 @@
 # ADR 0012 — the harness/instance boundary, and the public split
 
-*Status: accepted 2026-08-20 · executed at publication 2026-08-22 · owner: architect*
+*Status: accepted 2026-08-20 · executed at publication 2026-08-22 ·
+owner: architect · amended 2026-08-24 (ADR 0013: D4.1 dispatch delivery)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -163,8 +164,12 @@ satisfy:
 1. **Launch**: one typed command line, rendered from a template over the
    closed placeholder set (`{file} {memory} {model} {skills} {allow}
    {deny}`), that delivers the PID (system-prompt flag / config key /
-   rules flag — template text either way) and starts idle awaiting a typed
-   prompt.
+   rules flag — template text either way) and, for interactive `posse
+   new`, starts idle awaiting a typed prompt. **Dispatch** is a different
+   delivery: when the runtime declares `prompt: argv` (ADR 0013 §2) the
+   work prompt is appended as `"$(cat <file>)"` after that line — no new
+   placeholder, because an unrendered `{prompt}` is a literal argument
+   to the CLI. Headless flags (`-p` / `exec`) are not this path.
 2. **Unattended approval**: template flags must make it approve tool calls
    with nobody watching, or the instance accepts permanently-blocked
    sessions.

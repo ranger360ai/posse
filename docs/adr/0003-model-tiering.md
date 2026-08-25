@@ -1,6 +1,7 @@
 # ADR 0003 — Model tiering: which model, how much, per persona and bead
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
+(ADR 0013 §6: unmapped tier displays as `default`, not the intent name)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -42,6 +43,16 @@ Rendering: built-in templates gain **`{model}`** → `--model <id>` /
 that carry their own `command:` don't get a model unless they add
 `{model}` — never render an unknown token: an unrendered placeholder is a
 literal argument to the CLI (`posse agent check` warns).
+
+*(Amended 2026-08-24, ADR 0013 §6.)* The three names are intent (judged /
+building / mechanical), not a promise that every runtime selects a
+model. When `{model}` is empty the surfaces that *display* the tier
+(`posse list`, cockpit, work-prompt header) show `<runtime>/default`,
+never `<runtime>/strong`. A PID `tier: strong` on an unmapped runtime is
+a `posse agent check` / `runtime check` warning. Overflow still never
+moves `strong` (ADR 0010 §2b); an explicit `--runtime` is the operator's
+decision and launches. Availability preflight is per adapter; no adapter
+→ no preflight (ADR 0013 §6).
 
 **2. Where the tier comes from — precedence, most specific wins:**
 
