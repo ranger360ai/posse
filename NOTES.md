@@ -3538,3 +3538,31 @@ the hook under test ever ran — one assertion failed, and the one that
 "passed" was reading the shim's refusal, not the hook's (rangerhq-8sd).
 `TestMain` now sets PATH to `PathOutsideGates("")` for the whole test
 binary; a test that wants a shim on PATH renders one and prepends it.
+
+### The suite on Linux — `make test-linux`
+
+The suite ran on darwin and only on darwin until 2026-08-24, and two defects
+lived in that gap until a release rehearsal found them: `ServerGen` fenced herdr
+generations on an inode number, which ext4 and overlayfs recycle and APFS does
+not (ranger-base-fjj — a live bug in the linux tarballs, not merely nine red
+tests), and one gate test asserted macOS's `/bin/zsh` where the contract is a
+PATH search (ranger-base-gaf). Neither is exotic: this code reads filesystem
+identity and resolves shells, so it is platform-sensitive by nature and darwin
+hides one whole half of it.
+
+`make test-linux` closes that gap without CI: `go vet ./... && make test` — the
+same two commands `.github/workflows/release.yml` runs — inside a throwaway
+`golang:<go.mod>` container. ~35s cold, ~2s warm. The repo is mounted
+**read-only** and the container runs as *you* rather than root, so a run cannot
+leave a root-owned artifact or a rewritten `go.sum` behind; a test that needs to
+write must use `t.TempDir()`, which is what CI requires of it anyway. The build
+and module caches are the one writable thing and they live in
+`~/.cache/posse/test-linux`, outside the tree.
+
+It tests the host's architecture (arm64 on an Apple-Silicon box).
+`PLATFORM=linux/amd64 make test-linux` crosses that under emulation, slowly.
+`IMAGE=` overrides the toolchain image; `scripts/test-linux.sh --shell` drops
+you in there, and `scripts/test-linux.sh '<cmd>'` runs one command.
+
+The release workflow is still the last gate, not the first one: run this before
+you push, because on a tag is the worst place to learn that Linux disagrees.

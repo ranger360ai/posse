@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -96,6 +96,21 @@ test:
 
 vet:
 	$(GOBIN) vet ./...
+
+# The same gate, on Linux, from a mac (ranger-base-dbe). The suite had only
+# ever been run on darwin, and two defects lived in that gap — ranger-base-fjj
+# (ServerGen fences herdr generations on an inode number, which ext4 recycles
+# and APFS does not: a runtime bug in the linux tarballs, 9 tests red) and
+# ranger-base-gaf (a test hardcoding /bin/zsh). Both were found on a release
+# rehearsal, because .github/workflows/release.yml was the first thing that had
+# ever run the suite on Linux — on a tag, which is the worst place to learn it.
+#
+# `go vet ./... && make test` in a throwaway golang container, repo mounted
+# READ-ONLY and running as you, so it cannot leave anything in the tree.
+# ~35s cold, ~2s warm. IMAGE= / PLATFORM= overrides and a --shell in the
+# script; docker required.
+test-linux:
+	scripts/test-linux.sh
 
 fmt:
 	gofmt -w cmd internal embed.go

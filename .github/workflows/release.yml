@@ -28,11 +28,21 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # `ref:` is what keeps the TESTED tree and the SHIPPED tree the same
+      # commit (ranger-base-dbe). Without it, checkout takes the TRIGGERING
+      # ref: on a tag push that is the tag, but on workflow_dispatch it is the
+      # branch you dispatched from — while the build below uses --rev <tag's
+      # sha>. That path vets and tests main's fixed tree and ships tarballs
+      # built from the older tagged commit, which is exactly the recovery
+      # anyone reaches for after a failed release.
+      #
       # Full history: scripts/release-artifacts.sh builds HEAD in a temp
       # worktree and scripts/audit-silent-reverts.sh walks every commit. A
-      # shallow clone makes both of them wrong rather than loud.
+      # shallow clone makes both of them wrong rather than loud. It also
+      # fetches the tags, which the next step needs to resolve one.
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -62,6 +72,9 @@ jobs:
       - name: test
         run: make test
 
+      # --rev names the same commit that is checked out, by construction of
+      # the `ref:` above. Kept explicit so the artifacts state their commit
+      # rather than inheriting whatever HEAD happens to be.
       - name: build artifacts
         run: scripts/release-artifacts.sh --rev "${{ steps.tag.outputs.sha }}" --version "${{ steps.tag.outputs.tag }}"
 
