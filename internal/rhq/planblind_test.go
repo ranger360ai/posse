@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -191,6 +192,7 @@ func TestBlindMaxConfigured(t *testing.T) {
 		skip bool
 	}{
 		{"30s", 20 * time.Second, false},
+		{"30s", 30 * time.Second, false}, // strictly over, same as 5h/7d
 		{"30s", 31 * time.Second, true},
 		{"90", 80 * time.Second, false},
 		{"90", 2 * time.Minute, true},
@@ -434,5 +436,139 @@ func TestBlindFor(t *testing.T) {
 		if got := BlindFor(in); got != want {
 			t.Errorf("BlindFor(%s) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// rangerhq-6h1 / rangerhq-e1n: the budget is strictly over, the same rule
+// as the 5h/7d thresholds. At exactly 10m the pass still runs; one
+// nanosecond past it, it skips. Two rigs — a pass that ran has claimed
+// the bead, so a second run's n=0 would not prove a skip.
+func TestBlindBudgetIsStrictlyOver(t *testing.T) {
+	t.Run("at 10m", func(t *testing.T) {
+		r := newBlindRig(t, guardOn)
+		r.d.Unattended = true
+		r.blind()
+		r.at(10 * time.Minute)
+		if n := r.run(t); n != 1 {
+			t.Fatalf("exactly 10m is not over the budget: %d dispatched\n%s", n, r.out())
+		}
+		if strings.Contains(r.out(), "skipped") {
+			t.Errorf("exactly at the budget must not skip:\n%s", r.out())
+		}
+	})
+	t.Run("1ns over", func(t *testing.T) {
+		r := newBlindRig(t, guardOn)
+		r.d.Unattended = true
+		r.blind()
+		r.at(10*time.Minute + time.Nanosecond)
+		if n := r.run(t); n != 0 {
+			t.Fatalf("one step past 10m must skip: %d dispatched\n%s", n, r.out())
+		}
+		if !strings.Contains(r.out(), "pass skipped") {
+			t.Errorf("want a blind skip, got:\n%s", r.out())
+		}
+	})
+}
+
+// Either threshold alone arms the clock. Unset means off for that window,
+// not "both required".
+func TestBlindOneThresholdStillArms(t *testing.T) {
+	for _, cfg := range []string{"plan_guard_5h: 70", "plan_guard_7d: 85"} {
+		t.Run(cfg, func(t *testing.T) {
+			r := newBlindRig(t, cfg)
+			r.d.Unattended = true
+			r.blind()
+			r.at(12 * time.Minute)
+			if n := r.run(t); n != 0 {
+				t.Fatalf("one threshold still arms the clock: %d dispatched\n%s", n, r.out())
+			}
+			if !strings.Contains(r.out(), "pass skipped") {
+				t.Errorf("want a blind skip, got:\n%s", r.out())
+			}
+		})
+	}
+}
+
+// The production failure is often the keychain, not a dead socket
+// (ranger-base-r64). Same park: unattended, over budget, no bd.
+func TestBlindSkipOnKeychainUnreadable(t *testing.T) {
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	r.d.Plan.Token = func() (string, error) {
+		return "", Die("keychain item %q unreadable", KeychainService)
+	}
+	r.at(12 * time.Minute)
+
+	if n := r.run(t); n != 0 {
+		t.Fatalf("a locked keychain past the budget must skip: %d\n%s", n, r.out())
+	}
+	if !strings.Contains(r.out(), "pass skipped") || !strings.Contains(r.out(), "keychain") {
+		t.Errorf("the skip must name the keychain, got:\n%s", r.out())
+	}
+	if calls := bdCalls(t, r.fake); calls != "" {
+		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	}
+}
+
+// --dry-run does not buy a pass: the guard sits in front of routing.
+func TestBlindOverBudgetDryRunStillSkips(t *testing.T) {
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	r.d.DryRun = true
+	r.blind()
+	r.at(12 * time.Minute)
+
+	if n := r.run(t); n != 0 {
+		t.Fatalf("a dry-run unattended pass past the budget must skip: %d\n%s", n, r.out())
+	}
+	if !strings.Contains(r.out(), "pass skipped") {
+		t.Errorf("want a blind skip, got:\n%s", r.out())
+	}
+	if calls := bdCalls(t, r.fake); calls != "" {
+		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	}
+}
+
+func TestPlanGuardBlindMaxParse(t *testing.T) {
+	b, _ := newTestBackend(t)
+	a := b.App
+	var errb strings.Builder
+	if got := a.PlanGuardBlindMax(&errb); got != PlanGuardBlindMaxDefault {
+		t.Errorf("unset: %s, want %s", got, PlanGuardBlindMaxDefault)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("unset is silent: %q", errb.String())
+	}
+
+	for _, tc := range []struct {
+		raw  string
+		want time.Duration
+		warn bool
+	}{
+		{"0", 0, false},
+		{"0s", 0, false},
+		{"10m", 10 * time.Minute, false},
+		{"90", 90 * time.Second, false},
+		{"null", PlanGuardBlindMaxDefault, false}, // YamlGet: null/~ are unset
+		{"~", PlanGuardBlindMaxDefault, false},
+		{"-1", PlanGuardBlindMaxDefault, true},
+		{"-1s", PlanGuardBlindMaxDefault, true},
+		{"false", PlanGuardBlindMaxDefault, true},
+		{"10 minutes", PlanGuardBlindMaxDefault, true},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			if err := os.WriteFile(a.ConfigPath, []byte("plan_guard_blind_max: "+tc.raw+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			errb.Reset()
+			got := a.PlanGuardBlindMax(&errb)
+			if got != tc.want {
+				t.Errorf("plan_guard_blind_max %q: %s, want %s", tc.raw, got, tc.want)
+			}
+			warned := strings.Contains(errb.String(), "not a duration")
+			if warned != tc.warn {
+				t.Errorf("plan_guard_blind_max %q: warned=%v, want %v (%q)", tc.raw, warned, tc.warn, errb.String())
+			}
+		})
 	}
 }

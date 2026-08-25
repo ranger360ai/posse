@@ -1032,3 +1032,20 @@ func TestCockpitPlanBlindWitness(t *testing.T) {
 		t.Errorf("unguarded and unreadable must stay silent, got %q", got)
 	}
 }
+
+// rangerhq-6h1: the first failed scan, before any successful reading, is
+// the case the empty header used to hide. Floor the clock at cockpit start
+// and say so — 0s is a witness, empty is "guard not configured".
+func TestCockpitPlanBlindWitnessFromStart(t *testing.T) {
+	at := time.Date(2026, 8, 19, 20, 53, 0, 0, time.UTC)
+	c := &cockpit{now: func() time.Time { return at }}
+
+	got := c.planSegment(planRead{guarded: true})
+	if want := "5h — · guard blind 0s"; got != want {
+		t.Fatalf("first guarded failure = %q, want %q (empty is the original bug)", got, want)
+	}
+	at = at.Add(14 * time.Minute)
+	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 14m" {
+		t.Errorf("blind is time since cockpit start when there was never a reading, got %q", got)
+	}
+}
