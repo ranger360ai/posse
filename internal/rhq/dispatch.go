@@ -113,13 +113,15 @@ type Dispatcher struct {
 	budgetStopped *BudgetState // sticky: once a pass has hit 100%, it stays stopped
 	budgetWarned  bool         // a malformed cap is named once per pass, not once per bead
 
-	// Plan-guard overflow (ADR 0010, overflow.go). planTrip is this pass's
-	// over-threshold reason without its verdict ("plan 5h at 78% > 70%") and
-	// is set ONLY by a threshold trip — a blind guard skips and never
-	// overflows (§5), so "" here means the per-bead ladder does not run.
-	// overflow is the pass's resolved config, overflowUsed the rolling-window
-	// ledger count plus what this pass has already sent (read once per pass).
+	// Plan-guard state (ADR 0010 §1/§5, amended by ADR 0013 §3). planTrip is
+	// this pass's over-threshold reason without its verdict ("plan 5h at 78%
+	// > 70%"); planBlind is the unreadable-meter reason. Both are carried to
+	// the per-bead runtime decision: off-meter work launches through either,
+	// while on-meter work faces the overflow ladder on a trip and parks on a
+	// blind read. overflow is the pass's resolved config, overflowUsed the
+	// rolling-window ledger count plus what this pass has already sent.
 	planTrip     string
+	planBlind    string
 	overflow     Overflow
 	overflowUsed int
 }
@@ -144,7 +146,7 @@ func (d *Dispatcher) errw() io.Writer {
 	return os.Stderr
 }
 
-// planGuard decides whether this pass runs at all (rangerhq-jgm). The Max
+// planGuard takes this pass's shared plan reading (rangerhq-jgm). The Max
 // plan's 5h/7d windows are the real budget; `plan_guard_5h:` /
 // `plan_guard_7d:` (percent) are the thresholds and both are unset by
 // default — with neither set, no request is made at all, no clock runs, and
@@ -154,15 +156,13 @@ func (d *Dispatcher) errw() io.Writer {
 // keychain or endpoint is a monitoring failure and the fleet never halts on
 // one *while a human is watching*: a hand-run pass says so on stderr and
 // runs, unchanged. Unattended (--watch), blindness is a state with a clock
-// on it — past `plan_guard_blind_max:` (10m default, 0 = never) the pass is
-// skipped instead, and keeps being skipped until one reading succeeds. A
-// wrong skip costs nothing and heals itself on the next reading; a wrong
-// run costs a window that takes five hours to heal, at the exact moment
-// nobody can be told.
-func (d *Dispatcher) planGuard() (string, bool) {
+// on it — past `plan_guard_blind_max:` (10m default, 0 = never), on-meter
+// beads park until one reading succeeds. Off-meter beads still launch: the
+// meter gates only work that can spend it (ADR 0013 §3).
+func (d *Dispatcher) planGuard() {
 	fiveH, sevenD := d.App.PlanGuardThresholds(d.errw())
 	if fiveH <= 0 && sevenD <= 0 {
-		return "", false
+		return
 	}
 	// ADR 0010: the second pool's config is read once per pass, and only
 	// where the guard is armed at all — an unarmed guard reads nothing and
@@ -188,7 +188,8 @@ func (d *Dispatcher) planGuard() (string, bool) {
 	}
 	u, readAt, err := c.Read(planGuardMaxAge(d.App.PlanUsageTTL(d.errw()), d.App.PlanGuardBlindMax(io.Discard)))
 	if err != nil {
-		return d.blindGuard(now, err)
+		d.blindGuard(now, err)
+		return
 	}
 	// The first successful reading clears the clock and this same pass
 	// proceeds — no manual reset, no sticky state, no operator action.
@@ -206,26 +207,25 @@ func (d *Dispatcher) planGuard() (string, bool) {
 	// 5h first: it is the tighter window and the one the operator feels.
 	// Strictly above — at the threshold exactly, the pass still runs.
 	if fiveH > 0 && u.FiveHour > fiveH {
-		return d.overThreshold(fmt.Sprintf("plan 5h at %.0f%% > %.0f%%", u.FiveHour, fiveH))
+		d.overThreshold(fmt.Sprintf("plan 5h at %.0f%% > %.0f%%", u.FiveHour, fiveH))
+		return
 	}
 	if sevenD > 0 && u.SevenDay > sevenD {
-		return d.overThreshold(fmt.Sprintf("plan 7d at %.0f%% > %.0f%%", u.SevenDay, sevenD))
+		d.overThreshold(fmt.Sprintf("plan 7d at %.0f%% > %.0f%%", u.SevenDay, sevenD))
 	}
-	return "", false
 }
 
 // overThreshold is the fork ADR 0010 §1 adds to a tripped guard. With no
-// overflow runtime configured — the default — the whole pass is skipped on
-// the same line as before. With one, the pass RUNS and every bead faces the
-// per-bead ladder (overflowFor): its own runtime if that is not on the
-// guarded meter, the overflow pool if it is eligible and the cap has room,
-// and this same reason as its own skip line otherwise.
+// overflow runtime configured — the default — on-meter beads park on this
+// reason. With one, they face the per-bead ladder (overflowFor): the overflow
+// pool if eligible and the cap has room, and this same reason as their skip
+// line otherwise. Off-meter beads launch in both cases.
 //
-// The ledger is read here: once per pass, only on a trip, and never by a
-// pass the guard did not stop.
-func (d *Dispatcher) overThreshold(reason string) (string, bool) {
+// The ledger is read here once per pass, only on a threshold trip.
+func (d *Dispatcher) overThreshold(reason string) {
+	d.planTrip = reason
 	if !d.overflow.On() {
-		return reason + ", pass skipped", true
+		return
 	}
 	n, err := d.App.OverflowCount(d.overflow.Runtime, d.now())
 	if err != nil {
@@ -235,31 +235,24 @@ func (d *Dispatcher) overThreshold(reason string) (string, bool) {
 		fmt.Fprintf(d.errw(), "plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
 			AbbrevHome(d.App.OverflowLogPath()), err)
 		d.overflow = Overflow{}
-		return reason + ", pass skipped", true
+		return
 	}
-	d.overflowUsed, d.planTrip = n, reason
+	d.overflowUsed = n
 	fmt.Fprintf(d.Out, "%s — overflow %s, %d/%d in 7d; eligible beads step over\n", reason, d.overflow.Runtime, n, d.overflow.Cap)
-	return "", false
 }
 
-// blindGuard is the guard with no reading to make a decision on. It returns
-// the same (line, skip) contract as planGuard: skip only when this pass is
-// unattended and the blind window has outlived its budget.
+// blindGuard is the guard with no reading to make a decision on. Once an
+// unattended blind window outlives its budget it records a per-bead park;
+// off-meter beads still run and on-meter beads print this reason and skip.
 //
 // The log-noise rule (rangerhq-6h1): a --watch loop that is blind for a
 // weekend must not write the same line 500 times into a log nobody reads.
 // Say it when the reading first fails, and at most once an hour after that.
 //
-// That rule covers the fail-open case ONLY (rangerhq-llse). A pass that
-// runs prints its own routing lines, so the blind note is one line among
-// many and skipping it costs nothing. A pass that is SKIPPED prints nothing
-// else at all — no routing lines, no busy lines, just the loop's own
-// "0 dispatched" footer — so a quiet skip is indistinguishable from an
-// empty queue, which is exactly how three hours of gated passes read as a
-// loop with nothing to do. Every skipped pass names the error that skipped
-// it; a blind skip also backs --watch off toward --max-interval, so the
-// repeat is a line every few dozen minutes, not every few seconds.
-func (d *Dispatcher) blindGuard(now time.Time, err error) (string, bool) {
+// That rule covers the fail-open case ONLY (rangerhq-llse). Once the guard
+// parks work, each affected bead names why. A pass with only parked beads
+// still dispatches zero, so --watch backs off toward --max-interval.
+func (d *Dispatcher) blindGuard(now time.Time, err error) {
 	blind := now.Sub(d.blindSince)
 	errw := d.errw()
 	if d.blindWarned {
@@ -273,12 +266,9 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) (string, bool) {
 	d.blindFailed = true
 
 	if skip {
-		// Same shape as the over-threshold skip line, and the same
-		// treatment: nothing gathered, nothing claimed, and --watch reads it
-		// as a quiet pass and backs off toward --max-interval on its own.
-		// Said every time — see the note above.
 		d.blindSaid = now
-		return fmt.Sprintf("plan guard: blind %s (%v) — pass skipped", BlindFor(blind), err), true
+		d.planBlind = fmt.Sprintf("plan guard: blind %s (%v)", BlindFor(blind), err)
+		return
 	}
 	// Under the budget (or attended, or the escape hatch): today's line,
 	// today's outcome — the pass is not gated and it runs.
@@ -286,7 +276,6 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) (string, bool) {
 		d.blindSaid = now
 		fmt.Fprintf(d.errw(), "plan guard: %v — pass not gated\n", err)
 	}
-	return "", false
 }
 
 // blindQuiet is how long the blind state keeps its mouth shut between
@@ -782,19 +771,12 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	d.budgetStopped, d.budgetWarned = nil, false
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
-	d.planTrip, d.overflow, d.overflowUsed = "", Overflow{}, 0
+	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0
 
-	// Before anything else — no bd calls, no sessions: the plan's own rate
-	// windows gate the whole pass. Nothing dispatched, so --watch reads it
-	// as a quiet pass and backs off.
-	if line, skip := d.planGuard(); skip {
-		// An empty line is the blind guard's noise rule: still skipped,
-		// just not said again this hour.
-		if line != "" {
-			fmt.Fprintln(d.Out, line)
-		}
-		return 0, nil
-	}
+	// Before anything else, take one shared reading for the pass. Its verdict
+	// is applied later, after each bead's runtime is known; the pass itself
+	// always runs (ADR 0013 §3).
+	d.planGuard()
 
 	// verify-after (ADR 0006 §3) before ready work is gathered, so a verify
 	// bead filed by this pass is dispatched by this pass. --dry-run shows
@@ -1014,14 +996,13 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, budgetSkipLine(st))
 			continue
 		}
-		// ADR 0010 §1, before the tier is stepped and before anything is
-		// claimed: the plan guard tripped over a threshold and the pass is
-		// running, so which pool THIS bead spends is decided here. Off the
-		// guarded meter it is ungated (the fix in passing); eligible and
-		// under the cap it moves; otherwise it gets the guard's line and
-		// nothing else. A blind guard never reaches this (§5).
+		// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
+		// before anything is claimed: the plan guard applies at the grain of
+		// this bead, now that its runtime is known. Off-meter work launches
+		// through a trip or blind read. On-meter work faces the overflow
+		// ladder on a trip and parks without overflowing when blind.
 		launchRT, moved := d.sessionRuntime(ag), false
-		if d.planTrip != "" {
+		if d.planTrip != "" || d.planBlind != "" {
 			// Only sessions this pass CREATES move. A session that already
 			// exists keeps the runtime it was created with — read it back
 			// rather than assume, since an earlier pass in this same trip may
@@ -1038,12 +1019,19 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 				// the overflow move is dispatch's own — it never overrides one.
 				pin = fmt.Sprintf("--runtime %s pins this pass", launchRT)
 			}
-			dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
-			if dec.Skip != "" {
-				fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, dec.Skip)
-				continue
+			if d.planBlind != "" {
+				if OnGuardedMeter(launchRT) {
+					fmt.Fprintf(d.Out, "– %-14s %s — skipped\n", is.ID, d.planBlind)
+					continue
+				}
+			} else {
+				dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
+				if dec.Skip != "" {
+					fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, dec.Skip)
+					continue
+				}
+				launchRT, moved = dec.Runtime, dec.Moved
 			}
-			launchRT, moved = dec.Runtime, dec.Moved
 		}
 		if st.StepDown() {
 			// Dial E is untouched by the overflow: it still resolves the

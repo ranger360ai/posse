@@ -62,10 +62,9 @@ func (f *overflowFixture) ledger(t *testing.T) []string {
 	return strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 }
 
-// The default, and the behaviour every pass had before this ADR: the guard
-// trips, no overflow runtime is configured, the whole pass is skipped on the
-// same line — and bd is never asked anything.
-func TestOverflowUnsetSkipsWholePass(t *testing.T) {
+// With no overflow runtime configured, an on-meter bead parks on the trip
+// reason. The pass still gathers work so an off-meter bead could run.
+func TestOverflowUnsetSkipsOnMeterBead(t *testing.T) {
 	f := overflowPass(t, "", overflowPID, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
@@ -73,11 +72,11 @@ func TestOverflowUnsetSkipsWholePass(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(f.d)
-	if n != 0 || !strings.Contains(out, "plan 5h at 78% > 70%, pass skipped") {
-		t.Fatalf("want the whole-pass skip, got n=%d:\n%s", n, out)
+	if n != 0 || !strings.Contains(out, "plan 5h at 78% > 70% — skipped") {
+		t.Fatalf("want the on-meter bead parked, got n=%d:\n%s", n, out)
 	}
-	if calls := bdCalls(t, f.fake); calls != "" {
-		t.Errorf("a skipped pass must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, f.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a parked bead must not be claimed, got: %s", calls)
 	}
 	if f.errb.Len() != 0 {
 		t.Errorf("overflow unset is silent: %q", f.errb.String())
@@ -95,8 +94,8 @@ func TestOverflowWithoutCapIsOff(t *testing.T) {
 
 	n, _ := f.d.Run("", "", 0)
 	out := dispatcherOut(f.d)
-	if n != 0 || !strings.Contains(out, "plan 5h at 78% > 70%, pass skipped") {
-		t.Fatalf("no cap must skip the pass, got n=%d:\n%s", n, out)
+	if n != 0 || !strings.Contains(out, "plan 5h at 78% > 70% — skipped") {
+		t.Fatalf("no cap must park the on-meter bead, got n=%d:\n%s", n, out)
 	}
 	lines := strings.Split(strings.TrimRight(f.errb.String(), "\n"), "\n")
 	if len(lines) != 1 || !strings.Contains(lines[0], "plan_guard_overflow_cap:") {
@@ -274,11 +273,10 @@ func TestOverflowCapRolling7d(t *testing.T) {
 
 // The fix in passing: a lane whose PID names a runtime that is not on the
 // guarded meter is launched, tripped guard or not — and it is not an
-// overflow launch, so nothing is charged to the cap.
+// overflow launch, so no overflow configuration or cap is required.
 func TestOverflowUngatedRuntimeLaunches(t *testing.T) {
 	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: grok\n---\nYou are ranger.\n"
-	f := overflowPass(t, "plan_guard_overflow: codex\nplan_guard_overflow_cap: 5\n",
-		pid, `["go","tier:standard"]`)
+	f := overflowPass(t, "", pid, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
 	if err != nil {
@@ -424,10 +422,9 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 	}
 }
 
-// ADR 0010 §5: a blind guard skips and never overflows. The `--watch` skip
-// past `plan_guard_blind_max:` is not an over-threshold trip — there is no
-// reading to judge which beads are on which meter, so nothing is moved and
-// the ledger stays empty, cap or no cap.
+// ADR 0010 §5 / ADR 0013 §3: a blind guard parks on-meter work and never
+// overflows it. There is no reading to justify a pool move, so the ledger
+// stays empty, cap or no cap.
 func TestOverflowBlindGuardNeverOverflows(t *testing.T) {
 	r := newBlindRig(t, guardOn+"\nplan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n")
 	r.d.Unattended = true
@@ -437,7 +434,7 @@ func TestOverflowBlindGuardNeverOverflows(t *testing.T) {
 	if n := r.run(t); n != 0 {
 		t.Fatalf("a blind unattended pass is skipped, got n=%d:\n%s", n, r.out())
 	}
-	if !strings.Contains(r.out(), "pass skipped") || strings.Contains(r.out(), "overflow") {
+	if !strings.Contains(r.out(), "— skipped") || strings.Contains(r.out(), "← overflow") {
 		t.Errorf("a blind skip is a park, not a step-over:\n%s", r.out())
 	}
 	if _, err := os.Stat(r.d.App.OverflowLogPath()); !os.IsNotExist(err) {

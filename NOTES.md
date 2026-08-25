@@ -294,13 +294,14 @@ nothing decides anything from it, and a dead or unreadable pid degrades to
 would let the next launcher lock a fresh inode: two holders, one path, no
 error anywhere. `internal/rhq/launchlock.go`.
 
-**The plan-utilization guard** (rangerhq-jgm) runs before anything else in
-a pass — before bd is asked for ready work. On a subscription plan the real
-budget is not API-equivalent dollars (`posse cost`, ADR 0003 §4) but the
-plan's own rate windows: a rolling 5-hour one and a 7-day one, each a
-utilization percentage. The point of watching them is the operator's
-interactive headroom — a fleet that eats the 5h window leaves the operator
-staring at a rate limit.
+**The plan-utilization guard** (rangerhq-jgm) takes one shared reading before
+anything else in a pass — before bd is asked for ready work — then applies
+that reading per bead once dispatch knows which runtime the bead will spend
+(ADR 0013 §3). On a subscription plan the real budget is not API-equivalent
+dollars (`posse cost`, ADR 0003 §4) but the plan's own rate windows: a rolling
+5-hour one and a 7-day one, each a utilization percentage. The point of
+watching them is the operator's interactive headroom — a fleet that eats the
+5h window leaves the operator staring at a rate limit.
 
 - **Config** `plan_guard_5h:` / `plan_guard_7d:` (percent; the analyst's
   suggested start 70 / 85). **Both unset by default** — guard off, and then *no
@@ -316,11 +317,14 @@ staring at a rate limit.
   **nowhere** — not logs, not meta files, not bead comments; the errors in
   `internal/rhq/planusage.go` are deliberately generic so the credential
   cannot ride out in one.
-- **Above either threshold** the *whole pass* is skipped with one line
-  naming the window and the number — `plan 5h at 78% > 70%, pass skipped`.
-  5h is checked first (tighter window, the one the operator feels); strictly
-  above, so exactly at the threshold still runs. The pass dispatches nothing,
-  which is what makes `--watch` treat it as a quiet pass and back off.
+- **Above either threshold** the pass still runs. Each bead whose resolved
+  runtime is on the guarded meter faces the ADR 0010 ladder (overflow when
+  configured and eligible, otherwise park) with a line naming the window and
+  number — `plan 5h at 78% > 70% — skipped`. A bead on a different built-in
+  runtime launches ungated. 5h is checked first (tighter window, the one the
+  operator feels); strictly above, so exactly at the threshold still runs. A
+  pass whose every bead parks dispatches zero, which makes `--watch` treat it
+  as a quiet pass and back off.
 - **Fail-open with a bounded blind window when unattended** (rangerhq-6h1,
   the analyst's ruling on rangerhq-30m). An unreadable credential or endpoint is a
   monitoring failure and the fleet never halts on one *while a human is
@@ -331,18 +335,20 @@ staring at a rate limit.
   instant skip):
   - **under `plan_guard_blind_max:`** (default **10m**) — the old behaviour
     unchanged: one stderr line, pass not gated, pass runs;
-  - **over it** — the pass is *skipped*, same shape and same treatment as an
-    over-threshold skip (`plan guard: blind 12m (usage endpoint unreachable)
-    — pass skipped`): nothing gathered, nothing claimed, and `--watch` reads
-    it as a quiet pass and backs off toward `--max-interval` on its own;
+  - **over it** — the pass still gathers and routes work. On-meter beads park
+    (`plan guard: blind 12m (usage endpoint unreachable) — skipped`) without
+    being claimed; off-meter beads launch. A pass whose every bead parks
+    dispatches zero, so `--watch` backs off toward `--max-interval` on its own;
   - **the first good reading** clears the clock and that same pass proceeds.
     No manual reset, no sticky state, no operator action.
-  - **`plan_guard_blind_max: 0`** is the operator's escape hatch: never fail
-    closed, anywhere. So is unsetting the thresholds — then nothing is read.
-  - **Log noise**: said when the reading first fails, again at the moment it
-    crosses into skipping, at most once an hour after that, and once more
-    when a reading comes back. The passes in between are skipped just as
-    hard, only quietly.
+  - **`plan_guard_blind_max: 0`** is the operator's escape hatch for on-meter
+    work: never fail closed. It is not needed to keep off-meter work alive.
+    Unsetting the thresholds also disables the guard entirely — then nothing
+    is read.
+  - **Log noise**: the fail-open note is said when the reading first fails,
+    at most once an hour after that, and once more when a reading comes back.
+    Past the budget there is no separate pass-level repeat; each on-meter
+    bead's park line names the current blind age and cause.
   Why 10 minutes, and why a duration rather than "N failures": `--watch`
   backs off 8×, so N means anywhere from 15 minutes to 2 hours. The 5h
   window was measured (instance-side) moving fast enough under a handful of
@@ -352,8 +358,8 @@ staring at a rate limit.
   skip costs $0 and heals on the next reading, a wrong run costs a window
   that takes five hours to heal, at the exact moment nobody can be told.
   The cost of the trade, said out loud: a permanently unreadable endpoint
-  parks the fleet until someone notices — which is itself a louder witness
-  than a line in a log nobody opens.
+  parks the guarded-meter lanes until someone notices; other meters keep
+  moving.
 - **One reading, shared by every caller** (rangerhq-tdy8). The usage
   endpoint is a *metering* endpoint, and posse had three independent
   pollers on it: the cockpit every 2m for as long as it is open (~30
@@ -384,8 +390,8 @@ staring at a rate limit.
   costs: a lane whose runtime is not on that meter was skipped because
   somebody else's window was hot, and a pass that could have run at equal
   posture on a second pool ran nothing. `plan_guard_overflow: <runtime>`
-  (unset = the whole-pass skip, unchanged) makes a **tripped** guard run the
-  pass and decide per bead, at launch:
+  (unset = no pool move; on-meter beads park) makes a **tripped** guard decide
+  per bead, at launch:
   - **resolved runtime not on the guarded meter** — the built-in runtimes
     that are their own pools — **launch as today, ungated**. A template-only
     `runtimes/<name>.yaml` is *unknown*, and unknown is gated: "this runtime
@@ -427,13 +433,14 @@ staring at a rate limit.
   - Cap reached → the bead's line names it: `plan 5h at 78% > 70%, overflow
     grok: 20/20 in 7d — skipped`. `--dry-run` shows a move as
     `[grok ← overflow]`, and so does the prompted line of a real launch.
-- **A blind guard skips; it never overflows** (ADR 0010 §5). The blind skip
-  above is not an over-threshold trip, so the per-bead ladder does not run
-  and nothing moves, cap or no cap: every rung of it is a judgement made *on
-  a reading*, and blind there is none. The blind skip is a **park** —
-  nothing claimed, nothing spent on any pool, and the first good reading
-  resumes normal service including overflow. A blind pass writes nothing to
-  `overflow.log`.
+- **A blind guard parks only the meter it guards; it never overflows** (ADR
+  0010 §5, ADR 0013 §3). The blind state is not an over-threshold trip, so the
+  overflow ladder does not run, cap or no cap: every rung is a judgement made
+  *on a reading*, and blind there is none. Per bead: off the guarded meter →
+  launch; on-meter and blind → park without claiming; on-meter and over a
+  threshold → the normal overflow/skip ladder. The first good reading resumes
+  on-meter service including overflow. Blindness writes nothing to
+  `overflow.log`, including when off-meter work launches through it.
 - **Display** `posse cost` ends with the current reading and the cockpit
   header carries `5h 42% · 7d 61%` (refreshed every 2 min, off the event
   loop). `posse cost --plan` is that one line on its own, without the
@@ -455,7 +462,7 @@ staring at a rate limit.
 
 **Budget caps and step-down** (ADR 0003 Dial E, rangerhq-25p,
 `internal/rhq/budget.go`) are the dollar half of the same idea: where the
-plan guard skips a whole pass on the plan's rate windows, Dial E slows and
+plan guard parks beads that spend the guarded rate windows, Dial E slows and
 then stops dispatch on API-equivalent spend.
 
 - **Config** `budget_pass:` / `budget_day:` in dollars (a leading `$` is

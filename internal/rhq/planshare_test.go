@@ -6,6 +6,7 @@ package rhq
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -57,12 +58,18 @@ func TestBlindClockCountsFromTheReadingNotTheHit(t *testing.T) {
 	if got := r.ps.hits.Load(); got != 1 {
 		t.Fatalf("setup: want the cache hit, got %d requests", got)
 	}
-	if strings.Contains(r.out(), "pass skipped") {
+	if strings.Contains(r.out(), "— skipped") {
 		t.Fatalf("a 3m-old reading is inside the budget:\n%s", r.out())
 	}
 
 	// Past the TTL the fetch is attempted and fails — and the age it
-	// reports is measured from the reading, not from the hit.
+	// reports is measured from the reading, not from the hit. Use a fresh
+	// ready bead: the first one is now held by its session, and the guard is
+	// a per-bead launch decision rather than a whole-pass stop.
+	if err := os.WriteFile(filepath.Join(r.repo, "fake-ready.json"),
+		[]byte(`[{"id":"a-2","title":"u","labels":["go"]}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	r.at(11 * time.Minute)
 	if n := r.run(t); n != 0 {
 		t.Errorf("11m past the last READING is past the 10m budget: %d dispatched\n%s", n, r.out())

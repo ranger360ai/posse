@@ -6,8 +6,8 @@ package rhq
 
 import (
 	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +21,10 @@ const fakeToken = "sk-fake-do-not-log-me"
 // planServer is a fake usage endpoint. It counts requests and records the
 // last Authorization/anthropic-beta headers it saw.
 type planServer struct {
-	*httptest.Server
+	URL    string
+	client *http.Client
 	hits   atomic.Int64
+	closed atomic.Bool
 	auth   string
 	beta   string
 	status int
@@ -33,27 +35,39 @@ type planServer struct {
 func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 	t.Helper()
 	ps := &planServer{status: http.StatusOK}
+	ps.URL = "https://plan.test/usage"
 	ps.body = fmt.Sprintf(`{"five_hour":{"utilization":%g,"resets_at":"2026-08-18T12:00:00Z"},`+
 		`"seven_day":{"utilization":%g,"resets_at":"2026-08-24T12:00:00Z"}}`, fiveH, sevenD)
-	ps.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ps.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if ps.closed.Load() || r.URL.String() != ps.URL {
+			return nil, fmt.Errorf("fake usage endpoint down")
+		}
 		ps.hits.Add(1)
 		ps.auth = r.Header.Get("Authorization")
 		ps.beta = r.Header.Get("anthropic-beta")
+		h := make(http.Header)
 		if ps.retry != "" {
-			w.Header().Set("Retry-After", ps.retry)
+			h.Set("Retry-After", ps.retry)
 		}
-		w.WriteHeader(ps.status)
-		fmt.Fprint(w, ps.body)
-	}))
+		return &http.Response{
+			StatusCode: ps.status,
+			Status:     fmt.Sprintf("%d %s", ps.status, http.StatusText(ps.status)),
+			Header:     h,
+			Body:       io.NopCloser(strings.NewReader(ps.body)),
+			Request:    r,
+		}, nil
+	})}
 	t.Cleanup(ps.Close)
 	return ps
 }
+
+func (ps *planServer) Close() { ps.closed.Store(true) }
 
 func (ps *planServer) reader() *PlanReader {
 	return &PlanReader{
 		URL:   ps.URL,
 		Token: func() (string, error) { return fakeToken, nil },
-		HTTP:  ps.Client(),
+		HTTP:  ps.client,
 	}
 }
 
@@ -118,7 +132,7 @@ func TestPlanGuardBelowThresholdsRunsPass(t *testing.T) {
 	if got := ps.hits.Load(); got != 1 {
 		t.Errorf("want exactly 1 usage fetch per pass, got %d", got)
 	}
-	if out := dispatcherOut(d); strings.Contains(out, "pass skipped") {
+	if out := dispatcherOut(d); strings.Contains(out, "— skipped") {
 		t.Errorf("pass must not be skipped below thresholds:\n%s", out)
 	}
 	if errb.Len() != 0 {
@@ -130,8 +144,8 @@ func TestPlanGuardBelowThresholdsRunsPass(t *testing.T) {
 	}
 }
 
-// Above the 5h threshold: the whole pass is skipped, with the exact line,
-// before bd is asked anything — and --watch reads it as a quiet pass.
+// Above the 5h threshold: the on-meter bead parks with the exact reason.
+// Zero dispatched still makes --watch read it as a quiet pass.
 func TestPlanGuardSkipsAbove5h(t *testing.T) {
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 78, 40)
@@ -149,11 +163,11 @@ func TestPlanGuardSkipsAbove5h(t *testing.T) {
 		t.Fatalf("want 0 dispatched above the 5h threshold, got %d", n)
 	}
 	out := dispatcherOut(d)
-	if want := "plan 5h at 78% > 70%, pass skipped"; !strings.Contains(out, want) {
+	if want := "plan 5h at 78% > 70% — skipped"; !strings.Contains(out, want) {
 		t.Errorf("want %q, got:\n%s", want, out)
 	}
-	if calls := bdCalls(t, fake); calls != "" {
-		t.Errorf("a skipped pass must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a parked bead must not be claimed, got: %s", calls)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("a working guard says nothing on stderr: %q", errb.String())
@@ -178,7 +192,7 @@ func TestPlanGuardSkipsAbove7d(t *testing.T) {
 
 	n, _ := d.Run("", "", 0)
 	out := dispatcherOut(d)
-	if want := "plan 7d at 88% > 85%, pass skipped"; n != 0 || !strings.Contains(out, want) {
+	if want := "plan 7d at 88% > 85% — skipped"; n != 0 || !strings.Contains(out, want) {
 		t.Errorf("want %q (0 dispatched), got %d:\n%s", want, n, out)
 	}
 }
@@ -284,7 +298,7 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 			if strings.Contains(errb.String(), fakeToken) {
 				t.Error("the access token leaked into the failure line")
 			}
-			if out := dispatcherOut(d); strings.Contains(out, "pass skipped") {
+			if out := dispatcherOut(d); strings.Contains(out, "— skipped") {
 				t.Errorf("fail-open must not skip:\n%s", out)
 			}
 		})
@@ -324,6 +338,7 @@ func TestPlanReaderRequest(t *testing.T) {
 		t.Fatalf("RHQ_PLAN_USAGE_URL ignored: %s", r.URL)
 	}
 	r.Token = func() (string, error) { return fakeToken, nil }
+	r.HTTP = ps.client
 
 	u, err := r.Read()
 	if err != nil {

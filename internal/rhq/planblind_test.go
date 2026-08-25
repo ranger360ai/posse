@@ -9,8 +9,8 @@ package rhq
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,10 +24,7 @@ var blindT = time.Date(2026, 8, 19, 20, 53, 0, 0, time.UTC)
 // unreachable" text, no faked error strings.
 func deadURL(t *testing.T) string {
 	t.Helper()
-	s := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	u := s.URL
-	s.Close()
-	return u
+	return "http://127.0.0.1:1"
 }
 
 // blindRig: a dispatcher with a ready bead, a clock the test drives, and a
@@ -37,6 +34,7 @@ type blindRig struct {
 	d     *Dispatcher
 	errb  *strings.Builder
 	fake  string
+	repo  string
 	ps    *planServer // the working endpoint, for its request count
 	live  string      // its URL
 	dead  string      // the one that refuses connections
@@ -54,7 +52,7 @@ func newBlindRig(t *testing.T, cfg string) *blindRig {
 	planConfig(t, b.App, repo, cfg)
 	idleClaude(t, fake)
 
-	r := &blindRig{d: d, errb: errb, fake: fake, ps: ps, live: ps.URL, dead: deadURL(t), clock: blindT}
+	r := &blindRig{d: d, errb: errb, fake: fake, repo: repo, ps: ps, live: ps.URL, dead: deadURL(t), clock: blindT}
 	d.Now = func() time.Time { return r.clock }
 	d.blindSince = blindT
 	return r
@@ -104,9 +102,8 @@ func TestBlindUnderBudgetRuns(t *testing.T) {
 	}
 }
 
-// Over the budget, unattended: the pass is skipped, with the blind duration
-// in a line the shape of the over-threshold one — and bd is never asked
-// anything, so --watch reads it as a quiet pass and backs off.
+// Over the budget, unattended: the on-meter bead parks with the blind
+// duration in its line. Zero dispatched still makes --watch back off.
 func TestBlindOverBudgetSkips(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
@@ -117,16 +114,84 @@ func TestBlindOverBudgetSkips(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("past the blind budget the pass must not dispatch: %d\n%s", n, r.out())
 	}
-	want := "plan guard: blind 12m (usage endpoint unreachable) — pass skipped"
+	want := "plan guard: blind 12m (usage endpoint unreachable) — skipped"
 	if !strings.Contains(r.out(), want) {
 		t.Errorf("want %q, got:\n%s", want, r.out())
 	}
-	if calls := bdCalls(t, r.fake); calls != "" {
-		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, r.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a blind park must not claim the bead, got: %s", calls)
 	}
 	base := 30 * time.Second
 	if got := NextInterval(base, base, 8*base, n); got != 2*base {
 		t.Errorf("--watch must back off after a blind skip: %s, want %s", got, 2*base)
+	}
+}
+
+// ADR 0013 §3, off-meter arm: an explicit runtime on a different meter is
+// still the operator's routing decision, and a blind guarded meter cannot
+// park it.
+func TestBlindExplicitOffMeterRuntimeRuns(t *testing.T) {
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	r.d.Runtime = "grok"
+	r.blind()
+	r.at(12 * time.Minute)
+
+	if n := r.run(t); n != 1 {
+		t.Fatalf("--runtime grok must run while the guarded meter is blind: %d dispatched\n%s", n, r.out())
+	}
+	if strings.Contains(r.out(), "— skipped") {
+		t.Errorf("an off-meter launch must not be parked:\n%s", r.out())
+	}
+	if !strings.Contains(calls(t, r.fake), "runtime/tier: grok/") {
+		t.Errorf("the launched work prompt must name grok:\n%s", calls(t, r.fake))
+	}
+}
+
+// Both blind arms of ADR 0013 §3 share one pass: blind parks the claude bead,
+// the grok bead launches on its own runtime, and configured overflow is not
+// consulted without a reading. The threshold arm remains pinned in the
+// overflow tests.
+func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
+	b, fake := newTestBackend(t)
+	ps := newPlanServer(t, 12, 40)
+	d, _ := planDispatcher(t, b, ps)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	writePersona(t, b.App, "metered", "[metered]")
+	offMeterPID := "---\nname: offmeter\ndescription: test\nlabels: [offmeter]\nruntime: grok\n---\nYou are offmeter.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "offmeter.md"), []byte(offMeterPID), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := planRepo(t,
+		`[{"id":"a-1","title":"metered","labels":["metered"]},{"id":"b-1","title":"off meter","labels":["offmeter"]}]`,
+		`[{"id":"b-1","title":"off meter","status":"closed"}]`)
+	planConfig(t, b.App, repo, guardOn+"\nplan_guard_overflow: codex\nplan_guard_overflow_cap: 5")
+	agentPerLaunch(t, fake)
+
+	clock := blindT.Add(12 * time.Minute)
+	d.Now = func() time.Time { return clock }
+	d.blindSince = blindT
+	d.Unattended = true
+	d.Plan.URL = deadURL(t)
+
+	if n, err := d.Run("", "", 0); err != nil || n != 1 {
+		t.Fatalf("blind mixed pass dispatched %d, err=%v:\n%s", n, err, dispatcherOut(d))
+	}
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "a-1") || !strings.Contains(out, "blind 12m") || !strings.Contains(out, "— skipped") {
+		t.Errorf("the claude bead must park on the blind guarded meter:\n%s", out)
+	}
+	if !strings.Contains(calls(t, fake), "runtime/tier: grok/") {
+		t.Errorf("the grok bead must launch in the same pass:\n%s", calls(t, fake))
+	}
+	if strings.Contains(out, "← overflow") {
+		t.Errorf("blind never overflows:\n%s", out)
+	}
+	if _, err := os.Stat(d.App.OverflowLogPath()); !os.IsNotExist(err) {
+		t.Errorf("blind writes no overflow ledger (%v)", err)
+	}
+	if got := strings.Count(bdCalls(t, fake), "--claim"); got != 1 {
+		t.Errorf("only the off-meter bead may be claimed, got %d claims:\n%s", got, bdCalls(t, fake))
 	}
 }
 
@@ -138,7 +203,7 @@ func TestBlindRecoversInTheSamePass(t *testing.T) {
 	r.blind()
 	r.at(12 * time.Minute)
 	if n := r.run(t); n != 0 {
-		t.Fatalf("setup: want the blind pass skipped, got %d dispatched", n)
+		t.Fatalf("setup: want the on-meter bead parked, got %d dispatched", n)
 	}
 
 	r.sighted()
@@ -154,11 +219,11 @@ func TestBlindRecoversInTheSamePass(t *testing.T) {
 	// inside the budget again, even though it is 23 minutes after the first
 	// failure. (The bead itself is held by the session the last pass made,
 	// so the witness here is the absence of a second skip, not a count.)
-	before := strings.Count(r.out(), "pass skipped")
+	before := strings.Count(r.out(), "— skipped")
 	r.blind()
 	r.at(23 * time.Minute)
 	r.run(t)
-	if got := strings.Count(r.out(), "pass skipped"); got != before {
+	if got := strings.Count(r.out(), "— skipped"); got != before {
 		t.Errorf("the clock restarts at the good reading, so 9m blind must not skip:\n%s", r.out())
 	}
 }
@@ -281,11 +346,9 @@ func TestBlindLogNoiseWhileRunning(t *testing.T) {
 	}
 }
 
-// The skipped half (rangerhq-llse): a pass the guard SKIPS prints nothing
-// else at all, so its silence reads as an empty queue — three hours of
-// gated passes looked exactly like a loop with no work. Every skipped pass
-// names the error that skipped it, with the real blind age. The hourly
-// quiet applies to the fail-open note only.
+// The parked half (rangerhq-llse): every on-meter bead names the error that
+// parked it, with the real blind age. The hourly quiet applies to the
+// fail-open note only.
 func TestBlindSkipIsNeverSilent(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
@@ -296,7 +359,7 @@ func TestBlindSkipIsNeverSilent(t *testing.T) {
 	if n := r.run(t); n != 0 {
 		t.Fatalf("12m blind must skip: %d", n)
 	}
-	want := "plan guard: blind 12m (usage endpoint unreachable) — pass skipped"
+	want := "plan guard: blind 12m (usage endpoint unreachable) — skipped"
 	if !strings.Contains(r.out(), want) {
 		t.Fatalf("want %q, got:\n%s", want, r.out())
 	}
@@ -307,7 +370,7 @@ func TestBlindSkipIsNeverSilent(t *testing.T) {
 		if n := r.run(t); n != 0 {
 			t.Errorf("still blind at %s, still skipping: %d dispatched", at, n)
 		}
-		if got := strings.Count(r.out(), "pass skipped"); got != i+2 {
+		if got := strings.Count(r.out(), "— skipped"); got != i+2 {
 			t.Fatalf("a skipped pass must say why, every pass: %d lines after %s\n%s", got, at, r.out())
 		}
 	}
@@ -324,31 +387,27 @@ func TestBlindSkipIsNeverSilent(t *testing.T) {
 	}
 }
 
-// The exact contract Run's `if line != ""` would drop: a skipped pass
-// returning ("", true) is rangerhq-llse — Watch prints only the
-// "0 dispatched" footer. planGuard must never hand that pair back.
-func TestBlindSkipLineIsNeverEmpty(t *testing.T) {
+// The blind reason must survive the shared read and reach every on-meter
+// bead. Dropping it is rangerhq-llse: Watch reports only 0 dispatched.
+func TestBlindParkReasonIsNeverEmpty(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
 	r.blind()
 
 	r.at(12 * time.Minute)
-	line, skip := r.d.planGuard()
-	if !skip {
-		t.Fatal("12m unattended blind must skip")
+	r.d.planGuard()
+	if r.d.planBlind == "" {
+		t.Fatal("empty park reason is rangerhq-llse: Watch would print only 0 dispatched")
 	}
-	if line == "" {
-		t.Fatal("empty skip line is rangerhq-llse: Watch would print only 0 dispatched")
-	}
-	if !strings.Contains(line, "pass skipped") {
-		t.Errorf("skip line must name the skip, got %q", line)
+	if !strings.Contains(r.d.planBlind, "blind 12m") {
+		t.Errorf("park reason must name the blind age, got %q", r.d.planBlind)
 	}
 
-	// Inside the old hourly quiet window: still a line.
+	// Inside the hourly quiet window: the per-bead reason is still refreshed.
 	r.at(20 * time.Minute)
-	line, skip = r.d.planGuard()
-	if !skip || line == "" {
-		t.Fatalf("a second skip must still name itself: skip=%v line=%q", skip, line)
+	r.d.planGuard()
+	if !strings.Contains(r.d.planBlind, "blind 20m") {
+		t.Fatalf("a second park must carry its current age: %q", r.d.planBlind)
 	}
 }
 
@@ -366,7 +425,7 @@ func TestBlindSkipOn429IsNeverSilent(t *testing.T) {
 	if n := r.run(t); n != 0 {
 		t.Fatalf("12m blind on 429 must skip: %d\n%s", n, r.out())
 	}
-	if !strings.Contains(r.out(), "pass skipped") {
+	if !strings.Contains(r.out(), "— skipped") {
 		t.Fatalf("the first 429 skip must say why:\n%s", r.out())
 	}
 	if !strings.Contains(r.out(), "429") {
@@ -380,7 +439,7 @@ func TestBlindSkipOn429IsNeverSilent(t *testing.T) {
 		if n := r.run(t); n != 0 {
 			t.Errorf("still blind at %s, still skipping: %d dispatched", at, n)
 		}
-		if got := strings.Count(r.out(), "pass skipped"); got != i+2 {
+		if got := strings.Count(r.out(), "— skipped"); got != i+2 {
 			t.Fatalf("a skipped pass must say why, every pass: %d lines after %s\n%s", got, at, r.out())
 		}
 	}
@@ -390,8 +449,8 @@ func TestBlindSkipOn429IsNeverSilent(t *testing.T) {
 	if strings.Contains(r.out(), "no ready work") {
 		t.Errorf("a 429 skip must not read as an empty queue:\n%s", r.out())
 	}
-	if calls := bdCalls(t, r.fake); calls != "" {
-		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, r.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a blind park must not claim the bead, got: %s", calls)
 	}
 }
 
@@ -416,7 +475,7 @@ func TestWatchSeedsTheBlindClock(t *testing.T) {
 	if !r.d.blindSince.Equal(blindT) {
 		t.Errorf("blind clock seeded at loop start: %s, want %s", r.d.blindSince, blindT)
 	}
-	if strings.Contains(r.out(), "pass skipped") {
+	if strings.Contains(r.out(), "— skipped") {
 		t.Errorf("a fresh loop's first blind pass gets the full grace:\n%s", r.out())
 	}
 }
@@ -464,7 +523,7 @@ func TestBlindBudgetIsStrictlyOver(t *testing.T) {
 		if n := r.run(t); n != 0 {
 			t.Fatalf("one step past 10m must skip: %d dispatched\n%s", n, r.out())
 		}
-		if !strings.Contains(r.out(), "pass skipped") {
+		if !strings.Contains(r.out(), "— skipped") {
 			t.Errorf("want a blind skip, got:\n%s", r.out())
 		}
 	})
@@ -482,7 +541,7 @@ func TestBlindOneThresholdStillArms(t *testing.T) {
 			if n := r.run(t); n != 0 {
 				t.Fatalf("one threshold still arms the clock: %d dispatched\n%s", n, r.out())
 			}
-			if !strings.Contains(r.out(), "pass skipped") {
+			if !strings.Contains(r.out(), "— skipped") {
 				t.Errorf("want a blind skip, got:\n%s", r.out())
 			}
 		})
@@ -502,15 +561,15 @@ func TestBlindSkipOnKeychainUnreadable(t *testing.T) {
 	if n := r.run(t); n != 0 {
 		t.Fatalf("a locked keychain past the budget must skip: %d\n%s", n, r.out())
 	}
-	if !strings.Contains(r.out(), "pass skipped") || !strings.Contains(r.out(), "keychain") {
+	if !strings.Contains(r.out(), "— skipped") || !strings.Contains(r.out(), "keychain") {
 		t.Errorf("the skip must name the keychain, got:\n%s", r.out())
 	}
-	if calls := bdCalls(t, r.fake); calls != "" {
-		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, r.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a blind park must not claim the bead, got: %s", calls)
 	}
 }
 
-// --dry-run does not buy a pass: the guard sits in front of routing.
+// --dry-run still applies the per-bead guard after routing.
 func TestBlindOverBudgetDryRunStillSkips(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
@@ -521,11 +580,11 @@ func TestBlindOverBudgetDryRunStillSkips(t *testing.T) {
 	if n := r.run(t); n != 0 {
 		t.Fatalf("a dry-run unattended pass past the budget must skip: %d\n%s", n, r.out())
 	}
-	if !strings.Contains(r.out(), "pass skipped") {
+	if !strings.Contains(r.out(), "— skipped") {
 		t.Errorf("want a blind skip, got:\n%s", r.out())
 	}
-	if calls := bdCalls(t, r.fake); calls != "" {
-		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	if calls := bdCalls(t, r.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("a blind dry-run must not claim the bead, got: %s", calls)
 	}
 }
 

@@ -18,10 +18,10 @@ package rhq
 //
 // Two rules keep this from being a way to spend a pool nobody can meter.
 // `plan_guard_overflow_cap:` is REQUIRED — an overflow runtime with no cap is
-// overflow off, one stderr line, and the pass skipped as before. And a *blind*
-// guard never overflows (§5): a pass stopped because no reading could be taken
-// has no reading to judge on, and guessing that the other pool should pay is
-// exactly the failure the cap exists to bound.
+// overflow off, one stderr line, and on-meter beads park. And a *blind* guard
+// never overflows (§5): with no reading to judge on, guessing that the other
+// pool should pay is exactly the failure the cap exists to bound. Off-meter
+// beads still launch through either state (ADR 0013 §3).
 
 import (
 	"bufio"
@@ -64,8 +64,8 @@ func OnGuardedMeter(name string) bool {
 	return true
 }
 
-// Overflow is one pass's overflow configuration. The zero value is off,
-// which is the whole-pass skip this ADR started from.
+// Overflow is one pass's overflow configuration. The zero value is off, so
+// on-meter beads park on a threshold trip while off-meter beads still run.
 type Overflow struct {
 	Runtime string
 	Cap     int
@@ -93,7 +93,7 @@ func (a *App) PlanGuardOverflow(errw io.Writer) Overflow {
 	}
 	n, err := strconv.Atoi(raw)
 	if raw == "" || err != nil || n <= 0 {
-		fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s needs plan_guard_overflow_cap: N (beads per rolling 7 days, %q is not one) — overflow off, a tripped guard skips the pass as before\n", rt, raw)
+		fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s needs plan_guard_overflow_cap: N (beads per rolling 7 days, %q is not one) — overflow off, on-meter beads park on a tripped guard\n", rt, raw)
 		return Overflow{}
 	}
 	return Overflow{Runtime: rt, Cap: n}
