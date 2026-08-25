@@ -302,6 +302,11 @@ dirs:
 #                              # absent key = 3, and 0 (unbounded) only ever by saying so —
 #                              # an armed loop must never fire the whole ready queue by omission
 # autostart_dry_run: true      # passes route and report, dispatch nothing
+# autostart_resume: false      # THE ONLY KEY HERE THAT DEFAULTS ON. Absent, the loop
+#                              # passes --resume: a bead whose persona settled without
+#                              # closing it is re-prompted, instead of only warning an
+#                              # operator who is by definition not watching this loop.
+#                              # Set false to get the warning back and nothing else.
 # autostart_session: dispatch  # herdr session name (default: dispatch)
 # autostart_dir: ~             # session cwd (default: $HOME)
 

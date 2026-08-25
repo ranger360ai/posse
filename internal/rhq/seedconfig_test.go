@@ -46,7 +46,7 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		"plan_guard_overflow", "plan_guard_overflow_cap",
 		"budget_pass", "budget_day",
 		"autostart_interval", "autostart_max_interval", "autostart_max_beads",
-		"autostart_dry_run", "autostart_session", "autostart_dir",
+		"autostart_dry_run", "autostart_resume", "autostart_session", "autostart_dir",
 	} {
 		if v := YamlGet(cfg, key); v != "" {
 			t.Errorf("seed config sets %s: %q — the seed must ship it commented out", key, v)

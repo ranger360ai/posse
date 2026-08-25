@@ -310,3 +310,77 @@ func TestAutostartDisarmed(t *testing.T) {
 		t.Errorf("want the disarmed report:\n%s", r.out)
 	}
 }
+
+// ── the resume arm (ranger-base-f0g) ────────────────────────────────────────
+//
+// The armed loop is the one the OPERATOR gets, and before this it was
+// permanently the non-resuming one: a bead whose persona settled idle without
+// closing it got a `◑ … settled but open — review` line in a log nobody was
+// reading, and then sat there. `autostart_resume:` is therefore the one key in
+// this hook that defaults ON, which is exactly the kind of inversion that
+// wants pinning rather than remembering.
+
+func TestAutostartArmsResumeByDefault(t *testing.T) {
+	w := newHookWorld(t, armed)
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "--resume") {
+		t.Errorf("armed loop does not resume — a settled-but-open bead sits forever:\n%s", r.calls)
+	}
+}
+
+// Off is available, and only by saying so. An operator who wants the warning
+// and nothing else says false; nothing else in the file turns it off.
+func TestAutostartResumeFalseDisarmsResume(t *testing.T) {
+	w := newHookWorld(t, armed+"autostart_resume: false\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if strings.Contains(r.calls, "--resume") {
+		t.Errorf("autostart_resume: false still armed --resume:\n%s", r.calls)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch") {
+		t.Errorf("the loop was not armed at all:\n%s", r.calls)
+	}
+}
+
+// A typo is not an off-switch. `autostart_max_beads` sets the precedent: a
+// value the hook cannot read is named on stderr and replaced with the default
+// rather than silently obeyed — and here the default is the safe direction,
+// so the one thing a misspelling must not do is put the loop back in the
+// broken shape while looking configured.
+func TestAutostartResumeGarbageKeepsResumeAndSaysSo(t *testing.T) {
+	w := newHookWorld(t, armed+"autostart_resume: flase\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "--resume") {
+		t.Errorf("a malformed autostart_resume read as off:\n%s", r.calls)
+	}
+	if !strings.Contains(r.out, "not true/false") {
+		t.Errorf("the malformed value was obeyed silently:\n%s", r.out)
+	}
+}
+
+// Both switches at once, in the shape an operator actually arms first: dry
+// passes that also resume. The two are independent flags on one command line.
+func TestAutostartResumeAndDryRunCompose(t *testing.T) {
+	w := newHookWorld(t, armed+"autostart_dry_run: true\nautostart_resume: true\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	for _, flag := range []string{"--resume", "--dry-run", "-n 3"} {
+		if !strings.Contains(r.calls, flag) {
+			t.Errorf("armed command is missing %s:\n%s", flag, r.calls)
+		}
+	}
+}

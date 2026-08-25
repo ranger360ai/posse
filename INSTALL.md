@@ -833,11 +833,20 @@ autostart_interval: 5m       # ← the arm switch
 autostart_max_beads: 3       # -n per pass. A cap is ALWAYS applied (default 3);
                              # 0 means unbounded, and only by saying so.
 autostart_dry_run: true      # start here: passes route and report, dispatch nothing
+# autostart_resume: false    # defaults ON — see below
 # autostart_session: dispatch
 # autostart_dir: ~
 ```
 
 Arm it dry first, watch a few passes, then set `autostart_dry_run: false`.
+
+`autostart_resume:` is the one key here that **defaults on**. Without it the
+loop passes `--resume`, so a bead whose persona settled idle without closing
+it gets re-prompted on the next pass. The alternative is the line
+`◑ <id> settled "done" but issue is "in_progress" — review <session>`
+scrolling past in a log addressed to the operator who armed this loop
+precisely so they would not have to watch it. Set it to `false` if you want
+that warning and nothing else.
 
 **Set `plan_guard_5h:` / `plan_guard_7d:` before you arm anything.** They
 are what keep an unattended loop off your plan's rate windows; under

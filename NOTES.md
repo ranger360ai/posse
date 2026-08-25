@@ -576,8 +576,21 @@ for a fleet: no herdr, no fleet.
   without `autostart_interval:` in `$RHQ_HOME/config.yaml` — presence of
   that key is the arm switch. Beside it: `autostart_max_interval:`,
   `autostart_max_beads:` (`-n`), `autostart_dry_run:` (passes route and
-  report, dispatch nothing — the observation gear), `autostart_session:`
-  (default `dispatch`), `autostart_dir:`.
+  report, dispatch nothing — the observation gear), `autostart_resume:`,
+  `autostart_session:` (default `dispatch`), `autostart_dir:`.
+- **`autostart_resume:` is the one autostart key that defaults ON**
+  (ranger-base-f0g). `--resume` re-prompts an in_progress bead whose persona
+  session is alive and idle; without it the loop prints `◑ … settled "done"
+  but issue is "in_progress" — review <session>` and moves on. Measured
+  2026-08-24: three dispatched sessions in a row finished, went idle without
+  commenting or closing, and their beads sat open behind a busy key until the
+  operator re-prompted by hand — one of them holding 353 uncommitted lines a
+  reap would have destroyed. A warning is addressed to a reader; this loop's
+  whole premise is that nobody is reading. The token-burn rangerhq-zom guarded
+  against is bounded by bd's own readiness: a persona that files a question
+  and deps its bead on it leaves the ready set and is never re-prompted. A
+  persona that settles open with nothing filed is re-prompted every pass —
+  which is the polite-infinite-retry ranger-base-9hm is about.
 - **The fan-out cap is always present.** `autostart_max_beads:` raises or
   lowers `-n`; it does not switch it on. Absent, the hook passes `-n 3`
   (rangerhq-v83) — an armed loop that fired the whole ready queue in one

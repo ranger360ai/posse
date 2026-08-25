@@ -21,6 +21,20 @@
 #                            an armed loop must never fire the whole ready
 #                            queue in one pass by omission (rangerhq-v83)
 #   autostart_dry_run:       true → passes route and report, dispatch nothing
+#   autostart_resume:        false → the loop only WARNS about a bead whose
+#                            persona settled without closing it. DEFAULTS ON,
+#                            unlike every other key here, because the warning
+#                            ("◑ … settled but open — review") is addressed to
+#                            an operator who is by definition not watching this
+#                            loop: three measured sessions in a row went idle
+#                            on finished work and the beads sat open until a
+#                            human re-prompted by hand (ranger-base-f0g).
+#                            Only bd-ready beads are reachable, so a persona
+#                            that filed a question and depended its bead on it
+#                            is left alone; one that settles open with nothing
+#                            filed is re-prompted every pass until it closes
+#                            or somebody looks. Set false to get the warning
+#                            back and nothing else.
 #   autostart_session:       session name (default: dispatch)
 #   autostart_dir:           session cwd (default: $HOME)
 #
@@ -137,11 +151,22 @@ case "$maxbeads" in
 *[!0-9]*) say "autostart_max_beads: '$maxbeads' is not a count — using 3" >&2; maxbeads=3 ;;
 esac
 dry=$(cfg autostart_dry_run)
+# Inverted default: absent key → --resume. See the header — a settled-but-open
+# bead's only other outcome under an unattended loop is sitting there. A value
+# that is not a boolean is named and replaced rather than read as "off": the
+# one direction a typo must not silently take this is back to the broken shape.
+resume=$(cfg autostart_resume)
+case "$resume" in
+'' | true | yes | 1) resume=true ;;
+false | no | 0) resume=false ;;
+*) say "autostart_resume: '$resume' is not true/false — using true" >&2; resume=true ;;
+esac
 dir=$(cfg autostart_dir); dir=${dir:-$HOME}
 
 watch="$RHQ dispatch --watch $interval"
 [ -n "$maxint" ] && watch="$watch --max-interval $maxint"
 watch="$watch -n $maxbeads"
+[ "$resume" = true ] && watch="$watch --resume"
 case "$dry" in true|yes|1) watch="$watch --dry-run" ;; esac
 
 mkdir -p "$(dirname "$LOG")"
