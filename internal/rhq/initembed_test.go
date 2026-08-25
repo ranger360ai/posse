@@ -122,10 +122,21 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 			t.Errorf("%s: %d files, want at least %d", dir, len(ents), want)
 		}
 	}
-	// examples/skills does not exist yet (ADR 0012 D2). An absent seed root
-	// seeds nothing and fails nothing — the dir is still there to fill.
-	if ents, err := os.ReadDir(a.SkillsDir()); err != nil || len(ents) != 0 {
-		t.Errorf("skills/: %d entries, %v — expected an empty registry", len(ents), err)
+	// examples/skills ships the generic distributed-systems canon (ADR 0012
+	// D2), and a skill is a tree: SKILL.md plus references/. Assert it
+	// arrives whole from the embed, since the tails-stay-instance-side rule
+	// is only worth anything if the canon actually reaches a fresh instance.
+	if got := a.ListSkills(); len(got) != 1 || got[0] != "distributed-systems" {
+		t.Fatalf("ListSkills after init: %v — want the seeded canon", got)
+	}
+	skill := a.SkillPath("distributed-systems")
+	if b, err := os.ReadFile(filepath.Join(skill, "SKILL.md")); err != nil ||
+		!strings.Contains(string(b), "description:") {
+		t.Errorf("SKILL.md: %v — a skill without a description binds to nothing on some runtimes", err)
+	}
+	refs, err := os.ReadDir(filepath.Join(skill, "references"))
+	if err != nil || len(refs) != 7 {
+		t.Errorf("references/: %d files, %v — want the seven canon concepts", len(refs), err)
 	}
 
 	// Env sets hold secrets: 0700 dir, 0600 files, from the embed too.
