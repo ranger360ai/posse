@@ -1068,6 +1068,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// any other: refused, or launched on the host and marked. What it
 		// never is, is a launch that pretends to be caged.
 		caged = cage == CageContainer && a.ContainerAvailable()
+		// L3 is reconciled before the directory-aware parity check so parity
+		// can execute the slots and report what they do. Install errors stay
+		// best-effort — a legitimate foreign chain is expected to make install
+		// refuse — but a slot that does not actually gate the probe is now a
+		// visible degradation instead of a swallowed error.
+		if deniesGitPush(ag.Deny) {
+			InstallPrePushHook(dir)
+		}
+		a.InstallCommitGuardHook(dir)
 		parity := a.CheckParityIn(ag, rt, cage, tier, dir)
 		if len(parity.Degraded) > 0 {
 			// ADR 0003 §3: at fast the operator's consent is not on offer —
@@ -1135,23 +1144,6 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// file behind it that is the host's is mounted there (CageMounts).
 			gatesDir = CageGatesDir(o.Agent)
 		}
-		// L3, always on: the pre-push hook goes into the session's repo when
-		// the PID denies git push and the repo has no hook (ours is replaced,
-		// a foreign one is left alone and the launch proceeds — L1 still
-		// stands). Writes only inside .git/hooks.
-		if deniesGitPush(ag.Deny) {
-			InstallPrePushHook(dir) // best effort; a non-repo dir is fine
-		}
-		// The commit guard is not keyed on a deny rule: what makes an
-		// unqualified commit unsafe is the tree the session is dispatched
-		// into, which every persona shares, not anything the PID says
-		// (rangerhq-lmq9). It keys on RHQ_PERSONA at run time, so the
-		// operator's own commits in the same tree are untouched. The same
-		// hook carries the beads visibility guard, stamped here from config
-		// `beads_visibility:` — which is what keeps that stamp live: a mark
-		// the operator changes is in force on the next launch into the repo
-		// (rangerhq-hrz).
-		a.InstallCommitGuardHook(dir) // best effort; foreign hook = left alone
 		if emoji == "" || emoji == a.EmojiFor(o.Name) {
 			if e := a.EmojiExact(runtime); e != "" {
 				emoji = e // the cockpit shows what the persona runs on

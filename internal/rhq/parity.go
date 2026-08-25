@@ -67,8 +67,10 @@ type Parity struct {
 	Degraded   []string          // everything that makes the launch degrading (unrealized gates, cage shortfall)
 }
 
-// CheckParity computes the matrix for a PID on a runtime at a cage tier,
-// running at a model tier.
+// CheckParity computes the directory-independent matrix for a PID on a
+// runtime at a cage tier, running at a model tier. It cannot count L3: hook
+// ownership and behavior are facts about a concrete repo, added only by
+// CheckParityIn after executing the slots.
 func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity {
 	p := Parity{Runtime: rt.Name, Cage: cage, Tier: tier, Realized: map[string]string{}}
 	if cage == "" {
@@ -147,15 +149,10 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			// Without the gate shell (ADR 0009 §2), a runtime that re-execs a
 			// login shell per command puts the L1 shim behind /usr/bin
 			// whatever the launcher prepends, and nothing about the rule's
-			// shape can save it. L3 is a git hook, not a PATH lookup, so
-			// `git push` survives there. Every runtime gets the gate shell
-			// unless it opts out, so this is the exit hatch's price.
+			// shape can save it. L3 may recover git rules, but only after the
+			// directory-aware check executes a concrete repo's hooks.
 			if rt.NoGateShell {
-				if deniesGitPush([]string{rule}) {
-					p.Realized[rule] = "L3 pre-push hook (hooked repos) — the L1 shim does not hold on " + rt.Name
-				} else {
-					p.unrealized(rule, "L1 shim cannot hold on "+rt.Name+" (gate_shell: false): a runtime that re-execs a login shell lets path_helper demote the gates dir below /usr/bin")
-				}
+				p.unrealized(rule, "L1 shim cannot hold on "+rt.Name+" (gate_shell: false): a runtime that re-execs a login shell lets path_helper demote the gates dir below /usr/bin; L3 counts only after CheckParityIn behavior-probes the hook")
 				continue
 			}
 			cmd := shimCommand(rule)
@@ -175,12 +172,6 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			layers := "L1 shim (" + kind + ")"
 			if inner {
 				layers = "L1 shim (" + kind + ") rendered inside the cage"
-			}
-			if deniesGitPush([]string{rule}) {
-				layers += " + L3 pre-push hook (hooked repos)"
-			}
-			if deniesUnqualifiedCommit([]string{rule}) {
-				layers += " + L3 prepare-commit-msg hook (hooked repos)"
 			}
 			p.Realized[rule] = layers
 		case rule == "Edit" || rule == "Write" || rule == "NotebookEdit":
@@ -306,15 +297,71 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 // statement) so nothing that only describes a persona has to invent a cwd.
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
+	applyL3Probe(&p, ag, rt, dir)
 	if why := ProjectConfigTrust(rt, ag, dir); why != "" {
 		p.Degraded = append(p.Degraded, why)
-		// Same rule as the gates above: at fast the operator's consent is
-		// not on offer, so a degradation found here is not waivable either.
-		if p.Tier == TierFast {
-			p.NoDegrade = true
+	}
+	// Same rule as the dir-independent gates: at fast the operator's consent
+	// is not on offer. Recompute because a successful L3 behavior probe can
+	// also replace CheckParity's conservative NoGateShell verdict.
+	p.NoDegrade = p.Tier == TierFast && len(p.Degraded) > 0
+	return p
+}
+
+// applyL3Probe adds a fact about this launch directory to CheckParity's
+// directory-independent matrix. A marker is intentionally never
+// consulted: legitimate chain dispatchers have none, and marker-bearing
+// scripts are writable files. The behavioral check is the evidence.
+func applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
+	wantPrePush := deniesGitPush(ag.Deny)
+	probe := probeL3Hooks(dir, wantPrePush)
+	if !probe.Repo {
+		return
+	}
+	where := AbbrevHome(probe.HooksDir)
+	for _, rule := range ag.Deny {
+		switch {
+		case deniesGitPush([]string{rule}):
+			applyHookResult(p, rule, "L3 pre-push hook (behavior probed)", probe.PrePush,
+				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
+		case deniesUnqualifiedCommit([]string{rule}):
+			applyHookResult(p, rule, "L3 prepare-commit-msg hook (behavior probed)", probe.CommitGuard,
+				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
 		}
 	}
-	return p
+	if wantPrePush && !probe.PrePush {
+		p.Degraded = append(p.Degraded, "L3 pre-push hook — behavior probe in "+where+" did not refuse git push with exit 1; this layer is not realized")
+	}
+	if !probe.CommitGuard {
+		p.Degraded = append(p.Degraded, "L3 prepare-commit-msg hook — behavior probe in "+where+" did not refuse an unqualified commit with exit 1; the shared-index and beads visibility guards are not realized")
+	}
+}
+
+func applyHookResult(p *Parity, gate, observed string, works bool, noL1 string) {
+	if !works {
+		return
+	}
+	if layer := p.Realized[gate]; layer != "" {
+		p.Realized[gate] = layer + " + " + observed
+		return
+	}
+	clearGateDegradation(p, gate)
+	p.Realized[gate] = observed + " — " + noL1
+}
+
+func clearGateDegradation(p *Parity, gate string) {
+	prefix := gate + " — "
+	keep := func(lines []string) []string {
+		out := lines[:0]
+		for _, line := range lines {
+			if !strings.HasPrefix(line, prefix) {
+				out = append(out, line)
+			}
+		}
+		return out
+	}
+	p.Unrealized = keep(p.Unrealized)
+	p.Degraded = keep(p.Degraded)
 }
 
 // tierRank orders Tiers dearest-first (strong 0 … fast 2), so a *higher*

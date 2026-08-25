@@ -2,6 +2,7 @@ package rhq
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,9 +18,10 @@ func TestCheckParity(t *testing.T) {
 	grok, _ := a.LoadRuntime("grok")
 	security := loadTestAgent(t, "---\nname: security\ndeny: [Edit, Write, Bash(git push:*)]\n---\nYou are security.\n")
 
-	// security on codex at shims: read-only + shim + hook realize all three.
+	// security on codex at shims: read-only + shim realize all three in the
+	// directory-independent matrix; a concrete repo may add L3 below.
 	p := a.CheckParity(security, codex, CageShims, TierStrong)
-	if len(p.Degraded) != 0 || p.Realized["Edit"] != "codex sandbox (OS-enforced)" || p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware) + L3 pre-push hook (hooked repos)" {
+	if len(p.Degraded) != 0 || p.Realized["Edit"] != "codex sandbox (OS-enforced)" || p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware)" {
 		t.Errorf("security@codex: %+v", p)
 	}
 	// security on grok (and claude): Edit/Write are politeness → degraded,
@@ -45,9 +47,9 @@ func TestCheckParity(t *testing.T) {
 	if p := a.CheckParity(npmAll, claude, CageShims, TierStrong); len(p.Degraded) != 0 || p.Realized["Bash(npm)"] != "L1 shim (whole verb)" {
 		t.Errorf("whole-verb deny is matcher-independent: %+v", p)
 	}
-	// git has a table, so its subcommand denies are option-aware, and L3
-	// is labelled for what it actually covers.
-	if p := a.CheckParity(security, claude, CageShims, TierStrong); p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware) + L3 pre-push hook (hooked repos)" {
+	// git has a table, so its subcommand denies are option-aware. L3 is a
+	// directory fact and is deliberately absent here.
+	if p := a.CheckParity(security, claude, CageShims, TierStrong); p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware)" {
 		t.Errorf("git push layers: %q", p.Realized["Bash(git push:*)"])
 	}
 
@@ -64,13 +66,12 @@ func TestCheckParity(t *testing.T) {
 		}
 	}
 	// The exit hatch is the only thing that gives that back: a runtime with
-	// gate_shell: false gets no wrapper on the typed line, so every Bash
-	// deny but `git push` — which L3 catches as a git hook, not a PATH
-	// lookup — is unrealized there, exactly as grok read before ADR 0009.
+	// gate_shell: false gets no wrapper on the typed line. The dir-independent
+	// matrix counts no L3 possibility as realized; CheckParityIn can replace
+	// the git verdict only after it executes a concrete repo's hook.
 	nogs := &Runtime{Name: "odd", NoGateShell: true}
 	pg := a.CheckParity(dev, nogs, CageShims, TierStrong)
-	if len(pg.Unrealized) != 1 || !strings.Contains(pg.Unrealized[0], "Bash(rm -rf /) — L1 shim cannot hold on odd (gate_shell: false)") ||
-		!strings.HasPrefix(pg.Realized["Bash(git push:*)"], "L3 pre-push hook") {
+	if len(pg.Unrealized) != 2 || !strings.Contains(strings.Join(pg.Unrealized, "\n"), "Bash(rm -rf /) — L1 shim cannot hold on odd (gate_shell: false)") || pg.Realized["Bash(git push:*)"] != "" {
 		t.Errorf("dev@odd: %+v", pg)
 	}
 	// Tool-name denies are container-only; egress implies container; a
@@ -440,5 +441,121 @@ func TestProjectConfigTrustGatesTheLaunch(t *testing.T) {
 	}
 	if log := calls(t, fake); !strings.Contains(log, "codex") {
 		t.Errorf("no codex line typed:\n%s", log)
+	}
+}
+
+func TestParityL3ClaimsFollowBehavior(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	claude, _ := a.LoadRuntime("claude")
+	ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks, _ := hooksDir(repo)
+	write := func(slot, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A legitimate foreign dispatcher is marker-free but refuses both
+	// probes. Concrete parity may claim L3 only after observing that behavior.
+	write("pre-push", "#!/bin/sh\nexit 1\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
+	if len(p.Degraded) != 0 {
+		t.Fatalf("working foreign hooks must be clean: %+v", p)
+	}
+	for _, gate := range ag.Deny {
+		if !strings.Contains(p.Realized[gate], "behavior probed") {
+			t.Errorf("%s must name observed L3 behavior: %q", gate, p.Realized[gate])
+		}
+	}
+	// A runtime that opts out of the gate shell has no L1. Successful L3
+	// behavior replaces that conservative dir-independent verdict; this is
+	// why the concrete check cannot merely append a cosmetic layer string.
+	nogs := &Runtime{Name: "odd", NoGateShell: true}
+	if p := a.CheckParityIn(ag, nogs, CageShims, TierStrong, repo); len(p.Degraded) != 0 || len(p.Realized) != 2 {
+		t.Errorf("behavior-probed L3 must realize both git gates without L1: %+v", p)
+	}
+
+	// A planted pass-through body is the bead's exploit. L1 still realizes
+	// the PID rules, but L3 disappears from Realized and both failed probes
+	// are visible degradations.
+	write("pre-push", "#!/bin/sh\nexit 0\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 0\n")
+	p = a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
+	joined := strings.Join(p.Degraded, "\n")
+	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "beads visibility guards are not realized"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("failed probe missing %q in:\n%s", want, joined)
+		}
+	}
+	for _, gate := range ag.Deny {
+		if strings.Contains(p.Realized[gate], "L3") {
+			t.Errorf("failed behavior must remove L3 from %s: %q", gate, p.Realized[gate])
+		}
+	}
+}
+
+func TestLaunchInstallsHooksBeforeProbe(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	b, _ := newTestBackend(t)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+
+	mustCreate(t, b, NewSessionOpts{Name: "clean", Agent: "dev", Dir: repo})
+	if got := probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
+		t.Errorf("launch must reconcile both slots before checking them: %+v", got)
+	}
+	if m, _ := b.readMeta("clean"); m == nil || m.Degraded != "" {
+		t.Errorf("fresh repo with installed hooks must launch clean: %+v", m)
+	}
+}
+
+func TestLaunchReportsForeignHookFailure(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	b, fake := newTestBackend(t)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks, _ := hooksDir(repo)
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := b.CreateSession(NewSessionOpts{Name: "blocked", Agent: "dev", Dir: repo})
+	if err == nil || !strings.Contains(err.Error(), "L3 pre-push hook") || !strings.Contains(err.Error(), "L3 prepare-commit-msg hook") {
+		t.Fatalf("launch must report both foreign pass-through slots: %v", err)
+	}
+	if strings.Contains(calls(t, fake), "workspace create") {
+		t.Fatal("a hook-degraded launch must refuse before touching herdr")
+	}
+
+	mustCreate(t, b, NewSessionOpts{Name: "waived", Agent: "dev", Dir: repo, AllowDegraded: true})
+	m, _ := b.readMeta("waived")
+	if m == nil || !strings.Contains(m.Degraded, "L3 pre-push hook") || !strings.Contains(m.Degraded, "L3 prepare-commit-msg hook") {
+		t.Errorf("waived launch must retain both probe failures in meta: %+v", m)
 	}
 }

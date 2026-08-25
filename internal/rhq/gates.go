@@ -709,7 +709,10 @@ func InstallPrePushHook(dir string) (string, error) {
 	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook)
 }
 
-// PrePushHookInstalled reports whether the repo at dir has our hook.
+// PrePushHookInstalled reports whether the repo at dir has a hook carrying
+// our ownership marker. It is an install/replacement fact, not enforcement
+// evidence: a foreign dispatcher can enforce the gate without the marker,
+// and a marker-bearing file can be rewritten to exit 0.
 func PrePushHookInstalled(dir string) bool {
 	return hookInstalled(dir, "pre-push", prePushMarker, legacyPrePushMarker)
 }
@@ -988,9 +991,83 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 	return path, visibility, source, err
 }
 
-// CommitGuardHookInstalled reports whether the repo at dir has it.
+// CommitGuardHookInstalled reports whether the repo at dir has a hook carrying
+// our ownership marker. See PrePushHookInstalled: parity must probe behavior.
 func CommitGuardHookInstalled(dir string) bool {
 	return hookInstalled(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker)
+}
+
+// l3HookProbe is launch-time evidence about the two hook slots. Repo is false
+// for a non-git session directory, where L3 is not applicable. PrePush is true
+// without running that arm when the PID does not deny git push; the
+// prepare-commit-msg arm always runs because its shared-index and visibility
+// guards protect every persona session, independent of PID rule text.
+//
+// This is deliberately a snapshot, not a claim that the hook cannot change
+// after the probe (TOCTOU/CWE-367). The seatbelt hook carve-out can prevent a
+// caged session from changing it; cage: shims has no file-write boundary.
+type l3HookProbe struct {
+	Repo        bool
+	PrePush     bool
+	CommitGuard bool
+	HooksDir    string
+}
+
+// One shell invocation exercises both slots. Each hook must refuse the exact
+// operation it gates with exit 1; marker text and refusal output are not
+// evidence. Hook output is discarded and RHQ_GATES_DIR is blank so a launch
+// probe never forges a refusal-log entry.
+const l3HookProbeScript = `
+unset GIT_INDEX_FILE RHQ_VISIBILITY_OVERRIDE
+posse_push_bad=0
+if [ -n "$1" ]; then
+  printf 'refs/heads/main a refs/heads/main b\n' |
+    RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' RHQ_GATES_DIR= \
+    "$1" origin probe >/dev/null 2>&1
+  posse_status=$?
+  if [ "$posse_status" -ne 1 ]; then posse_push_bad=1; fi
+fi
+RHQ_PERSONA=probe RHQ_TOOLS_DENY= RHQ_GATES_DIR= \
+  "$2" "$3" >/dev/null 2>&1
+posse_status=$?
+posse_commit_bad=0
+if [ "$posse_status" -ne 1 ]; then posse_commit_bad=2; fi
+exit $((posse_push_bad + posse_commit_bad))
+`
+
+func probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		return l3HookProbe{}
+	}
+	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
+	msg, err := os.CreateTemp("", "posse-prepare-commit-msg-probe-")
+	if err != nil {
+		return r
+	}
+	msg.Close()
+	defer os.Remove(msg.Name())
+
+	prePush := ""
+	if wantPrePush {
+		prePush = filepath.Join(hooks, "pre-push")
+	}
+	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe",
+		prePush, filepath.Join(hooks, "prepare-commit-msg"), msg.Name())
+	cmd.Dir = dir
+	err = cmd.Run()
+	code := 0
+	if err != nil {
+		code = -1
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+	}
+	if code >= 0 {
+		r.PrePush = !wantPrePush || code&1 == 0
+		r.CommitGuard = code&2 == 0
+	}
+	return r
 }
 
 // deniesUnqualifiedCommit reports whether the PID's deny list carries the

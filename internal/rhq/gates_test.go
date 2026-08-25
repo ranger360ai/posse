@@ -1415,3 +1415,56 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 		t.Errorf("path-limited commit in a linked worktree must pass: %v %s", err, out)
 	}
 }
+
+// ranger-base-3c3: ownership markers decide whether install may replace a
+// hook; they do not decide whether L3 works. A legitimate chain dispatcher
+// has no marker, while a marker-bearing script can have been neutralized.
+func TestL3HookProbeUsesBehaviorNotMarkers(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks, err := hooksDir(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(slot, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No marker, but exactly the behavior a correctly chained foreign slot
+	// provides: both probe operations are refused with exit 1.
+	write("pre-push", "#!/bin/sh\nexit 1\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	if PrePushHookInstalled(repo) || CommitGuardHookInstalled(repo) {
+		t.Fatal("foreign behavior probes must not become ownership markers")
+	}
+	if got := probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
+		t.Errorf("working foreign chain must count by behavior: %+v", got)
+	}
+
+	// The inverse: both ownership markers survive, but the hooks pass the
+	// forbidden operations. Marker-only checkers called this installed.
+	write("pre-push", "#!/bin/sh\n"+prePushMarker+"\nexit 0\n")
+	write("prepare-commit-msg", "#!/bin/sh\n"+sharedIndexMarker+"\nexit 0\n")
+	if !PrePushHookInstalled(repo) || !CommitGuardHookInstalled(repo) {
+		t.Fatal("fixture must carry both ownership markers")
+	}
+	if got := probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
+		t.Errorf("neutralized marker-bearing hooks must fail behavior: %+v", got)
+	}
+
+	// The pre-push arm is conditional on the PID; prepare-commit-msg is not,
+	// because its visibility and shared-index guards apply to every persona.
+	os.Remove(filepath.Join(hooks, "pre-push"))
+	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	if got := probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
+		t.Errorf("commit-only probe: %+v", got)
+	}
+}

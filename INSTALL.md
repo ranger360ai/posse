@@ -832,6 +832,12 @@ must print no refusal and exit **0**: the commit guard keys on
 persona session the safe form is `git commit -F - -- <paths>`. A gate that
 prints its refusal but exits 0 is not installed — re-read the chain.
 
+Persona launch runs the first two behavioral probes itself (both slots in
+one shell invocation). Ownership markers still decide whether posse may
+replace a hook, but they are never enforcement evidence: a working foreign
+chain passes, while a slot that does not exit 1 is reported as `DEGRADED` and
+the session refuses unless the operator explicitly allows degradation.
+
 Re-running `bd hooks install` — after a `bd` upgrade, or in a second clone
 — overwrites both slots and takes the chain with them. Run the three probes
 again after any bd upgrade. Session create installs the two gates too, but

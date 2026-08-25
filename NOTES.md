@@ -1358,14 +1358,16 @@ Catches `/usr/bin/git push` and pushes from subprocesses that kept the
 env. It cannot see through `env -i` — nothing in-process can; that is
 the container tier's job. Install: `posse gates install-hooks [repo]`
 (replaces its own hook, refuses to overwrite a foreign one — chain by
-hand); persona launches into a repo also install it automatically when
-the PID denies git push and no foreign hook is in the way (writes only
-inside `.git/hooks`). Instance repos: run install-hooks once per repo —
-**dispatching into it is not a substitute** where `bd hooks install` got
-there first (bd 0.49.1 shims `pre-push` and `prepare-commit-msg` too), because
-then every install session create attempts refuses and session create discards
-the error: nothing installed, nothing printed (rangerhq-j4sq). Chain by hand,
-INSTALL.md §9, until rangerhq-mgdk lands. `posse init` does not touch repos.
+hand). Persona launch reconciles the pre-push slot when the PID denies git
+push and always reconciles `prepare-commit-msg`, then runs both gated
+operations in one shell invocation and requires exit 1. A working foreign
+chain therefore counts without a marker; a planted pass-through body does
+not count even if it kept one. Failure is `DEGRADED`, visible before herdr
+is touched, and L3 disappears from concrete parity. The probe is launch-time
+evidence, not a permanent lock: at `cage: shims` the session can still edit
+the slot after the probe (the TOCTOU residual); the L2/L4 hook carve-out is
+what removes that capability. Chain foreign slots per INSTALL.md §9.
+`posse init` does not touch repos.
 
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
@@ -3371,7 +3373,12 @@ same `GIT_INDEX_FILE`, verified across all four forms. The guard keys on
 operator's own commits in the same tree are untouched; it is installed at
 every persona session create and by `posse gates install-hooks`, and is *not*
 keyed on a deny rule, because what makes the commit unsafe is the tree the
-session was dispatched into, not anything the PID says.
+session was dispatched into, not anything the PID says. Session create then
+executes a persona probe against the slot and counts L3 only when the hook
+refuses with exit 1; the same single shell invocation probes pre-push when
+that PID denies it. A failed commit probe degrades every persona launch into
+the repo because this slot carries both the shared-index wall and the beads
+visibility guard.
 
 Commits git drives itself — merge (`$2` = `merge`), cherry-pick, revert,
 rebase, squash — are let through: git refuses a pathspec outright during

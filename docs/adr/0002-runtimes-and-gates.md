@@ -110,13 +110,15 @@ from the PID (source of truth; nothing hand-edited there survives):
 |---|---|---|---|
 | L0 politeness | any | runtime-native flags (§1) | whatever the runtime says it does — never counted as the wall |
 | L1 shims | `shims` (always on) | `gates/<p>/bin/<cmd>` for every `Bash(<cmd> <prefix>:*)`/`Bash(<cmd>)` deny; refuses when argv matches, else `exec`s the real binary resolved at render time; logs refusals to `gates/<p>/refusals.log`; PATH is prepended **on the typed command line** (`PATH=<bin>:$PATH <cmd>`), not in the workspace env, because macOS `path_helper` reorders PATH when the pane shell starts | any deny that is a shell verb, on any runtime |
-| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec when `RHQ_PERSONA` is set — the working tree and its index are shared by every persona, so an unqualified commit takes whatever anyone else has staged (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, even via absolute path / `env -i` / a subprocess |
+| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec when `RHQ_PERSONA` is set — the working tree and its index are shared by every persona, so an unqualified commit takes whatever anyone else has staged (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; after reconciliation, session create executes both slots and requires exit 1 on the gated probes — behavior, not the ownership marker, is what parity counts; the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, even via absolute path / `env -i` / a subprocess |
 | L2 seatbelt | `seatbelt` | `sandbox-exec -f gates/<p>/seatbelt.sb` wrapping the rendered command: deny `file-write*` except cwd, `{memory}`, the runtime's state dir (`~/.claude`,`~/.codex`,`~/.grok`), `$TMPDIR`; PID may add `writable:` paths; parametrized `Edit(<glob>)` is a trailing `subpath` deny after that allow (ADR 0014; last match wins) | `Edit`/`Write`-class denies on any runtime — bare and subtree-glob; the only runtime-proof file gate |
 | L4 container | `container` | runtime runs inside a container (engine = a command template, `RHQ_HOME/cages/<engine>.yaml`, Docker default) with the repo and `{memory}` mounted and **nothing else of the host**; typed in the pane through an argv0 launcher `state/cages/<p>/bin/<runtime>` so herdr still sees `claude`/`codex`/`grok`; joined to a `--internal` network whose only other member is a CONNECT proxy holding `egress:`; L1 and L3 **re-rendered inside** (below); herdr socket **not mounted unless the PID says `sockets: [herdr]`**; path-scoped writes are `:ro` overlays, and a `:ro` repo always gets `.beads`/`.git` (and `writable:`) as read-write overlays (ADR 0014 §4) | `egress:` (hosts the persona may reach); the mount boundary (`Edit`/`Write` denies by mounting the repo `:ro`, scoped globs by overlay) — the successor of L2, which cannot wrap a container; hostile-input work, untrusted runtimes |
 
-L1+L3 cost nothing per session and are on for every persona session on
-every runtime — including claude, where `--disallowedTools` becomes the
-polite refusal in front of the shim's hard one. **They do not follow a
+L1 is rendered locally; L3 adds one behavior-probe shell invocation per
+persona launch into a repo (both slots in that invocation), on every runtime
+— including claude, where `--disallowedTools` becomes the polite refusal in
+front of the shim's hard one. A failed slot is a launch degradation, never a
+silently discarded install error. **They do not follow a
 process into a container by themselves**: a shim `exec`s the real binary
 resolved *at render time on the host* (`/opt/homebrew/bin/git` does not
 exist in Linux) and the gate shell (ADR 0009) points at the host's zsh.
@@ -386,7 +388,8 @@ answer.**
 3. `trust_project_config: true` on the PID is the durable opt-in, for a
    persona whose work *is* the repo's own tooling.
 4. `CheckParity` stays dir-independent (a PID × runtime × cage × tier
-   statement, statting nothing); `CheckParityIn` is that plus this.
+   statement, statting nothing); `CheckParityIn` is that plus this and the
+   launch directory's behavior-probed L3 hook result.
    `CreateSession` uses it, so `RelaunchAgent` re-checks for free — a repo
    that grows a `.codex/` after a clean launch refuses on the next
    relaunch. `posse gates <persona>` computes for the cwd and prints the
