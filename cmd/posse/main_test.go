@@ -145,12 +145,15 @@ func TestValidCount(t *testing.T) {
 		{"3", true},
 		{"0", true},   // the deliberate escape hatch: no cap
 		{"007", true}, // strconv's reading, not a new one
+		{"+3", true},  // strconv's reading, same as 007
 		{"three", false},
 		{"3x", false},
 		{"", false},
 		{" 3", false},
 		{"3.0", false},
-		{"-1", false}, // fireLoop caps only on max > 0, so this was unbounded too
+		{"15m", false},                 // ParseInterval spelling; old code read as 0
+		{"9223372036854775808", false}, // overflow is an Atoi error, not a wrap
+		{"-1", false},                  // fireLoop caps only on max > 0, so this was unbounded too
 	} {
 		if got := validCount(c.arg); got != c.want {
 			t.Errorf("validCount(%q) = %v, want %v", c.arg, got, c.want)
@@ -324,6 +327,57 @@ func TestDispatchRefusesBadCount(t *testing.T) {
 		if code != 1 || !strings.Contains(string(out), c.want) {
 			t.Errorf("posse %s: exit %d, output %q; want exit 1 containing %q",
 				strings.Join(c.args, " "), code, out, c.want)
+		}
+	}
+}
+
+// ranger-base-sknr: ytkl closed the drop on dispatch's -n and --timeout.
+// prompt and wait still do `timeout, _ = strconv.Atoi(rest[1])`. Atoi's
+// 0 and a parsed -1 both skip the --timeout flag in AgentPrompt/AgentWait
+// (`timeoutMS > 0`), so `posse prompt sess hi --wait --timeout soon` waits
+// as long as herdr will. Missing-arg already dies; the hole is the dropped
+// error. Unskipped FAIL (HEAD b79e0a2): herdr is asked; the flag is not named.
+func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
+	t.Skip("ranger-base-sknr: posse prompt/wait --timeout still drop strconv.Atoi; soon/3x/-1 become 0 = herdr default (unbounded)")
+	bin := buildRhq(t)
+	home := t.TempDir()
+	env := append(os.Environ(),
+		"RHQ_HOME="+home,
+		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
+		"PATH=",
+	)
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "soon"}, "--timeout needs"},
+		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "3x"}, "--timeout needs"},
+		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "-1"}, "--timeout needs"},
+		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", ""}, "--timeout needs"},
+		{[]string{"prompt", "sess", "hi", "--wait", "--timeout"}, "--timeout needs"},
+		{[]string{"wait", "sess", "--timeout", "soon"}, "--timeout needs"},
+		{[]string{"wait", "sess", "--timeout", "3x"}, "--timeout needs"},
+		{[]string{"wait", "sess", "--timeout", "-1"}, "--timeout needs"},
+		{[]string{"wait", "sess", "--timeout"}, "--timeout needs"},
+	} {
+		cmd := exec.Command(bin, c.args...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("posse %s: %v", strings.Join(c.args, " "), err)
+		}
+		got := string(out)
+		if code != 1 || !strings.Contains(got, c.want) {
+			t.Errorf("posse %s: exit %d, output %q; want exit 1 containing %q",
+				strings.Join(c.args, " "), code, out, c.want)
+		}
+		if strings.Contains(got, "herdr workspace list") {
+			t.Errorf("posse %s reached herdr — the bad count was accepted:\n%s",
+				strings.Join(c.args, " "), got)
 		}
 	}
 }
