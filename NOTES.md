@@ -1733,9 +1733,15 @@ Three different things get called "permissions"; keep them apart
   persona's memory dir, the gates dir (refusals.log), the runtimes' own
   state (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.grok`, caches),
   `$TMPDIR`/`/tmp`, `/dev`, and the PID's `writable:` extras (relative to
-  the repo). Verified on this host: `touch` in the repo → Operation not
-  permitted, `ORDERS.md` append and `.beads/` writes succeed, claude/
-  codex/grok all start under it. **Codex cannot be wrapped**: it
+  the repo). Path-scoped denies (`Edit(docs/adr/**)`) are **ADR 0014**: a
+  subtree file-write deny, realized by a trailing SBPL `subpath` deny
+  after the cwd allow (last match wins, measured 2026-08-25) and, at
+  container, a `:ro` overlay of that directory — never by a hook.
+  `writable:` is the allow-list dual at both L2 and L4. The matrix and
+  renderers land with that ADR's implementation beads; until they do, a
+  parametrized rule still hits parity's default arm. Verified on this host:
+  `touch` in the repo → Operation not permitted, `ORDERS.md` append and
+  `.beads/` writes succeed, claude/codex/grok all start under it. **Codex cannot be wrapped**: it
   sandboxes its own child commands with `sandbox-exec`, and macOS refuses
   to nest (`sandbox_apply: Operation not permitted`) — the parity check
   reports `cage: seatbelt` on codex as incompatible (use `shims`; codex's
@@ -2123,8 +2129,11 @@ succeed, ~5s per command while bd tries and fails to start a daemon). On a
 **`:ro`** repo mount it does not: SQLite cannot open a database read-only,
 so a caged persona denying `Edit`/`Write` — the security persona, the
 reviewer skeletons, exactly the PIDs this tier is for — **cannot claim,
-comment or close a bead**. That is a design question and not a bug in the
-boundary; it is filed for the architect as an architecture bead.
+comment or close a bead**. **Answered by ADR 0014 §4:** L4's `:ro` repo
+carries L2's `.beads`/`.git` carve-outs as read-write overlays, so the
+wall is the rest of the tree and bd still works. Lands with that ADR's
+L4 implementation bead; overlapping binds on VirtioFS are ASSUMED until
+that bead measures them.
 
 ## Cage engine re-evaluation: still Docker (rangerhq-rli)
 

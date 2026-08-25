@@ -458,6 +458,23 @@ $ posse gates <persona>
 `--allow-degraded`; dispatch never degrades on its own. Reading this
 *before* your first dispatch saves you a confusing refusal later.
 
+**Path-scoped writes** (ADR 0014). `deny: [Edit, Write]` is still the
+whole-repo wall (the reviewer/security skeletons). A parametrized rule
+`Edit(docs/adr/**)` / `Write(docs/adr/**)` is a **subtree file-write
+deny** — that directory cannot be written, the rest of the repo can. The
+wall that realizes it is `cage: seatbelt` (OS-enforced trailing deny) or
+`cage: container` (a `:ro` overlay of the directory), not a Claude hook
+and not `--disallowedTools`. `sed -i` walks past the hook; it does not
+walk past the seatbelt. Globs that are not a directory prefix
+(`**/*.md`) stay unrealized — say so with `posse agent check`. The
+allow-list dual is the existing `writable:` key: `deny: [Edit, Write]`
+plus `writable: [docs/adr]` means *only* that directory (and `.beads` /
+`.git`, so bd still works). Codex `-s read-only` realizes the *bare*
+deny and over-enforces a scoped one, so a path-scoped PID on codex needs
+the container tier. Until the grammar lands in `posse gates`, a
+parametrized rule still prints as `runtime-native only` and refuses the
+launch — do not put one on a PID you need to dispatch this week.
+
 ---
 
 ## 8. A launch profile of your own

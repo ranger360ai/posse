@@ -2,7 +2,8 @@
 
 *Status: accepted 2026-08-17 · owner: architect · amended 2026-08-18
 (L4 folded from the container-tier spike — §3 L4, §4, §5, Consequences,
-Alternatives, Verification 8–11)*
+Alternatives, Verification 8–11) · amended 2026-08-25 (ADR 0014:
+path-scoped Edit/Write, `writable:` at L2 and L4, L4 `:ro` carve-outs)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -110,8 +111,8 @@ from the PID (source of truth; nothing hand-edited there survives):
 | L0 politeness | any | runtime-native flags (§1) | whatever the runtime says it does — never counted as the wall |
 | L1 shims | `shims` (always on) | `gates/<p>/bin/<cmd>` for every `Bash(<cmd> <prefix>:*)`/`Bash(<cmd>)` deny; refuses when argv matches, else `exec`s the real binary resolved at render time; logs refusals to `gates/<p>/refusals.log`; PATH is prepended **on the typed command line** (`PATH=<bin>:$PATH <cmd>`), not in the workspace env, because macOS `path_helper` reorders PATH when the pane shell starts | any deny that is a shell verb, on any runtime |
 | L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec when `RHQ_PERSONA` is set — the working tree and its index are shared by every persona, so an unqualified commit takes whatever anyone else has staged (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, even via absolute path / `env -i` / a subprocess |
-| L2 seatbelt | `seatbelt` | `sandbox-exec -f gates/<p>/seatbelt.sb` wrapping the rendered command: deny `file-write*` except cwd, `{memory}`, the runtime's state dir (`~/.claude`,`~/.codex`,`~/.grok`), `$TMPDIR`; PID may add `writable:` paths | `Edit`/`Write`-class denies on any runtime; the only runtime-proof file gate |
-| L4 container | `container` | runtime runs inside a container (engine = a command template, `RHQ_HOME/cages/<engine>.yaml`, Docker default) with the repo and `{memory}` mounted and **nothing else of the host**; typed in the pane through an argv0 launcher `state/cages/<p>/bin/<runtime>` so herdr still sees `claude`/`codex`/`grok`; joined to a `--internal` network whose only other member is a CONNECT proxy holding `egress:`; L1 and L3 **re-rendered inside** (below); herdr socket **not mounted unless the PID says `sockets: [herdr]`** | `egress:` (hosts the persona may reach); the mount boundary (`Edit`/`Write` denies by mounting the repo `:ro`) — the successor of L2, which cannot wrap a container; hostile-input work, untrusted runtimes |
+| L2 seatbelt | `seatbelt` | `sandbox-exec -f gates/<p>/seatbelt.sb` wrapping the rendered command: deny `file-write*` except cwd, `{memory}`, the runtime's state dir (`~/.claude`,`~/.codex`,`~/.grok`), `$TMPDIR`; PID may add `writable:` paths; parametrized `Edit(<glob>)` is a trailing `subpath` deny after that allow (ADR 0014; last match wins) | `Edit`/`Write`-class denies on any runtime — bare and subtree-glob; the only runtime-proof file gate |
+| L4 container | `container` | runtime runs inside a container (engine = a command template, `RHQ_HOME/cages/<engine>.yaml`, Docker default) with the repo and `{memory}` mounted and **nothing else of the host**; typed in the pane through an argv0 launcher `state/cages/<p>/bin/<runtime>` so herdr still sees `claude`/`codex`/`grok`; joined to a `--internal` network whose only other member is a CONNECT proxy holding `egress:`; L1 and L3 **re-rendered inside** (below); herdr socket **not mounted unless the PID says `sockets: [herdr]`**; path-scoped writes are `:ro` overlays, and a `:ro` repo always gets `.beads`/`.git` (and `writable:`) as read-write overlays (ADR 0014 §4) | `egress:` (hosts the persona may reach); the mount boundary (`Edit`/`Write` denies by mounting the repo `:ro`, scoped globs by overlay) — the successor of L2, which cannot wrap a container; hostile-input work, untrusted runtimes |
 
 L1+L3 cost nothing per session and are on for every persona session on
 every runtime — including claude, where `--disallowedTools` becomes the
@@ -150,7 +151,8 @@ realized by *at least one wall layer* (L0 doesn't count). Realization:
 | gate | realized by |
 |---|---|
 | `Bash(cmd …:*)` deny | L1 (any runtime) — plus L3 for `git push` |
-| `Edit`/`Write`/`NotebookEdit` deny | L2 seatbelt; or codex `-s read-only` (native, but OS-enforced, so it counts); at `container`, the repo mounted `:ro` (mount boundary, replaces L2) |
+| `Edit`/`Write`/`NotebookEdit` deny (bare) | L2 seatbelt; or codex `-s read-only` (native, but OS-enforced, so it counts); at `container`, the repo mounted `:ro` (mount boundary, replaces L2), with `.beads`/`.git` read-write overlays so bd still works (ADR 0014 §4) |
+| `Edit(<glob>)` / `Write(<glob>)` / `NotebookEdit(<glob>)` | **subtree file-write deny** (ADR 0014): L2 trailing `subpath` deny; L4 `:ro` overlay of that directory. Unrealized at `shims`. Codex `-s read-only` over-enforces and does **not** count. A hook is never this row. A glob that is not a directory prefix (`**/*.md`) is unrealized by construction |
 | `WebFetch`/`WebSearch` deny | claude/grok native flags only → **unrealized** below `container` tier; at `container`, realized only as far as `egress:` goes (the proxy stops unknown hosts, not fetches through an allowed one — say so in the degraded list when both are set) |
 | `mcp__*` / other tool-name denies | claude/grok native only → **unrealized** on other runtimes |
 | `egress:` list | L4 only — the route, not the env var: `--internal` network + CONNECT proxy; the launcher always adds the runtime's own hosts (claude `api.anthropic.com` + `platform.claude.com`; codex `chatgpt.com` + `ab.chatgpt.com`; grok `cli-chat-proxy.grok.com` + `grok.com`) and the proxy's denials land in `gates/<p>/refusals.log` like L1's |
@@ -182,7 +184,7 @@ placeholders, of which there are none new):
 ```yaml
 runtime: claude          # claude | codex | grok | <runtimes/*.yaml>
 cage: shims              # shims | seatbelt | container — minimum tier
-writable:                # seatbelt: extra writable paths (rare)
+writable:                # L2/L4 allow-list extras (ADR 0014): paths that stay writable when Edit/Write are denied
 egress:                  # container: hosts allowed out (implies cage: container)
 sockets:                 # container: host sockets passed in; only `herdr` is known — off by default
 trust_project_config: true  # allow the runtime to read the session dir's own config (amendment below)
@@ -399,3 +401,14 @@ Verification (added to the checklist above):
     `degraded:` in meta; the same launch at tier `fast` refuses even with
     `--allow-degraded`; a PID with `trust_project_config: true` launches
     clean.
+
+## Amendment 2026-08-25 — path-scoped writes (ADR 0014)
+
+§4's bare `Edit`/`Write`/`NotebookEdit` row stays. A *parametrized* rule
+`Edit(docs/adr/**)` is not a tool-name deny and must not fall through to
+the `mcp__*` default. It is a subtree file-write deny, realized by L2
+(trailing SBPL deny) and L4 (`:ro` overlay), never by a hook, never by
+codex `-s read-only`. `writable:` is the allow-list dual, at both tiers.
+L4's `:ro` repo carries L2's `.beads`/`.git` carve-outs as read-write
+overlays — the NOTES question about SQLite on a read-only mount is
+answered there, not here. Verification is ADR 0014's checklist.
