@@ -66,6 +66,7 @@ func TestRelaunchGuardIsWalkedByAnUnrelatedNamesake(t *testing.T) {
 	os.Remove(filepath.Join(fake, "agents.json"))
 	os.Remove(filepath.Join(fake, "calls.log"))
 
+	wantLaunched := m.Launched
 	relaunched, err := b.RelaunchAgent("foo", time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -76,6 +77,9 @@ func TestRelaunchGuardIsWalkedByAnUnrelatedNamesake(t *testing.T) {
 	if log := calls(t, fake); relaunched || strings.Contains(log, "pane run") {
 		t.Errorf("relaunched=%v; a persona command reached a pane on a board where foo has no session — %s is zulu's, and the guard resolved w99:\n%s",
 			relaunched, m.Pane, log)
+	}
+	if got := metaOf(t, b, "foo"); !got.Launched.Equal(wantLaunched) {
+		t.Errorf("refusing the namesake rewrote launched: got %v want %v", got.Launched, wantLaunched)
 	}
 }
 
@@ -110,6 +114,85 @@ func TestRelaunchStillRelaunchesItsOwnSession(t *testing.T) {
 	}
 	if log := calls(t, fake); !strings.Contains(log, "pane run "+m.Pane) {
 		t.Errorf("nothing typed into foo's own pane %s:\n%s", m.Pane, log)
+	}
+}
+
+// The same control with the namesake sitting next to ours. Resolve prefers
+// a non-foreign row, so this must still type into foo's pane — a namesake
+// is a distractor, not a veto. The no-namesake control above would not
+// catch a Resolve that started returning the foreign row first.
+func TestRelaunchStillRelaunchesItsOwnSessionBesideANamesake(t *testing.T) {
+	idProbeSocket(t)
+	b, fake := newTestBackend(t)
+	writePersona(t, b.App, "ranger", "[go]")
+	mustCreate(t, b, NewSessionOpts{Name: "foo", Agent: "ranger"})
+	m := metaOf(t, b, "foo")
+	m.Launched = time.Now().Add(-time.Hour)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+
+	saveWSTo(t, fake, []fakeWS{
+		{WorkspaceID: m.Workspace, Label: "foo"},
+		{WorkspaceID: "w99", Label: "foo"},
+	})
+	os.Remove(filepath.Join(fake, "agents.json"))
+	os.Remove(filepath.Join(fake, "calls.log"))
+
+	relaunched, err := b.RelaunchAgent("foo", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !relaunched {
+		t.Fatal("refused to relaunch ours because a namesake was also listed")
+	}
+	log := calls(t, fake)
+	if !strings.Contains(log, "pane run "+m.Pane) {
+		t.Errorf("nothing typed into foo's own pane %s:\n%s", m.Pane, log)
+	}
+	if strings.Contains(log, "pane run w99") {
+		t.Errorf("typed into the namesake:\n%s", log)
+	}
+}
+
+// The production caller of RelaunchAgent is dispatch's launchSession
+// (rangerhq-vk2). On the namesake board it must not type a persona command
+// into zulu either: RelaunchAgent refuses, then awaitAgent fails looking
+// at the namesake. Creating a replacement is Resolve's foreign-by-label
+// fallback, not this path — launchSession treats a resolved row as "the
+// session exists".
+func TestDispatchRelaunchOnNamesakeBoardDoesNotTypeIntoZulu(t *testing.T) {
+	sock := idProbeSocket(t)
+	b, fake := newTestBackend(t)
+	writePersona(t, b.App, "ranger", "[go]")
+	mustCreate(t, b, NewSessionOpts{Name: "foo", Agent: "ranger"})
+	m := metaOf(t, b, "foo")
+	m.Launched = time.Now().Add(-time.Hour)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+
+	newGeneration(t, sock)
+	saveWSTo(t, fake, []fakeWS{
+		{WorkspaceID: m.Workspace, Label: "zulu"},
+		{WorkspaceID: "w99", Label: "foo"},
+	})
+	os.Remove(filepath.Join(fake, "agents.json"))
+	os.Remove(filepath.Join(fake, "calls.log"))
+
+	d := newTestDispatcher(t, b)
+	d.StartupWait = 50 * time.Millisecond
+	d.Poll = 5 * time.Millisecond
+	_, _, err := d.launchSession(RepoIssue{Dir: t.TempDir(), BdIssue: BdIssue{ID: "b-1"}}, "ranger", "foo", "", "fast")
+	log := calls(t, fake)
+	if strings.Contains(log, "pane run") {
+		t.Errorf("dispatch typed a persona command on the namesake board — %s is zulu's:\n%s", m.Pane, log)
+	}
+	if strings.Contains(log, "workspace create") {
+		t.Errorf("dispatch created a replacement; launchSession resolved the namesake as existing:\n%s", log)
+	}
+	if err == nil {
+		t.Fatal("expected await-agent failure after the relaunch refuse, got success")
 	}
 }
 
