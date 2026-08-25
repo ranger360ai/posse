@@ -56,3 +56,71 @@ func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 		})
 	}
 }
+
+// ranger-base-88m: make install writes ~/.local/bin/posse, which is on no
+// default PATH. The go-install route (ranger-base-253) now has the export;
+// the README-leading make install route does not.
+func TestMakeInstallQuickstartsAddLocalBinToPathBeforeInit(t *testing.T) {
+	t.Skip("ranger-base-88m: make install lands in ~/.local/bin, not on a default PATH")
+
+	contents, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	installAt := strings.Index(text, "make install")
+	if installAt < 0 {
+		t.Fatal("README.md: missing \"make install\"")
+	}
+	after := text[installAt:]
+	initAt := strings.Index(after, "posse init")
+	if initAt < 0 {
+		t.Fatal("README.md: \"make install\" is not followed by \"posse init\"")
+	}
+	window := after[:initAt]
+	if !strings.Contains(window, `export PATH=`) || !strings.Contains(window, ".local/bin") {
+		t.Fatal("README.md: make install is not followed by an export that puts ~/.local/bin on PATH before posse init")
+	}
+}
+
+// ranger-base-5yl: the advertised posse new --dir ~/code/myproj dies
+// directory-not-found on a machine that has never created that path.
+func TestQuickstartsMkdirBeforeExampleNewDir(t *testing.T) {
+	t.Skip("ranger-base-5yl: advertised posse new --dir ~/code/myproj with no mkdir")
+
+	const newLine = "posse new myproj --dir ~/code/myproj"
+	for _, path := range []string{"README.md", "www/index.html", "INSTALL.md"} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(contents)
+		newAt := strings.Index(text, newLine)
+		if newAt < 0 {
+			continue
+		}
+		// Look behind the advertised new for a mkdir of that directory.
+		windowStart := newAt - 400
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		window := text[windowStart:newAt]
+		if !strings.Contains(window, "mkdir") || !strings.Contains(window, "code/myproj") {
+			t.Errorf("%s: %q is not preceded by mkdir of ~/code/myproj", path, newLine)
+		}
+	}
+}
+
+// ranger-base-m3a: README still describes @latest as an untagged pseudo-version
+// after v0.3.0 exists and is what the public proxy serves.
+func TestReadmeDoesNotClaimNoReleaseTag(t *testing.T) {
+	t.Skip("ranger-base-m3a: README still says the module has no release tag")
+
+	contents, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(contents), "no release tag yet") {
+		t.Fatal("README.md still claims the module has no release tag; go install @latest installs v0.3.0")
+	}
+}
