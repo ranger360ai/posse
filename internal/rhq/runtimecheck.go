@@ -178,7 +178,11 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 		}
 		r.note = append(r.note, "interstitial: "+in.Screen)
 		r.note = append(r.note, "  key: "+in.Key+" in "+in.Where+" — "+state)
-		r.note = append(r.note, "  operator silences it: "+in.Silence)
+		if in.Seeded {
+			r.note = append(r.note, "  posse SEEDS it at launch: "+in.Silence)
+		} else {
+			r.note = append(r.note, "  operator silences it: "+in.Silence)
+		}
 		if in.Danger != "" {
 			r.note = append(r.note, "  LAUNCH REFUSE until silenced — "+in.Danger)
 			r.note = append(r.note, "  posse never answers this: nothing blind-sends Enter (ADR 0013 §2).")

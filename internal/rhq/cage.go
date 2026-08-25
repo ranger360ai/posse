@@ -444,18 +444,10 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 	// A container's CLI is pinned by the image; an in-place self-update
 	// would diverge the cage from what `posse cage build` last verified.
 	state["autoUpdates"] = false
-	projects, _ := state["projects"].(map[string]any)
-	if projects == nil {
-		projects = map[string]any{}
-	}
-	proj, _ := projects[dir].(map[string]any)
-	if proj == nil {
-		proj = map[string]any{}
-	}
-	proj["hasTrustDialogAccepted"] = true
-	proj["hasCompletedProjectOnboarding"] = true
-	projects[dir] = proj
-	state["projects"] = projects
+	// Same keys the host launch seeds into the operator's config
+	// (trust.go), because it is the same dialog on the same build — the
+	// only difference is which HOME's file it lands in.
+	claudeSeedProject(state, dir)
 	b, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return "", err

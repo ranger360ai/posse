@@ -162,3 +162,20 @@ var CodexInterstitials = []Interstitial{{
 	Danger:  "the default-selected option is \"1. Update now\", which runs `brew upgrade --cask codex` — a pinned tool rolled forward with no decision, through a Homebrew this box has broken before (rangerhq-y5on)",
 	Probe:   codexUpdateProbe,
 }}
+
+// ClaudeInterstitials — measured on claude 2.1.241 (rangerhq-w4uf; four
+// herdr scratch panes, no API turn). The one entry is the table's declared
+// exception: posse WRITES this key at launch, because it has no once-per-
+// machine spelling — trust is per session directory, so every new repo,
+// worktree and scratch dir the fleet starts in draws the modal again, and
+// there is no flag, no settings key and no `claude project` subcommand to
+// answer it on the line. See trust.go for the measurement and for what the
+// grant hands the session dir.
+var ClaudeInterstitials = []Interstitial{{
+	Screen:  `"Quick safety check: Is this a project you created or one you trust?" — full-screen, "1. Yes, I trust this folder / 2. No, exit", footed "Enter to confirm · Esc to cancel". herdr reads it blocked (live_blocked_form), so dispatch waits it out rather than typing into it.`,
+	Where:   "~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json, or the config dir's .config.json when it exists)",
+	Key:     `projects["<session dir>"].hasTrustDialogAccepted`,
+	Silence: "the LAUNCH seeds it, per session dir, merged into the operator's file and only when the dir is not already trusted (SeedClaudeTrust) — the same grant posse types on codex's line, and the CLI's own documented alternative to answering the dialog by hand.",
+	Seeded:  true,
+	Probe:   claudeTrustProbe,
+}}

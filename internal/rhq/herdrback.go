@@ -28,6 +28,16 @@ type HerdrBackend struct {
 	App  *App
 	H    Herdr
 	Warn io.Writer // where degraded-launch notices go (nil = stderr)
+	// ClaudeConfig is the claude config the launch seeds directory trust
+	// into (trust.go, rangerhq-w4uf) — the ONE file a launch writes that
+	// lies outside RHQ_HOME and the session dir, which is why it is a field
+	// and not a resolution done down in the seed. NewHerdrBackend fills it
+	// with the operator's real one; a backend built without it (every test
+	// backend) seeds nothing, so a test can never leave a temp dir behind in
+	// the operator's ~/.claude.json. The empty case is a no-op, deliberately
+	// not a fallback: a launch that silently writes a file nobody named is
+	// worse than one that hits a dialog somebody can see.
+	ClaudeConfig string
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
@@ -64,7 +74,7 @@ type NewSessionOpts struct {
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
-	return &HerdrBackend{App: a, H: NewHerdr()}
+	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile()}
 }
 
 // ─── meta files ──────────────────────────────────────────────────────────────
@@ -1075,6 +1085,18 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if _, err := a.RenderSkillsFor(ag, rt, dir); err != nil {
 			return nil, err
 		}
+		// Directory trust (rangerhq-w4uf): on claude the session dir has to
+		// be trusted BEFORE the command is typed, or the CLI opens on a
+		// modal instead of a composer and the launch is over — the same
+		// failure the codex line's trust flag exists to prevent, one
+		// runtime over and with no flag to type it on. Not at the container
+		// tier: the config a caged claude reads is the cage HOME's, and
+		// SeedCageHome seeds it there with the same keys.
+		if !caged {
+			if _, err := SeedClaudeTrust(b.ClaudeConfig, rt, dir); err != nil {
+				return nil, err
+			}
+		}
 		// The store of record must be writable, and under ADR 0012 D3-C it is
 		// usually NOT under the session dir: <dir>/.beads holds a redirect and
 		// the database lives in the instance repo it names. A self-sandboxing
@@ -1357,6 +1379,16 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	}
 	if _, err := b.App.RenderSkillsFor(ag, rt, m.Dir); err != nil {
 		return false, err
+	}
+	// Same reason as the launch, and the same reason RelaunchAgent renders
+	// everything else again rather than trusting the meta: this re-types a
+	// full persona command into a live pane, so it has to arrive at a
+	// promptable screen (rangerhq-w4uf). Idempotent — a dir seeded at
+	// launch costs this path one read.
+	if m.Cage != CageContainer || !b.App.ContainerAvailable() {
+		if _, err := SeedClaudeTrust(b.ClaudeConfig, rt, m.Dir); err != nil {
+			return false, err
+		}
 	}
 	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier)
 	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {

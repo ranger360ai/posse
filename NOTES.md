@@ -2273,8 +2273,9 @@ with belongs in the harness repo. In brief:
 - **Security findings** about software others might run go in a private
   database until the fix lands, then get disclosed. When in doubt,
   private first.
-- **Env sets, personas/memory, skills** are config under `~/.config/rhq/`,
-  never repo content; `examples/` holds generic placeholders only.
+- **Env sets, personas/memory, skills** are config under `~/.config/posse/`,
+  never repo content; `examples/` holds generic placeholders only. An existing
+  `~/.config/rhq/` remains the home while the new path is absent.
 - **Local settings** — `.claude/settings.local.json` (personal
   permissions) is gitignored; the committed `.claude/settings.json`
   carries only the fleet allowlist plus a `deny` block (verb-scoped:
@@ -2615,7 +2616,7 @@ way: do not prune `downloads/`. `grok du` reports it as the largest thing in the
 grok home and is pure temptation — it only reports, and `grok worktree gc` does
 not touch it, so nothing prunes those binaries but a person.
 
-## Instance interstitials: the keys posse names and never writes (ADR 0013 §2)
+## Instance interstitials: the keys posse names, and the one it writes (ADR 0013 §2)
 
 Every CLI draws something on its first run in a fresh pane — a consent
 banner, an update menu, a splash. herdr recognizes none of those screens,
@@ -2662,18 +2663,70 @@ is the only thing posse does to these files.
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner above the composer | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | the **operator**, clicking `[Opt out]` once in their own grok session. The value is an RFC3339 stamp, not a bool, and it records only *that* the banner was answered — never which way. In 1.0.5 the consent RPC has no server handler, so even an accidental `[Opt in]` cannot persist; that defense is version-verified and evaporates the day xAI ships the handler (`rangerhq-sz7u`). |
 | grok | New worktree / Resume session / Quit startup menu, plus the changelog line | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | **already applied** — the fleet pin, declared in `etc/grok/version-pin.toml`, kills the update check *and* the shared leader's mid-life self-update. `make verify-grok-pin`; runbook in *grok substrate* above. |
 | codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | the **operator**, picking `3. Skip until next version`: Down twice, *verify the caret moved by re-peeking*, then Enter. Two steps with a verification between them, because getting it wrong upgrades their tooling. |
-| claude | — | — | no first-run dialog on this path. |
+| claude | `Quick safety check: Is this a project you created or one you trust?` — full screen, `1. Yes, I trust this folder / 2. No, exit`, footed `Enter to confirm · Esc to cancel` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`, or the config dir's `.config.json` where that exists) | **the LAUNCH**, per session directory — the one exception, below. |
 
 **The codex dismissal has a shelf life.** It silences one release: the menu
 returns the moment `latest_version` moves past `dismissed_version`. That is
 why `runtime check` prints both numbers rather than a bare yes — a probe
 whose answer expires should say when.
 
-**What posse does NOT do, so nobody re-proposes it:** pre-answer these from
-the harness (write `privacy_banner_acked`, write `version.json`). Rejected
-in ADR 0013 — coding-data consent is a visibility line and update-skip is
-the operator's pin. Posse documents the keys. Posse does not write the
-operator's CLI config.
+**The one key the launch writes, and why it is not the same kind of key
+(rangerhq-w4uf).** Claude's directory-trust dialog is not a first-*run*
+dialog at all — it is a first-run-*here* dialog. It fires per session
+directory, so the fleet's long-lived checkouts never show it and every new
+repo, worktree, container HOME and scratch dir draws it again. There is
+nothing an operator can answer once: MEASURED on claude 2.1.241, `claude
+--help` names no flag for it, `claude project` manages only `purge`,
+`--settings` takes no such key, and the single env that skips the check
+(`CLAUDE_CODE_SANDBOXED`) claims a confinement a shims-tier launch does not
+have. The CLI itself names the supported non-interactive path, in the error
+it prints when it drops a project's hooks for want of trust: *"Run Claude
+Code interactively here once and accept the trust dialog, or set
+projects[<dir>].hasTrustDialogAccepted: true in ~/.claude.json"*.
+
+So the launch seeds it (`SeedClaudeTrust`, `internal/rhq/trust.go`), which
+is the same grant posse already types on codex's line (`-c
+"projects={\"$PWD\"={trust_level=\"trusted\"}}"`, ADR 0002 §4) and the
+same one `SeedCageHome` already writes into a container HOME. What it does
+NOT do is bend the layer-2 rule: it is scoped to the one directory posse
+launched in, merged into the operator's file and never rewritten from a
+template, skipped entirely when the directory is already trusted, and it
+refuses the launch rather than replacing a config it cannot parse. Nothing
+here presses a key: the seed is written before the line is typed.
+
+Measured on the pane, four herdr scratch panes, no API turn:
+
+- fresh dir, real config → the modal, and `herdr agent explain` reports
+  **`blocked`** (`live_blocked_form`), not idle. So dispatch does not type
+  a work prompt into the menu the way stock detection let it type into
+  codex's *Hooks need review* — it waits out its patience and the session
+  never becomes promptable. (Consistent with *Dispatch primitives* above:
+  `agent wait` can settle `idle` a beat before the dialog is drawn, which
+  is why explain wins.)
+- same config dir, `hasTrustDialogAccepted: true` seeded → straight to a
+  live composer, `herdr` `idle`, `live_prompt_box`.
+- the key alone leaves claude's "Welcome back!" project panel drawn above
+  the composer — harmless (pane read `idle`, composer live), silenced
+  anyway with `hasCompletedProjectOnboarding`, because "harmless splash" is
+  what grok's startup menu was called too.
+
+**What the grant hands the session dir, and the open half.** Untrusted,
+claude *drops* the project's `hooks` and `mcpServers` entries out of
+`<dir>/.claude/settings.json` ("Dropped N project-scoped hooks entries —
+workspace not yet trusted"). Trusted, they load — the same class of channel
+ADR 0002's amendment made codex's launch check for. That amendment's §1
+says `ProjectConfig` is "empty everywhere else, including claude (posse
+types it no trust flag)", and this seed makes that premise false. Wiring
+`Runtime.ProjectConfig` to `.claude/settings.json` is the follow-on it
+parked, and it is now live work: it would refuse a launch in every repo
+carrying one, this repo included, so it is the architect's call and not a
+developer's (handed off from rangerhq-w4uf).
+
+**What posse does NOT do, so nobody re-proposes it:** pre-answer the other
+runtimes' dialogs from the harness (write `privacy_banner_acked`, write
+`version.json`). Rejected in ADR 0013 — coding-data consent is a visibility
+line and update-skip is the operator's pin. Posse documents those keys, and
+writes no answer the operator could have given once.
 
 ## herdr substrate: upgrading with `herdr update --handoff` (rangerhq-0ao)
 

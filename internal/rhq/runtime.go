@@ -88,19 +88,31 @@ func ValidRecord(r string) bool { return r == RecordTrusted || r == RecordUntrus
 
 // Interstitial is a first-run dialog this runtime draws that dispatch must
 // not answer for the operator (ADR 0013 §2, layer 2). Posse NAMES the key
-// that silences it and never writes it: one of these is a consent whose
-// wrong answer donates the operator's private-repo prompts to training, and
-// another's default action runs `brew upgrade` on their tooling.
+// that silences it and, with one declared exception, never writes it: one
+// of these is a consent whose wrong answer donates the operator's
+// private-repo prompts to training, and another's default action runs
+// `brew upgrade` on their tooling.
+//
+// The exception is Seeded, and it is narrow on purpose (rangerhq-w4uf):
+// claude's directory-trust dialog has no key the operator can set ONCE —
+// it is per session directory, so a fleet that grows a new repo, worktree
+// or scratch dir grows a new dialog with it, and the answer posse writes
+// is the same grant it already types on codex's line. Everything else here
+// stays the operator's.
 //
 // A dialog whose Danger is non-empty — the default action mutates the
 // machine — is a launch REFUSE until the operator's own config silences it.
 // Nothing blind-sends Enter.
 type Interstitial struct {
 	Screen  string // what the pane shows
-	Where   string // the file the silencing key lives in (operator-owned)
+	Where   string // the file the silencing key lives in (operator-owned unless Seeded)
 	Key     string // the key itself, by name
-	Silence string // what the operator does, with the SAFE choice named
+	Silence string // what the operator does, with the SAFE choice named — or what the launch does when Seeded
 	Danger  string // the default action when it mutates the machine ("" = safe default)
+	// Seeded: the LAUNCH writes this key, rather than naming it and
+	// refusing. True only where the key is per-session-directory and the
+	// grant is one posse already makes on another runtime.
+	Seeded bool
 	// Probe reports whether the key is set on this machine. nil = posse
 	// cannot cheaply tell, which prints as "unknown" rather than as "no".
 	Probe func() (bool, string)
@@ -668,7 +680,7 @@ var (
 // from a guess. ranger-base-dg5 is the dispatch half that reads it.
 var builtinRuntimes = []Runtime{
 	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", Unattended: ClaudeFleetFlags,
-		Egress: []string{"api.anthropic.com", "platform.claude.com"},
+		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.
 		// account: the transcript scanner (cost.go) is the one adapter that

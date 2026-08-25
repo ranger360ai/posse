@@ -241,8 +241,13 @@ instances on one machine is impossible by construction.
 
 An instance is a directory. Pick where it lives and **export `RHQ_HOME`**;
 everything `posse` does is relative to it. With `RHQ_HOME` unset, posse uses
-`~/.config/rhq` — fine for your only instance, wrong the moment there are
+`~/.config/posse` — fine for your only instance, wrong the moment there are
 two.
+
+Existing installs are left alone. If `~/.config/posse` does not exist but
+`~/.config/rhq` does, posse keeps using `~/.config/rhq` and prints a notice;
+it does not move, copy, or create anything there. That remains your home until
+you move it yourself. If both directories exist, `~/.config/posse` wins.
 
 A good home is a directory inside a *private* repo of your own, so your
 config and crew are versioned:
@@ -882,14 +887,15 @@ past your first launch — read `posse gates <persona>` and fix the cause.
 
 ### Instance interstitials — the first-run dialogs only you can answer
 
-**Read this before dispatching on any non-claude runtime.** A CLI's first
-run in a fresh pane draws a dialog: a consent banner, an update menu, a
-splash. herdr does not recognize those screens, so a dispatched session
-sits there un-promptable until its startup wait runs out, and the pass gets
-nothing (ADR 0013 §2; measured in `ranger-base-3j8`).
+**Read this before your first dispatch.** A CLI's first run in a fresh pane
+draws a dialog: a consent banner, an update menu, a splash. herdr does not
+recognize those screens, so a dispatched session sits there un-promptable
+until its startup wait runs out, and the pass gets nothing (ADR 0013 §2;
+measured in `ranger-base-3j8`). Claude's is a different shape and posse
+answers it for you — see *the one posse answers*, below.
 
-Posse **names these keys and never writes them**, and that is deliberate in
-both directions:
+Posse **names these keys and never writes them** — with the single declared
+exception below — and that is deliberate in both directions:
 
 - one of the answers is a **privacy** decision about your own repositories;
 - one of the *defaults* **mutates your machine**.
@@ -904,12 +910,29 @@ key, its file, and whether it is already silenced on this box.
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |
 | grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
 | codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | pick **3. Skip until next version**: arrow **Down** twice, *verify the caret moved*, **then** Enter. The default-selected option is `1. Update now`, which runs `brew upgrade --cask codex` — an unreviewed roll-forward of a pinned tool. |
+| claude | `Quick safety check: Is this a project you created or one you trust?` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per session directory, because this one fires in every new directory and has no flag to answer it with. See below. |
 
 The codex dismissal is good for **one release**: the menu returns as soon
 as `latest_version` moves past `dismissed_version`. `posse runtime check
 codex` prints both numbers, so you can see when it is due again.
 
-Claude has no such dialog on this path.
+**The one posse answers for you: claude's directory trust.** Claude asks
+*"Quick safety check: Is this a project you created or one you trust?"* the
+first time it runs **in a given directory** — so, unlike the rows above,
+there is no answer you can give once. Every new repo, worktree, container
+HOME and scratch dir asks again, and claude offers no flag and no settings
+key to answer it on the launch line (measured on 2.1.241). The launch
+therefore writes the key the CLI itself documents,
+`projects["<session dir>"].hasTrustDialogAccepted`, into your
+`~/.claude.json` — merged into the file, never rewritten from a template,
+only for the directory it is launching in, and only when that directory is
+not already trusted. It is the same grant posse already types on codex's
+line. A `~/.claude.json` posse cannot parse **refuses the launch** rather
+than being replaced; run `claude` in that directory once and accept the
+dialog by hand if you would rather answer it yourself.
+
+`posse runtime check claude` prints this row too, and its probe tells you
+whether the directory you are standing in is already trusted.
 
 ---
 
@@ -1032,7 +1055,7 @@ identified, designed, and open:
 
 | gap | what actually happens | bead |
 |---|---|---|
-| `RHQ_HOME` is not injected into sessions | a persona running `posse` **inside its own session** resolves the herdr server's env or the `~/.config/rhq` fallback — the *wrong* instance's config, queue and skills, silently | rangerhq-ysly |
+| `RHQ_HOME` is not injected into sessions | a persona running `posse` **inside its own session** resolves the herdr server's env or the default-home lookup (`~/.config/posse`, then an existing `~/.config/rhq`) — the *wrong* instance's config, queue and skills, silently | rangerhq-ysly |
 | labels carry no instance id | `instance:` is designed but **not implemented** — setting it today does nothing. Identical session names collide on the shared herdr: the second instance's create fails "already exists" | rangerhq-ouf9 |
 | destructive paths do not refuse foreign workspaces | `posse kill` and cockpit `x` will close a workspace owned by the *other* instance; reachable today via the autostart hook's kill-and-replace | rangerhq-selx |
 | seatbelt writable list is hardcoded | the `seatbelt` cage tier grants write to the literal `~/.config/rhq/state`, not this instance's state dir | rangerhq-qfzr |
