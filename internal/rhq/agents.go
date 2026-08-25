@@ -197,7 +197,7 @@ func renderPlaceholder(cmd, placeholder, text string) string {
 // rendered skills tree (ADR 0007; empty when the PID binds none or the
 // runtime has no surface — the parity check has already ruled on that).
 // ownRuntime is what the PID would run on with no override (ADR 0002 §1).
-func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string) string {
+func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writable ...string) string {
 	tmpl := rt.Command
 	if rt.Name == ownRuntime && ag.Command != "" {
 		tmpl = ag.Command
@@ -207,7 +207,7 @@ func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string) stri
 	out = renderPlaceholder(out, "{model}", rt.ModelText(tier))
 	var r Realized
 	if rt.Realize != nil {
-		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir)
+		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir, writable...)
 	}
 	skills, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills)
 	out = renderPlaceholder(out, "{skills}", skills)

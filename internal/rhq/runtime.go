@@ -127,7 +127,14 @@ type Runtime struct {
 	// the persona's memory dir (unquoted): a runtime whose writable-dir flag is
 	// only legal in some of the modes it picks has to name it here rather than
 	// in the template (codex --add-dir, below).
-	Realize   func(allow, deny []string, memory string) Realized
+	//
+	// writable names further directories the session must be able to WRITE
+	// that lie outside its workspace. It is empty for runtimes posse cages
+	// itself, and load-bearing for one that sandboxes itself (codex): a path
+	// nobody names is a path the persona cannot write, which is how five
+	// consecutive dispatched sessions did their work and could not record it
+	// (ranger-base-0fb — the store of record sat behind a .beads redirect).
+	Realize   func(allow, deny []string, memory string, writable ...string) Realized
 	Builtin   bool
 	Models    map[string]string // tier → model id; unset tier → runtime default (fast falls back to standard)
 	ModelFlag string            // printf form for {model}: "--model %s", "-c model=%s", "-m %s"
@@ -357,7 +364,7 @@ func quoteEach(rules []string) []string {
 // — the polite refusal was missing on exactly the spellings the L1 shim
 // has to catch (rangerhq-3mc). Realized still names the PID's own rules:
 // the extra spellings are how this runtime says them, not new gates.
-func realizeClaude(allow, deny []string, _ string) Realized {
+func realizeClaude(allow, deny []string, _ string, _ ...string) Realized {
 	var r Realized
 	if len(allow) > 0 {
 		r.Allow = "--allowedTools " + strings.Join(quoteEach(allow), " ")
@@ -396,7 +403,7 @@ func realizeClaude(allow, deny []string, _ string) Realized {
 // refuses every one of those spellings. The whole-verb half would be a
 // no-op besides: a plain `Bash(<cmd>)` is already a prefix on grok, not
 // claude's exact match. TestGrokDialectIsWhyGrokIsNotWidened models it.
-func realizeGrok(allow, deny []string, _ string) Realized {
+func realizeGrok(allow, deny []string, _ string, _ ...string) Realized {
 	var r Realized
 	var a, d []string
 	for _, x := range allow {
@@ -420,7 +427,7 @@ func realizeGrok(allow, deny []string, _ string) Realized {
 // codex-cli 0.147.0, rangerhq-5oi. Under read-only the memory dir is
 // readable anyway (codex reads the whole disk); only workspace-write needs
 // it named, so the persona can append to its ORDERS.md.
-func realizeCodex(allow, deny []string, memory string) Realized {
+func realizeCodex(allow, deny []string, memory string, writable ...string) Realized {
 	has := map[string]bool{}
 	for _, x := range deny {
 		has[x] = true
@@ -430,8 +437,13 @@ func realizeCodex(allow, deny []string, memory string) Realized {
 		return Realized{Deny: "-s read-only", Realized: []string{"Edit", "Write"}, Enforced: []string{"Edit", "Write", "NotebookEdit"}}
 	}
 	d := "-s workspace-write"
-	if memory != "" {
-		d += " --add-dir " + shellQuote(memory)
+	seen := map[string]bool{}
+	for _, w := range append([]string{memory}, writable...) {
+		if w == "" || seen[w] {
+			continue
+		}
+		seen[w] = true
+		d += " --add-dir " + shellQuote(w)
 	}
 	return Realized{Deny: d}
 }

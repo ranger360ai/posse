@@ -1075,7 +1075,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if _, err := a.RenderSkillsFor(ag, rt, dir); err != nil {
 			return nil, err
 		}
-		cmd = ag.RenderCommandFor(rt, own, tier)
+		// The store of record must be writable, and under ADR 0012 D3-C it is
+		// usually NOT under the session dir: <dir>/.beads holds a redirect and
+		// the database lives in the instance repo it names. A self-sandboxing
+		// runtime confines writes to its workspace, so unless that target is
+		// named here every `bd close` and `bd comments add` from the session
+		// is denied — which is exactly what happened to five dispatched codex
+		// sessions before anyone noticed the beads were silent, not the agent
+		// (ranger-base-0fb). Runtimes posse cages itself ignore this.
+		cmd = ag.RenderCommandFor(rt, own, tier, beadsHome(dir))
 		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
 		// rendered from the PID; the outer shell expands $(cat {file}) first.
 		if cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
