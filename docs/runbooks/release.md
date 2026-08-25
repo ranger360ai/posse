@@ -83,7 +83,29 @@ dirty working tree.
 which is the detector for the failure class a green suite does not report
 (`rangerhq-8rtf`), and it is what the workflow runs.
 
-**4. Optionally, rehearse the build itself** — the workflow's remaining steps,
+**4. Doc fixes to `README.md` and `INSTALL.md` are merged BEFORE the tag.**
+
+The tarball ships `posse`, `LICENSE`, `README.md` and `INSTALL.md`, and the
+formula installs the last two into `doc/` — its caveats send the reader there
+("The cold-start runbook is #{doc}/INSTALL.md"). **The documentation a brew
+user reads is frozen at the tag, not at `main`,** and a published tarball
+cannot be corrected in place: the fix rides the next release.
+
+v0.3.0 is the worked example. It was cut at `8595b8a`; the brew route was
+corrected to its three-command form (the `brew trust` line, `ranger-base-4mg`)
+one commit later in `adf9637`. So every v0.3.0 tarball ships the one-line
+sequence that stops at Homebrew 6.x's trust refusal, and its INSTALL.md still
+explains an `Error: Failure while executing tap` that now means something else.
+Nothing is wrong with the release; the doc simply predates the fix. Check
+before tagging rather than after:
+
+```sh
+$ tar -xzOf dist/posse_X.Y.Z_darwin_arm64.tar.gz INSTALL.md | sed -n '/^## 2\./,/^## 3\./p'
+```
+**Verify:** the install sequence in the *extracted* file is the one you want a
+stranger to follow.
+
+**5. Optionally, rehearse the build itself** — the workflow's remaining steps,
 on Linux, at the same commit:
 
 ```sh
@@ -180,6 +202,33 @@ INSTALL.md step 2 carries the reader-facing version of this (ranger-base-4mg).
 
 **If it fails: fix forward to the next patch version. Do not delete and re-cut
 the tag.** The Go proxy's cache is immutable and not ours to purge.
+
+## Step 5 — verify the published chain, from anywhere
+
+Step 4 needs a macOS machine that is not ours, which we do not reliably have
+(`ranger-base-hza`) — and it only ever proves the *one* architecture the person
+running it happens to have. This check needs no brew, no macOS and no trust
+grant, runs in the Linux clean room, and covers all four:
+
+```sh
+$ base=https://github.com/ranger360ai/posse/releases/download/vX.Y.Z
+$ curl -sL -O "$base/checksums.txt" -O "$base/posse.rb"
+$ for a in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
+>   curl -sLO "$base/posse_X.Y.Z_$a.tar.gz"; done
+$ shasum -a 256 -c checksums.txt          # GitHub's bytes match the manifest
+$ curl -sL -o tap.rb https://raw.githubusercontent.com/ranger360ai/homebrew-tap/main/Formula/posse.rb
+$ diff posse.rb tap.rb                     # the tap serves the release's own formula
+$ for h in $(grep -o 'sha256 "[a-f0-9]*"' tap.rb | cut -d'"' -f2); do
+>   grep -q "$h" checksums.txt && echo "OK $h" || echo "MISS $h"; done
+```
+**Verify:** four `OK` lines, `diff` silent, all four tarballs `OK`.
+(`shasum -a 256 -c` is the macOS spelling; `sha256sum -c` is GNU's. The
+`golang` image carries both, a bare Debian may carry only the second.)
+
+This is the check that catches the failure `scripts/tap-formula.sh` exists to
+prevent — one stale sha256 in the formula, which fails `brew install` for
+exactly one architecture: the one the person who cut the release does not use.
+A successful install on the maintainer's laptop cannot see it.
 
 ---
 
