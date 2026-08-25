@@ -21,9 +21,11 @@ type hookRun struct {
 }
 
 type hookWorld struct {
-	home   string // RHQ_HOME
-	exists string // touched while the fake posse believes the session exists
-	path   string // prepended to PATH, where a test shadows a system tool
+	home         string // RHQ_HOME
+	exists       string // touched while the fake posse believes the session exists
+	path         string // prepended to PATH, where a test shadows a system tool
+	socket       string // HERDR_SOCKET_PATH; empty is the default herdr server
+	herdrSession string // HERDR_SESSION; empty is the default herdr server
 }
 
 func newHookWorld(t *testing.T, config string) *hookWorld {
@@ -96,6 +98,8 @@ func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
 		"RHQ_HOME="+w.home,
 		"RHQ_BIN="+filepath.Join(w.home, "posse"),
 		"HOME="+w.home,
+		"HERDR_SOCKET_PATH="+w.socket,
+		"HERDR_SESSION="+w.herdrSession,
 	)
 	if w.path != "" {
 		cmd.Env = append(cmd.Env, "PATH="+w.path+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -112,6 +116,73 @@ func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
 }
 
 const armed = "autostart_interval: 30s\n"
+
+// herdr's plugin registry is global, so [[startup]] runs for named session
+// servers as well as the default server. A scratch server that inherits the
+// fleet RHQ_HOME must never become a second writer for the fleet queue or its
+// dispatch-watch.pid (ranger-base-87q).
+func TestAutostartNamedSocketNeverArmsTheFleet(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.socket = filepath.Join(w.home, ".config", "herdr", "sessions", "ug9b-qa", "herdr.sock")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if r.calls != "" {
+		t.Errorf("named herdr server invoked posse against the fleet:\n%s", r.calls)
+	}
+	if !strings.Contains(r.out, "not the default herdr server") || !strings.Contains(r.out, w.socket) {
+		t.Errorf("stand-down must name the non-default socket:\n%s", r.out)
+	}
+}
+
+// HERDR_SESSION is herdr's other way to select a named server. The plugin
+// normally injects the exact socket, but an absent socket must not turn a
+// named session into the default by accident.
+func TestAutostartNamedSessionNeverArmsTheFleet(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.herdrSession = "ug9b-qa"
+
+	r := w.run(t, "--startup")
+	if r.code != 0 || r.calls != "" {
+		t.Errorf("named herdr session touched posse (exit %d):\n%s\n%s", r.code, r.out, r.calls)
+	}
+	if !strings.Contains(r.out, "HERDR_SESSION=ug9b-qa") {
+		t.Errorf("stand-down must name the named session selector:\n%s", r.out)
+	}
+}
+
+// An explicit path to herdr's default socket is still the fleet server. This
+// is the positive control for the non-default socket fence above.
+func TestAutostartExplicitDefaultSocketStillArms(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.socket = filepath.Join(w.home, ".config", "herdr", "herdr.sock")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
+		t.Errorf("default herdr server did not arm the fleet loop:\n%s", r.calls)
+	}
+}
+
+// The ownership fence is for automatic server startup. Running the hook by
+// hand is an explicit act and keeps its existing ability to target whatever
+// herdr socket the operator selected.
+func TestAutostartByHandCanTargetNamedServer(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.socket = filepath.Join(w.home, ".config", "herdr", "sessions", "staging", "herdr.sock")
+
+	r := w.run(t)
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
+		t.Errorf("explicit hook run did not target the selected server:\n%s", r.calls)
+	}
+}
 
 // The bug: herdr runs [[startup]] hooks on a live handoff too, where the
 // workspace comes back WITH its command still running. The hook must leave

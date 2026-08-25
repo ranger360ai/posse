@@ -25,7 +25,9 @@ title = "posse: list sessions"
 command = ["./bin/posse", "list"]
 
 # Scheduled dispatch (rangerhq-snd): herdr runs this once per server start.
-# It is a no-op unless the instance config carries `autostart_interval:` —
-# the arm switch. See plugin/autostart.sh.
+# Only the default herdr server may arm it; named-session servers stand down
+# even though the plugin registry is global (ranger-base-87q). On the default
+# server it is a no-op unless the instance config carries
+# `autostart_interval:` — the arm switch. See plugin/autostart.sh.
 [[startup]]
 command = ["bash", "autostart.sh", "--startup"]

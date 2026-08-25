@@ -78,6 +78,33 @@ startup=false
 
 say() { echo "dispatch autostart: $*"; }
 
+# The plugin registry is global, so herdr runs this hook for named session
+# servers too. Only the default server owns the fleet queue and its one
+# dispatch-watch.pid. A scratch/named server inheriting the fleet RHQ_HOME
+# must fail closed before it reads that pidfile or invokes posse
+# (ranger-base-87q).
+#
+# HERDR_SOCKET_PATH is authoritative when present, matching herdr itself. If
+# it is absent, HERDR_SESSION still proves this is a named server. The fixed
+# default socket layout is measured and shared with herdrSocketPath in
+# internal/rhq/herdrback.go; herdr has no config-dir override.
+if $startup; then
+	default_socket=$HOME/.config/herdr/herdr.sock
+	case "${HERDR_SOCKET_PATH:-}" in
+	'')
+		if [ -n "${HERDR_SESSION:-}" ]; then
+			say "not the default herdr server (HERDR_SESSION=$HERDR_SESSION) — not arming the fleet loop"
+			exit 0
+		fi
+		;;
+	"$default_socket") ;;
+	*)
+		say "not the default herdr server (HERDR_SOCKET_PATH=$HERDR_SOCKET_PATH) — not arming the fleet loop"
+		exit 0
+		;;
+	esac
+fi
+
 # Is a dispatch loop actually running? Existence of the pidfile proves
 # nothing — a loop killed with its pane never gets to remove it — so this
 # asks the process. Signal 0 is the question, not an action.

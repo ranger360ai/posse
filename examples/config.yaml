@@ -281,7 +281,9 @@ dirs:
 # `posse dispatch --watch` in a workspace, once per herdr server start. The
 # loop lives where you can see it (cockpit row, `posse peek`, one `x` to kill),
 # it cannot start in a world with no herdr socket, and it dies when herdr
-# does. "Survives reboot" means "comes back when herdr does".
+# does. "Survives reboot" means "comes back when herdr does". Only the default
+# herdr server may arm the fleet loop; named-session servers stand down even
+# though herdr's plugin registry is global.
 #
 # DISARMED BY DEFAULT, AND THE DISARM IS A COMMENT. Presence of the
 # `autostart_interval:` key — not its value — is the arm switch, which is why

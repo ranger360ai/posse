@@ -585,6 +585,14 @@ for a fleet: no herdr, no fleet.
   `autostart_max_beads:` (`-n`), `autostart_dry_run:` (passes route and
   report, dispatch nothing — the observation gear), `autostart_resume:`,
   `autostart_session:` (default `dispatch`), `autostart_dir:`.
+- **The default herdr server is the only owner.** The plugin registry is
+  global, so herdr also runs `[[startup]]` on every
+  `herdr --session <name> server`. Those named/non-default servers stand down
+  before reading `dispatch-watch.pid` or invoking `posse`, even if they
+  inherited the fleet `RHQ_HOME` and its armed config (ranger-base-87q).
+  `HERDR_SOCKET_PATH` is authoritative when present; with no socket path,
+  `HERDR_SESSION` still identifies a named server. Running the hook explicitly
+  by hand retains its existing targeted behavior.
 - **`autostart_resume:` is the one autostart key that defaults ON**
   (ranger-base-f0g). `--resume` re-prompts an in_progress bead whose persona
   session is alive and idle; without it the loop prints `◑ … settled "done"

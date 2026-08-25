@@ -1003,7 +1003,9 @@ Useful while you watch: `posse peek <session>`, `posse cockpit` (or `ctrl+b g`),
 Scheduled dispatch is `posse dispatch --watch` running in a herdr workspace,
 armed once per herdr server start by the cockpit plugin's `[[startup]]`
 hook. It is **disarmed** until `autostart_interval:` appears in your
-config — the presence of that key is the arm switch.
+config — the presence of that key is the arm switch. Only the default herdr
+server may arm the fleet loop; named-session servers stand down even though
+herdr's plugin registry is global.
 
 ```yaml
 autostart_interval: 5m       # ← the arm switch
