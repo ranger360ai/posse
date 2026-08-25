@@ -1733,7 +1733,21 @@ Three different things get called "permissions"; keep them apart
   persona's memory dir, the gates dir (refusals.log), the runtimes' own
   state (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.grok`, caches),
   `$TMPDIR`/`/tmp`, `/dev`, and the PID's `writable:` extras (relative to
-  the repo). Path-scoped denies (`Edit(docs/adr/**)`) are **ADR 0014**: a
+  the repo). **Plus the store of record when `.beads/redirect` moves it**
+  (ADR 0012 D3-C, rangerhq-k5ny): `<repo>/.beads` is then a pointer, and
+  the database, jsonl, socket and lock are in the instance repo, so the
+  profile grants the *resolved* `.beads` and that repo's git dirs (the
+  per-worktree one and the common one) — and nothing else in that tree.
+  Without it `bd sync`/`bd export` fail on the db file and a commit fails
+  on `.git/index.lock`, which is how a caged persona's ORDERS.md sat 203
+  lines uncommitted in a shared checkout (measured, ranger-base-rhw); the
+  bd calls that go over the daemon socket keep working, which is what
+  makes the failure quiet. Same resolver `beadsHome` gives the census and
+  codex's `--add-dir` (ranger-base-0fb). Verified on this host under the
+  rendered profile: `touch` in `~/src/ranger-base/.beads` and `.git`
+  succeeds, `touch ~/src/ranger-base/x` → Operation not permitted, and
+  `bd export -o` — the command that failed on the db file — exits 0.
+  Path-scoped denies (`Edit(docs/adr/**)`) are **ADR 0014**: a
   subtree file-write deny, realized by a trailing SBPL `subpath` deny
   after the cwd allow (last match wins, measured 2026-08-25) and, at
   container, a `:ro` overlay of that directory — never by a hook.

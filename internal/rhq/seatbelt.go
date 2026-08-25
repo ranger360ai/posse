@@ -61,8 +61,9 @@ func SeatbeltProfile(persona string, writable []string) string {
 
 // SeatbeltWritable computes the writable set for a persona session:
 // cwd unless the PID denies Edit or Write (then only cwd/.beads so bd can
-// still claim/comment/close), memory dir, the runtime state dirs, TMPDIR,
-// the gates dir, plus the PID's writable: extras (relative to cwd).
+// still claim/comment/close), the store of record when a redirect puts it
+// in another repo, memory dir, the runtime state dirs, TMPDIR, the gates
+// dir, plus the PID's writable: extras (relative to cwd).
 func SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 	home, _ := os.UserHomeDir()
 	deniesFiles := false
@@ -76,10 +77,7 @@ func SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 		if p == "" {
 			return
 		}
-		if abs, err := filepath.Abs(p); err == nil {
-			p = abs
-		}
-		out = append(out, resolveExisting(p))
+		out = append(out, absResolve(p))
 	}
 	if cwd != "" {
 		if deniesFiles {
@@ -87,6 +85,28 @@ func SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 			add(filepath.Join(cwd, ".git")) // index refresh, hooks' own logs — never a push
 		} else {
 			add(cwd)
+		}
+		// The store of record is not under cwd when a redirect moves it
+		// (ADR 0012 D3-C): cwd/.beads holds a path and the database, its
+		// jsonl, socket and lock live in the instance repo it names. The
+		// two grants above then cover a directory bd never writes, and
+		// every mutation lands outside the profile — measured
+		// (ranger-base-rhw): `bd sync` and `bd export` fail on the db file
+		// ("operation not permitted"), and a commit of anything in that
+		// repo — the persona's own ORDERS.md included — fails on
+		// .git/index.lock. Grant the resolved directory and that repo's
+		// git dirs, and nothing else: the instance tree stays unwritable,
+		// which is the point of the tier. Not conditional on deniesFiles —
+		// cwd's subpath does not reach another repo either way.
+		//
+		// realizeCodex names the same directory for the runtimes that cage
+		// themselves (runtime.go, ranger-base-0fb); this is that grant at
+		// L2, same resolver, same chained-redirect bound.
+		if home := beadsHome(cwd); !underDir(cwd, home) {
+			add(home)
+			for _, g := range beadsGitDirs(home) {
+				add(g)
+			}
 		}
 	}
 	add(ag.MemoryDir)
@@ -107,6 +127,53 @@ func SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 			w = filepath.Join(cwd, w)
 		}
 		add(w)
+	}
+	return dedupeStrings(out)
+}
+
+// absResolve is the path the sandbox will match on: absolute, with
+// symlinks resolved over the longest existing prefix.
+func absResolve(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	return resolveExisting(p)
+}
+
+// underDir reports whether p is dir or inside it, compared as the sandbox
+// sees them — /tmp and its /private/tmp real path are the same directory.
+func underDir(dir, p string) bool {
+	rel, err := filepath.Rel(absResolve(dir), absResolve(p))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// beadsGitDirs names the git directories a session writes when the store of
+// record lives in another repo: bd's own `bd sync` commit takes
+// index.lock in the per-worktree git dir, hooks and refs live in the
+// common one, and outside a worktree those are one path. `git rev-parse`
+// is the only thing that can tell them apart — a worktree's .git is a
+// file, and beadsHome follows a redirect into one (bd worktree create
+// writes the chained form). <repo>/.git leads regardless, so a target git
+// cannot answer for still gets the grant it needs.
+func beadsGitDirs(home string) []string {
+	root := filepath.Dir(home)
+	out := []string{filepath.Join(root, ".git")}
+	for _, flag := range []string{"--git-dir", "--git-common-dir"} {
+		b, err := exec.Command("git", "-C", root, "rev-parse", flag).Output()
+		if err != nil {
+			continue
+		}
+		g := strings.TrimSpace(string(b))
+		if g == "" {
+			continue
+		}
+		if !filepath.IsAbs(g) {
+			g = filepath.Join(root, g)
+		}
+		out = append(out, g)
 	}
 	return dedupeStrings(out)
 }
