@@ -128,6 +128,132 @@ func TestValidCount(t *testing.T) {
 	}
 }
 
+func writeExec(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func readyEnv(t *testing.T, home string, extra ...string) []string {
+	t.Helper()
+	return append(append(os.Environ(),
+		"RHQ_HOME="+home,
+		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
+	), extra...)
+}
+
+const fakeBdScript = `#!/bin/sh
+cmd=""
+for a in "$@"; do
+  case "$a" in
+    -*) ;;
+    *) cmd=$a; break ;;
+  esac
+done
+if [ -f fake-ready-fail ]; then
+  echo "database is locked" >&2
+  exit 1
+fi
+if [ "$cmd" = "ready" ] && [ -f fake-ready.json ]; then
+  cat fake-ready.json
+  exit 0
+fi
+echo '[]'
+exit 0
+`
+
+// rangerhq-llse: `posse ready` must not print "no ready work" over a scan
+// that failed. An unreadable repo is an unknown queue.
+func TestReadyRefusesAFailedScanAsEmpty(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-ready-fail"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "ready")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("a failed scan must fail the command:\n%s", out)
+	}
+	got := string(out)
+	if !strings.Contains(got, "unknown, not empty") {
+		t.Errorf("want the queue named unknown, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ready scan failed") {
+		t.Errorf("want the failed repo named, got:\n%s", got)
+	}
+	if strings.Contains(got, "no ready work") {
+		t.Errorf("a failed scan must never read as an empty queue:\n%s", got)
+	}
+}
+
+func TestReadyNamesAPartialScanAndStillLists(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	good := t.TempDir()
+	bad := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+good+"\n  - "+bad+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(good, "fake-ready.json"), []byte(`[{"id":"a-1","title":"one","priority":1}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "fake-ready-fail"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "ready")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("one readable repo is enough to list: %v\n%s", err, out)
+	}
+	got := string(out)
+	if !strings.Contains(got, "a-1") {
+		t.Errorf("want the readable repo's bead listed:\n%s", got)
+	}
+	if !strings.Contains(got, "ready scan failed") || !strings.Contains(got, "database is locked") {
+		t.Errorf("the failed repo must be named:\n%s", got)
+	}
+	if strings.Contains(got, "no ready work") {
+		t.Errorf("a partial scan must not read as empty:\n%s", got)
+	}
+}
+
+func TestReadyEmptyQueueStillSaysNoReadyWork(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "ready")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("a genuine empty queue is not an error: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "no ready work") {
+		t.Errorf("a successful empty scan must still say so:\n%s", out)
+	}
+}
+
 // The end-to-end half: a bad count is refused by the process before the
 // pass starts. PATH is emptied so the first thing past the flag loop is
 // "bd not found" — which is also the positive control, since only a count

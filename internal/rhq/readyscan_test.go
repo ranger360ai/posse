@@ -6,11 +6,13 @@ package rhq
 // while a dozen beads sat ready.
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scanRepo is a beads repo serving `ready` from the given JSON, or failing
@@ -163,6 +165,57 @@ func TestReadyAllReportsMissingRepoBesideReadableOne(t *testing.T) {
 	var se ScanError
 	if !errors.As(failed[0], &se) || se.Dir != missing {
 		t.Errorf("the missing repo scan must name its configured path: %v", failed[0])
+	}
+}
+
+// A readable empty repo beside an unreadable one is not "no ready work":
+// the queue in the failed repo is unknown, so the pass fails instead of
+// reporting the one repo it could see as the whole picture.
+func TestPassEmptyReadableRepoBesideFailedScanIsUnknown(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	scanConfig(t, b.App, scanRepo(t, `[]`), scanRepo(t, ""))
+
+	n, err := d.Run("", "", 0)
+	if n != 0 {
+		t.Errorf("nothing is dispatchable: %d", n)
+	}
+	if err == nil || !strings.Contains(err.Error(), "unknown, not empty") {
+		t.Fatalf("an empty readable repo does not make the failed one empty: %v\n%s", err, dispatcherOut(d))
+	}
+	if strings.Contains(dispatcherOut(d), "no ready work") {
+		t.Errorf("a mixed empty+failed scan must not read as an empty queue:\n%s", dispatcherOut(d))
+	}
+}
+
+// --watch's job after a scan that failed everywhere: name the pass error
+// and keep looping. The pre-llse behaviour was to print "no ready work"
+// and look idle.
+func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	scanConfig(t, b.App, scanRepo(t, ""), scanRepo(t, ""))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+	passes := d.Watch(ctx, "", "", 0, 10*time.Millisecond, 40*time.Millisecond)
+	out := dispatcherOut(d)
+	if passes < 2 {
+		t.Fatalf("watch must keep looping after a pass error, got %d:\n%s", passes, out)
+	}
+	if strings.Count(out, "✗ pass failed:") < 2 {
+		t.Errorf("every failed pass must be named:\n%s", out)
+	}
+	if !strings.Contains(out, "unknown, not empty") {
+		t.Errorf("the pass error must say the queue is unknown:\n%s", out)
+	}
+	if strings.Contains(out, "no ready work") {
+		t.Errorf("a failed scan must never read as an empty queue:\n%s", out)
 	}
 }
 

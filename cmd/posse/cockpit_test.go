@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -91,6 +92,56 @@ func TestCockpitReselect(t *testing.T) {
 	}
 	if got := reselect(c.sessions, nil, c.issues, sel); got != 0 {
 		t.Errorf("IN PROGRESS emptied: cursor %d, want 0", got)
+	}
+}
+
+// rangerhq-llse: a repo whose bd call failed has an unknown queue, not a
+// shorter READY list. refresh puts that on the status line so the operator
+// sees the miss, not a quiet cockpit that looks caught up.
+func TestCockpitReadyScanFailureIsAStatus(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	herdr := filepath.Join(binDir, "herdr")
+	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+if [ "$1" = "workspace" ] && [ "$2" = "list" ]; then
+  printf '%s\n' '{"result":{"workspaces":[]}}'
+  exit 0
+fi
+if [ "$1" = "agent" ] && [ "$2" = "list" ]; then
+  printf '%s\n' '{"result":{"agents":[]}}'
+  exit 0
+fi
+printf '%s\n' '{"error":{"code":"no","message":"unexpected '"$1 $2"'"}}'
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bd := filepath.Join(binDir, "bd")
+	if err := os.WriteFile(bd, []byte("#!/bin/sh\necho 'database is locked' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &rhq.App{
+		Home:       home,
+		ConfigPath: filepath.Join(home, "config.yaml"),
+		StateDir:   filepath.Join(home, "state"),
+	}
+	c := &cockpit{
+		app: a,
+		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+		bd:  rhq.Bd{Bin: bd},
+	}
+	c.refresh()
+	if !strings.Contains(c.status, "ready scan failed") || !strings.Contains(c.status, "database is locked") {
+		t.Fatalf("status must name the failed scan, got %q", c.status)
+	}
+	foot := stripANSI(strings.Join(c.footerLines(120), "\n"))
+	if !strings.Contains(foot, "ready scan failed") {
+		t.Errorf("the status must reach the footer:\n%s", foot)
 	}
 }
 

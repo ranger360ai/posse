@@ -322,6 +322,77 @@ func TestBlindSkipIsNeverSilent(t *testing.T) {
 	}
 }
 
+// The exact contract Run's `if line != ""` would drop: a skipped pass
+// returning ("", true) is rangerhq-llse — Watch prints only the
+// "0 dispatched" footer. planGuard must never hand that pair back.
+func TestBlindSkipLineIsNeverEmpty(t *testing.T) {
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	r.blind()
+
+	r.at(12 * time.Minute)
+	line, skip := r.d.planGuard()
+	if !skip {
+		t.Fatal("12m unattended blind must skip")
+	}
+	if line == "" {
+		t.Fatal("empty skip line is rangerhq-llse: Watch would print only 0 dispatched")
+	}
+	if !strings.Contains(line, "pass skipped") {
+		t.Errorf("skip line must name the skip, got %q", line)
+	}
+
+	// Inside the old hourly quiet window: still a line.
+	r.at(20 * time.Minute)
+	line, skip = r.d.planGuard()
+	if !skip || line == "" {
+		t.Fatalf("a second skip must still name itself: skip=%v line=%q", skip, line)
+	}
+}
+
+// The production error was 429, not a dead socket. After rangerhq-tdy8 a
+// 429 also writes a cooldown, so later passes fail with a *different*
+// string ("not asking again") without hitting the endpoint. Both must
+// still name the skip — silence after the first 429 was the bug.
+func TestBlindSkipOn429IsNeverSilent(t *testing.T) {
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	r.ps.status = http.StatusTooManyRequests
+	r.ps.body = "rate limited"
+
+	r.at(12 * time.Minute)
+	if n := r.run(t); n != 0 {
+		t.Fatalf("12m blind on 429 must skip: %d\n%s", n, r.out())
+	}
+	if !strings.Contains(r.out(), "pass skipped") {
+		t.Fatalf("the first 429 skip must say why:\n%s", r.out())
+	}
+	if !strings.Contains(r.out(), "429") {
+		t.Errorf("the first skip must name the 429, got:\n%s", r.out())
+	}
+
+	// 14m/16m are inside the default 5m cooldown: no second request, a
+	// different error. 20m is past it: another 429. All four must speak.
+	for i, at := range []time.Duration{14 * time.Minute, 16 * time.Minute, 20 * time.Minute} {
+		r.at(at)
+		if n := r.run(t); n != 0 {
+			t.Errorf("still blind at %s, still skipping: %d dispatched", at, n)
+		}
+		if got := strings.Count(r.out(), "pass skipped"); got != i+2 {
+			t.Fatalf("a skipped pass must say why, every pass: %d lines after %s\n%s", got, at, r.out())
+		}
+	}
+	if !strings.Contains(r.out(), "not asking again") && !strings.Contains(r.out(), "rate-limited") {
+		t.Errorf("a cooldown skip must still name the rate limit:\n%s", r.out())
+	}
+	if strings.Contains(r.out(), "no ready work") {
+		t.Errorf("a 429 skip must not read as an empty queue:\n%s", r.out())
+	}
+	if calls := bdCalls(t, r.fake); calls != "" {
+		t.Errorf("a blind skip must not call bd at all, got: %s", calls)
+	}
+}
+
 // Watch is the discriminator and the seed: it marks the loop unattended and
 // starts the blind clock at loop start, so the first pass of a fresh
 // --watch gets the whole grace instead of an instant skip.
