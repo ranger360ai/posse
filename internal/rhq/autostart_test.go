@@ -473,3 +473,62 @@ func TestAutostartDryRunStillResumesByDefault(t *testing.T) {
 		t.Errorf("dry first-arm lost default --resume:\n%s", r.calls)
 	}
 }
+
+// ── the fan-out cap (rangerhq-v83) ─────────────────────────────────────────
+//
+// The unattended loop's -n is always present. Absent autostart_max_beads
+// used to omit the flag, and Dispatcher's 0 default is no cap — a whole
+// ready queue in one pass. The key raises or lowers a cap; it does not
+// switch it on. 0 is still unbounded, and only by saying so.
+
+func TestAutostartMaxBeadsAlwaysPresent(t *testing.T) {
+	cases := []struct {
+		name, config, wantN string
+		warn                bool
+	}{
+		{name: "unset", config: armed, wantN: "3"},
+		{name: "explicit-3", config: armed + "autostart_max_beads: 3\n", wantN: "3"},
+		{name: "unbounded-0", config: armed + "autostart_max_beads: 0\n", wantN: "0"},
+		{name: "raised-7", config: armed + "autostart_max_beads: 7\n", wantN: "7"},
+		{name: "empty-value", config: armed + "autostart_max_beads:\n", wantN: "3"},
+		{name: "commented-out", config: armed + "# autostart_max_beads: 99\n", wantN: "3"},
+		{name: "word", config: armed + "autostart_max_beads: three\n", wantN: "3", warn: true},
+		{name: "neg", config: armed + "autostart_max_beads: -1\n", wantN: "3", warn: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := newHookWorld(t, c.config)
+			r := w.run(t, "--startup")
+			if r.code != 0 {
+				t.Fatalf("exit %d:\n%s", r.code, r.out)
+			}
+			want := " -n " + c.wantN + " "
+			if !strings.Contains(r.calls, want) {
+				t.Errorf("want %q in the armed command:\n%s", want, r.calls)
+			}
+			warned := strings.Contains(r.out, "is not a count")
+			if warned != c.warn {
+				t.Errorf("warn=%v, want %v:\n%s", warned, c.warn, r.out)
+			}
+		})
+	}
+}
+
+// The shape an operator actually types first: interval, max-interval, an
+// explicit 3, dry-run. The cap has to survive composition, not only the
+// absent-key default.
+func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
+	w := newHookWorld(t, ""+
+		"autostart_interval: 5m\n"+
+		"autostart_max_interval: 40m\n"+
+		"autostart_max_beads: 3\n"+
+		"autostart_dry_run: true\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch 5m --max-interval 40m -n 3 --resume --dry-run") {
+		t.Errorf("first-arm block lost the cap:\n%s", r.calls)
+	}
+}
