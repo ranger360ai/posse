@@ -125,3 +125,87 @@ func TestReadmeDoesNotClaimNoReleaseTag(t *testing.T) {
 		t.Fatal("README.md still claims the module has no release tag; go install @latest installs v0.3.0")
 	}
 }
+
+// ranger-base-4ex: INSTALL.md §2 advertised `brew install ranger360ai/tap/posse`
+// while ranger360ai/homebrew-tap 404'd, and brew's error never said the tap
+// was never created. The tap now exists; keep the three-command route (tap,
+// trust one formula, install) and the diagnostic for when it does not.
+func TestInstallMdStep2BrewRouteNamesTheTapAndTheSilentFailure(t *testing.T) {
+	contents, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	start := strings.Index(text, "## 2.")
+	end := strings.Index(text, "## 3.")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatal("INSTALL.md missing §2 / §3 headings")
+	}
+	step2 := text[start:end]
+
+	tap := "brew tap ranger360ai/tap"
+	trust := "brew trust --formula ranger360ai/tap/posse"
+	install := "brew install ranger360ai/tap/posse"
+	for _, want := range []string{tap, trust, install, "Error: Failure while executing tap"} {
+		if !strings.Contains(step2, want) {
+			t.Errorf("INSTALL.md §2 missing %q", want)
+		}
+	}
+	if tapAt, trustAt, installAt := strings.Index(step2, tap), strings.Index(step2, trust), strings.Index(step2, install); tapAt < 0 || trustAt < 0 || installAt < 0 || !(tapAt < trustAt && trustAt < installAt) {
+		t.Error("INSTALL.md §2 brew route is not tap, then trust --formula, then install")
+	}
+}
+
+// ranger-base-4ex: `mktemp -d -t posse-release` is BSD-only. GNU coreutils
+// dies "too few X's in template", which is how the release workflow would
+// have failed on the tag after vet and test went green.
+func TestReleaseScriptsUsePortableMktemp(t *testing.T) {
+	scripts := []struct{ path, template string }{
+		{path: "scripts/release-artifacts.sh", template: `${TMPDIR:-/tmp}/posse-release.XXXXXX`},
+		{path: "scripts/clean-build.sh", template: `${TMPDIR:-/tmp}/posse-clean-build.XXXXXX`},
+	}
+	for _, s := range scripts {
+		t.Run(s.path, func(t *testing.T) {
+			contents, err := os.ReadFile(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := `mktemp -d "` + s.template + `"`
+			if !strings.Contains(string(contents), want) {
+				t.Errorf("%s: missing portable %q", s.path, want)
+			}
+			for _, line := range strings.Split(string(contents), "\n") {
+				trim := strings.TrimSpace(line)
+				if strings.HasPrefix(trim, "#") {
+					continue
+				}
+				if strings.Contains(line, "mktemp") && strings.Contains(line, " -t ") && !strings.Contains(line, "XXXXXX") {
+					t.Errorf("%s: live mktemp still uses BSD -t prefix: %s", s.path, trim)
+				}
+			}
+		})
+	}
+}
+
+// ranger-base-4ex: five in-repo references pointed at docs/runbooks/release.md
+// when the file did not exist. The workflow's own closing output is one of them.
+func TestReleaseRunbookExistsAtThePathFiveFilesCite(t *testing.T) {
+	if _, err := os.Stat("docs/runbooks/release.md"); err != nil {
+		t.Fatalf("docs/runbooks/release.md: %v", err)
+	}
+	const cite = "docs/runbooks/release.md"
+	for _, path := range []string{
+		"Makefile",
+		"INSTALL.md",
+		"scripts/tap-formula.sh",
+		".github/workflows/release.yml",
+	} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(contents), cite) {
+			t.Errorf("%s no longer cites %s", path, cite)
+		}
+	}
+}
