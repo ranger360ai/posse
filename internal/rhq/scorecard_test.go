@@ -161,3 +161,66 @@ func TestScorecardOutput(t *testing.T) {
 		t.Errorf("age at close missing:\n%s", s)
 	}
 }
+
+// The reopen count had the bead-loss census's blindness (rangerhq-92bv),
+// by a different route: under ADR 0012 D3-C the one `beads:` entry tracks
+// no issues.jsonl of its own, so its history holds fewer than two commits
+// and every persona's reopened column reads "?" for the life of the
+// instance. Unknown is not a lie, but closed-no-reopen is a crew metric
+// and it stops being measurable at cut-over — so this walk has to follow
+// .beads/redirect into the repo that actually holds the census.
+func TestReopensFromGitFollowsTheBeadsRedirect(t *testing.T) {
+	store := blRepo(t)
+	blCommit(t, store, "sync", blLine("x-1", "open"), blLine("x-2", "open"))
+	blCommit(t, store, "sync", blLine("x-1", "closed"), blLine("x-2", "closed"))
+	blCommit(t, store, "sync", blLine("x-1", "open"), blLine("x-2", "closed"))
+
+	work := blRepo(t) // the `beads:` entry: a redirect and no census at all
+	if got := ReopensFromGit(work); got != nil {
+		t.Fatalf("a repo with no census of its own is unknown, not counted: %v", got)
+	}
+	blRedirect(t, work, filepath.Join(store, beadsDirName))
+	got := ReopensFromGit(work)
+	if got == nil {
+		t.Fatalf("the reopen count must follow the redirect into %s", store)
+	}
+	if got["x-1"] != 1 || got["x-2"] != 0 {
+		t.Errorf("want x-1 reopened once, x-2 never: %v", got)
+	}
+}
+
+// Not a copy of the census's fix: that one only ever runs `git log`, whose
+// pathspec is cwd-relative, so running from inside .beads was the whole
+// hop. This walk also reads blobs, and `git show <rev>:<path>` is
+// repo-root-relative — a redirect target whose .beads is not at its repo
+// root would resolve to nothing and go quietly back to "?". The blob read
+// has to name the path relative to the .beads dir it is standing in.
+func TestReopensFromGitReadsBlobsRelativeToTheBeadsDir(t *testing.T) {
+	store := blRepo(t)
+	beads := filepath.Join(store, "instance", beadsDirName)
+	if err := os.MkdirAll(beads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commit := func(lines ...string) {
+		t.Helper()
+		body := strings.Join(lines, "\n") + "\n"
+		if err := os.WriteFile(filepath.Join(beads, beadsJSONL), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "sync"}} {
+			if out, err := exec.Command("git", append([]string{"-C", store}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+		}
+	}
+	commit(blLine("y-1", "closed"))
+	commit(blLine("y-1", "in_progress"))
+	commit(blLine("y-1", "closed"))
+
+	work := blRepo(t)
+	blRedirect(t, work, beads)
+	got := ReopensFromGit(work)
+	if got["y-1"] != 1 {
+		t.Errorf("a redirect target whose .beads is below its repo root must still be read: %v", got)
+	}
+}

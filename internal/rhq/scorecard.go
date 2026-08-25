@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -169,10 +168,27 @@ func addScore(a, b Score) Score {
 }
 
 // ReopensFromGit counts closed→not-closed transitions per issue id across
-// the git history of .beads/issues.jsonl in dir. Returns nil when there is
-// no git or no history — callers treat that as "unknown", not zero.
+// the git history of the census JSONL bd actually reads for dir — the
+// redirect target's when .beads/redirect names one, dir's own otherwise.
+// Returns nil when there is no git or no history — callers treat that as
+// "unknown", not zero.
+//
+// The redirect hop is beadsHome's (beadloss.go), and for the same reason:
+// under ADR 0012 D3-C the one `beads:` entry tracks no jsonl at all, so
+// walking its own history finds fewer than two commits forever and the
+// scorecard prints "reopened: ?" for the life of the instance. That is
+// unknown rather than a lie, but closed-no-reopen is a crew metric and it
+// stops being measurable at cut-over.
+//
+// Both commands run from inside the resolved .beads directory, so no repo
+// root has to be derived from the redirect target — `git -C` finds
+// whichever checkout the directory belongs to. A `log` pathspec is
+// cwd-relative already; `git show <rev>:<path>` is repo-root-relative
+// unless the path begins with "./", which is what makes the blob read
+// follow the same cwd (gitrevisions, "<rev>:./<path>").
 func ReopensFromGit(dir string) map[string]int {
-	revs, err := exec.Command("git", "-C", dir, "log", "--format=%H", "--reverse", "--", ".beads/issues.jsonl").Output()
+	home := beadsHome(dir)
+	revs, err := gitBead(home, "log", "--format=%H", "--reverse", "--", beadsJSONL)
 	if err != nil {
 		return nil
 	}
@@ -183,7 +199,7 @@ func ReopensFromGit(dir string) map[string]int {
 	out := map[string]int{}
 	prev := map[string]string{}
 	for _, sha := range shas {
-		blob, err := exec.Command("git", "-C", dir, "show", sha+":.beads/issues.jsonl").Output()
+		blob, err := gitBead(home, "show", sha+":./"+beadsJSONL)
 		if err != nil {
 			continue
 		}
