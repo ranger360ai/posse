@@ -1253,7 +1253,14 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		return wsID, err
 	}
 	if p.Cmd != "" {
-		if err := b.H.PaneRun(rootPane, p.Cmd); err != nil {
+		// The pane was created an instant ago and its shell is still
+		// starting: a line over PaneLineMax typed now is lost, not delayed
+		// (rangerhq-ybec). PaneLine keeps what is typed short.
+		line, err := b.App.PaneLine(o.Name, p.Cmd)
+		if err != nil {
+			return wsID, err
+		}
+		if err := b.H.PaneRun(rootPane, line); err != nil {
 			return wsID, err
 		}
 	}
@@ -1384,7 +1391,14 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	} else if cmd, _, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {
 		return false, err
 	}
-	if err := b.H.PaneRun(s.PaneID, cmd); err != nil {
+	// Same limit as the launch: this pane's shell has long since started, so
+	// canonical mode is not the wall here — but the tty is still one, and a
+	// line long enough is lost on a settled pane too (rangerhq-ybec).
+	line, err := b.App.PaneLine(m.Name, cmd)
+	if err != nil {
+		return false, err
+	}
+	if err := b.H.PaneRun(s.PaneID, line); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1428,6 +1442,7 @@ func (b *HerdrBackend) KillSession(name string) error {
 	}
 	if !s.Foreign {
 		os.Remove(b.metaPath(name))
+		b.App.DropPaneLine(name)
 	}
 	return nil
 }
