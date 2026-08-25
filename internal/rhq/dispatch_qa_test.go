@@ -871,6 +871,21 @@ func TestDispatchHeldBeadNotReprompted(t *testing.T) {
 // personas in two repos are both prompted before either settles, so the
 // pass takes as long as the slowest bead, not the sum.
 func TestDispatchParallelPass(t *testing.T) {
+	dispatchParallelPass(t, "")
+}
+
+// rangerhq-3ig1: the overlap assertion used to need the second prompt to
+// start within prompt-delay-ms (500ms). fire(A)→fire(B) work — a workspace
+// create plus a fake-herdr fork — ate that budget under CPU load and
+// accused a dispatcher that was gathering. 800ms of create delay is more
+// stagger than the old budget allowed; the barrier still gathers, so this
+// fails closed if the assertion is ever a stopwatch again.
+func TestDispatchParallelPassGathersDespiteCreateStagger(t *testing.T) {
+	dispatchParallelPass(t, "800")
+}
+
+func dispatchParallelPass(t *testing.T, createDelayMS string) {
+	t.Helper()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -888,6 +903,9 @@ func TestDispatchParallelPass(t *testing.T) {
 	// Every prompt is held until both are in flight, then both are released
 	// together — the pass either gathers or it deadlocks on the barrier.
 	os.WriteFile(filepath.Join(fake, "prompt-barrier"), []byte("2"), 0o644)
+	if createDelayMS != "" {
+		os.WriteFile(filepath.Join(fake, "create-delay-ms"), []byte(createDelayMS), 0o644)
+	}
 
 	n, err := d.Run("", "", 0)
 	if err != nil {

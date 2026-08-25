@@ -421,6 +421,15 @@ func fakeHerdr(args []string) int {
 			}
 			return fakeErr(code, msg)
 		}
+		// create-delay-ms holds the create the way a loaded box does: the
+		// stagger between fire(A) and fire(B) is this create plus a fake
+		// fork. TestDispatchParallelPassGathersDespiteCreateStagger arms it
+		// past the 500ms overlap budget that used to false-fail (rangerhq-3ig1).
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "create-delay-ms")); err == nil {
+			if ms, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && ms > 0 {
+				time.Sleep(time.Duration(ms) * time.Millisecond)
+			}
+		}
 		label := ""
 		for i := 2; i < len(args)-1; i++ {
 			if args[i] == "--label" {
