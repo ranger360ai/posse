@@ -1,6 +1,7 @@
 package posse
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +56,204 @@ func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ranger-base-g2u / ranger-base-4mg: brew install of a third-party formula
+// without the trust line is the PATH-line failure on a different axis — the
+// command is a no-op grant on some brew versions (full name is itself the
+// trust) and a hard refusal on others, and either way a stranger's machine
+// is the first witness. Same table shape as the go-install pin: IF a surface
+// advertises the install, the predecessors have to precede it, in order.
+// Whole-tap trust is not a substitute — that grant covers future formulae.
+func TestBrewInstallQuickstartsCarryTapAndTrustBeforeInstall(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		required bool
+	}{
+		{name: "landing page", path: "www/index.html", required: true},
+		{name: "README", path: "README.md"},
+		{name: "INSTALL.md", path: "INSTALL.md", required: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			contents, err := os.ReadFile(tt.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			advertised, err := advertisedBrewInstallSequence(string(contents))
+			if !advertised {
+				if tt.required {
+					t.Fatalf("%s: missing %q", tt.path, brewInstallCmd)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("%s: %v", tt.path, err)
+			}
+		})
+	}
+}
+
+// The pin above is only as strong as what it rejects. These are the shapes
+// that shipped (or would ship) while the suite stayed green.
+func TestBrewInstallSequenceRejectsTheHistoricalGaps(t *testing.T) {
+	canonical := brewTapCmd + "\n" + brewTrustCmd + "\n" + brewInstallCmd
+	if advertised, err := advertisedBrewInstallSequence(canonical); !advertised || err != nil {
+		t.Fatalf("canonical three-command form: advertised=%v err=%v", advertised, err)
+	}
+	if advertised, err := advertisedBrewInstallSequence("make install\nposse init\n"); advertised || err != nil {
+		t.Fatalf("a surface that does not advertise brew install must skip, not fail; advertised=%v err=%v", advertised, err)
+	}
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{name: "install with no trust (ranger-base-4mg)", text: brewTapCmd + "\n" + brewInstallCmd},
+		{name: "trust after install", text: brewTapCmd + "\n" + brewInstallCmd + "\n" + brewTrustCmd},
+		{name: "install with no tap", text: brewTrustCmd + "\n" + brewInstallCmd},
+		{name: "tap after trust", text: brewTrustCmd + "\n" + brewTapCmd + "\n" + brewInstallCmd},
+		{name: "whole-tap trust is the wrong grant", text: brewTapCmd + "\nbrew trust ranger360ai/tap\n" + brewInstallCmd},
+		{name: "trust without --formula", text: brewTapCmd + "\nbrew trust ranger360ai/tap/posse\n" + brewInstallCmd},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			advertised, err := advertisedBrewInstallSequence(tt.text)
+			if !advertised {
+				t.Fatal("fixture advertises brew install; sequence must be judged, not skipped")
+			}
+			if err == nil {
+				t.Fatal("historical gap passed the pin")
+			}
+		})
+	}
+
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("landing page with trust line deleted", func(t *testing.T) {
+		stripped := strings.ReplaceAll(string(index), brewTrustCmd, "")
+		advertised, err := advertisedBrewInstallSequence(stripped)
+		if !advertised || err == nil {
+			t.Fatalf("deleting the trust line from the landing page must fail the pin; advertised=%v err=%v", advertised, err)
+		}
+	})
+	t.Run("landing page with whole-tap trust", func(t *testing.T) {
+		whole := strings.ReplaceAll(string(index), brewTrustCmd, "brew trust ranger360ai/tap")
+		advertised, err := advertisedBrewInstallSequence(whole)
+		if !advertised || err == nil {
+			t.Fatalf("replacing --formula with whole-tap trust must fail the pin; advertised=%v err=%v", advertised, err)
+		}
+	})
+}
+
+// ranger-base-g2u / ranger-base-l9y: a bare brew trust on a landing-page
+// panel is the shape of a supply-chain lure. The panel has to link into
+// INSTALL.md §2 (the explanation) rather than paraphrase it. Pin presence
+// and target, not the link text — that copy sits on a 35-char budget and
+// will move. Pin the heading too: a fragment that does not match §2 dumps
+// the reader at the top of a 400-line file while the test stays green.
+func TestLandingPageBrewPanelLinksToInstallStep2(t *testing.T) {
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := githubHeadingAnchor("2. Get the harness and build it"), "2-get-the-harness-and-build-it"; got != want {
+		t.Fatalf("githubHeadingAnchor(%q)=%q, want %q (GitHub's heading id)", "2. Get the harness and build it", got, want)
+	}
+	if err := landingPageBrewPanelLink(string(index), string(install)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLandingPageBrewPanelLinkRejectsAMissingOrUnanchoredHref(t *testing.T) {
+	headingMD := "## 2. Get the harness and build it\n\n## 3. Next\n"
+	href := `https://github.com/ranger360ai/posse/blob/main/INSTALL.md#2-get-the-harness-and-build-it`
+	panel := func(inner string) string {
+		return `<pre class="terminal">` + inner + `</pre>`
+	}
+	canonicalInner := brewTapCmd + "\n" +
+		`<a href="` + href + `">why</a>` + "\n" +
+		brewTrustCmd + "\n" + brewInstallCmd + "\n"
+
+	if err := landingPageBrewPanelLink(panel(canonicalInner), headingMD); err != nil {
+		t.Fatalf("canonical panel: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		index   string
+		install string
+	}{
+		{
+			name:    "no link in the panel",
+			index:   panel(brewTapCmd + "\n" + brewTrustCmd + "\n" + brewInstallCmd),
+			install: headingMD,
+		},
+		{
+			name:    "link is in the caption, not the panel",
+			index:   panel(brewTapCmd+"\n"+brewTrustCmd+"\n"+brewInstallCmd) + `<p class="terminal-caption"><a href="` + href + `">why</a></p>`,
+			install: headingMD,
+		},
+		{
+			name:    "href to INSTALL.md with no fragment",
+			index:   panel(brewTapCmd + "\n" + `<a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md">why</a>` + "\n" + brewTrustCmd + "\n" + brewInstallCmd),
+			install: headingMD,
+		},
+		{
+			name:    "fragment is §1, not §2",
+			index:   panel(brewTapCmd + "\n" + `<a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md#1-prerequisites">why</a>` + "\n" + brewTrustCmd + "\n" + brewInstallCmd),
+			install: headingMD,
+		},
+		{
+			name:    "URL as comment text, not an href",
+			index:   panel(brewTapCmd + "\n# " + href + "\n" + brewTrustCmd + "\n" + brewInstallCmd),
+			install: headingMD,
+		},
+		{
+			name:    "INSTALL.md heading no longer matches the fragment",
+			index:   panel(canonicalInner),
+			install: "## 2. Install the binary\n\n## 3. Next\n",
+		},
+		{
+			name:    "panel no longer advertises brew",
+			index:   panel("go install github.com/ranger360ai/posse/cmd/posse@latest\n"),
+			install: headingMD,
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := landingPageBrewPanelLink(tt.index, tt.install); err == nil {
+				t.Fatal("gap passed the pin")
+			}
+		})
+	}
+
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("real panel with href stripped", func(t *testing.T) {
+		panelHTML, err := terminalPanel(string(index))
+		if err != nil {
+			t.Fatal(err)
+		}
+		stripped := strings.Replace(string(index), panelHTML, strings.ReplaceAll(panelHTML, `href="`, `data-x="`), 1)
+		if err := landingPageBrewPanelLink(stripped, string(install)); err == nil {
+			t.Fatal("stripping href from the real panel must fail the pin")
+		}
+	})
 }
 
 // ranger-base-88m: make install writes ~/.local/bin/posse, which is on no
@@ -208,4 +407,131 @@ func TestReleaseRunbookExistsAtThePathFiveFilesCite(t *testing.T) {
 			t.Errorf("%s no longer cites %s", path, cite)
 		}
 	}
+}
+
+const (
+	brewTapCmd     = "brew tap ranger360ai/tap"
+	brewTrustCmd   = "brew trust --formula ranger360ai/tap/posse"
+	brewInstallCmd = "brew install ranger360ai/tap/posse"
+)
+
+// advertisedBrewInstallSequence reports whether text advertises the brew
+// install, and if it does, whether tap and formula-trust precede it in that
+// order. advertised=false, err=nil is the optional-surface skip.
+func advertisedBrewInstallSequence(text string) (bool, error) {
+	installAt := strings.Index(text, brewInstallCmd)
+	if installAt < 0 {
+		return false, nil
+	}
+	before := text[:installAt]
+	tapAt := strings.Index(before, brewTapCmd)
+	trustAt := strings.Index(before, brewTrustCmd)
+	if tapAt < 0 {
+		return true, fmt.Errorf("%q is not preceded by %q", brewInstallCmd, brewTapCmd)
+	}
+	if trustAt < 0 {
+		return true, fmt.Errorf("%q is not preceded by %q", brewInstallCmd, brewTrustCmd)
+	}
+	if tapAt > trustAt {
+		return true, fmt.Errorf("%q must appear before %q", brewTapCmd, brewTrustCmd)
+	}
+	return true, nil
+}
+
+func terminalPanel(html string) (string, error) {
+	const open = `<pre class="terminal">`
+	start := strings.Index(html, open)
+	if start < 0 {
+		return "", fmt.Errorf(`missing %s`, open)
+	}
+	rest := html[start+len(open):]
+	end := strings.Index(rest, "</pre>")
+	if end < 0 {
+		return "", fmt.Errorf("unclosed terminal panel")
+	}
+	return rest[:end], nil
+}
+
+func hrefs(html string) []string {
+	var out []string
+	for _, quote := range []string{`"`, `'`} {
+		remain := html
+		open := "href=" + quote
+		for {
+			i := strings.Index(remain, open)
+			if i < 0 {
+				break
+			}
+			remain = remain[i+len(open):]
+			j := strings.Index(remain, quote)
+			if j < 0 {
+				break
+			}
+			out = append(out, remain[:j])
+			remain = remain[j+1:]
+		}
+	}
+	return out
+}
+
+func installStep2Heading(installMD string) (string, error) {
+	for _, line := range strings.Split(installMD, "\n") {
+		if strings.HasPrefix(line, "## 2.") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "## ")), nil
+		}
+	}
+	return "", fmt.Errorf("INSTALL.md missing ## 2. heading")
+}
+
+// githubHeadingAnchor is GitHub's heading-id slug: lowercase, drop
+// punctuation, spaces to hyphens. Kept in lockstep with the INSTALL.md §2
+// fragment the panel links to — if this drifts from GitHub, the known-pair
+// assertion in TestLandingPageBrewPanelLinksToInstallStep2 fails first.
+func githubHeadingAnchor(heading string) string {
+	var b strings.Builder
+	prevHyphen := false
+	for _, r := range strings.ToLower(heading) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevHyphen = false
+		case r == ' ' || r == '-':
+			if !prevHyphen && b.Len() > 0 {
+				b.WriteByte('-')
+				prevHyphen = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func landingPageBrewPanelLink(index, installMD string) error {
+	panel, err := terminalPanel(index)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(panel, brewInstallCmd) {
+		return fmt.Errorf("terminal panel does not advertise %q", brewInstallCmd)
+	}
+	heading, err := installStep2Heading(installMD)
+	if err != nil {
+		return err
+	}
+	anchor := githubHeadingAnchor(heading)
+	for _, href := range hrefs(panel) {
+		if !strings.Contains(href, "github.com/ranger360ai/posse") {
+			continue
+		}
+		if !strings.Contains(href, "INSTALL.md") {
+			continue
+		}
+		hash := strings.LastIndex(href, "#")
+		if hash < 0 {
+			continue
+		}
+		if href[hash+1:] == anchor {
+			return nil
+		}
+	}
+	return fmt.Errorf("terminal panel has no href to github.com/ranger360ai/posse … INSTALL.md#%s (INSTALL.md heading %q)", anchor, heading)
 }
