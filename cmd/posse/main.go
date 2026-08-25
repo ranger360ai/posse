@@ -1014,6 +1014,19 @@ func main() {
 		fmt.Fprintf(out, "  argv0 %s → this posse, which execs %s with argv[0]=%s (herdr identifies the session by that name)\n",
 			rhq.AbbrevHome(a.CageLauncher(ag.Name, rt.Exe())), e.Binary(), rt.Exe())
 
+	case "runtime":
+		// The ADR 0013 dispatch-contract grid for ONE runtime — six stages,
+		// who declared each, and what a missing one costs. `posse runtimes`
+		// (plural) stays the catalog; this is the onboarding surface.
+		if len(args) < 2 || args[0] != "check" {
+			die(rhq.Die("usage: posse runtime check <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
+		}
+		rt, err := a.LoadRuntime(args[1])
+		if err != nil {
+			die(err)
+		}
+		a.RuntimeCheck(rt, rhq.NewHerdr(), out)
+
 	case "runtimes":
 		for _, n := range a.ListRuntimes() {
 			rt, err := a.LoadRuntime(n)
@@ -1036,6 +1049,9 @@ func main() {
 			}
 			fmt.Fprintf(out, "%s %-8s %s · %s\n    %s\n", a.EmojiExact(n), n, kind, tiers, rt.Command)
 		}
+		// The catalog says what exists; the contract grid says whether a
+		// profile can take work (ADR 0013 §1). Nothing else points at it.
+		fmt.Fprintln(out, "`posse runtime check <name>` — the dispatch-contract grid for one profile")
 
 	case "skills":
 		// ADR 0007 §1: the directory is the registry — this is `ls` with the
@@ -1315,6 +1331,9 @@ catalog:
   posse env edit|rm <name>       manage an env set ($EDITOR; created if missing)
   posse agents                   list personas
   posse runtimes                 list launch profiles (claude/codex/grok + runtimes/*.yaml)
+  posse runtime check <name>     the ADR 0013 dispatch-contract grid for one launch profile:
+                                 launch/promptable/work/record/settle/account, who declared each,
+                                 and what a missing stage costs. Undeclared reads loud, not silent.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
   posse gates <persona>          the persona's L1 gate shims (from deny:) and refusals.log
   posse gates install-hooks [dir]   L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,

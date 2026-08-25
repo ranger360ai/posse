@@ -129,7 +129,7 @@ func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 		App: a, HB: hb, Bd: NewBd(), Out: out,
 		PromptWaitMS: 15 * 60 * 1000,
 		WaitCeiling:  4 * time.Hour,
-		StartupWait:  45 * time.Second,
+		StartupWait:  DefaultStartupWait,
 		StatusGrace:  10 * time.Second,
 		Poll:         2 * time.Second,
 		PromptGrace:  30 * time.Second,

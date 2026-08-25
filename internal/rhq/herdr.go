@@ -36,6 +36,41 @@ func (h Herdr) Available() bool {
 	return err == nil
 }
 
+// KnownAgentKinds is the set of agent kinds this herdr recognizes — the
+// `launch` stage's first observable (ADR 0013 §1): a runtime whose argv0
+// herdr cannot name has no detection, so `working` and every settled state
+// are guesses and dispatch is blind on it.
+//
+// Read from `herdr agent start --help`, which is the only place herdr
+// enumerates them; it is a clap `[possible values: …]` line, not the JSON
+// envelope Run decodes. Parsing --help is a soft dependency by
+// construction, so a shape change here degrades to "unknown" (nil) and
+// never to a wrong "no".
+func (h Herdr) KnownAgentKinds() []string {
+	if !h.Available() {
+		return nil
+	}
+	out, _, _ := h.capture([]string{"agent", "start", "--help"})
+	for _, ln := range strings.Split(string(out), "\n") {
+		i := strings.Index(ln, "[possible values:")
+		if i < 0 {
+			continue
+		}
+		v := ln[i+len("[possible values:"):]
+		if j := strings.Index(v, "]"); j >= 0 {
+			v = v[:j]
+		}
+		var kinds []string
+		for _, k := range strings.Split(v, ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				kinds = append(kinds, k)
+			}
+		}
+		return kinds
+	}
+	return nil
+}
+
 type herdrError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

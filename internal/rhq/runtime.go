@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const DefaultRuntime = "claude"
@@ -41,6 +42,70 @@ func ValidTier(t string) bool {
 	return false
 }
 
+// The dispatch contract (ADR 0013 §1). Six stages —
+//
+//	launch → promptable → work → record → settle → account
+//
+// — of which four are observed (herdr, the bead, the cost adapter) and two
+// are DECLARED here, per runtime: how the work prompt is delivered, and
+// whether a dispatched session of this runtime has been measured to write
+// the store of record. `posse runtime check <name>` prints the grid.
+//
+// The expensive column to get wrong is the unknown one, so the zero value
+// of every declaration is the noisy-and-honest reading, not the convenient
+// one: a template-only runtimes/<name>.yaml that declares nothing is
+// `prompt: typed`, `record: untrusted`, uncounted and tier-unmapped. It is
+// dispatchable — ADR 0013 rejected "refuse until a conformance suite is
+// green" — and it is loud.
+const (
+	// PromptArgv: the work prompt rides on the launch line as a positional
+	// argument, so no screen is the delivery channel (ADR 0013 §2).
+	PromptArgv = "argv"
+	// PromptTyped: create → await promptable → claim → type, today's path,
+	// with StartupWait as the patience.
+	PromptTyped = "typed"
+
+	// RecordTrusted: a *dispatched* session of this runtime has been
+	// measured to close its bead. Promotion is an edit here (or a yaml key)
+	// after that measurement — never a derived, auto-updating store, which
+	// could disagree with the bead (ADR 0011's class).
+	RecordTrusted = "trusted"
+	// RecordUntrusted: the default everywhere else. Dispatch still launches;
+	// gather never prints ✓ on settle-without-close, and unattended
+	// --resume re-prompts.
+	RecordUntrusted = "untrusted"
+
+	// DefaultStartupWait is the claude-shaped patience for a launch to reach
+	// a promptable screen. It is a per-runtime number (`startup_wait:`)
+	// because 45s is measured on claude and grok's cold start exceeds it on
+	// a clean screen (ranger-base-3j8).
+	DefaultStartupWait = 45 * time.Second
+)
+
+func ValidPrompt(p string) bool { return p == PromptArgv || p == PromptTyped }
+
+func ValidRecord(r string) bool { return r == RecordTrusted || r == RecordUntrusted }
+
+// Interstitial is a first-run dialog this runtime draws that dispatch must
+// not answer for the operator (ADR 0013 §2, layer 2). Posse NAMES the key
+// that silences it and never writes it: one of these is a consent whose
+// wrong answer donates the operator's private-repo prompts to training, and
+// another's default action runs `brew upgrade` on their tooling.
+//
+// A dialog whose Danger is non-empty — the default action mutates the
+// machine — is a launch REFUSE until the operator's own config silences it.
+// Nothing blind-sends Enter.
+type Interstitial struct {
+	Screen  string // what the pane shows
+	Where   string // the file the silencing key lives in (operator-owned)
+	Key     string // the key itself, by name
+	Silence string // what the operator does, with the SAFE choice named
+	Danger  string // the default action when it mutates the machine ("" = safe default)
+	// Probe reports whether the key is set on this machine. nil = posse
+	// cannot cheaply tell, which prints as "unknown" rather than as "no".
+	Probe func() (bool, string)
+}
+
 // Realized is what a native realizer produced: the two placeholder
 // expansions and the rules it could express natively.
 type Realized struct {
@@ -51,7 +116,12 @@ type Realized struct {
 }
 
 type Runtime struct {
-	Name    string
+	Name string
+	// Path is the runtimes/<name>.yaml this runtime was loaded from ("" for
+	// a built-in). It is what lets `runtime check` say WHO declared each
+	// stage — a key read from the file and a key that fell back to the
+	// built-in default are different facts to an onboarder.
+	Path    string
 	Command string // template: {file} {memory} {allow} {deny} {model}
 	// Realize turns the PID's rule lists into this CLI's own flags. memory is
 	// the persona's memory dir (unquoted): a runtime whose writable-dir flag is
@@ -138,7 +208,77 @@ type Runtime struct {
 	// persona's traffic is the operator's business and both degrade
 	// quietly. `egress:` in a template-only runtime's yaml names its own.
 	Egress []string
+
+	// --- ADR 0013, the declared half of the dispatch contract ---
+
+	// Prompt is how DISPATCH delivers the work prompt: PromptArgv (the
+	// prompt file appended to the already-rendered launch line as
+	// "$(cat <file>)", so no screen is the delivery channel) or PromptTyped
+	// (create → await promptable → claim → type). Empty = PromptTyped, the
+	// honest default for a runtime nobody has probed. Interactive `posse
+	// new` is unaffected either way: it appends nothing.
+	Prompt string
+	// StartupWait is this runtime's patience for reaching a promptable
+	// screen. Zero = DefaultStartupWait. A number here is MEASURED on the
+	// runtime, never guessed — that is the whole reason it is per-runtime.
+	StartupWait time.Duration
+	// Record is whether a dispatched session of this runtime has been
+	// measured to write the store of record (the bead — ADR 0011, never the
+	// runtime's own settle). Empty = RecordUntrusted.
+	Record string
+	// RecordWhy is the measurement behind a RecordTrusted, named so a reader
+	// can tell a promotion from an assumption. Ignored when untrusted.
+	RecordWhy string
+	// NativeRules are the rulebook files this runtime discovers and loads on
+	// its own, ahead of anything posse types. Posse does NOT rewrite them —
+	// the session cwd is the operator's shared checkout (ADR 0013 §4) — it
+	// declares them so `runtime check` can say what else is talking to the
+	// model. Whether a native file outranks the PID is a probe, not a patch.
+	NativeRules []string
+	// Interstitials are the first-run dialogs this runtime draws, with the
+	// operator-owned config key that silences each. Documented, never
+	// written.
+	Interstitials []Interstitial
+	// CostAdapter names the reading behind this runtime's `account` stage
+	// ("" = no adapter → account-degraded, ADR 0013 §5). Filling the
+	// cost-adapter seam (ADR 0012 D4) is how a runtime leaves that column;
+	// until then `uncounted_cap_<runtime>:` is the brake and unset means
+	// unlimited and loud.
+	CostAdapter string
 }
+
+// PromptMode is how dispatch delivers the work prompt here. The zero value
+// reads as typed: an unprobed runtime does not get argv delivery by
+// default, because argv-skips-the-interstitial is an ASSUMED claim in ADR
+// 0013 §2 and a wrong guess is a prompt typed into a hole.
+func (rt *Runtime) PromptMode() string {
+	if ValidPrompt(rt.Prompt) {
+		return rt.Prompt
+	}
+	return PromptTyped
+}
+
+// Wait is this runtime's promptable patience.
+func (rt *Runtime) Wait() time.Duration {
+	if rt.StartupWait > 0 {
+		return rt.StartupWait
+	}
+	return DefaultStartupWait
+}
+
+// RecordTrust is whether this runtime has been measured to close its bead.
+// Unknown reads as untrusted — the direction that costs a re-prompt rather
+// than a ✓ on work nobody recorded.
+func (rt *Runtime) RecordTrust() string {
+	if rt.Record == RecordTrusted {
+		return RecordTrusted
+	}
+	return RecordUntrusted
+}
+
+// Counted: does a cost adapter read this runtime's spend? False is the
+// account-degraded column (ADR 0013 §5) — never a claim that spend was $0.
+func (rt *Runtime) Counted() bool { return rt.CostAdapter != "" }
 
 // Model returns the model id for a tier on this runtime ("" = leave the
 // runtime to its default). fast falls back to standard when unmapped.
@@ -478,15 +618,74 @@ const CodexProjectConfig = ".codex/config.toml"
 // have is anchored on the boxed composer it would stop drawing.
 const GrokFleetFlags = `--permission-mode auto`
 
+// Native rulebooks (ADR 0013 §4). What each CLI discovers and loads by
+// itself, before anything posse types — a second instruction channel into
+// the same session, living in the operator's shared checkout. Posse
+// declares them and rewrites none of them: the work prompt's "PID
+// guardrails override repo docs" line is the reconciliation, and whether a
+// native file actually outranks the PID is a PROBE, not a patch. A runtime
+// that fails that probe stays record: untrusted.
+//
+// Sources, so nobody re-derives them:
+//   - claude 2.1.243, from the binary: "Claude Code hardcodes CLAUDE.md /
+//     AGENTS.md discovery" (it says so while explaining why codex's
+//     project_doc_fallback_filenames has no equivalent).
+//   - codex-cli 0.147.0: AGENTS.md and AGENTS.override.md, project and
+//     ~/.codex/; the set is widened by config project_doc_fallback_filenames.
+//   - grok 1.0.5, docs/user-guide/12-project-rules.md, in its own order,
+//     every match in a directory loaded (not first-wins), plus *.md under
+//     the rules dirs at each level from repo root to cwd.
+var (
+	claudeNativeRules = []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude/rules/*.md"}
+	codexNativeRules  = []string{"AGENTS.md", "AGENTS.override.md", "~/.codex/AGENTS.md"}
+	grokNativeRules   = []string{"Agents.md", "Claude.md", "CLAUDE.md", "CLAUDE.local.md", "AGENT.md", "AGENTS.md",
+		".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
+)
+
+// PROMPT DELIVERY IS `typed` ON ALL THREE, AND THAT IS THE PROBE'S DOING,
+// NOT AN OVERSIGHT (ADR 0013 §2). The ADR's own table reads "grok/codex
+// argv *if the probe holds*, else typed plus a measured wait" — and the
+// probe (ranger-base-cl7: does an argv prompt skip the interstitial and
+// still trip herdr `working`?) has not run. ASSUMED is not MEASURED, and
+// the cost of guessing wrong here is a work prompt delivered into a screen
+// nobody read. So argv is declarable today and declared nowhere.
+//
+// WHEN ranger-base-cl7 LANDS, this is the edit site: flip Prompt to
+// PromptArgv for whichever runtimes the probe held for, or leave them typed
+// and set a MEASURED StartupWait for the ones it falsified. Do not do both
+// from a guess. ranger-base-dg5 is the dispatch half that reads it.
 var builtinRuntimes = []Runtime{
 	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", Unattended: ClaudeFleetFlags,
-		Egress:  []string{"api.anthropic.com", "platform.claude.com"},
+		Egress: []string{"api.anthropic.com", "platform.claude.com"},
+		// record: trusted — dispatched claude sessions close their beads;
+		// that is the shape every other runtime is measured against.
+		// account: the transcript scanner (cost.go) is the one adapter that
+		// exists, and it reads ~/.claude/projects/*.jsonl.
+		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
+		NativeRules: claudeNativeRules, CostAdapter: "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)",
 		Command: `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
-		Egress:  []string{"chatgpt.com", "ab.chatgpt.com"},
+		Egress: []string{"chatgpt.com", "ab.chatgpt.com"},
+		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
+		// sessions did the work and left the bead in_progress with no
+		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
+		// Dispatch still launches; gather never ✓s a settle-without-close.
+		Prompt: PromptTyped, Record: RecordUntrusted,
+		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
 		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
-		Egress:  []string{"cli-chat-proxy.grok.com", "grok.com"},
+		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"},
+		// record: trusted — the qa lane on grok closed a bead properly on
+		// 2026-08-24, which is the measurement the promotion needs and the
+		// only reason grok and codex differ in this column.
+		//
+		// StartupWait is deliberately UNSET (= 45s) even though grok's cold
+		// start is known to exceed it on a clean screen (ranger-base-3j8):
+		// the replacement number is measured by ranger-base-cl7, and a
+		// guessed one here would be the same class of mistake with a longer
+		// timeout on it.
+		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "the qa lane closed a dispatched bead on 2026-08-24 (ADR 0013 §4)",
+		NativeRules: grokNativeRules, Interstitials: GrokInterstitials,
 		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 
@@ -515,7 +714,7 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	}
 	// Optional per-tier models (model_strong: …) and the flag {model} renders
 	// with (model_flag:, default --model).
-	rt := &Runtime{Name: name, Command: cmd, Models: map[string]string{}, ModelFlag: "--model %s"}
+	rt := &Runtime{Name: name, Path: p, Command: cmd, Models: map[string]string{}, ModelFlag: "--model %s"}
 	for _, t := range Tiers {
 		if id := YamlGet(p, "model_"+t); id != "" {
 			rt.Models[t] = id
@@ -553,6 +752,41 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	if YamlGet(p, "gate_shell") == "false" {
 		rt.NoGateShell = true
 	}
+	// --- the ADR 0013 dispatch-contract keys ---
+	//
+	// ABSENT is the loud reading, and it is reached by doing nothing: this
+	// runtime stays prompt: typed, record: untrusted, uncounted and
+	// tier-unmapped. A template-only yaml with no declarations at all is a
+	// dispatchable runtime that says so on every line of `runtime check`.
+	//
+	// PRESENT-BUT-WRONG is a different animal and refuses. `record: trused`
+	// would otherwise be silently demoted to untrusted, and `prompt: arvg`
+	// silently kept typed — a typo that reads as a declaration is exactly
+	// the silence this contract exists to remove.
+	if v := YamlGet(p, "prompt"); v != "" {
+		if !ValidPrompt(v) {
+			return nil, Die("runtime %s: %s has prompt: %q (want %s or %s — ADR 0013 §2)", name, AbbrevHome(p), v, PromptArgv, PromptTyped)
+		}
+		rt.Prompt = v
+	}
+	if v := YamlGet(p, "startup_wait"); v != "" {
+		d, err := ParseInterval(v)
+		if err != nil {
+			return nil, Die("runtime %s: %s has startup_wait: %q — %v", name, AbbrevHome(p), v, err)
+		}
+		rt.StartupWait = d
+	}
+	if v := YamlGet(p, "record"); v != "" {
+		if !ValidRecord(v) {
+			return nil, Die("runtime %s: %s has record: %q (want %s or %s — ADR 0013 §4)", name, AbbrevHome(p), v, RecordTrusted, RecordUntrusted)
+		}
+		rt.Record = v
+		rt.RecordWhy = YamlGet(p, "record_why")
+	}
+	// native_rules: the rulebook files this CLI loads on its own. Posse
+	// never writes them; declaring them is how `runtime check` can name the
+	// other voice in the session.
+	rt.NativeRules = YamlList(p, "native_rules")
 	return rt, nil
 }
 

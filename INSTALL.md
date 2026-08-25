@@ -441,6 +441,29 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # `cage: container` refuses here
 # gate_shell: false            # only if this CLI chokes on a wrapper named as
 #                              # its SHELL (ADR 0009 §2). Costly — read it first.
+#
+# --- the dispatch contract (ADR 0013). Every one of these is optional, and
+#     leaving it out is a DECLARATION too: see `posse runtime check` below ---
+# prompt: typed               # how dispatch delivers the work prompt.
+#                              # `typed` (the default): create the session,
+#                              # wait for a promptable screen, claim, then
+#                              # type. `argv`: append the prompt file to the
+#                              # launch line, so no screen is the delivery
+#                              # channel. Only declare `argv` once you have
+#                              # PROVED your CLI takes a positional prompt
+#                              # into an *interactive* session.
+# startup_wait: 45s           # how long a launch may take to reach a
+#                              # promptable screen. MEASURE it; do not guess.
+# record: untrusted           # the default. `trusted` says you have MEASURED
+# record_why: <what you saw>  # a dispatched session of this CLI closing its
+#                              # bead. Until then dispatch still launches, but
+#                              # a session that settles with the bead still
+#                              # open is never ✓ and gets re-prompted.
+# native_rules: [AGENTS.md]   # rulebook files this CLI discovers and loads by
+#                              # itself, ahead of anything posse types. Posse
+#                              # rewrites none of them — declaring them is how
+#                              # `runtime check` can name the other voice in
+#                              # the session.
 ```
 
 Four things about template profiles that will bite you if nobody says them:
@@ -517,6 +540,29 @@ $ posse runtimes
 ```
 **Verify:** your profile appears after the built-ins, marked
 `template-only (gates go to the wall)`, with the template printed back.
+
+Then read the contract grid — this is the onboarding surface, and it is
+the one command that tells you what your new profile has *not* declared:
+
+```sh
+$ posse runtime check <profile>
+```
+**Verify:** six stages — `launch / promptable / work / record / settle /
+account` — each with who declared it and what a missing one costs (ADR
+0013 §1). A profile with nothing but `command:` is **dispatchable and
+loud**: typed delivery on the default 45s wait, `record: untrusted`,
+`UNCOUNTED`, `UNMAPPED` tiers, and every row naming the yaml key that would
+change it. That is the intended reading, not a failure — unknown starts
+noisy, never silent and never forbidden.
+
+Two rows are worth acting on before you dispatch anything:
+
+- **launch** says whether herdr recognizes your CLI's argv0. If it does
+  not, herdr cannot see `working` or any settled state on it, so the wait
+  ladder is guessing and dispatch is blind. Fix that first.
+- **promptable** lists this runtime's **instance interstitials** — the
+  first-run dialogs that make a fresh pane un-promptable, and the config
+  key *you* set to silence each. See §10 below.
 
 Point at least one persona at it — set `runtime: <profile>` in its PID:
 
@@ -779,6 +825,37 @@ A launch that refuses with a `DEGRADED` gate list is the wall doing its
 job: either raise the cage tier, relax the PID, or launch with
 `--allow-degraded` knowingly. Do not reach for `--allow-degraded` to get
 past your first launch — read `posse gates <persona>` and fix the cause.
+
+### Instance interstitials — the first-run dialogs only you can answer
+
+**Read this before dispatching on any non-claude runtime.** A CLI's first
+run in a fresh pane draws a dialog: a consent banner, an update menu, a
+splash. herdr does not recognize those screens, so a dispatched session
+sits there un-promptable until its startup wait runs out, and the pass gets
+nothing (ADR 0013 §2; measured in `ranger-base-3j8`).
+
+Posse **names these keys and never writes them**, and that is deliberate in
+both directions:
+
+- one of the answers is a **privacy** decision about your own repositories;
+- one of the *defaults* **mutates your machine**.
+
+So nothing in posse blind-sends Enter at a fresh pane, and a dialog whose
+default action mutates the machine is a **launch refuse** until your own
+config silences it. `posse runtime check <name>` prints each one with its
+key, its file, and whether it is already silenced on this box.
+
+| runtime | screen | key | you do |
+|---|---|---|---|
+| grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |
+| grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | pick **3. Skip until next version**: arrow **Down** twice, *verify the caret moved*, **then** Enter. The default-selected option is `1. Update now`, which runs `brew upgrade --cask codex` — an unreviewed roll-forward of a pinned tool. |
+
+The codex dismissal is good for **one release**: the menu returns as soon
+as `latest_version` moves past `dismissed_version`. `posse runtime check
+codex` prints both numbers, so you can see when it is due again.
+
+Claude has no such dialog on this path.
 
 ---
 

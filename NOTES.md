@@ -805,6 +805,60 @@ codex:  codex {model} {skills} {deny} -a never --disable hooks -c allow_login_sh
 grok:   grok {model} {skills} --permission-mode auto --rules="$(cat {file})" {allow} {deny}
 ```
 
+**The dispatch contract (ADR 0013, `internal/rhq/runtimecheck.go`).** A
+runtime that *launches* safely is not the same claim as a runtime that can
+*take work*, and one evening of two non-claude runtimes in production broke
+the second claim about once an hour. So dispatch names six stages —
+
+```
+launch → promptable → work → record → settle → account
+```
+
+— of which four are observed (herdr, the bead, the cost adapter) and two
+are **declared** per runtime, in the built-in table or in
+`runtimes/<name>.yaml`:
+
+| key | values | what it says |
+|---|---|---|
+| `prompt:` | `typed` (default) / `argv` | how dispatch delivers the work prompt: type it into a promptable screen, or append the prompt file to the launch line so no screen is the delivery channel |
+| `startup_wait:` | duration, default 45s | how long a launch may take to reach a promptable screen. Measured per runtime — 45s is a *claude* number |
+| `record:` (+ `record_why:`) | `untrusted` (default) / `trusted` | whether a **dispatched** session of this runtime has been MEASURED to close its bead |
+| `native_rules:` | file names | the rulebooks this CLI discovers by itself, ahead of anything posse types |
+
+`posse runtime check <name>` prints the grid: each stage's observable, who
+declared it, and what a missing one costs — always a named degrade or a
+named refuse, never a patch. **This is how a runtime is onboarded**: fill
+the grid rather than discover each quirk in production.
+
+The unknown runtime is the case the command exists for, and the zero value
+of every declaration is the expensive-to-be-wrong-about direction. A
+`runtimes/<name>.yaml` with nothing but `command:` is `prompt: typed`,
+`record: untrusted`, uncounted and tier-unmapped — **dispatchable and
+loud**, every row naming the key that would change it. A *present but
+misspelled* value is the opposite case and refuses at load: `record:
+trused` silently reading as untrusted is exactly the silence this contract
+removes.
+
+Two declarations are deliberately conservative right now, and both are
+waiting on the same probe (`ranger-base-cl7`, whether an argv-delivered
+prompt skips the first-run interstitials *and* still trips herdr
+`working`):
+
+- **all three built-ins are `prompt: typed`.** ADR 0013 §2 reads
+  "grok/codex `argv` *if the probe holds*"; ASSUMED is not MEASURED, and
+  a work prompt delivered on a guess goes into a screen nobody read. The
+  edit site is commented in `runtime.go` above `builtinRuntimes`.
+- **grok's `startup_wait:` is unset (45s)** even though grok's cold start
+  is known to exceed it on a clean screen. The replacement number is
+  measured by that probe; a guessed longer timeout is the same mistake
+  with more patience on it.
+
+`record:` is where grok and codex differ, and only for a measured reason:
+the qa lane on grok closed a dispatched bead properly, and 3/3 dispatched
+codex sessions did the work and left the bead `in_progress` with no comment
+(`ranger-base-0fb`). Trust is a built-in/yaml edit after a measurement —
+never a derived store that could disagree with the bead (ADR 0011).
+
 Which runtime a session gets: `posse new --runtime` / `posse dispatch
 --runtime` > recipe `runtime:` > PID `runtime:` > config
 `default_runtime:` > `claude`. A PID's `command:` is the template for
@@ -2560,6 +2614,66 @@ Rollback is `ln -sfn ../downloads/grok-1.0.5-macos-aarch64 ~/.grok/bin/grok`
 way: do not prune `downloads/`. `grok du` reports it as the largest thing in the
 grok home and is pure temptation — it only reports, and `grok worktree gc` does
 not touch it, so nothing prunes those binaries but a person.
+
+## Instance interstitials: the keys posse names and never writes (ADR 0013 §2)
+
+Every CLI draws something on its first run in a fresh pane — a consent
+banner, an update menu, a splash. herdr recognizes none of those screens,
+so a *dispatched* session lands on one, reports `idle` /
+`default_known_agent_idle_fallback`, never becomes promptable, and burns
+its startup wait for nothing. Measured on both non-claude runtimes in one
+evening (`ranger-base-3j8`), and the layer that fixes it is not the clever
+one.
+
+**Three layers, cheapest first (ADR 0013 §2).**
+
+1. **Sidestep.** Deliver the work prompt on the launch line (`prompt:
+   argv`), so the screen is not the delivery channel at all. Pending
+   `ranger-base-cl7`; see *The dispatch contract* above.
+2. **Instance config.** Operator-owned facts posse **documents and never
+   writes**. This section.
+3. **Declared keystrokes.** Last resort, keyed on a herdr *rule id*
+   (today: `startup_splash` → Esc only). Keys are pressed once, and
+   **Enter is not in the table**.
+
+**Why layer 2 is a document and not a `os.WriteFile`.** Two of the three
+answers are not a harness's to give:
+
+- grok's `[Opt in]` lets xAI retain prompts and traces from sessions
+  working in the operator's *private* repos. That is a visibility line
+  (crew guardrail 4), and the privacy-preserving answer — `[Opt out]` — is
+  a click, not a config posse can write on the operator's behalf.
+- codex's update menu has `1. Update now` **default-selected**, and it runs
+  `brew upgrade --cask codex`. Enter on arrival is an unreviewed
+  roll-forward of a pinned tool, through a Homebrew this box has had broken
+  (`rangerhq-y5on`), and the pinning precedent is `rangerhq-y7jr`.
+
+Hence the rule, and it is the whole of layer 2: **a first-run dialog whose
+default action mutates the machine is a launch refuse until that config
+silences it, and nothing blind-sends Enter.** The coordinator's
+string-match Escape watchdog is a stopgap, not the architecture.
+
+**The keys, per runtime.** `posse runtime check <name>` prints each with
+its file and whether it is silenced on this box — read-only probes, which
+is the only thing posse does to these files.
+
+| runtime | screen | key | who silences it, and how |
+|---|---|---|---|
+| grok | `Help improve Grok  [Opt out] [Opt in]` consent banner above the composer | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | the **operator**, clicking `[Opt out]` once in their own grok session. The value is an RFC3339 stamp, not a bool, and it records only *that* the banner was answered — never which way. In 1.0.5 the consent RPC has no server handler, so even an accidental `[Opt in]` cannot persist; that defense is version-verified and evaporates the day xAI ships the handler (`rangerhq-sz7u`). |
+| grok | New worktree / Resume session / Quit startup menu, plus the changelog line | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | **already applied** — the fleet pin, declared in `etc/grok/version-pin.toml`, kills the update check *and* the shared leader's mid-life self-update. `make verify-grok-pin`; runbook in *grok substrate* above. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | the **operator**, picking `3. Skip until next version`: Down twice, *verify the caret moved by re-peeking*, then Enter. Two steps with a verification between them, because getting it wrong upgrades their tooling. |
+| claude | — | — | no first-run dialog on this path. |
+
+**The codex dismissal has a shelf life.** It silences one release: the menu
+returns the moment `latest_version` moves past `dismissed_version`. That is
+why `runtime check` prints both numbers rather than a bare yes — a probe
+whose answer expires should say when.
+
+**What posse does NOT do, so nobody re-proposes it:** pre-answer these from
+the harness (write `privacy_banner_acked`, write `version.json`). Rejected
+in ADR 0013 — coding-data consent is a visibility line and update-skip is
+the operator's pin. Posse documents the keys. Posse does not write the
+operator's CLI config.
 
 ## herdr substrate: upgrading with `herdr update --handoff` (rangerhq-0ao)
 
