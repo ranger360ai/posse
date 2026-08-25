@@ -7,10 +7,12 @@ package rhq
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const (
@@ -42,10 +44,23 @@ type App struct {
 	ModelLister *ModelLister
 }
 
-func NewApp() *App {
+var legacyHomeNotices sync.Map
+
+func NewApp() *App { return newApp(os.Stderr) }
+
+func newApp(stderr io.Writer) *App {
 	home := os.Getenv("RHQ_HOME")
 	if home == "" {
-		home = filepath.Join(os.Getenv("HOME"), ".config", "rhq")
+		configDir := filepath.Join(os.Getenv("HOME"), ".config")
+		preferred := filepath.Join(configDir, "posse")
+		legacy := filepath.Join(configDir, "rhq")
+		home = preferred
+		if _, err := os.Stat(preferred); os.IsNotExist(err) {
+			if st, err := os.Stat(legacy); err == nil && st.IsDir() {
+				home = legacy
+				legacyHomeNotice(stderr, preferred, legacy)
+			}
+		}
 	}
 	return &App{
 		Home:       home,
@@ -55,6 +70,20 @@ func NewApp() *App {
 		StateDir:   filepath.Join(home, "state"),
 		AgentsDir:  filepath.Join(home, "agents"),
 	}
+}
+
+func legacyHomeNotice(stderr io.Writer, preferred, legacy string) {
+	if stderr == nil {
+		return
+	}
+	// Keep the fallback read-only: a durable marker in either home would
+	// mutate the legacy instance or make the empty preferred home win on the
+	// next command. One process says the transition once for each path pair.
+	key := preferred + "\x00" + legacy
+	if _, loaded := legacyHomeNotices.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	fmt.Fprintf(stderr, "posse: %s does not exist; using existing home %s (nothing moved)\n", preferred, legacy)
 }
 
 // CfgGet reads a top-level config scalar with a default.

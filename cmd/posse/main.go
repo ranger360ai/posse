@@ -1243,7 +1243,7 @@ sessions (herdr workspaces):
       --cage <shims|seatbelt|container>    wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
   posse attach <name>            focus its workspace in herdr (alias: focus)
   posse up <name>                create-or-focus (alias: local)
-  posse recipe <name>            launch a saved recipe (~/.config/rhq/recipes)
+  posse recipe <name>            launch a saved recipe (<config home>/recipes)
   posse relaunch <name>          refresh a session in place: check the recreate
                                  first (a refusal here costs nothing), land the
                                  plane (one bounded turn to write lessons down
@@ -1365,7 +1365,7 @@ catalog:
   posse agent check [<name>|--all]  lint PIDs against the ADR 0001 contract (exit 1 on findings)
   posse memory <persona>         edit the persona's standing orders ($EDITOR)
   posse recipes                  list recipes
-  posse init                     seed ~/.config/rhq from the built-in examples
+  posse init                     seed ~/.config/posse from the built-in examples
                                  (examples/ beside the binary wins, for dev builds)
 
 cockpit (herdr plugin pane — make link-plugin):
@@ -1374,7 +1374,7 @@ cockpit (herdr plugin pane — make link-plugin):
                                  x kill · c claim · q quit
 
 environment:
-  RHQ_HOME       config dir (default ~/.config/rhq)
+  RHQ_HOME       config dir (default ~/.config/posse; existing ~/.config/rhq falls back)
   RHQ_HERDR_BIN  herdr binary override (testing)
   RHQ_BD_BIN     bd binary override (testing)
   RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing)

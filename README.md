@@ -51,7 +51,7 @@ queue, first dispatch — is [INSTALL.md](INSTALL.md). The short form:
 ```sh
 make build                       # dev build of the working tree → bin/posse-go
 make install                     # clean build of HEAD, then promote → ~/.local/bin/posse
-posse init                       # seed $RHQ_HOME (default ~/.config/rhq) from the
+posse init                       # seed $RHQ_HOME (default ~/.config/posse) from the
                                  # examples: examples/ beside the binary when there
                                  # is one, else the copy embedded at build time
 mkdir -p ~/code/myproj           # --dir must exist; point it at a project of yours

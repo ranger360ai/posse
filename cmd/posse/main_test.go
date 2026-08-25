@@ -102,6 +102,36 @@ func buildRhq(t *testing.T) string {
 	return bin
 }
 
+// ranger-base-g98: a machine with neither config home seeds the new posse
+// path. This runs the command, rather than only checking NewApp's string,
+// because the contract includes the complete embedded instance.
+func TestInitUsesPosseHomeByDefault(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	cmd := exec.Command(bin, "init")
+	cmd.Env = []string{"HOME=" + home, "RHQ_HOME="}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("posse init: %v\n%s", err, out)
+	}
+
+	wantHome := filepath.Join(home, ".config", "posse")
+	if !strings.Contains(string(out), "initialized "+wantHome) {
+		t.Errorf("init said %q, want home %s", out, wantHome)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "examples", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(wantHome, "config.yaml"))
+	if err != nil || string(got) != string(want) {
+		t.Errorf("seeded config: %v (%d bytes, want %d)", err, len(got), len(want))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "rhq")); !os.IsNotExist(err) {
+		t.Errorf("init touched the legacy home: %v", err)
+	}
+}
+
 // rangerhq-ytkl: `posse dispatch -n three` used to reach the pass as -n 0,
 // and 0 is documented as no cap — a typo in the one flag whose job is to
 // bound a pass made it unbounded, with no line said about it. --timeout
