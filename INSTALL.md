@@ -68,14 +68,68 @@ There are two ways in. **Homebrew** if you only want to run posse; **a
 checkout** if you want to change it — steps 3 and 9 below assume a checkout,
 and so does every persona that lands work.
 
+The Homebrew route is **three commands, not one** — the middle one is the
+part every published version of this page got wrong until 2026-08-24:
+
 ```sh
-$ brew install ranger360ai/tap/posse     # a release binary, no Go needed
+$ brew tap ranger360ai/tap                       # clone the tap
+$ brew trust --formula ranger360ai/tap/posse     # read the next paragraph before running this
+$ brew install ranger360ai/tap/posse             # a release binary, no Go needed
 ```
 **Verify:** `posse version` prints `0.3.0+<sha>`, where the sha is the
-commit the release was cut from. Then skip to step 4 — there is nothing to
-promote, and `posse init` seeds an instance from the examples embedded in
-the binary (ADR 0012 D5). The cockpit plugin still wants the checkout, so
-come back to step 3 when you want it.
+commit the release was cut from, and `which posse` answers
+`/opt/homebrew/bin/posse` (`/home/linuxbrew/.linuxbrew/bin/posse` on Linux).
+Check the second one: if you have ever run `make install` from a checkout on
+this machine, `~/.local/bin/posse` is earlier on `$PATH` and will answer
+`posse version` for you, which makes a broken brew install look fine —
+that PATH ambiguity is what produced ranger-base-253. Then skip to step 4 —
+there is nothing to promote, and `posse init` seeds an instance from the
+examples embedded in the binary (ADR 0012 D5). The cockpit plugin still
+wants the checkout, so come back to step 3 when you want it.
+
+**Why the trust line exists, and exactly what it grants.** Homebrew 6.x will
+not load formulae from a third-party tap until you say so; until then
+`brew tap-info ranger360ai/tap` reads `Untrusted` and brew, in its own
+words, "is currently ignoring formulae, casks and commands from these taps
+because tap trust is required". `brew trust --formula
+ranger360ai/tap/posse` grants **this one formula and nothing else**. The
+grant is one string appended to `~/.homebrew/trust.json` (or
+`$XDG_CONFIG_HOME/homebrew/trust.json` if that is set) — read the file
+afterwards and you can see the whole of what you gave. It is
+non-interactive: no prompt, no password, no network; it prints `Trusted
+formula: ranger360ai/tap/posse` and exits 0, and prints `Already trusted
+formula: …` if it was already there. `brew untrust --formula
+ranger360ai/tap/posse` takes it back.
+
+Do **not** reach for the whole-tap form `brew trust ranger360ai/tap` to make
+an error go away. Whole-tap trust covers every current *and future* formula,
+cask and command from that tap — a standing grant on a repository we can
+change later, which is far more than installing one binary is worth. Brew
+recommends the narrow form for exactly this reason: "Prefer trusting only
+the specific formulae, casks or commands you need."
+
+And do not take our word for it. A page that tells you to "trust" something
+without saying what it grants is the shape of a supply-chain lure, and ours
+should be checked the same way you'd check a stranger's: `brew trust --help`
+and <https://docs.brew.sh/Tap-Trust> describe this command, and the trust
+file is plain JSON you can read before and after.
+
+If you skip the trust line, brew names its own fix and you can run it then
+instead — this is a refusal to *load* our formula, not a broken machine:
+
+```
+Error: Refusing to load formula ranger360ai/tap/posse from untrusted tap ranger360ai/tap.
+Run `brew trust --formula ranger360ai/tap/posse` or `brew trust ranger360ai/tap` to trust it.
+```
+
+Depending on your brew version you may not see that error at all: naming a
+formula in full on the command line (`ranger360ai/tap/posse`, not `posse`)
+can be taken as the grant itself, in which case `brew install` trusts that
+one formula for you and the explicit line above prints `Already trusted`.
+Measured both ways on 6.0.19 — the short name `brew install posse` after a
+tap *is* refused. Run the trust line regardless: it is a no-op when it is
+not needed, and when it is needed it is the difference between installing
+and staring at an error.
 
 If brew answers `Error: Failure while executing tap` or `Repository not
 found`, **the tap is not published yet** — it exists only once a release has

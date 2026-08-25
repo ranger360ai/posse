@@ -156,12 +156,27 @@ formula name from the filename.
 ## Step 4 — prove it, on a machine that is not the one that built it
 
 ```sh
+$ brew tap ranger360ai/tap
+$ brew tap-info ranger360ai/tap                  # expect: Untrusted, on a machine that has not trusted us
+$ brew trust --formula ranger360ai/tap/posse     # this one formula, not the tap
 $ brew install ranger360ai/tap/posse
 $ posse version
+$ which posse
 ```
-**Verify:** `posse X.Y.Z+<sha>`. This is the same command INSTALL.md step 2
-gives a deployer; until it passes here, that step is advertising something that
-does not work.
+**Verify:** `posse X.Y.Z+<sha>`, and `which posse` resolves inside the brew
+prefix — **not** `~/.local/bin/posse`. A machine with a `make install` binary
+on `$PATH` will answer `posse version` from that binary and hide a broken brew
+install, so a box with one is the wrong instrument for this step. This is the
+same sequence INSTALL.md step 2 gives a deployer; until it passes here, that
+step is advertising something that does not work.
+
+The trust line is not decoration. Homebrew 6.x ignores third-party taps until
+they are trusted, and the narrow `--formula` form grants this one formula
+rather than everything the tap will ever carry. It is non-interactive — no
+prompt, exit 0 — so it is safe inside a dispatched session; on some brew
+versions the fully-qualified `brew install` grants it for you and the line
+prints `Already trusted`. Run it anyway: it costs nothing when it is redundant.
+INSTALL.md step 2 carries the reader-facing version of this (ranger-base-4mg).
 
 **If it fails: fix forward to the next patch version. Do not delete and re-cut
 the tag.** The Go proxy's cache is immutable and not ours to purge.
