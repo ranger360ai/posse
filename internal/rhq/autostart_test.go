@@ -200,6 +200,11 @@ func TestAutostartReplacesAHusk(t *testing.T) {
 	if !strings.Contains(r.calls, "dispatch --watch 30s") {
 		t.Errorf("the loop must be started after the kill:\n%s", r.calls)
 	}
+	// herdr server start is this path, not the cold `new`. ranger-base-f0g
+	// only matters if the replacement command resumes.
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
+		t.Errorf("husk replacement did not arm --resume:\n%s", r.calls)
+	}
 }
 
 // A loop killed with its pane never removes its pidfile. Existence is not
@@ -392,7 +397,7 @@ func TestAutostartArmsResumeByDefault(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("exit %d:\n%s", r.code, r.out)
 	}
-	if !strings.Contains(r.calls, "--resume") {
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
 		t.Errorf("armed loop does not resume — a settled-but-open bead sits forever:\n%s", r.calls)
 	}
 }
@@ -400,17 +405,21 @@ func TestAutostartArmsResumeByDefault(t *testing.T) {
 // Off is available, and only by saying so. An operator who wants the warning
 // and nothing else says false; nothing else in the file turns it off.
 func TestAutostartResumeFalseDisarmsResume(t *testing.T) {
-	w := newHookWorld(t, armed+"autostart_resume: false\n")
+	for _, off := range []string{"false", "no", "0"} {
+		t.Run(off, func(t *testing.T) {
+			w := newHookWorld(t, armed+"autostart_resume: "+off+"\n")
 
-	r := w.run(t, "--startup")
-	if r.code != 0 {
-		t.Fatalf("exit %d:\n%s", r.code, r.out)
-	}
-	if strings.Contains(r.calls, "--resume") {
-		t.Errorf("autostart_resume: false still armed --resume:\n%s", r.calls)
-	}
-	if !strings.Contains(r.calls, "dispatch --watch") {
-		t.Errorf("the loop was not armed at all:\n%s", r.calls)
+			r := w.run(t, "--startup")
+			if r.code != 0 {
+				t.Fatalf("exit %d:\n%s", r.code, r.out)
+			}
+			if strings.Contains(r.calls, "--resume") {
+				t.Errorf("autostart_resume: %s still armed --resume:\n%s", off, r.calls)
+			}
+			if !strings.Contains(r.calls, "dispatch --watch") {
+				t.Errorf("the loop was not armed at all:\n%s", r.calls)
+			}
+		})
 	}
 }
 
@@ -447,5 +456,20 @@ func TestAutostartResumeAndDryRunCompose(t *testing.T) {
 		if !strings.Contains(r.calls, flag) {
 			t.Errorf("armed command is missing %s:\n%s", flag, r.calls)
 		}
+	}
+}
+
+// INSTALL's first arm: dry-run on, resume key still commented. The inverted
+// default has to survive that shape or the observation loop is the old
+// warn-and-sit loop with a dry-run flag on it.
+func TestAutostartDryRunStillResumesByDefault(t *testing.T) {
+	w := newHookWorld(t, armed+"autostart_dry_run: true\n")
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume --dry-run") {
+		t.Errorf("dry first-arm lost default --resume:\n%s", r.calls)
 	}
 }
