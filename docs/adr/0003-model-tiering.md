@@ -1,7 +1,9 @@
 # ADR 0003 — Model tiering: which model, how much, per persona and bead
 
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
-(ADR 0013 §6: unmapped tier displays as `default`, not the intent name)*
+(ADR 0013 §6: unmapped tier displays as `default`, not the intent name)
+· amended 2026-08-25 (§1/§3: the mapping can miss; rangerhq-oay shipped
+the mechanism, ranger-base-lzx writes it down)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -51,8 +53,10 @@ model. When `{model}` is empty the surfaces that *display* the tier
 never `<runtime>/strong`. A PID `tier: strong` on an unmapped runtime is
 a `posse agent check` / `runtime check` warning. Overflow still never
 moves `strong` (ADR 0010 §2b); an explicit `--runtime` is the operator's
-decision and launches. Availability preflight is per adapter; no adapter
-→ no preflight (ADR 0013 §6).
+decision and launches. The mapping can miss: a resolved tier names a
+model id this account may not have. That is a launch substitution, not
+a display question — Amendment 2026-08-25. ADR 0013 §6 still holds for
+the unmapped case: no catalog posse can read → no preflight.
 
 **2. Where the tier comes from — precedence, most specific wins:**
 
@@ -81,6 +85,13 @@ is realized by the wall** on that (runtime × cage) — no
 `--allow-degraded` at `fast`, ever. A PID may also pin `tier_floor:`
 (e.g. `standard` for a persona whose critical guardrail is prose-only).
 Below the floor → refuse, same message shape as an unrealized gate.
+
+*(Amended 2026-08-25.)* The availability preflight never refuses on its
+own. It runs after §2 resolution and before this check, and hands the
+parity check and `tier_floor:` the *substituted* (runtime, tier) pair —
+both rule on what would really launch, not on what was asked for. A
+launch that would drop below the floor still refuses; the fallback line
+prints either way.
 
 ⚙ **Dial D — floor default**. Recommended: `standard` fleet-wide; `fast`
 only via an explicit label/map signal *and* full parity.
@@ -126,6 +137,11 @@ interactive spend stays visible, never gated.
   behind the cost seam (ADR 0012 D4), uncounted runtimes stated.
 - The metric `cost-per-closed-bead` by tier joins the metrics catalog so
   the step-down dials can be judged, not guessed.
+- Session meta gains `fallback:`; listings wear `⤵️fallback` beside a
+  `@runtime/tier` tag that already names the substitute. `posse cost`
+  needed no change: `TierForModel` reads the model out of the
+  transcript. Dispatch reads the launch record back (`effectiveTier`)
+  rather than probing again.
 
 ## Alternatives rejected
 
@@ -138,3 +154,162 @@ interactive spend stays visible, never gated.
   cheaper than a bad design only until it's built.
 - **Token budgets per persona.** Personas don't spend, beads do; the pass
   and the day are the units the operator actually watches.
+
+## Amendment 2026-08-25 — the mapping can miss
+
+*Shipped as rangerhq-oay; this section is the record, not a second
+design. Operator decisions 2026-08-20 (on that bead's comments) are
+quoted as rules, not re-opened.*
+
+§1 said a tier is a name, mapped per runtime to a model id. It did not
+say what happens when that id is not on the account. On 2026-08-20 the
+operator's own session lost the strong model mid-day; a persona resolving
+`tier: strong` would have launched anyway, the CLI would have served
+whatever it falls back to, and nobody would have been told the shop had
+stopped thinking at the tier its PID claims. `posse cost` would have
+filed the spend under the substitute's tier with no line saying why.
+
+**Decision.** After §2 has resolved a (runtime, tier) pair and before §3
+runs, the launch asks whether the model that pair names is one this
+account can run. Unavailable → **substitute**, loudly, recorded, and
+never as a refusal of the preflight's own. Four rules, in the operator's
+words:
+
+1. **Cheapest honest probe.** A zero-token GET of the account's model
+   catalog, same credential the plan guard already reads, shared through
+   `$RHQ_HOME/state/model-catalog.json` behind `model_probe_ttl:`
+   (default **1h**, `0` = every launch asks). Rate-limit cooldowns are
+   shared across processes the same way `plan-usage.json` is. The
+   catalog is the provider's store of record; the file is a derived
+   snapshot with an age on it (Helland: data on the outside is from the
+   past). Last-writer-wins is right for a snapshot. A runtime is probed
+   only when posse knows a catalog for its ids — today, when its
+   `egress:` names the Anthropic models host — so a template-only
+   runtime on the same API is covered and a built-in that moves is not
+   miscategorised by a stale name check. That is the precise form of
+   ADR 0013 §6's "no adapter → no preflight."
+2. **Unavailable is loud.** One line naming persona, asked-for tier,
+   wanted model, and substitute (`richard: tier strong wants
+   claude-fable-5 — unavailable, falling back to claude-opus-5`).
+   Session meta gains `fallback:` (the line); `tier:` / `runtime:`
+   already name what actually launched, the way `cage:` names the cage
+   it got. Listings wear `⤵️fallback` *beside* the `@runtime/tier` tag,
+   which now names the substitute. Dispatch reads that record back
+   (`effectiveTier`) so the work prompt tells the persona the tier it
+   is actually thinking at — one probe, one line, the meta as the
+   launch's store of record (ADR 0011 §3). `posse cost` was already
+   honest: `TierForModel` reads the transcript, not the PID.
+3. **The preflight never refuses.** "A degraded model is worse than
+   nothing" is the operator's judgement, recorded in advance as
+   `tier_floor:` (and as §3's no-`--allow-degraded` at `fast`). Both
+   of those still bite, on the substituted pair. The fallback line
+   prints either way.
+4. **Reuse the keys that exist.** `tier_fallback:` for where a miss
+   lands; the runtime's own `model_<tier>:` for what a tier means
+   there. Two operational keys beside them, modelled on
+   `plan_usage_ttl:`: `model_preflight:` (off switch; absent or
+   anything but `false` means on) and `model_probe_ttl:`.
+
+⚙ **Dial H — where a miss lands** (config `tier_fallback:`, one-level
+map). Key = a persona name **or** a tier name (persona wins — a lane
+can need a different substitute than its tier's; the standing example
+is the security lane, whose fallback from the strong model may be a
+different *runtime*). Value = a tier (drop a tier, same runtime), a
+runtime (hop runtimes, same tier), or `none` (no substitute: run the
+unavailable model and say so). Default is `strong` → `standard`,
+which on claude is the strongest model falling to the mid one, and
+it is a **floor rather than a seed**: a map that names other keys
+does **not** take it away. Deliberately unlike `tier_by_label:`,
+where a present key replaces the Dial B default wholesale — here the
+operator's rule is that *everyone* falls back, so adding one persona
+line must not silently switch the rest of the shop off. The walk is
+bounded (four hops); a cycle or a typo is a clause in the loud line,
+not a launch refusal.
+
+**Fail-open, one direction only.** Only a catalog that was actually
+read and does not contain the model moves a launch. Unreadable
+credential, unreachable endpoint, 429, empty answer, runtime with no
+per-tier mapping, preflight off — all UNKNOWN, and unknown launches
+exactly what it was asked to, with no launch warning. The request
+outcome is recorded in `state/model-catalog.log` so UNKNOWN is
+diagnosable without changing that launch. A preflight that guessed
+"unavailable" would silently downgrade the whole shop, which is the
+failure it exists to prevent, one level up. The check-then-launch
+window is a TOCTOU on a catalog another actor (the provider) mutates;
+staleness is made harmless by failing open in the expensive-to-be-wrong
+direction, not by narrowing the window.
+
+**What the meta records, relaunch replays.** A session degraded during
+an outage stays there until it is *recreated* after the model returns.
+Re-deciding a live session's model under a running CLI is a claim
+posse cannot make good on. Same trade as `cage:`.
+
+**Out of scope — catalog membership is not allotment.** A model can
+remain in the catalog while the account cannot spend on it. Measured
+2026-08-24/25: a strong-tier session returned a synthetic "Fable 5
+limit" message and settled idle without doing work; the preflight saw
+nothing wrong. That is a **turn outcome**, not a catalog miss (ADR
+0013 §6; detection already shipped). Demotion-on-exhaustion is a
+different signal and a different bead.
+
+**Consequences of this amendment**
+
+- `internal/rhq/modelavail.go`: `App.TierPreflight` / `PreflightReport`;
+  `planLaunch` calls it after §2 and before §3, reloads the runtime on
+  a hop, records `launchPlan.Fallback`.
+- `posse gates <persona>` prints the verdict per runtime — how an
+  operator tells "the strong model is gone" from "the probe never
+  answers on this box" without launching.
+- Credential cadence is a second consumer of the same Keychain item
+  at every launch, not only in an armed guard. Security review of
+  that is a different lane (already filed); this ADR does not reopen
+  the extraction path.
+
+**Alternatives rejected (this amendment)**
+
+- **Let the CLI fall back silently.** The incident. Spend moves
+  tiers, listings lie, the PID's claim is theatre.
+- **Refuse the launch.** The clever one: don't start work you can't
+  think at. Operator, 2026-08-20: a degraded model is worse than
+  nothing, and `tier_floor:` is where that call is recorded in
+  advance. A launcher that refuses over availability second-guesses
+  a dial that already exists.
+- **Hardcode strong → the mid model.** Cheaper than a map. Rejected
+  because one lane's fallback may be a *runtime hop*, not a cheaper
+  model (operator, 2026-08-20, security lane). A per-persona key
+  that can name a runtime is the whole reason the map exists.
+- **`tier_by_label:`-style "present key replaces the default."** One
+  persona line would switch everyone else off. The operator's rule
+  is that everyone falls back; the default is a floor.
+- **Treat unknown as unavailable.** Silently demotes the fleet the
+  first time the credential or the endpoint blinks. The expensive
+  guess, inverted.
+- **Probe per prompt, or re-decide on relaunch.** A live session's
+  model was chosen when it started. Re-probing under a running CLI
+  cannot change it; re-writing `tier:` on relaunch would.
+- **New vocabulary** (`model_fallback:`, a fourth tier, a PID key).
+  The keys already existed; two operational knobs beside them.
+- **Read allotment from the catalog.** Different fact. The catalog
+  stayed populated through two measured exhaustion incidents. Folding
+  them together would have the preflight "save" a case it cannot see.
+
+**MEASURED vs ASSUMED (this amendment)**
+
+- `/v1/models` exists, accepts this account's OAuth token, and
+  returns the ids the claude tier table names — **MEASURED**
+  2026-08-23 (unauthenticated 401 vs `/api/oauth/models` 404; live
+  catalog of ten ids including all three mapped models).
+- Both fallback shapes (default tier drop; per-persona runtime hop)
+  — **MEASURED** on a doctored snapshot against the real binary.
+- `TierForModel` already counts the model that ran — **MEASURED**
+  (regression pinned at close of rangerhq-oay).
+- Catalog membership ≠ allotment exhaustion — **MEASURED**
+  2026-08-24/25.
+- TTL 1h, 5s probe timeout, 4-hop bound — **ASSUMED** (access
+  changes on subscription scale, not pass scale; a launch must not
+  hang on a monitoring call; a long chain is a config the operator
+  should see). The 1h was chosen to be generous to the endpoint and
+  still catch a day-long outage on the next pass, not measured as
+  optimal.
+- Relaunch-replays-the-substitute — **JUDGED** (honest with `cage:`),
+  not A/B'd against re-deciding.
