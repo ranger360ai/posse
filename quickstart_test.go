@@ -83,11 +83,12 @@ func TestMakeInstallQuickstartsAddLocalBinToPathBeforeInit(t *testing.T) {
 	}
 }
 
-// ranger-base-5yl: the advertised posse new --dir ~/code/myproj dies
-// directory-not-found on a machine that has never created that path.
+// ranger-base-5yl: the advertised posse new --dir ~/code/myproj died
+// directory-not-found on a machine that had never created that path. `posse
+// new` still refuses a missing dir on purpose — a typo must not silently
+// become an empty workspace — so every surface that advertises the example
+// path has to make it first.
 func TestQuickstartsMkdirBeforeExampleNewDir(t *testing.T) {
-	t.Skip("ranger-base-5yl: advertised posse new --dir ~/code/myproj with no mkdir")
-
 	const newLine = "posse new myproj --dir ~/code/myproj"
 	for _, path := range []string{"README.md", "www/index.html", "INSTALL.md"} {
 		contents, err := os.ReadFile(path)

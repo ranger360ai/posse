@@ -54,6 +54,7 @@ make install                     # clean build of HEAD, then promote → ~/.loca
 posse init                       # seed $RHQ_HOME (default ~/.config/rhq) from the
                                  # examples: examples/ beside the binary when there
                                  # is one, else the copy embedded at build time
+mkdir -p ~/code/myproj           # --dir must exist; point it at a project of yours
 posse new myproj --dir ~/code/myproj --cmd claude
 posse list                       # live agent state per session
 posse prompt myproj "fix the failing test" --wait
