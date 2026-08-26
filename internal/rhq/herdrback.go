@@ -473,6 +473,7 @@ type HerdrSession struct {
 	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
 	Fallback    string // persona sessions: the tier's model was unavailable and this is what ran instead ("" = it got what it asked for)
 	TurnFailure string // provider refused the dispatch turn before model work began
+	Bead        string // the bead dispatch launched this session to work ("" = not a dispatched bead session; ADR 0013 §4)
 	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
 	Dir         string // working directory (from meta; "" for foreign sessions)
 	Agent       string
@@ -601,7 +602,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
-			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Crew: m.Crew, Dir: m.Dir,
+			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
 			Status: status(ws), Focused: ws.Focused,
 		})
 	}

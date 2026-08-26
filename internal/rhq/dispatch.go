@@ -30,6 +30,10 @@ package rhq
 //       working (rangerhq-khc)
 //     → closed by the persona → ✓ · blocked → flagged for a human
 //       (herdr's sidebar already shows it) · settled-but-open → review
+//     → end of pass: the auto-reap sweep (autoreap.go, rangerhq-us8) kills
+//       every per-bead session whose bead now reads closed and whose agent
+//       herdr calls idle/done — never a crew session, the persona's own
+//       reusable slot, or a bead this same pass just prompted
 //
 // One bead per session per pass; personas busy (working/blocked) are
 // skipped. Sessions are launched serially (create → await → claim →
@@ -76,6 +80,7 @@ type Dispatcher struct {
 	Tier          string        // --tier: model tier override for sessions this pass creates (ADR 0003; label/map resolution is rangerhq-6eb)
 	AllowDegraded bool          // --allow-degraded: launch sessions whose gates the wall cannot fully realize (operator's call, never dispatch's own)
 	Cage          string        // --cage: cage tier for sessions this pass creates (over the PID's cage:)
+	NoReap        bool          // --no-reap: skip the end-of-pass auto-reap (autoreap.go) regardless of config auto_reap:
 	PromptWaitMS  int           // one --wait leg: how long to watch before asking the agent whether it is still working (0 = herdr default, indefinite)
 	WaitCeiling   time.Duration // total time a fired prompt may stay in flight before the pass stops waiting on it (claim kept)
 	StartupWait   time.Duration // how long to wait for agent detection, and again for first settle
@@ -553,8 +558,9 @@ var beadIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 // session per dispatched bead — <persona>-<repobase>-<beadid> — so
 // context never accumulates across beads and cost attribution is per
 // bead. An in_progress bead resumes in its own session (or a fresh one
-// of the same name if that died). Sessions of finished beads are left
-// idle for the operator or --watch to reap (posse kill).
+// of the same name if that died). A finished bead's session goes idle and
+// the end-of-pass auto-reap (autoreap.go, rangerhq-us8) kills it on a later
+// pass — `auto_reap: false` or --no-reap falls back to `posse kill` by hand.
 func SessionForBead(persona, dir, id string) string {
 	return SessionFor(persona, dir) + "-" + sessionSanitizeRe.ReplaceAllString(id, "-")
 }
@@ -866,6 +872,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	}
 	if len(beads) == 0 {
 		fmt.Fprintln(d.Out, "no ready work")
+		// A quiet pass is still a pass: the steady state is exactly zero
+		// ready beads, and it must not be the one case that never sweeps.
+		d.autoReapPass(nil)
 		return 0, nil
 	}
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).
@@ -898,6 +907,16 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	if stillWorking > 0 {
 		fmt.Fprintf(d.Out, "◷ %d bead(s) still with their agent — claims kept; a later pass sees them held, not free\n", stillWorking)
 	}
+
+	// The end-of-pass reaper (rangerhq-us8): guard every session this pass
+	// itself just prompted — a settle read this soon after a fresh prompt is
+	// exactly the race PromptGrace exists for elsewhere, and a bead closed
+	// mid-pass is safer left for the NEXT pass's fresh read.
+	justPrompted := map[string]bool{}
+	for _, p := range pending {
+		justPrompted[p.session] = true
+	}
+	d.autoReapPass(justPrompted)
 	return dispatched, nil
 }
 

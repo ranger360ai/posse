@@ -572,6 +572,9 @@ func main() {
 			case "--allow-degraded":
 				d.AllowDegraded = true
 				rest = rest[1:]
+			case "--no-reap":
+				d.NoReap = true
+				rest = rest[1:]
 			case "--cage":
 				if len(rest) < 2 || !rhq.ValidCage(rest[1]) {
 					die(rhq.Die("--cage needs shims, seatbelt, or container"))
@@ -1424,6 +1427,14 @@ dispatch (beads):
       --tier <name>            model tier for sessions created this pass
       --allow-degraded         launch sessions whose gates the wall cannot fully realize (marked; never on its own)
       --cage <tier>            wall tier for sessions created this pass
+      --no-reap                skip the end-of-pass auto-reap this pass only
+                                 (config auto_reap:, default true, is the
+                                 standing switch; --dry-run only lists what
+                                 the reaper would kill — a per-bead session
+                                 whose bead is closed and whose agent herdr
+                                 calls idle/done; never a crew session, the
+                                 persona's own reusable slot, or a bead this
+                                 same pass just prompted)
       --resume                 re-prompt in_progress beads whose persona
                                  session is alive and idle, and take them
                                  before fresh work (default: only interrupted
