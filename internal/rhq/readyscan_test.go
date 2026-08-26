@@ -198,17 +198,33 @@ func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 	scanConfig(t, b.App, scanRepo(t, ""), scanRepo(t, ""))
 
+	const wantPasses = 2
+	tap := newPassTap(wantPasses)
+	d.Out = tap
+
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		time.Sleep(150 * time.Millisecond)
-		cancel()
+		select {
+		case <-tap.reached:
+			cancel()
+		case <-ctx.Done():
+		}
 	}()
-	passes := d.Watch(ctx, "", "", 0, 10*time.Millisecond, 40*time.Millisecond)
-	out := dispatcherOut(d)
-	if passes < 2 {
+	done := make(chan int, 1)
+	go func() { done <- d.Watch(ctx, "", "", 0, 10*time.Millisecond, 40*time.Millisecond) }()
+
+	var passes int
+	select {
+	case passes = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("watch never returned, though cancel fired on pass %d's header:\n%s", wantPasses, tap.String())
+	}
+	out := tap.String()
+	if passes < wantPasses {
 		t.Fatalf("watch must keep looping after a pass error, got %d:\n%s", passes, out)
 	}
-	if strings.Count(out, "✗ pass failed:") < 2 {
+	if strings.Count(out, "✗ pass failed:") < wantPasses {
 		t.Errorf("every failed pass must be named:\n%s", out)
 	}
 	if !strings.Contains(out, "unknown, not empty") {
