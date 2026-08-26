@@ -3,7 +3,8 @@
 *Status: accepted 2026-08-24 · owner: architect · amends 0003 §1
 display, 0010 §1/§5, 0012 D4.1 · amended 2026-08-26: cl7 probe results
 folded into §2/§4/Claims; codex rule-suppression decided in §4
-(ranger-base-cl7, ranger-base-00f)*
+(ranger-base-cl7, ranger-base-00f); §2 busy key gains a per-pass
+ceiling (ranger-base-8h5p)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -137,6 +138,34 @@ of *this pane* is not a fact about the persona. Split:
 
 Tonight's "one miss sterilises the queue" is the first arm wearing the
 second arm's consequence.
+
+**Ceiling (added 2026-08-26, ranger-base-8h5p).** The split's claim is
+"*one* pane failing says nothing about the persona" — and one is the
+quantifier, not a flourish. A slot's session failures within a pass are
+consecutive attempts by construction (a success sets the busy key and
+ends them), and each is a fresh Dial F pane sharing everything with the
+last except the pane itself. Two identical failures on two independent
+panes make the shared cause — the persona on this runtime — the better
+explanation than two coincident pane-local ones. So the pane-local
+explanation gets exactly one retry: the **second session failure of a
+slot in one pass benches the slot** for the rest of the pass, wearing
+the persona arm's consequence, with a line saying it was the second,
+not the first. Both panes stay stranded so the working/blocked guard
+ignores them, exactly as today.
+
+Two is derived, not tuned. The floor is two: a ceiling of one is the
+3j8 sterilise under a new name. And counts above two buy nothing,
+because the argv delivery above already drained the benign case out of
+this arm — a slow cold start now lands in `awaitDelivered`'s
+seen=false outcome (launched, claim kept, judged next pass), not in
+session failure, so what the arm still contains is dominated by
+deterministic persona faults (exe missing, instant crash, auth exit)
+that repeat identically per pane at ~`startup_wait:` each. A runtime
+that legitimately fails detection twice on fresh panes has a wrong
+`startup_wait:`, and that declared key — not this ceiling — is where
+slowness belongs. The bench is pass-local like the rest of the busy
+map: the next pass starts at zero, so a machine-load fluke costs at
+most the tail of one pass.
 
 ### 3. Plan guard — the meter gates the beads that spend it
 
@@ -340,6 +369,32 @@ it was asked and must say so when the first turn is a limit.
 - **A fifth store for "this runtime is trusted."** Trust is a built-in
   / yaml default updated after a measured close. Derived auto-promotion
   is a store that can disagree with the bead (ADR 0011's class).
+- **Leaving the session-failure arm unbounded** (what ranger-base-dg5
+  shipped, implementing this ADR's original §2 literally — added
+  2026-08-26, ranger-base-8h5p). Its defense was "a pass is already
+  bounded by `-n`, and `--watch` backs off on a quiet pass." Both
+  halves fail on reading: `-n` defaults to 0, unlimited, and each
+  failed launch consumes an attempt *and* a serialized
+  `startup_wait:`, so a persona whose CLI is broken in any
+  non-loadable way turns the pass into its own wait loop — thirty
+  ready beads is thirty waits, ~22 minutes, delaying every persona
+  after it in the same pass; and a mixed fleet's pass is never
+  zero-dispatch, so `--watch` never backs off on it.
+- **An exec preflight instead of a ceiling** (the arm that "does not
+  invent policy": LookPath the runtime's argv0 before launching; a
+  miss is the persona failure the grid already names). Rejected as a
+  gate because it answers in the wrong environment: posse's process,
+  the herdr daemon, and the pane's login shell hold three different
+  PATHs — INSTALL already warns about exactly this split — and a
+  false miss (scheduled dispatch's lean PATH, the pane's full one)
+  benches a healthy fleet on a guess. A detector that fails in the
+  dangerous direction is worse than none. It also covers only one
+  inhabitant of the arm: auth-exit and instant-crash resolve on PATH
+  fine and drain identically. Allowed as *diagnosis only*, the NOTES
+  precedent: a session-failure line may add that the exe is absent
+  from posse's own PATH, worded as posse's observation and never the
+  pane's, and the stranded pane's own tail (`posse peek`) remains the
+  honest instrument. Diagnosis decides nothing.
 
 ## Claims
 
@@ -380,6 +435,16 @@ it was asked and must say so when the first turn is a limit.
   NOTES/INSTALL; `runtime check` prints it against `latest_version`
   because the dismissal expires per release.
 
+- Read from source, 2026-08-26 (ranger-base-8h5p): `-n` defaults to 0
+  = unlimited (`cmd/posse/main.go`), and `fireLoop` counts a failed
+  launch as an attempt, so the unbounded-arm cost above is the
+  default, not an edge; `awaitDelivered` returns seen=false — a
+  successful launch, claim kept — when a pane exists but no rule
+  matched, so on `prompt: argv` runtimes a slow cold start does not
+  reach the session-failure arm at all; session failures of one slot
+  in one pass are consecutive attempts by construction (any success
+  sets the busy key).
+
 **ASSUMED** (still, after the probe)
 
 - Whether any native rulebook outranks the PID channel in live model
@@ -390,3 +455,14 @@ it was asked and must say so when the first turn is a limit.
   only if the §4 suppression decision is ever revisited.
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
+- That deterministic persona faults dominate what the session-failure
+  arm still catches after argv. Read from the mechanism (the benign
+  case migrated to seen=false), not tallied from a fleet; the
+  `record-skip-rate` cousin for this arm would be a
+  second-failure-benches count per runtime, worth eyeballing before
+  anyone proposes raising the ceiling.
+- That claude's first-run interstitials recur on every fresh dispatch
+  pane until the operator dismisses one by hand (nothing under
+  dispatch presses Enter). If true, bench-on-second is the right
+  outcome there too — panes cannot fix an instance-config fact (§2
+  layer 2). Unmeasured since the 3j8 evening.

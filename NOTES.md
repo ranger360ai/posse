@@ -1006,15 +1006,23 @@ working/blocked guard does not read a session left sitting on a splash
 (which herdr reports `blocked`) as the persona being busy — that would put
 the sterilise back one guard further down.
 
-**The cost, said out loud.** Before this, one failed launch benched the
-persona and the pass paid one startup wait; now every bead's own launch can
-pay its own. A persona whose CLI is missing on a queue of thirty beads
-spends thirty startup waits in a pass instead of one. That is the trade ADR
-0013 made deliberately — one grok cold start taking a persona's whole queue
-out of the pass was the failure being fixed (`ranger-base-3j8`) — and it
-supersedes rangerhq-vk2's "one detection timeout per pass" rule, which was
-written when a persona had one session per repo. Whether that ceiling wants
-a bound is `ranger-base-8h5p`.
+**The cost, and its ceiling.** Before the split, one failed launch benched
+the persona and the pass paid one startup wait; the split let every bead's
+own launch pay its own — deliberately, because one grok cold start taking a
+persona's whole queue out of the pass was the failure being fixed
+(`ranger-base-3j8`), superseding rangerhq-vk2's "one detection timeout per
+pass" rule from the one-session-per-repo era. Unbounded, though, a persona
+whose CLI is broken (exe missing, instant crash, auth exit — all of which
+look exactly like "no agent detected" from herdr's side) spends a
+serialized startup wait per ready bead, and `-n` defaults to unlimited. So
+the pane-local explanation gets exactly one retry: the **second** session
+failure of a slot in one pass benches the slot for the rest of the pass
+(ADR 0013 §2 "Ceiling", `ranger-base-8h5p`). Two is the floor that keeps
+the 3j8 fix and the ceiling that caps the drain; the benign slow-start case
+lands in `awaitDelivered`'s seen=false outcome on argv runtimes, not here.
+An exec-preflight gate was rejected in the same amendment — posse's PATH is
+not the pane's — see the ADR's alternatives. (Implementation:
+`ranger-base-4ctv`.)
 
 `record:` is where grok and codex differ, and only for a measured reason:
 the qa lane on grok closed a dispatched bead properly, and 3/3 dispatched
