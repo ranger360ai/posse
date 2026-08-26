@@ -164,3 +164,131 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 		}
 	}
 }
+
+// rangerhq-t9by — close of rangerhq-2f5r. The wall lmq9 landed covers THIS
+// incident's shared-index half. The four forms gilfoyle measured against the
+// live hook, driven with the incident's own argv (`git commit -F <file>`,
+// not `-m`): B holds staged work throughout.
+//
+// Half one is the unguarded incident: without the hook, `git add mine &&
+// git commit -F msg` captures B's staged file. If git stops sweeping, this
+// pin dies and the wall is guarding a ghost. Half two is the wall.
+func TestQA2f5rIncidentFourForms(t *testing.T) {
+	msg := filepath.Join(t.TempDir(), "msg")
+	if err := os.WriteFile(msg, []byte("incident\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Half one: the incident, unguarded.
+	_, git, write := qaCommitRepo(t)
+	write("a.txt", "B-STAGED")
+	git(nil, "add", "a.txt")
+	write("b.txt", "A-MINE")
+	git(nil, "add", "b.txt")
+	if out, err := git(nil, "commit", "-F", msg); err != nil {
+		t.Fatalf("unguarded incident must land: %v %s", err, out)
+	}
+	if out, _ := git(nil, "show", "--name-only", "--format=", "HEAD"); !strings.Contains(out, "a.txt") || !strings.Contains(out, "b.txt") {
+		t.Fatalf("premise: `git add mine && git commit -F msg` must capture B's staged a.txt, got %q", out)
+	}
+
+	// Half two: the same board with the guard. B stays staged through every form.
+	repo, git2, write2 := qaCommitRepo(t)
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	write2("a.txt", "B-STAGED")
+	git2(nil, "add", "a.txt")
+	write2("b.txt", "A-MINE")
+	git2(nil, "add", "b.txt")
+
+	stillB := func(after string) {
+		t.Helper()
+		if out, _ := git2(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(out) != "a.txt" && !strings.Contains(out, "a.txt") {
+			t.Errorf("after %s, B's staged entry missing: %q", after, out)
+		}
+		if out, _ := git2(nil, "show", ":a.txt"); strings.TrimSpace(out) != "B-STAGED" {
+			t.Errorf("after %s, B's staged content changed: %q", after, out)
+		}
+	}
+
+	// Form 1: the incident itself — git add mine then commit -F, no pathspec.
+	out, err := git2(persona, "commit", "-F", msg)
+	if err == nil || !strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+		t.Errorf("form1 (incident argv) must be refused: %v %s", err, out)
+	}
+	stillB("form1")
+	if out, _ := git2(nil, "diff", "--cached", "--name-only"); !strings.Contains(out, "b.txt") {
+		t.Errorf("form1 must leave A's staged mine.txt too, got %q", out)
+	}
+
+	git2(nil, "reset", "-q", "HEAD", "--", "b.txt")
+	write2("b.txt", "A-MINE")
+
+	// Form 2: git commit -a, named as -a.
+	if out, err := git2(persona, "commit", "-am", "sweep-all"); err == nil ||
+		!strings.Contains(out, "refused by posse gate: git commit -a") {
+		t.Errorf("form2 (`git commit -a`) must be refused as -a: %v %s", err, out)
+	}
+	stillB("form2")
+
+	// Form 3: the blessed form. Commits only mine; B stays in the shared index.
+	if out, err := git2(persona, "commit", "-F", msg, "--", "b.txt"); err != nil {
+		t.Fatalf("form3 (blessed `git commit -F msg -- b.txt`) must pass: %v %s", err, out)
+	}
+	if out, _ := git2(nil, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(out) != "b.txt" {
+		t.Errorf("form3 must commit only b.txt, got %q", out)
+	}
+	if out, _ := git2(nil, "show", "HEAD:b.txt"); strings.TrimSpace(out) != "A-MINE" {
+		t.Errorf("form3 HEAD:b.txt: %q", out)
+	}
+	if out, _ := git2(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(out) != "a.txt" {
+		t.Errorf("form3 must leave B staged, got %q", out)
+	}
+	stillB("form3")
+
+	// Form 4: the private GIT_INDEX_FILE workaround recorded on 2f5r. Dead.
+	idx := filepath.Join(t.TempDir(), "index")
+	priv := []string{"RHQ_PERSONA=qa", "GIT_INDEX_FILE=" + idx}
+	write2("b.txt", "A-VIA-PRIVATE")
+	if out, err := git2(priv, "read-tree", "HEAD"); err != nil {
+		t.Fatalf("read-tree private index: %v %s", err, out)
+	}
+	if out, err := git2(priv, "add", "--", "b.txt"); err != nil {
+		t.Fatalf("add private index: %v %s", err, out)
+	}
+	head, _ := git2(nil, "rev-parse", "HEAD")
+	out, err = git2(priv, "commit", "-m", "workaround")
+	if err == nil || !strings.Contains(out, "refused by posse gate: a commit from a private GIT_INDEX_FILE") {
+		t.Errorf("form4 (private GIT_INDEX_FILE) must be refused as private index: %v %s", err, out)
+	}
+	if now, _ := git2(nil, "rev-parse", "HEAD"); strings.TrimSpace(now) != strings.TrimSpace(head) {
+		t.Errorf("form4 moved HEAD")
+	}
+	stillB("form4")
+}
+
+// rangerhq-2f5r residual, filed rangerhq-lvu9: the blessed form commits the
+// WORKING TREE content of the named path, not what you staged. The wall
+// closed the shared-index half of the incident; this half rides through
+// because the form is correct. Isolation (rangerhq-09o2) is the real fix.
+func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
+	repo, git, write := qaCommitRepo(t)
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	write("a.txt", "v1\ndinesh line\nLAURIE HALF-WRITTEN\n")
+	msg := filepath.Join(t.TempDir(), "msg")
+	if err := os.WriteFile(msg, []byte("msg about dinesh line only\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git(persona, "commit", "-F", msg, "--", "a.txt"); err != nil {
+		t.Fatalf("blessed form must pass: %v %s", err, out)
+	}
+	body, _ := git(nil, "show", "HEAD:a.txt")
+	if !strings.Contains(body, "dinesh line") || !strings.Contains(body, "LAURIE HALF-WRITTEN") {
+		t.Fatalf("residual: named path commits the file on disk; got %q", body)
+	}
+}
