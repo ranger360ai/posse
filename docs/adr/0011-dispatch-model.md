@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
-*Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder) ·
-owner: architect*
+*Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
+§2 identity arm — restored 2026-08-26, see §2) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -94,6 +94,39 @@ older than a grace (5m — younger is exactly the race window) **and**
 is gone — a listing snapshot is never sufficient evidence. The socket
 guards stay in front. Observable for the verify bead: the race's repro
 (three concurrent `--persona` passes) deletes zero metas.
+
+*(Amended 2026-08-23: (b) as written answers* liveness*, and the
+measurement closed Appendix A's second asterisk the bad way — herdr's id
+allocator is `max(live id)+1`, recomputed from the live set at every
+server process start, restart and live handoff both, so an id that
+answers alive may be a stranger's workspace. The rule gains an* identity
+*arm: the answer must also be ours — the workspace's `label` (every
+workspace is created with `--label <session name>`) fenced by `gen:`, a
+meta field holding dev:inode of the api socket, which herdr recreates at
+exactly the moments the allocator resets. Inside one generation ids are
+never re-issued, so a label mismatch there is a rename and the session
+keeps its name; across generations rename and re-issue leave identical
+evidence, so the ambiguous case does nothing to the file. Three paths ask
+the predicate, not one: the prune, the create (`mustNotOrphan`), and the
+live branch of `Sessions()` — which this section never covered and which
+is where the damage actually was: a stale meta whose id a stranger holds
+used to be listed over that workspace, and every addressing path
+(Resolve, AgentTarget, KillSession, RelaunchAgent) reads that listing.
+Two deliberate asymmetries. The fence is NOT a third arm of the socket
+guard (`cannotAnswerFor`): `workspace_not_found` stays proof of death in
+ANY generation — a workspace never changes its id while it exists, and
+the ids that survive a restart are the live ones, unchanged — while a
+generation mismatch that kept metas would keep every meta forever after
+any restart. And the create refuses rather than repairing itself onto
+the label-matched workspace: a repair is only right if the session were
+alive under a different id, which cannot happen. "Not mine" never means
+"delete the meta" — kept, left out of the listing, reported with the
+repair recipe. `gen:` is stamped at create and backfilled only on
+positive identity. Tests: `internal/rhq/metaidentity_test.go`; promote
+gate: `scripts/verify-prune-guard.sh`. This amendment was written
+2026-08-23 in the private instance and lost in the private→public
+restatement; restored 2026-08-26 from the closing record, mechanisms
+re-verified against this tree.)*
 
 **3. The session meta is the run record.** Dial F already made
 session ≈ bead-run; the meta file is the record dispatch wrote and then
@@ -245,10 +278,20 @@ under the launcher flock (correction bead filed). On ordering, the
 reviewed alternative — write the meta before the workspace exists —
 inverts badly: a meta naming no workspace is unprunable by construction
 here; the current order (workspace → meta → command) plus grace is
-right. Second asterisk: `WorkspaceAlive(id)` proves a workspace
-*answers to that id* — identity only if herdr never recycles ids, which
-is assumed, not verified, and pid-recycling is exactly this failure
-(correction bead filed).
+right. Second asterisk, closed — **measured false**: herdr's allocator
+is `max(live id)+1`, recomputed from the live set at every server
+process start, restart and live handoff both (probe re-run on herdr
+0.8.0, `scripts/verify-id-recycle.sh`; measurement table in NOTES.md
+"Workspace ids recycle across a server process boundary"). So
+`WorkspaceAlive(id)` proves a workspace *answers to that id* and nothing
+more — the pid-recycling failure arrived exactly as predicted, one
+counter over — and not-found is a statement about the id's *present*:
+an id dead today can answer alive tomorrow, for a stranger. Fixed by
+§2's identity arm (amendment there). What stays true and load-bearing:
+not-found at ask time remains proof that the *meta's* workspace is dead
+in any generation, because a workspace never changes its id while it
+exists — which is exactly why the fence lives beside the death check
+instead of vetoing it.
 
 **"bd is the queue" is database-as-queue done the sanctioned way.** The
 folklore says never; the field's modern answer is: fine, *if you use the
