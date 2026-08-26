@@ -10,7 +10,7 @@ posse        the harness (bespoke, this repo)
              personas · env sets · recipes · dispatch · cockpit
   │
   ├─ beads   work substrate — dependency-aware task graph, agent mail,
-  │          project memory        github.com/steveyegge/beads (bd)
+  │          project memory        github.com/gastownhall/beads (bd)
   │
   ├─ herdr   presentation & oversight — workspaces, live agent state
   │          (working/blocked/idle)         herdr.dev
@@ -34,7 +34,7 @@ implementation.
 ## Requirements
 
 - [herdr](https://herdr.dev) ≥ 0.8 with its server running
-- [beads](https://github.com/steveyegge/beads) (`bd`) for the work graph —
+- [beads](https://github.com/gastownhall/beads) (`bd`) for the work graph —
   **0.49.1 exactly**; brew's `beads` is 1.2.x and does not read
   `.beads/beads.db` at all
 - Go ≥ 1.26 to build (`make build`); one Go dependency (`golang.org/x/term`)

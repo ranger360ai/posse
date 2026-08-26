@@ -36,14 +36,42 @@ Install these first. Versions matter; two of them are pinned on purpose.
 | tool | version | why pinned | get it |
 |---|---|---|---|
 | **Go** | ≥ 1.26 | builds `posse` | `brew install go` / your distro |
-| **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | https://herdr.dev |
-| **bd** (beads) | **0.49.1 exactly** | 1.2.x replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — a 1.2 binary silently forks your queue. See NOTES.md, *beads (bd) substrate*. | upstream v0.49.1 release binary → `~/.local/bin/bd` |
+| **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | typed below |
+| **bd** (beads) | **0.49.1 exactly** | 1.2.x replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — a 1.2 binary silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, or `grok`. | vendor |
 
 If you install `grok`, pin it: the fleet runs **1.0.5** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
 verify-grok-pin`). An upgrade is a security re-audit, not a version bump.
+
+**herdr** installs with its own script:
+
+```sh
+$ curl -fsSL https://herdr.dev/install.sh | sh
+```
+
+**bd** is a release binary from the beads repo,
+github.com/gastownhall/beads (formerly `steveyegge/beads`; the old URL
+redirects there). Do **not** `brew install beads` — that is 1.2.x, the
+wrong binary per the pin above. Take the pinned tarball, which carries
+`bd` at its root (`checksums.txt` sits beside the assets on the release
+page if you want to verify the download):
+
+```sh
+$ os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+$ mkdir -p ~/.local/bin
+$ curl -fsSL "https://github.com/gastownhall/beads/releases/download/v0.49.1/beads_0.49.1_${os}_${arch}.tar.gz" | tar xzf - -C ~/.local/bin bd
+```
+
+Both land in `~/.local/bin`, which is on no default PATH — the herdr
+installer warns about this and then the warning scrolls away. Put it on
+PATH now, and in your shell profile (`~/.zshrc`), or the Verify below
+dies `command not found` with both tools correctly installed:
+
+```sh
+$ export PATH="$HOME/.local/bin:$PATH"
+```
 
 ```sh
 $ go version && herdr --version && bd version && git --version
@@ -52,8 +80,10 @@ $ go version && herdr --version && bd version && git --version
 says 1.2.x, stop and install 0.49.1 before going further — the rest of this
 runbook will appear to work and will not.
 
-Start the herdr server if it is not running (`herdr` with no arguments
-launches or attaches its persistent session).
+Start the herdr server if it is not running: `herdr` with no arguments
+launches or attaches its persistent TUI session, and `herdr server` runs
+the server headless — installing herdr does not start it, so on a fresh
+machine this step is yours, not optional.
 
 ```sh
 $ herdr status server

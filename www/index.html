@@ -232,10 +232,10 @@
 
   /* ---------- links ---------- */
   a { color: var(--oxblood); text-decoration: none; }
-  .story a, .stack a, footer a {
+  .story a, .stack a, footer a, .terminal-caption a {
     border-bottom: 1px solid rgba(160,58,28,.35);
   }
-  .story a:hover, .stack a:hover, footer a:hover {
+  .story a:hover, .stack a:hover, footer a:hover, .terminal-caption a:hover {
     border-bottom-color: var(--oxblood);
   }
 
@@ -361,7 +361,7 @@
 <span class="ps1">$</span> posse new myproj --dir ~/code/myproj --cmd claude
 <span class="ps1">$</span> posse prompt myproj "fix the failing test" --wait
 <span class="ps1">$</span> posse cockpit   <span class="cmt"># the whole crew at a glance, blocked-first</span></code></pre>
-    <p class="terminal-caption">a release binary — no go needed &middot; still needs herdr &amp; beads &middot; from source: see the readme</p>
+    <p class="terminal-caption">a release binary — no go needed &middot; <a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md#1-prerequisites">still needs herdr &amp; beads</a> &middot; from source: see the readme</p>
   </section>
 
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
@@ -374,7 +374,7 @@
         <span class="what">the harness &mdash; personas, guardrails, dispatch, and the cockpit; the part that&rsquo;s yours</span>
       </li>
       <li>
-        <span class="name"><a href="https://github.com/steveyegge/beads">beads</a><small>work substrate</small></span>
+        <span class="name"><a href="https://github.com/gastownhall/beads">beads</a><small>work substrate</small></span>
         <span class="what">dependency-aware task graph, agent mail, project memory</span>
       </li>
       <li>

@@ -355,6 +355,119 @@ func TestInstallMdStep2BrewRouteNamesTheTapAndTheSilentFailure(t *testing.T) {
 	}
 }
 
+// ranger-base-n5i: INSTALL.md §1 pinned bd 0.49.1 and named herdr, but typed
+// no install command for either — so its own Verify died command-not-found on
+// a clean machine, and the runbook's "do not continue" rule stopped the
+// install at step 1. The get-it trail was a URL for herdr and a bare
+// destination for bd. Keep §1 carrying typed, copy-pasteable installs —
+// herdr's install script, the pinned bd release tarball, and the PATH line
+// for where both land — each before the Verify that needs them.
+func TestInstallMdStep1TypesTheHerdrAndBdInstalls(t *testing.T) {
+	contents, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	start := strings.Index(text, "## 1.")
+	end := strings.Index(text, "## 2.")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatal("INSTALL.md missing §1 / §2 headings")
+	}
+	step1 := text[start:end]
+
+	const verify = "go version && herdr --version && bd version && git --version"
+	verifyAt := strings.Index(step1, verify)
+	if verifyAt < 0 {
+		t.Fatalf("INSTALL.md §1 missing the Verify line %q", verify)
+	}
+	for _, want := range []string{
+		"curl -fsSL https://herdr.dev/install.sh | sh",
+		"https://github.com/gastownhall/beads/releases/download/v0.49.1/beads_0.49.1_${os}_${arch}.tar.gz",
+		`export PATH="$HOME/.local/bin:$PATH"`,
+	} {
+		at := strings.Index(step1, want)
+		if at < 0 {
+			t.Errorf("INSTALL.md §1 missing typed %q", want)
+			continue
+		}
+		if at > verifyAt {
+			t.Errorf("INSTALL.md §1: %q must precede the Verify that needs it", want)
+		}
+	}
+}
+
+// ranger-base-n5i: the beads repo moved — github.com/steveyegge/beads 301s to
+// github.com/gastownhall/beads. A public surface that routes a stranger
+// through the redirect is one upstream housecleaning away from a 404, and the
+// bead pin (0.49.1 exactly) makes these the only download trail we offer.
+func TestPublicSurfacesNameTheBeadsRepoPostRename(t *testing.T) {
+	for _, path := range []string{"README.md", "INSTALL.md", "www/index.html"} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The bare name may appear as history ("formerly steveyegge/beads");
+		// what must not appear is the linkable URL through the redirect.
+		if strings.Contains(string(contents), "github.com/steveyegge/beads") {
+			t.Errorf("%s still links the pre-rename beads repo (github.com/steveyegge/beads 301s; link gastownhall/beads)", path)
+		}
+	}
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "github.com/gastownhall/beads") {
+		t.Error("README.md no longer names the beads repo (github.com/gastownhall/beads)")
+	}
+}
+
+// ranger-base-n5i: the landing page's only word on the two required tools was
+// a caption reading "see the readme", and the readme's §1 pointer led to a
+// section with no typed installs. Keep the caption linking straight to
+// INSTALL.md §1, the section the test above holds to typed commands. Same
+// heading-anchor lockstep as the §2 panel-link pin.
+func TestLandingPageCaptionLinksHerdrAndBeadsToInstallStep1(t *testing.T) {
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	heading := ""
+	for _, line := range strings.Split(string(install), "\n") {
+		if strings.HasPrefix(line, "## 1.") {
+			heading = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			break
+		}
+	}
+	if heading == "" {
+		t.Fatal("INSTALL.md missing ## 1. heading")
+	}
+	anchor := githubHeadingAnchor(heading)
+	if anchor != "1-prerequisites" {
+		t.Fatalf("INSTALL.md §1 heading %q anchors to %q; the caption link and this pin expect %q", heading, anchor, "1-prerequisites")
+	}
+
+	captionAt := strings.Index(string(index), `class="terminal-caption"`)
+	if captionAt < 0 {
+		t.Fatal("www/index.html has no terminal-caption")
+	}
+	caption := string(index)[captionAt:]
+	if end := strings.Index(caption, "</p>"); end >= 0 {
+		caption = caption[:end]
+	}
+	for _, href := range hrefs(caption) {
+		if strings.Contains(href, "github.com/ranger360ai/posse") &&
+			strings.Contains(href, "INSTALL.md") &&
+			strings.HasSuffix(href, "#"+anchor) {
+			return
+		}
+	}
+	t.Fatalf("terminal caption has no href to github.com/ranger360ai/posse … INSTALL.md#%s", anchor)
+}
+
 // ranger-base-4ex: `mktemp -d -t posse-release` is BSD-only. GNU coreutils
 // dies "too few X's in template", which is how the release workflow would
 // have failed on the tag after vet and test went green.
