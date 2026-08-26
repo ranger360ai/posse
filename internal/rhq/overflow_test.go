@@ -141,8 +141,8 @@ func TestOverflowLaunchesEligibleBead(t *testing.T) {
 		t.Errorf("session meta runtime = %+v, want grok", m)
 	}
 	// The prompt header the persona reads names the runtime it is on.
-	if !strings.Contains(log, "runtime/tier: grok/standard") {
-		t.Errorf("the work prompt must name the overflow runtime:\n%s", log)
+	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/standard") {
+		t.Errorf("the work prompt must name the overflow runtime:\n%s", got)
 	}
 	l := f.ledger(t)
 	if len(l) != 1 {
@@ -292,8 +292,8 @@ func TestOverflowUngatedRuntimeLaunches(t *testing.T) {
 	if l := f.ledger(t); l != nil {
 		t.Errorf("an ungated launch owes the ledger nothing: %v", l)
 	}
-	if !strings.Contains(calls(t, f.fake), "runtime/tier: grok/standard") {
-		t.Errorf("the launch must still be grok's:\n%s", calls(t, f.fake))
+	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/standard") {
+		t.Errorf("the launch must still be grok's:\n%s", got)
 	}
 }
 
@@ -330,8 +330,8 @@ func TestOverflowUntrippedGuardReadsNothing(t *testing.T) {
 	if errb.Len() != 0 {
 		t.Errorf("and nothing on stderr: %q", errb.String())
 	}
-	if !strings.Contains(calls(t, fake), "runtime/tier: claude/standard") {
-		t.Errorf("the launch stays on claude:\n%s", calls(t, fake))
+	if got := delivered(t, b.App, fake); !strings.Contains(got, "runtime/tier: claude/standard") {
+		t.Errorf("the launch stays on claude:\n%s", got)
 	}
 	if after, _ := os.Stat(b.App.OverflowLogPath()); after.ModTime() != before.ModTime() || after.Size() != before.Size() {
 		t.Error("an untripped pass must not touch the ledger")

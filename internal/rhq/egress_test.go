@@ -52,7 +52,7 @@ func TestEgressAllowlistIsThePIDPlusTheRuntimesOwnHosts(t *testing.T) {
 		t.Errorf("a path or a phrase is not a host: %q", bad)
 	}
 	rt, _ := a.LoadRuntime("claude")
-	if _, err := a.WrapInCage(badAg, rt, "s1", t.TempDir(), "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err == nil ||
+	if _, err := a.WrapInCage(badAg, rt, "s1", t.TempDir(), "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err == nil ||
 		!strings.Contains(err.Error(), "is not a host") {
 		t.Errorf("and the launch refuses on it rather than dropping it: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestEgressAllowlistIsRenderedFreshAtEveryLaunch(t *testing.T) {
 	rt, _ := a.LoadRuntime("claude")
 	dir := t.TempDir()
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
-	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	hostsFile := a.EgressHostsFile("p", "s1")
@@ -80,7 +80,7 @@ func TestEgressAllowlistIsRenderedFreshAtEveryLaunch(t *testing.T) {
 	// Hand-edit it, drop the host from the PID, launch again.
 	os.WriteFile(hostsFile, []byte("evil.example.com\n"), 0o644)
 	ag2 := cageAgent(t, a, "cage: container\n")
-	if _, err := a.WrapInCage(ag2, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag2, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(hostsFile)
@@ -105,7 +105,7 @@ func TestEgressPlanIsTheRouteAndTheProxyHoldsNothing(t *testing.T) {
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
 	dir := t.TempDir()
-	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := a.LoadEngine(a.ResolveEngine())
@@ -189,7 +189,7 @@ func TestEgressWatcherOutlivesTheExecAndThenTakesTheRouteDown(t *testing.T) {
 	a := cageApp(t)
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
-	if _, err := a.WrapInCage(ag, rt, "s1", t.TempDir(), "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", t.TempDir(), "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	planFile := a.CageArgvFile("p", "s1")
@@ -276,7 +276,7 @@ func TestEgressWatcherWillNotReclaimANewerLaunchsRoute(t *testing.T) {
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
 	dir := t.TempDir()
-	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	planFile := a.CageArgvFile("p", "s1")
@@ -288,7 +288,7 @@ func TestEgressWatcherWillNotReclaimANewerLaunchsRoute(t *testing.T) {
 		t.Error("its own launch is not a newer one")
 	}
 	// A relaunch of the same session: same names, new id.
-	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", dir, "claude", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	next := readPlan(t, planFile)

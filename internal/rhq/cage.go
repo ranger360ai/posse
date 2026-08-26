@@ -615,7 +615,12 @@ func (a *App) CageImageBuilt(e *Engine, image string) bool {
 // same-path in and out, so the container's own sh reads exactly what the
 // host's would have; `exec` in front of it leaves the runtime as the
 // container's PID 1 rather than a child of a shell that outlives nothing.
-func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string, env []string) (string, error) {
+// promptFile is the ADR 0013 §2 argv work prompt ("" = none). The inner
+// `$(cat …)` is expanded by the container's own shell, so the file has to
+// be mounted at the path the line names — the same same-path trick the PID
+// mount uses, and without it a caged argv launch would hand the runtime an
+// empty first turn.
+func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string, env []string, promptFile string) (string, error) {
 	e, err := a.LoadEngine(a.ResolveEngine())
 	if err != nil {
 		return "", err
@@ -675,10 +680,15 @@ func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string,
 	if a.CageInnerGatesReady(e, image) {
 		innerArgv = append(GatesWrapArgv(ag.Name, rt), innerArgv...)
 	}
+	mounts := a.CageMounts(ag, e, dir)
+	if promptFile != "" {
+		mounts = append(mounts, CageMount{Src: promptFile, Dst: promptFile, RO: true,
+			Why: "the dispatched work prompt the launch line reads (ADR 0013 §2)"})
+	}
 	argv := e.RenderArgv(CageRender{
 		Name: "posse-" + session, Image: image, Workdir: dir, Net: net,
 		Inner:  innerArgv,
-		Mounts: a.CageMounts(ag, e, dir),
+		Mounts: mounts,
 		Env:    env, EnvSet: append(EgressProxyVars(), CageSocketVars(ag)...),
 	})
 	return a.WriteCageLaunch(ag.Name, session, rt, engine, argv, eg)

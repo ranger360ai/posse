@@ -666,18 +666,31 @@ var (
 		".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
 )
 
-// PROMPT DELIVERY IS `typed` ON ALL THREE, AND THAT IS THE PROBE'S DOING,
-// NOT AN OVERSIGHT (ADR 0013 §2). The ADR's own table reads "grok/codex
-// argv *if the probe holds*, else typed plus a measured wait" — and the
-// probe (ranger-base-cl7: does an argv prompt skip the interstitial and
-// still trip herdr `working`?) has not run. ASSUMED is not MEASURED, and
-// the cost of guessing wrong here is a work prompt delivered into a screen
-// nobody read. So argv is declarable today and declared nowhere.
+// PROMPT DELIVERY, AS THE PROBE MEASURED IT (ADR 0013 §2, ranger-base-cl7,
+// full trace in docs/adr/0013-argv-prompt-probe.md). The ADR's table read
+// "grok/codex argv *if the probe holds*, else typed plus a measured wait".
+// It held, on both, on 2026-08-25:
 //
-// WHEN ranger-base-cl7 LANDS, this is the edit site: flip Prompt to
-// PromptArgv for whichever runtimes the probe held for, or leave them typed
-// and set a MEASURED StartupWait for the ones it falsified. Do not do both
-// from a guess. ranger-base-dg5 is the dispatch half that reads it.
+//	codex 0.147.0  the Update-available banner draws and does not wait for
+//	               a selection; the positional prompt is the first user
+//	               turn and the screen goes `working`
+//	               (matched_rule screen_working_fallback)
+//	grok 1.0.5     the New-worktree/Resume splash clears with no keystroke
+//	               from posse; the positional prompt renders as turn #1 and
+//	               the screen goes `working` (matched_rule
+//	               spinner_status_working)
+//
+// So both are PromptArgv here, and neither carries a StartupWait: a typed
+// fallback is what a measured wait would be *for*, and there is no typed
+// fallback to measure. On grok there could not be one — a pane that has not
+// had a turn matches no rule at all, so waiting longer produces no screen
+// (monica's `agent explain`, ranger-base-3j8/cl7). Only a turn does, and
+// argv is what starts one.
+//
+// claude stays typed: it works, and re-testing a live path for symmetry is
+// a change with no measurement behind it (ADR 0013 Consequences: "argv is
+// an allowed later unify"). ranger-base-dg5 is the dispatch half that reads
+// this column.
 var builtinRuntimes = []Runtime{
 	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
@@ -694,7 +707,7 @@ var builtinRuntimes = []Runtime{
 		// sessions did the work and left the bead in_progress with no
 		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
 		// Dispatch still launches; gather never ✓s a settle-without-close.
-		Prompt: PromptTyped, Record: RecordUntrusted,
+		Prompt: PromptArgv, Record: RecordUntrusted,
 		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
 		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
@@ -703,12 +716,12 @@ var builtinRuntimes = []Runtime{
 		// 2026-08-24, which is the measurement the promotion needs and the
 		// only reason grok and codex differ in this column.
 		//
-		// StartupWait is deliberately UNSET (= 45s) even though grok's cold
-		// start is known to exceed it on a clean screen (ranger-base-3j8):
-		// the replacement number is measured by ranger-base-cl7, and a
-		// guessed one here would be the same class of mistake with a longer
-		// timeout on it.
-		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "the qa lane closed a dispatched bead on 2026-08-24 (ADR 0013 §4)",
+		// StartupWait stays UNSET, and after the probe that is an answer
+		// rather than a deferral: it is the `prompt: typed` ladder's
+		// patience, and grok does not use that ladder any more. Its cold
+		// start exceeding 45s on a clean screen (ranger-base-3j8) was a
+		// problem about reaching a composer; argv needs no composer.
+		Prompt: PromptArgv, Record: RecordTrusted, RecordWhy: "the qa lane closed a dispatched bead on 2026-08-24 (ADR 0013 §4)",
 		NativeRules: grokNativeRules, Interstitials: GrokInterstitials,
 		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }

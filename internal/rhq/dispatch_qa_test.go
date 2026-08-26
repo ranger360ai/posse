@@ -51,6 +51,23 @@ func workingClaude(t *testing.T, fake string) {
 		[]byte(`[{"agent":"claude","agent_status":"working","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
 }
 
+// delivered is what a dispatched session was actually asked, whichever
+// channel carried it. Since ADR 0013 §2 there are two: a `prompt: typed`
+// runtime gets `agent prompt <pane> <text>` in herdr's call log, and a
+// `prompt: argv` one gets the same text in state/prompts/<session>.txt,
+// read by the `$(cat …)` on its launch line. A test that asks "what did the
+// persona hear" must read both or it is asking about the transport.
+func delivered(t *testing.T, a *App, fake string) string {
+	t.Helper()
+	out := calls(t, fake)
+	ents, _ := os.ReadDir(a.WorkPromptDir())
+	for _, e := range ents {
+		b, _ := os.ReadFile(filepath.Join(a.WorkPromptDir(), e.Name()))
+		out += "\n--- " + e.Name() + " ---\n" + string(b)
+	}
+	return out
+}
+
 func bdCalls(t *testing.T, fake string) string {
 	t.Helper()
 	b, _ := os.ReadFile(filepath.Join(fake, "bd-calls.log"))
@@ -98,27 +115,77 @@ func TestDispatchNoAgentDetected(t *testing.T) {
 	}
 }
 
-// rangerhq-vk2: a session whose agent is gone must cost one detection
-// timeout per pass, not one per bead routed to that persona.
-func TestDispatchDeadSessionNotRetriedInPass(t *testing.T) {
+// ADR 0013 §2's busy-key split, and the test rangerhq-vk2 left behind.
+//
+// vk2's rule was "a session whose agent is gone must cost one detection
+// timeout per pass, not one per bead" — written when a persona had ONE
+// session per repo, so the second bead's timeout was the same dead pane
+// being re-read. Dial F ended that: each bead here launches its own
+// session, and each of those launches genuinely failed. Benching the
+// persona on the first one is the sterilise ranger-base-3j8 measured — one
+// grok cold start taking the persona's whole queue out of the pass.
+//
+// So the contract this pins now is the ADR's: a launch that never produced
+// a promptable agent is a fact about THAT PANE. The slot stays free, the
+// next bead gets its own fresh session, and nothing is claimed on the way.
+// The cost that vk2 was protecting — one startup wait per failed launch —
+// is now paid per bead, knowingly: see the NOTES entry.
+func TestSessionFailureKeepsThePersonaSlot(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 100 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`, "")
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if strings.Contains(out, "skipped for the rest of this pass") {
+		t.Errorf("one un-promptable launch benched the persona — that is the ranger-base-3j8 sterilise:\n%s", out)
+	}
+	if !strings.Contains(out, "keeps its slot") {
+		t.Errorf("want the slot kept and said so, got:\n%s", out)
+	}
+	// The second bead was attempted, in its own session — not skipped
+	// behind the first one's failure.
+	for _, want := range []string{SessionForBead("ranger", repo, "a-1"), SessionForBead("ranger", repo, "a-2")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("bead %s never got its own launch:\n%s", want, out)
+		}
+	}
+	if strings.Contains(bdCalls(t, fake), "--claim") {
+		t.Error("no bead may be claimed when the session has no agent")
+	}
+}
+
+// The other arm of the split, unchanged from rangerhq-81d: a failure that
+// is about the PERSONA on this runtime — here a runtime that will not load
+// at all — still benches the slot, because every bead routed to it would
+// fail the same way and claiming them all would strand them.
+func TestPersonaFailureStillBenchesTheSlot(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.StartupWait = 100 * time.Millisecond
+	writePersona(t, b.App, "ranger", "[go]")
+	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: no-such-runtime\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`, "")
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)
-	if got := strings.Count(out, "no agent detected"); got != 1 {
-		t.Errorf("dead session retried per bead (%d detection timeouts in one pass):\n%s", got, out)
-	}
 	if !strings.Contains(out, "skipped for the rest of this pass") {
-		t.Errorf("want the session benched, got:\n%s", out)
+		t.Errorf("a runtime that will not load is the persona's failure, not the pane's:\n%s", out)
+	}
+	if strings.Contains(out, "keeps its slot") {
+		t.Errorf("that is not a session failure:\n%s", out)
 	}
 	if strings.Contains(bdCalls(t, fake), "--claim") {
-		t.Error("no bead may be claimed when the session has no agent")
+		t.Error("nothing may be claimed for a persona whose runtime will not load")
 	}
 }
 

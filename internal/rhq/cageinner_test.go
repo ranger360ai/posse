@@ -315,7 +315,7 @@ func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
 	rt, _ := a.LoadRuntime("claude")
 	dir := t.TempDir()
 	inner := ag.RenderCommandFor(rt, "claude", TierStrong)
-	if _, err := a.WrapInCage(ag, rt, "s1", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s1", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(a.CageArgvFile("p", "s1"))
@@ -340,7 +340,7 @@ func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
 	// already had its say about what that costs.
 	os.WriteFile(filepath.Join(a.CagesDir(), "fake.yaml"), []byte(
 		"command: env {mounts} {env} -w {workdir} {image} {cmd}\nprobe: true {image}\ninner: false {image} {cmd}\n"), 0o644)
-	if _, err := a.WrapInCage(ag, rt, "s2", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
+	if _, err := a.WrapInCage(ag, rt, "s2", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(a.CageArgvFile("p", "s2"))

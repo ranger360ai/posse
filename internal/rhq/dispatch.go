@@ -95,6 +95,13 @@ type Dispatcher struct {
 	mu         sync.Mutex
 	lastPrompt map[string]time.Time // session → when this process last prompted it
 
+	// stranded are the sessions THIS pass created and could not use — a CLI
+	// that never came up, never became promptable, or is sitting on a screen
+	// posse does not know (ADR 0013 §2). They keep the persona's slot free
+	// and are invisible to the working/blocked guard for the rest of the
+	// pass. Reset by Run, like every other per-pass reading.
+	stranded map[string]bool
+
 	passStart time.Time  // when Run's current pass began — Dial E's pass window
 	planUsage *PlanUsage // this pass's plan reading, when the guard took one
 
@@ -772,6 +779,8 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
 	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0
+	// ADR 0013 §2: which panes this pass gave up on is this pass's memory.
+	d.stranded = nil
 
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
@@ -1061,13 +1070,33 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved)
 		if err != nil {
 			fmt.Fprintf(d.Out, "✗ %-14s %v\n", is.ID, err)
-			// A lost claim race is about the bead, not the session — the
-			// persona can still take its next bead. Anything else (no agent,
-			// never settled) means the session is not taking work: skip it
-			// for the rest of the pass rather than claiming and stranding
-			// every bead routed to it (rangerhq-81d).
+			// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
+			//
+			// A lost claim race is about the BEAD: someone else holds it and
+			// the persona can still take its next one.
+			//
+			// A session failure is about THIS PANE: the CLI never appeared,
+			// never became promptable, or sat behind a screen posse does not
+			// know. Dial F gives the next bead its own session, so the slot
+			// stays free — one grok cold start no longer sterilises the
+			// persona's whole queue (ranger-base-3j8). The pane is
+			// remembered so the working/blocked guard below does not read a
+			// session this pass just abandoned as the persona being busy.
+			//
+			// Everything else is about the PERSONA on this runtime — a
+			// runtime that will not load, a missing exe, a credential the
+			// cage refuses, gates the wall cannot realize — and every bead
+			// routed here would fail the same way, so the slot is benched
+			// for the pass rather than claiming and stranding all of them
+			// (rangerhq-81d).
 			var lost claimLostError
-			if !errors.As(err, &lost) {
+			var failed sessionFailure
+			switch {
+			case errors.As(err, &lost):
+			case errors.As(err, &failed):
+				d.strand(session)
+				fmt.Fprintf(d.Out, "– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+			default:
 				busy[slot] = true
 				fmt.Fprintf(d.Out, "– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
 			}
@@ -1097,7 +1126,15 @@ type pendingBead struct {
 	runtime string // transcript adapter for the launched session
 	// resumed: the bead was already this persona's when the pass picked it
 	// up, so a hand-back keeps the assignee.
-	resumed  bool
+	resumed bool
+	// delivered: the work prompt rode in on the launch line (ADR 0013 §2),
+	// so no `agent prompt` was made and a wait that fails says nothing
+	// about whether the prompt landed — it landed at exec.
+	delivered bool
+	// unseen: delivered, and herdr never recognized a screen in the session
+	// before the startup wait ran out. Nothing is in flight for this one;
+	// gather says so and keeps the claim.
+	unseen   bool
 	result   chan promptResult
 	prompted time.Time
 }
@@ -1113,7 +1150,19 @@ type promptResult struct {
 // 0010) — passed rather than inferred from the runtime, because a session
 // found on the overflow pool is not a move THIS pass made.
 func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, overflowed bool) (*pendingBead, error) {
-	target, resumed, err := d.launchSession(is, persona, session, runtime, tier)
+	ag, _ := d.App.LoadAgent(persona)
+	// The work prompt, assembled lazily: on the argv path launchSession
+	// needs it BEFORE the session exists, and on the typed path it is built
+	// after the launch so it can name the tier the session really got. The
+	// two do not disagree in practice — a runtime with no model map has
+	// nothing for the availability preflight to fall back FROM, and argv is
+	// declared today only on grok and codex, where `{model}` renders empty
+	// (ADR 0013 §6). If that ever changes, this is the seam where an argv
+	// prompt would start naming a tier the launch did not get.
+	prompt := func() string {
+		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, ag))
+	}
+	l, err := d.launchSession(is, persona, session, runtime, tier, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -1133,14 +1182,33 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	if overflowed {
 		over = fmt.Sprintf(" [%s ← overflow]", runtime)
 	}
-	fmt.Fprintf(d.Out, "· %-14s → %s  (prompted, %s via %s)%s\n", is.ID, session, tier, tierWhy, over)
-	ag, _ := d.App.LoadAgent(persona)
-	prompt := workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, ag))
-	p := &pendingBead{is: is, persona: persona, session: session, target: target, runtime: runtime, resumed: resumed, result: make(chan promptResult, 1), prompted: time.Now()}
-	go func() {
-		res, err := d.HB.H.AgentPrompt(target, prompt, true, d.PromptWaitMS)
-		p.result <- promptResult{res, err}
-	}()
+	how := "prompted"
+	if l.delivered {
+		how = "prompt on the launch line"
+	}
+	fmt.Fprintf(d.Out, "· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, over)
+	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
+		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,
+		result: make(chan promptResult, 1), prompted: time.Now()}
+	switch {
+	case l.unseen:
+		// Nothing to wait on: a settle-wait started over herdr's idle guess
+		// returns instantly and would read a session that never worked as
+		// one that settled. gather says what happened and keeps the claim.
+	case l.delivered:
+		// Same wait leg the typed path gets from `agent prompt --wait`,
+		// asked for directly — there is no prompt call to hang it off.
+		go func() {
+			res, err := d.HB.H.AgentWait(l.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
+			p.result <- promptResult{res, err}
+		}()
+	default:
+		text := prompt()
+		go func() {
+			res, err := d.HB.H.AgentPrompt(l.target, text, true, d.PromptWaitMS)
+			p.result <- promptResult{res, err}
+		}()
+	}
 	d.notePrompted(session)
 	return p, nil
 }
@@ -1150,6 +1218,15 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 // working, blocked, or that herdr cannot describe — the bead stays claimed
 // and is not judged this pass.
 func (d *Dispatcher) gather(p *pendingBead) (inFlight bool, err error) {
+	if p.unseen {
+		// ADR 0013 §2: the launch line carried the prompt, so the claim is
+		// not the harness's to hand back — what is missing is the screen,
+		// not the work. Same verdict a --wait timeout over an unreadable
+		// agent gets, and for the same reason (rangerhq-khc).
+		fmt.Fprintf(d.Out, "◷ %-14s prompt delivered but %s showed herdr no screen it knows — claim kept, not judged this pass (posse peek %s)\n",
+			p.is.ID, p.session, p.session)
+		return true, nil
+	}
 	var settled string
 wait:
 	for {
@@ -1161,7 +1238,13 @@ wait:
 		// A --wait that ran out of time is not a failed prompt: herdr took
 		// the text and stopped watching. Only the agent's own state says
 		// whether work is happening (rangerhq-1z0).
-		if !IsHerdrCode(r.err, "timeout") {
+		//
+		// On the argv path no wait failure is a prompt failure at all: the
+		// prompt was an argument to the exec, so it landed before herdr was
+		// ever asked anything. Every error there goes to the same question
+		// a timeout asks — what is the agent doing? — and the claim is
+		// never handed back on the answer "posse cannot tell".
+		if !IsHerdrCode(r.err, "timeout") && !p.delivered {
 			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.resumed, r.err)
 		}
 		waited := time.Since(p.prompted).Round(time.Second)
@@ -1353,11 +1436,31 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 		if s.Crew {
 			continue
 		}
+		// A pane this pass already gave up on is not the persona working
+		// (ADR 0013 §2). A session left sitting on a splash reads `blocked`
+		// to herdr, and reading that as "busy" would put the sterilise back
+		// one guard further down: the slot stays free, and the very next
+		// bead is told the persona is blocked.
+		if d.stranded[s.Name] {
+			continue
+		}
 		if s.Status == "working" || s.Status == "blocked" {
 			return s.Name, s.Status
 		}
 	}
 	return "", ""
+}
+
+// strand records a session this pass launched and could not use, so the
+// working/blocked guard ignores it for the rest of the pass. It is
+// deliberately per-pass: the next pass resolves the same name again and
+// judges it fresh, because a pane that was mid-splash a minute ago may be a
+// persona working by now.
+func (d *Dispatcher) strand(session string) {
+	if d.stranded == nil {
+		d.stranded = map[string]bool{}
+	}
+	d.stranded[session] = true
 }
 
 // crewHeld returns the first of these session names that is a live crew
@@ -1379,11 +1482,23 @@ func (d *Dispatcher) crewHeld(names ...string) string {
 // moved this bead (ADR 0010). It is passed explicitly rather than resolved
 // here so that everything downstream of the decision — the meta, the prompt
 // header, the parity check — names the runtime the session actually got.
-func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string) (target string, resumed bool, err error) {
-	if s, err := d.HB.Resolve(session); err != nil {
+func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string) (launched, error) {
+	s, resolveErr := d.HB.Resolve(session)
+	// ADR 0013 §2, and the whole reason this function grew a `prompt`
+	// argument: on a runtime that declares `prompt: argv`, a session posse
+	// is about to CREATE gets the work prompt on its launch line, and the
+	// order of the four steps below is the contract. A session that already
+	// exists is not this path — resuming into a live CLI is a typed prompt,
+	// because the launch line has already been typed.
+	if resolveErr != nil && prompt != nil {
+		if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PromptMode() == PromptArgv {
+			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt)
+		}
+	}
+	if resolveErr != nil {
 		fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier, AllowDegraded: d.AllowDegraded, Cage: d.Cage}); err != nil {
-			return "", false, err
+			return launched{}, err
 		}
 	} else if s.Status == "" {
 		// The session is alive but herdr sees no agent in it: the persona's
@@ -1392,7 +1507,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		// 45s×N sink per pass (rangerhq-vk2) — restart the persona there.
 		relaunched, err := d.HB.RelaunchAgent(session, d.StartupWait)
 		if err != nil {
-			return "", false, err
+			return launched{}, err
 		}
 		if relaunched {
 			fmt.Fprintf(d.Out, "· %-14s relaunching %s in %s (agent gone, session kept)\n", is.ID, persona, session)
@@ -1400,9 +1515,13 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	}
 
 	// The persona CLI needs a moment to start before it can take a prompt.
-	target, err = d.awaitAgent(is.ID, session)
+	target, err := d.awaitAgent(is.ID, session)
 	if err != nil {
-		return "", false, err
+		// ADR 0013 §2's busy-key split: a CLI that never came up, never
+		// became promptable, or sat behind a screen posse does not know is
+		// a fact about THIS pane, not about the persona. fireLoop reads the
+		// type, not the message.
+		return launched{}, sessionFailure{err}
 	}
 
 	// Atomic claim as the persona; losing a race is a clean skip — unless
@@ -1410,18 +1529,83 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// e.g. blocked on permissions, or bd routed the bead by assignee), which
 	// is a resume, not a conflict. Bd.Claim decides that by reading the bead
 	// back: bd's exit code is 0 either way (rangerhq-kux).
-	resumed, err = d.Bd.Claim(is.Dir, is.ID, persona)
+	resumed, err := d.claim(is, persona)
+	if err != nil {
+		return launched{}, err
+	}
+	return launched{target: target, resumed: resumed}, nil
+}
+
+// launched is what the front half of a dispatch hands back: the pane to
+// watch, whether the bead was already this persona's, and — since ADR 0013
+// §2 — whether the work prompt has already been delivered on the launch
+// line, so the caller has nothing to type.
+type launched struct {
+	target    string
+	resumed   bool
+	delivered bool // the work prompt rode in as argv; do not prompt again
+	// unseen: delivered, and then herdr never recognized a screen in the
+	// session before the startup wait ran out. The prompt is with the CLI
+	// either way — what is missing is the observation, so the bead keeps
+	// its claim and is not judged this pass.
+	unseen bool
+}
+
+// launchWithPrompt is the argv delivery path, ADR 0013 §2, in the order the
+// ADR sets out:
+//
+//  1. claim first — the fence. A lost claim creates nothing, so a race
+//     costs a bd call rather than a session with a persona in it.
+//  2. write the work prompt to $RHQ_HOME/state/ (argvprompt.go).
+//  3. create the session with `"$(cat <file>)"` on the launch line.
+//  4. await a state herdr has SEEN — not "idle enough to type at". The
+//     prompt is delivered; what this waits for is work starting.
+//
+// Create-fails-after-claim unclaims, which is the same cleanup a failed
+// prompt gets on the typed path and for the same reason: the claim is made
+// before the risky step so the race loses cleanly, and the price of that is
+// handing the bead back when the risky step does not happen.
+func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, tier string, prompt func() string) (launched, error) {
+	resumed, err := d.claim(is, persona)
+	if err != nil {
+		return launched{}, err
+	}
+	file, err := d.App.WriteWorkPrompt(session, prompt())
+	if err != nil {
+		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
+	}
+	fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
+	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file}); err != nil {
+		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
+	}
+	target, seen, err := d.awaitDelivered(is.ID, session)
+	if err != nil {
+		// No agent ever appeared: the CLI did not start, so nothing read
+		// the prompt file and nobody is working this bead. Hand it back.
+		return launched{}, sessionFailure{d.unclaimAfterLaunchFailure(is, persona, resumed, err)}
+	}
+	return launched{target: target, resumed: resumed, delivered: true, unseen: !seen}, nil
+}
+
+// claim is the atomic claim as the persona; losing a race is a clean skip —
+// unless the holder is this persona already (an earlier pass was
+// interrupted, e.g. blocked on permissions, or bd routed the bead by
+// assignee), which is a resume, not a conflict. Bd.Claim decides that by
+// reading the bead back: bd's exit code is 0 either way (rangerhq-kux).
+func (d *Dispatcher) claim(is RepoIssue, persona string) (bool, error) {
+	resumed, err := d.Bd.Claim(is.Dir, is.ID, persona)
 	if err != nil {
 		var lost ClaimLostError
 		if errors.As(err, &lost) {
-			return "", false, claimLostError{Die("claim lost: %s holds it", lost.Holder)}
+			return false, claimLostError{Die("claim lost: %s holds it", lost.Holder)}
 		}
-		return "", false, err
+		return false, err
 	}
 	if resumed {
 		fmt.Fprintf(d.Out, "· %-14s already claimed by %s — resuming\n", is.ID, persona)
 	}
-	return target, resumed, nil
+	return resumed, nil
 }
 
 // claimLostError marks a launch failure that is the bead's, not the
@@ -1431,12 +1615,40 @@ type claimLostError struct{ error }
 
 func (e claimLostError) Unwrap() error { return e.error }
 
+// sessionFailure marks a launch failure that is THIS PANE's, not the
+// persona's: the CLI never appeared, never became promptable, or sat behind
+// a screen posse does not know. ADR 0013 §2 splits the busy key on exactly
+// this line — Dial F already gives every bead its own session, so one pane
+// failing says nothing about whether the next bead's fresh session will,
+// and benching the persona on it is what sterilised a whole pass for one
+// grok cold start (ranger-base-3j8).
+//
+// Everything else — a runtime that will not load, an exe that is not there,
+// a credential the cage refuses, a wall the PID's gates outrun — IS a fact
+// about the persona on this runtime, and still benches the slot for the
+// pass, exactly as before.
+type sessionFailure struct{ error }
+
+func (e sessionFailure) Unwrap() error { return e.error }
+
 // unclaimAfterPromptFailure hands the bead back when the claim was made but
 // the prompt never reached the agent (stalled, agent_not_ready — never a
 // --wait timeout, which says nothing about whether the prompt landed).
 // The claim happens before the prompt so a race loses cleanly;
 // the price is this cleanup — without it every failed prompt strands a bead
 // as in_progress/assigned with nobody working it (rangerhq-81d).
+// unclaimAfterLaunchFailure is the argv path's half of the same rule: the
+// claim is the fence and it goes first, so every step after it that fails
+// before the CLI has the prompt must hand the bead back (ADR 0013 §2, step
+// 5). Same cleanup, different sentence — "the prompt never reached the
+// agent" is not what happened when the session was never created.
+func (d *Dispatcher) unclaimAfterLaunchFailure(is RepoIssue, persona string, resumed bool, launchErr error) error {
+	if uerr := d.Bd.Unclaim(is.Dir, is.ID, persona, resumed); uerr != nil {
+		return Die("%v (and unclaim failed: %v — %s stays claimed by %s)", launchErr, uerr, is.ID, persona)
+	}
+	return Die("%v — unclaimed", launchErr)
+}
+
 func (d *Dispatcher) unclaimAfterPromptFailure(is RepoIssue, persona string, resumed bool, promptErr error) error {
 	if uerr := d.Bd.Unclaim(is.Dir, is.ID, persona, resumed); uerr != nil {
 		return Die("%v (and unclaim failed: %v — %s stays claimed by %s)", promptErr, uerr, is.ID, persona)
@@ -1543,35 +1755,114 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// The cockpit's `d` is not a pass and has no plan reading (ADR 0010 §1
 	// is a *dispatch pass* ladder), so this launch is always the persona's
 	// own runtime.
-	target, resumed, err := d.launchSession(is, persona, session, d.sessionRuntime(ag), tier)
+	// The cockpit's `d` launches the same way a pass does, argv included: a
+	// session it has to CREATE on a `prompt: argv` runtime gets the work
+	// prompt on its launch line (ADR 0013 §2), and `d` on a live holder is
+	// the resume case, which stays a typed prompt.
+	launchRuntime := d.sessionRuntime(ag)
+	prompt := func() string {
+		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, ag))
+	}
+	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt)
 	if err != nil {
 		return "", err
 	}
-	launchRuntime := d.sessionRuntime(ag)
 	if rt, tr, fell := d.effectiveTier(session, launchRuntime, tier); fell != "" {
 		fmt.Fprintf(d.Out, "! %-14s %s\n", is.ID, fell)
 		launchRuntime, tier = rt, tr
 	}
-	if _, err := d.HB.H.AgentPrompt(target, workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, ag)), false, 0); err != nil {
-		return "", d.unclaimAfterPromptFailure(is, persona, resumed, err)
+	if !l.delivered {
+		if _, err := d.HB.H.AgentPrompt(l.target, prompt(), false, 0); err != nil {
+			return "", d.unclaimAfterPromptFailure(is, persona, l.resumed, err)
+		}
 	}
 	d.notePrompted(session)
 	return session, nil
 }
 
-func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
-	deadline := time.Now().Add(d.StartupWait)
-	var target string
+// awaitTarget polls until herdr resolves an agent pane in the session, or
+// the startup wait runs out. Detection only — whether that agent can be
+// spoken to is awaitSettled's question, and on the argv path nobody
+// intends to speak to it at all.
+func (d *Dispatcher) awaitTarget(session string, deadline time.Time) (string, error) {
 	for {
 		t, err := d.HB.AgentTarget(session)
 		if err == nil {
-			target = t
-			break
+			return t, nil
 		}
 		if time.Now().After(deadline) {
 			return "", Die("no agent detected in %s after %s — check the session (posse peek %s)", session, d.StartupWait, session)
 		}
 		time.Sleep(d.Poll)
+	}
+}
+
+// awaitDelivered is the argv path's wait, ADR 0013 §2 step 4. The prompt is
+// already with the CLI, so this is not a readiness gate and nothing is
+// waiting to be typed: it waits for herdr to SEE a screen, which is the
+// evidence that the launch line ran and a turn started.
+//
+// That distinction is the whole reason grok cannot be dispatched by typing.
+// A grok pane that has not had a turn emits no OSC title, no OSC progress
+// and no composer footer, so it matches no rule and herdr answers with its
+// idle GUESS; the same pane after one turn matches three rules at once
+// (monica's `agent explain`, ranger-base-3j8). Detectability is a property
+// of having been prompted — so waiting longer for a typed prompt's composer
+// produces nothing, and argv produces the turn that produces the screen.
+//
+// Two outcomes, and only one of them is a failure:
+//
+//   - no agent pane at all → the CLI never started, nothing read the prompt
+//     file, and the bead has nobody working it. That is the error return.
+//   - a pane, but no rule matched before the wait ran out → the prompt IS
+//     with the CLI. seen=false says so; the caller keeps the claim and does
+//     not judge the bead, because starting a settle-wait here would be
+//     waiting on herdr's idle guess, which returns instantly and would read
+//     a session that never worked as one that settled.
+func (d *Dispatcher) awaitDelivered(id, session string) (target string, seen bool, err error) {
+	deadline := time.Now().Add(d.StartupWait)
+	target, err = d.awaitTarget(session, deadline)
+	if err != nil {
+		return "", false, err
+	}
+	poll := d.Poll
+	if poll <= 0 {
+		poll = 250 * time.Millisecond
+	}
+	var lastWhy string
+	for {
+		det, derr := d.HB.H.AgentExplain(target)
+		switch {
+		case derr != nil:
+			// The same concession awaitSettled makes: a diagnostic call
+			// that fails is not evidence either way, and here there is even
+			// less at stake — nothing is about to be typed into the pane.
+			// Take herdr at its word that an agent is there and gather.
+			fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%v) — the work prompt is on its launch line; gathering anyway\n", id, session, derr)
+			return target, true, nil
+		case det.Seen():
+			return target, true, nil
+		default:
+			reason := det.FallbackReason
+			if reason == "" {
+				reason = "no rule matched"
+			}
+			lastWhy = fmt.Sprintf("only %q (%s)", det.State, reason)
+		}
+		if !time.Now().Add(poll).Before(deadline) {
+			fmt.Fprintf(d.Out, "◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s\n",
+				id, session, d.StartupWait, lastWhy)
+			return target, false, nil
+		}
+		time.Sleep(poll)
+	}
+}
+
+func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
+	deadline := time.Now().Add(d.StartupWait)
+	target, err := d.awaitTarget(session, deadline)
+	if err != nil {
+		return "", err
 	}
 
 	// Detection is not readiness: the first live dispatch raced claude's

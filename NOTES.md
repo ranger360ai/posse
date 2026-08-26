@@ -169,14 +169,22 @@ of the harness core:
    into its root pane (`RelaunchAgent`, rangerhq-vk2) — never within
    `StartupWait` of the last launch (`launched:` in the meta file), since a
    CLI still starting is invisible to detection and a second command would
-   land in its input box. A session that still fails is benched for the
-   rest of the pass, and `-n` bounds attempts (successes and failures), so
-   a pass is bounded in wall-clock.
+   land in its input box. A launch that fails benches the persona's slot for
+   the rest of the pass **unless the failure is the pane's own** (no agent,
+   never promptable, a screen posse does not know), which leaves the slot
+   free for the next bead's own fresh session — ADR 0013 §2's busy-key
+   split, below. `-n` bounds attempts (successes and failures), so a pass is
+   bounded in wall-clock.
 4. Atomically claim as the persona (`bd update --claim` — losing a race is
    a clean skip; the outcome comes from reading the bead back, because bd
    exits 0 on a refused claim, rangerhq-kux), then prompt with the
    **assembled work prompt** (ADR
    0005, `workPrompt`/`promptContext` in dispatch.go) with `--wait`
+   — **on a `prompt: typed` runtime.** On `prompt: argv` (grok, codex) the
+   order is claim → write the prompt to `state/prompts/` → create the
+   session with `"$(cat …)"` on its launch line → await a state herdr has
+   *seen*: the claim is the fence and there is nothing to type. See *Argv
+   delivery* below for the failure cleanups, which differ per step
    (one leg is 15 min, `--timeout` overrides; see 6 for what happens when
    a leg runs out). The prompt is skeleton +
    Context + escalation ladder + persona hook, ≤ ~40 lines, references
@@ -854,19 +862,87 @@ misspelled* value is the opposite case and refuses at load: `record:
 trused` silently reading as untrusted is exactly the silence this contract
 removes.
 
-Two declarations are deliberately conservative right now, and both are
-waiting on the same probe (`ranger-base-cl7`, whether an argv-delivered
-prompt skips the first-run interstitials *and* still trips herdr
-`working`):
+### Argv delivery: the work prompt rides in on the launch line
 
-- **all three built-ins are `prompt: typed`.** ADR 0013 §2 reads
-  "grok/codex `argv` *if the probe holds*"; ASSUMED is not MEASURED, and
-  a work prompt delivered on a guess goes into a screen nobody read. The
-  edit site is commented in `runtime.go` above `builtinRuntimes`.
-- **grok's `startup_wait:` is unset (45s)** even though grok's cold start
-  is known to exceed it on a clean screen. The replacement number is
-  measured by that probe; a guessed longer timeout is the same mistake
-  with more patience on it.
+The probe (`ranger-base-cl7`, trace in `docs/adr/0013-argv-prompt-probe.md`)
+held on both non-claude runtimes on 2026-08-25, so **grok and codex are
+`prompt: argv`** and claude stays `prompt: typed` (it works; ADR 0013 calls
+argv there an allowed later unify). Neither argv runtime carries a
+`startup_wait:` — that number is the *typed* ladder's patience, and they do
+not use that ladder.
+
+Why it is not a nicety. A grok pane that has not had a turn emits no OSC
+title, no OSC progress and no composer footer, so it matches **no** herdr
+rule and herdr answers with its idle guess; the same pane after one turn
+matches three rules at once. Detectability is a property of *having been
+prompted* — so there is no value of `startup_wait:` that turns waiting into
+a promptable screen there, and the typed fallback ADR 0013 §2 describes
+could not have been made to work with a bigger number.
+
+The path, in `dispatch.go` (`launchWithPrompt`) and `argvprompt.go`:
+
+1. **Claim first** — the fence. A lost claim creates nothing: no workspace,
+   no prompt file, no persona sitting in a repo working someone else's bead.
+2. **Write** the assembled ADR 0005 work prompt to
+   `$RHQ_HOME/state/prompts/<session>.txt` (0600). The prompt does not go on
+   the line itself: it is a page of text and a fresh pane's shell is a tty
+   with a line limit (rangerhq-ybec).
+3. **Create** the session with `"$(cat <file>)"` appended to the *runtime's*
+   rendered command — before the seatbelt prefix, the gates prefix and the
+   cage wrap, because it is an argument to the CLI and not to `sandbox-exec`
+   or `docker run`. There is no `{prompt}` placeholder: an unrendered token
+   would be a literal argv (ADR 0001/0002's lesson, and ADR 0013 rejects it
+   by name). At the container tier the file is mounted same-path read-only,
+   since that `$(cat …)` is expanded by the container's own shell.
+4. **Await a state herdr has SEEN** — a matched rule, not the idle fallback.
+   This is not a readiness gate; nothing is waiting to be typed. It is the
+   evidence that the launch line ran and a turn started.
+
+Three failures, three different cleanups, and the differences are the point:
+
+- **create fails after the claim** → unclaim. The claim went first so a race
+  loses cleanly; the price of that is handing the bead back.
+- **no agent pane ever appears** → the CLI never started, nothing read the
+  prompt file, nobody is working the bead → unclaim.
+- **a pane, but no rule matched in time** → the prompt IS with the CLI.
+  Claim kept, bead not judged this pass, and **no settle-wait is started**:
+  a wait over herdr's idle guess returns instantly and would read a session
+  that never worked as one that settled.
+
+The prompt files are left behind on purpose. A typed prompt at least echoes
+into the pane's scrollback; an argv one is consumed by the exec before any
+screen exists, so the file is the only record of what a session was asked.
+One small file per bead, rewritten on re-dispatch.
+
+**Resume is still typed.** `--resume` into a live session, and the cockpit's
+`d` on a live holder, prompt the composer: the launch line has already been
+typed, and the only way into a running CLI is through its screen.
+
+### The busy key: session failure vs persona failure (ADR 0013 §2)
+
+Dial F gives every bead its own session, so a *pane* failing is not a fact
+about the *persona*. Dispatch splits the three outcomes of a failed launch:
+
+| outcome | what it is | slot |
+|---|---|---|
+| claim lost | the **bead**'s — somebody else holds it | free |
+| session failure — no agent, never promptable, unknown screen | this **pane**'s | **free**; the next bead gets its own fresh session |
+| anything else — runtime will not load, exe missing, cage credential, gates the wall cannot realize | the **persona** on this runtime | benched for the pass |
+
+A pane the pass gave up on is also remembered for the pass, so the
+working/blocked guard does not read a session left sitting on a splash
+(which herdr reports `blocked`) as the persona being busy — that would put
+the sterilise back one guard further down.
+
+**The cost, said out loud.** Before this, one failed launch benched the
+persona and the pass paid one startup wait; now every bead's own launch can
+pay its own. A persona whose CLI is missing on a queue of thirty beads
+spends thirty startup waits in a pass instead of one. That is the trade ADR
+0013 made deliberately — one grok cold start taking a persona's whole queue
+out of the pass was the failure being fixed (`ranger-base-3j8`) — and it
+supersedes rangerhq-vk2's "one detection timeout per pass" rule, which was
+written when a persona had one session per repo. Whether that ceiling wants
+a bound is `ranger-base-8h5p`.
 
 `record:` is where grok and codex differ, and only for a measured reason:
 the qa lane on grok closed a dispatched bead properly, and 3/3 dispatched
@@ -2669,8 +2745,10 @@ one.
 **Three layers, cheapest first (ADR 0013 §2).**
 
 1. **Sidestep.** Deliver the work prompt on the launch line (`prompt:
-   argv`), so the screen is not the delivery channel at all. Pending
-   `ranger-base-cl7`; see *The dispatch contract* above.
+   argv`), so the screen is not the delivery channel at all. Landed for
+   grok and codex (`ranger-base-cl7`/`ranger-base-dg5`); see *Argv
+   delivery* above. This layer does not make the banner go away — it
+   makes it stop being in the way.
 2. **Instance config.** Operator-owned facts posse **documents and never
    writes**. This section.
 3. **Declared keystrokes.** Last resort, keyed on a herdr *rule id*

@@ -71,6 +71,12 @@ type NewSessionOpts struct {
 	// dispatch leaves it alone (ADR 0008). `posse new` and recipes set it;
 	// dispatch's own CreateSession never does.
 	Crew bool
+	// PromptFile is the ADR 0013 §2 argv delivery: the assembled work
+	// prompt, already written to this path, appended to the rendered launch
+	// line as `"$(cat <file>)"` so the CLI takes it as its first user turn.
+	// Set by dispatch, and only for a runtime that declares `prompt: argv`;
+	// "" is every interactive launch and every typed dispatch.
+	PromptFile string
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
@@ -1115,6 +1121,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// sessions before anyone noticed the beads were silent, not the agent
 		// (ranger-base-0fb). Runtimes posse cages itself ignore this.
 		cmd = ag.RenderCommandFor(rt, own, tier, beadsHome(dir))
+		// ADR 0013 §2, and the reason it is HERE and not further down: the
+		// prompt is an argument to the RUNTIME, so it goes on the runtime's
+		// line before any wall wraps it. Appended after the seatbelt prefix
+		// it would be an argument to sandbox-exec; appended after the cage
+		// it would be one to `docker run`.
+		if o.PromptFile != "" {
+			if rt.PromptMode() != PromptArgv {
+				return nil, Die("%s declares prompt: %s — a work prompt cannot ride on its launch line (ADR 0013 §2)", rt.Name, rt.PromptMode())
+			}
+			cmd += ArgvPromptSuffix(o.PromptFile)
+		}
 		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
 		// rendered from the PID; the outer shell expands $(cat {file}) first.
 		if cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
@@ -1214,7 +1231,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// included, which is the precondition this refuses without.
 	if caged {
 		var err error
-		if cmd, err = a.WrapInCage(ag, rt, o.Name, dir, cmd, CageEnvNames(vars)); err != nil {
+		if cmd, err = a.WrapInCage(ag, rt, o.Name, dir, cmd, CageEnvNames(vars), o.PromptFile); err != nil {
 			return nil, err
 		}
 	}
@@ -1409,7 +1426,10 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 			}
 			vars = append(vars, vs...)
 		}
-		if cmd, err = b.App.WrapInCage(ag, rt, m.Name, m.Dir, inner, CageEnvNames(vars)); err != nil {
+		// No prompt file: a relaunch restarts a persona whose CLI died, it
+		// does not re-dispatch the bead (ADR 0013 §2 — resume is a typed
+		// prompt into a live session, never a second argv delivery).
+		if cmd, err = b.App.WrapInCage(ag, rt, m.Name, m.Dir, inner, CageEnvNames(vars), ""); err != nil {
 			return false, err
 		}
 	} else if cmd, _, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {

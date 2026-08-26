@@ -182,7 +182,7 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 			t.Fatal(err)
 		}
 		line, err := a.WrapInCage(ag, rt, session, dir, "sh ./probe.sh",
-			append(CageEnvNames(nil), "CLAUDE_CODE_OAUTH_TOKEN", "RHQ_HERDR_SOCK_PROBE"))
+			append(CageEnvNames(nil), "CLAUDE_CODE_OAUTH_TOKEN", "RHQ_HERDR_SOCK_PROBE"), "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -50,7 +50,7 @@ func TestCageLauncherExecsTheEngineAsTheRuntime(t *testing.T) {
 	rt, _ := a.LoadRuntime("claude")
 	dir := t.TempDir()
 	inner := ag.RenderCommandFor(rt, "claude", TierStrong)
-	line, err := a.WrapInCage(ag, rt, "s1", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"})
+	line, err := a.WrapInCage(ag, rt, "s1", dir, inner, []string{"CLAUDE_CODE_OAUTH_TOKEN"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestCageLauncherIsABinaryOutsideTheGates(t *testing.T) {
 	stale := filepath.Join(a.CageDir("p"), "launch.sh")
 	os.WriteFile(stale, []byte("#!/bin/sh\nexec docker run …\n"), 0o755)
 
-	line, err := a.WrapInCage(ag, rt, "s1", dir, "claude --model 'm'", []string{"CLAUDE_CODE_OAUTH_TOKEN"})
+	line, err := a.WrapInCage(ag, rt, "s1", dir, "claude --model 'm'", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestCageLauncherNameComesFromRuntimeNotInnerCommand(t *testing.T) {
 	if rt.Exe() != "claude" {
 		t.Fatalf("Exe() reads the runtime template, not the PID command: %q", rt.Exe())
 	}
-	line, err := a.WrapInCage(ag, rt, "s1", t.TempDir(), "env FOO=1 claude --model x", []string{"CLAUDE_CODE_OAUTH_TOKEN"})
+	line, err := a.WrapInCage(ag, rt, "s1", t.TempDir(), "env FOO=1 claude --model x", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

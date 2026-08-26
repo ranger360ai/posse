@@ -143,8 +143,8 @@ func TestBlindExplicitOffMeterRuntimeRuns(t *testing.T) {
 	if strings.Contains(r.out(), "— skipped") {
 		t.Errorf("an off-meter launch must not be parked:\n%s", r.out())
 	}
-	if !strings.Contains(calls(t, r.fake), "runtime/tier: grok/") {
-		t.Errorf("the launched work prompt must name grok:\n%s", calls(t, r.fake))
+	if got := delivered(t, r.d.App, r.fake); !strings.Contains(got, "runtime/tier: grok/") {
+		t.Errorf("the launched work prompt must name grok:\n%s", got)
 	}
 }
 
@@ -181,8 +181,8 @@ func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
 	if !strings.Contains(out, "a-1") || !strings.Contains(out, "blind 12m") || !strings.Contains(out, "— skipped") {
 		t.Errorf("the claude bead must park on the blind guarded meter:\n%s", out)
 	}
-	if !strings.Contains(calls(t, fake), "runtime/tier: grok/") {
-		t.Errorf("the grok bead must launch in the same pass:\n%s", calls(t, fake))
+	if got := delivered(t, b.App, fake); !strings.Contains(got, "runtime/tier: grok/") {
+		t.Errorf("the grok bead must launch in the same pass:\n%s", got)
 	}
 	if strings.Contains(out, "← overflow") {
 		t.Errorf("blind never overflows:\n%s", out)

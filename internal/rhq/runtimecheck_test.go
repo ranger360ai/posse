@@ -141,8 +141,8 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 		counted              bool
 	}{
 		{"claude", PromptTyped, RecordTrusted, true},
-		{"codex", PromptTyped, RecordUntrusted, false},
-		{"grok", PromptTyped, RecordTrusted, false},
+		{"codex", PromptArgv, RecordUntrusted, false},
+		{"grok", PromptArgv, RecordTrusted, false},
 	} {
 		rt, err := a.LoadRuntime(c.name)
 		if err != nil {
@@ -164,14 +164,23 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 			t.Errorf("%s declares no native rulebooks; all three CLIs have them", c.name)
 		}
 	}
-	// ADR 0013 §2: argv delivery is ASSUMED until ranger-base-cl7 probes
-	// it. Nothing may declare it on a guess — the failure mode is a work
-	// prompt delivered into a screen nobody read.
-	for _, n := range []string{"claude", "codex", "grok"} {
+	// ADR 0013 §2: argv delivery was ASSUMED until ranger-base-cl7 probed
+	// it, and the probe held on both non-claude runtimes on 2026-08-25
+	// (docs/adr/0013-argv-prompt-probe.md). The rule the pre-probe version
+	// of this test enforced — nothing declares argv on a guess — is now
+	// enforced from the other side: a runtime that declares argv must have
+	// a measurement behind it, and a StartupWait on an argv runtime is a
+	// number for a ladder it does not use.
+	for _, n := range []string{"codex", "grok"} {
 		rt, _ := a.LoadRuntime(n)
-		if rt.Prompt == PromptArgv {
-			t.Errorf("%s declares argv delivery — only a landed probe may do that", n)
+		if rt.StartupWait != 0 {
+			t.Errorf("%s declares argv AND a startup_wait: — the wait is the typed ladder's patience, and argv does not use it", n)
 		}
+	}
+	// claude is the one that stays typed, and deliberately: it works, and
+	// ADR 0013 calls argv there "an allowed later unify", not this bead's.
+	if rt, _ := a.LoadRuntime("claude"); rt.Prompt != PromptTyped {
+		t.Errorf("claude moved off typed delivery with no measurement asking for it")
 	}
 }
 
