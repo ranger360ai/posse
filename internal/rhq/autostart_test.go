@@ -603,3 +603,60 @@ func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
 		t.Errorf("first-arm block lost the cap:\n%s", r.calls)
 	}
 }
+
+// ranger-base-g7lt: NewApp prefers ~/.config/posse, but autostart.sh line 70
+// still defaults RHQ_HOME to ~/.config/rhq. hookWorld.run injects RHQ_HOME
+// so the existing suite cannot see this. A fresh `posse init` seeds posse
+// and, with RHQ_HOME unset, the hook stays disarmed.
+func TestAutostartDefaultHomePrefersPosse(t *testing.T) {
+	t.Skip("ranger-base-g7lt: plugin/autostart.sh still defaults RHQ_HOME to $HOME/.config/rhq; a fresh posse init never arms. Do not just flip the default — the live operator still has only ~/.config/rhq.")
+
+	user := t.TempDir()
+	preferred := filepath.Join(user, ".config", "posse")
+	if err := os.MkdirAll(preferred, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(preferred, "config.yaml"), []byte(armed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exists := filepath.Join(user, "session-exists")
+	calls := filepath.Join(user, "calls.log")
+	fake := "#!/usr/bin/env bash\n" +
+		"echo \"$*\" >> " + shq(calls) + "\n" +
+		"case \"$1\" in\n" +
+		"new)  if [ -e " + shq(exists) + " ]; then echo 'workspace already exists'; exit 1; fi\n" +
+		"      : > " + shq(exists) + "; echo created; exit 0 ;;\n" +
+		"kill) rm -f " + shq(exists) + "; exit 0 ;;\n" +
+		"esac\nexit 0\n"
+	bin := filepath.Join(user, "posse")
+	if err := os.WriteFile(bin, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hook, err := filepath.Abs(filepath.Join("..", "..", "plugin", "autostart.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", hook)
+	cmd.Env = []string{
+		"HOME=" + user,
+		"RHQ_HOME=",
+		"RHQ_BIN=" + bin,
+		"PATH=" + os.Getenv("PATH"),
+		"HERDR_SOCKET_PATH=",
+		"HERDR_SESSION=",
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("autostart: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "disarmed") {
+		t.Fatalf("fresh posse home stayed disarmed:\n%s", out)
+	}
+	got, _ := os.ReadFile(calls)
+	if !strings.Contains(string(got), "dispatch --watch") {
+		t.Fatalf("want posse new of a watch loop, got:\n%s\n%s", got, out)
+	}
+	if _, err := os.Stat(filepath.Join(user, ".config", "rhq")); !os.IsNotExist(err) {
+		t.Errorf("hook created the legacy home: %v", err)
+	}
+}

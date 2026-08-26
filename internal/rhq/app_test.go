@@ -65,3 +65,50 @@ func TestNewAppHomeSelection(t *testing.T) {
 		})
 	}
 }
+
+func TestNewAppHomeSelectionEdges(t *testing.T) {
+	t.Run("legacy file is not a home", func(t *testing.T) {
+		root := t.TempDir()
+		t.Setenv("HOME", root)
+		t.Setenv("RHQ_HOME", "")
+		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".config", "rhq"), []byte("not-a-dir"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var stderr strings.Builder
+		a := newApp(&stderr)
+		want := filepath.Join(root, ".config", "posse")
+		if a.Home != want {
+			t.Fatalf("home = %s, want preferred %s", a.Home, want)
+		}
+		if stderr.String() != "" {
+			t.Errorf("unexpected notice: %q", stderr.String())
+		}
+	})
+	t.Run("dangling preferred symlink falls back", func(t *testing.T) {
+		root := t.TempDir()
+		t.Setenv("HOME", root)
+		t.Setenv("RHQ_HOME", "")
+		preferred := filepath.Join(root, ".config", "posse")
+		legacy := filepath.Join(root, ".config", "rhq")
+		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(root, ".config", "no-such-posse"), preferred); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(legacy, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var stderr strings.Builder
+		a := newApp(&stderr)
+		if a.Home != legacy {
+			t.Fatalf("home = %s, want legacy %s", a.Home, legacy)
+		}
+		if !strings.Contains(stderr.String(), preferred) || !strings.Contains(stderr.String(), legacy) {
+			t.Fatalf("legacy notice %q must name both paths", stderr.String())
+		}
+	})
+}

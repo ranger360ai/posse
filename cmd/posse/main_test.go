@@ -132,6 +132,43 @@ func TestInitUsesPosseHomeByDefault(t *testing.T) {
 	}
 }
 
+// ranger-base-g98: an existing ~/.config/rhq is the home until the operator
+// moves it. posse init must seed that directory, not mkdir ~/.config/posse
+// (which would then win on the next command and hide the live instance).
+func TestInitFallsBackToLegacyHome(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	legacy := filepath.Join(home, ".config", "rhq")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := "legacy-marker: keep\n"
+	if err := os.WriteFile(filepath.Join(legacy, "config.yaml"), []byte(marker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "init")
+	cmd.Env = []string{"HOME=" + home, "RHQ_HOME="}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("posse init: %v\n%s", err, out)
+	}
+	s := string(out)
+	if !strings.Contains(s, "initialized "+legacy) {
+		t.Errorf("init said %q, want legacy home %s", s, legacy)
+	}
+	preferred := filepath.Join(home, ".config", "posse")
+	if !strings.Contains(s, preferred) || !strings.Contains(s, "nothing moved") {
+		t.Errorf("legacy notice missing from %q", s)
+	}
+	if _, err := os.Stat(preferred); !os.IsNotExist(err) {
+		t.Errorf("init created the preferred home: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(legacy, "config.yaml"))
+	if err != nil || string(got) != marker {
+		t.Errorf("legacy config overwritten: %v %q", err, got)
+	}
+}
+
 // rangerhq-ytkl: `posse dispatch -n three` used to reach the pass as -n 0,
 // and 0 is documented as no cap — a typo in the one flag whose job is to
 // bound a pass made it unbounded, with no line said about it. --timeout
