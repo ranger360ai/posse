@@ -135,8 +135,31 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 		t.Errorf("SKILL.md: %v — a skill without a description binds to nothing on some runtimes", err)
 	}
 	refs, err := os.ReadDir(filepath.Join(skill, "references"))
-	if err != nil || len(refs) != 7 {
-		t.Errorf("references/: %d files, %v — want the seven canon concepts", len(refs), err)
+	if err != nil {
+		t.Fatalf("references/: %v", err)
+	}
+	gotRefs := map[string]bool{}
+	for _, e := range refs {
+		gotRefs[e.Name()] = true
+	}
+	// Names, not just a count: len==7 would still pass if the seven files were
+	// renamed out from under SKILL.md's index (ranger-base-tkc).
+	wantRefs := []string{
+		"db-as-queue.md",
+		"delivery-and-idempotency.md",
+		"fencing-and-leases.md",
+		"liveness-and-identity.md",
+		"safe-reclamation.md",
+		"single-writer-and-stores.md",
+		"toctou.md",
+	}
+	if len(refs) != len(wantRefs) {
+		t.Errorf("references/: %d files %v — want the seven named canon concepts", len(refs), gotRefs)
+	}
+	for _, n := range wantRefs {
+		if !gotRefs[n] {
+			t.Errorf("references/: missing %s", n)
+		}
 	}
 
 	// Env sets hold secrets: 0700 dir, 0600 files, from the embed too.
