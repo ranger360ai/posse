@@ -3,7 +3,8 @@
 *Status: accepted 2026-08-17 · owner: architect · amended 2026-08-18
 (L4 folded from the container-tier spike — §3 L4, §4, §5, Consequences,
 Alternatives, Verification 8–11) · amended 2026-08-25 (ADR 0014:
-path-scoped Edit/Write, `writable:` at L2 and L4, L4 `:ro` carve-outs)*
+path-scoped Edit/Write, `writable:` at L2 and L4, L4 `:ro` carve-outs) ·
+amended 2026-08-26 (Claude directory trust and executable project config)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -415,3 +416,94 @@ codex `-s read-only`. `writable:` is the allow-list dual, at both tiers.
 L4's `:ro` repo carries L2's `.beads`/`.git` carve-outs as read-write
 overlays — the NOTES question about SQLite on a read-only mount is
 answered there, not here. Verification is ADR 0014's checklist.
+
+## Amendment 2026-08-26 — Claude directory trust makes project config live
+
+### Context
+
+`SeedClaudeTrust` now writes
+`projects[<session dir>].hasTrustDialogAccepted` before every Claude
+persona launch that needs it. This is necessary: Claude 2.1.241 has no
+trust flag or settings key, and an untrusted fresh directory stops at a
+full-screen dialog before dispatch can deliver work. The grant is exact-
+directory, merged into the operator's config, and already the supported
+non-interactive answer Claude names.
+
+The grant also makes the 2026-08-18 amendment's premise false. In an
+untrusted directory Claude drops project `hooks` and `mcpServers` from
+`<dir>/.claude/settings.json`; after the launch trusts the directory those
+entries load. They are the same repo-to-box executable channel for which
+the amendment makes Codex ask at launch. But file presence alone is not
+the right Claude predicate: this repository's committed settings file has
+only `permissions`, which Claude reads without this grant, and refusing it
+would describe no newly unlocked capability.
+
+### Decision
+
+Keep launch-time Claude directory trust, and extend `ProjectConfig` with
+an optional content trigger:
+
+1. `Runtime.ProjectConfig` remains the relative path. An empty path means
+   no project-config surface. `ProjectConfigKeys` is a list of top-level
+   JSON keys; empty means the existing whole-file-presence predicate.
+2. Codex stays `ProjectConfig: .codex/config.toml` with no keys. Its check
+   is unchanged: any such file is a hit because untyped TOML settings are
+   live under trust.
+3. Claude becomes `ProjectConfig: .claude/settings.json` with
+   `ProjectConfigKeys: [hooks, mcpServers]`. A present top-level key is a
+   hit regardless of its value. Posse identifies the channel; it does not
+   reimplement Claude's schema or decide whether today's value happens to
+   execute.
+4. For a keyed JSON check: missing file is clean; a readable top-level
+   object with neither key is clean; a matching key is degraded. An
+   existing file that is unreadable, invalid JSON, or not a top-level
+   object is degraded because the launch cannot prove the executable
+   channel absent. The message names the path and either the matched keys
+   or the classification failure.
+5. The result stays a `Degraded` entry in `CheckParityIn`, with all of §4's
+   existing behavior: refusal by default; marked launch under
+   `--allow-degraded`; no waiver at tier `fast`; re-check on relaunch; and
+   `trust_project_config: true` as the PID's durable opt-in.
+
+This amendment does not scan `.claude/settings.local.json`, which is the
+operator's gitignored local scope, or `.mcp.json`, whose project-server
+approval is a separate Claude surface. If measurement shows the directory
+seed bypasses either boundary, that is a new security finding, not a reason
+to turn this detector into a general Claude settings engine.
+
+### Consequences
+
+- This repository's permission-only `.claude/settings.json` does not
+  refuse Claude launches. Adding `hooks` or `mcpServers` makes the refusal
+  immediate and visible before the runtime line is typed.
+- The implementation remains data plus the standard JSON decoder. It owns
+  no state and holds none hostage: removing Claude's table entry restores
+  the pre-amendment behavior; clearing its keys deliberately falls back to
+  whole-file presence.
+- `NOTES.md`, `Runtime.ProjectConfig` comments, and the refusal text must
+  stop claiming Codex-only or `mcp_servers/notify`-only semantics.
+
+Verification:
+
+13. In scratch directories, a Claude runtime with no settings file and one
+    with a permissions-only file are clean; files with top-level `hooks`
+    and `mcpServers` each degrade, refuse creation by default, launch marked
+    with `--allow-degraded`, cannot be waived at `fast`, and launch clean for
+    a PID with `trust_project_config: true`. Existing but unreadable,
+    malformed, and non-object JSON each fail closed. The existing Codex
+    whole-file tests stay green.
+
+### Alternatives rejected
+
+- **Treat every `.claude/settings.json` as hazardous.** This is simple but
+  knowingly false for permission-only files and would refuse this fleet's
+  own checkout until every Claude PID opted in.
+- **Leave Claude unwired.** The trust seed now enables the exact class of
+  project-owned executable channel the Codex decision requires the launch
+  to disclose; runtime parity is not a reason to omit the check.
+- **Interpret hook/MCP values deeply.** Claude owns that evolving schema.
+  Key presence is a stable boundary; a bespoke executable-value evaluator
+  would age with the runtime and could fail open.
+- **Disable all Claude project settings at launch.** Project permissions
+  are an intentional fleet floor (ADR 0001), and removing the whole source
+  is a wider policy change than containing the two channels trust unlocks.
