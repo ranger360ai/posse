@@ -12,7 +12,8 @@
 #   <label>           names a workspace this server DOES hold, under that
 #                     workspace's own label                   -> must be LISTED,
 #                     and gets socket: and gen: stamped on it (the abb2716
-#                     backfill, plus rangerhq-yt1p's generation fence)
+#                     backfill, plus rangerhq-yt1p's generation fence;
+#                     gen: is N:N:N = dev:ino:mtime after ranger-base-fjj)
 #   ghost-stranger    names that SAME live workspace under a name that is not
 #                     its label                               -> must be KEPT
 #                     and NOT listed (rangerhq-yt1p): the id answers alive for
@@ -90,8 +91,18 @@ printf '%s\n' "$listing" | grep -q " $label\( \|$\)"
 check "live-workspace meta listed" $? "$label missing from the listing itself"
 grep -q "^socket: $sock\$" "$metas/$label.yaml"
 check "socket: backfilled onto the live meta (abb2716)" $? "no backfill — the meta would stay unprunable forever"
-grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"
-check "gen: backfilled onto the live meta (rangerhq-yt1p)" $? "no generation stamped — the next restart cannot tell a rename from a re-issued id"
+# ranger-base-fjj: ServerGen is dev:ino:mtime (three fields). The two-field
+# regex '^gen: N:N$' is a false FAIL against a correct stamp — it is the
+# pre-fjj token, and matching it would sign off on the linux inode-reuse hole.
+if /usr/bin/grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"; then
+  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 0
+elif /usr/bin/grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"; then
+  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "two-field gen: (dev:ino) — ranger-base-fjj requires bind time as a third field"
+elif /usr/bin/grep -q '^gen:' "$metas/$label.yaml"; then
+  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "gen: present but not N:N:N — $(/usr/bin/grep '^gen:' "$metas/$label.yaml")"
+else
+  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "no generation stamped — the next restart cannot tell a rename from a re-issued id"
+fi
 grep -q "^launched: $old\$" "$metas/$label.yaml"
 check "backfill preserved launched:" $? "the rewrite dropped fields it should have kept"
 

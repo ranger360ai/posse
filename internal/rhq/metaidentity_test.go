@@ -21,6 +21,7 @@ package rhq
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,29 @@ func TestGenTokenSeparatesAGenerationThatRecycledTheInode(t *testing.T) {
 	}
 	if rebound := genToken(recycled, bound.Add(time.Second)); rebound == first {
 		t.Errorf("a recycled inode bound again named the same generation (%q) — the fence is inert, and an inert fence is rangerhq-yt1p", rebound)
+	}
+
+	// scripts/verify-prune-guard.sh must accept N:N:N and reject N:N$.
+	// A two-field $ regex is a false FAIL against a correct stamp (rangerhq-u4f7).
+	three := regexp.MustCompile(`^[0-9]+:[0-9]+:[0-9]+$`)
+	two := regexp.MustCompile(`^[0-9]+:[0-9]+$`)
+	if !three.MatchString(first) {
+		t.Errorf("genToken %q is not N:N:N — the promote gate regex is now wrong", first)
+	}
+	if two.MatchString(first) {
+		t.Errorf("two-field $ regex matched %q — that is the false FAIL rangerhq-u4f7 caught", first)
+	}
+}
+
+// rangerhq-u4f7: ranger-base-fjj changed the token to three fields and left
+// the promote gate asserting two. The success path must be N:N:N.
+func TestVerifyPruneGuardScriptPinsThreeFieldGen(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "scripts", "verify-prune-guard.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `^gen: [0-9][0-9]*:[0-9][0-9]*:[0-9][0-9]*$`) {
+		t.Error("verify-prune-guard.sh no longer asserts the three-field gen: token (ranger-base-fjj); a two-field $ regex is a false FAIL")
 	}
 }
 
