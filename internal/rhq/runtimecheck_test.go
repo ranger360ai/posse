@@ -187,7 +187,7 @@ func TestInterstitialsAreNamedNotWritten(t *testing.T) {
 	a.RuntimeCheck(grok, Herdr{Bin: "no-such-herdr-binary"}, &gb)
 	a.RuntimeCheck(codex, Herdr{Bin: "no-such-herdr-binary"}, &cb)
 
-	for _, want := range []string{"privacy_banner_acked", "~/.grok/config.toml", "[Opt out]", "auto_update"} {
+	for _, want := range []string{"privacy_banner_acked", "~/.grok/config.toml", "[Opt out]", "auto_update", "maximum_version"} {
 		if !strings.Contains(gb.String(), want) {
 			t.Errorf("grok grid must name %q:\n%s", want, gb.String())
 		}
@@ -259,5 +259,18 @@ func TestInterstitialProbesReadRealShapes(t *testing.T) {
 	os.WriteFile(vj, []byte(`{"latest_version":"0.150.0","dismissed_version":"0.149.1"}`), 0o644)
 	if ok, why := codexUpdateProbe(); ok || !strings.Contains(why, "the menu is back") {
 		t.Errorf("a dismissal expires when latest_version moves: %v %q", ok, why)
+	}
+}
+
+// rangerhq-y7jr: --no-auto-update is real (hidden from --help, accepted) but
+// per-session. Putting it on GrokFleetFlags would leave the operator's
+// interactive grok and the shared leader unpinned. The config pin covers
+// every entry point; the launch line must not pretend it does.
+func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
+	if strings.Contains(GrokFleetFlags, "--no-auto-update") {
+		t.Fatal("GrokFleetFlags must not carry --no-auto-update; it is per-session and would leave the shared leader unpinned (rangerhq-y7jr)")
+	}
+	if GrokFleetFlags != `--permission-mode auto` {
+		t.Errorf("GrokFleetFlags drifted: %q", GrokFleetFlags)
 	}
 }
