@@ -251,3 +251,32 @@ func TestBeadsDirsUsesCWDOnlyWhenKeyIsAbsent(t *testing.T) {
 		t.Fatalf("an explicitly empty beads list must name no repos, got %q", dirs)
 	}
 }
+
+// UnresolvedDirs is for the callers that walk BeadsDirs without reaching bd
+// (ranger-base-vlrp): they get no chdir failure to learn from, so a path that
+// is not there has to be spotted here or not at all. The cwd sentinel always
+// resolves, and a file where a repo should be is just as unresolvable as a
+// path that does not exist.
+func TestUnresolvedDirsNamesOnlyWhatIsNotThere(t *testing.T) {
+	good := t.TempDir()
+	gone := filepath.Join(t.TempDir(), "projA")
+	file := filepath.Join(t.TempDir(), "notarepo")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := UnresolvedDirs([]string{"", good, gone, file})
+	if len(failed) != 2 {
+		t.Fatalf("want the two unresolvable paths, got %v", failed)
+	}
+	var se ScanError
+	if !errors.As(failed[0], &se) || se.Dir != gone {
+		t.Errorf("want a ScanError naming %s, got %v", gone, failed[0])
+	}
+	if !strings.Contains(failed[0].Error(), "no such directory") {
+		t.Errorf("want the missing path said plainly: %v", failed[0])
+	}
+	if !strings.Contains(failed[1].Error(), "not a directory") {
+		t.Errorf("want a file distinguished from a missing path: %v", failed[1])
+	}
+}

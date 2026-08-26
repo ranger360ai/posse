@@ -438,6 +438,15 @@ func main() {
 		if dir != "" {
 			dirs = []string{dir}
 		}
+		// A configured repo that is not there has an UNKNOWN census, not a
+		// clean one (ranger-base-vlrp). The git walk is deliberately quiet
+		// where a repo has no census, so a path that does not resolve at all
+		// reads exactly like a healthy check — the same shape as the ready
+		// scan folding a missing repo into an empty queue (rangerhq-llse).
+		unresolved := rhq.UnresolvedDirs(dirs)
+		for _, err := range unresolved {
+			fmt.Fprintf(os.Stderr, "beads census failed: %v\n", err)
+		}
 		found := 0
 		for _, d := range dirs {
 			lost, err := rhq.LostBeads(bd, d)
@@ -467,13 +476,20 @@ func main() {
 				fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), rhq.AbbrevHome(rhq.DeletionLedgerPath(d)))
 			}
 		}
-		if found == 0 {
+		if found == 0 && len(unresolved) == 0 {
 			fmt.Fprintln(out, "no lost beads: every id git ever carried still resolves")
 			break
 		}
-		if reason == "" {
+		if found == 0 {
+			fmt.Fprintf(out, "no lost beads in the %d repo(s) that resolved — %d configured path(s) are not there, so that census is unknown, not clean\n",
+				len(dirs)-len(unresolved), len(unresolved))
+		}
+		if reason == "" || len(unresolved) > 0 {
 			// Non-zero so an instance repo can run this in CI, the way
-			// `posse agent check` reports PID findings.
+			// `posse agent check` reports PID findings. A census that could
+			// not be taken everywhere is not an all-clear either, --record
+			// or not: --record owns the losses it found, not the ones it
+			// could not go looking for.
 			os.Exit(1)
 		}
 

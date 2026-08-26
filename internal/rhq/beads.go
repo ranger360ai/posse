@@ -374,6 +374,31 @@ type ScanError struct {
 func (e ScanError) Error() string { return AbbrevHome(e.Dir) + ": " + e.Err.Error() }
 func (e ScanError) Unwrap() error { return e.Err }
 
+// UnresolvedDirs is the configured paths that are not there at all, as
+// ScanErrors. BeadsDirs keeps an unresolvable path on purpose (ranger-base-5b5)
+// so callers can name it, and a caller that reaches bd learns of it from bd's
+// own chdir failure. The git census cannot: it is deliberately quiet where a
+// repo has no census (beadloss.go, TestLostBeadsQuietWithoutACensus), which
+// makes "no repo here" read exactly like "nothing was ever dropped here". A
+// caller that walks BeadsDirs without bd asks this instead. "" is the cwd
+// fallback for the unset key and always resolves.
+func UnresolvedDirs(dirs []string) []error {
+	var failed []error
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		st, err := os.Stat(d)
+		switch {
+		case err != nil:
+			failed = append(failed, ScanError{Dir: d, Err: Die("no such directory")})
+		case !st.IsDir():
+			failed = append(failed, ScanError{Dir: d, Err: Die("not a directory")})
+		}
+	}
+	return failed
+}
+
 // ReadyAll aggregates ready work across the configured beads repos. Repos
 // whose bd call fails (most commonly: no database) are skipped rather than
 // fatal — the cockpit shouldn't die because one repo isn't bd-initialized

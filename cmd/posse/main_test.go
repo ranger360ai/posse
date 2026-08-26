@@ -418,3 +418,85 @@ func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
 		}
 	}
 }
+
+// ranger-base-vlrp: the seed config ships two `beads:` example paths a fresh
+// machine does not have, and `posse beads check` used to print its all-clear
+// over them. The census walk is deliberately quiet where a repo has no
+// census, so "the repo is not there" read exactly like "nothing was ever
+// dropped here" — the same shape the ready scan had before rangerhq-llse.
+func TestBeadsCheckRefusesAMissingRepoAsACleanCensus(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	gone := filepath.Join(t.TempDir(), "projA")
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+gone+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "beads", "check")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("a census that could not be taken must not exit 0:\n%s", out)
+	}
+	got := string(out)
+	if !strings.Contains(got, gone) {
+		t.Errorf("want the unresolvable path named, got:\n%s", got)
+	}
+	if !strings.Contains(got, "unknown, not clean") {
+		t.Errorf("want the census named unknown, got:\n%s", got)
+	}
+	if strings.Contains(got, "every id git ever carried still resolves") {
+		t.Errorf("a repo that is not there must never read as an all-clear:\n%s", got)
+	}
+}
+
+// The quieter variant, and the one that outlives the first day: one good
+// path and one typo. Half the census is invisible, and used to stay
+// invisible — the good repo answered and the command said all-clear.
+func TestBeadsCheckNamesATypoBesideARealRepo(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	good := t.TempDir()
+	typo := filepath.Join(t.TempDir(), "projB-typo")
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+good+"\n  - "+typo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "beads", "check")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("one unresolvable path is still an incomplete census:\n%s", out)
+	}
+	got := string(out)
+	if !strings.Contains(got, typo) {
+		t.Errorf("want the typo named, got:\n%s", got)
+	}
+	if !strings.Contains(got, "1 repo(s) that resolved") {
+		t.Errorf("want the partial census said out loud, got:\n%s", got)
+	}
+}
+
+// The positive control: every configured path resolves, so the all-clear is
+// the truth and still gets printed at exit 0.
+func TestBeadsCheckStillAllClearsWhenEveryRepoResolves(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "beads", "check")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("a repo that resolves is not an error: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "every id git ever carried still resolves") {
+		t.Errorf("want the all-clear intact:\n%s", out)
+	}
+}
