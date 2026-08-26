@@ -59,6 +59,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -217,6 +218,13 @@ type ModelCache struct {
 	Caller string
 	Lister *ModelLister
 	Now    func() time.Time
+	// Errw is where the one failure this preflight must not swallow gets
+	// said: posse's own gate shim refusing posse's credential read
+	// (ranger-base-r64). Every other read failure is UNKNOWN and UNKNOWN
+	// launches, so the log is the right place for it; a refusal by our own
+	// deny: is a misconfiguration of ours and the only witness before this
+	// was one line in model-catalog.log. nil = say nothing.
+	Errw io.Writer
 }
 
 func (a *App) ModelCache() *ModelCache {
@@ -258,6 +266,7 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 	}
 	ids, err := l.List()
 	c.logRead(now, ids, err)
+	c.noteGateRefusal(err)
 	if err != nil {
 		var rl *RateLimit
 		if errors.As(err, &rl) {
@@ -273,6 +282,28 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 	}
 	c.store(modelEntry{At: now, Models: ids})
 	return ids, true
+}
+
+// gateRefusalNotices keeps the line below to once per process per rule —
+// the launch preflight runs in front of every launch, and a shop dispatching
+// all day inside a gated pane must not get the same sentence per launch.
+// Same shape and same reason as app.go's legacyHomeNotices.
+var gateRefusalNotices sync.Map
+
+// noteGateRefusal says, on stderr, that the catalog read failed because
+// posse's own gate refused posse's reader. The preflight's UNKNOWN branch is
+// otherwise silent by design (it launches at the asked-for tier and writes
+// only to model-catalog.log), which is right for an outage and wrong for a
+// refusal we configured ourselves.
+func (c *ModelCache) noteGateRefusal(err error) {
+	var g *GateRefusal
+	if c.Errw == nil || !errors.As(err, &g) {
+		return
+	}
+	if _, loaded := gateRefusalNotices.LoadOrStore(g.Cmd+"\x00"+g.Rule, struct{}{}); loaded {
+		return
+	}
+	fmt.Fprintf(c.Errw, "posse: %v; tier availability UNKNOWN, launches take the tier as asked\n", g)
 }
 
 // logRead makes the UNKNOWN side of the preflight observable. Before this
@@ -618,7 +649,9 @@ func hopDesc(fromRT, toRT, toTier, model string) string {
 // availableModels is the catalog as a set, plus whether posse actually
 // knows it. Nothing may treat a false here as "unavailable".
 func (a *App) availableModels(errw io.Writer) (map[string]bool, bool) {
-	ids, ok := a.ModelCache().Models(a.ModelProbeTTL(errw))
+	mc := a.ModelCache()
+	mc.Errw = errw
+	ids, ok := mc.Models(a.ModelProbeTTL(errw))
 	if !ok {
 		return nil, false
 	}

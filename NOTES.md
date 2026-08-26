@@ -325,6 +325,17 @@ watching them is the operator's interactive headroom — a fleet that eats the
   **nowhere** — not logs, not meta files, not bead comments; the errors in
   `internal/rhq/planusage.go` are deliberately generic so the credential
   cannot ride out in one.
+- **Refused by our own gate** (ranger-base-r64) posse reads that credential
+  by running `security`, and a persona pane puts that persona's L1 shim dir
+  first on PATH — so any `posse` command typed inside a pane whose PID
+  denies `Bash(security:*)` (every crew PID does) has its own read refused.
+  That is a distinct error, not "keychain item unreadable": the blind line
+  and `plan-usage.log` name the deny rule, and the launch preflight — whose
+  UNKNOWN branch is otherwise silent — says it once per process on stderr.
+  The distinction is the point: the two strings used to be identical, and on
+  2026-08-24 a refusal read as an outage and `plan_guard_blind_max: 0` was
+  set for hours in response. Resolving `security` by absolute path is the
+  other half of the fix and waits on ranger-base-17i.
 - **Above either threshold** the pass still runs. Each bead whose resolved
   runtime is on the guarded meter faces the ADR 0010 ladder (overflow when
   configured and eligible, otherwise park) with a line naming the window and
@@ -1641,7 +1652,12 @@ a 404), and the catalog it returns is the ten ids this account can use,
 including all three the claude tier table names. A later installed-binary
 launch on the same account produced no snapshot at all; before the request
 log below, that launch left no evidence distinguishing credential context,
-HTTP response, transport failure, or an empty answer.
+HTTP response, transport failure, or an empty answer. **Answered
+2026-08-26 (ranger-base-r64): that launch was from a gated pane** — posse's
+own `security` read resolved to the persona's `Bash(security:*)` shim and
+was refused. The read now returns that as its own error instead of
+"keychain item unreadable", and the preflight says so once per process on
+stderr rather than only in the log.
 
 Every cache miss that attempts a probe appends a generic outcome to
 `$RHQ_HOME/state/model-catalog.log` (`ok models=N`, HTTP failure, empty

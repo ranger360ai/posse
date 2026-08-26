@@ -20,6 +20,7 @@ package rhq
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -128,12 +129,71 @@ func NewPlanReader() *PlanReader {
 	}
 }
 
+// GateRefusal is one of posse's OWN L1 gate shims refusing a command posse
+// itself ran (ranger-base-r64). Every persona launch prepends that persona's
+// shim dir to PATH (gates.go) and every crew PID denies Bash(security:*), so
+// a `posse` command typed inside a persona pane resolves posse's keychain
+// read to that persona's refusal shim and gets exit 1.
+//
+// It is a distinct type because the two things it is NOT are both worse than
+// it: it is not a credential outage (the item was never reached), and it is
+// not an availability answer. Reporting it as "keychain item unreadable" is
+// byte-identical to a real outage — on 2026-08-24 that reading is what got
+// plan_guard_blind_max: 0 set for hours, switching off the shop's only
+// automated brake on a diagnosis that was wrong.
+//
+// Cmd is the shimmed binary; Rule is the deny: line that refused it, "" when
+// the shim's stderr did not name one.
+type GateRefusal struct {
+	Cmd  string
+	Rule string
+}
+
+func (e *GateRefusal) Error() string {
+	if e.Rule != "" {
+		return fmt.Sprintf("keychain read refused by a posse gate shim: %s (deny: %s) — posse's own gate, not a credential outage", e.Cmd, e.Rule)
+	}
+	return fmt.Sprintf("keychain read refused by a posse gate shim: %s — posse's own gate, not a credential outage", e.Cmd)
+}
+
+// gateRefusal reads an exec failure as a shim refusal, or returns nil. The
+// shim writes "refused by posse gate: <cmd> <argv> (deny: <rule>)" to stderr
+// and exits 1, and .Output() hands that stderr back on *exec.ExitError.
+//
+// Only the command name and the rule are lifted out. The rest of the line is
+// argv, and this file's standing rule is that nothing it returns quotes a
+// command's own bytes.
+func gateRefusal(cmd string, err error) *GateRefusal {
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) {
+		return nil
+	}
+	for _, line := range strings.Split(string(ee.Stderr), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "refused by posse gate: ")
+		if !ok {
+			continue
+		}
+		g := &GateRefusal{Cmd: cmd}
+		// The deny group is the tail of the line, and the rule inside it
+		// has parens of its own — Bash(security:*) — so the closing one is
+		// the LAST character, not the first ")" after the marker.
+		if i := strings.LastIndex(rest, "(deny: "); i >= 0 {
+			g.Rule = strings.TrimSuffix(rest[i+len("(deny: "):], ")")
+		}
+		return g
+	}
+	return nil
+}
+
 // KeychainToken pulls the Claude Code OAuth access token out of the macOS
 // keychain. Errors never quote the command's output — that output is the
 // credential blob.
 func KeychainToken() (string, error) {
 	out, err := exec.Command("security", "find-generic-password", "-s", KeychainService, "-w").Output()
 	if err != nil {
+		if g := gateRefusal("security", err); g != nil {
+			return "", g
+		}
 		return "", Die("keychain item %q unreadable", KeychainService)
 	}
 	var creds struct {
