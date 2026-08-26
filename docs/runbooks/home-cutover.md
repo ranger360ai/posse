@@ -31,21 +31,44 @@ inside that same quiet.
 ## The window (home half)
 
 **1. Preconditions.** Fleet quiesced (see queue-cutover step 2). A
-posse carrying o943's promote is installed. The constitution repo's
-working tree is clean — promote refuses otherwise, so check now:
-`git -C ~/src/ranger-base status`.
+posse carrying o943's promote is installed. The constitution's
+**promoted paths** are committed — promote refuses otherwise, so check
+now:
+
+```sh
+git -C ~/src/ranger-base status --porcelain -- rhq/agents rhq/config.yaml rhq/recipes rhq/skills
+```
+
+That pathspec, and not the whole tree, is what promote gates on. As
+built, promote **refuses on a dirty promoted path** and **reports
+anything else dirty without blocking** — because the two things ADR
+0015 itself carves out, `.beads` (§4) and `personas/` (§5), are dirty
+in this repo essentially always, and neither is prose a promote puts
+in force. (o943 files the §3 amendment; the code says so at
+`promoteCleanGate`.)
 
 **2. First promote.** `[o943]`
 
 ```sh
-posse promote
+posse promote ~/src/ranger-base/rhq          # or --dry-run first
 ```
 
 Creates `~/.config/posse` as a real directory, writes `agents/`,
-`config.yaml`, `recipes/`, `skills/` and the manifest beside them.
+`config.yaml`, `recipes/`, `skills/` and `promoted.json` beside them
+— `{source, repo, sha, sha256 per file}`, the anchor every later
+launch re-hashes against. It prints the diff it is putting in force
+first; `--dry-run` prints that and writes nothing.
+
+The path argument is needed only this once: the manifest records it,
+so later promotes take no argument. (`constitution:` in config.yaml is
+the other way to name it, and survives a home rebuilt from scratch —
+worth adding to the constitution's own `config.yaml` before the
+window so the promoted copy carries it.)
+
 It must **not** create `envs/` (§7). It warns if `default_env:` names
 an env set that is not at the home — at this point in the sequence
-that warning is *expected*; step 3 clears it.
+that warning is *expected*; step 3 clears it. The warning names the
+**set**, never a value.
 
 **3. Carry the env sets** (§7). Modes must survive the copy — a copy
 that widens 0600 publishes tokens to every process of this user.
@@ -95,6 +118,12 @@ DEGRADED, no "env set not found", no legacy-home notice. The
 `TightenEnvPerms` line printing at launch means a mode drifted in the
 copy — it fixed it, but check step 3 was run as written.
 
+A DEGRADED line here, or a dispatch refused with "constitution does
+not match its manifest", means the promoted set at the home is not
+what promote wrote — re-read the paths it names, then `posse promote`
+again. It can never be an env file: `envs/` is in no manifest entry
+(§7), which item 7 above checks directly.
+
 **7. Only after step 6 passes: delete the env values from the
 constitution tree.** They are gitignored, so this is a disk change,
 not a git change — the point is that live tokens stop sitting in a
@@ -106,6 +135,14 @@ rm ~/src/ranger-base/rhq/envs/*.env
 
 The `.gitignore` rule stays: it is the fence against a future env file
 dropped there ever reaching a commit.
+
+**8. The first ratified change.** With promote in force, put the fence
+through it. `scripts/draft-pid-deny-promote.sh ~/src/ranger-base/rhq/agents`
+drafts `deny: - Bash(posse promote:*)` into every crew PID and stops —
+it stages nothing, commits nothing, and promotes nothing. Read the
+diff, commit it, `posse promote`. That is ADR 0015 §3's second
+spelling of the fence, ratified by the step ADR 0015 adds, which is
+the point of doing it in this order.
 
 ## Rollback
 

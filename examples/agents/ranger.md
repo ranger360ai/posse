@@ -10,6 +10,7 @@ allow:
   - Bash(bd:*)
 deny:
   - Bash(git push:*)
+  - Bash(posse promote:*)
 metrics:
   - closed-no-reopen
 ---

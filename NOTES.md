@@ -2847,6 +2847,71 @@ rather than there:
   rangerhq-fuom mechanism, armed. It fails closed, which is why the check is
   "is `daemon-error` gone", not "did anything break".
 
+### the constitution's promote, and what it will never carry (ADR 0015 §2/§3/§7)
+
+`~/.config/posse` stops being a symlink onto the instance repo and becomes a
+**copy** of it, taken from a commit: `posse promote` (`internal/rhq/promote.go`,
+ranger-base-o943). The runbook is `docs/runbooks/home-cutover.md`. What is
+worth knowing here rather than there:
+
+- **The promoted set is four paths** — `agents/`, `config.yaml`, `recipes/`,
+  `skills/` — and the exclusions are a symbol, not a sentence: `PromotedPaths`
+  and `NotPromoted` in promote.go, with a test that reads both. `envs/`,
+  `state/` and `personas/` are never created, copied or touched by promote,
+  each for its own reason (§7 secrets with no commit behind them, machine-local
+  state, persona memory).
+- **The manifest is the trust anchor** ranger-base-5na lacked, and it sits at
+  `home/promoted.json` — **beside** the promoted copy, deliberately not under
+  `state/`, which every session can write. It records source, repo, commit and
+  a sha256 per file.
+- **Every launch re-hashes the promoted set against it.** A dispatched launch
+  **refuses** on a mismatch (nobody is watching it, and the fix is one operator
+  command); an interactive launch warns DEGRADED and comes up (refusing to open
+  the session the operator would fix it from is the failure, not the control).
+  The hook is at the top of `planLaunch`, so it is one place and not nine.
+  **No manifest = nothing was promoted here = nothing to check**, which is what
+  keeps every pre-0015 home and every test home launching.
+- **Measured, since ADR 0015 marked it ASSUMED and it sits on the refusal
+  path**: 7ms for 121 files / ~1.2MB, worst of 20 runs — several times the live
+  constitution's size (`TestVerifyPromotedCostIsNegligible`, which fails above
+  250ms so the assumption cannot quietly stop holding).
+- **An env file can never trip it**, and that is a design decision rather than
+  an oversight: `WriteEnvSet` is a live TUI path, so a verify covering `envs/`
+  would refuse dispatch after any routine credential edit, until a re-promote
+  that cannot even see the values. A verify that fires on correct behaviour is
+  a verify everyone learns to ignore.
+- **The clean gate is narrower than §3's wording, on purpose.** §3 says "the
+  constitution repo's working tree is clean"; as built, a dirty *promoted path*
+  refuses and anything else dirty is reported and allowed. The reason is ADR
+  0015's own two carve-outs: `.beads` (§4) and `personas/` (§5) are dirty in
+  that repo essentially always — both were, the hour this was built — and
+  neither is prose a promote puts in force. A gate nobody can pass is a gate
+  that gets bypassed. The amendment is filed; `promoteCleanGate` carries the
+  argument.
+- **A promote also deletes.** A PID the constitution no longer has leaves the
+  home, or a retired persona stays in force forever. Bounded to the promoted
+  set — it can no more reach `envs/` than the copy can — and every removal is
+  printed.
+- **The fence is spelled twice and neither spelling is the wall**: every
+  shipped PID denies `Bash(posse promote:*)`, and promote itself refuses under
+  `RHQ_PERSONA`. Both verified live (ranger-base-o943): the marker refusal
+  against the real constitution repo, and the rendered shim refusing `posse
+  promote`, `posse promote <dir>` and `posse promote --dry-run` while `posse
+  version` passes through, with the refusal in `refusals.log`. What *notices*
+  a constitution that changed anyway is the manifest.
+- **`globalValueOpts` gained a `posse` entry with NO options**, and that empty
+  entry is load-bearing: it declares that posse parses no global flag before
+  its subcommand (**MEASURED**, `main()` reads argv[1] directly), which is what
+  lets parity call the rule realized. Without it every PID carrying the deny
+  launched DEGRADED on every runtime × cage — measured on the live gates
+  report — and a fence that costs `--allow-degraded` on every launch is a
+  fence that gets turned off.
+- **The `rhq` alias is outside the shim.** `make install` still links
+  `$BINDIR/rhq -> posse` (transition mechanics, rangerhq-tyay), the gate shims
+  are keyed on the command NAME, and no PID denies `Bash(rhq promote:*)` — so
+  `rhq promote` walks past L1. It is politeness that leaks, not the wall: the
+  manifest still notices, and retiring the alias closes it. Filed.
+
 ## grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr)
 
 The fleet's grok shipped configured to replace itself. `~/.grok/config.toml`

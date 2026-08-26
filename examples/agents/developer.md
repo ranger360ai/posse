@@ -16,6 +16,7 @@ allow:
 deny:
   - Bash(git push:*)
   - Bash(git push --force:*)
+  - Bash(posse promote:*)
 metrics:
   - closed-no-reopen
   - blocked-honestly

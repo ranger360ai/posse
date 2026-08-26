@@ -1038,6 +1038,24 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
 	a.TightenEnvPerms(os.Stderr) // every launch re-asserts 700/600 on envs/
 
+	// ADR 0015 §3, the launch verify: the promoted constitution is hashed
+	// against its manifest before anything is launched with it. A DISPATCHED
+	// session refuses — nobody is watching that launch, and the fix is one
+	// operator command (`posse promote`), so fail-closed is cheap. An
+	// interactive launch warns DEGRADED and proceeds: the operator IS the
+	// oversight there, and refusing to open a session is how they would fix
+	// it. `envs/` is not in the promoted set and never reaches this check
+	// (§7): a hand-edited env set is a supported live path, not a mismatch.
+	// No manifest = nothing was ever promoted here = nothing to check, which
+	// is what keeps every pre-0015 home launching.
+	if v := a.VerifyPromoted(); !v.OK() {
+		if o.Bead != "" {
+			return nil, Die("%s\n  dispatch refuses to launch on a constitution nobody promoted (ADR 0015 §3)\n"+
+				"  the operator clears it with: posse promote", v.Line())
+		}
+		b.warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)\n", v.Line())
+	}
+
 	dir := o.Dir
 	if dir == "" {
 		dir = a.CfgGet("default_dir", os.Getenv("HOME"))

@@ -13,6 +13,7 @@ allow:
   - Bash(git log:*)
 deny:
   - Bash(git push:*)
+  - Bash(posse promote:*)
 metrics:
   - spec-clarity
   - closed-no-reopen

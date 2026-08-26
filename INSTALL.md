@@ -329,6 +329,7 @@ $RHQ_HOME/
   envs/           ← two example env sets   (dir 0700, files 0600)
   skills/         ← empty; the skills registry
   state/          ← empty; machine-local, never commit it
+  promoted.json   ← the manifest: sha256 per promoted file, marked `seeded`
 ```
 
 Not created, and you make them yourself when you need them:
@@ -348,6 +349,28 @@ $ cd ~/src/<your-instance-repo>
 $ echo 'rhq/state/' >> .gitignore
 $ git add -A && git commit -m 'posse: seed instance from posse examples'
 ```
+
+**Or keep the two apart, which is what ADR 0015 recommends once the
+instance has personas editing their own prose.** Draft the constitution —
+`agents/`, `config.yaml`, `recipes/`, `skills/` — in a repo, and put it in
+force with `posse promote <that dir>`, which copies it into `$RHQ_HOME` from
+a **commit** and records `{source, sha, sha256 per file}` in
+`promoted.json` beside it. Every launch re-hashes the promoted set against
+that manifest: a dispatched session refuses on a mismatch, an interactive
+one warns DEGRADED, and `posse promote` clears it. Uncommitted prose is then
+never in force, and what you ratify is a diff — promote prints
+`git diff <last promoted>..HEAD` over those four paths before it writes
+anything (`--dry-run` prints it and stops).
+
+Promote never creates, copies or touches `envs/` (gitignored secret values
+— there is no commit to promote them from, and a copy that widens 0600
+publishes tokens), `state/` (machine-local) or `personas/` (persona memory,
+which is scoped, versioned, and deliberately not ratified). `posse init`
+already seeds `envs/` with its modes, and every env read re-asserts them.
+
+`posse init` writes a manifest too, marked `seeded`: a fresh install
+verifies clean without ever having promoted anything, and a home that never
+had a manifest is simply not checked.
 
 ---
 
@@ -1198,4 +1221,5 @@ Deliberately out of scope, and not because they were forgotten:
   reasons live here
 - `docs/adr/` — the decisions. 0001 personas · 0002 runtimes and gates ·
   0003 model tiering · 0005 work prompts · 0006 handoff shapes ·
-  0007 skills binding · 0011 dispatch · 0015 multi-instance
+  0007 skills binding · 0011 dispatch · 0012 harness/instance boundary ·
+  0015 constitution promotion

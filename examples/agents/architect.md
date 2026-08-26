@@ -15,6 +15,7 @@ allow:
 deny:
   - Bash(git push:*)
   - Bash(git push --force:*)
+  - Bash(posse promote:*)
 metrics:
   - designs-implemented-unchanged
   - closed-no-reopen

@@ -17,6 +17,7 @@ deny:
   - Write
   - Bash(git commit:*)
   - Bash(git push:*)
+  - Bash(posse promote:*)
 metrics:
   - blocked-honestly
   - closed-no-reopen

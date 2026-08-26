@@ -16,6 +16,7 @@ deny:
   - Edit
   - Write
   - Bash(git push:*)
+  - Bash(posse promote:*)
 metrics:
   - findings-surviving-triage
 ---

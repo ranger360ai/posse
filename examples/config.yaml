@@ -139,6 +139,24 @@ default_emoji: ⚙️
 # model_preflight: false    # turn the check off entirely (default: on)
 # model_probe_ttl: 1h       # how long one reading is shared; 0 = every launch asks
 
+# ─── the constitution (ADR 0015) ─────────────────────────────────────────────
+# Where `posse promote` takes the fleet's prose FROM: the directory holding
+# agents/, config.yaml, recipes/ and skills/ in the repo you draft them in.
+# This home is the promoted COPY of that directory — promote writes it, and
+# every launch re-hashes it against `promoted.json` beside it (dispatch
+# refuses on a mismatch, an interactive launch warns DEGRADED).
+#
+# Unset is fine and is the shipped default: `posse init` seeds this home from
+# the built-in examples and marks the manifest `seeded`, so nothing verifies
+# against a commit that does not exist. Set this once you keep the
+# constitution in a repo of its own, and `posse promote` needs no argument.
+#
+# What promote NEVER writes, whatever this says: envs/ (gitignored secret
+# values — there is no commit to promote them from, and a copy that widens
+# 0600 publishes tokens), state/ (machine-local runtime data), personas/
+# (persona memory, ADR 0015 §5).
+# constitution: ~/src/<your instance repo>/rhq
+
 # ─── the queue ───────────────────────────────────────────────────────────────
 # Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate
 # unblocked work from each listed repo's bd database. A path that is missing

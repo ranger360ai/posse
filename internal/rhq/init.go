@@ -121,6 +121,13 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			os.Chmod(filepath.Join(a.EnvsDir, e.Name()), 0o600)
 		}
 	}
+	// ADR 0015 §3: a seeded home gets a manifest too, so the launch verify
+	// has a true anchor from the first launch on a clean box instead of
+	// firing on an install nobody promoted. Marked `seeded` — a real
+	// manifest with no commit behind it (promote.go).
+	if err := a.SeedPromoteManifest(); err != nil {
+		return err
+	}
 	fmt.Fprintf(w, "initialized %s (seed: %s)\n", a.Home, from)
 	return nil
 }

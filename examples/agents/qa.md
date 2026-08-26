@@ -14,6 +14,7 @@ allow:
   - Bash(git show:*)
 deny:
   - Bash(git push:*)
+  - Bash(posse promote:*)
 metrics:
   - findings-surviving-triage
   - closed-no-reopen

@@ -89,8 +89,19 @@ func (r shimRule) Verb() bool {
 // `git --exec-path` is deliberately absent: bare, it prints and exits
 // without consuming the next word, so treating it as a pair would hide a
 // following `push` from the matcher.
+//
+// An entry with NO options is meaningful and not a placeholder: it declares
+// that the command has no global option taking a separate value, which makes
+// its subcommand rules exactly matchable and lets parity claim them realized.
+// posse is such a command, and it is one by construction — `main()` reads
+// argv[1] as the subcommand with no global flag parsing at all, so
+// `posse -x promote` is not "promote behind an option", it is the unknown
+// command `-x` (**MEASURED**, cmd/posse/main.go). Without the entry every PID
+// carrying ADR 0015 §3's `Bash(posse promote:*)` launched DEGRADED on every
+// runtime × cage (measured on the live gates report, ranger-base-o943).
 var globalValueOpts = map[string][]string{
-	"git": {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"},
+	"git":   {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"},
+	"posse": {},
 }
 
 // matcherFor names how the shim matches r for cmd, and reports whether

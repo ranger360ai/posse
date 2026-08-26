@@ -1187,6 +1187,32 @@ func main() {
 			die(err)
 		}
 
+	case "promote":
+		// The constitution's `make install` (ADR 0015 §3). Operator-run: it
+		// refuses under the persona env marker, and every crew PID denies
+		// `Bash(posse promote:*)` at L1.
+		args, help := argLead(args)
+		if help {
+			fmt.Fprintln(out, "usage: posse promote [<constitution dir>] [--dry-run]")
+			os.Exit(0)
+		}
+		var po rhq.PromoteOpts
+		for _, v := range args {
+			switch {
+			case v == "--dry-run":
+				po.DryRun = true
+			case strings.HasPrefix(v, "-"):
+				die(rhq.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
+			case po.Source == "":
+				po.Source = v
+			default:
+				die(rhq.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
+			}
+		}
+		if err := a.CmdPromote(out, po); err != nil {
+			die(err)
+		}
+
 	case "help", "-h", "--help":
 		help()
 	case "version", "--version":
@@ -1486,6 +1512,22 @@ catalog:
   posse recipes                  list recipes
   posse init                     seed ~/.config/posse from the built-in examples
                                  (examples/ beside the binary wins, for dev builds)
+  posse promote [<dir>] [--dry-run]
+                                 ADR 0015 §3 — put the constitution in force: copy
+                                 agents/, config.yaml, recipes/, skills/ from the
+                                 constitution repo AT HEAD into the home and record
+                                 {source, sha, sha256/file} in promoted.json beside
+                                 them. Prints the diff since the last promote, so
+                                 what is ratified is a diff and not a vibe. Refuses
+                                 on a dirty promoted path (nothing uncommitted is
+                                 ever in force) and under RHQ_PERSONA. Never
+                                 creates, copies or touches envs/ (§7: gitignored
+                                 secrets, no commit to promote from), state/ or
+                                 personas/. <dir> defaults to the last promote's
+                                 source, then config constitution:.
+                                 Every launch re-hashes the promoted set against
+                                 promoted.json: dispatch refuses on a mismatch,
+                                 an interactive launch warns DEGRADED.
 
 cockpit (herdr plugin pane — make link-plugin):
   posse cockpit                  interactive oversight: sessions blocked-first +
