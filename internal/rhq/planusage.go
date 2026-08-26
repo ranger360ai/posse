@@ -33,8 +33,12 @@ import (
 
 const (
 	// PlanUsageURL is the OAuth usage endpoint; RHQ_PLAN_USAGE_URL overrides
-	// it (tests point it at a local server).
+	// it (tests point it at a local server), and that override is honoured
+	// only when it names loopback — credpin.go has the why.
 	PlanUsageURL = "https://api.anthropic.com/api/oauth/usage"
+	// PlanUsageHost is the host that answers it: the one host, besides this
+	// machine, this process puts the account's credential in front of.
+	PlanUsageHost = "api.anthropic.com"
 	// KeychainService is the macOS keychain item Claude Code stores its
 	// OAuth credentials under.
 	KeychainService = "Claude Code-credentials"
@@ -63,6 +67,12 @@ type PlanReader struct {
 	URL   string
 	Token func() (string, error)
 	HTTP  *http.Client
+	// URLErr is a refused RHQ_PLAN_USAGE_URL (credpin.go), carried here
+	// rather than returned by NewPlanReader: every caller of that wants a
+	// reader, and the honest place to say "no reading, and why" is the one
+	// that would have made the request. Non-nil = Read refuses and asks
+	// nobody — no keychain read, no request.
+	URLErr error
 	// Now is the clock a Retry-After date is measured against (nil =
 	// time.Now). Only the HTTP-date form of that header needs it.
 	Now func() time.Time
@@ -118,15 +128,19 @@ func retryAfter(v string, now time.Time) time.Duration {
 }
 
 func NewPlanReader() *PlanReader {
-	url := os.Getenv("RHQ_PLAN_USAGE_URL")
-	if url == "" {
-		url = PlanUsageURL
-	}
-	return &PlanReader{
-		URL:   url,
+	r := &PlanReader{
+		URL:   PlanUsageURL,
 		Token: KeychainToken,
-		HTTP:  &http.Client{Timeout: 10 * time.Second},
+		HTTP:  pinnedClient(10*time.Second, "usage endpoint", PlanUsageHost),
 	}
+	if raw := os.Getenv("RHQ_PLAN_USAGE_URL"); raw != "" {
+		if u, err := loopbackOverride("RHQ_PLAN_USAGE_URL", raw); err != nil {
+			r.URLErr = err
+		} else {
+			r.URL = u
+		}
+	}
+	return r
 }
 
 // GateRefusal is one of posse's OWN L1 gate shims refusing a command posse
@@ -213,8 +227,16 @@ func KeychainToken() (string, error) {
 // Read fetches the current utilization of both windows.
 func (r *PlanReader) Read() (PlanUsage, error) {
 	var u PlanUsage
+	if r.URLErr != nil {
+		return u, r.URLErr
+	}
 	if r.Token == nil || r.URL == "" {
 		return u, Die("plan reader not configured")
+	}
+	// Before the keychain, not after: a host posse does not credential is
+	// answered by asking nobody and reading nothing (credpin.go).
+	if err := pinnedEndpoint("usage endpoint", r.URL, PlanUsageHost); err != nil {
+		return u, err
 	}
 	tok, err := r.Token()
 	if err != nil {
@@ -232,10 +254,21 @@ func (r *PlanReader) Read() (PlanUsage, error) {
 	}
 	resp, err := cl.Do(req)
 	if err != nil {
+		// A refused redirect comes back through here wrapped in *url.Error;
+		// it is not an outage and must not be reported as one.
+		var pin *PinRefusal
+		if errors.As(err, &pin) {
+			return u, pin
+		}
 		// A transport error can quote the URL but never a header.
 		return u, Die("usage endpoint unreachable")
 	}
 	defer resp.Body.Close()
+	// A redirect a client without our CheckRedirect followed: the answer
+	// came from a host we do not credential, so it is not an answer.
+	if err := pinnedResponse("usage endpoint", resp, PlanUsageHost); err != nil {
+		return u, err
+	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 		return u, &RateLimit{Status: resp.Status, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), r.now())}
 	}

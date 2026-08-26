@@ -473,7 +473,11 @@ watching them is the operator's interactive headroom — a fleet that eats the
   is what let a blind guard hide; so when the thresholds **are** set and the
   last read failed, the header says `5h — · guard blind 14m` instead
   (rangerhq-6h1). Unconfigured stays clean. `RHQ_PLAN_USAGE_URL` redirects
-  the endpoint for tests.
+  the endpoint for tests, and **only to loopback**: the request carries the
+  account's OAuth token, so an override naming any other host is refused by
+  name rather than followed or silently ignored (`internal/rhq/credpin.go`,
+  ranger-base-17i). The preflight's twin of it, `RHQ_MODEL_LIST_URL`, is
+  deleted outright — nothing but the vulnerability read it.
 - The reader is exported as `PlanReader.Read` for rangerhq-25p, and Dial E
   took the offer: when the guard has read the windows this pass, those
   percentages compete with the dollar windows below. The cockpit's `d` key
@@ -1728,10 +1732,13 @@ degraded during an outage stays there until it is recreated after the
 model returns. And the test seam is `App.ModelLister` (nil =
 `NewModelLister`), the twin of `Dispatcher.Plan`: `newTestBackend` hands
 every test an unconfigured one, which reads no credential and reaches no
-network and is therefore also the fail-open path. Tests that want the
-preflight to *do* something seed `state/model-catalog.json` — a reading
-off a seeded snapshot with an unconfigured lister proves it never asked
-anyone.
+network and is therefore also the fail-open path. That seam is the *only*
+one: the catalog URL is compiled in, with no env override at all, because
+the probe sends the account's OAuth token and a second way to point that
+token is the same argument as a second way to hand it one (credpin.go).
+Tests that want the preflight to *do* something seed
+`state/model-catalog.json` — a reading off a seeded snapshot with an
+unconfigured lister proves it never asked anyone.
 
 Catalog membership and plan allotment are different facts. On 2026-08-24 a
 strong-tier Claude session returned a synthetic assistant message saying

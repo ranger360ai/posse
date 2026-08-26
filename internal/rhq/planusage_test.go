@@ -35,7 +35,10 @@ type planServer struct {
 func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 	t.Helper()
 	ps := &planServer{status: http.StatusOK}
-	ps.URL = "https://plan.test/usage"
+	// Loopback, because the endpoint override and the credentialed request
+	// are both pinned to it (credpin.go). Nothing listens on it: the fake
+	// transport below answers, so the port is decoration.
+	ps.URL = "https://127.0.0.1:9/usage"
 	ps.body = fmt.Sprintf(`{"five_hour":{"utilization":%g,"resets_at":"2026-08-18T12:00:00Z"},`+
 		`"seven_day":{"utilization":%g,"resets_at":"2026-08-24T12:00:00Z"}}`, fiveH, sevenD)
 	ps.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

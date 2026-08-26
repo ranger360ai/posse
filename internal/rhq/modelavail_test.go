@@ -197,7 +197,10 @@ func TestModelCacheSharesOneReading(t *testing.T) {
 func TestModelCacheLogsAnUnreadableCatalogWithoutTheCredential(t *testing.T) {
 	a := preflightApp(t)
 	a.ModelLister = &ModelLister{
-		URL:   "https://models.invalid/v1/models",
+		// Loopback: the credentialed request is pinned to this machine or
+		// the compiled-in host (credpin.go), and the fake transport below
+		// is what actually answers.
+		URL:   "https://127.0.0.1:9/v1/models",
 		Token: func() (string, error) { return fakeToken, nil },
 		HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{

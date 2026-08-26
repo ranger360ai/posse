@@ -65,10 +65,12 @@ import (
 
 const (
 	// ModelListURL is Anthropic's model catalog — a plain GET, no tokens
-	// billed. RHQ_MODEL_LIST_URL overrides it (tests point it at a local
-	// server, the same seam PlanUsageURL has). There is deliberately NO
-	// override for the credential: a second way to hand this process a
-	// token is a new credential path, and that is not this bead's to open.
+	// billed. There is deliberately NO override for it and none for the
+	// credential: a second way to hand this process a token is a new
+	// credential path, and a second way to POINT that token is the same
+	// argument. RHQ_MODEL_LIST_URL used to be that second way and is gone
+	// (ranger-base-17i) — nothing read it but the vulnerability, since the
+	// tests inject App.ModelLister, the seam built for exactly this.
 	//
 	// It is /v1/models and not an /api/oauth/… route like the plan guard's:
 	// probed unauthenticated 2026-08-23, /v1/models answers 401 (it exists
@@ -77,7 +79,9 @@ const (
 	// is the one thing a launch finds out at run time — and a 401 is
 	// unknown, not unavailable, so finding out costs nothing.
 	ModelListURL = "https://api.anthropic.com/v1/models"
-	// ModelListHost is the API host that answers it. A runtime is probed
+	// ModelListHost is the API host that answers it, and the one host —
+	// besides this machine — the preflight will put the account's
+	// credential in front of (credpin.go). A runtime is probed
 	// only when its own `egress:` names this host — that is posse saying
 	// "this runtime's model ids are ids I know a catalog for", and it is
 	// data rather than a hardcoded runtime name, so a template-only runtime
@@ -119,11 +123,11 @@ type ModelLister struct {
 }
 
 func NewModelLister() *ModelLister {
-	url := os.Getenv("RHQ_MODEL_LIST_URL")
-	if url == "" {
-		url = ModelListURL
+	return &ModelLister{
+		URL:   ModelListURL,
+		Token: KeychainToken,
+		HTTP:  pinnedClient(modelProbeTimeout, "model list endpoint", ModelListHost),
 	}
-	return &ModelLister{URL: url, Token: KeychainToken, HTTP: &http.Client{Timeout: modelProbeTimeout}}
 }
 
 // List returns the model ids this account can use. Errors never quote a
@@ -131,6 +135,12 @@ func NewModelLister() *ModelLister {
 func (r *ModelLister) List() ([]string, error) {
 	if r.Token == nil || r.URL == "" {
 		return nil, Die("model lister not configured")
+	}
+	// Before the keychain, not after: a URL this process does not
+	// credential is answered by asking nobody and reading nothing. getPage
+	// checks again where the header is actually set (credpin.go).
+	if err := pinnedEndpoint("model list endpoint", r.URL, ModelListHost); err != nil {
+		return nil, err
 	}
 	tok, err := r.Token()
 	if err != nil {
@@ -178,6 +188,9 @@ func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, erro
 	if err != nil {
 		return page, Die("bad model list url")
 	}
+	if err := pinnedRequest("model list endpoint", req, ModelListHost); err != nil {
+		return page, err
+	}
 	// The same pair the plan guard sends: a Claude Code OAuth token goes on
 	// Authorization: Bearer with the oauth beta header, never on x-api-key.
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -185,10 +198,22 @@ func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, erro
 	req.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := cl.Do(req)
 	if err != nil {
+		// A refused redirect comes back through here wrapped in *url.Error;
+		// it is not an outage and must not be reported as one.
+		var pin *PinRefusal
+		if errors.As(err, &pin) {
+			return page, pin
+		}
 		// A transport error can quote the URL but never a header.
 		return page, Die("model list endpoint unreachable")
 	}
 	defer resp.Body.Close()
+	// A redirect a client without our CheckRedirect followed: the answer
+	// came from a host we do not credential, so it is not an answer — and
+	// an error here is what keeps it out of ModelCache.store.
+	if err := pinnedResponse("model list endpoint", resp, ModelListHost); err != nil {
+		return page, err
+	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 		return page, &RateLimit{Status: resp.Status, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
