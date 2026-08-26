@@ -78,7 +78,7 @@ func TestWatchStopsOnContext(t *testing.T) {
 		}
 	}()
 	done := make(chan int, 1)
-	go func() { done <- d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond) }()
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
 
 	// A backstop, not a margin: a loop that wedges mid-pass, or one that
 	// stops honouring ctx, fails with a sentence instead of hanging until

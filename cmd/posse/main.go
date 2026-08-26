@@ -525,9 +525,13 @@ func main() {
 		d := rhq.NewDispatcher(a, hb, out)
 		dirF, personaF, maxN := "", "", 0
 		var watch, watchMax time.Duration
+		watchStatus := false
 		rest := args
 		for len(rest) > 0 {
 			switch rest[0] {
+			case "--watch-status":
+				watchStatus = true
+				rest = rest[1:]
 			case "--dry-run":
 				d.DryRun = true
 				rest = rest[1:]
@@ -616,6 +620,18 @@ func main() {
 				die(rhq.Die("unknown flag: %s", rest[0]))
 			}
 		}
+		if watchStatus {
+			// The liveness question, asked of the kernel and answered on
+			// one line (rangerhq-gir5). Reads no bd, talks to no herdr, and
+			// launches nothing — plugin/autostart.sh runs it at every herdr
+			// server start, before the fleet is up.
+			line, err := rhq.WatchStatus(a)
+			if err != nil {
+				die(err)
+			}
+			fmt.Fprintln(out, line)
+			return
+		}
 		if !d.Bd.Available() {
 			die(rhq.Die("bd not found in PATH"))
 		}
@@ -626,8 +642,11 @@ func main() {
 				watchMax = 8 * watch
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			passes := d.Watch(ctx, dirF, personaF, maxN, watch, watchMax)
+			passes, err := d.Watch(ctx, dirF, personaF, maxN, watch, watchMax)
 			stop()
+			if err != nil {
+				die(err)
+			}
 			fmt.Fprintf(out, "watch stopped after %d pass(es)\n", passes)
 			return
 		}
@@ -1367,9 +1386,24 @@ dispatch (beads):
       --watch <interval> [--max-interval <i>]   keep passing: sleep between
                                  passes, quiet passes double the sleep up to
                                  max (default 8× interval); ctrl-c stops
-                                 the loop stamps state/dispatch-watch.pid while
-                                 it runs, so the autostart hook can tell it
-                                 from a herdr-restored husk
+                                 the loop holds flock(2) on
+                                 state/dispatch-watch.lock for its whole life,
+                                 so one loop per RHQ_HOME is the kernel's rule
+                                 and a second --watch refuses rather than
+                                 double-dispatching the queue; it also stamps
+                                 state/dispatch-watch.pid — which pid, since
+                                 when, under what argv, for the operator and
+                                 never as evidence
+      --watch-status           is a --watch loop of this RHQ_HOME running?
+                                 one line, read from the lock:
+                                   watch-loop: running (pid N, since T)
+                                   watch-loop: none (<lock> is free)
+                                 The LINE is the answer; the exit status says
+                                 only whether the question could be asked.
+                                 Reads no bd and no herdr —
+                                 plugin/autostart.sh asks it at every herdr
+                                 server start to tell a live loop from a
+                                 restored husk
                                config plan_guard_5h:/plan_guard_7d: (percent)
                                  skip a pass above the plan's rate windows;
                                  unset = off, unreadable = no-op — except under

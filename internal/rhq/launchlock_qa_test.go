@@ -212,7 +212,7 @@ func TestWatchReleasesLockBetweenPasses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan int, 1)
-	go func() { done <- d.Watch(ctx, "", "", 0, 30*time.Second, 30*time.Second) }()
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 30*time.Second, 30*time.Second); done <- p }()
 
 	qaWaitFor(t, &out, "next pass in") // the loop is in its backoff now
 	free := make(chan error, 1)

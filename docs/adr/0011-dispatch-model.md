@@ -157,7 +157,15 @@ retires.
   assess exposure. **ops** — once §1's helper exists, migrate autostart's
   `loop_alive` onto the same flock discipline (kills the pidfile class
   at the root); `dispatch-watch.pid` stays for the husk check's identity
-  half.
+  half. *(Landed 2026-08-26, rangerhq-gir5: `--watch` holds
+  `state/dispatch-watch.lock` for its lifetime and a second one refuses;
+  `posse dispatch --watch-status` reports the lock on one line and
+  `plugin/autostart.sh` reads that line. No `ps` and no pid remains in the
+  liveness decision, closing rangerhq-ppy9 and ranger-base-rmc with it. The
+  one judgement the flock did not make for us: a probe that cannot be ASKED
+  — a posse too old to know the subcommand — is not an answer, and the hook
+  stands down on it, keeping ct9/mugy's asymmetry that unarmed is visible
+  and double dispatch is not.)*
 - Operator's view: unchanged — `posse list` and the cockpit read as today.
   New surface: one line when a second launcher waits, naming the holder.
   *(Amended 2026-08-23: not quite unchanged — `posse ready` files by the

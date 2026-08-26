@@ -212,7 +212,7 @@ func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
 		}
 	}()
 	done := make(chan int, 1)
-	go func() { done <- d.Watch(ctx, "", "", 0, 10*time.Millisecond, 40*time.Millisecond) }()
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 10*time.Millisecond, 40*time.Millisecond); done <- p }()
 
 	var passes int
 	select {

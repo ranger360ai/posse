@@ -64,20 +64,19 @@ func TestWatchPidRoundTrip(t *testing.T) {
 	if !ok || w.Pid != os.Getpid() || !w.Started.Equal(started) || w.Cmd != "posse dispatch --watch 5m" {
 		t.Fatalf("round trip lost something: %+v (ok=%v)", w, ok)
 	}
-	if !w.Alive() {
-		t.Error("the test process must read as alive")
-	}
 }
 
-func TestWatchPidLivenessNotExistence(t *testing.T) {
+// The record is identity and says nothing about liveness (rangerhq-gir5):
+// a dead loop leaves it behind, and it stays perfectly readable — the lock
+// is what makes that harmless. What this pins is that reading it never
+// silently invents a record where there is none.
+func TestWatchPidIsARecordNotALiveness(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dispatch-watch.pid")
 
 	if _, ok := ReadWatchPid(path); ok {
 		t.Error("no file must read as no record")
 	}
-	// A dead loop leaves the file behind — that is the whole reason readers
-	// check liveness (rangerhq-ct9).
 	cmd := exec.Command("sh", "-c", "exit 0")
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
@@ -87,11 +86,8 @@ func TestWatchPidLivenessNotExistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, ok := ReadWatchPid(path)
-	if !ok {
-		t.Fatal("stale record must still be readable")
-	}
-	if w.Alive() {
-		t.Errorf("reaped pid %d must not read as alive", dead)
+	if !ok || w.Pid != dead {
+		t.Fatalf("a stale record must still name its pid: %+v (ok=%v)", w, ok)
 	}
 	for _, junk := range []string{"", "pid: nonsense\n", "pid: 0\n", "started: now\n"} {
 		os.WriteFile(path, []byte(junk), 0o644)
@@ -124,14 +120,17 @@ func TestWatchStampsAndClearsPidfile(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644)
 	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
 
-	// A live foreign record is overwritten — and said out loud, because two
-	// loops on one queue double-dispatch it.
+	// A foreign record whose pid happens to be alive is overwritten, in
+	// silence. It used to earn "another dispatch --watch loop looks live",
+	// which was an inference from a decayed file and cried wolf at every
+	// recycled pid; the lock is what knows now, and it let this loop start
+	// (rangerhq-gir5).
 	other := liveProcess(t, "dispatch-watch-stub")
 	WriteWatchPid(WatchPidPath(b.App), WatchPid{Pid: other})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
-	go func() { done <- d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond) }()
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
 
 	var seen *WatchPid
 	for i := 0; i < 200; i++ {
@@ -153,7 +152,7 @@ func TestWatchStampsAndClearsPidfile(t *testing.T) {
 	if _, err := os.Stat(WatchPidPath(b.App)); err == nil {
 		t.Error("a loop that ends cleanly must clear its stamp")
 	}
-	if !strings.Contains(errs.String(), "another dispatch --watch loop looks live") {
-		t.Errorf("overwriting a live loop's record must warn, got: %q", errs.String())
+	if strings.Contains(errs.String(), "looks live") {
+		t.Errorf("a stale record is not a second loop — the lock decides that: %q", errs.String())
 	}
 }

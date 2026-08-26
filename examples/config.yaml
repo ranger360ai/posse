@@ -316,7 +316,9 @@ dirs:
 # guard also fails closed here after plan_guard_blind_max: without a reading,
 # because this loop is the one with no witness.
 #
-# Log: $RHQ_HOME/state/dispatch-watch.log, beside dispatch-watch.pid.
+# Log: $RHQ_HOME/state/dispatch-watch.log, beside dispatch-watch.lock (held
+# by the loop for its whole life; `posse dispatch --watch-status` reads it)
+# and dispatch-watch.pid (which pid, since when, under what argv).
 # autostart_interval: 5m       # base pass interval (30s, 5m, or bare seconds) — THE ARM SWITCH
 # autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval)
 # autostart_max_beads: 3       # -n, launch attempts per pass. A cap is ALWAYS present:

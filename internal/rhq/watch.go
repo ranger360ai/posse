@@ -55,18 +55,37 @@ func ParseInterval(s string) (time.Duration, error) {
 // Watch runs passes until ctx is done. Returns the number of passes run.
 // A pass error is reported and the loop continues (bd or herdr hiccups
 // are transient by nature); only ctx ends it.
-func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string, max int, base, maxInterval time.Duration) int {
+//
+// The error is the refusal to start: another loop of this RHQ_HOME already
+// holds the watch lock, and one loop per queue is the invariant. It is
+// returned before any pass, so a refused Watch has done nothing.
+func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string, max int, base, maxInterval time.Duration) (int, error) {
 	if maxInterval < base {
 		maxInterval = base
 	}
+	// The loop's liveness, kernel-owned for its whole life (rangerhq-gir5).
+	// Taken before anything else so a second loop refuses without having
+	// touched the queue.
+	lock, held, err := lockWatch(d.App)
+	if held {
+		return 0, Die("another dispatch --watch loop of %s is already running — one loop per queue (ADR 0011 §1)", AbbrevHome(d.App.StateDir))
+	}
+	if err != nil {
+		// Degraded, never fatal: an unwritable state dir costs the record,
+		// not the loop. Say it, because while it lasts the autostart hook
+		// reads this loop as no loop and may replace it.
+		fmt.Fprintf(d.errw(), "warning: cannot hold the watch lock at %s: %v — the autostart hook cannot see this loop\n", AbbrevHome(WatchLockPath(d.App)), err)
+	}
+	defer lock.Release()
 	// A timer typed this command, not a human: the plan guard's fail-open
 	// line has no witness from here on, so blindness gets a clock
 	// (rangerhq-6h1). Seeded at loop start, not at the epoch — the first
 	// pass of a fresh loop gets the whole grace rather than an instant skip.
 	d.Unattended = true
 	d.blindSince = d.now()
-	// Leave a liveness record for anything that would otherwise infer the
-	// loop from the workspace — plugin/autostart.sh above all (rangerhq-ct9).
+	// Identity, not liveness: which pid, since when, under what argv. The
+	// lock above is what anything asking "is the loop running?" tests
+	// (rangerhq-gir5); this is what it quotes once the answer is yes.
 	defer d.dropWatchPid()
 	d.stampWatchPid()
 	passes := 0
@@ -79,27 +98,29 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			fmt.Fprintf(d.Out, "✗ pass failed: %v\n", err)
 		}
 		if ctx.Err() != nil {
-			return passes
+			return passes, nil
 		}
 		wait = NextInterval(wait, base, maxInterval, n)
 		fmt.Fprintf(d.Out, "   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
 		select {
 		case <-ctx.Done():
-			return passes
+			return passes, nil
 		case <-time.After(wait):
 		}
 	}
 }
 
-// stampWatchPid records this loop at $RHQ_HOME/state/dispatch-watch.pid.
-// An unwritable state dir costs the record, never the loop: the hook then
-// sees no live loop and falls back to its old kill-and-replace, which is
-// what it did before the file existed.
+// stampWatchPid records who this loop is at $RHQ_HOME/state/dispatch-watch.pid.
+// An unwritable state dir costs the record, never the loop.
+//
+// It overwrites whatever it finds, and no longer inspects it first. The old
+// "another loop looks live (pid N)" warning read a live pid in a stale
+// record as a second loop — the inference this bead removed, and a reliable
+// source of false alarms once a pid was recycled. The lock is what knows,
+// and it has already answered by the time this runs: a genuine second loop
+// never reaches here, because it refused above.
 func (d *Dispatcher) stampWatchPid() {
 	path := WatchPidPath(d.App)
-	if prev, ok := ReadWatchPid(path); ok && prev.Pid != os.Getpid() && prev.Alive() {
-		fmt.Fprintf(d.errw(), "warning: another dispatch --watch loop looks live (pid %d) — two loops share one queue\n", prev.Pid)
-	}
 	rec := WatchPid{Pid: os.Getpid(), Started: d.now(), Cmd: strings.Join(os.Args, " ")}
 	if err := WriteWatchPid(path, rec); err != nil {
 		fmt.Fprintf(d.errw(), "warning: cannot record the watch loop at %s: %v\n", path, err)

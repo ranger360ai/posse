@@ -7,12 +7,21 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // plugin/autostart.sh under test. herdr runs it as `bash autostart.sh
 // --startup` once per server start — including the start of a live-handoff
-// import server, which is the case rangerhq-ct9 is about. The hook is
-// driven here against a fake posse, so nothing real is created.
+// import server, which is the case rangerhq-ct9 is about.
+//
+// Two halves, faked differently on purpose. Everything the hook does to
+// herdr (`new`, `kill`) is scripted, so nothing real is created. The
+// liveness decision is not faked at all: the hook asks
+// `posse dispatch --watch-status`, and that reaches the real WatchStatus
+// over a real flock in a temp RHQ_HOME. A live loop here is the test
+// process holding that lock, and the hook's probe is a separate process
+// asking the kernel about it — which is exactly the arrangement in
+// production (rangerhq-gir5).
 
 type hookRun struct {
 	out   string
@@ -23,20 +32,40 @@ type hookRun struct {
 type hookWorld struct {
 	home         string // RHQ_HOME
 	exists       string // touched while the fake posse believes the session exists
-	path         string // prepended to PATH, where a test shadows a system tool
 	socket       string // HERDR_SOCKET_PATH; empty is the default herdr server
 	herdrSession string // HERDR_SESSION; empty is the default herdr server
+	deaf         string // touched to make the fake posse fail --watch-status
+	noisy        string // touched to make it print an unrelated stderr notice first
 }
 
 func newHookWorld(t *testing.T, config string) *hookWorld {
 	t.Helper()
 	home := t.TempDir()
-	w := &hookWorld{home: home, exists: filepath.Join(home, "session-exists")}
+	w := &hookWorld{
+		home:   home,
+		exists: filepath.Join(home, "session-exists"),
+		deaf:   filepath.Join(home, "probe-deaf"),
+		noisy:  filepath.Join(home, "probe-noisy"),
+	}
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// `new` and `kill` are scripted — they stand in for herdr. The liveness
+	// question is not: `dispatch --watch-status` re-execs this test binary
+	// as posse (TestMain's RHQ_FAKE_POSSE arm), which answers it from the
+	// real lock in the real state dir. The seam the hook depends on is that
+	// line, so the tests must cross it for real (rangerhq-gir5).
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
 	fake := "#!/usr/bin/env bash\n" +
 		"echo \"$*\" >> " + shq(filepath.Join(home, "calls.log")) + "\n" +
+		"if [ \"$1 $2\" = 'dispatch --watch-status' ]; then\n" +
+		"  if [ -e " + shq(w.deaf) + " ]; then echo 'posse: unknown flag: --watch-status' >&2; exit 1; fi\n" +
+		"  if [ -e " + shq(w.noisy) + " ]; then echo 'posse: ~/.config/posse does not exist; using existing home ~/.config/rhq (nothing moved)' >&2; fi\n" +
+		"  RHQ_FAKE_POSSE=1 exec " + shq(self) + " dispatch --watch-status\n" +
+		"fi\n" +
 		"case \"$1\" in\n" +
 		"new)  if [ -e " + shq(w.exists) + " ]; then echo 'workspace already exists'; exit 1; fi\n" +
 		"      : > " + shq(w.exists) + "; echo created; exit 0 ;;\n" +
@@ -50,32 +79,53 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 
 func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// fakePs shadows `ps` with a script. Shadowing beats un-setting PATH: the
-// hook still needs sed, head and the rest to get as far as the probe.
-func (w *hookWorld) fakePs(t *testing.T, script string) {
+// app is the hook's RHQ_HOME as posse sees it.
+func (w *hookWorld) app() *App {
+	return &App{Home: w.home, StateDir: filepath.Join(w.home, "state")}
+}
+
+// loopRunning arranges the live loop every carry-over test needs: the test
+// itself takes the watch lock, exactly as `posse dispatch --watch` does, and
+// the hook's probe is a separate process asking the kernel about it.
+func (w *hookWorld) loopRunning(t *testing.T) *WatchLock {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(script), 0o755); err != nil {
+	lock, held, err := lockWatch(w.app())
+	if err != nil || held {
+		t.Fatalf("could not arrange a running loop: held=%v err=%v", held, err)
+	}
+	t.Cleanup(lock.Release)
+	return lock
+}
+
+// deafProbe is the "could not ask" environment: a posse too old to know the
+// subcommand, or any other reason the question cannot be put. The hook must
+// stand down on it rather than replace a loop it cannot see.
+func (w *hookWorld) deafProbe(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(w.deaf, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	w.path = dir
 }
 
-// breakPs is the mugy environment: `ps` cannot answer at all (slim image,
-// sandbox that denies process inspection, restricted PATH).
-func (w *hookWorld) breakPs(t *testing.T) {
+// noisyProbe is the operator's own box: posse prints the config-home
+// transition notice on stderr before it answers anything, on every
+// invocation, for as long as the instance has only the old home.
+func (w *hookWorld) noisyProbe(t *testing.T) {
 	t.Helper()
-	w.fakePs(t, "#!/bin/sh\nexit 127\n")
+	if err := os.WriteFile(w.noisy, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
-// psCanReadArgv reports whether this box's `ps` can name a process by pid.
-// Only the pid-reuse guard needs that — refuting a live pid is the one
-// question an unanswerable probe cannot decide, so the test for it is
-// skipped rather than failed where the answer is unavailable (rangerhq-mugy).
-func psCanReadArgv(t *testing.T) bool {
-	t.Helper()
-	out, err := exec.Command("ps", "-p", strconv.Itoa(os.Getpid()), "-o", "command=").Output()
-	return err == nil && len(strings.TrimSpace(string(out))) > 0
+// probedOnly reports whether the hook asked the liveness question and did
+// nothing else — the shape of every stand-down.
+func probedOnly(calls string) bool {
+	for _, line := range strings.Split(strings.TrimSpace(calls), "\n") {
+		if line != "" && line != "dispatch --watch-status" {
+			return false
+		}
+	}
+	return true
 }
 
 // sessionExists makes the fake posse refuse `new` the way herdr's does for a
@@ -101,9 +151,6 @@ func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
 		"HERDR_SOCKET_PATH="+w.socket,
 		"HERDR_SESSION="+w.herdrSession,
 	)
-	if w.path != "" {
-		cmd.Env = append(cmd.Env, "PATH="+w.path+string(os.PathListSeparator)+os.Getenv("PATH"))
-	}
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -191,8 +238,9 @@ func TestAutostartByHandCanTargetNamedServer(t *testing.T) {
 func TestAutostartLeavesACarriedOverLoopAlone(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveProcess(t, "posse-dispatch-watch-stub")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
+	w.loopRunning(t)
+	// The identity half, which the hook quotes and never reasons from.
+	if err := WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: os.Getpid(), Started: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,29 +257,28 @@ func TestAutostartLeavesACarriedOverLoopAlone(t *testing.T) {
 	if !strings.Contains(r.out, "left alone") {
 		t.Errorf("want the hook to say it stood down:\n%s", r.out)
 	}
-	if r.calls != "" {
-		t.Errorf("a live loop must not invoke posse at all:\n%s", r.calls)
+	if !strings.Contains(r.out, strconv.Itoa(os.Getpid())) {
+		t.Errorf("the stand-down must name the holder from the pidfile:\n%s", r.out)
+	}
+	if !probedOnly(r.calls) {
+		t.Errorf("a live loop must cost exactly one question and nothing else:\n%s", r.calls)
 	}
 }
 
-// Same carry-over, but the process argv is the production shape
-// (`posse dispatch --watch …`), not a stub whose *path* happens to contain
-// "dispatch". The hook greps `ps -o command=`, so a test that only puts
-// the word in the filename would pass a matcher that never sees real args.
-func TestAutostartLeavesACarriedOverWatchArgvAlone(t *testing.T) {
+// The pidfile is identity, not evidence. A held lock with no record beside
+// it is still a running loop — the hook stands down, and says it cannot name
+// the holder rather than deciding it therefore has none.
+func TestAutostartLeavesACarriedOverLoopAloneWithNoRecord(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveArgv(t, "posse dispatch --watch 5m --dry-run")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
-		t.Fatal(err)
-	}
+	w.loopRunning(t)
 
 	r := w.run(t, "--startup")
-	if r.code != 0 || strings.Contains(r.calls, "kill") || strings.Contains(r.calls, "new") {
+	if r.code != 0 || !probedOnly(r.calls) {
 		t.Errorf("exit %d, calls:\n%s\nout:\n%s", r.code, r.calls, r.out)
 	}
-	if !strings.Contains(r.out, "left alone") {
-		t.Errorf("want the hook to say it stood down:\n%s", r.out)
+	if !strings.Contains(r.out, "holder unrecorded") || !strings.Contains(r.out, "left alone") {
+		t.Errorf("want a stand-down that admits it cannot name the holder:\n%s", r.out)
 	}
 }
 
@@ -241,16 +288,13 @@ func TestAutostartLeavesACarriedOverWatchArgvAlone(t *testing.T) {
 func TestAutostartStandsDownWhenLoopLivesUnderAnotherName(t *testing.T) {
 	w := newHookWorld(t, armed)
 	// no sessionExists: autostart_session is a name that is not running
-	pid := liveArgv(t, "posse dispatch --watch 30s")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
-		t.Fatal(err)
-	}
+	w.loopRunning(t)
 
 	r := w.run(t, "--startup")
 	if r.code != 0 {
 		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
 	}
-	if r.calls != "" {
+	if !probedOnly(r.calls) {
 		t.Errorf("a live loop in any session must not start another:\n%s", r.calls)
 	}
 }
@@ -278,8 +322,9 @@ func TestAutostartReplacesAHusk(t *testing.T) {
 	}
 }
 
-// A loop killed with its pane never removes its pidfile. Existence is not
-// liveness — the stale record must not keep the fleet unarmed.
+// A loop killed with its pane never removes its pidfile. The record is not
+// the evidence — the lock it left behind is free the instant it died, so
+// the stale file must not keep the fleet unarmed.
 func TestAutostartReplacesAHuskWithAStaleRecord(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
@@ -287,7 +332,7 @@ func TestAutostartReplacesAHuskWithAStaleRecord(t *testing.T) {
 	if err := done.Run(); err != nil {
 		t.Fatal(err)
 	}
-	WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: done.Process.Pid})
+	WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: done.Process.Pid})
 
 	r := w.run(t, "--startup")
 	if !strings.Contains(r.calls, "kill dispatch") || !strings.Contains(r.calls, "--watch 30s") {
@@ -296,15 +341,13 @@ func TestAutostartReplacesAHuskWithAStaleRecord(t *testing.T) {
 }
 
 // Pid reuse: the recorded number is alive, but it belongs to something else.
-// Matching the argv is what keeps that from reading as a running loop.
+// Under the pidfile this needed an argv match to refute, and the refutation
+// leaked (below). Under the lock there is nothing to refute — the recorded
+// pid is never asked.
 func TestAutostartIgnoresARecycledPid(t *testing.T) {
-	if !psCanReadArgv(t) {
-		t.Skip("no usable `ps -p -o command=`: pid reuse cannot be refuted here")
-	}
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveProcess(t, "somebody-elses-sleeper")
-	WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid})
+	WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: liveProcess(t, "somebody-elses-sleeper")})
 
 	r := w.run(t, "--startup")
 	if !strings.Contains(r.calls, "kill dispatch") || !strings.Contains(r.calls, "--watch 30s") {
@@ -312,15 +355,16 @@ func TestAutostartIgnoresARecycledPid(t *testing.T) {
 	}
 }
 
-// rangerhq-ppy9: grep -q dispatch matches any argv substring, so a recycled
-// pid of a one-shot `posse dispatch --persona` (or a claude PID that says
-// "dispatch") reads as the watch loop and the hook stands down.
+// rangerhq-ppy9, unskipped: `grep -q dispatch` matched any argv substring, so
+// a recycled pid of a one-shot `posse dispatch --persona` — or a claude
+// whose --append-system-prompt says the word — read as the watch loop and
+// the hook stood down, leaving the fleet unarmed until that pid died. The
+// argv is now nobody's evidence: this process holds no watch lock, so it is
+// not the watch loop, whatever it calls itself.
 func TestAutostartIgnoresARecycledOneShotDispatch(t *testing.T) {
-	t.Skip("rangerhq-ppy9: grep -q dispatch matches a one-shot `posse dispatch --persona` as if it were the watch loop")
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveArgv(t, "posse dispatch --persona qa -n 1")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
+	if err := WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: liveArgv(t, "posse dispatch --persona qa -n 1")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -330,96 +374,92 @@ func TestAutostartIgnoresARecycledOneShotDispatch(t *testing.T) {
 	}
 }
 
-// rangerhq-mugy: the argv probe can only REFUTE liveness. Where `ps` cannot
-// answer at all, an alive pid must still read as a live loop — the old
-// `ps ... | grep -q dispatch || return 1` read that silence as "no loop",
-// killed the workspace and started a second loop against the queue the
-// first one was still claiming beads from. Unarmed is visible; double
-// dispatch is not.
-func TestAutostartStandsDownWhenPsCannotAnswer(t *testing.T) {
+// rangerhq-mugy, ranger-base-rmc: three tests used to live here, one per
+// way `ps` can decline to answer — exit 127, exit 0 with nothing, exit 0
+// with a column of blanks — because the argv probe had to distinguish
+// silence from refutation and got it wrong twice. The lock has no such
+// arm: it is held or it is free. What survives is the case where the
+// QUESTION cannot be put at all, and the answer to that is unchanged —
+// stand down, and say which fact you stood down on (rangerhq-llse).
+// Unarmed is visible and recoverable; double dispatch is neither.
+func TestAutostartStandsDownWhenTheProbeCannotAnswer(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveArgv(t, "posse dispatch --watch 30s")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
-		t.Fatal(err)
-	}
-	w.breakPs(t)
+	w.loopRunning(t)
+	w.deafProbe(t) // a posse too old to know --watch-status
 
 	r := w.run(t, "--startup")
 	if r.code != 0 {
 		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
 	}
-	if r.calls != "" {
+	if !probedOnly(r.calls) {
 		t.Errorf("an unanswerable probe must not replace a live loop:\n%s", r.calls)
 	}
 	if !strings.Contains(r.out, "left alone") {
 		t.Errorf("want the hook to say it stood down:\n%s", r.out)
 	}
-	// A failed scan says so (rangerhq-llse): standing down on a pid nothing
-	// could identify is not the same fact as standing down on a confirmed
-	// loop, and the operator is the one who can tell them apart.
-	if !strings.Contains(r.out, "could not identify") {
+	if !strings.Contains(r.out, "could not answer") {
 		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "unknown flag") {
+		t.Errorf("want the probe's own words quoted, so the cause is diagnosable:\n%s", r.out)
 	}
 }
 
-// Same invariant as TestAutostartStandsDownWhenPsCannotAnswer, other arm of
-// the probe: `ps` exits 0 and prints nothing. That is not a refutation — it
-// is silence — and `[ -z "$argv" ]` is the only thing that treats it as
-// one. Exit 127 never reaches that arm.
-func TestAutostartStandsDownWhenPsPrintsNothing(t *testing.T) {
+// Same deafness, but with no loop running at all. The hook cannot tell the
+// two apart — that is the point of standing down — so it stands down here
+// too, and the fleet stays unarmed until somebody looks. That cost is the
+// one this direction accepts on purpose.
+func TestAutostartStandsDownOnADeafProbeEvenWithNoLoop(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveArgv(t, "posse dispatch --watch 30s")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
-		t.Fatal(err)
-	}
-	w.fakePs(t, "#!/bin/sh\nexit 0\n")
+	w.deafProbe(t)
 
 	r := w.run(t, "--startup")
 	if r.code != 0 {
 		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
 	}
-	if r.calls != "" {
-		t.Errorf("an empty probe must not replace a live loop:\n%s", r.calls)
+	if strings.Contains(r.calls, "kill") || strings.Contains(r.calls, "new") {
+		t.Errorf("an unanswerable probe must never authorise a kill:\n%s", r.calls)
 	}
-	if !strings.Contains(r.out, "left alone") {
-		t.Errorf("want the hook to say it stood down:\n%s", r.out)
-	}
-	if !strings.Contains(r.out, "could not identify") {
-		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
+	if !strings.Contains(r.out, "make link-plugin") {
+		t.Errorf("want the recovery named, since this state does not clear itself:\n%s", r.out)
 	}
 }
 
-// rangerhq-wnnd: loop_alive treats a successful `ps` whose stdout is only
-// spaces/tabs as a *refutation* (`*dispatch*` misses, return 1) and
-// kill-and-replaces a pid that answered kill -0. Empty and exit-127 are
-// silence; whitespace is not `[ -z ]`. The argv probe's mugy contract is
-// that it can only refute, never assert death — a column of blanks is not
-// a name. This box's /bin/ps does not pad `command=`; the shim is the
-// same shape as mugy's 127 environment.
-func TestAutostartStandsDownWhenPsPrintsOnlyWhitespace(t *testing.T) {
-	t.Skip("ranger-base-rmc: loop_alive treats whitespace-only ps output as a refutation and replaces a live pid")
+// stdout is the answer; stderr is not part of it. posse writes unrelated
+// notices there, and folding them in would put a line in front of
+// `watch-loop: …`, read as "could not ask", and stand the hook down on
+// every start of an instance that has not migrated its config home —
+// permanently unarmed, for a reason nothing in the message would name.
+func TestAutostartReadsTheAnswerPastAnUnrelatedStderrNotice(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
-	pid := liveArgv(t, "posse dispatch --watch 30s")
-	if err := WriteWatchPid(WatchPidPath(&App{StateDir: filepath.Join(w.home, "state")}), WatchPid{Pid: pid}); err != nil {
-		t.Fatal(err)
-	}
-	w.fakePs(t, "#!/bin/sh\nprintf '    \\n'\nexit 0\n")
+	w.loopRunning(t)
+	w.noisyProbe(t)
 
 	r := w.run(t, "--startup")
 	if r.code != 0 {
-		t.Errorf("exit %d, want 0:\n%s", r.code, r.out)
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
 	}
-	if r.calls != "" {
-		t.Errorf("a whitespace-only probe must not replace a live loop:\n%s", r.calls)
+	if !strings.Contains(r.out, "loop already running") {
+		t.Errorf("a stderr notice must not hide the answer:\n%s", r.out)
 	}
-	if !strings.Contains(r.out, "left alone") {
-		t.Errorf("want the hook to say it stood down:\n%s", r.out)
+	if !probedOnly(r.calls) {
+		t.Errorf("the live loop was not left alone:\n%s", r.calls)
 	}
-	if !strings.Contains(r.out, "could not identify") {
-		t.Errorf("want the stand-down to name the failed probe:\n%s", r.out)
+}
+
+// Same notice, no loop: the husk is still replaced. The noise must not push
+// the hook into either standing decision.
+func TestAutostartReplacesAHuskPastAnUnrelatedStderrNotice(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.sessionExists(t)
+	w.noisyProbe(t)
+
+	r := w.run(t, "--startup")
+	if !strings.Contains(r.calls, "kill dispatch") || !strings.Contains(r.calls, "--watch 30s") {
+		t.Errorf("a husk must still be replaced:\n%s\n%s", r.out, r.calls)
 	}
 }
 

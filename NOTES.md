@@ -607,7 +607,7 @@ for a fleet: no herdr, no fleet.
 - **The default herdr server is the only owner.** The plugin registry is
   global, so herdr also runs `[[startup]]` on every
   `herdr --session <name> server`. Those named/non-default servers stand down
-  before reading `dispatch-watch.pid` or invoking `posse`, even if they
+  before probing the watch lock or invoking `posse`, even if they
   inherited the fleet `RHQ_HOME` and its armed config (ranger-base-87q).
   `HERDR_SOCKET_PATH` is authoritative when present; with no socket path,
   `HERDR_SESSION` still identifies a named server. Running the hook explicitly
@@ -647,18 +647,35 @@ for a fleet: no herdr, no fleet.
   Usually — herdr runs `[[startup]]` hooks on a **live handoff** too, and
   there the workspace comes back *with* its command still running (same pid,
   PTY fd passed across). The two are indistinguishable from outside, so the
-  hook asks the loop instead of the workspace: `posse dispatch --watch` stamps
-  `$RHQ_HOME/state/dispatch-watch.pid` (`pid:`, `started:`, `cmd:`; one file
-  per RHQ_HOME, because the invariant is one loop per *queue*, not per
-  session name) and clears it when it ends. Existence proves nothing — a
-  loop killed with its pane never gets to remove the file — so the hook
-  checks that the pid answers signal 0 **and** that its argv is still a
-  dispatch loop, the second half being what keeps a recycled pid from
-  leaving the fleet silently unarmed. A live loop is never replaced,
-  whatever the workspace looks like; run by hand the hook is conservative
-  either way (rangerhq-ct9). A loop started by a posse old enough not to
-  stamp the file reads as dead and is replaced once, at the next server
-  start.
+  hook asks the loop instead of the workspace — and since rangerhq-gir5 it
+  asks the **kernel**, not a file. `posse dispatch --watch` holds `flock(2)`
+  on `$RHQ_HOME/state/dispatch-watch.lock` for its whole life (one file per
+  RHQ_HOME, because the invariant is one loop per *queue*, not per session
+  name), and `posse dispatch --watch-status` reports it on one line:
+  `watch-loop: running (pid N, since T)` or `watch-loop: none (… is free)`.
+  Held is a running loop; free is none; the kernel releases the lock when
+  the process dies, so a pane killed with `kill -9` reads dead in the same
+  instant and there is no stale state to reap. A second `--watch` on the
+  same RHQ_HOME now *refuses* rather than double-dispatching the queue.
+  **The line is the contract, not the exit status**: a posse too old to know
+  the subcommand prints nothing that matches, which the hook treats as
+  "could not ask" and stands down on — unarmed is visible and recoverable,
+  double dispatch is neither (rangerhq-ct9/mugy).
+  `dispatch-watch.pid` (`pid:`, `started:`, `cmd:`) is still written and
+  still cleared on a clean exit, demoted to the **identity** half: which pid,
+  since when, under what argv. It is what the stand-down line quotes once
+  the lock has answered, and a missing or stale one costs a name, never the
+  answer. What that retired: `kill -0` plus a grep of `ps -o command=`, which
+  had to reconstruct liveness from a file whose truth decays and leaked three
+  ways doing it — a recycled pid read as alive, a one-shot
+  `posse dispatch --persona` whose argv merely contained the word read as the
+  watch loop (rangerhq-ppy9), and a `ps` that could not answer read as alive
+  or dead depending on which arm you wrote (rangerhq-mugy, ranger-base-rmc).
+  A live loop is never replaced, whatever the workspace looks like; run by
+  hand the hook is conservative either way. A loop started by a posse old
+  enough not to hold the lock reads as dead and is replaced once, at the next
+  server start — both halves come from the same promoted `./bin/posse`, so
+  that window is the one start after an upgrade.
 - **Logs** `$RHQ_HOME/state/dispatch-watch.log`, tee'd from the pane and
   rotated to `.1` past 5 MiB; the pane's own scrollback is the live view
   (`posse peek dispatch`). The session wears 🛰️ and, being made by `posse new`,
@@ -3066,7 +3083,9 @@ herdr api snapshot | python3 -c 'import json,sys; print(len(json.load(sys.stdin)
 posse version                          # note the sha; two ancestor checks below depend on it
 git -C <posse checkout> merge-base --is-ancestor 04e9256 <fleet sha>   # exit 0: ct9 fix (pidfile) — see below
 git -C <posse checkout> merge-base --is-ancestor 41fa735 <fleet sha>   # exit 0: identity fence (gen:) — see below
-sed -n 's/^pid: *//p' ~/.config/rhq/state/dispatch-watch.pid   # the loop pid to compare after (empty = no loop)
+posse dispatch --watch-status          # `watch-loop: running (pid N, since T)` — N is what the
+                                       # post-flight compares. `none` means no loop is running,
+                                       # from the lock and not from any file (rangerhq-gir5)
 ```
 Fleet drained first (the coordinator): no dispatch pass mid-flight. The window between
 `installed` and `live handoff complete` is the dangerous one — during it the
@@ -3105,7 +3124,8 @@ fails and is reported" was the whole story. Armed, it is not.
 **The config flip is inert against the loop that is already running.**
 `--dry-run` is argv (`cmd/posse/main.go`, set once), and `plugin/autostart.sh`
 builds that argv from the config *at hook time*. The live loop's argv is what
-`state/dispatch-watch.pid` records. Editing `autostart_dry_run: true` back
+`state/dispatch-watch.pid` records (`cmd:` — still the place to read it; the
+file lost its liveness job in rangerhq-gir5, not its identity one). Editing `autostart_dry_run: true` back
 changes nothing until the loop restarts — and restarting it is exactly what
 flips the handoff's hook branch from "left alone" to "replacing", i.e. costs
 the ct9 check. Anyone who "restores dry-run for the window" by editing the
@@ -3262,8 +3282,9 @@ herdr plugin list                                     # posse.cockpit still regi
 posse dispatch --dry-run -n 1                         # routes without dispatching
 
 # the dispatch loop (rangerhq-61u) — pid unchanged, hook stood down
-sed -n 's/^pid: *//p' ~/.config/rhq/state/dispatch-watch.pid    # SAME number as pre-flight
-ps -p <pid> -o command=                                         # still `posse dispatch --watch ...`
+posse dispatch --watch-status                                   # `running`, and the SAME pid as pre-flight.
+                                                                # Held lock = the process itself survived the
+                                                                # handoff; no `ps` and no argv match involved
 herdr plugin log list --plugin posse.cockpit                 # the hook's own line, read it NOW
 grep -c 'dispatch --watch armed' ~/.config/rhq/state/dispatch-watch.log   # unchanged: no second banner
 posse peek dispatch                                             # one loop, passes continuing across the handoff

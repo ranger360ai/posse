@@ -466,7 +466,11 @@ func TestWatchSeedsTheBlindClock(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // one pass, then the loop ends
-	if passes := r.d.Watch(ctx, "", "", 0, time.Second, time.Second); passes != 1 {
+	passes, err := r.d.Watch(ctx, "", "", 0, time.Second, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passes != 1 {
 		t.Fatalf("want 1 pass, got %d", passes)
 	}
 	if !r.d.Unattended {

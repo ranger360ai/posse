@@ -30,6 +30,21 @@ func TestMain(m *testing.M) {
 		os.WriteFile(out, []byte(strings.Join(os.Args, "\n")), 0o644)
 		os.Exit(0)
 	}
+	// And as posse itself for the one question plugin/autostart.sh asks it
+	// (rangerhq-gir5). The hook's liveness decision is `posse dispatch
+	// --watch-status`, so the fake posse the hook tests drive must answer it
+	// for real — same WatchStatus, same lock, same RHQ_HOME — or the tests
+	// would only pin a string the shell and the binary agreed on separately.
+	// Everything else the hook calls (new, kill) stays scripted.
+	if os.Getenv("RHQ_FAKE_POSSE") == "1" {
+		line, err := WatchStatus(NewApp())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "posse: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(line)
+		os.Exit(0)
+	}
 	// The test binary doubles as both fake substrates; dispatch on the verb
 	// (herdr verbs are workspace/pane/agent; everything else is bd).
 	if os.Getenv("RHQ_FAKE_HERDR") == "1" {

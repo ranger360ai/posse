@@ -44,10 +44,13 @@
 # herdr runs [[startup]] hooks on a LIVE HANDOFF too (`herdr update
 # --handoff`), where the workspace comes back *with* its command still
 # running, same pid, PTY fd passed across. So the hook asks the loop, not
-# the workspace: `posse dispatch --watch` stamps $RHQ_HOME/state/dispatch-watch.pid
-# and a husk's stamp is stale. Kill-and-replace only when no live loop
-# answers (rangerhq-ct9). Run by hand without the flag it is conservative
-# and leaves a live session alone either way.
+# the workspace: `posse dispatch --watch` holds flock(2) on
+# $RHQ_HOME/state/dispatch-watch.lock for its whole life and
+# `posse dispatch --watch-status` reports it, so a husk's lock is free and a
+# carry-over's is held — kernel-owned, with no stale state to reason about
+# (rangerhq-ct9, rangerhq-gir5). Kill-and-replace only when no live loop
+# answers. Run by hand without the flag it is conservative and leaves a live
+# session alone either way.
 #
 # The plan-utilization guard (plan_guard_5h / plan_guard_7d) is what keeps an
 # unattended loop off the operator's plan window; dispatch runs it at the top
@@ -59,8 +62,9 @@
 #
 # Log: $RHQ_HOME/state/dispatch-watch.log (tee'd from the pane; state/ is
 # machine-local and gitignored). The pane's own scrollback is the live view.
-# Beside it, dispatch-watch.pid — written by the loop, removed when it ends
-# cleanly, left stale when its pane is killed.
+# Beside it, dispatch-watch.lock — held by the loop, released by the kernel
+# when it dies — and dispatch-watch.pid, which says which pid and since
+# when. The lock is the evidence; the pidfile is the name on it.
 set -uo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -70,7 +74,6 @@ RHQ=${RHQ_BIN:-$here/bin/posse}
 RHQ_HOME=${RHQ_HOME:-$HOME/.config/rhq}
 CONFIG=$RHQ_HOME/config.yaml
 LOG=$RHQ_HOME/state/dispatch-watch.log
-PIDFILE=$RHQ_HOME/state/dispatch-watch.pid
 MAXLOG=${AUTOSTART_MAXLOG:-5242880} # 5 MiB, then one .1 generation
 
 startup=false
@@ -105,40 +108,62 @@ if $startup; then
 	esac
 fi
 
-# Is a dispatch loop actually running? Existence of the pidfile proves
-# nothing — a loop killed with its pane never gets to remove it — so this
-# asks the process. Signal 0 is the question, not an action.
-livepid=
-argvchecked=
+# Is a dispatch loop actually running? The loop holds flock(2) on
+# $RHQ_HOME/state/dispatch-watch.lock for its whole life, so this asks the
+# kernel: held means running, free means not, and process death releases the
+# lock — crash, kill -9, closed pane alike. There is no stale state to
+# detect and nothing here to infer (rangerhq-gir5, ADR 0011 §1).
+#
+# What that retires: `kill -0` on the pidfile plus a grep of `ps -o
+# command=`. Reconstructing liveness from a file whose truth decays needed
+# three patches and still leaked — a recycled pid read as alive, a one-shot
+# `posse dispatch --persona` whose argv merely contains the word read as the
+# watch loop (rangerhq-ppy9), and a `ps` that could not answer read as
+# alive or dead depending on which arm you wrote (rangerhq-mugy,
+# ranger-base-rmc). The pidfile stays for the identity half — which pid,
+# since when — which is what the probe quotes once the lock has answered.
+#
+# flock(1) is not the probe: it is util-linux and absent on macOS, where
+# this hook runs. posse asks the kernel itself and reports on one line.
+#
+# THE LINE IS THE CONTRACT, not the exit status. A posse too old to know the
+# subcommand fails its flag parse and prints nothing matching, which is the
+# same "could not ask" as a state dir it cannot open — and an unanswerable
+# probe stands the hook down rather than replacing a loop it cannot see.
+# Unarmed is visible and recoverable; double dispatch is neither
+# (rangerhq-ct9/mugy).
+#
+# stdout is the answer and stderr is never folded into it. posse writes
+# unrelated notices there — the config-home transition notice fires on every
+# invocation of an instance that still has only the old home — and a line
+# glued in front of the answer would read as "could not ask" and stand the
+# hook down for good. stderr is kept, but only to quote when the answer did
+# not arrive.
+loopstate=
+loopwho=
+loopsaid=
+loopwhy=
 loop_alive() {
-	local pid argv
-	[ -f "$PIDFILE" ] || return 1
-	pid=$(sed -n 's/^pid:[[:space:]]*//p' "$PIDFILE" | head -1)
-	case "$pid" in '' | *[!0-9]*) return 1 ;; esac
-	kill -0 "$pid" 2>/dev/null || return 1
-	livepid=$pid
-	# Pid reuse: a stale file whose number the kernel handed to something
-	# else would read as live and leave the fleet silently unarmed. A watch
-	# loop's argv always carries the subcommand.
-	#
-	# The argv probe can only REFUTE liveness, never assert death: `ps` is
-	# not on every box this hook runs on (a slim image, a sandbox that
-	# denies process inspection, a restricted PATH), and a probe that could
-	# not run answers nothing. Reading that silence as "no loop" is
-	# fail-open on the invariant the pidfile exists to hold — it kills the
-	# workspace and starts a SECOND loop against the queue the first one is
-	# still claiming beads from (rangerhq-ct9). An alive pid we cannot
-	# identify stays alive: unarmed is visible and recoverable, double
-	# dispatch is neither (rangerhq-mugy).
-	if ! argv=$(ps -p "$pid" -o command= 2>/dev/null) || [ -z "$argv" ]; then
-		return 0
+	local errf
+	errf=$(mktemp 2>/dev/null) || errf=
+	loopsaid=$("$RHQ" dispatch --watch-status 2>"${errf:-/dev/null}")
+	if [ -n "$errf" ]; then
+		loopwhy=$(cat "$errf")
+		rm -f "$errf"
 	fi
-	argvchecked=yes
-	case "$argv" in
-	*dispatch*) return 0 ;;
+	case "$loopsaid" in
+	"watch-loop: running"*)
+		loopstate=running
+		loopwho=${loopsaid#watch-loop: running}
+		return 0
+		;;
+	"watch-loop: none"*)
+		loopstate=none
+		return 1
+		;;
 	esac
-	livepid=
-	return 1
+	loopstate=unknown
+	return 0
 }
 
 # Flat-YAML scalar read: `key: value`, trailing " #" comment stripped.
@@ -220,14 +245,15 @@ start() {
 # carry-over is a live loop that merely *looks* restored (rangerhq-ct9).
 if loop_alive; then
 	# A failed scan says so, the same way a gated pass does (rangerhq-llse):
-	# standing down on an unidentifiable pid is a different fact from
-	# standing down on a confirmed loop, and only one of them wants looking
-	# at.
-	if [ -n "$argvchecked" ]; then
-		say "loop already running (pid $livepid) — left alone"
+	# standing down because the probe could not answer is a different fact
+	# from standing down on a confirmed loop, and only one of them wants
+	# looking at.
+	if [ "$loopstate" = running ]; then
+		say "loop already running$loopwho — left alone"
 	else
-		say "pid $livepid is alive but ps could not identify it — left alone (one loop per queue)" >&2
-		say "if no dispatch loop is running, remove $PIDFILE and restart" >&2
+		say "posse could not answer whether a dispatch loop is running — left alone (one loop per queue)" >&2
+		say "it said: ${loopsaid:-nothing} ${loopwhy:+(stderr: $loopwhy)}" >&2
+		say "if this posse predates 'dispatch --watch-status', run 'make link-plugin'" >&2
 	fi
 	exit 0
 fi
@@ -239,9 +265,10 @@ fi
 # saved layout without its command — a husk, and a husk holds nothing worth
 # keeping.
 #
-# A loop started by a posse old enough not to stamp the pidfile reads as dead
-# here and is replaced once at the next server start; after that every loop
-# leaves a record.
+# A loop started by a posse old enough not to hold the watch lock reads as
+# dead here and is replaced once at the next server start; after that every
+# loop holds one. Both halves come from the same promoted ./bin/posse, so the
+# window is the one start that follows an upgrade.
 start; rc=$?
 if [ "$rc" = 3 ]; then
 	if $startup; then

@@ -1,27 +1,29 @@
 package rhq
 
-// The watch pidfile (rangerhq-ct9): a `posse dispatch --watch` loop leaves a
-// record of itself at $RHQ_HOME/state/dispatch-watch.pid, so anything asking
-// "is the fleet's loop running?" can answer from liveness instead of from
-// appearances.
+// The watch record (rangerhq-ct9): a `posse dispatch --watch` loop leaves a
+// note of itself at $RHQ_HOME/state/dispatch-watch.pid — which pid, since
+// when, under what argv.
 //
-// The appearance that lied was the workspace. plugin/autostart.sh read "a
-// session named `dispatch` exists at server start" as "herdr restored the
-// layout without re-running the command" and replaced it. But herdr runs
-// plugin [[startup]] hooks on a LIVE HANDOFF too (`herdr update --handoff`
-// → run_handoff_import_server), and there the workspace comes back *with*
-// its command still running — same pid, PTY fd passed across. Same
-// appearance, opposite truth: the hook would have killed a live loop
-// mid-pass, with a bead claimed and a prompt in flight, and started a
-// second one on the same queue.
+// It is IDENTITY, not evidence (rangerhq-gir5). It was written to answer
+// "is the fleet's loop running?", because the appearance that lied was the
+// workspace: plugin/autostart.sh read "a session named `dispatch` exists at
+// server start" as "herdr restored the layout without re-running the
+// command" and replaced it, when herdr runs plugin [[startup]] hooks on a
+// LIVE HANDOFF too (`herdr update --handoff` → run_handoff_import_server)
+// and there the workspace comes back *with* its command still running. Same
+// appearance, opposite truth.
+//
+// But a file cannot answer that question either. A loop killed with its
+// pane never removes this one, so its truth decays, and every reader had to
+// reconstruct liveness from the decayed copy — signal 0 plus an argv match,
+// patched twice and leaking still (rangerhq-ppy9, rangerhq-mugy). The
+// question moved to WatchLockPath, where the kernel answers it and release
+// is process death. This file now says who, once something else has said
+// whether: a missing or stale one costs a name in a message and no more.
 //
 // One file per RHQ_HOME, not one per session: the invariant worth
 // protecting is "at most one loop dispatching this queue", and that does
-// not care what the workspace is called. A loop killed with its pane leaves
-// the file behind, so existence proves nothing — every reader checks
-// liveness. The hook additionally matches the process's argv, because a
-// stale file whose pid has been recycled would read as live and silently
-// leave the fleet unarmed.
+// not care what the workspace is called.
 
 import (
 	"fmt"
@@ -72,11 +74,6 @@ func ReadWatchPid(path string) (*WatchPid, bool) {
 	}
 	started, _ := time.Parse(time.RFC3339, YamlGet(path, "started"))
 	return &WatchPid{Pid: pid, Started: started, Cmd: YamlGet(path, "cmd")}, true
-}
-
-// Alive says the recorded process still exists.
-func (w *WatchPid) Alive() bool {
-	return w != nil && pidAlive(w.Pid)
 }
 
 // pidAlive asks whether a pid names a live process. Signal 0 is the
