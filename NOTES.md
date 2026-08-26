@@ -998,6 +998,73 @@ codex sessions did the work and left the bead `in_progress` with no comment
 (`ranger-base-0fb`). Trust is a built-in/yaml edit after a measurement —
 never a derived store that could disagree with the bead (ADR 0011).
 
+### What a settle-without-close costs, and what it does not (ADR 0013 §4)
+
+The tick is the **bead's** to give. A pass prints `✓` only when `bd show`
+says `closed`, on every runtime, trusted or not — an agent going idle is a
+hint (ADR 0011), and on codex that hint was wrong three times out of three.
+Everything else settles as `◑ <id> settled "done" but issue is
+"in_progress" — review <session>`, and on a `record: untrusted` runtime the
+line adds whose declared degrade it is:
+
+```
+◑ a-1   settled "done" but issue is "in_progress" — review ranger-posse-a-1
+        (codex is record: untrusted — the claim is kept and --resume re-prompts it)
+```
+
+Three things that clause is telling the operator, and each of them is a
+decision made elsewhere in this file: the bead **keeps its claim** (nothing
+is handed back on a settle a pass could not judge), unattended `--resume`
+**re-prompts the same session** next pass rather than parking it behind a
+busy key (`autostart_resume:` above), and the harness **does not close the
+bead** on the agent's behalf — that hides the defect and puts a human back
+in the loop dispatch exists to replace. A `record: trusted` runtime gets the
+same honest `◑` and no clause: a runtime measured to close its beads that
+has stopped closing them is a signal, not a footnote.
+(`internal/rhq/recordskip_qa_test.go`.)
+
+### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
+
+`posse kill <name>` — and the kill inside `posse relaunch` — **refuses** a
+session whose `bead:` is still `in_progress` and whose working directory
+holds uncommitted work:
+
+```
+NOT killed: ranger-posse-a-1 still holds a-1 (in_progress) and ~/src/posse has
+uncommitted work (dispatch.go NOTES.md) — look first (posse attach ranger-posse-a-1),
+or `posse kill ranger-posse-a-1 --force`
+```
+
+The near-miss it is built from is `ranger-base-0fb`: a dispatched session
+that skipped its bookkeeping *and* left 353 uncommitted lines in the
+**shared** checkout, one reap away from gone. Per-session worktrees do not
+cover that board — a shared-checkout session has no branch, so the landing's
+existing "a tree still holding work is kept" refusal never fires — and L3's
+pathspec rule stops an unqualified commit, not a kill.
+
+Both arms must fire, and neither is a new store:
+
+- the **bead**, read from bd every time. `bead:` in the session meta is only
+  a *pointer* to which one, stamped by dispatch at launch (and on the
+  session it resumes into), so the meta can never disagree with the store
+  about whether the work is done. A session with no pointer — `posse new`,
+  a crew session, a recipe, anything from before this landed — is unguarded,
+  exactly as it was.
+- **git**, `status --porcelain` in the session's own cwd. Uncommitted is the
+  only shape of loss a kill can cause: committed work survives on a branch,
+  and a clean tree has nothing to lose however open its bead.
+
+An open bead over a clean tree is a bookkeeping skip — gather's line to
+print and `--resume`'s to retry, not a reason to keep a workspace alive. A
+dirty tree under a closed bead is the operator's own scratch. Ignorance
+*inside* the pair fails **closed**: a pointer, a dirty tree and a bd that
+will not answer is refused too, on `RemoveSessionTree`'s rule — the safe
+answer to an unanswerable question about destroying work is no, and the
+costs are asymmetric (a wrong refusal is one `--force`; a wrong kill is
+work with no other copy). `--force` on either command stands the guard
+down and nothing else — the landing still refuses to *remove* a tree that
+holds work. (`internal/rhq/reapguard.go`, `reapguard_qa_test.go`.)
+
 Which runtime a session gets: `posse new --runtime` / `posse dispatch
 --runtime` > recipe `runtime:` > PID `runtime:` > config
 `default_runtime:` > `claude`. A PID's `command:` is the template for

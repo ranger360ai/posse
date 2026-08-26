@@ -29,6 +29,10 @@ type RelaunchOpts struct {
 	Name    string
 	NoLand  bool          // skip the landing turn (a dead or wedged session)
 	Timeout time.Duration // bound on the landing turn (0 → DefaultLandTimeout)
+	// Force stands the ADR 0013 §4 reap guard down: refresh a session that
+	// still holds an open bead over an uncommitted tree. The operator has
+	// read the refusal and said do it anyway.
+	Force bool
 }
 
 // RelaunchSession lands, kills, and recreates one session by name.
@@ -108,6 +112,20 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 		}
 	}
 
+	// The reap guard (ADR 0013 §4), asked AFTER the landing turn, because
+	// the landing turn is the fix: an agent that wrote its lessons down and
+	// committed leaves a clean tree and refreshes exactly as before. What is
+	// refused is the other shape — a session whose bead nobody recorded
+	// finishing, over a tree nobody committed, about to lose the only agent
+	// that knows what is in it. `--no-land` reaches this with the tree
+	// untouched, which is the reap the ADR names.
+	if !o.Force {
+		if why := b.ReapRefusal(m); why != "" {
+			return Die("%s was NOT closed: %s — look first (posse attach %s), or `posse relaunch %s --force`",
+				o.Name, why, o.Name, o.Name)
+		}
+	}
+
 	if err := b.closeRecorded(m); err != nil {
 		return err
 	}
@@ -156,6 +174,10 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		// Nor is it a change of hands: a session the operator was talking
 		// to is still theirs on the other side of the refresh (ADR 0008).
 		Crew: m.Crew,
+		// The refreshed session is the same session, so it is still the one
+		// that bead was dispatched to: the reap guard must still find it
+		// (ADR 0013 §4).
+		Bead: m.Bead,
 		// A session that had its own tree keeps it. Dir already IS the
 		// worktree, so EnsureSessionTree resolves the same main checkout
 		// through it and finds the tree standing; the flag is what keeps the

@@ -1328,10 +1328,41 @@ wait:
 		d.mergeBack(p.is, p.persona, p.session)
 	case settled == "blocked":
 		fmt.Fprintf(d.Out, "⛔ %-14s blocked in %s — intervene (posse attach %s)\n", p.is.ID, p.session, p.session)
+	case showErr != nil:
+		// The ✓ is the BEAD's to give (ADR 0011, ADR 0013 §4) and bd did not
+		// answer, so there is none. An unreadable store of record is
+		// settle-without-record until it reads.
+		fmt.Fprintf(d.Out, "◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
+			p.is.ID, settled, showErr, p.session, d.recordClause(p.runtime))
 	default:
-		fmt.Fprintf(d.Out, "◑ %-14s settled %q but issue is %q — review %s\n", p.is.ID, settled, after.Status, p.session)
+		fmt.Fprintf(d.Out, "◑ %-14s settled %q but issue is %q — review %s%s\n",
+			p.is.ID, settled, after.Status, p.session, d.recordClause(p.runtime))
 	}
 	return false, nil
+}
+
+// recordClause is what a settle-without-close means on THIS runtime (ADR
+// 0013 §4). The ✓ above is never one of the answers: the bead is the store
+// of record and it says the work is not done, so the only question left is
+// whether that is news.
+//
+// On a `record: untrusted` runtime it is not news — it is the declared
+// degrade, measured (3/3 dispatched codex sessions, ranger-base-0fb) — and
+// what the operator needs to know is that nothing was lost by it: the claim
+// stays on the bead and unattended `--resume` re-prompts the same session
+// next pass. The harness does not close on the agent's behalf; that hides
+// the defect and puts a human back in the loop dispatch exists to replace.
+//
+// On a `record: trusted` runtime the same line IS news, and gets no clause:
+// a runtime measured to close its beads that stopped closing them is the
+// signal `record-skip-rate` exists to catch, and a reassuring parenthesis
+// beside it would be the harness explaining away its own evidence.
+func (d *Dispatcher) recordClause(runtime string) string {
+	rt, err := d.App.LoadRuntime(runtime)
+	if err != nil || rt.RecordTrust() != RecordUntrusted {
+		return ""
+	}
+	return fmt.Sprintf(" (%s is record: untrusted — the claim is kept and --resume re-prompts it)", rt.Name)
 }
 
 // rewait watches the same agent for another leg after a --wait timeout.
@@ -1519,10 +1550,17 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt)
 		}
 	}
+	if resolveErr == nil {
+		// A session this pass did not create is still the session this bead
+		// is being worked in, and the reap guard reads that pointer off the
+		// meta (ADR 0013 §4). Sessions from before the pointer existed, and
+		// the pre-Dial-F slot a second bead resumes into, get it here.
+		d.HB.NoteBead(session, is.ID)
+	}
 	if resolveErr != nil {
 		fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true}); err != nil {
+			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}); err != nil {
 			return launched{}, err
 		}
 		d.noteTree(is.ID, session)
@@ -1602,7 +1640,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	}
 	fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true}); err != nil {
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)

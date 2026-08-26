@@ -175,13 +175,15 @@ func main() {
 	case "relaunch":
 		// Session refresh: land the plane, close the workspace, recreate it
 		// from the same meta (rangerhq-dxq).
-		args = need(args, 1, "posse relaunch <name> [--no-land] [--timeout <interval>]")
+		args = need(args, 1, "posse relaunch <name> [--no-land] [--force] [--timeout <interval>]")
 		o := rhq.RelaunchOpts{Name: args[0]}
 		rest := args[1:]
 		for len(rest) > 0 {
 			switch rest[0] {
 			case "--no-land":
 				o.NoLand, rest = true, rest[1:]
+			case "--force":
+				o.Force, rest = true, rest[1:]
 			case "--timeout":
 				if len(rest) < 2 {
 					die(rhq.Die("--timeout needs an interval (10m, 90s, or seconds)"))
@@ -200,12 +202,27 @@ func main() {
 		}
 
 	case "kill":
-		args = need(args, 1, "posse kill <name>")
+		args = need(args, 1, "posse kill <name> [--force]")
 		// A kill is also the moment a session's own worktree is retired:
 		// its branch lands on the repo's branch and the tree goes away
 		// (rangerhq-09o2). It refuses to remove a tree that still holds
 		// work, so the line below is where the operator learns that.
-		landing, err := hb.KillSessionAndLand(args[0])
+		//
+		// And before any of that, the reap guard: a session still holding an
+		// open bead over an uncommitted tree is not killed at all (ADR 0013
+		// §4). --force is the operator saying they have read the refusal.
+		force := false
+		for _, f := range args[1:] {
+			if f != "--force" {
+				die(rhq.Die("unknown flag: %s", f))
+			}
+			force = true
+		}
+		kill := hb.KillSessionAndLand
+		if force {
+			kill = hb.ForceKillSessionAndLand
+		}
+		landing, err := kill(args[0])
 		if err != nil {
 			die(err)
 		}
@@ -1289,9 +1306,13 @@ sessions (herdr workspaces):
                                  persona/dir/envs
       --no-land                skip the landing turn (dead or wedged sessions)
       --timeout <interval>     bound on the landing turn (default 10m)
+      --force                  refresh even while its bead is open and its tree dirty
   posse kill <name>              close the workspace, land its worktree's branch on
                                  the repo's branch and remove the worktree (a tree
-                                 still holding work is kept and says so)
+                                 still holding work is kept and says so). A session
+                                 still holding an in_progress bead over uncommitted
+                                 work is NOT killed at all (ADR 0013 §4)
+      --force                  kill it anyway, once you have read the refusal
   posse worktrees [--dir <repo>] [--land]
                                  session worktrees and what has not landed yet;
                                  --land merges every branch that will land (it

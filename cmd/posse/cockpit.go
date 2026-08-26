@@ -655,6 +655,12 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 				landing, err := c.hb.KillSessionAndLand(s.Name)
 				switch {
 				case err != nil:
+					// Including the ADR 0013 §4 reap guard: a session still
+					// holding an open bead over an uncommitted tree is not
+					// killed here either, and the refusal is one line
+					// because this is the one line there is room for. The
+					// way through it is `posse kill <name> --force`, which
+					// the refusal names.
 					c.status = err.Error()
 				case landing.Line() != "":
 					// The worktree's fate is the half of a kill that can

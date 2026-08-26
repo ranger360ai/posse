@@ -218,6 +218,7 @@ func recordRow(rt *Runtime) stageRow {
 		missing: "settle-without-record is INCOMPLETE, never ✓; unattended --resume re-prompts (ADR 0013 §4)",
 	}
 	r.note = append(r.note, "the store of record is the bead (ADR 0011); agent settle is a hint. `bd close` stays the persona's — the harness never closes on its behalf.")
+	r.note = append(r.note, "reap guard: a session of ANY runtime whose bead is still in_progress over an uncommitted cwd is not killed — `posse kill`/`posse relaunch` refuse it and name why (--force overrides).")
 	return r
 }
 

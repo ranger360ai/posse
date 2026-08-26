@@ -38,6 +38,9 @@ type HerdrBackend struct {
 	// not a fallback: a launch that silently writes a file nobody named is
 	// worse than one that hits a dialog somebody can see.
 	ClaudeConfig string
+	// Bd is the beads runner the reap guard reads the store of record with
+	// (ADR 0013 §4). Zero value = the ambient binary, resolved on use.
+	Bd Bd
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
@@ -84,10 +87,16 @@ type NewSessionOpts struct {
 	// Set by dispatch, and only for a runtime that declares `prompt: argv`;
 	// "" is every interactive launch and every typed dispatch.
 	PromptFile string
+	// Bead is the id this session was dispatched to work (ADR 0013 §4). It
+	// is a POINTER, never a status: the bead's own store answers whether it
+	// is finished, so nothing here can disagree with it (ADR 0011). Set by
+	// dispatch; "" for every interactive launch, and what the reap guard
+	// reads to know there is a bead to ask about at all.
+	Bead string
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
-	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile()}
+	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(), Bd: NewBd()}
 }
 
 // ─── meta files ──────────────────────────────────────────────────────────────
@@ -110,6 +119,7 @@ type HerdrMeta struct {
 	Degraded    string    // "; "-joined gates the wall does not realize here ("" = full parity)
 	Fallback    string    // the availability preflight's line when the tier did not get its model ("" = it did) — rangerhq-oay
 	TurnFailure string    // provider refused the dispatch turn before model work began ("" = none observed)
+	Bead        string    // the bead dispatch launched this session to work (ADR 0013 §4; "" = not a dispatched bead session)
 	Crew        bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
 	Socket      string    // the herdr server this session was created against (see SocketID)
 	Gen         string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
@@ -256,6 +266,7 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Degraded:    YamlGet(p, "degraded"),
 		Fallback:    YamlGet(p, "fallback"),
 		TurnFailure: YamlGet(p, "turn_failure"),
+		Bead:        YamlGet(p, "bead"),
 		Crew:        YamlGet(p, "crew") == "true",
 		Socket:      YamlGet(p, "socket"),
 		Gen:         YamlGet(p, "gen"),
@@ -333,6 +344,13 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	// listing does not present the session as healthy.
 	if m.TurnFailure != "" {
 		fmt.Fprintf(&s, "turn_failure: %s\n", m.TurnFailure)
+	}
+	// Which bead this session was dispatched to work (ADR 0013 §4). The
+	// reap guard is the only reader: without it a kill cannot tell a
+	// session whose work is finished from one still holding an open bead
+	// and an uncommitted tree (ranger-base-0fb).
+	if m.Bead != "" {
+		fmt.Fprintf(&s, "bead: %s\n", m.Bead)
 	}
 	if m.Crew {
 		fmt.Fprintf(&s, "crew: true\n")
@@ -1311,7 +1329,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
 		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
-		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Crew: o.Crew,
+		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Bead: o.Bead, Crew: o.Crew,
 		// Which server, and which generation of it, issued this workspace
 		// id — the id alone identifies nothing across a restart or a
 		// handoff (rangerhq-yt1p).
@@ -1527,6 +1545,20 @@ func (b *HerdrBackend) KillSession(name string) error {
 	return err
 }
 
+// NoteBead records which bead a session is working (ADR 0013 §4), for a
+// session this pass did not create and so did not stamp at launch. It is a
+// pointer and only a pointer — the bead's own store still answers for its
+// status — so writing it back costs nothing when it is already right, and
+// a session with no meta is not one posse made and gets none.
+func (b *HerdrBackend) NoteBead(name, id string) {
+	m, ok := b.readMeta(name)
+	if !ok || id == "" || m.Bead == id {
+		return
+	}
+	m.Bead = id
+	_ = b.writeMeta(m)
+}
+
 // KillLanding is what a kill did with a session's own git worktree
 // (rangerhq-09o2). Nil Tree means the session shared the checkout — every
 // session before per-session worktrees, and every crew session — and there
@@ -1553,9 +1585,33 @@ type KillLanding struct {
 // gone can say so to git, which is a decision a human should have to make
 // in their own words.
 func (b *HerdrBackend) KillSessionAndLand(name string) (*KillLanding, error) {
+	return b.killAndLand(name, false)
+}
+
+// ForceKillSessionAndLand is the same kill with the ADR 0013 §4 reap guard
+// stood down: the operator has read the refusal and said kill it anyway.
+// Nothing else changes — the landing still refuses to destroy a tree that
+// holds work (RemoveSessionTree), so a forced kill of a dirty session
+// worktree still keeps the tree and says so.
+func (b *HerdrBackend) ForceKillSessionAndLand(name string) (*KillLanding, error) {
+	return b.killAndLand(name, true)
+}
+
+func (b *HerdrBackend) killAndLand(name string, force bool) (*KillLanding, error) {
 	// Before anything: the meta is the only record of which tree and branch
 	// belong to this session, and the kill below deletes it (ADR 0011 §3).
 	m, hadMeta := b.readMeta(name)
+
+	// The reap guard, before the workspace is closed and before the meta is
+	// dropped: a session still holding an open bead over an uncommitted
+	// tree is not killed (ADR 0013 §4, reapguard.go). It runs on the shared
+	// checkout too, which is where the near-miss was — there is no session
+	// branch there for the landing below to refuse over.
+	if hadMeta && !force {
+		if why := b.ReapRefusal(m); why != "" {
+			return nil, Die("NOT killed: %s — look first (posse attach %s), or `posse kill %s --force`", why, name, name)
+		}
+	}
 
 	s, err := b.Resolve(name)
 	if err != nil {

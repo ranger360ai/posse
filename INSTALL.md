@@ -993,6 +993,12 @@ wrote. A persona closed a real bead in a fresh instance; the install works.
 Sessions of finished beads are left idle for you to reap (`posse kill`, or
 `x` in the cockpit). They cost nothing and do not block the next pass.
 
+A session whose bead is *not* finished is a different matter: `posse kill`
+**refuses** one whose bead is still `in_progress` while its working
+directory holds uncommitted work, and names both halves (ADR 0013 §4).
+Look before you reap — `posse attach <session>` — then let it commit and
+close, or `posse kill <session> --force` once you have read the refusal.
+
 Useful while you watch: `posse peek <session>`, `posse cockpit` (or `ctrl+b g`),
 `posse scorecard`, `posse cost`.
 
