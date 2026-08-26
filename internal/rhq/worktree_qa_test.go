@@ -505,6 +505,67 @@ func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
 	}
 }
 
+// The merge target is the branch recorded when the session tree was made,
+// not whichever branch the operator happens to have checked out when the
+// persona closes its bead. A branch switch must refuse rather than land the
+// persona's commit on the operator's unrelated branch and report the
+// original base as merged.
+func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
+	t.Skip("ranger-base-5s2o: merge-back targets the operator's current branch instead of the recorded base")
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-branch-switch", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "session work")
+	baseBefore := mustGit(t, repo, "rev-parse", tr.Base)
+
+	mustGit(t, repo, "checkout", "-q", "-b", "operator-side")
+	o, err := MergeSessionWork(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged {
+		t.Fatalf("merge-back reported %s merged while the operator had operator-side checked out: %+v", tr.Base, o)
+	}
+	if got := mustGit(t, repo, "rev-parse", tr.Base); got != baseBefore {
+		t.Fatalf("recorded base %s moved across a branch-switch refusal: %s -> %s", tr.Base, baseBefore, got)
+	}
+	if got := mustGit(t, repo, "rev-parse", "operator-side"); got != baseBefore {
+		t.Fatalf("persona work landed on operator-side: %s -> %s", baseBefore, got)
+	}
+}
+
+// Relaunch starts from the recorded worktree path, not the main checkout.
+// A detached operator checkout removes the merge target temporarily, but it
+// must not erase the repo/branch provenance from the recreated run record:
+// that would make later close/kill paths treat a private tree as shared and
+// silently skip its landing.
+func TestQARelaunchKeepsWorktreeProvenanceWhileOperatorHeadIsDetached(t *testing.T) {
+	t.Skip("ranger-base-q5p1: detached operator HEAD erases worktree provenance on relaunch")
+	wtqaHome(t)
+	b, _ := newTestBackend(t)
+	repo := wtRepo(t)
+	write(t, b.App.ConfigPath, "")
+	if err := b.CreateSession(NewSessionOpts{Name: "s-detached", Dir: repo, Cmd: "true", Worktree: true}); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := b.readMeta("s-detached")
+	if !ok || m.Repo == "" || m.Branch == "" {
+		t.Fatalf("initial session has no worktree provenance: %+v", m)
+	}
+	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
+
+	p, err := b.planLaunch(RecreateOpts(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Dir != m.Dir || p.Repo != m.Repo || p.Branch != m.Branch {
+		t.Fatalf("relaunch demoted a private tree while operator HEAD was detached: plan dir/repo/branch = %q/%q/%q, want %q/%q/%q", p.Dir, p.Repo, p.Branch, m.Dir, m.Repo, m.Branch)
+	}
+}
+
 // A kill while a launcher is firing must not freeze on the lock and must not
 // merge unserialized: it kills, keeps the tree, and names the way to finish.
 func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
