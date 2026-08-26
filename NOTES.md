@@ -2806,6 +2806,47 @@ duplicate dispatch th7l just fixed. The ledger line carries b8i's whole
 record, so `git log --grep rangerhq-b8i` still lands somewhere that explains
 what the commit did.
 
+### the queue's own repo, and who commits its jsonl (ADR 0015 §4)
+
+The store of record moves out of the constitution repo into
+`~/src/ranger-queue`, reached from every repo the crew touches — the
+constitution repo now included — by the same `.beads/redirect` mechanism
+D3-C already uses. The runbook is `docs/runbooks/queue-cutover.md` and the
+script it drives is `scripts/queue-cutover.sh`; both were rehearsed on a
+full copy of the live store (ranger-base-tjfw). What is worth knowing here
+rather than there:
+
+- **The launcher commits the projection.** While the store lived in the
+  constitution repo, every commit anyone made carried
+  `.beads/issues.jsonl` along — bd's own pre-commit hook stages it. A repo
+  nobody commits in for any other reason has no such free ride, and `bd
+  sync` exports without committing while `bd sync --full` commits *and*
+  pushes (measured, 0.49.1). So a dispatch pass that judges a close flushes
+  and commits it, path-limited, in the repo config `queue_repo:` names —
+  `internal/rhq/queuejsonl.go`. Absent key = no commits, which is what
+  every instance that never moves its store keeps doing.
+- **Never a push, structurally.** Nothing on this path runs `git push`, and
+  the cutover leaves the queue repo with no remote at all, so a future bd
+  flag has nowhere to send it either.
+- **`bd daemon start --auto-commit` exists** (with a separate `--auto-push`)
+  and would do the committing with no posse code. Measured and not used: it
+  commits on a 5s timer with no bead to name, and its git failures — a
+  visibility-gate refusal included — land in `daemon.log`.
+- **A fresh queue repo would disarm the bead-loss census.** `LostBeads` IS
+  the git log of `issues.jsonl` in whatever repo the redirect lands in, so
+  the cutover replays the `.beads/` history rather than starting clean.
+  Because the replay renames every commit, it also rewrites
+  `deleted.jsonl`'s recorded shas — the ledger silences a finding only when
+  it names the same commit (rangerhq-6he5), and without the rewrite every
+  owned deletion alarms again. Both measured in the rehearsal, both silent
+  in production if missed.
+- **bd stamps the database with a repo id**, and the queue repo is a
+  different repo. Until `bd migrate --update-repo-id` runs, bd refuses to
+  start its daemon and drops `.beads/daemon-error` warning that the
+  git-history backfill "may treat your local issues as deleted" — the
+  rangerhq-fuom mechanism, armed. It fails closed, which is why the check is
+  "is `daemon-error` gone", not "did anything break".
+
 ## grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr)
 
 The fleet's grok shipped configured to replace itself. `~/.grok/config.toml`
