@@ -13,6 +13,10 @@ the machinery deliberately stops short of publishing anything.
 `.github/workflows/release.yml`, which vets, runs `make test`, builds the four
 tarballs, renders the formula, and stages a **draft** release.
 
+If that run needs to be retried, dispatch the workflow manually with the
+existing tag. `workflow_dispatch` checks out the requested tag before vetting
+and testing it, and the artifacts are built from that same commit.
+
 **What is not, on purpose:** publishing that draft and pushing the formula to
 the tap are outward-facing acts (crew guardrail 4) and stay in the operator's
 hands. Nothing in CI touches `ranger360ai/homebrew-tap`.
@@ -56,32 +60,28 @@ $ git rev-list --left-right --count origin/main...HEAD
 is not a taggable commit — CI checks out what GitHub has, not what your working
 tree has.
 
-**3. `make test` is green ON LINUX, at that exact commit.**
+**3. `make test-linux` is green, at that exact commit.**
 
-CI is `ubuntu-latest`. Darwin-green proves nothing about it: this repo has
-never had CI on branch pushes, so the release workflow is the first thing to
-run these tests on Linux — on a tag, where failure costs the version number.
-Two real bugs (`ranger-base-fjj`, `ranger-base-gaf`) were found exactly here.
+CI is `ubuntu-latest`. Darwin-green proves nothing about it: two real bugs
+(`ranger-base-fjj`, `ranger-base-gaf`) survived the macOS suite and were found
+only during a release rehearsal. Run the repository's Linux gate before the
+tag, while the version number is still free:
 
 ```sh
-$ docker run --rm -u 1000:1000 -e HOME=/tmp -e GOCACHE=/tmp/gocache \
-    -e GOMODCACHE=/tmp/gomod -e GOFLAGS=-buildvcs=false \
-    -v "$PWD":/repo -w /repo golang:1.26 \
-    sh -c 'git config --global --add safe.directory /repo; go vet ./... && make test'
+$ make test-linux
 ```
 **Verify:** exit 0, both packages `ok`, and `silent-revert audit: N commits, 0
 untriaged`. Run it against a **clean clone of the commit being tagged**, not a
 dirty working tree.
 
-> **`-u` IS NOT OPTIONAL.** Without it the container runs as root, root bypasses
-> file permission bits, and `TestBackfillDoesNotFailTheListing` fails with
-> "read-only meta was rewritten" because the test's read-only premise cannot
-> hold. That failure is an artifact of the run, not a defect. A root run reports
-> a bug that does not exist, and someone reverts a good commit over it.
+`make test-linux` derives the toolchain from `go.mod`, mounts the repository
+read-only, and runs the container as `$(id -u):$(id -g)`. Its writable build and
+module caches live outside the repository, so the rehearsal cannot leave a
+root-owned artifact or rewrite the tree.
 
-`make test`, not `go test ./...`: `make test` also runs the silent-revert audit,
-which is the detector for the failure class a green suite does not report
-(`rangerhq-8rtf`), and it is what the workflow runs.
+The target runs `go vet ./...` followed by `make test`, matching the release
+workflow. `make test` includes the silent-revert audit, which detects the
+failure class a green Go suite does not report (`rangerhq-8rtf`).
 
 **4. Doc fixes to `README.md` and `INSTALL.md` are merged BEFORE the tag.**
 
@@ -240,11 +240,7 @@ Stated plainly, so nobody mistakes this runbook for a guarantee:
   `permissions: contents: write` covers it, `gh` is preinstalled on
   `ubuntu-latest`, and `--generate-notes` works with no prior release — read,
   not run.
-- **linux/amd64.** Local Linux rehearsal on an Apple-silicon machine is
-  linux/**arm64**; GitHub's `ubuntu-latest` is amd64. The release cross-compiles
-  all four targets from one host regardless, but the *suite* has not been run on
-  linux/amd64 anywhere but CI.
-- **`workflow_dispatch` tests a different commit than it builds** — the workflow
-  checks out with no `ref:`, so re-running a failed release from the branch vets
-  and tests `main` while building the *tag*. Tracked as `ranger-base-dbe`. On a
-  tag push, which is the path above, the two are the same commit.
+- **linux/amd64 unless explicitly requested.** On an Apple-silicon machine,
+  plain `make test-linux` runs linux/arm64 while GitHub's `ubuntu-latest` is
+  amd64. Run `PLATFORM=linux/amd64 make test-linux` to cover the CI architecture
+  under emulation; the default rehearsal alone does not prove it.

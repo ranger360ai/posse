@@ -127,7 +127,6 @@ func TestTestLinuxScriptInvokesTheReleaseGateViaDocker(t *testing.T) {
 // and ships the tag, and precondition 3 is an ad-hoc docker one-liner with
 // a hardcoded uid 1000 rather than make test-linux.
 func TestReleaseRunbookDoesNotStillClaimDispatchDiverges(t *testing.T) {
-	t.Skip("ranger-base-vh6t: runbook still describes pre-dbe checkout and a uid-1000 docker one-liner, not make test-linux")
 	contents, err := os.ReadFile("docs/runbooks/release.md")
 	if err != nil {
 		t.Fatal(err)
