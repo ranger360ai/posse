@@ -1319,20 +1319,24 @@ Everything in codex's template above is a fix, not decoration:
   path and is not persisted, the attacker must already be able to write
   the repo, and claude has the same class of channel in
   `.claude/settings.json` project hooks — trust is parity, not a new
-  floor. What posse does instead is **check at launch**: `Runtime.ProjectConfig`
-  (`.codex/config.toml`, codex only — posse types no trust flag anywhere
-  else) is `stat`ed in the session dir by `ProjectConfigTrust`
-  (`parity.go`), and a hit is a `Degraded` entry, so `posse new`/`posse
-  dispatch`/the cockpit **refuse** and name the file unless the operator
-  passes `--allow-degraded` (session then marked, as any degraded launch)
-  or the PID carries `trust_project_config: true`. It is `Degraded` and
-  never `Unrealized`: nothing here is an unenforced gate, it is what the
-  launch gives away. `posse gates <persona>` computes the matrix for the
-  cwd, so the line shows there too. `RelaunchAgent` re-checks by going
-  through `CreateSession` — a repo that grows a `.codex/` after a clean
-  launch refuses on the next relaunch. The same check for claude's
-  `.claude/settings.json` hooks is a fair follow-on and is **not** wired:
-  `ProjectConfig` is empty for claude today.
+  floor. What posse does instead is **check at launch**:
+  `Runtime.ProjectConfig` names the file and `ProjectConfigKeys` optionally
+  narrows it to top-level JSON keys (`parity.go`). Codex keeps the original
+  whole-file predicate: any `.codex/config.toml` is a hit. Claude names
+  `.claude/settings.json` with `hooks` and `mcpServers`: either top-level key
+  is a hit regardless of value, while a readable object carrying only
+  `permissions` is clean. An existing keyed file that is unreadable,
+  malformed, or not an object fails closed because the launch cannot prove
+  the channel absent. A hit is a `Degraded` entry, so `posse new`/`posse
+  dispatch`/the cockpit **refuse** and name the file plus the matched keys or
+  classification failure unless the operator passes `--allow-degraded`
+  (session then marked, as any degraded launch) or the PID carries
+  `trust_project_config: true`. It is `Degraded` and never `Unrealized`:
+  nothing here is an unenforced gate, it is what the launch gives away.
+  `posse gates <persona>` computes the matrix for the cwd, so the line shows
+  there too. `posse relaunch` preflights the same launch plan before replacing
+  a session, so a repo that grows one of these surfaces after a clean launch
+  refuses on relaunch.
 - **Env: codex strips nothing by default.** ADR 0002 assumed
   `shell_environment_policy` drops `*KEY*`/`*TOKEN*`/`*SECRET*` names, so
   the template might need `ignore_default_excludes=true`. It does not: on
@@ -2042,11 +2046,12 @@ Three different things get called "permissions"; keep them apart
   `--allow-degraded`. `posse gates
   <persona>` prints the matrix per runtime. `RHQ_CAGE` in the env, `cage:`
   / `degraded:` in meta. One part of the check depends on *where* the
-  session starts rather than on the PID: a runtime posse hands the session
-  dir's own config (codex's directory trust → `.codex/config.toml`, see
-  *Codex specifics*) degrades the launch unless the PID says
-  `trust_project_config: true` — `CheckParityIn` is `CheckParity` plus
-  that, and `CheckParity` itself stats nothing.
+  session starts rather than on the PID: a runtime that posse makes able to read
+  the session dir's own executable config degrades the launch unless the PID
+  says `trust_project_config: true` — any `.codex/config.toml` for codex;
+  top-level `hooks` or `mcpServers` (or a classification failure) in
+  `.claude/settings.json` for claude. `CheckParityIn` is `CheckParity` plus
+  that directory check, and `CheckParity` itself stats nothing.
 - **The tier is part of parity (ADR 0003 §3, rangerhq-2uq).** A cheaper
   model follows the PID's prose less reliably, and the wall does not care
   what model is behind it — so a launch resolved to `fast` runs **only**
@@ -2980,17 +2985,16 @@ Measured on the pane, four herdr scratch panes, no API turn:
   anyway with `hasCompletedProjectOnboarding`, because "harmless splash" is
   what grok's startup menu was called too.
 
-**What the grant hands the session dir, and the open half.** Untrusted,
+**What the grant hands the session dir, and the keyed launch check.** Untrusted,
 claude *drops* the project's `hooks` and `mcpServers` entries out of
 `<dir>/.claude/settings.json` ("Dropped N project-scoped hooks entries —
 workspace not yet trusted"). Trusted, they load — the same class of channel
-ADR 0002's amendment made codex's launch check for. That amendment's §1
-says `ProjectConfig` is "empty everywhere else, including claude (posse
-types it no trust flag)", and this seed makes that premise false. Wiring
-`Runtime.ProjectConfig` to `.claude/settings.json` is the follow-on it
-parked, and it is now live work: it would refuse a launch in every repo
-carrying one, this repo included, so it is the architect's call and not a
-developer's (handed off from rangerhq-w4uf).
+ADR 0002 made codex's launch check for. Claude now declares that settings
+path with `ProjectConfigKeys: [hooks, mcpServers]`: presence of either key
+degrades before trust is seeded, while this repo's permission-only file stays
+clean. An existing file that cannot be decoded as a top-level JSON object
+also degrades; failing open there would turn a classification error into a
+claim that no executable channel exists.
 
 **What posse does NOT do, so nobody re-proposes it:** pre-answer the other
 runtimes' dialogs from the harness (write `privacy_banner_acked`, write

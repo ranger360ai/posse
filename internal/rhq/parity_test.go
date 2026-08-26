@@ -371,7 +371,7 @@ func TestDispatchRefusesFastBelowFloorPerBead(t *testing.T) {
 // $PWD/.codex/config.toml load before any model turn — its mcp_servers and
 // notify entries are spawned by codex outside its own sandbox with the
 // whole session env. The launch must find the file and refuse.
-func TestProjectConfigTrustGatesTheLaunch(t *testing.T) {
+func TestCodexProjectConfigTrustGatesTheLaunch(t *testing.T) {
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -396,8 +396,8 @@ func TestProjectConfigTrustGatesTheLaunch(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, ".codex", "config.toml"),
 		[]byte("[mcp_servers.probe]\ncommand = \"/bin/sh\"\n"), 0o644)
 
-	// codex reads it (posse trusts the dir for it); claude is not typed a
-	// trust flag by posse, so its own project config is not this bead's.
+	// Each runtime names its own project-config surface. Codex reads this
+	// file; Claude's keyed JSON check has nothing to inspect here.
 	p := b.App.CheckParityIn(dev, codex, CageShims, TierStrong, repo)
 	if len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], ".codex/config.toml") || !strings.Contains(p.Degraded[0], "trust_project_config: true") {
 		t.Errorf("codex must flag the repo's config: %+v", p)
@@ -406,7 +406,7 @@ func TestProjectConfigTrustGatesTheLaunch(t *testing.T) {
 		t.Errorf("this is what the launch gives away, not an unenforced gate: %+v", p.Unrealized)
 	}
 	if p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
-		t.Errorf("claude has no ProjectConfig surface here: %+v", p)
+		t.Errorf("claude must ignore codex's ProjectConfig surface: %+v", p)
 	}
 	// The dir-independent matrix stays dir-independent.
 	if p := b.App.CheckParity(dev, codex, CageShims, TierStrong); len(p.Degraded) != 0 {
@@ -441,6 +441,125 @@ func TestProjectConfigTrustGatesTheLaunch(t *testing.T) {
 	}
 	if log := calls(t, fake); !strings.Contains(log, "codex") {
 		t.Errorf("no codex line typed:\n%s", log)
+	}
+}
+
+// ranger-base-gyqi / ADR 0002 amendment 2026-08-26: SeedClaudeTrust makes
+// project hooks and MCP servers live, but permission-only project settings
+// do not gain an executable channel. The predicate is therefore top-level
+// key presence, regardless of the key's value, and classification fails
+// closed whenever an existing file cannot be proved safe.
+func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
+	b, fake := newTestBackend(t)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "trusting.md"),
+		[]byte("---\nname: trusting\ntrust_project_config: true\ndeny: [Bash(git push:*)]\n---\nYou are trusting.\n"), 0o644)
+	dev, _ := b.App.LoadAgent("dev")
+	trusting, _ := b.App.LoadAgent("trusting")
+	claude, _ := b.App.LoadRuntime("claude")
+	repo := t.TempDir()
+	settingsDir := filepath.Join(repo, ".claude")
+	settings := filepath.Join(settingsDir, "settings.json")
+
+	if claude.ProjectConfig != ClaudeProjectConfig || len(claude.ProjectConfigKeys) != 2 ||
+		claude.ProjectConfigKeys[0] != "hooks" || claude.ProjectConfigKeys[1] != "mcpServers" {
+		t.Fatalf("claude project-config declaration: %+v", claude)
+	}
+	if p := b.App.CheckParity(dev, claude, CageShims, TierStrong); len(p.Degraded) != 0 {
+		t.Fatalf("CheckParity must stay dir-independent: %+v", p)
+	}
+	// Missing and permission-only settings are clean, including at launch.
+	if p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
+		t.Errorf("no settings file: %+v", p)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "cl-none", Agent: "dev", Runtime: "claude", Dir: repo})
+	os.MkdirAll(settingsDir, 0o755)
+	os.WriteFile(settings, []byte(`{"permissions":{"allow":["Read"]}}`), 0o644)
+	if p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
+		t.Errorf("permission-only settings: %+v", p)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "cl-permissions", Agent: "dev", Runtime: "claude", Dir: repo})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		key  string
+	}{
+		{name: "hooks", body: `{"hooks":null}`, key: "hooks"},
+		{name: "mcp", body: `{"mcpServers":{}}`, key: "mcpServers"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			os.WriteFile(settings, []byte(tc.body), 0o644)
+			p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo)
+			if len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], ClaudeProjectConfig) ||
+				!strings.Contains(p.Degraded[0], "matched top-level project config keys: "+tc.key) ||
+				!strings.Contains(p.Degraded[0], "trust_project_config: true") {
+				t.Fatalf("matched key must degrade by presence regardless of value: %+v", p)
+			}
+			if len(p.Unrealized) != 0 {
+				t.Errorf("project config is degradation, not an unrealized gate: %+v", p.Unrealized)
+			}
+
+			prefix := "cl-" + tc.name
+			if err := b.CreateSession(NewSessionOpts{Name: prefix + "-refuse", Agent: "dev", Runtime: "claude", Dir: repo}); err == nil ||
+				!strings.Contains(err.Error(), tc.key) || !strings.Contains(err.Error(), "--allow-degraded") {
+				t.Fatalf("matched key must refuse by default: %v", err)
+			}
+			mustCreate(t, b, NewSessionOpts{Name: prefix + "-waived", Agent: "dev", Runtime: "claude", Dir: repo, AllowDegraded: true})
+			if m, _ := b.readMeta(prefix + "-waived"); m == nil || !strings.Contains(m.Degraded, tc.key) {
+				t.Errorf("waived launch must stay marked: %+v", m)
+			}
+			if p := b.App.CheckParityIn(dev, claude, CageShims, TierFast, repo); !p.NoDegrade {
+				t.Errorf("fast must make project-config degradation unwaivable: %+v", p)
+			}
+			if err := b.CreateSession(NewSessionOpts{Name: prefix + "-fast", Agent: "dev", Runtime: "claude", Dir: repo, Tier: TierFast, AllowDegraded: true}); err == nil ||
+				!strings.Contains(err.Error(), "never accepted") {
+				t.Errorf("fast + matched key must refuse despite waiver: %v", err)
+			}
+			if p := b.App.CheckParityIn(trusting, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
+				t.Errorf("PID opt-in must clear matched key: %+v", p)
+			}
+			mustCreate(t, b, NewSessionOpts{Name: prefix + "-trusted", Agent: "trusting", Runtime: "claude", Dir: repo})
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "malformed", body: `{"hooks":`, want: "classification failed: invalid JSON"},
+		{name: "non-object", body: `[]`, want: "classification failed: not a top-level JSON object"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			os.WriteFile(settings, []byte(tc.body), 0o644)
+			why := ProjectConfigTrust(claude, dev, repo)
+			if !strings.Contains(why, ClaudeProjectConfig) || !strings.Contains(why, tc.want) {
+				t.Errorf("existing %s settings must fail closed: %q", tc.name, why)
+			}
+			if err := b.CreateSession(NewSessionOpts{Name: "cl-" + tc.name + "-refuse", Agent: "dev", Runtime: "claude", Dir: repo}); err == nil ||
+				!strings.Contains(err.Error(), tc.want) {
+				t.Errorf("existing %s settings must refuse launch: %v", tc.name, err)
+			}
+		})
+	}
+
+	// A path that exists but cannot be read as a file is an unreadable
+	// classification failure, never the same thing as a missing file.
+	os.Remove(settings)
+	os.Mkdir(settings, 0o755)
+	if why := ProjectConfigTrust(claude, dev, repo); !strings.Contains(why, ClaudeProjectConfig) ||
+		!strings.Contains(why, "classification failed: unreadable") {
+		t.Errorf("existing unreadable settings must fail closed: %q", why)
+	}
+	if err := b.CreateSession(NewSessionOpts{Name: "cl-unreadable-refuse", Agent: "dev", Runtime: "claude", Dir: repo}); err == nil ||
+		!strings.Contains(err.Error(), "classification failed: unreadable") {
+		t.Errorf("existing unreadable settings must refuse launch: %v", err)
+	}
+	if log := calls(t, fake); !strings.Contains(log, "claude") {
+		t.Errorf("no claude line typed:\n%s", log)
 	}
 }
 

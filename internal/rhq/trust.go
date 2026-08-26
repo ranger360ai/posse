@@ -35,19 +35,15 @@ package rhq
 // in <config>". That is the key this file writes, and the reason it is a
 // file and not a typed line is that claude offers no line to type it on.
 //
-// WHAT THE GRANT BUYS THE REPO, and why that is a divergence somebody has
-// to rule on: while a workspace is untrusted claude DROPS the project's
-// `hooks` and `mcpServers` entries out of <dir>/.claude/settings.json
+// WHAT THE GRANT BUYS THE REPO: while a workspace is untrusted claude DROPS
+// the project's `hooks` and `mcpServers` entries out of
+// <dir>/.claude/settings.json
 // ("Dropped N project-scoped hooks entries — workspace not yet trusted",
 // its own log line). Trusted, they load. That is the same class of
-// channel ADR 0002's amendment made codex's launch check for, and the
-// amendment's §1 rests on a premise this file makes false for claude —
-// "empty everywhere else, including claude (posse types it no trust
-// flag)". Wiring Runtime.ProjectConfig to `.claude/settings.json` is the
-// follow-on that amendment parked, and it is now live work rather than a
-// hypothetical: it belongs to the architect (rangerhq-w4uf handed it off)
-// because it would refuse a launch in every repo that carries one, this
-// one included.
+// channel ADR 0002 made codex's launch check for. Claude's built-in runtime
+// therefore names this file plus the top-level keys above; permission-only
+// settings stay clean, while a match or an unclassifiable file degrades the
+// launch before this trust seed is written.
 
 import (
 	"encoding/json"

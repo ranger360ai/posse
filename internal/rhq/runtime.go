@@ -181,14 +181,18 @@ type Runtime struct {
 	// its own sandbox is what enforces Edit/Write there.
 	SelfSandbox bool
 	// ProjectConfig names a file *in the session directory* that this
-	// runtime reads as configuration at launch, because posse typed the flag
-	// that makes it do so (codex's directory trust). That is a channel from
-	// the repo to the box which no model and no PID sits in front of, so the
-	// launch checks for the file and refuses unless the PID opts in — see
-	// ProjectConfigTrust in parity.go. Empty = this runtime takes nothing
-	// from the session dir, which is the safe default for every
-	// template-only runtime (posse types no trust flag there).
+	// runtime reads as configuration at launch because posse made the session
+	// directory trusted. That is a channel from the repo to the box which no
+	// model and no PID sits in front of, so the launch checks it and refuses
+	// unless the PID opts in — see ProjectConfigTrust in parity.go. Empty =
+	// this runtime takes no project-config surface from the session dir, which
+	// is the safe default for every template-only runtime.
 	ProjectConfig string
+	// ProjectConfigKeys narrows the check to top-level JSON keys whose
+	// presence becomes live under trust. Empty preserves the whole-file
+	// presence predicate (codex). A keyed file that cannot be classified as
+	// a readable top-level JSON object fails closed (claude).
+	ProjectConfigKeys []string
 	// Unattended is the flag that makes this runtime approve a tool call
 	// with nobody watching, and it is a launch GUARANTEE, not a template
 	// detail (rangerhq-qs5r): every built-in template already carries it,
@@ -600,6 +604,10 @@ const CodexFleetFlags = `--disable hooks -c allow_login_shell=false -c "projects
 // reasoning defaults."
 const CodexProjectConfig = ".codex/config.toml"
 
+// ClaudeProjectConfig is the project settings file whose hooks and MCP
+// servers become live after SeedClaudeTrust accepts the session directory.
+const ClaudeProjectConfig = ".claude/settings.json"
+
 // GrokFleetFlags is what a grok persona session needs to run unattended —
 // verified in rangerhq-vjl on grok 1.0.x (the headless mode matrix on
 // 1.0.0, the live fleet sessions on 1.0.5 after the CLI self-updated
@@ -692,7 +700,7 @@ var (
 // an allowed later unify"). ranger-base-dg5 is the dispatch half that reads
 // this column.
 var builtinRuntimes = []Runtime{
-	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", Unattended: ClaudeFleetFlags,
+	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: ClaudeProjectConfig, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.

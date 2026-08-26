@@ -14,6 +14,7 @@ package rhq
 // PID may pin a `tier_floor:` below which it refuses to run at all.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -260,17 +261,11 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 }
 
 // ProjectConfigTrust is the one part of the matrix that depends on *where*
-// the session starts: a runtime whose config posse made the session dir able
-// to supply (Runtime.ProjectConfig — codex's directory trust, which the
-// fleet types because an unattended session otherwise hangs on the trust
-// dialog) reads that file before any model turn. Verified on codex-cli
-// 0.147.0 (rangerhq-pmz, reproduced in rangerhq-b7m): the keys posse types
-// on the line win over the project's, but the keys it does not type are
-// the repo's — [mcp_servers.*] and notify are spawned by the runtime
-// itself, outside its own per-command sandbox, with the whole session env.
-// So the channel is a file in the repo getting exec on the box with no
-// model and no PID in front of it, which is worth a refusal the operator
-// has to answer rather than a line nobody reads.
+// the session starts: a trusted runtime may read project-owned executable
+// configuration before any model turn. Runtime.ProjectConfigKeys narrows
+// JSON settings to the top-level keys made live by the trust grant; an empty
+// list preserves the original whole-file predicate. A keyed file fails closed
+// when it exists but cannot be proved to be a readable top-level JSON object.
 //
 // Returns "" when there is nothing to say: no such runtime surface, no
 // such file, or the PID opted in with trust_project_config: true. It is a
@@ -284,11 +279,54 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 		return ""
 	}
 	p := filepath.Join(dir, rt.ProjectConfig)
-	if _, err := os.Stat(p); err != nil {
+	if len(rt.ProjectConfigKeys) == 0 {
+		if _, err := os.Stat(p); err != nil {
+			return ""
+		}
+		return projectConfigTrustMessage(rt, p, "project config is present")
+	}
+
+	// Lstat distinguishes a missing config from an existing path whose target
+	// cannot be read (including a dangling symlink). Only the former is clean.
+	if _, err := os.Lstat(p); err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+err.Error())
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+err.Error())
+	}
+	// RawMessage values deliberately avoid interpreting either runtime's
+	// schema. Only JSON validity, the top-level shape, and key presence are
+	// ours to classify.
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(b, &obj); err != nil {
+		var raw json.RawMessage
+		if syntaxErr := json.Unmarshal(b, &raw); syntaxErr != nil {
+			return projectConfigTrustMessage(rt, p, "project config classification failed: invalid JSON: "+syntaxErr.Error())
+		}
+		return projectConfigTrustMessage(rt, p, "project config classification failed: not a top-level JSON object")
+	}
+	if obj == nil { // JSON null unmarshals to a nil map without an error.
+		return projectConfigTrustMessage(rt, p, "project config classification failed: not a top-level JSON object")
+	}
+	var matched []string
+	for _, key := range rt.ProjectConfigKeys {
+		if _, ok := obj[key]; ok {
+			matched = append(matched, key)
+		}
+	}
+	if len(matched) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("trust: %s reads %s from the session dir before any turn — its mcp_servers/notify entries run outside %s's sandbox with the whole session env (the keys posse types, -s/-a/developer_instructions, still win); opt in with trust_project_config: true on the PID, or remove the file",
-		rt.Name, AbbrevHome(p), rt.Name)
+	return projectConfigTrustMessage(rt, p, "matched top-level project config keys: "+strings.Join(matched, ", "))
+}
+
+func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
+	return fmt.Sprintf("trust: %s reads %s from the session dir before any turn — %s; project-owned executable configuration can run on the box with the whole session env before any model turn or PID/tool gate can mediate it; opt in with trust_project_config: true on the PID, or remove the file (or, for keyed JSON, the matching keys)",
+		rt.Name, AbbrevHome(path), finding)
 }
 
 // CheckParityIn is CheckParity plus what depends on the directory the

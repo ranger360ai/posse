@@ -81,12 +81,10 @@ type AgentFile struct {
 	// skills_flag: borrows the same dir (skills.go).
 	SkillsStateDir string
 	// TrustProjectConfig opts this persona into a runtime reading
-	// configuration out of the session directory (codex's
-	// Runtime.ProjectConfig). Off by default: posse types codex's trust flag
-	// so the session starts unattended, and that same trust lets a repo's
-	// .codex/config.toml spawn MCP servers and notify hooks outside the
-	// sandbox with the session env, before any turn (rangerhq-b7m). A launch
-	// into a dir that has the file degrades unless this is set.
+	// configuration out of the session directory (Runtime.ProjectConfig).
+	// Off by default: directory trust can make project-owned executable
+	// channels live before any turn. A launch whose runtime-specific file or
+	// keyed JSON predicate hits degrades unless this is set (ADR 0002).
 	TrustProjectConfig bool
 	// NoOverflow is `overflow: false` on the PID: this lane is never moved
 	// to the plan guard's overflow runtime (ADR 0010 §2c), whatever the
