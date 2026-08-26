@@ -1,7 +1,8 @@
 # ADR 0015 — Promote the constitution: three trees, three write policies, one ratification step
 
-*Status: proposed 2026-08-26 · owner: architect · awaiting operator
-ratification (ranger-base-yqpx) · execution rides with the rhq
+*Status: proposed 2026-08-26 · owner: architect · ratified 2026-08-26
+(ranger-base-ap2x) · amended 2026-08-26: §7 moves `envs/` out of the
+promoted set (ranger-base-h56a) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · informs 0002
 §3, 0012 D3-C, 0014 §3*
 
@@ -33,7 +34,11 @@ denying the write is prose for most of the fleet.
 The instance tree also mixes three write policies in one repo:
 
 1. **Constitution** — `rhq/agents`, `config.yaml`, `recipes/`,
-   `skills/`, `envs/`. Rare, deliberate, should be attributable.
+   `skills/`. Rare, deliberate, should be attributable. *(As first
+   written this list included `envs/` — wrongly: the same repo's
+   `.gitignore` line 3 forbids env values from ever being committed,
+   so "promote from a commit" was unsatisfiable for them by design.
+   Found by ranger-base-h56a; ruled in §7.)*
 2. **Runtime state** — `.beads` (the queue, store of record for every
    repo the crew touches, reached by `.beads/redirect`) and
    `rhq/state`. The write-hottest paths in the system; deniable to
@@ -60,8 +65,8 @@ what this ADR adds.
 | tree | contents | write policy | in force via |
 |---|---|---|---|
 | mechanism repo (posse) | source | ordinary project work | `make install` (exists) |
-| constitution repo (the instance tree) | PIDs, config, recipes, skills, envs — plus its own docs/ and scripts/ | ordinary project work — **drafting is open to personas** | `posse promote` (new) |
-| runtime home `~/.config/posse` | promoted constitution copy · `state/` · `personas/` (memory) | see §2/§5; never "promoted", never draft | n/a — it *is* the live surface |
+| constitution repo (the instance tree) | PIDs, config, recipes, skills — plus its own docs/ and scripts/ | ordinary project work — **drafting is open to personas** | `posse promote` (new) |
+| runtime home `~/.config/posse` | promoted constitution copy · `state/` · `envs/` (secrets, §7) · `personas/` (memory) | see §2/§5/§7; never "promoted", never draft | n/a — it *is* the live surface |
 | queue repo (new, §4) | `.beads` store of record | every session, always, via redirect | n/a — data, not prose |
 
 The split the operator asked for is therefore mostly **not a repo
@@ -72,8 +77,9 @@ symlink (§2).
 **2. The home becomes the promoted copy.** `~/.config/posse` — the
 path the binary already prefers (**MEASURED**, `app.go`) — is created
 as a *real directory*, not a symlink. `agents/`, `config.yaml`,
-`recipes/`, `skills/`, `envs/` under it are written **only** by
-`posse promote`. The `~/.config/rhq` symlink dies with the rhq
+`recipes/`, `skills/` under it — the **promoted set** — are written
+**only** by `posse promote` (`envs/` is deliberately not in this set;
+§7). The `~/.config/rhq` symlink dies with the rhq
 retirement; its replacement is the first promote. This is the "one
 path move" the ride-together ruling requires. `App` paths do not
 change shape — `AgentsDir` is still `home/agents`; what changes is
@@ -169,6 +175,63 @@ where it is already correct, and is *not* the fix for constitution
 edits — the fence is. ranger-base-6ne is a documented mode, closed by
 construction rather than by wall.
 
+**7. Env sets are state, not law** *(amended in 2026-08-26,
+ranger-base-h56a — as first ratified, §1/§2 put `envs/` in the promoted
+set)*. `envs/` leaves the promoted set, the manifest, and the launch
+verify. It lives at the runtime home as operator-owned, machine-local
+secret state — the same class as `state/`, gated like §5's memory is:
+by who can write it, not by ratification.
+
+Why this is the correct classification and not a coverage concession,
+each point **MEASURED** 2026-08-26:
+
+- Git is *forbidden* to hold env values — the constitution repo's own
+  `.gitignore` line 3, with a comment stating the policy ("Secrets
+  never enter git, even in a private repo"). "The promoted ref is a
+  commit" and "ratify the diff" are therefore unsatisfiable for
+  `envs/` *by design*, and the design that forbids it is right.
+- Env sets are runtime-mutable, not drafted prose: `WriteEnvSet` /
+  `EnsureEnvSet` / `DeleteEnvSet` (`envs.go`) edit them **at the
+  home**, via the TUI and `$EDITOR`. Had the launch verify hashed
+  them, every routine credential edit would have broken the manifest
+  and refused dispatch until a re-promote that cannot even see the
+  values.
+- The controls the promoted set gets from the manifest, `envs/`
+  already has in kind: `TightenEnvPerms` re-asserts 0700/0600 on
+  **every** env read, printing what drifted (`envs.go`,
+  rangerhq-f2b); and the seatbelt writable set includes `state/` but
+  never `envs/` (`seatbelt.go:122`), so for caged sessions the same
+  wall that covers the promoted copy covers the secrets.
+- `posse init` already seeds `envs/` from embedded examples with the
+  modes set (`init.go`) — the fresh-box path never needed promote.
+
+Two operational clauses o943 builds either way:
+
+- **Promote never creates, copies, or touches `home/envs`.** A copy
+  path that widens 0600 publishes tokens to every process of this
+  user; the cheapest copy that cannot widen modes is the one that
+  does not exist.
+- **Promote warns on a dangling `default_env`**: after copying
+  `config.yaml`, if `default_env:` names an env set absent from
+  `home/envs`, say so (names only, never values). This is the
+  tripwire for exactly the failure h56a found — an instance coming up
+  on the far side of the window with no env sets and no error.
+
+The cutover consequence, in the runbook not just here: today the four
+live env files exist only because the symlink makes the constitution
+repo *be* the home. After §2 nothing carries them. The window gains an
+explicit carry step — copy with modes preserved, verify, then delete
+the originals from the constitution working tree so live tokens stop
+sitting in a repo sessions get dispatched into
+(`docs/runbooks/home-cutover.md`).
+
+What is priced away: "the promoted set is the constitution" was
+exactly true and now has one named exclusion beside §5's, and the
+manifest covers one fewer directory. The successor design for the
+values themselves — provider seam, `posse refresh`, expiry — is
+ranger-base-x6ic, and this ruling feeds it: the credential store is
+rooted at the home, not the constitution.
+
 **Deferred as amendments** (do not hold the retirement for them):
 Q5 — whether the reporting path (`parity`, `posse gates`) is held to a
 verification standard outside posse (ranger-base-3c3 is the live
@@ -181,7 +244,10 @@ special is mounted).
 Rides with ranger-base-3rv9, per the operator's ruling. The
 retirement step "retire the `~/.config/rhq` symlink" becomes "first
 `posse promote` creates `~/.config/posse`", and the same window moves
-the queue. One window, two moves, zero moves later. Nothing in this
+the queue. One window, two moves, zero moves later. The home half of
+the window includes the §7 env carry (`docs/runbooks/home-cutover.md`)
+— it is a step in the runbook *before* the window opens, not a
+discovery inside it. Nothing in this
 ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 
 ## Alternatives rejected
@@ -218,6 +284,25 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
   class needs a lifecycle: it does not reach the dispatched-into case,
   does not exist at shims, and pins the runtime choice. Its real,
   separate value for project sessions is 8hd's call, unblocked by §6.
+- **`envs/` promoted with a non-git anchor** (h56a shape b): promote
+  hashes the constitution working tree's env files into the manifest,
+  no SHA. Keeps verify coverage on paper; in practice it makes the
+  constitution *working tree* the permanent store of secret values —
+  the exact dual-home confusion the cutover ends — and every
+  legitimate home-side edit (`WriteEnvSet` is a live TUI path,
+  **MEASURED**) becomes a dispatch refusal until an operator
+  re-promote. A verify that fires on routine correct behaviour trains
+  everyone to ignore it.
+- **A tracked names-only envs MANIFEST** (h56a shape c): diffable
+  structure in git, values 600 and local. Honestly attractive, and
+  rejected on price, **ASSUMED** not measured: the binding structure
+  it would track already exists in tracked files (`config.yaml
+  default_env:`, recipe env references, `CageCred` naming
+  `container.env` in code), so it is a second copy that drifts; and
+  ranger-base-x6ic is about to redesign the value store behind a
+  provider seam — landing a manifest format in the same window as the
+  design that may obsolete it violates the operator's one-migration-
+  per-window rule. If x6ic wants it, x6ic adds it.
 - **A second OS user / ACLs on the constitution.** Same-user is the
   operating model; macOS ACL maintenance would be a fourth policy
   regime; and detection (manifest) plus a promotion step buys the
@@ -246,6 +331,13 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    repo's `.git` is in no session's writable set (`posse gates`
    prints the set). A bead close produces a jsonl commit in the queue
    repo and no push. *(Unverified until the cutover rehearsal, §4.)*
+7. Envs after the window (§7): `~/.config/posse/envs` is 0700, each
+   `.env` 0600, and `posse` lists the same four set names the old home
+   had; `~/src/ranger-base/rhq/envs/` holds no `.env` files;
+   `home/envs` appears in **no** entry of the manifest; corrupting an
+   env file does *not* trip the launch verify (it is out of scope by
+   design); with `default_env:` naming a missing set, promote prints
+   the warning. *(Unverified until o943 is built and the window runs.)*
 
 ## Measured versus assumed
 
@@ -261,3 +353,9 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | store relocation via redirect rewrite + daemon restart is clean | **ASSUMED** — implementation bead rehearses on a copy first |
 | launcher-side jsonl commit at close-merge is a natural hook point | **ASSUMED** — bead confirms against the close path before building |
 | launch-time hashing of the promoted set is negligible | **ASSUMED** (dozens of small files; measure in the bead, it bounds the refusal path) |
+| env values are gitignored in the constitution repo, tracked=0 on-disk=4 | **MEASURED** 2026-08-26 (`git check-ignore -v`, h56a) |
+| env sets are runtime-mutable at the home (TUI/`$EDITOR` write paths) | **MEASURED** (`envs.go` WriteEnvSet/EnsureEnvSet/DeleteEnvSet) |
+| every env read re-asserts 0700/0600 | **MEASURED** (`envs.go` TightenEnvPerms, called from EnvSetVars) |
+| seatbelt writable set includes `state/` but never `envs/` | **MEASURED** (`seatbelt.go:122`) |
+| `posse init` seeds envs from embedded examples with modes set | **MEASURED** (`init.go`) |
+| the names-only envs manifest would only duplicate tracked bindings | **ASSUMED** — priced in Alternatives; x6ic re-opens it if wrong |
