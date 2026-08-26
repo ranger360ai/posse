@@ -640,6 +640,25 @@ func hooksDir(dir string) (string, error) {
 	return filepath.Join(gitDir, "hooks"), nil
 }
 
+// chainHookDispatcher is the dispatcher chainDispatcher tells the operator
+// to install when another tool already owns a hook slot. Keeping the runnable
+// body in one place also lets installHook recognize that exact arrangement:
+// the dispatcher and the other tool's hook stay foreign, while the
+// marker-owned posse hook behind them can still be refreshed on every launch.
+func chainHookDispatcher(slot string) string {
+	stdin := ""
+	if slot == "pre-push" {
+		// git feeds pre-push the ref list on stdin. Ours does not read it;
+		// keeping ours off it leaves it intact for the hook we exec into.
+		stdin = " </dev/null"
+	}
+	return fmt.Sprintf(`#!/bin/sh
+d=$(dirname "$0")
+"$d/posse-%[1]s" "$@"%[2]s || exit $?
+exec "$d/theirs-%[1]s" "$@"
+`, slot, stdin)
+}
+
 // chainDispatcher renders the only chaining form that holds when the slot
 // is already taken by a foreign hook: each hook in its own file, ours run
 // as its OWN PROCESS with its exit status checked. Never "append ours to
@@ -648,11 +667,8 @@ func hooksDir(dir string) (string, error) {
 // printing it (rangerhq-kk6e). Same words as INSTALL.md §9, which walks
 // both slots at once; this names the one slot that refused.
 func chainDispatcher(dir, hooks, slot string) string {
-	// git feeds pre-push the ref list on stdin. Ours does not read it;
-	// keeping ours off it leaves it intact for the hook we exec into.
-	stdin, probe := "", `t=$(mktemp); RHQ_PERSONA=probe ./`+slot+` "$t"; echo $?; rm -f "$t"`
+	probe := `t=$(mktemp); RHQ_PERSONA=probe ./` + slot + ` "$t"; echo $?; rm -f "$t"`
 	if slot == "pre-push" {
-		stdin = " </dev/null"
 		probe = `RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
   sh -c 'printf "refs/heads/main a refs/heads/main b\n" | ./` + slot + ` origin x'; echo $?`
 	}
@@ -668,11 +684,7 @@ mv %[2]s theirs-%[2]s
 posse gates install-hooks %[3]s
 mv %[2]s posse-%[2]s
 cat > %[2]s <<'EOF'
-#!/bin/sh
-d=$(dirname "$0")
-"$d/posse-%[2]s" "$@"%[4]s || exit $?
-exec "$d/theirs-%[2]s" "$@"
-EOF
+%[4]sEOF
 chmod +x %[2]s
 
 Then verify by running the slot, not by reading it — from that same dir:
@@ -680,7 +692,7 @@ Then verify by running the slot, not by reading it — from that same dir:
 %[5]s
 
 It must print "refused by posse gate" and exit 1. A slot that prints the
-refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), stdin, probe)
+refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), chainHookDispatcher(slot), probe)
 }
 
 // installHook writes one of our hooks into the repo at dir and returns its
@@ -696,6 +708,20 @@ func installHook(dir, slot, marker, legacy, script string) (string, error) {
 	}
 	p := filepath.Join(hooks, slot)
 	if b, err := os.ReadFile(p); err == nil && !ownsHook(string(b), marker, legacy) {
+		// A chain made from our printed prescription is deliberately foreign
+		// at the slot: overwriting it would discard the other tool's hook. Its
+		// posse-* member is ours, though, and must not become a frozen copy of
+		// an older gate just because it lives behind the dispatcher. Refresh
+		// only a marker-owned member of the exact dispatcher we prescribe.
+		chained := filepath.Join(hooks, "posse-"+slot)
+		if string(b) == chainHookDispatcher(slot) {
+			if owned, readErr := os.ReadFile(chained); readErr == nil && ownsHook(string(owned), marker, legacy) {
+				if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+					return "", err
+				}
+				return chained, nil
+			}
+		}
 		return "", Die("%s exists and is not a posse hook — not overwriting.\n%s", AbbrevHome(p), chainDispatcher(dir, hooks, slot))
 	}
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {

@@ -1218,6 +1218,90 @@ func installCommitGuard(dir string) (string, error) {
 	return p, err
 }
 
+// ranger-base-i5f4: the §9 chain leaves the slot foreign on purpose, with
+// posse's marker-owned hook behind it. Session launch must refresh that member
+// too; otherwise a hook installed before linked-worktree support stays frozen
+// forever and refuses ordinary commits in each session's private index.
+func TestInstallCommitGuardRefreshesItsChainedHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	gitEnv := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(dir string, extra []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(append([]string(nil), gitEnv...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git(repo, nil, "init", "-q", "-b", "main"); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git(repo, nil, "add", "base.txt"); err != nil {
+		t.Fatalf("git add base: %v %s", err, out)
+	}
+	if out, err := git(repo, nil, "commit", "-qm", "base"); err != nil {
+		t.Fatalf("base commit: %v %s", err, out)
+	}
+	wt := filepath.Join(t.TempDir(), "session")
+	if out, err := git(repo, nil, "worktree", "add", "-q", "-b", "posse/session", wt); err != nil {
+		t.Fatalf("git worktree add: %v %s", err, out)
+	}
+
+	hooks := filepath.Join(repo, ".git", "hooks")
+	slot := filepath.Join(hooks, "prepare-commit-msg")
+	ours := filepath.Join(hooks, "posse-prepare-commit-msg")
+	theirs := filepath.Join(hooks, "theirs-prepare-commit-msg")
+	dispatcher := chainHookDispatcher("prepare-commit-msg")
+	stale := `#!/bin/sh
+` + sharedIndexMarker + ` — stale hook from before linked worktrees
+[ -n "$RHQ_PERSONA" ] || exit 0
+echo "refused by posse gate: stale shared-index guard" >&2
+exit 1
+`
+	neighbor := "#!/bin/sh\nexit 0\n"
+	for path, body := range map[string]string{slot: dispatcher, ours: stale, theirs: neighbor} {
+		if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(wt, "mine.txt"), []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git(wt, nil, "add", "mine.txt"); err != nil {
+		t.Fatalf("git add mine: %v %s", err, out)
+	}
+	persona := []string{"RHQ_PERSONA=developer", "RHQ_GATES_DIR="}
+	if out, err := git(wt, persona, "commit", "-m", "mine"); err == nil || !strings.Contains(out, "stale shared-index guard") {
+		t.Fatalf("premise: the stale chained hook must refuse in a linked worktree: %v %s", err, out)
+	}
+
+	got, _, _, err := (&App{}).InstallCommitGuardHook(wt)
+	if err != nil {
+		t.Fatalf("refresh chained hook: %v", err)
+	}
+	if resolveExisting(got) != resolveExisting(ours) {
+		t.Errorf("refreshed path = %q, want marker-owned chain member %q", got, ours)
+	}
+	if body, _ := os.ReadFile(slot); string(body) != dispatcher {
+		t.Error("refresh overwrote the foreign dispatcher")
+	}
+	if body, _ := os.ReadFile(theirs); string(body) != neighbor {
+		t.Error("refresh overwrote the neighboring foreign hook")
+	}
+	if body, _ := os.ReadFile(ours); !strings.Contains(string(body), "git rev-parse --git-common-dir") {
+		t.Fatal("the chained posse hook was not refreshed with the linked-worktree stand-down")
+	}
+	if out, err := git(wt, persona, "commit", "-m", "mine"); err != nil {
+		t.Fatalf("ordinary commit in the linked worktree must pass after refresh: %v %s", err, out)
+	}
+}
+
 // rangerhq-lmq9 / rangerhq-nyqj: the L3 half. Driven by real git, because
 // the whole guard turns on what git puts in GIT_INDEX_FILE per commit form
 // and no fixture can assert that honestly.
