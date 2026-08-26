@@ -560,10 +560,12 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 		return p
 	}
 	p.Wanted, p.Got = rt.Model(tier), rt.Model(tier)
-	// Nothing to check: this runtime maps no model for this tier (codex and
-	// grok today — {model} renders empty and the CLI picks its own), the
+	// Nothing to check: this runtime maps no model for this tier (grok
+	// today — {model} renders empty and the CLI picks its own), the
 	// operator turned the preflight off, or posse knows no catalog for this
-	// runtime's ids.
+	// runtime's ids (codex maps gpt-5.6-* since ranger-base-arm, and this
+	// catalog is Anthropic's — anthropicAPI below is what keeps those ids
+	// from being checked against a list that will never hold them).
 	if p.Wanted == "" || !a.ModelPreflight() || !anthropicAPI(rt) {
 		return p
 	}

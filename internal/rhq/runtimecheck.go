@@ -118,7 +118,15 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) {
 	} else {
 		wrapGrid(w, "rulebooks", "none declared — native_rules: in the yaml names the files this CLI loads by itself, ahead of anything posse types")
 	}
-	fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
+	// The onboarding footer is about a runtime you DECLARE. Printed under a
+	// built-in it names a file that runtime never reads (LoadRuntime
+	// returns the built-in first), so a built-in gets the honest version.
+	if rt.Builtin {
+		fmt.Fprintf(w, "\n  %s is a BUILT-IN: a runtimes/%s.yaml is never read for it — LoadRuntime returns the\n", rt.Name, rt.Name)
+		fmt.Fprintln(w, "  built-in first. Onboarding your OWN CLI is filling this grid: it takes command:, prompt:,")
+	} else {
+		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
+	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), native_rules:, model_flag:/model_<tier>:,")
 	fmt.Fprintln(w, "  skills_flag:, egress:, cage_cred:, gate_shell:. Undeclared is loud, never silent.")
 }
@@ -256,16 +264,40 @@ func (a *App) accountRow(rt *Runtime) stageRow {
 	return r
 }
 
+// tierLine is the ADR 0013 §6 row: which tiers this runtime actually
+// renders a model for, and — the part that costs an evening when it is
+// missing — which ones it does NOT. A runtime that ignores a tier has to
+// SAY so here, because the only other way to learn it is to read
+// runtime.go, which is how `tier: strong` sat inert on codex for as long
+// as it did (ranger-base-arm).
 func (a *App) tierLine(rt *Runtime) string {
-	var mapped []string
-	for _, t := range Tiers {
-		if id := rt.Model(t); id != "" {
-			mapped = append(mapped, t+"="+id)
-		}
+	mapped, unmapped := rt.TierMap()
+	inert := func(tiers []string) string {
+		return "`tier: " + tiers[0] + "` here is intent, not a guarantee: {model} renders empty, the CLI picks its own, and the display is " +
+			rt.Name + "/default, never " + rt.Name + "/" + tiers[0] + " (ADR 0013 §6). " + rt.tierFix()
 	}
-	if len(mapped) == 0 {
-		return "UNMAPPED — {model} renders empty, so the runtime picks. A PID's `tier: strong` here is intent, not a guarantee; display is " +
-			rt.Name + "/default, never " + rt.Name + "/strong (ADR 0013 §6)"
+	switch {
+	case len(mapped) == 0:
+		return "UNMAPPED — this runtime ignores tier: entirely. " + inert(Tiers)
+	case len(unmapped) == 0:
+		return strings.Join(mapped, " ") + " (rendered with " + rt.ModelFlag + ")"
 	}
-	return strings.Join(mapped, " ") + " (rendered with " + rt.ModelFlag + ")"
+	return strings.Join(mapped, " ") + " (rendered with " + rt.ModelFlag + "); UNMAPPED: " +
+		strings.Join(unmapped, ", ") + " — " + inert(unmapped)
+}
+
+// tierFix says where the missing mapping would have to be declared, and it
+// has to distinguish the two cases or it prints a remedy that does not
+// work: App.LoadRuntime returns a BUILT-IN as soon as the name matches,
+// before it ever stats RHQ_HOME/runtimes/<name>.yaml, so model_<tier>: in
+// a yaml named after a built-in is read by nothing (ranger-base-arm —
+// whether that precedence is right is a separate decision; that it is the
+// behaviour is not in doubt, and a grid that told an operator to write
+// that file would be sending them somewhere the value cannot arrive).
+func (rt *Runtime) tierFix() string {
+	if rt.Builtin {
+		return "A runtimes/" + rt.Name + ".yaml cannot supply it: " + rt.Name +
+			" is a BUILT-IN and LoadRuntime returns it before it stats that file, so the map lives in runtime.go and wants a measured model id per tier"
+	}
+	return "Declare model_<tier>: (and model_flag:) in runtimes/" + rt.Name + ".yaml to change that"
 }

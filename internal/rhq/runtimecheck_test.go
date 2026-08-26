@@ -283,3 +283,78 @@ func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
 		t.Errorf("GrokFleetFlags drifted: %q", GrokFleetFlags)
 	}
 }
+
+// ranger-base-arm: a runtime that ignores `tier:` has to SAY so in the
+// grid. Until this landed, `tier: strong` on codex was inert — no Models
+// map at all — and the only way to find that out was to read runtime.go.
+// Three readings are pinned here, because they are three different facts
+// to an operator choosing a tier:
+//
+//   - fully mapped (claude, and codex since this bead): the ids, and the
+//     flag they render with, so nobody diffs two runtimes to learn which
+//     one honours the key;
+//   - fully unmapped (grok): UNMAPPED, "ignores tier: entirely", and the
+//     yaml key that would change it;
+//   - PARTIAL: the mapped tiers AND the unmapped ones. A partial map shown
+//     as a list of what is mapped reads as complete, which is the silence.
+func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+
+	// The tier line is read unwrapped: the grid wraps at word boundaries
+	// (gridWidth), so a substring assertion on the rendered screen would be
+	// testing the wrap, not the sentence. That the line reaches the screen
+	// at all is asserted separately, below.
+	grid := func(name string) string {
+		t.Helper()
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, h, &b)
+		if !strings.Contains(b.String(), "tier ") {
+			t.Errorf("the grid must carry a tier row:\n%s", b.String())
+		}
+		return a.tierLine(rt)
+	}
+
+	// codex: mapped, and the grid says so with the ids and the flag.
+	out := grid("codex")
+	for _, want := range []string{"strong=gpt-5.6-sol", "standard=gpt-5.6-sol", "fast=gpt-5.6-luna", "-c model=%s"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("codex tier line must carry %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "UNMAPPED") {
+		t.Errorf("codex maps every tier; nothing may read UNMAPPED:\n%s", out)
+	}
+
+	// grok: unmapped, and loud about it — including WHERE the mapping would
+	// have to go. For a built-in that is runtime.go and NOT a yaml: naming
+	// runtimes/grok.yaml here would send an operator to a file LoadRuntime
+	// never stats for a built-in, which is a remedy that silently does
+	// nothing — the exact shape of bug this line exists to prevent.
+	out = grid("grok")
+	for _, want := range []string{"UNMAPPED", "ignores tier: entirely", "grok/default", "BUILT-IN", "runtime.go"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("grok tier line must carry %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Declare model_<tier>:") {
+		t.Errorf("a yaml cannot override a built-in; the grid may not prescribe one:\n%s", out)
+	}
+
+	// Partial: only model_standard: declared. fast falls back to standard,
+	// so the honest reading is "standard and fast render; strong does not".
+	writeRuntime(t, a, "halfcli", "command: halfcli {model} --sys {file}\nmodel_standard: mid\n")
+	out = grid("halfcli")
+	for _, want := range []string{"standard=mid", "fast=mid", "UNMAPPED: strong", "halfcli/default", "Declare model_<tier>:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("partial tier line must carry %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "strong=") {
+		t.Errorf("strong is unmapped on halfcli; the grid may not show it as mapped:\n%s", out)
+	}
+}

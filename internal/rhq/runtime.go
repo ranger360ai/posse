@@ -315,6 +315,28 @@ func (rt *Runtime) Model(tier string) string {
 	return ""
 }
 
+// TierMap is the per-tier mapping as a reader needs it: the tiers that
+// render a model id here, in Tiers order and as "<tier>=<id>", and the
+// tiers that render NOTHING. It exists so every surface that shows the
+// dial — `posse runtimes`, the `runtime check` grid — says the same thing
+// from one rendering, and so a PARTIAL map cannot be shown as a full one
+// by listing only what is mapped (ranger-base-arm: a tier nobody mapped is
+// the fact the reader came for).
+//
+// Effective, not literal: the fast → standard fallback of Model() is
+// applied, so a runtime mapping only `model_standard:` reports fast as
+// mapped, because fast really does render a model there.
+func (rt *Runtime) TierMap() (mapped, unmapped []string) {
+	for _, t := range Tiers {
+		if id := rt.Model(t); id != "" {
+			mapped = append(mapped, t+"="+id)
+		} else {
+			unmapped = append(unmapped, t)
+		}
+	}
+	return mapped, unmapped
+}
+
 // Exe is the runtime's canonical executable name — the first word of its
 // command template. It is the name herdr matches its agent manifests on,
 // so it is also what the container tier's argv0 launcher is called and
@@ -523,13 +545,61 @@ func (rt *Runtime) RealizesSkills(names []string) bool {
 }
 
 // Claude model ids per tier (ADR 0003 table; exact ids from the current
-// CLI/API naming). codex/grok have no per-tier mapping yet: every tier
-// leaves the runtime to its default and {model} renders empty.
+// CLI/API naming).
 var claudeModels = map[string]string{
 	TierStrong:   "claude-fable-5",
 	TierStandard: "claude-opus-5",
 	TierFast:     "claude-sonnet-5",
 }
+
+// Codex model ids per tier. This map is the fleet's cost/quality dial on
+// codex, and before it existed `tier:` was INERT there: the built-in
+// carried no Models at all, so rt.Model(tier) returned "", {model}
+// rendered empty and the CLI picked whatever it defaults to — a PID
+// saying `tier: strong` on codex got no guarantee and no warning
+// (ranger-base-arm). The ModelFlag was already right (`-c model=%s`); only
+// the map was missing.
+//
+// The two ids are what live sessions on this box show, not what a doc
+// claims (measured 2026-08-25):
+//
+//   - gpt-5.6-sol — what a codex session here defaults to; footer
+//     "gpt-5.6-sol xhigh".
+//   - gpt-5.6-luna — the cheaper one codex itself offers when the account
+//     approaches its limits, "Fast and affordable agentic coding model";
+//     footer "gpt-5.6-luna medium". The operator authorised it as an
+//     option on 2026-08-25.
+//
+// So: strong and standard both name sol, fast names luna.
+//
+//   - strong == standard is not a copy-paste. codex offers nothing above
+//     sol here, and the honest mapping for "judged work" is the best id
+//     that exists rather than a name with nothing behind it. Naming it on
+//     both makes the launch a FACT instead of a CLI default that can move
+//     under us between releases — the same argument ClaudeFleetFlags makes
+//     for --permission-mode.
+//   - fast is the cost lever, and only that. MEASURED the same day:
+//     switching a session to luna did NOT lift an account-level usage wall
+//     — the wall is on the ACCOUNT, not on the model. Nothing here may be
+//     read as buying headroom; dispatch's budget step-down (standard →
+//     fast, dispatch.go) now buys a cheaper model on codex and no more
+//     allotment than before.
+//
+// Reasoning effort is NOT part of this: the footers differ (xhigh vs
+// medium) because those are the two models' own defaults, and {model}
+// renders a model id. A per-tier effort would be a second key nobody has
+// measured yet.
+var codexModels = map[string]string{
+	TierStrong:   "gpt-5.6-sol",
+	TierStandard: "gpt-5.6-sol",
+	TierFast:     "gpt-5.6-luna",
+}
+
+// grok stays unmapped: no grok model id has been measured on this box, and
+// an id nobody has seen a session run is a guess. Every tier there leaves
+// the runtime to its default, {model} renders empty, and `runtime check`
+// says UNMAPPED in the tier line so the next reader does not have to open
+// this file to find that out (ranger-base-arm).
 
 // ClaudeFleetFlags is what a claude persona session needs to run
 // unattended — the mode the OPERATOR DIRECTIVE of 2026-08-22 requires of
@@ -709,7 +779,7 @@ var builtinRuntimes = []Runtime{
 		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
 		NativeRules: claudeNativeRules, CostAdapter: "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)",
 		Command: `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
-	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
+	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no

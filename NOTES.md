@@ -1634,9 +1634,25 @@ what removes that capability. Chain foreign slots per INSTALL.md §9.
 
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
-`claude-fable-5` / `claude-opus-5` / `claude-sonnet-5`; codex and grok
-unmapped (runtime default; `fast` falls back to `standard` when only that
-is mapped). Built-in templates carry `{model}` → `--model <id>` (claude),
+`claude-fable-5` / `claude-opus-5` / `claude-sonnet-5`; codex
+`gpt-5.6-sol` / `gpt-5.6-sol` / `gpt-5.6-luna`; grok unmapped (runtime
+default; `fast` falls back to `standard` when only that is mapped). Codex
+maps `strong` and `standard` to the same id on purpose: sol is what a
+codex session here defaults to and codex offers nothing above it, so
+naming it makes the launch a fact rather than a CLI default that can move
+between releases, while `fast` = luna is the **cost** lever only —
+MEASURED 2026-08-25, switching to luna did not lift an account-level usage
+wall, because the wall is on the account and not on the model
+(ranger-base-arm). Until that map existed `tier:` was inert on codex: no
+`Models` at all, `{model}` empty, no warning. A runtime that maps nothing
+now says so where it is read — `posse runtimes` prints `tiers: UNMAPPED —
+ignores tier:` and `posse runtime check <name>` names the tiers that
+render nothing, both off one rendering (`Runtime.TierMap`). A
+`runtimes/*.yaml` still cannot override a **built-in**: `LoadRuntime`
+returns the built-in as soon as the name matches, before it stats
+`RHQ_HOME/runtimes/<name>.yaml`, so `model_<tier>:` / `model_flag:` reach
+template-only runtimes only (undecided, ranger-base-arm). Built-in
+templates carry `{model}` → `--model <id>` (claude),
 `-c model=<id>` (codex), `-m <id>` (grok), rendered to nothing when
 unmapped; a `runtimes/<name>.yaml` may set `model_<tier>:` and
 `model_flag:`. A PID that keeps its own `command:` gets no model unless

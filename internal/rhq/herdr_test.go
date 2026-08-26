@@ -1487,7 +1487,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if !strings.Contains(log, "--env RHQ_RUNTIME=claude") || !strings.Contains(log, "--env RHQ_RUNTIME=codex") {
 		t.Errorf("RHQ_RUNTIME missing:\n%s", log)
 	}
-	if !strings.Contains(log, "GATES claude --model 'claude-fable-5' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
+	if !strings.Contains(log, "GATES claude --model 'claude-fable-5' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -c model='gpt-5.6-sol' -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
 		t.Errorf("rendered commands:\n%s", log)
 	}
 	m1, _ := b.readMeta("h1")
@@ -1543,7 +1543,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, "GATES codex -s read-only") != 2 {
+	if got := calls(t, fake); strings.Count(got, "GATES codex -c model='gpt-5.6-sol' -s read-only") != 2 {
 		t.Errorf("relaunch must reuse the session's runtime:\n%s", got)
 	}
 	// Recipe runtime: rides through LaunchRecipe.

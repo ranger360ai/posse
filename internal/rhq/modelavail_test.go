@@ -282,10 +282,28 @@ func TestPreflightOffSwitch(t *testing.T) {
 func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	// codex maps no model for any tier: {model} renders empty and the CLI
+	// grok maps no model for any tier: {model} renders empty and the CLI
 	// picks its own, so there is nothing for a catalog to disagree with.
-	if pf := a.TierPreflight("hoover", "codex", TierStrong, nil); pf.Fell() {
-		t.Errorf("codex has no per-tier model to check, got %q", pf.Line)
+	if pf := a.TierPreflight("hoover", "grok", TierStrong, nil); pf.Fell() {
+		t.Errorf("grok has no per-tier model to check, got %q", pf.Line)
+	}
+}
+
+// codex maps gpt-5.6-* since ranger-base-arm, and this catalog is
+// Anthropic's: a mapped id off that API must NOT be reported missing just
+// because a list that will never hold it does not hold it. The predicate
+// is the runtime's egress: (anthropicAPI), not whether Models is empty.
+func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *testing.T) {
+	a := preflightApp(t)
+	seedCatalog(t, a, time.Minute, "claude-opus-5")
+	for _, tier := range Tiers {
+		if pf := a.TierPreflight("hoover", "codex", tier, nil); pf.Fell() {
+			t.Errorf("codex/%s: no catalog posse can read, got %q", tier, pf.Line)
+		}
+	}
+	line := a.PreflightReport("hoover", "codex", TierStrong, nil)
+	if !strings.Contains(line, "gpt-5.6-sol") || !strings.Contains(line, "no model catalog") {
+		t.Errorf("report must name the id AND why it went unchecked: %q", line)
 	}
 }
 
@@ -349,7 +367,11 @@ func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
 	if pf.Runtime != "codex" || pf.Tier != TierStrong {
 		t.Errorf("hoover must hop runtimes and keep his tier: %+v", pf)
 	}
-	if !strings.Contains(pf.Line, "falling back to codex/strong") {
+	// The hop names the RUNTIME, which is the requirement. It reads
+	// "<id> on codex" rather than "codex/strong" because codex maps a model
+	// per tier since ranger-base-arm — hopDesc says "codex/strong (the
+	// runtime\'s own default model)" only where nothing is mapped.
+	if !strings.Contains(pf.Line, "falling back to gpt-5.6-sol on codex") {
 		t.Errorf("line = %q", pf.Line)
 	}
 }
@@ -558,7 +580,10 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 	t.Run("no mapping", func(t *testing.T) {
 		a := preflightApp(t)
 		seedCatalog(t, a, time.Minute, "claude-opus-5")
-		if got := a.PreflightReport("hoover", "codex", TierStrong, nil); !strings.Contains(got, "maps no model") {
+		// grok, not codex: codex maps gpt-5.6-* since ranger-base-arm, so
+		// the runtime with nothing to preflight is now the one nobody has
+		// measured a model id for.
+		if got := a.PreflightReport("hoover", "grok", TierStrong, nil); !strings.Contains(got, "maps no model") {
 			t.Errorf("got %q", got)
 		}
 	})

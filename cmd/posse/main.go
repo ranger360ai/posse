@@ -1111,15 +1111,18 @@ func main() {
 			if rt.Builtin {
 				kind = "built-in"
 			}
-			models := []string{}
-			for _, t := range rhq.Tiers {
-				if id := rt.Model(t); id != "" {
-					models = append(models, t+"="+id)
-				}
-			}
-			tiers := "tiers: runtime default"
-			if len(models) > 0 {
-				tiers = "tiers: " + strings.Join(models, " ")
+			// The tier dial, said the same way `posse runtime check` says
+			// it (Runtime.TierMap): what renders a model, and what renders
+			// NOTHING. "runtime default" used to be all this line said for
+			// codex and grok, which reads as a choice rather than as a key
+			// the runtime ignores — ranger-base-arm is what that cost.
+			mapped, unmapped := rt.TierMap()
+			tiers := "tiers: " + strings.Join(mapped, " ")
+			switch {
+			case len(mapped) == 0:
+				tiers = "tiers: UNMAPPED — ignores tier:, the CLI picks its own model"
+			case len(unmapped) > 0:
+				tiers += " · UNMAPPED: " + strings.Join(unmapped, ",")
 			}
 			fmt.Fprintf(out, "%s %-8s %s · %s\n    %s\n", a.EmojiExact(n), n, kind, tiers, rt.Command)
 		}

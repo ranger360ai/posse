@@ -34,11 +34,23 @@ flag; each CLI uses its own default. Nothing reads a budget.
 **1. Tier is a name, not a model id.** Three tiers, mapped per runtime
 in the built-in table (a `runtimes/<name>.yaml` may set `model_<tier>:`):
 
-| tier | claude | other runtimes | meant for |
-|---|---|---|---|
-| `strong` | fable-5 | runtime default | design, audit, spec, anything judged |
-| `standard` | opus-5 | runtime default | building, testing, ops chores |
-| `fast` | sonnet-5 | (unset → standard) | mechanical: scaffolds, doc moves, bd hygiene, groom |
+| tier | claude | codex | other runtimes | meant for |
+|---|---|---|---|---|
+| `strong` | fable-5 | gpt-5.6-sol | runtime default | design, audit, spec, anything judged |
+| `standard` | opus-5 | gpt-5.6-sol | runtime default | building, testing, ops chores |
+| `fast` | sonnet-5 | gpt-5.6-luna | (unset → standard) | mechanical: scaffolds, doc moves, bd hygiene, groom |
+
+*(Amended 2026-08-26, ranger-base-arm.)* The codex column is filled; grok
+is still runtime default. codex carried NO map at all until then, so
+`tier:` was inert there — `{model}` empty, no warning, the CLI's own
+choice. `strong` and `standard` naming the same id is the honest reading
+and not an oversight: sol is what a codex session defaults to on this box
+and codex offers nothing above it, and naming it makes the launch a fact
+rather than a CLI default that can move between releases. `fast` = luna is
+a **cost** lever only — measured 2026-08-25, moving a session to luna did
+not lift an account-level usage wall, because that wall is on the account
+and not on the model, so dispatch's budget step-down buys a cheaper model
+there and no extra allotment.
 
 Rendering: built-in templates gain **`{model}`** → `--model <id>` /
 `-c model=<id>` / `-m <id>`, empty when the tier has no mapping. PIDs

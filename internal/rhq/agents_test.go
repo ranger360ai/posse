@@ -330,7 +330,10 @@ func TestRuntimeRealizers(t *testing.T) {
 	codex := render("codex")
 	// read-only: no --add-dir (codex exits on it in that mode), the PID rides
 	// as developer_instructions, and the unattended flags are present.
-	if !strings.HasPrefix(codex, "codex -s read-only -a never ") || strings.Contains(codex, "--add-dir") ||
+	// The tier's model id leads the line since ranger-base-arm: codex maps
+	// strong → gpt-5.6-sol, and {model} is the first placeholder in the
+	// template.
+	if !strings.HasPrefix(codex, "codex -c model='gpt-5.6-sol' -s read-only -a never ") || strings.Contains(codex, "--add-dir") ||
 		strings.Contains(codex, "allowedTools") || !strings.Contains(codex, CodexFleetFlags) ||
 		!strings.HasSuffix(codex, `-c developer_instructions="$(cat '`+ag.Path+`')"`) {
 		t.Errorf("codex: %s", codex)
@@ -347,7 +350,7 @@ func TestRuntimeRealizers(t *testing.T) {
 	rt, _ := a.LoadRuntime("codex")
 	// workspace-write is the one mode where --add-dir is legal, so the memory
 	// dir rides with the mode instead of with the template.
-	if c := ag2.RenderCommandFor(rt, "claude", TierStrong); !strings.HasPrefix(c, "codex -s workspace-write --add-dir '"+ag2.MemoryDir+"' -a never") {
+	if c := ag2.RenderCommandFor(rt, "claude", TierStrong); !strings.HasPrefix(c, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"+ag2.MemoryDir+"' -a never") {
 		t.Errorf("codex workspace-write: %s", c)
 	}
 	r := realizeCodex(nil, []string{"Edit", "Write"}, "/mem")
@@ -382,7 +385,7 @@ func TestRuntimeOverrideIgnoresPIDCommand(t *testing.T) {
 		t.Errorf("own runtime must use the PID command: %s", got)
 	}
 	x, _ := a.LoadRuntime("codex")
-	if got := ag.RenderCommandFor(x, own, TierStrong); !strings.HasPrefix(got, "codex -s read-only") {
+	if got := ag.RenderCommandFor(x, own, TierStrong); !strings.HasPrefix(got, "codex -c model='gpt-5.6-sol' -s read-only") {
 		t.Errorf("override must use codex's template: %s", got)
 	}
 	// A PID that says runtime: codex uses codex's template by default and
@@ -391,7 +394,7 @@ func TestRuntimeOverrideIgnoresPIDCommand(t *testing.T) {
 	if own := a.ResolveRuntime("", ag2); own != "codex" {
 		t.Errorf("PID runtime: not honoured: %q", own)
 	}
-	if got := ag2.RenderCommand(); !strings.HasPrefix(got, "codex -s workspace-write") {
+	if got := ag2.RenderCommand(); !strings.HasPrefix(got, "codex -c model='gpt-5.6-sol' -s workspace-write") {
 		t.Errorf("RenderCommand on a codex PID: %s", got)
 	}
 	// Precedence: explicit > PID > config default_runtime > claude.
@@ -443,11 +446,40 @@ func TestTiers(t *testing.T) {
 	if claude.Model(TierStrong) != "claude-fable-5" || claude.Model(TierStandard) != "claude-opus-5" || claude.Model(TierFast) != "claude-sonnet-5" {
 		t.Errorf("claude tier map: %v", claude.Models)
 	}
-	if codex.Model(TierStrong) != "" || codex.Model(TierFast) != "" || grok.Model(TierStandard) != "" {
-		t.Error("codex/grok have no tier mapping yet — runtime default")
+	// codex maps all three (ranger-base-arm): sol is what a session there
+	// defaults to, so strong and standard both name it — codex offers
+	// nothing above it — and fast names the cheap one. `tier:` was inert on
+	// codex until this map existed.
+	if codex.Model(TierStrong) != "gpt-5.6-sol" || codex.Model(TierStandard) != "gpt-5.6-sol" || codex.Model(TierFast) != "gpt-5.6-luna" {
+		t.Errorf("codex tier map: %v", codex.Models)
 	}
-	if claude.ModelText(TierFast) != "--model 'claude-sonnet-5'" || codex.ModelText(TierFast) != "" {
-		t.Errorf("ModelText: %q %q", claude.ModelText(TierFast), codex.ModelText(TierFast))
+	// grok stays unmapped: no grok model id has been measured on this box.
+	if grok.Model(TierStandard) != "" || grok.Model(TierStrong) != "" || grok.Model(TierFast) != "" {
+		t.Errorf("grok has no tier mapping — runtime default: %v", grok.Models)
+	}
+	if claude.ModelText(TierFast) != "--model 'claude-sonnet-5'" || codex.ModelText(TierFast) != "-c model='gpt-5.6-luna'" || grok.ModelText(TierFast) != "" {
+		t.Errorf("ModelText: %q %q %q", claude.ModelText(TierFast), codex.ModelText(TierFast), grok.ModelText(TierFast))
+	}
+	// TierMap is the one rendering both `posse runtimes` and the runtime
+	// check grid read: mapped tiers in Tiers order, and the tiers that
+	// render NOTHING — a partial map may never be shown as a full one.
+	if m, u := claude.TierMap(); strings.Join(m, " ") != "strong=claude-fable-5 standard=claude-opus-5 fast=claude-sonnet-5" || len(u) != 0 {
+		t.Errorf("TierMap claude: %v %v", m, u)
+	}
+	if m, u := grok.TierMap(); len(m) != 0 || strings.Join(u, ",") != "strong,standard,fast" {
+		t.Errorf("TierMap grok: %v %v", m, u)
+	}
+	// Partial: only strong declared, so fast has no standard to fall back
+	// to and is reported unmapped alongside standard.
+	part := &Runtime{Models: map[string]string{TierStrong: "big"}}
+	if m, u := part.TierMap(); strings.Join(m, " ") != "strong=big" || strings.Join(u, ",") != "standard,fast" {
+		t.Errorf("TierMap partial: %v %v", m, u)
+	}
+	// Effective, not literal: fast falls back to standard, so it counts as
+	// mapped there.
+	fb := &Runtime{Models: map[string]string{TierStandard: "m-std"}}
+	if m, u := fb.TierMap(); strings.Join(m, " ") != "standard=m-std fast=m-std" || strings.Join(u, ",") != "strong" {
+		t.Errorf("TierMap fallback: %v %v", m, u)
 	}
 	// fast falls back to standard when only standard is mapped.
 	rt := &Runtime{Models: map[string]string{TierStandard: "m-std"}, ModelFlag: "-m %s"}
@@ -466,7 +498,8 @@ func TestTiers(t *testing.T) {
 		{claude, TierStrong, "claude --model 'claude-fable-5' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{claude, TierStandard, "claude --model 'claude-opus-5' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " --append-system-prompt"},
-		{codex, TierFast, "codex -s workspace-write --add-dir '"},
+		{codex, TierFast, "codex -c model='gpt-5.6-luna' -s workspace-write --add-dir '"},
+		{codex, TierStrong, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"},
 		{grok, TierStrong, "grok " + GrokFleetFlags + ` --rules="$(cat '`},
 	} {
 		if got := ag.RenderCommandFor(c.rt, "claude", c.tier); !strings.HasPrefix(got, c.want) || strings.Contains(got, "{model}") {
