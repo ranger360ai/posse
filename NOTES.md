@@ -3624,8 +3624,23 @@ prevent.
 
 Crew sessions (`posse new`, recipes) keep the operator's checkout: a session
 the operator opened to talk to is theirs (ADR 0008). A dir that is not a git
-repo, or a repo on a detached HEAD, warns and falls back to the shared
-checkout — a launch must not die because somebody is bisecting.
+repo, or a repo on a detached HEAD with no session branch yet, warns and falls
+back to the shared checkout — a launch must not die because somebody is
+bisecting. A detached HEAD only removes the branch a tree would be **cut**
+from; a session whose branch already exists keeps its tree, and the launch
+says the landing waits for a branch rather than that the tree is shared. That
+distinction was ranger-base-q5p1: a relaunch while the operator bisected
+blanked `repo:`/`branch:` out of the recreated run record, and every later
+close and kill then read a live private tree as the shared checkout and
+skipped its landing — losing the work quietly, which is worse than deferring
+it loudly. One thing the same bead measured and did **not** change:
+`MainCheckout` answers in the caller's own spelling, and git gives it
+`.git` relatively from the main checkout but an already-resolved absolute
+path from inside a linked worktree — so under a symlinked path one repo has
+two spellings, and two of its answers must be compared with `resolveExisting`
+rather than as strings. Normalizing it there instead rewrites the
+`.beads/redirect` posse seeds into every session tree, which is an
+operator-visible file changed to buy nothing outside a symlinked checkout.
 
 The base is **recorded on the branch** when the tree is cut
 (`branch.posse/<session>.posseBase` in the repo's git config), and merge-back

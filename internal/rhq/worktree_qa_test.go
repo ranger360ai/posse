@@ -567,7 +567,6 @@ func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
 // that would make later close/kill paths treat a private tree as shared and
 // silently skip its landing.
 func TestQARelaunchKeepsWorktreeProvenanceWhileOperatorHeadIsDetached(t *testing.T) {
-	t.Skip("ranger-base-q5p1: detached operator HEAD erases worktree provenance on relaunch")
 	wtqaHome(t)
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
@@ -585,7 +584,13 @@ func TestQARelaunchKeepsWorktreeProvenanceWhileOperatorHeadIsDetached(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Dir != m.Dir || p.Repo != m.Repo || p.Branch != m.Branch {
+	// Repo is compared with symlinks resolved, and only Repo: git answers
+	// `--git-common-dir` relatively in the main checkout and absolutely —
+	// already resolved — from inside a linked worktree, so the create and
+	// the relaunch legitimately spell one repo two ways under a symlinked
+	// path like macOS's /var (MainCheckout says so). What must not change
+	// is WHICH repo, and that it is named at all.
+	if p.Dir != m.Dir || p.Branch != m.Branch || resolveExisting(p.Repo) != resolveExisting(m.Repo) || p.Repo == "" {
 		t.Fatalf("relaunch demoted a private tree while operator HEAD was detached: plan dir/repo/branch = %q/%q/%q, want %q/%q/%q", p.Dir, p.Repo, p.Branch, m.Dir, m.Repo, m.Branch)
 	}
 }

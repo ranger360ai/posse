@@ -214,6 +214,45 @@ func TestEnsureSessionTreeSkipsWhatItCannotIsolate(t *testing.T) {
 	}
 }
 
+// The other side of that fallback: a session whose tree and branch already
+// exist keeps them while the operator's checkout is detached. The branch
+// carries its own base, so nothing here has to be guessed from HEAD — and
+// answering "no worktree" would tell every later close and kill that a live
+// private tree is the shared checkout, with nothing to land (ranger-base-q5p1).
+func TestEnsureSessionTreeKeepsAnExistingTreeWhileHeadIsDetached(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	first, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil || first == nil {
+		t.Fatalf("EnsureSessionTree = (%v, %v)", first, err)
+	}
+	commitIn(t, first.Path, "fix.txt", "the persona's work\n", "s-1: the fix")
+	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
+
+	var warn strings.Builder
+	again, err := a.EnsureSessionTree(repo, "s-1", &warn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again == nil {
+		t.Fatal("a detached checkout demoted an existing session tree to the shared checkout")
+	}
+	if *again != *first {
+		t.Errorf("the tree changed under a detached HEAD: %+v, want %+v", again, first)
+	}
+	// The landing is deferred, not lost, and the operator is told which of
+	// the two it is.
+	if !strings.Contains(warn.String(), "detached HEAD") || !strings.Contains(warn.String(), first.Base) {
+		t.Errorf("the deferral must name the branch the work still lands on:\n%s", warn.String())
+	}
+	if strings.Contains(warn.String(), "SHARED checkout") {
+		t.Errorf("a private tree was reported as shared:\n%s", warn.String())
+	}
+	if o, err := MergeSessionWork(again); err != nil || o.Merged || !strings.Contains(o.Reason, "detached HEAD") {
+		t.Errorf("merge-back = (%+v, %v), want a deferral naming the detached HEAD", o, err)
+	}
+}
+
 // ─── the beads redirect: the graph must not fork ─────────────────────────────
 
 func TestSessionTreeSeedsAnAbsoluteBeadsRedirect(t *testing.T) {

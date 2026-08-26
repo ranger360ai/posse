@@ -179,6 +179,18 @@ func MainCheckout(dir string) (string, bool) {
 	// <main checkout>/.git → the main checkout. A bare repo has no working
 	// tree to hang a session off, and its common dir has no such parent to
 	// mean anything, so it is refused by the HEAD check below either way.
+	//
+	// Returned in the caller's own spelling, NOT resolved: from the main
+	// checkout git answers ".git" and the operator's path survives the join,
+	// while from a linked worktree git answers an absolute path it has
+	// already resolved through symlinks. So the same repo can come back
+	// under two spellings depending on which tree asked — harmless, since
+	// every caller either hands the answer to `git -C` or prints it, but
+	// it means two answers must be compared with resolveExisting and never
+	// as strings. Resolving here instead was measured on ranger-base-q5p1
+	// and rejected: the answer is written into each session tree's
+	// `.beads/redirect`, and normalizing it rewrites an operator-visible
+	// file to buy nothing outside a symlinked checkout.
 	return filepath.Clean(filepath.Dir(common)), true
 }
 
@@ -221,6 +233,16 @@ func repoBranch(repo string) string {
 		return ""
 	}
 	return b
+}
+
+// orDetached names a base for a human when there may not be one: a session
+// branch cut before posseBase was recorded has no answer, and saying so
+// beats printing an empty string mid-sentence.
+func orDetached(base string) string {
+	if base == "" {
+		return "the branch it was cut from"
+	}
+	return base
 }
 
 func branchExists(repo, branch string) bool {
@@ -277,16 +299,28 @@ func baseOf(repo, branch, fallback string) string {
 // twice: the plan and the launch cannot disagree.
 //
 // nil, nil is the honest "no worktree here": a dir that is not a git repo,
-// or a repo on a detached HEAD (no branch to cut from, nothing to merge back
-// into). Both fall back to the shared checkout, which is what posse did
-// before this landed.
+// or a repo on a detached HEAD with no session branch to return to (nothing
+// to cut from, nothing to merge back into). Both fall back to the shared
+// checkout, which is what posse did before this landed.
 func (a *App) PlanSessionTree(dir, session string) (*SessionTree, error) {
 	repo, ok := MainCheckout(dir)
 	if !ok {
 		return nil, nil
 	}
 	base := repoBranch(repo)
-	if base == "" {
+	branch := SessionBranch(session)
+	// A detached checkout is only fatal to a tree this launch would have to
+	// CUT: with no branch under HEAD there is no base to cut from. A session
+	// branch that already exists needs none — it was cut from a base
+	// recorded on the branch itself, and it is still that session's private
+	// tree whether or not the operator can take its work today. Answering
+	// nil here was ranger-base-q5p1: a relaunch while the operator bisected
+	// blanked the recreated record's repo/branch, and close and kill then
+	// read a live private tree as a shared checkout and skipped its landing
+	// entirely. Deferring the merge-back is the honest cost of a detached
+	// HEAD (MergeSessionWork says so in words); forgetting where the work
+	// is, is not.
+	if base == "" && !branchExists(repo, branch) {
 		return nil, nil
 	}
 	path, err := a.SessionTreePath(repo, session)
@@ -296,7 +330,6 @@ func (a *App) PlanSessionTree(dir, session string) (*SessionTree, error) {
 	// A branch that already exists was cut from a base recorded then, and
 	// that is where its work lands. For one this launch is about to cut, the
 	// repo's branch IS the base and baseOf answers it.
-	branch := SessionBranch(session)
 	return &SessionTree{Repo: repo, Path: path, Branch: branch, Base: baseOf(repo, branch, base)}, nil
 }
 
@@ -319,6 +352,13 @@ func (a *App) EnsureSessionTree(dir, session string, warn io.Writer) (*SessionTr
 			fmt.Fprintf(warnw(warn), "posse: %s has a detached HEAD — %s launches in the SHARED checkout (no session worktree, no merge-back)\n", AbbrevHome(repo), session)
 		}
 		return nil, nil
+	}
+	// The tree survives a detached checkout; only the landing waits for one.
+	// Said here because this is where the operator is looking — the merge
+	// itself may not be attempted for hours (ranger-base-q5p1).
+	if repoBranch(t.Repo) == "" {
+		fmt.Fprintf(warnw(warn), "posse: %s has a detached HEAD — %s keeps its own tree on %s; its work lands on %s once that branch is checked out there (posse worktrees --land)\n",
+			AbbrevHome(t.Repo), session, t.Branch, orDetached(t.Base))
 	}
 
 	if have, err := existingTree(t); err != nil {
