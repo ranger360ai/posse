@@ -72,6 +72,22 @@ type BdIssue struct {
 	CloseReason string     `json:"close_reason"`
 }
 
+// Flush exports the database to its JSONL projection and leaves git alone:
+// `bd sync --flush-only` is documented as "only export pending changes to
+// JSONL (skip git operations)", where a plain `bd sync` also skips them
+// today but does not say so in its name, and `bd sync --full` commits AND
+// pushes (measured on 0.49.1, `bd sync --help`) — which no persona and no
+// launcher of ours may do.
+//
+// It is what the launcher calls before committing the projection in the
+// queue repo (ADR 0015 §4, queuejsonl.go): the database is the store of
+// record, so committing without exporting first commits the state from
+// before the close.
+func (b Bd) Flush(dir string) error {
+	_, err := b.run(dir, "sync", "--flush-only")
+	return err
+}
+
 // ListAll returns every issue in the repo, closed included (bd list --all,
 // no limit) — the scorecard's raw material.
 func (b Bd) ListAll(dir string) ([]BdIssue, error) {

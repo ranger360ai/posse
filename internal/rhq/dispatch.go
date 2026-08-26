@@ -1326,6 +1326,7 @@ wait:
 	case showErr == nil && after.Status == "closed":
 		fmt.Fprintf(d.Out, "✓ %-14s closed by %s\n", p.is.ID, p.persona)
 		d.mergeBack(p.is, p.persona, p.session)
+		d.commitQueue(p.is, p.persona)
 	case settled == "blocked":
 		fmt.Fprintf(d.Out, "⛔ %-14s blocked in %s — intervene (posse attach %s)\n", p.is.ID, p.session, p.session)
 	case showErr != nil:
@@ -2248,6 +2249,47 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	default:
 		fmt.Fprintf(d.Out, "⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, t.Base, o.Reason)
 		d.fileMergeBlocked(is, persona, t, o)
+	}
+}
+
+// commitQueue is the other half of a close reaching git (ADR 0015 §4). Once
+// the store of record lives in its own repo, nobody's ordinary commit
+// carries `.beads/issues.jsonl` along any more, and an uncommitted
+// projection is a bead the loss census can never notice leaving
+// (beadloss.go). So the launcher commits it where it already owns a git
+// moment: the close it has just judged and merged.
+//
+// It takes the launcher lock for the same reason mergeBack does — moving a
+// shared repo's HEAD is check-then-act against a store two launchers share
+// (ADR 0011 §1) — and takes it separately, because mergeBack returns
+// without one for a session that shares the checkout, and that session's
+// closes need committing too.
+//
+// Best effort, and never quiet: a commit that cannot happen must not turn a
+// bead the persona really closed into a failed dispatch, but a close whose
+// record did not reach git is a fact the pass owes out loud. Silent only
+// when `queue_repo:` is unset, which is every instance that has not cut
+// over — there, this is exactly the no-op it was before the key existed.
+func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
+	if d.App.QueueRepo() == "" {
+		return
+	}
+	lock, err := lockLaunches(d.App, d.Out)
+	if err != nil {
+		fmt.Fprintf(d.errw(), "posse: %s jsonl not committed — the launcher lock is unavailable (%v)\n", is.ID, err)
+		return
+	}
+	defer lock.Release()
+
+	msg := fmt.Sprintf("beads: %s closed by %s", is.ID, persona)
+	c, err := d.App.CommitQueueJSONL(d.Bd, is.Dir, msg)
+	switch {
+	case err != nil:
+		fmt.Fprintf(d.Out, "⚠ %-14s the queue jsonl did NOT commit in %s: %v\n", is.ID, AbbrevHome(c.Repo), err)
+	case c.SHA != "":
+		fmt.Fprintf(d.Out, "⎘ %-14s %s committed in %s (%s)\n", is.ID, strings.Join(c.Paths, " "), AbbrevHome(c.Repo), c.SHA)
+	default:
+		fmt.Fprintf(d.Out, "◑ %-14s no queue commit: %s\n", is.ID, c.Skipped)
 	}
 }
 

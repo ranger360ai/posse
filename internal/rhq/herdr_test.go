@@ -151,6 +151,11 @@ func fakeBd(args []string) int {
 	case "close":
 		fmt.Print("{}")
 		return 0
+	case "sync":
+		// The launcher's pre-commit export (ADR 0015 §4, queuejsonl.go).
+		// bd owns the export; what a test can pin is that posse asked for
+		// the git-free form, and bd-calls.log above is where it reads that.
+		return 0
 	}
 	fmt.Fprintf(os.Stderr, "fake bd: unhandled %s\n", strings.Join(args, " "))
 	return 1
