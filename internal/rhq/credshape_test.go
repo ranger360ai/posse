@@ -99,6 +99,38 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 	}
 }
 
+// The shape the operator actually reported on 2026-08-26 (ranger-base-8i7l):
+// top level ['mcpOAuth', 'claudeAiOauth'] — the envelope posse reads for IS
+// present, so the defect is one level deeper. This pins that the error digs
+// into the envelope it found instead of stopping at "the token is missing",
+// and that a SECOND envelope posse knows nothing about is named rather than
+// silently ignored. mcpOAuth's own keys are never printed: only the envelope
+// the failing shape names is opened.
+func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
+	blob := `{"mcpOAuth":{"https://example.test/sse":{"accessToken":"` + fixtureSecret + `"}},` +
+		`"claudeAiOauth":{"refreshToken":"r","expiresAt":1756224000000,"scopes":["user:inference"],"subscriptionType":"max"}}`
+	_, _, err := credentialToken([]byte(blob))
+	if err == nil {
+		t.Fatal("want a shape failure")
+	}
+	msg := err.Error()
+	t.Logf("operator-visible line:\n  %s", msg)
+	for _, w := range []string{
+		"its top-level keys are [claudeAiOauth mcpOAuth]",
+		"claudeAiOauth's keys are [expiresAt refreshToken scopes subscriptionType]",
+	} {
+		if !strings.Contains(msg, w) {
+			t.Errorf("want %q in: %q", w, msg)
+		}
+	}
+	if strings.Contains(msg, "example.test") {
+		t.Errorf("only the envelope the shape names is opened; mcpOAuth's keys are not ours to print: %q", msg)
+	}
+	if strings.Contains(msg, fixtureSecret) {
+		t.Errorf("a value reached the error line: %q", msg)
+	}
+}
+
 // Key names are schema and safe to print. The one way they are not is an
 // object keyed BY a value — so a name that is not name-shaped is reported by
 // its size, never its bytes.
