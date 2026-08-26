@@ -1,0 +1,272 @@
+package posse
+
+// QA pins for ranger-base-dbe (verified under ranger-base-lsj).
+//
+// Two claims, both load-bearing for a tag:
+//
+//  1. workflow_dispatch used to vet and test the triggering branch while
+//     building --rev of the tag. checkout now takes
+//     ref: ${{ inputs.tag || github.ref }}, so the tested tree and the
+//     shipped tree are the same commit on both triggers.
+//  2. The suite had only ever run on darwin. scripts/test-linux.sh is the
+//     same gate the release workflow runs (go vet ./... && make test), in a
+//     throwaway container, repo mounted read-only, as the invoking user.
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestReleaseWorkflowChecksOutTheTagItBuilds(t *testing.T) {
+	contents, err := os.ReadFile(".github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(contents)
+	const want = `ref: ${{ inputs.tag || github.ref }}`
+	if !strings.Contains(body, want) {
+		t.Fatalf("release.yml checkout dropped %q — that ref is what keeps the tested tree and the shipped tree the same commit (ranger-base-dbe)", want)
+	}
+	// The pre-fix shape: checkout with fetch-depth only, no ref. A comment
+	// mentioning fetch-depth is fine; a with: block that is only fetch-depth
+	// is the original bug.
+	if strings.Contains(body, "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n") {
+		t.Fatal("release.yml checkout is back to triggering-ref only (no ref:); workflow_dispatch would test main and ship the tag")
+	}
+}
+
+func TestTestLinuxScriptIsTheReleaseGateOnLinux(t *testing.T) {
+	script, err := os.ReadFile("scripts/test-linux.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(script)
+	for _, want := range []string{
+		`--user "$(id -u):$(id -g)"`,
+		`-v "$REPO_ROOT:/repo:ro"`,
+		`gate='go vet ./... && make test'`,
+		`IMAGE="${IMAGE:-golang:$go_minor}"`,
+		`go_minor=$(sed -n 's/^go \([0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/go.mod" | head -1)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("scripts/test-linux.sh missing %q", want)
+		}
+	}
+	info, err := os.Stat("scripts/test-linux.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0111 == 0 {
+		t.Fatal("scripts/test-linux.sh is not executable")
+	}
+
+	makefile, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := string(makefile)
+	if !strings.Contains(mk, "test-linux:\n\tscripts/test-linux.sh\n") {
+		t.Error("Makefile lost the test-linux target")
+	}
+	if !strings.Contains(mk, " test-linux ") && !strings.Contains(mk, " test-linux\n") {
+		t.Error("Makefile .PHONY no longer lists test-linux")
+	}
+
+	contrib, err := os.ReadFile("CONTRIBUTING.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contrib), "make test-linux") {
+		t.Error("CONTRIBUTING.md no longer tells macOS contributors to run make test-linux")
+	}
+}
+
+func TestTestLinuxScriptInvokesTheReleaseGateViaDocker(t *testing.T) {
+	runArgs, exit := tlDocker(t, nil)
+	if exit != 0 {
+		t.Fatalf("default run exit %d, want 0", exit)
+	}
+	tlMustHave(t, runArgs, "--rm")
+	tlMustHave(t, runArgs, "--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()))
+	repo, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlMustHave(t, runArgs, "-v", repo+":/repo:ro")
+	tlMustHave(t, runArgs, "-w", "/repo")
+	image := "golang:" + tlGoMinor(t)
+	if !tlContains(runArgs, image) {
+		t.Errorf("docker run image: got %v, want %s (from go.mod)", runArgs, image)
+	}
+	if !tlContains(runArgs, "go vet ./... && make test") {
+		t.Errorf("docker run command: got %v, want the release gate", runArgs)
+	}
+
+	t.Run("false exits 1", func(t *testing.T) {
+		_, exit := tlDocker(t, nil, "false")
+		if exit != 1 {
+			t.Fatalf("false: exit %d, want 1", exit)
+		}
+	})
+
+	t.Run("PLATFORM override", func(t *testing.T) {
+		runArgs, exit := tlDocker(t, []string{"PLATFORM=linux/amd64"}, "true")
+		if exit != 0 {
+			t.Fatalf("PLATFORM=linux/amd64: exit %d", exit)
+		}
+		tlMustHave(t, runArgs, "--platform", "linux/amd64")
+	})
+}
+
+// ranger-base-dbe landed make test-linux and fixed checkout's ref, but the
+// operator runbook still describes the pre-fix world: dispatch tests main
+// and ships the tag, and precondition 3 is an ad-hoc docker one-liner with
+// a hardcoded uid 1000 rather than make test-linux.
+func TestReleaseRunbookDoesNotStillClaimDispatchDiverges(t *testing.T) {
+	t.Skip("ranger-base-vh6t: runbook still describes pre-dbe checkout and a uid-1000 docker one-liner, not make test-linux")
+	contents, err := os.ReadFile("docs/runbooks/release.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(contents)
+	if strings.Contains(body, "workflow_dispatch tests a different commit") ||
+		strings.Contains(body, "checks out with no `ref:`") {
+		t.Error("docs/runbooks/release.md still claims workflow_dispatch tests a different commit than it builds — that was ranger-base-dbe, fixed in b0a8ec7")
+	}
+	if strings.Contains(body, "-u 1000:1000") {
+		t.Error("docs/runbooks/release.md Linux rehearsal still hardcodes uid 1000; this host is not 1000, and scripts/test-linux.sh uses $(id -u):$(id -g)")
+	}
+	if !strings.Contains(body, "make test-linux") {
+		t.Error("docs/runbooks/release.md precondition 3 never names make test-linux")
+	}
+}
+
+// PLATFORM=linux/amd64 pulls golang:<minor> as amd64 and leaves that tag
+// pointing at the amd64 blob. A later default run (no PLATFORM) then qemu-
+// emulates amd64 instead of testing the host arch NOTES.md says it tests.
+// Always passing --platform, defaulting to the host, stops the tag poison.
+func TestTestLinuxDefaultRunPinsPlatformSoAnAmd64OverrideCannotPoisonTheTag(t *testing.T) {
+	t.Skip("ranger-base-1qm5: default docker run has no --platform; PLATFORM=linux/amd64 poisons the golang:<minor> tag")
+	runArgs, exit := tlDocker(t, nil)
+	if exit != 0 {
+		t.Fatalf("exit %d", exit)
+	}
+	if !tlContains(runArgs, "--platform") {
+		t.Fatal("default docker run has no --platform; PLATFORM=linux/amd64 therefore poisons the golang:<minor> tag for every later default run")
+	}
+}
+
+func tlGoMinor(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "go ") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "go "))
+		parts := strings.Split(rest, ".")
+		if len(parts) < 2 {
+			t.Fatalf("go.mod go directive %q", line)
+		}
+		return parts[0] + "." + parts[1]
+	}
+	t.Fatal("go.mod has no go directive")
+	return ""
+}
+
+// tlDocker runs scripts/test-linux.sh against a fake docker that logs argv
+// and never talks to a daemon. extra is additional env entries (KEY=val).
+func tlDocker(t *testing.T, extra []string, scriptArgs ...string) (runArgs []string, exit int) {
+	t.Helper()
+	scratch := t.TempDir()
+	logPath := filepath.Join(scratch, "docker.log")
+	fake := filepath.Join(scratch, "docker")
+	script := `#!/bin/sh
+log=${FAKE_DOCKER_LOG:?}
+{
+	printf 'DOCKER'
+	for a; do printf '\t%s' "$a"; done
+	printf '\n'
+} >>"$log"
+case "${1:-}" in
+info) exit 0 ;;
+run)
+	prev=
+	for a; do
+		if [ "$prev" = "-c" ] && [ "$a" = "false" ]; then exit 1; fi
+		prev=$a
+	done
+	exit 0
+	;;
+*) exit 0 ;;
+esac
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("./scripts/test-linux.sh", scriptArgs...)
+	cmd.Env = append(os.Environ(),
+		"PATH="+scratch+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"FAKE_DOCKER_LOG="+logPath,
+		"XDG_CACHE_HOME="+filepath.Join(scratch, "cache"),
+	)
+	cmd.Env = append(cmd.Env, extra...)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		exit = 0
+	} else if ee, ok := err.(*exec.ExitError); ok {
+		exit = ee.ExitCode()
+	} else {
+		t.Fatalf("test-linux.sh: %v\n%s", err, out)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("fake docker log: %v\n%s", err, out)
+	}
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		if !strings.HasPrefix(line, "DOCKER\trun") {
+			continue
+		}
+		runArgs = strings.Split(line, "\t")[1:]
+	}
+	if runArgs == nil && exit == 0 {
+		t.Fatalf("fake docker never saw `run`\nlog:\n%s\nout:\n%s", b, out)
+	}
+	return runArgs, exit
+}
+
+func tlContains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
+func tlMustHave(t *testing.T, args []string, want ...string) {
+	t.Helper()
+	if len(want) == 0 {
+		return
+	}
+	for i := 0; i+len(want) <= len(args); i++ {
+		match := true
+		for j := range want {
+			if args[i+j] != want[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return
+		}
+	}
+	t.Errorf("docker argv missing %s\nargv: %s", want, strings.Join(args, " | "))
+}
