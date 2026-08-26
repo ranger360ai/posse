@@ -6,6 +6,11 @@ package rhq
 // rename wins with only the dir it read, so the sibling launch's
 // hasTrustDialogAccepted is missing and that session opens on the trust
 // modal. Dispatch serializes via lockLaunches; posse new does not.
+//
+// FIXED by the lock in trust.go (lockClaudeConfig): the read, the trusted
+// check and the rename run under an flock on a sidecar beside the config,
+// so the merge is atomic against a sibling launch and against a second
+// process. Unskipped when that landed.
 
 import (
 	"sync"
@@ -13,7 +18,6 @@ import (
 )
 
 func TestQASeedTrustConcurrentLaunchesKeepBothDirs(t *testing.T) {
-	t.Skip("ranger-base-5qnt: concurrent SeedClaudeTrust is a lost-update; last rename drops the sibling dir")
 	cfg := t.TempDir() + "/.claude.json"
 	rt := claudeRuntime(t)
 	dirA, dirB := t.TempDir(), t.TempDir()

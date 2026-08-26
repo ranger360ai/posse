@@ -51,8 +51,11 @@ package rhq
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 )
 
 // ClaudeConfigFile is the file claude keeps its `projects` map in,
@@ -197,7 +200,7 @@ func claudeSeedProject(state map[string]any, dir string) {
 // about to type its command, and returns the config file it wrote — "" for
 // the launches with nothing to do: another runtime, or a directory claude
 // already trusts. Idempotent, so RelaunchAgent re-asserting it costs a
-// read.
+// lock and a read.
 //
 // It is the host counterpart of SeedCageHome: same key, same merge, a
 // different file, and the container tier calls that one instead because
@@ -217,11 +220,33 @@ func claudeSeedProject(state map[string]any, dir string) {
 // is a file posse does not touch: that state refuses the launch instead,
 // because an unreadable projects map is a map with no trusted directory in
 // it, which means the dialog is exactly what the session would get.
+//
+// AND THE MERGE IS CHECK-THEN-ACT, so it runs under a lock (ranger-base-5qnt).
+// Read-amend-rename by two launches at once is a textbook lost update: both
+// read the operator's state, each adds its own dir, and the second rename
+// wins with a projects map that never held the first one's key. The sibling
+// launch then opens on the dialog this file exists to answer — rangerhq-w4uf
+// again, one launcher over. The atomic rename is no defence: it makes the
+// file whole, not the merge correct. Measured 20/20 lost at N=2 before the
+// lock (laurie, verifying ranger-base-s83).
+//
+// The window is not narrowable, so it is closed: the lock is held across
+// read, check and write, which is the standard answer for a check-then-act
+// on state another actor mutates (CWE-367). It is per config FILE and not
+// per RHQ_HOME, because the launcher lock (ADR 0011 §1) already serializes
+// one RHQ_HOME's dispatch and is not the failing shape: `posse new` takes
+// no launcher lock, and a fleet RHQ_HOME and a scratch one write this same
+// file with two locks between them.
 func SeedClaudeTrust(cfg string, rt *Runtime, dir string) (string, error) {
 	if cfg == "" || rt == nil || rt.Name != "claude" || dir == "" {
 		return "", nil
 	}
 	p := cfg
+	unlock, err := lockClaudeConfig(p)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	b, err := os.ReadFile(p)
 	if err != nil && !os.IsNotExist(err) {
 		return "", Die("claude directory trust: cannot read %s (%v) — posse seeds projects[%s].hasTrustDialogAccepted there so the session does not open on the trust dialog (rangerhq-w4uf). Fix the file, or run `claude` in %s once and accept the dialog by hand",
@@ -278,6 +303,68 @@ func writeJSONInPlace(p string, state map[string]any) error {
 		return err
 	}
 	return os.Rename(tmp, p)
+}
+
+// ─── one writer at a time on the operator's config ───────────────────────────
+
+// claudeConfigLockFile is the sidecar the read-amend-rename above is held
+// under: <cfg>.posse-lock, beside the config and deliberately not the
+// config itself.
+//
+// NOT the config, because the write ends in a rename and a rename replaces
+// the inode under the path. A holder that flocked the old inode and a
+// waiter that opened the new one are two holders of one path with no error
+// anywhere — the same trap launchlock.go names for unlinking its lock
+// file. The sidecar is created once and never renamed, truncated or
+// removed, so every process locking it locks the same inode.
+//
+// Keyed on the config path so the two callers that matter meet on it: a
+// dispatch launch under one RHQ_HOME's launcher lock and a hand-run `posse
+// new` under none, both writing the operator's one file.
+func claudeConfigLockFile(cfg string) string { return cfg + ".posse-lock" }
+
+// claudeConfigLockWait bounds the wait. flock is held by the open file
+// description, so a dead holder's lock is already released by the kernel
+// and there is no staleness to reap (ADR 0011 §1) — the only thing this
+// deadline can hit is a live holder wedged inside a critical section that
+// is one read and one rename of a small file. Waiting past that is not
+// patience, it is a launch hanging silently in a pane nobody is watching,
+// which is the failure class this file exists to prevent. So it fails
+// loudly instead, naming the file to look at.
+const claudeConfigLockWait = 10 * time.Second
+
+// lockClaudeConfig takes the exclusive lock on cfg's sidecar and returns
+// the release. Callers must not nest it: flock is per open file
+// description, so a second Open+Flock in this process waits on the first
+// forever (launchlock.go, same reason). The one holder is SeedClaudeTrust.
+func lockClaudeConfig(cfg string) (func(), error) {
+	path := claudeConfigLockFile(cfg)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, Die("claude directory trust: cannot make %s (%v) — the seed writes projects[].hasTrustDialogAccepted there and will not write it unlocked (ranger-base-5qnt)", AbbrevHome(filepath.Dir(path)), err)
+	}
+	// 0600 like the file it guards: it sits in the operator's home beside
+	// a config that also holds account state.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, Die("claude directory trust: cannot open %s (%v) — posse serializes the merge of %s on it, and an unserialized merge drops a concurrent launch's trusted directory (ranger-base-5qnt)", AbbrevHome(path), err, AbbrevHome(cfg))
+	}
+	deadline := time.Now().Add(claudeConfigLockWait)
+	for {
+		err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return func() { f.Close() }, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			f.Close()
+			return nil, Die("claude directory trust: cannot lock %s (%v)", AbbrevHome(path), err)
+		}
+		if !time.Now().Before(deadline) {
+			f.Close()
+			return nil, Die("claude directory trust: %s held by another posse launch for %s — this launch will not merge %s unserialized (that is how a sibling launch's trusted directory goes missing, ranger-base-5qnt). Check for a wedged `posse new` or dispatch; the lock frees itself when its holder exits",
+				AbbrevHome(path), claudeConfigLockWait, AbbrevHome(cfg))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // claudeTrustProbe backs the interstitial row in `posse runtime check`:
