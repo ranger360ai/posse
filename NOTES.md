@@ -862,6 +862,19 @@ misspelled* value is the opposite case and refuses at load: `record:
 trused` silently reading as untrusted is exactly the silence this contract
 removes.
 
+`native_rules:` is a declaration, not a switch — and codex 0.147.0 *has*
+a switch (`-c project_doc_max_bytes=0` drops the project `AGENTS.md` from
+the model-visible prompt; measured, `ranger-base-cl7`) that dispatch
+deliberately does not use (ADR 0013 §4, decided on `ranger-base-00f`):
+grok has no equivalent so nothing fleet-wide would be gained, the key
+could rename and silently re-enable discovery, and the file is the
+operator's — suppressing it only under dispatch would make posse sessions
+disagree with hand-run ones about which of the operator's documents
+apply. An operator who wants codex doc-free owns that choice:
+`project_doc_max_bytes = 0` in `~/.codex/config.toml` (instance-wide), or
+the `-c` override in their own `runtimes/<name>.yaml` `command:`. Posse
+documents the key and never writes it.
+
 ### Argv delivery: the work prompt rides in on the launch line
 
 The probe (`ranger-base-cl7`, trace in `docs/adr/0013-argv-prompt-probe.md`)

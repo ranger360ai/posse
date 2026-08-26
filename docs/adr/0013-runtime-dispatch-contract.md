@@ -1,7 +1,9 @@
 # ADR 0013 — Runtime dispatch contract: what a runtime must guarantee to take work
 
 *Status: accepted 2026-08-24 · owner: architect · amends 0003 §1
-display, 0010 §1/§5, 0012 D4.1*
+display, 0010 §1/§5, 0012 D4.1 · amended 2026-08-26: cl7 probe results
+folded into §2/§4/Claims; codex rule-suppression decided in §4
+(ranger-base-cl7, ranger-base-00f)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -98,10 +100,16 @@ Resume into a live session stays `agent prompt` (typed). `prompt: typed`
 runtimes keep today's create → await promptable → claim → prompt, with a
 per-runtime `startup_wait:` (default 45s).
 
-**ASSUMED, and a probe may falsify:** argv skips the welcome/update
-interstitial while remaining a herdr-detectable TUI. If the probe says
-no, that runtime stays `prompt: typed` plus a *measured* `startup_wait:`;
-it does not grow a keystroke table.
+**MEASURED 2026-08-25 (ranger-base-cl7, trace in
+`0013-argv-prompt-probe.md`): argv held on both.** The positional prompt
+became the first user turn with no harness keystroke, and both post-argv
+screens matched a herdr `working` rule. Precisely: argv *sidesteps* the
+interstitial as a delivery blocker; it does not suppress the banner
+(codex's update banner still draws, grok's splash clears itself). The
+probe also showed the typed fallback could never have worked on grok at
+any `startup_wait:` — a pane with no turn emits no chrome and matches no
+rule; only a turn produces detectability (ranger-base-3j8). `prompt:
+typed` remains defined for runtimes measured to work that way (claude).
 
 **Interstitials, three layers, cheapest first:**
 
@@ -176,8 +184,50 @@ already stops an unqualified commit; it does not stop `posse kill`.
 rewrite the operator's `AGENTS.md` (shared checkout, operator's file).
 The work-prompt line "PID guardrails override repo docs" stays. Whether
 a native file outranks the PID is a **probe**, not a patch; a runtime
-that fails it stays `record: untrusted`. There is no flag on either CLI
-tonight that silences project rules (ASSUMED; the probe says).
+that fails it stays `record: untrusted`.
+
+The probe said (MEASURED 2026-08-25, cl7): codex `-c
+project_doc_max_bytes=0` removes the project `AGENTS.md` from the
+model-visible prompt while the argv prompt survives;
+`project_doc_fallback_filenames=[]` does not; no tested grok flag
+silences its discovery. So the original "no flag on either CLI silences
+project rules" was false for codex, and dispatch has a choice it must
+not make silently (dinesh's DIVERGED on cl7).
+
+**Decided (ranger-base-00f): dispatch does not use the codex override.**
+`native_rules:` stays a declaration, not a switch, on every runtime:
+
+1. *It buys no invariant.* Grok cannot suppress, so "a dispatched
+   session may carry a second rulebook" stays true fleet-wide and every
+   existing mitigation stays anyway — the PID-wins prompt line, the
+   precedence probe, `record:`, the cage owning the hard lines.
+   Suppression on one runtime removes no mechanism; it adds variance:
+   the same bead gets different effective instructions depending on
+   which runtime claimed it, chosen silently by dispatch.
+2. *It drifts silently.* The key is measured on codex 0.147.0 only. A
+   later codex that renames or re-scopes it reloads `AGENTS.md` with no
+   observable in dispatch — the ADR 0009 lesson (the per-runtime flag
+   is what drifts) in rulebook costume. The declared posture keeps an
+   observable: `codex debug prompt-input`, the probe's own instrument.
+3. *It splits the operator's brain.* Native discovery is the CLI
+   behavior the operator installed; suppressing it only under dispatch
+   yields "codex honors my `AGENTS.md` by hand and ignores it under
+   posse." This ADR already rejected the session-copy variant on the
+   operator's-file ground; a flag differs in mechanism, not effect.
+4. *It is only half measured.* The probe removed the *project* marker;
+   whether the byte cap also governs `~/.codex/AGENTS.md` (same
+   `native_rules` list) was not tested — "single rulebook" is ASSUMED
+   even where the flag works.
+
+The key joins §2 layer 2 as an operator-owned fact posse **documents
+and never writes**: an operator who wants codex doc-free sets
+`project_doc_max_bytes = 0` in `~/.codex/config.toml` (instance-wide,
+no dispatch/interactive split), or carries the `-c` override in their
+own `runtimes/<name>.yaml` `command:` if they insist on dispatch-only.
+Zero new posse surface either way. Revisit trigger: if the precedence
+probe ever measures codex's native `AGENTS.md` overriding the PID
+guardrails line, suppression returns as a mitigation applied to a
+measurement — not as a default.
 
 ### 5. Account — uncounted is a degrade, not a zero
 
@@ -211,8 +261,10 @@ map a tier **does not wear it**:
 - an explicit `--runtime` the operator typed is their decision and
   launches.
 
-Availability preflight is per cost/plan adapter. No adapter → no
-preflight. Dead-on-arrival (allotment message, one assistant turn, idle)
+Availability preflight is per cost/plan adapter — as shipped, the
+predicate is the runtime's `egress:` naming the catalog host
+(`anthropicAPI`, `modelavail.go`; ranger-base-lzx), not the adapter
+table. No catalog → no preflight. Dead-on-arrival (allotment message, one assistant turn, idle)
 is a **turn outcome**, not a catalog miss (ranger-base-1cc already
 shipped the detection half). A runtime without that probe launches what
 it was asked and must say so when the first turn is a limit.
@@ -221,10 +273,10 @@ it was asked and must say so when the first turn is a limit.
 
 - `runtime.go` / yaml: `prompt: argv|typed`, `startup_wait:`,
   `record: trusted|untrusted`, `native_rules:`, existing `model_<tier>:`.
-  Built-in defaults after the probe: claude `typed` (works; argv is an
-  allowed later unify), grok/codex `argv` *if the probe holds*, else
-  `typed` plus a measured wait; claude+grok `record: trusted`, codex
-  `untrusted`.
+  Built-in defaults after the probe (it held, 2026-08-25): claude
+  `typed` (works; argv is an allowed later unify), grok/codex `argv`
+  with no `startup_wait:`; claude+grok `record: trusted`, codex
+  `untrusted`. Shipped in ranger-base-dg5.
 - `dispatch.go`: claim-then-argv path; busy-key split; plan-guard skip
   is per-bead including blind; gather never ✓ on untrusted
   settle-without-close.
@@ -274,6 +326,17 @@ it was asked and must say so when the first turn is a limit.
 - **Silence `AGENTS.md` by writing a session copy.** The session cwd
   *is* the repo. That file is the operator's. A competing rulebook is
   declared and probed, not overwritten.
+- **Codex single-rulebook via `-c project_doc_max_bytes=0` on the
+  dispatch line** (the clever one, and measured to work on 0.147.0 —
+  added 2026-08-26 after cl7 falsified "no such flag exists"). Rejected
+  in §4: no fleet invariant gained (grok cannot join), silent re-enable
+  on a key rename with no observable, a dispatched-vs-interactive split
+  over the operator's own file, and the `~/.codex/AGENTS.md` channel
+  never probed under the cap. Priced honestly: the saving is one argv
+  token and the retirement of the cmfj collision class on one runtime;
+  the cost is a `native_rules:` surface that means different things per
+  runtime. Both prices ASSUMED — no incident has yet been caused by
+  codex reading `AGENTS.md` under dispatch.
 - **A fifth store for "this runtime is trusted."** Trust is a built-in
   / yaml default updated after a measured close. Derived auto-promotion
   is a store that can disagree with the bead (ADR 0011's class).
@@ -299,23 +362,31 @@ it was asked and must say so when the first turn is a limit.
 - ADR 0010 already launches off-meter beads through a *tripped*
   threshold. Blind still whole-pass-skips. `OnGuardedMeter` already
   knows the built-ins.
+- **The cl7 probe, 2026-08-25** (codex 0.147.0, grok 1.0.5, herdr
+  0.8.0; trace `0013-argv-prompt-probe.md`): argv is the first user
+  turn on both with no harness keystroke; both post-argv screens match
+  a herdr `working` rule (offline manifest replay); the interstitial is
+  sidestepped, not visually suppressed. Codex `-c
+  project_doc_max_bytes=0` removes the project `AGENTS.md` from the
+  model-visible prompt; `project_doc_fallback_filenames=[]` does not;
+  no tested grok flag silences its discovery.
+- A pre-turn grok pane matches **no** herdr rule (zero OSC bytes, no
+  composer footer); the same pane after one turn matches three.
+  Detectability is a property of having been prompted, so no
+  `startup_wait:` value could have made the typed fallback work there
+  (ranger-base-3j8, monica's `agent explain`).
+- Codex's update persist-skip is an instance-config write
+  (`dismissed_version` in `~/.codex/version.json`), documented in
+  NOTES/INSTALL; `runtime check` prints it against `latest_version`
+  because the dismissal expires per release.
 
-**ASSUMED** (probe replaces these; implementation of argv delivery
-depends on the first)
+**ASSUMED** (still, after the probe)
 
-- `grok "<prompt>"` / `codex [PROMPT]` / `claude [prompt]` skip the
-  welcome/update interstitial, remain a herdr-detectable TUI, and treat
-  `"$(cat file)"` as the first user turn rather than a subcommand.
-- No CLI flag tonight silences project-rule discovery (`AGENTS.md` et
-  al.).
-- Codex's update prompt has a persist-skip that is an instance config
-  write, not a fleet keystroke (coordinator's working hypothesis on
-  3j8).
-- `startup_wait` for grok-typed fallback, if argv is falsified, is
-  longer than 45s; the number is measured on the probe, not guessed here.
+- Whether any native rulebook outranks the PID channel in live model
+  behavior. The precedence probe is ranger-base-xaev; until it is
+  measured, the PID-wins prompt line is the reconciliation and codex
+  stays `record: untrusted`.
+- Whether codex's byte cap also governs `~/.codex/AGENTS.md`. Matters
+  only if the §4 suppression decision is ever revisited.
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
-
-**Unverified (needs the probe bead):** every ASSUMED line above, plus
-whether argv-delivered work still trips herdr `working` so the wait
-ladder can see it.
