@@ -51,3 +51,39 @@ func TestQASeedTrustConcurrentLaunchesKeepBothDirs(t *testing.T) {
 		t.Fatalf("%d/2 dirs missing from the config after concurrent seeds — last rename dropped a sibling launch's trust key", missing)
 	}
 }
+
+// Same dir, many launchers: the lock serializes them onto one key, and the
+// second-and-later seeds are the already-trusted no-op. A merge that
+// duplicated or dropped the entry would be a different hole than 5qnt.
+func TestQASeedTrustSameDirConcurrentIsIdempotent(t *testing.T) {
+	cfg := t.TempDir() + "/.claude.json"
+	rt := claudeRuntime(t)
+	dir := t.TempDir()
+
+	const n = 8
+	var wg sync.WaitGroup
+	errc := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := SeedClaudeTrust(cfg, rt, dir)
+			errc <- err
+		}()
+	}
+	wg.Wait()
+	close(errc)
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := readConfig(t, cfg)
+	if !ClaudeTrusted(state, dir) {
+		t.Fatal("dir not trusted after concurrent same-dir seeds")
+	}
+	projects, _ := state["projects"].(map[string]any)
+	if len(projects) != 1 {
+		t.Errorf("want one project entry, got %d: %v", len(projects), projects)
+	}
+}

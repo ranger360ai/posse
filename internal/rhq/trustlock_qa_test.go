@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // qaSeedDir is the session dir the seeder at index i claims. Named rather
@@ -87,6 +88,23 @@ func qaOperatorConfig(t *testing.T, cfg, operatorDir string) {
 	})
 }
 
+// qaSeederEnv is the parent environment plus extra, cloned so each child
+// gets its own backing array. append(env, extra...) aliases whenever env
+// has spare cap — the grow-loop that built it almost always does — and the
+// last child's RHQ_QA_TRUST_LO then overwrites the others. Every seeder
+// writes the same slice; qaAssertAllTrusted reports a 60/80 lost-update
+// that is the test, not the lock. gates_qa_test.go already clones this way.
+func qaSeederEnv(extra ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") || strings.HasPrefix(kv, "RHQ_QA_TRUST_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(append([]string(nil), env...), extra...)
+}
+
 // Contention, not a single collision. N=8 measured 6–7/8 missing before the
 // lock landed (ranger-base-5qnt); every one of those is a session that opens
 // on the modal.
@@ -144,21 +162,12 @@ func TestQASeedTrustHoldsAcrossProcesses(t *testing.T) {
 	operatorDir := t.TempDir()
 	qaOperatorConfig(t, cfg, operatorDir)
 
-	// The children must run as test binaries, not as the fake substrate
-	// TestMain turns this one into whenever RHQ_FAKE_HERDR is set.
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") {
-			env = append(env, kv)
-		}
-	}
-
 	var wg sync.WaitGroup
 	out := make([]string, children)
 	fail := make([]error, children)
 	for c := 0; c < children; c++ {
 		cmd := exec.Command(exe, "-test.run=TestQASeedTrustChildSeeder$", "-test.v")
-		cmd.Env = append(env,
+		cmd.Env = qaSeederEnv(
 			"RHQ_QA_TRUST_CFG="+cfg,
 			"RHQ_QA_TRUST_ROOT="+root,
 			"RHQ_QA_TRUST_LO="+strconv.Itoa(c*each),
@@ -177,6 +186,11 @@ func TestQASeedTrustHoldsAcrossProcesses(t *testing.T) {
 			t.Fatalf("seeder %d failed (%v):\n%s", c, fail[c], out[c])
 		}
 	}
+	for i := 0; i < children*each; i++ {
+		if _, err := os.Stat(qaSeedDir(root, i)); err != nil {
+			t.Fatalf("seeder never created %s — the child did not run its slice (env aliasing, not a lost update): %v", qaSeedDir(root, i), err)
+		}
+	}
 
 	qaAssertAllTrusted(t, cfg, root, children*each, operatorDir)
 
@@ -185,5 +199,100 @@ func TestQASeedTrustHoldsAcrossProcesses(t *testing.T) {
 	// processes can hold at once.
 	if _, err := os.Stat(claudeConfigLockFile(cfg)); err != nil {
 		t.Errorf("no lock sidecar beside the config after %d seeding processes: %v", children, err)
+	}
+}
+
+// A live wedged holder must refuse the next launch, not hang it. The wait
+// is LOCK_NB + sleep so a second Open+Flock in this process times out
+// instead of blocking forever (flock is per OFD; nested SeedClaudeTrust
+// would otherwise wait on itself until the test deadline).
+func TestQASeedTrustLockFailsLoudlyWhenHeld(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), ".claude.json")
+	unlock, err := lockClaudeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	start := time.Now()
+	_, err = SeedClaudeTrust(cfg, claudeRuntime(t), t.TempDir())
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("a launch that cannot take the lock must refuse, not merge unserialized")
+	}
+	if !strings.Contains(err.Error(), "held by another posse launch") {
+		t.Errorf("refusal must name the wedged holder: %v", err)
+	}
+	if elapsed < claudeConfigLockWait {
+		t.Errorf("waited %s, want at least the bound %s", elapsed, claudeConfigLockWait)
+	}
+}
+
+// The child half of TestQASeedTrustLockFreesOnProcessDeath.
+func TestQASeedTrustChildHoldLock(t *testing.T) {
+	cfg := os.Getenv("RHQ_QA_TRUST_HOLD")
+	if cfg == "" {
+		t.Skip("child of TestQASeedTrustLockFreesOnProcessDeath")
+	}
+	unlock, err := lockClaudeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	os.Stdout.WriteString("HELD " + strconv.Itoa(os.Getpid()) + "\n")
+	time.Sleep(2 * time.Minute)
+}
+
+// flock releases on process death — ADR 0011 §1's argument over a pidfile,
+// applied to the config sidecar. A killed `posse new` must not strand the
+// next launch behind a 10s refusal.
+func TestQASeedTrustLockFreesOnProcessDeath(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(t.TempDir(), ".claude.json")
+	child := exec.Command(exe, "-test.run=TestQASeedTrustChildHoldLock$", "-test.v")
+	child.Env = qaSeederEnv("RHQ_QA_TRUST_HOLD=" + cfg)
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reaped := false
+	defer func() {
+		if !reaped && child.Process != nil {
+			child.Process.Kill()
+			child.Wait()
+		}
+	}()
+
+	buf, seen := make([]byte, 4096), ""
+	deadline := time.Now().Add(30 * time.Second)
+	for !strings.Contains(seen, "HELD ") && time.Now().Before(deadline) {
+		n, err := stdout.Read(buf)
+		seen += string(buf[:n])
+		if err != nil {
+			break
+		}
+	}
+	if !strings.Contains(seen, "HELD ") {
+		t.Fatalf("the holding process never took the lock:\n%s", seen)
+	}
+
+	child.Process.Kill()
+	if err := child.Wait(); err != nil && !strings.Contains(err.Error(), "killed") {
+		t.Fatalf("holder exit: %v", err)
+	}
+	reaped = true
+
+	start := time.Now()
+	if _, err := SeedClaudeTrust(cfg, claudeRuntime(t), t.TempDir()); err != nil {
+		t.Fatalf("seed after holder death: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= claudeConfigLockWait {
+		t.Errorf("seed waited %s after the holder died — flock did not release on process death", elapsed)
 	}
 }
