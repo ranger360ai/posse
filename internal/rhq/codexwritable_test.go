@@ -1,6 +1,8 @@
 package rhq
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,3 +46,58 @@ func TestClaudeAndGrokIgnoreWritable(t *testing.T) {
 }
 
 func containsAddDir(s string) bool { return strings.Contains(s, "--add-dir") }
+
+// The four tests above pin realizeCodex in ISOLATION, which is not where the
+// bug was. The bug was one argument at the launch site: drop beadsHome(dir)
+// from planLaunch's RenderCommandFor call and every test above stays green
+// while dispatched codex sessions go silent again — and it took five of them
+// before anyone read the silence as a cage rather than an agent skipping its
+// bookkeeping (ranger-base-0fb). So pin the LINE, in the shape dispatch
+// really launches it: a session worktree (rangerhq-09o2) of a repo whose
+// .beads is an ADR 0012 D3-C redirect.
+func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b, fake := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: ranger\ndescription: test\nruntime: codex\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := blRepo(t)
+	work := wtRepo(t)
+	target := filepath.Join(store, beadsDirName)
+	if err := os.MkdirAll(filepath.Join(work, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blRedirect(t, work, target)
+
+	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
+
+	tree, err := b.App.SessionTreePath(work, "crew")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gits := LinkedGitDirs(tree)
+	if len(gits) != 2 {
+		t.Fatalf("no session worktree was made — the test asserts nothing: LinkedGitDirs(%s) = %v", tree, gits)
+	}
+	if h := beadsHome(tree); h != target {
+		t.Fatalf("the seeded worktree redirect does not reach the store: beadsHome = %q, want %q", h, target)
+	}
+
+	// A line this long spills to the launch script, so the typed line is
+	// the call log and that script together (paneline.go).
+	body, _ := os.ReadFile(b.App.LaunchScript("crew"))
+	log := calls(t, fake) + "\n" + string(body)
+	// The store of record, and the git dirs that hold this tree's index and
+	// the repo's objects: both outside the workspace, both denied unless
+	// named.
+	for _, want := range append([]string{target}, gits...) {
+		if !strings.Contains(log, "--add-dir "+shellQuote(want)) {
+			t.Errorf("codex launch does not name %s writable:\n%s", want, log)
+		}
+	}
+}
