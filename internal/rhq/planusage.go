@@ -285,17 +285,40 @@ func credShapeNames() string {
 // top level, and — when the envelope we look for is there but empty — that
 // envelope too, since "no claudeAiOauth at all" and "claudeAiOauth without
 // the token" are different diagnoses with different fixes.
+//
+// It also says WHICH of those two it is rather than leaving the reader to
+// diff a key list by eye. On 2026-08-26 the operator's reading came back
+// with claudeAiOauth present (ranger-base-8i7l), which narrowed the defect
+// to exactly this fork: the field is there and empty (the credential is
+// incomplete — a login problem, nothing to change here), or the field is
+// gone (renamed — a line in credShapes). Naming the fork is the difference
+// between a line an operator can act on and one they have to interpret.
 func foundShape(top map[string]json.RawMessage) string {
 	desc := "its top-level keys are " + safeKeys(top)
 	raw, ok := top["claudeAiOauth"]
 	if !ok {
-		return desc
+		return desc + "; posse's envelope (claudeAiOauth) is not among them, so this item holds some other credential structure"
 	}
 	var inner map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &inner); err != nil {
+	// nil map, no error: claudeAiOauth is `null`, which is not an object.
+	if err := json.Unmarshal(raw, &inner); err != nil || inner == nil {
 		return desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
 	}
-	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner)
+	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + tokenVerdict(inner)
+}
+
+// tokenVerdict reads the one fork that matters once posse's own envelope has
+// been found, and states which side of it we are on. Presence of the key,
+// never its bytes.
+func tokenVerdict(inner map[string]json.RawMessage) string {
+	if _, ok := inner["accessToken"]; !ok {
+		return "accessToken is not among them, so the field was renamed or dropped: teach credShapes the new name"
+	}
+	v := "accessToken is present but empty, so this is an incomplete credential and not a shape posse cannot read: re-authenticate rather than change posse"
+	if _, ok := inner["refreshToken"]; ok {
+		v += " (a refreshToken is present, so a refresh that did not complete fits)"
+	}
+	return v
 }
 
 // maxKeyName is the longest key this file will repeat back. Well above every

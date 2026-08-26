@@ -47,20 +47,22 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 		not   []string
 	}{
 		{
-			name:  "envelope present, token absent",
-			blob:  `{"claudeAiOauth":{"refreshToken":"r","expiresAt":123,"scopes":["user:inference"]}}`,
-			wants: []string{"[claudeAiOauth]", "claudeAiOauth's keys are [expiresAt refreshToken scopes]"},
+			name: "envelope present, token absent",
+			blob: `{"claudeAiOauth":{"refreshToken":"r","expiresAt":123,"scopes":["user:inference"]}}`,
+			wants: []string{"[claudeAiOauth]", "claudeAiOauth's keys are [expiresAt refreshToken scopes]",
+				"renamed or dropped", "teach credShapes"},
+			not: []string{"incomplete credential"},
 		},
 		{
 			name:  "envelope absent — a different credential structure",
 			blob:  `{"apiKey":"` + fixtureSecret + `","createdAt":1}`,
-			wants: []string{"top-level keys are [apiKey createdAt]"},
+			wants: []string{"top-level keys are [apiKey createdAt]", "is not among them"},
 			not:   []string{"claudeAiOauth's keys"},
 		},
 		{
 			name:  "envelope present but empty",
 			blob:  `{"claudeAiOauth":{}}`,
-			wants: []string{"claudeAiOauth's keys are [] (an empty object)"},
+			wants: []string{"claudeAiOauth's keys are [] (an empty object)", "renamed or dropped"},
 		},
 		{
 			name:  "envelope is not an object",
@@ -68,9 +70,18 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 			wants: []string{"claudeAiOauth is a JSON string, not an object"},
 		},
 		{
-			name:  "token present but empty",
-			blob:  `{"claudeAiOauth":{"accessToken":""}}`,
-			wants: []string{"claudeAiOauth's keys are [accessToken]"},
+			name:  "envelope is null",
+			blob:  `{"claudeAiOauth":null}`,
+			wants: []string{"claudeAiOauth is JSON null, not an object"},
+			not:   []string{"an empty object"},
+		},
+		{
+			name: "token present but empty — an incomplete credential, not our parse",
+			blob: `{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}`,
+			wants: []string{"claudeAiOauth's keys are [accessToken refreshToken]",
+				"incomplete credential", "re-authenticate rather than change posse",
+				"a refreshToken is present"},
+			not: []string{"renamed or dropped"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,35 +110,63 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 	}
 }
 
-// The shape the operator actually reported on 2026-08-26 (ranger-base-8i7l):
-// top level ['mcpOAuth', 'claudeAiOauth'] — the envelope posse reads for IS
-// present, so the defect is one level deeper. This pins that the error digs
-// into the envelope it found instead of stopping at "the token is missing",
-// and that a SECOND envelope posse knows nothing about is named rather than
-// silently ignored. mcpOAuth's own keys are never printed: only the envelope
-// the failing shape names is opened.
+// The TOP LEVEL the operator actually reported on 2026-08-26
+// (ranger-base-8i7l): ['mcpOAuth', 'claudeAiOauth']. The envelope posse
+// reads for IS present, so the defect is one level deeper — and the inner
+// keys are still unread, which is what this bead is waiting on.
+//
+// Both inner cases are pinned here because the line is what the operator
+// will read: with that one top level, either the token field is gone
+// (renamed) or it is there and empty (an incomplete credential). The error
+// must say WHICH, not hand back a key list to diff by eye. mcpOAuth is a
+// second envelope posse knows nothing about; it is named at the top level
+// and never opened, because its keys are per-server URLs and not ours.
 func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
-	blob := `{"mcpOAuth":{"https://example.test/sse":{"accessToken":"` + fixtureSecret + `"}},` +
-		`"claudeAiOauth":{"refreshToken":"r","expiresAt":1756224000000,"scopes":["user:inference"],"subscriptionType":"max"}}`
-	_, _, err := credentialToken([]byte(blob))
-	if err == nil {
-		t.Fatal("want a shape failure")
-	}
-	msg := err.Error()
-	t.Logf("operator-visible line:\n  %s", msg)
-	for _, w := range []string{
-		"its top-level keys are [claudeAiOauth mcpOAuth]",
-		"claudeAiOauth's keys are [expiresAt refreshToken scopes subscriptionType]",
+	const mcp = `"mcpOAuth":{"https://example.test/sse":{"accessToken":"` + fixtureSecret + `"}},`
+	for _, tc := range []struct {
+		name  string
+		inner string
+		wants []string
+	}{
+		{
+			name:  "accessToken gone — renamed, and ours to fix",
+			inner: `{"refreshToken":"r","expiresAt":1756224000000,"scopes":["user:inference"],"subscriptionType":"max"}`,
+			wants: []string{
+				"claudeAiOauth's keys are [expiresAt refreshToken scopes subscriptionType]",
+				"renamed or dropped", "teach credShapes",
+			},
+		},
+		{
+			name:  "accessToken there and empty — incomplete credential, not ours",
+			inner: `{"accessToken":"","refreshToken":"r","expiresAt":1756224000000}`,
+			wants: []string{
+				"claudeAiOauth's keys are [accessToken expiresAt refreshToken]",
+				"incomplete credential", "re-authenticate rather than change posse",
+			},
+		},
 	} {
-		if !strings.Contains(msg, w) {
-			t.Errorf("want %q in: %q", w, msg)
-		}
-	}
-	if strings.Contains(msg, "example.test") {
-		t.Errorf("only the envelope the shape names is opened; mcpOAuth's keys are not ours to print: %q", msg)
-	}
-	if strings.Contains(msg, fixtureSecret) {
-		t.Errorf("a value reached the error line: %q", msg)
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := credentialToken([]byte(`{` + mcp + `"claudeAiOauth":` + tc.inner + `}`))
+			if err == nil {
+				t.Fatal("want a shape failure")
+			}
+			msg := err.Error()
+			t.Logf("operator-visible line:\n  %s", msg)
+			if !strings.Contains(msg, "its top-level keys are [claudeAiOauth mcpOAuth]") {
+				t.Errorf("want both envelopes named at the top level: %q", msg)
+			}
+			for _, w := range tc.wants {
+				if !strings.Contains(msg, w) {
+					t.Errorf("want %q in: %q", w, msg)
+				}
+			}
+			if strings.Contains(msg, "example.test") {
+				t.Errorf("only the envelope the failing shape names is opened: %q", msg)
+			}
+			if strings.Contains(msg, fixtureSecret) {
+				t.Errorf("a value reached the error line: %q", msg)
+			}
+		})
 	}
 }
 
