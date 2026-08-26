@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -150,5 +151,118 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 	logb, _ := os.ReadFile(c.Log)
 	if n := strings.Count(string(logb), "deny: Bash(security:*)"); n != 2 {
 		t.Errorf("model-catalog.log must record both reads: %d\n%s", n, logb)
+	}
+}
+
+// A failed refresh does not make a retained catalog UNKNOWN. Models returns
+// that prior reading as known, so the refusal notice must not contradict the
+// bool on which TierPreflight acts.
+func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
+	t.Skip("ranger-base-co5n: retained catalog is known but the refusal notice says UNKNOWN")
+	gatedSecurityPATH(t)
+	gateRefusalNotices.Delete("security\x00Bash(security:*)")
+
+	var errb strings.Builder
+	home := t.TempDir()
+	c := &ModelCache{
+		Path:   filepath.Join(home, "model-catalog.json"),
+		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: KeychainToken},
+		Errw:   &errb,
+	}
+	c.store(modelEntry{At: time.Now().Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
+
+	ids, ok := c.Models(time.Hour)
+	if !ok || len(ids) != 1 || ids[0] != "claude-fable-5" {
+		t.Fatalf("failed refresh must retain the last known catalog: %v %v", ids, ok)
+	}
+	if got := errb.String(); !strings.Contains(got, "deny: Bash(security:*)") || strings.Contains(got, "UNKNOWN") {
+		t.Errorf("notice must name the refusal without contradicting known=true: %q", got)
+	}
+}
+
+func TestQAGateRefusalNoticeIsOnceUnderConcurrency(t *testing.T) {
+	const key = "security\x00Bash(security:*)"
+	gateRefusalNotices.Delete(key)
+	t.Cleanup(func() { gateRefusalNotices.Delete(key) })
+
+	var errb strings.Builder
+	c := &ModelCache{Errw: &errb}
+	err := &GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.noteGateRefusal(err)
+		}()
+	}
+	wg.Wait()
+
+	if got := strings.Count(errb.String(), "tier availability UNKNOWN"); got != 1 {
+		t.Errorf("64 concurrent notices wrote %d lines, want exactly one: %q", got, errb.String())
+	}
+}
+
+// The 08-24 harm path itself: unattended, past plan_guard_blind_max, the
+// pass parks. That park line is what an operator reads the next morning,
+// and on 2026-08-24 it read as a credential outage — the response was
+// plan_guard_blind_max: 0 for hours. It must name our own gate instead.
+func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
+	gatedSecurityPATH(t)
+	r := newBlindRig(t, guardOn)
+	r.d.Unattended = true
+	// The endpoint stays up: the read fails at the credential, so the park
+	// reason is the refusal and not the transport.
+	r.d.Plan.Token = KeychainToken
+	r.at(12 * time.Minute)
+
+	if n := r.run(t); n != 0 {
+		t.Fatalf("past the blind budget the pass must not dispatch: %d\n%s", n, r.out())
+	}
+	got := r.out()
+	if !strings.Contains(got, "blind 12m") || !strings.Contains(got, "deny: Bash(security:*)") {
+		t.Errorf("the park line must name the age and the rule that refused us:\n%s", got)
+	}
+	if strings.Contains(got, "unreadable") {
+		t.Errorf("the park line must not read as a credential outage:\n%s", got)
+	}
+	if strings.Contains(got, "find-generic-password") {
+		t.Errorf("the park line must not quote the command's argv:\n%s", got)
+	}
+}
+
+// plan-usage.log is where the 08-24 misdiagnosis was actually read:
+// "2026-08-24T12:18:02Z cost failed: keychain item unreadable", the exact
+// bytes a real credential outage writes. The log line is rendered from
+// err.Error() and nothing tests it, so pin it here — the log is the
+// operator's record after the process that printed the blind line is gone.
+func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
+	gatedSecurityPATH(t)
+	home := t.TempDir()
+	c := &PlanCache{
+		Path:   filepath.Join(home, "plan-usage.json"),
+		Log:    filepath.Join(home, "plan-usage.log"),
+		Caller: "cost",
+		// The URL is never dialled: PlanReader asks for the token first, so
+		// the failure is the credential and not the transport.
+		Reader: &PlanReader{URL: "http://127.0.0.1:1/x", Token: KeychainToken},
+	}
+
+	if _, _, err := c.Read(time.Hour); err == nil {
+		t.Fatal("a gated PATH must not yield a reading")
+	}
+	logb, err := os.ReadFile(c.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(logb)
+	if !strings.Contains(got, "cost failed: ") || !strings.Contains(got, "deny: Bash(security:*)") {
+		t.Errorf("the log line must name the rule that refused us: %q", got)
+	}
+	if strings.Contains(got, "unreadable") {
+		t.Errorf("the 08-24 misdiagnosis, byte for byte: %q", got)
+	}
+	if strings.Contains(got, "find-generic-password") {
+		t.Errorf("the log must not quote the command's argv: %q", got)
 	}
 }
