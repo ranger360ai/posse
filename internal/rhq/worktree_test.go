@@ -450,6 +450,56 @@ func TestMergeSessionWorkSaysSoOnADetachedRepo(t *testing.T) {
 	}
 }
 
+// ranger-base-5s2o: the base is the branch the session was CUT from, and it
+// is read back from the branch itself. It used to be read out of the repo's
+// HEAD at merge time, which made an operator's `git checkout -b` redirect
+// the persona's commits onto the operator's own branch.
+func TestSessionTreeRemembersTheBaseItWasCutFrom(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	mustGit(t, repo, "checkout", "-q", "-b", "operator-side")
+
+	// Every path that answers "where does this land" answers main, not the
+	// branch the operator happens to be on now.
+	plan, err := a.PlanSessionTree(repo, "s-1")
+	if err != nil || plan == nil || plan.Base != "main" {
+		t.Fatalf("planned base = %+v, %v; want main", plan, err)
+	}
+	if got := SessionTreeOf(&HerdrMeta{Repo: repo, Dir: tr.Path, Branch: tr.Branch}); got.Base != "main" {
+		t.Errorf("the run record's base = %q, want main", got.Base)
+	}
+	trees, err := SessionTreesIn([]string{repo})
+	if err != nil || len(trees) != 1 || trees[0].Base != "main" {
+		t.Fatalf("listed trees = %+v, %v; want one on main", trees, err)
+	}
+
+	// And the merge refuses rather than landing on operator-side.
+	before := mustGit(t, repo, "rev-parse", "main")
+	o, err := MergeSessionWork(trees[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged || !strings.Contains(o.Reason, "operator-side") {
+		t.Fatalf("outcome = %+v, want a refusal naming the branch in the way", o)
+	}
+	for _, b := range []string{"main", "operator-side"} {
+		if got := mustGit(t, repo, "rev-parse", b); got != before {
+			t.Errorf("%s moved across a refusal: %s → %s", b, before, got)
+		}
+	}
+
+	// Nothing is lost by refusing: back on the base, the same call lands it.
+	mustGit(t, repo, "checkout", "-q", "main")
+	if o, err = MergeSessionWork(trees[0]); err != nil || !o.Merged || o.Commits != 1 {
+		t.Fatalf("outcome back on the base = %+v, %v; want the commit landed", o, err)
+	}
+}
+
 // ─── retiring the tree ───────────────────────────────────────────────────────
 
 func TestRemoveSessionTreeRefusesWhileWorkWouldBeLost(t *testing.T) {

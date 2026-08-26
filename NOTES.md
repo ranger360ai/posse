@@ -3627,6 +3627,20 @@ the operator opened to talk to is theirs (ADR 0008). A dir that is not a git
 repo, or a repo on a detached HEAD, warns and falls back to the shared
 checkout — a launch must not die because somebody is bisecting.
 
+The base is **recorded on the branch** when the tree is cut
+(`branch.posse/<session>.posseBase` in the repo's git config), and merge-back
+refuses unless the main checkout still has that branch out. Reading the repo's
+HEAD at merge time instead was ranger-base-5s2o: `git merge --ff-only` moves
+whatever is CHECKED OUT, so an operator who ran `git checkout -b` mid-session
+got the persona's commits fast-forwarded onto their own branch while the pass
+reported `main` merged. The operator's checkout is the one store on this path
+the launcher lock does not govern, so the question is asked immediately before
+the merge — and refusing costs only time: the branch still holds the work, the
+pass says which branch is in the way, and `posse worktrees --land` finishes it
+once the base is checked out again. Git keeps the record rather than the run
+record, for the reason `posse worktrees` reads git: a kill that could not land
+removes the meta and leaves the tree standing.
+
 Config: `worktrees:` (default `~/.posse/worktrees`, and it **must** be under
 `$HOME`) and `worktree_link:`, a declared list of repo-relative gitignored
 paths symlinked from the main checkout into each fresh tree (`plugin/bin`,

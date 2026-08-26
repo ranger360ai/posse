@@ -263,6 +263,31 @@ func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
 	}
 }
 
+// The same refusal through the pass (ranger-base-5s2o): the operator's
+// checkout is the one store on this path the launcher lock does not govern,
+// so a branch switch during a session must leave the work on its branch and
+// file the bead that says where it is — never land it on whatever the
+// operator is standing on.
+func TestMergeBackRefusesWhenTheOperatorLeftTheBase(t *testing.T) {
+	d, repo, tree := wtqaPassWithWork(t, func(repo, _ string) {
+		mustGit(t, repo, "checkout", "-q", "-b", "operator-side")
+	})
+	out := dispatcherOut(d)
+
+	if !strings.Contains(out, "did NOT reach main") || !strings.Contains(out, "operator-side") {
+		t.Errorf("the pass must name the branch in the way:\n%s", out)
+	}
+	if !strings.Contains(out, "↳ filed q-") {
+		t.Errorf("an unlanded merge must file a bead:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err == nil {
+		t.Error("the persona's commit landed on the operator's branch")
+	}
+	if _, err := os.Stat(filepath.Join(tree, "fix.txt")); err != nil {
+		t.Errorf("the work left the tree that still holds it: %v", err)
+	}
+}
+
 // ─── the kill: land it, or keep it and say so ────────────────────────────────
 
 func TestKillLandsTheWorkAndRetiresTheTree(t *testing.T) {
@@ -511,7 +536,6 @@ func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
 // persona's commit on the operator's unrelated branch and report the
 // original base as merged.
 func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
-	t.Skip("ranger-base-5s2o: merge-back targets the operator's current branch instead of the recorded base")
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-branch-switch", nil)

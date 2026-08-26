@@ -83,7 +83,7 @@ type SessionTree struct {
 	Repo   string // the main checkout the worktree hangs off
 	Path   string // this session's working tree
 	Branch string // the branch checked out in it
-	Base   string // the repo's own branch — the merge target
+	Base   string // the branch it was cut from — the merge target, recorded on the branch
 }
 
 // SessionBranch is the branch a session's worktree checks out. The session
@@ -228,6 +228,45 @@ func branchExists(repo, branch string) bool {
 	return err == nil
 }
 
+// baseKey names where a session branch records the branch it was CUT from.
+// It is git config on the branch, not a field in the run record, for the
+// reason SessionTreesIn reads git too: a kill that could not land its work
+// removes the session's meta and leaves the tree standing, so the one record
+// that survives every path is the one git keeps. `git branch -d` takes the
+// branch's config with it, so retiring a tree leaves nothing behind.
+func baseKey(branch string) string { return "branch." + branch + ".posseBase" }
+
+// recordBase writes down the branch the session branch was cut from, at the
+// moment it is cut — the only moment the answer is known for certain.
+func recordBase(repo, branch, base string) error {
+	if base == "" {
+		return nil
+	}
+	_, err := git(repo, "config", baseKey(branch), base)
+	return err
+}
+
+// baseOf answers the branch a session's work must land on: the one it was
+// cut from. Reading the repo's CURRENT branch instead was the bug in
+// ranger-base-5s2o — an operator who switches branches while a persona works
+// does not move the target, they just make it temporarily unreachable, and
+// merge-back has to say so rather than land the work wherever HEAD happens
+// to be.
+//
+// fallback is what a branch cut before this was recorded gets: the repo's
+// own branch, which is the answer that shape always gave. Nothing can
+// recover a legacy branch's true base after the fact, and refusing to land
+// every tree that predates the fix would strand work that is already in
+// flight.
+func baseOf(repo, branch, fallback string) string {
+	if out, err := git(repo, "config", "--get", baseKey(branch)); err == nil {
+		if b := strings.TrimSpace(out); b != "" {
+			return b
+		}
+	}
+	return fallback
+}
+
 // ─── creating a session's tree ───────────────────────────────────────────────
 
 // PlanSessionTree answers WHERE a session's tree would be, without making
@@ -254,7 +293,11 @@ func (a *App) PlanSessionTree(dir, session string) (*SessionTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SessionTree{Repo: repo, Path: path, Branch: SessionBranch(session), Base: base}, nil
+	// A branch that already exists was cut from a base recorded then, and
+	// that is where its work lands. For one this launch is about to cut, the
+	// repo's branch IS the base and baseOf answers it.
+	branch := SessionBranch(session)
+	return &SessionTree{Repo: repo, Path: path, Branch: branch, Base: baseOf(repo, branch, base)}, nil
 }
 
 // EnsureSessionTree gives the session its own working tree, index and HEAD,
@@ -294,11 +337,19 @@ func (a *App) EnsureSessionTree(dir, session string, warn io.Writer) (*SessionTr
 	// idempotent across an operator's `rm -rf`.
 	_, _ = git(t.Repo, "worktree", "prune")
 	add := []string{"worktree", "add", t.Path, t.Branch}
-	if !branchExists(t.Repo, t.Branch) {
+	cut := !branchExists(t.Repo, t.Branch)
+	if cut {
 		add = []string{"worktree", "add", "-b", t.Branch, t.Path, t.Base}
 	}
 	if _, err := git(t.Repo, add...); err != nil {
 		return nil, err
+	}
+	if cut {
+		// Written here and nowhere else: this is the one moment the branch's
+		// base is a fact rather than a guess about the operator's checkout.
+		if err := recordBase(t.Repo, t.Branch, t.Base); err != nil {
+			return nil, err
+		}
 	}
 	return t, seedTree(t, a)
 }
@@ -452,6 +503,18 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		o.Merged = true
 		return o, nil
 	}
+	// `git merge` moves the branch the repo has CHECKED OUT, which is not
+	// necessarily the one this session was cut from: the operator's checkout
+	// is the one store here that the launcher lock does NOT govern (ADR 0011
+	// §1), and a `git checkout -b` in it between reading the base and acting
+	// on it used to land the persona's commit on the operator's own branch
+	// while reporting the base merged (ranger-base-5s2o). Asked immediately
+	// before the merge, so the window is as small as a check-then-act
+	// against somebody else's checkout can be made.
+	if why := notOnBase(t); why != "" {
+		o.Reason = why
+		return o, nil
+	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
 		o.Merged = true
 		return o, nil
@@ -469,12 +532,36 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		return o, nil
 	}
 	o.Rebased = true
+	// The rebase is the slow half, and the operator can switch branches
+	// during it. Ask again rather than trust the answer from before it.
+	if why := notOnBase(t); why != "" {
+		o.Reason = why
+		return o, nil
+	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err != nil {
 		o.Reason = fmt.Sprintf("%s still would not fast-forward after the rebase: %v", t.Base, err)
 		return o, nil
 	}
 	o.Merged = true
 	return o, nil
+}
+
+// notOnBase says why the repo's checkout cannot take this session's work
+// right now, and "" when it can. Not landing is a delay — the branch keeps
+// the work and `posse worktrees --land` finishes it once the operator is
+// back on the base — where landing on the wrong branch is a mess in the
+// operator's history that nothing here could undo.
+func notOnBase(t *SessionTree) string {
+	cur := repoBranch(t.Repo)
+	if cur == t.Base {
+		return ""
+	}
+	if cur == "" {
+		return fmt.Sprintf("%s has a detached HEAD, so %s cannot land on %s — check %s out there and `posse worktrees --land`",
+			AbbrevHome(t.Repo), t.Branch, t.Base, t.Base)
+	}
+	return fmt.Sprintf("%s has %s checked out, not %s — %s was cut from %s and lands there or nowhere; check %s out there and `posse worktrees --land`",
+		AbbrevHome(t.Repo), cur, t.Base, t.Branch, t.Base, t.Base)
 }
 
 // dirtyPaths lists what the worktree holds that no commit does. It is
@@ -573,7 +660,9 @@ func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 		path, branch := "", ""
 		flush := func() {
 			if path != "" && strings.HasPrefix(branch, "posse/") {
-				out = append(out, &SessionTree{Repo: repo, Path: path, Branch: branch, Base: base})
+				// Each tree's own base: they need not agree, and after an
+				// operator branch switch none of them is today's HEAD.
+				out = append(out, &SessionTree{Repo: repo, Path: path, Branch: branch, Base: baseOf(repo, branch, base)})
 			}
 		}
 		for _, ln := range strings.Split(list, "\n") {

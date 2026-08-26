@@ -199,12 +199,15 @@ func SessionTreeOf(m *HerdrMeta) *SessionTree {
 	if m == nil || m.Branch == "" || m.Repo == "" || m.Dir == "" {
 		return nil
 	}
-	// Base is read now rather than recorded, because it is the branch the
-	// work has to land on TODAY: an operator who renamed or switched the
-	// repo's branch has moved the target, and a recorded one would merge
-	// onto a branch nobody is on. An empty answer (detached HEAD) is not
-	// hidden here — MergeSessionWork says so in words.
-	return &SessionTree{Repo: m.Repo, Path: m.Dir, Branch: m.Branch, Base: repoBranch(m.Repo)}
+	// Base is the branch this session was CUT from, recorded on the branch
+	// when it was cut. It used to be read fresh out of the repo's HEAD, and
+	// that was ranger-base-5s2o: an operator who switches branches while a
+	// persona works is not moving the merge target, and reading HEAD made
+	// the close land the persona's commits on the operator's own branch.
+	// A branch older than the recording falls back to the repo's branch,
+	// and a detached HEAD then answers "" — MergeSessionWork says so in
+	// words either way.
+	return &SessionTree{Repo: m.Repo, Path: m.Dir, Branch: m.Branch, Base: baseOf(m.Repo, m.Branch, repoBranch(m.Repo))}
 }
 
 // recreateSession is the create half, minus the planning the caller already
