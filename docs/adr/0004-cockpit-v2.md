@@ -80,6 +80,16 @@ headers — they'd cost rows and complexity for a list that is rarely more
 than two screens). Row model edges show `↑ n more` / `↓ n more` in dim.
 `ctrl-d`/`ctrl-u` page; `g`/`G` top/bottom. Peek mode shows the tail in
 the same viewport, clipped to `h`, instead of appending below the list.
+*(Amended 2026-08-26: the fixed 2+3 chrome holds only down to `h = 6` —
+below that `h − 5` leaves no viewport, and as accepted the render
+overflowed the terminal (rangerhq-5qm). Below the floor the viewport
+keeps one row — the cursor's — and the chrome sheds one line per lost
+`h`, least-carrying first: the header's blank spacer, the cost line, the
+status line, then the header title; the footer's action line (keys,
+prompt, or the y/n question) survives to `h = 2`, and at `h = 1` only
+the cursor's row remains. `chromeFor`/`trimFooter` in
+`cmd/posse/cockpit.go`, pinned by `TestCockpitShortTerminalShedsChrome`
+and `TestCockpitFitsShortTerminal`.)*
 
 **5. Testable by construction.** `render(w,h)` is a pure function of
 `(rows, cursor, offset, mode, status)`; `cockpit_test.go` gains golden
