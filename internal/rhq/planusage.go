@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -203,25 +204,172 @@ func gateRefusal(cmd string, err error) *GateRefusal {
 // keychain. Errors never quote the command's output — that output is the
 // credential blob.
 func KeychainToken() (string, error) {
+	tok, _, err := KeychainCredential()
+	return tok, err
+}
+
+// KeychainCredential is the same read, plus the NAME of the credential shape
+// that answered. Callers that only want a token use KeychainToken; this one
+// exists so a shape other than the first declared can be reported rather
+// than silently relied on (ranger-base-okbr fix 1).
+func KeychainCredential() (tok string, shape string, err error) {
 	out, err := exec.Command("security", "find-generic-password", "-s", KeychainService, "-w").Output()
 	if err != nil {
 		if g := gateRefusal("security", err); g != nil {
-			return "", g
+			return "", "", g
 		}
-		return "", Die("keychain item %q unreadable", KeychainService)
+		return "", "", Die("keychain item %q unreadable", KeychainService)
 	}
-	var creds struct {
-		ClaudeAiOauth struct {
+	return credentialToken(out)
+}
+
+// credShape is one credential layout posse knows how to read, named by the
+// dotted path it takes. The list is ordered and the FIRST shape that yields
+// a non-empty token wins, so adding a shape can never change which token an
+// item that already works hands back.
+type credShape struct {
+	Name string
+	// Token digs the token out of the decoded top level, or returns "".
+	Token func(map[string]json.RawMessage) string
+}
+
+// credShapes is that order. One entry today — the OAuth envelope Claude
+// Code has always written. When a login writes a different one, append it
+// here and the failure below stops being reached; do not reorder.
+var credShapes = []credShape{
+	{"claudeAiOauth.accessToken", func(top map[string]json.RawMessage) string {
+		var env struct {
 			AccessToken string `json:"accessToken"`
-		} `json:"claudeAiOauth"`
+		}
+		if err := json.Unmarshal(top["claudeAiOauth"], &env); err != nil {
+			return ""
+		}
+		return env.AccessToken
+	}},
+}
+
+// credentialToken reads the keychain blob as one of the declared shapes.
+//
+// The failure here is the fourth credential-failure class (ranger-base-okbr):
+// the item is present, readable, and valid JSON of a shape we do not know.
+// "has no claudeAiOauth.accessToken" was true and useless — it did not say
+// what the item DOES hold, which cost an hour of outage. So this names the
+// key NAMES it actually found. The values are the credential and never
+// appear; the names are schema, and safeKeys covers the one case where an
+// item of the wrong shape is keyed BY something that is not a name.
+func credentialToken(out []byte) (tok string, shape string, err error) {
+	var top map[string]json.RawMessage
+	// nil map, no error: that is `null`, which decodes into a map and is
+	// not an object. Anything that is not an object is the same diagnosis.
+	if err := json.Unmarshal(out, &top); err != nil || top == nil {
+		return "", "", Die("keychain item %q is not the expected JSON (%s, want a JSON object)", KeychainService, jsonKind(out))
 	}
-	if err := json.Unmarshal(out, &creds); err != nil {
-		return "", Die("keychain item %q is not the expected JSON", KeychainService)
+	for _, s := range credShapes {
+		if t := s.Token(top); t != "" {
+			return t, s.Name, nil
+		}
 	}
-	if creds.ClaudeAiOauth.AccessToken == "" {
-		return "", Die("keychain item %q has no claudeAiOauth.accessToken", KeychainService)
+	return "", "", Die("keychain item %q holds no token in any shape posse knows (tried %s) — %s",
+		KeychainService, credShapeNames(), foundShape(top))
+}
+
+func credShapeNames() string {
+	names := make([]string, 0, len(credShapes))
+	for _, s := range credShapes {
+		names = append(names, s.Name)
 	}
-	return creds.ClaudeAiOauth.AccessToken, nil
+	return strings.Join(names, ", ")
+}
+
+// foundShape describes what the item DOES contain, in key names only: the
+// top level, and — when the envelope we look for is there but empty — that
+// envelope too, since "no claudeAiOauth at all" and "claudeAiOauth without
+// the token" are different diagnoses with different fixes.
+func foundShape(top map[string]json.RawMessage) string {
+	desc := "its top-level keys are " + safeKeys(top)
+	raw, ok := top["claudeAiOauth"]
+	if !ok {
+		return desc
+	}
+	var inner map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &inner); err != nil {
+		return desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
+	}
+	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner)
+}
+
+// maxKeyName is the longest key this file will repeat back. Well above every
+// schema name a credential envelope uses (`subscriptionType`, the longest we
+// have seen, is 16) and well under any token, because a long key means the
+// object is keyed by a value and this file does not print values.
+const maxKeyName = 24
+
+// maxKeysShown bounds the line — an item with hundreds of keys is not a
+// credential and the count says so better than the list would.
+const maxKeysShown = 12
+
+// safeKeys renders an object's key names, sorted, for a diagnostic. A name
+// that is not name-shaped — too long, or not printable ASCII without spaces
+// — is reported by its size instead of its bytes, because the one way key
+// names could carry a secret is an object keyed BY one.
+func safeKeys(obj map[string]json.RawMessage) string {
+	if len(obj) == 0 {
+		return "[] (an empty object)"
+	}
+	names := make([]string, 0, len(obj))
+	for k := range obj {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	shown := names
+	extra := 0
+	if len(shown) > maxKeysShown {
+		shown, extra = shown[:maxKeysShown], len(names)-maxKeysShown
+	}
+	for i, k := range shown {
+		if !nameShaped(k) {
+			shown[i] = fmt.Sprintf("<%d bytes, not a name>", len(k))
+		}
+	}
+	s := "[" + strings.Join(shown, " ") + "]"
+	if extra > 0 {
+		s += fmt.Sprintf(" (+%d more)", extra)
+	}
+	return s
+}
+
+func nameShaped(k string) bool {
+	if k == "" || len(k) > maxKeyName {
+		return false
+	}
+	for _, r := range k {
+		if r <= ' ' || r > '~' {
+			return false
+		}
+	}
+	return true
+}
+
+// jsonKind names what a blob decodes to, and nothing about what is in it.
+func jsonKind(b []byte) string {
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		return "not JSON"
+	}
+	switch v.(type) {
+	case map[string]any:
+		return "a JSON object"
+	case []any:
+		return "a JSON array"
+	case string:
+		return "a JSON string"
+	case float64:
+		return "a JSON number"
+	case bool:
+		return "a JSON boolean"
+	default:
+		return "JSON null"
+	}
 }
 
 // Read fetches the current utilization of both windows.
