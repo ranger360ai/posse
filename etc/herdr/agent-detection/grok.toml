@@ -33,9 +33,10 @@ id = "grok"
 # posse_forked_from = "2026.07.16.2"   <- read by scripts/verify-detection.sh
 # ...which was the BUNDLED manifest of this herdr build, not a remote one:
 # posse_bundled_from_herdr = "0.8.0"
-# herdr requires a dotted-numeric version; the trailing .104 marks this as ours
-# and keeps it above the bundled .2 so herdr prefers it.
-version = "2026.07.16.104"
+# herdr requires a dotted-numeric version; the trailing .105 marks this as ours
+# and keeps it above the bundled .2 so herdr prefers it. ranger-base-z6n bumped
+# .104 to .105 when the splash anchor learned the production-width boxed layout.
+version = "2026.07.16.105"
 min_engine_version = 3
 updated_at = "2026-07-16T00:00:00Z"
 aliases = ["grok-build"]
@@ -138,9 +139,13 @@ contains = ["new worktree", "resume session"]
 # next day, so the tag is a RACE (grok resolves its channel asynchronously),
 # not a per-machine variant. Requiring it drops the rule at random. Both
 # fixtures pin it: testdata/grok/idle-startup-splash{,-plain-footer}.txt.
-# The menu `contains` above is what discriminates; this is the second
-# anchor, so it must not carry an optional element as a requirement.
-line_regex = ['(?i)^\s*Grok Build\s+\S+(\s+\[[^\]]+\])?\s*$']
+#
+# At production width Grok Build is not a footer at all: it is embedded in
+# the boxed logo line, after braille art and before the right border. Do not
+# anchor this regex to the whole line. The menu `contains` above is the
+# discriminator; this is only the second anchor, and must accept both the
+# narrow footer and the wide boxed layout (ranger-base-z6n).
+line_regex = ['(?i)Grok Build\s+\S+(\s+\[[^\]]+\])?']
 not = [
   { contains = ["ctrl+.:shortcuts"] },
   { contains = ["esc:cancel"] },

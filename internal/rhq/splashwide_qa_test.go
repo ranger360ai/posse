@@ -17,7 +17,6 @@ import (
 )
 
 func TestQAGrokWideBoxedSplashIsNamedIdle(t *testing.T) {
-	t.Skip("ranger-base-z6n: production-width boxed splash must resolve to startup_splash, not fallback idle")
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
@@ -30,7 +29,24 @@ func TestQAGrokWideBoxedSplashIsNamedIdle(t *testing.T) {
 	if _, err := os.Stat(file); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command("herdr", "agent", "explain", "--file", file, "--agent", "grok", "--json").CombinedOutput()
+	// Execute the manifest in this checkout, not the installed fleet override:
+	// a committed detection fix must prove itself before an operator deploys it.
+	config := t.TempDir()
+	overrides := filepath.Join(config, "herdr", "agent-detection")
+	if err := os.MkdirAll(overrides, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(root, "..", "..", "etc", "herdr", "agent-detection", "grok.toml")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(overrides, "grok.toml"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("herdr", "agent", "explain", "--file", file, "--agent", "grok", "--json")
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+config, "XDG_STATE_HOME="+filepath.Join(config, "state"))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("herdr agent explain: %v\n%s", err, out)
 	}

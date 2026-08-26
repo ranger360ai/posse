@@ -96,17 +96,24 @@ fixture and a live pane (which has the OSC title) give the same answer.
 
 ### The anchors
 
-Keyed on the startup **menu** plus the `Grok Build <version>` footer, with
-`not` guards on the live-composer hint footers. The footer's `[channel]` tag
-is **optional**: the same box renders `Grok Build  1.0.5 [stable]` on one
-pane and a bare `Grok Build  1.0.5` on the next — 7sbo saw the bare form,
-1xsj saw the tagged form twice the next day, so the tag is a **race** (grok
-resolves its channel asynchronously), not a per-machine variant. Requiring
-it drops the rule at random. Both variants are pinned:
-`testdata/grok/idle-startup-splash{,-plain-footer}.txt`. A third, live
-2026-08-25 capture (`idle-startup-splash-no-consent-banner.txt`) has the
-tagged footer, extra changelog/tip lines, and **no** consent banner — the
-banner is not always drawn; the menu + footer still must match.
+Keyed on the startup **menu** plus `Grok Build <version>`, with `not` guards
+on the live-composer hint footers. At narrow widths Grok Build is a footer;
+at production width it sits inside the boxed logo after braille art. The
+secondary regex is deliberately not line-anchored so both layouts resolve to
+the same named rule (ranger-base-z6n).
+
+The footer's `[channel]` tag is **optional**: the same box renders
+`Grok Build  1.0.5 [stable]` on one pane and a bare `Grok Build  1.0.5` on
+the next — 7sbo saw the bare form, 1xsj saw the tagged form twice the next
+day, so the tag is a **race** (grok resolves its channel asynchronously),
+not a per-machine variant. Requiring it drops the rule at random. Both
+variants are pinned: `testdata/grok/idle-startup-splash{,-plain-footer}.txt`.
+A third, live 2026-08-25 capture
+(`idle-startup-splash-no-consent-banner.txt`) has the tagged footer, extra
+changelog/tip lines, and **no** consent banner — the banner is not always
+drawn; the menu + Grok Build anchor still must match. The production-width
+boxed capture is pinned by
+`internal/rhq/splashwide_qa_test.go` and its adjacent testdata file.
 
 `verify-detection` requires those splash fixtures to resolve to rule id
 `startup_splash`, not just state `idle`. After rangerhq-1xsj the state is
