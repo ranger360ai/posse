@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -164,6 +164,12 @@ POSSE ?= $(shell command -v posse)
 
 verify-prune-guard:
 	scripts/verify-prune-guard.sh $(POSSE)
+
+# herdr workspace-id recycling (rangerhq-6bg7 / rangerhq-6bbz). Scratch
+# --session server only; the fleet default server is snapshotted, never
+# aimed at. Allocator is max(live)+1 recomputed at every process start.
+verify-id-recycle:
+	scripts/verify-id-recycle.sh
 
 # The grok version pin (rangerhq-y7jr). grok ships `[cli] auto_update = true`
 # and a leader process that downloads a new binary and relaunches itself
