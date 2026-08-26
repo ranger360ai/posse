@@ -1857,6 +1857,7 @@ func (d *Dispatcher) awaitDelivered(id, session string) (target string, seen boo
 		poll = 250 * time.Millisecond
 	}
 	var lastWhy string
+	var lastGuess AgentDetection // herdr's working behind lastWhy — see awaitSettled
 	for {
 		det, derr := d.HB.H.AgentExplain(target)
 		switch {
@@ -1874,11 +1875,11 @@ func (d *Dispatcher) awaitDelivered(id, session string) (target string, seen boo
 			if reason == "" {
 				reason = "no rule matched"
 			}
-			lastWhy = fmt.Sprintf("only %q (%s)", det.State, reason)
+			lastWhy, lastGuess = fmt.Sprintf("only %q (%s)", det.State, reason), det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
-			fmt.Fprintf(d.Out, "◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s\n",
-				id, session, d.StartupWait, lastWhy)
+			fmt.Fprintf(d.Out, "◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
+				id, session, d.StartupWait, lastWhy, lastGuess.WhatHerdrSaw())
 			return target, false, nil
 		}
 		time.Sleep(poll)
@@ -1975,6 +1976,10 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		poll = 250 * time.Millisecond
 	}
 	var lastWhy, lastErr string
+	// The detection behind lastWhy, kept only while it is a GUESS: the
+	// failure line owes the next person herdr's working, and a read that
+	// DID see a rule has nothing to explain (ranger-base-3j8).
+	var lastGuess AgentDetection
 	for {
 		ms := int(time.Until(deadline) / time.Millisecond)
 		if ms < 1 {
@@ -2010,6 +2015,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// Settled a moment ago, something else on screen now. Not an
 			// answer either way: wait for one.
 			lastErr, lastWhy = "", fmt.Sprintf("herdr last read %q from rule %q", det.State, det.Rule.ID)
+			lastGuess = AgentDetection{}
 		default:
 			reason := det.FallbackReason
 			if reason == "" {
@@ -2017,13 +2023,14 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			}
 			lastErr = ""
 			lastWhy = fmt.Sprintf("herdr never saw a screen it recognizes there, only %q (%s) — the pane may still be at a shell prompt", status, reason)
+			lastGuess = det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
 			if lastErr != "" {
 				fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
 				return status, AgentDetection{State: status}, nil
 			}
-			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)", session, d.StartupWait, lastWhy, session)
+			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, d.StartupWait, lastWhy, session, lastGuess.WhatHerdrSaw())
 		}
 		time.Sleep(poll)
 	}

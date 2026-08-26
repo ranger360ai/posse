@@ -407,6 +407,33 @@ type AgentDetection struct {
 	// reported, never tested: Seen asks for positive evidence instead, so a
 	// fallback herdr names differently tomorrow is still not readiness.
 	FallbackReason string `json:"fallback_reason"`
+	// EvaluatedRules is herdr's working: every rule it tried, and what the
+	// region that rule reads actually held. Read only when nothing matched
+	// — see WhatHerdrSaw and ranger-base-3j8 for why a launch failure that
+	// does not say this costs a hand-launch and a peek to diagnose.
+	EvaluatedRules []EvaluatedRule `json:"evaluated_rules"`
+}
+
+// EvaluatedRule is one line of herdr's working: a manifest rule, whether it
+// fired, the screen region it reads, and — the part that matters when
+// NOTHING fired — how many bytes were in that region and a preview of them.
+//
+// An empty region is the diagnosis that took a hand-launch to get on
+// ranger-base-3j8: grok's three idle recognizers all read OSC chrome that a
+// fresh grok pane has not emitted yet, so `region_bytes: 0` on osc_title is
+// "the CLI has not spoken yet", while 600 bytes of splash text under
+// `whole_recent` is "the CLI is up and sitting on a screen posse does not
+// know". Those two need opposite responses and the old message described
+// them identically.
+type EvaluatedRule struct {
+	ID       string `json:"id"`
+	Matched  bool   `json:"matched"`
+	Region   string `json:"region"`
+	State    string `json:"state"`
+	Evidence struct {
+		RegionBytes   int    `json:"region_bytes"`
+		RegionPreview string `json:"region_preview"`
+	} `json:"evidence"`
 }
 
 // Seen reports whether herdr actually recognized what is on the screen,

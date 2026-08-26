@@ -918,6 +918,54 @@ One small file per bead, rewritten on re-dispatch.
 `d` on a live holder, prompt the composer: the launch line has already been
 typed, and the only way into a running CLI is through its screen.
 
+### When a launch is not promptable, say what herdr was looking at
+
+Argv retires the screen as the *delivery* channel; it does not retire the
+screen. A launch can still end with herdr recognizing nothing, and until
+`ranger-base-3j8` the only thing dispatch said about that was:
+
+```
+herdr never saw a screen it recognizes there, only "idle"
+(default_known_agent_idle_fallback)
+```
+
+Honest, and useless. Three different screens produced that identical
+sentence in one evening — a consent banner, a version splash, and a pane
+whose OSC chrome grok had simply not emitted yet — and two of them needed
+opposite fixes. Telling them apart cost a hand-launch and a `posse peek`
+each time.
+
+herdr already had the answer. `agent explain --json` carries
+`evaluated_rules`: every rule it tried, the screen **region** that rule
+reads, and how many bytes were in that region with a preview. Both
+promptability failures (typed `awaitSettled`, argv `awaitDelivered`) now
+append it, grouped by region — rules outnumber regions three to one and
+share their evidence, so twelve rows of which eleven repeat is a
+diagnostic nobody reads:
+
+```
+herdr evaluated 15 rules there and matched none. What it was reading:
+  osc_title                      0 bytes  ""  — osc_title_blocked, osc_title_idle, osc_title_working
+  bottom_non_empty_lines(2)    601 bytes  "╰── Grok 4.6 (high) ─╯ ..."  — permission_hints_blocked, +3 more
+  whole_recent                3969 bytes  "\ue0a0 main ~/src/posse ╭──╮ │ ..."  — startup_splash, +4 more
+```
+
+Read it as: **an empty region means the CLI has not spoken yet**; a region
+full of text means it is up and parked on a screen posse cannot name. On
+grok those are the two halves of this bead. The row above is the real one,
+and `╰── Grok 4.6 (high) ─╯` with no `· auto` is the tell the coordinator
+found by hand.
+
+Runs of four or more identical non-alphanumeric runes collapse to two
+before the preview is cut: on the wide grok splash, 70 of the first 72
+characters were one repeated box rule, so the row previewed nothing.
+Letters and digits are never collapsed.
+
+This is **diagnosis only**. Nothing decides on it and no key is pressed
+because of it — interstitials stay on the argv sidestep and the operator's
+own config (ADR 0013 §2, and the interstitial section below). A herdr that
+does not emit `evaluated_rules` leaves the old sentence exactly as it was.
+
 ### The busy key: session failure vs persona failure (ADR 0013 §2)
 
 Dial F gives every bead its own session, so a *pane* failing is not a fact

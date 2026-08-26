@@ -655,6 +655,11 @@ func fakeHerdr(args []string) int {
 //	                  visible_idle false, default_known_agent_idle_fallback.
 //	                  A number counts down — that many guesses, then seen,
 //	                  which is the boot race. Empty means guess forever.
+//	explain-rules     a raw JSON array spliced in as `evaluated_rules` —
+//	                  herdr's own working, which the guess shape carries in
+//	                  the field and the seen shape does not need. Absent
+//	                  means the key is absent, which is what an older herdr
+//	                  emits and what WhatHerdrSaw must survive.
 //	explain-error     `explain` fails outright (see the fake's error lever)
 func fakeExplain() string {
 	state := fakeWaitStatus()
@@ -668,9 +673,13 @@ func fakeExplain() string {
 			if counted {
 				os.WriteFile(filepath.Join(fakeDir(), "explain-fallback"), []byte(strconv.Itoa(n-1)), 0o644)
 			}
+			rules := ""
+			if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-rules")); err == nil {
+				rules = `,"evaluated_rules":` + strings.TrimSpace(string(b))
+			}
 			return fmt.Sprintf(`{"state":%q,"matched_rule":null,"visible_idle":false,`+
 				`"visible_blocker":false,"visible_working":false,`+
-				`"fallback_reason":"default_known_agent_idle_fallback"}`, state)
+				`"fallback_reason":"default_known_agent_idle_fallback"%s}`, state, rules)
 		}
 	}
 	rule := "fake_" + state
