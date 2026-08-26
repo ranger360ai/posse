@@ -128,3 +128,65 @@ func TestBeadsGitDirsFallsBackToRepoDotGit(t *testing.T) {
 		t.Errorf("non-repo target: got %v, want [%s]", got, filepath.Join(root, ".git"))
 	}
 }
+
+// MEASURED against bd 0.49.1, and it is the one thing beadsHome and bd
+// disagree about: bd REFUSES a chain. Point work -> mid -> store and bd
+// prints "redirect chains not allowed, ignoring redirect in <mid>/.beads"
+// and opens the database in MID, the first hop. beadsHome follows up to
+// eight hops and answers STORE. The writable set is then wrong in both
+// directions at once — it grants a directory bd never opens and denies the
+// one it does — and a caged persona gets the original defect back verbatim:
+//
+//	bd sync   -> failed to open database: ... <mid>/.beads/beads.db:
+//	             operation not permitted
+//	bd export -> the same line
+//
+// Not live in this fleet: seedBeadsRedirect (worktree.go) resolves the main
+// checkout's redirect before writing the worktree's, "so a chain is never
+// built". The bound in beadsHome exists for a shape posse does not create
+// and bd will not read. The same resolver backs the beadloss census, which
+// would walk a repo bd is not using — the alarm disarmed without a word.
+func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
+	t.Skip("ranger-base-f5dg: beadsHome follows chains bd refuses; grant is the wrong hop")
+	work, mid, store := blRepo(t), blRepo(t), blRepo(t)
+	blRedirect(t, work, filepath.Join(mid, beadsDirName))
+	blRedirect(t, mid, filepath.Join(store, beadsDirName))
+
+	w := SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	if !sbHas(w, filepath.Join(mid, beadsDirName)) {
+		t.Errorf("bd opens the FIRST hop's database; the profile must grant it:\n%s", strings.Join(w, "\n"))
+	}
+	if sbHas(w, filepath.Join(store, beadsDirName)) {
+		t.Errorf("bd never opens the chain's end; granting it widens the cage for nothing:\n%s", strings.Join(w, "\n"))
+	}
+}
+
+// A redirect that stays INSIDE cwd but does not name cwd/.beads. The grant
+// is guarded by `!underDir(cwd, home)` — "the store of record is not under
+// cwd" — but for a persona that denies Edit/Write cwd is NOT granted: only
+// cwd/.beads and cwd/.git are. So "under cwd" is the wrong boundary in that
+// branch, the target is skipped as already-covered when nothing covers it,
+// and bd is denied its own database. Measured with bd 0.49.1 in
+// ~/laurie-cage-probe/work, redirect `inner/.beads` (bd resolves the
+// relative form against the repo root — verified, it built the db there):
+//
+//	bd sync   -> failed to open database: ... work/inner/.beads/beads.db:
+//	             operation not permitted
+//	bd export -> the same line
+//
+// The open-repo persona is fine here — cwd whole covers it — which is the
+// mirror image of the bug this file's first test pins.
+func TestSeatbeltGrantsARedirectThatStaysUnderCwd(t *testing.T) {
+	t.Skip("ranger-base-f5dg: underDir(cwd) is the wrong boundary when only cwd/.beads is granted")
+	work := blRepo(t)
+	inner := filepath.Join(work, "inner")
+	if err := os.MkdirAll(filepath.Join(inner, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blRedirect(t, work, filepath.Join(inner, beadsDirName))
+
+	w := SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	if !sbHas(w, filepath.Join(inner, beadsDirName)) {
+		t.Errorf("the redirect target is where bd opens the db, under cwd or not:\n%s", strings.Join(w, "\n"))
+	}
+}
