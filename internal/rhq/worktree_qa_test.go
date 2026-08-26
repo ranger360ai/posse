@@ -514,7 +514,7 @@ func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
 
 	// L2: the seatbelt profile's writable list.
 	ag := &AgentFile{Name: "p", MemoryDir: t.TempDir()}
-	w := strings.Join(SeatbeltWritable(ag, tr.Path, t.TempDir()), "\n")
+	w := strings.Join(NewAppAt(t.TempDir()).SeatbeltWritable(ag, tr.Path, t.TempDir()), "\n")
 	for _, d := range dirs {
 		if !strings.Contains(w, absResolve(d)) {
 			t.Errorf("seatbelt does not grant %s:\n%s", d, w)

@@ -946,12 +946,12 @@ func main() {
 		fmt.Fprintf(out, "%s\n", rhq.AbbrevHome(gatesDir))
 		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", rhq.AbbrevHome(gateShell))
 		if rhq.ResolveCage("", ag) == rhq.CageSeatbelt && rhq.AvailableCages[rhq.CageSeatbelt] {
-			if prof, err := a.RenderSeatbelt(ag, cwd); err == nil {
-				fmt.Fprintf(out, "  seatbelt.sb rendered for cwd %s (writable set below):\n", rhq.AbbrevHome(cwd))
-				for _, w := range rhq.SeatbeltWritable(ag, cwd, gatesDir) {
-					fmt.Fprintf(out, "    w %s\n", rhq.AbbrevHome(w))
-				}
-				_ = prof
+			// Said out loud rather than swallowed: this block is where an
+			// operator reads ADR 0015 §2's wall off the output, and a
+			// report that silently prints nothing is the failure it exists
+			// to prevent.
+			if err := a.SeatbeltReport(ag, cwd, out); err != nil {
+				fmt.Fprintf(out, "  seatbelt profile not rendered: %v\n", err)
 			}
 		}
 		rules := rhq.ParseShimRules(ag.Deny)
@@ -1480,7 +1480,9 @@ catalog:
                                  launch/promptable/work/record/settle/account, who declared each,
                                  and what a missing stage costs. Undeclared reads loud, not silent.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
-  posse gates <persona>          the persona's L1 gate shims (from deny:) and refusals.log
+  posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
+                                 writable set with ADR 0015 §2's constitution check
+                                 over it, and refusals.log
   posse gates install-hooks [dir]   L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
                                     and prepare-commit-msg refusing an unqualified commit under RHQ_PERSONA
                                     plus ops-class content added to .beads/*.jsonl in a repo that

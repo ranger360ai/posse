@@ -746,20 +746,13 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{
-		Home:       home,
-		ConfigPath: filepath.Join(home, "config.yaml"),
-		RecipesDir: filepath.Join(home, "recipes"),
-		EnvsDir:    filepath.Join(home, "envs"),
-		StateDir:   filepath.Join(home, "state"),
-		AgentsDir:  filepath.Join(home, "agents"),
-		// Hermetic by construction, like RHQ_FAKE_HERDR above: an
-		// unconfigured lister reads no keychain and reaches no network, and
-		// the availability preflight takes that as UNKNOWN and launches the
-		// tier exactly as asked (modelavail.go). Tests that want the
-		// preflight to DO something seed the snapshot or set this field.
-		ModelLister: &ModelLister{},
-	}
+	a := NewAppAt(home)
+	// Hermetic by construction, like RHQ_FAKE_HERDR above: an unconfigured
+	// lister reads no keychain and reaches no network, and the availability
+	// preflight takes that as UNKNOWN and launches the tier exactly as asked
+	// (modelavail.go). Tests that want the preflight to DO something seed
+	// the snapshot or set this field.
+	a.ModelLister = &ModelLister{}
 	return &HerdrBackend{App: a, H: Herdr{Bin: exe}}, fake
 }
 

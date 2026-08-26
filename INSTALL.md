@@ -1155,15 +1155,17 @@ $ RHQ_HOME=<second home> posse dispatch --watch 5m -n 3
 
 ### Known gaps — read these before running two instances
 
-As of this writing, coexistence is **not yet clean**. Five holes are
-identified, designed, and open:
+As of this writing, coexistence is **not yet clean**. Four holes are
+identified, designed, and open (a fifth — the seatbelt's hardcoded
+`~/.config/rhq/state` grant — is closed: the profile derives the state
+grant from the App's home, so a second `RHQ_HOME` gets its own state dir
+and no grant into the default instance's; rangerhq-qfzr, ranger-base-cpyb):
 
 | gap | what actually happens | bead |
 |---|---|---|
 | `RHQ_HOME` is not injected into sessions | a persona running `posse` **inside its own session** resolves the herdr server's env or the default-home lookup (`~/.config/posse`, then an existing `~/.config/rhq`) — the *wrong* instance's config, queue and skills, silently | rangerhq-ysly |
 | labels carry no instance id | `instance:` is designed but **not implemented** — setting it today does nothing. Identical session names collide on the shared herdr: the second instance's create fails "already exists" | rangerhq-ouf9 |
 | destructive paths do not refuse foreign workspaces | `posse kill` and cockpit `x` will close a workspace owned by the *other* instance; reachable today via the autostart hook's kill-and-replace | rangerhq-selx |
-| seatbelt writable list is hardcoded | the `seatbelt` cage tier grants write to the literal `~/.config/rhq/state`, not this instance's state dir | rangerhq-qfzr |
 | `BeadsDirs()` falls back to `[""]` | with no surviving `beads:` entry, bd runs in the caller's cwd — silent wrong-queue dispatch | rangerhq-wmrb |
 
 Until `ysly` and `ouf9` land, run two instances with your eyes open: give

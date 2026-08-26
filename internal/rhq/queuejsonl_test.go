@@ -324,7 +324,7 @@ func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 	work := qWork(t, store) // a project checkout, redirecting to the queue
 
 	ag := &AgentFile{Name: "dinesh"}
-	got := SeatbeltWritable(ag, work, t.TempDir())
+	got := NewAppAt(t.TempDir()).SeatbeltWritable(ag, work, t.TempDir())
 
 	var sawStore bool
 	for _, w := range got {

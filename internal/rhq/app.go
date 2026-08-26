@@ -62,6 +62,15 @@ func newApp(stderr io.Writer) *App {
 			}
 		}
 	}
+	return NewAppAt(home)
+}
+
+// NewAppAt is an App rooted at an explicit home, with every path in the
+// struct derived from it. One function knows the home's shape, so a caller
+// that needs a path under the home asks the App instead of spelling
+// `~/.config/...` itself — the seatbelt's state grant used to be spelled,
+// and spelled the pre-0015 home (ADR 0015 §2, ranger-base-cpyb).
+func NewAppAt(home string) *App {
 	return &App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),

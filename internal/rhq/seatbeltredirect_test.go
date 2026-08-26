@@ -8,6 +8,11 @@ import (
 	"testing"
 )
 
+// sbApp is a seatbelt test's App: a home nothing else writes, so the state
+// grant the profile derives (ADR 0015 §2) is this test's own and never the
+// operator's live one.
+func sbApp(t *testing.T) *App { t.Helper(); return NewAppAt(t.TempDir()) }
+
 func sbHas(w []string, p string) bool {
 	want := absResolve(p)
 	for _, x := range w {
@@ -32,7 +37,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	gates := t.TempDir()
 
 	denied := &AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
-	w := SeatbeltWritable(denied, work, gates)
+	w := sbApp(t).SeatbeltWritable(denied, work, gates)
 	for _, want := range []string{
 		filepath.Join(store, beadsDirName), // the database, jsonl, socket, lock
 		filepath.Join(store, ".git"),       // index.lock for `bd sync`'s commit
@@ -55,7 +60,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	// A persona that may edit the repo is in the same bind: cwd is granted
 	// whole and the store of record is still in another tree.
 	open := &AgentFile{Name: "dev", MemoryDir: t.TempDir()}
-	wo := SeatbeltWritable(open, work, gates)
+	wo := sbApp(t).SeatbeltWritable(open, work, gates)
 	for _, want := range []string{work, filepath.Join(store, beadsDirName), filepath.Join(store, ".git")} {
 		if !sbHas(wo, want) {
 			t.Errorf("writable set missing %q:\n%s", want, strings.Join(wo, "\n"))
@@ -69,7 +74,7 @@ func TestSeatbeltWithoutARedirectGrantsNothingExtra(t *testing.T) {
 	work := blRepo(t)
 	gates := t.TempDir()
 	ag := &AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
-	w := SeatbeltWritable(ag, work, gates)
+	w := sbApp(t).SeatbeltWritable(ag, work, gates)
 	var rooted []string
 	for _, x := range w {
 		if underDir(work, x) {
@@ -88,7 +93,7 @@ func TestSeatbeltIgnoresADanglingRedirect(t *testing.T) {
 	work := blRepo(t)
 	gone := filepath.Join(t.TempDir(), "gone", beadsDirName)
 	blRedirect(t, work, gone)
-	w := SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if sbHas(w, gone) || sbHas(w, filepath.Dir(gone)) {
 		t.Errorf("a dangling redirect must grant nothing:\n%s", strings.Join(w, "\n"))
 	}
@@ -152,7 +157,7 @@ func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 	blRedirect(t, work, filepath.Join(mid, beadsDirName))
 	blRedirect(t, mid, filepath.Join(store, beadsDirName))
 
-	w := SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if !sbHas(w, filepath.Join(mid, beadsDirName)) {
 		t.Errorf("bd opens the FIRST hop's database; the profile must grant it:\n%s", strings.Join(w, "\n"))
 	}
@@ -185,7 +190,7 @@ func TestSeatbeltGrantsARedirectThatStaysUnderCwd(t *testing.T) {
 	}
 	blRedirect(t, work, filepath.Join(inner, beadsDirName))
 
-	w := SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if !sbHas(w, filepath.Join(inner, beadsDirName)) {
 		t.Errorf("the redirect target is where bd opens the db, under cwd or not:\n%s", strings.Join(w, "\n"))
 	}

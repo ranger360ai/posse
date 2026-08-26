@@ -174,7 +174,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	dev, _ := b.App.LoadAgent("dev")
 	gates := b.App.GatesDir("security")
 
-	w := SeatbeltWritable(security, repo, gates)
+	w := b.App.SeatbeltWritable(security, repo, gates)
 	joined := strings.Join(w, "\n")
 	real := resolveExisting(repo)
 	for _, want := range []string{filepath.Join(real, ".beads"), filepath.Join(real, ".git"), security.MemoryDir, resolveExisting(gates), filepath.Join(real, "scratch"), "/opt/shared"} {
@@ -187,7 +187,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 			t.Error("repo itself must not be writable when Edit/Write are denied")
 		}
 	}
-	if wd := SeatbeltWritable(dev, repo, gates); !strings.Contains(strings.Join(wd, "\n"), real+"\n") && wd[0] != real {
+	if wd := b.App.SeatbeltWritable(dev, repo, gates); !strings.Contains(strings.Join(wd, "\n"), real+"\n") && wd[0] != real {
 		t.Errorf("without Edit/Write denies the repo is writable: %v", wd)
 	}
 	prof := SeatbeltProfile("security", w)

@@ -2021,8 +2021,22 @@ Three different things get called "permissions"; keep them apart
   `.beads/` and `.git/`** so bd can still claim/comment/close — the
   persona's memory dir, the gates dir (refusals.log), the runtimes' own
   state (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.grok`, caches),
-  `$TMPDIR`/`/tmp`, `/dev`, and the PID's `writable:` extras (relative to
-  the repo). **Plus the store of record when `.beads/redirect` moves it**
+  posse's own `state/` **derived from the App's home** (it was the literal
+  `~/.config/rhq/state` until ranger-base-cpyb, so a second `RHQ_HOME`'s
+  sessions got no grant to their own state dir and one into the default
+  instance's — rangerhq-qfzr), `$TMPDIR`/`/tmp`, `/dev`, and the PID's
+  `writable:` extras (relative to the repo). **What it never grants is the
+  rest of the home** — `agents/`, `config.yaml`, `recipes/`, `skills/`,
+  `envs/`, `promoted.json`: after ADR 0015 §2 that is the promoted
+  constitution, and a promoted copy stays in force precisely because no
+  session can write it. `posse gates <persona>` prints the writable set
+  with that check over it, so the property is read rather than audited —
+  `✗ GRANT REACHES THE CONSTITUTION: <path>` when it fails.
+  `personas/<self>` IS granted: §5's named exception, memory is not law.
+  The home's `personas` is a symlink into the constitution repo and the
+  grant is resolved through it (`resolveExisting`), so the profile matches
+  the real directory and neither spelling reaches another persona's
+  memory. **Plus the store of record when `.beads/redirect` moves it**
   (ADR 0012 D3-C, rangerhq-k5ny): `<repo>/.beads` is then a pointer, and
   the database, jsonl, socket and lock are in the instance repo, so the
   profile grants the *resolved* `.beads` and that repo's git dirs (the
