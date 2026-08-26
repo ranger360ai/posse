@@ -652,9 +652,17 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 		}
 		if yes {
 			if s := c.selSession(); s != nil {
-				if err := c.hb.KillSession(s.Name); err != nil {
+				landing, err := c.hb.KillSessionAndLand(s.Name)
+				switch {
+				case err != nil:
 					c.status = err.Error()
-				} else {
+				case landing.Line() != "":
+					// The worktree's fate is the half of a kill that can
+					// lose work, so it goes on the status line rather than
+					// into a stream the cockpit does not show
+					// (rangerhq-09o2).
+					c.status = "killed " + s.Name + " — " + landing.Line()
+				default:
 					c.status = "killed " + s.Name
 				}
 				c.refresh()

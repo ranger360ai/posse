@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -113,6 +114,35 @@ func main() {
 			die(err)
 		}
 
+	case "worktrees":
+		// The operability half of "the launcher merges" (rangerhq-09o2): a
+		// kill that could not land its work keeps the tree, and a session
+		// meta that was pruned takes the only posse-side record of it with
+		// it. git still knows, so this asks git.
+		dir, land := "", false
+		rest := args
+		for len(rest) > 0 {
+			switch {
+			case rest[0] == "--dir" && len(rest) > 1:
+				dir, rest = rest[1], rest[2:]
+			case rest[0] == "--land":
+				land, rest = true, rest[1:]
+			default:
+				die(rhq.Die("posse worktrees [--dir <repo>] [--land]"))
+			}
+		}
+		dirs := a.BeadsDirs()
+		if dir != "" {
+			dirs = []string{rhq.ExpandTilde(dir)}
+		}
+		fn := rhq.ListSessionTrees
+		if land {
+			fn = func(w io.Writer, dirs []string) error { return rhq.LandSessionTrees(w, a, dirs) }
+		}
+		if err := fn(out, dirs); err != nil {
+			die(err)
+		}
+
 	case "new":
 		args = need(args, 1, `posse new <name> [--dir <path>] [--env-file <name>]... [--cmd "..."] [--emoji <e>] [--agent <name>]`)
 		o := parseNewFlags(args)
@@ -171,10 +201,18 @@ func main() {
 
 	case "kill":
 		args = need(args, 1, "posse kill <name>")
-		if err := hb.KillSession(args[0]); err != nil {
+		// A kill is also the moment a session's own worktree is retired:
+		// its branch lands on the repo's branch and the tree goes away
+		// (rangerhq-09o2). It refuses to remove a tree that still holds
+		// work, so the line below is where the operator learns that.
+		landing, err := hb.KillSessionAndLand(args[0])
+		if err != nil {
 			die(err)
 		}
 		fmt.Fprintf(out, "killed %s\n", args[0])
+		if line := landing.Line(); line != "" {
+			fmt.Fprintf(out, "  %s\n", line)
+		}
 
 	case "prompt":
 		// The dispatch primitive: submit work to a session's agent.
@@ -1251,7 +1289,14 @@ sessions (herdr workspaces):
                                  persona/dir/envs
       --no-land                skip the landing turn (dead or wedged sessions)
       --timeout <interval>     bound on the landing turn (default 10m)
-  posse kill <name>              close the workspace
+  posse kill <name>              close the workspace, land its worktree's branch on
+                                 the repo's branch and remove the worktree (a tree
+                                 still holding work is kept and says so)
+  posse worktrees [--dir <repo>] [--land]
+                                 session worktrees and what has not landed yet;
+                                 --land merges every branch that will land (it
+                                 never removes a tree — it cannot tell a dead
+                                 session's from a live one's)
   posse crew <name> [--off]      mark a session as yours (👤) so dispatch leaves it
                                  alone, or --off to give it back to the fleet
                                  (ADR 0008; posse new and recipes are crew already,

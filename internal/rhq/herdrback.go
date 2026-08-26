@@ -71,6 +71,13 @@ type NewSessionOpts struct {
 	// dispatch leaves it alone (ADR 0008). `posse new` and recipes set it;
 	// dispatch's own CreateSession never does.
 	Crew bool
+	// Worktree asks for the session's own git worktree, index and HEAD
+	// instead of the shared checkout at Dir (rangerhq-09o2, worktree.go).
+	// Dispatch sets it for every fleet launch; `posse new` and recipes do
+	// not, because a crew session is the operator's own conversation in the
+	// operator's own checkout (ADR 0008). A dir that is not a git repo, or a
+	// repo on a detached HEAD, warns and launches in the shared checkout.
+	Worktree bool
 	// PromptFile is the ADR 0013 §2 argv delivery: the assembled work
 	// prompt, already written to this path, appended to the rendered launch
 	// line as `"$(cat <file>)"` so the CLI takes it as its first user turn.
@@ -95,6 +102,8 @@ type HerdrMeta struct {
 	Runtime     string    // launch profile the persona command was rendered for (ADR 0002)
 	Tier        string    // model tier it was rendered at (ADR 0003)
 	Dir         string    // working directory the session was created in (seatbelt re-render on relaunch)
+	Repo        string    // the main checkout Dir is a session worktree of ("" = Dir IS the checkout)
+	Branch      string    // the session branch the launcher merges back (rangerhq-09o2; "" = no worktree)
 	Cmd         string    // raw --cmd, sessions without a persona only (persona lines are re-rendered, never replayed)
 	Cage        string    // cage tier the session got (ADR 0002 §4)
 	Sockets     string    // container: host sockets the PID declared and the cage mounted ("" = none)
@@ -239,6 +248,8 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Runtime:     YamlGet(p, "runtime"),
 		Tier:        YamlGet(p, "tier"),
 		Dir:         YamlGet(p, "dir"),
+		Repo:        YamlGet(p, "repo"),
+		Branch:      YamlGet(p, "branch"),
 		Cmd:         YamlGet(p, "cmd"),
 		Cage:        YamlGet(p, "cage"),
 		Sockets:     YamlGet(p, "sockets"),
@@ -283,6 +294,17 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	}
 	if m.Dir != "" {
 		fmt.Fprintf(&s, "dir: %s\n", m.Dir)
+	}
+	// The run record's half of per-session worktrees (ADR 0011 §3): where
+	// the work is and where it has to go. A kill or a merge reads these
+	// rather than re-deriving a path from the session name, so a session
+	// created before this landed — no `repo:`, no `branch:` — is correctly
+	// read as one that shares the checkout and has nothing to merge.
+	if m.Repo != "" {
+		fmt.Fprintf(&s, "repo: %s\n", m.Repo)
+	}
+	if m.Branch != "" {
+		fmt.Fprintf(&s, "branch: %s\n", m.Branch)
 	}
 	if m.Cmd != "" {
 		fmt.Fprintf(&s, "cmd: %s\n", m.Cmd)
@@ -974,6 +996,8 @@ func (b *HerdrBackend) nameFree(name string) error {
 // never have succeeded (rangerhq-v52t).
 type launchPlan struct {
 	Dir      string
+	Repo     string // main checkout Dir is a session worktree of ("" = Dir is the checkout)
+	Branch   string // the session branch to merge back ("" = nothing to merge)
 	Cmd      string
 	Emoji    string
 	Envs     []string
@@ -1003,6 +1027,23 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	dir = ExpandTilde(dir)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, Die("directory not found: %s", dir)
+	}
+
+	// The session's own tree, before anything else reads `dir`: the gates,
+	// the hooks, the parity probe, the skills render, the seatbelt profile
+	// and claude's directory trust are all path-scoped, and every one of
+	// them must name the tree the persona will actually work in
+	// (rangerhq-09o2). Doing this first is what makes that true by
+	// construction rather than by nine remembered call sites.
+	repo, branch := "", ""
+	if o.Worktree {
+		t, err := a.EnsureSessionTree(dir, o.Name, b.warnWriter())
+		if err != nil {
+			return nil, err
+		}
+		if t != nil {
+			dir, repo, branch = t.Path, t.Repo, t.Branch
+		}
 	}
 
 	emoji := o.Emoji
@@ -1120,7 +1161,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// is denied — which is exactly what happened to five dispatched codex
 		// sessions before anyone noticed the beads were silent, not the agent
 		// (ranger-base-0fb). Runtimes posse cages itself ignore this.
-		cmd = ag.RenderCommandFor(rt, own, tier, beadsHome(dir))
+		// The writable roots a self-sandboxing runtime is told about: the
+		// store of record when a redirect moves it, and — in a session
+		// worktree — the git dirs that hold this tree's index and the
+		// repo's objects, which sit outside the tree (rangerhq-09o2).
+		cmd = ag.RenderCommandFor(rt, own, tier, append([]string{beadsHome(dir)}, LinkedGitDirs(dir)...)...)
 		// ADR 0013 §2, and the reason it is HERE and not further down: the
 		// prompt is an argument to the RUNTIME, so it goes on the runtime's
 		// line before any wall wraps it. Appended after the seatbelt prefix
@@ -1241,7 +1286,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		sockets = CageSocketTag(ag)
 	}
 	return &launchPlan{
-		Dir: dir, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
+		Dir: dir, Repo: repo, Branch: branch, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
 		Runtime: runtime, Tier: tier, Cage: cage, Sockets: sockets, Degraded: degraded,
 		Fallback: fallback,
 	}, nil
@@ -1265,7 +1310,8 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 	meta := &HerdrMeta{
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
-		Dir: p.Dir, Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Crew: o.Crew,
+		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
+		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Crew: o.Crew,
 		// Which server, and which generation of it, issued this workspace
 		// id — the id alone identifies nothing across a restart or a
 		// handoff (rangerhq-yt1p).
@@ -1477,18 +1523,111 @@ func dedupeStrings(in []string) []string {
 }
 
 func (b *HerdrBackend) KillSession(name string) error {
+	_, err := b.KillSessionAndLand(name)
+	return err
+}
+
+// KillLanding is what a kill did with a session's own git worktree
+// (rangerhq-09o2). Nil Tree means the session shared the checkout — every
+// session before per-session worktrees, and every crew session — and there
+// was nothing of its own to land.
+type KillLanding struct {
+	Tree  *SessionTree
+	Merge MergeOutcome
+	Kept  string // why the worktree was left in place ("" = it was removed)
+}
+
+// KillSessionAndLand ends a session and retires the tree it worked in: kill
+// the workspace, merge the session branch onto the repo's branch, then
+// remove the worktree and the branch.
+//
+// The order is deliberate. The kill goes first, so nothing is still writing
+// into the tree while it is being read; the merge goes before the removal,
+// so the removal has nothing left to destroy; and the removal REFUSES while
+// anything would be lost — uncommitted files, or commits the repo's branch
+// does not have — because a session worktree is the only copy of what is in
+// it. A reap that destroys work is the failure this whole feature exists to
+// prevent, so a kill that cannot land its work keeps the tree and says so.
+//
+// It never forces. An operator who really wants a tree with unmerged work
+// gone can say so to git, which is a decision a human should have to make
+// in their own words.
+func (b *HerdrBackend) KillSessionAndLand(name string) (*KillLanding, error) {
+	// Before anything: the meta is the only record of which tree and branch
+	// belong to this session, and the kill below deletes it (ADR 0011 §3).
+	m, hadMeta := b.readMeta(name)
+
 	s, err := b.Resolve(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := b.H.CloseWorkspace(s.WorkspaceID); err != nil {
-		return err
+		return nil, err
 	}
 	if !s.Foreign {
 		os.Remove(b.metaPath(name))
 		b.App.DropPaneLine(name)
 	}
-	return nil
+	if !hadMeta || s.Foreign {
+		return &KillLanding{}, nil
+	}
+	t := SessionTreeOf(m)
+	if t == nil {
+		return &KillLanding{}, nil
+	}
+	l := &KillLanding{Tree: t}
+	// Moving the repo's branch is a launcher act (ADR 0011 §1) — the same
+	// check-then-act against a store a dispatch pass is also writing. The
+	// lock is taken around the landing ONLY, never around the kill: a kill
+	// must stay instant, and nothing about closing a workspace is shared.
+	//
+	// And it is taken WITHOUT waiting. The cockpit's `k` runs this on the
+	// TUI's single select loop, where blocking behind a firing pass would
+	// freeze the cockpit for as long as the pass holds the lock. Losing the
+	// race costs nothing but time: the tree and its branch are kept, the
+	// line says so, and `posse worktrees --land` lands it afterwards. What
+	// it must never do is merge unserialized.
+	lock, ok := tryLockLaunches(b.App)
+	if !ok {
+		l.Kept = "a launcher is running — not landed; `posse worktrees --land` finishes it"
+		return l, nil
+	}
+	defer lock.Release()
+	o, err := MergeSessionWork(t)
+	l.Merge = o
+	if err != nil {
+		l.Kept = err.Error()
+		return l, nil
+	}
+	if !o.Merged {
+		l.Kept = o.Reason
+		return l, nil
+	}
+	if err := RemoveSessionTree(t, false); err != nil {
+		l.Kept = err.Error()
+	}
+	return l, nil
+}
+
+// Line is the one sentence a kill's landing is worth saying out loud. ""
+// when the session had no tree of its own and there is nothing to report.
+func (l *KillLanding) Line() string {
+	if l == nil || l.Tree == nil {
+		return ""
+	}
+	t := l.Tree
+	switch {
+	case l.Kept != "":
+		return fmt.Sprintf("%s KEPT: %s", AbbrevHome(t.Path), l.Kept)
+	case l.Merge.Commits == 0:
+		return fmt.Sprintf("%s had no commits — worktree and %s removed", AbbrevHome(t.Path), t.Branch)
+	default:
+		how := "fast-forwarded"
+		if l.Merge.Rebased {
+			how = "rebased and fast-forwarded"
+		}
+		return fmt.Sprintf("%d commit(s) %s onto %s; worktree and %s removed", l.Merge.Commits, how, t.Base, t.Branch)
+	}
 }
 
 // FocusSession is the herdr twin of attach: re-aim the herdr UI at the

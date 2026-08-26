@@ -90,6 +90,29 @@ func lockLaunches(a *App, out io.Writer) (*LaunchLock, error) {
 	return &LaunchLock{f: f}, nil
 }
 
+// tryLockLaunches takes the launcher lock only if it is free right now. It
+// exists for the one caller that must never wait: `posse kill` lands a
+// session's worktree branch, and the cockpit's `k` runs that on the TUI's
+// single select loop, where a minutes-long wait behind a firing pass is a
+// frozen cockpit (rangerhq-09o2). The caller's fallback must be to do
+// nothing and say so — never to act unserialized.
+func tryLockLaunches(a *App) (*LaunchLock, bool) {
+	path := LaunchLockPath(a)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, false
+	}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, false
+	}
+	if err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, false
+	}
+	stampLockHolder(f)
+	return &LaunchLock{f: f}, true
+}
+
 // flock is syscall.Flock with the EINTR retry a blocking LOCK_EX needs in a
 // Go process: the runtime's own preemption signal lands on it, and a lock
 // wait abandoned by SIGURG would be a launcher that skipped the queue.

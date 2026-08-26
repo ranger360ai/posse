@@ -818,6 +818,20 @@ posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 for posse_f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
   if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
 done
+# A LINKED WORKTREE HAS NO SHARED INDEX (rangerhq-09o2, measured by laurie on
+# this hook). git keeps a per-worktree index in the per-worktree git dir, so
+# in a session worktree there is nothing for an unqualified commit to sweep —
+# the wall would refuse a form that is safe, under a message ("shared by every
+# persona") that is no longer true of that tree. The discriminator is git's
+# own: --git-dir is the per-worktree dir and --git-common-dir the shared one,
+# and they differ only in a linked worktree. Resolved with pwd -P because one
+# is relative in the main repo and both are absolute in a worktree.
+posse_common=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+posse_gd=$(CDPATH= cd -P -- "$posse_gitdir" 2>/dev/null && pwd -P)
+posse_cd=$(CDPATH= cd -P -- "$posse_common" 2>/dev/null && pwd -P)
+if [ -n "$posse_gd" ] && [ -n "$posse_cd" ] && [ "$posse_gd" != "$posse_cd" ]; then
+  exit 0
+fi
 # Only a genuine path-limited commit gets a next-index-<pid> temporary index;
 # 'git commit -a' gets .git/index.lock, which is a temporary index too.
 # The NAME does not settle it: GIT_INDEX_FILE is the caller's to spell, and
@@ -1054,7 +1068,19 @@ func probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	}
 	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe",
 		prePush, filepath.Join(hooks, "prepare-commit-msg"), msg.Name())
+	// The probe runs in the MAIN checkout, not in dir, since per-session
+	// worktrees (rangerhq-09o2). The shared-index arm deliberately stands
+	// down in a linked worktree — that tree's index is private and there is
+	// nothing to sweep — so probing there would read a wall that is right to
+	// be quiet as a wall that is not there, and degrade every launch into the
+	// repo. The question the probe asks is whether the wall is installed and
+	// refuses, and the checkout where it applies is where to ask it. A
+	// persona that walks into the shared checkout meets the armed hook, which
+	// is exactly what this proves.
 	cmd.Dir = dir
+	if repo, ok := MainCheckout(dir); ok {
+		cmd.Dir = repo
+	}
 	err = cmd.Run()
 	code := 0
 	if err != nil {

@@ -156,7 +156,33 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		// Nor is it a change of hands: a session the operator was talking
 		// to is still theirs on the other side of the refresh (ADR 0008).
 		Crew: m.Crew,
+		// A session that had its own tree keeps it. Dir already IS the
+		// worktree, so EnsureSessionTree resolves the same main checkout
+		// through it and finds the tree standing; the flag is what keeps the
+		// meta's `repo:`/`branch:` on the recreated session rather than
+		// silently demoting it to a shared-checkout session (rangerhq-09o2).
+		// A tree the operator removed by hand is not self-healed here — the
+		// launch's own "directory not found" is the honest answer, and
+		// re-cutting a branch from today's main would not restore what was
+		// in it anyway.
+		Worktree: m.Branch != "",
 	}
+}
+
+// SessionTreeOf reads a session's worktree out of the run record it was
+// written into (ADR 0011 §3). nil means the session shares the checkout —
+// including every session created before per-session worktrees landed,
+// whose meta has no `branch:` and so has nothing to merge or prune.
+func SessionTreeOf(m *HerdrMeta) *SessionTree {
+	if m == nil || m.Branch == "" || m.Repo == "" || m.Dir == "" {
+		return nil
+	}
+	// Base is read now rather than recorded, because it is the branch the
+	// work has to land on TODAY: an operator who renamed or switched the
+	// repo's branch has moved the target, and a recorded one would merge
+	// onto a branch nobody is on. An empty answer (detached HEAD) is not
+	// hidden here — MergeSessionWork says so in words.
+	return &SessionTree{Repo: m.Repo, Path: m.Dir, Branch: m.Branch, Base: repoBranch(m.Repo)}
 }
 
 // recreateSession is the create half, minus the planning the caller already

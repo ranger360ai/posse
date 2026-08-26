@@ -30,6 +30,25 @@ default_emoji: ⚙️
 # default_engine: docker    # container engine for cage: container (built-in docker; or cages/<name>.yaml)
 # cage_image: posse-cage:latest  # the image `posse cage build` writes and a caged launch runs
 
+# ─── session worktrees (rangerhq-09o2) ───────────────────────────────────────
+# Every DISPATCHED session gets its own git worktree, index and HEAD of the
+# bead's repo, on a branch `posse/<session>`; the launcher fast-forwards that
+# branch onto the repo's own branch when the bead closes and `posse kill`
+# retires the tree. Crew sessions (`posse new`, recipes) keep the operator's
+# checkout. Nothing to arm — this is on.
+#
+# Where the trees go. Must be under $HOME: bd does NOT refuse a .beads
+# outside it (measured, rangerhq-80fx), so this is our rule to hold, and a
+# session worktree under a reaped scratch dir is work destroyed.
+# worktrees: ~/.posse/worktrees
+#
+# Gitignored paths a fresh worktree does not inherit and a session needs,
+# symlinked from the main checkout. Declared, not guessed — linking every
+# gitignored path would link build output two sessions then race over.
+# worktree_link:
+#   - plugin/bin
+#   - .claude/settings.local.json
+
 # ─── who ─────────────────────────────────────────────────────────────────────
 # The human. Assignee for the ASK question beads a persona files when only
 # you can answer (ADR 0005); unset files them unassigned.

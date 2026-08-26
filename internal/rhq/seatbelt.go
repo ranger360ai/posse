@@ -86,6 +86,14 @@ func SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 		} else {
 			add(cwd)
 		}
+		// A session worktree's `.git` is a FILE, and its index, HEAD, objects
+		// and refs live outside the tree entirely (rangerhq-09o2). Granting
+		// cwd alone leaves a persona that cannot commit in its own tree —
+		// the same shape as the redirect grant below, for the session's own
+		// repo instead of the store of record. Empty in the main checkout.
+		for _, g := range LinkedGitDirs(cwd) {
+			add(g)
+		}
 		// The store of record is not under cwd when a redirect moves it
 		// (ADR 0012 D3-C): cwd/.beads holds a path and the database, its
 		// jsonl, socket and lock live in the instance repo it names. The

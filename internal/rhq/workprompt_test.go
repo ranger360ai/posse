@@ -91,7 +91,7 @@ func TestPromptContext(t *testing.T) {
 	}
 
 	is := RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "t", Description: "implements docs/adr/0002-runtimes-and-gates.md §3", Labels: []string{"code"}}, Dir: repo}
-	ctx := b.App.promptContext(bd, is, "codex", "fast", ag)
+	ctx := b.App.promptContext(bd, is, "codex", "fast", "", ag)
 	if ctx.Runtime != "codex" || ctx.Tier != "fast" || ctx.Operator != "opuser" || ctx.Hook != "Build to the design." || !ctx.HasComments {
 		t.Errorf("basics: %+v", ctx)
 	}
@@ -109,14 +109,14 @@ func TestPromptContext(t *testing.T) {
 	}
 	// Config orientation: overrides the list; missing files drop out.
 	os.WriteFile(b.App.ConfigPath, []byte("orientation:\n  - NOTES.md\n  - README.md\n"), 0o644)
-	ctx = b.App.promptContext(bd, is, "claude", "strong", nil)
+	ctx = b.App.promptContext(bd, is, "claude", "strong", "", nil)
 	if strings.Join(ctx.Orientation, ",") != "NOTES.md" || ctx.Operator != "" || ctx.Hook != "" {
 		t.Errorf("config orientation/operator: %+v", ctx)
 	}
 	// No comments, no deps files → lines absent, never an error.
 	os.Remove(filepath.Join(repo, "fake-comments.json"))
 	os.Remove(filepath.Join(repo, "fake-deps.json"))
-	ctx = b.App.promptContext(bd, is, "claude", "strong", nil)
+	ctx = b.App.promptContext(bd, is, "claude", "strong", "", nil)
 	if ctx.HasComments || len(ctx.From)+len(ctx.Unblockers) != 0 || len(ctx.Designs) != 1 {
 		t.Errorf("degraded bd: %+v", ctx)
 	}

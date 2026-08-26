@@ -630,6 +630,12 @@ type PromptContext struct {
 	HasComments bool
 	Operator    string // config operator: — assignee for ASK beads ("" = unassigned)
 	Hook        string // the PID's ## Work prompt, verbatim
+	// Tree is the session's own worktree when it has one (rangerhq-09o2).
+	// The persona has to be told, or it reads a branch it did not choose and
+	// a checkout that is not the path in `repo:` as something gone wrong —
+	// and AGENTS.md's landing instructions are written for the operator's
+	// checkout. nil = the shared checkout, and nothing is said.
+	Tree *SessionTree
 }
 
 // BdRef is a bead named in the prompt: id + title (fenced when rendered).
@@ -645,8 +651,17 @@ var adrPathRe = regexp.MustCompile(`docs/adr/[A-Za-z0-9._-]+\.md`)
 // comment count), the repo (orientation files), and the launch (runtime,
 // tier). Every bd call is best effort: a missing piece is an absent line,
 // never a failed launch.
-func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier string, ag *AgentFile) PromptContext {
+func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, ag *AgentFile) PromptContext {
 	ctx := PromptContext{Dir: is.Dir, Runtime: runtime, Tier: tier, Labels: is.Labels, Operator: a.CfgGet("operator", "")}
+	// The same predicate the launch runs, asked without side effects, so the
+	// prompt cannot promise a tree the launch then declines to make
+	// (worktree.go). A config error here is not the prompt's to raise — the
+	// launch raises it a moment later, where it can refuse.
+	if session != "" {
+		if t, err := a.PlanSessionTree(is.Dir, session); err == nil {
+			ctx.Tree = t
+		}
+	}
 	if ag != nil {
 		ctx.Hook = ag.WorkPrompt
 	}
@@ -735,6 +750,14 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 	}
 	if head != "" {
 		lines = append(lines, head)
+	}
+	if t := ctx.Tree; t != nil {
+		lines = append(lines,
+			"your own worktree: "+AbbrevHome(t.Path)+"  ·  branch "+t.Branch+"\n"+
+				"  Nobody else has this tree, this index or this HEAD — commit normally, and\n"+
+				"  commit everything you want kept: posse fast-forwards "+t.Branch+" onto\n"+
+				"  "+t.Base+" in "+AbbrevHome(t.Repo)+" when the bead closes, and only commits move.\n"+
+				"  Still never push, and never merge to "+t.Base+" yourself — that is the launcher's.")
 	}
 	if len(ctx.From) > 0 {
 		lines = append(lines, "from: "+fenceRefs(ctx.From)+" (discovered-from / design bead)")
@@ -1160,7 +1183,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	// (ADR 0013 §6). If that ever changes, this is the seam where an argv
 	// prompt would start naming a tier the launch did not get.
 	prompt := func() string {
-		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, ag))
+		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag))
 	}
 	l, err := d.launchSession(is, persona, session, runtime, tier, prompt)
 	if err != nil {
@@ -1302,6 +1325,7 @@ wait:
 	switch {
 	case showErr == nil && after.Status == "closed":
 		fmt.Fprintf(d.Out, "✓ %-14s closed by %s\n", p.is.ID, p.persona)
+		d.mergeBack(p.is, p.persona, p.session)
 	case settled == "blocked":
 		fmt.Fprintf(d.Out, "⛔ %-14s blocked in %s — intervene (posse attach %s)\n", p.is.ID, p.session, p.session)
 	default:
@@ -1497,9 +1521,11 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	}
 	if resolveErr != nil {
 		fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
-		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier, AllowDegraded: d.AllowDegraded, Cage: d.Cage}); err != nil {
+		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
+			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true}); err != nil {
 			return launched{}, err
 		}
+		d.noteTree(is.ID, session)
 	} else if s.Status == "" {
 		// The session is alive but herdr sees no agent in it: the persona's
 		// CLI exited (crash, /exit, closed by hand) and left a bare shell.
@@ -1576,9 +1602,10 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	}
 	fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file}); err != nil {
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true}); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
+	d.noteTree(is.ID, session)
 	target, seen, err := d.awaitDelivered(is.ID, session)
 	if err != nil {
 		// No agent ever appeared: the CLI did not start, so nothing read
@@ -1761,7 +1788,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// the resume case, which stays a typed prompt.
 	launchRuntime := d.sessionRuntime(ag)
 	prompt := func() string {
-		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, ag))
+		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, session, ag))
 	}
 	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt)
 	if err != nil {
@@ -2087,4 +2114,122 @@ func agentStatusFromResult(raw []byte) string {
 		return payload.Agent.AgentStatus
 	}
 	return payload.Status
+}
+
+// ─── per-session worktrees: telling, and landing (rangerhq-09o2) ─────────────
+
+// noteTree says where a launch just put the session, because "created
+// session X in ~/src/posse" stopped being the whole truth when the session
+// got its own tree: the persona is in a worktree of that repo, on a branch,
+// and the operator reading the pass output has to be able to find it.
+// Silent when the launch fell back to the shared checkout — that case
+// already printed its own warning from the launch.
+func (d *Dispatcher) noteTree(id, session string) {
+	m, ok := d.HB.readMeta(session)
+	if !ok {
+		return
+	}
+	t := SessionTreeOf(m)
+	if t == nil {
+		return
+	}
+	fmt.Fprintf(d.Out, "· %-14s own tree %s on %s (merges to %s at close)\n",
+		id, AbbrevHome(t.Path), t.Branch, t.Base)
+}
+
+// mergeBack is option A (rangerhq-jbyr, the operator's ruling): the launcher
+// merges. A persona commits on its session branch, in its own tree, and
+// never pushes; when the bead is observed closed the launcher fast-forwards
+// that branch onto the repo's own branch, so "closed means it is on main"
+// stays true for the verify pass that reads it (ADR 0006 §3).
+//
+// It takes the launcher lock, and it can, because gather deliberately runs
+// outside it (ADR 0011 §1): moving the repo's branch is a check-then-act
+// against a store two launchers share, so it is serialized like every other
+// one. Best effort throughout — a merge that cannot happen must never turn a
+// bead the persona really closed into a failed dispatch. What it must never
+// do is go quiet: every outcome other than "merged" says so on the pass, and
+// an obstacle that needs a human files a bead.
+//
+// The worktree itself is NOT removed here. The session is still alive in it
+// (the operator can attach and read the turn), and the tree holds anything
+// the persona did not commit. Retiring it is `posse kill`'s, which refuses
+// while either would be lost.
+//
+// It runs where the pass JUDGES a close, which is not every close: a bead
+// whose wait ran out keeps its claim and is not judged this pass, and if the
+// persona closes it afterwards nothing here sees it. That branch is not
+// lost, only unlanded — `posse worktrees` lists it and `--land` finishes it
+// — and the honest fix is a run record that names the bead a tree belongs to
+// (ADR 0011 §3's `bead:`), which is not yet written.
+func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
+	m, ok := d.HB.readMeta(session)
+	if !ok {
+		return
+	}
+	t := SessionTreeOf(m)
+	if t == nil {
+		return // a session that shares the checkout: its commits are already there
+	}
+	lock, err := lockLaunches(d.App, d.Out)
+	if err != nil {
+		fmt.Fprintf(d.errw(), "posse: %s not merged — the launcher lock is unavailable (%v)\n", t.Branch, err)
+		return
+	}
+	defer lock.Release()
+
+	o, err := MergeSessionWork(t)
+	if err != nil {
+		fmt.Fprintf(d.Out, "⚠ %-14s %s not merged onto %s: %v — the branch still holds the work\n", is.ID, t.Branch, t.Base, err)
+		return
+	}
+	if len(o.Dirty) > 0 {
+		// Uncommitted work is not a merge failure and is not lost — it is
+		// sitting in the tree. Said out loud because the persona reported
+		// the bead done and this is the part of "done" that did not land.
+		fmt.Fprintf(d.Out, "◑ %-14s %d uncommitted path(s) left in %s (%s) — not merged, still in the tree\n",
+			is.ID, len(o.Dirty), AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
+	}
+	switch {
+	case o.Merged && o.Commits == 0:
+		fmt.Fprintf(d.Out, "◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
+	case o.Merged:
+		how := "fast-forwarded"
+		if o.Rebased {
+			how = "rebased and fast-forwarded"
+		}
+		fmt.Fprintf(d.Out, "⤴ %-14s %d commit(s) %s from %s onto %s in %s\n",
+			is.ID, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
+	default:
+		fmt.Fprintf(d.Out, "⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, t.Base, o.Reason)
+		d.fileMergeBlocked(is, persona, t, o)
+	}
+}
+
+// fileMergeBlocked hands a stuck merge to the persona whose branch it is.
+// ADR 0006 §1: a handoff is a bead, never a comment on someone else's and
+// never a chat — and a merge nobody is told about is how a closed bead's
+// code sits on a branch forever.
+func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTree, o MergeOutcome) {
+	id, err := d.Bd.Create(is.Dir, BdNew{
+		Title:    fmt.Sprintf("merge-back blocked: %s does not land on %s", t.Branch, t.Base),
+		Assignee: persona,
+		Labels:   []string{"code"},
+		Deps:     []string{"discovered-from:" + is.ID},
+		Priority: "1",
+		Actor:    "posse",
+		Description: fmt.Sprintf(
+			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\nworktree: %s\nrepo:     %s\n\n"+
+				"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
+				"Resolve it in the worktree (rebase onto %s and fix the conflicts), then a\n"+
+				"launcher pass or `posse kill` lands it. The branch is untouched and still\n"+
+				"holds every commit.",
+			persona, is.ID, o.Commits, t.Branch, t.Base, o.Reason,
+			t.Path, t.Repo, t.Base, t.Base, t.Base),
+	})
+	if err != nil {
+		fmt.Fprintf(d.errw(), "posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
+		return
+	}
+	fmt.Fprintf(d.Out, "  ↳ filed %s for %s\n", id, persona)
 }

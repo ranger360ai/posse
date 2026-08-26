@@ -3393,29 +3393,96 @@ every chained install (verified). Residual, stated plainly:
 deliberately placed inside the repo's own git dir, which is a decision rather
 than a temp file that happened to be spelled right.
 
-**Isolation: worktrees are viable, and the assumed blocker is not real.**
-The decision (rangerhq-nyqj) is per-session `git worktree` — one tree, one
-index, one HEAD each — because it is the only candidate that also removes
-`git checkout <path>` discarding another persona's edits, `git stash` taking
-someone else's WIP, half-written files landing under a green message, and
-two personas racing writes to one file. A commit lock fixes only the sweep.
-What was measured before deciding:
+**Isolation: per-session worktrees, LANDED (rangerhq-09o2).** The decision
+(rangerhq-nyqj) was per-session `git worktree` — one tree, one index, one HEAD
+each — because it is the only candidate that also removes `git checkout <path>`
+discarding another persona's edits, `git stash` taking someone else's WIP,
+half-written files landing under a green message, and two personas racing
+writes to one file. A commit lock fixes only the sweep. It is now built
+(`internal/rhq/worktree.go`), and the merge-back is the operator's option A
+(rangerhq-jbyr): **the launcher merges**.
+
+What a dispatched session gets:
+
+| | |
+|---|---|
+| main checkout | `~/src/<repo>` — the operator's, on `main`, unchanged |
+| session worktree | `<worktrees root>/<repo>/<session>` — its own tree, index, HEAD |
+| session branch | `posse/<session>`, cut from the repo's own branch |
+| merge-back | the launcher fast-forwards it onto that branch when the bead closes, under the ADR 0011 §1 launcher lock |
+| retirement | `posse kill` lands the branch then removes tree and branch — and REFUSES while either holds work |
+
+The kill takes the launcher lock **without waiting**: the cockpit's `k` runs
+it on the TUI's single select loop, and blocking there behind a firing pass
+freezes the cockpit. Losing that race costs only time — the workspace is
+closed, the tree and branch are kept, and the line says
+`posse worktrees --land` finishes it. `--land` merges every landable branch
+under one blocking lock and **never removes a tree**: it reads git, so it
+cannot tell a dead session's tree from one a persona is working in this
+second, and removing the second is the exact damage this feature exists to
+prevent.
+
+Crew sessions (`posse new`, recipes) keep the operator's checkout: a session
+the operator opened to talk to is theirs (ADR 0008). A dir that is not a git
+repo, or a repo on a detached HEAD, warns and falls back to the shared
+checkout — a launch must not die because somebody is bisecting.
+
+Config: `worktrees:` (default `~/.posse/worktrees`, and it **must** be under
+`$HOME`) and `worktree_link:`, a declared list of repo-relative gitignored
+paths symlinked from the main checkout into each fresh tree (`plugin/bin`,
+a local settings file). Declared rather than guessed — linking every
+gitignored path links build output two sessions then race over. `posse
+worktrees` lists every session tree and what has not landed; it reads **git**,
+not the meta dir, so a tree orphaned by a kill that could not land is still
+findable.
+
+What was measured, before and during the build:
 
 - `bd worktree create <name>` is a first-class subcommand: it makes the
   worktree, writes `.beads/redirect`, and gitignores the path, so **all
-  worktrees share one beads database**. The graph does not fork.
-- Confirmed by hand against the live repo: a detached worktree with a correct
-  `redirect` reads the live graph (a bead's real IN_PROGRESS status), not a
-  snapshot. `redirect` holds a path **relative to the worktree root**, not to
-  `.beads/` — one `..` off and bd warns and silently falls back.
+  worktrees share one beads database**. The graph does not fork. posse writes
+  the redirect itself rather than shelling out to it — deterministic, no
+  mutation of the repo's `.gitignore`, and testable without bd.
+- **Without a redirect the graph DOES fork, silently.** Measured on bd 0.49.1:
+  a linked worktree with no redirect makes bd read the checked-out
+  `issues.jsonl`, report "fresh clone detected", and build a second database
+  beside it. That is the failure the seeding exists to prevent.
+- **The redirect posse writes is ABSOLUTE.** bd's relative form resolves
+  against the worktree ROOT, not against `.beads/` — one `..` off and bd warns
+  once and silently falls back to a stale path. An absolute path has no such
+  arithmetic to get wrong, and it resolves the main checkout's OWN redirect
+  first so a chain is never built (this repo's `.beads` is itself a redirect
+  to ranger-base's database).
+- **The staleness trap does not fire through a correct redirect.** A worktree
+  checkout does materialize a tracked `.beads/issues.jsonl` with a fresh
+  mtime, but bd compares the mtime of the jsonl beside the database it
+  RESOLVED to. Measured: touching the worktree's copy forward changes nothing
+  (an hour into the future changes nothing); touching the MAIN repo's copy
+  forward is what raises "Database out of sync with JSONL. Run 'bd sync
+  --import-only'". So the worktree's copy is inert and is deliberately left
+  alone — deleting or back-dating it would dirty a tree the persona is about
+  to commit from. No `--allow-stale`, and no `bd sync --import-only` left
+  sitting as a persona's obvious next step. **Stated precisely, because the
+  warning has not been abolished**: a genuinely stale main jsonl — after a
+  `git pull`, or after bd's own pre-commit hook rewrote it — still raises it,
+  in the worktree and in the main checkout alike, because it is one database
+  and the fact is true of both. What worktrees do not add is a *new* source
+  of it. The live pin (`RHQ_LIVE_BD=1 go test ./internal/rhq -run
+  TestLiveWorktreeSharesOneGraph`) asserts exactly that discrimination.
+- `redirect` is in bd's own bundled `.beads/.gitignore`, so seeding one leaves
+  the worktree clean in any bd-initialised repo.
 - bd's bundled `pre-commit` and `post-merge` hooks are already worktree-aware
   (they resolve `.beads` via `--git-common-dir`).
-- **The trap.** A worktree checkout materializes the *tracked*
-  `.beads/issues.jsonl` with a fresh mtime, so bd's staleness check fires and
-  tells you to run `bd sync --import-only` — which would import that stale
-  snapshot over the live database. That is a bead-loss event of exactly the
-  class rangerhq-fuom censused. Whoever builds this must handle the tracked
-  JSONL in a redirected worktree; `--allow-stale` reads correctly meanwhile.
+- **`git merge --ff-only` in the main checkout survives an unrelated dirty
+  tree** and refuses rather than clobbering when the changes collide, so the
+  operator having work in flight is not a reason to skip the merge and never
+  a reason it loses anything. When the base has moved the launcher rebases in
+  the SESSION's tree — the operator's checkout is untouched by the risky half
+  — and a conflict is `rebase --abort`ed, leaving branch, tree and repo
+  exactly as they were, and files a bead (ADR 0006 §1) at the persona.
+- `git commit -- <path>` on a path git has never seen fails with "pathspec did
+  not match any file(s) known to git", so the blessed commit form needs an
+  `add` in front of it for a NEW file. Not new behaviour; newly written down.
 - **Put session worktrees under `$HOME` — and do not expect bd to enforce it.**
   An earlier version of this note claimed bd refuses a `.beads` under `/tmp`
   ("BEADS_DIR points to unsafe location"). That is **false** on bd 0.49.1
@@ -3433,14 +3500,30 @@ What was measured before deciding:
   `os.TempDir()`. So `$HOME` is **our** constraint to keep, not a net bd holds
   under us; a session scratchpad is reaped, and a reaped worktree under a live
   session is exactly the failure that imagined net was assumed to prevent.
+  `WorktreeRoot()` refuses a configured root outside `$HOME`.
 - The `pre-commit` slot is **already taken by bd's hook**, and the posse gate
   precedent is "foreign hooks are never overwritten" (pre-push, ADR 0002 §3).
   A posse commit gate has to chain or use `core.hooksPath`, not claim the slot.
 
-**The wall, landed (rangerhq-lmq9).** Until worktrees land the commit form
-*is* the rule — in a shared tree, `git commit … -- <your paths>`, never
-`git add`+`git commit` and never `git commit -a` — and it is now enforced in
-two layers rather than asked for.
+**The shared-index wall now asks whether an index is actually shared.** laurie
+measured (on rangerhq-09o2) that the `prepare-commit-msg` guard installs into
+the COMMON git dir, so every linked worktree inherits it and is refused there
+too — under a message saying the index is "shared by every persona", which is
+exactly what a session worktree's index is not. The arm now exits 0 when
+`git rev-parse --git-dir` and `--git-common-dir` differ (resolved with
+`pwd -P`; they differ only in a linked worktree). Two consequences worth
+knowing: in your own session tree the ordinary `git add` + `git commit` is
+fine, and in the shared checkout nothing changed. The **L3 parity probe** moved
+with it — it now runs in the MAIN checkout, because probing inside a worktree
+would read a wall that is right to be quiet as a wall that is not there and
+degrade every launch into the repo.
+
+**The wall, landed (rangerhq-lmq9).** In a SHARED tree the commit form *is*
+the rule — `git commit … -- <your paths>`, never `git add`+`git commit` and
+never `git commit -a` — and it is enforced in two layers rather than asked
+for. Since rangerhq-09o2 that is what it says: the wall stands in the
+operator's checkout and stands down in a session worktree, where there is no
+shared index to sweep.
 
 *L1, the typed line.* The shim's rule grammar gained a **negative match**:
 `Bash(git commit unless --)` refuses `git commit` UNLESS argv carries `--`
@@ -3481,7 +3564,9 @@ one of them; it takes a pathspec and sweeps without one, so it is refused.
 
 Two holes worth naming. A pathspec of `.` satisfies both layers and still
 sweeps the tree — the refusal message says "name your own paths, not `.`",
-which is manners again, and only worktrees close it. And a PID must carry
+which is manners again, and only worktrees close it; per-session worktrees
+(rangerhq-09o2) close it for every DISPATCHED session, and it stays open in
+the shared checkout. And a PID must carry
 `Bash(git commit unless --)` for the L1 half to render; the crew's PIDs live
 in `RHQ_HOME/agents/`, outside every persona's working dirs, so as of
 2026-08-22 the L3 hook is the layer actually standing.
