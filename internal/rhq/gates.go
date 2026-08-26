@@ -645,7 +645,19 @@ func hooksDir(dir string) (string, error) {
 // body in one place also lets installHook recognize that exact arrangement:
 // the dispatcher and the other tool's hook stay foreign, while the
 // marker-owned posse hook behind them can still be refreshed on every launch.
+// `theirs-<slot>` is the generic name the printed prescription uses; the
+// operator names the file after the tool that owns it, so recognition goes
+// through chainHookDispatcherWith.
 func chainHookDispatcher(slot string) string {
+	return chainHookDispatcherWith(slot, "theirs-"+slot)
+}
+
+// chainHookDispatcherWith renders that dispatcher handing off to a named
+// sibling hook. The name is a parameter because the prescription is a shape,
+// not one filename: INSTALL.md §9 walks the arrangement with bd's hooks moved
+// to `bd-<slot>`, and an operator who followed those words to the letter has
+// the prescribed chain (ranger-base-r5ba).
+func chainHookDispatcherWith(slot, neighbor string) string {
 	stdin := ""
 	if slot == "pre-push" {
 		// git feeds pre-push the ref list on stdin. Ours does not read it;
@@ -655,8 +667,29 @@ func chainHookDispatcher(slot string) string {
 	return fmt.Sprintf(`#!/bin/sh
 d=$(dirname "$0")
 "$d/posse-%[1]s" "$@"%[2]s || exit $?
-exec "$d/theirs-%[1]s" "$@"
-`, slot, stdin)
+exec "$d/%[3]s" "$@"
+`, slot, stdin, neighbor)
+}
+
+// isChainHookDispatcher reports whether body is the prescribed dispatcher for
+// slot, whatever the neighboring hook is called. Everything but that one
+// filename must match byte for byte — the point of the check is that the file
+// demonstrably runs `posse-<slot>` first and honors its exit status, which is
+// what makes refreshing that sibling honest rather than a claim about a hook
+// nothing calls. The name itself must be a plain sibling filename: no path
+// separator, no whitespace, nothing the shell would read as anything but a
+// file in the same hooks dir.
+func isChainHookDispatcher(body, slot string) bool {
+	// A byte no filename may hold marks where the name goes.
+	head, tail, ok := strings.Cut(chainHookDispatcherWith(slot, "\x00"), "\x00")
+	if !ok || len(body) <= len(head)+len(tail) {
+		return false
+	}
+	if !strings.HasPrefix(body, head) || !strings.HasSuffix(body, tail) {
+		return false
+	}
+	name := body[len(head) : len(body)-len(tail)]
+	return !strings.ContainsAny(name, "/\\\"'`$ \t\n") && name != "." && name != ".."
 }
 
 // chainDispatcher renders the only chaining form that holds when the slot
@@ -714,7 +747,7 @@ func installHook(dir, slot, marker, legacy, script string) (string, error) {
 		// an older gate just because it lives behind the dispatcher. Refresh
 		// only a marker-owned member of the exact dispatcher we prescribe.
 		chained := filepath.Join(hooks, "posse-"+slot)
-		if string(b) == chainHookDispatcher(slot) {
+		if isChainHookDispatcher(string(b), slot) {
 			if owned, readErr := os.ReadFile(chained); readErr == nil && ownsHook(string(owned), marker, legacy) {
 				if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
 					return "", err
