@@ -3,6 +3,8 @@ package posse
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -256,30 +258,254 @@ func TestLandingPageBrewPanelLinkRejectsAMissingOrUnanchoredHref(t *testing.T) {
 	})
 }
 
-// ranger-base-88m: make install writes ~/.local/bin/posse, which is on no
-// default PATH. The go-install route (ranger-base-253) now has the export;
-// the README-leading make install route does not.
+// ranger-base-88m: `make install` writes $(BINDIR)/posse — ~/.local/bin by
+// default, which is on no default macOS or Linux PATH, and which the install
+// itself may have just created (Debian's skel .profile prepends it only when it
+// already existed at login). The install exits 0 and the very next command the
+// README advertises is `posse: command not found`. Same defect as
+// ranger-base-253 on the go-install route, different destination: an install
+// that succeeds without making the binary reachable.
+//
+// Two halves, pinned separately below: every surface that advertises `make
+// install` carries the export before the first use of the installed binary, and
+// the install target itself says so when the shell cannot find what it wrote.
 func TestMakeInstallQuickstartsAddLocalBinToPathBeforeInit(t *testing.T) {
-	t.Skip("ranger-base-88m: make install lands in ~/.local/bin, not on a default PATH")
+	for _, path := range []string{"README.md", "INSTALL.md"} {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := makeInstallExportsLocalBin(string(contents)); err != nil {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+}
 
-	contents, err := os.ReadFile("README.md")
+// The pin is only as strong as what it rejects. Case one is the shape that
+// shipped and produced the bead.
+func TestMakeInstallPathPinRejectsTheHistoricalGaps(t *testing.T) {
+	const export = `export PATH="$HOME/.local/bin:$PATH"`
+	cases := []struct {
+		name string
+		text string
+		want bool // want an error
+	}{
+		{
+			name: "the shape that shipped (ranger-base-88m)",
+			text: "make build\nmake install\nposse init\n",
+			want: true,
+		},
+		{
+			name: "export after first use",
+			text: "make install\nposse init\n" + export + "\n",
+			want: true,
+		},
+		{
+			name: "export of the wrong directory",
+			text: "make install\nexport PATH=\"$(go env GOPATH)/bin:$PATH\"\nposse init\n",
+			want: true,
+		},
+		{
+			name: "prose about PATH is not an export",
+			text: "make install\nit lands in ~/.local/bin, put that on your PATH\nposse init\n",
+			want: true,
+		},
+		{
+			name: "canonical",
+			text: "make install\n" + export + "\nposse init\n",
+		},
+		{
+			name: "INSTALL.md's $-prefixed form",
+			text: "$ make install\n$ " + export + "\n$ posse version\n",
+		},
+		{
+			name: "a surface that does not advertise make install is not judged",
+			text: "brew install ranger360ai/tap/posse\nposse init\n",
+		},
+		{
+			name: "prose mentions are not commands",
+			text: "running `make install` from a checkout puts `posse init` within reach\n",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := makeInstallExportsLocalBin(tt.text)
+			if tt.want && err == nil {
+				t.Fatal("gap passed the pin")
+			}
+			if !tt.want && err != nil {
+				t.Fatalf("canonical form rejected: %v", err)
+			}
+		})
+	}
+
+	readme, err := os.ReadFile("README.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(contents)
-	installAt := strings.Index(text, "make install")
+	t.Run("README with the export line deleted", func(t *testing.T) {
+		stripped := strings.Replace(string(readme), export, "", 1)
+		if makeInstallExportsLocalBin(stripped) == nil {
+			t.Fatal("deleting the export from README must fail the pin")
+		}
+	})
+}
+
+// makeInstallExportsLocalBin reports whether a surface that advertises `make
+// install` puts BINDIR on PATH before the first command that runs the binary it
+// just installed. Only command lines count on either side: the docs discuss
+// `make install` and `posse init` in prose constantly, and prose is not a
+// sequence a reader types.
+func makeInstallExportsLocalBin(text string) error {
+	installAt := commandLineAt(text, "make install")
 	if installAt < 0 {
-		t.Fatal("README.md: missing \"make install\"")
+		return nil // this surface does not advertise the make route
 	}
-	after := text[installAt:]
-	initAt := strings.Index(after, "posse init")
-	if initAt < 0 {
-		t.Fatal("README.md: \"make install\" is not followed by \"posse init\"")
+	rest := text[installAt:]
+	useAt := len(rest)
+	for _, use := range []string{"posse init", "posse version", "posse new", "make link-plugin"} {
+		if at := commandLineAt(rest, use); at >= 0 && at < useAt {
+			useAt = at
+		}
 	}
-	window := after[:initAt]
-	if !strings.Contains(window, `export PATH=`) || !strings.Contains(window, ".local/bin") {
-		t.Fatal("README.md: make install is not followed by an export that puts ~/.local/bin on PATH before posse init")
+	if useAt == len(rest) {
+		return fmt.Errorf("%q is not followed by any command that runs the installed binary", "make install")
 	}
+	window := rest[:useAt]
+	exportAt := commandLineAt(window, "export PATH=")
+	if exportAt < 0 || !strings.Contains(lineAt(window, exportAt), ".local/bin") {
+		return fmt.Errorf("%q is not followed by an export putting ~/.local/bin on PATH before %q",
+			"make install", strings.TrimSpace(lineAt(rest, useAt)))
+	}
+	return nil
+}
+
+// commandLineAt finds the offset of the first line the reader would TYPE that
+// begins with cmd — bare, or with INSTALL.md's `$ ` prompt. A backticked
+// mention mid-sentence is prose and does not count.
+func commandLineAt(text, cmd string) int {
+	for off := 0; off < len(text); {
+		end := strings.IndexByte(text[off:], '\n')
+		if end < 0 {
+			end = len(text) - off
+		}
+		line := strings.TrimSpace(text[off : off+end])
+		line = strings.TrimPrefix(line, "$ ")
+		if strings.HasPrefix(line, cmd) {
+			return off
+		}
+		off += end + 1
+	}
+	return -1
+}
+
+func lineAt(text string, off int) string {
+	if off < 0 || off >= len(text) {
+		return ""
+	}
+	line := text[off:]
+	if end := strings.IndexByte(line, '\n'); end >= 0 {
+		line = line[:end]
+	}
+	return line
+}
+
+// The docs half above is advice; this is the half that reaches a reader who
+// never read them. `make install` must say, on the spot, that the shell cannot
+// find what it just wrote — and print the exact export, the way herdr's own
+// installer does for the same directory.
+func TestInstallWarnsWhenBindirIsNotOnPath(t *testing.T) {
+	makefile, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(makefile), "\t@scripts/path-warning.sh '$(BINDIR)'\n") {
+		t.Error("Makefile install no longer runs scripts/path-warning.sh with BINDIR — a promote that cannot be found is ranger-base-88m again")
+	}
+	info, err := os.Stat("scripts/path-warning.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0111 == 0 {
+		t.Fatal("scripts/path-warning.sh is not executable")
+	}
+
+	bindir := filepath.Join(t.TempDir(), ".local", "bin")
+	if err := os.MkdirAll(bindir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(bindir, "posse")
+	if err := os.WriteFile(installed, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("bindir not on PATH", func(t *testing.T) {
+		stdout, stderr := pathWarning(t, bindir, "/usr/bin:/bin")
+		if stdout != "" {
+			t.Errorf("stdout = %q, want the warning on stderr only", stdout)
+		}
+		if !strings.Contains(stderr, bindir+" is not in your PATH") {
+			t.Errorf("stderr does not name the unreachable directory:\n%s", stderr)
+		}
+		// The exact line, copy-pasteable, with $PATH left for the shell to expand.
+		if want := `export PATH="` + bindir + `:$PATH"`; !strings.Contains(stderr, want) {
+			t.Errorf("stderr missing %q:\n%s", want, stderr)
+		}
+	})
+
+	t.Run("bindir on PATH is silent", func(t *testing.T) {
+		stdout, stderr := pathWarning(t, bindir, bindir+":/usr/bin:/bin")
+		if stdout != "" || stderr != "" {
+			t.Errorf("a correct PATH must print nothing; stdout=%q stderr=%q", stdout, stderr)
+		}
+	})
+
+	t.Run("a different posse answers first (ranger-base-253)", func(t *testing.T) {
+		_, stderr := pathWarning(t, bindir, other+":"+bindir+":/usr/bin:/bin")
+		if !strings.Contains(stderr, "PATH resolves posse to "+filepath.Join(other, "posse")) {
+			t.Errorf("stale posse earlier on PATH went unreported:\n%s", stderr)
+		}
+	})
+
+	t.Run("a symlink to the installed binary is the installed binary", func(t *testing.T) {
+		link := filepath.Join(other, "posse")
+		if err := os.Remove(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(installed, link); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			os.Remove(link)
+			os.WriteFile(link, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+		}()
+		if _, stderr := pathWarning(t, bindir, other+":/usr/bin:/bin"); stderr != "" {
+			t.Errorf("a link to the promoted binary is not a stale posse: %s", stderr)
+		}
+	})
+}
+
+// pathWarning runs the warning with a PATH of the test's choosing. It must
+// always exit 0: a PATH the installer cannot edit is not a failed build, and
+// `make install` on a correctly-configured box has to stay green.
+func pathWarning(t *testing.T, bindir, path string) (stdout, stderr string) {
+	t.Helper()
+	cmd := exec.Command("sh", "scripts/path-warning.sh", bindir)
+	cmd.Env = []string{"PATH=" + path, "HOME=" + t.TempDir()}
+	var out, errb strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("scripts/path-warning.sh %s (PATH=%s): %v\n%s", bindir, path, err, errb.String())
+	}
+	return out.String(), errb.String()
 }
 
 // ranger-base-5yl: the advertised posse new --dir ~/code/myproj died

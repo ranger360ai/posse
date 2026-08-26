@@ -197,10 +197,22 @@ commit you can name, never somebody's in-flight edit.
 
 ```sh
 $ make install                 # → ~/.local/bin/posse   (BINDIR=… to override)
+$ export PATH="$HOME/.local/bin:$PATH"   # step 1 already did this; harmless twice
+$ posse version
 ```
 **Verify:** the target prints `installed: …/posse`, the promoted sha, and the
-version. If it warns that PATH resolves `posse` somewhere else, fix your PATH
-now — the plugin and every later step run the binary PATH finds.
+version, and `posse version` — the one PATH finds, not `./bin/posse-go` —
+prints the sha it just promoted. Two warnings can appear on stderr instead,
+and both are yours to fix before going on, because the plugin and every later
+step run the binary PATH finds:
+
+- `…/.local/bin is not in your PATH` — the export above is missing from this
+  shell. Run it, and put it in `~/.zshrc` too. Skip it and `posse init` in
+  step 4 is `command not found` with the install having exited 0
+  (ranger-base-88m).
+- `PATH resolves posse to …` — some *other* posse (a brew install, an older
+  checkout) is earlier on `$PATH` and will answer for the binary you just
+  promoted. Reorder `$PATH` or remove the stale one.
 
 `install` also drops an `rhq` symlink beside the binary, and `link-plugin` a
 second one in `plugin/bin/`. Both are **transition mechanics** for instances

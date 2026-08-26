@@ -51,6 +51,7 @@ queue, first dispatch — is [INSTALL.md](INSTALL.md). The short form:
 ```sh
 make build                       # dev build of the working tree → bin/posse-go
 make install                     # clean build of HEAD, then promote → ~/.local/bin/posse
+export PATH="$HOME/.local/bin:$PATH"   # ← where the line above wrote it
 posse init                       # seed $RHQ_HOME (default ~/.config/posse) from the
                                  # examples: examples/ beside the binary when there
                                  # is one, else the copy embedded at build time
@@ -60,6 +61,13 @@ posse list                       # live agent state per session
 posse prompt myproj "fix the failing test" --wait
 make link-plugin                 # register the cockpit with herdr (runs the installed posse)
 ```
+
+`make install` writes to `~/.local/bin` (`BINDIR=…` overrides), which is on no
+default macOS or Linux `PATH` — Debian's `.profile` prepends it only when the
+directory already existed at login, and `make install` creates it mid-session.
+Skip that export and `make install` exits 0 with `installed: …/posse` and the
+next command is `posse: command not found`; the target says so on stderr when
+it happens. Put the line in your shell's rc file, not just this shell.
 
 Without a checkout the binary installs from the module path — and lands in a
 directory your shell does not search:

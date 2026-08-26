@@ -49,8 +49,7 @@ install: release
 	@echo "  alias   : $(BINDIR)/rhq -> posse (transition only, rangerhq-tyay)"
 	@echo "  promoted: $$(git rev-parse --short HEAD) $$(git log -1 --format=%s HEAD)"
 	@echo "  version : $$($(BINDIR)/posse version)"
-	@which posse >/dev/null 2>&1 && [ "$$(which posse)" != "$(BINDIR)/posse" ] && \
-		echo "  WARNING : PATH resolves posse to $$(which posse), not the binary just installed" || :
+	@scripts/path-warning.sh '$(BINDIR)'
 
 deploy: install
 
