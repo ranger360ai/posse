@@ -220,8 +220,12 @@ $ go install github.com/ranger360ai/posse/cmd/posse@latest
 ```
 
 That build carries the seed tree (`examples/`) embedded, so `posse init`
-works with no repo beside it — but it is not the promotion path a fleet
-should use, because it has no commit to name. Prefer `make install`.
+works with no repo beside it. `@latest` installs the newest release tag —
+currently `v0.3.0`, which trails `main` — and until ranger-base-bzu lands its
+`posse version` still reports `0.3.0+dev`; `go version -m $(command -v
+posse)` shows the module version that actually installed. It is not the
+promotion path a fleet should use: the tag lags, and the fleet needs a build
+stamped with the exact commit. Prefer `make install`.
 
 ```sh
 $ make link-plugin

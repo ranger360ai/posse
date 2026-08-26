@@ -75,10 +75,12 @@ unset — normally `~/go/bin`, which is on no default macOS or Linux `PATH`.
 Skip that second line and the very next command is `zsh: command not found:
 posse`, with the install itself having exited 0. Put it in your shell's rc
 file, not just the current shell. That binary carries the seed tree embedded,
-so `posse init` needs no repo beside it; the module carries no release tag
-yet, so `@latest` resolves to a commit pseudo-version and `posse version`
-reports `0.3.0+dev`. `make install` stays the path for a fleet, because its
-build has a commit to name.
+so `posse init` needs no repo beside it. `@latest` resolves to the newest
+release tag — currently `v0.3.0` — which trails `main`, so what installs is
+the tag, not the tree whose README you are reading. A known stamping bug
+makes that build's `posse version` still report `0.3.0+dev`; `go version -m
+$(command -v posse)` shows the module version that actually installed. `make
+install` stays the path for a fleet, because its build has a commit to name.
 
 `posse version` prints `0.3.0+<sha>[-dirty]` for a build made here, and the
 cockpit header shows the same, so "which build is live" is one glance. `make
