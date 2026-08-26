@@ -4,7 +4,9 @@
 display, 0010 §1/§5, 0012 D4.1 · amended 2026-08-26: cl7 probe results
 folded into §2/§4/Claims; codex rule-suppression decided in §4
 (ranger-base-cl7, ranger-base-00f); §2 busy key gains a per-pass
-ceiling (ranger-base-8h5p)*
+ceiling (ranger-base-8h5p); §2/Claims narrowed: grok's typed fallback
+has no `startup_wait:` to measure — pre-turn chrome is a race
+(ranger-base-wjze)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -107,10 +109,21 @@ became the first user turn with no harness keystroke, and both post-argv
 screens matched a herdr `working` rule. Precisely: argv *sidesteps* the
 interstitial as a delivery blocker; it does not suppress the banner
 (codex's update banner still draws, grok's splash clears itself). The
-probe also showed the typed fallback could never have worked on grok at
-any `startup_wait:` — a pane with no turn emits no chrome and matches no
-rule; only a turn produces detectability (ranger-base-3j8). `prompt:
-typed` remains defined for runtimes measured to work that way (claude).
+probe also showed the typed fallback is **not a measurement task on
+grok — there is no `startup_wait:` to measure**. Typed delivery needs a
+named-rule idle before the first turn, and grok's pre-turn chrome is a
+race, not a latency: one fresh pane emits OSC title `grok` from 0.41s
+(ranger-base-z6n), another emits zero OSC bytes and no composer footer
+until it has received a turn (ranger-base-3j8, monica's `agent
+explain`). When the race goes the wrong way, no wait at any value
+produces a match — waiting longer is waiting for chrome that only a
+delivered prompt creates. So `prompt: typed` plus a measured
+`startup_wait:` is a branch for runtimes *measured to deliver typed*
+(claude), not the recipe when the argv probe fails: first measure
+whether a fresh pane reliably reaches a named idle at all; only then is
+there a number worth taking. Moot for grok today — its built-in is
+`prompt: argv` — but the next runtime onboarded against this grid reads
+this branch as the recipe, so it says so.
 
 **Interstitials, three layers, cheapest first:**
 
@@ -425,11 +438,14 @@ it was asked and must say so when the first turn is a limit.
   project_doc_max_bytes=0` removes the project `AGENTS.md` from the
   model-visible prompt; `project_doc_fallback_filenames=[]` does not;
   no tested grok flag silences its discovery.
-- A pre-turn grok pane matches **no** herdr rule (zero OSC bytes, no
-  composer footer); the same pane after one turn matches three.
-  Detectability is a property of having been prompted, so no
-  `startup_wait:` value could have made the typed fallback work there
-  (ranger-base-3j8, monica's `agent explain`).
+- The measured pre-turn grok pane (wJ9) matched **no** herdr rule —
+  zero OSC bytes, no composer footer — and the same pane after one turn
+  matched three (ranger-base-3j8, monica's `agent explain`). Not
+  universal: another fresh pane carried OSC title `grok` from 0.41s
+  (ranger-base-z6n, laurie). Pre-turn detectability on grok is a race
+  posse does not control, and when it goes the wrong way no
+  `startup_wait:` value produces a match — the typed fallback has no
+  number to measure there.
 - Codex's update persist-skip is an instance-config write
   (`dismissed_version` in `~/.codex/version.json`), documented in
   NOTES/INSTALL; `runtime check` prints it against `latest_version`
