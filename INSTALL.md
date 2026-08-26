@@ -1059,6 +1059,11 @@ config — the presence of that key is the arm switch. Only the default herdr
 server may arm the fleet loop; named-session servers stand down even though
 herdr's plugin registry is global.
 
+The hook resolves which config that is exactly the way `posse` does (§4):
+`RHQ_HOME` if set, else `~/.config/posse`, else an existing `~/.config/rhq`.
+It exports the result, so the workspace it arms — and the dispatch loop
+inside it — runs out of the same instance the arm decision was read from.
+
 ```yaml
 autostart_interval: 5m       # ← the arm switch
 autostart_max_beads: 3       # -n per pass. A cap is ALWAYS applied (default 3);

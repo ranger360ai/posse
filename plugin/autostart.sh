@@ -71,15 +71,43 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # ./bin/posse is the symlink `make link-plugin` points at the *promoted*
 # binary — never a persona's unfinished `make build` (ORDERS: rangerhq-8te).
 RHQ=${RHQ_BIN:-$here/bin/posse}
-RHQ_HOME=${RHQ_HOME:-$HOME/.config/rhq}
-CONFIG=$RHQ_HOME/config.yaml
-LOG=$RHQ_HOME/state/dispatch-watch.log
-MAXLOG=${AUTOSTART_MAXLOG:-5242880} # 5 MiB, then one .1 generation
 
 startup=false
 [ "${1:-}" = "--startup" ] && startup=true
 
 say() { echo "dispatch autostart: $*"; }
+
+# Which home. This is the SECOND decision site for one fact — newApp
+# (internal/rhq/app.go) is the first — so it reads the same way or the hook
+# arms out of one instance while the loop it starts runs out of another
+# (ranger-base-g7lt). RHQ_HOME wins; otherwise ~/.config/posse, unless it
+# does not exist and ~/.config/rhq does. `-e` follows symlinks and is true
+# for a plain file, matching os.Stat; `-d` matches st.IsDir() on the legacy
+# side, so a dangling posse symlink falls back and a posse *file* does not.
+#
+# Not a bare default either way: ~/.config/rhq alone would leave a fresh
+# `posse init` disarmed forever, and ~/.config/posse alone would disarm every
+# instance that still has only the old home — this operator's included — at
+# the next herdr start.
+if [ -z "${RHQ_HOME:-}" ]; then
+	preferred=$HOME/.config/posse
+	legacy=$HOME/.config/rhq
+	RHQ_HOME=$preferred
+	if [ ! -e "$preferred" ] && [ -d "$legacy" ]; then
+		RHQ_HOME=$legacy
+		say "$preferred does not exist; using existing home $legacy (nothing moved)" >&2
+	fi
+fi
+# Exported, not just assigned: the probe, `posse new`, and the dispatch loop
+# that session runs all inherit it, so every one of them resolves the home
+# the arm decision was actually made from. Unexported, a legacy-home arm
+# handed `posse new` a bare environment and the loop wrote its session into
+# ~/.config/posse — the arm and the queue in different instances.
+export RHQ_HOME
+
+CONFIG=$RHQ_HOME/config.yaml
+LOG=$RHQ_HOME/state/dispatch-watch.log
+MAXLOG=${AUTOSTART_MAXLOG:-5242880} # 5 MiB, then one .1 generation
 
 # The plugin registry is global, so herdr runs this hook for named session
 # servers too. Only the default server owns the fleet queue and its one
@@ -134,11 +162,12 @@ fi
 # (rangerhq-ct9/mugy).
 #
 # stdout is the answer and stderr is never folded into it. posse writes
-# unrelated notices there — the config-home transition notice fires on every
-# invocation of an instance that still has only the old home — and a line
+# unrelated notices there — the config-home transition notice used to fire on
+# every invocation of an instance that still has only the old home, and does
+# not for these children only because RHQ_HOME is exported above — and a line
 # glued in front of the answer would read as "could not ask" and stand the
-# hook down for good. stderr is kept, but only to quote when the answer did
-# not arrive.
+# hook down for good. The next such notice will not announce itself either.
+# stderr is kept, but only to quote when the answer did not arrive.
 loopstate=
 loopwho=
 loopsaid=

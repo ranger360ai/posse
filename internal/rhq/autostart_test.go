@@ -644,59 +644,233 @@ func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
 	}
 }
 
-// ranger-base-g7lt: NewApp prefers ~/.config/posse, but autostart.sh line 70
-// still defaults RHQ_HOME to ~/.config/rhq. hookWorld.run injects RHQ_HOME
-// so the existing suite cannot see this. A fresh `posse init` seeds posse
-// and, with RHQ_HOME unset, the hook stays disarmed.
-func TestAutostartDefaultHomePrefersPosse(t *testing.T) {
-	t.Skip("ranger-base-g7lt: plugin/autostart.sh still defaults RHQ_HOME to $HOME/.config/rhq; a fresh posse init never arms. Do not just flip the default — the live operator still has only ~/.config/rhq.")
+// ranger-base-g7lt. Every test above injects RHQ_HOME, which is exactly why
+// none of them could see this: the hook's default was a second, disagreeing
+// copy of newApp's both-paths read (internal/rhq/app.go). homeWorld runs the
+// hook with RHQ_HOME UNSET and a scratch HOME, and its fake posse records the
+// home each child inherited beside the argv — the arm decision and the
+// session's home are two facts, and the bug was that they disagreed.
+type homeWorld struct {
+	user string // HOME
+	home string // RHQ_HOME, when the test sets one; empty = unset
+	log  string // calls.log: one `RHQ_HOME=<home> <argv>` per line
+}
 
+// newHomeWorld builds a scratch HOME. homes maps a directory name under
+// ~/.config to its config.yaml body; an empty body creates the home empty.
+func newHomeWorld(t *testing.T, homes map[string]string) *homeWorld {
+	t.Helper()
 	user := t.TempDir()
-	preferred := filepath.Join(user, ".config", "posse")
-	if err := os.MkdirAll(preferred, 0o755); err != nil {
-		t.Fatal(err)
+	for name, body := range homes {
+		dir := filepath.Join(user, ".config", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if body == "" {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(preferred, "config.yaml"), []byte(armed), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	exists := filepath.Join(user, "session-exists")
-	calls := filepath.Join(user, "calls.log")
+	w := &homeWorld{user: user, log: filepath.Join(user, "calls.log")}
+	// The liveness seam is crossed for real by the tests above; here the
+	// probe only has to answer, so the fake says "none" and the hook goes on
+	// to arm. Anything else and every case below would stand down on an
+	// unanswerable probe instead of deciding a home.
 	fake := "#!/usr/bin/env bash\n" +
-		"echo \"$*\" >> " + shq(calls) + "\n" +
-		"case \"$1\" in\n" +
-		"new)  if [ -e " + shq(exists) + " ]; then echo 'workspace already exists'; exit 1; fi\n" +
-		"      : > " + shq(exists) + "; echo created; exit 0 ;;\n" +
-		"kill) rm -f " + shq(exists) + "; exit 0 ;;\n" +
-		"esac\nexit 0\n"
-	bin := filepath.Join(user, "posse")
-	if err := os.WriteFile(bin, []byte(fake), 0o755); err != nil {
+		"echo \"RHQ_HOME=${RHQ_HOME-<unset>} $*\" >> " + shq(w.log) + "\n" +
+		"if [ \"$1 $2\" = 'dispatch --watch-status' ]; then echo 'watch-loop: none'; exit 0; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(filepath.Join(user, "posse"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	return w
+}
+
+// run invokes the hook with a built-from-nothing environment: the developer's
+// own RHQ_HOME must not be able to reach a test about what happens when there
+// is none.
+func (w *homeWorld) run(t *testing.T) hookRun {
+	t.Helper()
 	hook, err := filepath.Abs(filepath.Join("..", "..", "plugin", "autostart.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", hook)
+	cmd := exec.Command("bash", hook, "--startup")
 	cmd.Env = []string{
-		"HOME=" + user,
-		"RHQ_HOME=",
-		"RHQ_BIN=" + bin,
+		"HOME=" + w.user,
 		"PATH=" + os.Getenv("PATH"),
-		"HERDR_SOCKET_PATH=",
-		"HERDR_SESSION=",
+		"RHQ_BIN=" + filepath.Join(w.user, "posse"),
+	}
+	if w.home != "" {
+		cmd.Env = append(cmd.Env, "RHQ_HOME="+w.home)
 	}
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("autostart: %v\n%s", err, out)
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(string(out), "disarmed") {
-		t.Fatalf("fresh posse home stayed disarmed:\n%s", out)
+	calls, _ := os.ReadFile(w.log)
+	return hookRun{out: string(out), code: code, calls: string(calls)}
+}
+
+func (w *homeWorld) path(name string) string { return filepath.Join(w.user, ".config", name) }
+
+// childHome is the RHQ_HOME every invoked posse saw, or "" if they disagreed
+// or none ran. The disagreement is the point: an arm read from one home that
+// launches the loop into another is the half of ranger-base-g7lt that a
+// "which config did it read" assertion alone would miss.
+func childHome(t *testing.T, calls string) string {
+	t.Helper()
+	seen := ""
+	for _, line := range strings.Split(strings.TrimSpace(calls), "\n") {
+		if line == "" {
+			continue
+		}
+		got := strings.TrimPrefix(strings.Fields(line)[0], "RHQ_HOME=")
+		if seen != "" && got != seen {
+			t.Errorf("children disagreed about the home:\n%s", calls)
+			return ""
+		}
+		seen = got
 	}
-	got, _ := os.ReadFile(calls)
-	if !strings.Contains(string(got), "dispatch --watch") {
-		t.Fatalf("want posse new of a watch loop, got:\n%s\n%s", got, out)
+	return seen
+}
+
+// The whole decision table, read against newApp's: RHQ_HOME wins; otherwise
+// ~/.config/posse unless it does not exist and ~/.config/rhq does. Both
+// halves are asserted every time — which config armed it, and which home the
+// session it started will run out of.
+func TestAutostartDefaultHomeMatchesNewApp(t *testing.T) {
+	cases := []struct {
+		name   string
+		homes  map[string]string
+		want   string // the home that must both arm and be exported
+		armed  bool
+		absent string // a home under ~/.config the hook must not create
+	}{
+		// The fresh install INSTALL.md describes: `posse init` seeded
+		// ~/.config/posse, nothing in the profile. This stayed disarmed.
+		{name: "fresh-posse-only", homes: map[string]string{"posse": armed}, want: "posse", armed: true, absent: "rhq"},
+		// This operator, and every install that predates the rename.
+		{name: "legacy-only", homes: map[string]string{"rhq": armed}, want: "rhq", armed: true, absent: "posse"},
+		// Both present: posse wins, as newApp does — including the
+		// arm switch living only in the home that lost.
+		{name: "both-armed-in-posse", homes: map[string]string{"posse": armed, "rhq": ""}, want: "posse", armed: true},
+		{name: "both-armed-in-legacy", homes: map[string]string{"posse": "", "rhq": armed}, want: "posse", armed: false},
+		// Nothing installed at all: name the preferred home in the
+		// disarm line and create neither.
+		{name: "neither", homes: nil, want: "posse", armed: false, absent: "rhq"},
 	}
-	if _, err := os.Stat(filepath.Join(user, ".config", "rhq")); !os.IsNotExist(err) {
-		t.Errorf("hook created the legacy home: %v", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := newHomeWorld(t, c.homes)
+			r := w.run(t)
+			if r.code != 0 {
+				t.Fatalf("exit %d:\n%s", r.code, r.out)
+			}
+			want := w.path(c.want)
+			if c.armed {
+				if strings.Contains(r.out, "disarmed") {
+					t.Fatalf("%s is armed but the hook stood down:\n%s", want, r.out)
+				}
+				if !strings.Contains(r.calls, "dispatch --watch") {
+					t.Fatalf("no watch loop launched:\n%s\n%s", r.calls, r.out)
+				}
+				if got := childHome(t, r.calls); got != want {
+					t.Errorf("armed from %s but handed posse RHQ_HOME=%s:\n%s", want, got, r.calls)
+				}
+			} else {
+				if !strings.Contains(r.out, "disarmed (no autostart_interval: in "+filepath.Join(want, "config.yaml")+")") {
+					t.Errorf("disarm line must name %s:\n%s", want, r.out)
+				}
+				if strings.Contains(r.calls, "dispatch --watch ") {
+					t.Errorf("disarmed run launched a loop:\n%s", r.calls)
+				}
+			}
+			if c.absent != "" {
+				if _, err := os.Stat(w.path(c.absent)); !os.IsNotExist(err) {
+					t.Errorf("hook created %s: %v", w.path(c.absent), err)
+				}
+			}
+		})
 	}
+}
+
+// RHQ_HOME still wins over both directories, and is still what the children
+// get — the case the whole suite above depends on.
+func TestAutostartExplicitHomeWinsOverBoth(t *testing.T) {
+	w := newHomeWorld(t, map[string]string{"posse": "", "rhq": ""})
+	elsewhere := filepath.Join(w.user, "instances", "fleet")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(elsewhere, "config.yaml"), []byte(armed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.home = elsewhere
+
+	r := w.run(t)
+	if r.code != 0 || strings.Contains(r.out, "disarmed") {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if got := childHome(t, r.calls); got != elsewhere {
+		t.Errorf("RHQ_HOME=%s did not reach posse (got %s):\n%s", elsewhere, got, r.calls)
+	}
+	if strings.Contains(r.out, "does not exist; using existing home") {
+		t.Errorf("explicit home printed the transition notice:\n%s", r.out)
+	}
+}
+
+// The fallback is announced once on stderr, the way posse announces it, and
+// it says nothing was moved — an operator who sees the fleet arm out of the
+// old home has to be able to tell that from a migration.
+func TestAutostartLegacyFallbackSaysSo(t *testing.T) {
+	w := newHomeWorld(t, map[string]string{"rhq": armed})
+
+	r := w.run(t)
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	want := w.path("posse") + " does not exist; using existing home " + w.path("rhq") + " (nothing moved)"
+	if !strings.Contains(r.out, want) {
+		t.Errorf("want the transition notice %q:\n%s", want, r.out)
+	}
+}
+
+// os.Stat's two edges, which the shell test has to match exactly or the hook
+// and newApp part company on the odd install. A dangling ~/.config/posse
+// symlink is IsNotExist, so it falls back; a ~/.config/posse that is a plain
+// file is not, so it does not — newApp keeps it and `posse init` fails there
+// loudly, which is the outcome an operator can act on.
+func TestAutostartHomeStatEdgesMatchNewApp(t *testing.T) {
+	t.Run("dangling-symlink-falls-back", func(t *testing.T) {
+		w := newHomeWorld(t, map[string]string{"rhq": armed})
+		if err := os.Symlink(filepath.Join(w.user, "gone"), w.path("posse")); err != nil {
+			t.Fatal(err)
+		}
+		r := w.run(t)
+		if r.code != 0 || strings.Contains(r.out, "disarmed") {
+			t.Fatalf("dangling posse symlink did not fall back (exit %d):\n%s", r.code, r.out)
+		}
+		if got := childHome(t, r.calls); got != w.path("rhq") {
+			t.Errorf("armed with RHQ_HOME=%s, want %s:\n%s", got, w.path("rhq"), r.calls)
+		}
+	})
+	t.Run("plain-file-does-not", func(t *testing.T) {
+		w := newHomeWorld(t, map[string]string{"rhq": armed})
+		if err := os.WriteFile(w.path("posse"), []byte("not a home\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := w.run(t)
+		if r.code != 0 {
+			t.Fatalf("exit %d:\n%s", r.code, r.out)
+		}
+		if !strings.Contains(r.out, "disarmed (no autostart_interval: in "+filepath.Join(w.path("posse"), "config.yaml")+")") {
+			t.Errorf("a posse *file* must not fall back to the legacy home:\n%s", r.out)
+		}
+	})
 }
