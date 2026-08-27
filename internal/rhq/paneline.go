@@ -21,9 +21,12 @@ package rhq
 // shell_pid from the first sample and a foreground group that is the shell
 // alone within 0.03-0.35s, and a line typed the instant that predicate goes
 // true is still lost 5/5 — there is no observable for "ZLE has the tty".
-// And a settled pane is not unbounded either: 16000 bytes runs 2/2 on a pane
-// three seconds old, 20000 bytes runs 0/3. A line long enough is lost no
-// matter how long anyone waits.
+// And a settled pane is not unbounded either: re-measured 2026-08-27 on a
+// pane three seconds old, 24000 bytes runs 3/3 and 28000 bytes runs 0/3.
+// (2026-08-25 put that bound at 16000/20000; the fresh-pane cliff above is
+// MAX_CANON and has not moved, but the settled bound is not a documented
+// constant and drifts — what holds is that one is there.) A line long
+// enough is lost no matter how long anyone waits.
 //
 // So the line stays short instead. Over the limit it is written to
 // state/launch/<session>.sh and the pane runs `. <path>` — sourced, not
@@ -63,7 +66,8 @@ func (a *App) LaunchScript(session string) string {
 // a `. <script>` that runs it. A line that fits is typed verbatim — the
 // pane's scrollback and herdr's log are where an operator reads what a
 // session was launched with, and today every persona line fits with room
-// (352-677 bytes rendered with gates, against a 1023-byte limit).
+// (591-691 bytes rendered with gates as of 2026-08-27, against a
+// 1023-byte limit).
 //
 // The script is rewritten at every launch and removed the moment a line
 // fits again: a rendering left behind that nothing runs is how the next

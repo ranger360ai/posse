@@ -22,7 +22,13 @@ package rhq
 //	 20000 B typed  0/3 ran     20000 B spilled to a file  3/3 ran
 //
 // and on a pane left to settle for three seconds first: 1024 B 3/3, 5000 B
-// 3/3, 16000 B 2/2, 20000 B 0/3 — which is why waiting is not the fix.
+// 3/3 — bounded too, only further out, which is why waiting is not the fix.
+// Re-measured 2026-08-27 (ranger-base-82u): the fresh-pane cliff is
+// unchanged (1022/1023 B 3/3, 1024 B 0/3, 1500 B 0/3, 20000 B spilled 3/3),
+// but the settled bound had moved — 20000 B and 24000 B now run 3/3 and
+// 28000 B runs 0/3, where 2026-08-25 saw 16000 B 2/2 and 20000 B 0/3. Only
+// the fresh-pane cliff is a documented constant (MAX_CANON); the settled
+// bound drifts, so this test pins the cliff and not that number.
 
 import (
 	"fmt"
