@@ -10,6 +10,7 @@ package rhq
 //   description: terse ops copilot
 //   runtime: claude             # claude | codex | grok | runtimes/<name>.yaml (ADR 0002)
 //   labels: [ops]
+//   route_order: 40             # tiebreak among label matches; lower first (default 50)
 //   intents: [design]           # inventory slugs — read by humans/tools, not here
 //   allow: [Bash(bd:*)]         # permission rules added to the repo floor
 //   deny: [Bash(git push:*)]    # permission rules removed, deny wins
@@ -34,6 +35,8 @@ package rhq
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -95,6 +98,13 @@ type AgentFile struct {
 	// eligible: the default is the one that costs nothing to be wrong about
 	// (a bad move is one skipped bead, not a lost gate).
 	NoOverflow bool
+	// RouteOrder is `route_order:` — where this PID sits among the personas
+	// whose labels match a bead. Lower goes first; absent is
+	// RouteOrderDefault, so a lane can be promoted or demoted without
+	// negative numbers. See Route: the key exists so that "which persona
+	// gets an unassigned bead" is a decision someone made, not a property
+	// of how the agents dir happens to sort.
+	RouteOrder int
 }
 
 func agentFrontmatter(data string) (front []string, body string) {
@@ -108,6 +118,30 @@ func agentFrontmatter(data string) (front []string, body string) {
 		}
 	}
 	return nil, data
+}
+
+// RouteOrderDefault is where a PID with no `route_order:` sits in the label
+// race. Mid-scale on purpose: a lane is promoted below it and demoted above
+// it, both without a minus sign, and an instance that never touches the key
+// keeps exactly the order it had (every PID ties, the tiebreak decides).
+const RouteOrderDefault = 50
+
+// parseRouteOrder reads `route_order:`. ok is false for absent AND for
+// malformed, which both mean "this PID stated nothing usable" and take the
+// default — a PID that would not load because of one mistyped ordering hint
+// is a lane that goes silent, which is the failure this key exists to stop.
+// `posse agent check` reports the malformed spelling (pidcheck.go) so it is
+// not silent, only non-fatal.
+func parseRouteOrder(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func (a *App) LoadAgent(name string) (*AgentFile, error) {
@@ -137,6 +171,10 @@ func (a *App) LoadAgent(name string) (*AgentFile, error) {
 		Metrics:     yamlListLines(front, "metrics"),
 		Envs:        yamlListLines(front, "envs"),
 		Skills:      yamlListLines(front, "skills"),
+	}
+	ag.RouteOrder = RouteOrderDefault
+	if n, ok := parseRouteOrder(yamlGetLines(front, "route_order")); ok {
+		ag.RouteOrder = n
 	}
 	ag.TrustProjectConfig = yamlGetLines(front, "trust_project_config") == "true"
 	ag.NoOverflow = yamlGetLines(front, "overflow") == "false"
@@ -243,7 +281,16 @@ func (ag *AgentFile) RenderCommand() string {
 	return ag.RenderCommandFor(rt, own, tier)
 }
 
-// ListAgents returns agent names (agents/*.md, extension stripped), sorted.
+// ListAgents returns agent names (agents/*.md, extension stripped), sorted
+// by persona name.
+//
+// The sort is explicit, and it is on the name rather than the file: this
+// list is dispatch's tiebreak among personas that match a bead equally
+// (Route), so its order is a decision the code makes and can be read, not
+// whatever os.ReadDir hands back. ReadDir already returns filenames sorted,
+// so this changes nothing an instance can see except the one shape where
+// stripping `.md` reorders a pair (`a.md`, `a-x.md`) — there, the persona
+// names are what the operator reads, so the persona names are what sorts.
 func (a *App) ListAgents() []string {
 	ents, _ := os.ReadDir(a.AgentsDir)
 	var out []string
@@ -252,6 +299,7 @@ func (a *App) ListAgents() []string {
 			out = append(out, strings.TrimSuffix(e.Name(), ".md"))
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -354,6 +402,7 @@ tier: standard
 labels:
   # bead labels this persona picks up (dispatch routing), e.g.
   # - code
+# route_order: 50          # tiebreak when several personas' labels match one bead — lower first, default 50, ties by persona name
 intents:
   # intent-inventory slugs this persona serves, e.g.
   # - build-features

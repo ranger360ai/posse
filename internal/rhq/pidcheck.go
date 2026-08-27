@@ -190,6 +190,15 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	} else if len(ag.Sockets) > 0 && ResolveCage("", ag) != CageContainer {
 		add("sockets: %s is a container-tier key and this PID launches at %s — nothing is mounted (add cage: container or drop it)", strings.Join(ag.Sockets, ", "), ResolveCage("", ag))
 	}
+	// route_order: a spelling that is not an integer takes the default and
+	// the PID still loads (a lane must not go silent over an ordering
+	// hint) — so the mistake has to surface here, or `route_order: high`
+	// reads as an ordering nobody has.
+	if raw := yamlGetLines(front, "route_order"); raw != "" {
+		if _, ok := parseRouteOrder(raw); !ok {
+			add("route_order: %q is not an integer — this PID routes at the default %d", raw, RouteOrderDefault)
+		}
+	}
 	if ag.TierFloor != "" && !ValidTier(ag.TierFloor) {
 		add("tier_floor: %q is not strong | standard | fast", ag.TierFloor)
 	} else if ValidTier(ag.Tier) && BelowFloor(ag, ag.Tier) {

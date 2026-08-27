@@ -172,11 +172,11 @@ of the harness core:
    `bd ready`'s own order is the query's, and `-n` takes the top of this
    list (rangerhq-1r2).
 2. Route each to a persona: bead **assignee** that is a persona wins, then
-   the first persona whose `labels:` frontmatter overlaps the bead's
-   labels, then config `default_persona:`. Unroutable beads are reported
-   and skipped. Config `coordinator:` is returned by **no** path (ADR
-   0018): assignee-is-the-coordinator refuses loudly with no fallthrough
-   to label routing, the label loop skips that PID, and a
+   the label match with the lowest PID `route_order:` (default 50, ties
+   broken by persona name), then config `default_persona:`. Unroutable
+   beads are reported and skipped. Config `coordinator:` is returned by
+   **no** path (ADR 0018): assignee-is-the-coordinator refuses loudly with
+   no fallthrough to label routing, the label loop skips that PID, and a
    `default_persona:` naming her is a loud config error. Both launchers
    share `Route`, so the refusal covers the pass, `--watch` and the
    cockpit's `d`; no flag reaches past it. Unset key = no coordinator =
@@ -192,6 +192,25 @@ of the harness core:
    the way its PID is named — in the session name, `BD_ACTOR`,
    `RHQ_PERSONA` and the PID the launcher cats — and a name that is not
    `ValidName` routes nowhere.
+
+   The label step used to be *the first* persona whose `labels:`
+   overlapped, walking `ListAgents` — os.ReadDir order, i.e. alphabetical.
+   Nobody chose alphabetical as a priority scheme, but on every unassigned
+   bead it was one, and it favoured the seeded generics over the lanes the
+   operator wrote: `developer` took `code`, `devops` took `infra`, and an
+   audit of the crew found 11 of 37 unassigned open beads parked on PIDs
+   with 14 and 0 lifetime closes (ranger-base-2yj5). `route_order:` makes the order sayable; its default
+   leaves every existing instance's winner exactly where it was (all tie,
+   the name decides), so this is a statement of the behavior plus a
+   control, not a change of it. Retiring the unused generics is the other
+   half, and that half is config — the operator's, not code's. `why` now
+   carries the race — `label:code (first of 2: <winner>, <runner-up>)` —
+   capped
+   at four names with `+N more` and never a silent count, because the
+   audit that found this needed a script to answer a question the pass
+   line was one clause short of answering. It costs a `LoadAgent` per
+   persona per bead instead of stopping at the first match — which is what
+   makes the count honest.
 3. Resolve the bead's **tier** (ADR 0003 §2): `--tier` > bead label
    `tier:strong|standard|fast` > config `tier_by_label:` (one-level map;
    when the key is absent the Dial B default applies: doc/groom/triage/

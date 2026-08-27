@@ -569,8 +569,29 @@ func coordinatorKey(name string) string {
 }
 
 // Route picks the persona for a bead: assignee that is a persona, then the
-// first persona whose `labels:` frontmatter overlaps the bead's labels,
-// then config default_persona. Returns ("", why) when unroutable.
+// label match with the lowest `route_order:`, then config default_persona.
+// Returns ("", why) when unroutable.
+//
+// The label step used to be "the first persona whose labels overlap" and
+// stopped there — first in os.ReadDir order over the agents dir, which is
+// alphabetical. Nobody chose alphabetical as a priority scheme, but for
+// every unassigned bead it was one, and it favoured the seeded generics:
+// on the crew this was found in, a `code` bead went to the seeded
+// `developer` (14 lifetime closes) ahead of the lane the operator had
+// actually written, and 11 of 37 unassigned open beads sat on PIDs with 14
+// and 0 lifetime closes while the personas who could close them were one
+// letter later in the alphabet (ranger-base-2yj5). So the order is stated
+// now: `route_order:` on the PID, lower first, ties broken by persona name
+// — the same order as before, but as a decision, and a new PID cannot jump
+// the queue by being named `aaa`.
+//
+// The winning label is still the first of the PID's `labels:` that the
+// bead carries, so the `label:<x>` half of why does not move.
+//
+// This costs a LoadAgent per persona per bead rather than stopping at the
+// first match: the roster in why must be the true one, and a count that
+// stopped early would be a silent cap. The reads are small and a pass
+// already shells out per bead.
 //
 // ADR 0018 §2: the coordinator is never returned, by any path. The refusal
 // is keyed on config `coordinator:` alone — not on what the PID grants, not
@@ -595,6 +616,33 @@ func (d *Dispatcher) Route(is RepoIssue) (persona, why string) {
 			return name, "assignee"
 		}
 	}
+	if cands := d.labelMatches(coord, is); len(cands) > 0 {
+		return cands[0].name, routeWhy(cands)
+	}
+	if def := d.App.CfgGet("default_persona", ""); def != "" {
+		if isCoordinator(coord, def) {
+			return "", fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0018 §2)", def)
+		}
+		if name, ok := d.App.CanonAgent(def); ok {
+			return name, "default_persona"
+		}
+	}
+	return "", "no assignee/label match and no default_persona"
+}
+
+// routeMatch is one persona whose labels overlap a bead's, with the label
+// that matched and the PID's stated place in the queue.
+type routeMatch struct {
+	name  string
+	label string
+	order int
+}
+
+// labelMatches is every persona that could take this bead by label, in the
+// order routing prefers them: `route_order:` ascending, then persona name
+// (ListAgents' order — stable, so the sort never reshuffles a tie).
+func (d *Dispatcher) labelMatches(coord string, is RepoIssue) []routeMatch {
+	var out []routeMatch
 	for _, name := range d.App.ListAgents() {
 		// Her PID's labels: make her label-routable; they are a lane's
 		// vocabulary, and she is not a lane.
@@ -606,22 +654,40 @@ func (d *Dispatcher) Route(is RepoIssue) (persona, why string) {
 			continue
 		}
 		for _, pl := range ag.Labels {
-			for _, bl := range is.Labels {
-				if pl == bl {
-					return name, "label:" + bl
-				}
+			if hasLabel(is.Labels, pl) {
+				out = append(out, routeMatch{name: name, label: pl, order: ag.RouteOrder})
+				break
 			}
 		}
 	}
-	if def := d.App.CfgGet("default_persona", ""); def != "" {
-		if isCoordinator(coord, def) {
-			return "", fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0018 §2)", def)
-		}
-		if name, ok := d.App.CanonAgent(def); ok {
-			return name, "default_persona"
-		}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].order < out[j].order })
+	return out
+}
+
+// routeMaxRoster is how many names the why line prints before summarizing.
+// A pass prints one line per bead and the roster is context, not the
+// answer; what is over the cap is counted, never dropped quietly.
+const routeMaxRoster = 4
+
+// routeWhy says which label matched and — when more than one persona
+// matched it — who else was in the race and in what order. The audit this
+// came from needed a script to answer "why did that persona get this
+// bead"; the pass already printed `label:code`, and "(first of 2: <who
+// won>, <who did not>)" is the rest of the sentence (ranger-base-2yj5).
+func routeWhy(c []routeMatch) string {
+	why := "label:" + c[0].label
+	if len(c) == 1 {
+		return why
 	}
-	return "", "no assignee/label match and no default_persona"
+	names := make([]string, 0, routeMaxRoster+1)
+	for i, m := range c {
+		if i == routeMaxRoster {
+			names = append(names, fmt.Sprintf("+%d more", len(c)-routeMaxRoster))
+			break
+		}
+		names = append(names, m.name)
+	}
+	return fmt.Sprintf("%s (first of %d: %s)", why, len(c), strings.Join(names, ", "))
 }
 
 var sessionSanitizeRe = regexp.MustCompile(`[^A-Za-z0-9_-]+`)

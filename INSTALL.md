@@ -486,6 +486,7 @@ The frontmatter keys that do work:
 |---|---|
 | `name`, `description` | identity and the listing line |
 | `labels:` | **dispatch routing** — bead labels this persona picks up |
+| `route_order:` | tiebreak when several personas' `labels:` match one bead — lower goes first, default 50, ties broken by persona name |
 | `runtime:` | which launch profile (step 8); default `claude` |
 | `tier:` / `tier_floor:` | model tier, and the tier below which it refuses to run (ADR 0003) |
 | `intents:` | intent slugs; the `## Intents` table's "done when" cell is what a reviewer checks a closed bead against |
@@ -498,11 +499,28 @@ The frontmatter keys that do work:
 **How a bead reaches a persona** (dispatch, in order):
 
 1. the bead's **assignee**, if it names a persona;
-2. the first persona whose `labels:` overlap the bead's labels;
+2. among the personas whose `labels:` overlap the bead's labels, the one
+   with the lowest `route_order:` — ties broken by persona name;
 3. config `default_persona:`, if you set one.
 
 Unroutable beads are reported and skipped. If nothing picks up your work,
 this list is why.
+
+Step 2 is where a seeded generic quietly outranks the persona you actually
+wrote: with no `route_order:` anywhere, every match ties and the name
+decides, so the seeded `developer` takes every unassigned `code` bead ahead
+of the lane you wrote yourself. That is a real leak — an audit of one crew
+found 11 of 37 unassigned open beads parked on PIDs with 14 and 0 lifetime
+closes (ranger-base-2yj5). Two ways out, and they compose: delete the
+seeded generics you do not use, and state the order — `route_order: 10` on
+the lane you want first, or `route_order: 90` on the one you want last.
+
+The dispatch line tells you when a race happened, so you do not need an
+audit to see it:
+
+```
+· my-repo-9xy  → developer (label:code (first of 2: developer, hopper)) …
+```
 
 The one name none of the three ever reaches is config `coordinator:` — the
 instance's exception handler (ADR 0018). Dispatch refuses to hire her by any
