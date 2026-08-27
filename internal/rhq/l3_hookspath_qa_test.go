@@ -240,7 +240,12 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 // and the use; the hook lies. The launch's reconcile cannot help: the body
 // carries no ownership marker, so installHook leaves it alone.
 //
-// LIVE-DEFECT PIN: inverted by whatever ranger-base-flz7 decides here.
+// LIVE-DEFECT PIN, still green: ranger-base-flz7 decided this is not a bugfix.
+// Randomizing the persona value only moves the tell (RHQ_TOOLS_DENY's exact
+// spelling, the origin/probe argv, the unset GIT_INDEX_FILE, the probe's temp
+// filename all remain readable), so the choice is containment or driving the
+// probe through git — an architecture call, filed as ranger-base-vqvl.
+// Inverted by whatever that bead lands.
 func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
 	repo, hooks := qaHookRepo(t)
 	body := "#!/bin/sh\n[ \"$RHQ_PERSONA\" = probe ] && exit 1\nexit 0\n"
