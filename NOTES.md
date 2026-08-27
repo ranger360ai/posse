@@ -545,9 +545,11 @@ watching them is the operator's interactive headroom — a fleet that eats the
     declared under it, because nothing has been decided. The knob's single
     meaning since ADR 0018 is exactly that — **how long quiet tolerance
     lasts before the fork**, never how long a degrade may run.
-  - **Log noise**: the fail-open note is said when the reading first fails,
-    at most once an hour after that, and once more when a reading comes back.
-    Past the budget there is no separate pass-level repeat; each on-meter
+  - **Log noise**: the hourly quiet belongs to the fail-open note alone —
+    said when the reading first fails, at most once an hour after that, and
+    once more when a reading comes back. Past the budget nothing is quiet
+    (rangerhq-llse): a degraded pass says so on the pass output every pass,
+    and a parked one has no pass-level line only because each on-meter
     bead's park line names the current blind age and cause.
   Why 10 minutes, and why a duration rather than "N failures": `--watch`
   backs off 8×, so N means anywhere from 15 minutes to 2 hours. The 5h
