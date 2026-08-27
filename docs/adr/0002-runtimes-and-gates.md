@@ -324,7 +324,14 @@ trust_project_config: true  # allow the runtime to read the session dir's own co
    `command -v git` → `/…/gates/security/bin/git`, `git push` prints the
    gate refusal and lands in `refusals.log`, `/usr/bin/git push` is
    refused by the pre-push hook, `touch x` in the repo fails (`:ro`),
-   `bd comments add` on the current bead succeeds through `.beads/bd.sock`.
+   and `bd comments add` on the current bead succeeds anyway — through the
+   `.beads` carve-out (mounted read-write back over the `:ro` repo) and the
+   inner `bd --no-db --no-daemon` wrapper, with the comment visible to a
+   plain host `bd show` and nothing imported by hand. The socket route this
+   line first named is not one: `.beads/bd.sock` through a directory mount
+   answers `ENOTSUP` (rangerhq-6so). The carve-out itself is the
+   2026-08-25 amendment's `.beads` read-write overlay (ADR 0014 §4), built
+   and re-measured in rangerhq-abvm.
 9. Inside the same session: `curl https://example.com` fails (no route,
    no DNS); an allowlisted host answers through the proxy; a denied host
    yields the proxy's 403 *and* a line in `refusals.log`.

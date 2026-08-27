@@ -302,10 +302,27 @@ func (a *App) CageHome(persona string) string {
 // on VirtioFS — ENOTSUP, read-only or not — so `.beads/bd.sock` is not a
 // route into the cage and `bd` falls back to direct storage. That works on a
 // read-write repo mount and NOT on a `:ro` one, where SQLite cannot open the
-// database at all: a persona denying Edit/Write cannot claim, comment or
-// close a bead inside this tier. It is the boundary doing exactly what the
-// ADR asked for, and it is a design question — filed for the architect,
-// not papered over here.
+// database at all: a persona denying Edit/Write could not claim, comment or
+// close a bead inside this tier.
+//
+// **The one carve-out is `.beads`** (ADR 0002's amendment of 2026-08-22 via
+// rangerhq-3nxk; ADR 0014 §4 answering the same question from the other
+// side): the store is not the work, and a tier whose whole point is the
+// personas who may not edit the work — the reviewer, the auditor — is not
+// allowed to be the tier where they cannot report what they found. So the
+// repo goes `:ro` and `{dir}/.beads` is mounted back over it read-write.
+// Measured 2026-08-22 (Docker 29.0.1): a bind mount of a pre-existing
+// DIRECTORY lands read-write over a `:ro` bind of its parent, later mount
+// wins, and `touch` in the repo still fails. Pre-existing is the condition
+// and it is why this is guarded by a Stat — a mount whose source does not
+// exist is a mountpoint the engine has to CREATE on a read-only mount, which
+// is the failure rangerhq-6so measured on `.beads/bd.sock`.
+//
+// What crosses the carve-out is the JSONL, not SQLite: the inner `bd`
+// wrapper (cageinner.go) runs no-db, so this mount carries a file append and
+// the host's daemon imports it. `.git` is the other carve-out ADR 0014 names
+// and it is NOT here — it belongs with that ADR's `writable:` overlays, and
+// L3's `pre-push` needs no write at all.
 func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 	ro := deniesFileWrite(ag.Deny)
 	why := "the session's repo"
@@ -316,6 +333,14 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 		{Src: dir, Dst: dir, RO: ro, Why: why},
 		{Src: ag.MemoryDir, Dst: ag.MemoryDir, Why: "persona memory ({memory}, ORDERS.md)"},
 		{Src: ag.Path, Dst: ag.Path, RO: true, Why: "the PID the runtime reads as its prompt ({file})"},
+	}
+	// The carve-out, AFTER the repo so the later mount wins. Only when the
+	// repo is `:ro` (on a read-write repo there is nothing to carve out of)
+	// and only when the directory is already there.
+	if beads := filepath.Join(dir, ".beads"); ro {
+		if st, err := os.Stat(beads); err == nil && st.IsDir() {
+			ms = append(ms, CageMount{Src: beads, Dst: beads, Why: "the bead store, READ-WRITE over the :ro repo — the carve-out that keeps claim/comment/close at this tier (ADR 0002 amendment, rangerhq-3nxk)"})
+		}
 	}
 	// A worktree's `.git` is a FILE pointing at the main repo's common dir,
 	// which is somewhere else on the host — so `.git/hooks/pre-push`, the L3

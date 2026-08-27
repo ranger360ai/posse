@@ -114,6 +114,7 @@ type GatesWrap struct {
 	Gates string   // the dir the gates were rendered into (RHQ_GATES_DIR)
 	Bin   string   // the shim dir now first on PATH
 	Shell string   // the gate shell ("" when the runtime opted out)
+	Bd    string   // the no-db bd wrapper ("" when the image carries no bd)
 }
 
 // DenyFromEnv reads the PID's deny list out of RHQ_TOOLS_DENY, which is how
@@ -150,6 +151,9 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 		return nil, err
 	}
 	w := &GatesWrap{Path: path, Argv: argv, Gates: gatesDir, Bin: binDir, Shell: shell}
+	if w.Bd, err = renderCageBd(binDir); err != nil {
+		return nil, err
+	}
 	if noGateShell {
 		w.Shell = ""
 	}
@@ -163,6 +167,59 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 		w.Env = envPut(w.Env, "GROK_SHELL", w.Shell)
 	}
 	return w, nil
+}
+
+// ─── `bd` inside the cage (ADR 0002 amendment, rangerhq-3nxk) ────────────────
+
+// CageBdFlags are the global flags the inner `bd` is given: JSONL only, no
+// daemon. The other half of the `.beads` carve-out (CageMounts) — the mount
+// makes the store writable, this makes bd able to use it.
+//
+// Measured 2026-08-22 (Docker 29.0.1, bd 0.49.1, BD_ACTOR forwarded):
+// through the carve-out with these flags, `create` / `comments add` /
+// `dep add` / `q` / `show` all answer sub-second and `close` still enforces
+// the graph (it refuses on an open dep — this is bd, not a jsonl append);
+// the host's daemon imports the write on its next read, so a caged comment
+// is visible to an ordinary host `bd show` with nothing to import by hand.
+// Without them bd spends ~5s per command trying and failing to start a
+// daemon on a socket the boundary cannot carry (rangerhq-6so's ENOTSUP).
+//
+// `--sandbox` is the tidier spelling the bead offered and it is NOT this:
+// it disables the daemon and auto-sync, which leaves SQLite — the half that
+// does not work here. Two flags that were measured beat one that reads
+// better.
+var CageBdFlags = []string{"--no-db", "--no-daemon"}
+
+// renderCageBd puts that bd on the same PATH the inner gates own — the shim
+// dir, so one PATH entry carries the whole inner render and a session that
+// escapes the wrapper has escaped the gates too. Returns "" (no error) when
+// there is nothing to render:
+//
+//   - the image carries no `bd` — then there is nothing to wrap, and a
+//     wrapper exec'ing a binary that is not there would turn "bd is missing"
+//     into "bd is broken";
+//   - the persona's deny: already rendered a `bd` shim into that name. A
+//     gate outranks a convenience: the refusal stays, and the forms it lets
+//     through reach the image's bd on the ordinary PATH — slower, still
+//     correct.
+func renderCageBd(binDir string) (string, error) {
+	path := filepath.Join(binDir, "bd")
+	if _, err := os.Stat(path); err == nil {
+		return "", nil
+	}
+	// Resolved here and written in, exactly like a shim's REAL: the wrapper
+	// is first on PATH under its own name, so anything that searched PATH
+	// again would find itself.
+	real := resolveOutside("bd", binDir)
+	if real == "" {
+		return "", nil
+	}
+	script := fmt.Sprintf("#!/bin/sh\n# posse: bd inside the cage — the .beads carve-out's other half (rangerhq-abvm).\n# Rendered at launch by `posse gates wrap`; do not edit.\nexec %s %s \"$@\"\n",
+		shQuote(real), strings.Join(CageBdFlags, " "))
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // RunGatesWrap is `posse gates wrap <persona> [--no-gate-shell] -- <argv…>`,

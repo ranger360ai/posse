@@ -5,7 +5,8 @@ package rhq
 // *rendered*; this proves the only thing that matters about it:
 //
 //	inside the cage, the wall is really there — the shims are the image's,
-//	the hook fires on the repo mount, and a read-only repo is read-only.
+//	the hook fires on the repo mount, a read-only repo is read-only, and the
+//	one carve-out in it (`.beads`) is a bead the persona can still comment on.
 //
 //	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveInnerGates -v
 //
@@ -14,7 +15,10 @@ package rhq
 // shell script, because every claim here is about the environment the
 // runtime is handed and none of them is about the runtime.
 //
-// Measured 2026-08-22, macOS 26.4.1, Docker 29.0.1, image posse-cage:latest.
+// Measured 2026-08-22, macOS 26.4.1, Docker 29.0.1, image posse-cage:latest;
+// the `.beads` carve-out clause 2026-08-27 on the same host (rangerhq-abvm),
+// against an image rebuilt from that tree — the inner render is the IMAGE's
+// posse, so a source change to it is not in the cage until `posse cage build`.
 
 import (
 	"encoding/json"
@@ -22,7 +26,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -142,10 +148,16 @@ echo "which-git=$(command -v git)"
 echo "shim: $(git push origin main 2>&1 | head -1)"
 echo "hook: $(/usr/bin/git push origin main 2>&1 | grep -i refused | head -1)"
 touch ./written 2>/dev/null && echo "touch=wrote" || echo "touch=refused"
+echo "which-bd=$(command -v bd)"
+touch ./.beads/written 2>/dev/null && echo "beadswrite=wrote" || echo "beadswrite=refused"
+if [ -n "$RHQ_BD_PROBE_ID" ]; then
+  echo "bdcomment=$(bd comments add "$RHQ_BD_PROBE_ID" 'from inside the cage' 2>&1 | tail -1)"
+fi
 echo "dirsock=$(conn ./probe.sock)"
 if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROBE")"; else echo "herdr=absent"; fi
 `
 	dir := liveCageRepo(t, probe)
+	bead := liveCageBeadStore(t, dir)
 	ln, err := net.Listen("unix", filepath.Join(dir, "probe.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +194,7 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 			t.Fatal(err)
 		}
 		line, err := a.WrapInCage(ag, rt, session, dir, "sh ./probe.sh",
-			append(CageEnvNames(nil), "CLAUDE_CODE_OAUTH_TOKEN", "RHQ_HERDR_SOCK_PROBE"), "")
+			append(CageEnvNames(nil), "CLAUDE_CODE_OAUTH_TOKEN", "RHQ_HERDR_SOCK_PROBE", "RHQ_BD_PROBE_ID"), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,6 +220,12 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 			"RHQ_TOOLS_DENY="+strings.Join(deny, "\n"),
 			"RHQ_PERSONA="+ag.Name,
 			"RHQ_HERDR_SOCK_PROBE="+hsock,
+			// The carve-out's two halves need one name each: the bead to
+			// comment on, and the actor the comment is attributed to — which
+			// is the same BD_ACTOR the host forwards into a real caged
+			// session (CageEnvNames), not something this test invented.
+			"RHQ_BD_PROBE_ID="+bead,
+			"BD_ACTOR=caged-"+ag.Name,
 		)
 		out, err := c.CombinedOutput()
 		if err != nil {
@@ -257,6 +275,36 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 	if got["dirsock"] == "connected" {
 		t.Errorf("a socket through a directory mount now connects (%q) — re-open the bd question this tier was scoped around and fix the NOTES", got["dirsock"])
 	}
+	// The `.beads` carve-out, which is the rest of verification 8 (ADR 0002's
+	// amendment via rangerhq-3nxk): the repo is read-only and the bead store
+	// inside it is NOT, and the bd on the inner PATH is one that can use it.
+	// The three claims are separate on purpose — a writable mount with a bd
+	// that cannot open it is not a capability, and neither is the reverse.
+	if bead != "" {
+		if got["beadswrite"] != "wrote" {
+			t.Errorf("the .beads carve-out must be writable over the :ro repo, got %q", got["beadswrite"])
+		}
+		if want := filepath.Join(inner, "bin", "bd"); got["which-bd"] != want {
+			t.Errorf("`command -v bd` must answer the inner no-db wrapper (%s), got %q — an image older than that render answers with its own bd, so rebuild it (`posse cage build`) before reading this as a regression", want, got["which-bd"])
+		}
+		if !strings.Contains(got["bdcomment"], "Comment added") {
+			t.Errorf("a caged persona denying Edit/Write must still be able to comment on its bead, got %q", got["bdcomment"])
+		}
+		// And the write is on the ordinary host path, with nothing imported
+		// by hand: the caged bd appended to issues.jsonl and the repo's
+		// running daemon imports it before answering. "Running" is load-
+		// bearing — see liveCageBeadStore, where stopping it first turns
+		// this same read into a staleness refusal.
+		c := exec.Command("bd", "show", bead)
+		c.Dir, c.Env = dir, append(os.Environ(), "PATH="+PathOutsideGates(""))
+		b, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("host bd show %s: %v\n%s", bead, err, b)
+		}
+		if !strings.Contains(string(b), "from inside the cage") {
+			t.Errorf("the caged comment must be visible to an ordinary host `bd show`, with no manual import:\n%s", b)
+		}
+	}
 	// Both refusals land in the host's audit trail, not in the container's
 	// ephemeral filesystem: that mount is the whole reason it is a mount.
 	b, err := os.ReadFile(a.RefusalsLogPath("p"))
@@ -300,4 +348,70 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 	if held["herdr"] != "connected" {
 		t.Errorf("sockets: [herdr] must mount a socket that can be SPOKEN to, got %q", held["herdr"])
 	}
+}
+
+// liveCageBeadStore puts a real bd store in the fixture and returns the id of
+// one issue in it — the thing the `.beads` carve-out exists for. "" when the
+// host has no bd, which costs that clause and nothing else: the image carries
+// its own, and the host's is needed only to build the fixture and to read the
+// result back on the ordinary path.
+func liveCageBeadStore(t *testing.T, dir string) string {
+	t.Helper()
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Log("no bd on the host: skipping verification 8's .beads carve-out clause")
+		return ""
+	}
+	bd := func(args ...string) string {
+		t.Helper()
+		c := exec.Command("bd", args...)
+		c.Dir = dir
+		c.Env = append(os.Environ(), "PATH="+PathOutsideGates(""), "BD_ACTOR=fixture")
+		b, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("bd %v: %v\n%s", args, err, b)
+		}
+		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+		return strings.TrimSpace(lines[len(lines)-1])
+	}
+	// --skip-hooks: posse's L3 hooks are already installed in this fixture
+	// and bd's own are not what is being verified here.
+	bd("init", "-q", "-p", "cage", "--skip-hooks", "--skip-merge-driver")
+	id := bd("q", "the bead a caged persona has to be able to comment on")
+	bd("sync") // db → issues.jsonl, which is what the no-db bd inside reads
+
+	// The daemon those commands started is LEFT RUNNING, and that is part of
+	// the claim rather than laziness. "Visible with no manual import" is a
+	// property of the daemon: it imports a newer JSONL before answering. Stop
+	// it first and the same read fails instead — measured 2026-08-27, the
+	// cold store's `bd show` waits 5s for a daemon it cannot start, drops to
+	// direct mode and refuses with *Database out of sync with JSONL. Run 'bd
+	// sync --import-only' to fix.* A caged persona writes into a repo whose
+	// daemon is up, which is what this fixture reproduces.
+	//
+	// Cleanup stops it, because the fixture dir is about to be removed and a
+	// daemon holding a deleted repo is the stale kind `make verify-bd-pin`
+	// goes looking for. The workspace is an ARGUMENT, not the cwd: `bd daemon
+	// stop` on 0.49.1 exits 1 with "accepts 1 arg(s), received 0" whatever
+	// directory it is run from (measured 2026-08-27), and a cleanup whose
+	// error is ignored is a cleanup that silently leaves the daemon behind.
+	t.Cleanup(func() {
+		c := exec.Command("bd", "daemon", "stop", dir)
+		c.Dir, c.Env = dir, append(os.Environ(), "PATH="+PathOutsideGates(""))
+		if b, err := c.CombinedOutput(); err != nil {
+			t.Logf("bd daemon stop %s: %v\n%s", dir, err, b)
+		}
+		// …and the backstop, because that command exits 0 and leaves the
+		// process running anyway (measured 2026-08-27, bd 0.49.1). The pid
+		// file is the one this fixture's own daemon wrote seconds ago in a
+		// directory nothing else has ever seen, so signalling it is not a
+		// guess about somebody else's process.
+		b, err := os.ReadFile(filepath.Join(dir, ".beads", "daemon.pid"))
+		if err != nil {
+			return
+		}
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 0 {
+			_ = syscall.Kill(pid, syscall.SIGTERM)
+		}
+	})
+	return id
 }

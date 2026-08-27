@@ -348,3 +348,121 @@ func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
 		t.Errorf("no posse in the image → no posse on the line:\n%s", b)
 	}
 }
+
+// The `.beads` carve-out (ADR 0002's amendment, rangerhq-3nxk): the boundary
+// is the work, not the store. A repo that goes `:ro` gets its bead store
+// mounted back read-write over it, because the personas this tier exists for
+// — the reviewer, the auditor — are exactly the ones who have to be able to
+// report what they found.
+func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := t.TempDir()
+	beads := filepath.Join(dir, ".beads")
+	ag := cageAgent(t, a, "cage: container\ndeny: [Write]\n")
+
+	// No store, no mount. A bind whose source does not exist is a mountpoint
+	// the engine has to CREATE on a read-only mount, which is the failure
+	// rangerhq-6so measured on `.beads/bd.sock`.
+	for _, m := range a.CageMounts(ag, e, dir) {
+		if m.Src == beads {
+			t.Errorf("no .beads directory → nothing to carve out: %+v", m)
+		}
+	}
+	if err := os.MkdirAll(beads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ms := a.CageMounts(ag, e, dir)
+	at := -1
+	for i, m := range ms {
+		if m.Src == beads {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatalf("a :ro repo must carry its .beads read-write: %+v", ms)
+	}
+	if ms[at].Dst != beads || ms[at].RO {
+		t.Errorf("same path in and out, and WRITABLE — that is the whole carve-out: %+v", ms[at])
+	}
+	// Later mount wins is the mechanism, so the order is the mechanism too.
+	if !ms[0].RO || at == 0 {
+		t.Errorf("the carve-out must come after the :ro repo it carves out of: %+v", ms)
+	}
+	// The engine's own spelling: read-write is the ABSENCE of `:ro`, so this
+	// asserts the rendered word and not the struct field twice.
+	argv := e.RenderArgv(CageRender{Image: "img", Workdir: dir, Mounts: ms, Inner: []string{"x"}})
+	if !argvHas(argv, "-v", beads+":"+beads) || !argvHas(argv, "-v", dir+":"+dir+":ro") {
+		t.Errorf("the carve-out is a mount flag, not a claim: %q", argv)
+	}
+	// A repo nobody made read-only has nothing to carve out of: the store is
+	// already writable on the repo mount and a second bind would only be a
+	// second thing to explain.
+	for _, m := range a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir) {
+		if m.Src == beads {
+			t.Errorf("a read-write repo needs no carve-out: %+v", m)
+		}
+	}
+}
+
+// The other half of the carve-out: the mount makes `.beads` writable, this
+// makes bd able to use it. A no-db wrapper on the same PATH the inner gates
+// own — because the socket does not cross (ENOTSUP, rangerhq-6so) and SQLite
+// through a mount spends ~5s a command failing to start a daemon.
+func TestInnerBdWrapperRunsNoDbOnTheGatesPath(t *testing.T) {
+	real := resolveOutside("bd", "")
+	if real == "" {
+		t.Skip("needs bd on PATH (in the cage it is the image's)")
+	}
+	a := &App{StateDir: t.TempDir()}
+	env := []string{"PATH=" + PathOutsideGates(""), "RHQ_PERSONA=p"}
+	w, err := a.PrepareGatesWrap("p", []string{"Edit", "Write"}, false, []string{"sh", "-c", "x"}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Bd != filepath.Join(w.Bin, "bd") {
+		t.Fatalf("the wrapper goes in the shim dir, the one PATH entry the inner render owns: %q", w.Bd)
+	}
+	b, err := os.ReadFile(w.Bd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(b)
+	// Resolved and written in, like a shim's REAL: first on PATH under its
+	// own name, so a wrapper that searched PATH again would find itself.
+	if !strings.Contains(script, "exec "+shQuote(real)+" ") {
+		t.Errorf("the wrapper must exec the bd resolved on THIS side (%s):\n%s", real, script)
+	}
+	// Global flags BEFORE the subcommand: `bd --no-db close x`, not
+	// `bd close x --no-db` (measured — the trailing spelling is not a flag
+	// the subcommand knows).
+	for _, f := range CageBdFlags {
+		if !strings.Contains(script, " "+f+" ") {
+			t.Errorf("%s must be prepended as a global flag:\n%s", f, script)
+		}
+	}
+	if i, j := strings.Index(script, CageBdFlags[0]), strings.Index(script, `"$@"`); i < 0 || j < 0 || i > j {
+		t.Errorf("the persona's own argv comes last:\n%s", script)
+	}
+	if st, err := os.Stat(w.Bd); err != nil || st.Mode().Perm()&0o111 == 0 {
+		t.Errorf("the wrapper has to be executable: %v %v", st, err)
+	}
+
+	// A gate outranks a convenience: a PID that denies a bd verb keeps its
+	// refusal, and the wrapper does not overwrite it.
+	g := &App{StateDir: t.TempDir()}
+	gw, err := g.PrepareGatesWrap("p", []string{"Bash(bd close:*)"}, false, []string{"sh", "-c", "x"}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gw.Bd != "" {
+		t.Errorf("a rendered bd shim owns the name: %q", gw.Bd)
+	}
+	shim, err := os.ReadFile(filepath.Join(gw.Bin, "bd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(shim), "refused by posse gate") {
+		t.Errorf("the deny must still be the thing on that PATH entry:\n%s", shim)
+	}
+}

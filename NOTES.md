@@ -2392,6 +2392,7 @@ rangerhq-6so — *What is built* at the end of this section).
 |---|---|
 | repo + `{memory}` bind mounts | work, and VirtioFS maps ownership — a file written as root inside lands owned by the operator outside. `git` inside wants one `safe.directory` line |
 | herdr socket passthrough | **works, and only in one shape**: a socket bind-mounted as a **file** (`-v …/herdr.sock:…/herdr.sock`) carries a full `agent.list` round-trip. A socket reached through a bind-mounted **directory** does not: `connect(2)` answers `ENOTSUP` on VirtioFS, read-write or read-only alike (re-measured 2026-08-22, Docker 29.0.1, rangerhq-6so). That is why `sockets:` mounts the file, and why `.beads/bd.sock` on the repo mount is **not** a route into the cage |
+| `bd` inside a `:ro` repo | **works through one carve-out** (rangerhq-3nxk/abvm, measured 2026-08-22, re-run 2026-08-27): `{dir}/.beads` bind-mounted **read-write over** the `:ro` repo — a pre-existing DIRECTORY lands rw over a `:ro` bind of its parent, later mount wins, and `touch` in the repo still fails — plus a `bd --no-db --no-daemon` wrapper on the inner gates PATH. `create`/`comments add`/`dep add`/`q`/`show` answer sub-second, `close` still enforces the graph, and the host's daemon imports the JSONL, so a caged comment is on the ordinary host path with nothing typed. Direct SQLite through the same mount is ~5s a command, failing to start a daemon it has no socket for |
 | herdr detection through `docker run` | **breaks, and the fix is one launcher** (below) |
 | egress allowlist proxy | **realized, and enforced by routing, not by env var** (below) |
 | VirtioFS build tax | ~8% on a cold `go build ./...` of this repo (4.84s bind-mounted vs 4.49s on the container's own fs; the host itself takes 5.33s). Warm image start is ~0.2s. Not the tax ADR 0002 assumed |
@@ -2678,7 +2679,15 @@ cage, `command -v git` → `/posse/gates/p/bin/git`, `SHELL` →
 `/usr/bin/git push` prints the L3 hook's, `touch` fails on the `:ro` repo,
 **both** refusals land in the host's `refusals.log`, the same holds from a
 worktree, and the herdr socket is absent by default and *connectable* with
-`sockets: [herdr]`.
+`sockets: [herdr]`. Extended 2026-08-27 (rangerhq-abvm) with the carve-out:
+`command -v bd` → `/posse/gates/p/bin/bd`, a write under `.beads` succeeds
+on that same `:ro` repo, `bd comments add` inside answers *Comment added*,
+and a plain host `bd show` reads the comment back with nothing imported by
+hand — *while the repo's daemon is up*, which is the one qualification that
+paragraph needs. Stop it and the same read fails: `bd show` waits 5s for a
+daemon it cannot start, drops to direct mode and refuses with *Database out
+of sync with JSONL. Run 'bd sync --import-only' to fix.* The import is the
+daemon's, not the JSONL's.
 
 **What it costs, measured on the day (2026-08-22, Docker 29.0.1):** a unix
 socket reached through a bind-mounted **directory** is not connectable —
@@ -2691,11 +2700,27 @@ succeed, ~5s per command while bd tries and fails to start a daemon). On a
 **`:ro`** repo mount it does not: SQLite cannot open a database read-only,
 so a caged persona denying `Edit`/`Write` — the security persona, the
 reviewer skeletons, exactly the PIDs this tier is for — **cannot claim,
-comment or close a bead**. **Answered by ADR 0014 §4:** L4's `:ro` repo
-carries L2's `.beads`/`.git` carve-outs as read-write overlays, so the
-wall is the rest of the tree and bd still works. Lands with that ADR's
-L4 implementation bead; overlapping binds on VirtioFS are ASSUMED until
-that bead measures them.
+comment or close a bead**. **Answered, and now built** (ADR 0002's
+amendment via rangerhq-3nxk, the same answer ADR 0014 §4 reaches from the
+path-scoped side; rangerhq-abvm): the `:ro` repo carries **one carve-out**,
+`{dir}/.beads` mounted back read-write over it, and the inner render puts a
+`bd --no-db --no-daemon` wrapper on the gates PATH so bd uses the JSONL
+rather than the SQLite it cannot open and the socket that cannot cross.
+The wall is the rest of the tree; claim, comment and close survive it.
+Overlapping binds on VirtioFS are no longer ASSUMED — a pre-existing
+directory mounts rw over a `:ro` parent, later mount wins, and `touch` at
+the repo root still fails (measured 2026-08-22, re-run 2026-08-27 in
+`TestLiveInnerGatesHoldInsideTheCage`). Three costs come with it and are
+accepted rather than hidden: the carve-out is a **directory, not a
+protocol** (anything under `.beads/` is writable, bd's own files included);
+there is a **lost-update window** on `issues.jsonl` between the host
+daemon's export and a cage's no-db append (low frequency, git-visible);
+and a **worktree** session's caged bd writes that worktree's own tracked
+`.beads/issues.jsonl` — nearest `.beads` wins — so the write reaches the
+shared store by merge/sync, unlike host worktree bd, which routes to the
+main checkout's daemon. `.git` is the other carve-out ADR 0014 names and it
+is **not** built here: it belongs with that ADR's `writable:` overlays, and
+L3's `pre-push` needs no write at all.
 
 ## Cage engine re-evaluation: still Docker (rangerhq-rli)
 
