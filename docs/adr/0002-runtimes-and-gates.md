@@ -7,7 +7,10 @@ path-scoped Edit/Write, `writable:` at L2 and L4, L4 `:ro` carve-outs) ·
 amended 2026-08-26 (Claude directory trust and executable project config) ·
 amended 2026-08-27 (ADR 0025: enforcement class on every realized gate;
 §3 L3 row's `env -i` claim struck as measured false; the refusals trail
-gets a single writer at the container tier)*
+gets a single writer at the container tier) · amended 2026-08-27 (escape C,
+bead ranger-base-3csb: §3's closing sentence corrected — L3 is a cooperative
+backstop, not the boundary for the `/usr/bin/git` hole; `-c core.hooksPath`
+redirects past it with zero writes, measured)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -581,3 +584,91 @@ its reason. Keep `ProjectConfigKeys: [hooks, mcpServers]` on Claude:
 
 No implementation change follows from this amendment. `NOTES.md` and
 `internal/rhq/trust.go` carry the same correction.
+
+## Amendment 2026-08-27 — L3 is not the absolute-path backstop it was written as (escape C, measured)
+
+### Context
+
+§3's closing sentence — "Known holes of L1 (`/usr/bin/git`, `command -p`)
+are why L3 exists for the one verb that is a hard risk line; the remaining
+holes are what the seatbelt/container tiers are for." — reads as: L1 misses
+the absolute-path `git push`, and L3 catches it. ADR 0025 already
+reclassified L3 as *cooperative* and named `core.hooksPath` and `--no-verify`
+among its defeats in the L3 row, but that closing sentence was not corrected,
+and it still promises L3 as the backstop for the `/usr/bin/git` hole. A
+single invocation falsifies the promise.
+
+**Escape C, now MEASURED** (git 2.39.3 / Apple Git-146, ungated scratch:
+bare local remote, a refusing pre-push installed in the client, `/usr/bin/git`
+throughout — bead ranger-base-3csb; the same forms ADR 0025 verification 4
+carried as ASSUMED-from-docs):
+
+- Baseline plain push → the pre-push hook fires, the ref does not land.
+- `git -c core.hooksPath=<hookless dir>` push, `core.hooksPath=` (empty
+  value) push, and `core.hooksPath=/dev/null` push → all three refs **land**.
+  git dispatches from `core.hooksPath` and finds no `pre-push` there.
+- `git push --no-verify` → ref lands (pre-push skipped outright).
+- Control — `core.hooksPath=<dir that *does* contain a refusing pre-push>`
+  → the hook fires, the ref does not land. So git genuinely runs the hook at
+  the *redirected* path; the escape is aiming it at a hookless directory,
+  which is **zero writes** to the repo's own `.git/hooks/pre-push` slot.
+- The whole run went through `/usr/bin/git` and this session's L1 shim never
+  refused it — the L1 half (an absolute path never reaches the PATH shim)
+  observed in passing.
+
+The combined form `/usr/bin/git -c core.hooksPath=<hookless> push` therefore
+defeats **both** cooperative layers in one call: L1 by the absolute path, L3
+by the redirect, with no file written anywhere posse could gate.
+
+### Decision
+
+**1. Correct §3's closing sentence.** L3 is a *cooperative* backstop for the
+one hard-risk verb: it raises the cost of the ordinary absolute-path or
+subprocess push that keeps its environment and dispatches hooks normally. It
+is **not** the boundary for the `/usr/bin/git` hole. `--no-verify`, an
+emptied environment (ADR 0025 amendment), and a `-c core.hooksPath=` redirect
+each walk past it; the redirect needs no file write. The remaining holes —
+this one included — are what the seatbelt/container tiers are for.
+
+**2. No file-deny fixes escape C (option ii is a dead end — say so).**
+The redirect writes nothing: `core.hooksPath=/dev/null` and `core.hooksPath=`
+(empty) name no new file at all, and pointing at an existing empty directory
+writes nothing into the repo. So L2's `file-write*` boundary, and any
+hooks-directory write-deny of the kind the L3-planting carve-out contemplates
+(ranger-base-j5s0, ADR 0023 non-goal 3), cannot touch it — there is no write
+to deny. This is the same conclusion ADR 0025 reached rejecting its option
+(b): hardening the write path buys back a false claim, not a wall.
+
+**3. No git knob closes it (option iii checked, empty — the b0y lesson).**
+git 2.39.3's config surface (`git-config(5)`, `core.hooksPath`) offers no
+"protected hooks", no way to forbid a `-c` override of it, and no way to
+force a hook to run. Client hooks are advisory by git's own design, not a
+security boundary. Checked, not assumed; the knob does not exist.
+
+**4. The boundary is the container tier's *effect* gate, exactly as ADR 0025
+§3 already states.** A `-c core.hooksPath` redirect changes nothing about
+where the bytes go: at `cage: container` a path remote inside the mounts dies
+on the `:ro` boundary (granted when the PID denies Edit/Write), and a network
+remote dies at the egress `--internal` network + proxy unless `egress:` names
+its host — both *enforced*, held outside the process. The verb gate stays
+cooperative at every tier; the effect is what an adversarial invocation runs
+into. Parity prints this as the class line's note, never as a computed claim
+(the launcher does not know the remote's host).
+
+### Consequences
+
+- This is a doctrine correction, not new mechanism. Escape C is the
+  cooperative-class residual ADR 0025 already priced, now measured in its
+  combined absolute-path + redirect form.
+- The QA pins belong to the lane ADR 0025 verification 4 already opened
+  (ranger-base-evb1): `/usr/bin/git push --no-verify` and
+  `git -c core.hooksPath= push` pinned either way in
+  `cageinnerliveqa_test.go`. This amendment adds the combined escape-C form
+  (`/usr/bin/git -c core.hooksPath=<hookless> push` unrefused while a plain
+  `git push` is refused — green on purpose, the day it flips is the day
+  someone notices) and supplies the measured expected values above, so evb1
+  no longer carries these as ASSUMED.
+- The §3 closing sentence's correction is a docs-sweep item; a grep for "why
+  L3 exists" that no longer finds the backstop reading is the cheap pin.
+
+No decision here reopens ADR 0025 — it confirms it.
