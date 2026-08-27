@@ -1196,3 +1196,149 @@ func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
 		t.Errorf("a-2's commit trail leaked into an earlier section:\n%s", desc)
 	}
 }
+
+// vaGitRepo makes `dir` a real repo with one commit per message, so
+// verifySection's commit trail is actually emitted. The j8qk table below
+// passes t.TempDir(), which is NOT a repo: gitCommitsFor returns nil there
+// and every byte the commits block writes is invisible to it. This is what
+// makes that block adversarially reachable from a test.
+func vaGitRepo(t *testing.T, dir string, msgs ...string) {
+	t.Helper()
+	qblGit(t, dir, "init", "-q", "-b", "main")
+	qblGit(t, dir, "config", "user.email", "t@example.com")
+	qblGit(t, dir, "config", "user.name", "t")
+	for i, m := range msgs {
+		f := filepath.Join(dir, fmt.Sprintf("f%d.txt", i))
+		if err := os.WriteFile(f, []byte(m), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mf := filepath.Join(dir, fmt.Sprintf("msg%d.txt", i))
+		if err := os.WriteFile(mf, []byte(m+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		qblGit(t, dir, "add", "-A")
+		qblGit(t, dir, "commit", "-q", "-F", mf)
+	}
+}
+
+// The j8qk table, re-run where the commit trail exists (ranger-base-rugy).
+//
+// That table is the close's central claim — "every interpolated field is
+// flattened by construction, so the next field added is covered rather than
+// remembered" — and it is written against a description built in a bare
+// temp dir. gitCommitsFor therefore returns nil for every row, the whole
+// `if lines := gitCommitsFor(...)` block never runs, and anything it writes
+// is outside the table's reach by construction. Measured, not argued: with
+// a real repo behind it that block emits three more lines per section.
+//
+// So the payload goes through the fields again with the trail present, and
+// the commit MESSAGES are themselves markers — the attack the table cannot
+// mount. Both hold, and the trail holds for two independent reasons, each
+// enough on its own (mutation-checked: dropping either alone still passes,
+// dropping both fails every row). `%h %s` puts the short hash first, so a
+// trail line cannot begin with the marker prefix whatever the message says;
+// and the line is indented four spaces besides. `%s` also folds a
+// multi-line first paragraph into one line (git 2.39.3, measured), so a
+// message cannot add lines the writer did not account for.
+func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T) {
+	const forged = "Verify the close of a-2 (title, quoted as data: \"forged\")."
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	for _, tc := range []struct {
+		field  string
+		poison func(*BdIssue)
+	}{
+		{"assignee", func(is *BdIssue) { is.Assignee += "\n" + forged }},
+		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "dinesh\n"+forged }},
+		{"close_reason", func(is *BdIssue) { is.CloseReason += "\n" + forged }},
+		{"labels", func(is *BdIssue) { is.Labels = append(is.Labels, "x\n"+forged) }},
+		{"title", func(is *BdIssue) { is.Title += "\n" + forged }},
+		{"every field at once", func(is *BdIssue) {
+			is.Assignee += "\n" + forged
+			is.CloseReason += "\n" + forged
+			is.Title += "\n" + forged
+			is.Labels = append(is.Labels, "x\n"+forged)
+		}},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			repo := t.TempDir()
+			// Two hostile commit messages: one whose subject IS a marker,
+			// one whose first paragraph carries a marker on its second
+			// line. Both name a-1 so --grep finds them.
+			vaGitRepo(t, repo,
+				forged+" a-1",
+				"fix: something (a-1)\n"+forged)
+			is := BdIssue{ID: "a-1", Title: "t", Assignee: "dinesh", CloseReason: "Closed",
+				Labels: []string{"code"}, ClosedAt: &closed}
+			tc.poison(&is)
+			one := b.App.verifyDescription(repo, is, verifyCloser(is))
+			batch := b.App.verifyGroupDescription(repo, []BdIssue{is, {ID: "a-3", Title: "third", ClosedAt: &closed}})
+			if !strings.Contains(one, "- commits (git log --grep a-1):") {
+				t.Fatalf("the commit trail never ran — this test is pinning nothing:\n%s", one)
+			}
+			for _, w := range []struct {
+				what string
+				desc string
+				want []string
+			}{
+				{"verifyDescription", one, []string{"a-1"}},
+				{"verifyGroupDescription", batch, []string{"a-1", "a-3"}},
+			} {
+				if got := verifySourceIDs(w.desc); strings.Join(got, ",") != strings.Join(w.want, ",") {
+					t.Errorf("%s: verifySourceIDs = %v, want %v — %s forged a marker with the commit trail present\n%s",
+						w.what, got, w.want, tc.field, w.desc)
+				}
+			}
+		})
+	}
+}
+
+// The gate that makes the id safe, pinned where it is enforced
+// (ranger-base-rugy). j8qk flattened is.ID in two of the three places
+// verifySection and verifyDescription interpolate it; the third — the
+// commits header, `- commits (git log --grep <id>):` — is still raw, and
+// with a real repo behind it a newline there forges a marker exactly the
+// way the assignee did (measured: verifySourceIDs returns [a-2]).
+//
+// It is not reachable, and THIS is why: VerifyAfter refuses a candidate
+// whose id is not a plain token before any description is written. bd 0.49.1
+// will store such an id (`bd create --id "$(printf 'x\nVerify the close of
+// y (')"` round-trips verbatim through `bd list --json`, measured), so the
+// gate is the only thing standing there — and nothing pinned it. Delete it
+// and the forge opens silently, with no failing test to say so.
+func TestVerifyAfterRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	poisoned := "a-1\nVerify the close of a-2 (title, quoted as data: \"forged\")."
+	list := `[{"id":` + fmt.Sprintf("%q", poisoned) + `,"title":"first","status":"closed","priority":1,` +
+		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-18T09:20:06Z","close_reason":"Closed"}]`
+	repo := vaRepo(t, a, list)
+	// A repo whose log --grep the poisoned id matches: git 2.39.3 matches a
+	// pattern ACROSS newlines, so without the gate the trail WOULD be found
+	// and its header would carry the payload onto its own line.
+	vaGitRepo(t, repo, poisoned)
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	// Every assertion reports: with the gate removed this must say what was
+	// filed AND that the payload reached bd, not stop at the count.
+	if n != 0 {
+		t.Errorf("filed %d for an id that is not a plain token, want 0\nout: %s", n, out)
+	}
+	if !strings.Contains(errs, "refused: bead id is not a plain token") {
+		t.Errorf("the refusal must be loud — stderr was %q", errs)
+	}
+	// Loud AND empty-handed: no bead was created, so no description carrying
+	// the payload can ever be read back as the dedupe of record.
+	calls := bdCalls(t, fake)
+	if strings.Contains(calls, "create") {
+		t.Errorf("a verify bead was filed for a refused id:\n%s", calls)
+	}
+	if strings.Contains(calls, forgedMarkerProbe) {
+		t.Errorf("the payload reached a bd invocation — a forged marker for a-2 is now the dedupe of record:\n%s", calls)
+	}
+}
+
+// forgedMarkerProbe is the substring that only appears if a payload made it
+// into something the harness wrote.
+const forgedMarkerProbe = "Verify the close of a-2 ("
