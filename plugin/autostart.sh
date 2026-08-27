@@ -207,15 +207,11 @@ if [ -z "$interval" ]; then
 	say "disarmed (no autostart_interval: in $CONFIG)"
 	exit 0
 fi
-# The transition alias (rangerhq-tyay). `make link-plugin` writes both names,
-# but an operator who ran `make install` and stopped has a plugin dir holding
-# only the old one — and the cost of being strict here is that nothing gets
-# dispatched until somebody notices. So fall back, and SAY so: this arm exists
-# to be seen and removed, not to make the two names interchangeable.
-if [ ! -x "$RHQ" ] && [ -z "${RHQ_BIN:-}" ] && [ -x "$here/bin/rhq" ]; then
-	say "no $RHQ — arming through the transition alias bin/rhq; run 'make link-plugin'" >&2
-	RHQ=$here/bin/rhq
-fi
+# There used to be a fallback here that armed through the transition alias
+# bin/rhq when bin/posse was missing (rangerhq-tyay). `make link-plugin` no
+# longer writes that name (ranger-base-igup), so the arm could only ever fire
+# on a plugin dir left over from before the retirement — and arming a fleet
+# loop off a stale link is worse than the loud failure below.
 if [ ! -x "$RHQ" ]; then
 	say "no posse at $RHQ — run 'make link-plugin'" >&2
 	exit 1

@@ -3058,11 +3058,15 @@ worth knowing here rather than there:
   launched DEGRADED on every runtime × cage — measured on the live gates
   report — and a fence that costs `--allow-degraded` on every launch is a
   fence that gets turned off.
-- **The `rhq` alias is outside the shim.** `make install` still links
-  `$BINDIR/rhq -> posse` (transition mechanics, rangerhq-tyay), the gate shims
-  are keyed on the command NAME, and no PID denies `Bash(rhq promote:*)` — so
-  `rhq promote` walks past L1. It is politeness that leaks, not the wall: the
-  manifest still notices, and retiring the alias closes it. Filed.
+- **The `rhq` alias is outside the shim.** The gate shims are keyed on the
+  command NAME and no PID denies `Bash(rhq promote:*)`, so while an `rhq` on
+  `$PATH` reaches this binary, `rhq promote` walks past L1. It is politeness
+  that leaks, not the wall: the manifest still notices. Closed at the source on
+  2026-08-27 (ranger-base-igup) — `make install` and `make link-plugin` no
+  longer write the alias, so no fresh install has a second spelling. The two
+  inodes already on the operator's box are his to remove inside
+  ranger-base-3rv9's window (ranger-base-6y83); until then the leak is live
+  there and nowhere else.
 
 ## grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr)
 

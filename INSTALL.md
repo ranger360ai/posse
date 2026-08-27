@@ -214,16 +214,22 @@ step run the binary PATH finds:
   checkout) is earlier on `$PATH` and will answer for the binary you just
   promoted. Reorder `$PATH` or remove the stale one.
 
-`install` also drops an `rhq` symlink beside the binary, and `link-plugin` a
-second one in `plugin/bin/`. Both are **transition mechanics** for instances
-that predate the rename (rangerhq-tyay): the command is `posse`, and `rhq` is
-only there so standing orders, permission allowlists and recorded session
-recipes written under the old name keep resolving on the day the binary
-changes. Nothing new should be written against it, and it is scheduled for
-removal — on a fresh install you can delete both links and lose nothing. One
-consequence while it exists: a PID rule naming the harness is matched on the
-typed word, so `Bash(posse …)` does not cover `rhq …`. Spell such a rule both
-ways, or retire the links first.
+`install` used to drop an `rhq` symlink beside the binary, and `link-plugin` a
+second one in `plugin/bin/`. Both were **transition mechanics** for instances
+that predated the rename (rangerhq-tyay) — there only so standing orders,
+permission allowlists and recorded session recipes written under the old name
+kept resolving on the day the binary changed. Neither is written any more
+(ranger-base-igup): by 2026-08-27 nothing on the fleet invoked either one, the
+dispatch loop's own recipe included, so the build stopped recreating them. A
+fresh install has one name, `posse`. An instance installed before that change
+still has the two links; deleting them loses nothing.
+
+The reason those links mattered is worth keeping, because it is a property of
+the harness and not of the alias: a PID rule naming the harness is matched on
+the **typed word**. `Bash(posse …)` covers only what is typed as `posse`. Any
+second name on `$PATH` that reaches the same binary — a shell alias, a wrapper,
+a leftover symlink — is a second command to that matcher, and a rule spelled
+once does not fence it.
 
 From outside a checkout the same binary installs with:
 

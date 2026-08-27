@@ -43,13 +43,15 @@ package rhq
 // the same.
 //
 // EVERY LAYER HERE MATCHES ON THE TYPED WORD, so a command with two names
-// on PATH is two commands to this matcher. `posse` currently has one:
-// `make install` puts an `rhq` symlink beside it for instance continuity
-// across the rename (rangerhq-tyay), and a rule spelled Bash(posse …) does
-// not fire on `rhq …`. Nothing in the PIDs denies either spelling today —
-// the only PID that names it at all is an allow: — so this is a note, not
-// a hole. It becomes one the moment a PID denies the harness by name:
-// spell such a rule BOTH ways until the operator retires the symlink.
+// on PATH is two commands to this matcher. The build gives `posse` exactly
+// one: the `rhq` alias `make install`/`make link-plugin` used to write for
+// continuity across the rename (rangerhq-tyay) is no longer created
+// (ranger-base-igup). Two inodes from before that change survive on the
+// operator's box until ranger-base-6y83's window, and a rule spelled
+// Bash(posse …) does not fire on `rhq …` while they do. The rule outlives
+// them: any second name reaching this binary — alias, wrapper, leftover
+// symlink — is a second command here, so a PID that denies the harness by
+// name must be spelled for every name that resolves to it.
 
 import (
 	"fmt"

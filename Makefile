@@ -31,22 +31,22 @@ release:
 # Promote the release build to the live binary. install(1) unlinks the target
 # before writing, so running cockpits/dispatches keep their old inode.
 #
-# THE `rhq` SYMLINK IS TRANSITION MECHANICS, NOT A SECOND NAME (rangerhq-tyay).
-# On promote day an instance is still full of the old spelling — persona standing
-# orders, permission allowlists, saved recipes (the live dispatch loop's own
-# recipe names an absolute .../plugin/bin/rhq), the operator's fingers. So the
-# rename ships with a same-inode alias beside the binary and nothing breaks at
-# the moment of promotion. It is scheduled for removal, not for documenting:
-# `posse` is the command. Retiring the link is the operator's call, and the
-# thing to check first is `grep -rn '\brhq\b' ~/.config/rhq` plus this repo's
-# .claude/settings.json. Relative on purpose — $(BINDIR) may be moved or
-# symlinked itself, and a relative link follows it.
+# THE `rhq` SYMLINK IS GONE FROM THIS TARGET (ranger-base-igup, was
+# rangerhq-tyay). It was transition mechanics, never a second name: on promote
+# day an instance was still full of the old spelling — persona standing orders,
+# permission allowlists, saved recipes — so the rename shipped a same-inode
+# alias beside the binary and nothing broke at the moment of promotion. That
+# job is done, MEASURED 2026-08-27: the live dispatch loop's own recipe records
+# `<repo>/plugin/bin/posse dispatch --watch` (pidfile and `ps`), the plugin
+# manifest runs ./bin/posse, and no herdr config, shell profile or session
+# recipe on this box invokes the alias. Zero consumers, so the build stopped
+# writing it. `posse` is the command. Retiring the two inodes that predate this
+# change is the operator's, inside ranger-base-3rv9's window (ranger-base-6y83);
+# nothing here recreates them.
 install: release
 	install -d $(BINDIR)
 	install -m 0755 bin/posse-release $(BINDIR)/posse
-	ln -sfn posse $(BINDIR)/rhq
 	@echo "installed: $(BINDIR)/posse"
-	@echo "  alias   : $(BINDIR)/rhq -> posse (transition only, rangerhq-tyay)"
 	@echo "  promoted: $$(git rev-parse --short HEAD) $$(git log -1 --format=%s HEAD)"
 	@echo "  version : $$($(BINDIR)/posse version)"
 	@scripts/path-warning.sh '$(BINDIR)'
@@ -117,15 +117,18 @@ fmt:
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink
 # to the *installed* binary, so the popup never runs an unpromoted build.
-# plugin/bin/rhq is the same transition alias as $(BINDIR)/rhq, and here it is
-# load-bearing rather than habitual: a session recipe records the ABSOLUTE
-# command it was launched with, and the fleet's own dispatch --watch loop is
-# recorded as `<repo>/plugin/bin/rhq dispatch --watch`. Dropping this link
-# would break relaunching the loop that dispatches everything else.
+# plugin/bin/rhq is no longer written here (ranger-base-igup). It was kept on
+# the claim that it was load-bearing — that a session recipe records the
+# ABSOLUTE command it was launched with, and the fleet's dispatch --watch loop
+# was recorded as `<repo>/plugin/bin/rhq dispatch --watch`, so dropping the link
+# would break relaunching the loop that dispatches everything else. That claim
+# was measured on 2026-08-27 and is false: the live loop's recipe, its pidfile
+# and `ps` all name `<repo>/plugin/bin/posse dispatch --watch`, and
+# autostart.sh's own default is $$here/bin/posse. No recipe on this box invokes
+# the old spelling.
 link-plugin:
 	mkdir -p plugin/bin
 	ln -sfn $(BINDIR)/posse plugin/bin/posse
-	ln -sfn $(BINDIR)/posse plugin/bin/rhq
 	herdr plugin link $(CURDIR)/plugin
 
 # Install every agent-detection override in etc/herdr/agent-detection into
