@@ -34,6 +34,14 @@ type App struct {
 	EnvsDir    string
 	StateDir   string
 	AgentsDir  string
+	// ExamplesDir is the reference shelf: what `posse init` lays down to
+	// be READ rather than loaded. Only agents/ lives under it, and that
+	// asymmetry is the point — a persona is the one seeded thing the
+	// engine picks up by name, so shipping the examples into AgentsDir
+	// made every generic a live lane that outranked the operator's own
+	// crew alphabetically (ranger-base-qajs). Nothing reads this path;
+	// ListAgents never looks here.
+	ExamplesDir string
 	// ModelLister is the account's model catalog reader (modelavail.go).
 	// nil = NewModelLister, which is what every real launch uses; it is a
 	// field for the same reason Dispatcher.Plan is one — so a test can hand
@@ -72,12 +80,13 @@ func newApp(stderr io.Writer) *App {
 // and spelled the pre-0015 home (ADR 0015 §2, ranger-base-cpyb).
 func NewAppAt(home string) *App {
 	return &App{
-		Home:       home,
-		ConfigPath: filepath.Join(home, "config.yaml"),
-		RecipesDir: filepath.Join(home, "recipes"),
-		EnvsDir:    filepath.Join(home, "envs"),
-		StateDir:   filepath.Join(home, "state"),
-		AgentsDir:  filepath.Join(home, "agents"),
+		Home:        home,
+		ConfigPath:  filepath.Join(home, "config.yaml"),
+		RecipesDir:  filepath.Join(home, "recipes"),
+		EnvsDir:     filepath.Join(home, "envs"),
+		StateDir:    filepath.Join(home, "state"),
+		AgentsDir:   filepath.Join(home, "agents"),
+		ExamplesDir: filepath.Join(home, "examples"),
 	}
 }
 

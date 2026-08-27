@@ -7,8 +7,13 @@
 #
 # TO ARM DISPATCH ON A FRESH INSTANCE, in order:
 #   1. `beads:`          — the repo(s) whose bd queue dispatch reads.
-#   2. `agents/*.md`     — the PIDs it can route to (`posse init` seeds
-#                          examples; `posse agent new <name>` scaffolds one).
+#   2. `agents/*.md`     — the PIDs it can route to. THIS DIRECTORY SHIPS
+#                          EMPTY: `posse agent new <name>` scaffolds one, and
+#                          `examples/agents/` beside it holds the reference
+#                          PIDs to copy from. They are seeded there and not
+#                          here on purpose — a persona in `agents/` is a lane,
+#                          and a generic lane nobody staffed outranked the
+#                          crew's own personas in label routing.
 #                          Routing is by label: a bead's label must match
 #                          some PID's `labels:`, or set `default_persona:`.
 #   3. `operator:`       — who a persona's ASK question beads are filed at.
@@ -71,7 +76,7 @@ default_emoji: ⚙️
 # skipped rather than handed to a lane that did not ask for it — which is the
 # safe default, so set this only once you have a generalist PID that can
 # honestly take anything. Naming the coordinator here is a config error.
-# default_persona: developer
+# default_persona: <persona name>
 
 # Repo-root files named in every work prompt when present (ADR 0005) — the
 # orientation a persona is told to read before it touches anything. Omit the

@@ -105,7 +105,7 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 		t.Errorf("init said %q", out.String())
 	}
 
-	for _, d := range []string{a.RecipesDir, a.EnvsDir, a.StateDir, a.AgentsDir, a.SkillsDir()} {
+	for _, d := range []string{a.RecipesDir, a.EnvsDir, a.StateDir, a.AgentsDir, a.SkillsDir(), a.ExampleAgentsDir()} {
 		if st, err := os.Stat(d); err != nil || !st.IsDir() {
 			t.Errorf("%s not created: %v", d, err)
 		}
@@ -116,11 +116,16 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 	if err != nil || string(got) != string(seed) {
 		t.Errorf("config.yaml: %v (%d bytes, want %d)", err, len(got), len(seed))
 	}
-	for dir, want := range map[string]int{a.AgentsDir: 9, a.RecipesDir: 3, a.EnvsDir: 2} {
+	for dir, want := range map[string]int{a.ExampleAgentsDir(): 9, a.RecipesDir: 3, a.EnvsDir: 2} {
 		ents, _ := os.ReadDir(dir)
 		if len(ents) < want {
 			t.Errorf("%s: %d files, want at least %d", dir, len(ents), want)
 		}
+	}
+	// ...and agents/ arrives EMPTY (ranger-base-qajs): the examples are a
+	// shelf to copy from, not a crew, because a file here is a live lane.
+	if got := a.ListAgents(); len(got) != 0 {
+		t.Errorf("agents/ after init: %v — a fresh install ships no crew", got)
 	}
 	// examples/skills ships the generic distributed-systems canon (ADR 0012
 	// D2), and a skill is a tree: SKILL.md plus references/. Assert it
@@ -176,8 +181,8 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 
 	// Never overwrites: re-running fills gaps and leaves edits alone.
 	os.WriteFile(a.ConfigPath, []byte("# mine\n"), 0o644)
-	agents, _ := os.ReadDir(a.AgentsDir)
-	gone := filepath.Join(a.AgentsDir, agents[0].Name())
+	agents, _ := os.ReadDir(a.ExampleAgentsDir())
+	gone := filepath.Join(a.ExampleAgentsDir(), agents[0].Name())
 	os.Remove(gone)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatal(err)

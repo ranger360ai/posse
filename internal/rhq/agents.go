@@ -281,6 +281,21 @@ func (ag *AgentFile) RenderCommand() string {
 	return ag.RenderCommandFor(rt, own, tier)
 }
 
+// ExampleAgentsDir is the reference shelf's agents/ — where `posse init`
+// puts the shipped example PIDs (ranger-base-qajs). Derived rather than
+// read straight off the field so an App built by hand in a test, with only
+// Home set, still names a path under that home instead of a relative one.
+//
+// It is deliberately NOT AgentsDir and nothing loads from it: an example
+// that is loadable is a lane, and a lane nobody staffed wins beads.
+func (a *App) ExampleAgentsDir() string {
+	dir := a.ExamplesDir
+	if dir == "" {
+		dir = filepath.Join(a.Home, "examples")
+	}
+	return filepath.Join(dir, "agents")
+}
+
 // ListAgents returns agent names (agents/*.md, extension stripped), sorted
 // by persona name.
 //

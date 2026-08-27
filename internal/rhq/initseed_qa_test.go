@@ -26,28 +26,35 @@ func seedQAHome(t *testing.T) *App {
 	return NewApp()
 }
 
-// The crew a fresh public install actually receives. `posse init` succeeding
-// says nothing about whether what it laid down is usable: the seeded PIDs are
-// the first thing dispatch reads, and a contract finding in one of them is a
-// broken instance that reported success. Measured live during the verify —
-// a go-installed binary with no repo readable seeds 9 personas and
-// `posse agent check --all` passes 9/9; this keeps that true.
+// The reference PIDs a fresh public install actually receives. `posse init`
+// succeeding says nothing about whether what it laid down is usable: an
+// example an operator copies into agents/ is the first thing dispatch reads,
+// and a contract finding in one of them is a broken persona that looked
+// shipped. Measured live during the verify — a go-installed binary with no
+// repo readable lays down 9 PIDs and `posse agent check --all` passes 9/9;
+// this keeps that true.
+//
+// AMENDED by ranger-base-qajs: the nine land on the SHELF
+// ($RHQ_HOME/examples/agents), not in agents/. The contract claim is
+// unchanged and is checked against the shelf; what changed is that a fresh
+// install ships no crew, which the companion pin below states directly.
 func TestEmbeddedSeedShipsAContractValidCrew(t *testing.T) {
 	a := seedQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init from the embed: %v", err)
 	}
-	names := a.ListAgents()
+	shelf := &App{Home: a.Home, AgentsDir: a.ExampleAgentsDir()}
+	names := shelf.ListAgents()
 	if len(names) < 9 {
-		t.Fatalf("the embedded seed laid down %d persona(s) (%v) — a fresh install gets a crew, not a stub", len(names), names)
+		t.Fatalf("the embedded seed laid down %d example PID(s) (%v) — a fresh install gets the reference shelf, not a stub", len(names), names)
 	}
 	for _, n := range names {
-		findings, _, err := a.CheckAgent(n)
+		findings, _, err := shelf.CheckAgent(n)
 		if err != nil {
 			t.Fatalf("CheckAgent(%s): %v", n, err)
 		}
 		if len(findings) > 0 {
-			t.Errorf("seeded persona %s fails the PID contract: %v", n, findings)
+			t.Errorf("example PID %s fails the PID contract: %v", n, findings)
 		}
 	}
 }

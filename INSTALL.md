@@ -330,7 +330,9 @@ What `init` created, and what it did not:
 ```
 $RHQ_HOME/
   config.yaml     ← from examples/config.yaml, fully commented
-  agents/         ← nine generic personas from examples/agents/
+  agents/         ← EMPTY; your crew goes here, and nothing else does
+  examples/agents/ ← the nine reference PIDs, to read and copy from —
+                    seeded here because a PID in agents/ is a live lane
   recipes/        ← three example recipes
   envs/           ← two example env sets   (dir 0700, files 0600)
   skills/         ← empty; the skills registry
@@ -470,15 +472,32 @@ A **persona** is three things bound to one name:
 3. `$RHQ_HOME/personas/<name>/` — private memory, seeded with `ORDERS.md`
    at first launch.
 
-`init` gave you nine generic personas (`architect`, `developer`, `devops`,
-`product`, `qa`, `reviewer`, `security`, `business-manager`, `ranger`).
-**They are a starting point to edit, not a crew.** Rename them, delete the
-ones you do not want, write the bodies in your own words.
+`init` gave you **no personas**. `$RHQ_HOME/agents/` is empty and it is
+yours; what it seeded instead is `$RHQ_HOME/examples/agents/`, nine
+reference PIDs (`architect`, `developer`, `devops`, `product`, `qa`,
+`reviewer`, `security`, `business-manager`, `ranger`) to read and copy
+from. Nothing loads them from there — that is the point. A file in
+`agents/` is a **lane**, and dispatch hands unassigned beads to whichever
+lane matches the label; seeding nine generics used to mean nine lanes
+nobody staffed, sorting ahead of the crew the operator wrote (step 2
+below, and `ranger-base-qajs`).
 
 ```sh
-$ posse agent edit developer            # edit a seeded one
-$ posse agent new <name>                # scaffold a new one (opens $EDITOR)
+$ cp $RHQ_HOME/examples/agents/developer.md $RHQ_HOME/agents/dinesh.md
+$ posse agent edit dinesh               # `name:` must match the filename
+$ posse agent new <name>                # or scaffold a fresh one (opens $EDITOR)
+$ posse agent check --all               # lint every PID against ADR 0001
 ```
+
+**Upgrading an instance that has the generics?** Re-run `posse init`. It
+moves each generic that is still byte-for-byte the shipped example out of
+`agents/` and onto the shelf, and prints what it moved. It leaves alone —
+and names — any you edited in place (that one is your persona now, not an
+example), any named by `coordinator:`, `default_persona:` or
+`verify_assignee:`, and all of them on a home `posse promote` manages,
+where the retirement belongs in the constitution repo instead. Work
+already assigned to a retired name is not reassigned: check `bd list
+--assignee <name>` before you dispatch again.
 
 The frontmatter keys that do work:
 
@@ -506,14 +525,16 @@ The frontmatter keys that do work:
 Unroutable beads are reported and skipped. If nothing picks up your work,
 this list is why.
 
-Step 2 is where a seeded generic quietly outranks the persona you actually
+Step 2 is where an unwanted lane quietly outranks the persona you actually
 wrote: with no `route_order:` anywhere, every match ties and the name
-decides, so the seeded `developer` takes every unassigned `code` bead ahead
-of the lane you wrote yourself. That is a real leak — an audit of one crew
-found 11 of 37 unassigned open beads parked on PIDs with 14 and 0 lifetime
-closes (ranger-base-2yj5). Two ways out, and they compose: delete the
-seeded generics you do not use, and state the order — `route_order: 10` on
-the lane you want first, or `route_order: 90` on the one you want last.
+decides, so a `developer` sitting in `agents/` takes every unassigned
+`code` bead ahead of the lane you wrote yourself. That is a real leak — an
+audit of one crew found 11 of 37 unassigned open beads parked on PIDs with
+14 and 0 lifetime closes (ranger-base-2yj5). It is why the generics are no
+longer seeded into `agents/` at all. Two ways out for whatever is left
+there, and they compose: delete the personas you do not staff, and state
+the order — `route_order: 10` on the lane you want first, or `route_order:
+90` on the one you want last.
 
 The dispatch line tells you when a race happened, so you do not need an
 audit to see it:
@@ -797,7 +818,7 @@ $ bd onboard >> AGENTS.md
 reads it.** `bd init` writes an `AGENTS.md` carrying a "Landing the Plane"
 section that orders the reader to push — "Work is NOT complete until `git
 push` succeeds", "NEVER stop before pushing", "If push fails, resolve and
-retry until it succeeds". Every seeded persona in `examples/agents/` denies
+retry until it succeeds". Every reference PID in `examples/agents/` denies
 `Bash(git push:*)`, and the `pre-push` gate installed below enforces that
 deny in the shell. So the file dispatch hands a persona as orientation
 orders the one thing the wall refuses, and orders it retried. This is not
