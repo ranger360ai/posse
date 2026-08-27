@@ -22,8 +22,21 @@ func TestCheckAgent(t *testing.T) {
 	ref, _ := os.ReadFile(filepath.Join("..", "..", "examples", "agents", "architect.md"))
 	if len(ref) > 0 {
 		os.WriteFile(filepath.Join(a.AgentsDir, "architect.md"), ref, 0o644)
+		// The shelf PID declares skills: [distributed-systems] (ADR 0012 D2),
+		// and `posse init` seeds that skill from examples/skills — so "clean"
+		// is judged in a home that HAS been seeded, not in a bare directory.
+		mkSkill(t, a.SkillsDir(), "distributed-systems")
 		if fs, _, _ := a.CheckAgent("architect"); len(fs) != 0 {
 			t.Errorf("reference PID has findings: %v", fs)
+		}
+		// The other side of that same coin: copy the shelf PID into a home
+		// whose skills/ does not carry it and the lint says so by name. That
+		// is the whole point of declaring it — the binding is required, and a
+		// missing skill is a finding rather than a silent drop.
+		os.RemoveAll(a.SkillPath("distributed-systems"))
+		fs, _, _ := a.CheckAgent("architect")
+		if len(fs) != 1 || !strings.Contains(fs[0], `unknown skill "distributed-systems"`) {
+			t.Errorf("a home without the seeded skill must name it: %v", fs)
 		}
 	}
 

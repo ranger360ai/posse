@@ -1,0 +1,12 @@
+# Recipe: a Grok CLI session in project B — the other non-claude shape.
+# Launch with: posse recipe grok-projB
+#
+# Same shape as codex-projA.yaml: the CLI is the pane's command, nothing
+# else. See that file for the `agent:` form that turns a recipe into a
+# persona session on a non-claude runtime.
+name: grok-projB
+purpose: grok
+dir: ~/code/projB
+env_files: []
+command: grok
+emoji: ✖️

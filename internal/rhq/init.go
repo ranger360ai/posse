@@ -79,9 +79,9 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		return nil
 	}
 	// A skill is a directory (SKILL.md plus references/), so skills is the
-	// one seed root that must be walked rather than listed. It is also the
-	// one that may be absent — examples/skills is a later bead (ADR 0012
-	// D2) — and an absent seed root seeds nothing, quietly.
+	// one seed root that must be walked rather than listed. The shipped seed
+	// carries examples/skills/distributed-systems (ADR 0012 D2, the generic
+	// canon); a seed dir that has no skills/ at all seeds nothing, quietly.
 	copyTree := func(fromDir, toDir string, mode os.FileMode) error {
 		if st, err := fs.Stat(src, fromDir); err != nil || !st.IsDir() {
 			return nil

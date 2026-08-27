@@ -50,6 +50,7 @@ var shippedExampleDigests = map[string][]string{
 	"agents/architect.md": {
 		"16171774e3e2af7b3b5b4b482ce6059e9b283e4fc9d852e636bd6637207be631", // 5668b76 2026-08-23 posse: initial publication
 		"f637586f5dd5cfaf1531d31820d66e2d991d871d843b4cba1ce6c9ebad378d16", // 95c4b70 2026-08-26 feat: posse promote
+		"e40cb8c323e040d91b730d537516c45436d5be115c3ee89f89d7e97015d47975", // rangerhq-icb3 2026-08-27 skills: [distributed-systems]
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -58,6 +59,7 @@ var shippedExampleDigests = map[string][]string{
 	"agents/developer.md": {
 		"17e0db0cf3780cb6ba6e0ecd0b13d300f1b45d05b470be6df4d43575b43348de", // 5668b76
 		"f8ed74a6ffe8b6a3e536c3643def024ae44afadfcc23d55b23e8119fba233fa9", // 95c4b70
+		"2acfe22434656eddb0e93cf86458ba613a294e906896e56a5ea82564858b21f9", // rangerhq-icb3 2026-08-27 skills: [distributed-systems]
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76

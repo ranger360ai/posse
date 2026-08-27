@@ -8,6 +8,15 @@ intents:
   - design
   - review-design
   - cut-implementation-beads
+# Skills this persona carries (ADR 0007). The PID names them; the launch
+# materializes them for whichever runtime the session lands on — a rendered
+# plugin dir on claude, `<cwd>/.agents/skills/<name>` on codex and grok.
+# DECLARED MEANS REQUIRED: a runtime that cannot surface a named skill is
+# refused, never silently dropped. Each name must resolve to
+# $RHQ_HOME/skills/<name>/SKILL.md — `posse init` seeds this one from
+# examples/skills, and `posse skills` lists what is there with the PIDs
+# bound to it.
+skills: [distributed-systems]
 allow:
   - Bash(bd:*)
   - Bash(git log:*)

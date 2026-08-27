@@ -1,0 +1,24 @@
+# Recipe: a Codex CLI session in project A — the non-claude shape.
+# Launch with: posse recipe codex-projA
+#
+# A recipe is the operator launching something to sit in (ADR 0008), so the
+# runtime is simply the command that runs in the pane, and the emoji map in
+# config.yaml tags it 🪢. `runtime:` and `tier:` are the PERSONA launch's
+# knobs and do nothing here — without `agent:` there is no PID to resolve
+# them against.
+#
+# To make this a persona session on codex instead — the PID delivered as
+# codex's developer_instructions, allow/deny realized as its sandbox mode,
+# skills symlinked into `<cwd>/.agents/skills/` — name a persona you have
+# installed and let its launch profile write the command line:
+#
+#   agent: <persona>     # a PID in agents/; this seed ships none, see examples/agents/
+#   runtime: codex       # overrides that PID's own runtime: for this recipe
+#   tier: standard       # overrides that PID's own tier: for this recipe
+#   command: null        # the runtime's template renders it — do not hand-write it
+name: codex-projA
+purpose: codex
+dir: ~/code/projA
+env_files: []
+command: codex
+emoji: 🪢
