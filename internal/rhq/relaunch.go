@@ -93,12 +93,15 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 
 	// The one obstacle to the recreate that does not live in the plan, and
 	// the only one the preflight used to walk past.
-	if other, err := b.nameWornElsewhere(m); err != nil {
+	if other, label, err := b.nameWornElsewhere(m); err != nil {
 		return Die("%s was NOT closed: this herdr did not list its workspaces (%v)", o.Name, err)
 	} else if other != "" {
+		// The obstacle's OWN label, not the session name: that is the string
+		// `herdr workspace list` prints, and under an instance tag the two
+		// differ (rangerhq-ouf9).
 		return Die("%s cannot be recreated as it stands, so it was NOT closed: herdr workspace %s is also labelled '%s' and posse did not create it, so the recreate could not take the name back.\n"+
 			"  rename or close %s in herdr (herdr workspace list), then relaunch again",
-			o.Name, other, o.Name, other)
+			o.Name, other, label, other)
 	}
 
 	if !o.NoLand {
@@ -348,7 +351,7 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 	gen := ServerGen()
 	for _, ws := range wss {
 		if ws.WorkspaceID == m.Workspace {
-			return notOurWorkspace(m, ws, gen) == "", nil
+			return b.notOurWorkspace(m, ws, gen) == "", nil
 		}
 	}
 	return false, nil
@@ -372,17 +375,21 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 // — never a stranger's agent. And the refusal names the workspace in the
 // way, which the orphan guard's own message cannot: it would send the
 // operator to `posse attach <name>`, which resolves to that same stranger.
-func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (string, error) {
+func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err error) {
 	wss, err := b.H.Workspaces()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	for _, ws := range wss {
-		if ws.Label == m.Name && ws.WorkspaceID != m.Workspace {
-			return ws.WorkspaceID, nil
+		// "Wears its name" is this home's rendering of it (rangerhq-ouf9):
+		// a workspace another instance labelled <their tag>/<name> is not
+		// in the way of a create this instance labels <our tag>/<name>, and
+		// refusing over it would block a relaunch nothing can obstruct.
+		if b.App.labelWearsName(ws.Label, m.Name) && ws.WorkspaceID != m.Workspace {
+			return ws.WorkspaceID, ws.Label, nil
 		}
 	}
-	return "", nil
+	return "", "", nil
 }
 
 // describePlan is the preflight's receipt: what the recreate resolved to,

@@ -40,6 +40,10 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 
 	for _, key := range []string{
 		"operator", "coordinator", "default_persona",
+		// instance: renames every workspace this home creates in herdr's one
+		// shared list (rangerhq-ouf9). A seed that shipped it set would tag a
+		// single-instance fleet for a coexistence it does not have.
+		"instance",
 		"default_runtime", "default_tier", "default_engine", "cage_image",
 		"verify_assignee",
 		// verify_batch: is the gate's ratio and therefore the operator's

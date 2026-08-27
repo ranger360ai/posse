@@ -594,7 +594,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 		// (rangerhq-yt1p). The id is left unclaimed, so the workspace itself
 		// is still listed — under its own meta, or as foreign.
 		if live {
-			if why := notOurWorkspace(m, ws, gen); why != "" {
+			if why := b.notOurWorkspace(m, ws, gen); why != "" {
 				strangers = append(strangers, fmt.Sprintf("%s: %s", name, why))
 				continue
 			}
@@ -755,11 +755,12 @@ func emptyBoard(sock string, listed int) string {
 //
 // Two anchors, and neither works alone:
 //
-//   - the LABEL. posse creates every workspace with --label <session name>
-//     (CreateWorkspace) and the meta's filename is that name, so a workspace
-//     whose label is not the meta's name is not the meta's workspace. Not
-//     conclusive on its own: renaming a workspace in herdr breaks the label
-//     without changing whose workspace it is.
+//   - the LABEL. posse creates every workspace with --label
+//     <instance tag><session name> (startPlanned, rangerhq-ouf9) and the
+//     meta's filename is that name, so a workspace whose label is not one
+//     this home would have written for the meta's name is not the meta's
+//     workspace. Not conclusive on its own: renaming a workspace in herdr
+//     breaks the label without changing whose workspace it is.
 //   - the GENERATION. Within one server process an id is never re-issued
 //     (measured, same probe). So when the meta's gen: is this server's, the
 //     id cannot have been recycled, and a label mismatch can only be a
@@ -781,15 +782,15 @@ func emptyBoard(sock string, listed int) string {
 // herdr that stopped reporting labels would otherwise turn the entire fleet
 // into strangers in one release, and unlabelled workspaces are not the ones
 // posse's own creates hand out.
-func notOurWorkspace(m *HerdrMeta, ws HerdrWorkspace, gen string) string {
-	if ws.Label == "" || ws.Label == m.Name {
+func (b *HerdrBackend) notOurWorkspace(m *HerdrMeta, ws HerdrWorkspace, gen string) string {
+	if ws.Label == "" || b.App.labelWearsName(ws.Label, m.Name) {
 		return ""
 	}
 	if gen != "" && m.Gen == gen {
 		return "" // same server generation: ids are not re-issued, so this is a rename
 	}
 	return fmt.Sprintf("workspace %s is labelled %q, not %q, and %s — herdr re-issues workspace ids across a server restart or handoff (rangerhq-6bg7)",
-		m.Workspace, ws.Label, m.Name, genLabel(m.Gen, gen))
+		m.Workspace, ws.Label, b.App.WorkspaceLabel(m.Name), genLabel(m.Gen, gen))
 }
 
 // genLabel says how much the fence knows, in the voice of a warning line.
@@ -830,7 +831,7 @@ func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why stri
 	if !found {
 		return true, ""
 	}
-	if stranger := notOurWorkspace(m, ws, gen); stranger != "" {
+	if stranger := b.notOurWorkspace(m, ws, gen); stranger != "" {
 		return false, stranger
 	}
 	return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
@@ -1203,6 +1204,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	}
 	a.TightenEnvPerms(os.Stderr) // every launch re-asserts 700/600 on envs/
 
+	// The instance tag is checked here, with the other refusals that are
+	// knowable before anything is touched (rangerhq-ouf9). It gates every
+	// create because every create plans first — `posse new`, a recipe, a
+	// cockpit key, dispatch, and relaunch, which plans before it kills. A
+	// tag posse cannot render is refused rather than ignored: ignoring it
+	// would put this home's sessions back under the bare labels the key was
+	// set to move them off, on the one server another instance is watching.
+	if _, err := a.Instance(); err != nil {
+		return nil, err
+	}
+
 	// ADR 0015 §3, the launch verify: the promoted constitution is hashed
 	// against its manifest before anything is launched with it. A DISPATCHED
 	// session refuses — nobody is watching that launch, and the fix is one
@@ -1540,7 +1552,12 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 // exists" from "a workspace is up and something later went wrong" — the
 // second is not a state to write over (rangerhq-v52t).
 func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, error) {
-	wsID, rootPane, err := b.H.CreateWorkspace(o.Name, p.Dir, p.Vars)
+	// The label is the session name plus this home's instance tag, and the
+	// meta below is written under the NAME (rangerhq-ouf9): the label is
+	// what herdr's one shared list shows, the name is what posse addresses.
+	// planLaunch has already refused a malformed tag, so nothing here can
+	// create a workspace under a label this home would not recognise.
+	wsID, rootPane, err := b.H.CreateWorkspace(b.App.WorkspaceLabel(o.Name), p.Dir, p.Vars)
 	if err != nil {
 		return "", err
 	}

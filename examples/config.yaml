@@ -70,6 +70,29 @@ default_emoji: ⚙️
 # ships carrying no crew name.
 # coordinator: <persona name>
 
+# ─── this instance, on a shared herdr ────────────────────────────────────────
+# A tag for this home's sessions in herdr's ONE workspace list. Leave it
+# unset unless a second posse home shares this machine's herdr server.
+#
+# Everything under state/ is namespaced by $RHQ_HOME already; a workspace
+# LABEL is not. Two homes that share a persona name, or that type the same
+# hand-named session (`smoke`, `dispatch`), put byte-identical labels on the
+# one server: the second create refuses with "already exists" (measured — it
+# refuses, it does not take over), and neither home's listing can say whose
+# a row is. Set this and the label becomes `<instance>/<session>`, so the
+# names stop colliding and a foreign row says which home to go ask.
+#
+# It changes the LABEL and nothing else. Session names, meta files, the work
+# prompt, `posse attach <name>` — all unchanged, in every home. Nothing
+# parses identity back out of a label; the meta dir is the ownership record.
+# Syntax is a session name's (letters, digits, - and _), and a malformed tag
+# refuses the launch rather than quietly labelling like an untagged home.
+#
+# Coexistence is the rest of this file too: disjoint `beads:` and `dirs:`
+# (one repo is served by exactly one home), and a distinct
+# `autostart_session:` — the herdr startup hook arms one home per server.
+# instance: <short tag>
+
 # ─── routing ─────────────────────────────────────────────────────────────────
 # Dispatch picks a persona per bead: explicit assignee > label match against
 # each PID's `labels:` > this. Unset means an unroutable bead is reported and

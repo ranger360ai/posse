@@ -1322,7 +1322,7 @@ Two invariants you must respect — the harness does not enforce them:
 What to set in the second instance's `config.yaml`:
 
 ```yaml
-instance: <short-name>       # DESIGNED, NOT YET IMPLEMENTED — see gaps below
+instance: <short-name>       # tags this home's herdr labels: <instance>/<session>
 beads:   [ ... ]             # disjoint from the other instance's
 dirs:    [ ... ]             # disjoint
 autostart_session: <name>    # distinct, if it ever arms
@@ -1339,24 +1339,30 @@ $ RHQ_HOME=<second home> posse dispatch --watch 5m -n 3
 
 ### Known gaps — read these before running two instances
 
-As of this writing, coexistence is **not yet clean**. Four holes are
-identified, designed, and open (a fifth — the seatbelt's hardcoded
-`~/.config/rhq/state` grant — is closed: the profile derives the state
-grant from the App's home, so a second `RHQ_HOME` gets its own state dir
-and no grant into the default instance's; rangerhq-qfzr, ranger-base-cpyb):
+One hole is still open:
 
 | gap | what actually happens | bead |
 |---|---|---|
-| `RHQ_HOME` is not injected into sessions | a persona running `posse` **inside its own session** resolves the herdr server's env or the default-home lookup (`~/.config/posse`, then an existing `~/.config/rhq`) — the *wrong* instance's config, queue and skills, silently | rangerhq-ysly |
-| labels carry no instance id | `instance:` is designed but **not implemented** — setting it today does nothing. Identical session names collide on the shared herdr: the second instance's create fails "already exists" | rangerhq-ouf9 |
 | destructive paths do not refuse foreign workspaces | `posse kill` and cockpit `x` will close a workspace owned by the *other* instance; reachable today via the autostart hook's kill-and-replace | rangerhq-selx |
-| `BeadsDirs()` falls back to `[""]` | with no surviving `beads:` entry, bd runs in the caller's cwd — silent wrong-queue dispatch | rangerhq-wmrb |
 
-Until `ysly` and `ouf9` land, run two instances with your eyes open: give
-sessions manifestly different names, do not let either instance's autostart
-hook run while the other has live sessions, and treat any cross-talk you
-hit as a harness bug worth filing — it is cheaper found here than on a work
-machine.
+Closed, and named here because the ADR lists them as designed work:
+
+- **`RHQ_HOME` rides every session** (rangerhq-ysly) — persona and crew
+  alike, and into cages, so `posse`/`bd` run inside a session address the
+  home that launched it.
+- **`instance:` tags the herdr label** (rangerhq-ouf9) — `<instance>/<session>`
+  at create, session names untouched. Foreign rows keep their full label,
+  so a row you cannot account for says which home to go ask.
+- **`BeadsDirs()` fails loud** (rangerhq-wmrb) rather than falling back to
+  `[""]` and running bd in the caller's cwd.
+- **The seatbelt derives its state grant from the App's home**
+  (rangerhq-qfzr, ranger-base-cpyb), so a second `RHQ_HOME` gets its own
+  state dir and no grant into the default instance's.
+
+Until `selx` lands, run two instances with your eyes open: do not let either
+instance's autostart hook run while the other has live sessions, and treat
+any cross-talk you hit as a harness bug worth filing — it is cheaper found
+here than on a work machine.
 
 Accepted and *not* fixed (ADR 0015 D5): the posse binary, the plugin
 registration, the detection manifests and the default cage image tag are
