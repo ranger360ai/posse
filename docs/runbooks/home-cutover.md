@@ -44,8 +44,8 @@ built, promote **refuses on a dirty promoted path** and **reports
 anything else dirty without blocking** — because the two things ADR
 0015 itself carves out, `.beads` (§4) and `personas/` (§5), are dirty
 in this repo essentially always, and neither is prose a promote puts
-in force. (o943 files the §3 amendment; the code says so at
-`promoteCleanGate`.)
+in force. (§3 was amended to say so — ranger-base-yb9j; the code says
+so at `promoteCleanGate`.)
 
 **2. First promote.** `[o943]`
 

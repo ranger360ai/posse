@@ -2,7 +2,9 @@
 
 *Status: proposed 2026-08-26 · owner: architect · ratified 2026-08-26
 (ranger-base-ap2x) · amended 2026-08-26: §7 moves `envs/` out of the
-promoted set (ranger-base-h56a) · execution rides with the rhq
+promoted set (ranger-base-h56a) · amended 2026-08-26: §3's clean gate
+is the promoted paths, not the whole tree (ranger-base-yb9j, built in
+ranger-base-o943) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · informs 0002
 §3, 0012 D3-C, 0014 §3*
 
@@ -95,9 +97,25 @@ there is promotion, which is the operator's.
 **3. `posse promote`.** Operator-run, like `make install`, and fenced
 the same way twice:
 
-- **Preconditions**: the constitution repo's working tree is clean and
-  the promoted ref is a commit — uncommitted prose can never be in
-  force, which is the attributability 5na asked for.
+- **Preconditions** *(amended 2026-08-26, ranger-base-yb9j — as first
+  ratified this read "the working tree is clean", whole-tree)*: the
+  promoted ref is a commit, and the **promoted paths** — `agents/`,
+  `config.yaml`, `recipes/`, `skills/` — are clean: `git status
+  --porcelain --ignored=matching` over those pathspecs is empty, so a
+  promoted path that is dirty *or gitignored* is a hard refusal (an
+  ignored path has no commit to promote from — the h56a `envs/` shape,
+  generalized to catch the next path that grows it). Anything else
+  dirty in the repo is a warning naming the paths, never a block.
+  Whole-tree clean is unsatisfiable by this ADR's own carve-outs:
+  `.beads` (§4 — bd rewrites `issues.jsonl` continuously until the
+  queue moves out, and the redirect file lives here after) and
+  `personas/` (§5 — memory, appended at session end, deliberately
+  unpromoted) are dirty in ordinary operation, and neither is prose a
+  promote puts in force; a gate that cannot be passed on the day of
+  the window gets bypassed with a flag, which is worse. The narrow
+  gate keeps the property 5na asked for exactly: the promoted bytes
+  equal the bytes at the recorded SHA — uncommitted *prose* can never
+  be in force.
 - **Manifest**: promote records `{source repo path, git SHA, sha256
   per promoted file}` under the home *beside* the promoted copy (not
   under `state/`, which stays session-writable). It prints
@@ -318,8 +336,10 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 3. Corrupt one byte of `home/agents/<any>.md`: dispatch refuses with
    the mismatch named; interactive launch prints DEGRADED; re-promote
    clears it.
-4. `posse promote` on a dirty constitution tree: refused, names the
-   dirty paths. Under a persona env marker: refused. From a PID:
+4. `posse promote` with a dirty **promoted path**: refused, names the
+   paths; with a gitignored promoted path: refused; with only `.beads`
+   or `personas/` dirty: proceeds and prints the not-blocking note
+   naming them. Under a persona env marker: refused. From a PID:
    `Bash(posse promote:*)` denied at L1 (shim refusal logged).
 5. Under seatbelt with cwd elsewhere: write to `home/agents` refused;
    write to own `home/personas/<self>` allowed; write to another
@@ -359,3 +379,4 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | seatbelt writable set includes `state/` but never `envs/` | **MEASURED** (`seatbelt.go:122`) |
 | `posse init` seeds envs from embedded examples with modes set | **MEASURED** (`init.go`) |
 | the names-only envs manifest would only duplicate tracked bindings | **ASSUMED** — priced in Alternatives; x6ic re-opens it if wrong |
+| whole-tree clean is unsatisfiable in the live constitution repo (`.beads/issues.jsonl` and `personas/…/ORDERS.md` dirty in ordinary operation) | **MEASURED** 2026-08-26 (`git status --porcelain`, the hour o943 was built; recorded on ranger-base-yb9j) |
