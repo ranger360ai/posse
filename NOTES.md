@@ -3678,8 +3678,11 @@ one.
 2. **Instance config.** Operator-owned facts posse **documents and never
    writes**. This section.
 3. **Declared keystrokes.** Last resort, keyed on a herdr *rule id*
-   (today: `startup_splash` → Esc only). Keys are pressed once, and
-   **Enter is not in the table**.
+   (today: none — grok's splash was the only entry, retired in
+   `rangerhq-6723` once detection stopped calling it a blocker). Any
+   future table presses each key once, **Enter is not in the table**,
+   and `TestDispatchPathPressesNoKeys` is edited in the same commit
+   that revives it (ADR 0013 §2, amended ranger-base-xqft).
 
 **Why layer 2 is a document and not a `os.WriteFile`.** Two of the three
 answers are not a harness's to give:

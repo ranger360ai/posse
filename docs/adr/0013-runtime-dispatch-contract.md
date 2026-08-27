@@ -9,7 +9,9 @@ has no `startup_wait:` to measure — pre-turn chrome is a race
 (ranger-base-wjze) · amended 2026-08-27: §4 gains the reachability
 half of record — the cage, not only the runtime, decides whether the
 store of record can be written (ranger-base-hxhb, measured in
-ranger-base-rhw/oyta)*
+ranger-base-rhw/oyta); §2 layer 3's only instance retired — dispatch
+presses no key at any screen, the layer stands empty as last resort
+(rangerhq-6723, ranger-base-xqft)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -141,8 +143,18 @@ this branch as the recipe, so it says so.
    The coordinator's string-match Escape watchdog is a stopgap and is
    not the architecture.
 3. **Declared keystrokes** — last resort, keyed on a herdr *rule id*
-   (today: `startup_splash` → Esc only). Keys are pressed once. Enter is
-   not in the table.
+   (today: none — grok's splash was the only entry, retired in
+   rangerhq-6723 once detection stopped calling it a blocker
+   (rangerhq-1xsj) and the branch was measured never firing in a launch
+   (rangerhq-3hb5)). The layer stays: any future table presses each key
+   once, never Enter, and carries rangerhq-4mzt's two ratified
+   assertions (only Esc; only rule ids from posse's own manifests) —
+   `TestDispatchPathPressesNoKeys` fails until they return, and is
+   edited in the same commit that revives the table. A speed bump, not
+   a ban. The next candidate (codex's update menu, rangerhq-9py0) is a
+   layer-2 case by this section's own rule: its default action mutates
+   the machine, so it is a launch refuse until instance config silences
+   it.
 
 **Busy key.** Dial F already gives each bead its own session. A failure
 of *this pane* is not a fact about the persona. Split:
