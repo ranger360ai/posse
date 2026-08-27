@@ -1059,6 +1059,10 @@ fi
   echo "every persona's modified tracked file."
   echo "  safe form: git commit -F - -- <paths>"
   echo "  name your own paths, not '.' — a pathspec of '.' sweeps the tree too."
+  echo "  a named path commits the file as it is ON DISK, not what you staged"
+  echo "  (rangerhq-lvu9): if another persona is editing it, you commit their"
+  echo "  half-written lines too, under your message. 'git diff -- <paths>'"
+  echo "  first — a clean diff there is what makes the safe form actually safe."
   if [ "$posse_form" = "a commit from a private GIT_INDEX_FILE" ]; then
     echo "A private index also leaves the shared .git/index holding the PRE-FIX blobs"
     echo "for every path you just committed, so the next unqualified commit reverts"
