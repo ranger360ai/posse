@@ -2605,7 +2605,12 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		det, err := d.HB.H.AgentExplain(target)
 		switch {
 		case err != nil:
-			lastErr, lastWhy = err.Error(), ""
+			// lastWhy/lastGuess are left alone: an error here is not
+			// evidence, and must not erase a real answer a prior poll in
+			// this same window already got (rangerhq-lhy2). Only when no
+			// poll has ever produced one does lastWhy stay "" down to the
+			// deadline check below.
+			lastErr = err.Error()
 		case det.State == "blocked":
 			// Never a guess — the fallback only ever says idle — and it
 			// carries the rule that produced it, for the failure line.
@@ -2627,7 +2632,13 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			lastGuess = det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
-			if lastErr != "" {
+			// The concession is for detection that could not be READ at
+			// all: lastWhy == "" means no poll in this window ever got a
+			// real answer, only errors. Once one has (lastWhy != ""), that
+			// answer stands even if the LAST call happened to error —
+			// twenty-two guesses are twenty-two real answers, and one late
+			// diagnostic failure does not outrank them (rangerhq-lhy2).
+			if lastErr != "" && lastWhy == "" {
 				fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
 				return status, AgentDetection{State: status}, nil
 			}

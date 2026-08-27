@@ -103,7 +103,6 @@ func TestQAExplainErrorOnStderrStillPromptsOutLoud(t *testing.T) {
 // only the last one has to fail; a herdr restart or live handoff mid-launch
 // is how it fails (ranger-base-7t4).
 func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
-	t.Skip("rangerhq-lhy2: one late explain error outranks a whole window of guesses")
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 900 * time.Millisecond
