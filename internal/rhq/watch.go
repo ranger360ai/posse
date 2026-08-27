@@ -88,6 +88,15 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// (rangerhq-gir5); this is what it quotes once the answer is yes.
 	defer d.dropWatchPid()
 	d.stampWatchPid()
+	// The pulse (ADR 0013 §1-2, rangerhq-4ish): a shop-check ticker that
+	// starts with this loop and dies with it. Disarmed (no pulse_interval:
+	// in config) starts nothing; a config error disarms this run rather
+	// than failing the watch loop over it.
+	if cfg, err := LoadPulseConfig(d.App); err != nil {
+		fmt.Fprintf(d.errw(), "pulse: %v — disarmed for this loop\n", err)
+	} else if cfg.Armed {
+		go d.pulseLoop(ctx, cfg)
+	}
 	passes := 0
 	wait := base
 	for {
