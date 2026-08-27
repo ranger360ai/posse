@@ -175,7 +175,19 @@ retires.
 - Handoffs: **security** — a pruned meta also deletes the crew mark, so
   a wipe can turn the operator's own conversation back into
   fleet-promptable; that is the data-loss shape of the meta-sweep race,
-  assess exposure. **ops** — once §1's helper exists, migrate autostart's
+  assess exposure. *(Assessed 2026-08-21 as rangerhq-ynx8 and fixed
+  2026-08-27. The exposure was wider than the crew mark: a meta-less
+  workspace `Resolve` finds by label answers EVERY dispatch guard with a
+  zero value — no crew, no agent, no run record — and each guard read the
+  absence as permission, so the bead was claimed and a work prompt tiered
+  and caged for the routed persona was typed into whatever agent that pane
+  held. Dispatch now fails closed: `foreignHeld` sits beside `crewHeld` at
+  both launchers and `launchSession` carries the backstop, refusing rather
+  than reading "foreign" as "no session yet" — creating under a held label
+  is the collision, not the fix. The refusal stays in dispatch and NOT in
+  `Resolve`/`AgentTarget`, which the operator's own commands need. The
+  destructive half is rangerhq-selx; `docs/notes.d/rangerhq-ynx8.md` has
+  the full account.)* **ops** — once §1's helper exists, migrate autostart's
   `loop_alive` onto the same flock discipline (kills the pidfile class
   at the root); `dispatch-watch.pid` stays for the husk check's identity
   half. *(Landed 2026-08-26, rangerhq-gir5: `--watch` holds

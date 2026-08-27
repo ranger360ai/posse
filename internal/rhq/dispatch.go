@@ -1491,6 +1491,16 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			fmt.Fprintf(d.Out, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
 			continue
 		}
+		// Same names, same question, one rung lower: a workspace posse holds
+		// no meta for is not this persona's session and this pass does not
+		// launch into it or prompt it — including under --resume, which
+		// overrides the holder's idleness, never somebody else's ownership
+		// (rangerhq-ynx8). Before the holder join, so a foreign row is never
+		// the session `held` names.
+		if held := d.foreignHeld(crewNames...); held != "" {
+			fmt.Fprintf(d.Out, "– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(held), foreignFreeLine(held))
+			continue
+		}
 		// The holder join (ADR 0004 §2): a bead this persona already holds is
 		// joined to its live session. Walked once — the skip below and the
 		// resume that overrides it are two answers about the SAME session,
@@ -2094,6 +2104,47 @@ func (d *Dispatcher) crewHeld(names ...string) string {
 	return ""
 }
 
+// foreignHeld returns the first of these session names that resolves to a
+// FOREIGN row — a live herdr workspace posse holds no session meta for — or
+// "".
+//
+// Resolve falls back to foreign workspaces by label, which is right for the
+// commands the operator points at something they can see (`posse prompt`,
+// `posse peek`, `posse kill`) and wrong for every launcher. A meta-less row
+// carries no crew mark, no agent, no runtime and no run record, so each
+// guard reads its absence as permission: ADR 0008's shield asks `s.Crew` and
+// a row that has no meta cannot be crew, so the operator's own conversation
+// — wiped meta, workspace still alive under the same label — becomes
+// fleet-promptable at exactly the moment it loses its mark. What lands is
+// the splice ADR 0008 exists to prevent: the bead is claimed and a prompt
+// tiered and caged for one persona's PID is typed into whatever agent that
+// pane holds (rangerhq-ynx8, from rangerhq-ggm8).
+//
+// So dispatch fails CLOSED: a wiped meta makes a session un-promptable, not
+// fleet-promptable. The refusal lives here rather than in Resolve or
+// AgentTarget, because the operator addressing a foreign row by name is the
+// legitimate case those two exist for.
+func (d *Dispatcher) foreignHeld(names ...string) string {
+	for _, name := range names {
+		if s, err := d.HB.Resolve(name); err == nil && s.Foreign {
+			return name
+		}
+	}
+	return ""
+}
+
+// foreignHoldLine and foreignFreeLine are the one sentence every launcher
+// says about a foreign hold, split so each caller adds its own verdict word
+// the way the crew lines do — `— not dispatched` for a command the operator
+// typed, `— skipped` for a bead in a pass.
+func foreignHoldLine(session string) string {
+	return fmt.Sprintf("held by a foreign workspace %s (no session meta)", session)
+}
+
+func foreignFreeLine(session string) string {
+	return fmt.Sprintf("posse kill %s or rename it in herdr to free the name", session)
+}
+
 // launchSession is the shared front half of both dispatch flavors:
 // find-or-create the persona session, wait for its agent, claim the bead.
 // Returns the promptable target pane.
@@ -2104,6 +2155,15 @@ func (d *Dispatcher) crewHeld(names ...string) string {
 // header, the parity check — names the runtime the session actually got.
 func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string) (launched, error) {
 	s, resolveErr := d.HB.Resolve(session)
+	// The backstop under every dispatch path (rangerhq-ynx8): a foreign row
+	// is not this persona's session, whatever it is labelled. Refused rather
+	// than read as "no session yet" — creating one under a label herdr
+	// already holds is the collision, not the fix — and refused before the
+	// argv branch below, which would otherwise launch a second agent beside
+	// the workspace wearing the name.
+	if resolveErr == nil && s.Foreign {
+		return launched{}, Die("%s %s — not dispatched; %s", is.ID, foreignHoldLine(session), foreignFreeLine(session))
+	}
 	// ADR 0013 §2, and the whole reason this function grew a `prompt`
 	// argument: on a runtime that declares `prompt: argv`, a session posse
 	// is about to CREATE gets the work prompt on its launch line, and the
@@ -2348,6 +2408,14 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// and --resume does not override it — the same line Run prints.
 	if held := d.crewHeld(names...); held != "" {
 		return "", Die("%s is held by crew session %s (operator's) — not dispatched", is.ID, held)
+	}
+	// And the row with no meta at all, which is the same refusal with the
+	// crew mark missing rather than false (rangerhq-ynx8). Beside the crew
+	// check because it answers the same question — is this name somebody
+	// else's? — and must answer it before the holder loop below adopts the
+	// row as the bead's holder.
+	if held := d.foreignHeld(names...); held != "" {
+		return "", Die("%s %s — not dispatched; %s", is.ID, foreignHoldLine(held), foreignFreeLine(held))
 	}
 	session = names[0]
 	status := ""
