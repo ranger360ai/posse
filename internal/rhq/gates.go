@@ -709,18 +709,43 @@ done
 exit 0
 `
 
-// hooksDir is the repo's common hooks dir — common, so a worktree gets the
-// hooks of the repo it belongs to rather than none.
+// hooksDir is WHERE GIT DISPATCHES THIS REPO'S HOOKS, which is not always
+// `<git-common-dir>/hooks`: `core.hooksPath` overrides that outright, at any
+// config level, and the slot under the git dir then stays inert. Deriving the
+// path ourselves made every L3 claim a statement about a file rather than
+// about git's behavior — install wrote where git would not read
+// (rangerhq-b38m), and the probe exec'd a hook git would never run and
+// reported `behavior probed` over a wall that was not there
+// (ranger-base-flz7). Executing a script is only evidence if git is the one
+// who would execute it.
+//
+// So ask git instead of reconstructing its answer. `--git-path hooks` is the
+// same lookup git's own `find_hook()` performs, and it settles three things at
+// once — all MEASURED on this host's git 2.39.3 rather than reasoned from the
+// docs:
+//
+//   - core.hooksPath wins when set, absolute or relative;
+//   - with it unset, a linked worktree still resolves to the COMMON hooks dir
+//     (`<main>/.git/hooks`, never the per-worktree `worktrees/<n>/hooks`), so
+//     a worktree keeps getting the hooks of the repo it belongs to rather than
+//     none — the property the old spelling was chosen for, preserved for free;
+//   - a relative value comes back rewritten relative to the CWD (`../myhooks`
+//     from a subdirectory), so joining it onto `dir` is right at any depth.
+//     git resolves relative hooksPath against the worktree top-level, and this
+//     is what saves us from having to know that.
 func hooksDir(dir string) (string, error) {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "hooks").Output()
 	if err != nil {
 		return "", Die("%s is not a git repository", dir)
 	}
-	gitDir := strings.TrimSpace(string(out))
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(dir, gitDir)
+	hooks := strings.TrimSpace(string(out))
+	if hooks == "" {
+		return "", Die("%s is not a git repository", dir)
 	}
-	return filepath.Join(gitDir, "hooks"), nil
+	if !filepath.IsAbs(hooks) {
+		hooks = filepath.Join(dir, hooks)
+	}
+	return hooks, nil
 }
 
 // chainHookDispatcher is the dispatcher chainDispatcher tells the operator

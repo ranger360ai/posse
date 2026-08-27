@@ -173,11 +173,12 @@ func TestQAGuardLetsAGitDrivenRevertThrough(t *testing.T) {
 }
 
 // rangerhq-b38m: git runs hooks from core.hooksPath when it is set, and
-// hooksDir() never reads it — so both gates land in .git/hooks, install
-// reports success, §9's probes (which run the file directly) go green, and
-// git runs none of it.
+// hooksDir() never read it — so both gates landed in .git/hooks, install
+// reported success, §9's probes (which run the file directly) went green, and
+// git ran none of it. Closed with ranger-base-flz7, which was the same defect
+// seen from the probe's side: hooksDir() now asks `git rev-parse --git-path
+// hooks`, so install and probe address the one directory git dispatches from.
 func TestQAInstallHooksHonoursCoreHooksPath(t *testing.T) {
-	t.Skip("rangerhq-b38m: install-hooks writes .git/hooks even when core.hooksPath points elsewhere")
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

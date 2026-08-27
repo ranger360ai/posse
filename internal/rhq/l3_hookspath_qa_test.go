@@ -6,17 +6,24 @@ package rhq
 // probe and reaches the operator as a DEGRADED line, and a deleted one is
 // reinstalled before it is asked. The bottom half of this file pins those.
 //
-// The top half pins the two forms that got past it, filed as ranger-base-flz7.
-// One root cause: probeL3Hooks asks a question about a FILE — "does
-// <git-common-dir>/hooks/<slot> exit 1 when I exec it" — and git's question is
-// "what does core.hooksPath say, and does THAT program refuse". Where the two
-// disagree the probe reports a wall git will never run.
+// The top half pinned the two forms that got past it, filed as
+// ranger-base-flz7. Both shared a shape: probeL3Hooks asked a question about a
+// FILE — "does <git-common-dir>/hooks/<slot> exit 1 when I exec it" — where
+// git's question is "what does core.hooksPath say, and does THAT program
+// refuse". Where the two disagree the probe reported a wall git will never run.
 //
-// THE FIRST THREE TESTS ASSERT A LIVE DEFECT, NOT A CONTRACT. They are written
-// green on purpose, because NOTES.md's silent-revert lesson is that a skipped
-// pin is how a defect stays green — a red pin would be deleted, a skipped one
-// forgotten. When ranger-base-flz7 lands they must FAIL, and the fix inverts
-// them: that failure is the signal, and it is the whole point of the shape.
+// ESCAPE A IS CLOSED (ranger-base-flz7, with the install half rangerhq-b38m):
+// hooksDir() asks `git rev-parse --git-path hooks`, so install, probe, and
+// parity all address the directory git dispatches from. Its two pins were
+// INVERTED — they now assert the contract, and the shape did its job: the
+// hooksDir assertion failed the moment the fix landed, which is what said the
+// pins had to be rewritten rather than deleted.
+//
+// ESCAPE B IS STILL LIVE and keeps the original shape. Its pin below is
+// written GREEN ON PURPOSE, because NOTES.md's silent-revert lesson is that a
+// skipped pin is how a defect stays green — a red pin would be deleted, a
+// skipped one forgotten. When escape B is fixed that test must FAIL, and that
+// failure is the signal to invert it too.
 
 import (
 	"os"
@@ -105,14 +112,21 @@ func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
 	}
 }
 
-// ─── ranger-base-flz7: what got past the probe ───────────────────────────────
+// ─── ranger-base-flz7: escape A, closed ──────────────────────────────────────
+//
+// These two were the live-defect pins for escape A, now INVERTED as their own
+// failure messages instructed. hooksDir() asks `git rev-parse --git-path
+// hooks` instead of deriving `<git-common-dir>/hooks`, so every L3 claim is
+// about the directory git actually dispatches from.
+//
+// Escape B below is NOT closed by that change and keeps its live-defect pin.
 
 // ESCAPE A. One `git config` — no hook file written, so installHook's
-// foreign-hook refusal never fires — moves git's dispatch out from under an
-// armed slot, and the probe keeps calling that slot armed.
-//
-// LIVE-DEFECT PIN: inverted by the fix for ranger-base-flz7.
-func TestL3ProbeIgnoresCoreHooksPathToday(t *testing.T) {
+// foreign-hook refusal never fires — used to move git's dispatch out from
+// under an armed slot while the probe kept calling that slot armed. The probe
+// must now follow the redirect: an armed .git/hooks and an EMPTY core.hooksPath
+// is a repo with no wall, and it has to read as one.
+func TestL3ProbeFollowsCoreHooksPath(t *testing.T) {
 	repo, hooks := qaHookRepo(t)
 	qaArm(t, hooks, "pre-push", "prepare-commit-msg")
 	if got := probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
@@ -123,51 +137,101 @@ func TestL3ProbeIgnoresCoreHooksPathToday(t *testing.T) {
 	empty := t.TempDir()
 	qaGit(t, repo, "config", "core.hooksPath", empty)
 
-	if dir, err := hooksDir(repo); err != nil || dir != hooks {
-		t.Fatalf("hooksDir(%s) = %q, %v — want the unchanged %q", repo, dir, err, hooks)
+	dir, err := hooksDir(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != empty {
+		t.Fatalf("hooksDir(%s) = %q — want the redirect %q, not the git dir %q",
+			repo, dir, empty, hooks)
 	}
 	got := probeL3Hooks(repo, true)
-	if !got.PrePush || !got.CommitGuard {
-		t.Fatalf("ranger-base-flz7 looks FIXED (probe = %+v). Invert this test: the "+
-			"probe must now fail both arms under a redirected core.hooksPath, and "+
-			"TestParityClaimsL3UnderARedirectedHooksPath must assert a DEGRADED line.", got)
+	if got.PrePush || got.CommitGuard {
+		t.Errorf("probe still claims a wall git will not run: %+v", got)
 	}
-	if got.HooksDir != hooks {
+	if got.HooksDir != empty {
 		t.Errorf("probe named %s; git dispatches from %s", got.HooksDir, empty)
 	}
 }
 
-// ESCAPE A end to end: the launch's install-then-probe sequence writes into a
-// directory git no longer reads, reports no degradation, and Realizes both L3
-// layers by name.
-//
-// LIVE-DEFECT PIN: inverted by the fix for ranger-base-flz7.
-func TestParityClaimsL3UnderARedirectedHooksPath(t *testing.T) {
-	repo, _ := qaHookRepo(t)
-	empty := t.TempDir()
-	qaGit(t, repo, "config", "core.hooksPath", empty)
-
-	home := t.TempDir()
-	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
-	claude, err := a.LoadRuntime("claude")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")
-
-	// Exactly what a launch does — herdrback.go:1155-1164.
-	InstallPrePushHook(repo)
-	a.InstallCommitGuardHook(repo)
-	p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
-
-	if len(p.Degraded) != 0 {
-		t.Fatalf("ranger-base-flz7 looks FIXED (degraded: %v). Invert this test.", p.Degraded)
-	}
-	for _, gate := range ag.Deny {
-		if !strings.Contains(p.Realized[gate], "behavior probed") {
-			t.Fatalf("ranger-base-flz7 looks FIXED (%s -> %q). Invert this test.", gate, p.Realized[gate])
+// ESCAPE A end to end, both directions. The launch's install-then-probe
+// sequence must PUT the gates where git will run them — and where it cannot
+// (a foreign hook already sitting at the redirect), the operator must be told
+// in a line that names the redirected directory, not the git dir.
+func TestParityFollowsCoreHooksPath(t *testing.T) {
+	newLaunch := func(t *testing.T, repo string) (*App, *Runtime, *AgentFile) {
+		t.Helper()
+		home := t.TempDir()
+		a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+		claude, err := a.LoadRuntime("claude")
+		if err != nil {
+			t.Fatal(err)
 		}
+		ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")
+		return a, claude, ag
 	}
+
+	t.Run("install lands at the redirect and parity is honest about it", func(t *testing.T) {
+		repo, gitHooks := qaHookRepo(t)
+		redirect := t.TempDir()
+		qaGit(t, repo, "config", "core.hooksPath", redirect)
+		a, claude, ag := newLaunch(t, repo)
+
+		// Exactly what a launch does — herdrback.go:1155-1164.
+		if _, err := InstallPrePushHook(repo); err != nil {
+			t.Fatalf("install pre-push: %v", err)
+		}
+		if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+			t.Fatalf("install commit guard: %v", err)
+		}
+		for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+			if _, err := os.Stat(filepath.Join(redirect, slot)); err != nil {
+				t.Errorf("%s must be installed where git runs it: %v", slot, err)
+			}
+			if _, err := os.Stat(filepath.Join(gitHooks, slot)); err == nil {
+				t.Errorf("%s was written to the inert git dir as well", slot)
+			}
+		}
+		p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
+		if len(p.Degraded) != 0 {
+			t.Errorf("the wall is genuinely armed at the redirect; degraded: %v", p.Degraded)
+		}
+		for _, gate := range ag.Deny {
+			if !strings.Contains(p.Realized[gate], "behavior probed") {
+				t.Errorf("%s -> %q, want a behavior-probed L3 claim", gate, p.Realized[gate])
+			}
+		}
+	})
+
+	t.Run("a foreign hook at the redirect degrades and names it", func(t *testing.T) {
+		repo, gitHooks := qaHookRepo(t)
+		redirect := t.TempDir()
+		qaGit(t, repo, "config", "core.hooksPath", redirect)
+		// Armed at the git dir, so a probe that looked there would go green;
+		// waved through at the redirect, which is the only slot git runs.
+		qaArm(t, gitHooks, "pre-push", "prepare-commit-msg")
+		for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+			if err := os.WriteFile(filepath.Join(redirect, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		a, claude, ag := newLaunch(t, repo)
+		InstallPrePushHook(repo)       // both refuse: the slots are foreign
+		a.InstallCommitGuardHook(repo) //nolint:errcheck // best effort, as at launch
+
+		p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
+		joined := strings.Join(p.Degraded, "\n")
+		if joined == "" {
+			t.Fatal("a pass-through hook at core.hooksPath must degrade the launch")
+		}
+		if !strings.Contains(joined, AbbrevHome(redirect)) {
+			t.Errorf("degradation must name the directory git dispatches from (%s):\n%s",
+				AbbrevHome(redirect), joined)
+		}
+		if strings.Contains(joined, AbbrevHome(gitHooks)) {
+			t.Errorf("degradation named the inert git dir %s:\n%s", AbbrevHome(gitHooks), joined)
+		}
+	})
 }
 
 // ESCAPE B. The probe's signature is a fixed string in a file the planter can
