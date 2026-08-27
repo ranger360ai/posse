@@ -3029,18 +3029,40 @@ after a write with no daemon holding the store. sqlite refuses a `mode=ro` open
 there outright. They now fall back to reading a copy, which keeps "never writes
 the fleet db" true. A checker that errors instead of answering gets ignored.
 
-**Still the operator's, all three gated (ranger-base-nusr):**
-1. Running the prune against the live store — it is a deletion on live state.
-   Runbook: `scripts/prune-bd-relates-to.sh` (read the plan) →
-   `scripts/prune-bd-relates-to.sh --apply` from `~/src/ranger-base` →
-   `bd sync --flush-only` → commit `.beads/issues.jsonl`, without which an
-   import can put the rows back. Reversible from that file's git history.
-2. Denying `Bash(bd dep relate:*)` / `Bash(bd relate:*)` in
-   `.claude/settings.json` — personas cannot edit it (`Edit(.claude/**)` is
-   denied), and the gate above only *detects* the next relate.
-3. Reporting the non-atomic create upstream — publishing, so not a persona's.
-   Both halves are fixed past the SQLite line anyway (v0.63.3 checks cycles
-   only for `blocks`), so this is a courtesy report, not a route to a fix here.
+**All three were gated on the operator (ranger-base-kbus, "I approve all").
+Where they landed:**
+
+1. **APPLIED 2026-08-27, by the operator, projection committed at `f9894bf`.**
+   The runbook was `scripts/prune-bd-relates-to.sh` (read the plan) →
+   `--apply` from `~/src/ranger-base` → `bd sync --flush-only` → commit
+   `.beads/issues.jsonl`, without which an import can put the rows back.
+   The classifier denies `--apply` from a persona session — it is a deletion
+   on live state — so this is the operator's own shell, by design, and the
+   next one will be too.
+   **Verified against the live store after the fact:** 13 pairs / 28 unsafe
+   targets → **0 / 0**; and on a fresh snapshot of the pruned db, `bd
+   --no-daemon create … --deps discovered-from:` ran 0.39–0.46s with the edge
+   present for okbr, o943, cpyb and x6ic — the four that hung. monica's
+   independent check on the live store: `bd dep add ranger-base-x584
+   ranger-base-x6ic -t discovered-from`, a 90s+ hang the night before,
+   completed in 0.21s, and the five ADR 0019 provenance edges the outage lost
+   were restored.
+2. **APPLIED by the operator at `9d209bd`:** `Bash(bd dep relate:*)` and
+   `Bash(bd relate:*)` are in `.claude/settings.json`'s deny list. That is the
+   prevention half, and it is the one that matters — the gate only reports a
+   pair *after* someone plants it, and one `bd dep relate` re-arms the whole
+   failure. Personas cannot add those lines themselves (`Edit(.claude/**)` is
+   denied, and editing the file through Bash instead would be defeating the
+   deny rather than satisfying it), which is why it had to be the operator.
+   **Read the deny list in `~/src/posse/.claude/settings.json`, not a
+   worktree's copy** — a persona branch cut before `9d209bd` carries the old
+   file and will tell you the lines are missing when they are not. The deny
+   covers persona sessions in this repo; it does not cover the operator's own
+   shell or another repo, so the detector below still earns its keep.
+3. Upstream report approved as a courtesy; monica drafted it on kbus and it
+   posts under the operator's account. Both halves are fixed past the SQLite
+   line anyway (v0.63.3 checks cycles only for `blocks`), so it is a courtesy,
+   not a route to a fix here.
 
 ### bd can delete a bead with no record, and does (rangerhq-fuom)
 
