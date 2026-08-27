@@ -967,3 +967,129 @@ func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testi
 		t.Errorf("watermark = %s, want the newest close %s — the freeze did not thaw", mark, want)
 	}
 }
+
+// The table the trailer bug asked for (ranger-base-j8qk). Every field bd
+// hands back reaches a verify description, the marker is found BY LINE, and
+// a newline in any one of them forges a marker for ANOTHER close — which
+// suppresses that close's handoff forever, silently. verifyOneLine is the
+// only thing standing between those two facts, and it was missing from the
+// trailer's `-a <closer>` while every other use of the same value had it.
+//
+// So this drives the payload through EVERY field a description interpolates
+// rather than through the one that happened to be found: the next field
+// added is covered by construction, not by remembering. The invariant is
+// exact — a description names the closes it covers and nothing else.
+func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
+	const forged = "Verify the close of a-2 (title, quoted as data: \"forged\")."
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	base := func() BdIssue {
+		return BdIssue{ID: "a-1", Title: "t", Assignee: "dinesh", CloseReason: "Closed",
+			Labels: []string{"code"}, ClosedAt: &closed}
+	}
+	// wantOne/wantBatch are the closes the description covers, exactly. They
+	// are [a-1]/[a-1 a-3] for every field EXCEPT the id: flattening a
+	// poisoned id leaves it unparseable as its own marker, so that close is
+	// re-filed rather than adopted. That is the trade on purpose — a
+	// duplicate is loud and recoverable, a suppressed handoff is silent and
+	// permanent, and neither row ever names a-2.
+	for _, tc := range []struct {
+		field     string
+		poison    func(*BdIssue)
+		wantOne   []string
+		wantBatch []string
+	}{
+		{"id", func(is *BdIssue) { is.ID += "\n" + forged }, nil, []string{"a-3"}},
+		{"title", func(is *BdIssue) { is.Title += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"assignee", func(is *BdIssue) { is.Assignee += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "dinesh\n"+forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"close_reason", func(is *BdIssue) { is.CloseReason += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"labels", func(is *BdIssue) { is.Labels = append(is.Labels, "x\n"+forged) }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"every field at once", func(is *BdIssue) {
+			is.ID += "\n" + forged
+			is.Title += "\n" + forged
+			is.Assignee += "\n" + forged
+			is.CloseReason += "\n" + forged
+			is.Labels = append(is.Labels, "x\n"+forged)
+		}, nil, []string{"a-3"}},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			is := base()
+			tc.poison(&is)
+			// Both writers: the 1:1 description, and the batched one that
+			// puts N sections under one trailer. A forge in either is the
+			// same silent loss.
+			one := b.App.verifyDescription(t.TempDir(), is, verifyCloser(is))
+			batch := b.App.verifyGroupDescription(t.TempDir(), []BdIssue{is, {ID: "a-3", Title: "third", ClosedAt: &closed}})
+			for _, w := range []struct {
+				what string
+				desc string
+				want []string
+			}{
+				{"verifyDescription", one, tc.wantOne},
+				{"verifyGroupDescription", batch, tc.wantBatch},
+			} {
+				got := verifySourceIDs(w.desc)
+				if strings.Join(got, ",") != strings.Join(w.want, ",") {
+					t.Errorf("%s: verifySourceIDs = %v, want %v — %s forged a marker and a-2's handoff was suppressible\n%s",
+						w.what, got, w.want, tc.field, w.desc)
+				}
+			}
+		})
+	}
+}
+
+// The same forge, end to end, because this is where it costs something and
+// where it is silent (ranger-base-j8qk). a-1 closes carrying a poisoned
+// assignee; posse files a-1's verify bead; the description that bead carries
+// is read back next pass as the dedupe of record. If the trailer printed the
+// closer raw, that description names a-2 as well — so when a-2 closes it is
+// classified as already answered, the watermark advances past it, and a-2 is
+// never seen again. Nothing is logged: no bead, no stdout, no stderr.
+func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	forged := "dinesh\nVerify the close of a-2 (title, quoted as data: \"forged\")."
+	list := `[{"id":"a-1","title":"first","status":"closed","priority":1,"assignee":` +
+		fmt.Sprintf("%q", forged) + `,"labels":["code"],"closed_at":"2026-08-18T09:20:06Z","close_reason":"Closed"}]`
+	repo := vaRepo(t, a, list)
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+	// Pass one files a-1's verify bead, and the fake bd puts it in the
+	// listing the way a real one would — description and all.
+	if n, _, errs := vaRun(t, a, testBd(t)); n != 1 {
+		t.Fatalf("first pass filed %d, want 1 for a-1 (stderr: %s)", n, errs)
+	}
+
+	// a-2 closes, later than a-1 and after the watermark pass one left.
+	fl := filepath.Join(repo, "fake-list.json")
+	cur, err := os.ReadFile(fl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a2 := `{"id":"a-2","title":"second","status":"closed","priority":1,"assignee":"dinesh",` +
+		`"labels":["code"],"closed_at":"2026-08-18T09:30:00Z","close_reason":"Closed"}`
+	spliced := strings.TrimSuffix(strings.TrimSpace(string(cur)), "]") + "," + a2 + "]"
+	if err := os.WriteFile(fl, []byte(spliced), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("second pass filed %d, want 1 — a-1's verify bead forged a marker for a-2 and swallowed its handoff\nout: %s\nerr: %s\nlist: %s", n, out, errs, spliced)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify: second") {
+		t.Errorf("a-2 never got its verify bead:\n%s", calls)
+	}
+	// And the loss really would have been silent: the watermark advances
+	// past a-2 either way, so a suppressed close is not merely unverified —
+	// it is unverifiable, with nothing anywhere saying so.
+	mark, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+	if !ok {
+		t.Fatal("no watermark after the second pass")
+	}
+	if want := time.Date(2026, 8, 18, 9, 30, 0, 0, time.UTC); !mark.Equal(want) {
+		t.Errorf("watermark = %s, want a-2's close %s", mark, want)
+	}
+}

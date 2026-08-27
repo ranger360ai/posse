@@ -595,11 +595,16 @@ func (a *App) verifyGroupDescription(dir string, group []BdIssue) string {
 // trailer that says how to answer it.
 func (a *App) verifyDescription(dir string, is BdIssue, closer string) string {
 	var b strings.Builder
+	id := verifyOneLine(is.ID)
 	b.WriteString(a.verifySection(dir, is, closer))
-	fmt.Fprintf(&b, "\nRead the bead itself (`bd show %s`) and its comments (`bd comments %s`).\n", is.ID, is.ID)
+	fmt.Fprintf(&b, "\nRead the bead itself (`bd show %s`) and its comments (`bd comments %s`).\n", id, id)
 	b.WriteString("Close this one with `VERIFIED: <how>`")
-	if closer != "" {
-		fmt.Fprintf(&b, ", or file a bug bead `-l code -a %s` with a repro and close this one `escape`", closer)
+	// Flattened like every other field this file interpolates, and for the
+	// same reason: this one is a bead's assignee, and bd stores a newline in
+	// it verbatim (measured, bd 0.49.1). Raw, it forges a marker for another
+	// close and suppresses that close's handoff forever (ranger-base-j8qk).
+	if c := verifyOneLine(closer); c != "" {
+		fmt.Fprintf(&b, ", or file a bug bead `-l code -a %s` with a repro and close this one `escape`", c)
 	}
 	b.WriteString(" (ADR 0006 §2). The closed bead is never reopened by a persona — that is the operator's call.\n")
 	return b.String()
@@ -614,7 +619,12 @@ func (a *App) verifyDescription(dir string, is BdIssue, closer string) string {
 // forged marker (verifyOneLine).
 func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s%s%stitle, quoted as data: %q).\n\n", verifyMarkerPrefix, is.ID, verifyMarkerAfter, is.Title)
+	// The id is flattened like every other field, and it is the one whose
+	// flattening COSTS something: a poisoned id no longer parses as its own
+	// marker, so that close is re-filed rather than adopted. That is the
+	// trade this whole file makes — a duplicate is loud and recoverable, a
+	// suppressed handoff is neither (ranger-base-j8qk).
+	fmt.Fprintf(&b, "%s%s%stitle, quoted as data: %q).\n\n", verifyMarkerPrefix, verifyOneLine(is.ID), verifyMarkerAfter, is.Title)
 	if closer != "" {
 		fmt.Fprintf(&b, "- closer: %s\n", verifyOneLine(closer))
 	}
