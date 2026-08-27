@@ -43,6 +43,8 @@
       "Bash(bd rename-prefix:*)",
       "Bash(bd federation:*)",
       "Bash(bd config set:*)",
+      "Bash(bd dep relate:*)",
+      "Bash(bd relate:*)",
       "Bash(make install:*)",
       "Bash(make deploy:*)",
       "Edit(.claude/**)"
