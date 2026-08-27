@@ -32,9 +32,21 @@ cfg_max=$(val maximum_version "$cfg")
 
 # The authority on what the updater will actually do — grok's own answer, not
 # our reading of the config file. Network call; empty when offline.
+#
+# Parse tolerantly: live 1.0.5 emits compact JSON, but a space after the colon
+# or a pretty-printed payload is the same answer and must read the same
+# (ranger-base-ocfh — the old extractor required the value to sit immediately
+# after the colon, so `"autoUpdate": true` captured nothing and fell into the
+# offline arm: config false, updater true, exit 0 "pin intact"). Only an EMPTY
+# payload is offline. A payload we cannot parse is a FAIL, not silence — if the
+# field is ever renamed or restyled this script says so instead of passing.
+# POSIX BRE only, no alternation: BSD sed has no `\|`.
+jstr() { printf '%s' "$2" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1; }
+jword() { printf '%s' "$2" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p" | head -1; }
+
 chk=$(grok update --check --json 2>/dev/null)
-live_auto=$(printf '%s' "$chk" | sed -n 's/.*"autoUpdate":\([a-z]*\).*/\1/p')
-upstream=$(printf '%s' "$chk" | sed -n 's/.*"latestVersion":"\([^"]*\)".*/\1/p')
+live_auto=$(jword autoUpdate "$chk")
+upstream=$(jstr latestVersion "$chk")
 
 chk_row() { # label want got
   if [ "$2" = "$3" ]; then printf '  %-28s %-10s ok\n' "$1" "$3"
@@ -45,11 +57,17 @@ echo "grok version pin — $pin"
 chk_row "grok --version"            "$want_ver"  "$live_ver"
 chk_row "config auto_update"        "false"      "$cfg_auto"
 chk_row "config maximum_version"    "$want_max"  "$cfg_max"
-if [ -n "$live_auto" ]; then
-  chk_row "grok update: autoUpdate"  "false"     "$live_auto"
-else
-  printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: autoUpdate" "—"
-fi
+case "$live_auto" in
+  true | false)
+    chk_row "grok update: autoUpdate"  "false"     "$live_auto" ;;
+  *)
+    if [ -n "$chk" ]; then
+      printf '  %-28s %-10s <-- FAIL (grok answered; no autoUpdate boolean in it)\n' "grok update: autoUpdate" "${live_auto:-?}"
+      fail=$((fail + 1))
+    else
+      printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: autoUpdate" "—"
+    fi ;;
+esac
 
 ver_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]; }
 

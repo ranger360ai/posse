@@ -10,9 +10,13 @@ package posse
 //
 // Live grok 1.0.5 emits compact update JSON (`"autoUpdate":false` with no
 // space). The hermetic cases below stub grok so make test does not need
-// the operator's ~/.grok or a network. Pretty-printed / spaced JSON is
-// ranger-base-ocfh — skipped, un-skip to watch the sed treat autoUpdate:true
-// as offline and print pin intact.
+// the operator's ~/.grok or a network.
+//
+// ranger-base-ocfh: a space after the colon, or a pretty-printed payload, is
+// the SAME answer and must read the same. The old extractor captured nothing
+// there and fell into the offline arm — config false, updater true, exit 0
+// "pin intact". The pretty rows below are that pin, plus the arm it exposed:
+// only an EMPTY payload is offline; a payload we cannot parse FAILs.
 
 import (
 	"os"
@@ -272,8 +276,15 @@ func TestQAGrokPinScriptMissingGrokOrConfigExits2(t *testing.T) {
 	}
 }
 
+const gpPrettyFalse = `{
+  "currentVersion": "1.0.5",
+  "latestVersion": "1.0.5",
+  "updateAvailable": false,
+  "autoUpdate": false,
+  "error": null
+}`
+
 func TestQAGrokPinPrettyJSONAutoUpdateIsNotTreatedAsOffline(t *testing.T) {
-	t.Skip("ranger-base-ocfh: verify-grok-pin sed cannot parse pretty JSON / space-after-colon; autoUpdate:true is treated as offline and prints pin intact")
 	root := gpRoot(t)
 	bin := t.TempDir()
 	pretty := `{
@@ -290,5 +301,81 @@ func TestQAGrokPinPrettyJSONAutoUpdateIsNotTreatedAsOffline(t *testing.T) {
 	}
 	if strings.Contains(out, "offline") || strings.Contains(out, "pin intact") {
 		t.Errorf("pretty autoUpdate:true must not be the offline/intact arm:\n%s", out)
+	}
+}
+
+// The other half of ocfh: a spaced/pretty `false` is a real answer, not silence.
+// Reading it as offline would be a false PASS the day the field flips.
+func TestQAGrokPinPrettyJSONAutoUpdateFalseIsRead(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", gpPrettyFalse)
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("pretty autoUpdate:false: exit %d, want 0\n%s", code, out)
+	}
+	if strings.Contains(out, "offline") {
+		t.Errorf("pretty autoUpdate:false is an answer, not silence:\n%s", out)
+	}
+	if !strings.Contains(out, "grok update: autoUpdate") || !strings.Contains(out, "pin intact at 1.0.5") {
+		t.Errorf("want the autoUpdate row read ok and the pin intact:\n%s", out)
+	}
+}
+
+// latestVersion has the same colon-spacing hazard, and losing it loses the
+// re-audit gate silently: upstream moves, the list never prints.
+func TestQAGrokPinPrettyJSONUpstreamMovePrintsReaudit(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", `{
+  "currentVersion": "1.0.5",
+  "latestVersion": "1.1.0",
+  "updateAvailable": true,
+  "autoUpdate": false,
+  "error": null
+}`)
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("pin holding with upstream moved must exit 0, got %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.1.0") {
+		t.Errorf("pretty latestVersion must still trip the re-audit gate:\n%s", out)
+	}
+}
+
+// Only an EMPTY payload is offline — that arm still exists and still exits 0,
+// so the fail-closed arm below cannot creep over a genuinely absent network.
+func TestQAGrokPinEmptyCheckOutputIsStillOffline(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", "")
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("no update output: exit %d, want 0\n%s", code, out)
+	}
+	if !strings.Contains(out, "offline?") || !strings.Contains(out, "pin intact at 1.0.5") {
+		t.Errorf("empty payload is the offline arm:\n%s", out)
+	}
+}
+
+// grok answered and we could not read it. That is not silence, and passing on
+// it is exactly the ocfh failure one rename away — FAIL instead.
+func TestQAGrokPinUnreadableAnswerFailsInsteadOfPassing(t *testing.T) {
+	for _, tc := range []struct{ name, json string }{
+		{"no autoUpdate field", `{"currentVersion":"1.0.5","error":"network unreachable"}`},
+		{"autoUpdate as a string", `{"autoUpdate": "true", "latestVersion": "1.0.5"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.5", tc.json)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1\n%s", code, out)
+			}
+			if strings.Contains(out, "offline") || strings.Contains(out, "pin intact") {
+				t.Errorf("an unreadable answer must not read as offline/intact:\n%s", out)
+			}
+		})
 	}
 }
