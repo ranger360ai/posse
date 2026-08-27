@@ -33,14 +33,15 @@ func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 		{name: "landing page", path: "www/index.html"},
 		{name: "README", path: "README.md", required: true},
 
-		// INSTALL.md is deliberately absent: §3 ("From outside a checkout the
-		// same binary installs with") advertises the route with no export
-		// anywhere in the file, and the next thing it tells the reader is that
-		// `posse init` works — measured exit 0 then exit 127, ranger-base-4ash,
-		// filed to dinesh. Add the row in the same commit as the doc fix; the
-		// logic below already rejects that shape, pinned as a fixture case in
+		// ranger-base-977x: INSTALL.md §3 ("From outside a checkout the same
+		// binary installs with") advertised the route with no export anywhere
+		// in the file, and the next thing it told the reader was that `posse
+		// init` works — measured exit 0 then exit 127, ranger-base-4ash. The
+		// doc now carries the export and this row holds it there; the shape it
+		// shipped as stays pinned as a fixture case in
 		// TestGoInstallPathPinRejectsTheHistoricalGaps.
-		//
+		{name: "INSTALL.md", path: "INSTALL.md", required: true},
+
 		// etc/cleanroom/README.md must NEVER be added. It is a transcript OF
 		// the failure — an export line there would destroy the evidence.
 	}

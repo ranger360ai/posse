@@ -235,7 +235,14 @@ From outside a checkout the same binary installs with:
 
 ```sh
 $ go install github.com/ranger360ai/posse/cmd/posse@latest
+$ export PATH="$(go env GOPATH)/bin:$PATH"   # ← where the line above wrote it
 ```
+
+`go install` writes to `$GOBIN`, or to `$(go env GOPATH)/bin` when `GOBIN` is
+unset — normally `~/go/bin`, which is on no default macOS or Linux `PATH`.
+Skip that second line and the next command is `zsh: command not found: posse`,
+with the install itself having exited 0 (ranger-base-977x). Put it in your
+shell profile, not just this shell.
 
 That build carries the seed tree (`examples/`) embedded, so `posse init`
 works with no repo beside it. `@latest` installs the newest release tag —
