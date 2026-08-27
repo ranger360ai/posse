@@ -2860,6 +2860,92 @@ Lesson, now standing orders for devops: a substrate upgrade that any live
 session depends on gets canaried first — run the new binary from the fetched
 bottle against a *copy* of state in scratch, then upgrade.
 
+### The pin is not enforced, and the 08-16 rollback left a live process (ranger-base-31md)
+
+The 08-26 lock storm was not a new failure. It was the tail of the 08-16 one.
+Measured 2026-08-27, all of it live on this box:
+
+**The orphan's provenance.** `.beads/daemon.log` line 1 is
+`2026-08-13T23:28:26` — the orphan's own start, and it matches the 12d21h age
+at diagnosis. Its binary was `/opt/homebrew/bin/bd`, deleted underneath it by
+the `brew upgrade beads` of 08-16 that caused the first outage. The rollback
+that day was verified at the **command** layer (`bd version`, `bd ready`,
+`dispatch --dry-run`, all green) and never at the **process** layer. *A
+rollback that leaves a live process from the reverted artifact is not a
+rollback.* That process ran unnoticed for 12d21h and then detonated.
+
+**The pin rests on two soft facts and nothing asserts either.**
+- `bd version` 0.49.1 from `~/.local/bin/bd` — a hand-placed binary.
+- Homebrew `beads` **1.2.2 installed, `linked_keg` None** — an unlinked keg at
+  `/opt/homebrew/Cellar/beads/1.2.2` (135.6MB), pulled in as a dependency of
+  the *linked* `gastown` 0.5.0, next to `dolt` 2.3.0.
+- `/opt/homebrew/bin` precedes `~/.local/bin` in the fleet PATH. Relink that
+  keg — `brew upgrade`, `brew link beads`, a `gastown` reinstall — and 1.2.2
+  wins silently, which is precisely the 08-16 outage re-armed.
+- `beads` is **not `brew pin`ned** (`brew list --pinned` empty, no
+  `/opt/homebrew/var/homebrew/pinned`). The operator's own tap formula
+  `davidstacy/local/beads@0.49.1` exists and is **not installed**.
+- `make` carries `verify-grok-pin`, `verify-bd-dep-safety` and
+  `verify-bd-no-relate-pairs`. There is **no `verify-bd-pin`** — the one
+  substrate whose unpin has already taken the fleet down twice.
+
+**What it cost, priced.** 27 daemon `ERROR`s in the 21:00 hour and 1 in
+22:00 — a ~40-minute storm, landing on the leading edge of the shop's densest
+block: 08-26 closed **100 beads local**, **38 of them between 21:00 and
+23:59**. Nothing was lost; counts clean before and after. The day ran 138
+bead-segments / **$491.65 API-equiv**, median $3.27. So the bill was the
+operator's Wednesday evening and a degraded prime shift, **not dollars** —
+and 12d21h of not looking is the number to fix, not the 40 minutes.
+
+**Detection is one `test -e`, and it is all we can have.** The running
+daemon's own binary path either still exists or it does not; `bd version`
+either is 0.49.1 or it is not. Remediation is *not* available to any persona —
+`Bash(bd daemon:*)` is denied repo-wide and killing a pid is in no PID — so
+the check reports and the operator acts. A detector that cannot act still
+turns 12d21h into one dispatch pass. Do not build a monitoring subsystem for
+a subsystem the vendor deleted; build the `verify-grok-pin`-shaped target
+(ranger-base-tdwy; the one-command guard is the operator's, ranger-base-8auf).
+
+**The version question, answered — and the money column is a tie at $0.**
+beads is MIT, Dolt is Apache-2.0, both already installed here; no vendor, no
+plan, no renewal, nothing expires. Cost is never the argument on this chain.
+- *"Latest is 1.2.2" is misleading.* From the vendor's own CHANGELOG shipped
+  in the keg (`/opt/homebrew/Cellar/beads/1.2.2/CHANGELOG.md`): 1.2.0 and
+  1.2.1 were "published by accident on 2026-08-11 without release testing";
+  1.2.1 **migrated user databases on first command** ("running any command
+  once was enough"), leaving them unopenable by the older binary. 1.2.2
+  (08-15) is **the v1.1.2 code re-released under a higher version number**,
+  with the 1.2 features (work leases, events journal, `bd sync`, `bd serve`)
+  taken back out. Upgrading to "latest" buys July's code and August's
+  release-engineering record.
+- *What the upgrade would genuinely fix, and it is real:* **0.51.0 Phase 2
+  deleted the daemon** outright (and `--no-daemon` with it). Every mechanism
+  in this incident — a daemon auto-spawned per call, `daemon.lock`, an orphan
+  holding FDs on a deleted inode — is 0.49.x-only and **cannot recur on 1.x**.
+  That is the strongest thing on the migrate side and it should be said out
+  loud, not buried.
+- *What it costs:* the runbook above, twice, with writers frozen; a re-audit
+  of the bd allowlist against a surface it has never seen; and re-verifying
+  the three posse guards built around a 0.49.1 bug
+  (`verify-bd-dep-safety`, `prune-bd-relates-to`, `verify-bd-no-relate-pairs`)
+  against a different cycle-check engine. None of that is priced in dollars
+  either — it is operator hands and a frozen queue.
+- *The "what if we leave" column, both directions:* truth of record is
+  `.beads/issues.jsonl` — 4.1MB, git-tracked, flushed continuously. Forward is
+  `bd init --from-jsonl`; out of beads entirely is parsing a documented JSONL
+  file. **Lock-in is near zero today, and 1.2 makes it worse, not better**:
+  JSONL is demoted to an optional export (`export.auto`, off by default,
+  throttled to 60s). The runbook's `bd config set export.auto true` is
+  load-bearing, not a nicety.
+- **HOLD at 0.49.1 stands** — the operator's call of 2026-08-17 (rangerhq-f49,
+  recorded by monica 08-18). Nothing since moves the arithmetic toward
+  migrating and the vendor's August moves it away. The uncomfortable half,
+  plainly: 0.49.1 is **permanently unsupported** — the SQLite line ends at
+  0.50.3 with the `dep add` landmine byte-identical — so we are choosing to
+  carry known defects with known workarounds over an untested migration. That
+  choice is correct today and must be re-opened on the first *new* 0.49.1
+  defect that has **no** workaround, not on the next release announcement.
+
 ### `bd dep add` never terminates when the target can reach a `relates-to` pair (ranger-base-pkqn)
 
 MEASURED 2026-08-27 on a scratch copy of the fleet db: `bd --no-daemon dep add
