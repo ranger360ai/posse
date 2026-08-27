@@ -2815,6 +2815,12 @@ session for ~3 minutes; rolled back to the upstream v0.49.1 release binary
 (sha256-verified) at `~/.local/bin/bd`, with Homebrew's 1.2.2 left installed
 but unlinked. Both this repo and the instance repo are on 0.49.1 SQLite.
 
+`make verify-bd-pin` asserts that pin against the live box — version, which
+binary `bd` actually resolves to, homebrew's keg still unlinked, and every live
+`bd daemon` running the pinned binary and younger than it. Read-only: it never
+kills, links or installs anything. See *"The pin is not enforced"* below for
+why the process-layer half exists.
+
 Also present as a brew-managed pin: a local tap formula `beads@0.49.1`
 (operator-side), which installs the same release tarball; `brew install`
 of it currently fails only because the Command Line Tools are older than
@@ -2905,6 +2911,50 @@ the check reports and the operator acts. A detector that cannot act still
 turns 12d21h into one dispatch pass. Do not build a monitoring subsystem for
 a subsystem the vendor deleted; build the `verify-grok-pin`-shaped target
 (ranger-base-tdwy; the one-command guard is the operator's, ranger-base-8auf).
+
+**Built, 2026-08-27 — `make verify-bd-pin` (ranger-base-tdwy).** Declaration is
+`etc/bd/version-pin.toml` (pinned version, pinned binary, the homebrew formula
+whose keg must stay unlinked); the assertion is `scripts/verify-bd-pin.sh`.
+Four rows, all read-only, exit 1 on any failure and exit 2 when it cannot
+check at all:
+- `bd version` == 0.49.1 exactly. Asked as `bd --no-daemon version`, so the
+  check never spawns the thing it is checking; a 1.x on PATH rejects that flag
+  (0.51.0 deleted the daemon and the flag with it) and the row fails anyway.
+- `command -v bd` == the pinned binary. Not "a bd reporting 0.49.1" — *the*
+  pinned one. A shadowing 0.49.1 in front of it still fails, because the claim
+  is about which inode the fleet runs.
+- homebrew's `beads` keg is **unlinked or brew-pinned**. LINKED fails. Parsed
+  from `brew info --json=v2` with python3, not sed — `verify-grok-pin`'s sed
+  cannot survive pretty-printed JSON (ranger-base-ocfh) and that defect was
+  not worth reproducing.
+- **the process layer.** For each live `bd daemon` — matched on argv[0]
+  basename `bd` with argv[1] `daemon`, so `bd list` and a grep for the phrase
+  are not daemons — one of four verdicts: `ORPHAN` (its binary is gone from
+  disk), `FOREIGN` (a different, existing binary), `STALE` (started *before*
+  the pinned binary's mtime, so it is running an artifact that has since been
+  replaced — the 08-16 orphan's exact shape: started 08-13, binary rewritten
+  08-16 23:54), or ok.
+
+MEASURED while building it, and the detector rests on it: on macOS
+`ps -o comm=` returns an **empty string** once a running process's executable
+is unlinked — not a stale path. argv[0] survives in `ps -o args=`, which is
+why enumeration reads `args` and identification reads `comm`. Empty and
+"path that no longer exists" are the same verdict, so it holds either way.
+
+It acts on nothing. No kill, no `brew pin`, no relink — `Bash(bd daemon:*)` is
+denied fleet-wide and killing a pid is in no PID. A failing run prints the
+operator's next step and stops; `bdpin_qa_test.go` asserts the script's *code*
+(not its report text) contains no such verb. Wired into `scripts/clean-build.sh`
+ahead of `git worktree add`, because that is what fires the bd post-checkout
+hook and that is how the storm broke `make install` — **advisory there**, never
+fatal: the pin's state does not make a build wrong, and a failed check must not
+be what stands between the operator and a working binary.
+
+What it still does not do: `brew pin beads` is the belt and remains unset. The
+check says so on every clean run ("NOT BELT-AND-BRACES") and names the command
+without running it, because installing or pinning a formula is the operator's
+hand. Today the pin holds by the absence of a symlink, not by policy.
+
 
 **The version question, answered — and the money column is a tie at $0.**
 beads is MIT, Dolt is Apache-2.0, both already installed here; no vendor, no

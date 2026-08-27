@@ -80,6 +80,14 @@ $ go version && herdr --version && bd version && git --version
 says 1.2.x, stop and install 0.49.1 before going further — the rest of this
 runbook will appear to work and will not.
 
+Order matters in that `PATH` line. If Homebrew ever installs `beads` — on its
+own or as a dependency of something else — `/opt/homebrew/bin` typically
+precedes `~/.local/bin`, and 1.2.x wins silently. Once posse is built,
+`make verify-bd-pin` checks exactly that (and three other things: the version,
+Homebrew's keg still unlinked, and every live `bd daemon` running the pinned
+binary rather than one deleted underneath it). It is read-only and it is worth
+running after any `brew upgrade`. See NOTES.md, *beads (bd) substrate*.
+
 Start the herdr server if it is not running: `herdr` with no arguments
 launches or attaches its persistent TUI session, and `herdr server` runs
 the server headless — installing herdr does not start it, so on a fresh

@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -183,6 +183,19 @@ verify-id-recycle:
 # when upstream stable moves past the pin. Lifting the pin is the operator's.
 verify-grok-pin:
 	scripts/verify-grok-pin.sh
+
+# The bd version pin (rangerhq-f49). bd 0.49.1 auto-spawns a per-repo daemon on
+# any call and that daemon outlives the binary it was exec'd from: `brew upgrade
+# beads` deleted /opt/homebrew/bin/bd underneath one on 08-16, and the rollback
+# that day was verified at the COMMAND layer only — `bd version`, `bd ready`,
+# `dispatch --dry-run`, all green — so the orphan ran on for 12d21h and then
+# degraded every bd write on the box for ~40 minutes on 08-26. This asserts the
+# pin at BOTH layers: version, `command -v bd`, homebrew's keg unlinked-or-
+# pinned, and every live `bd daemon` running the pinned binary and younger than
+# it. etc/bd/version-pin.toml is the declaration. Read-only — it kills nothing
+# (`Bash(bd daemon:*)` is denied fleet-wide); remediation is the operator's.
+verify-bd-pin:
+	scripts/verify-bd-pin.sh
 
 # The bd 0.49.1 dep-add landmine (ranger-base-pkqn). bd's cycle check walks
 # the whole dependency graph with UNION ALL — walks, not nodes, depth 100, all

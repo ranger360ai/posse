@@ -1,0 +1,37 @@
+# The fleet's bd version pin — the operator's HOLD of 2026-08-17 (rangerhq-f49).
+#
+# These keys, and only these keys, are what posse requires of the live box.
+# Nothing here is installed over anything: the pinned binary is hand-placed and
+# homebrew's keg is the operator's. `make verify-bd-pin` asserts that the live
+# machine still matches what is here.
+#
+# WHY. bd 0.49.1 auto-spawns a per-repo daemon on any call, and that daemon
+# outlives the binary it was exec'd from. `brew upgrade beads` on 2026-08-16
+# deleted /opt/homebrew/bin/bd underneath a running daemon; the orphan held FDs
+# on the deleted inode for 12d21h and then degraded every bd write on the box
+# for ~40 minutes on 08-26. The 08-16 rollback was verified at the COMMAND
+# layer only — `bd version`, `bd ready`, `dispatch --dry-run`, all green — and
+# the orphan sailed straight through it. *A rollback that leaves a live process
+# from the reverted artifact is not a rollback.* So this pin is asserted at the
+# process layer too; see NOTES.md, "The pin is not enforced, and the 08-16
+# rollback left a live process" (ranger-base-31md / ranger-base-tdwy).
+#
+# LIFTING THE PIN is the operator's, and 1.x is a migration, not a version
+# bump: 0.51.0 Phase 2 deleted the daemon outright. HOLD at 0.49.1 stands.
+# Runbook: NOTES.md, "beads (bd) substrate".
+
+posse_pinned_version = "0.49.1"   # `bd version` at the time of the pin
+
+# The hand-placed binary the pin lives in. /opt/homebrew/bin precedes this
+# directory in the fleet PATH, so `command -v bd` resolving anywhere else means
+# something has been linked in front of the pin.
+pinned_binary = "~/.local/bin/bd"
+
+[homebrew]
+# Homebrew carries beads 1.2.2 as an UNLINKED keg — pulled in as a dependency
+# of the linked `gastown`. Unlinked is the entire defence: link it and 1.2.2
+# wins PATH silently, which is the 08-16 outage re-armed. `brew pin` is the
+# belt and is deliberately NOT asserted as required — installing or pinning a
+# formula is the operator's hand, not the devops lane's — so the check accepts
+# either "unlinked" or "pinned" and merely says so when only the first holds.
+formula = "beads"

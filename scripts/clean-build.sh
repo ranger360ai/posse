@@ -44,6 +44,33 @@ if [ -n "$dirty" ]; then
 	echo "  commit them first if they belong in the installed binary." >&2
 fi
 
+# `git worktree add` below fires the repo's bd post-checkout hook, and that is
+# precisely how the 08-26 lock storm broke `make install`: a bd write that hung
+# on a lock held by an orphaned daemon, reported as an unexplained stall in the
+# middle of a build. Say the cause out loud BEFORE the hook runs. Advisory
+# only — the pin's state does not make the build wrong, and a failed check must
+# never be what stands between the operator and a working binary. Exit 1 is a
+# real failed check and gets the full report; exit 2 is "cannot check" (no bd
+# on this machine, e.g. Linux CI) and gets one line.
+pincheck=$(dirname "$0")/verify-bd-pin.sh
+if [ -x "$pincheck" ]; then
+	# NOT `out` — that is this script's output path, set from $1 at the top.
+	# Clobbering it makes `make release` write the binary to the report text and
+	# still exit 0 (MEASURED while building this check).
+	if pinreport=$("$pincheck" 2>&1); then
+		:
+	else
+		rc=$?
+		if [ "$rc" = 2 ]; then
+			echo "clean-build: bd pin not checkable on this machine (verify-bd-pin exit 2)" >&2
+		else
+			echo "clean-build: BD PIN CHECK FAILED — the post-checkout hook below talks to bd:" >&2
+			printf '%s\n' "$pinreport" | sed 's/^/    /' >&2
+			echo "  building anyway; this is advisory. If the build stalls, that is why." >&2
+		fi
+	fi
+fi
+
 # Explicit template — `mktemp -t <prefix>` is BSD-only and GNU coreutils
 # rejects it, which would break `make release`/`make install` for any Linux
 # reader following INSTALL.md. Same form as scripts/verify-prune-guard.sh.
