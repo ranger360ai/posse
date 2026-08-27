@@ -236,6 +236,16 @@ type credShape struct {
 // credShapes is that order. One entry today — the OAuth envelope Claude
 // Code has always written. When a login writes a different one, append it
 // here and the failure below stops being reached; do not reorder.
+//
+// It stayed at one entry through the 2026-08-26 outage (ranger-base-okbr)
+// BECAUSE the shape was measured rather than guessed. posse's own line, once
+// the naming fix below was promoted, reported claudeAiOauth's keys as
+// [accessToken expiresAt rateLimitTier refreshToken refreshTokenExpiresAt
+// scopes subscriptionType] — accessToken present, so nothing had been
+// renamed and there was nothing here to teach. The token was empty: an
+// incomplete credential, fixed by re-authenticating, and the shop came back
+// with no change to this file. Guessing a shape and appending it would have
+// been a second wrong diagnosis on top of the first.
 var credShapes = []credShape{
 	{"claudeAiOauth.accessToken", func(top map[string]json.RawMessage) string {
 		var env struct {
@@ -322,10 +332,18 @@ func tokenVerdict(inner map[string]json.RawMessage) string {
 }
 
 // maxKeyName is the longest key this file will repeat back. Well above every
-// schema name a credential envelope uses (`subscriptionType`, the longest we
-// have seen, is 16) and well under any token, because a long key means the
-// object is keyed by a value and this file does not print values.
-const maxKeyName = 24
+// schema name a credential envelope uses and well under any token, because a
+// long key means the object is keyed by a value and this file does not print
+// values.
+//
+// The measured margin is smaller than it looks. The bound was 24 when the
+// longest name we had seen was `subscriptionType` (16); the 2026-08-26
+// reading brought `refreshTokenExpiresAt` (21), a key we had never seen, and
+// this envelope adds keys under us. A name we elide is a name the operator
+// needed, so the headroom is worth more than the tightness — and 32 is still
+// far under any credential this file could be handed (`sk-ant-oat01-…` runs
+// past 100 bytes).
+const maxKeyName = 32
 
 // maxKeysShown bounds the line — an item with hundreds of keys is not a
 // credential and the count says so better than the list would.

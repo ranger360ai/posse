@@ -110,39 +110,60 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 	}
 }
 
-// The TOP LEVEL the operator actually reported on 2026-08-26
-// (ranger-base-8i7l): ['mcpOAuth', 'claudeAiOauth']. The envelope posse
-// reads for IS present, so the defect is one level deeper — and the inner
-// keys are still unread, which is what this bead is waiting on.
+// The shape the outage ACTUALLY had, measured on the operator's own machine
+// rather than guessed. The top level came back first (ranger-base-8i7l):
+// ['mcpOAuth', 'claudeAiOauth']. The inner keys came from posse itself once
+// the naming fix was promoted — $RHQ_HOME/state/plan-usage.log, every
+// dispatch from 2026-08-26T18:25:05Z to 00:42:22Z the next morning:
 //
-// Both inner cases are pinned here because the line is what the operator
-// will read: with that one top level, either the token field is gone
-// (renamed) or it is there and empty (an incomplete credential). The error
-// must say WHICH, not hand back a key list to diff by eye. mcpOAuth is a
-// second envelope posse knows nothing about; it is named at the top level
-// and never opened, because its keys are per-server URLs and not ours.
+//	its top-level keys are [claudeAiOauth mcpOAuth], and claudeAiOauth's keys
+//	are [accessToken expiresAt rateLimitTier refreshToken
+//	refreshTokenExpiresAt scopes subscriptionType]
+//
+// accessToken IS among them, so the fork falls on the "present but empty"
+// side: the credential was incomplete, posse's parse was never wrong, and
+// credShapes gains no entry. Read a second way, the log says the same thing —
+// dispatch went green at 00:48:33Z with no change to posse.
+//
+// The renamed fork is pinned beside it because the code still has to take it,
+// and because rateLimitTier and refreshTokenExpiresAt were both new that day:
+// this envelope does change under us, which is the reason the line names keys
+// at all.
+//
+// mcpOAuth is a second envelope posse knows nothing about; it is named at the
+// top level and never opened, because its keys are per-server URLs and not
+// ours.
 func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 	const mcp = `"mcpOAuth":{"https://example.test/sse":{"accessToken":"` + fixtureSecret + `"}},`
+	// The measured key set. Values are invented — only the names were read.
+	const measured = `"expiresAt":1756224000000,"rateLimitTier":"tier","refreshToken":"r",` +
+		`"refreshTokenExpiresAt":1758816000000,"scopes":["user:inference"],"subscriptionType":"max"`
 	for _, tc := range []struct {
 		name  string
 		inner string
 		wants []string
+		not   []string
 	}{
 		{
-			name:  "accessToken gone — renamed, and ours to fix",
-			inner: `{"refreshToken":"r","expiresAt":1756224000000,"scopes":["user:inference"],"subscriptionType":"max"}`,
+			name:  "the shape the outage had — accessToken there and empty",
+			inner: `{"accessToken":"",` + measured + `}`,
 			wants: []string{
-				"claudeAiOauth's keys are [expiresAt refreshToken scopes subscriptionType]",
-				"renamed or dropped", "teach credShapes",
+				"claudeAiOauth's keys are [accessToken expiresAt rateLimitTier refreshToken " +
+					"refreshTokenExpiresAt scopes subscriptionType]",
+				"incomplete credential", "re-authenticate rather than change posse",
+				"a refreshToken is present",
 			},
+			not: []string{"renamed or dropped", "teach credShapes"},
 		},
 		{
-			name:  "accessToken there and empty — incomplete credential, not ours",
-			inner: `{"accessToken":"","refreshToken":"r","expiresAt":1756224000000}`,
+			name:  "the fork it was not — accessToken gone, and ours to fix",
+			inner: `{` + measured + `}`,
 			wants: []string{
-				"claudeAiOauth's keys are [accessToken expiresAt refreshToken]",
-				"incomplete credential", "re-authenticate rather than change posse",
+				"claudeAiOauth's keys are [expiresAt rateLimitTier refreshToken " +
+					"refreshTokenExpiresAt scopes subscriptionType]",
+				"renamed or dropped", "teach credShapes",
 			},
+			not: []string{"incomplete credential"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,9 +176,20 @@ func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 			if !strings.Contains(msg, "its top-level keys are [claudeAiOauth mcpOAuth]") {
 				t.Errorf("want both envelopes named at the top level: %q", msg)
 			}
+			// The longest measured name is 21 bytes; every one of them must
+			// survive whole, because a key we elide is a key the operator
+			// needed (maxKeyName).
+			if !strings.Contains(msg, "refreshTokenExpiresAt") || strings.Contains(msg, "not a name") {
+				t.Errorf("a measured schema name was elided: %q", msg)
+			}
 			for _, w := range tc.wants {
 				if !strings.Contains(msg, w) {
 					t.Errorf("want %q in: %q", w, msg)
+				}
+			}
+			for _, n := range tc.not {
+				if strings.Contains(msg, n) {
+					t.Errorf("must not say %q: %q", n, msg)
 				}
 			}
 			if strings.Contains(msg, "example.test") {
@@ -174,6 +206,13 @@ func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 // object keyed BY a value — so a name that is not name-shaped is reported by
 // its size, never its bytes.
 func TestKeyNamesNeverCarryAValue(t *testing.T) {
+	// This test only means something while the fixture is longer than the
+	// bound. maxKeyName has been raised once already (ranger-base-okbr, when a
+	// 21-byte schema name showed up); raise it past this and the assertion
+	// below would pass by echoing the secret instead of eliding it.
+	if len(fixtureSecret) <= maxKeyName {
+		t.Fatalf("fixture (%d bytes) no longer exceeds maxKeyName (%d): lengthen it", len(fixtureSecret), maxKeyName)
+	}
 	blob := `{"` + fixtureSecret + `":1,"ok":2}`
 	_, _, err := credentialToken([]byte(blob))
 	if err == nil {
