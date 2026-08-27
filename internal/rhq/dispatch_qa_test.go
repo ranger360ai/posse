@@ -703,7 +703,9 @@ func TestDispatchStalledPromptBenchesSession(t *testing.T) {
 	if strings.Contains(bd, "update a-2") || strings.Contains(bd, "update a-3") {
 		t.Errorf("later beads for the benched session must not be touched:\n%s", bd)
 	}
-	if !strings.Contains(out, "unclaimed") || strings.Count(out, "busy this pass") != 2 {
+	// The lane is one seat wide, so a benched seat is a busy lane
+	// (ADR 0020 §2: the report names the lane, never one persona).
+	if !strings.Contains(out, "unclaimed") || strings.Count(out, "go lane busy: ranger") != 2 {
 		t.Errorf("want ✗ unclaimed + two busy skips:\n%s", out)
 	}
 	if !strings.Contains(out, "agent_prompt_stalled") {
@@ -730,7 +732,7 @@ func TestDispatchClaimLostKeepsSessionInPlay(t *testing.T) {
 	out := dispatcherOut(d)
 	// Both claims fail (the fake fails all of them) — the point is that the
 	// second bead was still attempted rather than skipped as busy.
-	if n != 0 || strings.Count(out, "claim lost") != 2 || strings.Contains(out, "busy this pass") {
+	if n != 0 || strings.Count(out, "claim lost") != 2 || strings.Contains(out, "lane busy") {
 		t.Errorf("claim loss must not bench the session, got n=%d:\n%s", n, out)
 	}
 	if strings.Contains(bdCalls(t, fake), "--status open") {
@@ -774,7 +776,7 @@ func TestDispatchTwoBeadsFreshSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)
-	if n != 1 || !strings.Contains(out, "busy this pass") {
+	if n != 1 || !strings.Contains(out, "go lane busy: ranger") {
 		t.Errorf("want 1 dispatched + busy skip, got n=%d:\n%s", n, out)
 	}
 	if got := strings.Count(calls(t, fake), "agent prompt w1:p1"); got != 1 {
@@ -1191,7 +1193,7 @@ func TestDispatchClaimLostExitZeroKeepsSessionInPlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)
-	if n != 0 || strings.Count(out, "claim lost") != 2 || strings.Contains(out, "busy this pass") {
+	if n != 0 || strings.Count(out, "claim lost") != 2 || strings.Contains(out, "lane busy") {
 		t.Errorf("claim loss must not bench the session, got n=%d:\n%s", n, out)
 	}
 	if !strings.Contains(out, "someone-else holds it") {

@@ -756,31 +756,60 @@ func coordinatorKey(name string) string {
 // reaches past it. What it compares is identity, not the string it was
 // handed: see isCoordinator, and CanonAgent for the name actually returned.
 func (d *Dispatcher) Route(is RepoIssue) (persona, why string) {
+	l := d.laneFor(is)
+	if l.deny != "" {
+		return "", l.deny
+	}
+	return l.seats[0].name, l.why
+}
+
+// routeLane is ADR 0020 §2's first question answered on its own: WHICH LANE.
+// It carries every seat the bead could take, in the order routing prefers
+// them, and deliberately says nothing about which of them is free —
+// availability is a fact about right now, and the only place allowed to read
+// it is a launcher holding the launcher lock (ADR 0011 §1). Splitting the
+// two questions is what lets the fire loop offer a busy lane's work to the
+// next seat instead of skipping the bead.
+type routeLane struct {
+	seats []routeMatch // candidates, preferred first; empty iff deny != ""
+	label string       // the label that made this a lane; "" when not label-routed
+	why   string       // the route report's clause, before any seat clause
+	deny  string       // non-empty: unroutable, and this says why
+}
+
+// laneFor resolves the lane and nothing else. An assignee that loads is a
+// lane of ONE and never falls through (§2: silently rerouting an assignment
+// hands the work to the wrong actor); so is default_persona, which is a
+// fallback and not a roster. Only a label match can produce a lane wider
+// than one seat, which is why routeLane.label is set on that path alone —
+// a lane is a set of LABELS (§1), and naming one for an assignee would
+// invent a lane the roster does not have.
+func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 	coord := d.App.Coordinator()
 	// An explicitly assigned bead never falls through to label routing:
 	// silently rerouting an assignment hands the work to the wrong actor,
 	// and unroutable-and-loud is honest. The operator reassigns, or carries
 	// it to the coordinator by hand in her crew session (ADR 0008).
 	if isCoordinator(coord, is.Assignee) {
-		return "", fmt.Sprintf("assigned to the coordinator — not a lane; %s triages by hand (reassign, or take to the operator)", coord)
+		return routeLane{deny: fmt.Sprintf("assigned to the coordinator — not a lane; %s triages by hand (reassign, or take to the operator)", coord)}
 	}
 	if is.Assignee != "" {
 		if name, ok := d.App.CanonAgent(is.Assignee); ok {
-			return name, "assignee"
+			return routeLane{seats: []routeMatch{{name: name}}, why: "assignee"}
 		}
 	}
 	if cands := d.labelMatches(coord, is); len(cands) > 0 {
-		return cands[0].name, routeWhy(cands)
+		return routeLane{seats: cands, label: cands[0].label, why: routeWhy(cands)}
 	}
 	if def := d.App.CfgGet("default_persona", ""); def != "" {
 		if isCoordinator(coord, def) {
-			return "", fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0018 §2)", def)
+			return routeLane{deny: fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0018 §2)", def)}
 		}
 		if name, ok := d.App.CanonAgent(def); ok {
-			return name, "default_persona"
+			return routeLane{seats: []routeMatch{{name: name}}, why: "default_persona"}
 		}
 	}
-	return "", "no assignee/label match and no default_persona"
+	return routeLane{deny: "no assignee/label match and no default_persona"}
 }
 
 // routeMatch is one persona whose labels overlap a bead's, with the label
@@ -841,6 +870,118 @@ func routeWhy(c []routeMatch) string {
 		names = append(names, m.name)
 	}
 	return fmt.Sprintf("%s (first of %d: %s)", why, len(c), strings.Join(names, ", "))
+}
+
+// seatPass is one candidate the seat walk stepped over, and why: the raw
+// material for both halves of the report — the lane-busy line names the
+// seats, the seat clause names what each was doing.
+type seatPass struct{ name, doing string }
+
+// seatFor answers ADR 0020 §2's second question — WHICH SEAT — for a lane
+// whose first question is already answered. It walks the lane in routing
+// order and takes the first candidate that is actually free: not made busy
+// earlier in this pass, and with no working or blocked session of its own
+// in this repo (personaActive). Name order is therefore a TIEBREAK and not
+// a priority: it decides only who takes the first bead while several seats
+// are free, and the next bead in the same pass overflows to the next seat.
+//
+// Availability is read here and nowhere else on this path, which is what
+// lets the report say why a seat won rather than who won a race (§2.3). A
+// candidate found working is marked busy for the rest of the pass — the
+// same bench the single-seat loop always applied — so a wide lane costs one
+// herdr listing per persona per pass, not one per persona per bead.
+//
+// The rest of the loop's guards stay where they are and stay BEAD skips,
+// because they are facts about this bead rather than about a seat: a crew
+// session holding the bead's own session, a holder that settled, a session
+// prompted seconds ago. Falling through any of those would hand one bead to
+// a second persona, which is the opposite of what §2 is for.
+//
+// --persona X restricts SEATING to X (§2.4): a lane containing X may seat
+// only there, and a lane that does not contain X is not this pass's
+// business — the caller counts those and says so once at the end rather
+// than printing a line per bead of a queue the operator filtered out.
+//
+// Returns (index, why, "") on a seat, (-1, "", line) when every seat the
+// filter allows is busy, and (-1, "", "") when --persona put the bead out
+// of scope.
+func (d *Dispatcher) seatFor(l routeLane, is RepoIssue, personaFilter string, busy map[string]bool) (int, string, string) {
+	var passed []seatPass
+	inLane := false
+	for i, m := range l.seats {
+		if personaFilter != "" && m.name != personaFilter {
+			continue
+		}
+		inLane = true
+		slot := SessionFor(m.name, is.Dir)
+		if busy[slot] {
+			passed = append(passed, seatPass{m.name, "busy"})
+			continue
+		}
+		if name, st := d.personaActive(m.name, is.Dir); name != "" {
+			busy[slot] = true
+			passed = append(passed, seatPass{m.name, st})
+			continue
+		}
+		return i, seatWhy(l, i, passed), ""
+	}
+	if !inLane {
+		return -1, "", ""
+	}
+	return -1, "", laneBusyLine(l, passed, is.Dir)
+}
+
+// seatWhy is §2.3: "label:code (seat 2/3: hopper; developer busy)" — which
+// seat took the bead, and why the ones before it did not. It REPLACES routeWhy's
+// roster clause on a wide lane: "2/3" already says how big the race was,
+// and naming what each earlier seat was doing is the half a roster cannot
+// answer. A lane of one has no seat to explain and keeps its bare clause.
+func seatWhy(l routeLane, idx int, passed []seatPass) string {
+	if len(l.seats) < 2 {
+		return l.why
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "label:%s (seat %d/%d: %s", l.label, idx+1, len(l.seats), l.seats[idx].name)
+	for i, p := range passed {
+		if i == 0 {
+			b.WriteString("; ")
+		} else {
+			b.WriteString(", ")
+		}
+		if i == routeMaxRoster {
+			fmt.Fprintf(&b, "+%d more", len(passed)-routeMaxRoster)
+			break
+		}
+		fmt.Fprintf(&b, "%s %s", p.name, p.doing)
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
+// laneBusyLine is what a bead gets when no seat in its lane is free: the
+// LANE, never one persona (§2). "code lane busy: developer, hopper" is the
+// difference between "the shop's code capacity is spent this pass" and
+// "developer is the code lane" — the single-seat reading ADR 0020 retired,
+// and the one an operator would answer by waiting instead of by hiring.
+//
+// An assignee or a default_persona is not a lane (§1: a lane is a set of
+// labels), so its one busy seat is still reported as the persona it is.
+func laneBusyLine(l routeLane, passed []seatPass, dir string) string {
+	names := make([]string, 0, routeMaxRoster+1)
+	for i, p := range passed {
+		if i == routeMaxRoster {
+			names = append(names, fmt.Sprintf("+%d more", len(passed)-routeMaxRoster))
+			break
+		}
+		names = append(names, p.name)
+	}
+	if len(names) == 0 { // no seat was tried: nothing to name but the lane
+		names = append(names, l.seats[0].name)
+	}
+	if l.label == "" {
+		return fmt.Sprintf("%s busy this pass", SessionFor(names[0], dir))
+	}
+	return fmt.Sprintf("%s lane busy: %s — waits for a later pass", l.label, strings.Join(names, ", "))
 }
 
 var sessionSanitizeRe = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
@@ -1255,6 +1396,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 
 	dispatched, attempts := 0, 0
 	busy := map[string]bool{} // sessions made busy during this pass
+	outside := 0              // beads whose lane does not contain --persona X
 	var pending []*pendingBead
 	for _, is := range beads {
 		if max > 0 && attempts >= max {
@@ -1274,24 +1416,34 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			}
 			continue
 		}
-		persona, why := d.Route(is)
-		if persona == "" {
-			fmt.Fprintf(d.Out, "– %-14s unroutable (%s)\n", is.ID, why)
+		// ADR 0020 §2: routing is two questions, and this loop is the only
+		// place that may answer the second. WHICH LANE is a pure function
+		// of the roster and the bead's labels; WHICH SEAT is availability,
+		// read under the launcher lock, right here.
+		lane := d.laneFor(is)
+		if lane.deny != "" {
+			fmt.Fprintf(d.Out, "– %-14s unroutable (%s)\n", is.ID, lane.deny)
 			continue
 		}
-		if personaFilter != "" && persona != personaFilter {
+		// One bead per persona per repo per pass (§4): the seat walk skips
+		// a persona already made busy, so a wide lane fans across SEATS and
+		// never fans one persona N-wide. The busy key is the persona's repo
+		// slot; the session is the bead's own (Dial F).
+		seat, why, full := d.seatFor(lane, is, personaFilter, busy)
+		if seat < 0 {
+			if full == "" {
+				// --persona X, and X is not in this bead's lane: not this
+				// pass's business, and one line per filtered-out bead would
+				// bury the ones that are.
+				outside++
+				continue
+			}
+			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, full)
 			continue
 		}
-		// One bead per persona per repo per pass: the fresh-session-per-bead
-		// rule (Dial F) is about context and cost, not about fanning one
-		// persona out N-wide. The busy key is the persona's repo slot; the
-		// session is the bead's own.
+		persona := lane.seats[seat].name
 		slot := SessionFor(persona, is.Dir)
 		session := SessionForBead(persona, is.Dir, is.ID)
-		if busy[slot] {
-			fmt.Fprintf(d.Out, "– %-14s %s busy this pass\n", is.ID, slot)
-			continue
-		}
 		// ADR 0008: a bead whose own session is the operator's — or, when
 		// this bead would resume into it, the pre-Dial-F slot — is left
 		// alone. No fleet twin is made for it and --resume does not
@@ -1305,11 +1457,6 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		}
 		if held := d.crewHeld(crewNames...); held != "" {
 			fmt.Fprintf(d.Out, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
-			continue
-		}
-		if name, st := d.personaActive(persona, is.Dir); name != "" {
-			fmt.Fprintf(d.Out, "– %-14s %s is %s — skipped\n", is.ID, name, st)
-			busy[slot] = true
 			continue
 		}
 		// The holder join (ADR 0004 §2): a bead this persona already holds is
@@ -1452,7 +1599,18 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			fmt.Fprintf(d.Out, "· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, over)
 			dispatched++
 			attempts++
+			busy[slot] = true
 			continue
+		}
+		// ADR 0020 §2.3, on the real path and not only under --dry-run: the
+		// audit ranger-base-2yj5 asked for is about beads that were actually
+		// dispatched, and until now `why` reached the operator's eye in a
+		// dry pass alone. Printed here, after every guard that could still
+		// skip the bead, so the line means a seat was really taken — and
+		// only for a lane wider than one seat, because a lane of one has no
+		// seat to explain and every single-seat pass report stays as it was.
+		if len(lane.seats) > 1 {
+			fmt.Fprintf(d.Out, "· %-14s %s\n", is.ID, why)
 		}
 		attempts++
 		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved)
@@ -1501,6 +1659,15 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		}
 		busy[slot] = true
 		pending = append(pending, p)
+	}
+	// §2.4's other half. A pass filtered to one persona skips every bead
+	// outside that persona's lane without a line — one per bead would bury
+	// the lines that matter — but a filtered pass that reports NOTHING
+	// cannot be told from an empty queue, which is the silence
+	// ranger-base-69jo was filed about. One line at the end says which it
+	// was, and it names no bead, so nothing here is a dispatch decision.
+	if personaFilter != "" && outside > 0 {
+		fmt.Fprintf(d.Out, "– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
 	}
 	return dispatched, pending, nil
 }

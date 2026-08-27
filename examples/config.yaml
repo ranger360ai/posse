@@ -392,6 +392,22 @@ dirs:
 # autostart_max_beads: 3       # -n, launch attempts per pass. A cap is ALWAYS present:
 #                              # absent key = 3, and 0 (unbounded) only ever by saying so —
 #                              # an armed loop must never fire the whole ready queue by omission
+#                              #
+#                              # This is ONE of three bounds and never the only one
+#                              # (ADR 0020 §5). A pass's effective width is
+#                              #   min(autostart_max_beads,
+#                              #       floor(budget_pass / your cost-per-bead),
+#                              #       free seats with ready work)
+#                              # so raising this alone does nothing: budget_pass:
+#                              # above is a spend bound, and the third bound is
+#                              # the roster — lane concurrency IS seat count, and
+#                              # hiring (a PID file in git) is the knob (§4).
+#                              # Sizing rule: set this to the seats you want
+#                              # started per pass, then budget_pass: to at least
+#                              # that many times your measured per-bead cost. The
+#                              # caps stay denominated in BEADS on purpose: spend
+#                              # is incurred per bead, and a seat-denominated cap
+#                              # would let a hire silently raise spend authority.
 # autostart_dry_run: true      # passes route and report, dispatch nothing
 # autostart_resume: false      # THE ONLY KEY HERE THAT DEFAULTS ON. Absent, the loop
 #                              # passes --resume: a bead whose persona settled without

@@ -171,9 +171,12 @@ of the harness core:
    priority — with `--resume`, `in_progress` beads ahead of all of it.
    `bd ready`'s own order is the query's, and `-n` takes the top of this
    list (rangerhq-1r2).
-2. Route each to a persona: bead **assignee** that is a persona wins, then
-   the label match with the lowest PID `route_order:` (default 50, ties
-   broken by persona name), then config `default_persona:`. Unroutable
+2. Route each to a **lane**, and then to a **seat** in it (ADR 0020 §2 —
+   two questions the pass used to conflate). *Which lane*: bead
+   **assignee** that is a persona wins and is a lane of one that never
+   falls through, then every persona whose `labels:` overlap the bead's,
+   ordered by PID `route_order:` (default 50, ties broken by persona
+   name), then config `default_persona:` — also a lane of one. Unroutable
    beads are reported and skipped. Config `coordinator:` is returned by
    **no** path (ADR 0018): assignee-is-the-coordinator refuses loudly with
    no fallthrough to label routing, the label loop skips that PID, and a
@@ -211,6 +214,29 @@ of the harness core:
    line was one clause short of answering. It costs a `LoadAgent` per
    persona per bead instead of stopping at the first match — which is what
    makes the count honest.
+
+   *Which seat* is the second question, and only the fire loop can answer
+   it: the bead is seated on the first candidate in that order that is
+   actually **free** — not made busy earlier in this pass, and with no
+   working or blocked session of its own in the repo. So name order is a
+   TIEBREAK and not a priority: it decides who takes the first bead while
+   several seats are free, and the next bead in the same pass overflows to
+   the next seat. A pass with three unassigned `code` beads and three free
+   `code` seats fires all three. Every seat busy is the LANE being busy and
+   the report says so — `code lane busy: developer, hopper, wren`, not one
+   persona, because "wait" and "hire" are different answers and only the
+   lane line tells them apart (lane concurrency *is* seat count, ADR 0020
+   §4). When a lane is wider than one seat the pass prints why that seat
+   won — `label:code (seat 2/3: hopper; developer busy)`. `--persona X`
+   restricts *seating* to X: a bead whose lane contains X seats there, one
+   whose lane does not is skipped without a line of its own and counted in
+   a single closing line, so a filtered pass that dispatches nothing can
+   still be told from an empty queue.
+
+   The guards after the seat is chosen stay BEAD skips, not fallthroughs —
+   a crew session holding the bead's own session, a holder that settled, a
+   session prompted seconds ago. Each is a fact about *this bead*, and
+   falling through any of them would hand one bead to a second persona.
 3. Resolve the bead's **tier** (ADR 0003 §2): `--tier` > bead label
    `tier:strong|standard|fast` > config `tier_by_label:` (one-level map;
    when the key is absent the Dial B default applies: doc/groom/triage/
@@ -224,7 +250,9 @@ of the harness core:
    to detect the agent. Still one bead per persona per repo per pass (the
    busy key is the persona's repo slot, and any working/blocked session of
    that persona in that repo — per-bead or the pre-Dial-F `<persona>-<repo>`
-   one — skips it). Sessions of finished beads are left idle for the
+   one — takes that SEAT out of the walk for the pass, which since ADR 0020
+   §2 offers the bead to the next seat in the lane instead of skipping the
+   bead). Sessions of finished beads are left idle for the
    operator to reap (`posse kill`, or from the cockpit); they cost nothing
    and do not block dispatch. Note the operator's own bead-cost tooling
    attributes by session, so per-bead sessions are what it wants. A session that is alive but has no

@@ -679,7 +679,11 @@ func main() {
 		}
 		verb := "dispatched"
 		if d.DryRun {
-			verb = "routable"
+			// Not "routable": since ADR 0020 §2 a dry pass walks the seats
+			// and benches each one it seats, so the count is what a real
+			// pass would fire — a lane's fourth bead is not in it, and
+			// calling that number routable would overstate the queue.
+			verb = "would be dispatched"
 		}
 		fmt.Fprintf(out, "%d bead(s) %s\n", n, verb)
 

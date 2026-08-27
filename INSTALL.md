@@ -520,7 +520,7 @@ The frontmatter keys that do work:
 |---|---|
 | `name`, `description` | identity and the listing line |
 | `labels:` | **dispatch routing** — bead labels this persona picks up |
-| `route_order:` | tiebreak when several personas' `labels:` match one bead — lower goes first, default 50, ties broken by persona name |
+| `route_order:` | tiebreak when several personas' `labels:` match one bead — lower goes first, default 50, ties broken by persona name. A tiebreak, not a priority: it picks who takes the FIRST bead of a pass, and the next one overflows to the next free seat |
 | `runtime:` | which launch profile (step 8); default `claude` |
 | `tier:` / `tier_floor:` | model tier, and the tier below which it refuses to run (ADR 0003) |
 | `intents:` | intent slugs; the `## Intents` table's "done when" cell is what a reviewer checks a closed bead against |
@@ -530,12 +530,29 @@ The frontmatter keys that do work:
 | `cage:`, `writable:`, `egress:` | minimum wall tier (ADR 0002 §5) |
 | `command:` | escape hatch — a hand-written launch template. Prefer `runtime:`. |
 
-**How a bead reaches a persona** (dispatch, in order):
+**How a bead reaches a persona** (dispatch, in two questions):
 
-1. the bead's **assignee**, if it names a persona;
-2. among the personas whose `labels:` overlap the bead's labels, the one
-   with the lowest `route_order:` — ties broken by persona name;
+*Which lane?* — in order:
+
+1. the bead's **assignee**, if it names a persona (a lane of one, and it
+   never falls through);
+2. every persona whose `labels:` overlap the bead's labels, ordered by
+   `route_order:` — ties broken by persona name;
 3. config `default_persona:`, if you set one.
+
+*Which seat?* — the bead goes to the first persona in that order who is
+actually free: not already given a bead by this pass, and with no session
+of their own working or blocked in that repo. So a lane with three
+personas in it takes three beads in one pass, and `route_order:`/name
+order decides only who gets the first one. If every seat is busy the bead
+waits for a later pass and the report names the lane, not one persona:
+
+```
+– my-repo-9xy  code lane busy: developer, hopper — waits for a later pass
+```
+
+Which is the signal that the answer is a *hire*: a lane's concurrency is
+its seat count, and a seat is a PID file you wrote.
 
 Unroutable beads are reported and skipped. If nothing picks up your work,
 this list is why.
@@ -551,11 +568,11 @@ there, and they compose: delete the personas you do not staff, and state
 the order — `route_order: 10` on the lane you want first, or `route_order:
 90` on the one you want last.
 
-The dispatch line tells you when a race happened, so you do not need an
-audit to see it:
+The dispatch line tells you which seat took the bead and why the ones
+before it did not, so you do not need an audit to see it:
 
 ```
-· my-repo-9xy  → developer (label:code (first of 2: developer, hopper)) …
+· my-repo-9xy  label:code (seat 2/2: hopper; developer busy)
 ```
 
 The one name none of the three ever reaches is config `coordinator:` — the
