@@ -20,15 +20,23 @@ import (
 
 // qaPrescription pulls the runnable block out of a refusal: everything from
 // the `cd <hooks>` line through the `chmod +x <slot>` that ends it, with the
-// bare `posse` of step 3 pointed at the binary under test.
+// bare `posse` of step 3 pointed at the binary under test. Anchored on the
+// END marker and then the LAST `cd ` before it, because since rangerhq-mgdk
+// one call reports both slots and so may print two prescriptions: anchoring
+// on the first `cd ` would hand back the other slot's block with this one's
+// tail glued on.
 func qaPrescription(t *testing.T, out, slot, bin string) string {
 	t.Helper()
-	start := strings.Index(out, "\ncd ")
-	end := strings.Index(out, "\nchmod +x "+slot+"\n")
-	if start < 0 || end < 0 {
+	tail := "\nchmod +x " + slot + "\n"
+	end := strings.Index(out, tail)
+	if end < 0 {
 		t.Fatalf("no runnable prescription for %s in:\n%s", slot, out)
 	}
-	block := out[start+1 : end+len("\nchmod +x "+slot+"\n")]
+	start := strings.LastIndex(out[:end], "\ncd ")
+	if start < 0 {
+		t.Fatalf("no runnable prescription for %s in:\n%s", slot, out)
+	}
+	block := out[start+1 : end+len(tail)]
 	return strings.Replace(block, "\nposse gates install-hooks ", "\n"+bin+" gates install-hooks ", 1)
 }
 
@@ -97,7 +105,6 @@ func qaSh(t *testing.T, script string) (string, int) {
 func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 	bin := buildRhq(t)
 	repo := qaForeignBoth(t)
-	hooks := filepath.Join(repo, ".git", "hooks")
 
 	// The refusal for the first slot, and the block it prints.
 	first, _ := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
@@ -113,6 +120,42 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 	if code != 0 {
 		t.Errorf("the prepare-commit-msg prescription must run as printed: code=%d\n%s", code, commitOut)
 	}
+
+	qaAssertBothSlotsChained(t, repo)
+}
+
+// rangerhq-pon3, the other order. The bead's claim was about ORDER —
+// "prescription A must be finished last, and nothing printed says so" — and
+// since rangerhq-mgdk one call reports both slots, so the operator is handed
+// both blocks at once and may paste either first. Pinning only A-then-B
+// would pin one half of the claim.
+func TestQAInstallRefusalPrescriptionsRunInEitherOrder(t *testing.T) {
+	bin := buildRhq(t)
+	repo := qaForeignBoth(t)
+
+	// One call, both refusals, both prescriptions — the commit slot's first.
+	first, _ := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
+	commitOut, code := qaSh(t, qaPrescription(t, string(first), "prepare-commit-msg", bin))
+	if code != 0 {
+		t.Errorf("the prepare-commit-msg prescription must run as printed FIRST: code=%d\n%s", code, commitOut)
+	}
+	// Its own step 3 reprints the pre-push block, now against a repo whose
+	// commit slot already holds our dispatcher: taking the second slot must
+	// not disturb the first.
+	preOut, code := qaSh(t, qaPrescription(t, commitOut, "pre-push", bin))
+	if code != 0 {
+		t.Errorf("the pre-push prescription must run as printed SECOND: code=%d\n%s", code, preOut)
+	}
+
+	qaAssertBothSlotsChained(t, repo)
+}
+
+// qaAssertBothSlotsChained is the end state both prescription orders owe:
+// each gate installed behind its dispatcher, each slot refusing its probe
+// with exit 1, and the operator's own commit still landing.
+func qaAssertBothSlotsChained(t *testing.T, repo string) {
+	t.Helper()
+	hooks := filepath.Join(repo, ".git", "hooks")
 
 	// Both gates must exist behind their dispatchers.
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
