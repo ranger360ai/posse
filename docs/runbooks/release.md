@@ -243,4 +243,7 @@ Stated plainly, so nobody mistakes this runbook for a guarantee:
 - **linux/amd64 unless explicitly requested.** On an Apple-silicon machine,
   plain `make test-linux` runs linux/arm64 while GitHub's `ubuntu-latest` is
   amd64. Run `PLATFORM=linux/amd64 make test-linux` to cover the CI architecture
-  under emulation; the default rehearsal alone does not prove it.
+  under emulation; the default rehearsal alone does not prove it. Running it is
+  safe to repeat: the script passes `--platform` on every run, defaulting to the
+  host, so an amd64 rehearsal no longer leaves the next default run emulated
+  (ranger-base-1qm5).

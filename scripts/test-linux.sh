@@ -26,6 +26,7 @@
 # Environment:
 #   IMAGE=golang:1.26     override the toolchain image (default: golang:<go.mod>)
 #   PLATFORM=linux/amd64  test the other architecture (slow, emulated)
+#                         default: the host's, from `uname -m` — always passed
 #
 # THE REPO IS MOUNTED READ-ONLY and the container runs as YOU, not root, so a
 # run cannot leave anything in the working tree — not a root-owned artifact,
@@ -84,8 +85,25 @@ fi
 
 mkdir -p "$CACHE/build" "$CACHE/mod"
 
-run_flags=(--rm -i)
-if [ -n "${PLATFORM:-}" ]; then run_flags+=(--platform "$PLATFORM"); fi
+# --platform IS ALWAYS PASSED, defaulting to this host (ranger-base-1qm5).
+# Docker's classic image store keys `golang:<minor>` as ONE local image, so a
+# platform-specific run replaces whatever that tag pointed at: one documented
+# `PLATFORM=linux/amd64` run left the tag holding the amd64 blob, and every
+# later DEFAULT run then qemu-emulated amd64 — silently, apart from a platform
+# WARNING — instead of testing the host arch NOTES.md says it tests. Naming the
+# platform every time makes the request explicit in both directions, so the run
+# after an override resolves back to the host's arch instead of inheriting the
+# override's. (Docker's containerd image store keeps both platforms under the
+# tag and does not poison; this does not depend on which store is configured.)
+if [ -z "${PLATFORM:-}" ]; then
+  case "$(uname -m)" in
+    arm64 | aarch64) PLATFORM=linux/arm64 ;;
+    x86_64 | amd64)  PLATFORM=linux/amd64 ;;
+    *) die "unknown host architecture '$(uname -m)' — set PLATFORM=linux/<arch> explicitly" ;;
+  esac
+fi
+
+run_flags=(--rm -i --platform "$PLATFORM")
 
 # /repo plus every git dir mounted at its own path: mounted read-only, and
 # marked safe.directory so git does not refuse them on an ownership mismatch.
@@ -110,7 +128,7 @@ esac
 # A tty when there is one to give: --shell, or a human watching a normal run.
 if [ -t 0 ] && [ -t 1 ]; then run_flags+=(-t); fi
 
-echo "test-linux: $IMAGE${PLATFORM:+ ($PLATFORM)} — $gate"
+echo "test-linux: $IMAGE ($PLATFORM) — $gate"
 if [ -n "$git_mounts" ]; then
   printf 'test-linux: linked worktree — also mounting %s read-only at its own path so git resolves in the container\n' \
     "$(printf '%s' "$git_mounts" | tr '\n' ' ' | sed 's/ $//')"

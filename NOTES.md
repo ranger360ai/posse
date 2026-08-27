@@ -4757,5 +4757,21 @@ It tests the host's architecture (arm64 on an Apple-Silicon box).
 `IMAGE=` overrides the toolchain image; `scripts/test-linux.sh --shell` drops
 you in there, and `scripts/test-linux.sh '<cmd>'` runs one command.
 
+**`--platform` is passed on every run, not only when `PLATFORM=` is set**
+(ranger-base-1qm5). Docker's classic image store keys `golang:<minor>` as one
+local image, so the documented amd64 override *replaced* what that tag pointed
+at: one `PLATFORM=linux/amd64` run, and every later default run qemu-emulated
+amd64 — announced by nothing but a platform WARNING — while NOTES.md, this
+paragraph, said it tested the host arch. A one-shot override was a persistent
+retarget. The default is now `linux/arm64` or `linux/amd64` read from
+`uname -m`, so the request is explicit in both directions and the run after an
+override resolves back to the host instead of inheriting it. Docker's
+containerd image store (`Storage Driver: overlayfs`,
+`io.containerd.snapshotter.v1`) keeps both platforms under the tag and never
+poisoned — measured 2026-08-27 on Docker 29.0.1, where the repro no longer
+reproduces — which is exactly why naming the platform beats relying on the
+store: the fix is in the `docker run` argv, and `release_qa_test.go` pins it
+there against a fake docker, on any store and any host.
+
 The release workflow is still the last gate, not the first one: run this before
 you push, because on a tag is the worst place to learn that Linux disagrees.

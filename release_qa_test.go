@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -149,13 +150,21 @@ func TestReleaseRunbookDoesNotStillClaimDispatchDiverges(t *testing.T) {
 // emulates amd64 instead of testing the host arch NOTES.md says it tests.
 // Always passing --platform, defaulting to the host, stops the tag poison.
 func TestTestLinuxDefaultRunPinsPlatformSoAnAmd64OverrideCannotPoisonTheTag(t *testing.T) {
-	t.Skip("ranger-base-1qm5: default docker run has no --platform; PLATFORM=linux/amd64 poisons the golang:<minor> tag")
 	runArgs, exit := tlDocker(t, nil)
 	if exit != 0 {
 		t.Fatalf("exit %d", exit)
 	}
 	if !tlContains(runArgs, "--platform") {
 		t.Fatal("default docker run has no --platform; PLATFORM=linux/amd64 therefore poisons the golang:<minor> tag for every later default run")
+	}
+	// Present is not enough: it has to name THIS host, or the default run
+	// tests an architecture nobody asked for. runtime.GOARCH is the same
+	// answer the script reads out of `uname -m`.
+	switch runtime.GOARCH {
+	case "arm64", "amd64":
+		tlMustHave(t, runArgs, "--platform", "linux/"+runtime.GOARCH)
+	default:
+		t.Logf("host GOARCH %q: pinning only that --platform is passed", runtime.GOARCH)
 	}
 }
 
