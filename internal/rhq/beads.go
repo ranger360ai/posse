@@ -13,9 +13,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -366,9 +368,41 @@ func (a *App) BeadsDirs() []string {
 		out = append(out, ExpandTilde(d))
 	}
 	if len(out) == 0 && !yamlHasKey(a.ConfigPath, "beads") {
+		cwdFallbackNotice(noticeWriter, a.ConfigPath)
 		out = append(out, "")
 	}
 	return out
+}
+
+var cwdFallbackNotices sync.Map
+
+// noticeWriter is where BeadsDirs says it fell back. A var only so a test can
+// assert the silence half of this fix — that a configured `beads:` key emits
+// nothing — which is not observable if the notice goes straight to os.Stderr.
+var noticeWriter io.Writer = os.Stderr
+
+// cwdFallbackNotice is the other half of rangerhq-wmrb. Whether the cwd
+// fallback should exist was settled elsewhere and kept (ranger-base-5b5), so
+// the defect that survives is not the fallback — it is that it says nothing.
+// A scan that FAILS in the cwd now names it (DirLabel), but a scan that
+// SUCCEEDS was the silent case the bead is titled for: `posse dispatch` typed
+// in the wrong directory, or run under a second instance whose config never
+// set `beads:`, dispatches whatever repo the process happened to start in and
+// looks exactly like a correct pass. One line on stderr is the whole fix: the
+// queue is still served, and the operator can see which repo served it.
+//
+// Read-only and said once per config path, for legacyHomeNotice's reason —
+// BeadsDirs is called several times per command, and a notice that repeats is
+// a notice that gets filtered out.
+func cwdFallbackNotice(stderr io.Writer, configPath string) {
+	if stderr == nil {
+		return
+	}
+	if _, loaded := cwdFallbackNotices.LoadOrStore(configPath, struct{}{}); loaded {
+		return
+	}
+	fmt.Fprintf(stderr, "posse: no `beads:` in %s — using the process cwd %s as the only beads source\n",
+		AbbrevHome(configPath), cwdLabel())
 }
 
 // RepoIssue is a BdIssue tagged with the repo it came from.
@@ -387,8 +421,34 @@ type ScanError struct {
 	Err error
 }
 
-func (e ScanError) Error() string { return AbbrevHome(e.Dir) + ": " + e.Err.Error() }
+func (e ScanError) Error() string { return DirLabel(e.Dir) + ": " + e.Err.Error() }
 func (e ScanError) Unwrap() error { return e.Err }
+
+// DirLabel names a beads source for the operator. The "" BeadsDirs returns
+// for an absent `beads:` key is not "no directory": it is the process cwd,
+// which is what bd inherits when cmd.Dir is unset. Rendering it verbatim is
+// how a failed scan of that source came out as `ready scan failed: :`, an
+// error naming no repo at all — the silent-cwd hazard (rangerhq-wmrb) wearing
+// an error message. Whether the cwd fallback is the right default is settled
+// elsewhere and deliberately (ranger-base-5b5 kept it, and reports configured
+// paths that do not resolve rather than dying); what is not defensible is
+// running there without saying so. The suffix is the point: it tells the
+// operator this source came from the fallback, not from config.yaml.
+func DirLabel(dir string) string {
+	if dir != "" {
+		return AbbrevHome(dir)
+	}
+	return cwdLabel() + " (process cwd)"
+}
+
+// cwdLabel names the directory bd inherits when cmd.Dir is unset.
+func cwdLabel() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "the process cwd"
+	}
+	return AbbrevHome(wd)
+}
 
 // UnresolvedDirs is the configured paths that are not there at all, as
 // ScanErrors. BeadsDirs keeps an unresolvable path on purpose (ranger-base-5b5)

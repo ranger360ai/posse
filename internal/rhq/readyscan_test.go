@@ -6,8 +6,10 @@ package rhq
 // while a dozen beads sat ready.
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,4 +318,101 @@ func TestReadyAllOrdersByPriorityAcrossRepos(t *testing.T) {
 	if issues[0].ID != "one-p1" || issues[len(issues)-1].Priority != 3 {
 		t.Errorf("want a P1 at the head and a P3 at the tail, got %v", ids)
 	}
+}
+
+// A scan failure has to name the repo it happened in, and the cwd fallback is
+// the one source whose name is not in config.yaml (rangerhq-wmrb). Rendered
+// verbatim the "" sentinel produced `ready scan failed: :`, which names
+// nothing — the operator could not tell that bd had run in whatever directory
+// the process happened to be in.
+func TestScanErrorNamesTheCWDFallback(t *testing.T) {
+	err := ScanError{Dir: "", Err: Die("boom")}.Error()
+	if strings.HasPrefix(err, ":") {
+		t.Fatalf("the cwd source must be named, got %q", err)
+	}
+	if !strings.Contains(err, "process cwd") {
+		t.Errorf("the cwd source must say it came from the fallback, got %q", err)
+	}
+	wd, gerr := os.Getwd()
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if !strings.Contains(err, AbbrevHome(wd)) {
+		t.Errorf("want the actual cwd %q named, got %q", AbbrevHome(wd), err)
+	}
+
+	// A configured path still reads exactly as before: no suffix, abbreviated.
+	if got := (ScanError{Dir: "/nope/there", Err: Die("boom")}).Error(); got != "/nope/there: boom" {
+		t.Errorf("a configured path must be named plainly, got %q", got)
+	}
+}
+
+// The cwd fallback is kept (ranger-base-5b5) but must not be silent: a pass
+// that dispatches the process cwd's queue is indistinguishable from a correct
+// one unless it says so (rangerhq-wmrb). Said once per config, because
+// BeadsDirs is called several times per command.
+func TestCWDFallbackAnnouncesItselfOnceAndOnlyWhenItHappens(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+
+	cwdFallbackNotice(&buf, cfg)
+	first := buf.String()
+	if !strings.Contains(first, "no `beads:`") || !strings.Contains(first, AbbrevHome(cfg)) {
+		t.Fatalf("the notice must name the config it read, got %q", first)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first, AbbrevHome(wd)) {
+		t.Errorf("the notice must name the cwd it will use, got %q", first)
+	}
+	if strings.Contains(first, "(process cwd)") {
+		t.Errorf("the notice already says 'process cwd'; the suffix reads twice: %q", first)
+	}
+
+	cwdFallbackNotice(&buf, cfg)
+	if buf.String() != first {
+		t.Errorf("a repeated notice is one that gets filtered out, got %q", buf.String())
+	}
+}
+
+// A configured beads: key must stay quiet — the notice is for the fallback,
+// not for every command. The silence is half the fix: a line printed on every
+// pass is a line the operator stops reading.
+func TestConfiguredBeadsKeyIsQuiet(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - /somewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	defer swapNoticeWriter(&buf)()
+
+	if dirs := b.App.BeadsDirs(); len(dirs) != 1 || dirs[0] != "/somewhere" {
+		t.Fatalf("want the configured path, got %q", dirs)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a configured beads: key must say nothing, got %q", buf.String())
+	}
+
+	// ...and the same App with the key removed does speak.
+	if err := os.WriteFile(b.App.ConfigPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if dirs := b.App.BeadsDirs(); len(dirs) != 1 || dirs[0] != "" {
+		t.Fatalf("want the cwd sentinel, got %q", dirs)
+	}
+	if !strings.Contains(buf.String(), "no `beads:`") {
+		t.Errorf("the fallback must announce itself, got %q", buf.String())
+	}
+}
+
+// swapNoticeWriter redirects the fallback notice for one test and returns the
+// restore. Each call also clears the once-per-config memo, so tests do not
+// silence each other through it.
+func swapNoticeWriter(w io.Writer) func() {
+	prev := noticeWriter
+	noticeWriter = w
+	cwdFallbackNotices.Range(func(k, _ any) bool { cwdFallbackNotices.Delete(k); return true })
+	return func() { noticeWriter = prev }
 }
