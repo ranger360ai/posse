@@ -315,7 +315,17 @@ create side mirrors it (`mustNotOrphan`). The asterisk: the
 fresh meta between check and delete. Narrowed to milliseconds, not
 closed — and a narrowed race is worse to debug, not safer. The
 by-construction fix is cheap because §1 exists: delete and meta-write
-under the launcher flock (correction bead filed). On ordering, the
+under the launcher flock. **Closed** (rangerhq-3a5t): the unlink takes
+the lock `LOCK_NB` and re-proves death inside it — locking the delete
+alone would still act on evidence read outside the lock, which is the
+same race one step over — and a contended lock spares the file, which
+also makes nesting safe (flock is per open file description, so a pass
+already holding it spares rather than deadlocks). `CreateSession` takes
+the same lock around `mustNotOrphan` and its `writeMeta`, which finally
+puts `posse new` under §1 — mustNotOrphan's own doc named the unlocked
+create as the hole it could not close. Relaunch's two meta-destroying
+steps (`clearDeadMeta`, `keepRecipe`) are the same shape and are still
+outside the lock: bead filed. On ordering, the
 reviewed alternative — write the meta before the workspace exists —
 inverts badly: a meta naming no workspace is unprunable by construction
 here; the current order (workspace → meta → command) plus grace is

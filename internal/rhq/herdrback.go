@@ -614,7 +614,13 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
 				continue
 			}
-			os.Remove(b.metaPath(name)) // workspace died — stale meta
+			// Proven dead — by evidence gathered OUTSIDE the launcher lock,
+			// which is a fact about the instant it was read and not about
+			// the instant the unlink lands (rangerhq-3a5t). reclaim re-proves
+			// it under the lock, where no create can be in flight.
+			if why := b.reclaim(name, sock, gen); why != "" {
+				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
+			}
 			continue
 		}
 		claimed[m.Workspace] = true
@@ -861,6 +867,72 @@ func (b *HerdrBackend) prunable(m *HerdrMeta, gen string) (dead bool, why string
 	return b.idEvidence(m, gen)
 }
 
+// reclaim is the unlink itself: the only line in posse that destroys a
+// session's record on inference rather than on the operator's word.
+//
+// prunable() proving death is necessary and is not sufficient, because
+// proof and act were two steps over a file another actor writes. Between
+// them a create for the SAME name — a launcher's, or a `posse new` that
+// took no lock — can legitimately pass mustNotOrphan (the old workspace
+// really is dead) and writeMeta a fresh meta at this very path. The Remove
+// then deletes the NEW record: a live session loses its identity, which is
+// the rangerhq-9nso damage shape reached through the write/delete
+// interleave instead of two deletes. The window is milliseconds, and
+// CWE-367's own note applies — a narrow race is worse to debug, not safer.
+//
+// So the act is taken under the launcher lock ADR 0011 §1 already built,
+// and the check is taken again INSIDE it. Both halves matter: locking the
+// unlink alone would still act on evidence read before the lock, which is
+// the same race one step over. Under the lock a create for this name is
+// either finished (and the re-read sees its meta, which is young and names
+// a live workspace, so prunable spares it) or has not begun (CreateSession
+// takes the same lock, underLaunchLock).
+//
+// A contended lock is answered by sparing the file, never by waiting and
+// never by acting: a held lock means a launcher is running, a listing must
+// not block behind it (the cockpit reads this on its select loop), and the
+// next quiet pass prunes. That answer also makes nesting safe by
+// construction — flock is per open file description, so a pass that already
+// holds the lock cannot take it again, and its own listings spare every
+// meta rather than deadlocking. Nothing is lost: a kept meta is taken back
+// by the next read, and the prune is the half of the meta rule whose
+// refusal costs a file (prunable, mustNotOrphan).
+//
+// It returns why the file was kept, "" when it was pruned — or when the
+// re-read finds nothing there at all, which is not a sparing: somebody else
+// already did the delete this pass had proved.
+func (b *HerdrBackend) reclaim(name, sock, gen string) string {
+	lock, ok := tryLockLaunches(b.App)
+	if !ok {
+		return "a launcher holds the launch lock, so the unlink is not taken now (ADR 0011 §1, rangerhq-3a5t) — the next quiet pass prunes it"
+	}
+	defer lock.Release()
+	// The whole check again, on the file as it is now. The listing-shaped
+	// arm (emptyBoard) is deliberately not re-asked: it is a fact about the
+	// snapshot this pass holds, already answered above, and re-asking it
+	// would mean a second `workspace list` inside the lock to learn nothing
+	// about THIS meta. What can have changed under a concurrent create is
+	// the FILE, and every arm below reads it.
+	m, ok := b.readMeta(name)
+	if !ok {
+		return ""
+	}
+	if m.Workspace == "" {
+		return "it now names no workspace: a relaunch left its recipe here while this pass was proving the old workspace dead"
+	}
+	if m.Socket == "" {
+		return "it now records no socket, and nothing on disk says this server ever held it"
+	}
+	if why := cannotAnswerFor(m, sock); why != "" {
+		return why
+	}
+	if dead, why := b.prunable(m, gen); !dead {
+		return why
+	}
+	os.Remove(b.metaPath(name)) // workspace died — stale meta
+	return ""
+}
+
 // backfillServer records which herdr server — and which generation of it —
 // a meta belongs to, the moment this pass finds its workspace live: holding
 // the workspace is the proof the meta file never carried. Without it a meta
@@ -971,9 +1043,12 @@ func (b *HerdrBackend) HasSession(name string) bool {
 // did die a minute ago may be recreated under its name at once, as always.
 //
 // The launch lock (rangerhq-tzdf, ADR 0011 §1) closes this window for two
-// dispatch passes, which re-read a fresh listing inside the lock. It does
-// not cover an operator's `posse new` racing a pass — that takes no lock —
-// and it is a serialization, not a guard on the write itself.
+// dispatch passes, which re-read a fresh listing inside the lock, and since
+// rangerhq-3a5t for an operator's `posse new` too: CreateSession takes the
+// same lock around this check and the writeMeta it authorizes, so the
+// unlocked create the paragraph above used to name is gone, and so is the
+// prune racing it from the other side (reclaim). It is still a
+// serialization and not a guard on the write itself — the guard is here.
 func (b *HerdrBackend) mustNotOrphan(name string) error {
 	m, ok := b.readMeta(name)
 	if !ok || m.Workspace == "" {
@@ -1058,13 +1133,23 @@ func (b *HerdrBackend) mustNotOrphan(name string) error {
 		name, why, name, b.metaPath(name))
 }
 
+// nameSyntax is nameFree's first guard on its own, so a create can ask it
+// before it takes the launcher lock: it reads no state, which is exactly
+// what makes it safe to ask outside the serialization the other two need.
+func nameSyntax(name string) error {
+	if !ValidName(name) {
+		return Die("bad session name '%s' (letters, digits, - and _; may not start with -)", name)
+	}
+	return nil
+}
+
 // nameFree is the trio of guards every create passes: a usable name, no
 // live session already wearing it, and no meta this create would orphan.
 // Relaunch runs it too — after its kill, which is the only moment the name
 // is free — so the guards live here rather than inside CreateSession.
 func (b *HerdrBackend) nameFree(name string) error {
-	if !ValidName(name) {
-		return Die("bad session name '%s' (letters, digits, - and _; may not start with -)", name)
+	if err := nameSyntax(name); err != nil {
+		return err
 	}
 	if b.HasSession(name) {
 		return Die("session '%s' already exists (try: posse attach %s)", name, name)
@@ -1499,16 +1584,37 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 // CreateSession mirrors the tmux CreateSession contract (defaults, env sets,
 // persona precedence) on the herdr backend: guard the name, resolve the
 // launch, start it.
+// The whole body runs under the launcher lock (ADR 0011 §1). nameFree's
+// mustNotOrphan is the check and startPlanned's writeMeta is the act, and
+// mustNotOrphan's own doc named the gap between them as the hole it could
+// not close: "it does not cover an operator's `posse new` racing a pass —
+// that takes no lock". This closes it, and with it the other side of the
+// same window — a prune that has just proved this name's old workspace dead
+// and is about to unlink the meta this create is writing (rangerhq-3a5t,
+// reclaim). Under LaunchBead the lock is already held and underLaunchLock
+// runs the body directly; from `posse new` it is taken here, which makes
+// `posse new` the launcher ADR 0011 §1 always said it was.
 func (b *HerdrBackend) CreateSession(o NewSessionOpts) error {
-	if err := b.nameFree(o.Name); err != nil {
+	// The name's SYNTAX is checked outside the lock, and it is the one
+	// check that can be: it reads no state, so no concurrent actor can
+	// change its answer. Taking the launcher lock to reject `posse new -x`
+	// would queue a typo behind a running pass and leave a lock file in an
+	// RHQ_HOME nothing has launched in yet (cmd/posse: help and a refused
+	// name leave no state behind). Everything below it reads the meta dir.
+	if err := nameSyntax(o.Name); err != nil {
 		return err
 	}
-	p, err := b.planLaunch(o)
-	if err != nil {
+	return underLaunchLock(b.App, b.warnWriter(), func() error {
+		if err := b.nameFree(o.Name); err != nil {
+			return err
+		}
+		p, err := b.planLaunch(o)
+		if err != nil {
+			return err
+		}
+		_, err = b.startPlanned(o, p)
 		return err
-	}
-	_, err = b.startPlanned(o, p)
-	return err
+	})
 }
 
 // RelaunchAgent re-types the persona command into a live session's root

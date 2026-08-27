@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -53,6 +54,48 @@ func (l *LaunchLock) Release() {
 	}
 	l.f.Close()
 	l.f = nil
+	launchLockDepth.Add(-1)
+}
+
+// launchLockDepth is how many launcher locks THIS process is inside. flock
+// is per open file description, so the kernel cannot tell a caller "you
+// already hold this" — a second Open+Flock in the same process blocks on
+// the first forever, and LOCK_NB turns that deadlock into a spurious
+// EWOULDBLOCK against nobody. The two callers that must tell the two apart
+// read it here.
+//
+// It is a fact about the PROCESS, and posse only ever launches, creates and
+// prunes from one goroutine: the only goroutines in the non-test code are
+// the herdr RPC waiters dispatch parks a `--wait` leg on (dispatch.go), and
+// none of them touches a meta file or the lock. If that ever stops being
+// true this becomes a lie about the CALLER, and the fix is to pass the held
+// lock down rather than to look it up.
+var launchLockDepth atomic.Int32
+
+// launchLockMine reports whether this process is already inside the
+// launcher lock.
+func launchLockMine() bool { return launchLockDepth.Load() > 0 }
+
+// underLaunchLock runs f serialized against every other launcher of this
+// RHQ_HOME, and takes the lock only if this process is not already inside
+// it. A nested call runs f directly: the lock we hold is the exclusion f
+// needed, and re-taking it is the deadlock above, not a second guarantee.
+//
+// This is the write half of rangerhq-3a5t. The prune's half deliberately
+// does NOT come through here — a contended lock there means "spare the
+// file", which is a safe answer a create does not have (mustNotOrphan: on
+// the write side doing nothing is what destroys the record), so it takes
+// tryLockLaunches directly and treats its own process's lock as contention.
+func underLaunchLock(a *App, out io.Writer, f func() error) error {
+	if launchLockMine() {
+		return f()
+	}
+	lock, err := lockLaunches(a, out)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	return f()
 }
 
 // lockLaunches takes the launcher lock, blocking until it is ours. When
@@ -64,7 +107,10 @@ func (l *LaunchLock) Release() {
 // Open+Flock in this process waits on the first forever. The callers are
 // Run's fire loop, LaunchBead, and VerifyAfter (which acts, and so is a
 // launcher for this purpose — rangerhq-th7l); none runs inside another, and
-// Run's two are strictly sequential.
+// Run's two are strictly sequential. A caller that can run BOTH inside one
+// of those and on its own — CreateSession, which `posse new` reaches
+// unlocked and LaunchBead reaches holding it — goes through
+// underLaunchLock instead of here.
 func lockLaunches(a *App, out io.Writer) (*LaunchLock, error) {
 	path := LaunchLockPath(a)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -87,6 +133,7 @@ func lockLaunches(a *App, out io.Writer) (*LaunchLock, error) {
 		return nil, Die("launcher lock %s: %v", AbbrevHome(path), err)
 	}
 	stampLockHolder(f)
+	launchLockDepth.Add(1)
 	return &LaunchLock{f: f}, nil
 }
 
@@ -110,6 +157,7 @@ func tryLockLaunches(a *App) (*LaunchLock, bool) {
 		return nil, false
 	}
 	stampLockHolder(f)
+	launchLockDepth.Add(1)
 	return &LaunchLock{f: f}, true
 }
 

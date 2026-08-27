@@ -251,7 +251,11 @@ func TestAutoReapSweepsAtPassStartEvenWhenThePassLaterFails(t *testing.T) {
 	idleClaude(t, fake)
 
 	// A directory at the lock path: fireLoop's O_RDWR on it cannot succeed,
-	// so this pass never reaches gather or its own epilogue.
+	// so this pass never reaches gather or its own epilogue. The candidate
+	// above was created through CreateSession, which now takes the launcher
+	// lock itself (rangerhq-3a5t) and so left the lock FILE here — the
+	// directory only goes where nothing is.
+	os.Remove(LaunchLockPath(b.App))
 	if err := os.MkdirAll(LaunchLockPath(b.App), 0o755); err != nil {
 		t.Fatal(err)
 	}

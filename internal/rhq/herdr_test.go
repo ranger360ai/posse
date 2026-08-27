@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -524,6 +525,7 @@ func fakeHerdr(args []string) int {
 	}
 	switch args[0] + " " + args[1] {
 	case "workspace create":
+		fakeProbeLaunchLock()
 		// create-error (file) makes the workspace create fail — the lever
 		// for the one relaunch failure no ordering can prevent, on the far
 		// side of the kill (rangerhq-v52t). "code|message" like prompt-error.
@@ -591,6 +593,7 @@ func fakeHerdr(args []string) int {
 			return fakeErr("timeout", "no response from the herdr server")
 		}
 		id := args[2]
+		fakeInterleave(id)
 		for _, w := range fakeLoadWS() {
 			if w.WorkspaceID == id {
 				b, _ := json.Marshal(w)
@@ -813,6 +816,60 @@ func fakeWaitStatus() string {
 		return strings.TrimSpace(string(b))
 	}
 	return "idle"
+}
+
+// fakeInterleave is rangerhq-3a5t's race harness: a lever that makes
+// another process write a file at the exact instant the prune's per-id
+// query is answered — i.e. inside the window between prunable() proving a
+// workspace dead and the unlink acting on that proof. The fake herdr is a
+// separate process (the test binary re-execs it), so this is a real
+// concurrent write and not a hook the code under test knows about.
+//
+// The lever is `interleave-write` in the fake dir: line 1 the workspace id
+// to fire on, line 2 the path to write, the rest the content. It fires once
+// and removes itself, so a re-check under the lock sees a settled world
+// rather than a race that can never end.
+func fakeInterleave(id string) {
+	p := filepath.Join(fakeDir(), "interleave-write")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	parts := strings.SplitN(string(b), "\n", 3)
+	if len(parts) < 3 || parts[0] != id {
+		return
+	}
+	os.Remove(p)
+	os.MkdirAll(filepath.Dir(parts[1]), 0o755)
+	os.WriteFile(parts[1], []byte(parts[2]), 0o644)
+}
+
+// fakeProbeLaunchLock answers, from the fake herdr's own process, whether
+// the launcher lock was held while a workspace create was in flight. It has
+// to be asked from another process to mean anything: flock is per open file
+// description, so the creating process asking itself would always find it
+// free. The lever is `probe-launch-lock` holding the lock path; the answer
+// lands in `launch-lock-probe` as "held" or "free".
+func fakeProbeLaunchLock() {
+	b, err := os.ReadFile(filepath.Join(fakeDir(), "probe-launch-lock"))
+	if err != nil {
+		return
+	}
+	ans := "held"
+	f, err := os.OpenFile(strings.TrimSpace(string(b)), os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		// Never "held": a lock file this probe cannot even open is a probe
+		// that measured nothing, and reporting that as contention would let
+		// a create that takes no lock at all pass for one that does.
+		ans = "unknown: " + err.Error()
+	} else {
+		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+			ans = "free"
+			syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		}
+		f.Close()
+	}
+	os.WriteFile(filepath.Join(fakeDir(), "launch-lock-probe"), []byte(ans), 0o644)
 }
 
 // fakeNextWSID hands out w1, w2, … per fake dir, monotonically.
