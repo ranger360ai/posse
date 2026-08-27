@@ -27,27 +27,33 @@ import (
 // board where the delete keeps the file and the create destroys it is jeu2
 // by definition, whatever the socket values that produced it.
 //
-// One disagreement is deliberate and is pinned here rather than merely
-// allowed: an unstamped meta asked by an unstamped pass is one server
-// talking about itself, and the write proceeds. Taking the prune's arm there
-// would refuse every name on the operator's own path — `posse` from a plain
-// terminal has HERDR_SOCKET_PATH unset — so the prune pays a kept file for
-// the pre-field metas and the write does not. Pinning it means a SECOND
-// disagreement is red, and this one cannot silently widen (rangerhq-y4z owns
-// making "" and the default path one server, which retires the exception).
+// The disagreements that remain are deliberate, and they are one rule, not a
+// list: the write proceeds wherever the meta names THIS very socket. Both of
+// the prune's extra arms — an unstamped meta, and an empty listing — fire
+// only on boards where the socket comparison has nothing to object to, and
+// on those boards this server is the one that would know. The prune pays a
+// kept file for them because a kept file is taken back by the next listing;
+// the write cannot pay, because there the same refusal costs the NAME, and
+// `posse relaunch` with it (rangerhq-jeu2's close for the unstamped arm,
+// rangerhq-7dn4 for the empty one).
+//
+// So mayDiffer is derived, not listed: it is exactly "the sockets match".
+// Stating it that way is what makes a THIRD disagreement red — a board where
+// the sockets differ and the write still proceeds is jeu2 itself, and no
+// widening of the exception can hide in a table row (rangerhq-y4z owns making
+// "" and the default path one server, which retires the unstamped half).
 func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 	const (
 		sockA = "/tmp/jeu2/A.sock"
 		sockB = "/tmp/jeu2/B.sock"
 	)
 	cases := []struct {
-		name      string
-		metaSock  string
-		passSock  string
-		empty     bool
-		mayDiffer bool // the one arm the write deliberately does not take
+		name     string
+		metaSock string
+		passSock string
+		empty    bool
 	}{
-		{name: "unstamped meta, unstamped pass", mayDiffer: true},
+		{name: "unstamped meta, unstamped pass"},
 		{name: "unstamped meta, unstamped pass, empty board", empty: true},
 		{name: "unstamped meta, named pass", passSock: sockA},
 		{name: "unstamped meta, named pass, empty board", passSock: sockA, empty: true},
@@ -97,14 +103,20 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 			b.Warn = io.Discard
 			err := b.CreateSession(NewSessionOpts{Name: "victim", Cmd: "claude", Dir: t.TempDir()})
 
+			// The one rule, derived from the board rather than listed
+			// beside it: the write's exception is a meta that names this
+			// very socket.
+			mayDiffer := c.metaSock == c.passSock
+
 			switch {
 			case !guarded:
 				return // no socket guard fired; the per-id query decides, as always
-			case c.mayDiffer:
+			case mayDiffer:
 				if err != nil {
-					t.Fatalf("the write took an arm it must not: an unstamped meta asked by an unstamped "+
-						"pass is one server talking about itself, and refusing it costs every name on the "+
-						"operator's own path (rangerhq-jeu2's close, rangerhq-y4z): %v", err)
+					t.Fatalf("the write took an arm it must not: a meta naming this very socket is one "+
+						"server talking about itself, and refusing it costs the name — every name on the "+
+						"operator's own path for the unstamped arm, and `posse relaunch` fleet-wide after a "+
+						"herdr restart for the empty-board one (rangerhq-jeu2's close, rangerhq-7dn4): %v", err)
 				}
 			case err == nil:
 				now, _ := b.readMeta("victim")
@@ -116,27 +128,29 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 	}
 }
 
-// ─── the cost of the arm the write DID take (rangerhq-7dn4) ──────────────────
+// ─── the arm the write no longer takes (rangerhq-7dn4) ───────────────────────
 
-// cannotAnswerFor tests `listed == 0` before it compares sockets, so the
-// write refuses on an empty board even when the meta names THIS very socket
-// — the one board where the socket evidence says this server is the one
-// that would know. On the delete side that ordering costs a kept file. Here
-// it costs the name, and it costs relaunch: a herdr restart empties the
-// listing for the whole fleet at once, so every session's recovery is
-// refused until some workspace exists on the board.
+// The empty-listing arm is the prune's, and only the prune's. It used to be
+// asked by the write too, ahead of the socket comparison, so the create
+// refused on an empty board even when the meta named THIS very socket — the
+// one board where the socket evidence says this server IS the one that would
+// know. On the delete side that costs a kept file the next listing takes
+// back. On the write side it cost the name, and it cost relaunch: a herdr
+// restart empties the listing for the whole fleet at once, so every
+// session's recovery was refused until some workspace existed on the board.
 //
-// It is not clearly wrong — an empty listing can be a herdr that just came
-// up and has not re-attached its workspaces, and writing in that window
-// orphans exactly what jeu2 is about. It is unpriced: the same cost was
-// measured and rejected for the unstamped arm in jeu2's close, and no filed
-// repro needs this arm on the write side (the arm-(3) repro's board is a
-// socket MISMATCH and refuses without it). Direction is the implementer's;
-// if the
-// refusal stays, invert these rather than delete them.
+// The reading it was protecting — a herdr that just came up and has not
+// re-attached its workspaces — does not survive its own evidence: herdr
+// restores workspaces across a restart (measured, rangerhq-snd), so a server
+// answering on this socket with an empty board is an empty board. Its other
+// reading, "one that never held this session", is the socket comparison's,
+// and the comparison decides it better. What is left is the per-id query,
+// which is the strong evidence anyway.
+//
+// These two are the operator's ordinary path, and they are why: the board
+// the last session on a server leaves behind, and the board a restart leaves
+// for every meta at once.
 func TestNameStaysReusableOnThisServersOwnEmptyBoard(t *testing.T) {
-	t.Skip("rangerhq-7dn4: the empty-listing arm refuses the name and blocks relaunch on this server's own empty board")
-
 	t.Run("the name after the last workspace dies", func(t *testing.T) {
 		t.Setenv("HERDR_SOCKET_PATH", "")
 		b, fake := newTestBackend(t)

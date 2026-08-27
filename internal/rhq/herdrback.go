@@ -600,11 +600,12 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 			}
 		}
 		if !live {
-			// m.Socket == "" is the prune's own arm, and only the prune's:
-			// refusing to DELETE an unstamped meta costs a kept file, so it
-			// is worth paying for the pre-field metas it covers. The write
-			// cannot pay it — see mustNotOrphan (rangerhq-jeu2).
-			if m.Socket == "" || cannotAnswerFor(m, sock, len(wss)) != "" {
+			// m.Socket == "" and an empty listing are the prune's own arms,
+			// and only the prune's: refusing to DELETE costs a kept file, so
+			// they are worth paying for the pre-field metas and the wrong-
+			// server board they cover. The write cannot pay either — see
+			// mustNotOrphan (rangerhq-jeu2, rangerhq-7dn4).
+			if m.Socket == "" || emptyBoard(sock, len(wss)) != "" || cannotAnswerFor(m, sock) != "" {
 				kept++
 				continue
 			}
@@ -690,18 +691,47 @@ const PruneGrace = 5 * time.Minute
 // nothing is already safe. On the write side doing nothing means refusing
 // the create, because proceeding is what destroys the record.
 //
-// The prune keeps one class this does not name: a meta with no socket
-// recorded at all. That arm is about a meta written before the field
-// existed, where nothing on disk says this server ever held the workspace —
-// and refusing to delete such a file costs a kept file. It is applied at the
-// prune's call site, not here, because on the write side it is not true: see
-// mustNotOrphan.
-func cannotAnswerFor(m *HerdrMeta, sock string, listed int) string {
-	switch {
-	case listed == 0:
-		return fmt.Sprintf("this herdr (%s) lists no workspaces at all — a server that just came up, or one that never held this session (rangerhq-snd)", socketLabel(sock))
-	case m.Socket != sock:
+// The prune keeps two classes this does not name, and both are applied at
+// its call site rather than here, because on the write side neither is true
+// (see mustNotOrphan): a meta with no socket recorded at all, and an EMPTY
+// workspace listing. Refusing to delete costs a kept file, which the next
+// listing takes back; refusing to write costs the name.
+func cannotAnswerFor(m *HerdrMeta, sock string) string {
+	if m.Socket != sock {
 		return fmt.Sprintf("the meta was written against %s and this pass is talking to %s", socketLabel(m.Socket), socketLabel(sock))
+	}
+	return ""
+}
+
+// emptyBoard is the prune's second own arm: this herdr listed no workspaces
+// at all. It is the belt gilfoyle added with the socket field itself after a
+// pass on a scratch server deleted eleven live sessions' metas in one read
+// (rangerhq-snd) — an empty listing looks exactly like "everything died".
+//
+// It is NOT asked by the write, and the asymmetry is the same one the
+// unstamped arm above is: what the two callers pay for a refusal.
+//
+//   - Its two readings are "a server that just came up" and "one that never
+//     held this session". The second is what the socket comparison already
+//     decides, and decides better — a meta naming THIS socket says plainly
+//     that this server held it. The first does not survive its own evidence
+//     either: herdr restores workspaces across a restart (measured,
+//     rangerhq-snd), so a server answering on this socket with an empty board
+//     is an empty board, not a server mid-re-attach.
+//   - The costs are not comparable. On the delete side an empty board costs
+//     a kept file, and the belt is worth that for the readings it does catch.
+//     On the write side it costs the NAME: a session's name is unusable while
+//     the board is empty, which is exactly the board left behind when the last
+//     session on it dies, and `posse relaunch <name>` — the recovery command —
+//     is refused for the whole fleet at once, since a restart empties the
+//     listing for every meta simultaneously (rangerhq-7dn4).
+//
+// So the write asks the socket comparison and then the per-id query, which
+// is the strong evidence anyway: only herdr's own workspace_not_found, from
+// the server the meta names, opens a name (ADR 0011 §2).
+func emptyBoard(sock string, listed int) string {
+	if listed == 0 {
+		return fmt.Sprintf("this herdr (%s) lists no workspaces at all — a server that just came up, or one that never held this session (rangerhq-snd)", socketLabel(sock))
 	}
 	return ""
 }
@@ -960,33 +990,50 @@ func (b *HerdrBackend) mustNotOrphan(name string) error {
 	// the file and the create overwrote it one line later, destroying the
 	// only record of a session alive elsewhere (rangerhq-jeu2).
 	//
-	// The listing is fetched only to ask whether it is EMPTY. It is never
-	// consulted for whether this workspace is in it — that is the snapshot
-	// read as a fact about another store, which is the whole of ADR 0011 §2.
-	// A name with no meta, or one naming no workspace, has already returned
-	// above, so the ordinary create still pays nothing.
+	// The listing is not read at all, and that is the point: whether this
+	// workspace is in it is the snapshot read as a fact about another store,
+	// which is the whole of ADR 0011 §2. A name with no meta, or one naming
+	// no workspace, has already returned above, so the ordinary create still
+	// pays nothing beyond the per-id query below.
 	//
-	// One arm of the prune's is deliberately NOT taken: an unstamped meta is
-	// refused there and asked about here, when this pass is unstamped too.
-	// It is not the copy-paste gap it looks like. Every create stamps
-	// Socket: SocketID(), so socket: "" says the meta was written by a pass
-	// that was itself on the default server — the server being asked. That
-	// is evidence the two name the SAME server, not absence of evidence, and
-	// reading it as two servers is rangerhq-y4z's misfire. On the prune side
-	// that misfire costs a kept file. Here it would cost every name: `posse`
-	// from a plain terminal has HERDR_SOCKET_PATH unset, so it writes and
-	// reads unstamped metas, and a dead session's name could never be reused
-	// without deleting its meta by hand. A meta unstamped against a NAMED
-	// socket still refuses — that is the mismatch arm, and it is the arm the
-	// repro walks. What stays open is the pre-field legacy meta on a
-	// multi-server board; rangerhq-y4z closes it by making "" and the default
-	// path one server, at which point this arm can be taken verbatim.
+	// TWO arms of the prune's are deliberately not taken here, for the same
+	// reason twice: a refusal costs the two halves different things, and only
+	// this half can lose a name.
+	//
+	// An unstamped meta is refused there and asked about here, when this pass
+	// is unstamped too. It is not the copy-paste gap it looks like. Every
+	// create stamps Socket: SocketID(), so socket: "" says the meta was
+	// written by a pass that was itself on the default server — the server
+	// being asked. That is evidence the two name the SAME server, not absence
+	// of evidence, and reading it as two servers is rangerhq-y4z's misfire.
+	// On the prune side that misfire costs a kept file. Here it would cost
+	// every name: `posse` from a plain terminal has HERDR_SOCKET_PATH unset,
+	// so it writes and reads unstamped metas, and a dead session's name could
+	// never be reused without deleting its meta by hand. A meta unstamped
+	// against a NAMED socket still refuses — that is the mismatch arm. What
+	// stays open is the pre-field legacy meta on a multi-server board;
+	// rangerhq-y4z closes it by making "" and the default path one server, at
+	// which point this arm can be taken verbatim.
+	//
+	// An EMPTY listing is the same trade one bead later (rangerhq-7dn4), and
+	// it bites harder. It only ever changes the answer when the sockets
+	// MATCH — a mismatch is already refused on the line below, and every
+	// unstamped/named combination is a mismatch — so the board it governs is
+	// the one where the meta names this very socket, i.e. where the socket
+	// evidence says this server IS the one that would know. Refusing there
+	// costs the name for as long as the board is empty, which is precisely
+	// the board the last session on it leaves behind, and it costs relaunch
+	// fleet-wide after a herdr restart, because a restart empties the listing
+	// for every meta at once. See emptyBoard for why the reading it protects
+	// against ("a server that just came up") does not survive its own
+	// evidence: herdr restores workspaces across a restart.
+	//
+	// Dropping it takes the listing call with it. Nothing else here read the
+	// listing, and its failure branch was a weaker copy of the per-id query
+	// below: if herdr will not answer, the query errors too, and silence on
+	// the write side is already a refusal.
 	sock := SocketID()
-	wss, lerr := b.H.Workspaces()
-	if lerr != nil {
-		return Die("session '%s' has a meta naming workspace %s and this herdr did not list its workspaces (%v) — refusing to overwrite the only record of a session that may still be alive (remove %s by hand if it is stale)", name, m.Workspace, lerr, b.metaPath(name))
-	}
-	if why := cannotAnswerFor(m, sock, len(wss)); why != "" {
+	if why := cannotAnswerFor(m, sock); why != "" {
 		return Die("session '%s' has a meta naming workspace %s and %s — refusing to overwrite the only record of a session that may be alive on another herdr; the prune keeps this same file for the same reason (rangerhq-8fq). Point posse at the herdr that holds it, or remove %s by hand.", name, m.Workspace, why, b.metaPath(name))
 	}
 	// The per-id query, through the predicate the prune asks — including its
