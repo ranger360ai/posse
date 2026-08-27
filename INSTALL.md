@@ -37,7 +37,7 @@ Install these first. Versions matter; two of them are pinned on purpose.
 |---|---|---|---|
 | **Go** | ≥ 1.26 | builds `posse` | `brew install go` / your distro |
 | **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | typed below |
-| **bd** (beads) | **0.49.1 exactly** | 1.2.x replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — a 1.2 binary silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
+| **bd** (beads) | **0.49.1 exactly** | v0.51.0 replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — anything ≥ 0.51 silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, or `grok`. | vendor |
 
@@ -1193,7 +1193,7 @@ one budget and the caps become conservative, not wrong.
 | a persona with `skills:` refuses to launch | the runtime has no skill surface (template profile with no `skills_flag:`) | add `skills_flag:`, or drop the binding |
 | session sits forever on a permission dialog | template runtime whose `command:` names no unattended flag | add the CLI's own unattended flag to `command:` (step 8) |
 | `-c model= 'x'` in the launch line | `model_flag:` renders with a space | hardcode the model in `command:` — rangerhq-5p0d |
-| `bd list` → "no beads database found" | a bd 1.2.x binary is on PATH | install 0.49.1; 1.2 does not read `.beads/beads.db` |
+| `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.49.1; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a workspace with that name is live — possibly another instance's | `posse list`; see §13 |
 

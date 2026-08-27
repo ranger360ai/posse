@@ -2713,11 +2713,13 @@ software's own documented mechanism and were dropped. Residual, stated: a
 vendor's public list price (`$3/MTok`) trips the cost class and a
 single-digit amount (`$0`) does not.
 
-## beads (bd) substrate: pinned at 0.49.1, 1.2.x is a migration (rangerhq-f49)
+## beads (bd) substrate: pinned at 0.49.1, 0.51+ is a migration (rangerhq-f49)
 
-The fleet runs `bd` **0.49.1** on purpose. beads 1.2.x removed the SQLite
-backend for embedded Dolt: a 1.2 binary does not read `.beads/beads.db` at all
-(`bd list` → "no beads database found") and, on first invocation, silently
+The fleet runs `bd` **0.49.1** on purpose. beads removed the SQLite backend
+for embedded Dolt at **v0.51.0** — not at 1.2.x, as this section said until
+ranger-base-pkqn measured it: any binary ≥ 0.51 does not read
+`.beads/beads.db` at all (`bd list` → "no beads database found") and, on first
+invocation, silently
 `bd init`s an embedded Dolt DB under `.beads/embeddeddolt/` seeded from
 whatever `issues.jsonl` says — i.e. a stale fork of the fleet's state, at the
 last flush. `brew upgrade beads` on 2026-08-16 broke `bd` for every persona
@@ -2769,6 +2771,94 @@ the SQLite `beads.db` is untouched by 1.2 and still valid.
 Lesson, now standing orders for devops: a substrate upgrade that any live
 session depends on gets canaried first — run the new binary from the fetched
 bottle against a *copy* of state in scratch, then upgrade.
+
+### `bd dep add` never terminates when the target can reach a `relates-to` pair (ranger-base-pkqn)
+
+MEASURED 2026-08-27 on a scratch copy of the fleet db: `bd --no-daemon dep add
+ranger-base-x584 ranger-base-x6ic -t discovered-from` was killed at **300s**,
+never having completed. It is not "slow" — it does not finish. The same
+command, same db, with the *reverse* `relates-to` edges deleted, completes in
+**0s**. That difference is the whole trigger, and it holds the sqlite write
+lock the entire time, which is how one edge soft-locks every other bd client
+at their 30s lock timeout.
+
+Root cause, read out of the pinned source
+(`internal/storage/sqlite/dependencies.go:106`, duplicated verbatim at
+`transaction.go:766`): the cycle check is a recursive CTE that walks the
+dependency graph outward from the *target*, written with `UNION ALL` — so it
+enumerates every **walk**, not every node. No visited set, no memoisation,
+bounded only by a fixed depth of 100. It follows **all** dependency types, and
+`relates-to` edges are always symmetric (`cmd/bd/relate.go` writes both
+directions; bd's own comment calls them "inherently bidirectional"), so every
+`relates-to` edge is a 2-cycle the walk bounces across until the depth cap.
+
+Measured expansion of that CTE, run verbatim against this graph from
+`ranger-base-x6ic`:
+
+| depth | walks enumerated |
+|---|---|
+| 2 | 19 |
+| 6 | 1,243 |
+| 10 | 63,551 |
+| 14 | 3,228,573 |
+| 18 | 163,915,501 |
+
+≈7.1× per level. bd runs it at **depth 100**.
+
+The asymmetry that makes this read as intermittent: the query is `SELECT
+EXISTS(…)`, so a walk that *does* reach the cycle short-circuits and returns
+at once. The expensive case is the one where the answer is "no cycle" — the
+ordinary, legitimate `dep add`. A **rejected** `dep add` is instant; an
+**accepted** one hangs.
+
+bd already knows this walk has to skip `relates-to`: `loadDependencyGraph`
+(`dependencies.go:799`) selects `WHERE type != 'relates-to'`, and says why.
+The `AddDependency` cycle check is simply inconsistent with it.
+
+**Blast radius, measured 2026-08-27:** 13 nodes sit in a symmetric pair (10
+pairs, 20 edges) and **27 nodes were unsafe as a `dep add` target** — unsafe
+meaning some 2-cycle node is reachable from it, so the walk explodes. Forty
+minutes later it was 28, with no new `relates-to` edge: an ordinary bead had
+landed upstream of the cluster. The count is a snapshot; read it, do not
+memorise it.
+`make verify-bd-dep-safety` prints both lists;
+`scripts/verify-bd-dep-safety.sh <id>` exits 1 when that id is unsafe as a
+target. The set only grows: every `bd relate` / `bd dep add -t relates-to`
+plants another pair, and it cannot be pruned back, because bd rewrites the
+reverse edge on the next relate.
+
+**Standing rule: do not create `relates-to` edges in this fleet, and never
+`dep add` onto an unsafe target — record the provenance as a comment
+instead.** This is the same landmine as ranger-base-muoo from the other end:
+`bd create --deps discovered-from:<parent>` starts the same CTE at `<parent>`,
+so a poisoned parent loses its edge to the 30s timeout while the issue itself
+commits — which is how 33 edgeless duplicate verify beads got filed. The
+HANDOFF rung of a dispatch prompt (`internal/rhq/dispatch.go`) has that exact
+shape. The ASK rung does **not**: its target is a freshly created question
+bead with no outgoing edges, so the CTE is empty and returns at once. Leave it
+alone.
+
+**There is no drop-in fix.** Upstream did fix it, but only past the end of the
+SQLite line:
+
+- v0.49.6 and v0.50.3 carry the **byte-identical** CTE. Canaried 2026-08-27
+  against a copy: the v0.50.3 release binary hangs on the same command (killed
+  at 180s) and prints `Note: bd v0.50+ defaults to Dolt`.
+- v0.51.0 **removes `internal/storage/sqlite` outright**. Measured: the v0.51.0
+  binary, run in a directory holding a valid `.beads/beads.db`, answers `Error:
+  no beads database found`; it has also dropped `--db` and `--no-daemon`.
+- v0.63.3 (`internal/storage/issueops/dependencies.go`) runs the cycle check
+  only when the new edge is `blocks`, and traverses only `blocks` edges —
+  either change alone kills this bug. The CTE there is still `UNION ALL` with
+  no visited set, so the shape survives; it is just no longer reachable from a
+  `relates-to` pair.
+
+So "upgrade bd" and "migrate to Dolt" are one decision (rangerhq-f49), not two
+options. **Correction to this section's header, and to README.md and
+INSTALL.md: the SQLite backend goes away at v0.51.0, not at 1.2.x.** Every
+release ≥ 0.51 silently forks the queue, twelve minors earlier than this file
+used to claim; 0.50.x still reads `beads.db` but is not worth taking, because
+it fixes nothing here.
 
 **`bd` exit codes do not carry the claim result (rangerhq-kux).** 0.49.1
 refuses a claim it cannot grant by printing to STDERR and **exiting 0** with

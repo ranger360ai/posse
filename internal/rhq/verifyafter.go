@@ -72,6 +72,16 @@ const (
 	// 16:36 and 21:13 that day, all of them edgeless, against three parents
 	// that time out deterministically while every other parent's verify bead
 	// carries its edge and was filed exactly once.
+	//
+	// ranger-base-pkqn named the mechanism behind that: bd's cycle check is a
+	// UNION ALL recursive CTE that enumerates WALKS, not nodes, to depth 100
+	// over every edge type, and it starts at the `--deps` target. A symmetric
+	// `relates-to` pair is a 2-cycle it bounces across ~7x per level, so the
+	// query does not terminate — the "timeout" is bd waiting on itself. The
+	// three deterministic parents are exactly the parents that can reach such
+	// a pair; `scripts/verify-bd-dep-safety.sh <id>` says which those are.
+	// This is not fixable by upgrading: the SQLite line ends at 0.50.3 with
+	// the same query, and 0.51+ is the Dolt migration. The marker stays.
 	verifyMarkerPrefix = "Verify the close of "
 	verifyMarkerAfter  = " ("
 )

@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-dep-safety audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -180,6 +180,17 @@ verify-id-recycle:
 # when upstream stable moves past the pin. Lifting the pin is the operator's.
 verify-grok-pin:
 	scripts/verify-grok-pin.sh
+
+# The bd 0.49.1 dep-add landmine (ranger-base-pkqn). bd's cycle check walks
+# the whole dependency graph with UNION ALL — walks, not nodes, depth 100, all
+# edge types — and `relates-to` edges are always symmetric, so each one is a
+# 2-cycle the walk bounces across ~7x per level. A `dep add` whose TARGET can
+# reach such a pair does not terminate, and soft-locks every other bd client
+# while it holds the write lock. No drop-in fix exists: the SQLite line ends at
+# 0.50.3 with the bug byte-identical, and 0.51+ is the Dolt migration. This
+# prints the pairs and the unsafe targets; pass an id to gate one dep add.
+verify-bd-dep-safety:
+	scripts/verify-bd-dep-safety.sh
 
 # Silent-revert audit (rangerhq-8rtf). ef8d35f, a landed P1 fix, was undone by
 # a `bd sync` commit and re-landed 3h52m later; `go test ./...` stayed GREEN the
