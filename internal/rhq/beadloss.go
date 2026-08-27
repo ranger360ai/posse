@@ -99,7 +99,10 @@ type DeletionRecord struct {
 // at the head of a dispatch pass on every configured repo, and a repo that
 // cannot be censused must not stop the fleet or say so every pass.
 func LostBeads(bd Bd, dir string) ([]LostBead, error) {
-	removed := removedBeads(dir)
+	removed, err := removedBeads(dir)
+	if err != nil {
+		return nil, err
+	}
 	if len(removed) == 0 {
 		return nil, nil
 	}
@@ -144,10 +147,18 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 // the most recent commit that removed its line. An id removed and later put
 // back is still in here; the caller drops it when bd resolves it, which is
 // the authority — the census only says "git saw this id leave".
-func removedBeads(dir string) map[string]LostBead {
-	out, err := gitBead(beadsHome(dir), "log", "--format=%x00%H %at", "-p", "--no-renames", "--", beadsJSONL)
+//
+// A repo that is not a git checkout, or whose issues.jsonl git has never
+// seen, has no census and so no findings — nil, nil, not an error (gitBead
+// failing is that case, not a scan failure). --diff-merges=first-parent asks
+// git for a merge commit's net diff against its first parent, which `-p`
+// alone never prints; the walk still visits side-branch commits on their own
+// entries, so a removal that happened on a branch is still attributed to
+// that commit and a merge only adds its own net effect.
+func removedBeads(dir string) (map[string]LostBead, error) {
+	out, err := gitBead(beadsHome(dir), "log", "--format=%x00%H %at", "-p", "--diff-merges=first-parent", "--no-renames", "--", beadsJSONL)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	removed := map[string]LostBead{}
 	sha, when := "", time.Time{}
@@ -177,7 +188,14 @@ func removedBeads(dir string) map[string]LostBead {
 			Commit: sha, When: when, Record: line[1:],
 		}
 	}
-	return removed
+	// A line over the scanner's cap ends the walk mid-history with no error
+	// from Scan itself — sc.Err() is the only thing that tells the caller
+	// this census is partial rather than complete, and a mechanism whose
+	// whole contract is "a loss cannot stay quiet" must not go quiet here.
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("scanning %s history: %w", beadsJSONL, err)
+	}
+	return removed, nil
 }
 
 // parseCommitStamp splits "<sha> <unix-seconds>".

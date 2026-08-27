@@ -139,7 +139,10 @@ func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 	worktrees := t.TempDir()
 	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
 
-	before := removedBeads(constitution)
+	before, err := removedBeads(constitution)
+	if err != nil {
+		t.Fatalf("removedBeads(constitution): %v", err)
+	}
 	if _, ok := before[dropped]; !ok {
 		t.Fatalf("the fixture's census does not see %s leaving; it has nothing to preserve", dropped)
 	}
@@ -149,7 +152,10 @@ func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 		t.Fatalf("queue-cutover.sh: %v\n%s", err, out)
 	}
 
-	after := removedBeads(project) // through the redirect the script rewrote
+	after, err := removedBeads(project) // through the redirect the script rewrote
+	if err != nil {
+		t.Fatalf("removedBeads(project): %v", err)
+	}
 	lb, ok := after[dropped]
 	if !ok {
 		t.Fatalf("the census is DISARMED after the move: %s no longer reads as lost\n%s", dropped, out)
@@ -178,7 +184,9 @@ func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 	write(t, filepath.Join(naive, ".beads", beadsJSONL), string(body))
 	mustGit(t, naive, "add", ".beads/"+beadsJSONL)
 	mustGit(t, naive, "commit", "-q", "-m", "fresh start", "--", ".beads")
-	if got := removedBeads(naive); len(got) != 0 {
+	if got, err := removedBeads(naive); err != nil {
+		t.Errorf("removedBeads(naive): %v", err)
+	} else if len(got) != 0 {
 		t.Errorf("the counterfactual is not what it claims: a fresh-start repo censused %d removal(s)", len(got))
 	}
 }

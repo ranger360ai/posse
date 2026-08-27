@@ -128,7 +128,6 @@ func TestLedgerDoesNotExemptALaterLoss(t *testing.T) {
 // once — taking one side wholesale is how a bead leaves in a merge commit
 // (rangerhq-boco).
 func TestCensusSeesABeadDroppedByAMergeCommit(t *testing.T) {
-	t.Skip("rangerhq-boco: the census walk asks git for no merge diff")
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "base", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -156,7 +155,6 @@ func TestCensusSeesABeadDroppedByAMergeCommit(t *testing.T) {
 // today (the longest line this repo ever committed is ~27KB) but it is a
 // silent path inside the alarm (rangerhq-boco).
 func TestCensusDoesNotTruncateSilentlyOnAnOversizedLine(t *testing.T) {
-	t.Skip("rangerhq-boco: sc.Err() is never checked, so an oversized line buries the rest")
 	newTestBackend(t)
 	repo := qblRepo(t)
 	huge := `{"id":"q-big","title":"` + strings.Repeat("x", 9*1024*1024) + `","status":"open"}`
