@@ -390,6 +390,33 @@ func TestRuntimeRealizers(t *testing.T) {
 	}
 }
 
+// rangerhq-bju2: the LITERAL, on the rendered line. Every other grok
+// assertion in this package compares the launch line against the
+// GrokFleetFlags CONSTANT ("grok "+GrokFleetFlags+...), so a one-line edit
+// to the constant repaints them all and stays green. This one does not,
+// and that is its whole job: --permission-mode auto is the only thing
+// standing between a dispatched grok session and the machine-local
+// ~/.grok/config.toml `[ui] permission_mode` (on this box:
+// "always-approve"). Of grok's six modes only `auto` and
+// `bypassPermissions` approve a tool call with nobody watching, and `auto`
+// is the lower-privilege of the two — see the GrokFleetFlags doc comment
+// for the measurement. Weakening the const is a decision, not a refactor;
+// this test is what makes it say so out loud.
+func TestGrokLaunchLineTypesPermissionModeAutoLiterally(t *testing.T) {
+	ag := loadTestAgent(t, "---\nname: p\ndeny: [Bash(git push:*)]\n---\nYou are p.\n")
+	home := t.TempDir()
+	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	rt, err := a.LoadRuntime("grok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range Tiers {
+		if got := ag.RenderCommandFor(rt, "claude", tier); !strings.Contains(got, "--permission-mode auto") {
+			t.Errorf("%s: the grok launch line no longer types --permission-mode auto: %s", tier, got)
+		}
+	}
+}
+
 func TestRuntimeOverrideIgnoresPIDCommand(t *testing.T) {
 	// A PID with its own claude-shaped command: uses it on claude only; an
 	// override to codex takes codex's built-in template.
