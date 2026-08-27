@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-dep-safety audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -194,6 +194,20 @@ verify-grok-pin:
 # prints the pairs and the unsafe targets; pass an id to gate one dep add.
 verify-bd-dep-safety:
 	scripts/verify-bd-dep-safety.sh
+
+# The drift detector that keeps the prune above from rotting (ranger-base-nusr).
+# `--gate` exits 1 the moment ANY symmetric dependency pair is back in the
+# store. Exactly one verb plants one — `bd dep relate` / the deprecated `bd
+# relate` — so this failing means someone ran it; `bd dep add -t relates-to`
+# writes a single row and is harmless (measured, correcting NOTES as it stood).
+verify-bd-no-relate-pairs:
+	scripts/verify-bd-dep-safety.sh --gate
+
+# Prints the plan; it does NOT prune. Pruning the fleet store is a deletion on
+# live state, so it is the operator's call and takes an explicit
+# `scripts/prune-bd-relates-to.sh --apply`.
+prune-bd-relates-to:
+	scripts/prune-bd-relates-to.sh
 
 # Silent-revert audit (rangerhq-8rtf). ef8d35f, a landed P1 fix, was undone by
 # a `bd sync` commit and re-landed 3h52m later; `go test ./...` stayed GREEN the

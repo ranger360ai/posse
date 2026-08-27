@@ -2908,9 +2908,13 @@ landed upstream of the cluster. The count is a snapshot; read it, do not
 memorise it.
 `make verify-bd-dep-safety` prints both lists;
 `scripts/verify-bd-dep-safety.sh <id>` exits 1 when that id is unsafe as a
-target. The set only grows: every `bd relate` / `bd dep add -t relates-to`
+target. ~~The set only grows: every `bd relate` / `bd dep add -t relates-to`
 plants another pair, and it cannot be pruned back, because bd rewrites the
-reverse edge on the next relate.
+reverse edge on the next relate.~~ **Both halves of that sentence are wrong —
+measured, ranger-base-nusr, below:** only `bd dep relate` / `bd relate` plants
+a pair (`dep add -t relates-to` writes one row), and the pairs prune cleanly
+and stay pruned. What grows on its own is the *unsafe target* set, as the
+preceding paragraph says.
 
 **Standing rule: do not create `relates-to` edges in this fleet, and never
 `dep add` onto an unsafe target — record the provenance as a comment
@@ -2969,6 +2973,74 @@ Audited alongside it (0.49.1): `close`, `comments add`, `update --status`, and
 has this property — but the error text arrives on *stdout* as `{"error": …}`
 for the `--json` verbs, which `Bd.run` does not read (rangerhq-aas). Treat any
 new bd verb as guilty until probed: assert on state, not on exit status.
+
+### The pairs are prunable, and pruning is the only fix on the pin (ranger-base-nusr)
+
+`bd create --deps` is **not atomic**, and the fix is not a timeout. dinesh saw
+`create --deps discovered-from:<poisoned parent>` exit 1 after 30.9s with
+`i/o timeout` on the daemon socket, the issue committed and the edge missing.
+That 30s is the client's socket read deadline and it is **incidental**: run the
+same create in direct storage mode, where there is no socket at all, and it
+does not fail — it never returns.
+
+MEASURED 2026-08-27 against a `VACUUM INTO` snapshot of the fleet db,
+`bd --no-daemon --db <snapshot> create … --deps discovered-from:<parent>`:
+
+| parent | before the prune | after the prune |
+|---|---|---|
+| ranger-base-okbr | killed at 90s, issue committed, `dependencies` empty | 0.43s, edge present |
+| ranger-base-o943 | (same shape, dinesh measured 30.9s via the daemon) | 0.45s, edge present |
+| ranger-base-x6ic | — | 0.42s, edge present |
+| ranger-base-cpyb | — | 0.40s, edge present |
+
+So **raising bd's client timeout is the wrong fix** — it buys a longer hang and
+a longer held write lock, never an edge. The write the caller asked for is one
+statement behind a cycle check that diverges; nothing downstream of the
+deadline can help. Ruled out; do not spend the pin on it.
+
+**The decision: `relates-to` is not stored as an edge in this fleet.** The
+relations carry no scheduling meaning — bd's ready queue gates on `blocks`
+alone, and posse never reads the type — so the edge is pure provenance, and
+provenance goes in a comment, which is what the standing rule already told
+callers to do at the other end. `scripts/prune-bd-relates-to.sh` records each
+link as a comment on **both** beads and then `bd dep unrelate`s the pair; it is
+dry unless `--apply` is typed, refuses a symmetric pair of any type it cannot
+unlink, and re-checks itself afterwards. Measured on the snapshot: 10 pairs,
+20 rows, ~0.2s per pair, 20 comments written, and `blocks` (153),
+`discovered-from` (566), `related` (3) and `blocked-by` (1) all untouched.
+
+**Two corrections to the section above, both measured on the snapshot:**
+
+- `bd dep add <x> <y> -t relates-to` writes **one** row and is harmless. Only
+  `bd dep relate` (and its deprecated alias `bd relate`) writes both
+  directions. The poison has exactly one source verb, not two.
+- "The set only grows … it cannot be pruned back" is wrong, and it was the
+  reason nobody tried. It cannot be pruned back only if someone keeps
+  relating. Prune, then gate: `make verify-bd-no-relate-pairs`
+  (`scripts/verify-bd-dep-safety.sh --gate`) exits 1 the moment any symmetric
+  pair — of any type — is back. What *does* grow on its own is the *unsafe
+  target* set: an ordinary bead landing upstream of a pair joins it with no new
+  `relates-to` edge, which is why gating on the pairs and not on the count is
+  the durable check.
+
+Fixed alongside: both scripts used to die with a bare `unable to open database
+file (14)` against a WAL-mode db whose `-shm` is gone — the state bd leaves
+after a write with no daemon holding the store. sqlite refuses a `mode=ro` open
+there outright. They now fall back to reading a copy, which keeps "never writes
+the fleet db" true. A checker that errors instead of answering gets ignored.
+
+**Still the operator's, all three gated (ranger-base-nusr):**
+1. Running the prune against the live store — it is a deletion on live state.
+   Runbook: `scripts/prune-bd-relates-to.sh` (read the plan) →
+   `scripts/prune-bd-relates-to.sh --apply` from `~/src/ranger-base` →
+   `bd sync --flush-only` → commit `.beads/issues.jsonl`, without which an
+   import can put the rows back. Reversible from that file's git history.
+2. Denying `Bash(bd dep relate:*)` / `Bash(bd relate:*)` in
+   `.claude/settings.json` — personas cannot edit it (`Edit(.claude/**)` is
+   denied), and the gate above only *detects* the next relate.
+3. Reporting the non-atomic create upstream — publishing, so not a persona's.
+   Both halves are fixed past the SQLite line anyway (v0.63.3 checks cycles
+   only for `blocks`), so this is a courtesy report, not a route to a fix here.
 
 ### bd can delete a bead with no record, and does (rangerhq-fuom)
 

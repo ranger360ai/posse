@@ -3,6 +3,7 @@
 #
 # Usage: scripts/verify-bd-dep-safety.sh                 # print the audit, exit 0
 #        scripts/verify-bd-dep-safety.sh <target-id>     # exit 1 if unsafe
+#        scripts/verify-bd-dep-safety.sh --gate          # exit 1 if ANY pair exists
 #        BEADS_DB=/path/to/beads.db scripts/verify-bd-dep-safety.sh [<id>]
 #
 # bd 0.49.1's cycle check is a recursive CTE over the WHOLE dependency graph,
@@ -17,11 +18,22 @@
 # in `bd create --deps <type>:<target>` — the node the walk starts from. A
 # brand-new bead is always safe; anything with outgoing edges may not be.
 #
+# The pairs CAN be pruned and the prune DOES hold (measured, ranger-base-nusr):
+# exactly one verb plants a pair — `bd dep relate` / the deprecated `bd relate`
+# — and `scripts/prune-bd-relates-to.sh` removes them. `--gate` is the drift
+# detector that keeps the store at zero once it is there; wire it into CI or
+# run `make verify-bd-no-relate-pairs`.
+#
 # Read-only: the db is opened `mode=ro`, and the recursive queries here use
 # UNION (memoised), so they are cheap where bd's own is not.
 set -euo pipefail
 
+GATE=0
 TARGET=${1:-}
+if [ "$TARGET" = "--gate" ]; then
+	GATE=1
+	TARGET=
+fi
 
 find_db() {
 	if [ -n "${BEADS_DB:-}" ]; then
@@ -40,7 +52,32 @@ DB=$(find_db)
 [ -f "$DB" ] || { echo "verify-bd-dep-safety: no beads db at $DB" >&2; exit 2; }
 command -v sqlite3 >/dev/null || { echo "verify-bd-dep-safety: sqlite3 not on PATH" >&2; exit 2; }
 
-q() { sqlite3 "file:${DB}?mode=ro" "$1"; }
+# Reading a beads db read-only is not always possible: a WAL-mode db whose
+# `-shm` file is gone (no live writer) cannot be opened with `mode=ro` at all —
+# sqlite refuses to create the shared-memory file and returns CANTOPEN(14).
+# That state has no writer by definition, so a copy is a faithful snapshot, and
+# reading the copy keeps the promise that this never writes the fleet db.
+RO_TMPS=""
+cleanup_ro() { [ -z "$RO_TMPS" ] || rm -rf $RO_TMPS; }
+trap cleanup_ro EXIT
+DB_READ=""
+pick_reader() {
+	if sqlite3 "file:${DB}?mode=ro" "SELECT 1" >/dev/null 2>&1; then
+		DB_READ="file:${DB}?mode=ro"
+		return
+	fi
+	local tmp
+	tmp=$(mktemp -d) || { echo "$(basename "$0"): mktemp failed" >&2; exit 2; }
+	RO_TMPS="$RO_TMPS $tmp"
+	cp "$DB" "$tmp/beads.db"
+	[ -f "$DB-wal" ] && cp "$DB-wal" "$tmp/beads.db-wal"
+	DB_READ="$tmp/beads.db"
+}
+
+q() {
+	[ -n "$DB_READ" ] || pick_reader
+	sqlite3 "$DB_READ" "$1"
+}
 
 # Nodes sitting in a symmetric pair — the 2-cycles the walk explodes on.
 CYCLE_NODES_SQL="
@@ -62,6 +99,22 @@ unsafe(n) AS (
   SELECT d.issue_id FROM dependencies d JOIN unsafe u ON d.depends_on_id = u.n
 )
 SELECT n FROM unsafe ORDER BY n"
+
+if [ "$GATE" = 1 ]; then
+	cyc=$(q "$CYCLE_NODES_SQL ORDER BY 1")
+	n=$(printf '%s\n' "$cyc" | grep -c . || true)
+	if [ "$n" -gt 0 ]; then
+		echo "UNSAFE: $n node(s) sit in a symmetric dependency pair in $DB." >&2
+		printf '%s\n' "$cyc" | sed 's/^/  /' >&2
+		echo "  Each pair is a 2-cycle that makes bd 0.49.1's cycle check diverge," >&2
+		echo "  so 'bd dep add' / 'bd create --deps' onto anything upstream of one" >&2
+		echo "  never returns. Prune: scripts/prune-bd-relates-to.sh --apply" >&2
+		echo "  Do not run 'bd dep relate' / 'bd relate' in this fleet." >&2
+		exit 1
+	fi
+	echo "clean: no symmetric dependency pair in $DB"
+	exit 0
+fi
 
 if [ -n "$TARGET" ]; then
 	hit=$(q "$UNSAFE_SQL" | grep -Fx -- "$TARGET" || true)
@@ -87,5 +140,8 @@ echo "unsafe as a 'dep add' / '--deps' TARGET: $(printf '%s\n' "$unsafe" | grep 
 printf '%s\n' "$unsafe" | sed 's/^/  /'
 echo
 echo "Never dep-add onto one of those. Comment the provenance instead."
-echo "This list only grows: 'bd relate' plants a new pair and bd rewrites the"
-echo "reverse edge, so removing one does not hold. See NOTES.md (ranger-base-pkqn)."
+echo "The list grows on its own: an ordinary bead landing upstream of a pair"
+echo "joins it, with no new relates-to edge. Only 'bd dep relate' / 'bd relate'"
+echo "plants a pair ('bd dep add -t relates-to' writes ONE row and is harmless),"
+echo "so pruning the pairs holds: scripts/prune-bd-relates-to.sh, then --gate."
+echo "See NOTES.md (ranger-base-pkqn, ranger-base-nusr)."
