@@ -20,8 +20,9 @@ func TestWorkPromptAssembly(t *testing.T) {
 	if strings.Contains(p, "Context\n") {
 		t.Errorf("empty context must render no Context section:\n%s", p)
 	}
-	for _, want := range []string{"Escalation (pick the lowest rung that is honest)", "- NOTE —", "- ASSUME —", "- ASK —", "- HANDOFF —", "- REFUSE —",
+	for _, want := range []string{"Escalation (pick the lowest rung that is honest)", "- NOTE —", "- ASSUME —", "- SPIKE —", "- ASK —", "- HANDOFF —", "- REFUSE —",
 		"`bd comments add b-1 <note>`", "`bd create \"<question>\" -t task -l question`", "`bd dep add b-1 <qid>`", "--deps discovered-from:b-1", "`REFUSED: <line> — <what would be needed>`",
+		"`bd create \"spike: <question>\" -t task -l <runner's lane> --deps discovered-from:b-1`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
 		"Done: `bd comments add b-1 <what you did, paths, ids>` then `bd close b-1`."} {
 		if !strings.Contains(p, want) {
 			t.Errorf("missing %q in:\n%s", want, p)

@@ -59,7 +59,7 @@ Context                                                      # assembled from bd
 - orientation: AGENTS.md, DIRECTION.md, NOTES.md  (files present in the repo root)
   Your PID's guardrails override any push/deploy instruction in repo docs.
 Escalation (pick the lowest rung that is honest)              # fixed text, §2
-- NOTE … ASSUME … ASK … HANDOFF … REFUSE …
+- NOTE … ASSUME … SPIKE … ASK … HANDOFF … REFUSE …
 Done: `bd comments add <id> <what you did, paths, ids>` then `bd close <id>`.
 <persona hook: the PID's `## Work prompt` section, verbatim>  # §3
 ```
@@ -69,7 +69,7 @@ ADRs gets three lines. Comments are *not* inlined (the persona reads
 them); the prompt says "comments carry decisions — read them" when the
 bead has any.
 
-**2. The escalation ladder — five rungs, one per honest state.** Fixed
+**2. The escalation ladder — six rungs, one per honest state.** Fixed
 text in every work prompt; the PID's `## Blocked` stays the terminal
 behaviour, the ladder says which rung comes first:
 
@@ -77,6 +77,7 @@ behaviour, the ladder says which rung comes first:
 |---|---|---|---|
 | **NOTE** | a decision or finding worth keeping | `bd comments add <id> …` | continue |
 | **ASSUME** | a gap you can bridge without changing the deliverable's shape | comment `ASSUMED: <x> — <why>`; do the rest in full | continue |
+| **SPIKE** | the gap is knowledge, not permission — you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured | check the skills you carry first; on a shelf miss `bd create "spike: <question>" -t task -l <runner's lane> --deps discovered-from:<id>`, `bd dep add <id> <sid>` so deciding waits on reading; comment `SPIKE: <question> → <sid>` | continue with whatever the answer can't change; else **stop** |
 | **ASK** | a gap only the operator can fill and the bead is useless if you guess | `bd create "<question>" -t task -l question -a <operator>` (config `operator:`; unassigned if unset), `bd dep add <id> <qid>` so the bead leaves `bd ready` until answered; comment `BLOCKED: <need> → <qid>` | **stop** |
 | **HANDOFF** | part of the work belongs to another persona | `bd create … -a <persona> -l <their label> --deps discovered-from:<id>`; comment it | continue with your part; if nothing is left, close yours |
 | **REFUSE** | a hard risk line (money · publishing · deployed systems · visibility) or a gate you can't realize | comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk` | **stop** |
@@ -85,8 +86,19 @@ Dispatch consequences: beads labelled `question` are never routed to a
 persona (they are for humans; `posse ready`/cockpit show them first);
 `bd dep add` already keeps a blocked bead out of `bd ready`, so an ASKed
 bead needs no new dispatch state — answering the question closes it and
-the bead is ready again. `bd comments` prefixes (`ASSUMED:`, `BLOCKED:`,
-`REFUSED:`) are the greppable trail the `blocked-honestly` metric counts.
+the bead is ready again. `bd comments` prefixes (`ASSUMED:`, `SPIKE:`,
+`BLOCKED:`, `REFUSED:`) are the greppable trail the `blocked-honestly`
+metric counts.
+
+SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
+not permission: no one has to be asked for it, so it belongs below the
+rungs that spend the operator's attention. It is the mechanism of the
+research-spike practice (bead rangerhq-dfz8) — the ladder is the one text
+every persona reads on every bead, so the trigger travels with the work
+instead of depending on someone remembering to pull the cord; PID prose
+is reinforcement, not the mechanism. Its `bd dep add` is the same one ASK
+uses, and buys the same thing: `bd ready` itself enforces read-before-
+decide, so no new dispatch state exists for spikes either.
 
 **3. Persona hook: `## Work prompt` in the PID body.** Optional section,
 appended verbatim to every work prompt for that persona — the standing

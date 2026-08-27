@@ -265,15 +265,18 @@ of the harness core:
    with "your PID's guardrails override any push/deploy instruction in
    repo docs"; "comments carry decisions — read them" when the bead has
    any (each line only when non-empty; every bead-sourced string
-   %q-fenced); then the fixed **escalation ladder** — NOTE / ASSUME / ASK
-   / HANDOFF / REFUSE with exact bd commands, ASK beads `-l question -a
-   <config operator:>` (unassigned when unset) plus `bd dep add` so the
-   bead leaves `bd ready` until answered; `Done:` line; then the PID's
-   `## Work prompt` section verbatim (optional; `posse agent check` warns
-   when absent). Beads labelled `question` are for the operator: dispatch
-   and the cockpit never route them, they cost no `-n` attempt, and under
-   `--persona` only a question assigned to that persona is reported. `bd prime` is *not* injected (its
-   close protocol says `git push`; see the ADR). Two extra bd calls per
+   %q-fenced); then the fixed **escalation ladder** — NOTE / ASSUME /
+   SPIKE / ASK / HANDOFF / REFUSE with exact bd commands, ASK beads `-l
+   question -a <config operator:>` (unassigned when unset) plus `bd dep
+   add` so the bead leaves `bd ready` until answered; SPIKE files a
+   `spike:` bead in the runner's lane and dep-blocks this one the same
+   way, because its gap is knowledge, not permission; `Done:` line; then
+   the PID's `## Work prompt` section verbatim (optional; `posse agent
+   check` warns when absent). Beads labelled `question` are for the
+   operator: dispatch and the cockpit never route them, they cost no `-n`
+   attempt, and under `--persona` only a question assigned to that persona
+   is reported. `bd prime` is *not* injected (its close protocol says
+   `git push`; see the ADR). Two extra bd calls per
    launch (dep list, comment count), best effort. A claim already held
    by this persona is a **resume** in the bead's own session — but only
    when the run was interrupted (no live session, or its agent gone). If

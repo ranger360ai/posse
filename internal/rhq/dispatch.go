@@ -876,9 +876,16 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 	return ctx
 }
 
-// EscalationLadder is ADR 0005 §2: five rungs, one per honest state, the
+// EscalationLadder is ADR 0005 §2: six rungs, one per honest state, the
 // same text in every work prompt. operator fills the ASK assignee; ""
 // leaves the question unassigned.
+//
+// SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
+// not permission: nobody has to be asked for it, so it belongs below the
+// rungs that spend the operator's attention. It is the mechanism behind the
+// research-spike practice — the ladder is the one text every persona reads
+// on every bead, so the trigger travels with the work rather than depending
+// on a persona remembering to pull the cord.
 func EscalationLadder(id, operator string) string {
 	ask := ""
 	if operator != "" {
@@ -887,6 +894,7 @@ func EscalationLadder(id, operator string) string {
 	return "Escalation (pick the lowest rung that is honest)\n" +
 		"- NOTE — a decision or finding worth keeping: `bd comments add " + id + " <note>`; continue.\n" +
 		"- ASSUME — a gap you can bridge without changing the deliverable's shape: comment `ASSUMED: <x> — <why>`; do the rest in full; continue.\n" +
+		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Check the skills you carry first; if they do not cover it, `bd create \"spike: <question>\" -t task -l <runner's lane> --deps discovered-from:" + id + "`, then `bd dep add " + id + " <sid>` so deciding waits on reading; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
 		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
 		"- HANDOFF — part of the work belongs to another persona: `bd create \"<title>\" -a <persona> -l <their label> --deps discovered-from:" + id + "`; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n"
