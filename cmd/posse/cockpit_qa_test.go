@@ -216,6 +216,71 @@ func TestCockpitFitsShortTerminal(t *testing.T) {
 	}
 }
 
+// rangerhq-dkn0 (verifying rangerhq-5qm's close): the fix's promise below the
+// h=6 floor is that the cursor's row is the one thing that survives. Neither
+// pin covered that promise where it is hardest — TestCockpitCursorStaysVisible
+// starts at h=6, and the short-terminal sweep above only ever puts the cursor
+// at 0, which is the position that needs no scrolling. Here every collapsed
+// height meets every cursor position (so every section, since the cursor is one
+// index across all three) at three widths: exact line count, the arithmetic
+// witness, and a ▸ actually on the screen.
+func TestCockpitCursorSurvivesTheCollapsedHeights(t *testing.T) {
+	for _, w := range []int{40, 60, 140} {
+		for h := 1; h <= 8; h++ {
+			for cur := 0; cur < qaFixture().qaItems(); cur++ {
+				c := qaFixture()
+				c.qaAt(cur, h)
+				lines := c.renderLines(w, h)
+				if len(lines) != h {
+					t.Errorf("%dx%d cursor=%d: %d lines rendered", w, h, cur, len(lines))
+				}
+				n, _, _ := visible(c.offset, len(c.rows), viewportH(h))
+				if row := c.cursorRow(); row < c.offset || row >= c.offset+n {
+					t.Errorf("%dx%d cursor=%d: row %d outside the drawn window [%d,%d)",
+						w, h, cur, row, c.offset, c.offset+n)
+				}
+				if !strings.Contains(qaPlain(strings.Join(lines, "\n")), "▸") {
+					t.Errorf("%dx%d cursor=%d: no ▸ on screen", w, h, cur)
+				}
+			}
+		}
+	}
+}
+
+// rangerhq-dkn0: a resize is a sequence, not a size. draw() feeds the previous
+// height's offset into scrollTo, so the state that crosses the h=6 floor is an
+// offset computed for a viewport that no longer exists — the shape rangerhq-5qm
+// was found in (a live pane dragged short), and the one a per-size sweep cannot
+// reach. Shrink through the floor to h=1 and grow back, from the top of the
+// list and from the bottom, reusing the one cockpit the way draw() does.
+func TestCockpitResizeThroughTheFloor(t *testing.T) {
+	seq := []int{40, 20, 12, 9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 5, 7, 9, 40, 1, 40}
+	for _, start := range []string{"top", "bottom"} {
+		c := qaFixture()
+		c.buildRows()
+		if start == "bottom" {
+			c.cursor = c.qaItems() - 1
+		}
+		for i, h := range seq {
+			c.buildRows()
+			c.offset = scrollTo(c.offset, c.cursorRow(), len(c.rows), viewportH(h))
+			lines := c.renderLines(60, h)
+			if len(lines) != h {
+				t.Errorf("%s step %d h=%d: %d lines rendered", start, i, h, len(lines))
+			}
+			n, _, _ := visible(c.offset, len(c.rows), viewportH(h))
+			if row := c.cursorRow(); row < c.offset || row >= c.offset+n {
+				t.Errorf("%s step %d h=%d: row %d outside the drawn window [%d,%d)",
+					start, i, h, row, c.offset, c.offset+n)
+			}
+			if !strings.Contains(qaPlain(strings.Join(lines, "\n")), "▸") {
+				t.Errorf("%s step %d h=%d: no ▸ on screen:\n%s",
+					start, i, h, qaPlain(strings.Join(lines, "\n")))
+			}
+		}
+	}
+}
+
 // ─── escapes, pinned ─────────────────────────────────────────────────────────
 
 // rangerhq-nm8: the peek banner and the ↑/↓ markers are painted, never
