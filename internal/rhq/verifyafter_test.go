@@ -512,6 +512,36 @@ func TestVerifyAfterDoesNotRefileAnAnsweredVerify(t *testing.T) {
 
 // The marker is a contract with ourselves, so it round-trips — and it reads
 // nothing it did not write.
+// TestVerifySourceIDAdoptsAPreFixDescription pins the reader against a verify
+// description captured VERBATIM from the live store — one of the ten orphans
+// the pre-fix binary committed for ranger-base-okbr while its edge never
+// landed (ranger-base-6jmg, ranger-base-muoo).
+//
+// The round-trip test above cannot catch this: it feeds verifyDescription's
+// own output back to verifySourceID, so writer and reader drift together and
+// it stays green. The beads that decide whether the flood ENDS were written by
+// a binary that is no longer in the tree. If a future edit to the marker
+// constants stops parsing them, the next pass indexes nothing, adopts nothing,
+// and files an eleventh — the original bug, resurrected by a rename.
+//
+// The em dash and the embedded quotes are load-bearing: they are what the real
+// title carried, and they are what a naive parser trips on.
+func TestVerifySourceIDAdoptsAPreFixDescription(t *testing.T) {
+	const preFix = `Verify the close of ranger-base-okbr (title, quoted as data: "plan guard reads a keychain item with no claudeAiOauth.accessToken — two logins did not change it, and the shop is stopped").`
+
+	if got := verifySourceID(preFix); got != "ranger-base-okbr" {
+		t.Fatalf("verifySourceID(pre-fix description) = %q, want %q\n%s", got, "ranger-base-okbr", preFix)
+	}
+	// And through the index the pass actually consults, which is what turns
+	// the orphan into an adoption rather than a duplicate.
+	idx := verifiedSources([]BdIssue{{
+		ID: "ranger-base-vdc7", Description: preFix, Labels: []string{VerifyLabel},
+	}})
+	if !idx["ranger-base-okbr"] {
+		t.Fatalf("verifiedSources did not index the pre-fix orphan: %v", idx)
+	}
+}
+
 func TestVerifySourceIDRoundTripsAndRejectsForeignText(t *testing.T) {
 	b, _ := newTestBackend(t)
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
