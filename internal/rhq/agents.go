@@ -50,7 +50,26 @@ import (
 // skillOverrides suppresses it without touching auth. (CLAUDE_CODE_SIMPLE /
 // --bare would also suppress it but never reads OAuth credentials, so a
 // subscription-authenticated fleet lands on "Not logged in".)
-const ClaudeFleetSettings = `{"skillOverrides":{"auto-mode-setup":"off"}}`
+//
+// permissions.defaultMode: auto is the second layer of the OPERATOR
+// DIRECTIVE ClaudeFleetFlags' --permission-mode auto already carries
+// (rangerhq-qs5r, layer 1; rangerhq-slq6, this layer). A launch that loses
+// the flag — template drift, a future CLI arg rename, a path that builds
+// its own argv and forgets it — still lands auto from the settings payload,
+// because it never loses --settings: DefaultAgentCommand renders both flags
+// on the same line, so a line missing --permission-mode is a line that
+// dropped one flag, not the whole template. Confirmed on claude 2.1.247
+// (grep -a of the installed binary): the settings key is
+// `["permissions","defaultMode"]`, and its accepted-without-a-trust-prompt
+// set includes "auto" alongside "acceptEdits" and "bypassPermissions" — the
+// same vocabulary --permission-mode takes. The CLI flag still wins when
+// both are present (argv over settings is the general precedence), so this
+// changes nothing about a launch that keeps its flag; it only gives a
+// flag-stripped launch somewhere to fall back to instead of the CLI's own
+// default, which is exactly the risk unattended_live_test.go's file
+// comment names: that default has moved once already and does not error
+// when it does.
+const ClaudeFleetSettings = `{"permissions":{"defaultMode":"auto"},"skillOverrides":{"auto-mode-setup":"off"}}`
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with
 // neither runtime: nor command: launches with.

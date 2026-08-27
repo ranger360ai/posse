@@ -14,6 +14,33 @@ import (
 	"time"
 )
 
+// callsSourced is calls(t, fake) with any spilled launch script's body
+// appended: a rendered line long enough to lose MAX_CANON (paneline.go,
+// rangerhq-ybec) is typed as `. '<script>'` instead of verbatim, and a
+// substring assertion on what the persona was launched with must still see
+// it whichever way this particular rendering happened to land. Adding a
+// deny rule, a longer --settings, or another mount is exactly the class of
+// change paneline.go names as pushing a line over that cliff.
+func callsSourced(t *testing.T, fake string) string {
+	t.Helper()
+	log := calls(t, fake)
+	out := log
+	for _, ln := range strings.Split(log, "\n") {
+		idx := strings.Index(ln, ". '")
+		if idx < 0 {
+			continue
+		}
+		path, _, ok := strings.Cut(ln[idx+len(". '"):], "'")
+		if !ok {
+			continue
+		}
+		if body, err := os.ReadFile(path); err == nil {
+			out += "\n" + string(body)
+		}
+	}
+	return out
+}
+
 // mkSkill writes an Agent-Skills dir (<name>/SKILL.md) under dir.
 func mkSkill(t *testing.T, dir, name string) string {
 	t.Helper()
@@ -339,7 +366,7 @@ func TestSkillsLaunchAndRelaunch(t *testing.T) {
 
 	mustCreate(t, b, NewSessionOpts{Name: "dc", Agent: "developer", Dir: t.TempDir()})
 	tree := filepath.Join(a.StateDir, "skills", "developer", "claude")
-	log := calls(t, fake)
+	log := callsSourced(t, fake)
 	if !strings.Contains(log, "--plugin-dir '"+tree+"'") {
 		t.Errorf("the typed line must point claude at the tree:\n%s", log)
 	}
@@ -360,7 +387,7 @@ func TestSkillsLaunchAndRelaunch(t *testing.T) {
 	if ok, err := b.RelaunchAgent("dc", time.Second); err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, "--plugin-dir '"+tree+"'") != 2 {
+	if got := callsSourced(t, fake); strings.Count(got, "--plugin-dir '"+tree+"'") != 2 {
 		t.Errorf("relaunch must keep the binding:\n%s", got)
 	}
 	if _, err := os.Stat(filepath.Join(tree, "skills", "dataviz", "SKILL.md")); err != nil {

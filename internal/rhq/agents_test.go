@@ -5,6 +5,7 @@ package rhq
 // shape staying byte-for-byte as it was.
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,25 @@ func TestFleetSettingsSurviveRendering(t *testing.T) {
 	}
 	if strings.Contains(got, "{allow}") || strings.Contains(got, "{deny}") {
 		t.Errorf("unrendered placeholder remains: %q", got)
+	}
+}
+
+func TestFleetSettingsCarryPermissionModeAuto(t *testing.T) {
+	// Layer 2 of the OPERATOR DIRECTIVE (rangerhq-slq6): a claude launch
+	// that loses --permission-mode auto (rangerhq-qs5r, layer 1) must still
+	// land auto from the --settings payload. Parsed, not string-matched —
+	// key order inside the JSON blob is not the contract, the value under
+	// permissions.defaultMode is.
+	var parsed struct {
+		Permissions struct {
+			DefaultMode string `json:"defaultMode"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal([]byte(ClaudeFleetSettings), &parsed); err != nil {
+		t.Fatalf("ClaudeFleetSettings is not valid JSON: %v", err)
+	}
+	if parsed.Permissions.DefaultMode != "auto" {
+		t.Errorf("ClaudeFleetSettings permissions.defaultMode = %q, want %q", parsed.Permissions.DefaultMode, "auto")
 	}
 }
 
