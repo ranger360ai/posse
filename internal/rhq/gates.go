@@ -766,17 +766,47 @@ func chainHookDispatcher(slot string) string {
 // to `bd-<slot>`, and an operator who followed those words to the letter has
 // the prescribed chain (ranger-base-r5ba).
 func chainHookDispatcherWith(slot, neighbor string) string {
+	return chainRender(slot, neighbor, true)
+}
+
+// legacyChainHookDispatcherWith is the same dispatcher as it was rendered
+// before rangerhq-xo65 — no guard, an unconditional exec. It is still a
+// dispatcher that runs our gate as its own process and honors its exit
+// status, so a repo carrying one is still L3-certified and its posse-<slot>
+// is still ours to refresh; it is only the NEIGHBOUR handoff that is unsafe.
+// Recognizing it is what lets installHook upgrade it in place instead of
+// abandoning every repo chained before the fix.
+func legacyChainHookDispatcherWith(slot, neighbor string) string {
+	return chainRender(slot, neighbor, false)
+}
+
+// chainRender renders the dispatcher body. guard adds the line that makes a
+// missing neighbour a DEGRADE instead of a dead repo: `exec` on a file that
+// is not there exits 126/127, and a prepare-commit-msg that exits non-zero
+// blocks EVERY commit in the repo — the operator's included, whom the gate
+// itself is careful to exempt (it keys on RHQ_PERSONA; an exec failure keys
+// on nothing). That state is reachable without doing anything wrong: the mv
+// that creates bd-<slot> fails silently in a pasted block if `bd hooks
+// install` never took that slot (older bd planted no prepare-commit-msg at
+// all; `--beads`/`--shared` write elsewhere entirely). With the guard, the
+// slot degrades to "gate only" — which is the whole of what posse promises
+// there anyway (rangerhq-xo65).
+func chainRender(slot, neighbor string, guard bool) string {
 	stdin := ""
 	if slot == "pre-push" {
 		// git feeds pre-push the ref list on stdin. Ours does not read it;
 		// keeping ours off it leaves it intact for the hook we exec into.
 		stdin = " </dev/null"
 	}
+	guarded := ""
+	if guard {
+		guarded = fmt.Sprintf("[ -x \"$d/%s\" ] || exit 0\n", neighbor)
+	}
 	return fmt.Sprintf(`#!/bin/sh
 d=$(dirname "$0")
 "$d/posse-%[1]s" "$@"%[2]s || exit $?
-exec "$d/%[3]s" "$@"
-`, slot, stdin, neighbor)
+%[4]sexec "$d/%[3]s" "$@"
+`, slot, stdin, neighbor, guarded)
 }
 
 // isChainHookDispatcher reports whether body is the prescribed dispatcher for
@@ -786,18 +816,34 @@ exec "$d/%[3]s" "$@"
 // what makes refreshing that sibling honest rather than a claim about a hook
 // nothing calls. The name itself must be a plain sibling filename: no path
 // separator, no whitespace, nothing the shell would read as anything but a
-// file in the same hooks dir.
+// file in the same hooks dir. Two renders are accepted: the current one and
+// the pre-rangerhq-xo65 one without the neighbour guard — both dispatch our
+// gate and honor its status, which is the whole of what this decides.
 func isChainHookDispatcher(body, slot string) bool {
-	// A byte no filename may hold marks where the name goes.
-	head, tail, ok := strings.Cut(chainHookDispatcherWith(slot, "\x00"), "\x00")
-	if !ok || len(body) <= len(head)+len(tail) {
-		return false
+	_, ok := chainDispatcherNeighbour(body, slot)
+	return ok
+}
+
+// chainDispatcherNeighbour returns the neighbouring hook a dispatcher body
+// hands off to, and whether body is a dispatcher at all. The name now appears
+// twice (guard and exec), so it is read off the trailing exec line and the
+// whole body is then compared against the render for that name — byte for
+// byte, guarded form or the pre-rangerhq-xo65 unguarded one. Equality is the
+// check; the extraction only says which render to compare against.
+func chainDispatcherNeighbour(body, slot string) (string, bool) {
+	const pre, post = "\nexec \"$d/", "\" \"$@\"\n"
+	i := strings.LastIndex(body, pre)
+	if i < 0 || !strings.HasSuffix(body, post) || len(body) < i+len(pre)+len(post) {
+		return "", false
 	}
-	if !strings.HasPrefix(body, head) || !strings.HasSuffix(body, tail) {
-		return false
+	name := body[i+len(pre) : len(body)-len(post)]
+	if name == "" || strings.ContainsAny(name, "/\\\"'`$ \t\n") || name == "." || name == ".." {
+		return "", false
 	}
-	name := body[len(head) : len(body)-len(tail)]
-	return !strings.ContainsAny(name, "/\\\"'`$ \t\n") && name != "." && name != ".."
+	if body != chainHookDispatcherWith(slot, name) && body != legacyChainHookDispatcherWith(slot, name) {
+		return "", false
+	}
+	return name, true
 }
 
 // chainDispatcher renders the only chaining form that holds when the slot
@@ -870,10 +916,22 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		// an older gate just because it lives behind the dispatcher. Refresh
 		// only a marker-owned member of the exact dispatcher we prescribe.
 		chained := filepath.Join(hooks, "posse-"+slot)
-		if isChainHookDispatcher(string(b), slot) {
+		if neighbour, isChain := chainDispatcherNeighbour(string(b), slot); isChain {
 			if owned, readErr := os.ReadFile(chained); readErr == nil && ownsHook(string(owned), marker, legacy) {
 				if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
 					return "", err
+				}
+				// Upgrade a chain written before rangerhq-xo65 while we are
+				// here. Its unconditional `exec` kills every commit in the
+				// repo the moment its neighbour is missing, and a repo
+				// chained by an earlier posse would otherwise carry that
+				// forever. Safe because the body matched our own render byte
+				// for byte: we know exactly what it is, and we write back the
+				// same shape, same neighbour, plus the guard.
+				if string(b) == legacyChainHookDispatcherWith(slot, neighbour) {
+					if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755); err != nil {
+						return "", err
+					}
 				}
 				return chained, nil
 			}

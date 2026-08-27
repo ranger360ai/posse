@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/rhq"
 )
 
 // qaPrescription pulls the runnable block out of a refusal: everything from
@@ -48,6 +50,25 @@ func qaForeignBoth(t *testing.T) string {
 		}
 	}
 	return repo
+}
+
+// gitOutsideGates resolves the REAL git binary, ignoring any posse L0 shim on
+// the session PATH. `exec.Command("git", …)` resolves a bare name against the
+// CURRENT process's PATH — never cmd.Env — so a persona running this suite ran
+// its own `git` shim, and the shim's refusal of an unqualified `git commit`
+// (deny: Bash(git commit unless --)) was reported as the chain killing the
+// operator's commit. Red for every persona, green for the operator, and about
+// neither the hook nor the chain.
+func gitOutsideGates(t *testing.T) string {
+	t.Helper()
+	for _, dir := range filepath.SplitList(rhq.PathOutsideGates("")) {
+		p := filepath.Join(dir, "git")
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	t.Skip("no git outside the gates")
+	return ""
 }
 
 // qaSh runs a prescription block the way an operator pastes it: one /bin/sh,
@@ -129,11 +150,11 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 	// The operator's own commit must still work — a dispatcher whose
 	// neighbour is missing exits 127 and takes every commit with it.
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a"), 0o644)
-	add := exec.Command("git", "-C", repo, "add", "a.txt")
-	add.Env = []string{"PATH=" + os.Getenv("PATH")}
+	add := exec.Command(gitOutsideGates(t), "-C", repo, "add", "a.txt")
+	add.Env = []string{"PATH=" + rhq.PathOutsideGates("")}
 	add.Run()
-	ci := exec.Command("git", "-C", repo, "commit", "-qm", "operator commit")
-	ci.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(),
+	ci := exec.Command(gitOutsideGates(t), "-C", repo, "commit", "-qm", "operator commit")
+	ci.Env = []string{"PATH=" + rhq.PathOutsideGates(""), "HOME=" + t.TempDir(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	if out, err := ci.CombinedOutput(); err != nil {
 		t.Errorf("the operator's own commit must survive the chain: %v %s", err, out)

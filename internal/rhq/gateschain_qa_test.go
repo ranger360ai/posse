@@ -47,6 +47,7 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 		}
 		chain := "#!/bin/sh\nd=$(dirname \"$0\")\n" +
 			"\"$d/posse-" + slot + "\" \"$@\"" + stdin + " || exit $?\n" +
+			"[ -x \"$d/bd-" + slot + "\" ] || exit 0\n" +
 			"exec \"$d/bd-" + slot + "\" \"$@\"\n"
 		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(chain), 0o755); err != nil {
 			t.Fatal(err)
@@ -127,13 +128,61 @@ func TestQADocChainRefusesFirstAndOtherwiseReachesBdsHook(t *testing.T) {
 // no commit path at all — the failure hits the operator, whom the gate is
 // careful to exempt.
 func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
-	t.Skip("rangerhq-xo65: a missing bd-<slot> makes the slot exit 126, so every commit in the repo dies")
 	repo, _ := qaChainRepo(t)
 	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
 		t.Fatal(err)
 	}
 	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 0 {
 		t.Errorf("the operator's commit must survive a missing neighbour: code=%d %q", code, out)
+	}
+	// A neighbour that is there but not executable execs to 126 just the
+	// same, so the guard is -x, not -e.
+	if err := os.WriteFile(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg"),
+		[]byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 0 {
+		t.Errorf("the operator's commit must survive a non-executable neighbour: code=%d %q", code, out)
+	}
+	// And the degrade is only about the neighbour: the gate behind the
+	// dispatcher still refuses what it refused before.
+	if out, code := runHook(t, repo, "prepare-commit-msg", "", "RHQ_PERSONA=probe"); code != 1 ||
+		!strings.Contains(out, "refused by posse gate") {
+		t.Errorf("the gate must still refuse with a missing neighbour: code=%d %q", code, out)
+	}
+	// The same for pre-push, whose exec carries git's ref list.
+	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-pre-push")); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := runHook(t, repo, "pre-push", "refs/heads/main a1 refs/heads/main b1\n"); code != 0 {
+		t.Errorf("a push must survive a missing neighbour: code=%d %q", code, out)
+	}
+}
+
+// rangerhq-xo65, the same defect from git's side: with the chain naming a
+// neighbour that is not there, a plain operator commit — no RHQ_PERSONA, the
+// case the guard exists to exempt — must still land.
+func TestQAOperatorCanCommitThroughAChainMissingItsNeighbour(t *testing.T) {
+	repo, _ := qaChainRepo(t)
+	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "X.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = []string{"PATH=" + PathOutsideGates(""), "HOME=" + t.TempDir(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git("add", "X.md"); err != nil {
+		t.Fatalf("git add: %v %s", err, out)
+	}
+	if out, err := git("commit", "-qm", "operator commit", "--", "X.md"); err != nil {
+		t.Errorf("the operator's own commit must not be blocked by a missing neighbour: %v %s", err, out)
 	}
 }
 
@@ -349,5 +398,132 @@ func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(hooks, "bd-pre-push")); err == nil {
 		t.Error("a non-bd hook must not be moved aside as if it were bd's shim")
+	}
+}
+
+// rangerhq-xo65: §9's hand-built chain and the one posse writes itself
+// (chainBdShim / the printed prescription) are the same arrangement, and a
+// fix applied to one and not the other leaves half the fleet dead at the
+// next missing neighbour. The doc is the operator's copy of chainRender —
+// pin it byte for byte, with bd's names filled in, so drift is a red test
+// rather than a repo that cannot commit.
+func TestQADocChainMatchesTheRenderedDispatcher(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(b)
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		want := chainHookDispatcherWith(slot, "bd-"+slot)
+		// The block as INSTALL.md pastes it: a heredoc into the slot.
+		open := "$ cat > .git/hooks/" + slot + " <<'EOF'\n"
+		i := strings.Index(doc, open)
+		if i < 0 {
+			t.Errorf("INSTALL.md §9 no longer writes %s with a heredoc", slot)
+			continue
+		}
+		rest := doc[i+len(open):]
+		j := strings.Index(rest, "EOF\n")
+		if j < 0 {
+			t.Errorf("INSTALL.md §9's %s heredoc has no terminator", slot)
+			continue
+		}
+		if got := rest[:j]; got != want {
+			t.Errorf("INSTALL.md §9's %s chain has drifted from chainHookDispatcherWith:\n got %q\nwant %q", slot, got, want)
+		}
+	}
+}
+
+// rangerhq-xo65: every repo chained before the fix carries the unguarded
+// dispatcher, and nothing about it is ever rewritten — so the fix would reach
+// new installs only and leave the existing fleet one missing neighbour away
+// from a repo that cannot commit. installHook already refreshes the
+// posse-<slot> behind a recognized chain on every launch; it upgrades the
+// dispatcher itself in the same pass. Safe because the body matched our own
+// render byte for byte: we know what it is, and we write back the same shape
+// and the same neighbour.
+func TestQALegacyChainIsUpgradedInPlace(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		t.Run(slot, func(t *testing.T) {
+			repo := t.TempDir()
+			if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+				t.Fatalf("git init: %v %s", err, out)
+			}
+			hooks := filepath.Join(repo, ".git", "hooks")
+			install := InstallPrePushHook
+			if slot == "prepare-commit-msg" {
+				install = installCommitGuard
+			}
+			if _, err := install(repo); err != nil {
+				t.Fatal(err)
+			}
+			// The pre-fix arrangement, exactly as an older posse left it.
+			if err := os.Rename(filepath.Join(hooks, slot), filepath.Join(hooks, "posse-"+slot)); err != nil {
+				t.Fatal(err)
+			}
+			legacy := legacyChainHookDispatcherWith(slot, "bd-"+slot)
+			if err := os.WriteFile(filepath.Join(hooks, slot), []byte(legacy), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(hooks, "bd-"+slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			// A launch-time reinstall, the pass that already refreshes the
+			// chained member.
+			got, err := install(repo)
+			if err != nil {
+				t.Fatalf("reinstall over a pre-xo65 chain must succeed: %v", err)
+			}
+			if want := filepath.Join(hooks, "posse-"+slot); got != want {
+				t.Errorf("reinstall must report the chained member: got %q want %q", got, want)
+			}
+			b, err := os.ReadFile(filepath.Join(hooks, slot))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := chainHookDispatcherWith(slot, "bd-"+slot); string(b) != want {
+				t.Errorf("the dispatcher must be upgraded in place:\n got %q\nwant %q", string(b), want)
+			}
+			// The neighbour it names is untouched, and a foreign hook stays foreign.
+			if nb, err := os.ReadFile(filepath.Join(hooks, "bd-"+slot)); err != nil || string(nb) != "#!/bin/sh\nexit 0\n" {
+				t.Errorf("the neighbour must not be rewritten: %q %v", string(nb), err)
+			}
+		})
+	}
+}
+
+// The upgrade is only for a body that is byte-for-byte one of our own
+// renders. A foreign hook that merely looks chain-shaped is still refused,
+// untouched — ADR 0002 §3.
+func TestQALegacyUpgradeLeavesForeignHooksAlone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(hooks, "prepare-commit-msg")
+	if err := os.Rename(slot, filepath.Join(hooks, "posse-prepare-commit-msg")); err != nil {
+		t.Fatal(err)
+	}
+	// Ours dispatched, but its exit status discarded — not a chain.
+	foreign := "#!/bin/sh\nd=$(dirname \"$0\")\n\"$d/posse-prepare-commit-msg\" \"$@\"\nexec \"$d/bd-prepare-commit-msg\" \"$@\"\n"
+	if err := os.WriteFile(slot, []byte(foreign), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := installCommitGuard(repo); err == nil {
+		t.Error("a foreign hook must still be refused, not upgraded")
+	}
+	if b, _ := os.ReadFile(slot); string(b) != foreign {
+		t.Errorf("a refused hook must be left byte-identical: %q", string(b))
 	}
 }

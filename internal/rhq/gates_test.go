@@ -1515,6 +1515,14 @@ func TestIsChainHookDispatcher(t *testing.T) {
 		{"a command, not a name", chainHookDispatcherWith("prepare-commit-msg", "x\"; rm -rf /; :\""), false},
 		{"no neighbour at all", chainHookDispatcherWith("prepare-commit-msg", ""), false},
 		{"trailing junk", chainHookDispatcher("prepare-commit-msg") + "echo more\n", false},
+		// rangerhq-xo65: the unguarded form every chain built before the fix
+		// still carries. Its gate runs and its status is checked, so it is
+		// still the prescribed chain — recognizing it is what lets install
+		// upgrade it rather than declare those repos foreign.
+		{"pre-xo65 chain, no guard", legacyChainHookDispatcherWith("prepare-commit-msg", "bd-prepare-commit-msg"), true},
+		{"pre-xo65 printed prescription", legacyChainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"), true},
+		{"guard names a different neighbour", strings.Replace(chainHookDispatcherWith("prepare-commit-msg", "bd-prepare-commit-msg"), "[ -x \"$d/bd-prepare-commit-msg\" ]", "[ -x \"$d/other\" ]", 1), false},
+		{"guard exits non-zero", strings.Replace(chainHookDispatcherWith("prepare-commit-msg", "bd-prepare-commit-msg"), "|| exit 0", "|| exit 1", 1), false},
 	} {
 		slot := "prepare-commit-msg"
 		if c.name == "pre-push keeps its stdin redirect" {

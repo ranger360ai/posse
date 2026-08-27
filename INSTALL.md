@@ -1003,12 +1003,14 @@ $ cat > .git/hooks/pre-push <<'EOF'
 #!/bin/sh
 d=$(dirname "$0")
 "$d/posse-pre-push" "$@" </dev/null || exit $?
+[ -x "$d/bd-pre-push" ] || exit 0
 exec "$d/bd-pre-push" "$@"
 EOF
 $ cat > .git/hooks/prepare-commit-msg <<'EOF'
 #!/bin/sh
 d=$(dirname "$0")
 "$d/posse-prepare-commit-msg" "$@" || exit $?
+[ -x "$d/bd-prepare-commit-msg" ] || exit 0
 exec "$d/bd-prepare-commit-msg" "$@"
 EOF
 $ chmod +x .git/hooks/pre-push .git/hooks/prepare-commit-msg
@@ -1026,6 +1028,18 @@ but the dispatcher above is still the only form that runs both hooks. The
 `</dev/null` keeps the gate off the ref list git feeds on stdin; `exec`
 hands that stdin, untouched, to bd's shim, which reads it.
 
+The `[ -x … ] || exit 0` line is not decoration. `exec` on a file that is
+not there exits **126**, and a `prepare-commit-msg` that exits non-zero
+blocks *every* commit in the repo — including the operator's own, which the
+gate itself is careful to exempt (the gate keys on `RHQ_PERSONA`; a failed
+`exec` keys on nothing). That state is one silent `mv` away: if `bd hooks
+install` never took a slot — older `bd` planted no `prepare-commit-msg` at
+all, and `bd hooks install --beads` / `--shared` write to `.beads/hooks/` and
+`.beads-hooks/` rather than `.git/hooks` — the `mv` above prints `No such
+file or directory`, every later line succeeds, and the chain you just pasted
+names a hook that is not there. The guard degrades that to "gate only",
+which is all posse promises in that slot anyway (rangerhq-xo65).
+
 `posse gates install-hooks` prints this same chain, with the slot and paths
 filled in, whenever it finds a hook that is not its own.
 
@@ -1042,6 +1056,12 @@ must print no refusal and exit **0**: the commit guard keys on
 `RHQ_PERSONA`, so **your own commits in that tree are unaffected**. Inside a
 persona session the safe form is `git commit -F - -- <paths>`. A gate that
 prints its refusal but exits 0 is not installed — re-read the chain.
+
+A **non-zero third probe that prints no refusal** is the other failure: the
+chain names a neighbour that is not there, or is not executable. The message
+names the file — check the two `mv`s above; the one whose source was missing
+printed `No such file or directory` and is easy to scroll past. Until that
+is fixed, no commit in that repo can succeed, the operator's included.
 
 Persona launch runs the first two behavioral probes itself (both slots in
 one shell invocation). Ownership markers still decide whether posse may
