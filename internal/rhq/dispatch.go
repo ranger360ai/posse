@@ -1263,6 +1263,27 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0013 §2: which panes this pass gave up on is this pass's memory.
 	d.stranded = nil
 
+	// The load guard (ranger-base-innx) comes before every other reading
+	// this pass takes, because it is the only one that costs nothing to
+	// take and because the readings below it fork: `bd`, the plan endpoint,
+	// the git census. On a box where fork() is starved they hang, and a
+	// pass that hangs on its own instrumentation is the failure this guard
+	// was cut from. One line, then nothing — no verify-after, no ready
+	// scan, no launch. Not an error: --watch keeps its cadence and the next
+	// pass takes a fresh reading, which is what "skip a pass" means.
+	// --dry-run is the operator's diagnostic and launches nothing, so it
+	// says what a real pass would have done and then goes on to show the
+	// routing. Hiding the routing behind the guard would take the one
+	// command someone reaches for on a sick box and make it silent.
+	if why := d.App.LoadHigh(d.errw()); why != "" {
+		if d.DryRun {
+			fmt.Fprintf(d.Out, "◷ %s — a real pass would be skipped here; --dry-run launches nothing, so routing follows\n", why)
+		} else {
+			fmt.Fprintf(d.Out, "◷ %s — pass skipped, nothing launched into a saturated box (running sessions are left alone)\n", why)
+			return 0, nil
+		}
+	}
+
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
 	// always runs (ADR 0013 §3).

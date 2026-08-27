@@ -1056,6 +1056,19 @@ type launchPlan struct {
 // design, so planning twice costs nothing and changes nothing.
 func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
+
+	// The load guard (ranger-base-innx) is first, before this function's
+	// renders and before anything is asserted about the home, because the
+	// question it answers — can this box still fork? — decides whether the
+	// rest is worth doing. Every launch path funnels through here: `posse
+	// new`, a recipe, a cockpit key, dispatch, and relaunch, which plans
+	// before it kills (rangerhq-v52t) and so refuses with the old session
+	// still alive rather than losing it to a box that cannot start the
+	// replacement.
+	if why := a.LoadHigh(b.warnWriter()); why != "" {
+		return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or set config load_guard: 0 to launch anyway",
+			why, o.Name)
+	}
 	a.TightenEnvPerms(os.Stderr) // every launch re-asserts 700/600 on envs/
 
 	// ADR 0015 §3, the launch verify: the promoted constitution is hashed

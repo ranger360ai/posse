@@ -363,6 +363,34 @@ dirs:
 # budget_pass: <dollars per pass>
 # budget_day: <dollars per day>
 
+# ─── load guard ──────────────────────────────────────────────────────────────
+# The 1-minute load average above which this instance launches NOTHING: a
+# dispatch pass over it is skipped whole with one witness line, and `posse
+# new`, `posse relaunch`, a recipe and a cockpit launch all refuse. Nothing
+# already running is touched — a saturated box needs its sessions to finish.
+#
+# Why it exists: a box whose load is far above its core count cannot schedule
+# fork(). Every command a session tries to spawn then hangs with no output at
+# all, while in-process work carries on, so the fleet looks alive and is not.
+# Process limits, ptys and disk all read fine while it happens, which is why
+# the elimination tree costs hours and the load average costs one line.
+#
+# It is a belt, not a cure. Load that posse itself generates is fixed by
+# fixing the bug, not by declining to dispatch. What this earns is the load
+# posse does not control — an OS update storm, a neighbour's build — where
+# starting a session on a box that cannot fork it is strictly worse than
+# waiting for the next pass.
+#
+# The default assumes roughly eight cores. **Load is not normalised by core
+# count and neither is that number**: set it from your own quiet baseline —
+# several times the quiet number, well under the broken one. **0 = off**,
+# which is the pre-guard behaviour.
+#
+# An unreadable load average gates nothing and says so once: this is a belt
+# over `budget_*`/`plan_guard_*`, and a monitoring failure must not be able to
+# stop the shop.
+# load_guard: 25             # 1-min loadavg ceiling for launching; 0 = off
+
 # ─── scheduled dispatch (autostart) ──────────────────────────────────────────
 # The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs
 # `posse dispatch --watch` in a workspace, once per herdr server start. The

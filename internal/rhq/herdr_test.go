@@ -846,6 +846,12 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	// (modelavail.go). Tests that want the preflight to DO something seed
 	// the snapshot or set this field.
 	a.ModelLister = &ModelLister{}
+	// Same reason, one guard further on: the load guard (loadguard.go)
+	// reads the 1-minute load average of whatever box the suite is running
+	// on, and a suite that goes red because something ELSE saturated the
+	// machine is red per-day, not per-commit. Quiet by construction; the
+	// tests that want the guard to fire set this field.
+	a.Load1 = func() (float64, error) { return 0, nil }
 	return &HerdrBackend{App: a, H: Herdr{Bin: exe}}, fake
 }
 

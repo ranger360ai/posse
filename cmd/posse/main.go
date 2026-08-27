@@ -1500,6 +1500,17 @@ dispatch (beads):
                                  guard's degrade (ADR 0018) — and an
                                  unreadable cost scan is not $0 spent, so it
                                  parks there and says so on stderr elsewhere
+                               config load_guard: (1-min load average)
+                                 skip the whole pass above it, one witness
+                                 line, and refuse every session launch —
+                                 posse new, relaunch, recipes — while the
+                                 box is over — a box far above its core count
+                                 cannot fork, and every spawn on it hangs
+                                 silently. Default 25, which assumes ~8 cores;
+                                 load is not core-normalised, so set it from
+                                 your own quiet baseline. 0 = off. Running
+                                 sessions are never touched, and an unreadable
+                                 load gates nothing
 
 catalog:
   posse envs                     list env sets (key names only)

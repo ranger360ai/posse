@@ -50,6 +50,12 @@ type App struct {
 	// configured", which the preflight reads as UNKNOWN and launches on,
 	// so the hermetic default is also the fail-open one.
 	ModelLister *ModelLister
+	// Load1 reads the box's 1-minute load average for the load guard
+	// (loadguard.go). nil = SysLoad1, the real box, which is what every
+	// real launch uses. Tests set it for the reason newTestBackend sets
+	// ModelLister: a guard whose reading comes from the machine the suite
+	// happens to be running on is red per-day, not per-commit.
+	Load1 func() (float64, error)
 }
 
 var legacyHomeNotices sync.Map
