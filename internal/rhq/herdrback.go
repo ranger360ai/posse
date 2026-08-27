@@ -1308,6 +1308,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		vars = append(vars, vs...)
 	}
 
+	// RHQ_HOME rides every session, persona or crew, because any rhq/bd
+	// tool run inside resolves its instance from this var (falling back to
+	// ~/.config/rhq otherwise) — a second RHQ_HOME's session addressing the
+	// wrong instance's config, queue, and skills silently (ADR 0012 §D2,
+	// rangerhq-ysly). Appended after the env-set vars so this instance's
+	// identity is authoritative over anything an env file happened to set.
+	vars = append(vars, EnvVar{"RHQ_HOME", a.Home})
+
 	if ag != nil {
 		// The persona's durable identity rides the environment: BD_ACTOR
 		// makes every bd call inside the session attribute to the persona

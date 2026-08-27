@@ -932,6 +932,10 @@ func TestHerdrCreateSession(t *testing.T) {
 	for _, want := range []string{
 		"workspace create --label proj --no-focus --cwd " + dir,
 		"--env FOO=bar",
+		// rangerhq-ysly: RHQ_HOME rides every session, not only persona
+		// ones — a crew session runs rhq/bd tools too, and without this
+		// they would resolve the wrong instance's config, queue, skills.
+		"--env RHQ_HOME=" + b.App.Home,
 		"pane run w1:p1 npm run dev",
 	} {
 		if !strings.Contains(log, want) {
@@ -1583,6 +1587,9 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	log := calls(t, fake)
 	if !strings.Contains(log, "--env RHQ_RUNTIME=claude") || !strings.Contains(log, "--env RHQ_RUNTIME=codex") {
 		t.Errorf("RHQ_RUNTIME missing:\n%s", log)
+	}
+	if !strings.Contains(log, "--env RHQ_HOME="+b.App.Home) {
+		t.Errorf("RHQ_HOME missing (rangerhq-ysly):\n%s", log)
 	}
 	if !strings.Contains(log, "GATES claude --model 'claude-fable-5' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -c model='gpt-5.6-sol' -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
 		t.Errorf("rendered commands:\n%s", log)

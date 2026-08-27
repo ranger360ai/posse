@@ -358,7 +358,7 @@ var cageEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // container credential (rangerhq-kiz).
 func CageEnvNames(vars []EnvVar) []string {
 	names := []string{
-		"BD_ACTOR", EnvPersona, "RHQ_PERSONA_DIR", "RHQ_RUNTIME", "RHQ_TIER",
+		"RHQ_HOME", "BD_ACTOR", EnvPersona, "RHQ_PERSONA_DIR", "RHQ_RUNTIME", "RHQ_TIER",
 		"RHQ_CAGE", "RHQ_GATES_DIR", "RHQ_SKILLS_DIR", "RHQ_SKILLS",
 		"RHQ_TOOLS_ALLOW", "RHQ_TOOLS_DENY",
 	}
