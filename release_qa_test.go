@@ -159,6 +159,77 @@ func TestTestLinuxDefaultRunPinsPlatformSoAnAmd64OverrideCannotPoisonTheTag(t *t
 	}
 }
 
+// Every dispatched session works in a linked worktree (AGENTS.md, "Landing
+// the plane"), where .git is a FILE naming a gitdir OUTSIDE the tree. Mount
+// only the worktree and git in the container resolves nothing: the three
+// seedpub publication-boundary tests (ADR 0012) go red 40s in looking exactly
+// like product failures, and the honest report becomes "green except three
+// known env failures" — one step from "green enough" (ranger-base-v0gm).
+// Every git dir outside $REPO_ROOT must be mounted at the SAME absolute path
+// git names, because that pointer is baked into the .git file — and :ro,
+// which is the property that must not move.
+func TestTestLinuxMountsGitDirsLivingOutsideTheWorktree(t *testing.T) {
+	const common = "/elsewhere/posse/.git"
+	const linked = common + "/worktrees/session"
+
+	t.Run("linked worktree", func(t *testing.T) {
+		runArgs, exit := tlDocker(t, []string{"FAKE_GIT_REV_PARSE=" + common + "\n" + linked}, "true")
+		if exit != 0 {
+			t.Fatalf("exit %d", exit)
+		}
+		tlMustHave(t, runArgs, "-v", common+":"+common+":ro")
+		if tlContains(runArgs, linked+":"+linked+":ro") {
+			t.Errorf("gitdir %s is inside %s; it needs no mount of its own: %v", linked, common, runArgs)
+		}
+		tlMustHave(t, runArgs, "-e", "GIT_CONFIG_COUNT=2")
+		tlMustHave(t, runArgs, "-e", "GIT_CONFIG_VALUE_1="+common)
+	})
+
+	t.Run("gitdir outside the common dir is mounted too", func(t *testing.T) {
+		const apart = "/apart/session.gitdir"
+		runArgs, exit := tlDocker(t, []string{"FAKE_GIT_REV_PARSE=" + common + "\n" + apart}, "true")
+		if exit != 0 {
+			t.Fatalf("exit %d", exit)
+		}
+		tlMustHave(t, runArgs, "-v", common+":"+common+":ro")
+		tlMustHave(t, runArgs, "-v", apart+":"+apart+":ro")
+		tlMustHave(t, runArgs, "-e", "GIT_CONFIG_COUNT=3")
+	})
+
+	t.Run("ordinary checkout mounts nothing extra", func(t *testing.T) {
+		repo, err := filepath.Abs(".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gitdir := filepath.Join(repo, ".git")
+		runArgs, exit := tlDocker(t, []string{"FAKE_GIT_REV_PARSE=" + gitdir + "\n" + gitdir}, "true")
+		if exit != 0 {
+			t.Fatalf("exit %d", exit)
+		}
+		if tlContains(runArgs, gitdir+":"+gitdir+":ro") {
+			t.Errorf("git dir is already inside the /repo mount; mounting it again is noise: %v", runArgs)
+		}
+		tlMustHave(t, runArgs, "-e", "GIT_CONFIG_COUNT=1")
+	})
+
+	// Whatever the layout, the repo and its git dir stay read-only: a gate run
+	// must not be able to write to either.
+	t.Run("every mount stays read-only", func(t *testing.T) {
+		runArgs, _ := tlDocker(t, []string{"FAKE_GIT_REV_PARSE=" + common + "\n" + linked}, "true")
+		for i, a := range runArgs {
+			if i == 0 || runArgs[i-1] != "-v" {
+				continue
+			}
+			if strings.HasPrefix(a, "/gocache") || strings.Contains(a, ":/gocache") || strings.Contains(a, ":/gomodcache") {
+				continue // the build cache is the one writable thing, and it lives outside the repo
+			}
+			if !strings.HasSuffix(a, ":ro") {
+				t.Errorf("mount %q is writable; repo and git dir must both be :ro", a)
+			}
+		}
+	})
+}
+
 func tlGoMinor(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile("go.mod")
@@ -208,6 +279,22 @@ run)
 esac
 `
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A fake git in front of the real one, inert unless FAKE_GIT_REV_PARSE is
+	// set: that is how the linked-worktree branch (ranger-base-v0gm) gets
+	// exercised on a machine that is not in a linked worktree, and vice versa.
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not available")
+	}
+	gitStub := "#!/bin/sh\n" +
+		"if [ -n \"${FAKE_GIT_REV_PARSE:-}\" ] && [ \"${1:-}\" = rev-parse ]; then\n" +
+		"\tprintf '%s\\n' \"$FAKE_GIT_REV_PARSE\"\n" +
+		"\texit 0\n" +
+		"fi\n" +
+		"exec " + realGit + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(scratch, "git"), []byte(gitStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("./scripts/test-linux.sh", scriptArgs...)

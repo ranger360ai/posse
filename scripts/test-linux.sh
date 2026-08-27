@@ -49,10 +49,57 @@ go_minor=$(sed -n 's/^go \([0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/go.mo
 [ -n "$go_minor" ] || die "could not read the go directive from go.mod"
 IMAGE="${IMAGE:-golang:$go_minor}"
 
+# THE GIT DIR IS NOT ALWAYS INSIDE THE REPO (ranger-base-v0gm). Every
+# dispatched session works in a linked worktree (AGENTS.md, "Landing the
+# plane"), and there `.git` is a FILE reading `gitdir: <abs path outside the
+# worktree>`. Mount only the worktree and git inside the container cannot
+# resolve the repo at all: `fatal: not a git repository`, three seedpub
+# publication-boundary tests red 40s in, looking exactly like product
+# failures. So mount whatever git dirs live outside $REPO_ROOT as well — at
+# the SAME absolute path git names, since that pointer is baked into the .git
+# file — and keep them :ro, which is the property that must not move.
+git_mounts=""   # newline-delimited absolute paths, outside $REPO_ROOT
+git_mount_add() {
+  local p=$1 seen
+  [ -n "$p" ] || return 0
+  case $p in "$REPO_ROOT" | "$REPO_ROOT"/*) return 0 ;; esac   # already under /repo
+  while IFS= read -r seen; do
+    [ -n "$seen" ] || continue
+    case $p in "$seen" | "$seen"/*) return 0 ;; esac           # already covered
+  done <<EOF
+$git_mounts
+EOF
+  git_mounts="${git_mounts}${p}
+"
+}
+# --git-common-dir first: it normally contains the worktree's own git dir, so
+# the second add dedupes into it and one mount covers both.
+if git_paths=$(cd -- "$REPO_ROOT" && git rev-parse --path-format=absolute --git-common-dir --git-dir 2>/dev/null); then
+  while IFS= read -r p; do git_mount_add "$p"; done <<EOF
+$git_paths
+EOF
+elif [ -f "$REPO_ROOT/.git" ]; then
+  die "$REPO_ROOT is a linked worktree ($(cat "$REPO_ROOT/.git")) but git here cannot resolve its git dir, so the container could not either — every git-reading test would fail"
+fi
+
 mkdir -p "$CACHE/build" "$CACHE/mod"
 
 run_flags=(--rm -i)
 if [ -n "${PLATFORM:-}" ]; then run_flags+=(--platform "$PLATFORM"); fi
+
+# /repo plus every git dir mounted at its own path: mounted read-only, and
+# marked safe.directory so git does not refuse them on an ownership mismatch.
+safe_n=1
+git_env=(-e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo)
+while IFS= read -r p; do
+  [ -n "$p" ] || continue
+  run_flags+=(-v "$p:$p:ro")
+  git_env+=(-e "GIT_CONFIG_KEY_$safe_n=safe.directory" -e "GIT_CONFIG_VALUE_$safe_n=$p")
+  safe_n=$((safe_n + 1))
+done <<EOF
+$git_mounts
+EOF
+git_env+=(-e "GIT_CONFIG_COUNT=$safe_n")
 
 gate='go vet ./... && make test'
 case "${1:-}" in
@@ -64,6 +111,10 @@ esac
 if [ -t 0 ] && [ -t 1 ]; then run_flags+=(-t); fi
 
 echo "test-linux: $IMAGE${PLATFORM:+ ($PLATFORM)} — $gate"
+if [ -n "$git_mounts" ]; then
+  printf 'test-linux: linked worktree — also mounting %s read-only at its own path so git resolves in the container\n' \
+    "$(printf '%s' "$git_mounts" | tr '\n' ' ' | sed 's/ $//')"
+fi
 
 exec docker run "${run_flags[@]}" \
   --user "$(id -u):$(id -g)" \
@@ -75,7 +126,5 @@ exec docker run "${run_flags[@]}" \
   -e GOCACHE=/gocache \
   -e GOMODCACHE=/gomodcache \
   -e GOFLAGS=-count=1 \
-  -e GIT_CONFIG_COUNT=1 \
-  -e GIT_CONFIG_KEY_0=safe.directory \
-  -e GIT_CONFIG_VALUE_0=/repo \
+  "${git_env[@]}" \
   "$IMAGE" bash -c "$gate"

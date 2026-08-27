@@ -4449,6 +4449,24 @@ write must use `t.TempDir()`, which is what CI requires of it anyway. The build
 and module caches are the one writable thing and they live in
 `~/.cache/posse/test-linux`, outside the tree.
 
+**It works from a session worktree** (ranger-base-v0gm). It did not, at first:
+the script mounted `$REPO_ROOT` and nothing else, and in a linked worktree
+`.git` is a *file* reading `gitdir: /Users/…/src/posse/.git/worktrees/<session>`
+— a path outside the mount, so git in the container resolved nothing and the
+three seedpub publication-boundary pins (ADR 0012) failed with `fatal: not a
+git repository` 40s in, looking exactly like product failures. Since every
+dispatched session works in a worktree, the gate ORDERS tells personas to run
+was unrunnable-clean for every persona, and the honest report was "green except
+three known env failures" — one step from "green enough". The script now asks
+`git rev-parse --path-format=absolute --git-common-dir --git-dir` and mounts
+whatever those name outside `$REPO_ROOT` **at the same absolute path**, because
+that pointer is baked into the `.git` file and cannot be relocated. Those
+mounts are `:ro` like the repo, and are added to `safe.directory`; an ordinary
+checkout has its git dir inside `/repo` already and gets no extra mount.
+`release_qa_test.go` pins all of it against a fake git, so both branches are
+exercised wherever the suite runs. Skipping the seedpub tests was never the
+fix: they *are* the publication boundary.
+
 It tests the host's architecture (arm64 on an Apple-Silicon box).
 `PLATFORM=linux/amd64 make test-linux` crosses that under emulation, slowly.
 `IMAGE=` overrides the toolchain image; `scripts/test-linux.sh --shell` drops
