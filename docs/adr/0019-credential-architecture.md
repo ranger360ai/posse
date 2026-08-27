@@ -11,7 +11,9 @@ same number.*
 The plan guard and the model-availability preflight read the Claude
 Code OAuth access token with `exec.Command("security",
 "find-generic-password", …)` — unconditionally. MEASURED in this tree:
-`planusage.go:216` has no build tags and no `runtime.GOOS` check;
+`planusage_anthropic.go:225-243` (moved there from `planusage.go:216`
+by 66ed579, the plan-window seam split) has no build tags and no
+`runtime.GOOS` check;
 `modelavail.go:128` is the second caller of the same function. On any
 non-macOS build that exec fails executable-not-found and the error says
 `keychain item … unreadable` — a message about a keychain, on a system
