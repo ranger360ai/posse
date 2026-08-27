@@ -74,7 +74,9 @@ not this repo has an orientation file to hang a caveat on. It names no
 source as its boundary — any instruction, whatever handed it over — and
 names `git push`, because the earlier wording ("…in repo docs", carried
 as a rider on `orientation:`) was present in the M1 cold rehearsal and
-the persona pushed into the gate anyway (rangerhq-gmnm). Otherwise a bead
+the persona pushed into the gate anyway (rangerhq-gmnm). Its placement inside `Context` is deliberate,
+not drift — ratified against two reshapes in Alternatives rejected
+(ranger-base-tcaj). Otherwise a bead
 with no parents and no ADRs gets four lines — three assembled, plus that
 one. Comments are *not* inlined (the persona reads them); the prompt says
 "comments carry decisions — read them" when the bead has any.
@@ -176,3 +178,16 @@ line (d) of `Context` — a reference, still not inlined.
   question bead with a dependency does, and it unblocks mechanically.
   (ADR 0006 decides mail vs comments for persona-to-persona; ASK is
   persona-to-operator and is settled here.)
+- **The `guardrails:` line outside `Context` — its own block above the
+  ladder, or folded into the ladder's fixed text.** Ratified in place
+  instead (ranger-base-tcaj). The Context block is the list of what the
+  session is handed — repo docs, design, orientation, comments — and the
+  guardrail is the precedence rule over exactly that list; it reads
+  strongest as the line that closes it, adjacent to the sources it
+  outranks. A separate block would restore "render only when non-empty"
+  exception-free, but buys that taxonomic purity with renderer and golden
+  churn plus an orphan line between two blocks. The ladder is the wrong
+  home twice over: it is a decision procedure for honest states, not a
+  shelf for standing prohibitions, and its REFUSE rung already points
+  back at guardrails. One exception, spelled out where the sentence
+  bends (§1), is cheaper than either.
