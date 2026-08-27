@@ -416,3 +416,68 @@ func TestAnOverrides429DoesNotParkTheFleet(t *testing.T) {
 		t.Errorf("an override wrote a fleet-wide cooldown: %s", got)
 	}
 }
+
+// ─── ranger-base-n052 (verify of dr6u): the spelling rule 4 is there for ──────
+//
+// Rule 4 is URL equality precisely so that a URL which merely LOOKS like the
+// compiled-in endpoint is still an override. The near miss above is a
+// trailing slash; this is the one an attacker would actually reach for,
+// because it puts the real endpoint's own name in front of the caller's
+// listener: `http://api.anthropic.com@127.0.0.1:PORT/api/oauth/usage` has
+// Hostname() == 127.0.0.1 and userinfo "api.anthropic.com". Any host-shaped
+// credential test that read the authority carelessly would credential it.
+//
+// Measured live during the verify: Go's client does put an Authorization
+// header on this request — `Basic base64("api.anthropic.com:")`, 30 bytes,
+// synthesised from the caller's OWN userinfo. That is the caller handing its
+// own string back to itself, not the account's token, and the assertion
+// below says so in those terms so a future reader who sees a header arrive
+// does not read it as a leak.
+func TestAUserinfoSpellingOfTheEndpointIsStillAnOverride(t *testing.T) {
+	var gotAuth string
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`))
+	}))
+	defer srv.Close()
+
+	// srv.URL is http://127.0.0.1:PORT — put the real endpoint's host in the
+	// userinfo, and its path on the end, so the whole string reads like it.
+	raw := "http://" + PlanUsageHost + "@" + strings.TrimPrefix(srv.URL, "http://") + "/api/oauth/usage"
+	if credentialedURL(raw, PlanUsageURL) {
+		t.Fatalf("%s was treated as the compiled-in endpoint", raw)
+	}
+
+	t.Setenv("RHQ_PLAN_USAGE_URL", raw)
+	r := NewPlanReader()
+	if r.URLErr != nil {
+		t.Fatalf("the host is loopback, so the seam must still work: %v", r.URLErr)
+	}
+	if r.Shared {
+		t.Fatal("a userinfo spelling of the endpoint must not be the fleet's fact")
+	}
+	r.Token = refusingToken(t)
+
+	dir := t.TempDir()
+	c := &PlanCache{
+		Path:   filepath.Join(dir, "plan-usage.json"),
+		Log:    filepath.Join(dir, "plan-usage.log"),
+		Caller: "cost",
+		Reader: r,
+	}
+	if _, _, err := c.Read(0); err != nil {
+		t.Fatalf("the seam must keep working: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("%d requests reached the listener, want 1", hits)
+	}
+	if strings.HasPrefix(gotAuth, "Bearer ") {
+		t.Errorf("the account's credential reached a caller-named listener: %q", gotAuth)
+	}
+	if _, err := os.ReadFile(c.Path); err == nil {
+		t.Error("a userinfo spelling of the endpoint published to the instance's snapshot")
+	}
+}
