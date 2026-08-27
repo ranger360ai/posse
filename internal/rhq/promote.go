@@ -78,6 +78,16 @@ const promoteManifestVersion = 1
 // Seeded means `posse init` wrote it from the embedded examples — a fresh
 // box has a real manifest (so the launch verify never fires on a clean
 // install) and no commit behind it, which is the honest difference.
+//
+// What `seeded` does NOT mean, and what nothing may read it as: that posse
+// laid these bytes down. SeedPromoteManifest writes a manifest whenever a
+// home has none, hashing whatever is on disk at that moment — on the first
+// manifest-writing init over an older home that is the operator's own files,
+// personas they adopted in place included. The manifest is an ANCHOR ("these
+// bytes were here when posse started watching"), never provenance ("posse
+// wrote these bytes"). Provenance for a seed file has its own answer,
+// isShippedExample in exampledigests.go; taking it off Seeded instead retired
+// an operator's persona out of routing in two inits (ranger-base-rgx0).
 type PromoteManifest struct {
 	Version    int               `json:"version"`
 	PromotedAt string            `json:"promoted_at"`
@@ -877,9 +887,10 @@ func warnDanglingDefaultEnv(w io.Writer, a *App) {
 // promoted anything — without it, a `posse init` install would either have
 // to skip the verify forever or fail it on first launch. It hashes what is
 // actually on disk (init copies only what is missing, so the seed's contents
-// and the home's need not be the same), never overwrites an existing
-// manifest, and marks the result seeded: a real manifest with no commit
-// behind it, which is the honest description of a fresh install.
+// and the home's need not be the same — this is the anchor/provenance split
+// on PromoteManifest.Seeded), never overwrites an existing manifest, and
+// marks the result seeded: a real manifest with no commit behind it, which is
+// the honest description of a fresh install.
 func (a *App) SeedPromoteManifest() error {
 	if m, err := ReadPromoteManifest(a.PromoteManifestPath()); err != nil || m != nil {
 		return err

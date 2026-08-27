@@ -62,6 +62,25 @@ func olderSeed(t *testing.T) fs.FS {
 	return m
 }
 
+// shipFixtureAsARelease enters the fixture's example PIDs in posse's record
+// of what posse has shipped (exampledigests.go). That table is generated from
+// this repo's history, so a fixture standing in for a release that never
+// existed has to be entered the way a real one is — by appending its digest.
+// The real entries are never disturbed and the table is restored after.
+func shipFixtureAsARelease(t *testing.T, src fs.FS) {
+	t.Helper()
+	for _, n := range exampleAgentNames(src) {
+		rel := "agents/" + n + ".md"
+		b, err := fs.ReadFile(src, rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		was := shippedExampleDigests[rel]
+		t.Cleanup(func() { shippedExampleDigests[rel] = was })
+		shippedExampleDigests[rel] = append(append([]string{}, was...), sha256Bytes(b))
+	}
+}
+
 // preFixHome is a home as an OLDER posse left it: the examples seeded live,
 // into agents/, which is what every install that predates ranger-base-qajs
 // looks like. src is that older binary's seed tree.
@@ -111,40 +130,29 @@ func preFixHome(t *testing.T, src fs.FS) *App {
 // filed to remove, still open) and init told the operator it kept them
 // because they "edited" them, which they did not.
 //
-// The evidence was already in the home and the rule now reads it: the seeded
-// manifest holds the hash init recorded when it laid the file down, and it
-// answers "untouched since it was seeded" for any version. This pin is the
-// inversion of the one it replaces — it fails if judging ever goes back to
-// the running binary's bytes alone.
+// The rule now asks posse's own record instead: the table of every digest
+// posse has shipped for each example (exampledigests.go) recognises an older
+// release's bytes for any version, and — unlike the home's `seeded` manifest,
+// which ranger-base-rgx0 took out of this decision — nothing an operator
+// wrote can be in it. This pin is the inversion of the one it replaces: it
+// fails if judging ever goes back to the running binary's bytes alone.
 func TestUpgradeFromAnOlderSeedRetiresTheNine(t *testing.T) {
 	src := olderSeed(t)
+	shipFixtureAsARelease(t, src)
 	a := preFixHome(t, src)
 	names := exampleAgentNames(posse.Seed)
 
-	// The home is untouched since it was seeded — the manifest says so — and
-	// every one of the nine is byte-different from what this posse ships,
-	// which is the whole point of the fixture.
-	man, err := ReadPromoteManifest(a.PromoteManifestPath())
-	if err != nil || man == nil {
-		t.Fatalf("fixture manifest: %v", err)
-	}
+	// Every one of the nine is a version posse shipped and is byte-different
+	// from what this posse ships, which is the whole point of the fixture.
 	for _, n := range names {
 		rel := "agents/" + n + ".md"
-		want, ok := man.Files[rel]
-		if !ok {
-			t.Fatalf("fixture: manifest does not name %s", rel)
-		}
 		live := filepath.Join(a.AgentsDir, n+".md")
-		got, err := sha256File(live)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != want {
-			t.Fatalf("fixture: %s already differs from what was seeded — the fixture is wrong, not the code", rel)
-		}
 		have, err := os.ReadFile(live)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if !isShippedExample(rel, have) {
+			t.Fatalf("fixture: %s is not entered as a release — the fixture is wrong, not the code", rel)
 		}
 		shipped, err := fs.ReadFile(posse.Seed, rel)
 		if err != nil {
@@ -161,8 +169,8 @@ func TestUpgradeFromAnOlderSeedRetiresTheNine(t *testing.T) {
 	}
 	if live := a.ListAgents(); len(live) != 0 {
 		t.Fatalf(`ranger-base-8ehw REGRESSED — %d generic(s) still routing after an upgrade from
-an older seed: %v. Retirement is judged untouched-since-seeded (the seeded
-manifest's own hashes), not byte-identity against the running binary; a home
+an older seed: %v. Retirement is judged against the digests posse has shipped
+(exampledigests.go), not byte-identity against the running binary; a home
 seeded by any earlier posse retires nothing under the latter.
 init said:
 %s`, len(live), live, out.String())
@@ -170,8 +178,10 @@ init said:
 	if !strings.Contains(out.String(), "retired") {
 		t.Errorf("init said %q — a retirement the operator cannot see is a file that vanished", out.String())
 	}
-	// And nobody is blamed for an edit they did not make.
-	if strings.Contains(out.String(), "edited since it was seeded") {
+	// And nobody is blamed for an edit they did not make. "it is yours now"
+	// is the wording init keeps a file under today; assert the phrase, not a
+	// string that no longer exists, or this stops pinning anything.
+	if strings.Contains(out.String(), "it is yours now") {
 		t.Errorf(`init said %q — version skew is not an operator edit, and saying so sends
 them looking for a change they never made`, out.String())
 	}
@@ -193,21 +203,24 @@ them looking for a change they never made`, out.String())
 	}
 }
 
-// ranger-base-8ehw, the sharp edge the manifest rule brings with it and the
-// guarantee that blunts it.
+// ranger-base-8ehw, the sharp edge the version-skew rule brings with it and
+// the guarantee that blunts it.
 //
-// `seeded` does not mean "init laid these bytes down": SeedPromoteManifest
-// writes a manifest whenever a home has none, hashing whatever is on disk at
-// that moment. A home that predates ADR 0015 and had a generic the operator
-// had already adopted therefore gets a seeded manifest attesting to THEIR
-// file, and the rule above reads that as untouched-since-seeded. init cannot
-// tell those apart — nothing in the home records which posse wrote agents/.
+// Once an older release's bytes can be retired, what leaves agents/ need not
+// be what the shelf already holds: on a skewed home the live file is the only
+// copy of those bytes anywhere in the home. So the retirement is a rename,
+// never a remove — whatever leaves agents/ is still readable on the shelf
+// under the name init printed. Under the old rule the live bytes were always
+// byte-identical to the embed and os.Remove lost nothing.
 //
-// So the retirement is a rename, never a remove: whatever leaves agents/ is
-// still readable on the shelf under the name init printed. Under the old
-// rule the bytes were byte-identical to the embed and os.Remove lost nothing;
-// under this one they need not be, and losing an operator's persona is the
-// "worse than the bug" the design bead named. Filed separately: ranger-base-rgx0.
+// The fixture is the case that made that non-negotiable: a generic the
+// operator adopted in place on a home that predates ADR 0015, which a
+// post-hoc `seeded` manifest then attested to as if init had laid it down.
+// That file is KEPT now (ranger-base-rgx0 — identity comes from the digests
+// posse has shipped, and the home's own manifest is no longer evidence about
+// who wrote a file). This pin does not care which way that decision goes: it
+// asserts only that the bytes are still in the home afterwards, so it keeps
+// holding if the decision ever moves again.
 func TestRetirementNeverDestroysTheBytesItTakes(t *testing.T) {
 	a := preFixHome(t, posse.Seed)
 	names := exampleAgentNames(posse.Seed)

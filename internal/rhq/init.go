@@ -178,20 +178,24 @@ func exampleAgentNames(src fs.FS) []string {
 // agents/ is the operator's directory, so the rules are narrow, and each
 // one buys back a way this could have made things worse than the bug:
 //
-//   - UNCHANGED SINCE IT WAS SEEDED. An edited example is not an example any
-//     more — it is the persona the operator adopted in place, with bd history
-//     and an assignee under that name. It stays, and init names it, because a
-//     retirement that took it would leave real work parked on a persona that
-//     no longer loads. "Unchanged" has two true answers and the running
-//     binary's bytes are only one of them (ranger-base-8ehw): the example PIDs
-//     are shipped prose and they change — 95c4b70 added `- Bash(posse
-//     promote:*)` to the deny list of all nine — so a home seeded by any
-//     earlier posse holds files that are byte-for-byte what THAT posse
-//     shipped and byte-different from this one's. Judged against the embed
-//     alone, every such home retires nothing (the whole leak, still open) and
-//     init blames the operator for edits they never made. The seeded manifest
-//     records the sha256 of each file as init laid it down, and answers the
-//     question for any version, so it is the second answer.
+//   - IT IS POSSE'S FILE, AND POSSE CAN PROVE IT. An edited example is not
+//     an example any more — it is the persona the operator adopted in place,
+//     with bd history and an assignee under that name. It stays, and init
+//     names it, because a retirement that took it would leave real work
+//     parked on a persona that no longer loads. "It is ours" has two true
+//     answers and the running binary's bytes are only one of them
+//     (ranger-base-8ehw): the example PIDs are shipped prose and they change
+//     — 95c4b70 added `- Bash(posse promote:*)` to the deny list of all nine
+//     — so a home seeded by any earlier posse holds files that are
+//     byte-for-byte what THAT posse shipped and byte-different from this
+//     one's. Judged against the embed alone, every such home retires nothing
+//     (the whole leak, still open) and init blames the operator for edits
+//     they never made. The second answer is the table of digests posse has
+//     shipped for each example (exampledigests.go): posse's record of its
+//     own releases, so a file the operator wrote can never be in it. The
+//     home's own seeded manifest looked like that record and is not — it
+//     attests to whatever was on disk when it was first written, upgrades
+//     included (ranger-base-rgx0).
 //   - NEVER A NAME THE CONFIG DEPENDS ON. `coordinator:`, `default_persona:`
 //     and `verify_assignee:` each turn a persona name into behaviour; a
 //     home that retired one of them would come up with an unresolvable
@@ -232,30 +236,15 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 		}
 		want, wantErr := fs.ReadFile(src, rel)
 		shipped := wantErr == nil && string(have) == string(want)
-		// The other answer: a `seeded` manifest is this home's own record of
-		// what init laid down, whichever posse laid it, so it recognises an
-		// older release's example that the embed cannot. Only a seeded one —
-		// on a promoted home the same hashes describe a commit in the
-		// constitution repo, which is a different claim.
-		seededSum, recorded := "", false
-		if man != nil && man.Seeded {
-			seededSum, recorded = man.Files[rel]
-		}
-		untouched := false
-		if recorded {
-			sum, err := sha256File(live)
-			untouched = err == nil && sum == seededSum
-		}
-		if !shipped && !untouched {
-			// Two different findings, and only one of them is an accusation:
-			// the manifest can say the file changed after it was seeded, but
-			// with no seeded record here all init knows is that these bytes
-			// are not the ones it ships.
-			why := "differs from the example this posse ships, and nothing here records what was seeded — it is yours now"
-			if recorded {
-				why = "edited since it was seeded — it is yours now"
-			}
-			kept = append(kept, name+".md ("+why+")")
+		// The other answer: the table of every digest posse has shipped for
+		// this example (exampledigests.go), which recognises an older
+		// release's bytes that the embed cannot. It is posse's own record and
+		// not the home's, so nothing the operator wrote can enter it — a
+		// `seeded` manifest cannot say that much, because it hashes whatever
+		// was on disk the first time a manifest-writing posse ran init here,
+		// an adopted generic included (ranger-base-rgx0).
+		if !shipped && !isShippedExample(rel, have) {
+			kept = append(kept, name+".md (differs from every example PID posse has shipped — it is yours now)")
 			continue
 		}
 		if pinned[strings.ToLower(name)] {
