@@ -507,3 +507,58 @@ Verification:
 - **Disable all Claude project settings at launch.** Project permissions
   are an intentional fleet floor (ADR 0001), and removing the whole source
   is a wider policy change than containing the two channels trust unlocks.
+
+## Amendment 2026-08-27 — what Claude directory trust actually gates (measured)
+
+The 2026-08-26 amendment's premise sentence — "In an untrusted directory
+Claude drops project `hooks` and `mcpServers` from `<dir>/.claude/settings.json`;
+after the launch trusts the directory those entries load" — does not describe
+the shipped binary. Current Claude docs say the opposite shape (hooks run
+before trust; trust gates `permissions.allow`, `permissions.additionalDirectories`
+and MCP `headersHelper`), and both could not be true of one binary. Measured
+in scratch directories under an isolated `CLAUDE_CONFIG_DIR`, no API turn, on
+2.1.247 and re-run unchanged on 2.1.241, 2.1.245 and 2.1.246 (ranger-base-i0s8):
+
+1. **The drop is permissions-only.** `permissions.allow` and
+   `permissions.additionalDirectories` are dropped while untrusted, named on
+   stderr. The "Dropped N project-scoped … entries — workspace not yet
+   trusted" line quoted in the earlier record is real, but its template is
+   dynamic and those two permission keys are its only call sites in the
+   bundle; it never carried `hooks`. The disagreement was a misquote, not a
+   version drift — 2.1.241 measured today behaves exactly like 2.1.247.
+2. **`hooks` are gated at execution, and only where the dialog is live.**
+   "Skipping <event> hook execution — workspace trust not accepted".
+   Interactive and untrusted, the session parks on the dialog and a project
+   `SessionStart` hook never runs; interactive and trusted, it runs. Headless
+   `claude -p` in an untrusted directory runs the project's hooks in the same
+   run that drops that file's `permissions.allow`, and writes no trust entry.
+3. **`mcpServers` in `.claude/settings.json` is inert** on all four builds:
+   not listed by `claude mcp list`, not named in a trusted session's debug
+   log, never spawned. The live project-MCP channel is `.mcp.json`, behind an
+   approval gate that reads identically trusted and untrusted — confirming
+   this ADR's decision to leave `.mcp.json` out of the detector.
+4. **Trust keys on the repo root; worktrees inherit it.** With only a repo
+   root trusted, a subdirectory and a linked worktree of it both launched
+   clean, an untrusted sibling repo drew the dialog, and Claude wrote no new
+   `projects` entry. The seed's per-worktree entries are belt, not
+   load-bearing.
+
+### Decision
+
+The 2026-08-26 decision stands unchanged, and this measurement strengthens
+its reason. Keep `ProjectConfigKeys: [hooks, mcpServers]` on Claude:
+
+- The check fires on **settings content**, so it does not depend on which of
+  Claude's gates is holding, on interactive versus headless, or on the docs
+  and the binary agreeing next release. That is the property to preserve.
+- Keep `mcpServers` in the key list even though Claude ignores it today.
+  Posse identifies the channel a repo declares; a key the runtime ignores
+  this release is a key it may honor the next, and dropping it would trade a
+  stable boundary for a version-pinned one.
+- The seed is still the enabling act for repo hooks **in a posse launch**,
+  because a posse launch is interactive and the untrusted alternative is a
+  session parked on the dialog. It is not the enabling act for hooks in
+  general, and §"Consequences" should not be read as claiming that.
+
+No implementation change follows from this amendment. `NOTES.md` and
+`internal/rhq/trust.go` carry the same correction.

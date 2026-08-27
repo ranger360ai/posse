@@ -86,6 +86,51 @@ can orphan nothing and cannot be inferred dead and pruned), the error
 carries both the retry (`posse relaunch <name>`) and the hand-rebuilt
 `posse new …` line, and `posse list` reports the kept recipe as what it is.
 
+### The launch line is typed, so it has a limit — 1023 bytes (rangerhq-ybec)
+
+A launch is a *command typed into the pane's shell*: `herdr pane run` puts
+it through the tty exactly as a keyboard would. A pane `workspace create` has
+just returned has not started its ZLE yet — the shell is still reading
+rc files — so the tty is in **canonical mode**, where the line discipline's
+per-line buffer is `MAX_CANON`, 1024 bytes *including* the newline that
+would submit it (`sys/syslimits.h`). Over that, the head is echoed raw, the
+tail sits in the buffer without its newline, and **nothing runs** — the next
+thing typed is appended to the leftover. Hence `PaneLineMax = 1023` in
+`internal/rhq/paneline.go`, the last length that survives.
+
+Waiting is not the fix, twice over. `herdr pane process-info` reports a
+`shell_pid` from the very first sample and a shell-alone foreground group
+within 0.03–0.35s, and a line typed the instant that predicate goes true is
+still lost: there is no observable for "ZLE has the tty". And a settled pane
+is bounded too, only further out — on a three-second-old pane 24000 B ran
+3/3 and 28000 B ran 0/3 — so a long enough line is lost no matter how long
+anyone waits, and "wait for the shell" could never have been the general
+fix.
+
+So the line stays short instead. Over the limit, `App.PaneLine` writes the
+command to `state/launch/<session>.sh` and types `. <path>` — **sourced**,
+not `sh <path>`, so the tty's foreground process is the runtime itself and
+not a shell holding it, which is what herdr's argv0 detection,
+`RelaunchAgent` typing into the surviving shell, and a kill all rest on. A
+superseded script is removed the moment a line fits again: a rendering left
+behind that nothing runs is how the next debugging session gets misled. It
+is wired at both launch sites (`startPlanned`, `RelaunchAgent`), and
+`KillSession` drops the script beside the meta.
+
+Under the limit the command is still typed verbatim, because the pane's
+scrollback and herdr's log are where an operator reads what a session was
+launched with. Headroom today: every crew PID's line renders to **591–691
+bytes** against the 1023 limit, so nothing spills (`state/launch/` does not
+exist on a healthy fleet). That is ~330 bytes of slack, and anything that
+grows a typed line spends it — another deny rule (`--disallowedTools` is
+variadic), a longer `--settings`, more mounts. The container tier's ~1.6KB
+engine line spent it in one go and had to render a file before this rule
+existed; see *Container tier* below.
+
+None of this is asserted from memory: `internal/rhq/panelinelive_test.go`
+(`RHQ_LIVE_PANE_LINE=1`, against a scratch herdr server, no API turn) is the
+live pin both sides of the cliff and the spill are measured from.
+
 ## Dispatch primitives
 
 - `posse prompt <name> "<text>" [--wait] [--timeout ms]` — submit work to the
@@ -2302,10 +2347,13 @@ reads it) — per *session*, because a persona holds one per bead. It is a
 file and not a typed line because an engine argv carries every mount and
 every forwarded name: rendered as a line it runs past 1.5KB, and a
 command that long **does not survive being typed into a freshly created
-workspace** — the shell is still starting and eats the head of it (an
-identical 1500-byte line is lost on a new pane and runs on that same pane
-a second later; rangerhq-ybec). Launcher and plan are rendered fresh from
-the PID at every launch, like the gates.
+workspace** — a fresh pane's tty is still in canonical mode and takes
+1023 bytes, so the head is echoed raw and nothing runs (*The launch line
+is typed, so it has a limit* above; rangerhq-ybec). This tier met that
+first and rendered a file for its own reason as well — the argv0 the
+launch must leave behind — and the general rule now covers every launch,
+so nothing here needs to keep it alone. Launcher and plan are rendered
+fresh from the PID at every launch, like the gates.
 
 And parity says only what the tier holds
 *today*, which since rangerhq-6so it asks the **image** rather than a
@@ -3145,16 +3193,55 @@ Measured on the pane, four herdr scratch panes, no API turn:
   anyway with `hasCompletedProjectOnboarding`, because "harmless splash" is
   what grok's startup menu was called too.
 
-**What the grant hands the session dir, and the keyed launch check.** Untrusted,
-claude *drops* the project's `hooks` and `mcpServers` entries out of
-`<dir>/.claude/settings.json` ("Dropped N project-scoped hooks entries —
-workspace not yet trusted"). Trusted, they load — the same class of channel
-ADR 0002 made codex's launch check for. Claude now declares that settings
-path with `ProjectConfigKeys: [hooks, mcpServers]`: presence of either key
-degrades before trust is seeded, while this repo's permission-only file stays
-clean. An existing file that cannot be decoded as a top-level JSON object
-also degrades; failing open there would turn a classification error into a
-claim that no executable channel exists.
+**What the grant hands the session dir, and the keyed launch check.**
+REMEASURED 2026-08-27 on claude 2.1.247 and re-run unchanged on
+2.1.241/.245/.246 (ranger-base-i0s8), because the first telling of this
+paragraph was wrong in its detail and the current claude docs say the
+opposite shape. What the shipped binary does:
+
+- **Directory trust gates two keys, and they are permission keys.**
+  `permissions.allow` and `permissions.additionalDirectories` out of
+  `.claude/settings.json` are dropped while the workspace is untrusted,
+  and claude says so on stderr ("Ignoring 1 permissions.allow entry from
+  .claude/settings.json: this workspace has not been trusted…"). The debug
+  line quoted here before — "Dropped N project-scoped … entries — workspace
+  not yet trusted" — is real, but its template is dynamic and those two
+  permission keys are its only call sites in the bundle. It never said
+  `hooks`. That misquote, not a version drift, is the whole disagreement:
+  2.1.241 measured today behaves exactly like 2.1.247.
+- **`hooks` are gated one layer down, at execution, and only where the
+  dialog is a live screen.** The binary's own line is "Skipping <event>
+  hook execution — workspace trust not accepted". Interactive and
+  untrusted, the session parks on the trust dialog and a project
+  SessionStart hook never runs; interactive and trusted — what the seed
+  buys — it runs. Headless does not hold that line: `claude -p` in an
+  untrusted directory runs the project's hooks, in the same run that drops
+  that file's `permissions.allow`, and writes no trust entry. So the seed
+  is the enabling act for repo hooks in a posse LAUNCH, which is
+  interactive; it is not what gates hooks in general.
+- **`mcpServers` under `.claude/settings.json` is inert** on these builds:
+  never listed by `claude mcp list`, never named in a trusted session's
+  debug log, never spawned. The live project-MCP channel is `.mcp.json`,
+  and it sits behind its own "⏸ Pending approval" gate that reads
+  identically trusted and untrusted.
+
+None of that moves the launch check, and it makes it *more* load-bearing:
+the check fires on settings content, so it does not depend on which of
+claude's gates is holding, or on the docs and the binary agreeing next
+release. Claude declares that settings path with
+`ProjectConfigKeys: [hooks, mcpServers]`: presence of either key degrades
+before trust is seeded, while this repo's permission-only file stays clean.
+Naming `mcpServers` is deliberately conservative — a key claude ignores
+today is a key it may honor tomorrow. An existing file that cannot be
+decoded as a top-level JSON object also degrades; failing open there would
+turn a classification error into a claim that no executable channel exists.
+
+**Trust keys on the repo root, and worktrees inherit it.** Measured in the
+same pass: with only a repo root carrying `hasTrustDialogAccepted`, a
+subdirectory of it and a `git worktree add` linked worktree of it both
+opened on a live composer, an untrusted sibling repo drew the dialog, and
+claude wrote no new `projects` entry for either. The fleet's per-worktree
+seed entries are belt, not load-bearing.
 
 **What posse does NOT do, so nobody re-proposes it:** pre-answer the other
 runtimes' dialogs from the harness (write `privacy_banner_acked`, write

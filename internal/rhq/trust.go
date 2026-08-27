@@ -35,15 +35,39 @@ package rhq
 // in <config>". That is the key this file writes, and the reason it is a
 // file and not a typed line is that claude offers no line to type it on.
 //
-// WHAT THE GRANT BUYS THE REPO: while a workspace is untrusted claude DROPS
-// the project's `hooks` and `mcpServers` entries out of
-// <dir>/.claude/settings.json
-// ("Dropped N project-scoped hooks entries — workspace not yet trusted",
-// its own log line). Trusted, they load. That is the same class of
-// channel ADR 0002 made codex's launch check for. Claude's built-in runtime
-// therefore names this file plus the top-level keys above; permission-only
-// settings stay clean, while a match or an unclassifiable file degrades the
-// launch before this trust seed is written.
+// WHAT THE GRANT BUYS THE REPO — REMEASURED 2026-08-27 on 2.1.247 and
+// re-run unchanged on 2.1.241/.245/.246 (ranger-base-i0s8), because the
+// first telling of this paragraph was wrong in its detail:
+//
+//   - The "Dropped N project-scoped <key> entries — workspace not yet
+//     trusted" line is real, but its template is dynamic and the shipped
+//     bundle passes it exactly two keys: `permissions.allow` and
+//     `permissions.additionalDirectories`. It never says `hooks`. The
+//     earlier quote here attributed a permissions message to hooks.
+//   - `hooks` are not dropped at settings load at all. They are gated one
+//     layer down, at execution: "Skipping <event> hook execution —
+//     workspace trust not accepted". Interactive and untrusted, the
+//     session parks on the dialog and the project's SessionStart hook
+//     never runs (SessionEnd is skipped with that line). Interactive and
+//     trusted — the state this file seeds — it runs.
+//   - Headless is the shape that does NOT hold: `claude -p` in an
+//     UNTRUSTED directory runs the project's hooks, in the same run that
+//     drops that file's `permissions.allow`, and writes no trust. So trust
+//     is what enables repo hooks for a posse LAUNCH, which is interactive;
+//     it is not what gates hooks in general.
+//   - `mcpServers` under .claude/settings.json is inert on these builds:
+//     never listed by `claude mcp list`, never named in a trusted
+//     session's debug log, never spawned. The live project-MCP channel is
+//     `.mcp.json`, and it sits behind its own "Pending approval" gate that
+//     reads identically trusted and untrusted.
+//
+// The launch check is unchanged by all of this, and is MORE load-bearing
+// for it: it fires on settings content, so it does not depend on which of
+// claude's gates is holding. Claude's built-in runtime names this file plus
+// the top-level keys above; permission-only settings stay clean, while a
+// match or an unclassifiable file degrades the launch before this trust
+// seed is written. Naming `mcpServers` there is deliberately conservative
+// — a key claude ignores today is a key it may honor tomorrow.
 
 import (
 	"encoding/json"
@@ -113,11 +137,15 @@ func ClaudeTrustKey(dir string) string {
 //
 // One hop is deliberately not followed: claude also keys the config on the
 // CANONICAL root, so a linked worktree resolves to its main repo and
-// inherits that repo's answer. Following a `.git` file through its
+// inherits that repo's answer. MEASURED 2026-08-27 on 2.1.247
+// (ranger-base-i0s8): with only a repo root trusted, both a subdirectory
+// and a `git worktree add` linked worktree of it opened on a live
+// composer, while an untrusted sibling repo drew the dialog, and claude
+// added no projects entry for either. Following a `.git` file through its
 // commondir to decide whether to skip a write is more machinery than the
 // write is worth, so a fresh worktree of a trusted repo gets an entry it
-// did not strictly need. The error only ever runs that way: nothing this
-// reports trusted would have drawn the dialog.
+// did not strictly need — belt, not load-bearing. The error only ever runs
+// that way: nothing this reports trusted would have drawn the dialog.
 func ClaudeTrusted(state map[string]any, dir string) bool {
 	projects, _ := state["projects"].(map[string]any)
 	if projects == nil {

@@ -188,10 +188,16 @@ type Runtime struct {
 	// this runtime takes no project-config surface from the session dir, which
 	// is the safe default for every template-only runtime.
 	ProjectConfig string
-	// ProjectConfigKeys narrows the check to top-level JSON keys whose
-	// presence becomes live under trust. Empty preserves the whole-file
-	// presence predicate (codex). A keyed file that cannot be classified as
-	// a readable top-level JSON object fails closed (claude).
+	// ProjectConfigKeys narrows the check to the top-level JSON keys that
+	// declare a repo-to-box executable channel. Empty preserves the
+	// whole-file presence predicate (codex). A keyed file that cannot be
+	// classified as a readable top-level JSON object fails closed (claude).
+	// The check is on CONTENT, not on the runtime's trust state: claude's
+	// trust gates its permission keys, its hooks are gated a layer down and
+	// only where the dialog is a live screen, and a headless `claude -p`
+	// runs an untrusted repo's hooks outright (measured, ranger-base-i0s8,
+	// see trust.go). Naming a key the runtime ignores this release is the
+	// conservative side of that.
 	ProjectConfigKeys []string
 	// Unattended is the flag that makes this runtime approve a tool call
 	// with nobody watching, and it is a launch GUARANTEE, not a template
@@ -674,8 +680,11 @@ const CodexFleetFlags = `--disable hooks -c allow_login_shell=false -c "projects
 // reasoning defaults."
 const CodexProjectConfig = ".codex/config.toml"
 
-// ClaudeProjectConfig is the project settings file whose hooks and MCP
-// servers become live after SeedClaudeTrust accepts the session directory.
+// ClaudeProjectConfig is the project settings file in which a repo declares
+// hooks and MCP servers to claude. SeedClaudeTrust is what makes its hooks
+// live for a posse LAUNCH, which is interactive; trust is not the only gate
+// on them and is not one at all headless (measured, ranger-base-i0s8 — see
+// the header of trust.go).
 const ClaudeProjectConfig = ".claude/settings.json"
 
 // GrokFleetFlags is what a grok persona session needs to run unattended —
