@@ -536,3 +536,45 @@ func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
 		t.Fatalf("bd ignores a redirect in the target; beadsHome followed to %s, want first hop %s", got, want)
 	}
 }
+
+// A deletion the operator RECORDED is owned: the ledger exempts it by naming
+// the commit that dropped it. But the census keeps, per id, the most recent
+// commit that removed the line, and --diff-merges=first-parent (rangerhq-boco)
+// made a merge's net diff a removal entry too — so merging the branch that
+// dropped the bead re-attributes the drop from the side commit to the merge
+// commit, the ledger's `rec.Commit != lb.Commit` arm stops matching, and an
+// owned deletion alarms as lost forever. Recording it again silences it only
+// by appending a second ledger line for one deletion, which is the input
+// rangerhq-fknq is filed about. Latent while every merge-back is a
+// fast-forward; live the first time a merge commit touches issues.jsonl
+// (ranger-base-ntsz).
+func TestLedgerRecordSurvivesAMergeOfTheDroppingCommit(t *testing.T) {
+	t.Skip("ranger-base-ntsz: the census re-attributes a branch's removal to the merge commit, and the ledger is keyed on the commit")
+	newTestBackend(t)
+	repo := qblRepo(t)
+	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
+	qblGit(t, repo, "branch", "-M", "main")
+
+	// The bead is dropped on a branch, on purpose, and recorded there.
+	qblGit(t, repo, "checkout", "-q", "-b", "side")
+	qblCommit(t, repo, "side drops q-2", qblLine("q-1", "open"))
+	qblLive(t, repo, "q-1")
+	qblRecord(t, repo)
+	if l := qblLost(t, repo); len(l) != 0 {
+		t.Fatalf("setup: a recorded deletion is owned, got %+v", l)
+	}
+
+	// The branch merges. Nothing about the deletion changed — only which
+	// commit git's first-parent diff blames for it.
+	qblGit(t, repo, "checkout", "-q", "main")
+	qblGit(t, repo, "merge", "-q", "--no-ff", "--no-edit", "side")
+	qblLive(t, repo, "q-1")
+	if l := qblLost(t, repo); len(l) != 0 {
+		t.Fatalf("a merge of the branch that dropped it must not un-record an owned deletion: got %+v", l)
+	}
+
+	// And the ledger still holds one record for one deletion.
+	if lines := qblLedgerLines(t, repo); len(lines) != 1 {
+		t.Errorf("one deletion, one record: got %d lines: %v", len(lines), lines)
+	}
+}
