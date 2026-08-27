@@ -48,7 +48,7 @@ them).
 | handoff | trigger | shape | closes when |
 |---|---|---|---|
 | **architect → developer** (design → build) | ADR committed | implementation beads `-l code -a <developer> --deps discovered-from:<design>`, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture -a <architect>` |
-| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa -a <config verify_assignee:> --deps discovered-from:<closed id>`, description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row for the bead's intent | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code -a <closer>` with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
+| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa -a <config verify_assignee:> --deps discovered-from:<closed id>`, description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row for the bead's intent *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code -a <closer>` with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
 | **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security -a <security persona> --deps discovered-from:<id>`, **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
 | **operator/product grooming** (cadence) | one `-l groom` bead per week assigned to the product persona, filed by the operator or their scheduling automation (posse does not schedule; `--watch` dispatches, it doesn't create) | the product persona re-prioritises, splits, labels (`tier:` per ADR 0003), files `-l architecture` beads where design precedes build, closes with `bd comments add` listing what moved | close = queue is honest for the week; the `queue-honesty` metric reads it |
 
@@ -63,6 +63,42 @@ seen and not duplicated. Config `verify_labels:` (empty = off),
 it is not a workflow engine. *(Amended 2026-08-20: a `--dry-run` pass
 files nothing — dry-run shows routing without acting, and filing a bead
 is acting. The code said so from the start; the record now does too.)*
+
+*(Amended 2026-08-27, from ranger-base-f7pk/bh7q.)* Config gains
+`verify_batch: N` (default 1) and `verify_batch_age:` (default 24h). At
+N=1 the rule is exactly as written above, byte for byte; the seed config
+ships the key commented out, so N > 1 is the operator's move
+(ranger-base-bah7). At N > 1 one verify bead answers N closes:
+
+- title `verify N closes: <id>, <id>, …` (a single close keeps
+  `verify: <title>` unchanged);
+- one `discovered-from` edge per close; priority = the batch's most
+  urgent close;
+- description = N sections, each exactly the block §2 quotes, under one
+  trailer; `verify filed: <qid>` is commented back on every close.
+
+The dedupe is per close, not per bead: each section opens with the
+harness's own marker line, so a batched orphan from a timed-out create
+still answers every close in it next pass. A trailing partial batch is
+**held, bounded**: filed only when its oldest close reaches
+`verify_batch_age:`. Both obvious alternatives fail — filing every
+pass's leftovers makes N a ceiling, not a quantum (most passes see one
+close, so `verify_batch: 4` would still file 1:1 and buy nothing), and
+holding unbounded means a shop that goes quiet three closes into a
+batch of four never verifies those three. Held closes need no new
+store: the watermark does not advance past one, so the pending set is
+exactly the closes it has not passed.
+
+Batching is not a coverage cut — the same work is verified, in one
+session instead of N; what N divides is the *filing* amplification.
+Measured (ranger-base-1t7r): half of verify runs file real follow-up
+work (`qa → code` = 0.49), so the 1:1 gate put the queue's branching
+factor at ρ = 1.14, 90% CI [1.02, 1.25], which grows without bound at
+any headcount; N=4 puts ρ at 0.875. The alternative rejected — dropping
+`code` from `verify_labels:` — gets the same ρ for free but buys it by
+cutting the catch, and the 0-reopens record is what this gate pays for.
+§5 stands unchanged: batched or not, the verify bead never holds any
+close.
 
 **4. PID `## Handoffs` sections say the shape, not just the name.** Each
 row becomes `who · label · what the bead must contain`, e.g. the
