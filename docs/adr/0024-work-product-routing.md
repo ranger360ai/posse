@@ -1,7 +1,7 @@
 # ADR 0024 — work product vs the public tree: the routing rule, and a prose wall at commit
 
-*Status: proposed 2026-08-27 · owner: architect · operator ratification
-pending (the question bead is cited from the proposing bead's comments) ·
+*Status: accepted 2026-08-27 (operator ratified; the D4 ceilings blessed
+as shipped example defaults) · owner: architect ·
 extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz)*
 
 ## Context
