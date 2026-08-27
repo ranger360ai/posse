@@ -1093,3 +1093,106 @@ func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing
 		t.Errorf("watermark = %s, want a-2's close %s", mark, want)
 	}
 }
+
+// More pending closes than one batch holds: the pass files EVERY full batch
+// it can, not just the first, and holds only the trailing remainder. The
+// filing loop's stride is the one piece of control flow batching added, and
+// nothing else exercises it past a single turn — a `break` where the code
+// wants `continue` would file batch one, hold six closes, and look correct
+// on every existing test.
+func TestVerifyBatchFilesEveryFullBatchInOnePass(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-time.Hour)
+	var beads []string
+	for i := 1; i <= 7; i++ {
+		beads = append(beads, vaClosed(fmt.Sprintf("a-%d", i), t0.Add(time.Duration(i)*time.Minute), 1))
+	}
+	repo := vaRepo(t, a, vaList(beads...), "verify_batch: 3")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0)
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 2 {
+		t.Fatalf("filed %d beads for 7 closes at verify_batch: 3, want 2 full batches (stderr: %s)", n, errs)
+	}
+	calls := bdCalls(t, fake)
+	for _, want := range []string{
+		"create verify 3 closes: a-1, a-2, a-3",
+		"create verify 3 closes: a-4, a-5, a-6",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("bd calls missing %q — a later full batch was skipped:\n%s", want, calls)
+		}
+	}
+	for _, line := range strings.Split(calls, "\n") {
+		if strings.Contains(line, "create ") && strings.Contains(line, "a-7") {
+			t.Errorf("the remainder was filed instead of held:\n%s", calls)
+		}
+	}
+	if !strings.Contains(out, "1 close(s) held for a verify batch of 3") {
+		t.Errorf("the trailing remainder is not named on the pass:\n%s", out)
+	}
+	// The watermark passed the six that were filed and stopped at the held
+	// one, or a-7 is never seen again.
+	mark, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+	if !ok {
+		t.Fatal("no watermark written")
+	}
+	if want := t0.Add(6 * time.Minute); !mark.Equal(want) {
+		t.Errorf("watermark = %s, want a-6's close %s — it must stop at the held close", mark, want)
+	}
+}
+
+// f7pk's acceptance clause verbatim: the batched bead carries all N closers,
+// close_reasons and commit lists, "the way the single-close one carries one".
+// The existing batch tests assert the markers; this asserts the CONTENTS —
+// a batch that rendered one close's section N times, or hoisted the first
+// close's commit trail over all of them, passes every one of those.
+func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := t.TempDir()
+	qblGit(t, repo, "init", "-q", "-b", "main")
+	qblGit(t, repo, "config", "user.email", "t@example.com")
+	qblGit(t, repo, "config", "user.name", "t")
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a"), 0o644)
+	qblGit(t, repo, "add", "-A")
+	qblGit(t, repo, "commit", "-q", "-m", "feat: the code half (a-1)")
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("b"), 0o644)
+	qblGit(t, repo, "add", "-A")
+	qblGit(t, repo, "commit", "-q", "-m", "ops: the devops half (a-2)")
+
+	closed := time.Date(2026, 8, 27, 9, 30, 0, 0, time.UTC)
+	later := closed.Add(time.Minute)
+	group := []BdIssue{
+		{ID: "a-1", Title: "code close", Assignee: "dinesh", Labels: []string{"code"},
+			CloseReason: "fixed", ClosedAt: &closed},
+		{ID: "a-2", Title: "devops close", Assignee: "gilfoyle", Labels: []string{"devops"},
+			CloseReason: "shipped", ClosedAt: &later},
+	}
+	desc := a.verifyGroupDescription(repo, group)
+
+	for _, want := range []string{
+		"- closer: dinesh", "- closer: gilfoyle",
+		"- close_reason: fixed", "- close_reason: shipped",
+		"- labels: code", "- labels: devops",
+		"feat: the code half (a-1)", "ops: the devops half (a-2)",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("batched description missing %q — a section lost its own close's field:\n%s", want, desc)
+		}
+	}
+	// And each commit trail sits under its OWN close, not hoisted to the top
+	// or duplicated: a-1's section ends before a-2's marker begins.
+	first := strings.Index(desc, "Verify the close of a-1 (")
+	second := strings.Index(desc, "Verify the close of a-2 (")
+	if first < 0 || second < 0 || first > second {
+		t.Fatalf("both markers must appear, a-1 before a-2:\n%s", desc)
+	}
+	if i := strings.Index(desc, "feat: the code half (a-1)"); i < first || i > second {
+		t.Errorf("a-1's commit trail is not inside a-1's section:\n%s", desc)
+	}
+	if i := strings.Index(desc, "ops: the devops half (a-2)"); i < second {
+		t.Errorf("a-2's commit trail leaked into an earlier section:\n%s", desc)
+	}
+}
