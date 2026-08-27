@@ -218,6 +218,22 @@ dirs:
 # have. Name your QA lane's PID here once it exists.
 # verify_labels: [code, devops]
 # verify_assignee: qa
+#
+# `verify_batch: N` files ONE verify bead per N closes instead of one per
+# close, carrying all N closers, close reasons and commit lists. Unset — the
+# default — is N=1, the 1:1 gate. It is not a coverage cut: the same work is
+# verified, in one session instead of N. What it divides is the FILING, and
+# that is the point — a verify run files follow-up work about half the time,
+# so at 1:1 each close begets roughly one more bead of work, which is how a
+# queue grows without bound at any headcount. Raise it if your queue's
+# branching factor is above 1.0; leave it alone if it is not.
+#
+# A PARTIAL batch is held for the closes that would fill it, so N stays a
+# quantum and does not become a ceiling — bounded by `verify_batch_age:`
+# (default 24h), after which it is filed as it stands, so a shop that goes
+# quiet mid-batch still gets its last closes verified.
+# verify_batch: 4
+# verify_batch_age: 24h
 
 # ─── plan-utilization guard ──────────────────────────────────────────────────
 # Percent of the subscription plan's rolling rate windows above which `posse

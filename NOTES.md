@@ -627,9 +627,9 @@ repo for beads that closed since that repo's watermark and carry a label in
 config `verify_labels:`. Each one without a `qa` dependent earns
 `bd create "verify: <title>" -l qa -a <verify_assignee> --deps
 discovered-from:<id>`, and `verify filed: <qid>` goes back as a comment on
-the close. The verify bead's description is what makes it workable: the
-closer, the `close_reason`, the commits `git log --grep <id>` finds in that
-repo, and the closer PID's `## Intents` "done when" row for the bead's
+the close (or one bead per N closes — `verify_batch:`, below). The verify
+bead's description is what makes it workable: the closer, the
+`close_reason`, the commits `git log --grep <id>` finds in that repo, and the closer PID's `## Intents` "done when" row for the bead's
 labels (`IntentDoneWhen` — a label matches an intent slug word, plural or
 not, so `bug` finds `fix-bugs`; no match is an absent line).
 
@@ -638,6 +638,26 @@ not, so `bug` finds `fix-bugs`; no match is an absent line).
   verify beads are assigned to). The verify bead inherits the closed bead's priority — a P1 fix
   earns a P1 verify — and is filed with bd actor `posse`, so `created_by`
   distinguishes harness-filed beads from a persona's own.
+- **Config `verify_batch: N`** (default 1 — the 1:1 gate, unchanged) files
+  ONE verify bead per N closes: title `verify N closes: <ids>`, one
+  description section per close (the same closer / `close_reason` / commits /
+  "done when" block the 1:1 bead carries), a `discovered-from` edge per
+  close, `verify filed: <qid>` commented back on all N, and the priority of
+  the batch's most urgent close. Coverage is unchanged — the same work is
+  verified, in one session instead of N. What is divided is the FILING
+  amplification, which is the point: `qa → code` is 0.49, so at 1:1 each
+  close begets about one more bead of work and the queue's branching factor
+  measured rho = 1.14, above 1.0 and therefore unbounded at any headcount
+  (ranger-base-1t7r; N=4 → 0.875, ~8.4 seats). N > 1 is the operator's call,
+  so the seed config ships it commented out and `TestSeedConfigArmsNothing`
+  pins that.
+- **A partial batch is held**, not filed short: filing every pass's leftovers
+  would make N a ceiling rather than a quantum, and since most passes see a
+  single close that is the 1:1 gate wearing a config key. The hold is bounded
+  by `verify_batch_age:` (default 24h) on the batch's OLDEST close, so a shop
+  that goes quiet three closes into a batch of four still gets those three
+  verified. Holding needs no new store: the watermark below does not advance
+  past a held close, so the pending set IS the closes it has not passed.
 - **Watermark** `RHQ_HOME/state/verify-after.<repo>` holds the newest
   `closed_at` the sweep has accounted for. **The first sight of a repo files
   nothing**: the watermark is seeded to that repo's newest close, because

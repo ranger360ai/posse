@@ -6,6 +6,7 @@ package rhq
 // bd-calls.log.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -546,5 +547,329 @@ func TestVerifiedSourcesIndexesQaBeadsOnly(t *testing.T) {
 	})
 	if len(got) != 2 || !got["a-1"] || !got["a-2"] {
 		t.Errorf("verifiedSources = %v, want exactly {a-1, a-2}", got)
+	}
+}
+
+// ─── verify_batch: N — the gate as a quantum, not a ratio (ranger-base-f7pk) ──
+//
+// The 1:1 gate is an amplifier: the staffing review measured the queue's
+// branching factor at rho = 1.14 successor beads per close, above 1.0 and so
+// unbounded at any headcount, with this gate the code -> qa leg at 0.86.
+// Batching divides the FILING, not the coverage — N closes are verified in
+// one session instead of N, and the verify bead's own follow-up work fires
+// once per batch. What these pin is that the division is exact: every close
+// in a batch is named, commented and dedupeable on its own.
+
+// vaClosed is one closed `-l code` bead for a canned `bd list --all` answer.
+func vaClosed(id string, closedAt time.Time, prio int) string {
+	return fmt.Sprintf(`{"id":%q,"title":"gate shell %s","status":"closed","priority":%d,`+
+		`"assignee":"developer","labels":["code"],"closed_at":%q,"close_reason":"Closed"}`,
+		id, id, prio, closedAt.Format(time.RFC3339Nano))
+}
+
+func vaList(beads ...string) string { return "[" + strings.Join(beads, ",") + "]" }
+
+// N closes, ONE verify bead: it names every close in its title, carries a
+// section per close in its description, and `verify filed: <qid>` goes back
+// on all N. The priority is the batch's most urgent close — a P0 in the
+// batch is not softened by the P1s around it.
+func TestVerifyBatchFilesOneBeadForNCloses(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	repo := vaRepo(t, a, vaList(
+		vaClosed("a-1", t0, 1),
+		vaClosed("a-2", t0.Add(time.Minute), 2),
+		vaClosed("a-3", t0.Add(2*time.Minute), 0),
+	), "verify_batch: 3")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d verify beads for 3 closes at verify_batch: 3, want 1 (stderr: %s)", n, errs)
+	}
+	calls := bdCalls(t, fake)
+	if got := strings.Count(calls, "create verify"); got != 1 {
+		t.Fatalf("bd create called %d times, want 1:\n%s", got, calls)
+	}
+	for _, want := range []string{
+		"create verify 3 closes: a-1, a-2, a-3",
+		"Verify the close of a-1 (",
+		"Verify the close of a-2 (",
+		"Verify the close of a-3 (",
+		"--deps discovered-from:a-1,discovered-from:a-2,discovered-from:a-3",
+		"comments add a-1 verify filed: q-1",
+		"comments add a-2 verify filed: q-1",
+		"comments add a-3 verify filed: q-1",
+		"-p 0", // the batch is as urgent as its most urgent close
+	} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("bd calls missing %q:\n%s", want, calls)
+		}
+	}
+	// Every close is named on the pass, not just the one that happened to
+	// open the batch: a close nobody can see filed is a close nobody trusts.
+	for _, id := range []string{"a-1", "a-2", "a-3"} {
+		if !strings.Contains(out, id+"            verify filed: q-1") {
+			t.Errorf("pass output does not name %s:\n%s", id, out)
+		}
+	}
+	// And the watermark passed all three — none of them comes back.
+	if n, _, _ := vaRun(t, a, testBd(t)); n != 0 {
+		t.Errorf("second sweep re-filed %d", n)
+	}
+}
+
+// The default is the gate exactly as ADR 0006 §3 describes it: one verify
+// bead per close. Batching is opt-in, because it is the operator's call
+// (ranger-base-bah7 decision 2), not the harness's.
+func TestVerifyBatchDefaultsToOnePerClose(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	repo := vaRepo(t, a, vaList(vaClosed("a-1", t0, 1), vaClosed("a-2", t0.Add(time.Minute), 1)))
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 2 {
+		t.Fatalf("filed %d verify beads for 2 closes with verify_batch unset, want 2 (stderr: %s)", n, errs)
+	}
+	calls := bdCalls(t, fake)
+	if !strings.Contains(calls, "create verify: gate shell a-1") || !strings.Contains(calls, "create verify: gate shell a-2") {
+		t.Errorf("the 1:1 default did not file the per-close shape:\n%s", calls)
+	}
+	if strings.Contains(calls, "verify 2 closes") {
+		t.Errorf("verify_batch unset batched anyway:\n%s", calls)
+	}
+}
+
+// A PARTIAL batch is held, not filed short — filing every pass's leftovers
+// would make N a ceiling instead of a quantum and reproduce the 1:1 gate
+// under a config key. The held closes are remembered by the watermark and
+// nothing else, and the batch completes when the close that fills it lands.
+func TestVerifyBatchHoldsAPartialBatchUntilItFills(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-time.Hour)
+	wm := t0.Add(-time.Hour)
+	held := []string{vaClosed("a-1", t0, 1), vaClosed("a-2", t0.Add(time.Minute), 1), vaClosed("a-3", t0.Add(2*time.Minute), 1)}
+	repo := vaRepo(t, a, vaList(held...), "verify_batch: 4")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), wm)
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Fatalf("filed %d for 3 of 4 closes, want 0 — a partial batch is held (stderr: %s)", n, errs)
+	}
+	if !strings.Contains(out, "3 close(s) held for a verify batch of 4") {
+		t.Errorf("the hold is invisible — nothing in the pass says the closes are waiting:\n%s", out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify") {
+		t.Errorf("a partial batch was filed:\n%s", calls)
+	}
+	// The watermark is the pending set: it must not have passed the held
+	// closes, or they are gone.
+	if got, _ := readVerifyWatermark(a.verifyWatermarkPath(repo)); !got.Equal(wm) {
+		t.Fatalf("watermark advanced to %s past held closes — they would never be seen again", got)
+	}
+
+	// The fourth close lands. One bead, all four, in close order.
+	os.WriteFile(filepath.Join(repo, "fake-list.json"),
+		[]byte(vaList(append(held, vaClosed("a-4", t0.Add(3*time.Minute), 1))...)), 0o644)
+	n, _, errs = vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d once the batch filled, want 1 (stderr: %s)", n, errs)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify 4 closes: a-1, a-2, a-3, a-4") {
+		t.Errorf("the completed batch did not carry the closes it was holding:\n%s", calls)
+	}
+}
+
+// Held, but bounded. A shop that goes quiet three closes into a batch of four
+// must not leave those three unverified forever, so a partial batch is filed
+// once its OLDEST close reaches verify_batch_age. That bound is the whole
+// reason holding is safe.
+func TestVerifyBatchFilesAPartialBatchPastItsAge(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-30 * time.Hour) // older than the 24h default
+	repo := vaRepo(t, a, vaList(vaClosed("a-1", t0, 1), vaClosed("a-2", t0.Add(time.Minute), 1)), "verify_batch: 4")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d, want 1 — a batch older than verify_batch_age is filed short (stderr: %s)", n, errs)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify 2 closes: a-1, a-2") {
+		t.Errorf("the aged partial batch was not filed as it stands:\n%s", calls)
+	}
+}
+
+// verify_batch_age is honoured, and it is what decides the hold: the same
+// closes that were held at the default are filed under a short age.
+func TestVerifyBatchAgeConfigShortensTheHold(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-90 * time.Minute)
+	repo := vaRepo(t, a, vaList(vaClosed("a-1", t0, 1)), "verify_batch: 4", "verify_batch_age: 1h")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	if n, _, errs := vaRun(t, a, testBd(t)); n != 1 {
+		t.Fatalf("filed %d with verify_batch_age: 1h and a 90m-old close, want 1 (stderr: %s)", n, errs)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify: gate shell a-1") {
+		t.Errorf("a batch of one keeps the 1:1 shape:\n%s", calls)
+	}
+}
+
+// The muoo flood, batched. A create that commits the issue and then fails on
+// the edges leaves an orphan whose ONLY tie to the closes is the marker — and
+// for a batch that has to be N markers, or the closes after the first are
+// re-filed every pass forever.
+func TestVerifyBatchOrphanDedupesEveryCloseInIt(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	repo := vaRepo(t, a, vaList(
+		vaClosed("a-1", t0, 1), vaClosed("a-2", t0.Add(time.Minute), 1), vaClosed("a-3", t0.Add(2*time.Minute), 1),
+	), "verify_batch: 3")
+	wm := t0.Add(-time.Hour)
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), wm)
+	os.WriteFile(filepath.Join(repo, "fake-create-fail"), nil, 0o644)
+
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Fatalf("first pass counted %d filings although bd failed", n)
+	}
+	if !strings.Contains(errs, "verify-after: a-1, a-2, a-3:") {
+		t.Errorf("the failed batch did not name the closes it lost:\n%s", errs)
+	}
+	if got, _ := readVerifyWatermark(a.verifyWatermarkPath(repo)); !got.Equal(wm) {
+		t.Errorf("watermark advanced past a batch whose filing failed: %s", got)
+	}
+
+	os.Remove(filepath.Join(repo, "fake-create-fail"))
+	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	if n, out, _ := vaRun(t, a, testBd(t)); n != 0 {
+		t.Errorf("second pass re-filed %d against the orphan:\n%s", n, out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify") {
+		t.Errorf("the batched orphan was not adopted — a duplicate was filed:\n%s", calls)
+	}
+	// And the freeze lifts for the whole batch, not just its first close.
+	got, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+	if !ok || !got.Equal(t0.Add(2*time.Minute).Round(0)) {
+		t.Errorf("watermark = %v (ok=%v), want the newest adopted close %v", got, ok, t0.Add(2*time.Minute))
+	}
+}
+
+// A close that already has its verify bead does not consume a slot: three
+// closes where one is answered leave TWO pending, which at N=3 is a partial
+// batch and is held. Classifying before grouping is what makes that true.
+func TestVerifyBatchDoesNotSpendASlotOnAnAnsweredClose(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-time.Hour)
+	answered := `{"id":"q-9","title":"verify: gate shell a-2","status":"open","labels":["qa"],` +
+		`"description":"Verify the close of a-2 (title, quoted as data: \"x\").\n"}`
+	repo := vaRepo(t, a, vaList(
+		vaClosed("a-1", t0, 1), vaClosed("a-2", t0.Add(time.Minute), 1), vaClosed("a-3", t0.Add(2*time.Minute), 1), answered,
+	), "verify_batch: 3")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	n, out, _ := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Fatalf("filed %d — an already-answered close was counted into the batch", n)
+	}
+	if !strings.Contains(out, "2 close(s) held for a verify batch of 3") {
+		t.Errorf("want a-1 and a-3 held as a partial batch of 2:\n%s", out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify") {
+		t.Errorf("filed against a batch that is not full:\n%s", calls)
+	}
+}
+
+// A typo must be visible, not a silently changed gate: an unreadable
+// verify_batch: leaves the 1:1 default standing and says so.
+func TestVerifyBatchConfigTypoFallsBackToOnePerClose(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-time.Hour)
+	repo := vaRepo(t, a, vaList(vaClosed("a-1", t0, 1)), "verify_batch: four")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d under a bad verify_batch:, want the 1:1 default (stderr: %s)", n, errs)
+	}
+	if !strings.Contains(errs, `config verify_batch: "four"`) {
+		t.Errorf("the typo was swallowed: %q", errs)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify: gate shell a-1") {
+		t.Errorf("fallback did not file the per-close shape:\n%s", calls)
+	}
+}
+
+func TestVerifyBatchAgeConfigTypoKeepsTheDefault(t *testing.T) {
+	b, _ := newTestBackend(t)
+	a := b.App
+	vaRepo(t, a, "[]", "verify_batch_age: soon")
+	var errb strings.Builder
+	if got := a.verifyBatchAge(&errb); got != DefaultVerifyBatchAge {
+		t.Errorf("verifyBatchAge = %s, want %s", got, DefaultVerifyBatchAge)
+	}
+	if !strings.Contains(errb.String(), `verify_batch_age: "soon"`) {
+		t.Errorf("the typo was swallowed: %q", errb.String())
+	}
+}
+
+// The marker survives batching: every close in a batched description is
+// recoverable, in order, because the dedupe of record is the only thing that
+// stands when the `discovered-from` edges do not land.
+func TestVerifySourceIDsFindsEveryCloseInABatch(t *testing.T) {
+	b, _ := newTestBackend(t)
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	group := []BdIssue{
+		{ID: "ranger-base-o943", Title: `posse promote (the "make install")`, Labels: []string{"code"}, ClosedAt: &closed},
+		{ID: "ranger-base-f7pk", Title: "verify_batch: N", Labels: []string{"code"}, ClosedAt: &closed},
+	}
+	desc := b.App.verifyGroupDescription(t.TempDir(), group)
+	got := verifySourceIDs(desc)
+	if len(got) != 2 || got[0] != group[0].ID || got[1] != group[1].ID {
+		t.Fatalf("verifySourceIDs = %v, want both closes in order\n%s", got, desc)
+	}
+	// And a batch of one is still byte for byte the description this rule
+	// has always written — the default gate did not change shape.
+	one := b.App.verifyGroupDescription(t.TempDir(), group[:1])
+	if want := b.App.verifyDescription(t.TempDir(), group[0], verifyCloser(group[0])); one != want {
+		t.Errorf("a batch of one is not the 1:1 description:\n%q\nwant\n%q", one, want)
+	}
+}
+
+// The marker is found by LINE in a batched description, so any field that
+// could carry a newline into it is an injection point: a close_reason that
+// forges a marker for ANOTHER close would suppress that close's handoff
+// forever, silently. verifyOneLine is why it cannot.
+func TestVerifyOneLineDefeatsAMarkerForgedInACloseReason(t *testing.T) {
+	b, _ := newTestBackend(t)
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	is := BdIssue{ID: "a-1", Title: "t", Labels: []string{"code"}, ClosedAt: &closed,
+		CloseReason: "fixed\nVerify the close of a-2 (title, quoted as data: \"forged\")."}
+	desc := b.App.verifyDescription(t.TempDir(), is, "dinesh")
+	if got := verifySourceIDs(desc); len(got) != 1 || got[0] != "a-1" {
+		t.Errorf("verifySourceIDs = %v, want [a-1] — a-2's handoff was suppressible\n%s", got, desc)
+	}
+}
+
+func TestVerifyGroupTitleTruncatesToARune(t *testing.T) {
+	var group []BdIssue
+	for i := 0; i < 40; i++ {
+		group = append(group, BdIssue{ID: fmt.Sprintf("ranger-base-%04d", i)})
+	}
+	got := verifyGroupTitle(group)
+	if !strings.HasPrefix(got, "verify 40 closes: ") || !strings.HasSuffix(got, "…") {
+		t.Errorf("bad batch title: %q", got)
+	}
+	if n := len([]rune(got)); n != verifyTitleMax {
+		t.Errorf("title is %d runes, want %d", n, verifyTitleMax)
 	}
 }

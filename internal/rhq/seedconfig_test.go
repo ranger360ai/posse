@@ -42,6 +42,10 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		"operator", "coordinator", "default_persona",
 		"default_runtime", "default_tier", "default_engine", "cage_image",
 		"verify_assignee",
+		// verify_batch: is the gate's ratio and therefore the operator's
+		// call (ranger-base-bah7 decision 2): a seed that shipped N>1 would
+		// change how much gets verified per bead without anyone deciding to.
+		"verify_batch", "verify_batch_age",
 		"plan_guard_5h", "plan_guard_7d", "plan_guard_blind_max",
 		"plan_guard_overflow", "plan_guard_overflow_cap",
 		"budget_pass", "budget_day",
