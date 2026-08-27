@@ -1,12 +1,14 @@
 package rhq
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseShimRules(t *testing.T) {
@@ -1107,6 +1109,185 @@ func TestGateShellRealShellResolution(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(gatesDir, "shell")); err != nil {
 		t.Errorf("shell dir: %v", err)
 	}
+}
+
+// ranger-base-f0ay — the fleet freeze of 2026-08-27. A rendered wrapper is
+// installed as gates/<persona>/shell/zsh: shell basename, ordinary
+// executable file. Every test realShell applied to $SHELL was true of one,
+// so a render running while $SHELL was another persona's wrapper captured
+// that wrapper as REAL. Wrappers chained persona-to-persona; on 08-27 the
+// chain closed into a two-node cycle (two personas each other's REAL) and
+// every spawn entering it exec-looped, growing the -c string ~320 B/hop
+// until E2BIG ~40 minutes later. The symptom was every Bash call in every
+// session hanging with zero bytes.
+//
+// The three renders below are that incident, in order: an honest one, the
+// chain link, then the render that closed the cycle. No platform path is
+// asserted (ranger-base-gaf/2cv: a hardcoded /bin/zsh here fails on Linux
+// runners either way) — the contract is "not a wrapper, and really there".
+func TestGateShellNeverChainsToAnotherWrapper(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+
+	// A zsh that is really a shell, on PATH and outside every gates dir —
+	// the answer the search must fall through to on any platform.
+	pathDir := t.TempDir()
+	honest := filepath.Join(pathDir, "zsh")
+	if err := os.WriteFile(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", pathDir)
+
+	realOf := func(t *testing.T, wrapper string) string {
+		t.Helper()
+		b, err := os.ReadFile(wrapper)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := regexp.MustCompile(`(?m)^REAL='(.*)'$`).FindStringSubmatch(string(b))
+		if m == nil {
+			t.Fatalf("no REAL= line in %s:\n%s", wrapper, b)
+		}
+		return m[1]
+	}
+	render := func(t *testing.T, persona, shell string) string {
+		t.Helper()
+		t.Setenv("SHELL", shell)
+		_, _, w, err := a.RenderGates(persona, []string{"Bash(git push:*)"})
+		if err != nil {
+			t.Fatalf("render %s under $SHELL=%s: %v", persona, shell, err)
+		}
+		real := realOf(t, w)
+		if isGateWrapper(real) {
+			t.Fatalf("%s's REAL is a gate wrapper (%s) — this is the chain that wedged the fleet", persona, real)
+		}
+		if _, err := os.Stat(real); err != nil {
+			t.Errorf("%s's REAL must be a shell that is really there: %v", persona, err)
+		}
+		return w
+	}
+
+	// 1. An honest render: $SHELL is a shell, and it wins.
+	monica := render(t, "monica", honest)
+	if got := realOf(t, monica); got != honest {
+		t.Errorf("an honest $SHELL still wins: REAL=%s, want %s", got, honest)
+	}
+	// 2. The chain link: a render whose $SHELL is another persona's
+	//    wrapper. It must refuse it and fall through to the search.
+	jianYang := render(t, "jian-yang", monica)
+	if got := realOf(t, jianYang); got != honest {
+		t.Errorf("a wrapper as $SHELL must fall through to the PATH search: REAL=%s, want %s", got, honest)
+	}
+	// 3. The render that closed the cycle on 08-27 — monica again, this
+	//    time under jian-yang's wrapper, with monica already jian-yang's
+	//    REAL in the buggy world.
+	render(t, "monica", jianYang)
+
+	// The spawn canary the RCA asks for, run where a cycle would now be:
+	// under the bug, monica and jian-yang name each other and this hangs
+	// until E2BIG. Time-bounded, so a regression fails the suite instead
+	// of wedging it — which is exactly how the incident presented.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, monica, "-c", "echo canary").CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("spawn through the gate shell did not terminate — the wrappers are chained: %q", out)
+	}
+	if err != nil || !strings.Contains(string(out), "canary") {
+		t.Errorf("gate shell must run its command: %v %q", err, out)
+	}
+}
+
+// The marker is what makes a wrapper recognizable when the path cannot say
+// so — a second RHQ_HOME, or the cage render at CageStateRoot. It lives in
+// the script, so it can drift out of it; this is the pin. The content test
+// is exercised on a copy OUTSIDE any gates dir, since inside one the path
+// test would answer first and prove nothing.
+func TestGateShellScriptCarriesItsMarker(t *testing.T) {
+	if !strings.Contains(gateShellScript, gateShellMarker) {
+		t.Fatalf("gateShellScript must carry %q — isGateWrapper reads it to tell a wrapper from a shell", gateShellMarker)
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	t.Setenv("SHELL", "")
+	_, _, wrapper, err := a.RenderGates("developer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isGateWrapper(wrapper) {
+		t.Errorf("a rendered wrapper must be recognized in place: %s", wrapper)
+	}
+	b, err := os.ReadFile(wrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(t.TempDir(), "zsh") // no `gates` path element
+	if err := os.WriteFile(moved, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !isGateWrapper(moved) {
+		t.Errorf("a wrapper must be recognized by content wherever it sits: %s", moved)
+	}
+	if isGateWrapper(filepath.Join(t.TempDir(), "zsh")) {
+		t.Error("a missing file is not a wrapper")
+	}
+	plain := filepath.Join(t.TempDir(), "zsh")
+	if err := os.WriteFile(plain, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if isGateWrapper(plain) {
+		t.Errorf("an ordinary shell is not a wrapper: %s", plain)
+	}
+}
+
+// The render-time assertion: whatever resolved REAL, a wrapper is never
+// written naming another one. realShell refuses first, so this is the belt
+// — it is what would have turned the 08-27 chain into a failed launch
+// instead of a silent link, and it holds even if some later resolution
+// path learns a new way to hand back a wrapper.
+func TestGateShellRenderRefusesAWrapperAsReal(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	t.Setenv("SHELL", "")
+	gatesDir, binDir, wrapper, err := a.RenderGates("developer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(wrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := a.GatesDir("qa")
+	_, err = writeGateShell("qa", other, filepath.Join(other, "bin"), wrapper, "zsh")
+	if err == nil {
+		t.Fatal("a render whose REAL is a gate wrapper must be refused, not written")
+	}
+	for _, want := range []string{"qa", wrapper, "ranger-base-f0ay"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q so an operator can act on it: %v", want, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(other, "shell")); err == nil {
+		t.Error("a refused render must write nothing")
+	}
+	// Asserted before the dir is cleared: refusing a render must not also
+	// cost the persona the working wrapper it already had.
+	if after, err := os.ReadFile(wrapper); err != nil || string(after) != string(before) {
+		t.Errorf("a refused render must leave the existing wrapper alone: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(gatesDir, "bin")); err != nil {
+		t.Errorf("bin dir: %v", err)
+	}
+	_ = binDir
 }
 
 // rangerhq-lmq9. The L1 half of the shared-index wall: a NEGATIVE rule.

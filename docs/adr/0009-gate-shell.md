@@ -1,7 +1,8 @@
 # ADR 0009 — The gate shell: L1 survives a runtime that re-execs a login shell
 
 *Status: accepted 2026-08-18 · owner: architect · amends ADR 0002 §3–4 ·
-amended 2026-08-18 (§1 guard form, §4 rc files)*
+amended 2026-08-18 (§1 guard form, §4 rc files), 2026-08-27 (§1 REAL
+must resolve outside every gates dir — ranger-base-f0ay)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -45,9 +46,23 @@ launch, next to the shims, the launcher renders
 `RHQ_HOME/state/gates/<persona>/shell/<basename>` — a POSIX `sh` script
 whose only job is `exec <real shell> "$@"` after guarding PATH:
 
-- `<real shell>` = `$SHELL` if its basename is `bash` or `zsh`, else
-  `/bin/zsh`; the wrapper is **named with that basename** so a runtime
-  that picks its snapshot dialect from the name (grok does) picks right.
+- `<real shell>` = `$SHELL` if its basename is `bash` or `zsh` **and it
+  is not itself a rendered gate wrapper**, else the first `zsh`/`bash`
+  found on PATH outside every gates dir, else `/bin/sh`; the wrapper is
+  **named with that basename** so a runtime that picks its snapshot
+  dialect from the name (grok does) picks right.
+  **A wrapper's `REAL` must resolve outside every gates dir**, and a
+  render that cannot satisfy that is refused rather than written. A
+  wrapper is installed as `shell/zsh`, so it has a shell's basename and
+  stats like one: while `<real shell>` was chosen by name and stat alone,
+  any render running under a gated context — dispatch's own relaunch
+  pass, measured — captured the *calling* persona's wrapper as `REAL`,
+  and wrappers chained persona-to-persona. On 2026-08-27 the chain closed
+  into a two-node cycle: every spawn entering it `exec`-looped, prepending
+  its guard to the `-c` string each hop until `E2BIG` ~40 minutes later,
+  and every Bash call in every session hung with zero output for two
+  hours. The refusal is at both arms of the resolution and again at the
+  render (ranger-base-f0ay).
 - It walks argv the way a shell does (leading `-x`/`+x` words are options;
   `-o/-O/+o/+O/--rcfile/--init-file` consume a value; `--` ends them). If
   a `-c` was seen, the **first operand is the command string** — Claude's

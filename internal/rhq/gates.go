@@ -55,6 +55,7 @@ package rhq
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -499,17 +500,29 @@ exec "$REAL" "$@"
 // dead gate shell, which is a shell verb that is not refused. Resolution
 // happens where the binaries are, on both sides of the boundary; the host
 // keeps its old answer because $SHELL is set there and /bin/zsh exists.
+//
+// A candidate that is itself a rendered wrapper is REFUSED, at both arms.
+// This is the whole of ranger-base-f0ay: a wrapper is installed as
+// state/gates/<persona>/shell/zsh, so it has a shell's basename and stats
+// like one, and every property this function used to test was true of it.
+// A render running while $SHELL was another persona's wrapper therefore
+// captured that wrapper as REAL, and wrappers chained persona-to-persona
+// instead of ending at a shell. On 2026-08-27 the chain closed into a
+// two-node cycle and every spawn entering it exec-looped, each hop
+// prepending its PRE guard to the -c string until E2BIG ~40 minutes later:
+// the fleet-wide Bash wedge. Refusing costs nothing when $SHELL is honest
+// and falls through to the search, which sheds gates dirs already.
 func realShell(binDir string) (real, base string) {
 	if s := os.Getenv("SHELL"); s != "" {
 		switch b := filepath.Base(s); b {
 		case "bash", "zsh":
-			if st, err := os.Stat(s); err == nil && !st.IsDir() {
+			if st, err := os.Stat(s); err == nil && !st.IsDir() && !isGateWrapper(s) {
 				return s, b
 			}
 		}
 	}
 	for _, b := range []string{"zsh", "bash"} {
-		if p := resolveOutside(b, binDir); p != "" {
+		if p := resolveOutside(b, binDir); p != "" && !isGateWrapper(p) {
 			return p, b
 		}
 	}
@@ -519,10 +532,68 @@ func realShell(binDir string) (real, base string) {
 	return "/bin/sh", "sh"
 }
 
+// gateShellMarker is the wrapper's own signature, carried on its second
+// line. Content is the only thing that tells a wrapper apart from the
+// shell it stands in front of: it is NAMED zsh on purpose, and it is a
+// readable executable file, so name and stat both say "shell". The marker
+// travels with the file — across a second RHQ_HOME, and across the cage
+// render at CageStateRoot, neither of which is under this host's state
+// dir. TestGateShellScriptCarriesItsMarker pins it to the script.
+const gateShellMarker = "posse gate shell"
+
+// isGateWrapper reports whether p is one of our rendered gate shells and
+// so must never be exec'd by another one (ranger-base-f0ay).
+//
+// Two tests, either sufficient, because they fail in opposite directions:
+// the path test recognizes a wrapper whose content we cannot read, and the
+// content test recognizes one that a second RHQ_HOME put somewhere this
+// process would not think to look. A `gates` PATH ELEMENT is how
+// PathOutsideGates already spells "ours", and it is the same test — so
+// /opt/gateskeeper/bin/zsh is not one of ours here either. False on error:
+// an unreadable candidate is refused a line later by os.Stat anyway, and
+// the render-time assertion is the backstop for whatever slips past.
+func isGateWrapper(p string) bool {
+	if p == "" {
+		return false
+	}
+	sep := string(filepath.Separator)
+	if strings.Contains(p, sep+"gates"+sep) {
+		return true
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head, _ := io.ReadAll(io.LimitReader(f, 512))
+	return strings.Contains(string(head), gateShellMarker)
+}
+
 // renderGateShell writes gates/<persona>/shell/<basename> and returns its
 // path. The dir is cleared first, so a wrapper left by a different $SHELL
 // does not linger.
 func renderGateShell(persona, gatesDir, binDir string) (string, error) {
+	real, base := realShell(binDir)
+	return writeGateShell(persona, gatesDir, binDir, real, base)
+}
+
+// writeGateShell is renderGateShell's second half, split off so the
+// invariant below can be asserted against a REAL of the test's choosing —
+// realShell alone refuses the wrapper it is handed, and a defense that
+// only its own caller can reach is a defense nothing pins.
+//
+// THE INVARIANT: a wrapper's REAL must resolve OUTSIDE every gates dir.
+// Refusing the render is the loud failure ADR 0009 asks for everywhere
+// else in this file — the launch fails, someone reads why. Writing the
+// chain link instead is silent until the day it closes a cycle and takes
+// the fleet down for two hours with zero bytes of output (2026-08-27).
+// It is asserted before the dir is cleared: a render this refuses must
+// not also be the thing that removes a working wrapper.
+func writeGateShell(persona, gatesDir, binDir, real, base string) (string, error) {
+	if isGateWrapper(real) {
+		return "", fmt.Errorf("refusing to render %s's gate shell: REAL would be a gate wrapper (%s), not a shell — wrappers must exec a real shell, never each other (ADR 0009 §1; ranger-base-f0ay). $SHELL=%s: this render is running under a gated context",
+			persona, real, os.Getenv("SHELL"))
+	}
 	dir := filepath.Join(gatesDir, "shell")
 	if err := os.RemoveAll(dir); err != nil {
 		return "", err
@@ -530,7 +601,6 @@ func renderGateShell(persona, gatesDir, binDir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	real, base := realShell(binDir)
 	script := strings.NewReplacer(
 		"__PERSONA__", persona,
 		"__GATES_BIN__", shQuote(binDir),
