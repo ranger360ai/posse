@@ -3,7 +3,8 @@
 *Status: accepted 2026-08-27 · owner: richard · amends ADR 0011 (the
 routing rule and the pass's caps); the ADR 0006 §3 wording change for
 the batched verify gate is tracked separately (ranger-base-bh7q) ·
-ranger-base-4ur5*
+ranger-base-4ur5 · §2 amended 2026-08-27: seat selection binds every
+launcher, not only the pass (ranger-base-f8m9)*
 
 ## Context
 
@@ -48,6 +49,32 @@ questions it currently conflates:
   gwart; dinesh busy)" — the audit line ranger-base-2yj5 asked for.
 - `--persona X` restricts seating to X: a bead whose lane contains X
   may seat only there, others are skipped as today.
+- *Which launchers?* (amended 2026-08-27, ranger-base-f8m9) **All of
+  them.** The original text said "the fire loop", and `LaunchBead` (the
+  cockpit's `d`) kept taking Route's single head — an operator pressing
+  `d` on an unassigned code bead always got the lane's first name and a
+  "working — not dispatched" refusal while other seats sat free. A bead
+  with NO HOLDER is seated availability-first wherever it launches from:
+  LaunchBead answers WHICH SEAT with the same walk the pass uses —
+  laneFor, then seatFor under the launcher lock it already holds, empty
+  bench, no filter. All seats busy → the lane-busy line replaces the
+  one-persona refusal. This also puts §4 in front of `d` for fresh
+  launches: the old path read only the target session's status, so `d`
+  could fan a persona two-wide by launching a second bead at a persona
+  working elsewhere in the repo — the same class as a cap the pass
+  honours but the `d` key walks past (the Dial E guard in the same
+  function), and it closes the same way.
+- *`d` on a holder never reseats.* An in-progress bead has no seat
+  question: `d` there is resume, and the seat is the HOLDER — the
+  assignee's joined session, exactly as today (an assigned bead is a
+  lane of one by §2.1, so this is structure, not a carve-out). When an
+  unclaim erased the assignee under a live run, the record answers
+  before availability does: narrow the lane to the seat whose run
+  record (`bead:`, ADR 0011 §3) names this bead; a hit is a lane of
+  one. Only no assignee AND no record seats by availability. The guards
+  after seating keep their bead-level classification (crew-held,
+  settled holder, prompt grace — seatFor's own comment): falling
+  through any of them hands one bead to a second persona.
 
 Name order is a TIEBREAK, not a priority, and that is why it is enough:
 under availability-first it decides only who takes the first bead when
@@ -123,6 +150,26 @@ N stays 1 until the operator takes ranger-base-bah7 decision 2.
 - ranger-base-2yj5 is retargeted to implement §2 (its generic-PID
   premise died with the retirement); a placement bead for §3's pin goes
   to monica; the §5 numbers go to the operator as a question bead.
+- (f8m9) The cockpit's ready-work row keeps saying `unassigned`
+  (MEASURED: issueCols renders the assignee or that word; no cockpit
+  surface ever rendered a routed prediction — holderSession joins only
+  IN PROGRESS rows, on assignee). That display is §3 in miniature: a
+  seat predicted at render time is filing-time selection in a smaller
+  window. Dispatch answers at `d`, and the result line's session name
+  carries the persona who won.
+- (f8m9) Accepted cost: two `d` presses inside PromptGrace on two beads
+  of one lane may refuse the second instead of overflowing — herdr's
+  lag hides the first launch from personaActive, then the grace guard
+  refuses the chosen seat. Same classification the pass gives the grace
+  (a bead skip, not a seat skip); the retry lands once herdr catches
+  up. Window ASSUMED narrow (title-spinner latency, the pass lives with
+  the same lag).
+- (f8m9) `d`-resume on a holder's idle session while that persona works
+  another bead still re-prompts — the operator's hand can run a persona
+  two-wide on the RESUME path only. Known, out of this amendment's
+  scope: whether §4 should bind an explicit resume is its own decision,
+  and closing it here would change resume semantics nobody complained
+  about.
 
 ## Alternatives rejected
 
@@ -151,3 +198,19 @@ N stays 1 until the operator takes ranger-base-bah7 decision 2.
 - **A lane registry (config `lanes:`).** A second copy of what PID
   labels already say, and the two would drift; the roster is the lane
   table.
+- **(f8m9) Reading (b): `d` launches the persona the row displayed.**
+  Priced against the display, and the display shows no persona for
+  exactly the beads this amendment moves (MEASURED: the ready row says
+  `unassigned`). For the rows that DO show one — IN PROGRESS holders,
+  assigned beads — (b) is already enforced structurally (lane of one,
+  plus the run-record narrow). Choosing (b) for unassigned rows would
+  preserve a prediction the UI never made.
+- **(f8m9) A lane column in the ready-work row** ("code·3" instead of
+  `unassigned`). A roster walk per refresh to predict what dispatch
+  decides one keypress later, and it evicts the assignment-state signal
+  the column exists to show. Nothing needs it to act (COST ASSUMED
+  small; rejected on value, not cost).
+- **(f8m9) Grace-as-seat-skip in LaunchBead** (seed the bench from the
+  prompt records so a just-prompted seat overflows). Diverges from the
+  pass's own classification of the grace, for a window herdr closes by
+  itself; one behaviour, honestly refused, beats two.
