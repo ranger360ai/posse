@@ -6,7 +6,10 @@ promoted set (ranger-base-h56a) · amended 2026-08-26: §3's clean gate
 is the promoted paths, not the whole tree (ranger-base-yb9j, built in
 ranger-base-o943) · amended 2026-08-27: verification item 5 verified
 live, marker dropped, cwd-elsewhere boundary clause added
-(ranger-base-4v1d) · execution rides with the rhq
+(ranger-base-4v1d) · amended 2026-08-27: §3's invariant re-attributed —
+the commit read, not the clean gate, keeps bytes == SHA
+(ranger-base-znma via ranger-base-70ci; the set half is open in
+ranger-base-70ry) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · informs 0002
 §3, 0012 D3-C, 0014 §3*
 
@@ -114,10 +117,42 @@ the same way twice:
   `personas/` (§5 — memory, appended at session end, deliberately
   unpromoted) are dirty in ordinary operation, and neither is prose a
   promote puts in force; a gate that cannot be passed on the day of
-  the window gets bypassed with a flag, which is worse. The narrow
-  gate keeps the property 5na asked for exactly: the promoted bytes
-  equal the bytes at the recorded SHA — uncommitted *prose* can never
-  be in force.
+  the window gets bypassed with a flag, which is worse.
+  *(Re-attributed 2026-08-27, ranger-base-znma via ranger-base-70ci —
+  as amended by yb9j this bullet ended by crediting the gate with the
+  invariant: "the promoted bytes equal the bytes at the recorded SHA".
+  Wrong, and znma is the proof: `git update-index --skip-worktree` or
+  `--assume-unchanged` makes `git status --porcelain
+  --ignored=matching` report a promoted path clean while its
+  working-tree bytes differ from the blob. The gate enumerates what
+  git will report; it cannot cover what git has been told not to
+  report. It stays for the honest question it CAN answer — an
+  uncommitted edit git does report is a hard refusal naming the path,
+  because silently promoting the older committed bytes would be its
+  own kind of lie. The invariant itself lives in the Mechanism bullet
+  below.)*
+- **Mechanism** *(added 2026-08-27, ranger-base-znma)*: promote does
+  not read the constitution working tree's bytes at all.
+  `promotedAtCommit` (`internal/rhq/promote.go`) reads the blobs at
+  the recorded SHA — `git ls-tree -r -z` for the oids and modes, one
+  `git cat-file --batch` for the bytes — and the manifest's sha256 is
+  taken over those bytes. *This*, not the clean gate, keeps the
+  property 5na asked for: the promoted bytes equal the bytes at the
+  recorded SHA, so uncommitted prose can never be in force. The
+  invariant is structural, not gated. Two facts the mechanism carries:
+  a promoted file's mode at the home is git's — 0644, or 0755 for a
+  committed exec bit; git records no other — and `git archive` is
+  explicitly *not* the tool, because export-subst and eol filters
+  would rewrite bytes the manifest attests to. **Scope, said
+  plainly** (ranger-base-echz): this makes the promoted *bytes* equal
+  the bytes at the SHA; it does not yet make the promoted *set* equal
+  the set at the SHA. `promotePathspecs` still stats the working tree
+  to decide which promoted paths to read, so a promote can record a
+  full SHA over a strict subset of it — one `git sparse-checkout` in
+  the constitution repo takes ratified prose out of force under a SHA
+  that still carries it, manifest born matching. That half is
+  ranger-base-70ry; until it lands, §3's invariant claims per-file
+  bytes, not set completeness.
 - **Manifest**: promote records `{source repo path, git SHA, sha256
   per promoted file}` under the home *beside* the promoted copy (not
   under `state/`, which stays session-writable). It prints
@@ -400,3 +435,6 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | whole-tree clean is unsatisfiable in the live constitution repo (`.beads/issues.jsonl` and `personas/…/ORDERS.md` dirty in ordinary operation) | **MEASURED** 2026-08-26 (`git status --porcelain`, the hour o943 was built; recorded on ranger-base-yb9j) |
 | verification item 5 (cwd elsewhere: constitution refused, own memory allowed, another's refused) under the built §3 profile | **MEASURED** 2026-08-27, twice (cpyb close under sandbox-exec; 0djg fresh probe home) · pinned in `seatbeltconstitution_qa_test.go` (7 tests: 5 from cpyb, 2 from a86ec3f) |
 | a seatbelt PID not denying Edit/Write, cwd covering the home, holds the constitution writable; the `posse gates` verdict is consulted by nothing on the launch path | **MEASURED** 2026-08-27 (ranger-base-h15, laurie's probe; sole caller of ConstitutionGrants is `cmd/posse/main.go:960`) |
+| `update-index --skip-worktree` (and `--assume-unchanged`) defeats the §3 clean gate: status reports the promoted path clean while its working-tree bytes differ from the blob | **MEASURED** 2026-08-27 (ranger-base-znma repro) |
+| promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/rhq/promote.go`, znma fix; runbook `docs/runbooks/home-cutover.md` agrees) |
+| the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
