@@ -19,6 +19,33 @@ trap 'docker rm -f posse-probe-proxy >/dev/null 2>&1 || true
       docker rmi -f $IMG >/dev/null 2>&1 || true
       rm -rf "$WORK"' EXIT
 
+# ----------------------------------- 0. host precondition (bead rangerhq-bnvk)
+# Probe 2's leak detector below is only meaningful stated together with this
+# number. apple/container#2062 leaks outbound TCP off a hostOnly network
+# *because the macOS host NATs it* — and Apple's own maintainer could not
+# reproduce the leak with net.inet.ip.forwarding at its macOS default of 0
+# (issue thread, 2026-08-05). So a vmnet-backed engine measured on a host with
+# forwarding=0 answers 000 on the raw-IP line and looks isolated when nothing
+# about the engine has changed. That is a false pass in this instrument, not a
+# finding. Read the VALUE, not the exit status: a non-numeric answer has to
+# land in "unknown", never be mistaken for "off".
+FWD=$(sysctl -n net.inet.ip.forwarding 2>/dev/null || true)
+case "$FWD" in ''|*[!0-9]*) FWD=unknown ;; esac
+echo "== 0. host precondition: net.inet.ip.forwarding = $FWD =="
+case "$FWD" in
+  0)
+    echo "   docker: UNAFFECTED — its --internal network is enforced inside the"
+    echo "   Linux VM, not by macOS vmnet, so probe 2 stands exactly as written."
+    echo "   A VMNET-BACKED ENGINE (apple/container) MEASURED HERE IS VOID: at"
+    echo "   forwarding=0 the raw-IP line answers 000 for the HOST's reason, not"
+    echo "   the engine's. Re-measure with forwarding=1, or do not claim a pass." ;;
+  unknown)
+    echo "   WARNING: sysctl unreadable — treat probe 2's verdict as unqualified." ;;
+  *)
+    echo "   forwarding is ON: the apple/container#2062 leak condition is live on"
+    echo "   this host, so a vmnet-backed engine measured now is a fair test." ;;
+esac
+
 # ---------------------------------------------------------------- image
 cat > "$WORK/Dockerfile" <<'DOCK'
 FROM node:22-slim
