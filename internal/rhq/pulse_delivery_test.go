@@ -1,6 +1,6 @@
 package rhq
 
-// Delivery half of the pulse (ADR 0013 §3-4, rangerhq-44w1): prompt on a
+// Delivery half of the pulse (ADR 0027 §3-4, rangerhq-44w1): prompt on a
 // new fingerprint, suppress inside renag, renag doubling, idle-only skip,
 // no crew mark written. Builds on rangerhq-4ish's ShopCheck and fixtures
 // (pulse_test.go); pulseOnce is called directly with a controlled clock
@@ -213,7 +213,7 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 	}
 }
 
-// ADR 0008 §2's carve-out amended by ADR 0013: the pulse may reach a
+// ADR 0008 §2's carve-out amended by ADR 0027: the pulse may reach a
 // crew-marked session — the operator's own conversation — and must set no
 // crew mark doing it, unlike every other prompt path (personaActive,
 // crewHeld) which treats a crew session as if it did not exist.

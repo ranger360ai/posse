@@ -58,7 +58,8 @@ Other beads of that persona/repo dispatch normally into their own
 per-bead sessions — under Dial F the "fleet twin" is automatic and needs
 no `-fleet` suffix.
 
-*Amended 2026-08-21 (ADR 0013):* one named exception — the watch loop's
+*Amended 2026-08-21 (ADR 0027, monica pulse — designed as "0013", file
+committed 2026-08-27 under the free number):* one named exception — the watch loop's
 **pulse** may prompt the `pulse_persona` session (config; typically the
 coordinating persona) even when crew-marked: idle-only, `Pulse
 check`-prefixed, harness-originated via the §1 `RHQ_PERSONA` seam so it

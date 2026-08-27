@@ -1,6 +1,6 @@
 package rhq
 
-// The pulse's sensing half (ADR 0013 §1-2, rangerhq-4ish): condition set,
+// The pulse's sensing half (ADR 0027 §1-2, rangerhq-4ish): condition set,
 // fingerprint, arm switch. Delivery (prompting monica) is rangerhq-44w1;
 // its tests live in pulse_delivery_test.go.
 
@@ -61,7 +61,7 @@ func TestLoadPulseConfigBadInterval(t *testing.T) {
 }
 
 // blockedSession creates a live posse session for persona and marks its
-// workspace's herdr agent status blocked, the fixture ADR 0013 §1's
+// workspace's herdr agent status blocked, the fixture ADR 0027 §1's
 // condition (a) reads.
 func blockedSession(t *testing.T, b *HerdrBackend, fake, name, persona string) {
 	t.Helper()

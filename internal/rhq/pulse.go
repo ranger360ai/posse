@@ -1,7 +1,7 @@
 package rhq
 
 // The pulse: a shop-check ticker inside the dispatch --watch process (ADR
-// 0013, rangerhq-wxd). Sensing (§1-2, rangerhq-4ish) computes the condition
+// 0027, rangerhq-wxd). Sensing (§1-2, rangerhq-4ish) computes the condition
 // set and fingerprints it to state/pulse.yaml. Delivery (§3-4, rangerhq-44w1)
 // decides, on a non-empty set, whether it is due — new fingerprint, or an
 // unchanged one past its renag backoff — and if so prompts pulse_persona's
@@ -30,7 +30,7 @@ import (
 const DefaultPulsePersona = "monica"
 
 // DefaultPulseRenag and DefaultPulseRenagMax are the renag backoff bounds
-// (ADR 0013 §3) when pulse_renag:/pulse_renag_max: are unset: re-prompt an
+// (ADR 0027 §3) when pulse_renag:/pulse_renag_max: are unset: re-prompt an
 // unchanged condition set after 30m, doubling per repeat, capped at 4h.
 const (
 	DefaultPulseRenag    = 30 * time.Minute
@@ -39,7 +39,7 @@ const (
 
 // PulseConfig is the pulse_* config family, autostart_* style (flat YAML,
 // plugin/autostart.sh): presence of pulse_interval: is the arm switch.
-// Renag/RenagMax are delivery's renag backoff bounds (ADR 0013 §3-4).
+// Renag/RenagMax are delivery's renag backoff bounds (ADR 0027 §3-4).
 type PulseConfig struct {
 	Armed    bool
 	Interval time.Duration
@@ -79,7 +79,7 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 	return cfg, nil
 }
 
-// ShopCheck computes the ADR 0013 §1 condition set:
+// ShopCheck computes the ADR 0027 §1 condition set:
 //
 //   - (a) any live session whose agent herdr reports blocked
 //   - (b) unpushed commits (@{u}..HEAD) on a config beads: repo — no
@@ -157,7 +157,7 @@ type PulseState struct {
 // WritePulseState fingerprints the condition set and the delivery
 // bookkeeping to disk. The ticker goroutine is this file's only writer; a
 // second watch loop's writes and this one's interleave last-writer-wins,
-// which ADR 0013's consequences accept — one loop per queue is the
+// which ADR 0027's consequences accept — one loop per queue is the
 // invariant (ADR 0011 §1) in practice, and a stale fingerprint costs one
 // missed pulse, not a wrong one.
 func WritePulseState(path string, s PulseState) error {
@@ -221,7 +221,7 @@ func (d *Dispatcher) pulseLoop(ctx context.Context, cfg PulseConfig) {
 }
 
 // pulseOnce is one tick: compute, decide whether the non-empty set is due
-// for delivery (ADR 0013 §3-4), fingerprint + bookkeeping to disk, log
+// for delivery (ADR 0027 §3-4), fingerprint + bookkeeping to disk, log
 // non-empty.
 func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	conditions, err := ShopCheck(d.HB, d.App.BeadsDirs(), cfg.Persona)
@@ -264,7 +264,7 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 //
 // This targets cfg.Persona's session directly via herdr's AgentPrompt, not
 // `posse prompt` or personaActive/crewHeld — the ADR 0008 §2 carve-out
-// (amended by ADR 0013): it may reach a crew-marked session, and because
+// (amended by ADR 0027): it may reach a crew-marked session, and because
 // nothing here calls MarkCrew/MarkCrewOnOperatorPrompt, it sets no crew
 // mark. The prompt itself carries no authority; the stores stay the record.
 func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
@@ -341,7 +341,7 @@ func pulseTarget(sessions []HerdrSession, persona string) (name, status string, 
 }
 
 // pulsePromptText is the fixed 'Pulse check' marker plus the observed
-// conditions as hints (ADR 0013 §3): the prompt carries no authority, so it
+// conditions as hints (ADR 0027 §3): the prompt carries no authority, so it
 // tells the session what to re-verify rather than what to do — dispatch's
 // own stores (rhq list, git, bd) stay the record. One line, like every
 // other prompt this codebase assembles (workPrompt, LandingPrompt).
