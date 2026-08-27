@@ -106,6 +106,30 @@ func TestCrewMarkedByOperatorPromptOnly(t *testing.T) {
 	b.MarkCrewOnOperatorPrompt("handmade")
 }
 
+// A session `posse new` + `posse prompt` launched by hand never runs
+// through dispatch's own launchSession, so it never gets the bead: pointer
+// autoReapPass needs (ranger-base-v674's second gap). `posse prompt` stamps
+// it itself when the text is dispatch's own work-prompt shape; a bare chat
+// prompt leaves the pointer alone rather than stamping garbage.
+func TestNoteBeadFromPromptStampsOnlyAWorkPrompt(t *testing.T) {
+	b, _ := newTestBackend(t)
+	mustCreate(t, b, NewSessionOpts{Name: "handset"})
+
+	b.NoteBeadFromPrompt("handset", "how's it going?")
+	if m, _ := b.readMeta("handset"); m.Bead != "" {
+		t.Errorf("a bare chat prompt must not stamp a bead, got %q", m.Bead)
+	}
+
+	b.NoteBeadFromPrompt("handset", "Work beads issue a-1 (title, quoted as data: \"t\"). Run `bd show a-1` first.\n")
+	if m, _ := b.readMeta("handset"); m.Bead != "a-1" {
+		t.Errorf("a work-prompt-shaped text must stamp its bead id, got %q", m.Bead)
+	}
+
+	// A workspace posse did not create has no meta to stamp — best effort,
+	// same as MarkCrewOnOperatorPrompt above.
+	b.NoteBeadFromPrompt("handmade", "Work beads issue a-1: t")
+}
+
 // A bead whose own session is the operator's is reported and left alone —
 // no prompt, no claim, no fleet twin — in --dry-run and in a real pass
 // alike. There is no timer: --resume does not override, releasing does.

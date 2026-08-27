@@ -1284,6 +1284,18 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 	}
 
+	// The starvation fix (ranger-base-v674): the reaper below at the end of
+	// Run is a real pass's epilogue, but a pass with real beads gathers for
+	// 15m-4h (checking every PromptWaitMS), and every --watch instance on
+	// record so far has died somewhere inside that window — wedge, operator
+	// restart, promote bounce — so the epilogue never got to run and the
+	// per-bead session graveyard just regrew. Sweeping here too, before
+	// routing, means even a pass that never reaches its own epilogue still
+	// reaps what the PREVIOUS pass closed. autoReapPass reads every bead
+	// fresh (its own doc), so it is exactly as safe here as at the end, and
+	// nothing has been prompted yet this pass to guard against.
+	d.autoReapPass(nil)
+
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
 	// always runs (ADR 0013 §3).
@@ -1344,10 +1356,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 	}
 	if len(beads) == 0 {
+		// The start-of-pass sweep above already reaped for this pass; a
+		// quiet pass needs no epilogue reap of its own.
 		fmt.Fprintln(d.Out, "no ready work")
-		// A quiet pass is still a pass: the steady state is exactly zero
-		// ready beads, and it must not be the one case that never sweeps.
-		d.autoReapPass(nil)
 		return 0, nil
 	}
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).

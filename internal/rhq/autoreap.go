@@ -43,11 +43,17 @@ func (a *App) AutoReap() bool {
 	return a.CfgGet("auto_reap", "true") != "false"
 }
 
-// autoReapPass is Run's epilogue. justPrompted names sessions this same pass
-// fired a prompt at (pendingBead.session) — never a reap candidate, whatever
-// herdr says about them right now. A read failure is the epilogue's own to
-// swallow: a pass that dispatched real work does not fail because the reap
-// sweep that runs after it could not list sessions.
+// autoReapPass sweeps closed-and-idle sessions. Run calls it twice: once at
+// pass start, before routing, and once as its own epilogue (ranger-base-v674
+// — a real pass with real beads gathers for 15m-4h, and every --watch
+// instance on record has died somewhere inside that window, so the epilogue
+// alone left the sweep starved). It reads every bead fresh (see below), so
+// either call site is equally safe. justPrompted names sessions this same
+// pass fired a prompt at (pendingBead.session) — never a reap candidate,
+// whatever herdr says about them right now; it is nil at the start-of-pass
+// call, since nothing has been prompted yet. A read failure is this sweep's
+// own to swallow: a pass that dispatched real work does not fail because a
+// reap sweep could not list sessions.
 func (d *Dispatcher) autoReapPass(justPrompted map[string]bool) {
 	if d.NoReap || !d.App.AutoReap() {
 		return

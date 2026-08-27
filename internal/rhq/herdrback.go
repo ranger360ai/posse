@@ -1610,6 +1610,22 @@ func (b *HerdrBackend) NoteBead(name, id string) {
 	_ = b.writeMeta(m)
 }
 
+// NoteBeadFromPrompt is NoteBead for a hand-dispatch (`posse prompt <name>
+// "<text>"`, ranger-base-v674's second gap): that path never gets a bead id
+// argument, so a session someone launched by hand with `posse new` and then
+// worked with `posse prompt` never carries the `bead:` pointer autoReapPass
+// needs, and sits forever (s.Bead == "" is skipped there on purpose — a
+// session with no bead pointer is not Dial F's to judge). It parses the same
+// "Work beads issue <id> …" header dispatch's own prompts always carry
+// (workPromptRe, shared with the cost scanner and turn-failure reader) and
+// stamps only when the text matches; an operator just chatting with a
+// session leaves its bead pointer untouched.
+func (b *HerdrBackend) NoteBeadFromPrompt(name, text string) {
+	if m := workPromptRe.FindStringSubmatch(text); m != nil {
+		b.NoteBead(name, m[1])
+	}
+}
+
 // MarkPrompted records that a work prompt was just sent to this session
 // (ADR 0011 §3) — the persisted half of PromptGrace, so the next reader is
 // any launcher rather than only this process.

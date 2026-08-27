@@ -235,3 +235,35 @@ func TestAutoReapRunsOnAQuietPass(t *testing.T) {
 		t.Errorf("expected a reap line on the quiet pass, got:\n%s", dispatcherOut(d))
 	}
 }
+
+// The starvation fix (ranger-base-v674): a real pass with real beads
+// gathers for 15m-4h, and every --watch instance on record so far has died
+// somewhere in that window, before ever reaching the epilogue reap below.
+// Proving the fix needs a pass that fails before it gets there — a
+// launch-lock failure (the same shape TestLaunchLockFailureFailsThePass
+// forces) is the cheapest way — and checking that a session a PREVIOUS pass
+// left closed-idle was still reaped despite this pass's own failure.
+func TestAutoReapSweepsAtPassStartEvenWhenThePassLaterFails(t *testing.T) {
+	b, fake := newTestBackend(t)
+	qaOneBeadRepo(t, b.App)
+	writePersona(t, b.App, "ranger", "[go]")
+	reapCandidate(t, b, "ranger-repo-a-0", "a-0", "closed")
+	idleClaude(t, fake)
+
+	// A directory at the lock path: fireLoop's O_RDWR on it cannot succeed,
+	// so this pass never reaches gather or its own epilogue.
+	if err := os.MkdirAll(LaunchLockPath(b.App), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newTestDispatcher(t, b)
+	if _, err := d.Run("", "", 0); err == nil {
+		t.Fatal("expected the launch lock failure to fail the pass")
+	}
+	if _, ok := b.readMeta("ranger-repo-a-0"); ok {
+		t.Error("the start-of-pass sweep must reap a previous pass's closed session even when this pass fails before its own epilogue")
+	}
+	if !strings.Contains(dispatcherOut(d), "reaped ranger-repo-a-0") {
+		t.Errorf("expected a reap line before the pass failed, got:\n%s", dispatcherOut(d))
+	}
+}

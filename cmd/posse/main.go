@@ -263,6 +263,11 @@ func main() {
 		// persona's prompt marks nothing (ADR 0008). After the prompt took,
 		// so a failed prompt is not a conversation.
 		hb.MarkCrewOnOperatorPrompt(name)
+		// A hand-launched session (`posse new` + `posse prompt`, never
+		// through dispatch's own launchSession) has no bead: pointer
+		// unless this stamps it — autoReapPass skips s.Bead=="" forever
+		// (ranger-base-v674). Only a work-prompt-shaped text matches.
+		hb.NoteBeadFromPrompt(name, text)
 		fmt.Fprintf(out, "%s\n", res)
 
 	case "crew":
