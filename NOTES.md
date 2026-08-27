@@ -3872,9 +3872,13 @@ grep -H '^workspace:\|^socket:' ~/.config/rhq/state/herdr/*.yaml | sort > /tmp/h
                                        # the two fields a handoff PRESERVES. THIS, not a
                                        # byte-for-byte diff of the directory, is the post-flight
                                        # check: `gen:` is expected to change (window section).
-                                       # `| sort` is load-bearing — ugrep (the `grep` on this box)
-                                       # walks a glob in parallel, so unsorted output reorders
-                                       # between runs and the post-flight diff falsely fails.
+                                       # `| sort` is load-bearing when `grep` is ugrep — as it
+                                       # is inside a Claude Code Bash call, where `grep` is a
+                                       # shell function resolving to ugrep, which walks a glob
+                                       # in parallel, so unsorted output reorders between runs
+                                       # there. Sort both sides regardless: free in a plain
+                                       # terminal, and the post-flight diff falsely fails
+                                       # without it in an agent shell.
 cp -a ~/.local/bin/herdr /tmp/herdr-0.8.0                 # THE rollback binary — update keeps no backup
 herdr api snapshot | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["result"]["snapshot"]["panes"]))'   # must be < 64
 posse version                          # note the sha; two ancestor checks below depend on it
