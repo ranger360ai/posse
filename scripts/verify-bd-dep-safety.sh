@@ -18,10 +18,14 @@
 # in `bd create --deps <type>:<target>` — the node the walk starts from. A
 # brand-new bead is always safe; anything with outgoing edges may not be.
 #
-# The pairs CAN be pruned and the prune DOES hold (measured, ranger-base-nusr):
-# exactly one verb plants a pair — `bd dep relate` / the deprecated `bd relate`
-# — and `scripts/prune-bd-relates-to.sh` removes them. `--gate` is the drift
-# detector that keeps the store at zero once it is there; wire it into CI or
+# The pairs CAN be pruned and the prune DOES hold (measured, ranger-base-nusr),
+# and `scripts/prune-bd-relates-to.sh` removes them. TWO verbs plant a pair,
+# not one: `bd dep relate` / the deprecated `bd relate` writes both rows in a
+# call, and two `bd dep add -t relates-to` calls in opposite directions plant
+# the identical pair — bd accepts the second unconditionally (measured,
+# ranger-base-uw8g, correcting an earlier note that called `dep add` harmless).
+# `dep add -t relates-to` is not denyable by pattern, so `--gate` here, not a
+# settings.json deny list, is what keeps the store at zero; wire it into CI or
 # run `make verify-bd-no-relate-pairs`.
 #
 # Read-only: the db is opened `mode=ro`, and the recursive queries here use
@@ -141,7 +145,8 @@ printf '%s\n' "$unsafe" | sed 's/^/  /'
 echo
 echo "Never dep-add onto one of those. Comment the provenance instead."
 echo "The list grows on its own: an ordinary bead landing upstream of a pair"
-echo "joins it, with no new relates-to edge. Only 'bd dep relate' / 'bd relate'"
-echo "plants a pair ('bd dep add -t relates-to' writes ONE row and is harmless),"
-echo "so pruning the pairs holds: scripts/prune-bd-relates-to.sh, then --gate."
-echo "See NOTES.md (ranger-base-pkqn, ranger-base-nusr)."
+echo "joins it, with no new relates-to edge. TWO verbs plant a pair: 'bd dep"
+echo "relate' / 'bd relate' in one call, and two 'bd dep add -t relates-to'"
+echo "calls in opposite directions (bd accepts the second). Prune:"
+echo "scripts/prune-bd-relates-to.sh, then run --gate again to confirm."
+echo "See NOTES.md (ranger-base-pkqn, ranger-base-nusr, ranger-base-uw8g)."

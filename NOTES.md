@@ -3157,11 +3157,16 @@ memorise it.
 `scripts/verify-bd-dep-safety.sh <id>` exits 1 when that id is unsafe as a
 target. ~~The set only grows: every `bd relate` / `bd dep add -t relates-to`
 plants another pair, and it cannot be pruned back, because bd rewrites the
-reverse edge on the next relate.~~ **Both halves of that sentence are wrong —
-measured, ranger-base-nusr, below:** only `bd dep relate` / `bd relate` plants
-a pair (`dep add -t relates-to` writes one row), and the pairs prune cleanly
-and stay pruned. What grows on its own is the *unsafe target* set, as the
-preceding paragraph says.
+reverse edge on the next relate.~~ **The second half of that sentence is
+wrong — measured, ranger-base-nusr below: the pairs prune cleanly and stay
+pruned as long as nothing re-plants one.** The first half is *not* wrong,
+and an intervening correction that said so was itself wrong (measured,
+ranger-base-uw8g): `bd dep relate` / `bd relate` write both rows in one
+call, but two `bd dep add -t relates-to` calls in opposite directions plant
+the identical pair — bd's cycle check does not consult direction, so the
+second call is accepted. **Any single `-t relates-to` row is one bd command
+away from being a pair.** What grows on its own, independent of all of this,
+is the *unsafe target* set, as the preceding paragraph says.
 
 **Standing rule: do not create `relates-to` edges in this fleet, and never
 `dep add` onto an unsafe target — record the provenance as a comment
@@ -3256,19 +3261,30 @@ unlink, and re-checks itself afterwards. Measured on the snapshot: 10 pairs,
 20 rows, ~0.2s per pair, 20 comments written, and `blocks` (153),
 `discovered-from` (566), `related` (3) and `blocked-by` (1) all untouched.
 
-**Two corrections to the section above, both measured on the snapshot:**
+**Two corrections to the section above, both measured on the snapshot — and
+one of them retracted below, so read ranger-base-uw8g before trusting either:**
 
-- `bd dep add <x> <y> -t relates-to` writes **one** row and is harmless. Only
+- ~~`bd dep add <x> <y> -t relates-to` writes **one** row and is harmless. Only
   `bd dep relate` (and its deprecated alias `bd relate`) writes both
-  directions. The poison has exactly one source verb, not two.
+  directions. The poison has exactly one source verb, not two.~~ **WRONG,
+  measured ranger-base-uw8g 2026-08-27: one call writes one row, but two
+  `bd dep add -t relates-to` calls in opposite directions write both rows —
+  bd 0.49.1 accepts the second unconditionally. The poison has one MECHANISM
+  (a symmetric pair) reachable through two verbs, not one.** `Bash(bd dep
+  relate:*)` / `Bash(bd relate:*)` in `.claude/settings.json` therefore deny
+  only one of the two reachable paths; `bd dep add -t relates-to` is not
+  denyable by pattern (every ordinary `dep add` shares its prefix), so the
+  gate (`scripts/verify-bd-dep-safety.sh --gate`, wired up by
+  ranger-base-z3s3) is the control, not the deny list.
 - "The set only grows … it cannot be pruned back" is wrong, and it was the
   reason nobody tried. It cannot be pruned back only if someone keeps
-  relating. Prune, then gate: `make verify-bd-no-relate-pairs`
-  (`scripts/verify-bd-dep-safety.sh --gate`) exits 1 the moment any symmetric
-  pair — of any type — is back. What *does* grow on its own is the *unsafe
-  target* set: an ordinary bead landing upstream of a pair joins it with no new
-  `relates-to` edge, which is why gating on the pairs and not on the count is
-  the durable check.
+  relating — **by either verb, not just `bd dep relate`**. Prune, then gate:
+  `make verify-bd-no-relate-pairs` (`scripts/verify-bd-dep-safety.sh --gate`)
+  exits 1 the moment any symmetric pair — of any type, planted by either verb
+  — is back. What *does* grow on its own is the *unsafe target* set: an
+  ordinary bead landing upstream of a pair joins it with no new `relates-to`
+  edge, which is why gating on the pairs and not on the count is the durable
+  check.
 
 Fixed alongside: both scripts used to die with a bare `unable to open database
 file (14)` against a WAL-mode db whose `-shm` is gone — the state bd leaves

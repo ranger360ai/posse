@@ -22,11 +22,14 @@
 # belongs in a comment. This records each link as a comment on BOTH beads
 # before removing it, so nothing is lost, then unlinks the pair.
 #
-# DURABILITY. Exactly one verb plants a pair: `bd dep relate` (and its
-# deprecated alias `bd relate`). `bd dep add -t relates-to` writes a single row
-# and is harmless — measured, correcting an earlier note. So the prune holds as
-# long as nobody relates; `scripts/verify-bd-dep-safety.sh --gate` is the
-# detector that says when someone did.
+# DURABILITY. Two verbs plant a pair. `bd dep relate` (and its deprecated
+# alias `bd relate`) writes both rows in one call. `bd dep add -t relates-to`
+# writes a single row per call and is NOT harmless: two calls in opposite
+# directions write both rows too — bd 0.49.1's cycle check does not consult
+# direction, so the second call is accepted (measured, ranger-base-uw8g,
+# correcting an earlier note that said the opposite). So the prune does NOT
+# hold on a deny of `bd dep relate` alone; `scripts/verify-bd-dep-safety.sh
+# --gate` is the detector that catches a pair from either verb.
 #
 # BLAST RADIUS of --apply: deletes the `relates-to` dependency rows of every
 # symmetric pair (two rows per pair) and adds two comments per pair. It touches
