@@ -310,6 +310,11 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 			"unreachable"},
 		{"garbage body", func(ps *planServer, r *AnthropicPlanReader) { ps.body = "<html>nope" },
 			"not the expected JSON"},
+		// A 200 of the wrong shape reaches the guard as a failed read, not
+		// as 0% (ranger-base-65s) — which is what makes the one stderr line
+		// below the discriminating assertion here.
+		{"shape-drifted 200", func(ps *planServer, r *AnthropicPlanReader) { ps.body = "{}" },
+			"not the expected JSON"},
 		{"keychain locked", func(ps *planServer, r *AnthropicPlanReader) {
 			keychainOnly(r, func() (string, error) {
 				return "", Die("keychain item %q unreadable", KeychainService)
@@ -406,6 +411,54 @@ func TestPlanReaderRequest(t *testing.T) {
 	// The cockpit header / posse cost line: percentages, no history.
 	if got := u.Line(); got != "5h 42% · 7d 61%" {
 		t.Errorf("Line() = %q, want %q", got, "5h 42% · 7d 61%")
+	}
+}
+
+// A 200 whose body is valid JSON of the WRONG SHAPE is not a reading
+// (ranger-base-65s). Decoded into values, `{}` — or an error envelope from
+// a middlebox, or a renamed key after an endpoint change — came back as a
+// successful reading of 0% utilization: the guard opened and
+// plan_guard_blind_max never armed, because the reads kept "succeeding".
+// The last row is the line this must not cross: a window present and 0.0 is
+// a fresh window, and stays a legitimate reading.
+func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string // the window named in the error, or "" for a reading
+	}{
+		{"empty object", `{}`, "5h"},
+		{"five_hour missing", `{"seven_day":{"utilization":12}}`, "5h"},
+		{"seven_day missing", `{"five_hour":{"utilization":12}}`, "7d"},
+		{"utilization renamed", `{"five_hour":{"pct":12},"seven_day":{"pct":12}}`, "5h"},
+		{"error envelope", `{"error":{"type":"not_found","message":"no such endpoint"}}`, "5h"},
+		{"window null", `{"five_hour":null,"seven_day":{"utilization":0}}`, "5h"},
+		{"utilization null", `{"five_hour":{"utilization":null},"seven_day":{"utilization":0}}`, "5h"},
+		{"both present at zero", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := newPlanServer(t, 0, 0)
+			ps.body = tc.body
+			u, err := ps.reader().Read()
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("a window present at 0.0 is a reading: %v", err)
+				}
+				if win(u, "5h") != 0 || win(u, "7d") != 0 {
+					t.Errorf("parsed %+v, want both windows at 0", u)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("a 200 of the wrong shape read as %+v — the blind clock never arms", u)
+			}
+			if u != nil {
+				t.Errorf("a failed read must hand back no windows, got %+v", u)
+			}
+			if !strings.Contains(err.Error(), "not the expected JSON") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to name %q and the expected-JSON failure", err, tc.want)
+			}
+		})
 	}
 }
 

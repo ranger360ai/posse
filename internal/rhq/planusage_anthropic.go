@@ -234,20 +234,50 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 		return nil, Die("usage endpoint returned %s", resp.Status)
 	}
 	var body struct {
-		FiveHour struct {
-			Utilization float64 `json:"utilization"`
-		} `json:"five_hour"`
-		SevenDay struct {
-			Utilization float64 `json:"utilization"`
-		} `json:"seven_day"`
+		FiveHour *anthropicWindowBody `json:"five_hour"`
+		SevenDay *anthropicWindowBody `json:"seven_day"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
 		return nil, Die("usage response is not the expected JSON")
 	}
+	// A 200 is not a reading (ranger-base-65s). Decoded into values, a body
+	// of the wrong shape — `{}`, an error envelope from a middlebox, a
+	// renamed key after an endpoint change — left both windows at their
+	// zero value and came back as a SUCCESSFUL reading of 0% utilization.
+	// The guard opened, and plan_guard_blind_max never armed because the
+	// reads kept "succeeding": fail-open in the one direction the interlock
+	// must never fail. Absent is now an error, so the blind clock runs.
+	five, ok := body.FiveHour.pct()
+	if !ok {
+		return nil, Die("usage response is not the expected JSON: no %s utilization", anthropicWindow5h)
+	}
+	seven, ok := body.SevenDay.pct()
+	if !ok {
+		return nil, Die("usage response is not the expected JSON: no %s utilization", anthropicWindow7d)
+	}
 	// Tightest first: the guard trips on the first window over its
 	// threshold, and the 5h window is the one the operator feels.
 	return PlanUsage{
-		{Name: anthropicWindow5h, Pct: body.FiveHour.Utilization},
-		{Name: anthropicWindow7d, Pct: body.SevenDay.Utilization},
+		{Name: anthropicWindow5h, Pct: five},
+		{Name: anthropicWindow7d, Pct: seven},
 	}, nil
+}
+
+// anthropicWindowBody is one window as the endpoint reports it. Both the
+// window and its utilization are pointers so that MISSING and 0.0 are
+// different values all the way down: a key that is present and zero is a
+// legitimate reading (a fresh window really is 0% used), a key that is not
+// there at all is no reading.
+type anthropicWindowBody struct {
+	Utilization *float64 `json:"utilization"`
+}
+
+// pct is the window's utilization and whether the response actually
+// carried one. Nil-receiver safe: the absent window and the present-but-
+// empty one are the same answer.
+func (w *anthropicWindowBody) pct() (float64, bool) {
+	if w == nil || w.Utilization == nil {
+		return 0, false
+	}
+	return *w.Utilization, true
 }
