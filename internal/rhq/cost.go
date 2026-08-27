@@ -257,10 +257,35 @@ func userText(raw json.RawMessage) string {
 }
 
 // TranscriptFiles lists Claude Code transcripts under ~/.claude/projects,
-// optionally filtered by a project-path substring.
+// optionally filtered by a project-path substring. The quiet form, for
+// callers that only ever display what they found.
 func TranscriptFiles(project string) []string {
-	home, _ := os.UserHomeDir()
-	files, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", "*.jsonl"))
+	files, _ := transcriptFiles(project)
+	return files
+}
+
+// transcriptFiles is TranscriptFiles with the reason it found nothing.
+//
+// "No transcripts here" and "cannot read where the transcripts are" are two
+// different facts and this listing used to return the same empty slice for
+// both — which is how an unreadable root reads as $0 spent (ADR 0018 §3).
+// A root that does not exist IS no records: a machine that has never run
+// the CLI has nothing to count, and calling that unreadable would park a
+// fresh instance on its first blind pass. Anything else — a permission, a
+// broken mount, a directory replaced by a file — is a read failure and says
+// so.
+func transcriptFiles(project string) ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	root := filepath.Join(home, ".claude", "projects")
+	if _, err := os.Stat(root); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	// Glob's own error is only a bad pattern, and this pattern is a
+	// constant; the failure that matters is the stat above.
+	files, _ := filepath.Glob(filepath.Join(root, "*", "*.jsonl"))
 	var out []string
 	for _, f := range files {
 		if project == "" || strings.Contains(f, project) {
@@ -268,7 +293,7 @@ func TranscriptFiles(project string) []string {
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // CostReport is everything posse cost prints and the cockpit reads.
@@ -280,6 +305,15 @@ type CostReport struct {
 	Uncounted   int // persona sessions on runtimes with no transcript here (codex/grok)
 	Since       time.Time
 
+	// What the scan could NOT read (ADR 0018 §3). Beads/Interactive hold
+	// what it could; these two say what is missing from them, so a caller
+	// that gates on money can tell "nothing was spent" from "nothing could
+	// be counted". ReadErr is the first failure, Unread how many there were.
+	// Nothing here is subtracted from a total — an uncountable ledger has no
+	// total, and the caller decides what that licenses.
+	ReadErr error
+	Unread  int
+
 	// Dial E's caps (ADR 0003 §4), for the report footer only — filled by
 	// the caller from config; 0 = unset = no cap. Nothing here enforces
 	// them: `posse cost` reads, dispatch decides.
@@ -289,7 +323,14 @@ type CostReport struct {
 // ScanCosts scans all transcripts (or those matching project) since a time.
 func ScanCosts(project string, since time.Time) *CostReport {
 	rep := &CostReport{Since: since}
-	for _, f := range TranscriptFiles(project) {
+	files, err := transcriptFiles(project)
+	if err != nil {
+		// The whole ledger, not one file: report nothing read rather than
+		// an empty scan that reads as a quiet day.
+		rep.noteUnread(err)
+		return rep
+	}
+	for _, f := range files {
 		// A file untouched since `since` holds no record after it, and
 		// ScanTranscript would drop every segment it built from one. Skipping
 		// it on mtime alone is what makes dispatch's per-launch budget check
@@ -299,7 +340,14 @@ func ScanCosts(project string, since time.Time) *CostReport {
 				continue
 			}
 		}
-		segs, _ := ScanTranscript(f, since)
+		segs, err := ScanTranscript(f, since)
+		if err != nil {
+			// This file's spend is unknown, not zero. Keep scanning — a
+			// partial ledger is still the best floor available — but
+			// remember that it is a floor.
+			rep.noteUnread(err)
+			continue
+		}
 		for _, s := range segs {
 			if s.Bead == "interactive" {
 				u, c := s.Sum(), s.CostUSD
@@ -316,6 +364,15 @@ func ScanCosts(project string, since time.Time) *CostReport {
 	}
 	sort.Slice(rep.Beads, func(i, j int) bool { return rep.Beads[i].Start.Before(rep.Beads[j].Start) })
 	return rep
+}
+
+// noteUnread records a read failure: the count for how bad, the first
+// error for what to print.
+func (r *CostReport) noteUnread(err error) {
+	r.Unread++
+	if r.ReadErr == nil {
+		r.ReadErr = err
+	}
 }
 
 // AttributePersonas fills Segment.Persona from bead assignees across the

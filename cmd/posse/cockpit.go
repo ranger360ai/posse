@@ -157,6 +157,7 @@ type planRead struct {
 	line    string    // the reading, formatted; "" when it could not be taken
 	at      time.Time // when that reading was TAKEN (zero = now) — it may be a shared one, minutes old
 	guarded bool      // plan_guard_5h/7d configured — then blindness is worth saying
+	ledger  bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
 }
 
 // scanPlan runs off the event loop; the reading lands on c.plans. Read-only
@@ -167,6 +168,11 @@ func (c *cockpit) scanPlan() {
 	// cockpit owns the whole terminal — it cannot write to stderr at all.
 	fiveH, sevenD := c.app.PlanGuardThresholds(io.Discard)
 	r.guarded = fiveH > 0 || sevenD > 0
+	// Read whether Dial E is armed, not what it says: the header reports
+	// which policy a blind guard is under (ADR 0018 §1), and the dollars are
+	// the cost scan's to print.
+	pass, day := c.app.BudgetCaps(io.Discard)
+	r.ledger = pass > 0 || day > 0
 	// Through the shared cache (rangerhq-tdy8), never the endpoint direct:
 	// a cockpit open all day was ~30 requests/hour on a metering endpoint,
 	// and the 429s that bought cost the fleet a three-hour blind guard.
@@ -188,6 +194,12 @@ func (c *cockpit) scanPlan() {
 // IS configured, say the blind instead of nothing: `5h — · guard blind 14m`.
 // The clock is time since the last successful reading, floored at cockpit
 // start, the same rule the dispatcher's blind window uses.
+//
+// ADR 0018 §1 made blindness two outcomes, so the header names which one is
+// waiting: with Dial E armed an unattended pass past `plan_guard_blind_max:`
+// degrades under the ledger (`… — ledger brake`), with it unset that same
+// pass parks the fleet's on-meter lanes. Same blind clock, opposite days —
+// reading one as the other is the ambiguity this segment exists to close.
 func (c *cockpit) planSegment(r planRead) string {
 	now := c.clock()
 	if c.planReadAt.IsZero() {
@@ -206,7 +218,11 @@ func (c *cockpit) planSegment(r planRead) string {
 	if !r.guarded {
 		return "" // no guard: nothing to be blind about, nothing to say
 	}
-	return "5h — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
+	seg := "5h — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
+	if r.ledger {
+		seg += " — ledger brake"
+	}
+	return seg
 }
 
 // sessionCost is the running api-equiv $ for a persona session's bead, or

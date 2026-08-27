@@ -399,16 +399,35 @@ watching them is the operator's interactive headroom — a fleet that eats the
   instant skip):
   - **under `plan_guard_blind_max:`** (default **10m**) — the old behaviour
     unchanged: one stderr line, pass not gated, pass runs;
-  - **over it** — the pass still gathers and routes work. On-meter beads park
-    (`plan guard: blind 12m (usage endpoint unreachable) — skipped`) without
-    being claimed; off-meter beads launch. A pass whose every bead parks
-    dispatches zero, so `--watch` backs off toward `--max-interval` on its own;
+  - **over it** — the pass still gathers and routes work, and forks on
+    whether Dial E is armed (ADR 0018 §1, below). With `budget_pass:`/
+    `budget_day:` **unset** the plan guard is the last automated brake and it
+    fails closed: on-meter beads park (`plan guard: blind 12m (usage endpoint
+    unreachable) — skipped`) without being claimed; off-meter beads launch. A
+    pass whose every bead parks dispatches zero, so `--watch` backs off toward
+    `--max-interval` on its own;
+  - **over it, with a cap set** — there is a floor under the blind meter, so
+    the pass **degrades** instead of parking: one line per pass on the pass
+    output (`plan guard: blind 4h00m (…) — degraded, running under ledger
+    brake (pass $8.20/$30.00, day $146.00/$250.00)`), then Dial E's ordinary
+    rungs decide per bead. The degrade is bounded **by the ledger, never by
+    wall-clock** — run while something is still counting, never because the
+    clock ran out. The classes of failure do not fork this (§2): a shape
+    mismatch, a gate refusal, a 401 and a dead socket are one state — no
+    reading. They shape the diagnostic and the cooldown, never the policy,
+    because policy that reads diagnosis strings rots when the diagnosis
+    improves. And if the cost scan itself cannot be read the floor is gone,
+    so the pass parks with both failures named (`…, ledger unreadable (…) —
+    skipped`);
   - **the first good reading** clears the clock and that same pass proceeds.
     No manual reset, no sticky state, no operator action.
   - **`plan_guard_blind_max: 0`** is the operator's escape hatch for on-meter
     work: never fail closed. It is not needed to keep off-meter work alive.
     Unsetting the thresholds also disables the guard entirely — then nothing
-    is read.
+    is read. It is quiet tolerance without end, not a degrade: nothing is
+    declared under it, because nothing has been decided. The knob's single
+    meaning since ADR 0018 is exactly that — **how long quiet tolerance
+    lasts before the fork**, never how long a degrade may run.
   - **Log noise**: the fail-open note is said when the reading first fails,
     at most once an hour after that, and once more when a reading comes back.
     Past the budget there is no separate pass-level repeat; each on-meter
@@ -575,9 +594,30 @@ then stops dispatch on API-equivalent spend.
   endpoint would be absurd; a cap is a number the operator typed, and a cap
   the pass loop honours but one keystroke walks past is not a cap. The
   refusal names the way out, and raising the cap is a config edit away.
+- **An unreadable ledger is not $0 spent** (ADR 0018 §3). `ScanCosts` used
+  to drop every read failure on the floor (`segs, _ := ScanTranscript(…)`),
+  so an unreadable transcript root read as a quiet day — an armed cap that
+  counted nothing. The report now carries `ReadErr`/`Unread` beside what it
+  did read, and `BudgetState.Unreadable` travels with the numbers, so nobody
+  downstream mistakes a floor for a total. A root that does not *exist* is
+  still no records: a machine that never ran the CLI has nothing to count,
+  and calling that a fault would park a fresh instance on its first blind
+  pass. Sighted passes name a read failure on stderr once per pass and run
+  on the floor they could read; a **degraded** pass parks instead, because
+  there its cap was the only thing counting. Same rule the overflow ledger
+  already keeps.
+- **Arming Dial E also chooses the blind policy** (ADR 0018 §1). Dial E
+  computes from posse's own transcripts and needs no credential, so it works
+  exactly when the plan guard cannot — which is what makes it the floor a
+  blind guard can degrade onto. The coupling is deliberate and lives in
+  code, not in a comment: the alternative was hand-tuning
+  `plan_guard_blind_max:` whenever the caps changed, measured failing on
+  2026-08-26 (three changes in two days, each on a wrong diagnosis).
 - **Display** `posse cost` ends with the caps in force and the day spend
   against them (or "no caps set … dormant"); the cockpit footer shows
-  `today $… of $… budget_day (NN%)`. Both read; only dispatch acts.
+  `today $… of $… budget_day (NN%)`, and the header's blind segment names
+  which policy is waiting — `guard blind 14m` parks, `guard blind 14m —
+  ledger brake` degrades. Both read; only dispatch acts.
 
 **verify-after** (ADR 0006 §3, `internal/rhq/verifyafter.go`) is the one
 handoff the harness files rather than a persona. Every dispatch pass — right

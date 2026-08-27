@@ -1049,3 +1049,32 @@ func TestCockpitPlanBlindWitnessFromStart(t *testing.T) {
 		t.Errorf("blind is time since cockpit start when there was never a reading, got %q", got)
 	}
 }
+
+// ADR 0018 §1: blindness is now two different days, and the header must not
+// read them as one. Unarmed, a blind guard is about to park the on-meter
+// lanes; armed, the same blind guard is a declared degrade with a spend
+// ceiling under it. Same clock, opposite outcomes.
+func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
+	at := time.Date(2026, 8, 19, 20, 53, 0, 0, time.UTC)
+	c := &cockpit{now: func() time.Time { return at }}
+
+	// A reading first, so the blind clock counts from something real.
+	c.planSegment(planRead{line: "5h 42% · 7d 61%", guarded: true, ledger: true})
+	at = at.Add(14 * time.Minute)
+	if got := c.planSegment(planRead{guarded: true, ledger: true}); got != "5h — · guard blind 14m — ledger brake" {
+		t.Errorf("an armed ledger must show as the brake that is holding, got %q", got)
+	}
+	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 14m" {
+		t.Errorf("unarmed is today's line, unchanged: %q", got)
+	}
+	// A good reading is a good reading either way — the clause is about
+	// blindness, not about Dial E being configured.
+	if got := c.planSegment(planRead{line: "5h 9% · 7d 30%", guarded: true, ledger: true}); got != "5h 9% · 7d 30%" {
+		t.Errorf("a reading is the segment, got %q", got)
+	}
+	// No guard, no blindness to qualify.
+	at = at.Add(time.Hour)
+	if got := c.planSegment(planRead{ledger: true}); got != "" {
+		t.Errorf("unguarded stays silent whatever Dial E says, got %q", got)
+	}
+}

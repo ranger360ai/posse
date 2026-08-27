@@ -124,6 +124,7 @@ type Dispatcher struct {
 
 	budgetStopped *BudgetState // sticky: once a pass has hit 100%, it stays stopped
 	budgetWarned  bool         // a malformed cap is named once per pass, not once per bead
+	budgetUnread  bool         // an unreadable ledger is named once per pass, not once per bead
 
 	// Plan-guard state (ADR 0010 §1/§5, amended by ADR 0013 §3). planTrip is
 	// this pass's over-threshold reason without its verdict ("plan 5h at 78%
@@ -132,6 +133,11 @@ type Dispatcher struct {
 	// while on-meter work faces the overflow ladder on a trip and parks on a
 	// blind read. overflow is the pass's resolved config, overflowUsed the
 	// rolling-window ledger count plus what this pass has already sent.
+	//
+	// ADR 0018 §1 narrows planBlind to the case where the blind meter is the
+	// LAST armed brake: with Dial E armed a blind pass degrades instead, and
+	// planBlind stays empty so on-meter beads face the ledger like any other
+	// pass.
 	planTrip     string
 	planBlind    string
 	overflow     Overflow
@@ -168,9 +174,12 @@ func (d *Dispatcher) errw() io.Writer {
 // keychain or endpoint is a monitoring failure and the fleet never halts on
 // one *while a human is watching*: a hand-run pass says so on stderr and
 // runs, unchanged. Unattended (--watch), blindness is a state with a clock
-// on it — past `plan_guard_blind_max:` (10m default, 0 = never), on-meter
-// beads park until one reading succeeds. Off-meter beads still launch: the
-// meter gates only work that can spend it (ADR 0013 §3).
+// on it — past `plan_guard_blind_max:` (10m default, 0 = never) the pass
+// forks on whether Dial E is armed (ADR 0018 §1): with no cap set the plan
+// guard is the last brake and on-meter beads park until one reading
+// succeeds; with one set the pass runs loudly under the ledger instead.
+// Off-meter beads still launch either way: the meter gates only work that
+// can spend it (ADR 0013 §3).
 func (d *Dispatcher) planGuard() {
 	fiveH, sevenD := d.App.PlanGuardThresholds(d.errw())
 	if fiveH <= 0 && sevenD <= 0 {
@@ -253,9 +262,14 @@ func (d *Dispatcher) overThreshold(reason string) {
 	fmt.Fprintf(d.Out, "%s — overflow %s, %d/%d in 7d; eligible beads step over\n", reason, d.overflow.Runtime, n, d.overflow.Cap)
 }
 
-// blindGuard is the guard with no reading to make a decision on. Once an
-// unattended blind window outlives its budget it records a per-bead park;
-// off-meter beads still run and on-meter beads print this reason and skip.
+// blindGuard is the guard with no reading to make a decision on.
+//
+// `plan_guard_blind_max:` has exactly one meaning here (ADR 0018): how long
+// quiet tolerance lasts. Under it, nothing changes and the pass runs. Past
+// it — unattended only — the policy fork in blindFork decides between a
+// per-bead park and a declared degrade; either way off-meter beads still
+// launch (ADR 0013 §3). The knob does not bound the degrade: no amount of
+// wall-clock is a reason to run, and none is a reason to stop.
 //
 // The log-noise rule (rangerhq-6h1): a --watch loop that is blind for a
 // weekend must not write the same line 500 times into a log nobody reads.
@@ -273,13 +287,13 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 	budget := d.App.PlanGuardBlindMax(errw)
 	d.blindWarned = true
 
-	skip := d.Unattended && budget > 0 && blind > budget
+	past := d.Unattended && budget > 0 && blind > budget
 	first := !d.blindFailed
 	d.blindFailed = true
 
-	if skip {
+	if past {
 		d.blindSaid = now
-		d.planBlind = fmt.Sprintf("plan guard: blind %s (%v)", BlindFor(blind), err)
+		d.blindFork(blind, err)
 		return
 	}
 	// Under the budget (or attended, or the escape hatch): today's line,
@@ -288,6 +302,68 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 		d.blindSaid = now
 		fmt.Fprintf(d.errw(), "plan guard: %v — pass not gated\n", err)
 	}
+}
+
+// blindFork is ADR 0018 §1: what an unattended blind window past its budget
+// actually costs depends on whether anything else is still counting.
+//
+// The last armed brake fails closed, unchanged. On 2026-08-26 the plan
+// guard WAS the only armed brake — `budget_pass:`/`budget_day:` were unset
+// — and "degrade" would have meant an unmetered fleet until a human read a
+// log. Blind is blind: an unreadable meter cannot tell 0% used from 98%.
+//
+// With Dial E armed there is a floor under the blind meter, so the pass runs
+// under it — the ledger's own rungs, step-down at 80% and stop at 100%,
+// applied per bead by the loop that has always applied them. The degrade is
+// bounded by MONEY and never by wall-clock: run while something is still
+// counting, never because the clock ran out.
+//
+// No fork by failure class (§2): a shape mismatch, a gate refusal, a 401 and
+// a dead socket are one state here — no reading. The classes are for the
+// diagnostic and the cooldown, never for park-vs-degrade, because policy
+// that reads diagnosis strings rots when the diagnosis improves.
+func (d *Dispatcher) blindFork(blind time.Duration, err error) {
+	park := func(why string) {
+		d.planBlind = fmt.Sprintf("plan guard: blind %s (%v)%s", BlindFor(blind), err, why)
+	}
+	if !d.ledgerArmed() {
+		park("")
+		return
+	}
+	st := d.passBudget()
+	// §3: an armed cap over an unreadable ledger is a brake that counts
+	// nothing, which is the unarmed case wearing the armed case's clothes.
+	// Park exactly as if Dial E were unset — the same rule the overflow
+	// ledger already keeps: an unreadable ledger is not a licence to spend.
+	if st.Unreadable != nil {
+		park(fmt.Sprintf(", ledger unreadable (%v)", st.Unreadable))
+		return
+	}
+	// Loud, on the pass output and every pass: a degraded pass is never
+	// quiet (extending rangerhq-llse), and the hourly tolerance below is the
+	// fail-open note's alone. d.Out, not stderr — this is an outcome the
+	// pass reached, not a warning about one.
+	fmt.Fprintf(d.Out, "plan guard: blind %s (%v) — degraded, running under ledger brake (%s)\n",
+		BlindFor(blind), err, st.Ledger())
+}
+
+// ledgerArmed reports whether Dial E has a cap at all — the fork's whole
+// question. Config only: armed-ness is a property of the configuration, and
+// asking it must not cost a transcript scan on the passes that then park.
+func (d *Dispatcher) ledgerArmed() bool {
+	pass, day := d.budgetCaps()
+	return BudgetState{PassCap: pass, DayCap: day}.Set()
+}
+
+// budgetCaps reads Dial E's caps with the once-per-pass typo rule that both
+// its callers need: a malformed cap is visible, not a wall of the same line.
+func (d *Dispatcher) budgetCaps() (pass, day float64) {
+	errw := d.errw()
+	if d.budgetWarned {
+		errw = io.Discard
+	}
+	d.budgetWarned = true
+	return d.App.BudgetCaps(errw)
 }
 
 // blindQuiet is how long the blind state keeps its mouth shut between
@@ -322,14 +398,7 @@ func (d *Dispatcher) passBudget() BudgetState {
 // the zero value and nothing is scanned — dormant is free.
 func (d *Dispatcher) budget() BudgetState {
 	var st BudgetState
-	// The check runs per bead, so a malformed cap must be named once, not
-	// once per bead: visible, not a wall of the same line.
-	errw := d.errw()
-	if d.budgetWarned {
-		errw = io.Discard
-	}
-	d.budgetWarned = true
-	st.PassCap, st.DayCap = d.App.BudgetCaps(errw)
+	st.PassCap, st.DayCap = d.budgetCaps()
 	if !st.Set() {
 		return st
 	}
@@ -346,6 +415,14 @@ func (d *Dispatcher) budget() BudgetState {
 	}
 	rep := scan(since)
 	st.PassSpend, st.DaySpend = rep.PassTotal(d.passStart), rep.DayTotal(now)
+	// ADR 0018 §3: what the scan could not read travels with the numbers it
+	// did read, so nobody downstream mistakes a floor for a total. Said once
+	// per pass on stderr — the degraded pass says it on its own park line
+	// instead, and this is the sighted pass's witness.
+	if st.Unreadable = rep.ReadErr; st.Unreadable != nil && !d.budgetUnread {
+		d.budgetUnread = true
+		fmt.Fprintf(d.errw(), "budget: %d transcript(s) unreadable (%v) — the ledger counts less than was spent\n", rep.Unread, rep.ReadErr)
+	}
 	if u := d.planUsage; u != nil {
 		st.Plan5h, st.Plan7d = u.FiveHour, u.SevenDay
 	}
@@ -811,7 +888,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// since this moment is what `budget_pass:` caps. Reset the sticky stop
 	// too — a new pass gets a fresh reading.
 	d.passStart = time.Now()
-	d.budgetStopped, d.budgetWarned = nil, false
+	d.budgetStopped, d.budgetWarned, d.budgetUnread = nil, false, false
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
 	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0

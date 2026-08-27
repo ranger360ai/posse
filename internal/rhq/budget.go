@@ -76,6 +76,14 @@ type BudgetState struct {
 
 	Pct    float64 // the tightest window's utilization
 	Window string  // which window that was ("" when no cap is set)
+
+	// Unreadable is the cost scan's read failure, when it had one (ADR 0018
+	// §3): part of the ledger could not be read, so PassSpend/DaySpend are a
+	// FLOOR and not a total. The rungs below deliberately ignore it — a
+	// floor over the cap is still over the cap — but a caller about to trust
+	// this state as the only brake must not treat an uncountable ledger as
+	// $0 spent. "An unreadable ledger is not a licence to spend."
+	Unreadable error
 }
 
 // Set reports whether Dial E is armed at all.
@@ -130,6 +138,24 @@ func (b BudgetState) Line() string {
 	default: // plan 5h / plan 7d — a percentage is all the endpoint gives
 		return fmt.Sprintf("%s at %.0f%%", b.Window, b.Pct)
 	}
+}
+
+// Ledger names both cap windows and what has been spent against them —
+// "pass $8.20/$30, day $146/$250". Unlike Line it does not pick the
+// tightest window: this is the receipt a degraded pass prints (ADR 0018
+// §1), and the operator reading it wants every number the brake has.
+func (b BudgetState) Ledger() string {
+	var parts []string
+	if b.PassCap > 0 {
+		parts = append(parts, fmt.Sprintf("pass $%.2f/$%.2f", b.PassSpend, b.PassCap))
+	}
+	if b.DayCap > 0 {
+		parts = append(parts, fmt.Sprintf("day $%.2f/$%.2f", b.DaySpend, b.DayCap))
+	}
+	if len(parts) == 0 {
+		return "no cap set"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // startOfDay is the local midnight that opens now's calendar day — the

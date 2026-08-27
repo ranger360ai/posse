@@ -1468,8 +1468,13 @@ dispatch (beads):
                                  skip a pass above the plan's rate windows;
                                  unset = off, unreadable = no-op — except under
                                  --watch, where plan_guard_blind_max: (10m,
-                                 0 = never) skips passes once the last good
-                                 reading is that old, until one succeeds
+                                 0 = never) ends quiet tolerance once the last
+                                 good reading is that old. Past it (ADR 0018)
+                                 the pass parks on-meter beads when
+                                 budget_pass:/budget_day: are unset — the last
+                                 armed brake fails closed — and runs loudly
+                                 under those caps when they are set, until one
+                                 reading succeeds
                                config plan_guard_overflow:/_cap: (ADR 0010)
                                  a tripped guard runs the pass and sends the
                                  beads that can move to this runtime instead —
@@ -1484,7 +1489,11 @@ dispatch (beads):
                                  session steps down to fast (parity permitting,
                                  never below tier_floor: or a pinned tier), at
                                  100% dispatch stops with a line per bead;
-                                 both unset = dormant, nothing is even scanned
+                                 both unset = dormant, nothing is even scanned.
+                                 Arming either also arms the blind plan
+                                 guard's degrade (ADR 0018) — and an
+                                 unreadable cost scan is not $0 spent, so it
+                                 parks there and says so on stderr elsewhere
 
 catalog:
   posse envs                     list env sets (key names only)
