@@ -3,12 +3,15 @@ package rhq
 // ranger-base-8b3h, verifying ranger-base-qajs. The fresh-install half of
 // that close holds: `posse init` puts the nine examples on the shelf and
 // leaves agents/ empty. The UPGRADE half — the half the bead called the one
-// that "must not be worse than the bug" — has two defects, pinned here.
+// that "must not be worse than the bug" — had two defects, pinned here.
 //
-// Both live in retireExamplePIDs (init.go). Both are pinned the way
-// rangerhq-th7l asks for: the CURRENT behaviour is asserted, and the
-// assertion fails loudly the moment it changes, so the suite stays green and
-// neither defect can be fixed — or made worse — without this file saying so.
+// Both live in retireExamplePIDs (init.go). DEFECT 1 is FIXED
+// (ranger-base-8ehw) and its pin is now the inversion: it asserts the fixed
+// behaviour and fails if judging ever goes back to the running binary's bytes
+// alone. DEFECT 2 is still open (ranger-base-9afo) and is pinned the way
+// rangerhq-th7l asks for: the CURRENT behaviour is asserted and the assertion
+// fails loudly the moment it changes, so the suite stays green and the defect
+// cannot be fixed — or made worse — without this file saying so.
 //
 // Self-contained (own helpers, own fixtures): a pin an edit next door can
 // carry away pinned nothing.
@@ -99,24 +102,28 @@ func preFixHome(t *testing.T, src fs.FS) *App {
 	return a
 }
 
-// DEFECT 1 (ranger-base-8b3h). retireExamplePIDs decides "is this still the
-// shipped example?" by comparing the live file with the example the RUNNING
-// binary embeds. That comparison can only ever recognise the current
-// version's bytes, so a home seeded by any earlier posse retires NOTHING —
-// the nine generics keep routing, which is the whole bug ranger-base-qajs
-// was filed to remove — and init tells the operator it kept them because
-// they "edited" them, which they did not.
+// DEFECT 1 (ranger-base-8b3h), FIXED by ranger-base-8ehw. retireExamplePIDs
+// used to decide "is this still the shipped example?" against the example the
+// RUNNING binary embeds, which can only ever recognise the current version's
+// bytes. The example PIDs are shipped prose and they change — 95c4b70 added
+// `- Bash(posse promote:*)` to the deny list of all nine — so every home
+// seeded by an earlier posse retired NOTHING (the leak ranger-base-qajs was
+// filed to remove, still open) and init told the operator it kept them
+// because they "edited" them, which they did not.
 //
-// The evidence that this is version skew and not a real edit is in the home
-// already: the seeded manifest holds the hash init recorded when it laid the
-// file down, and the live file still matches it. retireExamplePIDs reads
-// that manifest three lines earlier, for a different question.
-func TestUpgradeFromAnOlderSeedRetiresNothingAndBlamesTheOperator(t *testing.T) {
+// The evidence was already in the home and the rule now reads it: the seeded
+// manifest holds the hash init recorded when it laid the file down, and it
+// answers "untouched since it was seeded" for any version. This pin is the
+// inversion of the one it replaces — it fails if judging ever goes back to
+// the running binary's bytes alone.
+func TestUpgradeFromAnOlderSeedRetiresTheNine(t *testing.T) {
 	src := olderSeed(t)
 	a := preFixHome(t, src)
 	names := exampleAgentNames(posse.Seed)
 
-	// The home is untouched since it was seeded — the manifest says so.
+	// The home is untouched since it was seeded — the manifest says so — and
+	// every one of the nine is byte-different from what this posse ships,
+	// which is the whole point of the fixture.
 	man, err := ReadPromoteManifest(a.PromoteManifestPath())
 	if err != nil || man == nil {
 		t.Fatalf("fixture manifest: %v", err)
@@ -127,12 +134,24 @@ func TestUpgradeFromAnOlderSeedRetiresNothingAndBlamesTheOperator(t *testing.T) 
 		if !ok {
 			t.Fatalf("fixture: manifest does not name %s", rel)
 		}
-		got, err := sha256File(filepath.Join(a.AgentsDir, n+".md"))
+		live := filepath.Join(a.AgentsDir, n+".md")
+		got, err := sha256File(live)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got != want {
 			t.Fatalf("fixture: %s already differs from what was seeded — the fixture is wrong, not the code", rel)
+		}
+		have, err := os.ReadFile(live)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shipped, err := fs.ReadFile(posse.Seed, rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(have) == string(shipped) {
+			t.Fatalf("fixture: %s is byte-identical to the current embed — the fixture cannot express version skew", rel)
 		}
 	}
 
@@ -140,44 +159,94 @@ func TestUpgradeFromAnOlderSeedRetiresNothingAndBlamesTheOperator(t *testing.T) 
 	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("upgrade init: %v", err)
 	}
-	live := a.ListAgents()
-
-	if len(live) == 0 {
-		t.Fatalf(`ranger-base-8b3h DEFECT 1 LOOKS FIXED — the upgrade now retires a home
-seeded by an older posse (agents/ is empty). If retirement was moved onto the
-seeded manifest's own hashes (untouched-since-seeded) rather than the running
-binary's bytes, that is the fix: delete this pin and say so on the bead.
+	if live := a.ListAgents(); len(live) != 0 {
+		t.Fatalf(`ranger-base-8ehw REGRESSED — %d generic(s) still routing after an upgrade from
+an older seed: %v. Retirement is judged untouched-since-seeded (the seeded
+manifest's own hashes), not byte-identity against the running binary; a home
+seeded by any earlier posse retires nothing under the latter.
 init said:
-%s`, out.String())
+%s`, len(live), live, out.String())
 	}
-	if len(live) != len(names) {
-		t.Fatalf(`ranger-base-8b3h DEFECT 1 MOVED — %d of %d generic(s) still routing after the
-upgrade, expected all %d. Re-read the bead before touching this pin.
-init said:
-%s`, len(live), len(names), len(names), out.String())
+	if !strings.Contains(out.String(), "retired") {
+		t.Errorf("init said %q — a retirement the operator cannot see is a file that vanished", out.String())
 	}
-	// ...and the reason given is false. The operator edited nothing.
-	if !strings.Contains(out.String(), "edited since it was seeded — it is yours now") {
-		t.Fatalf(`ranger-base-8b3h DEFECT 1 CHANGED — the nine are still kept, but init no longer
-calls them operator edits. If the message now names version skew, the pin needs
-rewording, not deleting: the leak is still open.
-init said:
-%s`, out.String())
+	// And nobody is blamed for an edit they did not make.
+	if strings.Contains(out.String(), "edited since it was seeded") {
+		t.Errorf(`init said %q — version skew is not an operator edit, and saying so sends
+them looking for a change they never made`, out.String())
 	}
-	// And the shelf now holds the CURRENT bytes, so nothing on disk tells the
-	// operator that the nine live files were ever ours.
+	// A move, not a delete: what left agents/ is readable on the shelf. On a
+	// skewed home the live bytes are the OLDER release's and exist nowhere
+	// else in the home, so the shelf must hold them and not the embed's.
 	for _, n := range names {
 		shelf, err := os.ReadFile(filepath.Join(a.ExampleAgentsDir(), n+".md"))
 		if err != nil {
-			t.Fatalf("%s: %v", n, err)
+			t.Fatalf("%s left the home entirely: %v", n, err)
 		}
-		want, err := fs.ReadFile(posse.Seed, "agents/"+n+".md")
+		was, err := fs.ReadFile(src, "agents/"+n+".md")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(shelf) != string(want) {
-			t.Errorf("shelf copy of %s is not the current shipped example", n)
+		if string(shelf) != string(was) {
+			t.Errorf("shelf copy of %s is not what was retired — the retired bytes are gone from the home", n)
 		}
+	}
+}
+
+// ranger-base-8ehw, the sharp edge the manifest rule brings with it and the
+// guarantee that blunts it.
+//
+// `seeded` does not mean "init laid these bytes down": SeedPromoteManifest
+// writes a manifest whenever a home has none, hashing whatever is on disk at
+// that moment. A home that predates ADR 0015 and had a generic the operator
+// had already adopted therefore gets a seeded manifest attesting to THEIR
+// file, and the rule above reads that as untouched-since-seeded. init cannot
+// tell those apart — nothing in the home records which posse wrote agents/.
+//
+// So the retirement is a rename, never a remove: whatever leaves agents/ is
+// still readable on the shelf under the name init printed. Under the old
+// rule the bytes were byte-identical to the embed and os.Remove lost nothing;
+// under this one they need not be, and losing an operator's persona is the
+// "worse than the bug" the design bead named. Filed separately: ranger-base-rgx0.
+func TestRetirementNeverDestroysTheBytesItTakes(t *testing.T) {
+	a := preFixHome(t, posse.Seed)
+	names := exampleAgentNames(posse.Seed)
+	mine := names[0]
+	live := filepath.Join(a.AgentsDir, mine+".md")
+	b, err := os.ReadFile(live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted := string(b) + "\n<!-- the operator adopted this one before this home had a manifest -->\n"
+	if err := os.WriteFile(live, []byte(adopted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ...and only THEN does a manifest-writing posse first run init here.
+	if err := os.Remove(a.PromoteManifestPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SeedPromoteManifest(); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
+		t.Fatalf("upgrade init: %v", err)
+	}
+	// Whether it was kept or retired, the bytes are still in the home.
+	found := ""
+	for _, p := range []string{live, filepath.Join(a.ExampleAgentsDir(), mine+".md")} {
+		if got, err := os.ReadFile(p); err == nil && string(got) == adopted {
+			found = p
+		}
+	}
+	if found == "" {
+		t.Fatalf(`ranger-base-8ehw REGRESSED — %s.md is gone from the home. A seeded manifest
+can attest to an operator's own file (it hashes whatever was on disk the first
+time any manifest-writing posse ran init here), so the retirement must rename
+onto the shelf, never os.Remove.
+init said:
+%s`, mine, out.String())
 	}
 }
 

@@ -178,11 +178,20 @@ func exampleAgentNames(src fs.FS) []string {
 // agents/ is the operator's directory, so the rules are narrow, and each
 // one buys back a way this could have made things worse than the bug:
 //
-//   - BYTE-IDENTICAL ONLY. An edited example is not an example any more —
-//     it is the persona the operator adopted in place, with bd history and
-//     an assignee under that name. It stays, and init names it, because a
-//     retirement that took it would leave real work parked on a persona
-//     that no longer loads.
+//   - UNCHANGED SINCE IT WAS SEEDED. An edited example is not an example any
+//     more — it is the persona the operator adopted in place, with bd history
+//     and an assignee under that name. It stays, and init names it, because a
+//     retirement that took it would leave real work parked on a persona that
+//     no longer loads. "Unchanged" has two true answers and the running
+//     binary's bytes are only one of them (ranger-base-8ehw): the example PIDs
+//     are shipped prose and they change — 95c4b70 added `- Bash(posse
+//     promote:*)` to the deny list of all nine — so a home seeded by any
+//     earlier posse holds files that are byte-for-byte what THAT posse
+//     shipped and byte-different from this one's. Judged against the embed
+//     alone, every such home retires nothing (the whole leak, still open) and
+//     init blames the operator for edits they never made. The seeded manifest
+//     records the sha256 of each file as init laid it down, and answers the
+//     question for any version, so it is the second answer.
 //   - NEVER A NAME THE CONFIG DEPENDS ON. `coordinator:`, `default_persona:`
 //     and `verify_assignee:` each turn a persona name into behaviour; a
 //     home that retired one of them would come up with an unresolvable
@@ -197,7 +206,9 @@ func exampleAgentNames(src fs.FS) []string {
 //
 // It is a move, not a delete: the file lands on the shelf beside the other
 // examples, so an operator who wanted that generic can copy it straight
-// back.
+// back. That has to be a real rename now rather than a remove-because-the-
+// shelf-already-matches: once an older version's bytes can be retired, the
+// live file is the only copy of them in the home.
 func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 	names := exampleAgentNames(src)
 	if len(names) == 0 {
@@ -213,14 +224,38 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 	}
 	var retired, kept []string
 	for _, name := range names {
+		rel := path.Join("agents", name+".md")
 		live := filepath.Join(a.AgentsDir, name+".md")
 		have, err := os.ReadFile(live)
 		if err != nil {
 			continue // not installed here — nothing to retire
 		}
-		want, err := fs.ReadFile(src, path.Join("agents", name+".md"))
-		if err != nil || string(have) != string(want) {
-			kept = append(kept, name+".md (edited since it was seeded — it is yours now)")
+		want, wantErr := fs.ReadFile(src, rel)
+		shipped := wantErr == nil && string(have) == string(want)
+		// The other answer: a `seeded` manifest is this home's own record of
+		// what init laid down, whichever posse laid it, so it recognises an
+		// older release's example that the embed cannot. Only a seeded one —
+		// on a promoted home the same hashes describe a commit in the
+		// constitution repo, which is a different claim.
+		seededSum, recorded := "", false
+		if man != nil && man.Seeded {
+			seededSum, recorded = man.Files[rel]
+		}
+		untouched := false
+		if recorded {
+			sum, err := sha256File(live)
+			untouched = err == nil && sum == seededSum
+		}
+		if !shipped && !untouched {
+			// Two different findings, and only one of them is an accusation:
+			// the manifest can say the file changed after it was seeded, but
+			// with no seeded record here all init knows is that these bytes
+			// are not the ones it ships.
+			why := "differs from the example this posse ships, and nothing here records what was seeded — it is yours now"
+			if recorded {
+				why = "edited since it was seeded — it is yours now"
+			}
+			kept = append(kept, name+".md ("+why+")")
 			continue
 		}
 		if pinned[strings.ToLower(name)] {
@@ -235,15 +270,20 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 			kept = append(kept, name+".md (this home is promoted — retire it in the constitution repo, then `posse promote`)")
 			continue
 		}
-		// The shelf copy must already hold these exact bytes before the
-		// live one goes: copyIfMissing above wrote it, unless the operator
-		// edited the shelf, in which case theirs wins and nothing moves.
+		// The shelf slot must still be the example copyIfMissing wrote
+		// above; if the operator edited the shelf, theirs wins and nothing
+		// moves onto it.
 		shelf := filepath.Join(a.ExampleAgentsDir(), name+".md")
 		if b, err := os.ReadFile(shelf); err != nil || string(b) != string(want) {
 			kept = append(kept, name+".md (the shelf copy differs — not overwriting it)")
 			continue
 		}
-		if err := os.Remove(live); err != nil {
+		// Rename, not remove. When the live file is an older release's
+		// example its bytes exist nowhere else in the home, and the shelf
+		// slot it replaces is the one thing here init can always lay down
+		// again. Whatever leaves agents/ is still readable, under the name
+		// init just printed.
+		if err := os.Rename(live, shelf); err != nil {
 			return err
 		}
 		retired = append(retired, name)
