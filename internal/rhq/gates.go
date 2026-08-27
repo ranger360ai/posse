@@ -1236,19 +1236,54 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // Keyed on RHQ_PERSONA, like the pre-push gate keys on RHQ_TOOLS_DENY: the
 // operator's own commits in the same tree are untouched.
 //
-// Commits git drives itself (merge, cherry-pick, revert, rebase, squash)
-// are let through: git refuses a pathspec during those outright ("cannot do
-// a partial commit during a merge"), so refusing them would leave no way
-// through rather than a safer one. `git commit --amend` is NOT one of them
-// — it takes a pathspec and sweeps without one, so it is refused.
+// Commits git drives itself are let through WHEN GIT LEAVES A MARKER TO SEE:
+// merge, cherry-pick, a rebase, and a revert the persona is finishing by
+// hand all write one before prepare-commit-msg runs, and during a conflicted
+// merge git refuses a pathspec outright ("cannot do a partial commit during
+// a merge"), so refusing them would leave no way through rather than a safer
+// one. `git commit --amend` is NOT one of them — it takes a pathspec and
+// sweeps without one, so it is refused.
+//
+// A CLEAN `git revert` IS REFUSED, and that is the verdict rather than an
+// oversight (rangerhq-lrnp, laurie). Measured on git 2.39.3: it writes no
+// REVERT_HEAD, no sequencer and no GIT_REFLOG_ACTION before the hook runs —
+// $2 is "message" and GIT_INDEX_FILE is .git/index, i.e. at this slot it is
+// indistinguishable from `git commit -m`. The two signals that DO exist are
+// both unusable as an exemption, and each would take the wall down silently
+// rather than narrow it (measured, this is the rangerhq-cqq1 lesson again):
+// AUTO_MERGE outlives the revert that wrote it and is still there for the
+// next plain commit, and MERGE_MSG outlives a revert this hook refuses.
+// Widening the `case "$2"` arm to `revert` is worse still — $2 is "message",
+// so that arm would wave every unqualified commit through.
+//
+// So the way through is NAMED IN THE REFUSAL instead, and it is two steps
+// (verified end to end under the gate): `git revert --no-commit <sha>`, then
+// `git commit -F - -- <the paths it touched>`. That second commit needs no
+// exemption: a path-limited commit gets its own next-index temp file even
+// mid-revert, so it passes on its own merits.
+//
+// And because git stages the revert BEFORE this hook can refuse it, the
+// refusal names what is sitting in the shared index and how to undo it
+// path-limited. That dirt is bounded: `git revert` only starts from an index
+// that matches HEAD ("your local changes would be overwritten by revert"),
+// so what is staged at refusal time is the revert and nothing of anyone
+// else's — which is also why the hook must not "clean up" itself. A hook
+// that ran `git reset` behind the persona would be the destructive act the
+// wall exists to prevent.
 const sharedIndexBody = `
 # ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
 [ -n "$RHQ_PERSONA" ] || exit 0
-# Commits git drives itself cannot take a pathspec at all.
+# The two message forms git names itself; no pathspec is possible there.
 case "$2" in
   merge|squash) exit 0 ;;
 esac
 posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+# The markers a git-driven operation leaves BEFORE its commit. A clean
+# 'git revert' leaves none of them (rangerhq-lrnp, measured on git 2.39.3):
+# it is refused, and the refusal below names the two-step way through. Do
+# NOT widen this to "$2" (it is "message" for a revert AND for every
+# unqualified commit), nor to MERGE_MSG or AUTO_MERGE — both outlive the
+# operation that wrote them, so either would leave the wall down.
 for posse_f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
   if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
 done
@@ -1324,6 +1359,25 @@ fi
     echo "A private index also leaves the shared .git/index holding the PRE-FIX blobs"
     echo "for every path you just committed, so the next unqualified commit reverts"
     echo "you silently (rangerhq-8rtf). Naming it next-index-* does not change that."
+  fi
+  # rangerhq-lrnp: a clean 'git revert' reaches this hook with no marker to
+  # exempt it AND with its change already staged in the shared index, so this
+  # refusal is landing on a tree git has changed. Say so, and name both ways
+  # out. The test is git's own message file: git primes it from MERGE_MSG for
+  # the commits it drives, and a stale MERGE_MSG does not match a message you
+  # typed (measured both ways). It only WORDS the refusal — a false positive
+  # costs a confusing sentence, never an opening in the wall, which is why
+  # MERGE_MSG is trusted here and not above.
+  if [ -f "$posse_gitdir/MERGE_MSG" ] && cmp -s "$1" "$posse_gitdir/MERGE_MSG"; then
+    posse_staged=$(git diff --cached --name-only HEAD 2>/dev/null | tr '\n' ' ')
+    echo "git prepared this commit itself (revert): it staged the change into the"
+    echo "shared index BEFORE this hook could refuse, so the change is sitting there"
+    echo "now. It is bounded — git revert only starts from an index matching HEAD —"
+    echo "so these paths are yours and nobody else's:"
+    echo "  finish it:  git commit -F - -- $posse_staged"
+    echo "  or undo it: git restore --source=HEAD --staged --worktree -- $posse_staged"
+    echo "  next time:  git revert --no-commit <sha>, then the path-limited commit."
+    echo "Never 'git reset --hard' here: this tree is shared, and it is not yours."
   fi
 } >&2
 if [ -n "$RHQ_GATES_DIR" ]; then

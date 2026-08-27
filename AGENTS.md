@@ -24,6 +24,12 @@ bd sync               # Sync with git
   unqualified commit takes whatever another persona has staged, and the
   `prepare-commit-msg` gate refuses one. In your own worktree nothing is
   shared, the gate stands down, and the ordinary form is fine.
+- **In the shared checkout a revert is two steps**: `git revert --no-commit
+  <sha>`, then `git commit -F - -- <the paths it touched>`. A plain
+  `git revert` names no paths, so the same gate refuses it — after git has
+  already staged it (rangerhq-lrnp); undo that path-limited with
+  `git restore --source=HEAD --staged --worktree -- <those paths>`, never
+  `git reset --hard`.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

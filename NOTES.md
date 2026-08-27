@@ -4556,11 +4556,42 @@ that PID denies it. A failed commit probe degrades every persona launch into
 the repo because this slot carries both the shared-index wall and the beads
 visibility guard.
 
-Commits git drives itself — merge (`$2` = `merge`), cherry-pick, revert,
-rebase, squash — are let through: git refuses a pathspec outright during
-those ("cannot do a partial commit during a merge"), so refusing them would
-leave no way through rather than a safer one. `git commit --amend` is not
-one of them; it takes a pathspec and sweeps without one, so it is refused.
+Commits git drives itself are let through **when git leaves a marker to
+see** — merge (`$2` = `merge`), cherry-pick, rebase, squash, and a revert
+being finished by hand all write one before `prepare-commit-msg` runs, and
+during a conflicted merge git refuses a pathspec outright ("cannot do a
+partial commit during a merge"), so refusing them would leave no way through
+rather than a safer one. `git commit --amend` is not one of them; it takes a
+pathspec and sweeps without one, so it is refused.
+
+**A clean `git revert` is not one of them either, and it is refused
+(rangerhq-lrnp).** Measured on git 2.39.3: it writes no `REVERT_HEAD`, no
+sequencer, no `GIT_REFLOG_ACTION` before the hook runs — `$2` is `message`
+and `GIT_INDEX_FILE` is `.git/index`, so at this slot a clean revert is
+*indistinguishable* from `git commit -m`. The two signals it does leave are
+both unusable as an exemption, and each would take the wall down silently
+rather than narrow it: `AUTO_MERGE` outlives the revert that wrote it (still
+there for the next plain commit — pinned in the tests), and `MERGE_MSG`
+outlives a revert this hook refuses. Widening the `case "$2"` arm to
+`revert` is worse still: `$2` is `message`, so that arm would wave every
+unqualified commit through. The way through is named in the refusal instead,
+and it is two steps:
+
+```sh
+$ git revert --no-commit <sha>
+$ git commit -F - -- <the paths it touched>
+```
+
+The second command needs no exemption — a path-limited commit gets its own
+`next-index-<pid>` temp index even mid-revert, so it passes on its own
+merits. And because git stages the revert *before* the hook can refuse it,
+the refusal names what is sitting in the shared index and the path-limited
+undo (`git restore --source=HEAD --staged --worktree -- <paths>`, never
+`git reset --hard` in a shared tree). That dirt is bounded: `git revert`
+only starts from an index matching HEAD, so what a refusal leaves staged is
+the revert and nobody else's work. The hook does not clean it up itself —
+a hook running `git reset` behind a persona would be the destructive act the
+wall exists to prevent.
 
 Two holes worth naming. A pathspec of `.` satisfies both layers and still
 sweeps the tree — the refusal message says "name your own paths, not `.`",

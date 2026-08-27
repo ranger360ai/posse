@@ -352,8 +352,15 @@ trust_project_config: true  # allow the runtime to read the session dir's own co
     still in `git diff --cached` afterwards. The same `git commit -m x`
     from the operator's own shell in the same tree commits normally.
 14. `git merge`, `git cherry-pick` and `git rebase --continue` in a persona
-    session are **not** refused — git forbids a pathspec during those, so a
-    refusal would have no safe form to point at.
+    session are **not** refused — each leaves a marker in the git dir before
+    `prepare-commit-msg` runs, and git forbids a pathspec during a conflicted
+    merge, so a refusal would have no safe form to point at.
+15. A clean `git revert` in a persona session **is** refused (rangerhq-lrnp):
+    it writes no marker before the hook runs, so at that slot it cannot be
+    told from `git commit -m`. The refusal names the two steps that work —
+    `git revert --no-commit <sha>` then `git commit -F - -- <the paths it
+    touched>` — and, because git stages the revert before the hook can refuse
+    it, the path-limited undo for what is already staged.
 
 ## Amendment 2026-08-18 — the session directory is an input to the launch
 

@@ -186,13 +186,18 @@ func TestQAOperatorCanCommitThroughAChainMissingItsNeighbour(t *testing.T) {
 	}
 }
 
-// rangerhq-lrnp: the guard's own comment exempts the commits git drives
-// itself, on the strength of a marker file in the git dir. A clean
+// rangerhq-lrnp: the guard's own comment exempted "the commits git drives
+// itself" on the strength of a marker file in the git dir, and a clean
 // `git revert` writes none of them before prepare-commit-msg runs (git
-// 2.39.3), so the persona is refused — and refused only after the revert is
-// already staged in the shared index the guard exists to protect.
-func TestQAGuardLetsAGitDrivenRevertThrough(t *testing.T) {
-	t.Skip("rangerhq-lrnp: no REVERT_HEAD exists at prepare-commit-msg time, so the guard refuses the revert")
+// 2.39.3) — so the persona was refused under a comment promising otherwise,
+// and refused only AFTER git had staged the revert into the shared index the
+// guard exists to protect. The verdict kept is the refusal (no exemption is
+// safe: the only two signals a clean revert leaves, MERGE_MSG and
+// AUTO_MERGE, both outlive the operation that wrote them, and the last arm
+// here pins that). What changed is that the refusal now names the two-step
+// way through and the bounded dirt it is leaving behind. All of it is run,
+// not read.
+func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -205,19 +210,94 @@ func TestQAGuardLetsAGitDrivenRevertThrough(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status := func() string {
+		out, _ := git(nil, "status", "--porcelain")
+		return strings.TrimSpace(out)
+	}
 	git(nil, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a"), 0o644)
+	write("a.txt", "a")
 	git(nil, "add", "a.txt")
-	git(nil, "commit", "-qm", "add a")
+	git(nil, "commit", "-qm", "add a", "--", "a.txt")
+	write("b.txt", "b")
+	git(nil, "add", "b.txt")
+	git(nil, "commit", "-qm", "add b", "--", "b.txt")
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
 	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
-	if out, err := git(persona, "revert", "--no-edit", "HEAD"); err != nil {
-		t.Errorf("a git-driven revert must be let through: %v %s", err, out)
+
+	// A clean revert is refused — and the refusal has to be usable, because
+	// git has already staged the revert by the time it prints.
+	out, err := git(persona, "revert", "--no-edit", "HEAD")
+	if err == nil {
+		t.Fatalf("a clean revert is refused (no marker exists to exempt it): %s", out)
 	}
-	if out, _ := git(nil, "status", "--porcelain"); strings.TrimSpace(out) != "" {
-		t.Errorf("a refused revert must not leave the shared index dirty: %q", out)
+	for _, want := range []string{
+		"refused by posse gate",
+		"git prepared this commit itself (revert)",
+		"finish it:  git commit -F - -- b.txt",
+		"or undo it: git restore --source=HEAD --staged --worktree -- b.txt",
+		"next time:  git revert --no-commit <sha>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal must name the way through and the dirt it leaves, missing %q:\n%s", want, out)
+		}
+	}
+	// The dirt is bounded: git revert only starts from an index matching
+	// HEAD, so the refusal leaves exactly the revert and nothing of another
+	// persona's — which is what makes the path-limited undo above correct.
+	if st := status(); st != "D  b.txt" {
+		t.Errorf("the refusal leaves exactly the revert staged, got %q", st)
+	}
+	if out, err := git(persona, "restore", "--source=HEAD", "--staged", "--worktree", "--", "b.txt"); err != nil {
+		t.Fatalf("the undo the refusal names must work: %v %s", err, out)
+	}
+	if st := status(); st != "" {
+		t.Errorf("after the named undo the tree is clean, got %q", st)
+	}
+
+	// The two-step way through, end to end under the gate. The second step
+	// needs no exemption: a path-limited commit gets its own next-index temp
+	// index even mid-revert, so it passes on its own merits.
+	if out, err := git(persona, "revert", "--no-commit", "HEAD"); err != nil {
+		t.Fatalf("git revert --no-commit stages without committing: %v %s", err, out)
+	}
+	if out, err := git(persona, "commit", "-m", "Revert add b", "--", "b.txt"); err != nil {
+		t.Fatalf("the path-limited commit must land the revert: %v %s", err, out)
+	}
+	if st := status(); st != "" {
+		t.Errorf("the way through leaves a clean tree, got %q", st)
+	}
+	if out, _ := git(nil, "log", "--oneline", "-1"); !strings.Contains(out, "Revert add b") {
+		t.Errorf("HEAD must carry the revert: %q", out)
+	}
+	for _, marker := range []string{"REVERT_HEAD", "MERGE_MSG", "AUTO_MERGE", "sequencer"} {
+		if _, err := os.Stat(filepath.Join(repo, ".git", marker)); err == nil {
+			t.Errorf("the way through leaves no %s behind", marker)
+		}
+	}
+
+	// And the arm that says why no exemption was added: AUTO_MERGE OUTLIVES
+	// the revert that wrote it. The operator's own revert completes (the
+	// guard exempts them), leaves AUTO_MERGE in the git dir, and the next
+	// unqualified persona commit must still be refused — exempting on that
+	// file would have taken the wall down for good.
+	if out, err := git(nil, "revert", "--no-edit", "HEAD"); err != nil {
+		t.Fatalf("the operator's own revert is untouched by the guard: %v %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "AUTO_MERGE")); err != nil {
+		t.Fatalf("AUTO_MERGE is expected to linger past a completed revert: %v", err)
+	}
+	write("c.txt", "c")
+	git(nil, "add", "c.txt")
+	if out, err := git(persona, "commit", "-m", "sweep"); err == nil ||
+		!strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+		t.Errorf("a lingering AUTO_MERGE must not exempt anything: %v %s", err, out)
 	}
 }
 

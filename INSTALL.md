@@ -925,6 +925,12 @@ $ cat >> AGENTS.md <<'EOF'
 - Close the bead, and commit **naming your own paths** (`git commit -F - --
   <paths>`) — every persona shares this checkout and its index, so an
   unqualified commit takes whatever another persona has staged.
+- **A `git revert` is two steps here** — `git revert --no-commit <sha>`, then
+  `git commit -F - -- <the paths it touched>`. A plain `git revert` is refused
+  by the same gate (it names no paths), and it is refused only *after* git has
+  staged the revert, so undo that path-limited (`git restore --source=HEAD
+  --staged --worktree -- <those paths>`) rather than with `git reset --hard`,
+  which would take another persona's work with it.
 - `bd sync`, so `.beads/issues.jsonl` matches the database.
 - **Never push. The operator pushes.** Every persona's PID denies
   `Bash(git push:*)` and this repo's `pre-push` gate refuses it, so a push
@@ -962,7 +968,9 @@ Install the L3 gates — a `pre-push` hook that refuses `git push` in any
 persona session whose PID denies it, and a `prepare-commit-msg` hook that
 refuses a commit which does not name its own paths (every persona shares
 this checkout and its index, so an unqualified commit takes whatever
-another persona has staged).
+another persona has staged). A clean `git revert` names no paths and is
+refused too — it leaves git no marker to be recognized by (rangerhq-lrnp) —
+and the refusal names the two-step form above.
 
 That same `prepare-commit-msg` hook carries the beads **visibility guard**:
 in a repo config `beads_visibility:` does not mark `private`, it refuses a
