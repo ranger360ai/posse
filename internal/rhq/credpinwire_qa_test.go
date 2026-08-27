@@ -89,11 +89,20 @@ func TestNoEnvVarPointsTheModelListAtAListener(t *testing.T) {
 
 // ─── the override that is pinned, over the wire ──────────────────────────────
 
+// ranger-base-dr6u, over the wire and from the listener's side: this is
+// laurie's repro on ranger-base-7nlw with the assertion inverted.
+//
 // The seam still works end to end, with the reader's own transport and no
-// fake anywhere: a loopback override is honoured and the bearer arrives.
-// This is the behaviour the pin deliberately keeps — see the comment at the
-// bottom of this file for what it costs.
-func TestLoopbackOverrideCarriesTheBearerToTheSocket(t *testing.T) {
+// fake anywhere — the request arrives, the beta header arrives, the body
+// parses. What does NOT arrive is the account's credential, and the
+// keychain is not read to produce one: on this machine a 127.0.0.1 listener
+// is something any seatbelt-caged session can start, so a loopback override
+// is a destination the CALLER chose. Reaching it is a seam; being handed
+// the account's token is not.
+//
+// A fake transport cannot prove this half either: the assertion is about
+// the bytes a socket that is genuinely listening did not receive.
+func TestLoopbackOverrideCarriesNoBearerToTheSocket(t *testing.T) {
 	w := newWireServer(t, `{"five_hour":{"utilization":42},"seven_day":{"utilization":43}}`)
 	w.reachable(t)
 	t.Setenv("RHQ_PLAN_USAGE_URL", w.URL+"/usage")
@@ -102,20 +111,30 @@ func TestLoopbackOverrideCarriesTheBearerToTheSocket(t *testing.T) {
 	if r.URLErr != nil {
 		t.Fatalf("loopback override refused: %v", r.URLErr)
 	}
-	r.Token = func() (string, error) { return fakeToken, nil }
+	r.Token = func() (string, error) {
+		t.Error("the keychain was read for a listener the caller named")
+		return fakeToken, nil
+	}
 
 	u, err := r.Read()
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
 	if u.FiveHour != 42 || u.SevenDay != 43 {
-		t.Errorf("parsed %+v, want 42/43", u)
+		t.Errorf("parsed %+v, want 42/43 — the seam must keep working", u)
 	}
 	if w.hits != 1 {
 		t.Fatalf("%d requests reached the endpoint, want 1", w.hits)
 	}
-	if w.auth != "Bearer "+fakeToken || w.beta != planBetaHeader {
-		t.Errorf("headers on the wire: auth=%q beta=%q", w.auth, w.beta)
+	if w.auth != "" {
+		t.Errorf("the account's credential reached a caller-named listener: %q", w.auth)
+	}
+	if w.beta != planBetaHeader {
+		t.Errorf("anthropic-beta header on the wire = %q", w.beta)
+	}
+	// And the reading is the caller's own: it is not the fleet's fact.
+	if r.Shared {
+		t.Error("an override's reading must not be shareable")
 	}
 }
 
@@ -187,10 +206,20 @@ func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
 	}
 }
 
-// WHAT THIS FILE DOES NOT CLAIM (ranger-base-8rff verdict, and the reason
-// for the residual filed alongside it): loopback is honoured by NAME for a
-// reason — a test server is always on it — and the test above shows the
-// account's bearer arriving at a listener the CALLER chose. On this machine
-// a listener is something any session with a shell can start, so the
-// loopback half of the pin is a narrowed hole, not a closed one. That is
-// the bead's own design decision (17i fix 2), not a defect in it.
+// WHAT THIS FILE CLAIMS, AND WHAT IT STILL DOES NOT (ranger-base-8rff's
+// verdict, closed by ranger-base-dr6u).
+//
+// It used to end here saying the loopback half was a narrowed hole rather
+// than a closed one: loopback is honoured by NAME because a test server is
+// always on it, and the wire test above USED to show the account's bearer
+// arriving at a listener the caller chose. That is now inverted — the
+// credential does not leave for an override and the keychain is not read
+// for one, and the answer an override gives is not written to the snapshot
+// the rest of the fleet reads (credpin.go rules 4 and 5).
+//
+// What is still not claimed: belt 3 accepts an answer from loopback when
+// the request went to the compiled-in host, so a redirect from a
+// compromised or intercepted upstream to a local listener would still be
+// decoded and — because that reader IS the compiled-in one — cached. That
+// needs control of the network or of api.anthropic.com, not an env var, so
+// it is a separate finding rather than part of this one.

@@ -66,12 +66,30 @@ func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 
 func (ps *planServer) Close() { ps.closed.Store(true) }
 
+// reader is the fake endpoint as a PlanReader. Shared is set explicitly:
+// the field's zero value is "this reading is nobody's fact" (credpin.go
+// rule 5), and every cache test below is about a reading that IS shared —
+// so the fake stands in for the compiled-in endpoint, not for an override.
+// The tests that are about an override build their reader from
+// NewPlanReader with RHQ_PLAN_USAGE_URL set, which is the only way a
+// running posse can get an unshared one.
 func (ps *planServer) reader() *PlanReader {
 	return &PlanReader{
-		URL:   ps.URL,
-		Token: func() (string, error) { return fakeToken, nil },
-		HTTP:  ps.client,
+		URL:    ps.URL,
+		Token:  func() (string, error) { return fakeToken, nil },
+		HTTP:   ps.client,
+		Shared: true,
 	}
+}
+
+// keychainOnly points a plan reader at the compiled-in endpoint with the
+// token source a test wants to fail. Since ranger-base-dr6u the keychain is
+// read only for that url (credpin.go rule 4), so a test about a CREDENTIAL
+// failure has to be pointed there — the fake endpoint is not one. Nothing
+// is dialled either way: PlanReader asks for the token first, so the
+// failure is the credential and not the transport.
+func keychainOnly(r *PlanReader, tok func() (string, error)) {
+	r.URL, r.Token = PlanUsageURL, tok
 }
 
 // planConfig writes a config with the guard thresholds and one beads repo.
@@ -273,7 +291,9 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 		{"garbage body", func(ps *planServer, r *PlanReader) { ps.body = "<html>nope" },
 			"not the expected JSON"},
 		{"keychain locked", func(ps *planServer, r *PlanReader) {
-			r.Token = func() (string, error) { return "", Die("keychain item %q unreadable", KeychainService) }
+			keychainOnly(r, func() (string, error) {
+				return "", Die("keychain item %q unreadable", KeychainService)
+			})
 		}, "keychain"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -331,8 +351,12 @@ func TestPlanGuardBadThreshold(t *testing.T) {
 	}
 }
 
-// The request carries the OAuth bearer and the beta header the endpoint
-// requires, and RHQ_PLAN_USAGE_URL redirects NewPlanReader for testing.
+// The seam still works: RHQ_PLAN_USAGE_URL redirects NewPlanReader, the
+// beta header the endpoint requires is sent, and the response parses. What
+// does NOT go with it is the account's credential — a loopback override is
+// a host the caller named, so it is asked uncredentialed and the keychain
+// is not read at all (credpin.go rule 4, ranger-base-dr6u). The token
+// below is a fake and it still must not arrive.
 func TestPlanReaderRequest(t *testing.T) {
 	ps := newPlanServer(t, 42.4, 61.4)
 	t.Setenv("RHQ_PLAN_USAGE_URL", ps.URL)
@@ -340,7 +364,10 @@ func TestPlanReaderRequest(t *testing.T) {
 	if r.URL != ps.URL {
 		t.Fatalf("RHQ_PLAN_USAGE_URL ignored: %s", r.URL)
 	}
-	r.Token = func() (string, error) { return fakeToken, nil }
+	r.Token = func() (string, error) {
+		t.Error("the keychain was read for a caller-named endpoint")
+		return fakeToken, nil
+	}
 	r.HTTP = ps.client
 
 	u, err := r.Read()
@@ -350,8 +377,8 @@ func TestPlanReaderRequest(t *testing.T) {
 	if u.FiveHour != 42.4 || u.SevenDay != 61.4 {
 		t.Errorf("parsed %+v, want 42.4/61.4", u)
 	}
-	if ps.auth != "Bearer "+fakeToken {
-		t.Errorf("Authorization header = %q", ps.auth)
+	if ps.auth != "" {
+		t.Errorf("an override was handed a credential: Authorization = %q", ps.auth)
 	}
 	if ps.beta != "oauth-2025-04-20" {
 		t.Errorf("anthropic-beta header = %q", ps.beta)
@@ -359,6 +386,24 @@ func TestPlanReaderRequest(t *testing.T) {
 	// The cockpit header / posse cost line: percentages, no history.
 	if got := u.Line(); got != "5h 42% · 7d 61%" {
 		t.Errorf("Line() = %q, want %q", got, "5h 42% · 7d 61%")
+	}
+}
+
+// The compiled-in endpoint is the one that is credentialed, and the one
+// whose answer the fleet may believe. Nothing here dials: the assertion is
+// about how NewPlanReader is configured with no override in the
+// environment.
+func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
+	os.Unsetenv("RHQ_PLAN_USAGE_URL")
+	r := NewPlanReader()
+	if r.URL != PlanUsageURL {
+		t.Fatalf("default URL = %s, want %s", r.URL, PlanUsageURL)
+	}
+	if !r.Shared {
+		t.Error("the compiled-in endpoint's reading must still be the fleet's fact")
+	}
+	if !credentialedURL(r.URL, PlanUsageURL) {
+		t.Error("the compiled-in endpoint must still be credentialed")
 	}
 }
 

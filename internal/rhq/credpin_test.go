@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,5 +235,184 @@ func TestThePinnedClientWillNotFollowARedirectOffTheHost(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "unreachable") {
 		t.Errorf("a refusal must not be reported as an outage: %q", err)
+	}
+}
+
+// ─── ranger-base-dr6u: the loopback carve-out, closed ────────────────────────
+//
+// 17i pinned the override to loopback on the premise that "a test server
+// always is loopback; an exfil destination never is". The second half is
+// false when the adversary is a LOCAL process — a 127.0.0.1 listener is
+// both loopback and a destination the caller chose, and on this machine any
+// seatbelt-caged persona can bind one and set an env var for a `posse`
+// command. So loopback still buys the SEAM and nothing else: not the
+// account's credential (rule 4), and not a place in the snapshot the rest
+// of the fleet reads (rule 5).
+//
+// The listeners below are real: httptest binds 127.0.0.1, which is the only
+// way an override is honoured at all, and the readers dial them with their
+// own pinnedClient.
+
+// overrideRig is one loopback listener the caller "chose", plus the state
+// dir that stands in for the instance's shared one.
+type overrideRig struct {
+	dir   string
+	hits  int
+	auth  string
+	cache *PlanCache
+}
+
+func newOverrideRig(t *testing.T, status int, body, retryAfter string) *overrideRig {
+	t.Helper()
+	rig := &overrideRig{dir: t.TempDir()}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rig.hits++
+		rig.auth = r.Header.Get("Authorization")
+		if retryAfter != "" {
+			w.Header().Set("Retry-After", retryAfter)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	t.Setenv("RHQ_PLAN_USAGE_URL", srv.URL+"/usage")
+	r := NewPlanReader()
+	if r.URLErr != nil {
+		t.Fatalf("the loopback seam must keep working: %v", r.URLErr)
+	}
+	if r.Shared {
+		t.Fatal("an override's reading must not be shareable")
+	}
+	r.Token = func() (string, error) {
+		t.Error("the keychain was read for a listener the caller named")
+		return fakeToken, nil
+	}
+	rig.cache = &PlanCache{
+		Path:   filepath.Join(rig.dir, "plan-usage.json"),
+		Log:    filepath.Join(rig.dir, "plan-usage.log"),
+		Caller: "cost",
+		Reader: r,
+	}
+	return rig
+}
+
+func (rig *overrideRig) snapshot(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(rig.cache.Path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func (rig *overrideRig) seedTheFleetsReading(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(rig.dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","five_hour":42,"seven_day":61}`
+	if err := os.WriteFile(rig.cache.Path, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// HALF A. The override is asked, and it is asked with nothing: no
+// Authorization header, and no keychain read to produce one. This is
+// laurie's repro (ranger-base-7nlw) with the expectation it asked for.
+func TestALoopbackOverrideIsAskedWithoutTheCredential(t *testing.T) {
+	rig := newOverrideRig(t, http.StatusOK, `{"five_hour":{"utilization":7},"seven_day":{"utilization":8}}`, "")
+
+	u, _, err := rig.cache.Read(time.Hour)
+	if err != nil {
+		t.Fatalf("the seam must keep working: %v", err)
+	}
+	if u.FiveHour != 7 || u.SevenDay != 8 {
+		t.Errorf("the caller must still get its own reading, got %+v", u)
+	}
+	if rig.hits != 1 {
+		t.Fatalf("%d requests reached the listener, want 1", rig.hits)
+	}
+	if rig.auth != "" {
+		t.Errorf("the account's credential reached a caller-named listener: %q", rig.auth)
+	}
+}
+
+// HALF A, whatever set the URL: a struct field is not a better provenance
+// than an env var. Only the compiled-in url is credentialed.
+func TestOnlyTheCompiledInURLIsCredentialed(t *testing.T) {
+	for _, raw := range []string{
+		"http://127.0.0.1:9/usage",
+		"http://localhost:9/usage",
+		"https://api.anthropic.com/api/oauth/usage/", // the near miss: one byte
+	} {
+		if credentialedURL(raw, PlanUsageURL) {
+			t.Errorf("%s is treated as the compiled-in endpoint", raw)
+		}
+	}
+	if !credentialedURL(PlanUsageURL, PlanUsageURL) {
+		t.Error("the compiled-in endpoint must be credentialed")
+	}
+}
+
+// HALF B. The poisoning primitive needs no credential at all: an override
+// answering 0% would disarm the plan-window guard for every posse process
+// on the instance for the TTL. The caller gets its own reading; the fleet's
+// snapshot is not written.
+func TestAnOverridesAnswerIsNotTheFleetsFact(t *testing.T) {
+	rig := newOverrideRig(t, http.StatusOK, `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, "")
+
+	u, _, err := rig.cache.Read(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.FiveHour != 0 {
+		t.Fatalf("setup: the caller should have read the listener's 0%%, got %+v", u)
+	}
+	if got := rig.snapshot(t); got != "" {
+		t.Errorf("an override published to the instance's snapshot: %s", got)
+	}
+	// Declining to adopt it is not declining to record it: the request left
+	// the machine, and the cadence log is the evidence that it did.
+	log, err := os.ReadFile(rig.cache.Log)
+	if err != nil || !strings.Contains(string(log), "cost ok") {
+		t.Errorf("the request must still be in the read log, got %q (%v)", log, err)
+	}
+}
+
+// And it cannot overwrite a reading the fleet already has. maxAge 0 always
+// asks, so the snapshot is not merely answering ahead of the listener.
+func TestAnOverrideCannotOverwriteTheFleetsReading(t *testing.T) {
+	rig := newOverrideRig(t, http.StatusOK, `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, "")
+	rig.seedTheFleetsReading(t)
+
+	if _, _, err := rig.cache.Read(0); err != nil {
+		t.Fatal(err)
+	}
+	if rig.hits != 1 {
+		t.Fatalf("setup: maxAge 0 must ask, got %d requests", rig.hits)
+	}
+	got := rig.snapshot(t)
+	if !strings.Contains(got, `"five_hour":42`) || strings.Contains(got, `"five_hour":0`) {
+		t.Errorf("the fleet's reading was overwritten by an override: %s", got)
+	}
+}
+
+// The other direction of the same primitive, and the one that needs neither
+// a credential nor a plausible number: a listener answering `429
+// Retry-After: 3600` would write an hour-long cooldown into the file every
+// posse process honours, parking the fleet. The caller still gets the 429.
+func TestAnOverrides429DoesNotParkTheFleet(t *testing.T) {
+	rig := newOverrideRig(t, http.StatusTooManyRequests, `{}`, "3600")
+	rig.seedTheFleetsReading(t)
+
+	_, _, err := rig.cache.Read(0)
+	var rl *RateLimit
+	if !errors.As(err, &rl) {
+		t.Fatalf("Read error = %v, want a *RateLimit for the caller", err)
+	}
+	if got := rig.snapshot(t); strings.Contains(got, "retry_at") {
+		t.Errorf("an override wrote a fleet-wide cooldown: %s", got)
 	}
 }

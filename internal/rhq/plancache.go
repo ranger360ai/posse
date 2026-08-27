@@ -129,6 +129,9 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		r = NewPlanReader()
 	}
 	u, err := r.Read()
+	// The read log is written either way. A request that left the machine is
+	// evidence whoever answered it, and an override that is refused a place
+	// in the snapshot should still be visible in the cadence file.
 	c.logRead(now, err)
 	if err != nil {
 		var rl *RateLimit
@@ -137,12 +140,32 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 			// The reading is still the newest fact anyone has, and whether
 			// it is too old to act on is the caller's question, not ours.
 			e.RetryAt = now.Add(planCooldown(rl.RetryAfter))
-			c.store(e)
+			c.share(r, e)
 		}
 		return PlanUsage{}, time.Time{}, err
 	}
-	c.store(planEntry{At: now, FiveHour: u.FiveHour, SevenDay: u.SevenDay})
+	c.share(r, planEntry{At: now, FiveHour: u.FiveHour, SevenDay: u.SevenDay})
 	return u, now, nil
+}
+
+// share is store with credpin.go rule 5 in front of it: an answer only
+// becomes the instance's fact when the reader that fetched it was still
+// pointed at the compiled-in endpoint (ranger-base-dr6u).
+//
+// It gates the 429 branch as well as the success one, and for the same
+// reason: a cooldown IS a fact the whole fleet acts on, so a loopback
+// listener answering `429 Retry-After: 3600` would park every posse process
+// on the machine for an hour without ever being asked for a credential.
+//
+// The caller gets its own reading regardless — an override still works, it
+// just works for the process that set it. Nothing is said out loud here:
+// this is not a refusal, it is the snapshot declining to adopt a stranger,
+// and plan-usage.log already records that the request happened.
+func (c *PlanCache) share(r *PlanReader, e planEntry) {
+	if r == nil || !r.Shared {
+		return
+	}
+	c.store(e)
 }
 
 // Line is the reading as a person reads it: `plan windows: 5h 42% · 7d

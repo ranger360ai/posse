@@ -557,9 +557,9 @@ func TestBlindOneThresholdStillArms(t *testing.T) {
 func TestBlindSkipOnKeychainUnreadable(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
-	r.d.Plan.Token = func() (string, error) {
+	keychainOnly(r.d.Plan, func() (string, error) {
 		return "", Die("keychain item %q unreadable", KeychainService)
-	}
+	})
 	r.at(12 * time.Minute)
 
 	if n := r.run(t); n != 0 {

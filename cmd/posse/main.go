@@ -1555,6 +1555,8 @@ environment:
   RHQ_HOME       config dir (default ~/.config/posse; existing ~/.config/rhq falls back)
   RHQ_HERDR_BIN  herdr binary override (testing)
   RHQ_BD_BIN     bd binary override (testing)
-  RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing; loopback hosts only)
+  RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing; loopback hosts only —
+                      asked without the account's credential, and its answer is
+                      not shared with other posse processes)
 `)
 }

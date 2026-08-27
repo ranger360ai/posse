@@ -18,14 +18,14 @@ package rhq
 //
 // The rule, one place, both callers:
 //
-//  1. An endpoint override is honoured only when its host is LOOPBACK. A
-//     test server is; an exfil destination is not. Anything else is
-//     REFUSED and said out loud — never silently swapped back for the real
-//     endpoint, because an override the operator set and posse ignored is
-//     the other way to be wrong.
-//  2. Belt: the Authorization header goes on a request only when that
-//     request's host is the compiled-in one or loopback — whatever set the
-//     URL: an env var, a struct field, or a caller who forgets rule 1.
+//  1. An endpoint override is honoured only when its host is LOOPBACK.
+//     Anything else is REFUSED and said out loud — never silently swapped
+//     back for the real endpoint, because an override the operator set and
+//     posse ignored is the other way to be wrong.
+//  2. Belt: a reader may be POINTED at the compiled-in host or at this
+//     machine, and nowhere else — whatever set the URL: an env var, a
+//     struct field, or a caller who forgets rule 1. That is reachHost
+//     below, and it is deliberately NOT the credential question.
 //  3. Belt: the host that ANSWERED is checked too. Go already strips
 //     Authorization across a redirect to another domain; this stops the
 //     other half, which is that the override was a cache-poisoning
@@ -35,6 +35,36 @@ package rhq
 // The override this file does not mention is RHQ_MODEL_LIST_URL: it is
 // gone. Nothing read it but the vulnerability — the tests inject
 // App.ModelLister, the seam built for exactly this.
+//
+// ─── what ranger-base-dr6u changed ───────────────────────────────────────
+//
+// 17i's premise for rule 1 was "a test server always is loopback; an exfil
+// destination never is". The second half is false when the adversary is a
+// LOCAL process, and on this machine it is: SeatbeltProfile is `(allow
+// default)` + `(deny file-write*)` with no network restriction, and
+// `Bash(posse:*)` is granted crew-wide — so an env var and a socket are all
+// it takes to be a caller-chosen destination that is also loopback
+// (verified live against a synthetic token, ranger-base-7nlw). Reaching a
+// local listener is a seam. Being CREDENTIALED and being BELIEVED are not,
+// so those two are their own rules now:
+//
+//  4. The account's credential goes only to the compiled-in endpoint,
+//     byte for byte — credentialedURL below, never a host test. A loopback
+//     override is asked WITHOUT an Authorization header, and the keychain
+//     is not read for it at all: the seam keeps working, uncredentialed.
+//  5. An override's answer is not the fleet's fact. `$StateDir/
+//     plan-usage.json` is read by every posse process on the instance for
+//     the TTL (rangerhq-tdy8), so one `posse cost --plan` under an override
+//     would otherwise PUBLISH a caller's numbers to the whole shop — 0%
+//     disarms the plan guard, 99% parks the fleet, and neither needs a
+//     credential. Enforced at the store, in plancache.go, off
+//     PlanReader.Shared.
+//
+// Rules 4 and 5 are the PLAN reader's. ModelLister keeps the loopback
+// carve-out of rules 2 and 3 because it has no override to reach it with:
+// RHQ_MODEL_LIST_URL is deleted and its URL is the compiled-in constant in
+// every path that is not a test injecting a struct field. If a model-list
+// override is ever re-introduced, it needs rules 4 and 5 first.
 
 import (
 	"fmt"
@@ -45,13 +75,20 @@ import (
 	"time"
 )
 
-// pinLoopbackRule and pinCredentialRule are the two refusals in the
-// operator's terms. They are what an operator reads when a launch says no,
-// so they name the fix, not the failure.
+// pinLoopbackRule, pinReachRule and pinCredentialRule are the refusals in
+// the operator's terms. They are what an operator reads when a launch says
+// no, so they name the fix, not the failure.
 const pinLoopbackRule = "an endpoint override is honoured only when its host is loopback (127.0.0.1, [::1], localhost)"
 
+// pinReachRule is rule 2: where a reader may be pointed at all.
+func pinReachRule(host string) string {
+	return "posse asks " + host + " or this machine and nowhere else"
+}
+
+// pinCredentialRule is rule 4: where the credential may go. Loopback is
+// absent by design — see the dr6u section above.
 func pinCredentialRule(host string) string {
-	return "posse puts the account's credential in front of " + host + " or loopback and nowhere else"
+	return "posse puts the account's credential in front of " + host + " and nowhere else"
 }
 
 // PinRefusal is posse declining to point a credentialed request at a host
@@ -78,9 +115,15 @@ func (e *PinRefusal) Error() string {
 	return fmt.Sprintf("%s %s %s — refused: %s", e.What, verb, host, e.Why)
 }
 
-// credentialedHost: may this process put the account's credential in front
-// of u? The compiled-in host of the endpoint, or this machine.
-func credentialedHost(u *url.URL, want string) bool {
+// reachHost: may this process point a reader at u, or believe an answer
+// from it? The compiled-in host of the endpoint, or this machine.
+//
+// It used to be called credentialedHost and used for both questions. It is
+// not the credential question (ranger-base-dr6u): a loopback listener is a
+// host any local process can be, so "posse may ask it" and "posse may hand
+// it the account's token" are different permissions. credentialedURL is the
+// second one.
+func reachHost(u *url.URL, want string) bool {
 	if u == nil {
 		return false
 	}
@@ -88,11 +131,37 @@ func credentialedHost(u *url.URL, want string) bool {
 	if h == "" {
 		return false
 	}
-	if strings.EqualFold(h, want) || strings.EqualFold(h, "localhost") {
+	if strings.EqualFold(h, want) {
+		return true
+	}
+	return loopbackHost(u)
+}
+
+// loopbackHost: does u name this machine? The test-seam question, and the
+// one loopbackOverride is built on.
+func loopbackHost(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	h := u.Hostname()
+	if h == "" {
+		return false
+	}
+	if strings.EqualFold(h, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(h)
 	return ip != nil && ip.IsLoopback()
+}
+
+// credentialedURL is rule 4, and it is deliberately not a host test: the
+// account's credential goes to the endpoint posse COMPILED IN, byte for
+// byte, and to no URL that merely resolves somewhere that looks like it.
+// Anything an env var or a caller substituted — including a variant
+// spelling of the real endpoint — is an override, and an override is
+// answered by a host somebody else chose.
+func credentialedURL(raw, compiled string) bool {
+	return raw == compiled
 }
 
 // loopbackOverride reads an endpoint override. It returns the URL only when
@@ -106,7 +175,7 @@ func loopbackOverride(name, raw string) (string, error) {
 	// The compiled-in host is deliberately NOT accepted here: an override
 	// that names the real endpoint buys nothing and would make the rule two
 	// rules. Loopback, or refused.
-	if !credentialedHost(u, "") {
+	if !loopbackHost(u) {
 		return "", &PinRefusal{What: name, Host: u.Host, Why: pinLoopbackRule}
 	}
 	return raw, nil
@@ -114,26 +183,28 @@ func loopbackOverride(name, raw string) (string, error) {
 
 // pinnedEndpoint is belt (2) made one step early: before the keychain is
 // read at all, on a URL that has not become a request yet. A host this
-// process does not credential costs the credential nothing — not even a
-// read into memory.
+// process will not ask costs the credential nothing — not even a read into
+// memory.
 func pinnedEndpoint(what, raw, want string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return &PinRefusal{What: what, Why: pinCredentialRule(want)}
+		return &PinRefusal{What: what, Why: pinReachRule(want)}
 	}
-	if credentialedHost(u, want) {
+	if reachHost(u, want) {
 		return nil
 	}
-	return &PinRefusal{What: what, Host: u.Host, Why: pinCredentialRule(want)}
+	return &PinRefusal{What: what, Host: u.Host, Why: pinReachRule(want)}
 }
 
-// pinnedRequest is the same check where the Authorization header is about
-// to be set, on the request that is about to be made.
+// pinnedRequest is the check made where the Authorization header is about
+// to be set, on the request that is about to be made. Callers that set that
+// header for a loopback URL must not use it — it is rule 2's host test, and
+// the plan reader answers rule 4 with credentialedURL before it gets here.
 func pinnedRequest(what string, req *http.Request, want string) error {
-	if credentialedHost(req.URL, want) {
+	if reachHost(req.URL, want) {
 		return nil
 	}
-	return &PinRefusal{What: what, Host: req.URL.Host, Why: pinCredentialRule(want)}
+	return &PinRefusal{What: what, Host: req.URL.Host, Why: pinReachRule(want)}
 }
 
 // pinnedResponse is belt (3): the check made on the host that answered, so
@@ -142,10 +213,10 @@ func pinnedResponse(what string, resp *http.Response, want string) error {
 	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
 		return nil
 	}
-	if credentialedHost(resp.Request.URL, want) {
+	if reachHost(resp.Request.URL, want) {
 		return nil
 	}
-	return &PinRefusal{What: what, Host: resp.Request.URL.Host, Why: pinCredentialRule(want), Redirect: true}
+	return &PinRefusal{What: what, Host: resp.Request.URL.Host, Why: pinReachRule(want), Redirect: true}
 }
 
 // pinnedClient is the client the two readers build for themselves: one that
@@ -159,8 +230,8 @@ func pinnedClient(timeout time.Duration, what, want string) *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("stopped after 10 redirects")
 			}
-			if !credentialedHost(req.URL, want) {
-				return &PinRefusal{What: what, Host: req.URL.Host, Why: pinCredentialRule(want), Redirect: true}
+			if !reachHost(req.URL, want) {
+				return &PinRefusal{What: what, Host: req.URL.Host, Why: pinReachRule(want), Redirect: true}
 			}
 			return nil
 		},

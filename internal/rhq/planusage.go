@@ -35,10 +35,11 @@ import (
 const (
 	// PlanUsageURL is the OAuth usage endpoint; RHQ_PLAN_USAGE_URL overrides
 	// it (tests point it at a local server), and that override is honoured
-	// only when it names loopback — credpin.go has the why.
+	// only when it names loopback — credpin.go has the why. It is also the
+	// ONLY url this process credentials, byte for byte (credpin.go rule 4).
 	PlanUsageURL = "https://api.anthropic.com/api/oauth/usage"
-	// PlanUsageHost is the host that answers it: the one host, besides this
-	// machine, this process puts the account's credential in front of.
+	// PlanUsageHost is the host that answers it: besides this machine, the
+	// one host this process will ask at all.
 	PlanUsageHost = "api.anthropic.com"
 	// KeychainService is the macOS keychain item Claude Code stores its
 	// OAuth credentials under.
@@ -77,6 +78,23 @@ type PlanReader struct {
 	// Now is the clock a Retry-After date is measured against (nil =
 	// time.Now). Only the HTTP-date form of that header needs it.
 	Now func() time.Time
+	// Shared reports whether a reading this reader produces may become the
+	// instance's shared fact — `$StateDir/plan-usage.json`, which every
+	// posse process on the machine reads for the TTL (rangerhq-tdy8).
+	// credpin.go rule 5: only the compiled-in endpoint's answers may. One
+	// `posse cost --plan` under a loopback override would otherwise publish
+	// a caller's numbers to the whole shop, and that needs no credential at
+	// all (ranger-base-dr6u, reproduced live on ranger-base-7nlw).
+	//
+	// FALSE is the zero value on purpose: a reader nobody vouched for is
+	// nobody's fact, so a struct literal that forgets this field fails
+	// safe. NewPlanReader sets it true while the URL is still PlanUsageURL,
+	// and a test that wants the real reader's caching sets it too.
+	//
+	// It gates the STORE, not the load: reading the fleet's snapshot under
+	// an override is not poisoning, and `posse cost --plan` in a test home
+	// is meant to answer off a seeded one.
+	Shared bool
 }
 
 func (r *PlanReader) now() time.Time {
@@ -141,6 +159,10 @@ func NewPlanReader() *PlanReader {
 			r.URL = u
 		}
 	}
+	// Derived from where the URL ended up, never from whether an env var
+	// was set: a refused override leaves the compiled-in endpoint, and that
+	// one still shares.
+	r.Shared = credentialedURL(r.URL, PlanUsageURL)
 	return r
 }
 
@@ -419,23 +441,43 @@ func (r *PlanReader) Read() (PlanUsage, error) {
 	if r.URLErr != nil {
 		return u, r.URLErr
 	}
-	if r.Token == nil || r.URL == "" {
+	if r.URL == "" {
 		return u, Die("plan reader not configured")
 	}
-	// Before the keychain, not after: a host posse does not credential is
-	// answered by asking nobody and reading nothing (credpin.go).
+	// Before the keychain, not after: a host posse will not ask is answered
+	// by asking nobody and reading nothing (credpin.go rule 2).
 	if err := pinnedEndpoint("usage endpoint", r.URL, PlanUsageHost); err != nil {
 		return u, err
 	}
-	tok, err := r.Token()
-	if err != nil {
-		return u, err
+	// credpin.go rule 4. A loopback override is a seam, not an account: it
+	// is asked WITHOUT the credential, and the keychain is not read for it
+	// at all — so an env var and a socket can no longer make posse pull the
+	// token out of the keychain and put it in front of a listener the
+	// caller chose (ranger-base-dr6u). The seam keeps working; what it
+	// stops getting is the bearer.
+	credentialed := credentialedURL(r.URL, PlanUsageURL)
+	var tok string
+	if credentialed {
+		if r.Token == nil {
+			return u, Die("plan reader not configured")
+		}
+		var err error
+		if tok, err = r.Token(); err != nil {
+			return u, err
+		}
 	}
 	req, err := http.NewRequest("GET", r.URL, nil)
 	if err != nil {
 		return u, Die("bad usage url")
 	}
-	req.Header.Set("Authorization", "Bearer "+tok)
+	if credentialed {
+		// Belt, on the request that is about to be made: the header goes on
+		// only after this URL has been checked one more time.
+		if err := pinnedRequest("usage endpoint", req, PlanUsageHost); err != nil {
+			return u, err
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 	req.Header.Set("anthropic-beta", planBetaHeader)
 	cl := r.HTTP
 	if cl == nil {

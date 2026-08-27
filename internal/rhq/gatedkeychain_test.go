@@ -96,9 +96,11 @@ func TestKeychainTokenNonRefusalStaysUnreadable(t *testing.T) {
 func TestPlanGuardBlindLineNamesTheDenyRule(t *testing.T) {
 	gatedSecurityPATH(t)
 	r := newBlindRig(t, guardOn)
-	// The endpoint stays up: the read fails at the credential, which is the
-	// failure this bead is about.
-	r.d.Plan.Token = KeychainToken
+	// The read fails at the credential, which is the failure this bead is
+	// about — and the keychain is reached only from the compiled-in
+	// endpoint, which is never dialled because the token is asked for
+	// first.
+	keychainOnly(r.d.Plan, KeychainToken)
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("blind still fails open when attended: %d dispatched\n%s", n, r.out())
@@ -211,9 +213,10 @@ func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
 	gatedSecurityPATH(t)
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
-	// The endpoint stays up: the read fails at the credential, so the park
-	// reason is the refusal and not the transport.
-	r.d.Plan.Token = KeychainToken
+	// The read fails at the credential, so the park reason is the refusal
+	// and not the transport — and the keychain is reached only from the
+	// compiled-in endpoint, which is never dialled (credpin.go rule 4).
+	keychainOnly(r.d.Plan, KeychainToken)
 	r.at(12 * time.Minute)
 
 	if n := r.run(t); n != 0 {
@@ -243,9 +246,11 @@ func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
 		Path:   filepath.Join(home, "plan-usage.json"),
 		Log:    filepath.Join(home, "plan-usage.log"),
 		Caller: "cost",
-		// The URL is never dialled: PlanReader asks for the token first, so
-		// the failure is the credential and not the transport.
-		Reader: &PlanReader{URL: "http://127.0.0.1:1/x", Token: KeychainToken},
+		// The compiled-in endpoint, and it is never dialled: the keychain
+		// is read only for that url (credpin.go rule 4) and PlanReader asks
+		// for the token first, so the failure is the credential and not the
+		// transport.
+		Reader: &PlanReader{URL: PlanUsageURL, Token: KeychainToken},
 	}
 
 	if _, _, err := c.Read(time.Hour); err == nil {

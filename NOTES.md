@@ -518,10 +518,16 @@ watching them is the operator's interactive headroom — a fleet that eats the
   is what let a blind guard hide; so when the thresholds **are** set and the
   last read failed, the header says `5h — · guard blind 14m` instead
   (rangerhq-6h1). Unconfigured stays clean. `RHQ_PLAN_USAGE_URL` redirects
-  the endpoint for tests, and **only to loopback**: the request carries the
-  account's OAuth token, so an override naming any other host is refused by
-  name rather than followed or silently ignored (`internal/rhq/credpin.go`,
-  ranger-base-17i). The preflight's twin of it, `RHQ_MODEL_LIST_URL`, is
+  the endpoint for tests, and **only to loopback**: an override naming any
+  other host is refused by name rather than followed or silently ignored
+  (`internal/rhq/credpin.go`, ranger-base-17i). Loopback buys the seam and
+  nothing else (ranger-base-dr6u) — on this machine a `127.0.0.1` listener
+  is something any caged persona can bind, so an override is asked with **no
+  Authorization header** and the keychain is not read for it at all, and its
+  answer is **never written to `state/plan-usage.json`**, the snapshot every
+  posse process on the instance reads for the TTL. An override reads for the
+  process that set it; it is not the fleet's fact, and neither is a 429 it
+  answers. The preflight's twin of it, `RHQ_MODEL_LIST_URL`, is
   deleted outright — nothing but the vulnerability read it.
 - The reader is exported as `PlanReader.Read` for rangerhq-25p, and Dial E
   took the offer: when the guard has read the windows this pass, those
