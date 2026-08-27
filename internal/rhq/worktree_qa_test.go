@@ -647,3 +647,113 @@ func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
 		t.Errorf("`posse worktrees --land` did not finish the deferred landing:\n%s", out.String())
 	}
 }
+
+// The pin above stops at the launch plan. The harm ranger-base-q5p1 named
+// was two steps further down: the recreated RUN RECORD carried the blanked
+// repo/branch, SessionTreeOf answered nil for it, and the kill then read a
+// live private tree as a shared checkout and skipped its landing without a
+// word. This drives the whole chain — relaunch under a detached checkout,
+// kill under it, catch-up after it — through the real paths.
+func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
+	wtqaHome(t)
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := wtRepo(t)
+	write(t, b.App.ConfigPath, "")
+	if err := b.CreateSession(NewSessionOpts{Name: "s-detached", Dir: repo, Cmd: "true", Worktree: true}); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := b.readMeta("s-detached")
+	if !ok || before.Branch == "" {
+		t.Fatalf("the session got no tree: %+v", before)
+	}
+	commitIn(t, before.Dir, "fix.txt", "the persona's work\n", "s-detached: the fix")
+	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
+
+	var out strings.Builder
+	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "s-detached", NoLand: true, Force: true}); err != nil {
+		t.Fatalf("relaunch under a detached checkout: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "SHARED checkout") {
+		t.Errorf("the relaunch reported a live private tree as shared:\n%s", out.String())
+	}
+
+	// The record the kill will read, not just the plan the launch used.
+	after, ok := b.readMeta("s-detached")
+	if !ok {
+		t.Fatal("the recreated session has no meta")
+	}
+	if after.Dir != before.Dir || after.Branch != before.Branch || after.Repo == "" {
+		t.Fatalf("the recreated run record lost its worktree provenance: dir/repo/branch = %q/%q/%q, want %q/<non-empty>/%q",
+			after.Dir, after.Repo, after.Branch, before.Dir, before.Branch)
+	}
+	if SessionTreeOf(after) == nil {
+		t.Fatal("SessionTreeOf(recreated meta) = nil — every later close and kill would skip the landing")
+	}
+
+	// Killed while the operator is STILL detached: the landing is deferred
+	// out loud, and nothing is destroyed. Silence here was the bug.
+	landing, err := b.KillSessionAndLand("s-detached")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Tree == nil || landing.Line() == "" {
+		t.Fatalf("the kill saw no tree to land: %+v", landing)
+	}
+	if landing.Kept == "" {
+		t.Fatalf("a tree whose base is unreachable was retired: %+v", landing)
+	}
+	if _, err := os.Stat(filepath.Join(before.Dir, "fix.txt")); err != nil {
+		t.Fatalf("the deferred kill destroyed the work: %v", err)
+	}
+	if !branchExists(repo, before.Branch) {
+		t.Fatal("the branch holding the unmerged work was deleted")
+	}
+
+	// And the operator coming back off the bisect finishes it.
+	mustGit(t, repo, "checkout", "-q", "main")
+	var land strings.Builder
+	if err := LandSessionTrees(&land, b.App, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err != nil {
+		t.Fatalf("the work never reached main after the detach ended:\n%s", land.String())
+	}
+}
+
+// The other side of that tree surviving a detach: what the persona is TOLD
+// about it. A session branch with no recorded base — the legacy shape baseOf
+// documents and falls back for — answers Base == "" under a detached
+// checkout, and the work prompt interpolates it raw. The launch warning
+// already says "the branch it was cut from" there (orDetached); the prompt
+// says nothing at all, twice. ranger-base-nfgh.
+func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
+	t.Skip("ranger-base-nfgh: the work prompt renders an empty base — unskip with the fix")
+	wtqaHome(t)
+	b, _ := newTestBackend(t)
+	repo := wtRepo(t)
+	write(t, b.App.ConfigPath, "")
+	session := SessionForBead("ranger", repo, "a-1")
+	tr, err := b.App.EnsureSessionTree(repo, session, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A branch cut before posseBase was recorded: nothing can recover its
+	// true base, and baseOf answers "" once HEAD has no branch to fall back
+	// on either.
+	mustGit(t, repo, "config", "--unset", baseKey(tr.Branch))
+	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
+
+	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
+	exe, _ := os.Executable()
+	p := workPrompt(is, b.App.promptContext(Bd{Bin: exe}, is, "claude", "standard", session, nil))
+	i := strings.Index(p, "your own worktree")
+	if i < 0 {
+		t.Fatal("the session was not told about the tree it is working in")
+	}
+	for _, empty := range []string{"fast-forwards " + tr.Branch + " onto\n   in ", "never merge to  yourself"} {
+		if strings.Contains(p, empty) {
+			t.Errorf("the work prompt names no branch where a base belongs (%q):\n%s", empty, p[i:])
+		}
+	}
+}
