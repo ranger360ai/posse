@@ -4,7 +4,9 @@
 (ranger-base-ap2x) · amended 2026-08-26: §7 moves `envs/` out of the
 promoted set (ranger-base-h56a) · amended 2026-08-26: §3's clean gate
 is the promoted paths, not the whole tree (ranger-base-yb9j, built in
-ranger-base-o943) · execution rides with the rhq
+ranger-base-o943) · amended 2026-08-27: verification item 5 verified
+live, marker dropped, cwd-elsewhere boundary clause added
+(ranger-base-4v1d) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · informs 0002
 §3, 0012 D3-C, 0014 §3*
 
@@ -343,8 +345,24 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    `Bash(posse promote:*)` denied at L1 (shim refusal logged).
 5. Under seatbelt with cwd elsewhere: write to `home/agents` refused;
    write to own `home/personas/<self>` allowed; write to another
-   persona's memory dir refused. *(Unverified until built: needs the
-   §3 profile change removing the legacy hardcoded state grant.)*
+   persona's memory dir refused. *(Verified live 2026-08-27, twice
+   independently: at the close of ranger-base-cpyb — e9320bc, the §3
+   profile change — and on a fresh probe home outside every temp root,
+   ranger-base-0djg, including §5's symlink shape under both
+   spellings. Pinned hermetically in
+   `internal/rhq/seatbeltconstitution_qa_test.go`.)*
+   **Boundary — "cwd elsewhere" is load-bearing, not incidental**: a
+   `cage: seatbelt` PID that does *not* deny Edit/Write, dispatched
+   with cwd = the repo the home is symlinked into, gets cwd whole and
+   with it the constitution writable (**MEASURED** 2026-08-27,
+   ranger-base-h15). `posse gates` names every such grant, but the
+   verdict is print-only — nothing on the launch path consults it.
+   The live fleet is clean today only because the sole seatbelt
+   persona denies Edit/Write. The fix for that mode is h15's trailing
+   deny, not this item; after §2 the exposed surface shrinks to
+   sessions dispatched into the constitution repo, where drafts are
+   writable by design and §5's surviving `personas/` symlink is the
+   remaining non-draft content in cwd's reach.
 6. Queue after the move: `bd ready` / `bd comments add` / `bd close`
    work from a project worktree, from the constitution repo, and from
    a session worktree — all through redirects; the constitution
@@ -380,3 +398,5 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | `posse init` seeds envs from embedded examples with modes set | **MEASURED** (`init.go`) |
 | the names-only envs manifest would only duplicate tracked bindings | **ASSUMED** — priced in Alternatives; x6ic re-opens it if wrong |
 | whole-tree clean is unsatisfiable in the live constitution repo (`.beads/issues.jsonl` and `personas/…/ORDERS.md` dirty in ordinary operation) | **MEASURED** 2026-08-26 (`git status --porcelain`, the hour o943 was built; recorded on ranger-base-yb9j) |
+| verification item 5 (cwd elsewhere: constitution refused, own memory allowed, another's refused) under the built §3 profile | **MEASURED** 2026-08-27, twice (cpyb close under sandbox-exec; 0djg fresh probe home) · pinned in `seatbeltconstitution_qa_test.go` (7 tests: 5 from cpyb, 2 from a86ec3f) |
+| a seatbelt PID not denying Edit/Write, cwd covering the home, holds the constitution writable; the `posse gates` verdict is consulted by nothing on the launch path | **MEASURED** 2026-08-27 (ranger-base-h15, laurie's probe; sole caller of ConstitutionGrants is `cmd/posse/main.go:960`) |
