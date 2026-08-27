@@ -84,6 +84,16 @@ type Dispatcher struct {
 	PromptWaitMS  int           // one --wait leg: how long to watch before asking the agent whether it is still working (0 = herdr default, indefinite)
 	WaitCeiling   time.Duration // total time a fired prompt may stay in flight before the pass stops waiting on it (claim kept)
 	StartupWait   time.Duration // how long to wait for agent detection, and again for first settle
+	// RelaunchGrace is how young a launch is too young to re-type into: a
+	// CLI that is still starting is invisible to herdr's detection, and a
+	// second command typed at it lands inside its input box (rangerhq-vk2).
+	// It rode on StartupWait until ranger-base-ze9p, and that was one knob
+	// serving two unrelated budgets — StartupWait is the DETECTION patience
+	// and tests shorten it to keep the suite fast, which shortened this
+	// guard with it until a loaded box could outrun 200ms between the meta
+	// stamp and the check. This one is measured against a session's real
+	// age, so nothing that shortens a test may shorten it.
+	RelaunchGrace time.Duration
 	StatusGrace   time.Duration // after a --wait leg times out: how long an unreadable agent status is re-asked before the pass stops waiting on that bead
 	Poll          time.Duration // detection poll interval
 	PromptGrace   time.Duration // LaunchBead: refuse a session prompted this recently that herdr still calls idle
@@ -144,16 +154,24 @@ type Dispatcher struct {
 	overflowUsed int
 }
 
+// DefaultRelaunchGrace is how long after a launch RelaunchAgent refuses to
+// re-type the persona command. It starts at the same 45s DefaultStartupWait
+// carried before ranger-base-ze9p — the number is unchanged in production —
+// but it is its own budget: it bounds how long a starting CLI may stay
+// invisible to detection, not how long dispatch waits for one.
+const DefaultRelaunchGrace = 45 * time.Second
+
 func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 	return &Dispatcher{
 		App: a, HB: hb, Bd: NewBd(), Out: out,
-		PromptWaitMS: 15 * 60 * 1000,
-		WaitCeiling:  4 * time.Hour,
-		StartupWait:  DefaultStartupWait,
-		StatusGrace:  10 * time.Second,
-		Poll:         2 * time.Second,
-		PromptGrace:  30 * time.Second,
-		lastPrompt:   map[string]time.Time{},
+		PromptWaitMS:  15 * 60 * 1000,
+		WaitCeiling:   4 * time.Hour,
+		StartupWait:   DefaultStartupWait,
+		RelaunchGrace: DefaultRelaunchGrace,
+		StatusGrace:   10 * time.Second,
+		Poll:          2 * time.Second,
+		PromptGrace:   30 * time.Second,
+		lastPrompt:    map[string]time.Time{},
 	}
 }
 
@@ -1739,7 +1757,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		// CLI exited (crash, /exit, closed by hand) and left a bare shell.
 		// Waiting StartupWait for an agent that will never appear was a
 		// 45s×N sink per pass (rangerhq-vk2) — restart the persona there.
-		relaunched, err := d.HB.RelaunchAgent(session, d.StartupWait)
+		relaunched, err := d.HB.RelaunchAgent(session, d.RelaunchGrace)
 		if err != nil {
 			return launched{}, err
 		}

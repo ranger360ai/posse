@@ -270,6 +270,38 @@ func TestDispatchNoRelaunchWithinGrace(t *testing.T) {
 	}
 }
 
+// ranger-base-ze9p: the guard above must be a BRANCH, not a stopwatch the
+// pass can outrun. It rode on StartupWait, which tests shorten to 200ms to
+// keep the suite fast — so on a loaded box the gap between the stamp and the
+// check exceeded the whole grace and the relaunch fired (seen once in a full
+// `make test` with the fleet mid-flight, never in isolation). The pause here
+// is that load, made deterministic: it is longer than StartupWait and the
+// answer must not change.
+func TestDispatchRelaunchGraceOutlivesStartupWait(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.StartupWait = 200 * time.Millisecond
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1")
+	m, _ := b.readMeta(session)
+	m.Launched = time.Now()
+	b.writeMeta(m)
+	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
+
+	time.Sleep(300 * time.Millisecond) // > StartupWait, << RelaunchGrace
+
+	n, _ := d.Run("", "", 0)
+	out := dispatcherOut(d)
+	if n != 0 || strings.Contains(out, "relaunching") {
+		t.Errorf("a session launched moments ago is inside the %s grace whatever StartupWait says, got n=%d:\n%s",
+			d.RelaunchGrace, n, out)
+	}
+	if strings.Count(calls(t, fake), "pane run") != 1 {
+		t.Errorf("only the original launch may type into the pane:\n%s", calls(t, fake))
+	}
+}
+
 // -n bounds attempts, not successes: two failing personas and -n 1 cost
 // one detection timeout, not two.
 func TestDispatchMaxBoundsAttempts(t *testing.T) {

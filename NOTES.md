@@ -231,12 +231,15 @@ of the harness core:
    agent (the CLI crashed or was closed; the workspace survives as a bare
    shell with the launch env intact) gets the persona command re-typed
    into its root pane (`RelaunchAgent`, rangerhq-vk2) — never within
-   `StartupWait` of the last launch (`launched:` in the meta file), since a
-   CLI still starting is invisible to detection and a second command would
-   land in its input box. A launch that fails benches the persona's slot for
-   the rest of the pass **unless the failure is the pane's own** (no agent,
-   never promptable, a screen posse does not know), which leaves the slot
-   free for the next bead's own fresh session — ADR 0013 §2's busy-key
+   `RelaunchGrace` (45s) of the last launch (`launched:` in the meta file),
+   since a CLI still starting is invisible to detection and a second command
+   would land in its input box. That grace is its own field, not
+   `StartupWait`: the detection patience is a knob tests shorten to
+   milliseconds, and while the two shared one, the guard was a stopwatch a
+   loaded box could outrun (ranger-base-ze9p). A launch that fails benches
+   the persona's slot for the rest of the pass **unless the failure is the
+   pane's own** (no agent, never promptable, a screen posse does not know),
+   which leaves the slot free for the next bead's own fresh session — ADR 0013 §2's busy-key
    split, below. `-n` bounds attempts (successes and failures), so a pass is
    bounded in wall-clock.
 4. Atomically claim as the persona (`bd update --claim` — losing a race is
