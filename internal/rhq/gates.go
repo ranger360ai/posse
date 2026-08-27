@@ -107,6 +107,95 @@ var globalValueOpts = map[string][]string{
 	"posse": {},
 }
 
+// spoiler names the options that SATISFY a negative rule's qualifier and
+// still do the very thing the rule refuses. `unless <tok>` asks whether
+// argv carries the token with an operand, which is a proxy — for `git
+// commit` it is a proxy for "path-limited" — and a proxy has two kinds of
+// error. A false positive (`git commit -m x --pathspec-from-file=list` IS
+// path-limited and is refused) costs a respelling and leaves a way through.
+// A false negative is the wall not being there. These are the false
+// negatives, measured per option, and the shim refuses them by name.
+//
+// Opts are matched before the qualifier's own operand: after `--` every
+// word is a path, and a file named `-i` is a file. Short options are
+// single-letter and match inside a cluster — `git commit -im x -- b.txt`
+// sweeps exactly as `-i` does (measured, git 2.39.3). That costs the one
+// false positive of the same class as above: `-mi` is the message "i", and
+// it is refused. The safe form is one space away.
+type spoiler struct {
+	Opts []string // `-x` (single letter, matches in a cluster) or `--long`
+	Why  string   // completes "…, and without <opts> — <why>"
+}
+
+// qualifierSpoilers is keyed by command and subcommand, the way the rule is
+// written: `Bash(git commit unless --)` looks up "git commit".
+var qualifierSpoilers = map[string]spoiler{
+	"git commit": {
+		Opts: []string{"-i", "--include"},
+		Why:  "it commits the shared index ON TOP of the named paths (rangerhq-ojnw)",
+	},
+}
+
+// spoilersFor returns the spoiler table entry for r under cmd. Only a
+// negative rule has a qualifier to spoil.
+func spoilersFor(cmd string, r shimRule) spoiler {
+	if r.Unless == "" {
+		return spoiler{}
+	}
+	return qualifierSpoilers[strings.TrimSpace(cmd+" "+strings.Join(r.Words, " "))]
+}
+
+// spoiledFunc is the name of the sh helper rendered for r's spoilers, or ""
+// when it has none. Named for the subcommand so the rendered shim reads:
+// `posse_spoiled_commit "$@"`.
+func spoiledFunc(cmd string, r shimRule) string {
+	if len(spoilersFor(cmd, r).Opts) == 0 {
+		return ""
+	}
+	name := "posse_spoiled"
+	for _, w := range r.Words {
+		name += "_" + strings.Map(func(c rune) rune {
+			if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+				return c
+			}
+			return '_'
+		}, w)
+	}
+	return name
+}
+
+// renderSpoiled writes the sh helper: does argv, up to the first `--`,
+// carry one of the spoiling options? The case arms are baked in rather than
+// passed in a variable, because a glob pattern reaching `case` through an
+// unquoted expansion is also a pathname expansion, and one of these
+// patterns would happily match a file in the caller's cwd.
+func renderSpoiled(name string, sp spoiler) string {
+	var longs, shorts []string
+	for _, o := range sp.Opts {
+		if strings.HasPrefix(o, "--") {
+			longs = append(longs, o)
+			continue
+		}
+		shorts = append(shorts, strings.TrimPrefix(o, "-"))
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n", name)
+	b.WriteString("      --) return 1 ;;\n") // past here every word is a path
+	for _, l := range longs {
+		fmt.Fprintf(&b, "      %s) return 0 ;;\n", l)
+	}
+	if len(shorts) > 0 {
+		// Long options are done above: without this arm `--signoff` would
+		// match the cluster pattern for `-i` and be refused.
+		b.WriteString("      --*) ;;\n")
+		for _, s := range shorts {
+			fmt.Fprintf(&b, "      -*%s*) return 0 ;;\n", s)
+		}
+	}
+	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
+	return b.String()
+}
+
 // matcherFor names how the shim matches r for cmd, and reports whether
 // that matcher realizes the rule faithfully — what parity may claim.
 func matcherFor(cmd string, r shimRule) (kind string, faithful bool) {
@@ -333,7 +422,11 @@ func ruleHint(cmd string, r shimRule) string {
 	if words != "" {
 		words += " "
 	}
-	return fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
+	hint := fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
+	if sp := spoilersFor(cmd, r); len(sp.Opts) > 0 {
+		hint += fmt.Sprintf(", and without %s — %s", strings.Join(sp.Opts, "/"), sp.Why)
+	}
+	return hint
 }
 
 // setVars renders the assignment of the refusal's two variables for r.
@@ -343,7 +436,7 @@ func setVars(cmd string, r shimRule) string {
 
 // ruleCond renders the test for one rule against the positional params in
 // scope (the raw argv, or what is left after the globals are skipped).
-func ruleCond(r shimRule) string {
+func ruleCond(cmd string, r shimRule) string {
 	conds := []string{}
 	for i, w := range r.Words {
 		conds = append(conds, fmt.Sprintf("[ \"$%d\" = %s ]", i+1, shQuote(w)))
@@ -352,7 +445,14 @@ func ruleCond(r shimRule) string {
 		conds = append(conds, fmt.Sprintf("[ \"$#\" -eq %d ]", len(r.Words)))
 	}
 	if r.Unless != "" {
-		conds = append(conds, fmt.Sprintf("! posse_qualified %s \"$@\"", shQuote(r.Unless)))
+		q := fmt.Sprintf("! posse_qualified %s \"$@\"", shQuote(r.Unless))
+		if fn := spoiledFunc(cmd, r); fn != "" {
+			// Refuse when the qualifier is missing OR when it is there and
+			// lying: `git commit -i -m x -- b.txt` carries a pathspec and
+			// commits the shared index anyway.
+			q = fmt.Sprintf("{ %s || %s \"$@\"; }", q, fn)
+		}
+		conds = append(conds, q)
 	}
 	if len(conds) == 0 {
 		return "true"
@@ -379,6 +479,18 @@ func renderShim(persona, cmd, real, log string, rules []shimRule) string {
 		b.WriteString("posse_qualified() {\n  posse_q=$1; shift\n  while [ $# -gt 0 ]; do\n    if [ \"$1\" = \"$posse_q\" ]; then\n      [ $# -gt 1 ] && return 0\n      return 1\n    fi\n    shift\n  done\n  return 1\n}\n")
 		break
 	}
+	// And a second helper per rule whose qualifier has known false
+	// negatives — options that carry the qualifier and do the unsafe thing
+	// anyway (rangerhq-ojnw).
+	seenSpoiled := map[string]bool{}
+	for _, r := range rules {
+		fn := spoiledFunc(cmd, r)
+		if fn == "" || seenSpoiled[fn] {
+			continue
+		}
+		seenSpoiled[fn] = true
+		b.WriteString(renderSpoiled(fn, spoilersFor(cmd, r)))
+	}
 	// Rules that lead with an option are a literal argv prefix: matched
 	// where they are written. Rules that name a subcommand are matched
 	// after the command's global options are skipped (rangerhq-2zm).
@@ -388,7 +500,7 @@ func renderShim(persona, cmd, real, log string, rules []shimRule) string {
 			verbs = append(verbs, r)
 			continue
 		}
-		fmt.Fprintf(&b, "if %s; then %s; posse_refuse \"$@\"; fi\n", ruleCond(r), setVars(cmd, r))
+		fmt.Fprintf(&b, "if %s; then %s; posse_refuse \"$@\"; fi\n", ruleCond(cmd, r), setVars(cmd, r))
 	}
 	if len(verbs) > 0 {
 		fmt.Fprintf(&b, "# Skip %s's leading global options, then match the first non-option\n", cmd)
@@ -403,7 +515,7 @@ func renderShim(persona, cmd, real, log string, rules []shimRule) string {
 		}
 		b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
 		for _, r := range verbs {
-			fmt.Fprintf(&b, "  if %s; then %s; return 0; fi\n", ruleCond(r), setVars(cmd, r))
+			fmt.Fprintf(&b, "  if %s; then %s; return 0; fi\n", ruleCond(cmd, r), setVars(cmd, r))
 		}
 		b.WriteString("  return 0\n}\n")
 		// Called directly, not through $(...): the matcher sets the rule and
@@ -1155,7 +1267,8 @@ if [ -n "$posse_gd" ] && [ -n "$posse_cd" ] && [ "$posse_gd" != "$posse_cd" ]; t
   exit 0
 fi
 # Only a genuine path-limited commit gets a next-index-<pid> temporary index;
-# 'git commit -a' gets .git/index.lock, which is a temporary index too.
+# 'git commit -a' gets .git/index.lock, which is a temporary index too, and so
+# does 'git commit -i -- <paths>' (rangerhq-ojnw) — one arm, two forms.
 # The NAME does not settle it: GIT_INDEX_FILE is the caller's to spell, and
 # <tmpdir>/next-index-mine walked straight through the earlier glob
 # (rangerhq-cqq1). git makes its own inside $GIT_DIR and names it after its
@@ -1188,7 +1301,7 @@ if [ -n "$posse_idx" ] && [ -n "$posse_realdir" ]; then
   if [ "$posse_idxdir" = "$posse_realdir" ]; then
     case "$posse_base" in
       index) ;;
-      index.lock) posse_form="git commit -a" ;;
+      index.lock) posse_form="git commit -a or -i" ;;
       *) posse_form="a commit from a private GIT_INDEX_FILE" ;;
     esac
   else
@@ -1198,8 +1311,9 @@ fi
 {
   echo "refused by posse gate: $posse_form — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
   echo "This working tree's .git/index is shared by every persona (rangerhq-nyqj):"
-  echo "an unqualified commit takes whatever anyone else has staged, and -a takes"
-  echo "every persona's modified tracked file."
+  echo "an unqualified commit takes whatever anyone else has staged, -a takes"
+  echo "every persona's modified tracked file, and -i takes the shared index ON"
+  echo "TOP of the paths you named."
   echo "  safe form: git commit -F - -- <paths>"
   echo "  name your own paths, not '.' — a pathspec of '.' sweeps the tree too."
   echo "  a named path commits the file as it is ON DISK, not what you staged"

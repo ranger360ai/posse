@@ -1295,6 +1295,12 @@ func TestGateShellRenderRefusesAWrapperAsReal(t *testing.T) {
 // `--` with at least one operand. The three argv shapes rangerhq-nyqj
 // measured are the three cases here, plus the empty pathspec — `git commit
 // --` reaches git with the shared index, so the bare token is not enough.
+//
+// AND UNLESS THE OPERAND IS A LIE (rangerhq-ojnw): `-i`/`--include` carries
+// a pathspec and commits the shared index on top of it, so the qualifier is
+// satisfied by a form that does the very thing the rule refuses. The
+// qualifier is only a proxy for "path-limited"; its false negatives are
+// spelled out in qualifierSpoilers and refused by name.
 func TestShimNegativeMatchUnless(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
@@ -1340,13 +1346,16 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 		{"empty pathspec", []string{"commit", "-m", "x", "--"}},
 		{"behind git's global options", []string{"-C", "/tmp", "commit", "-m", "x"}},
 		{"the qualifier consumed as a message", []string{"commit", "-m", "--"}},
+		{"--include, qualifier and all", []string{"commit", "-i", "-m", "x", "--", "a.go"}},
+		{"--include spelled long", []string{"commit", "--include", "-m", "x", "--", "a.go"}},
+		{"-i bundled into a cluster", []string{"commit", "-im", "x", "--", "a.go"}},
 	}
 	for _, c := range refused {
 		out, errs, code := run(c.argv...)
 		if code != 1 || out != "" || !strings.Contains(errs, "(deny: Bash(git commit unless --))") {
 			t.Errorf("%s must be refused: code=%d out=%q err=%q", c.what, code, out, errs)
 		}
-		if !strings.Contains(errs, "safe form: git commit … -- <operand> [<operand>…]") {
+		if !strings.Contains(errs, "safe form: git commit … -- <operand> [<operand>…], and without -i/--include") {
 			t.Errorf("%s: refusal must name the safe form, got %q", c.what, errs)
 		}
 	}
@@ -1357,6 +1366,11 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 		{"commit", "--amend", "--no-edit", "--", "a.go"},
 		{"status", "-s"},
 		{"log", "--", "commit"}, // not the commit verb at all
+		// A long option that merely contains the spoiler's letter is not
+		// the spoiler, and past `--` a word spelled like one is a path.
+		{"commit", "--signoff", "-m", "x", "--", "a.go"},
+		{"commit", "--fixup=HEAD", "--", "a.go"},
+		{"commit", "-m", "x", "--", "-i"},
 	}
 	for _, argv := range passed {
 		if out, errs, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {

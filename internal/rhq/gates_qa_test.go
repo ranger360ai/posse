@@ -60,11 +60,13 @@ func TestQACommitWallIncludeFormSweepsAndIsRefused(t *testing.T) {
 	write("a.txt", "theirs") // another persona's staged work
 	git(nil, "add", "a.txt")
 	write("b.txt", "mine")
-	if out, err := git(nil, "commit", "-i", "-m", "mine", "--", "b.txt"); err != nil {
+	// The bundled spelling, because that is the one the L1 arm has to read
+	// out of a cluster: `-im x` is `-i -m x` to git (measured, 2.39.3).
+	if out, err := git(nil, "commit", "-im", "mine", "--", "b.txt"); err != nil {
 		t.Fatalf("unguarded -i commit: %v %s", err, out)
 	}
 	if out, _ := git(nil, "show", "--name-only", "--format=", "HEAD"); !strings.Contains(out, "a.txt") {
-		t.Fatalf("premise: `git commit -i -- b.txt` must sweep a.txt, got %q", out)
+		t.Fatalf("premise: `git commit -im mine -- b.txt` must sweep a.txt, got %q", out)
 	}
 
 	// Half two: with the guard installed, the same argv is refused.
@@ -80,10 +82,15 @@ func TestQACommitWallIncludeFormSweepsAndIsRefused(t *testing.T) {
 	for _, argv := range [][]string{
 		{"commit", "-i", "-m", "x", "--", "b.txt"},
 		{"commit", "--include", "-m", "x", "--", "b.txt"},
+		{"commit", "-im", "x", "--", "b.txt"},
 	} {
 		out, err := git2(persona, argv...)
-		if err == nil || !strings.Contains(out, "refused by posse gate") {
-			t.Errorf("git %s must be refused (it sweeps): %v %s", strings.Join(argv, " "), err, out)
+		// The hook has no argv — it discriminates on GIT_INDEX_FILE, and -i
+		// gets .git/index.lock, the same arm that catches -a. So the form it
+		// names has to cover both; naming this one "git commit -a" sent the
+		// reader after a flag that is not on the line (rangerhq-ojnw).
+		if err == nil || !strings.Contains(out, "refused by posse gate: git commit -a or -i") {
+			t.Errorf("git %s must be refused, named as -a or -i (it sweeps): %v %s", strings.Join(argv, " "), err, out)
 		}
 	}
 	if out, _ := git2(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(out) != "a.txt" {
@@ -134,13 +141,19 @@ func TestQACommitWallRefusalLeavesSharedTreeIntact(t *testing.T) {
 	}
 }
 
-// The L1 half does not catch --include: the rule asks only for `--` with
-// an operand, and `git commit -i -- <paths>` has one while still committing
-// the whole shared index. L3 catches it (test above), so the wall holds
-// where the hook is installed — but L1 is the layer that travels with the
-// session into a repo that has no hook.
+// The L1 half catches --include too (rangerhq-ojnw). It did not: the rule
+// asked only for `--` with an operand, and `git commit -i -- <paths>` has
+// one while still committing the whole shared index. L3 caught it either
+// way — but L1 is the layer that travels with the session into a repo that
+// has no hook, which is the whole reason both layers exist.
+//
+// The bundled spelling is the fifth form and it is not theoretical:
+// `git commit -im x -- b.txt` sweeps exactly as `-i` does (measured, git
+// 2.39.3, in TestQACommitWallIncludeFormSweepsAndIsRefused's premise arm).
+// The other side of that is one accepted false positive: `-mi` is the
+// message "i" and is refused too. A false positive has a way through; a
+// false negative is the wall not being there.
 func TestQACommitWallL1IncludeForm(t *testing.T) {
-	t.Skip("rangerhq-ojnw: L1 asks only for `--` with an operand; `-i` carries one and still commits the shared index. L3 catches it, so the wall holds where the hook is installed.")
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
@@ -153,14 +166,41 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	run := func(argv ...string) (string, int) {
+		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		return string(out), code
+	}
 	for _, argv := range [][]string{
 		{"commit", "-i", "-m", "x", "--", "a.go"},
 		{"commit", "--include", "-m", "x", "--", "a.go"},
+		{"commit", "-im", "x", "--", "a.go"},
+		{"-C", "/tmp", "commit", "-i", "-m", "x", "--", "a.go"},
 	} {
-		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
-		out, _ := cmd.CombinedOutput()
-		if !strings.Contains(string(out), "refused by posse gate") {
-			t.Errorf("git %s must be refused at L1 (it commits the shared index): %s", strings.Join(argv, " "), out)
+		out, code := run(argv...)
+		if code != 1 || !strings.Contains(out, "refused by posse gate") {
+			t.Errorf("git %s must be refused at L1 (it commits the shared index): %d %s", strings.Join(argv, " "), code, out)
+		}
+		if !strings.Contains(out, "and without -i/--include") {
+			t.Errorf("git %s: the refusal must name the option that spoiled the qualifier, got %q", strings.Join(argv, " "), out)
+		}
+	}
+	// The way through is unchanged, and the scan stops at `--`: past it a
+	// word spelled like an option is a path, and `--signoff` is a long
+	// option that merely contains the letter.
+	for _, argv := range [][]string{
+		{"commit", "-m", "x", "--", "a.go"},
+		{"commit", "-m", "x", "--", "-i"},
+		{"commit", "--signoff", "-m", "x", "--", "a.go"},
+		{"commit", "--fixup=HEAD", "--", "a.go"},
+		{"commit", "--amend", "--no-edit", "--", "a.go"},
+	} {
+		if out, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {
+			t.Errorf("git %s must pass: %d %s", strings.Join(argv, " "), code, out)
 		}
 	}
 }
