@@ -836,10 +836,25 @@ It must print "refused by posse gate" and exit 1. A slot that prints the
 refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), chainHookDispatcher(slot), probe)
 }
 
+// bdShimMarker identifies bd's own hook shim: `bd hooks install` plants a
+// known, fixed, two-line `exec bd hooks run <slot> "$@"` body wearing this
+// header in pre-push, prepare-commit-msg, pre-commit, post-merge and
+// post-checkout (verified against the bd 0.49.1 binary). It is a foreign
+// hook, but not a foreign hook of UNKNOWN shape — install-hooks --chain may
+// take it over rather than refuse it (rangerhq-f2p5, rangerhq-mgdk).
+const bdShimMarker = "# bd-shim v1"
+
+func isBdShim(body string) bool {
+	return strings.Contains(body, bdShimMarker)
+}
+
 // installHook writes one of our hooks into the repo at dir and returns its
 // path. Refuses to overwrite a hook that is not ours; replaces ours in
-// place (ADR 0002 §3: foreign hooks are never overwritten).
-func installHook(dir, slot, marker, legacy, script string) (string, error) {
+// place (ADR 0002 §3: foreign hooks are never overwritten). chain, when
+// true, additionally lets bd's own shim through: rather than refuse, it is
+// moved aside and chained (see chainBdShim). A genuinely unknown hook is
+// still refused whether or not chain is set.
+func installHook(dir, slot, marker, legacy, script string, chain bool) (string, error) {
 	hooks, err := hooksDir(dir)
 	if err != nil {
 		return "", err
@@ -863,6 +878,9 @@ func installHook(dir, slot, marker, legacy, script string) (string, error) {
 				return chained, nil
 			}
 		}
+		if chain && isBdShim(string(b)) {
+			return chainBdShim(hooks, slot, script)
+		}
 		return "", Die("%s exists and is not a posse hook — not overwriting.\n%s", AbbrevHome(p), chainDispatcher(dir, hooks, slot))
 	}
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
@@ -871,21 +889,70 @@ func installHook(dir, slot, marker, legacy, script string) (string, error) {
 	return p, nil
 }
 
-// hookInstalled reports whether the repo at dir carries our hook in slot.
+// chainBdShim performs, in-process, the arrangement install-hooks otherwise
+// only prints as a prescription to paste by hand (INSTALL.md §9): bd's shim
+// is moved aside to bd-<slot>, ours is written to posse-<slot>, and the
+// process-and-status dispatcher (never appended-to — rangerhq-kk6e) is
+// written into the real slot, exec'ing into bd's shim last so it still gets
+// the argv and stdin git handed the slot.
+func chainBdShim(hooks, slot, script string) (string, error) {
+	p := filepath.Join(hooks, slot)
+	neighbor := "bd-" + slot
+	bdPath := filepath.Join(hooks, neighbor)
+	if _, err := os.Stat(bdPath); err == nil {
+		// Already taken — by an earlier chain, or something else entirely.
+		// Guessing which is wrong often enough that refusing is the honest
+		// answer; the manual prescription (INSTALL.md §9) still applies.
+		return "", Die("%s already exists — not overwriting; chain by hand (INSTALL.md §9)", AbbrevHome(bdPath))
+	}
+	if err := os.Rename(p, bdPath); err != nil {
+		return "", err
+	}
+	chained := filepath.Join(hooks, "posse-"+slot)
+	if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbor)), 0o755); err != nil {
+		return "", err
+	}
+	return chained, nil
+}
+
+// hookInstalled reports whether the repo at dir carries our hook in slot —
+// either directly, or, since install-hooks --chain (and the manual
+// prescription it mirrors) never puts our marker in the slot itself, behind
+// a recognized chain dispatcher whose posse-<slot> member is ours.
 func hookInstalled(dir, slot, marker, legacy string) bool {
 	hooks, err := hooksDir(dir)
 	if err != nil {
 		return false
 	}
 	b, err := os.ReadFile(filepath.Join(hooks, slot))
-	return err == nil && ownsHook(string(b), marker, legacy)
+	if err != nil {
+		return false
+	}
+	body := string(b)
+	if ownsHook(body, marker, legacy) {
+		return true
+	}
+	if isChainHookDispatcher(body, slot) {
+		owned, err := os.ReadFile(filepath.Join(hooks, "posse-"+slot))
+		return err == nil && ownsHook(string(owned), marker, legacy)
+	}
+	return false
 }
 
 // InstallPrePushHook writes the hook into the repo at dir (its common git
 // dir, so worktrees share it). Returns the hook path. Refuses to overwrite
 // a hook that is not ours; replaces ours in place.
 func InstallPrePushHook(dir string) (string, error) {
-	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook)
+	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook, false)
+}
+
+// InstallPrePushHookChained is InstallPrePushHook, but a slot occupied by
+// bd's own shim is chained rather than refused (rangerhq-mgdk).
+func InstallPrePushHookChained(dir string) (string, error) {
+	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook, true)
 }
 
 // PrePushHookInstalled reports whether the repo at dir has a hook carrying
@@ -1202,7 +1269,15 @@ func CommitGuardHook(visibility string) string {
 // stamped, so the caller can say which wall the operator just got.
 func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(dir)
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility))
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility), false)
+	return path, visibility, source, err
+}
+
+// InstallCommitGuardHookChained is InstallCommitGuardHook, but a slot
+// occupied by bd's own shim is chained rather than refused (rangerhq-mgdk).
+func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, source string, err error) {
+	visibility, source = a.BeadsVisibility(dir)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility), true)
 	return path, visibility, source, err
 }
 

@@ -973,13 +973,24 @@ before you hook them (NOTES.md, *Privacy model*), or the first `bd sync`
 carrying a cost figure is a refusal. `posse gates install-hooks` prints
 which way it stamped each repo.
 
-Both gates want a slot `bd hooks install` has already taken, and neither
-tool yields: `posse gates install-hooks` refuses to overwrite a hook that is
-not its own **and exits non-zero**, so its second hook never installs at
-all; `bd hooks install` overwrites without asking. Running the two commands
-in either order therefore leaves this repo with *no* posse gate
-(rangerhq-f2p5). Install them under separate filenames and put a chain in
-the real slot:
+Both gates want a slot `bd hooks install` has already taken. Run:
+
+```sh
+$ posse gates install-hooks ~/src/<your-work-repo> --chain
+```
+
+`--chain` recognizes bd's shim by its `# bd-shim v1` header — a known,
+fixed, two-line `exec bd hooks run <slot> "$@"` body, not a hook of unknown
+shape — and takes the slot over rather than refusing it (rangerhq-mgdk):
+bd's shim moves to `bd-<slot>`, the posse gate goes to `posse-<slot>`, and
+the real slot gets a dispatcher that runs the gate **as its own process,
+with its exit status checked**, then `exec`s into bd's shim. Both slots are
+attempted even if only one is bd's — a foreign hook in one no longer costs
+the other. `posse gates install-hooks` (no `--chain`) still refuses either
+slot outright, same as always.
+
+A hook that is neither ours nor bd's `# bd-shim v1` shim is still refused,
+`--chain` or not — build the chain by hand instead:
 
 ```sh
 $ cd ~/src/<your-work-repo>
@@ -1003,14 +1014,15 @@ EOF
 $ chmod +x .git/hooks/pre-push .git/hooks/prepare-commit-msg
 ```
 
-Copy that chain exactly. The gate runs **as its own process, and its exit
-status is checked** — it is never appended to, in either slot. Appending is
-not a chain: the gate's refusal is an `exit`, so a hook pasted after it
-never runs at all, and worse, until rangerhq-0g1c an appended line
-*discarded* the refusal — the hook printed `refused by posse gate` and exited
-**0** while git pushed, so the operator's own check said the wall held
-(rangerhq-kk6e). The gates now exit explicitly on every path, but the
-dispatcher above is still the only form that runs both hooks. The
+Copy that chain exactly (this is exactly what `--chain` writes, for a
+neighbor it does not already recognize as bd's). The gate runs **as its own
+process, and its exit status is checked** — it is never appended to, in
+either slot. Appending is not a chain: the gate's refusal is an `exit`, so a
+hook pasted after it never runs at all, and worse, until rangerhq-0g1c an
+appended line *discarded* the refusal — the hook printed `refused by posse
+gate` and exited **0** while git pushed, so the operator's own check said
+the wall held (rangerhq-kk6e). The gates now exit explicitly on every path,
+but the dispatcher above is still the only form that runs both hooks. The
 `</dev/null` keeps the gate off the ref list git feeds on stdin; `exec`
 hands that stdin, untouched, to bd's shim, which reads it.
 
@@ -1046,10 +1058,12 @@ install` got there first, both slots are bd's, so every install it attempts
 refuses; and because session create makes them best-effort and discards the
 error, it installs **nothing and says nothing**. That is the state
 rangerhq-f2p5 was filed about — no push gate, no commit guard — reached
-silently, by dispatch.
-So the block above is not optional for a repo you dispatch into: it is the
-only thing that puts the gates there. Until rangerhq-mgdk lands, run it, and
-run the three probes, in every clone.
+silently, by dispatch. Session create itself does not pass `--chain` (it is
+a CLI flag, typed by an operator who can weigh a slot takeover, not a
+default a silent best-effort install should choose on its own), so this is
+still not optional for a repo you dispatch into: run `install-hooks --chain`
+by hand once — or the manual block above, if the occupying hook is not bd's
+shim — and run the three probes, in every clone.
 
 Health check, then wire it into the instance:
 

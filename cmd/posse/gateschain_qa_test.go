@@ -74,7 +74,6 @@ func qaSh(t *testing.T, script string) (string, int) {
 // renames a file that was never written and pastes a dispatcher pointing at
 // nothing: exit 127, and every commit in the repo fails with it.
 func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
-	t.Skip("rangerhq-pon3: the printed chain prescription dead-ends on the second slot")
 	bin := buildRhq(t)
 	repo := qaForeignBoth(t)
 	hooks := filepath.Join(repo, ".git", "hooks")
@@ -138,5 +137,68 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	if out, err := ci.CombinedOutput(); err != nil {
 		t.Errorf("the operator's own commit must survive the chain: %v %s", err, out)
+	}
+}
+
+// rangerhq-mgdk: a single `install-hooks` call on a repo where BOTH slots
+// are foreign must attempt and report both — pre-push failing must not
+// cost prepare-commit-msg (or vice versa) — and must exit non-zero exactly
+// when something was left uninstalled.
+func TestQAInstallHooksAttemptsBothSlotsInOneCall(t *testing.T) {
+	bin := buildRhq(t)
+	repo := qaForeignBoth(t)
+
+	out, err := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("gates install-hooks: %v %s", err, out)
+	}
+	if code == 0 {
+		t.Errorf("a call that installed neither slot must exit non-zero: %s", out)
+	}
+	if !strings.Contains(string(out), "not installed: pre-push") {
+		t.Errorf("pre-push refusal must be reported: %s", out)
+	}
+	if !strings.Contains(string(out), "not installed: prepare-commit-msg") {
+		t.Errorf("prepare-commit-msg must be ATTEMPTED and reported even though pre-push failed first: %s", out)
+	}
+}
+
+// rangerhq-mgdk: --chain takes over a repo `bd hooks install` reached
+// first — the state TestQASessionCreateInstallsNothingIntoABdHookedRepo
+// shows dispatch leaves silently uncovered — in one call, both slots.
+func TestQAInstallHooksChainFlagTakesOverBdsShim(t *testing.T) {
+	bin := buildRhq(t)
+	repo := qaForeignBoth(t)
+	hooks := filepath.Join(repo, ".git", "hooks")
+
+	out, err := exec.Command(bin, "gates", "install-hooks", repo, "--chain").CombinedOutput()
+	if err != nil {
+		t.Fatalf("gates install-hooks --chain: %v %s", err, out)
+	}
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		if _, err := os.Stat(filepath.Join(hooks, "bd-"+slot)); err != nil {
+			t.Errorf("bd's shim must be moved aside for %s: %v", slot, err)
+		}
+		if _, err := os.Stat(filepath.Join(hooks, "posse-"+slot)); err != nil {
+			t.Errorf("our gate must be installed for %s: %v", slot, err)
+		}
+	}
+
+	msg := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	os.WriteFile(msg, []byte("m\n"), 0o644)
+	cmd := exec.Command(filepath.Join(hooks, "pre-push"), "origin", "x")
+	cmd.Dir = repo
+	cmd.Stdin = strings.NewReader("refs/heads/main a refs/heads/main b\n")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "RHQ_PERSONA=probe", "RHQ_TOOLS_DENY=Bash(git push:*)"}
+	pushOut, pushErr := cmd.CombinedOutput()
+	pushCode := 0
+	if ee, ok := pushErr.(*exec.ExitError); ok {
+		pushCode = ee.ExitCode()
+	}
+	if pushCode != 1 || !strings.Contains(string(pushOut), "refused by posse gate") {
+		t.Errorf("denied push must still refuse through the --chain result: code=%d %q", pushCode, pushOut)
 	}
 }

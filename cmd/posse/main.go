@@ -883,7 +883,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] | posse gates wrap <persona> -- <cmd>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates wrap <persona> -- <cmd>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -899,31 +899,57 @@ func main() {
 			return
 		}
 		if args[0] == "install-hooks" {
+			chain := false
 			dir := "."
-			if len(args) > 1 {
-				dir = rhq.ExpandTilde(args[1])
+			for _, a2 := range args[1:] {
+				if a2 == "--chain" {
+					chain = true
+					continue
+				}
+				dir = rhq.ExpandTilde(a2)
 			}
-			p, err := rhq.InstallPrePushHook(dir)
+			// Both slots are attempted and reported independently — a
+			// foreign hook taking one must not cost the other
+			// (rangerhq-mgdk; the comment used to claim this and only
+			// InstallCommitGuardHook below actually did it, because the
+			// pre-push failure died before it was ever reached).
+			failed := false
+			var p string
+			var err error
+			if chain {
+				p, err = rhq.InstallPrePushHookChained(dir)
+			} else {
+				p, err = rhq.InstallPrePushHook(dir)
+			}
 			if err != nil {
-				die(err)
+				fmt.Fprintf(out, "not installed: pre-push — %v\n", err)
+				failed = true
+			} else {
+				fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", rhq.AbbrevHome(p))
 			}
-			fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", rhq.AbbrevHome(p))
-			// The shared-index guard is the second L3 hook and a separate
-			// slot: a foreign hook in one must not cost the other, so its
-			// failure is reported and the command still succeeds.
-			c, vis, src, cerr := a.InstallCommitGuardHook(dir)
+			var c, vis, src string
+			var cerr error
+			if chain {
+				c, vis, src, cerr = a.InstallCommitGuardHookChained(dir)
+			} else {
+				c, vis, src, cerr = a.InstallCommitGuardHook(dir)
+			}
 			if cerr != nil {
 				fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
-				return
+				failed = true
+			} else {
+				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit when RHQ_PERSONA is set — the index is shared; rangerhq-lmq9)\n", rhq.AbbrevHome(c))
+				// The same slot carries the beads visibility guard, and its
+				// verdict is stamped into the file — so say which one was
+				// stamped and where it came from, or an operator has to read a
+				// hook to find out whether their db is guarded (rangerhq-hrz).
+				fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
+				if vis == rhq.VisibilityPublic {
+					fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", rhq.AbbrevHome(dir))
+				}
 			}
-			fmt.Fprintf(out, "installed %s (refuses an unqualified git commit when RHQ_PERSONA is set — the index is shared; rangerhq-lmq9)\n", rhq.AbbrevHome(c))
-			// The same slot carries the beads visibility guard, and its
-			// verdict is stamped into the file — so say which one was
-			// stamped and where it came from, or an operator has to read a
-			// hook to find out whether their db is guarded (rangerhq-hrz).
-			fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
-			if vis == rhq.VisibilityPublic {
-				fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", rhq.AbbrevHome(dir))
+			if failed {
+				os.Exit(1)
 			}
 			return
 		}
@@ -1529,10 +1555,16 @@ catalog:
   posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
                                  writable set with ADR 0015 §2's constitution check
                                  over it, and refusals.log
-  posse gates install-hooks [dir]   L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
+  posse gates install-hooks [dir] [--chain]
+                                    L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
                                     and prepare-commit-msg refusing an unqualified commit under RHQ_PERSONA
                                     plus ops-class content added to .beads/*.jsonl in a repo that
-                                    config beads_visibility: does not mark private (unmarked = public)
+                                    config beads_visibility: does not mark private (unmarked = public).
+                                    Both slots are attempted even if one is foreign. --chain takes over
+                                    a slot occupied by bd's own shim (# bd-shim v1) instead of refusing:
+                                    bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
+                                    real slot gets the process-and-status dispatcher (INSTALL.md §9).
+                                    A hook that is neither ours nor bd's is still refused.
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

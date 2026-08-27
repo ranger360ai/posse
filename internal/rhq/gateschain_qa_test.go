@@ -256,3 +256,98 @@ func TestQASessionCreateInstallsNothingIntoABdHookedRepo(t *testing.T) {
 		t.Fatalf("pre-push refused after all (exit %d): %s — §9's closing paragraph needs re-checking", code, out)
 	}
 }
+
+// rangerhq-mgdk: the CLI's own --chain, exercised against a bd-shimmed
+// repo the way TestQASessionCreateInstallsNothingIntoABdHookedRepo shows
+// dispatch leaves untouched. Both InstallXxxChained calls must build the
+// same chain INSTALL.md §9 walks by hand — bd's shim moved to bd-<slot>,
+// ours at posse-<slot>, the real slot holding the dispatcher — and the
+// gate must still run first and bd's shim must still be reachable behind
+// it. hookInstalled() (via PrePushHookInstalled/CommitGuardHookInstalled)
+// must see through the result, since neither slot carries our marker
+// directly once chained.
+func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	witness := filepath.Join(t.TempDir(), "bd.log")
+	shim := "#!/bin/sh\n# bd-shim v1\nprintf 'ran[%s]\\n' \"$0\" >> " + witness + "\nexit 0\n"
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if PrePushHookInstalled(repo) || CommitGuardHookInstalled(repo) {
+		t.Fatal("a repo holding only bd's shim must not report our gate installed")
+	}
+
+	if _, err := InstallPrePushHookChained(repo); err != nil {
+		t.Fatalf("chained pre-push install must take over bd's shim: %v", err)
+	}
+	if _, _, _, err := (&App{}).InstallCommitGuardHookChained(repo); err != nil {
+		t.Fatalf("chained commit-guard install must take over bd's shim: %v", err)
+	}
+
+	if !PrePushHookInstalled(repo) || !CommitGuardHookInstalled(repo) {
+		t.Error("hookInstalled must see through the chain it just built")
+	}
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		if _, err := os.Stat(filepath.Join(hooks, "bd-"+slot)); err != nil {
+			t.Errorf("bd's shim must survive, moved aside: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(hooks, "posse-"+slot)); err != nil {
+			t.Errorf("our gate must be installed behind the dispatcher: %v", err)
+		}
+	}
+
+	if out, code := runHook(t, repo, "pre-push", "refs/heads/main a refs/heads/main b\n",
+		"RHQ_PERSONA=probe", "RHQ_TOOLS_DENY=Bash(git push:*)"); code != 1 || !strings.Contains(out, "refused by posse gate") {
+		t.Errorf("denied push must still refuse through the chain: code=%d %q", code, out)
+	}
+	if b, _ := os.ReadFile(witness); len(b) != 0 {
+		t.Errorf("a refused push must not reach bd's shim: %q", b)
+	}
+	if out, code := runHook(t, repo, "pre-push", "refs/heads/main a refs/heads/main b\n"); code != 0 {
+		t.Errorf("an allowed push must fall through to bd's shim: code=%d %q", code, out)
+	}
+	if b, _ := os.ReadFile(witness); !strings.Contains(string(b), "bd-pre-push") {
+		t.Errorf("bd's shim must have run: %q", b)
+	}
+}
+
+// rangerhq-mgdk: --chain only recognizes bd's own shim (the `# bd-shim v1`
+// header). A hook of unknown shape must still be refused, chain or no
+// chain — chaining an arbitrary foreign hook without knowing its exit-code
+// semantics is exactly the risk the manual prescription exists to make an
+// operator, not rhq, decide.
+func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallPrePushHookChained(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
+		t.Fatalf("an unrecognized foreign hook must still be refused under --chain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(hooks, "bd-pre-push")); err == nil {
+		t.Error("a non-bd hook must not be moved aside as if it were bd's shim")
+	}
+}
