@@ -1797,10 +1797,20 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 	}
 }
 
-// ranger-base-3c3: ownership markers decide whether install may replace a
-// hook; they do not decide whether L3 works. A legitimate chain dispatcher
-// has no marker, while a marker-bearing script can have been neutralized.
-func TestL3HookProbeUsesBehaviorNotMarkers(t *testing.T) {
+// ranger-base-3c3 + ADR 0023: a marker never decides whether a slot works —
+// that was always true, and stays true. What changed is what DOES decide:
+// not the raw behavior of whatever bytes sit at the dispatch path (a
+// planted hook can lie about that — ranger-base-vqvl), but full-byte
+// identity of the dispatched file against our render, paired with the
+// behavior of OUR OWN render exec'd from a private temp file. A legitimate
+// chain dispatcher has no marker at the slot and still counts, because
+// posse-<slot> behind it is byte-exact our render. A marker-bearing script
+// whose bytes have been altered does not count even though the marker
+// survives. And a foreign body with no marker that happens to refuse
+// everything — indistinguishable, to a black-box probe, from a hook that
+// refuses only the probe — does not count either: the launcher never runs
+// it to find out.
+func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -1818,34 +1828,47 @@ func TestL3HookProbeUsesBehaviorNotMarkers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	a := &App{}
 
-	// No marker, but exactly the behavior a correctly chained foreign slot
-	// provides: both probe operations are refused with exit 1.
-	write("pre-push", "#!/bin/sh\nexit 1\n")
-	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	if PrePushHookInstalled(repo) || CommitGuardHookInstalled(repo) {
-		t.Fatal("foreign behavior probes must not become ownership markers")
-	}
-	if got := probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
-		t.Errorf("working foreign chain must count by behavior: %+v", got)
+	// A legitimate chain dispatcher: no marker at the slot itself, posse-<slot>
+	// behind it byte-exact our render. Must count, by identity.
+	write("pre-push", chainHookDispatcherWith("pre-push", "theirs-pre-push"))
+	write("theirs-pre-push", "#!/bin/sh\nexit 1\n")
+	write("posse-pre-push", PrePushHook)
+	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
+	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic))
+	if got := a.probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
+		t.Errorf("byte-exact chain must count by identity: %+v", got)
 	}
 
-	// The inverse: both ownership markers survive, but the hooks pass the
-	// forbidden operations. Marker-only checkers called this installed.
+	// The inverse of the old defect: both ownership markers survive, but the
+	// bytes around them differ from our render (neutralized). Stale, not
+	// realized — the marker never decides.
 	write("pre-push", "#!/bin/sh\n"+prePushMarker+"\nexit 0\n")
 	write("prepare-commit-msg", "#!/bin/sh\n"+sharedIndexMarker+"\nexit 0\n")
 	if !PrePushHookInstalled(repo) || !CommitGuardHookInstalled(repo) {
 		t.Fatal("fixture must carry both ownership markers")
 	}
-	if got := probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
-		t.Errorf("neutralized marker-bearing hooks must fail behavior: %+v", got)
+	if got := a.probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
+		t.Errorf("marker survives but bytes differ from our render — must not count: %+v", got)
+	}
+
+	// A foreign body with no marker that behaviorally refuses everything.
+	// Must not count: the launcher never execs it to ask.
+	write("pre-push", "#!/bin/sh\nexit 1\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	if got := a.probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
+		t.Errorf("a foreign refuser must not count — identity, not behavior of foreign bytes, is the evidence: %+v", got)
 	}
 
 	// The pre-push arm is conditional on the PID; prepare-commit-msg is not,
 	// because its visibility and shared-index guards apply to every persona.
+	// wantPrePush=false is vacuous for the push arm regardless of what sits
+	// there; the commit-guard arm still requires identity.
 	os.Remove(filepath.Join(hooks, "pre-push"))
-	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	if got := probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
+	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic))
+	if got := a.probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
 		t.Errorf("commit-only probe: %+v", got)
 	}
 }

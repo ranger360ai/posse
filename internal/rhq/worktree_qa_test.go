@@ -451,7 +451,7 @@ func TestL3ProbeSeesTheWallFromInsideAWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := probeL3Hooks(tr.Path, false); !p.Repo || !p.CommitGuard {
+	if p := a.probeL3Hooks(tr.Path, false); !p.Repo || !p.CommitGuard {
 		t.Errorf("probe from inside the session tree = %+v, want the commit guard counted", p)
 	}
 }

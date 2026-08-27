@@ -563,7 +563,7 @@ func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
 	}
 }
 
-func TestParityL3ClaimsFollowBehavior(t *testing.T) {
+func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -583,42 +583,62 @@ func TestParityL3ClaimsFollowBehavior(t *testing.T) {
 		}
 	}
 
-	// A legitimate foreign dispatcher is marker-free but refuses both
-	// probes. Concrete parity may claim L3 only after observing that behavior.
-	write("pre-push", "#!/bin/sh\nexit 1\n")
-	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	// A byte-exact chain dispatcher, our render behind it: identity holds via
+	// the prescribed chain even though the slot itself carries no marker.
+	write("pre-push", chainHookDispatcherWith("pre-push", "theirs-pre-push"))
+	write("theirs-pre-push", "#!/bin/sh\nexit 1\n")
+	write("posse-pre-push", PrePushHook)
+	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
+	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
+	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic))
 	p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
 	if len(p.Degraded) != 0 {
-		t.Fatalf("working foreign hooks must be clean: %+v", p)
+		t.Fatalf("a byte-exact chain must be clean: %+v", p)
 	}
 	for _, gate := range ag.Deny {
-		if !strings.Contains(p.Realized[gate], "behavior probed") {
-			t.Errorf("%s must name observed L3 behavior: %q", gate, p.Realized[gate])
+		if !strings.Contains(p.Realized[gate], "render probed, dispatch verified") {
+			t.Errorf("%s must name the identity-verified L3 claim: %q", gate, p.Realized[gate])
 		}
 	}
 	// A runtime that opts out of the gate shell has no L1. Successful L3
-	// behavior replaces that conservative dir-independent verdict; this is
-	// why the concrete check cannot merely append a cosmetic layer string.
+	// identity+behavior replaces that conservative dir-independent verdict;
+	// this is why the concrete check cannot merely append a cosmetic layer
+	// string.
 	nogs := &Runtime{Name: "odd", NoGateShell: true}
 	if p := a.CheckParityIn(ag, nogs, CageShims, TierStrong, repo); len(p.Degraded) != 0 || len(p.Realized) != 2 {
-		t.Errorf("behavior-probed L3 must realize both git gates without L1: %+v", p)
+		t.Errorf("identity-verified L3 must realize both git gates without L1: %+v", p)
 	}
 
-	// A planted pass-through body is the bead's exploit. L1 still realizes
-	// the PID rules, but L3 disappears from Realized and both failed probes
-	// are visible degradations.
-	write("pre-push", "#!/bin/sh\nexit 0\n")
-	write("prepare-commit-msg", "#!/bin/sh\nexit 0\n")
+	// ADR 0023's whole point: a foreign hook with no marker that behaviorally
+	// refuses everything must NOT certify. It cannot be told apart, by a
+	// black-box probe, from one that refuses only the probe (the escape
+	// ranger-base-vqvl found) — so identity is what decides, and this one
+	// fails it. L1 still realizes the PID rules; L3 disappears from Realized
+	// and both slots degrade, naming the foreign file and the chain remedy.
+	write("pre-push", "#!/bin/sh\nexit 1\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
 	p = a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
 	joined := strings.Join(p.Degraded, "\n")
-	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "beads visibility guards are not realized"} {
+	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "foreign hook", "beads visibility guards are not realized", "posse gates install-hooks"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("failed probe missing %q in:\n%s", want, joined)
 		}
 	}
 	for _, gate := range ag.Deny {
 		if strings.Contains(p.Realized[gate], "L3") {
-			t.Errorf("failed behavior must remove L3 from %s: %q", gate, p.Realized[gate])
+			t.Errorf("a foreign refuser must remove L3 from %s: %q", gate, p.Realized[gate])
+		}
+	}
+
+	// A planted pass-through body — the bead's original exploit shape — is
+	// also degraded, and for the same reason: no identity.
+	write("pre-push", "#!/bin/sh\nexit 0\n")
+	write("prepare-commit-msg", "#!/bin/sh\nexit 0\n")
+	p = a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
+	joined = strings.Join(p.Degraded, "\n")
+	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "foreign hook"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("failed probe missing %q in:\n%s", want, joined)
 		}
 	}
 }
@@ -637,7 +657,7 @@ func TestLaunchInstallsHooksBeforeProbe(t *testing.T) {
 	}
 
 	mustCreate(t, b, NewSessionOpts{Name: "clean", Agent: "dev", Dir: repo})
-	if got := probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
+	if got := b.App.probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
 		t.Errorf("launch must reconcile both slots before checking them: %+v", got)
 	}
 	if m, _ := b.readMeta("clean"); m == nil || m.Degraded != "" {

@@ -19,11 +19,17 @@ package rhq
 // hooksDir assertion failed the moment the fix landed, which is what said the
 // pins had to be rewritten rather than deleted.
 //
-// ESCAPE B IS STILL LIVE and keeps the original shape. Its pin below is
-// written GREEN ON PURPOSE, because NOTES.md's silent-revert lesson is that a
-// skipped pin is how a defect stays green — a red pin would be deleted, a
-// skipped one forgotten. When escape B is fixed that test must FAIL, and that
-// failure is the signal to invert it too.
+// ESCAPE B IS CLOSED (ADR 0023, ranger-base-ujdg, from the design bead
+// ranger-base-vqvl). The whole class — asking the file at the dispatch path
+// a behavioral question — is gone, not just the probe's signature: identity
+// (byte-exact against posse's render, or the prescribed chain to it) decides
+// whether a slot counts, and the only bytes ever exec'd are posse's own
+// render from a private temp file. TestL3ProbeIsDefeatedByItsOwnSignature was
+// the live-defect pin, green on purpose per NOTES.md's silent-revert lesson;
+// it is now INVERTED, asserting the contract. The tests after it pin the rest
+// of ADR 0023's verification list: the probe never execs foreign bytes, the
+// prescribed chain certifies by identity, and a foreign hook — even one that
+// genuinely refuses everything — degrades rather than certifies.
 
 import (
 	"os"
@@ -128,8 +134,10 @@ func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
 // is a repo with no wall, and it has to read as one.
 func TestL3ProbeFollowsCoreHooksPath(t *testing.T) {
 	repo, hooks := qaHookRepo(t)
-	qaArm(t, hooks, "pre-push", "prepare-commit-msg")
-	if got := probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
+	a := &App{}
+	InstallPrePushHook(repo)
+	a.InstallCommitGuardHook(repo)
+	if got := a.probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
 		t.Fatalf("fixture must start armed: %+v", got)
 	}
 
@@ -145,7 +153,7 @@ func TestL3ProbeFollowsCoreHooksPath(t *testing.T) {
 		t.Fatalf("hooksDir(%s) = %q — want the redirect %q, not the git dir %q",
 			repo, dir, empty, hooks)
 	}
-	got := probeL3Hooks(repo, true)
+	got := a.probeL3Hooks(repo, true)
 	if got.PrePush || got.CommitGuard {
 		t.Errorf("probe still claims a wall git will not run: %+v", got)
 	}
@@ -197,8 +205,8 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 			t.Errorf("the wall is genuinely armed at the redirect; degraded: %v", p.Degraded)
 		}
 		for _, gate := range ag.Deny {
-			if !strings.Contains(p.Realized[gate], "behavior probed") {
-				t.Errorf("%s -> %q, want a behavior-probed L3 claim", gate, p.Realized[gate])
+			if !strings.Contains(p.Realized[gate], "render probed, dispatch verified") {
+				t.Errorf("%s -> %q, want an identity-verified L3 claim", gate, p.Realized[gate])
 			}
 		}
 	})
@@ -234,18 +242,20 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 	})
 }
 
-// ESCAPE B. The probe's signature is a fixed string in a file the planter can
-// read, so a hook can refuse the probe and pass everything else. This is not
-// the TOCTOU the probe's type doc names — nothing changes between the probe
-// and the use; the hook lies. The launch's reconcile cannot help: the body
-// carries no ownership marker, so installHook leaves it alone.
+// ESCAPE B, CLOSED (ADR 0023, ranger-base-ujdg). The probe's signature used
+// to be a fixed string in a file the planter can read, so a hook could
+// refuse the probe and pass everything else — not the TOCTOU the probe's
+// type doc names; nothing changes between probe and use, the hook lies. No
+// secret signature fixes a black box the adversary's own code is answering.
+// The fix instead stops asking the file a question: identity (byte-exact
+// dispatch, ADR 0023 Decision 1) plus behavior of OUR OWN render, never the
+// planted bytes (Decision 2). This test used to be the live-defect pin,
+// GREEN on purpose per NOTES.md's silent-revert lesson; it is now INVERTED,
+// asserting the contract instead of the defect.
 //
-// LIVE-DEFECT PIN, still green: ranger-base-flz7 decided this is not a bugfix.
-// Randomizing the persona value only moves the tell (RHQ_TOOLS_DENY's exact
-// spelling, the origin/probe argv, the unset GIT_INDEX_FILE, the probe's temp
-// filename all remain readable), so the choice is containment or driving the
-// probe through git — an architecture call, filed as ranger-base-vqvl.
-// Inverted by whatever that bead lands.
+// InstallPrePushHook/InstallCommitGuardHook refusing to overwrite a hook
+// that carries no marker of ours (ranger-base-3c3) is untouched by this fix
+// and still holds — the probe's answer changed, not install's refusal rule.
 func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
 	repo, hooks := qaHookRepo(t)
 	body := "#!/bin/sh\n[ \"$RHQ_PERSONA\" = probe ] && exit 1\nexit 0\n"
@@ -257,11 +267,93 @@ func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
 	InstallPrePushHook(repo)
 	a.InstallCommitGuardHook(repo)
 
-	if got := probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
-		t.Fatalf("ranger-base-flz7 escape B looks FIXED (probe = %+v). Invert this test.", got)
+	got := a.probeL3Hooks(repo, true)
+	if got.PrePush || got.CommitGuard {
+		t.Fatalf("the signature-discriminating hook must be reported DOWN on both arms — no identity, so no L3 claim: %+v", got)
+	}
+	if got.PrePushDegraded == "" || !strings.Contains(got.PrePushDegraded, "foreign hook") {
+		t.Errorf("pre-push must degrade naming the foreign file: %q", got.PrePushDegraded)
+	}
+	if got.CommitGuardDegraded == "" || !strings.Contains(got.CommitGuardDegraded, "foreign hook") {
+		t.Errorf("prepare-commit-msg must degrade naming the foreign file: %q", got.CommitGuardDegraded)
 	}
 	if PrePushHookInstalled(repo) || CommitGuardHookInstalled(repo) {
 		t.Error("the planted body carries no marker; the launch must not have overwritten it")
+	}
+}
+
+// ADR 0023 Decision 2, pinned directly: the probe must never exec the file
+// at the dispatch path, so a planted hook's own code never runs during a
+// probe, whatever it would have done. A canary the hook body would drop
+// proves it — after the probe, the canary must not exist.
+func TestL3ProbeNeverExecsForeignBytes(t *testing.T) {
+	repo, hooks := qaHookRepo(t)
+	canary := filepath.Join(repo, "canary")
+	body := "#!/bin/sh\n: > " + canary + "\nexit 1\n"
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755)
+	}
+	a := &App{}
+	a.probeL3Hooks(repo, true)
+	if _, err := os.Stat(canary); err == nil {
+		t.Fatal("the probe ran the planted hook's own bytes — the canary exists")
+	}
+}
+
+// ADR 0023 Decision 1, chain pin: the prescribed chain dispatcher, built
+// byte-exact with posse-<slot> copied from the render, certifies by
+// identity — no marker sits at the slot itself. Flip one byte of the member
+// and it degrades, naming the member (the dispatch-path file, not the
+// dispatcher).
+func TestL3ProbeCertifiesThePrescribedChain(t *testing.T) {
+	repo, hooks := qaHookRepo(t)
+	a := &App{}
+	os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(chainHookDispatcherWith("pre-push", "theirs-pre-push")), 0o755)
+	os.WriteFile(filepath.Join(hooks, "theirs-pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755)
+
+	if got := a.probeL3Hooks(repo, true); !got.PrePush {
+		t.Fatalf("byte-exact chain must certify: %+v (degraded: %q)", got, got.PrePushDegraded)
+	}
+
+	// One byte of the member differs from the render.
+	tampered := strings.Replace(PrePushHook, "exit 0", "exit  0", 1)
+	if tampered == PrePushHook {
+		t.Fatal("fixture did not actually change a byte")
+	}
+	os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(tampered), 0o755)
+	got := a.probeL3Hooks(repo, true)
+	if got.PrePush {
+		t.Fatalf("a one-byte-flipped member must not certify: %+v", got)
+	}
+	if !strings.Contains(got.PrePushDegraded, "posse-pre-push") {
+		t.Errorf("degradation must name the member, not the dispatcher: %q", got.PrePushDegraded)
+	}
+}
+
+// ADR 0023 Decision 3, foreign-refuser pin, stated as its own test rather
+// than folded into a larger fixture: an unconditional `exit 1` at the
+// dispatch path, no marker, must DEGRADE — even though it refuses every
+// operation the probe asks about — and the degraded line must name the
+// foreign file and the chain remedy. This is the honest trade ADR 0023's
+// Consequences section calls out: a legitimately refusing foreign hook that
+// used to certify now degrades, because a black-box probe cannot tell it
+// apart from ranger-base-vqvl's liar.
+func TestL3ProbeDegradesAForeignRefuser(t *testing.T) {
+	repo, hooks := qaHookRepo(t)
+	qaArm(t, hooks, "pre-push", "prepare-commit-msg")
+	a := &App{}
+	got := a.probeL3Hooks(repo, true)
+	if got.PrePush || got.CommitGuard {
+		t.Fatalf("an unconditional foreign refuser must not certify: %+v", got)
+	}
+	for _, degraded := range []string{got.PrePushDegraded, got.CommitGuardDegraded} {
+		if !strings.Contains(degraded, "foreign hook") {
+			t.Errorf("must name the foreign hook: %q", degraded)
+		}
+		if !strings.Contains(degraded, "posse gates install-hooks") {
+			t.Errorf("must print the chain remedy: %q", degraded)
+		}
 	}
 }
 
@@ -299,15 +391,15 @@ func TestL3ProbeCatchesTamperingAtTheKnownPath(t *testing.T) {
 			qaArm(t, hooks, "pre-push", "prepare-commit-msg")
 			c.break_(hooks)
 
-			if got := probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
+			home := t.TempDir()
+			a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+			if got := a.probeL3Hooks(repo, true); got.PrePush || got.CommitGuard {
 				t.Errorf("tampering went unreported: %+v", got)
 			}
 
-			home := t.TempDir()
-			a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 			InstallPrePushHook(repo)
 			a.InstallCommitGuardHook(repo)
-			after := probeL3Hooks(repo, true)
+			after := a.probeL3Hooks(repo, true)
 			if healed := after.PrePush && after.CommitGuard; healed != c.heals {
 				t.Errorf("reconcile healed = %v, want %v: %+v", healed, c.heals, after)
 			}
@@ -333,7 +425,7 @@ func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
 	ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")
 	joined := strings.Join(a.CheckParityIn(ag, claude, CageShims, TierStrong, repo).Degraded, "\n")
 	for _, want := range []string{
-		"L3 pre-push hook", "did not refuse git push with exit 1",
+		"L3 pre-push hook", "foreign hook, posse cannot vouch for a hook it did not write",
 		"L3 prepare-commit-msg hook", "shared-index and beads visibility guards are not realized",
 		AbbrevHome(hooks),
 	} {

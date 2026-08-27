@@ -335,7 +335,7 @@ func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
 // statement) so nothing that only describes a persona has to invent a cwd.
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
-	applyL3Probe(&p, ag, rt, dir)
+	a.applyL3Probe(&p, ag, rt, dir)
 	if why := ProjectConfigTrust(rt, ag, dir); why != "" {
 		p.Degraded = append(p.Degraded, why)
 	}
@@ -347,31 +347,34 @@ func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) 
 }
 
 // applyL3Probe adds a fact about this launch directory to CheckParity's
-// directory-independent matrix. A marker is intentionally never
-// consulted: legitimate chain dispatchers have none, and marker-bearing
-// scripts are writable files. The behavioral check is the evidence.
-func applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
+// directory-independent matrix. ADR 0023 amends ADR 0002 §3's doctrine: a
+// marker is still never trusted to decide whether install may overwrite a
+// hook — that question stays behavioral, unrelated to L3 realization — but
+// full-byte identity of the dispatched file IS the L3 evidence now, paired
+// with behavior of our own render (probeL3Hooks). Identity is not a marker:
+// it is the whole file, checked against the whole file we would have
+// written.
+func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	wantPrePush := deniesGitPush(ag.Deny)
-	probe := probeL3Hooks(dir, wantPrePush)
+	probe := a.probeL3Hooks(dir, wantPrePush)
 	if !probe.Repo {
 		return
 	}
-	where := AbbrevHome(probe.HooksDir)
 	for _, rule := range ag.Deny {
 		switch {
 		case deniesGitPush([]string{rule}):
-			applyHookResult(p, rule, "L3 pre-push hook (behavior probed)", probe.PrePush,
+			applyHookResult(p, rule, "L3 pre-push hook (render probed, dispatch verified)", probe.PrePush,
 				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
 		case deniesUnqualifiedCommit([]string{rule}):
-			applyHookResult(p, rule, "L3 prepare-commit-msg hook (behavior probed)", probe.CommitGuard,
+			applyHookResult(p, rule, "L3 prepare-commit-msg hook (render probed, dispatch verified)", probe.CommitGuard,
 				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
 		}
 	}
 	if wantPrePush && !probe.PrePush {
-		p.Degraded = append(p.Degraded, "L3 pre-push hook — behavior probe in "+where+" did not refuse git push with exit 1; this layer is not realized")
+		p.Degraded = append(p.Degraded, probe.PrePushDegraded)
 	}
 	if !probe.CommitGuard {
-		p.Degraded = append(p.Degraded, "L3 prepare-commit-msg hook — behavior probe in "+where+" did not refuse an unqualified commit with exit 1; the shared-index and beads visibility guards are not realized")
+		p.Degraded = append(p.Degraded, probe.CommitGuardDegraded)
 	}
 }
 

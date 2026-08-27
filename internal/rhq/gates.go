@@ -1293,6 +1293,16 @@ func CommitGuardHookInstalled(dir string) bool {
 // prepare-commit-msg arm always runs because its shared-index and visibility
 // guards protect every persona session, independent of PID rule text.
 //
+// ADR 0023: a slot counts only when IDENTITY and BEHAVIOR both hold — the
+// file at the dispatch path (`git rev-parse --git-path hooks`) is
+// byte-for-byte our current render (or the prescribed chain to it), and our
+// own render, exec'd fresh from a private temp file, still refuses. The file
+// at the dispatch path is never exec'd, so a planted hook has nothing to lie
+// to: there is no question being asked of it. *Degraded names why, when a
+// slot does not count — foreign (no marker of ours), stale (marker present,
+// bytes differ), or a renderer regression (identity holds, our own render
+// failed to refuse).
+//
 // This is deliberately a snapshot, not a claim that the hook cannot change
 // after the probe (TOCTOU/CWE-367). The seatbelt hook carve-out can prevent a
 // caged session from changing it; cage: shims has no file-write boundary.
@@ -1301,12 +1311,67 @@ type l3HookProbe struct {
 	PrePush     bool
 	CommitGuard bool
 	HooksDir    string
+
+	// PrePushDegraded and CommitGuardDegraded are full, ready-to-display
+	// lines naming why the slot did not count. Empty when the slot counts
+	// (or, for PrePushDegraded, when the PID does not deny git push).
+	PrePushDegraded     string
+	CommitGuardDegraded string
 }
 
-// One shell invocation exercises both slots. Each hook must refuse the exact
-// operation it gates with exit 1; marker text and refusal output are not
-// evidence. Hook output is discarded and RHQ_GATES_DIR is blank so a launch
-// probe never forges a refusal-log entry.
+// l3Identity reports whether the file at hooks/slot is byte-for-byte render
+// (+x) — our current render, dispatched — or the prescribed chain dispatcher
+// (+x) with posse-<slot> byte-for-byte render (+x). When it is neither, stale
+// distinguishes "carries our marker but the bytes differ" (reinstall fixes
+// it) from "no marker of ours at all" (foreign; installHook will not touch
+// it — ranger-base-3c3). path names the file the verdict is actually about —
+// the dispatch-path file itself, or posse-<slot> behind a chain dispatcher —
+// so a degraded line can name the file to fix rather than the slot in
+// general.
+func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale bool, path string) {
+	top := filepath.Join(hooks, slot)
+	body, err := os.ReadFile(top)
+	if err == nil {
+		if identityMatch(top, render) {
+			return true, false, top
+		}
+		if isChainHookDispatcher(string(body), slot) {
+			if fi, statErr := os.Stat(top); statErr == nil && fi.Mode()&0o111 != 0 {
+				chained := filepath.Join(hooks, "posse-"+slot)
+				if identityMatch(chained, render) {
+					return true, false, chained
+				}
+				if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker, legacy) {
+					return false, true, chained
+				}
+				return false, false, chained
+			}
+		} else if ownsHook(string(body), marker, legacy) {
+			return false, true, top
+		}
+	}
+	return false, false, top
+}
+
+// identityMatch is byte-exact content plus the execute bit — the degenerate
+// check that DETERMINES behavior instead of hinting at it (ADR 0023,
+// amending ADR 0002 §3's "behavior, not the marker" doctrine).
+func identityMatch(path, render string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+		return false
+	}
+	body, err := os.ReadFile(path)
+	return err == nil && string(body) == render
+}
+
+// One shell invocation exercises both slots. Each render must refuse the
+// exact operation it gates with exit 1; marker text and refusal output are
+// not evidence. Hook output is discarded and RHQ_GATES_DIR is blank so a
+// launch probe never forges a refusal-log entry. $1/$2 are private temp
+// files carrying OUR OWN render (execOwnRenders) — never the file at the
+// dispatch path — so this exec never runs bytes a session did not just
+// write (ADR 0023 Decision 2).
 const l3HookProbeScript = `
 unset GIT_INDEX_FILE RHQ_VISIBILITY_OVERRIDE
 posse_push_bad=0
@@ -1325,25 +1390,35 @@ if [ "$posse_status" -ne 1 ]; then posse_commit_bad=2; fi
 exit $((posse_push_bad + posse_commit_bad))
 `
 
-func probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
-	hooks, err := hooksDir(dir)
-	if err != nil {
-		return l3HookProbe{}
+// execOwnRenders writes render to a private temp file per slot and execs
+// THAT under l3HookProbeScript — never the file at the dispatch path. This
+// half of the probe catches a renderer regression (a broken /bin/sh, a bad
+// render) rather than anything about what is planted at the dispatch path;
+// identity (l3Identity) is what says whether the dispatch path is ours.
+func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushOK, commitOK bool) {
+	var pushTemp string
+	if wantPrePush {
+		f, err := writeTempRender(PrePushHook)
+		if err != nil {
+			return false, false
+		}
+		defer os.Remove(f)
+		pushTemp = f
 	}
-	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
+	commitTemp, err := writeTempRender(commitRender)
+	if err != nil {
+		return false, false
+	}
+	defer os.Remove(commitTemp)
+
 	msg, err := os.CreateTemp("", "posse-prepare-commit-msg-probe-")
 	if err != nil {
-		return r
+		return false, false
 	}
 	msg.Close()
 	defer os.Remove(msg.Name())
 
-	prePush := ""
-	if wantPrePush {
-		prePush = filepath.Join(hooks, "pre-push")
-	}
-	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe",
-		prePush, filepath.Join(hooks, "prepare-commit-msg"), msg.Name())
+	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msg.Name())
 	// The probe runs in the MAIN checkout, not in dir, since per-session
 	// worktrees (rangerhq-09o2). The shared-index arm deliberately stands
 	// down in a linked worktree — that tree's index is private and there is
@@ -1365,9 +1440,81 @@ func probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 			code = ee.ExitCode()
 		}
 	}
-	if code >= 0 {
-		r.PrePush = !wantPrePush || code&1 == 0
-		r.CommitGuard = code&2 == 0
+	if code < 0 {
+		return false, false
+	}
+	return !wantPrePush || code&1 == 0, code&2 == 0
+}
+
+func writeTempRender(body string) (string, error) {
+	f, err := os.CreateTemp("", "posse-l3-render-")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if _, err := f.WriteString(body); err != nil {
+		f.Close()
+		os.Remove(name)
+		return "", err
+	}
+	f.Close()
+	if err := os.Chmod(name, 0o755); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
+// l3DegradeLine is the full, ready-to-display Degraded entry for one slot:
+// what posse cannot vouch for (foreign / stale / renderer regression), the
+// remedy, and what protection is lost by consequence. ONE LINE: Degraded
+// flows into session meta, a flat-file format with no quoting for embedded
+// newlines (yamlflat.go) — a multi-line value silently truncates on
+// read-back (measured, ranger-base-ujdg). The foreign case points at `posse
+// gates install-hooks`, which prints the full paste-able chain prescription
+// itself (installHook's Die, same text chainDispatcher renders) — this
+// includes a foreign hook that happens to refuse everything: honest,
+// because a black-box probe cannot tell that from a hook that refuses only
+// the probe (the escape this ADR closes), and the launcher no longer runs
+// it to find out.
+func l3DegradeLine(hooks, slot, path, consequence string, identity, stale bool) string {
+	switch {
+	case !identity && stale:
+		return fmt.Sprintf("L3 %s hook — %s — ours but stale — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
+	case !identity:
+		return fmt.Sprintf("L3 %s hook — %s — foreign hook, posse cannot vouch for a hook it did not write; %s (run `posse gates install-hooks` to see the chain prescription)", slot, AbbrevHome(path), consequence)
+	default:
+		return fmt.Sprintf("L3 %s hook — %s — our own render did not refuse the operation (renderer regression); %s", slot, AbbrevHome(path), consequence)
+	}
+}
+
+func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		return l3HookProbe{}
+	}
+	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
+
+	visibility, _ := a.BeadsVisibility(dir)
+	commitRender := CommitGuardHook(visibility)
+
+	var prePushIdentity, prePushStale bool
+	var prePushPath string
+	if wantPrePush {
+		prePushIdentity, prePushStale, prePushPath = l3Identity(hooks, "pre-push", PrePushHook, prePushMarker, legacyPrePushMarker)
+	}
+	commitIdentity, commitStale, commitPath := l3Identity(hooks, "prepare-commit-msg", commitRender, sharedIndexMarker, legacySharedIndexMarker)
+
+	prePushBehavior, commitBehavior := execOwnRenders(dir, wantPrePush, commitRender)
+
+	r.PrePush = !wantPrePush || (prePushIdentity && prePushBehavior)
+	r.CommitGuard = commitIdentity && commitBehavior
+
+	if wantPrePush && !r.PrePush {
+		r.PrePushDegraded = l3DegradeLine(hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
+	}
+	if !r.CommitGuard {
+		r.CommitGuardDegraded = l3DegradeLine(hooks, "prepare-commit-msg", commitPath, "the shared-index and beads visibility guards are not realized", commitIdentity, commitStale)
 	}
 	return r
 }
