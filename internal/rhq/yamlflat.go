@@ -137,3 +137,32 @@ func yamlHasKey(path, key string) bool {
 	}
 	return false
 }
+
+// YamlKeysWithPrefix returns the top-level keys that begin with prefix, in
+// file order, once each. It is the reader for a family of keys whose members
+// this harness does not know in advance — `plan_guard_<window>:`, where the
+// window names belong to whichever provider adapter is installed
+// (planusage.go, ADR 0012 D4).
+//
+// Top-level means what it means everywhere else in this file: a line whose
+// first character is not space, tab or '#'.
+func YamlKeysWithPrefix(path, prefix string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ln := range readLines(path) {
+		if ln == "" || ln[0] == ' ' || ln[0] == '\t' || ln[0] == '#' {
+			continue
+		}
+		i := strings.Index(ln, ":")
+		if i <= 0 {
+			continue
+		}
+		k := ln[:i]
+		if !strings.HasPrefix(k, prefix) || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+	}
+	return out
+}

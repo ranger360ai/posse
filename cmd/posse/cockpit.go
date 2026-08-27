@@ -28,6 +28,7 @@ package main
 // renders the same row model at 80 wide.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -154,10 +155,11 @@ func (c *cockpit) scanCosts() {
 // into "guard blind 14m" lives on the event loop, not here, so this stays a
 // pure read and nothing races the header.
 type planRead struct {
-	line    string    // the reading, formatted; "" when it could not be taken
-	at      time.Time // when that reading was TAKEN (zero = now) — it may be a shared one, minutes old
-	guarded bool      // plan_guard_5h/7d configured — then blindness is worth saying
-	ledger  bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
+	line      string    // the reading, formatted; "" when it could not be taken
+	at        time.Time // when that reading was TAKEN (zero = now) — it may be a shared one, minutes old
+	guarded   bool      // any plan_guard_<window>: configured — then blindness is worth saying
+	noAdapter bool      // the guard is armed and nothing here can read a meter (ADR 0012 D4)
+	ledger    bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
 }
 
 // scanPlan runs off the event loop; the reading lands on c.plans. Read-only
@@ -166,8 +168,7 @@ func (c *cockpit) scanPlan() {
 	var r planRead
 	// io.Discard: a malformed threshold is dispatch's line to print, and the
 	// cockpit owns the whole terminal — it cannot write to stderr at all.
-	fiveH, sevenD := c.app.PlanGuardThresholds(io.Discard)
-	r.guarded = fiveH > 0 || sevenD > 0
+	r.guarded = len(c.app.PlanGuardThresholds(io.Discard)) > 0
 	// Read whether Dial E is armed, not what it says: the header reports
 	// which policy a blind guard is under (ADR 0018 §1), and the dollars are
 	// the cost scan's to print.
@@ -180,6 +181,12 @@ func (c *cockpit) scanPlan() {
 	// are the whole instance's one request per TTL.
 	if u, at, err := c.app.PlanCache("cockpit").Read(c.app.PlanUsageTTL(io.Discard)); err == nil {
 		r.line, r.at = u.Line(), at
+	} else {
+		// The one failure that is not blindness: no adapter, so no meter and
+		// no clock (ADR 0012 D4). The header must not show a blind timer
+		// counting up toward a park that will never come.
+		var na *rhq.NoPlanAdapter
+		r.noAdapter = errors.As(err, &na)
 	}
 	select {
 	case c.plans <- r:
@@ -191,9 +198,12 @@ func (c *cockpit) scanPlan() {
 // rangerhq-6h1. A good reading is the reading. A failed one is empty today
 // — which is indistinguishable from "no guard configured", the exact
 // ambiguity that lets an unattended loop go blind unseen. So when the guard
-// IS configured, say the blind instead of nothing: `5h — · guard blind 14m`.
+// IS configured, say the blind instead of nothing: `plan — · guard blind 14m`.
 // The clock is time since the last successful reading, floored at cockpit
 // start, the same rule the dispatcher's blind window uses.
+//
+// A guard with no adapter is the third state and says so: it is off, not
+// blind, and no clock is running (ADR 0012 D4).
 //
 // ADR 0018 §1 made blindness two outcomes, so the header names which one is
 // waiting: with Dial E armed an unattended pass past `plan_guard_blind_max:`
@@ -218,7 +228,10 @@ func (c *cockpit) planSegment(r planRead) string {
 	if !r.guarded {
 		return "" // no guard: nothing to be blind about, nothing to say
 	}
-	seg := "5h — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
+	if r.noAdapter {
+		return "plan — · guard off, no adapter"
+	}
+	seg := "plan — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
 	if r.ledger {
 		seg += " — ledger brake"
 	}

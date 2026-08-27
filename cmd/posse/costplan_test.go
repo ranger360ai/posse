@@ -98,7 +98,10 @@ func TestCostPlanPrintsTheReadingAndNothingElse(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
 	seedPlan(t, home, map[string]any{
-		"at": time.Now().UTC().Format(time.RFC3339Nano), "five_hour": 42, "seven_day": 61,
+		"at": time.Now().UTC().Format(time.RFC3339Nano),
+		// The snapshot is window-shaped since ADR 0012 D4: the names are the
+		// adapter's, and this file only asserts that they come back out.
+		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 	})
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
@@ -119,8 +122,8 @@ func TestCostPlanFailsLoudWhenTheReadingIsUnavailable(t *testing.T) {
 	home := t.TempDir()
 	now := time.Now().UTC()
 	seedPlan(t, home, map[string]any{
-		"at":        now.Add(-time.Hour).Format(time.RFC3339Nano),
-		"five_hour": 42, "seven_day": 61,
+		"at":       now.Add(-time.Hour).Format(time.RFC3339Nano),
+		"windows":  []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 		"retry_at": now.Add(30 * time.Minute).Format(time.RFC3339Nano),
 	})
 

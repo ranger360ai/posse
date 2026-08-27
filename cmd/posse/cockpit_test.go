@@ -976,7 +976,7 @@ func TestCockpitPlanClockFollowsTheReading(t *testing.T) {
 	// Seven minutes later it cannot be refreshed: eleven minutes blind,
 	// counted from the reading, not from the tick that displayed it.
 	at = at.Add(7 * time.Minute)
-	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 11m" {
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 11m" {
 		t.Errorf("blind is time since the reading was taken, got %q", got)
 	}
 	// A reading with no time on it (nothing shared it) is taken as now.
@@ -984,7 +984,7 @@ func TestCockpitPlanClockFollowsTheReading(t *testing.T) {
 		t.Fatalf("recovery = %q", got)
 	}
 	at = at.Add(2 * time.Minute)
-	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 2m" {
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 2m" {
 		t.Errorf("an untimed reading clocks from now, got %q", got)
 	}
 }
@@ -1005,7 +1005,7 @@ func TestCockpitPlanBlindWitness(t *testing.T) {
 	// Fourteen minutes later the reading fails and the guard is on: say it.
 	at = at.Add(14 * time.Minute)
 	got := c.planSegment(planRead{guarded: true})
-	if want := "5h — · guard blind 14m"; got != want {
+	if want := "plan — · guard blind 14m"; got != want {
 		t.Errorf("blind segment = %q, want %q", got, want)
 	}
 	var b strings.Builder
@@ -1018,7 +1018,7 @@ func TestCockpitPlanBlindWitness(t *testing.T) {
 	// The clock keeps counting from the last good reading, not from the
 	// last failure — two failed scans in a row are one blind window.
 	at = at.Add(6 * time.Minute)
-	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 20m" {
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 20m" {
 		t.Errorf("blind is time since the last reading, got %q", got)
 	}
 
@@ -1041,11 +1041,11 @@ func TestCockpitPlanBlindWitnessFromStart(t *testing.T) {
 	c := &cockpit{now: func() time.Time { return at }}
 
 	got := c.planSegment(planRead{guarded: true})
-	if want := "5h — · guard blind 0s"; got != want {
+	if want := "plan — · guard blind 0s"; got != want {
 		t.Fatalf("first guarded failure = %q, want %q (empty is the original bug)", got, want)
 	}
 	at = at.Add(14 * time.Minute)
-	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 14m" {
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 14m" {
 		t.Errorf("blind is time since cockpit start when there was never a reading, got %q", got)
 	}
 }
@@ -1061,10 +1061,10 @@ func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
 	// A reading first, so the blind clock counts from something real.
 	c.planSegment(planRead{line: "5h 42% · 7d 61%", guarded: true, ledger: true})
 	at = at.Add(14 * time.Minute)
-	if got := c.planSegment(planRead{guarded: true, ledger: true}); got != "5h — · guard blind 14m — ledger brake" {
+	if got := c.planSegment(planRead{guarded: true, ledger: true}); got != "plan — · guard blind 14m — ledger brake" {
 		t.Errorf("an armed ledger must show as the brake that is holding, got %q", got)
 	}
-	if got := c.planSegment(planRead{guarded: true}); got != "5h — · guard blind 14m" {
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 14m" {
 		t.Errorf("unarmed is today's line, unchanged: %q", got)
 	}
 	// A good reading is a good reading either way — the clause is about

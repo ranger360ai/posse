@@ -58,7 +58,7 @@ package rhq
 //     would otherwise PUBLISH a caller's numbers to the whole shop — 0%
 //     disarms the plan guard, 99% parks the fleet, and neither needs a
 //     credential. Enforced at the store, in plancache.go, off
-//     PlanReader.Shared.
+//     PlanReader.MayShare.
 //
 // Rules 4 and 5 are the PLAN reader's. ModelLister keeps the loopback
 // carve-out of rules 2 and 3 because it has no override to reach it with:

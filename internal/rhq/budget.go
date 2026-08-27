@@ -24,12 +24,17 @@ package rhq
 // spend, the same total the cockpit shows. Interactive sessions are in
 // neither — Dial G keeps them visible and ungated.
 //
-// When the plan-utilization guard (rangerhq-jgm) has already read the Max
-// plan's 5h/7d windows this pass, those percentages join the comparison:
-// the plan window is the realer budget, and stepping down at 80% of it is
-// the soft landing before the guard's hard skip. Nothing extra is fetched
-// for this — no thresholds configured means no reading, and no caps set
-// means Dial E is dormant whatever the plan says.
+// When the plan-utilization guard (rangerhq-jgm) has already read the
+// plan's rate windows this pass, those percentages join the comparison: the
+// plan window is the realer budget, and stepping down at 80% of it is the
+// soft landing before the guard's hard skip. Nothing extra is fetched for
+// this — no thresholds configured means no reading, and no caps set means
+// Dial E is dormant whatever the plan says.
+//
+// Which windows those are is the provider adapter's business and never this
+// file's (ADR 0012 D4). A window arrives named, and every window is the
+// same thing to the arithmetic here whatever its provider calls it: a
+// percentage with a label on it.
 
 import (
 	"fmt"
@@ -72,7 +77,9 @@ func (a *App) budgetDollars(key string, errw io.Writer) float64 {
 type BudgetState struct {
 	PassCap, DayCap     float64
 	PassSpend, DaySpend float64
-	Plan5h, Plan7d      float64 // plan-window utilization when read this pass; 0 = not consulted
+	// Plan is the plan-window reading this pass took, as its adapter named
+	// it; nil = the guard was not consulted. Any number of windows.
+	Plan PlanUsage
 
 	Pct    float64 // the tightest window's utilization
 	Window string  // which window that was ("" when no cap is set)
@@ -110,11 +117,13 @@ func (b *BudgetState) resolve() {
 	if b.DayCap > 0 {
 		consider(100*b.DaySpend/b.DayCap, "day")
 	}
-	if b.Plan5h > 0 {
-		consider(b.Plan5h, "plan 5h")
-	}
-	if b.Plan7d > 0 {
-		consider(b.Plan7d, "plan 7d")
+	// In the adapter's order, though order does not decide anything here —
+	// consider takes the largest, and a tie keeps the first, which is the
+	// tighter window by the adapter's own reckoning.
+	for _, w := range b.Plan {
+		if w.Pct > 0 {
+			consider(w.Pct, "plan "+w.Name)
+		}
 	}
 }
 
@@ -135,7 +144,7 @@ func (b BudgetState) Line() string {
 		return fmt.Sprintf("day $%.2f of $%.2f (%.0f%%)", b.DaySpend, b.DayCap, b.Pct)
 	case "":
 		return "no cap set"
-	default: // plan 5h / plan 7d — a percentage is all the endpoint gives
+	default: // a plan window — a percentage is all a usage endpoint gives
 		return fmt.Sprintf("%s at %.0f%%", b.Window, b.Pct)
 	}
 }

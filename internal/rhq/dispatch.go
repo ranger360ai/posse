@@ -63,8 +63,8 @@ type Dispatcher struct {
 	HB   *HerdrBackend
 	Bd   Bd
 	Out  io.Writer
-	Err  io.Writer   // guard/monitoring failures (nil = os.Stderr)
-	Plan *PlanReader // plan-utilization reader (nil = NewPlanReader on demand)
+	Err  io.Writer  // guard/monitoring failures (nil = os.Stderr)
+	Plan PlanReader // plan-window adapter (nil = the instance's, PlanAdapter)
 	// Spend is where Dial E's dollars come from (nil = scan the claude
 	// transcripts under ~/.claude/projects). Injected by tests, which have
 	// no transcripts to scan.
@@ -117,8 +117,8 @@ type Dispatcher struct {
 	// pass. Reset by Run, like every other per-pass reading.
 	stranded map[string]bool
 
-	passStart time.Time  // when Run's current pass began — Dial E's pass window
-	planUsage *PlanUsage // this pass's plan reading, when the guard took one
+	passStart time.Time // when Run's current pass began — Dial E's pass window
+	planUsage PlanUsage // this pass's plan reading, when the guard took one
 
 	// The blind window (rangerhq-6h1). blindSince is the last SUCCESSFUL
 	// reading — or, for a --watch loop, the moment the loop started, so the
@@ -131,14 +131,20 @@ type Dispatcher struct {
 	blindFailed bool // the last reading failed
 	blindSaid   time.Time
 	blindWarned bool // a malformed plan_guard_blind_max: is named once per process
+	// planNoAdapterSaid and planThreshWarned are the two "you armed a guard
+	// that gates nothing" lines, each said once per process for
+	// blindWarned's reason: a --watch loop must not write the same
+	// configuration fact into a log every pass.
+	planNoAdapterSaid bool
+	planThreshWarned  bool
 
 	budgetStopped *BudgetState // sticky: once a pass has hit 100%, it stays stopped
 	budgetWarned  bool         // a malformed cap is named once per pass, not once per bead
 	budgetUnread  bool         // an unreadable ledger is named once per pass, not once per bead
 
 	// Plan-guard state (ADR 0010 §1/§5, amended by ADR 0013 §3). planTrip is
-	// this pass's over-threshold reason without its verdict ("plan 5h at 78%
-	// > 70%"); planBlind is the unreadable-meter reason. Both are carried to
+	// this pass's over-threshold reason without its verdict ("plan <window> at
+	// 78% > 70%"); planBlind is the unreadable-meter reason. Both are carried to
 	// the per-bead runtime decision: off-meter work launches through either,
 	// while on-meter work faces the overflow ladder on a trip and parks on a
 	// blind read. overflow is the pass's resolved config, overflowUsed the
@@ -182,14 +188,19 @@ func (d *Dispatcher) errw() io.Writer {
 	return os.Stderr
 }
 
-// planGuard takes this pass's shared plan reading (rangerhq-jgm). The Max
-// plan's 5h/7d windows are the real budget; `plan_guard_5h:` /
-// `plan_guard_7d:` (percent) are the thresholds and both are unset by
-// default — with neither set, no request is made at all, no clock runs, and
-// this is exactly today's behaviour.
+// planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
+// own rate windows are the real budget; `plan_guard_<window>:` (percent) are
+// the thresholds and none is set by default — with none set, no request is
+// made at all, no clock runs, and this is exactly today's behaviour.
+//
+// Which windows exist is the provider adapter's answer, never this
+// function's (ADR 0012 D4): the thresholds are matched to the reading BY
+// NAME, and a name nobody reports is said out loud rather than ignored. With
+// the shipped adapter that is `plan_guard_5h:` and `plan_guard_7d:`, which
+// is what it has always been.
 //
 // Fail-open, with a bounded blind window (rangerhq-6h1). An unreadable
-// keychain or endpoint is a monitoring failure and the fleet never halts on
+// credential or endpoint is a monitoring failure and the fleet never halts on
 // one *while a human is watching*: a hand-run pass says so on stderr and
 // runs, unchanged. Unattended (--watch), blindness is a state with a clock
 // on it — past `plan_guard_blind_max:` (10m default, 0 = never) the pass
@@ -199,8 +210,8 @@ func (d *Dispatcher) errw() io.Writer {
 // Off-meter beads still launch either way: the meter gates only work that
 // can spend it (ADR 0013 §3).
 func (d *Dispatcher) planGuard() {
-	fiveH, sevenD := d.App.PlanGuardThresholds(d.errw())
-	if fiveH <= 0 && sevenD <= 0 {
+	th := d.App.PlanGuardThresholds(d.errw())
+	if len(th) == 0 {
 		return
 	}
 	// ADR 0010: the second pool's config is read once per pass, and only
@@ -223,7 +234,14 @@ func (d *Dispatcher) planGuard() {
 	c := d.App.PlanCache("dispatch")
 	c.Now = d.now
 	if d.Plan != nil {
-		c.Reader = d.Plan
+		c.Reader, c.NoAdapter = d.Plan, nil
+	}
+	// Guard-OFF, not guard-blind, and never a silent nil: an armed guard
+	// with no adapter to run is a state of its own (planusage.go's
+	// NoPlanAdapter), and this is where it is said.
+	if c.Reader == nil {
+		d.planNoAdapter(c.NoAdapter)
+		return
 	}
 	u, readAt, err := c.Read(planGuardMaxAge(d.App.PlanUsageTTL(d.errw()), d.App.PlanGuardBlindMax(io.Discard)))
 	if err != nil {
@@ -242,15 +260,80 @@ func (d *Dispatcher) planGuard() {
 	d.blindSaid = time.Time{}
 	// Keep it for Dial E: the pass is under the skip threshold, but the same
 	// numbers are the realest budget pressure signal there is (rangerhq-25p).
-	d.planUsage = &u
-	// 5h first: it is the tighter window and the one the operator feels.
-	// Strictly above — at the threshold exactly, the pass still runs.
-	if fiveH > 0 && u.FiveHour > fiveH {
-		d.overThreshold(fmt.Sprintf("plan 5h at %.0f%% > %.0f%%", u.FiveHour, fiveH))
+	d.planUsage = u
+	d.unmatchedThresholds(th, u)
+	// In the adapter's reading order, and the first trip wins: the adapter
+	// lists the window whose exhaustion hurts most first, and that is the
+	// one the operator wants named. Strictly above — at the threshold
+	// exactly, the pass still runs.
+	for _, w := range u {
+		if t := th[w.Name]; t > 0 && w.Pct > t {
+			d.overThreshold(fmt.Sprintf("plan %s at %.0f%% > %.0f%%", w.Name, w.Pct, t))
+			return
+		}
+	}
+}
+
+// planNoAdapter is a guard the operator armed that no shipped adapter can
+// serve (ADR 0012 D4) — posse on a platform whose credential store nothing
+// here can read, or a provider nobody has written an adapter for.
+//
+// It is guard-OFF, and that is a decision, not a shrug. The blind clock
+// never starts, nothing parks and nothing degrades, because blind means "a
+// meter exists and could not be read" and this is "there is no meter":
+// failing a pass closed against a provider posse was never able to meter
+// would be a brake with no release, on a machine where no reading will ever
+// arrive to lift it.
+//
+// What it is NOT is silence. The thresholds are set, so the operator
+// believes there is a guard; one line per process says there is not, names
+// why, and says which state this is — because "off" read as "blind", or
+// either read as "fine", is exactly the class of monitoring silence this
+// guard already cost a day to.
+func (d *Dispatcher) planNoAdapter(err error) {
+	if d.planNoAdapterSaid {
 		return
 	}
-	if sevenD > 0 && u.SevenDay > sevenD {
-		d.overThreshold(fmt.Sprintf("plan 7d at %.0f%% > %.0f%%", u.SevenDay, sevenD))
+	d.planNoAdapterSaid = true
+	if err == nil {
+		err = &NoPlanAdapter{Why: "no plan-window adapter"}
+	}
+	fmt.Fprintf(d.errw(), "plan guard: %v — thresholds are set, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", err)
+}
+
+// unmatchedThresholds names a `plan_guard_<window>:` that gates nothing
+// because this provider reports no such window — a threshold carried over
+// from an adapter that named its windows differently, or a plain typo.
+//
+// Saying it is planPercent's rule one layer out: a malformed threshold is
+// visible rather than a silently disabled guard, and a threshold aimed at a
+// window that does not exist is disabled just as completely. It needs a
+// reading to be sure, so it is asked once a reading arrives, and once per
+// process after that.
+func (d *Dispatcher) unmatchedThresholds(th map[string]float64, u PlanUsage) {
+	if d.planThreshWarned {
+		return
+	}
+	have := make(map[string]bool, len(u))
+	names := make([]string, 0, len(u))
+	for _, w := range u {
+		have[w.Name] = true
+		names = append(names, w.Name)
+	}
+	var bad []string
+	for name := range th {
+		if !have[name] {
+			bad = append(bad, name)
+		}
+	}
+	if len(bad) == 0 {
+		return
+	}
+	sort.Strings(bad)
+	d.planThreshWarned = true
+	for _, name := range bad {
+		fmt.Fprintf(d.errw(), "plan guard: config plan_guard_%s: this provider reports no window by that name (it reports %s) — that threshold gates nothing\n",
+			name, strings.Join(names, ", "))
 	}
 }
 
@@ -441,9 +524,7 @@ func (d *Dispatcher) budget() BudgetState {
 		d.budgetUnread = true
 		fmt.Fprintf(d.errw(), "budget: %d transcript(s) unreadable (%v) — the ledger counts less than was spent\n", rep.Unread, rep.ReadErr)
 	}
-	if u := d.planUsage; u != nil {
-		st.Plan5h, st.Plan7d = u.FiveHour, u.SevenDay
-	}
+	st.Plan = d.planUsage
 	st.resolve()
 	return st
 }

@@ -59,7 +59,7 @@ func TestPlanCacheOneReadingManyCallers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.FiveHour != 42 || u.SevenDay != 61 {
+	if win(u, "5h") != 42 || win(u, "7d") != 61 {
 		t.Fatalf("wrong reading: %+v", u)
 	}
 	if !at.Equal(blindT) {
@@ -72,7 +72,7 @@ func TestPlanCacheOneReadingManyCallers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", who, err)
 		}
-		if u2 != u {
+		if u2.Line() != u.Line() {
 			t.Errorf("%s got a different reading: %+v want %+v", who, u2, u)
 		}
 		// The age travels with it — a hit is a snapshot, not a fresh read.
@@ -238,7 +238,7 @@ func TestPlanCacheKeepsTheReadingThroughA429(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the last good reading survived the 429: %v", err)
 	}
-	if u.FiveHour != 42 || !at.Equal(blindT) {
+	if win(u, "5h") != 42 || !at.Equal(blindT) {
 		t.Errorf("want the original reading at %s, got %+v at %s", blindT, u, at)
 	}
 }
@@ -255,7 +255,7 @@ func TestPlanCacheCorruptSnapshotRefetches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a corrupt cache must read through to the endpoint: %v", err)
 	}
-	if u.FiveHour != 42 {
+	if win(u, "5h") != 42 {
 		t.Errorf("wrong reading: %+v", u)
 	}
 	var e planEntry
@@ -312,7 +312,7 @@ func TestPlanCacheLogsRequestsNotHits(t *testing.T) {
 func TestPlanCacheLogsAFailedRead(t *testing.T) {
 	r := newCacheRig(t)
 	c := r.caller("dispatch")
-	c.Reader.URL = deadURL(t)
+	c.Reader.(*AnthropicPlanReader).URL = deadURL(t)
 	if _, _, err := c.Read(time.Minute); err == nil {
 		t.Fatal("want the transport error")
 	}
@@ -475,7 +475,7 @@ func TestPlanCacheLineSaysHowOldTheReadingIs(t *testing.T) {
 func TestPlanCacheLineRendersNothingOnAFailedRead(t *testing.T) {
 	r := newCacheRig(t)
 	c := r.caller("cost")
-	c.Reader = &PlanReader{URL: deadURL(t), Token: func() (string, error) { return fakeToken, nil }}
+	c.Reader = &AnthropicPlanReader{URL: deadURL(t), Token: func() (string, error) { return fakeToken, nil }}
 
 	line, err := c.Line(5 * time.Minute)
 	if err == nil {

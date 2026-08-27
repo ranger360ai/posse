@@ -96,8 +96,12 @@ func TestBudgetStateResolve(t *testing.T) {
 		{"day steps", BudgetState{DayCap: 100, DaySpend: 80}, "day", 80, true, false},
 		{"day stops", BudgetState{DayCap: 100, DaySpend: 103}, "day", 103, true, true},
 		{"pass is tighter", BudgetState{PassCap: 25, PassSpend: 24, DayCap: 100, DaySpend: 40}, "pass", 96, true, false},
-		{"plan is tighter", BudgetState{DayCap: 100, DaySpend: 10, Plan5h: 84, Plan7d: 30}, "plan 5h", 84, true, false},
-		{"plan alone is not a cap", BudgetState{Plan5h: 99}, "plan 5h", 99, false, false},
+		{"plan is tighter", BudgetState{DayCap: 100, DaySpend: 10, Plan: PlanUsage{{"5h", 84}, {"7d", 30}}}, "plan 5h", 84, true, false},
+		{"plan alone is not a cap", BudgetState{Plan: PlanUsage{{"5h", 99}}}, "plan 5h", 99, false, false},
+		// The arithmetic never learned what a window is called (ADR 0012
+		// D4): a provider that names its windows something else gets the
+		// same tightest-window answer, with its own label on the line.
+		{"another provider's windows", BudgetState{DayCap: 100, DaySpend: 10, Plan: PlanUsage{{"burst", 20}, {"month", 91}}}, "plan month", 91, true, false},
 	}
 	for _, c := range cases {
 		st := c.st

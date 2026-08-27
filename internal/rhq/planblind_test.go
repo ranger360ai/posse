@@ -58,8 +58,8 @@ func newBlindRig(t *testing.T, cfg string) *blindRig {
 	return r
 }
 
-func (r *blindRig) blind()               { r.d.Plan.URL = r.dead }
-func (r *blindRig) sighted()             { r.d.Plan.URL = r.live }
+func (r *blindRig) blind()               { planReaderOf(r.d).URL = r.dead }
+func (r *blindRig) sighted()             { planReaderOf(r.d).URL = r.live }
 func (r *blindRig) at(d time.Duration)   { r.clock = blindT.Add(d) }
 func (r *blindRig) out() string          { return dispatcherOut(r.d) }
 func (r *blindRig) err() string          { return r.errb.String() }
@@ -172,7 +172,7 @@ func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
 	d.Now = func() time.Time { return clock }
 	d.blindSince = blindT
 	d.Unattended = true
-	d.Plan.URL = deadURL(t)
+	planReaderOf(d).URL = deadURL(t)
 
 	if n, err := d.Run("", "", 0); err != nil || n != 1 {
 		t.Fatalf("blind mixed pass dispatched %d, err=%v:\n%s", n, err, dispatcherOut(d))
@@ -557,7 +557,7 @@ func TestBlindOneThresholdStillArms(t *testing.T) {
 func TestBlindSkipOnKeychainUnreadable(t *testing.T) {
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
-	keychainOnly(r.d.Plan, func() (string, error) {
+	keychainOnly(planReaderOf(r.d), func() (string, error) {
 		return "", Die("keychain item %q unreadable", KeychainService)
 	})
 	r.at(12 * time.Minute)

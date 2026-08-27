@@ -278,7 +278,7 @@ func TestPlanGuardBlindLineNamesTheShapeItFound(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	r := newBlindRig(t, guardOn)
-	keychainOnly(r.d.Plan, KeychainToken)
+	keychainOnly(planReaderOf(r.d), KeychainToken)
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("a monitoring failure still fails open when attended: %d dispatched\n%s", n, r.out())

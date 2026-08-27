@@ -4,7 +4,7 @@ package rhq
 // hot.
 //
 // The plan guard (planusage.go) reads ONE provider's rate windows and, above
-// `plan_guard_5h:` / `plan_guard_7d:`, skipped the whole pass. Two things are
+// their `plan_guard_<window>:` thresholds, skipped the whole pass. Two things are
 // wrong with that once the fleet runs more than one runtime: a lane whose
 // runtime is not on that meter was skipped because somebody else's window was
 // hot, and a pass that could have run at equal posture on a second pool ran

@@ -73,8 +73,8 @@ func (ps *planServer) Close() { ps.closed.Store(true) }
 // The tests that are about an override build their reader from
 // NewPlanReader with RHQ_PLAN_USAGE_URL set, which is the only way a
 // running posse can get an unshared one.
-func (ps *planServer) reader() *PlanReader {
-	return &PlanReader{
+func (ps *planServer) reader() *AnthropicPlanReader {
+	return &AnthropicPlanReader{
 		URL:    ps.URL,
 		Token:  func() (string, error) { return fakeToken, nil },
 		HTTP:   ps.client,
@@ -82,13 +82,33 @@ func (ps *planServer) reader() *PlanReader {
 	}
 }
 
+// win is one window's percentage out of a reading, by name — the assertion
+// shape the []Window seam left behind (ADR 0012 D4). A window the reading
+// does not carry answers -1, never 0, so a test that names the wrong window
+// fails loudly instead of comparing against an absence that reads as "0%
+// used".
+func win(u PlanUsage, name string) float64 {
+	for _, w := range u {
+		if w.Name == name {
+			return w.Pct
+		}
+	}
+	return -1
+}
+
+// planReaderOf is the dispatcher's adapter as the shipped one. The seam is
+// an interface now (ADR 0012 D4) and every rig here injects the concrete
+// Anthropic reader, so the assertion is a statement about the rig, not a
+// hope about the code under test.
+func planReaderOf(d *Dispatcher) *AnthropicPlanReader { return d.Plan.(*AnthropicPlanReader) }
+
 // keychainOnly points a plan reader at the compiled-in endpoint with the
 // token source a test wants to fail. Since ranger-base-dr6u the keychain is
 // read only for that url (credpin.go rule 4), so a test about a CREDENTIAL
 // failure has to be pointed there — the fake endpoint is not one. Nothing
 // is dialled either way: PlanReader asks for the token first, so the
 // failure is the credential and not the transport.
-func keychainOnly(r *PlanReader, tok func() (string, error)) {
+func keychainOnly(r *AnthropicPlanReader, tok func() (string, error)) {
 	r.URL, r.Token = PlanUsageURL, tok
 }
 
@@ -281,16 +301,16 @@ func TestPlanGuardOffMakesNoRequest(t *testing.T) {
 func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		mut   func(*planServer, *PlanReader)
+		mut   func(*planServer, *AnthropicPlanReader)
 		wants string
 	}{
-		{"endpoint 500", func(ps *planServer, r *PlanReader) { ps.status = http.StatusInternalServerError },
+		{"endpoint 500", func(ps *planServer, r *AnthropicPlanReader) { ps.status = http.StatusInternalServerError },
 			"500"},
-		{"endpoint down", func(ps *planServer, r *PlanReader) { ps.Close(); r.URL = ps.URL },
+		{"endpoint down", func(ps *planServer, r *AnthropicPlanReader) { ps.Close(); r.URL = ps.URL },
 			"unreachable"},
-		{"garbage body", func(ps *planServer, r *PlanReader) { ps.body = "<html>nope" },
+		{"garbage body", func(ps *planServer, r *AnthropicPlanReader) { ps.body = "<html>nope" },
 			"not the expected JSON"},
-		{"keychain locked", func(ps *planServer, r *PlanReader) {
+		{"keychain locked", func(ps *planServer, r *AnthropicPlanReader) {
 			keychainOnly(r, func() (string, error) {
 				return "", Die("keychain item %q unreadable", KeychainService)
 			})
@@ -300,7 +320,7 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 			b, fake := newTestBackend(t)
 			ps := newPlanServer(t, 99, 99)
 			d, errb := planDispatcher(t, b, ps)
-			tc.mut(ps, d.Plan)
+			tc.mut(ps, planReaderOf(d))
 			writePersona(t, b.App, "ranger", "[go]")
 			repo := planRepo(t, `[{"id":"a-1","title":"t","labels":["go"]}]`,
 				`[{"id":"a-1","title":"t","status":"closed"}]`)
@@ -360,7 +380,7 @@ func TestPlanGuardBadThreshold(t *testing.T) {
 func TestPlanReaderRequest(t *testing.T) {
 	ps := newPlanServer(t, 42.4, 61.4)
 	t.Setenv("RHQ_PLAN_USAGE_URL", ps.URL)
-	r := NewPlanReader()
+	r := NewAnthropicPlanReader()
 	if r.URL != ps.URL {
 		t.Fatalf("RHQ_PLAN_USAGE_URL ignored: %s", r.URL)
 	}
@@ -374,7 +394,7 @@ func TestPlanReaderRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.FiveHour != 42.4 || u.SevenDay != 61.4 {
+	if win(u, "5h") != 42.4 || win(u, "7d") != 61.4 {
 		t.Errorf("parsed %+v, want 42.4/61.4", u)
 	}
 	if ps.auth != "" {
@@ -395,7 +415,7 @@ func TestPlanReaderRequest(t *testing.T) {
 // environment.
 func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
 	os.Unsetenv("RHQ_PLAN_USAGE_URL")
-	r := NewPlanReader()
+	r := NewAnthropicPlanReader()
 	if r.URL != PlanUsageURL {
 		t.Fatalf("default URL = %s, want %s", r.URL, PlanUsageURL)
 	}
@@ -410,7 +430,7 @@ func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
 // Default construction points at the real endpoint (no env override).
 func TestPlanReaderDefaultURL(t *testing.T) {
 	os.Unsetenv("RHQ_PLAN_USAGE_URL")
-	if r := NewPlanReader(); r.URL != PlanUsageURL {
+	if r := NewAnthropicPlanReader(); r.URL != PlanUsageURL {
 		t.Errorf("default URL = %s, want %s", r.URL, PlanUsageURL)
 	}
 }

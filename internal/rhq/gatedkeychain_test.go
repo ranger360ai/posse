@@ -100,7 +100,7 @@ func TestPlanGuardBlindLineNamesTheDenyRule(t *testing.T) {
 	// about — and the keychain is reached only from the compiled-in
 	// endpoint, which is never dialled because the token is asked for
 	// first.
-	keychainOnly(r.d.Plan, KeychainToken)
+	keychainOnly(planReaderOf(r.d), KeychainToken)
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("blind still fails open when attended: %d dispatched\n%s", n, r.out())
@@ -216,7 +216,7 @@ func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
 	// The read fails at the credential, so the park reason is the refusal
 	// and not the transport — and the keychain is reached only from the
 	// compiled-in endpoint, which is never dialled (credpin.go rule 4).
-	keychainOnly(r.d.Plan, KeychainToken)
+	keychainOnly(planReaderOf(r.d), KeychainToken)
 	r.at(12 * time.Minute)
 
 	if n := r.run(t); n != 0 {
@@ -250,7 +250,7 @@ func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
 		// is read only for that url (credpin.go rule 4) and PlanReader asks
 		// for the token first, so the failure is the credential and not the
 		// transport.
-		Reader: &PlanReader{URL: PlanUsageURL, Token: KeychainToken},
+		Reader: &AnthropicPlanReader{URL: PlanUsageURL, Token: KeychainToken},
 	}
 
 	if _, _, err := c.Read(time.Hour); err == nil {

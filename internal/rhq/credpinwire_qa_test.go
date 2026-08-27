@@ -107,7 +107,7 @@ func TestLoopbackOverrideCarriesNoBearerToTheSocket(t *testing.T) {
 	w.reachable(t)
 	t.Setenv("RHQ_PLAN_USAGE_URL", w.URL+"/usage")
 
-	r := NewPlanReader() // HTTP left alone: the real pinnedClient dials.
+	r := NewAnthropicPlanReader() // HTTP left alone: the real pinnedClient dials.
 	if r.URLErr != nil {
 		t.Fatalf("loopback override refused: %v", r.URLErr)
 	}
@@ -120,7 +120,7 @@ func TestLoopbackOverrideCarriesNoBearerToTheSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if u.FiveHour != 42 || u.SevenDay != 43 {
+	if win(u, "5h") != 42 || win(u, "7d") != 43 {
 		t.Errorf("parsed %+v, want 42/43 — the seam must keep working", u)
 	}
 	if w.hits != 1 {
@@ -146,7 +146,7 @@ func TestNonLoopbackOverrideReachesNoSocketAndNoKeychain(t *testing.T) {
 	w.reachable(t)
 	t.Setenv("RHQ_PLAN_USAGE_URL", "http://listener.example/usage")
 
-	r := NewPlanReader()
+	r := NewAnthropicPlanReader()
 	r.Token = func() (string, error) {
 		t.Error("the keychain was read for a host the pin refuses")
 		return fakeToken, nil

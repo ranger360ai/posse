@@ -73,10 +73,13 @@ const (
 // last asked for. The cooldown rides along with the reading rather than in
 // its own file — one fact, one store.
 type planEntry struct {
-	At       time.Time `json:"at"`
-	FiveHour float64   `json:"five_hour"`
-	SevenDay float64   `json:"seven_day"`
-	RetryAt  time.Time `json:"retry_at,omitempty"`
+	At time.Time `json:"at"`
+	// Windows is the reading, named by whichever adapter took it (ADR 0012
+	// D4). It replaced two provider-shaped fields, so a snapshot written by
+	// a posse from before that split decodes to zero windows — which load
+	// below reads as a miss rather than as a plan with no limits.
+	Windows PlanUsage `json:"windows"`
+	RetryAt time.Time `json:"retry_at,omitempty"`
 }
 
 // PlanCache is the shared reading as one caller sees it. Caller is the name
@@ -86,18 +89,25 @@ type PlanCache struct {
 	Path   string // the snapshot; "" = no sharing, every read is a request
 	Log    string // the read-cadence log; "" = no log
 	Caller string
-	Reader *PlanReader      // nil = NewPlanReader on demand
+	Reader PlanReader       // the instance's adapter; nil = there is none
 	Now    func() time.Time // nil = time.Now
+	// NoAdapter is why Reader is nil (planusage.go). Carried rather than
+	// returned by the constructor, for PlanReader.URLErr's reason: every
+	// caller wants a cache, and the honest place to say "no reading, and
+	// why" is the one that would have made the request.
+	NoAdapter error
 }
 
 // PlanCache builds the instance's cache for one caller. Every posse process
 // that reads the usage endpoint goes through this.
 func (a *App) PlanCache(caller string) *PlanCache {
+	r, err := PlanAdapter()
 	return &PlanCache{
-		Path:   filepath.Join(a.StateDir, "plan-usage.json"),
-		Log:    filepath.Join(a.StateDir, "plan-usage.log"),
-		Caller: caller,
-		Reader: NewPlanReader(),
+		Path:      filepath.Join(a.StateDir, "plan-usage.json"),
+		Log:       filepath.Join(a.StateDir, "plan-usage.log"),
+		Caller:    caller,
+		Reader:    r,
+		NoAdapter: err,
 	}
 }
 
@@ -116,17 +126,24 @@ func (c *PlanCache) now() time.Time {
 // "ignore Retry-After": honouring a rate limiter is not caching, and no
 // setting turns it off.
 func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
+	// No adapter, no reading — and not a stale one either. A snapshot on
+	// this machine was written by a posse that could reach a meter; an
+	// instance that cannot refresh it has no business acting on it, and
+	// saying so is the whole point of NoPlanAdapter being a type.
+	r := c.Reader
+	if r == nil {
+		if c.NoAdapter != nil {
+			return nil, time.Time{}, c.NoAdapter
+		}
+		return nil, time.Time{}, &NoPlanAdapter{Why: "no plan-window adapter"}
+	}
 	now := c.now()
 	e, have := c.load()
 	if have && maxAge > 0 && !e.At.IsZero() && now.Sub(e.At) < maxAge && now.Sub(e.At) >= 0 {
-		return PlanUsage{FiveHour: e.FiveHour, SevenDay: e.SevenDay}, e.At, nil
+		return e.Windows, e.At, nil
 	}
 	if have && now.Before(e.RetryAt) {
-		return PlanUsage{}, time.Time{}, Die("usage endpoint rate-limited, not asking again for %s", BlindFor(e.RetryAt.Sub(now)))
-	}
-	r := c.Reader
-	if r == nil {
-		r = NewPlanReader()
+		return nil, time.Time{}, Die("usage endpoint rate-limited, not asking again for %s", BlindFor(e.RetryAt.Sub(now)))
 	}
 	u, err := r.Read()
 	// The read log is written either way. A request that left the machine is
@@ -142,9 +159,9 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 			e.RetryAt = now.Add(planCooldown(rl.RetryAfter))
 			c.share(r, e)
 		}
-		return PlanUsage{}, time.Time{}, err
+		return nil, time.Time{}, err
 	}
-	c.share(r, planEntry{At: now, FiveHour: u.FiveHour, SevenDay: u.SevenDay})
+	c.share(r, planEntry{At: now, Windows: u})
 	return u, now, nil
 }
 
@@ -161,15 +178,16 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 // just works for the process that set it. Nothing is said out loud here:
 // this is not a refusal, it is the snapshot declining to adopt a stranger,
 // and plan-usage.log already records that the request happened.
-func (c *PlanCache) share(r *PlanReader, e planEntry) {
-	if r == nil || !r.Shared {
+func (c *PlanCache) share(r PlanReader, e planEntry) {
+	if r == nil || !r.MayShare() {
 		return
 	}
 	c.store(e)
 }
 
-// Line is the reading as a person reads it: `plan windows: 5h 42% · 7d
-// 61%`, plus how old the snapshot is once that is worth saying. One
+// Line is the reading as a person reads it: `plan windows: ` and whatever
+// the adapter's windows are called, plus how old the snapshot is once that
+// is worth saying. One
 // rendering for the tail of `posse cost` and for `posse cost --plan`, so a
 // persona greps the same bytes either way.
 //
@@ -211,6 +229,13 @@ func (c *PlanCache) load() (planEntry, bool) {
 	// A truncated or hand-edited file is a cache miss, never a crash and
 	// never a wrong number: json leaves e zeroed and the caller fetches.
 	if err := json.Unmarshal(b, &e); err != nil {
+		return planEntry{}, false
+	}
+	// A snapshot with no windows is not a reading: it is a pre-seam file, a
+	// truncated one, or a 429 entry that never held one. Only the cooldown
+	// survives — a rate limiter must be honoured off any entry that names
+	// one, and that is the one fact here that does not need a reading.
+	if len(e.Windows) == 0 && e.RetryAt.IsZero() {
 		return planEntry{}, false
 	}
 	return e, true

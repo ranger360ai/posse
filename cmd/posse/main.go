@@ -832,7 +832,7 @@ func main() {
 		rep.Print(out)
 		// The plan's own rate windows (rangerhq-jgm) — the constraint the
 		// dollars above are a proxy for. Current reading only, no history;
-		// silent when the keychain or endpoint is unreadable.
+		// silent when the credential or endpoint is unreadable.
 		// Through the shared cache (rangerhq-tdy8) — `posse cost` in a loop
 		// is one of the three pollers that made the endpoint 429. A reading
 		// a few minutes old is still the reading; say its age when it has
@@ -1261,7 +1261,7 @@ func joinComma(s []string) string {
 
 // costOpts is what `posse cost` was asked for. It returns an error rather
 // than calling die() so the flag contract is testable without a subprocess
-// — the reading behind --plan is not (it wants the operator's keychain).
+// — the reading behind --plan is not (it wants the provider credential).
 type costOpts struct {
 	since   time.Time
 	project string
@@ -1464,7 +1464,9 @@ dispatch (beads):
                                  plugin/autostart.sh asks it at every herdr
                                  server start to tell a live loop from a
                                  restored husk
-                               config plan_guard_5h:/plan_guard_7d: (percent)
+                               config plan_guard_<window>: (percent, one key
+                                 per rate window the provider adapter reports;
+                                 a name it does not report is named on stderr)
                                  skip a pass above the plan's rate windows;
                                  unset = off, unreadable = no-op — except under
                                  --watch, where plan_guard_blind_max: (10m,
@@ -1527,9 +1529,9 @@ catalog:
   posse cost [--since <date>] [--project <substr>]
                                  API-equiv $ per bead from claude transcripts, by
                                  tier/persona/day; codex/grok reported as uncounted;
-                                 plus the plan's 5h/7d windows when readable
+                                 plus the plan's own rate windows when readable
                                  and the budget_pass:/budget_day: caps in force
-  posse cost --plan              just the plan's 5h/7d windows, no transcript scan
+  posse cost --plan              just the plan's rate windows, no transcript scan
                                  (shared reading; exits 1 when unreadable)
   posse agent new <name>         scaffold a persona (PID shape) and open it in $EDITOR
   posse agent edit <name>        open an existing persona in $EDITOR

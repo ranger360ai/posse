@@ -259,6 +259,11 @@ dirs:
 # stderr line): the fleet never halts on a monitoring failure while a human
 # is watching it. Set the thresholds from your own plan's headroom, not from
 # these numbers — they are shapes, not recommendations.
+#
+# One key per window, named `plan_guard_<window>:` after the window the
+# adapter reports — the shipped one reports `5h` and `7d`. A key naming a
+# window your adapter does not report gates nothing, and says so on stderr
+# with the names it does report.
 # plan_guard_5h: 70          # skip the pass above 70% of the 5-hour window
 # plan_guard_7d: 85          # skip the pass above 85% of the 7-day window
 #

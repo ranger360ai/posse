@@ -79,7 +79,7 @@ func TestPlanUsageURLOverrideRefusesNonLoopback(t *testing.T) {
 	} {
 		t.Run(raw, func(t *testing.T) {
 			t.Setenv("RHQ_PLAN_USAGE_URL", raw)
-			r := NewPlanReader()
+			r := NewAnthropicPlanReader()
 			r.Token, r.HTTP = refusingToken(t), refusingTransport(t)
 
 			if r.URL != PlanUsageURL {
@@ -108,7 +108,7 @@ func TestPlanUsageURLOverrideHonoursLoopback(t *testing.T) {
 		"http://[::1]:8080/usage",
 	} {
 		t.Setenv("RHQ_PLAN_USAGE_URL", raw)
-		if got := NewPlanReader(); got.URL != raw || got.URLErr != nil {
+		if got := NewAnthropicPlanReader(); got.URL != raw || got.URLErr != nil {
 			t.Errorf("loopback override %s not honoured: url=%s err=%v", raw, got.URL, got.URLErr)
 		}
 	}
@@ -120,7 +120,7 @@ func TestPlanUsageURLOverrideHonoursLoopback(t *testing.T) {
 // Authorization header is never put in front of a host we do not credential.
 func TestReadersRefuseAnUncredentialedHostWhateverSetTheURL(t *testing.T) {
 	t.Run("plan", func(t *testing.T) {
-		r := &PlanReader{URL: "https://listener.example/usage", Token: refusingToken(t), HTTP: refusingTransport(t)}
+		r := &AnthropicPlanReader{URL: "https://listener.example/usage", Token: refusingToken(t), HTTP: refusingTransport(t)}
 		_, err := r.Read()
 		var pin *PinRefusal
 		if !errors.As(err, &pin) {
@@ -206,7 +206,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 // The plan reader's half of the same thing.
 func TestARedirectedUsageResponseIsRefused(t *testing.T) {
 	rt := newRedirectTransport("listener.example", `{"five_hour":{"utilization":1}}`)
-	r := &PlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, error) { return fakeToken, nil }, HTTP: rt.client}
+	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, error) { return fakeToken, nil }, HTTP: rt.client}
 	_, err := r.Read()
 	var pin *PinRefusal
 	if !errors.As(err, &pin) {
@@ -278,7 +278,7 @@ func newOverrideRig(t *testing.T, status int, body, retryAfter string) *override
 	t.Cleanup(srv.Close)
 
 	t.Setenv("RHQ_PLAN_USAGE_URL", srv.URL+"/usage")
-	r := NewPlanReader()
+	r := NewAnthropicPlanReader()
 	if r.URLErr != nil {
 		t.Fatalf("the loopback seam must keep working: %v", r.URLErr)
 	}
@@ -312,7 +312,7 @@ func (rig *overrideRig) seedTheFleetsReading(t *testing.T) {
 	if err := os.MkdirAll(rig.dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seed := `{"at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","five_hour":42,"seven_day":61}`
+	seed := `{"at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","windows":[{"name":"5h","pct":42},{"name":"7d","pct":61}]}`
 	if err := os.WriteFile(rig.cache.Path, []byte(seed), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestALoopbackOverrideIsAskedWithoutTheCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the seam must keep working: %v", err)
 	}
-	if u.FiveHour != 7 || u.SevenDay != 8 {
+	if win(u, "5h") != 7 || win(u, "7d") != 8 {
 		t.Errorf("the caller must still get its own reading, got %+v", u)
 	}
 	if rig.hits != 1 {
@@ -367,7 +367,7 @@ func TestAnOverridesAnswerIsNotTheFleetsFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.FiveHour != 0 {
+	if win(u, "5h") != 0 {
 		t.Fatalf("setup: the caller should have read the listener's 0%%, got %+v", u)
 	}
 	if got := rig.snapshot(t); got != "" {
@@ -394,7 +394,7 @@ func TestAnOverrideCannotOverwriteTheFleetsReading(t *testing.T) {
 		t.Fatalf("setup: maxAge 0 must ask, got %d requests", rig.hits)
 	}
 	got := rig.snapshot(t)
-	if !strings.Contains(got, `"five_hour":42`) || strings.Contains(got, `"five_hour":0`) {
+	if !strings.Contains(got, `"pct":42`) || strings.Contains(got, `"pct":0`) {
 		t.Errorf("the fleet's reading was overwritten by an override: %s", got)
 	}
 }
@@ -452,7 +452,7 @@ func TestAUserinfoSpellingOfTheEndpointIsStillAnOverride(t *testing.T) {
 	}
 
 	t.Setenv("RHQ_PLAN_USAGE_URL", raw)
-	r := NewPlanReader()
+	r := NewAnthropicPlanReader()
 	if r.URLErr != nil {
 		t.Fatalf("the host is loopback, so the seam must still work: %v", r.URLErr)
 	}

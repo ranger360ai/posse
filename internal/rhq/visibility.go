@@ -94,7 +94,7 @@ func (p OpsPattern) MatchedText(s string, n int) []string {
 //     the rule and the same side of the regex — the price gets flagged, the
 //     $0 does not.
 //   - The config-key class needs a VALUE, not the key: `budget_pass:` and
-//     `plan_guard_5h:/plan_guard_7d:` are this harness's own public
+//     `plan_guard_<window>:` are this harness's own public
 //     vocabulary and appear in prose constantly (43 beads on the bare
 //     names, 17 with a number after the colon — and those 17 are almost all
 //     genuine: live thresholds, an armed autostart interval).
