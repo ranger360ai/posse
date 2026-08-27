@@ -100,8 +100,6 @@ func TestSeedOverrideThatIsNotASeedDoesNotHalfSeedSilently(t *testing.T) {
 // (ADR 0012 D5), and the error string that row names cannot be printed by any
 // build since 49e287f. README.md carried the twin of this until 83c3c10.
 func TestInstallDocsDoNotPrescribeARepoCheckoutToSeed(t *testing.T) {
-	t.Skip("ranger-base-n0d: INSTALL.md §14 still names the removed error and prescribes the checkout")
-
 	dead := []string{
 		"not found next to this binary", // an error no build can emit
 		"must be the repo build",        // the claim the embed falsified
@@ -116,6 +114,41 @@ func TestInstallDocsDoNotPrescribeARepoCheckoutToSeed(t *testing.T) {
 				if strings.Contains(line, phrase) {
 					t.Errorf("%s:%d says %q — `posse init` seeds from the embed with no repo present", doc, i+1, phrase)
 				}
+			}
+		}
+	}
+}
+
+// The other half of ranger-base-n0d, and the half a phrase list cannot see: a
+// troubleshooting row may name no dead error at all and still send the reader
+// to a checkout. Only the fix cells are read, and only inside the tables — the
+// body legitimately names `./bin/posse-go init` when it explains which seed a
+// dev build chooses.
+func TestTroubleshootingFixesDoNotSendTheReaderToACheckout(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err != nil {
+		t.Fatalf("read INSTALL.md: %v", err)
+	}
+	inTable := false
+	for i, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "|") {
+			inTable = false
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), "|")
+		if len(cells) < 3 {
+			continue
+		}
+		if !inTable {
+			// The header row names the columns; everything under it until a
+			// non-table line is a row whose last cell is the fix.
+			inTable = strings.Contains(line, "| fix |")
+			continue
+		}
+		fix := cells[len(cells)-1]
+		for _, phrase := range []string{"bin/posse-go", "repo checkout", "the checkout"} {
+			if strings.Contains(fix, phrase) {
+				t.Errorf("INSTALL.md:%d prescribes %q as a fix — the embed made the checkout unnecessary (ADR 0012 D5)", i+1, phrase)
 			}
 		}
 	}

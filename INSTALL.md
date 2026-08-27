@@ -1370,7 +1370,7 @@ one budget and the caps become conservative, not wrong.
 
 | symptom | cause | fix |
 |---|---|---|
-| `examples/ not found next to this binary (~/.local/examples)` | ran the installed `posse init` | run `./bin/posse-go init` from the repo checkout |
+| `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a directory named `examples/` sits one level above the binary — `~/.local/bin/posse` reads `~/.local/examples` — and wins over the embed: right in a checkout, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in |
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
 | `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH |
 | launch refuses with a `DEGRADED` list | the wall cannot realize a PID gate on this runtime × cage | `posse gates <persona>` and fix the cause; `--allow-degraded` only knowingly |
