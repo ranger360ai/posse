@@ -93,7 +93,8 @@ metric counts.
 SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
 not permission: no one has to be asked for it, so it belongs below the
 rungs that spend the operator's attention. It is the mechanism of the
-research-spike practice (bead rangerhq-dfz8) — the ladder is the one text
+research-spike practice (ADR 0026; archive bead rangerhq-dfz8) — the
+ladder is the one text
 every persona reads on every bead, so the trigger travels with the work
 instead of depending on someone remembering to pull the cord; PID prose
 is reinforcement, not the mechanism. Its `bd dep add` is the same one ASK

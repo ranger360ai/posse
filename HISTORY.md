@@ -19,9 +19,15 @@ repo) only, and ids minted here never take these prefixes.
 
 ## ADR numbering
 
-ADR numbering carries over from the private archive (ADR 0012 D6). ADRs
-0001–0012 are restated in `docs/adr/` under their original numbers, each
-with a provenance header; the full-fat originals remain in the archive.
-ADRs 0013–0018 exist in the archive but are not yet restated:
-**their numbers are reserved, restatements pending** — new ADRs continue
-the sequence from 0019.
+ADR numbering carried over from the private archive (ADR 0012 D6) for
+ADRs 0001–0012 only: those are restated in `docs/adr/` under their
+original numbers, each with a provenance header; the full-fat originals
+remain in the archive. The plan at publication reserved 0013–0018 for
+the archive's ADRs of those numbers, but this repo minted native ADRs
+onto them starting 2026-08-24, so **from 0013 onward the two numbering
+lines have diverged and numbers are repo-local**. A bare `docs/adr/00NN`
+past 0012 is ambiguous across the two repos: cross-repo and cross-era
+references go by title or practice name, never by number alone. An
+archive ADR restated after the divergence takes the next free number
+here, with a provenance header naming the archive document (ADR 0026,
+restating the archive's research-spikes ADR, is the pattern).
