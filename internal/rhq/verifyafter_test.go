@@ -409,3 +409,142 @@ func TestVerifyAfterWithoutTheLockFilesNothing(t *testing.T) {
 		t.Errorf("watermark moved to %s — the close would never be seen again", got)
 	}
 }
+
+// ─── the duplicate flood (ranger-base-muoo) ──────────────────────────────────
+
+// The incident, end to end, against a fake bd that models what 0.49.1 really
+// does: `bd create --deps discovered-from:<id>` COMMITS the issue and then
+// exits 1 on a socket read timeout, so the `discovered-from` edge never
+// lands. Before the marker dedupe that cost one duplicate P1 verify bead per
+// dispatch pass, forever — 33 of them in five hours — because the qa-dependent
+// check looks at the edge that did not land, and the frozen watermark kept
+// re-offering the same close.
+//
+// What is pinned: the second pass files NOTHING, and the watermark the
+// timeout froze thaws on its own, because adopting the orphan is a handled
+// candidate.
+func TestVerifyAfterAdoptsTheOrphanATimedOutCreateLeft(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	closed := "2026-08-18T09:20:06-04:00"
+	repo := vaRepo(t, a, closedList("a-1", `["code"]`, closed))
+	os.WriteFile(filepath.Join(repo, "fake-create-fail"), nil, 0o644)
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+
+	// Pass one: bd commits the bead and reports failure. Nothing is counted
+	// as filed, the failure is on stderr, and the watermark stays put — the
+	// close must be seen again, because as far as this pass knows it was lost.
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Fatalf("first pass counted %d filings although bd failed", n)
+	}
+	if !strings.Contains(errs, "verify-after: a-1:") {
+		t.Errorf("the failed filing was not reported:\n%s", errs)
+	}
+	if mark, _ := readVerifyWatermark(a.verifyWatermarkPath(repo)); !mark.Equal(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("watermark advanced past a close whose filing failed: %s", mark)
+	}
+
+	// Pass two: the orphan is in the listing now, with no edge and no
+	// comment — the only thing tying it to a-1 is the marker in its
+	// description. That has to be enough.
+	os.Remove(filepath.Join(repo, "fake-create-fail"))
+	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	n, out, _ := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Errorf("second pass re-filed %d verify beads for a-1:\n%s", n, out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify:") {
+		t.Errorf("the orphan was not adopted — a duplicate was filed:\n%s", calls)
+	}
+	// And the freeze lifts: an adopted orphan is a handled candidate, so a
+	// single poisoned close cannot hold the watermark down forever.
+	mark, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+	if !ok {
+		t.Fatal("no watermark after the second pass")
+	}
+	if want, _ := time.Parse(time.RFC3339, closed); !mark.Equal(want) {
+		t.Errorf("watermark = %s, want the adopted close %s — the freeze did not thaw", mark, want)
+	}
+}
+
+// The dedupe is by close target, not by "some qa bead exists": an orphan
+// answering a DIFFERENT close must not swallow this one's handoff.
+func TestVerifyAfterOrphanForAnotherCloseDoesNotSuppress(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	list := `[{"id":"a-1","title":"gate shell live","status":"closed","priority":1,` +
+		`"assignee":"developer","labels":["code"],"closed_at":"2026-08-18T09:20:06-04:00"},` +
+		`{"id":"q-9","title":"verify: something else","status":"open","labels":["qa"],` +
+		`"description":"Verify the close of a-2 (title, quoted as data: \"x\").\n"}]`
+	vaRepo(t, a, list)
+	writeVerifyWatermark(a.verifyWatermarkPath(a.BeadsDirs()[0]), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+
+	if n, _, errs := vaRun(t, a, testBd(t)); n != 1 {
+		t.Fatalf("filed %d, want 1 — an orphan for a-2 suppressed a-1's handoff (stderr: %s)", n, errs)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create verify: gate shell live") {
+		t.Errorf("a-1 never got its verify bead:\n%s", calls)
+	}
+}
+
+// A verify bead that has already been ANSWERED is still a verify bead: a
+// close whose verify was filed and closed must not come back.
+func TestVerifyAfterDoesNotRefileAnAnsweredVerify(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	list := `[{"id":"a-1","title":"gate shell live","status":"closed","priority":1,` +
+		`"assignee":"developer","labels":["code"],"closed_at":"2026-08-18T09:20:06-04:00"},` +
+		`{"id":"q-9","title":"verify: gate shell live","status":"closed","labels":["qa"],` +
+		`"closed_at":"2026-08-18T11:00:00-04:00",` +
+		`"description":"Verify the close of a-1 (title, quoted as data: \"x\").\n"}]`
+	vaRepo(t, a, list)
+	writeVerifyWatermark(a.verifyWatermarkPath(a.BeadsDirs()[0]), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+
+	if n, _, _ := vaRun(t, a, testBd(t)); n != 0 {
+		t.Errorf("re-filed a verify bead whose answer is already closed")
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify:") {
+		t.Errorf("duplicate filed against an answered verify:\n%s", calls)
+	}
+}
+
+// The marker is a contract with ourselves, so it round-trips — and it reads
+// nothing it did not write.
+func TestVerifySourceIDRoundTripsAndRejectsForeignText(t *testing.T) {
+	b, _ := newTestBackend(t)
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	is := BdIssue{ID: "ranger-base-o943", Title: `posse promote (the "make install")`,
+		Labels: []string{"code"}, ClosedAt: &closed}
+	desc := b.App.verifyDescription(t.TempDir(), is, "dinesh")
+	if got := verifySourceID(desc); got != is.ID {
+		t.Errorf("verifySourceID(verifyDescription(...)) = %q, want %q\n%s", got, is.ID, desc)
+	}
+	for _, bad := range []string{
+		"",
+		"Verify the close of a-1",      // no opener: not our text
+		"Verify the close of  (title)", // no id
+		"Verify the close of not a token (title)", // id with spaces is not a bead id
+		"A persona wrote this one by hand about a-1 (whatever).",
+	} {
+		if got := verifySourceID(bad); got != "" {
+			t.Errorf("verifySourceID(%q) = %q, want \"\"", bad, got)
+		}
+	}
+}
+
+// verifiedSources reads only qa beads, and only the marker.
+func TestVerifiedSourcesIndexesQaBeadsOnly(t *testing.T) {
+	marker := func(id string) string { return "Verify the close of " + id + " (title, quoted as data: \"x\").\n" }
+	got := verifiedSources([]BdIssue{
+		{ID: "q-1", Labels: []string{"qa"}, Description: marker("a-1")},
+		{ID: "q-2", Labels: []string{"qa"}, Description: marker("a-2")},
+		// -l code, not -l qa: a work bead that happens to quote the marker
+		// is not a filing, or a persona could suppress its own verify.
+		{ID: "w-1", Labels: []string{"code"}, Description: marker("a-3")},
+		{ID: "q-3", Labels: []string{"qa"}, Description: "hand-written, no marker"},
+	})
+	if len(got) != 2 || !got["a-1"] || !got["a-2"] {
+		t.Errorf("verifiedSources = %v, want exactly {a-1, a-2}", got)
+	}
+}

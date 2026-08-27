@@ -122,7 +122,20 @@ func fakeBd(args []string) int {
 		}
 		return 0
 	case "create": // create <title> … --json → a fresh id, counted per fake dir
-		fmt.Printf(`{"id":%q,"title":"created"}`, fakeBdNextID())
+		id := fakeBdNextID()
+		// bd 0.49.1's non-atomic create (ranger-base-muoo), opt-in with a
+		// fake-create-fail marker: against a parent whose dependency closure
+		// is tangled the daemon COMMITS the issue and then outruns the
+		// client's 30s socket read timeout, so bd exits 1, prints no id, and
+		// the --deps edge never lands. The issue still shows up in the next
+		// `bd list`, because in the wild it does — that is the whole reason
+		// the flood was invisible to a dedupe that reads the edge.
+		if _, err := os.Stat("fake-create-fail"); err == nil {
+			fakeBdAppendCreated(id, args)
+			fmt.Fprint(os.Stderr, "Error: failed to read response: read unix ->bd.sock: i/o timeout")
+			return 1
+		}
+		fmt.Printf(`{"id":%q,"title":"created"}`, id)
 		return 0
 	case "comments": // comments <id> --json → fake-comments.json; comments add → ok
 		for _, a := range args {
@@ -159,6 +172,41 @@ func fakeBd(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "fake bd: unhandled %s\n", strings.Join(args, " "))
 	return 1
+}
+
+// fakeBdAppendCreated puts the issue bd just committed into fake-list.json,
+// so the next pass's `bd list --all` sees it the way it would see a real one.
+func fakeBdAppendCreated(id string, args []string) {
+	flag := func(name string) string {
+		for i, a := range args {
+			if a == name && i+1 < len(args) {
+				return args[i+1]
+			}
+		}
+		return ""
+	}
+	title := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--actor" {
+			i++
+			continue
+		}
+		if args[i] == "create" && i+1 < len(args) {
+			title = args[i+1]
+			break
+		}
+	}
+	var list []map[string]any
+	if b, err := os.ReadFile("fake-list.json"); err == nil {
+		json.Unmarshal(b, &list)
+	}
+	list = append(list, map[string]any{
+		"id": id, "title": title, "description": flag("-d"),
+		"status": "open", "labels": strings.Split(flag("-l"), ","),
+	})
+	if b, err := json.Marshal(list); err == nil {
+		os.WriteFile("fake-list.json", b, 0o644)
+	}
 }
 
 // fakeBdNextID hands out q-1, q-2, … so a test can assert on the id the
