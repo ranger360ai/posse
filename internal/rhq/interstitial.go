@@ -153,9 +153,10 @@ var GrokInterstitials = []Interstitial{{
 	Probe:   grokAutoUpdateProbe,
 }}
 
-// CodexInterstitials — measured on codex-cli 0.147.0 (ranger-base-3j8).
+// CodexInterstitials — measured on codex-cli 0.147.0 (ranger-base-3j8,
+// rangerhq-9py0).
 var CodexInterstitials = []Interstitial{{
-	Screen:  `"Update available! → 1. Update now  2. Skip  3. Skip until next version"`,
+	Screen:  `"Update available! → 1. Update now  2. Skip  3. Skip until next version", footed "Press enter to continue". herdr reads it blocked (update_menu, etc/herdr/agent-detection/codex.toml — before that rule it fell through to idle with no rule matched), so a launch fails by name instead of waiting it out. Text sent to the untouched menu is discarded, not buffered: nothing typed there reaches a composer.`,
 	Where:   "~/.codex/version.json",
 	Key:     "dismissed_version",
 	Silence: "the OPERATOR picks \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter). It silences one release; the menu returns when latest_version moves.",

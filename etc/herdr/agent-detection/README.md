@@ -167,7 +167,15 @@ and nothing errors. The same hole covers every codex modal whose footer reads
 `Press enter to confirm or esc to go back` (`/model`, `/approvals`, …); upstream
 only matches the `esc to cancel` wording of the same footer.
 
-Our override forks upstream `2026.08.09.1` and adds exactly two things — see
+The same fallthrough hides a second, more expensive screen: codex's
+**"Update available!"** release menu (rangerhq-9py0), drawn on a version delta
+before the composer exists and footed `Press enter to continue` — a footer
+neither the upstream rules nor `live_strong_blocker` match, over a pane whose
+OSC title is blank while the menu is up, so `osc_title_idle` does not fire
+either. Its default-selected option is `1. Update now`, which runs a package
+upgrade of the operator's pinned tooling.
+
+Our override forks upstream `2026.08.09.1` and adds exactly three things — see
 the diff against `~/.local/state/herdr/agent-detection/remote/codex.toml`:
 
 - **`hooks_review`** (priority 960) matches the dialog's own text in the top
@@ -175,6 +183,13 @@ the diff against `~/.local/state/herdr/agent-detection/remote/codex.toml`:
   shared footer so a footer reword cannot silently turn it back into `idle`.
 - **`live_strong_blocker`** gains the `esc to go back` footer wording, which
   generalises to codex modals we have not met yet.
+- **`update_menu`** (priority 940) matches the release menu on its banner plus
+  its numbered `1. Update now` option — not on the footer, and not on the
+  parenthetical naming the package manager, which differs per install method.
+  `blocked` is measured, not assumed: text sent to the untouched menu is
+  **discarded**, where grok's `startup_splash` buffers it into the composer
+  beneath (rangerhq-1xsj). Nothing may answer this screen — see
+  `Interstitial.Danger` in `internal/rhq/interstitial.go`.
 
 This does not change the fleet's posture. `posse`'s codex template still passes
 `--disable hooks` (`internal/rhq.CodexFleetFlags`) because the cage is ours, not
