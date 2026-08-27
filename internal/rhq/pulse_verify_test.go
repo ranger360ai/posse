@@ -10,7 +10,9 @@ package rhq
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -55,5 +57,75 @@ func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 	}
 	if _, err := os.Stat(PulsePath(b.App)); err == nil {
 		t.Error("a disarmed pulse must never write state/pulse.yaml")
+	}
+}
+
+// ─── rangerhq-44w1 close (ranger-base-k19q) ──────────────────────────────
+
+// TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker is
+// rangerhq-44w1's DONE WHEN sentence, run as written: "fake-herdr blocked
+// session yields exactly one prompt with the marker, renag honors backoff".
+//
+// The delivery tests carry every mechanism (due-ness, renag doubling,
+// idle-only, the crew seam) but all of them raise the condition set with an
+// unpushed repo, deliberately, so the target session's status can be held
+// fixed. Nothing exercised the shape the bead names and the incident is
+// about: a DIFFERENT persona's session goes blocked, and monica — idle, and
+// the only session that must be prompted — gets exactly one prompt naming
+// it. Two live sessions with two different herdr statuses is also the only
+// arrangement in which pulseTarget's "first match by agent" can pick wrong.
+func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) {
+	b, fake := newTestBackend(t)
+	writePersona(t, b.App, "dinesh", "code")
+	writePersona(t, b.App, "monica", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "dinesh-work", Agent: "dinesh"})
+	mustCreate(t, b, NewSessionOpts{Name: "monica-work", Agent: "monica"})
+
+	ids := map[string]string{}
+	for _, w := range fakeLoadWSFrom(t, fake) {
+		ids[w.Label] = w.WorkspaceID
+	}
+	if ids["dinesh-work"] == "" || ids["monica-work"] == "" {
+		t.Fatalf("fixture: both sessions must exist, got %v", ids)
+	}
+	// One listing, two agents, two statuses — blocked dinesh, idle monica.
+	agents := fmt.Sprintf(
+		`[{"agent":"claude","agent_status":"blocked","pane_id":%q,"workspace_id":%q},`+
+			`{"agent":"claude","agent_status":"idle","pane_id":%q,"workspace_id":%q}]`,
+		ids["dinesh-work"]+":p1", ids["dinesh-work"], ids["monica-work"]+":p1", ids["monica-work"])
+	if err := os.WriteFile(filepath.Join(fake, "agents.json"), []byte(agents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	clock := time.Now()
+	d := deliveryDispatcher(t, b, &clock)
+	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+
+	d.pulseOnce(cfg)
+
+	log := calls(t, fake)
+	if n := strings.Count(log, "agent prompt monica-work"); n != 1 {
+		t.Fatalf("a blocked session must yield exactly one prompt, got %d:\n%s", n, log)
+	}
+	if !strings.Contains(log, "agent prompt monica-work Pulse check:") {
+		t.Errorf("the prompt must carry the fixed marker:\n%s", log)
+	}
+	if !strings.Contains(log, "blocked:dinesh-work") {
+		t.Errorf("the prompt must name the condition it was raised by:\n%s", log)
+	}
+	if strings.Contains(log, "agent prompt dinesh-work") {
+		t.Errorf("the blocked session is the SUBJECT of the pulse, never its target:\n%s", log)
+	}
+
+	// Renag honours the backoff on the same set, and releases after it.
+	clock = clock.Add(10 * time.Minute)
+	d.pulseOnce(cfg)
+	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 1 {
+		t.Errorf("inside the renag window the same set must not re-prompt, got %d", n)
+	}
+	clock = clock.Add(21 * time.Minute)
+	d.pulseOnce(cfg)
+	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 2 {
+		t.Errorf("past the renag window the same set must re-prompt once, got %d", n)
 	}
 }
