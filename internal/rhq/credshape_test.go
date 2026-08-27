@@ -294,3 +294,43 @@ func TestPlanGuardBlindLineNamesTheShapeItFound(t *testing.T) {
 		t.Errorf("a wrong shape is not an unreadable item: %q", errs)
 	}
 }
+
+// A non-string accessToken — the envelope restructures the field rather than
+// renaming it. Found adversarially while verifying ranger-base-okbr's close
+// (ranger-base-ymmk); the WORDING it gets today is wrong and is
+// ranger-base-6ai5's to fix, because the shape's Token func returns "" both
+// for an empty string and for a value it could not decode, and the verdict
+// reads only the first.
+//
+// What this pins is the pair that must hold whichever way that line is
+// reworded: a value posse cannot read is never handed back AS a token, and no
+// byte of it reaches the error. The second matters most here — a restructured
+// field carries the credential one level deeper than any case pinned above,
+// inside a RawMessage the diagnostic holds and must not print.
+func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
+	for _, tc := range []struct{ name, inner string }{
+		{"an object", `{"accessToken":{"token":"` + fixtureSecret + `","type":"oauth"},"refreshToken":"r"}`},
+		{"an array", `{"accessToken":["` + fixtureSecret + `"]}`},
+		{"a number", `{"accessToken":12345,"refreshToken":"r"}`},
+		{"a boolean", `{"accessToken":false}`},
+		{"a nested envelope", `{"accessToken":{"claudeAiOauth":{"accessToken":"` + fixtureSecret + `"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tok, shape, err := credentialToken([]byte(`{"claudeAiOauth":` + tc.inner + `}`))
+			if err == nil {
+				t.Fatalf("a value posse cannot decode must not pass as a token: %q (shape %q)", tok, shape)
+			}
+			if tok != "" || shape != "" {
+				t.Errorf("failed read must hand back nothing: tok=%q shape=%q", tok, shape)
+			}
+			if strings.Contains(err.Error(), fixtureSecret) {
+				t.Errorf("the credential reached the error line: %q", err)
+			}
+			// The key itself is schema and stays: an operator has to be able
+			// to see that accessToken is there at all.
+			if !strings.Contains(err.Error(), "accessToken") {
+				t.Errorf("the key posse looked for must still be named: %q", err)
+			}
+		})
+	}
+}
