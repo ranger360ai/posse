@@ -179,6 +179,75 @@ func TestMetricKey(t *testing.T) {
 	}
 }
 
+// ADR 0018 §5: the parity lint's drift alarm — advisory only (a warning,
+// never a finding), and it fires on both arms: a push-granting PID that is
+// not the named coordinator, and a push-granting PID when no coordinator is
+// named at all.
+func TestCheckAgentCoordinatorParity(t *testing.T) {
+	home := t.TempDir()
+	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	os.MkdirAll(a.AgentsDir, 0o755)
+	pid := func(name string) {
+		md := "---\nname: " + name + "\ndescription: t\nallow: [Bash(git push:*)]\n---\nYou are " + name + ", the role of the crew.\n"
+		os.WriteFile(filepath.Join(a.AgentsDir, name+".md"), []byte(md), 0o644)
+	}
+	pid("monica")
+	const want = "grants the coordinator's defining permission"
+
+	// No coordinator: configured at all — the important arm.
+	_, ws, err := a.CheckAgent("monica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(ws, "\n")
+	if !strings.Contains(joined, want) || !strings.Contains(joined, "no coordinator: is configured") {
+		t.Errorf("missing no-coordinator-named warning:\n%s", joined)
+	}
+
+	// coordinator: names someone else — drift.
+	os.WriteFile(a.ConfigPath, []byte("coordinator: coordinator\n"), 0o644)
+	_, ws, err = a.CheckAgent("monica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined = strings.Join(ws, "\n")
+	if !strings.Contains(joined, want) || !strings.Contains(joined, "not the coordinator") {
+		t.Errorf("missing drift warning:\n%s", joined)
+	}
+
+	// coordinator: names this PID — no warning.
+	os.WriteFile(a.ConfigPath, []byte("coordinator: monica\n"), 0o644)
+	_, ws, err = a.CheckAgent("monica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(ws, "\n"), want) {
+		t.Errorf("the coordinator itself must not warn on its own grant: %v", ws)
+	}
+	// Case/path spelling still resolves to the same identity (isCoordinator).
+	os.WriteFile(a.ConfigPath, []byte("coordinator: Monica\n"), 0o644)
+	_, ws, err = a.CheckAgent("monica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(ws, "\n"), want) {
+		t.Errorf("a case-different spelling of the same coordinator must not warn: %v", ws)
+	}
+
+	// A PID that does not grant push stays quiet regardless of config.
+	os.WriteFile(a.ConfigPath, []byte("coordinator: someone-else\n"), 0o644)
+	if _, err := a.ScaffoldAgent("quiet"); err != nil {
+		t.Fatal(err)
+	}
+	_, ws, err = a.CheckAgent("quiet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(ws, "\n"), want) {
+		t.Errorf("a PID that grants no push must not get the ADR 0018 §5 warning: %v", ws)
+	}
+}
+
 func TestBalancedParens(t *testing.T) {
 	for _, ok := range []string{"Edit", "Bash(git push:*)", "Bash(posse:*)", "a(b(c))"} {
 		if !balancedParens(ok) {

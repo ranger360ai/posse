@@ -912,6 +912,24 @@ func deniesGitPush(deny []string) bool {
 	return false
 }
 
+// grantsGitPush returns the PID's allow: rule (verbatim) that grants git
+// push, or "" if none — ADR 0018 §2's coordinator's defining permission. It
+// reuses deniesGitPush's rule-shape parser: the same Bash(git push...) shape
+// means the same thing whether it appears in allow: or deny:.
+func grantsGitPush(allow []string) string {
+	for cmd, rules := range ParseShimRules(allow) {
+		if cmd != "git" {
+			continue
+		}
+		for _, r := range rules {
+			if len(r.Words) == 0 || r.Words[0] == "push" {
+				return r.Rule
+			}
+		}
+	}
+	return ""
+}
+
 // ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────
 
 // sharedIndexMarker identifies our prepare-commit-msg hook. The slot now
