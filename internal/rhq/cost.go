@@ -11,8 +11,14 @@ package rhq
 // names. Divergences from the script, both stated: cache writes are priced
 // by TTL when the breakdown is present (5m = 1.25× input, 1h = 2× input;
 // the script used 1.25× flat), and each message is priced at its own
-// model rather than everything at Fable. codex/grok sessions leave no
-// transcript here — they are reported as uncounted, never as $0.
+// model rather than everything at Fable.
+//
+// That method is now the *Claude adapter's* (cost_claude.go), reached through
+// the provider seam in costseam.go: price table + transcript locator + record
+// decoder is the whole provider surface, and everything below []*Segment in
+// this file is arithmetic that never learns a provider's name (ADR 0012 D4).
+// A runtime with no adapter — codex today — is reported as uncounted, never
+// as $0. grok has an adapter (cost_grok.go).
 
 import (
 	"bufio"
@@ -44,8 +50,18 @@ var PriceTable = map[string]Price{
 	"claude-haiku-4-5": {1, 5},
 }
 
-// PriceFor resolves a model id to list rates; unknown ids fall back by
-// family, then to Fable (the expensive assumption — visible in the output).
+// PriceFor resolves a model id to list rates, falling back by family for ids
+// we have not seen exactly.
+//
+// An id that matches no family is **unpriced, not guessed**: it returns the
+// zero Price and false, and the caller must count it as uncounted rather than
+// as money. The old behaviour assumed Fable — the most expensive tier — on the
+// theory that an over-estimate is visible. It is not: it lands in the same
+// total as real money, with nothing in the arithmetic marking which dollars
+// were invented, so a mis-detected model silently inflates a budget window and
+// can stop dispatch. Uncounted-never-guessed is the same rule as
+// uncounted-never-zero (ADR 0012 D4, ADR 0018 §3) pointed at the other
+// direction: say what is not known instead of picking a number for it.
 func PriceFor(model string) (Price, bool) {
 	if p, ok := PriceTable[model]; ok {
 		return p, true
@@ -61,7 +77,7 @@ func PriceFor(model string) (Price, bool) {
 	case strings.Contains(m, "haiku"):
 		return Price{1, 5}, true
 	}
-	return Price{10, 50}, false
+	return Price{}, false
 }
 
 // TierForModel maps a claude model id back to the ADR 0003 tier name.
@@ -84,9 +100,28 @@ type Usage struct {
 	Model                                       string
 }
 
-// Cost prices one message.
+// Tokens is every token this message reported. Zero means it consumed no
+// API at all — a locally-generated record such as Claude Code's `<synthetic>`
+// notices — and such a message costs nothing whatever its model id says.
+func (u Usage) Tokens() int {
+	return u.In + u.CacheW + u.CacheW5m + u.CacheW1h + u.CacheR + u.Out
+}
+
+// Priced reports whether this message's model has a rate at all. False means
+// its spend is unknown — which Cost renders as 0 and the report must carry as
+// uncounted, never as "it was free".
+func (u Usage) Priced() bool {
+	_, ok := PriceFor(u.Model)
+	return ok
+}
+
+// Cost prices one message. An unpriced model costs 0 here; Priced is how the
+// caller tells that 0 apart from a message that genuinely cost nothing.
 func (u Usage) Cost() float64 {
-	p, _ := PriceFor(u.Model)
+	p, ok := PriceFor(u.Model)
+	if !ok {
+		return 0
+	}
 	w5, w1 := u.CacheW5m, u.CacheW1h
 	if w5+w1 == 0 { // no TTL breakdown: the script's flat 1.25×
 		w5 = u.CacheW
@@ -105,9 +140,56 @@ type Segment struct {
 	Model   string  // dominant model (by cost)
 	Persona string  // filled by CostReport from bead assignees, if known
 	CostUSD float64 // filled by Total()
+
+	// ProviderPriced marks a segment whose provider reported money directly
+	// instead of tokens to be priced from a table. ProviderUSD is that money.
+	// No price table is consulted for such a segment — the provider's own
+	// number is better than any rate card we could keep current.
+	//
+	// Two ways a provider reports it, and picking the wrong one is a silent
+	// multiple of the truth, so the seam offers exactly one call for each:
+	//
+	//	NotePricedTurn — a per-turn total. Sum them.
+	//	NoteCumulative — a running total restated every record. Take the max,
+	//	                 never sum (ADR 0012 D4): summing re-counts every
+	//	                 earlier record, and the overcount grows with the
+	//	                 session, so it is worst where nobody checks by hand.
+	//
+	// A decoder never does this arithmetic itself; it calls one of the two and
+	// cannot get the rule wrong on its own.
+	ProviderPriced bool
+	ProviderUSD    float64
+
+	// Unpriced counts messages whose model matched no rate (PriceFor said
+	// false). Their spend is missing from CostUSD, which therefore is a floor
+	// — the report says so rather than letting the gap read as $0.
+	Unpriced int
+}
+
+// NotePricedTurn adds one turn's cost that the provider already priced.
+func (s *Segment) NotePricedTurn(usd float64) {
+	s.ProviderPriced = true
+	s.ProviderUSD += usd
+}
+
+// NoteCumulative records one CUMULATIVE cost snapshot — a provider restating
+// its running total. Max, never sum (ADR 0012 D4).
+func (s *Segment) NoteCumulative(usd float64) {
+	s.ProviderPriced = true
+	if usd > s.ProviderUSD {
+		s.ProviderUSD = usd
+	}
 }
 
 func (s *Segment) Total() (u Usage, cost float64) {
+	if s.ProviderPriced {
+		// The provider already priced this. Nothing to reprice, and any
+		// tokens it reported are informational — Sum still reports them so
+		// the token columns are not blank, but they do not make the money.
+		s.CostUSD = s.ProviderUSD
+		return s.Sum(), s.CostUSD
+	}
+	s.Unpriced = 0
 	byModel := map[string]float64{}
 	for _, m := range s.Msgs {
 		u.In += m.In
@@ -116,6 +198,21 @@ func (s *Segment) Total() (u Usage, cost float64) {
 		u.CacheW1h += m.CacheW1h
 		u.CacheR += m.CacheR
 		u.Out += m.Out
+		if !m.Priced() {
+			// Unknown model: its spend is unknown, not zero. Counted here so
+			// the report can say the total is a floor (ADR 0012 D4).
+			//
+			// Unless it burned no tokens: a record with nothing in any usage
+			// field consumed no API, so its cost is a known zero and no rate
+			// would change it. Claude Code's `<synthetic>` notices are all of
+			// this shape (measured 2026-08-27: 56 records, every field 0), and
+			// counting them would print a floor warning on every report
+			// forever — a false alarm is its own dishonesty.
+			if m.Tokens() > 0 {
+				s.Unpriced++
+			}
+			continue
+		}
 		c := m.Cost()
 		cost += c
 		byModel[m.Model] += c
@@ -346,8 +443,11 @@ type CostReport struct {
 	Interactive Usage
 	InterCost   float64
 	InterTurns  int
-	Uncounted   int // persona sessions on runtimes with no transcript here (codex/grok)
-	Since       time.Time
+	Uncounted   int // persona sessions on runtimes with no cost adapter
+	// UncountedRuntimes names those runtimes, sorted and deduped, so the
+	// report can say which spend is missing instead of naming a fixed pair.
+	UncountedRuntimes []string
+	Since             time.Time
 
 	// What the scan could NOT read (ADR 0018 §3). Beads/Interactive hold
 	// what it could; these two say what is missing from them, so a caller
@@ -358,26 +458,48 @@ type CostReport struct {
 	ReadErr error
 	Unread  int
 
+	// Unpriced counts messages on models with no rate, across every segment
+	// (Segment.Unpriced summed). Non-zero means the dollar totals here are a
+	// FLOOR: that spend is unknown, not zero, and is reported rather than
+	// guessed at (ADR 0012 D4).
+	Unpriced int
+
 	// Dial E's caps (ADR 0003 §4), for the report footer only — filled by
 	// the caller from config; 0 = unset = no cap. Nothing here enforces
 	// them: `posse cost` reads, dispatch decides.
 	PassCap, DayCap float64
 }
 
-// ScanCosts scans all transcripts (or those matching project) since a time.
+// ScanCosts scans every registered provider's transcripts (or those matching
+// project) since a time. Which providers those are is the registry's business
+// and never this function's (ADR 0012 D4); a runtime with no adapter
+// contributes no segments here and is counted as uncounted instead.
 func ScanCosts(project string, since time.Time) *CostReport {
 	rep := &CostReport{Since: since}
-	files, errs := transcriptFiles(project)
+	for _, p := range CostProviders() {
+		rep.scanProvider(p, project, since)
+	}
+	sort.Slice(rep.Beads, func(i, j int) bool { return rep.Beads[i].Start.Before(rep.Beads[j].Start) })
+	return rep
+}
+
+// scanProvider folds one adapter's transcripts into the report. A provider
+// whose records cannot be looked for is a read failure like any other (ADR
+// 0018 §3): the rest of the scan continues — a partial ledger is still the
+// best floor available — and the report remembers that it is a floor.
+func (r *CostReport) scanProvider(p CostProvider, project string, since time.Time) {
+	files, errs := p.Transcripts(project)
 	for _, err := range errs {
-		// A directory that would not open hides an unknown number of
-		// transcripts, so what follows is a floor even if every file it did
-		// find reads cleanly. Report that rather than an empty scan that
-		// reads as a quiet day.
-		rep.noteUnread(err)
+		// A locator failure hides an unknown number of transcripts, so what
+		// follows is a floor even if every file it did find reads cleanly.
+		// One per failure, not one per provider: a walk that could not open
+		// three project dirs lost three unknown piles of spend (ADR 0018 §3).
+		// Report that rather than an empty scan that reads as a quiet day.
+		r.noteUnread(err)
 	}
 	for _, f := range files {
-		// A file untouched since `since` holds no record after it, and
-		// ScanTranscript would drop every segment it built from one. Skipping
+		// A file untouched since `since` holds no record after it, and the
+		// decoder would drop every segment it built from one. Skipping
 		// it on mtime alone is what makes dispatch's per-launch budget check
 		// (ADR 0003 Dial E) affordable as the transcript pile grows.
 		if !since.IsZero() {
@@ -385,30 +507,28 @@ func ScanCosts(project string, since time.Time) *CostReport {
 				continue
 			}
 		}
-		segs, err := ScanTranscript(f, since)
+		segs, err := p.Decode(f, since)
 		if err != nil {
 			// This file's spend is unknown, not zero. Keep scanning — a
 			// partial ledger is still the best floor available — but
 			// remember that it is a floor.
-			rep.noteUnread(err)
+			r.noteUnread(err)
 			continue
 		}
 		for _, s := range segs {
 			if s.Bead == "interactive" {
 				u, c := s.Sum(), s.CostUSD
-				rep.Interactive.In += u.In
-				rep.Interactive.CacheW += u.CacheW
-				rep.Interactive.CacheR += u.CacheR
-				rep.Interactive.Out += u.Out
-				rep.InterCost += c
-				rep.InterTurns += s.Turns()
+				r.Interactive.In += u.In
+				r.Interactive.CacheW += u.CacheW
+				r.Interactive.CacheR += u.CacheR
+				r.Interactive.Out += u.Out
+				r.InterCost += c
+				r.InterTurns += s.Turns()
 				continue
 			}
-			rep.Beads = append(rep.Beads, s)
+			r.Beads = append(r.Beads, s)
 		}
 	}
-	sort.Slice(rep.Beads, func(i, j int) bool { return rep.Beads[i].Start.Before(rep.Beads[j].Start) })
-	return rep
 }
 
 // noteUnread records a read failure: the count for how bad, the first
@@ -440,18 +560,45 @@ func (r *CostReport) AttributePersonas(a *App, bd Bd) {
 	}
 }
 
-// CountUncounted counts live persona sessions whose runtime writes no
-// transcript this scanner reads (anything but claude).
+// CountUncounted counts live persona sessions on runtimes with no cost
+// adapter registered.
+//
+// What makes a runtime countable is an adapter, not its name (ADR 0012 D4):
+// a runtime gains a price table, a locator and a decoder and drops out of
+// this count on the same commit, with nothing here to edit. The test used to
+// be `!= "claude"`, which would have gone on calling a counted runtime
+// uncounted forever.
 func (r *CostReport) CountUncounted(hb *HerdrBackend) {
 	ss, err := hb.Sessions()
 	if err != nil {
 		return
 	}
+	seen := map[string]bool{}
 	for _, s := range ss {
-		if s.Agent != "" && s.Runtime != "" && s.Runtime != "claude" {
-			r.Uncounted++
+		if s.Agent == "" || s.Runtime == "" {
+			continue
+		}
+		if _, ok := CostProviderFor(s.Runtime); ok {
+			continue
+		}
+		r.Uncounted++
+		if !seen[s.Runtime] {
+			seen[s.Runtime] = true
+			r.UncountedRuntimes = append(r.UncountedRuntimes, s.Runtime)
 		}
 	}
+	sort.Strings(r.UncountedRuntimes)
+}
+
+// CountUnpriced sums the unpriced-message count over every segment, and
+// caches it on the report. Non-zero means the totals are a floor.
+func (r *CostReport) CountUnpriced() int {
+	n := 0
+	for _, s := range r.Beads {
+		n += s.Unpriced
+	}
+	r.Unpriced = n
+	return n
 }
 
 // ByBead returns cost per bead id (summed over its segments).
@@ -578,11 +725,22 @@ func (r *CostReport) Print(w io.Writer) {
 		// and a pass log name one condition the same way.
 		fmt.Fprintf(w, "\nunreadable: %d transcript(s) unreadable (%v) — the ledger counts less than was spent; every total above is a floor\n", r.Unread, r.ReadErr)
 	}
+	// The other way the totals are a floor: a file that read fine but whose
+	// model has no rate. Both lines can print; they are different gaps.
+	if n := r.CountUnpriced(); n > 0 {
+		fmt.Fprintf(w, "\nunpriced: %d message(s) on models with no rate — their spend is unknown, not zero, so every $ above is a floor\n", n)
+	}
 	fmt.Fprintf(w, "\ninteractive: %d turns, api-equiv $%.2f (not gated — shown so the ratio is visible)\n", r.InterTurns, r.InterCost)
 	if r.Uncounted > 0 {
-		fmt.Fprintf(w, "uncounted: %d live persona session(s) on codex/grok — no transcript this scanner reads; their spend is not in these numbers\n", r.Uncounted)
+		which := strings.Join(r.UncountedRuntimes, "/")
+		if which == "" {
+			which = "runtimes with no adapter"
+		}
+		fmt.Fprintf(w, "uncounted: %d live persona session(s) on %s — no cost adapter for that runtime; their spend is not in these numbers, and is not zero\n",
+			r.Uncounted, which)
 	} else {
-		fmt.Fprintln(w, "codex/grok: uncounted (no live sessions now; when there are, they will not appear here)")
+		fmt.Fprintf(w, "counted runtimes: %s — a session on any other runtime is uncounted, never $0 (none live now)\n",
+			strings.Join(CountedRuntimes(), "/"))
 	}
 	fmt.Fprintln(w, "per pass: measured live by `posse dispatch` from the moment a pass starts (Dial E's pass window); transcripts carry no pass id, so it cannot be reconstructed after the fact")
 	if r.PassCap > 0 || r.DayCap > 0 {

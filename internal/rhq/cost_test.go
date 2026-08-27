@@ -23,8 +23,16 @@ func TestPricesAndTiers(t *testing.T) {
 	if p, ok := PriceFor("claude-opus-9-experimental"); ok == false || p != (Price{5, 25}) {
 		t.Errorf("family fallback: %+v %v", p, ok)
 	}
-	if p, ok := PriceFor("mystery-model"); ok || p != (Price{10, 50}) {
-		t.Errorf("unknown must assume fable and say so: %+v %v", p, ok)
+	// Unknown is UNPRICED, not guessed: a made-up number lands in the same
+	// total as real money with nothing marking it (ADR 0012 D4).
+	if p, ok := PriceFor("mystery-model"); ok || p != (Price{}) {
+		t.Errorf("unknown must be unpriced, not assumed: %+v %v", p, ok)
+	}
+	if c := (Usage{In: 1e6, Out: 1e6, Model: "mystery-model"}).Cost(); c != 0 {
+		t.Errorf("unpriced model must not invent a cost: %v", c)
+	}
+	if (Usage{Model: "mystery-model"}).Priced() {
+		t.Error("mystery-model must report unpriced")
 	}
 	for m, want := range map[string]string{"claude-fable-5": TierStrong, "claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?"} {
 		if got := TierForModel(m); got != want {
@@ -174,7 +182,7 @@ func TestCostReportGroupsAndPrint(t *testing.T) {
 	var out strings.Builder
 	rep.Print(&out)
 	s := out.String()
-	for _, want := range []string{"a-1", "by tier", "strong", "fast", "standard", "by persona", "dev ", "qa ", "by day", "2026-08-17", "2026-08-18", "interactive: 5 turns, api-equiv $9.50", "uncounted: 2 live persona session(s) on codex/grok", "per pass: measured live by", "no caps set"} {
+	for _, want := range []string{"a-1", "by tier", "strong", "fast", "standard", "by persona", "dev ", "qa ", "by day", "2026-08-17", "2026-08-18", "interactive: 5 turns, api-equiv $9.50", "uncounted: 2 live persona session(s) on runtimes with no adapter", "per pass: measured live by", "no caps set"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("report missing %q:\n%s", want, s)
 		}

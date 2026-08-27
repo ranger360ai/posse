@@ -276,6 +276,10 @@ func TestBlindDegradeIsLoudEveryPass(t *testing.T) {
 // it, so an armed ledger changes nothing a human is watching.
 func TestBlindDegradeIsUnattendedOnly(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
+	// Inject the spend, as every sibling here does. Without it this rig falls
+	// through to the real ScanCosts over the operator's own ~/.claude and
+	// ~/.grok, so what it asserts depends on how much was spent on the machine
+	// that day — it passed only while grok was invisible to the scanner.
 	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
 	r.blind()
 	r.at(4 * time.Hour)

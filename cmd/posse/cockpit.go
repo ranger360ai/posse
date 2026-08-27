@@ -373,8 +373,13 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 	if s.Agent == "" {
 		return ""
 	}
-	if s.Runtime != "" && s.Runtime != "claude" {
-		return "$uncounted"
+	// An adapter is what makes a runtime countable, not its name (ADR 0012
+	// D4) — grok gained one and stopped printing $uncounted here on the same
+	// commit, with nothing in the cockpit to edit.
+	if s.Runtime != "" {
+		if _, ok := rhq.CostProviderFor(s.Runtime); !ok {
+			return "$uncounted"
+		}
 	}
 	if s.Dir == "" || c.costByBead == nil {
 		return ""
