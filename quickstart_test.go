@@ -12,6 +12,18 @@ import (
 // ranger-base-253: go install succeeds without making posse discoverable on a
 // default PATH. Whenever a public quickstart advertises that route, keep the
 // corrective export between installation and first use.
+//
+// ranger-base-4ash: judged per ROUTE, not per file. The first cut of this pin
+// took the FIRST `go install` line and searched the whole rest of the file, so
+// a second block appended later — the shape a "from source" or "on Linux"
+// section arrives in — inherited the first block's export and stayed green
+// while advertising the original defect verbatim.
+const (
+	goInstallCmd = "go install github.com/ranger360ai/posse/cmd/posse@latest"
+	goBinExport  = `export PATH="$(go env GOPATH)/bin:$PATH"`
+	goInstallUse = "posse init"
+)
+
 func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -20,13 +32,18 @@ func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 	}{
 		{name: "landing page", path: "www/index.html"},
 		{name: "README", path: "README.md", required: true},
-	}
 
-	const (
-		install = "go install github.com/ranger360ai/posse/cmd/posse@latest"
-		path    = `export PATH="$(go env GOPATH)/bin:$PATH"`
-		init    = "posse init"
-	)
+		// INSTALL.md is deliberately absent: §3 ("From outside a checkout the
+		// same binary installs with") advertises the route with no export
+		// anywhere in the file, and the next thing it tells the reader is that
+		// `posse init` works — measured exit 0 then exit 127, ranger-base-4ash,
+		// filed to dinesh. Add the row in the same commit as the doc fix; the
+		// logic below already rejects that shape, pinned as a fixture case in
+		// TestGoInstallPathPinRejectsTheHistoricalGaps.
+		//
+		// etc/cleanroom/README.md must NEVER be added. It is a transcript OF
+		// the failure — an export line there would destroy the evidence.
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -34,30 +51,123 @@ func TestGoInstallQuickstartsAddGoBinToPathBeforeInit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
-			quickstart := string(contents)
-			installAt := strings.Index(quickstart, install)
-			if installAt < 0 {
+			advertised, err := goInstallExportsGoBin(string(contents))
+			if !advertised {
 				if tt.required {
-					t.Fatalf("%s: missing %q", tt.path, install)
+					t.Fatalf("%s: missing %q", tt.path, goInstallCmd)
 				}
 				return
 			}
-			quickstart = quickstart[installAt+len(install):]
-
-			pathAt := strings.Index(quickstart, path)
-			initAt := strings.Index(quickstart, init)
-			if pathAt < 0 {
-				t.Fatalf("%s: %q is not followed by %q", tt.path, install, path)
-			}
-			if initAt < 0 {
-				t.Fatalf("%s: %q is not followed by %q", tt.path, install, init)
-			}
-			if pathAt > initAt {
-				t.Fatalf("%s: %q must appear before %q", tt.path, path, init)
+			if err != nil {
+				t.Fatalf("%s: %v", tt.path, err)
 			}
 		})
 	}
+}
+
+// The pin is only as strong as what it rejects. Case one is the shape that
+// shipped and produced ranger-base-253; the last two are the shapes that
+// survived the first cut of the pin.
+func TestGoInstallPathPinRejectsTheHistoricalGaps(t *testing.T) {
+	canonical := goInstallCmd + "\n" + goBinExport + "\n" + goInstallUse + "\n"
+
+	if advertised, err := goInstallExportsGoBin(canonical); !advertised || err != nil {
+		t.Fatalf("canonical three-line form: advertised=%v err=%v", advertised, err)
+	}
+	if advertised, err := goInstallExportsGoBin("make install\nposse init\n"); advertised || err != nil {
+		t.Fatalf("a surface that does not advertise the route must skip, not fail; advertised=%v err=%v", advertised, err)
+	}
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{
+			name: "the shape that shipped (ranger-base-253)",
+			text: goInstallCmd + "\n" + goInstallUse + "\n",
+		},
+		{
+			name: "export after first use",
+			text: goInstallCmd + "\n" + goInstallUse + "\n" + goBinExport + "\n",
+		},
+		{
+			name: "export of the wrong directory",
+			text: goInstallCmd + "\nexport PATH=\"$HOME/.local/bin:$PATH\"\n" + goInstallUse + "\n",
+		},
+		{
+			name: "a second route inherits the first one's export (ranger-base-4ash)",
+			text: canonical + "\n## Also available\n\n" + goInstallCmd + "\n" + goInstallUse + "\n",
+		},
+		{
+			name: "INSTALL.md §3: the route, then prose promising init works (ranger-base-4ash)",
+			text: "```sh\n$ " + goInstallCmd + "\n```\n\nThat build carries the seed tree (`examples/`) embedded, so `" +
+				goInstallUse + "` works with no repo beside it.\n",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			advertised, err := goInstallExportsGoBin(tt.text)
+			if !advertised {
+				t.Fatal("fixture advertises the route; it must be judged, not skipped")
+			}
+			if err == nil {
+				t.Fatal("historical gap passed the pin")
+			}
+		})
+	}
+
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("README with the export line deleted", func(t *testing.T) {
+		stripped := strings.Replace(string(readme), goBinExport, "", 1)
+		advertised, err := goInstallExportsGoBin(stripped)
+		if !advertised || err == nil {
+			t.Fatalf("deleting the export from README must fail the pin; advertised=%v err=%v", advertised, err)
+		}
+	})
+}
+
+// goInstallExportsGoBin judges EVERY go-install route a surface advertises.
+// Each occurrence of the install command opens a window that ends at the next
+// occurrence, so two blocks in one file cannot borrow each other's export.
+// Plain substring search, not line anchoring: the landing page carries its
+// commands inside <span> markup, and the panel is the surface that broke.
+func goInstallExportsGoBin(text string) (advertised bool, firstErr error) {
+	for off := 0; ; {
+		at := strings.Index(text[off:], goInstallCmd)
+		if at < 0 {
+			return advertised, firstErr
+		}
+		advertised = true
+		off += at + len(goInstallCmd)
+
+		window := text[off:]
+		if next := strings.Index(window, goInstallCmd); next >= 0 {
+			window = window[:next]
+		}
+		if err := goInstallRouteExportsGoBin(window); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+}
+
+// goInstallRouteExportsGoBin judges one route: the text between its install
+// command and the next one.
+func goInstallRouteExportsGoBin(window string) error {
+	exportAt := strings.Index(window, goBinExport)
+	useAt := strings.Index(window, goInstallUse)
+	if exportAt < 0 {
+		return fmt.Errorf("%q is not followed by %q", goInstallCmd, goBinExport)
+	}
+	if useAt < 0 {
+		return fmt.Errorf("%q is not followed by %q", goInstallCmd, goInstallUse)
+	}
+	if exportAt > useAt {
+		return fmt.Errorf("%q must appear before %q", goBinExport, goInstallUse)
+	}
+	return nil
 }
 
 // ranger-base-g2u / ranger-base-4mg: brew install of a third-party formula
