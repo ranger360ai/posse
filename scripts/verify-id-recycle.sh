@@ -79,8 +79,15 @@ json_label() {
 	python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("result") or {}).get("workspace",{}).get("label") or "")'
 }
 
+# GNU FIRST. Same inverted probe as scripts/verify-bd-pin.sh had
+# (ranger-base-tssy): `-f` is a FORMAT flag on BSD but DISPLAY FILESYSTEM
+# STATUS on GNU, where it takes no format, so `stat -f '%i' FILE` prints
+# FILE's filesystem block on STDOUT and only then exits non-zero — the
+# fallback runs as well and the caller compares a blob, not an inode. BSD
+# stat rejects `-c` outright with nothing on stdout, so this order does
+# discriminate.
 sock_ino() {
-	stat -f '%i' "$1" 2>/dev/null || stat -c '%i' "$1"
+	stat -c '%i' "$1" 2>/dev/null || stat -f '%i' "$1"
 }
 
 create() {

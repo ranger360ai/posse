@@ -196,6 +196,73 @@ func bpFixture(t *testing.T, brew string, procs []bpProc) (root, home, stubs str
 	return
 }
 
+// bpStubStat puts a `stat` on the stub PATH that behaves like the named
+// platform's, so BOTH platforms' stat is exercised on EITHER host — the bug
+// this pins was reachable only from linux and so only `make test-linux` ever
+// saw it (ranger-base-tssy).
+//
+//	gnu     `-c FMT` is the format flag. `-f` is DISPLAY FILESYSTEM STATUS and
+//	        takes NO format, so `stat -f %m FILE` reads two FILE operands:
+//	        it prints FILE's filesystem block on STDOUT and only then exits
+//	        non-zero on the missing `%m` — which is why a `-f`-first `||`
+//	        chain got the blob AND the fallback's epoch appended to it.
+//	bsd     `-f FMT` is the format flag; `-c` is not an option at all and is
+//	        rejected with no stdout, which is what makes GNU-first safe.
+//	broken  answers both forms with non-numeric junk and exit 0 — the third
+//	        stat nobody has met. The verdict must degrade to "age unverified",
+//	        never to `ok`.
+//
+// Only the pinned binary is a known operand; anything else fails as it would
+// on the real thing.
+func bpStubStat(t *testing.T, dir, flavor, target string, mtime time.Time) {
+	t.Helper()
+	epoch := fmt.Sprintf("%d", mtime.Unix())
+	var body string
+	switch flavor {
+	case "gnu":
+		body = `#!/bin/bash
+if [ "$1" = -c ]; then
+  [ "$2" = %Y ] || { echo "stat: invalid directive" >&2; exit 1; }
+  shift 2
+  [ "$1" = "$TARGET" ] || { echo "stat: cannot statx '$1'" >&2; exit 1; }
+  echo "$EPOCH"; exit 0
+fi
+if [ "$1" = -f ]; then
+  shift; rc=0                       # -f takes no format: every word is a FILE
+  for f in "$@"; do
+    if [ "$f" = "$TARGET" ]; then
+      printf '  File: "%s"\n    ID: 5225eaf229dfbec4 Namelen: 255     Type: overlayfs\nBlock size: 4096       Fundamental block size: 4096\n' "$f"
+    else
+      echo "stat: cannot read file system information for '$f'" >&2; rc=1
+    fi
+  done
+  exit $rc
+fi
+echo "stat: unsupported: $*" >&2; exit 1
+`
+	case "bsd":
+		body = `#!/bin/bash
+if [ "$1" = -f ]; then
+  [ "$2" = %m ] || { echo "stat: bad format" >&2; exit 1; }
+  shift 2
+  [ "$1" = "$TARGET" ] || { echo "stat: $1: No such file or directory" >&2; exit 1; }
+  echo "$EPOCH"; exit 0
+fi
+echo "stat: illegal option -- ${1#-}" >&2; exit 1
+`
+	case "broken":
+		body = `#!/bin/bash
+echo "mtime: whenever"; exit 0
+`
+	default:
+		t.Fatalf("bpStubStat: unknown flavor %q", flavor)
+	}
+	body = "#!/bin/bash\nEPOCH=" + epoch + "\nTARGET=" + target + "\n" + strings.TrimPrefix(body, "#!/bin/bash\n")
+	if err := os.WriteFile(filepath.Join(dir, "stat"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // argv0 is what `ps -A ... args=` reports and comm is what `ps -o comm=`
 // reports. They are the same path for a healthy daemon and they diverge
 // exactly in the orphan case: argv[0] is fixed at exec and survives, while
@@ -348,6 +415,78 @@ func TestQABdPinCatchesDaemonOlderThanItsOwnBinary(t *testing.T) {
 	}
 	if !strings.Contains(out, "STALE") {
 		t.Errorf("a daemon predating the pinned binary must be STALE:\n%s", out)
+	}
+}
+
+// ranger-base-tssy. The mtime probe read BSD `stat -f %m` first and fell back
+// on exit status, but `-f` does not FAIL on GNU — it prints a filesystem blob
+// and then errors, so the fallback ran too and bin_mtime came out as blob +
+// epoch. `-lt` errored, the STALE arm went false, and the "age unverified"
+// arm went false as well because bin_mtime was non-empty: linux printed `ok`
+// for a daemon it had never checked. That is the 08-16 command-layer-only
+// verdict (TestQABdPinCatchesTheOrphanTheCommandLayerMissed) reintroduced on
+// the other platform and reported as green.
+//
+// Stubbing stat is what makes this a pin on BOTH hosts. The live bug was
+// visible only under `make test-linux`; here darwin runs the GNU case too.
+func TestQABdPinReadsBinaryMtimeWhicheverStatIsInstalled(t *testing.T) {
+	for _, flavor := range []string{"gnu", "bsd"} {
+		t.Run(flavor+"/stale", func(t *testing.T) {
+			root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+			pinned := filepath.Join(home, ".local", "bin", "bd")
+			bpStubStat(t, stubs, flavor, pinned, mtime)
+			bpStubPS(t, stubs, []bpProc{bpDaemon("31368", pinned, pinned, mtime.Add(-3*24*time.Hour))})
+			out, code := bpRun(t, root, home, stubs, "")
+			if code != 1 {
+				t.Fatalf("exit %d, want 1\n%s", code, out)
+			}
+			if !strings.Contains(out, "STALE") {
+				t.Errorf("a daemon predating the pinned binary must be STALE under %s stat:\n%s", flavor, out)
+			}
+			// The failure mode was silent: a shell error on stderr and a
+			// filesystem block pasted into the run, with the verdict still ok.
+			for _, leak := range []string{"Namelen", "integer expression expected"} {
+				if strings.Contains(out, leak) {
+					t.Errorf("%s stat output leaked into the run (%q):\n%s", flavor, leak, out)
+				}
+			}
+		})
+
+		t.Run(flavor+"/young", func(t *testing.T) {
+			root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+			pinned := filepath.Join(home, ".local", "bin", "bd")
+			bpStubStat(t, stubs, flavor, pinned, mtime)
+			bpStubPS(t, stubs, []bpProc{bpDaemon("4548", pinned, pinned, mtime.Add(time.Hour))})
+			out, code := bpRun(t, root, home, stubs, "")
+			if code != 0 {
+				t.Fatalf("exit %d, want 0\n%s", code, out)
+			}
+			// `ok` here and not "age unverified": the mtime was actually read
+			// under this stat, not quietly discarded. A fix that always
+			// returned empty would pass the stale case above and fail here.
+			if strings.Contains(out, "age unverified") {
+				t.Errorf("%s stat: the binary mtime must be readable, not unverified:\n%s", flavor, out)
+			}
+		})
+	}
+}
+
+// The belt. A stat this script has never met — one that answers with
+// something that is not an epoch and exits 0 — must route the verdict to the
+// honest "age unverified" arm. `ok` for an unchecked daemon is the thing
+// ranger-base-tdwy exists to prevent, and it must not be reachable by a probe
+// coming back wrong.
+func TestQABdPinCallsAnUnreadableMtimeUnverifiedNotOk(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	pinned := filepath.Join(home, ".local", "bin", "bd")
+	bpStubStat(t, stubs, "broken", pinned, mtime)
+	bpStubPS(t, stubs, []bpProc{bpDaemon("31368", pinned, pinned, mtime.Add(-3*24*time.Hour))})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 — unreadable is not a failure, it is unverified\n%s", code, out)
+	}
+	if !strings.Contains(out, "age unverified") {
+		t.Errorf("an unparseable binary mtime must read as unverified:\n%s", out)
 	}
 }
 

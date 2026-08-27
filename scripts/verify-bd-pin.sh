@@ -100,14 +100,42 @@ LINKED)
 esac
 
 # ------------------------------------------------------------ process layer
-bin_mtime=$(stat -f %m "$want_bin" 2>/dev/null || stat -c %Y "$want_bin" 2>/dev/null)
+
+# A BSD/GNU `||` chain only discriminates if the WRONG arm FAILS, and
+# `stat -f` does not fail on GNU: `-f` is a FORMAT flag on BSD but
+# DISPLAY-FILESYSTEM-STATUS on GNU, where it takes no format, so
+# `stat -f %m FILE` reads `%m` and FILE as two operands, prints FILE's
+# multi-line filesystem block on STDOUT, and only then exits non-zero on the
+# missing `%m` — so the fallback ran too and appended the real epoch.
+# bin_mtime became that blob plus a number: `-lt` errored, the STALE arm went
+# false, and so did the "age unverified" arm below it because bin_mtime was
+# non-empty. Linux printed `ok` for a daemon it never checked, which is the
+# 08-16 command-layer-only verdict reintroduced on the other platform
+# (ranger-base-tssy). GNU first, because BSD stat rejects `-c` outright and so
+# that order does discriminate; and every epoch is digit-checked on the way
+# out, so a probe that comes back wrong on some third stat lands in "age
+# unverified" — the honest arm — instead of `ok`.
+epoch() { # stdin -> epoch seconds, empty unless it is all digits
+	local v
+	v=$(cat)
+	case $v in '' | *[!0-9]*) return 0 ;; esac
+	printf '%s' "$v"
+}
+
+file_mtime() { # path -> epoch seconds, empty when unreadable
+	{ stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || true; } | epoch
+}
+
+bin_mtime=$(file_mtime "$want_bin")
 
 proc_start() { # pid -> epoch seconds, empty when unparseable
 	local ls
 	ls=$(ps -wwo lstart= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//')
 	[ -n "$ls" ] || return 0
-	date -j -f '%a %b %e %H:%M:%S %Y' "$ls" +%s 2>/dev/null ||
-		date -d "$ls" +%s 2>/dev/null || true
+	{
+		date -j -f '%a %b %e %H:%M:%S %Y' "$ls" +%s 2>/dev/null ||
+			date -d "$ls" +%s 2>/dev/null || true
+	} | epoch
 }
 
 age() { # epoch -> "12d21h"
