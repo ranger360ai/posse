@@ -251,3 +251,82 @@ func TestQAGatesPrintsTheConstitutionVerdictOverTheSet(t *testing.T) {
 		t.Errorf("a grant into the promoted set must be named:\n%s", got)
 	}
 }
+
+// The exclusion list is itself a deny-list, and that is the one failure
+// mode this whole design set out to avoid: nobody can tell by looking
+// whether it is still complete. Measured (ranger-base-0djg) — with
+// HomeConstitutionPaths returning only `PromotedPaths`, i.e. having
+// quietly lost `envs/` and `promoted.json`, the entire rhq package stays
+// green. Both survivors are the entries that are respelled literals here
+// rather than read off promote.go the way the promoted four are, so they
+// are exactly the two a later edit can drop without arguing with any other
+// symbol.
+//
+// What is at stake in each: `envs/` is §7's secret values, and
+// `promoted.json` is the manifest the launch verify hashes against — a
+// trust anchor a session could rewrite is not one. Losing either from the
+// list does not open a grant; it blinds the detector that would say so,
+// and `posse gates` then prints the all-clear over a set nobody checked
+// those two against.
+func TestQAConstitutionExclusionListStaysComplete(t *testing.T) {
+	root := sbRoot(t)
+	a := NewAppAt(filepath.Join(root, "home"))
+	homeWithConstitution(t, a, "")
+
+	got := map[string]bool{}
+	for _, p := range a.HomeConstitutionPaths() {
+		got[p] = true
+	}
+	// The promoted set, read off the same symbol promote copies.
+	for _, rel := range PromotedPaths {
+		if p := filepath.Join(a.Home, rel); !got[p] {
+			t.Errorf("HomeConstitutionPaths has lost the promoted path %s: %v", p, a.HomeConstitutionPaths())
+		}
+	}
+	// And the two §7/§3 entries that are spelled here and nowhere else.
+	for _, p := range []string{a.EnvsDir, a.PromoteManifestPath()} {
+		if !got[p] {
+			t.Errorf("HomeConstitutionPaths has lost %s — the detector is now blind to it: %v", p, a.HomeConstitutionPaths())
+		}
+	}
+	// The other direction, so the list cannot be "completed" by adding the
+	// home wholesale: the three things at the home a session MUST keep are
+	// not in it, and NotPromoted names two of them.
+	for _, p := range []string{a.StateDir, a.PersonasDir(), a.GatesDir("dinesh")} {
+		if got[p] {
+			t.Errorf("%s must NOT be an exclusion — a session needs it (ADR 0015 §5, and state/ is what the runtime data IS)", p)
+		}
+	}
+}
+
+// The behavioural half of the same pin, and the one that dies on the
+// mutation above: a `writable:` extra reaching `envs/` or the manifest is
+// a breach ConstitutionGrants must NAME, not merely a path it happens to
+// list. Item 5's clauses cover agents/ and recipes/; these two never had a
+// case of their own.
+func TestQAConstitutionGrantsCatchesEnvsAndTheManifest(t *testing.T) {
+	root := sbRoot(t)
+	a := NewAppAt(filepath.Join(root, "home"))
+	homeWithConstitution(t, a, "")
+	cwd := sbMkdir(t, filepath.Join(root, "work"))
+
+	for _, tc := range []struct{ what, grant string }{
+		{"§7's env secrets", a.EnvsDir},
+		{"a single env file inside them", filepath.Join(a.EnvsDir, "default.env")},
+		{"the promote manifest", a.PromoteManifestPath()},
+	} {
+		ag := &AgentFile{Name: "dinesh", Writable: []string{tc.grant}}
+		w := a.SeatbeltWritable(ag, cwd, a.GatesDir("dinesh"))
+		if bad := a.ConstitutionGrants(w); len(bad) == 0 {
+			t.Errorf("a grant on %s (%s) is unreported:\n  %s", tc.what, tc.grant, strings.Join(w, "\n  "))
+		}
+		// And loud in the place an operator reads, not just in the return.
+		var b strings.Builder
+		if err := a.SeatbeltReport(ag, cwd, &b); err != nil {
+			t.Fatal(err)
+		}
+		if got := b.String(); !strings.Contains(got, "GRANT REACHES THE CONSTITUTION") {
+			t.Errorf("gates prints the all-clear over a grant on %s:\n%s", tc.what, got)
+		}
+	}
+}
