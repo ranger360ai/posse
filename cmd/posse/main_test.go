@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/rhq"
 )
 
 func TestArgLead(t *testing.T) {
@@ -441,8 +443,15 @@ func TestBeadsCheckRefusesAMissingRepoAsACleanCensus(t *testing.T) {
 		t.Fatalf("a census that could not be taken must not exit 0:\n%s", out)
 	}
 	got := string(out)
-	if !strings.Contains(got, gone) {
-		t.Errorf("want the unresolvable path named, got:\n%s", got)
+	// ranger-base-33vp: every path posse prints goes through
+	// rhq.AbbrevHome — here via ScanError.Error — so the assertion is that
+	// rendering, not the raw absolute path. Asserting the absolute form
+	// passed only where t.TempDir() landed OUTSIDE $HOME; under
+	// scripts/test-linux.sh (HOME=/tmp, no TMPDIR) it never does, and the
+	// leg was red on every box. readyEnv keeps os.Environ(), so the child
+	// abbreviates against the same $HOME this process does.
+	if want := rhq.AbbrevHome(gone); !strings.Contains(got, want) {
+		t.Errorf("want the unresolvable path named as %s, got:\n%s", want, got)
 	}
 	if !strings.Contains(got, "unknown, not clean") {
 		t.Errorf("want the census named unknown, got:\n%s", got)
@@ -472,8 +481,9 @@ func TestBeadsCheckNamesATypoBesideARealRepo(t *testing.T) {
 		t.Fatalf("one unresolvable path is still an incomplete census:\n%s", out)
 	}
 	got := string(out)
-	if !strings.Contains(got, typo) {
-		t.Errorf("want the typo named, got:\n%s", got)
+	// ranger-base-33vp: home-abbreviated, as above.
+	if want := rhq.AbbrevHome(typo); !strings.Contains(got, want) {
+		t.Errorf("want the typo named as %s, got:\n%s", want, got)
 	}
 	if !strings.Contains(got, "1 repo(s) that resolved") {
 		t.Errorf("want the partial census said out loud, got:\n%s", got)

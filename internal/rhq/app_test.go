@@ -112,3 +112,25 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 		}
 	})
 }
+
+// ranger-base-33vp: AbbrevHome is what every printed path passes through,
+// and cmd/posse's census tests now assert against it — so a degenerate
+// AbbrevHome (one that returned "", say) would make those
+// strings.Contains checks trivially true and silently stop asserting.
+// Pin the four cases here so that assertion rests on something.
+func TestAbbrevHome(t *testing.T) {
+	home := "/tmp/somehome"
+	t.Setenv("HOME", home)
+	for _, c := range []struct{ in, want string }{
+		{home, "~"},
+		{home + "/src/posse", "~/src/posse"},
+		{"/var/lib/elsewhere", "/var/lib/elsewhere"},
+		// A sibling that merely shares the prefix as a string is NOT under
+		// home: the check is home+"/", not home.
+		{home + "2/src", home + "2/src"},
+	} {
+		if got := AbbrevHome(c.in); got != c.want {
+			t.Errorf("AbbrevHome(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
