@@ -26,6 +26,7 @@ package posse
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -77,14 +78,44 @@ func TestLiveBdDepAddTwiceInOppositeDirectionsPlantsAPair(t *testing.T) {
 		t.Fatalf("dep add %s %s -t relates-to (the reverse call) was refused, contradicting the pin: %v\n%s", b, a, err, out)
 	}
 
+	// A pair is a SET of two rows, so read it as one. bd ids carry a random
+	// suffix, so any row order the database hands back — creation order,
+	// `ORDER BY issue_id`, whatever the planner feels like — is a coin flip
+	// against the order the two `bd dep add` calls went out in, and comparing
+	// the two sequences pins the coin, not the pair (ranger-base-nt4r).
 	out, err := exec.Command("sqlite3", root+"/.beads/beads.db",
-		"SELECT issue_id, depends_on_id FROM dependencies WHERE type='relates-to' ORDER BY 1;").Output()
+		"SELECT issue_id, depends_on_id FROM dependencies WHERE type='relates-to';").Output()
 	if err != nil {
 		t.Fatalf("sqlite3 read: %v", err)
 	}
-	got := strings.TrimSpace(string(out))
-	want := a + "|" + b + "\n" + b + "|" + a
-	if got != want {
-		t.Errorf("two opposite-direction dep adds did not plant a full symmetric pair:\ngot:  %q\nwant: %q", got, want)
+	var got []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			got = append(got, line)
+		}
 	}
+	slices.Sort(got)
+
+	forward, reverse := a+"|"+b, b+"|"+a
+	want := []string{forward, reverse}
+	slices.Sort(want)
+	if slices.Equal(got, want) {
+		return
+	}
+
+	// Say which half is actually absent. "did not plant a pair" printed over a
+	// `got` that holds both rows is worse than no pin at all: it tells a reader
+	// the opposite of what the rows in front of them say.
+	var missing []string
+	if !slices.Contains(got, forward) {
+		missing = append(missing, "the forward row "+forward)
+	}
+	if !slices.Contains(got, reverse) {
+		missing = append(missing, "the reverse row "+reverse)
+	}
+	if len(missing) > 0 {
+		t.Errorf("two opposite-direction dep adds did not plant a full symmetric pair: %s absent.\nrows: %q", strings.Join(missing, " and "), got)
+		return
+	}
+	t.Errorf("both rows of the pair are present, but the table carries rows this test did not plant:\nrows: %q\nplanted: %q", got, want)
 }
