@@ -224,3 +224,52 @@ func TestReopensFromGitReadsBlobsRelativeToTheBeadsDir(t *testing.T) {
 		t.Errorf("a redirect target whose .beads is below its repo root must still be read: %v", got)
 	}
 }
+
+// The unit-level hop above is only half of what the bead asked for
+// (rangerhq-i6n6): the DONE WHEN is at the command's own level — with
+// `beads:` naming a repo whose .beads is a redirect, `posse scorecard`
+// must print a reopen COUNT, not the "?" trailer. The column and the
+// trailer are driven by reopensKnown (scorecard.go), one nil away from
+// each other, so pin the two states of that flag end to end.
+func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
+	b, _ := newTestBackend(t)
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\nlabels: [code]\nmetrics: [closed-no-reopen]\n---\nYou are dev.\n"), 0o644)
+
+	store := blRepo(t) // the repo that actually tracks the census
+	blCommit(t, store, "sync", blLine("x-1", "closed"), blLine("x-2", "closed"))
+	blCommit(t, store, "sync", blLine("x-1", "open"), blLine("x-2", "closed"))
+	blCommit(t, store, "sync", blLine("x-1", "closed"), blLine("x-2", "closed"))
+
+	work := blRepo(t) // the `beads:` entry: a redirect and no census of its own
+	os.WriteFile(filepath.Join(work, "fake-list.json"), []byte(`[
+		{"id":"x-1","status":"closed","assignee":"dev"},
+		{"id":"x-2","status":"closed","assignee":"dev"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+work+"\n"), 0o644)
+
+	card := func() string {
+		t.Helper()
+		var out strings.Builder
+		if err := b.App.Scorecard(bd, &out, "dev"); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	// Before the redirect: honestly unknown, which is the state the bead
+	// says the whole instance would be stuck in after cut-over.
+	if s := card(); !strings.Contains(s, "reopened: ?") {
+		t.Fatalf("a repo with no census of its own must read unknown:\n%s", s)
+	}
+	blRedirect(t, work, filepath.Join(store, beadsDirName))
+	s := card()
+	if strings.Contains(s, "reopened: ?") {
+		t.Errorf("the reopen column must follow the redirect into %s:\n%s", store, s)
+	}
+	// x-1 closed→open once, x-2 never: 2 closed, 1 of them reopened.
+	if !strings.Contains(s, "closed-no-reopen") || !strings.Contains(s, "→ 1") {
+		t.Errorf("want closed-no-reopen 2 closed → 1 through the hop:\n%s", s)
+	}
+}
