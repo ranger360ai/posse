@@ -13,6 +13,7 @@ package rhq
 // mode on". The flag takes in both directions.
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,5 +166,73 @@ func TestModeIsAppendedAfterAVariadicToolList(t *testing.T) {
 				t.Errorf("the list must come first — this is the shape being pinned:\n%s", got)
 			}
 		})
+	}
+}
+
+// The other half of the directive (rangerhq-oaya). qs5r pinned every path
+// that starts a PERSONA; a launch with no persona took `cmd := o.Cmd`
+// verbatim and never went near a mode, so `posse new x --cmd "claude"` and
+// a recipe with no `agent:` ran on whatever the CLI defaulted to — measured
+// live at claude 2.1.240 as the single word `claude` in argv, with a footer
+// reading "auto mode on" for the wrong reason. What the line may and may
+// not be guessed from is the whole content of the fix.
+func TestNoPersonaLineTypesTheMode(t *testing.T) {
+	for _, c := range []struct{ name, cmd, want string }{
+		{"bare claude", `claude`, `claude --permission-mode auto`},
+		{"bare grok", `grok`, `grok --permission-mode auto`},
+		{"bare codex", `codex`, `codex -a never`},
+		{"claude with flags", `claude --model x`, `claude --model x --permission-mode auto`},
+		// The operator's own choice is never overridden — this is what
+		// makes the mode a default rather than an imposition.
+		{"explicit mode kept", `claude --permission-mode plan`, `claude --permission-mode plan`},
+		{"explicit codex mode kept", `codex -a on-request`, `codex -a on-request`},
+		// Found by path: an installed CLI named absolutely is the same CLI.
+		{"absolute path", `/opt/bin/claude -x`, `/opt/bin/claude -x --permission-mode auto`},
+		// And the refusals to guess. A flag typed at the wrong program is a
+		// launch that does not start at all, which is worse than the mode.
+		{"a shell is left alone", `zsh -l`, `zsh -l`},
+		{"a wrapper is left alone", `env FOO=1 claude`, `env FOO=1 claude`},
+		{"an unknown CLI is left alone", `plain --go`, `plain --go`},
+		{"no command at all", ``, ``},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := EnsureUnattendedLine(c.cmd); got != c.want {
+				t.Errorf("\n got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// Idempotent, because relaunch re-plans from the line it recorded: a
+// session whose meta already carries the appended flag must not collect a
+// second one on every refresh.
+func TestNoPersonaModeIsIdempotent(t *testing.T) {
+	got := EnsureUnattendedLine(EnsureUnattendedLine("claude"))
+	if strings.Count(got, ClaudeFleetFlags) != 1 {
+		t.Errorf("re-planning the recorded line said the mode twice: %q", got)
+	}
+}
+
+// The launch paths themselves, typed into the pane: `posse new --cmd` and a
+// recipe with no `agent:` — the two spellings of the hole, both measured
+// live on argv before this landed.
+func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+
+	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
+	if log := calls(t, fake); !strings.Contains(log, "claude "+ClaudeFleetFlags) {
+		t.Errorf("posse new --cmd typed no permission mode:\n%s", log)
+	}
+
+	os.MkdirAll(a.RecipesDir, 0o755)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(a.RecipesDir, "qa-bare.yaml"),
+		[]byte("name: qa-bare\ndir: "+dir+"\ncommand: claude\nemoji: 🧪\n"), 0o644)
+	if err := b.LaunchRecipe(io.Discard, "qa-bare"); err != nil {
+		t.Fatalf("recipe: %v", err)
+	}
+	if got := strings.Count(calls(t, fake), "claude "+ClaudeFleetFlags); got != 2 {
+		t.Errorf("a recipe with no agent: typed no permission mode (%d of 2):\n%s", got, calls(t, fake))
 	}
 }

@@ -1034,3 +1034,36 @@ func (a *App) EmojiExact(name string) string {
 	}
 	return ""
 }
+
+// EnsureUnattendedLine types the unattended mode onto a launch line posse
+// did not render — the `--cmd` of `posse new` and the `command:` of a
+// recipe with no `agent:` (rangerhq-oaya). Those lines never reach
+// RenderCommandFor, so until now they carried whatever mode the CLI
+// happened to default to that release: the operator's directive is "every
+// launch", not "every persona launch", and a no-persona session is still
+// one of theirs to be blocked in.
+//
+// No runtime is named on such a launch, so it is recovered the only honest
+// way there is: by the executable the line starts. A line that starts a CLI
+// whose dialect posse knows gets that CLI's flag; a shell, an editor, a
+// wrapper, `env FOO=1 claude`, or a template-only runtime that has no
+// unattended dialect to declare gets nothing — the same refusal to guess
+// EnsureUnattended already makes, and for the same reason.
+//
+// A mode already on the line always wins: EnsureUnattended appends only
+// when the flag is absent, so `--cmd "claude --permission-mode plan"` is
+// left exactly as the operator typed it. That is what keeps this a default
+// rather than an imposition on the operator's own session.
+func EnsureUnattendedLine(cmd string) string {
+	f := strings.Fields(cmd)
+	if len(f) == 0 {
+		return cmd
+	}
+	exe := filepath.Base(f[0])
+	for i := range builtinRuntimes {
+		if builtinRuntimes[i].Exe() == exe {
+			return builtinRuntimes[i].EnsureUnattended(cmd)
+		}
+	}
+	return cmd
+}

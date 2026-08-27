@@ -1280,6 +1280,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				emoji = e // the cockpit shows what the persona runs on
 			}
 		}
+	} else {
+		// The other half of the same guarantee (rangerhq-oaya). A launch
+		// with no persona never went near RenderCommandFor, so its line
+		// named no mode at all and the session took the CLI's default —
+		// which is exactly the thing that moved under the fleet once
+		// already (rangerhq-qs5r). The runtime is unnamed here, so the line
+		// itself is asked: see EnsureUnattendedLine for what that can and
+		// cannot recover, and why a mode already typed is left alone.
+		cmd = EnsureUnattendedLine(cmd)
 	}
 
 	// Env sets: explicit ones (--env-file, recipe env_files) always; the
