@@ -1,8 +1,8 @@
 package rhq
 
 // The pulse's sensing half (ADR 0013 §1-2, rangerhq-4ish): condition set,
-// fingerprint, arm switch. Delivery (prompting monica) is rangerhq-44w1 and
-// has no tests here.
+// fingerprint, arm switch. Delivery (prompting monica) is rangerhq-44w1;
+// its tests live in pulse_delivery_test.go.
 
 import (
 	"context"
