@@ -3,7 +3,8 @@ package rhq
 // posse's own keychain read refused by posse's own L1 gate shim
 // (ranger-base-r64). Every persona launch prepends that persona's shim dir
 // to PATH and every crew PID denies Bash(security:*), so a `posse` command
-// typed inside a persona pane resolves KeychainToken's `security` to a
+// typed inside a persona pane resolves the darwin credential adapter's
+// `security` to a
 // refusal shim. Both consumers then failed in opposite directions and
 // neither said why: the plan guard reported "keychain item unreadable" —
 // byte-identical to a real credential outage, and on 2026-08-24 read as one
@@ -45,12 +46,21 @@ func gatedSecurityPATH(t *testing.T) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// keychainToken is the darwin adapter alone, asked directly rather than
+// through the GOOS switch: these tests are about that adapter, and a stub
+// `security` on PATH answers on any box — so they run, and mean the same
+// thing, under `make test-linux` (ADR 0019 D2).
+func keychainToken() (string, error) {
+	tok, _, err := readStore(keychainStore())
+	return tok, err
+}
+
 // The read names our own gate and the rule that refused it — and does NOT
 // say "unreadable", which is the sentence a real outage says.
-func TestKeychainTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
+func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 	gatedSecurityPATH(t)
 
-	tok, err := KeychainToken()
+	tok, err := keychainToken()
 	if err == nil {
 		t.Fatalf("a gated PATH must not yield a token: %q", tok)
 	}
@@ -71,7 +81,7 @@ func TestKeychainTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 
 // An ordinary exec failure is still the ordinary error: nothing about a
 // missing or broken `security` may be reported as our gate.
-func TestKeychainTokenNonRefusalStaysUnreadable(t *testing.T) {
+func TestMeterTokenNonRefusalStaysUnreadable(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
@@ -81,7 +91,7 @@ func TestKeychainTokenNonRefusalStaysUnreadable(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, err := KeychainToken()
+	_, err := keychainToken()
 	var g *GateRefusal
 	if err == nil || errors.As(err, &g) {
 		t.Fatalf("a plain exec failure is not a gate refusal: %v", err)
@@ -100,7 +110,7 @@ func TestPlanGuardBlindLineNamesTheDenyRule(t *testing.T) {
 	// about — and the keychain is reached only from the compiled-in
 	// endpoint, which is never dialled because the token is asked for
 	// first.
-	keychainOnly(planReaderOf(r.d), KeychainToken)
+	keychainOnly(planReaderOf(r.d), keychainToken)
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("blind still fails open when attended: %d dispatched\n%s", n, r.out())
@@ -130,7 +140,7 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 		Path:   filepath.Join(home, "model-catalog.json"),
 		Log:    filepath.Join(home, "model-catalog.log"),
 		Caller: "preflight",
-		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: KeychainToken},
+		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainToken},
 		Errw:   &errb,
 	}
 
@@ -168,7 +178,7 @@ func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
 	home := t.TempDir()
 	c := &ModelCache{
 		Path:   filepath.Join(home, "model-catalog.json"),
-		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: KeychainToken},
+		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainToken},
 		Errw:   &errb,
 	}
 	c.store(modelEntry{At: time.Now().Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
@@ -216,7 +226,7 @@ func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
 	// The read fails at the credential, so the park reason is the refusal
 	// and not the transport — and the keychain is reached only from the
 	// compiled-in endpoint, which is never dialled (credpin.go rule 4).
-	keychainOnly(planReaderOf(r.d), KeychainToken)
+	keychainOnly(planReaderOf(r.d), keychainToken)
 	r.at(12 * time.Minute)
 
 	if n := r.run(t); n != 0 {
@@ -250,7 +260,7 @@ func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
 		// is read only for that url (credpin.go rule 4) and PlanReader asks
 		// for the token first, so the failure is the credential and not the
 		// transport.
-		Reader: &AnthropicPlanReader{URL: PlanUsageURL, Token: KeychainToken},
+		Reader: &AnthropicPlanReader{URL: PlanUsageURL, Token: keychainToken},
 	}
 
 	if _, _, err := c.Read(time.Hour); err == nil {

@@ -125,7 +125,7 @@ type ModelLister struct {
 func NewModelLister() *ModelLister {
 	return &ModelLister{
 		URL:   ModelListURL,
-		Token: KeychainToken,
+		Token: MeterToken("claude"),
 		HTTP:  pinnedClient(modelProbeTimeout, "model list endpoint", ModelListHost),
 	}
 }
@@ -136,7 +136,7 @@ func (r *ModelLister) List() ([]string, error) {
 	if r.Token == nil || r.URL == "" {
 		return nil, Die("model lister not configured")
 	}
-	// Before the keychain, not after: a URL this process does not
+	// Before the credential, not after: a URL this process does not
 	// credential is answered by asking nobody and reading nothing. getPage
 	// checks again where the header is actually set (credpin.go).
 	if err := pinnedEndpoint("model list endpoint", r.URL, ModelListHost); err != nil {

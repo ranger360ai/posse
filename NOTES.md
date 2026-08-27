@@ -437,10 +437,29 @@ watching them is the operator's interactive headroom — a fleet that eats the
   **nowhere** — not logs, not meta files, not bead comments; the errors in
   `internal/rhq/planusage.go` are deliberately generic so the credential
   cannot ride out in one.
-- **Refused by our own gate** (ranger-base-r64) posse reads that credential
-  by running `security`, and a persona pane puts that persona's L1 shim dir
-  first on PATH — so any `posse` command typed inside a pane whose PID
-  denies `Bash(security:*)` (every crew PID does) has its own read refused.
+- **Where that credential comes from** (ADR 0019, ranger-base-x584) one
+  seam — `ReadCredential(runtime, purpose)` in
+  `internal/rhq/credential.go` — is the only place posse acquires a
+  credential at all. The `meter` purpose reads the RUNTIME's own store of
+  record, picked by `runtime.GOOS` at run time and never by a build tag (so
+  `make test-linux` compiles and tests both branches): the macOS keychain
+  item on darwin, `~/.claude/.credentials.json` everywhere else, both fed
+  through the SAME envelope parser so a shape diagnosis is written once and
+  cannot fork. The `session` purpose wraps the env-set lookup that already
+  existed (`CageCredential`) — the operator's own scoped mint, store of
+  record is the home. posse never writes a rotating credential; `posse
+  refresh` (ranger-base-h207) is the one credential write and it is
+  human-gated. A store that does not exist for this (runtime, purpose,
+  platform) is `*NoSource`, a distinct error class: the guard runs OFF with
+  a witness rather than blind, because blindness has a clock on it and a
+  structural condition reported as an outage would park the fleet forever
+  (ranger-base-vmqg does that rendering). Until the Linux probe runs (ADR
+  0019 V1) the non-darwin path says in its own error text that it is
+  built-but-unconfirmed.
+- **Refused by our own gate** (ranger-base-r64) on darwin posse reads that
+  credential by running `security`, and a persona pane puts that persona's
+  L1 shim dir first on PATH — so any `posse` command typed inside a pane
+  whose PID denies `Bash(security:*)` (every crew PID does) has its own read refused.
   That is a distinct error, not "keychain item unreadable": the blind line
   and `plan-usage.log` name the deny rule, and the launch preflight — whose
   UNKNOWN branch is otherwise silent — says it once per process on stderr.

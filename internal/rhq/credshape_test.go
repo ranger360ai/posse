@@ -24,15 +24,23 @@ const fixtureSecret = "sk-ant-oat01-FIXTURE-SECRET-VALUE"
 // The shape that works still works, and says which shape answered.
 func TestCredentialTokenReadsTheOAuthEnvelope(t *testing.T) {
 	blob := `{"claudeAiOauth":{"accessToken":"` + fixtureSecret + `","refreshToken":"r","expiresAt":123}}` + "\n"
-	tok, shape, err := credentialToken([]byte(blob))
+	tok, meta, err := credentialToken(keychainStore().Name, []byte(blob))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tok != fixtureSecret {
 		t.Errorf("token: %q", tok)
 	}
-	if shape != "claudeAiOauth.accessToken" {
-		t.Errorf("shape: %q", shape)
+	if meta.Shape != "claudeAiOauth.accessToken" {
+		t.Errorf("shape: %q", meta.Shape)
+	}
+	if meta.Source != keychainStore().Name {
+		t.Errorf("source: %q", meta.Source)
+	}
+	// expiresAt 123 is not a date in any unit, so the honest answer is
+	// "cannot tell" rather than 1970 (ADR 0019 D5).
+	if !meta.ExpiresAt.IsZero() {
+		t.Errorf("an unreadable expiry must stay zero: %v", meta.ExpiresAt)
 	}
 }
 
@@ -85,9 +93,9 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tok, shape, err := credentialToken([]byte(tc.blob))
+			tok, meta, err := credentialToken(keychainStore().Name, []byte(tc.blob))
 			if err == nil {
-				t.Fatalf("want a shape failure, got token %q in shape %q", tok, shape)
+				t.Fatalf("want a shape failure, got token %q in shape %q", tok, meta.Shape)
 			}
 			msg := err.Error()
 			if !strings.Contains(msg, KeychainService) || !strings.Contains(msg, "tried claudeAiOauth.accessToken") {
@@ -167,7 +175,7 @@ func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := credentialToken([]byte(`{` + mcp + `"claudeAiOauth":` + tc.inner + `}`))
+			_, _, err := credentialToken(keychainStore().Name, []byte(`{`+mcp+`"claudeAiOauth":`+tc.inner+`}`))
 			if err == nil {
 				t.Fatal("want a shape failure")
 			}
@@ -214,7 +222,7 @@ func TestKeyNamesNeverCarryAValue(t *testing.T) {
 		t.Fatalf("fixture (%d bytes) no longer exceeds maxKeyName (%d): lengthen it", len(fixtureSecret), maxKeyName)
 	}
 	blob := `{"` + fixtureSecret + `":1,"ok":2}`
-	_, _, err := credentialToken([]byte(blob))
+	_, _, err := credentialToken(keychainStore().Name, []byte(blob))
 	if err == nil {
 		t.Fatal("want a shape failure")
 	}
@@ -248,7 +256,7 @@ func TestNonObjectJSONNamesItsKind(t *testing.T) {
 		`null`:                      "JSON null",
 		`<html>nope`:                "not JSON",
 	} {
-		_, _, err := credentialToken([]byte(blob))
+		_, _, err := credentialToken(keychainStore().Name, []byte(blob))
 		if err == nil {
 			t.Fatalf("%q: want a failure", blob)
 		}
@@ -278,7 +286,7 @@ func TestPlanGuardBlindLineNamesTheShapeItFound(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	r := newBlindRig(t, guardOn)
-	keychainOnly(planReaderOf(r.d), KeychainToken)
+	keychainOnly(planReaderOf(r.d), keychainToken)
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("a monitoring failure still fails open when attended: %d dispatched\n%s", n, r.out())
@@ -316,12 +324,12 @@ func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
 		{"a nested envelope", `{"accessToken":{"claudeAiOauth":{"accessToken":"` + fixtureSecret + `"}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tok, shape, err := credentialToken([]byte(`{"claudeAiOauth":` + tc.inner + `}`))
+			tok, meta, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":`+tc.inner+`}`))
 			if err == nil {
-				t.Fatalf("a value posse cannot decode must not pass as a token: %q (shape %q)", tok, shape)
+				t.Fatalf("a value posse cannot decode must not pass as a token: %q (shape %q)", tok, meta.Shape)
 			}
-			if tok != "" || shape != "" {
-				t.Errorf("failed read must hand back nothing: tok=%q shape=%q", tok, shape)
+			if tok != "" || meta.Shape != "" {
+				t.Errorf("failed read must hand back nothing: tok=%q shape=%q", tok, meta.Shape)
 			}
 			if strings.Contains(err.Error(), fixtureSecret) {
 				t.Errorf("the credential reached the error line: %q", err)

@@ -1,40 +1,37 @@
 package rhq
 
 // The shipped plan-window adapter (ADR 0012 D4): Anthropic's OAuth usage
-// endpoint, read with the Claude Code credential out of the macOS keychain.
+// endpoint, read with the Claude Code credential the credential seam hands
+// it (credential.go, ADR 0019).
 //
 // This file is the provider surface and the ONLY place in posse that names
-// this provider, its endpoint, its credential store, or its window
-// vocabulary. Everything the guard does with a reading — thresholds, the
+// this provider, its endpoint, or its window vocabulary — the store its
+// credential comes out of is the seam's (credential.go), one layer down.
+// Everything the guard does with a reading — thresholds, the
 // blind clock, the tightest-window arithmetic, the header — lives in
 // planusage.go and knows none of it. A second provider is another file like
 // this one plus a line in planAdapters; nothing else moves.
 //
 // Source: GET https://api.anthropic.com/api/oauth/usage with the Claude Code
-// OAuth access token from the macOS keychain (the business manager's
-// plan-usage.sh is the reference method). The token is read into memory for
-// the one request and never written anywhere — not to logs, meta files, or
-// bead comments; the errors this file returns are deliberately generic for
-// that reason.
+// OAuth access token (the business manager's plan-usage.sh is the reference
+// method). The token is read into memory for the one request and never
+// written anywhere — not to logs, meta files, or bead comments; the errors
+// this file returns are deliberately generic for that reason.
 //
-// The credential half is a lodger, not a resident: ADR 0019 (ranger-base-x584)
-// moves the keychain read behind a per-GOOS credential seam that this
-// adapter and modelavail.go will both call. It is left here verbatim so
-// that bead stays a move-and-wrap.
+// WHERE that token is read from is no longer this file's business: the
+// credential seam (ADR 0019, ranger-base-x584) owns the per-platform store
+// of record, and this adapter asks it for `MeterToken("claude")`. What is
+// left here is the provider's endpoint, its window vocabulary, and nothing
+// else — which is what makes a second provider a second file.
 //
 // Everything here is fail-open: a monitoring failure never halts the fleet.
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
-	"runtime"
-	"sort"
-	"strings"
 	"time"
 )
 
@@ -46,11 +43,8 @@ const (
 	PlanUsageURL = "https://api.anthropic.com/api/oauth/usage"
 	// PlanUsageHost is the host that answers it: besides this machine, the
 	// one host this process will ask at all.
-	PlanUsageHost = "api.anthropic.com"
-	// KeychainService is the macOS keychain item Claude Code stores its
-	// OAuth credentials under.
-	KeychainService = "Claude Code-credentials"
-	planBetaHeader  = "oauth-2025-04-20"
+	PlanUsageHost  = "api.anthropic.com"
+	planBetaHeader = "oauth-2025-04-20"
 )
 
 // The window names this adapter reports, in reading order: the rolling
@@ -65,37 +59,38 @@ const (
 
 // anthropicPlanAdapter is this file's entry in planAdapters.
 //
-// Unavailable is one question: can the credential be read on this machine?
-// The endpoint is reachable from anywhere; the keychain is macOS. Answering
-// it BEFORE building a reader is what turns "posse on Linux" from a fleet
-// that reports `keychain item unreadable` every pass — a fake outage, and
-// on 2026-08-24 a fake outage is what got the shop's only automated brake
-// switched off on a wrong diagnosis (GateRefusal below) — into a guard that
-// says plainly that it cannot run here.
+// Unavailable is one question, and the seam answers it: is there a store of
+// record for this credential on this machine? The endpoint is reachable from
+// anywhere. Until ADR 0019 the answer was "only on macOS", and off darwin
+// this adapter reported `keychain item unreadable` every pass — a fake
+// outage, and on 2026-08-24 a fake outage is what got the shop's only
+// automated brake switched off on a wrong diagnosis (credential.go's
+// GateRefusal). Now darwin reads the keychain, everything else reads the
+// runtime's own credentials file, and only a machine where that file has
+// never been written answers no — as *NoSource, which is the guard OFF and
+// not a fleet parked on a condition no retry can change (ADR 0019 D3).
 var anthropicPlanAdapter = planAdapter{
 	Name: "anthropic",
 	Unavailable: func() error {
 		// A loopback RHQ_PLAN_USAGE_URL is asked WITHOUT the credential and
-		// never touches the keychain (credpin.go rule 4), so there is no
-		// platform question to answer and this adapter serves that seam
+		// reads no store at all (credpin.go rule 4), so there is no
+		// credential question to answer and this adapter serves that seam
 		// anywhere. Not a test hatch: it is the same rule stated where the
-		// question is asked, and it is what keeps the seam runnable off
-		// darwin instead of a code path only one OS can reach.
+		// question is asked, and it is what keeps the seam runnable on a
+		// machine with no credential instead of a code path only a logged-in
+		// box can reach.
 		if raw := os.Getenv("RHQ_PLAN_USAGE_URL"); raw != "" {
 			if _, err := loopbackOverride("RHQ_PLAN_USAGE_URL", raw); err == nil {
 				return nil
 			}
 		}
-		if runtime.GOOS != "darwin" {
-			return Die("its credential store is the macOS keychain and this is %s; a store for this platform is the credential seam's (ADR 0019)", runtime.GOOS)
-		}
-		return nil
+		return MeterUnavailable("claude")
 	},
 	New: func() PlanReader { return NewAnthropicPlanReader() },
 }
 
 // AnthropicPlanReader reads this provider's two windows. Token and HTTP are
-// fields so tests can inject a fake keychain and a fake endpoint; nothing
+// fields so tests can inject a fake credential and a fake endpoint; nothing
 // else needs to.
 //
 // This is the reader rangerhq-25p asked for: Dial E's step-down may take
@@ -146,7 +141,7 @@ func (r *AnthropicPlanReader) now() time.Time {
 func NewAnthropicPlanReader() *AnthropicPlanReader {
 	r := &AnthropicPlanReader{
 		URL:   PlanUsageURL,
-		Token: KeychainToken,
+		Token: MeterToken("claude"),
 		HTTP:  pinnedClient(10*time.Second, "usage endpoint", PlanUsageHost),
 	}
 	if raw := os.Getenv("RHQ_PLAN_USAGE_URL"); raw != "" {
@@ -163,275 +158,6 @@ func NewAnthropicPlanReader() *AnthropicPlanReader {
 	return r
 }
 
-// GateRefusal is one of posse's OWN L1 gate shims refusing a command posse
-// itself ran (ranger-base-r64). Every persona launch prepends that persona's
-// shim dir to PATH (gates.go) and every crew PID denies Bash(security:*), so
-// a `posse` command typed inside a persona pane resolves posse's keychain
-// read to that persona's refusal shim and gets exit 1.
-//
-// It is a distinct type because the two things it is NOT are both worse than
-// it: it is not a credential outage (the item was never reached), and it is
-// not an availability answer. Reporting it as "keychain item unreadable" is
-// byte-identical to a real outage — on 2026-08-24 that reading is what got
-// plan_guard_blind_max: 0 set for hours, switching off the shop's only
-// automated brake on a diagnosis that was wrong.
-//
-// Cmd is the shimmed binary; Rule is the deny: line that refused it, "" when
-// the shim's stderr did not name one.
-type GateRefusal struct {
-	Cmd  string
-	Rule string
-}
-
-func (e *GateRefusal) Error() string {
-	if e.Rule != "" {
-		return fmt.Sprintf("keychain read refused by a posse gate shim: %s (deny: %s) — posse's own gate, not a credential outage", e.Cmd, e.Rule)
-	}
-	return fmt.Sprintf("keychain read refused by a posse gate shim: %s — posse's own gate, not a credential outage", e.Cmd)
-}
-
-// gateRefusal reads an exec failure as a shim refusal, or returns nil. The
-// shim writes "refused by posse gate: <cmd> <argv> (deny: <rule>)" to stderr
-// and exits 1, and .Output() hands that stderr back on *exec.ExitError.
-//
-// Only the command name and the rule are lifted out. The rest of the line is
-// argv, and this file's standing rule is that nothing it returns quotes a
-// command's own bytes.
-func gateRefusal(cmd string, err error) *GateRefusal {
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
-		return nil
-	}
-	for _, line := range strings.Split(string(ee.Stderr), "\n") {
-		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "refused by posse gate: ")
-		if !ok {
-			continue
-		}
-		g := &GateRefusal{Cmd: cmd}
-		// The deny group is the tail of the line, and the rule inside it
-		// has parens of its own — Bash(security:*) — so the closing one is
-		// the LAST character, not the first ")" after the marker.
-		if i := strings.LastIndex(rest, "(deny: "); i >= 0 {
-			g.Rule = strings.TrimSuffix(rest[i+len("(deny: "):], ")")
-		}
-		return g
-	}
-	return nil
-}
-
-// KeychainToken pulls the Claude Code OAuth access token out of the macOS
-// keychain. Errors never quote the command's output — that output is the
-// credential blob.
-func KeychainToken() (string, error) {
-	tok, _, err := KeychainCredential()
-	return tok, err
-}
-
-// KeychainCredential is the same read, plus the NAME of the credential shape
-// that answered. Callers that only want a token use KeychainToken; this one
-// exists so a shape other than the first declared can be reported rather
-// than silently relied on (ranger-base-okbr fix 1).
-func KeychainCredential() (tok string, shape string, err error) {
-	out, err := exec.Command("security", "find-generic-password", "-s", KeychainService, "-w").Output()
-	if err != nil {
-		if g := gateRefusal("security", err); g != nil {
-			return "", "", g
-		}
-		return "", "", Die("keychain item %q unreadable", KeychainService)
-	}
-	return credentialToken(out)
-}
-
-// credShape is one credential layout posse knows how to read, named by the
-// dotted path it takes. The list is ordered and the FIRST shape that yields
-// a non-empty token wins, so adding a shape can never change which token an
-// item that already works hands back.
-type credShape struct {
-	Name string
-	// Token digs the token out of the decoded top level, or returns "".
-	Token func(map[string]json.RawMessage) string
-}
-
-// credShapes is that order. One entry today — the OAuth envelope Claude
-// Code has always written. When a login writes a different one, append it
-// here and the failure below stops being reached; do not reorder.
-//
-// It stayed at one entry through the 2026-08-26 outage (ranger-base-okbr)
-// BECAUSE the shape was measured rather than guessed. posse's own line, once
-// the naming fix below was promoted, reported claudeAiOauth's keys as
-// [accessToken expiresAt rateLimitTier refreshToken refreshTokenExpiresAt
-// scopes subscriptionType] — accessToken present, so nothing had been
-// renamed and there was nothing here to teach. The token was empty: an
-// incomplete credential, fixed by re-authenticating, and the shop came back
-// with no change to this file. Guessing a shape and appending it would have
-// been a second wrong diagnosis on top of the first.
-var credShapes = []credShape{
-	{"claudeAiOauth.accessToken", func(top map[string]json.RawMessage) string {
-		var env struct {
-			AccessToken string `json:"accessToken"`
-		}
-		if err := json.Unmarshal(top["claudeAiOauth"], &env); err != nil {
-			return ""
-		}
-		return env.AccessToken
-	}},
-}
-
-// credentialToken reads the keychain blob as one of the declared shapes.
-//
-// The failure here is the fourth credential-failure class (ranger-base-okbr):
-// the item is present, readable, and valid JSON of a shape we do not know.
-// "has no claudeAiOauth.accessToken" was true and useless — it did not say
-// what the item DOES hold, which cost an hour of outage. So this names the
-// key NAMES it actually found. The values are the credential and never
-// appear; the names are schema, and safeKeys covers the one case where an
-// item of the wrong shape is keyed BY something that is not a name.
-func credentialToken(out []byte) (tok string, shape string, err error) {
-	var top map[string]json.RawMessage
-	// nil map, no error: that is `null`, which decodes into a map and is
-	// not an object. Anything that is not an object is the same diagnosis.
-	if err := json.Unmarshal(out, &top); err != nil || top == nil {
-		return "", "", Die("keychain item %q is not the expected JSON (%s, want a JSON object)", KeychainService, jsonKind(out))
-	}
-	for _, s := range credShapes {
-		if t := s.Token(top); t != "" {
-			return t, s.Name, nil
-		}
-	}
-	return "", "", Die("keychain item %q holds no token in any shape posse knows (tried %s) — %s",
-		KeychainService, credShapeNames(), foundShape(top))
-}
-
-func credShapeNames() string {
-	names := make([]string, 0, len(credShapes))
-	for _, s := range credShapes {
-		names = append(names, s.Name)
-	}
-	return strings.Join(names, ", ")
-}
-
-// foundShape describes what the item DOES contain, in key names only: the
-// top level, and — when the envelope we look for is there but empty — that
-// envelope too, since "no claudeAiOauth at all" and "claudeAiOauth without
-// the token" are different diagnoses with different fixes.
-//
-// It also says WHICH of those two it is rather than leaving the reader to
-// diff a key list by eye. On 2026-08-26 the operator's reading came back
-// with claudeAiOauth present (ranger-base-8i7l), which narrowed the defect
-// to exactly this fork: the field is there and empty (the credential is
-// incomplete — a login problem, nothing to change here), or the field is
-// gone (renamed — a line in credShapes). Naming the fork is the difference
-// between a line an operator can act on and one they have to interpret.
-func foundShape(top map[string]json.RawMessage) string {
-	desc := "its top-level keys are " + safeKeys(top)
-	raw, ok := top["claudeAiOauth"]
-	if !ok {
-		return desc + "; posse's envelope (claudeAiOauth) is not among them, so this item holds some other credential structure"
-	}
-	var inner map[string]json.RawMessage
-	// nil map, no error: claudeAiOauth is `null`, which is not an object.
-	if err := json.Unmarshal(raw, &inner); err != nil || inner == nil {
-		return desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
-	}
-	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + tokenVerdict(inner)
-}
-
-// tokenVerdict reads the one fork that matters once posse's own envelope has
-// been found, and states which side of it we are on. Presence of the key,
-// never its bytes.
-func tokenVerdict(inner map[string]json.RawMessage) string {
-	if _, ok := inner["accessToken"]; !ok {
-		return "accessToken is not among them, so the field was renamed or dropped: teach credShapes the new name"
-	}
-	v := "accessToken is present but empty, so this is an incomplete credential and not a shape posse cannot read: re-authenticate rather than change posse"
-	if _, ok := inner["refreshToken"]; ok {
-		v += " (a refreshToken is present, so a refresh that did not complete fits)"
-	}
-	return v
-}
-
-// maxKeyName is the longest key this file will repeat back. Well above every
-// schema name a credential envelope uses and well under any token, because a
-// long key means the object is keyed by a value and this file does not print
-// values.
-//
-// The measured margin is smaller than it looks. The bound was 24 when the
-// longest name we had seen was `subscriptionType` (16); the 2026-08-26
-// reading brought `refreshTokenExpiresAt` (21), a key we had never seen, and
-// this envelope adds keys under us. A name we elide is a name the operator
-// needed, so the headroom is worth more than the tightness — and 32 is still
-// far under any credential this file could be handed (`sk-ant-oat01-…` runs
-// past 100 bytes).
-const maxKeyName = 32
-
-// maxKeysShown bounds the line — an item with hundreds of keys is not a
-// credential and the count says so better than the list would.
-const maxKeysShown = 12
-
-// safeKeys renders an object's key names, sorted, for a diagnostic. A name
-// that is not name-shaped — too long, or not printable ASCII without spaces
-// — is reported by its size instead of its bytes, because the one way key
-// names could carry a secret is an object keyed BY one.
-func safeKeys(obj map[string]json.RawMessage) string {
-	if len(obj) == 0 {
-		return "[] (an empty object)"
-	}
-	names := make([]string, 0, len(obj))
-	for k := range obj {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	shown := names
-	extra := 0
-	if len(shown) > maxKeysShown {
-		shown, extra = shown[:maxKeysShown], len(names)-maxKeysShown
-	}
-	for i, k := range shown {
-		if !nameShaped(k) {
-			shown[i] = fmt.Sprintf("<%d bytes, not a name>", len(k))
-		}
-	}
-	s := "[" + strings.Join(shown, " ") + "]"
-	if extra > 0 {
-		s += fmt.Sprintf(" (+%d more)", extra)
-	}
-	return s
-}
-
-func nameShaped(k string) bool {
-	if k == "" || len(k) > maxKeyName {
-		return false
-	}
-	for _, r := range k {
-		if r <= ' ' || r > '~' {
-			return false
-		}
-	}
-	return true
-}
-
-// jsonKind names what a blob decodes to, and nothing about what is in it.
-func jsonKind(b []byte) string {
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return "not JSON"
-	}
-	switch v.(type) {
-	case map[string]any:
-		return "a JSON object"
-	case []any:
-		return "a JSON array"
-	case string:
-		return "a JSON string"
-	case float64:
-		return "a JSON number"
-	case bool:
-		return "a JSON boolean"
-	default:
-		return "JSON null"
-	}
-}
-
 // Read fetches the current utilization of both windows.
 //
 // Every failure returns a nil PlanUsage rather than a zeroed one: with
@@ -445,15 +171,15 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	if r.URL == "" {
 		return nil, Die("plan reader not configured")
 	}
-	// Before the keychain, not after: a host posse will not ask is answered
+	// Before the credential, not after: a host posse will not ask is answered
 	// by asking nobody and reading nothing (credpin.go rule 2).
 	if err := pinnedEndpoint("usage endpoint", r.URL, PlanUsageHost); err != nil {
 		return nil, err
 	}
 	// credpin.go rule 4. A loopback override is a seam, not an account: it
-	// is asked WITHOUT the credential, and the keychain is not read for it
-	// at all — so an env var and a socket can no longer make posse pull the
-	// token out of the keychain and put it in front of a listener the
+	// is asked WITHOUT the credential, and no credential store is read for
+	// it at all — so an env var and a socket can no longer make posse pull
+	// the token out of its store and put it in front of a listener the
 	// caller chose (ranger-base-dr6u). The seam keeps working; what it
 	// stops getting is the bearer.
 	credentialed := credentialedURL(r.URL, PlanUsageURL)

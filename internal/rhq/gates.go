@@ -33,14 +33,14 @@ package rhq
 // THE HARNESS IS NOT EXEMPT. The shim dir goes on the PATH of the pane, so
 // `posse` typed inside a persona pane inherits it and every binary POSSE
 // itself execs resolves through the shims too. Measured (ranger-base-r64):
-// posse's own keychain read — `security find-generic-password`, planusage.go
-// — was refused by the crew's Bash(security:*) deny, blinding the plan guard
-// and silently UNKNOWN-ing the launch preflight. That is not a hole in the
-// wall (nothing leaked; the deny worked), but it means a gate rule aimed at a
-// persona also aims at us, and posse must be able to tell its own refusal
-// from a real failure. KeychainToken does, by reading the refusal line
-// below off stderr; anything else here that execs a shimmable binary owes
-// the same.
+// posse's own keychain read — `security find-generic-password`, the darwin
+// credential adapter in credential.go — was refused by the crew's
+// Bash(security:*) deny, blinding the plan guard and silently UNKNOWN-ing
+// the launch preflight. That is not a hole in the wall (nothing leaked; the
+// deny worked), but it means a gate rule aimed at a persona also aims at us,
+// and posse must be able to tell its own refusal from a real failure. That
+// adapter does, by reading the refusal line below off stderr; anything else
+// here that execs a shimmable binary owes the same.
 //
 // EVERY LAYER HERE MATCHES ON THE TYPED WORD, so a command with two names
 // on PATH is two commands to this matcher. The build gives `posse` exactly
