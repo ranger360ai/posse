@@ -199,6 +199,14 @@ func TestQueueCommitNeverPushes(t *testing.T) {
 	mustGit(t, bare, "init", "-q", "--bare", ".")
 	repo := qRepo(t)
 	mustGit(t, repo, "remote", "add", "origin", bare)
+	// …and an upstream for `main`, set with config rather than by pushing.
+	// Without it this pin had no teeth against the likeliest regression:
+	// measured on ranger-base-lpz4, a mutant that ran a bare `git push`
+	// after the commit left this test GREEN, because `push.default=simple`
+	// with no upstream fails at the client before it reaches the remote.
+	// The remote it must not move has to be one a bare push would reach.
+	mustGit(t, repo, "config", "branch.main.remote", "origin")
+	mustGit(t, repo, "config", "branch.main.merge", "refs/heads/main")
 	store := filepath.Join(repo, ".beads")
 	a := qApp(t, repo)
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
