@@ -4,10 +4,17 @@
 G=__GATES_BIN__   # rendered: RHQ_HOME/state/gates/<persona>/bin
 REAL=__REAL__
 LOG=__GATES_DIR__/shell.log
-PRE="case \"\$PATH:\" in \"$G\":*) ;; *) PATH=\"$G:\$PATH\";; esac; export PATH; "
-# The guard asserts the gates dir is FIRST, not merely present: the typed line
-# already puts it on PATH, so path_helper (via /etc/zprofile, which runs before
-# this -c string) demotes it below /usr/bin instead of dropping it (ADR 0009 §1).
+PRE="_rgp=; _rgr=\"\$PATH:\"; while [ -n \"\$_rgr\" ]; do _rge=\${_rgr%%:*}; _rgr=\${_rgr#*:}; case \"\$_rge\" in ''|*/gates/*) ;; *) _rgp=\"\$_rgp:\$_rge\";; esac; done; PATH=\"$G\$_rgp\"; export PATH; unset _rgp _rgr _rge; "
+# The guard REBUILDS PATH rather than testing it, because it has two jobs.
+# (a) This persona's gates dir must be FIRST, not merely present: the typed
+# line already puts it on PATH, so path_helper (via /etc/zprofile, which runs
+# before this -c string) demotes it below /usr/bin instead of dropping it
+# (ADR 0009 §1). (b) NO OTHER persona's gates dir may be on PATH at all: a
+# persona launched from another persona's pane inherits that pane's PATH,
+# headed by the LAUNCHING persona's shim dir, and a verb only that PID denies
+# has no shim of ours to shadow it (ADR 0009 §1, rangerhq-v553).
+eval "$PRE"   # the wrapper's own env too: exec hands it to REAL, and an
+              # interactive/login shell with no -c string sees it nowhere else.
 # Walk argv like the shell does: leading -x/+x words are options (-o/-O/+o/+O
 # and --rcfile/--init-file consume a value; '--' ends them). If a -c was
 # seen, the first operand is the command string: prefix it. If the operand

@@ -2,7 +2,8 @@
 
 *Status: accepted 2026-08-18 · owner: architect · amends ADR 0002 §3–4 ·
 amended 2026-08-18 (§1 guard form, §4 rc files), 2026-08-27 (§1 REAL
-must resolve outside every gates dir — ranger-base-f0ay)*
+must resolve outside every gates dir — ranger-base-f0ay; §1 the guard
+drops every OTHER persona's gates dir — rangerhq-v553)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -71,21 +72,36 @@ whose only job is `exec <real shell> "$@"` after guarding PATH:
   `--`, the next word is a runtime's *user-command slot* (grok's shape):
   the guard is prepended there too, so it runs **after** the snapshot
   replay, where an rc file that re-prepended a dir cannot outrank it.
-- The guard is one line, valid in bash and zsh, and it asserts
-  **precedence, not presence**:
-  `case "$PATH:" in "<bin>":*) ;; *) PATH="<bin>:$PATH";; esac; export PATH;`
-  This ADR first wrote the obvious "idempotent" spelling — `case ":$PATH:"
-  in *":<bin>:"*)`, is the dir *anywhere* on PATH — and it did not hold
-  on the runtime it was written for: the typed line has
+- The guard is one line, valid in bash and zsh, and it **rebuilds** PATH:
+  it walks the elements, drops every one inside a gates dir, and puts this
+  persona's dir back at the head. It asserts two things at once —
+  **precedence** for its own dir, and **absence** for every other
+  persona's. This ADR first wrote the obvious "idempotent" spelling —
+  `case ":$PATH:" in *":<bin>:"*)`, is the dir *anywhere* on PATH — and it
+  did not hold on the runtime it was written for: the typed line has
   already put the gates dir on PATH, so `path_helper` (via
   `/etc/zprofile`, which runs before any `-c` string) **re-orders** it
   below `/usr/bin` rather than dropping it. A presence test then sees
   "present" and does nothing — a no-op exactly when it is needed. Live on
   grok 1.0.5 the wrapper rendered, was invoked on the predicted argv, and
-  `command -v git` still answered `/usr/bin/git`. The precedence test
-  costs one duplicate entry in PATH; lookup takes the first. Do not
-  "simplify" it back: any "already set?" guard that runs after a reorder
-  has this trap.
+  `command -v git` still answered `/usr/bin/git`. Do not "simplify" it
+  back: any "already set?" guard that runs after a reorder has this trap.
+  **Absence** is the second job, and it is why the guard rebuilds rather
+  than prepends (2026-08-27, rangerhq-v553). A persona launched from
+  another persona's pane inherits that pane's environment, and the head of
+  that PATH is the LAUNCHING persona's shim dir. Prepending our own leaves
+  the stranger's live: for a verb both PIDs deny ours wins by position, but
+  for a verb only the launching PID denies there is no shim of ours in
+  front of it, and the launched session is refused by a rule it does not
+  carry — against ADR 0002 §3, which makes the PID the source of truth for
+  a session's wall. Measured on the fleet 2026-08-23 and again after
+  ranger-base-f0ay fixed the REAL chain: that fix stops a wrapper exec'ing
+  a wrapper, it does not touch a PATH that arrives through the environment.
+  "Ours" is a `gates` path ELEMENT, the spelling `PathOutsideGates` already
+  uses, so a stranger's `/opt/gateskeeper/bin` is not ours to drop. The
+  wrapper also `eval`s the guard on its own environment before `exec`, so
+  what REAL inherits is already clean — an interactive or login shell gets
+  no `-c` string and would otherwise never see it.
   When the guard fires in the user-command slot it appends one line to
   `gates/<persona>/shell.log` — that means the replayed PATH did not have
   the gates dir *first* (rc or `path_helper` reordering), which is worth

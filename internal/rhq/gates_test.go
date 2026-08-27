@@ -921,7 +921,7 @@ func TestGateShellArgvWalk(t *testing.T) {
 	// A fake real shell that just prints its argv, one <arg> per word.
 	wrapper, _, binDir := renderGateShellFor(t, "zsh",
 		"#!/bin/sh\nfor a in \"$@\"; do printf '<%s>' \"$a\"; done\nprintf '\\n'\n")
-	guard := "case \"$PATH:\" in \"" + binDir + "\":*) ;; *) PATH=\"" + binDir + ":$PATH\";; esac; export PATH; "
+	guard := "_rgp=; _rgr=\"$PATH:\"; while [ -n \"$_rgr\" ]; do _rge=${_rgr%%:*}; _rgr=${_rgr#*:}; case \"$_rge\" in ''|*/gates/*) ;; *) _rgp=\"$_rgp:$_rge\";; esac; done; PATH=\"" + binDir + "$_rgp\"; export PATH; unset _rgp _rgr _rge; "
 	// The user-command slot carries the log line ahead of the same guard.
 	slot := func(cmd string) string {
 		return "case \"$PATH:\" in \"" + binDir + "\":*) ;; *) echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '" +
@@ -1198,6 +1198,75 @@ func TestGateShellNeverChainsToAnotherWrapper(t *testing.T) {
 	}
 	if err != nil || !strings.Contains(string(out), "canary") {
 		t.Errorf("gate shell must run its command: %v %q", err, out)
+	}
+}
+
+// rangerhq-v553: a persona launched from ANOTHER persona's pane inherits
+// that pane's PATH, whose head is the launching persona's shim dir. The
+// wrapper only ever prepended its own, so both dirs were live and a verb
+// that only the launching PID denies had no shim of ours in front of it:
+// the launched session was refused by a rule it does not carry, and ADR
+// 0002 §3 says the PID is the source of truth for a session's wall.
+//
+// The wrapper's REAL no longer chains (ranger-base-f0ay), which removed the
+// other half of the same leak; this is the half that survives it, because
+// PATH arrives through the environment and not through the exec.
+func TestGateShellDropsAnotherPersonasGatesBin(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	// A zsh that is really a shell, so REAL is honest on every platform.
+	pathDir := t.TempDir()
+	honest := filepath.Join(pathDir, "zsh")
+	if err := os.WriteFile(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", honest)
+
+	// Two PIDs that deny different verbs — the asymmetry is the whole test:
+	// alpha has no shim to shadow beta's, so beta's is what runs.
+	_, alphaBin, alpha, err := a.RenderGates("alpha", []string{"Bash(ls:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, betaBin, _, err := a.RenderGates("beta", []string{"Bash(date:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// alpha's session, started from inside beta's: beta's shim dir is on
+	// the inherited PATH, first, exactly as the launching pane left it.
+	run := func(args ...string) string {
+		cmd := exec.Command(alpha, args...)
+		cmd.Env = []string{"PATH=" + betaBin + ":" + PathOutsideGates(""), "RHQ_GATES_DIR=" + filepath.Dir(alphaBin)}
+		out, _ := cmd.CombinedOutput()
+		return string(out)
+	}
+	if out := run("-c", "date +%Y"); strings.Contains(out, "refused by posse gate") {
+		t.Errorf("alpha's PID does not deny date — a rule from beta's PID must not reach it:\n%s", out)
+	}
+	if out := run("-c", "echo $PATH"); strings.Contains(out, betaBin) {
+		t.Errorf("beta's shim dir must be off alpha's PATH:\n%s", out)
+	}
+	// The guard still does its first job: alpha's own dir, first, and its
+	// own deny lands.
+	if out := run("-c", "echo $PATH"); !strings.HasPrefix(strings.TrimSpace(out), alphaBin+string(os.PathListSeparator)) {
+		t.Errorf("alpha's own shim dir must lead its PATH:\n%s", out)
+	}
+	if out := run("-c", "ls /"); !strings.Contains(out, "refused by posse gate: ls /") {
+		t.Errorf("alpha's own deny must still bite:\n%s", out)
+	}
+	// And with no -c string to prefix — a script, an interactive login —
+	// the wrapper's own exported PATH is already clean, because exec hands
+	// it to REAL and nothing else would.
+	script := filepath.Join(t.TempDir(), "p.sh")
+	if err := os.WriteFile(script, []byte("echo \"$PATH\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := run(script); strings.Contains(out, betaBin) {
+		t.Errorf("the wrapper's own env must not carry beta's shim dir into REAL:\n%s", out)
 	}
 }
 
