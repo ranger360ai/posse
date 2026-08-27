@@ -4,7 +4,10 @@
 (L4 folded from the container-tier spike — §3 L4, §4, §5, Consequences,
 Alternatives, Verification 8–11) · amended 2026-08-25 (ADR 0014:
 path-scoped Edit/Write, `writable:` at L2 and L4, L4 `:ro` carve-outs) ·
-amended 2026-08-26 (Claude directory trust and executable project config)*
+amended 2026-08-26 (Claude directory trust and executable project config) ·
+amended 2026-08-27 (ADR 0025: enforcement class on every realized gate;
+§3 L3 row's `env -i` claim struck as measured false; the refusals trail
+gets a single writer at the container tier)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -111,7 +114,7 @@ from the PID (source of truth; nothing hand-edited there survives):
 |---|---|---|---|
 | L0 politeness | any | runtime-native flags (§1) | whatever the runtime says it does — never counted as the wall |
 | L1 shims | `shims` (always on) | `gates/<p>/bin/<cmd>` for every `Bash(<cmd> <prefix>:*)`/`Bash(<cmd>)` deny; refuses when argv matches, else `exec`s the real binary resolved at render time; logs refusals to `gates/<p>/refusals.log`; PATH is prepended **on the typed command line** (`PATH=<bin>:$PATH <cmd>`), not in the workspace env, because macOS `path_helper` reorders PATH when the pane shell starts | any deny that is a shell verb, on any runtime |
-| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec when `RHQ_PERSONA` is set — the working tree and its index are shared by every persona, so an unqualified commit takes whatever anyone else has staged (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; after reconciliation, session create executes both slots and requires exit 1 on the gated probes — behavior, not the ownership marker, is what parity counts; the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, even via absolute path / `env -i` / a subprocess |
+| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec when `RHQ_PERSONA` is set — the working tree and its index are shared by every persona, so an unqualified commit takes whatever anyone else has staged (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; after reconciliation, session create executes both slots and requires exit 1 on the gated probes — behavior, not the ownership marker, is what parity counts; the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, via absolute path or a subprocess that keeps its environment — an emptied environment (`env -i`), `--no-verify`, or `core.hooksPath` defeat it: cooperative class (ADR 0025; measured 2026-08-27, corrected from "even via … `env -i`") |
 | L2 seatbelt | `seatbelt` | `sandbox-exec -f gates/<p>/seatbelt.sb` wrapping the rendered command: deny `file-write*` except cwd, `{memory}`, the runtime's state dir (`~/.claude`,`~/.codex`,`~/.grok`), `$TMPDIR`; PID may add `writable:` paths; parametrized `Edit(<glob>)` is a trailing `subpath` deny after that allow (ADR 0014; last match wins) | `Edit`/`Write`-class denies on any runtime — bare and subtree-glob; the only runtime-proof file gate |
 | L4 container | `container` | runtime runs inside a container (engine = a command template, `RHQ_HOME/cages/<engine>.yaml`, Docker default) with the repo and `{memory}` mounted and **nothing else of the host**; typed in the pane through an argv0 launcher `state/cages/<p>/bin/<runtime>` so herdr still sees `claude`/`codex`/`grok`; joined to a `--internal` network whose only other member is a CONNECT proxy holding `egress:`; L1 and L3 **re-rendered inside** (below); herdr socket **not mounted unless the PID says `sockets: [herdr]`**; path-scoped writes are `:ro` overlays, and a `:ro` repo always gets `.beads`/`.git` (and `writable:`) as read-write overlays (ADR 0014 §4) | `egress:` (hosts the persona may reach); the mount boundary (`Edit`/`Write` denies by mounting the repo `:ro`, scoped globs by overlay) — the successor of L2, which cannot wrap a container; hostile-input work, untrusted runtimes |
 
@@ -507,6 +510,22 @@ Verification:
 - **Disable all Claude project settings at launch.** Project permissions
   are an intentional fleet floor (ADR 0001), and removing the whole source
   is a wider policy change than containing the two channels trust unlocks.
+
+## Amendment 2026-08-27 — enforcement class (ADR 0025)
+
+Live cage verification (rangerhq-pafo → ranger-base-6uq6) measured that
+`env -i /usr/bin/git push` escapes both L1 and L3 — the hook fails open
+on an empty env by design, since the env is the per-repo hook's only
+per-persona carrier — and that the bind-mounted `refusals.log` can be
+truncated from inside the cage. §3's L3 row is corrected above; §4's
+"realized" now carries an **enforcement class** per gate — `enforced`
+(kernel/route: seatbelt, mount boundary, egress proxy, codex OS sandbox)
+or `cooperative` (in-process: shims, hooks, gate shell) — printed by
+parity everywhere it names a realized gate, with no change to
+refuse/degrade behavior. The canonical refusals log gains a single
+writer: the cage appends to a per-session spool the host folds in, with
+tamper detection. Mechanism, alternatives priced, and verification live
+in ADR 0025.
 
 ## Amendment 2026-08-27 — what Claude directory trust actually gates (measured)
 
