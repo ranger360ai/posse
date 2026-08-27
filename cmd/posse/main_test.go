@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -498,5 +499,75 @@ func TestBeadsCheckStillAllClearsWhenEveryRepoResolves(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "every id git ever carried still resolves") {
 		t.Errorf("want the all-clear intact:\n%s", out)
+	}
+}
+
+// ranger-base-xotg: `posse ready` prints ONE queue, ordered by priority
+// across every configured source. It used to print each repo's `bd ready`
+// output concatenated, so priority held inside a source and not across it:
+// the second source's P1 landed behind the first source's P3s, which is how
+// an operator raising a bead to P1 watched it move BACKWARD in the list.
+func TestReadyOrdersByPriorityAcrossSources(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	first, second := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"),
+		[]byte("beads:\n  - "+first+"\n  - "+second+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Each source hands back its own beads in its own order — bd's order is
+	// the query's, not a queue's.
+	if err := os.WriteFile(filepath.Join(first, "fake-ready.json"), []byte(
+		`[{"id":"one-p1","title":"first p1","priority":1},
+		  {"id":"one-p3","title":"first p3","priority":3},
+		  {"id":"one-p2","title":"first p2","priority":2}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(second, "fake-ready.json"), []byte(
+		`[{"id":"two-p3","title":"second p3","priority":3},
+		  {"id":"two-p1","title":"second p1","priority":1},
+		  {"id":"two-p2","title":"second p2","priority":2}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "ready")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("two readable repos must list: %v\n%s", err, out)
+	}
+	got := string(out)
+
+	line := regexp.MustCompile(`(?m)^(\S+)\s+p(\d)`)
+	var ids []string
+	var prios []int
+	for _, m := range line.FindAllStringSubmatch(got, -1) {
+		ids = append(ids, m[1])
+		prios = append(prios, int(m[2][0]-'0'))
+	}
+	if len(ids) != 6 {
+		t.Fatalf("want all 6 beads of both sources listed, got %v:\n%s", ids, got)
+	}
+	// The whole point: monotonic in priority, one list, sources interleaved.
+	for i := 1; i < len(prios); i++ {
+		if prios[i] < prios[i-1] {
+			t.Fatalf("priority resets at %s (p%d after %s p%d) — the list is per-source, not a queue:\n%s",
+				ids[i], prios[i], ids[i-1], prios[i-1], got)
+		}
+	}
+	at := func(id string) int {
+		for i, g := range ids {
+			if g == id {
+				return i
+			}
+		}
+		t.Fatalf("%s missing from the list:\n%s", id, got)
+		return -1
+	}
+	// The reported regression, exactly: a P1 in the second source outranks
+	// every lower-priority bead of the first.
+	if at("two-p1") > at("one-p2") || at("two-p1") > at("one-p3") {
+		t.Errorf("raising a second-source bead to P1 must move it FORWARD, got %v:\n%s", ids, got)
 	}
 }

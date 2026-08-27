@@ -280,3 +280,40 @@ func TestUnresolvedDirsNamesOnlyWhatIsNotThere(t *testing.T) {
 		t.Errorf("want a file distinguished from a missing path: %v", failed[1])
 	}
 }
+
+// ranger-base-xotg: ReadyAll returns a queue, not a concatenation. The
+// cockpit's READY WORK section reads it straight (readyOnly only filters),
+// so an unordered aggregate showed the operator a list where a second
+// repo's P1 sat below the first repo's P3s — priority looked connected and
+// was not.
+func TestReadyAllOrdersByPriorityAcrossRepos(t *testing.T) {
+	b, _ := newTestBackend(t)
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+
+	first := scanRepo(t, `[{"id":"one-p1","title":"first p1","priority":1},
+	                       {"id":"one-p3","title":"first p3","priority":3}]`)
+	second := scanRepo(t, `[{"id":"two-p3","title":"second p3","priority":3},
+	                        {"id":"two-p1","title":"second p1","priority":1},
+	                        {"id":"two-p2","title":"second p2","priority":2}]`)
+	scanConfig(t, b.App, first, second)
+
+	issues, failed := bd.ReadyAll(b.App, "")
+	if len(failed) != 0 {
+		t.Fatalf("both repos are readable: %v", failed)
+	}
+	var ids []string
+	for i, is := range issues {
+		ids = append(ids, is.ID)
+		if i > 0 && is.Priority < issues[i-1].Priority {
+			t.Errorf("priority resets at %s (p%d after p%d) — the aggregate is per-repo, not a queue: %v",
+				is.ID, is.Priority, issues[i-1].Priority, ids)
+		}
+	}
+	if len(issues) != 5 {
+		t.Fatalf("want every repo's beads in the one list, got %v", ids)
+	}
+	if issues[0].ID != "one-p1" || issues[len(issues)-1].Priority != 3 {
+		t.Errorf("want a P1 at the head and a P3 at the tail, got %v", ids)
+	}
+}

@@ -392,6 +392,10 @@ func main() {
 				die(rhq.Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed)))
 			}
 		}
+		// One queue, one order — priority first, across every source
+		// (ranger-base-xotg). ReadyAll already hands back an ordered list;
+		// this covers --dir, where bd's own order is the query's.
+		rhq.OrderBeads(issues, false)
 		if len(issues) == 0 {
 			fmt.Fprintln(out, "no ready work")
 			break

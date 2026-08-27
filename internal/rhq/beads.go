@@ -420,6 +420,14 @@ func UnresolvedDirs(dirs []string) []error {
 // fatal — the cockpit shouldn't die because one repo isn't bd-initialized
 // yet — but they come back as ScanErrors, and every caller must say so.
 // Skipping is not the same as finding nothing there.
+//
+// The result is ONE queue, ordered by OrderBeads across every source, not a
+// concatenation of per-repo lists (ranger-base-xotg). The concatenation is
+// exactly where priority died: each repo's beads kept whatever order bd's
+// query gave them and the second repo's P1 landed behind the first repo's
+// P3s, so raising a bead's priority moved it backward. Sorting here rather
+// than at each call site means a queue can only be read in queue order —
+// `posse ready`, the cockpit's READY WORK, and the dispatch pass alike.
 func (b Bd) ReadyAll(a *App, assignee string) ([]RepoIssue, []error) {
 	var out []RepoIssue
 	var failed []error
@@ -433,6 +441,7 @@ func (b Bd) ReadyAll(a *App, assignee string) ([]RepoIssue, []error) {
 			out = append(out, RepoIssue{BdIssue: is, Dir: dir})
 		}
 	}
+	OrderBeads(out, false)
 	return out, failed
 }
 

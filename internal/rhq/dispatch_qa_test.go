@@ -1430,3 +1430,56 @@ func TestDispatchPromptServerGoneUnclaims(t *testing.T) {
 		t.Errorf("81d: a prompt that never landed must not strand the claim:\n%s", bdCalls(t, fake))
 	}
 }
+
+// ranger-base-xotg: the pass's queue is ONE queue. Two beads sources
+// (config `beads:` lists more than one repo, and each gets its own `bd
+// ready` call) used to be concatenated, so priority held inside a source
+// and not across it — the second source's P1 fired after the first
+// source's P3s, which is how raising a bead to P1 moved it backward.
+func TestDispatchOrdersByPriorityAcrossSources(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.DryRun = true
+	writePersona(t, b.App, "ranger", "[go]")
+	first := scanRepo(t, `[{"id":"one-p1","title":"first p1","priority":1,"labels":["go"]},
+	                       {"id":"one-p3","title":"first p3","priority":3,"labels":["go"]}]`)
+	second := scanRepo(t, `[{"id":"two-p3","title":"second p3","priority":3,"labels":["go"]},
+	                        {"id":"two-p1","title":"second p1","priority":1,"labels":["go"]},
+	                        {"id":"two-p2","title":"second p2","priority":2,"labels":["go"]}]`)
+	scanConfig(t, b.App, first, second)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	at := func(id string) int {
+		i := strings.Index(out, id)
+		if i < 0 {
+			t.Fatalf("%s never reached the pass:\n%s", id, out)
+		}
+		return i
+	}
+	// Every P1 first, then the P2, then the P3s — source is not a tiebreak
+	// above priority.
+	if !(at("one-p1") < at("two-p2") && at("two-p1") < at("two-p2")) {
+		t.Errorf("P1s must fire before the P2, whichever source they came from:\n%s", out)
+	}
+	if !(at("two-p2") < at("one-p3") && at("two-p2") < at("two-p3")) {
+		t.Errorf("the P2 must fire before every P3:\n%s", out)
+	}
+	// The reported regression, exactly: the second source's P1 behind the
+	// first source's P3.
+	if at("two-p1") > at("one-p3") {
+		t.Errorf("raising a second-source bead to P1 must not put it behind a first-source P3:\n%s", out)
+	}
+
+	// -n 1 spends its one attempt on the head of that one queue.
+	d2 := newTestDispatcher(t, b)
+	d2.DryRun = true
+	if _, err := d2.Run("", "", 1); err != nil {
+		t.Fatal(err)
+	}
+	if out := dispatcherOut(d2); !strings.Contains(out, "one-p1") || strings.Contains(out, "one-p3") {
+		t.Errorf("-n 1 must take the top-priority bead of the merged queue:\n%s", out)
+	}
+}

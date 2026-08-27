@@ -419,16 +419,23 @@ func (d *Dispatcher) promptedRecently(session string) (time.Duration, bool) {
 	return age, age < d.PromptGrace
 }
 
-// orderBeads puts the pass's picks in the order an operator would work
-// them, because `-n` takes the top of this list and bd ready's own order is
-// the query's, not a queue's (rangerhq-1r2): P0 before P3, and inside one
+// OrderBeads puts a ready list in the order an operator would work it,
+// because `-n` takes the top of this list and bd ready's own order is the
+// query's, not a queue's (rangerhq-1r2): P0 before P3, and inside one
 // priority the oldest bead first — waiting work should not be overtaken by
 // work filed after it. With --resume, in_progress beads sort ahead of
 // everything: the flag exists to pick a stopped bead back up, so a pass
 // with a small -n must not spend it on fresh work instead.
 //
+// It is the ONE queue order, and it is applied to the whole list, never to
+// one source's slice of it (ranger-base-xotg). A queue assembled by
+// concatenating per-repo `bd ready` calls is sorted within each repo at
+// best and unsorted across them: raising a bead in the second repo to P1
+// moved it BACKWARD, behind every P3 of the first. Priority is a control
+// the operator pulls; a list that keeps sources apart makes it decoration.
+//
 // Stable: beads that tie on every key keep bd's order.
-func orderBeads(beads []RepoIssue, resume bool) {
+func OrderBeads(beads []RepoIssue, resume bool) {
 	sort.SliceStable(beads, func(i, j int) bool {
 		a, b := beads[i], beads[j]
 		if resume {
@@ -878,7 +885,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		return 0, nil
 	}
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).
-	orderBeads(beads, d.Resume)
+	OrderBeads(beads, d.Resume)
 
 	dispatched, pending, err := d.fireLoop(beads, personaFilter, max)
 	if err != nil {
