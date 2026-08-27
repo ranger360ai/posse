@@ -1,12 +1,28 @@
 package rhq
 
-// Startup screens (rangerhq-7sbo): grok opens on a splash that owns the
-// keyboard and never dismisses itself, so the wait-for-settled gate in
-// dispatch — right, and now honestly answered `blocked` by our detection
-// override — made grok undispatchable. The launcher clears the screens it
-// knows by rule id, and nothing else: the levers here are wait-status (what
-// herdr settles on), explain-rule (which rule produced it) and
-// send-keys-clears (whether the key actually works).
+// Startup screens, retired (rangerhq-6723). grok opened on a splash our
+// detection override called `blocked` (rangerhq-37c/7sbo), so the launcher
+// pressed Esc at it by rule id — startupScreenDismissals, ADR 0013 §2 layer
+// 3, "declared keystrokes". Two later measurements took the ground out from
+// under that: the splash is decoration over a live composer and reports
+// `idle` now (rangerhq-1xsj), and it is not even drawn until 0.6s after the
+// readiness gate opens, so the branch never fired in a launch (rangerhq-3hb5).
+// The machinery went with it; what remains here is the fence it left behind.
+//
+// THE FENCE, and why it is still executable. hoover ruled on rangerhq-4mzt
+// that the launcher may never answer a drawn dialog: "1/Enter" at claude's
+// trust dialog is a capability grant made blind, and that dialog matches
+// herdr's GENERIC `live_blocked_form`, so a dismissal entry for it would
+// answer every form claude ever draws. The old test carried that ruling as
+// two assertions over the dismissal table (only Esc; only rule ids posse's
+// own manifests carry). With no table there is nothing to constrain, so the
+// ruling is pinned here as behaviour instead, and the harder way: dispatch
+// answers NO blocked screen, including the one it used to answer. If ADR
+// 0013 layer 3 is ever taken up again for another agent, hoover's two
+// assertions come back with the table.
+//
+// The levers are the same fake-herdr ones: wait-status (what herdr settles
+// on) and explain-rule (which rule produced it).
 
 import (
 	"os"
@@ -32,131 +48,55 @@ func splashRepo(t *testing.T, b *HerdrBackend, fake, rule string) *Dispatcher {
 	return d
 }
 
-// The whole point of the bead: a fresh grok pane is blocked on its splash,
-// the launcher presses Esc, and the bead is dispatched.
-func TestDispatchClearsGrokStartupSplash(t *testing.T) {
-	b, fake := newTestBackend(t)
-	d := splashRepo(t, b, fake, "startup_splash")
-	os.WriteFile(filepath.Join(fake, "send-keys-clears"), nil, 0o644)
+// A blocked agent is the operator's, whatever screen it is sitting on — the
+// dialog posse never knew (a permission prompt), the generic form claude's
+// trust dialog matches, and `startup_splash`, the one screen posse used to
+// press a key at. Dispatch waits, fails loudly, and never touches the
+// keyboard. Answering a dialog on the operator's behalf is the failure this
+// code must not grow back into (rangerhq-4mzt).
+func TestDispatchAnswersNoBlockedScreen(t *testing.T) {
+	for _, rule := range []string{
+		"permission_scope_selector",
+		"live_blocked_form",
+		"startup_splash",
+	} {
+		t.Run(rule, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			d := splashRepo(t, b, fake, rule)
+			// The fake would clear on a keypress. Nothing presses one.
+			os.WriteFile(filepath.Join(fake, "send-keys-clears"), nil, 0o644)
 
-	n, err := d.Run("", "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := calls(t, fake)
-	if !strings.Contains(log, "agent send-keys w1:p1 esc") {
-		t.Errorf("the splash was never cleared:\n%s", log)
-	}
-	if !strings.Contains(log, "agent prompt") || n != 1 {
-		t.Errorf("want the bead dispatched after the splash cleared, got n=%d:\n%s\n%s", n, dispatcherOut(d), log)
-	}
-	if !strings.Contains(dispatcherOut(d), "clearing the startup screen") {
-		t.Errorf("clearing a screen must be said out loud:\n%s", dispatcherOut(d))
-	}
-	// Esc, and only Esc: Enter is what the splash eats, and its menu and the
-	// consent banner's [Opt in] are on that same screen (rangerhq-sz7u).
-	if strings.Count(log, "agent send-keys") != 1 || strings.Contains(log, "send-keys w1:p1 enter") {
-		t.Errorf("exactly one Esc may be sent, and never Enter:\n%s", log)
-	}
-}
-
-// A blocker that is not a startup screen is the operator's: dispatch waits,
-// fails loudly, and never touches the keyboard. Answering a permission
-// dialog on the operator's behalf is the failure this fix must not become.
-func TestDispatchLeavesUnknownBlockerAlone(t *testing.T) {
-	b, fake := newTestBackend(t)
-	d := splashRepo(t, b, fake, "permission_scope_selector")
-	os.WriteFile(filepath.Join(fake, "send-keys-clears"), nil, 0o644)
-
-	n, err := d.Run("", "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := calls(t, fake)
-	if strings.Contains(log, "agent send-keys") {
-		t.Errorf("a dialog posse does not know must never be answered for the operator:\n%s", log)
-	}
-	if n != 0 || !strings.Contains(dispatcherOut(d), "never settled") {
-		t.Errorf("want a loud failure, got n=%d:\n%s", n, dispatcherOut(d))
-	}
-	if strings.Contains(log, "agent prompt") {
-		t.Errorf("prompt fired into a blocked agent:\n%s", log)
-	}
-}
-
-// grok's splash does not undraw when its key is pressed: Esc moves the focus
-// into the composer, the menu and banner stay on screen, and herdr goes on
-// reporting the same rule for a pane that takes a prompt perfectly well
-// (measured live, rangerhq-7sbo). The same screen after the key means ready.
-func TestDispatchPromptsThroughAStillDrawnStartupScreen(t *testing.T) {
-	b, fake := newTestBackend(t)
-	d := splashRepo(t, b, fake, "startup_splash")
-
-	n, err := d.Run("", "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := calls(t, fake)
-	if got := strings.Count(log, "agent send-keys"); got != 1 {
-		t.Errorf("want exactly one keypress, got %d:\n%s", got, log)
-	}
-	if n != 1 || !strings.Contains(log, "agent prompt") {
-		t.Errorf("a still-drawn startup screen must not cost the dispatch, got n=%d:\n%s\n%s", n, dispatcherOut(d), log)
-	}
-	if !strings.Contains(dispatcherOut(d), "still drawn") {
-		t.Errorf("prompting past a screen herdr still calls blocked must be said out loud:\n%s", dispatcherOut(d))
-	}
-}
-
-// What is behind the startup screen is not posse's to interpret. A different
-// blocker after the keypress is the operator's, and the launch fails loudly
-// rather than typing a work prompt into whatever that is.
-func TestDispatchStopsWhenAnotherBlockerIsBehindTheStartupScreen(t *testing.T) {
-	b, fake := newTestBackend(t)
-	d := splashRepo(t, b, fake, "startup_splash")
-	os.WriteFile(filepath.Join(fake, "send-keys-rule"), []byte("permission_scope_selector"), 0o644)
-
-	n, err := d.Run("", "", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := calls(t, fake)
-	if got := strings.Count(log, "agent send-keys"); got != 1 {
-		t.Errorf("want exactly one keypress, got %d:\n%s", got, log)
-	}
-	if n != 0 || !strings.Contains(dispatcherOut(d), "never settled") {
-		t.Errorf("want a loud failure, got n=%d:\n%s", n, dispatcherOut(d))
-	}
-	if strings.Contains(log, "agent prompt") {
-		t.Errorf("prompt fired into a dialog posse does not know:\n%s", log)
-	}
-}
-
-// Every rule posse presses a key at must exist in the shipped manifest, and
-// the key must be one herdr names. A renamed rule is a fix that silently
-// stops working — the launch would go back to failing on the splash.
-func TestStartupScreenRulesExistInTheManifests(t *testing.T) {
-	for rule, keys := range startupScreenDismissals {
-		if len(keys) == 0 {
-			t.Errorf("%s: no keys to press", rule)
-		}
-		for _, k := range keys {
-			if k != "esc" {
-				t.Errorf("%s: %q — only Esc is safe on a screen nobody is watching", rule, k)
-			}
-		}
-		found := false
-		for _, m := range []string{"grok.toml", "codex.toml"} {
-			b, err := os.ReadFile(filepath.Join("..", "..", "etc", "herdr", "agent-detection", m))
+			n, err := d.Run("", "", 0)
 			if err != nil {
-				continue
+				t.Fatal(err)
 			}
-			if strings.Contains(string(b), `id = "`+rule+`"`) {
-				found = true
+			log := calls(t, fake)
+			if strings.Contains(log, "agent send-keys") {
+				t.Errorf("a key was pressed at %s — no screen is the launcher's to answer:\n%s", rule, log)
 			}
-		}
-		if !found {
-			t.Errorf("no rule %q in etc/herdr/agent-detection — dispatch presses keys at a screen no manifest reports", rule)
+			if strings.Contains(log, "agent prompt") {
+				t.Errorf("prompt fired into a blocked agent:\n%s", log)
+			}
+			if n != 0 || !strings.Contains(dispatcherOut(d), "never settled") {
+				t.Errorf("want a loud failure, got n=%d:\n%s", n, dispatcherOut(d))
+			}
+		})
+	}
+}
+
+// The retirement itself, so it cannot be half-undone. A dismissal table is
+// only safe with hoover's two assertions attached (see the file comment), and
+// those assertions are gone because the table is. Bringing back a key press
+// in the launch path without them is the regression this pins: `AgentSendKeys`
+// stays a herdr binding with no caller in dispatch.
+func TestDispatchPathPressesNoKeys(t *testing.T) {
+	src, err := os.ReadFile("dispatch.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dead := range []string{"AgentSendKeys", "startupScreenDismissals", "clearStartupScreen"} {
+		if strings.Contains(string(src), dead) {
+			t.Errorf("dispatch.go names %s again — rangerhq-6723 retired it, and rangerhq-4mzt's two assertions (only Esc, only a rule id from posse's own manifests) must come back with any table that presses a key", dead)
 		}
 	}
 }

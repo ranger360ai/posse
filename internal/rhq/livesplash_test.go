@@ -1,15 +1,15 @@
 package rhq
 
-// Live pin for rangerhq-7sbo / rangerhq-aw9n: grok is dispatchable with its
-// startup splash on screen. The hermetic cases in startupscreen_test.go run
+// Live pin for rangerhq-7sbo / rangerhq-aw9n, narrowed by rangerhq-6723:
+// grok is dispatchable with its startup splash on screen, and now without a
+// key being pressed at it. The hermetic cases in startupscreen_test.go run
 // against a fake herdr that this repo also writes, so they cannot catch the
-// four things only a real herdr knows — that `agent wait --until blocked`
-// is a valid state, that `agent send-keys <pane> esc` exists, that
-// `agent explain --json` really emits a top-level "state" beside
-// "matched_rule".id, and that a settled pane's explain carries the
-// visible_idle the readiness gate now demands (rangerhq-3hb5). This one runs
-// awaitAgent against a real pane; bootrace_live_test.go runs it against a
-// pane that is still booting.
+// three things only a real herdr knows — that `agent wait --until blocked`
+// is a valid state, that `agent explain --json` really emits a top-level
+// "state" beside "matched_rule".id, and that a settled pane's explain
+// carries the visible_idle the readiness gate demands (rangerhq-3hb5).
+// This one runs awaitAgent against a real pane; bootrace_live_test.go runs
+// it against a pane that is still booting.
 //
 // It skips unless pointed at one. Recipe (QA, 2026-08-21):
 //
@@ -22,9 +22,11 @@ package rhq
 // It never prompts: awaitAgent stops at a promptable target, so this costs
 // no agent turn. Tear down with `herdr workspace close` + `herdr server stop`.
 //
-// Both arms are the point. A pane herdr already calls idle must come back
-// untouched — adding `blocked` to the settle wait changed the common path
-// too, and no fake can prove it did not.
+// The pane may be sitting on the splash or on a bare composer; since
+// rangerhq-1xsj made the splash a seen `idle` both are the same case, and
+// both must come back untouched and silent. That is the assertion no fake
+// can make: `blocked` is still in the settle wait, and only a real herdr can
+// show that a live splash does not land there.
 
 import (
 	"fmt"
@@ -58,7 +60,7 @@ func liveBackend(t *testing.T, pane string) *HerdrBackend {
 	return &HerdrBackend{App: a, H: Herdr{Bin: bin}}
 }
 
-func TestLiveAwaitAgentClearsAStartupScreen(t *testing.T) {
+func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
 	pane := os.Getenv("RHQ_LIVE_PANE")
 	if pane == "" {
 		t.Skip("set RHQ_LIVE_PANE=<ws:pane> (+ HERDR_SOCKET_PATH, RHQ_HERDR_BIN) — see the file comment")
@@ -69,7 +71,6 @@ func TestLiveAwaitAgentClearsAStartupScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("herdr agent explain %s: %v (is the pane live?)", pane, err)
 	}
-	rule, wantKeys := (&Dispatcher{HB: b}).startupScreen(pane)
 	t.Logf("pane %s: state=%q rule=%q seen=%v", pane, before.State, before.Rule.ID, before.Seen())
 
 	var out strings.Builder
@@ -87,20 +88,10 @@ func TestLiveAwaitAgentClearsAStartupScreen(t *testing.T) {
 		t.Fatalf("target %q != %q", target, pane)
 	}
 
-	if wantKeys == nil {
-		// The common path: a settled agent is prompted, never typed at.
-		if out.Len() != 0 {
-			t.Errorf("a settled agent must be dispatched in silence:\n%s", out.String())
-		}
-		return
-	}
-	// A startup screen posse knows: one key, said out loud, and never Enter —
-	// grok's menu and the consent banner's [Opt in] share that screen
-	// (rangerhq-sz7u).
-	if !strings.Contains(out.String(), "clearing the startup screen") {
-		t.Errorf("clearing %s must be said out loud:\n%s", rule, out.String())
-	}
-	if strings.Contains(out.String(), "enter") {
-		t.Errorf("Enter must never be pressed at a startup screen:\n%s", out.String())
+	// A settled agent — splash drawn or not — is prompted, never typed at.
+	// Silence is the assertion: since rangerhq-6723 there is no line for
+	// awaitAgent to print on a pane it accepts, and no key for it to press.
+	if out.Len() != 0 {
+		t.Errorf("a settled agent must be dispatched in silence, and %q is on screen:\n%s", before.Rule.ID, out.String())
 	}
 }

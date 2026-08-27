@@ -125,10 +125,13 @@ a live, prompt-accepting composer; keying on it would strand every grok pane
 forever. `testdata/grok/idle-composer-with-consent-banner.txt` pins it.
 The live splash above pins the other direction: a splash with no banner.
 
-`startupScreenDismissals` in `internal/rhq/dispatch.go` still presses Esc at
-this rule id when a pane reports blocked — a branch this state change makes
-unreachable for grok. Until it is retired the id must not be renamed;
-`internal/rhq/startupscreen_test.go` asserts it exists here.
+`startupScreenDismissals` in `internal/rhq/dispatch.go` pressed Esc at this
+rule id when a pane reported blocked. **Retired in rangerhq-6723**: the state
+change above made that branch unreachable, and dispatch now answers *no*
+blocked screen at all — a blocker is the operator's, always (rangerhq-4mzt).
+The id is still load-bearing for `verify-detection` (above), which pins the
+splash fixtures to this rule id and not merely to state `idle`; it is no
+longer load-bearing for dispatch.
 
 Do not send **Enter** to an untouched grok splash: `[Opt in]` for
 coding-data retention is on that screen — rangerhq-sz7u. The Enter measured

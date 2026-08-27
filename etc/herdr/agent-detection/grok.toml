@@ -117,11 +117,15 @@ contains = ["Action Required"]
 # pinned `idle` instead of herdr's "no rule matched" fallback, and so
 # verify-detection fails the day grok turns the splash into a real modal.
 #
-# THE ID IS STILL LOAD-BEARING, for now. startupScreenDismissals in
-# internal/rhq/dispatch.go presses Esc at this id when a pane reports
-# blocked — a branch that this state change makes unreachable for grok.
-# Retiring it is rangerhq-6723; until then the id must not be renamed
-# (internal/rhq/startupscreen_test.go asserts it exists here).
+# THE ID IS STILL LOAD-BEARING, but no longer to dispatch.
+# startupScreenDismissals in internal/rhq/dispatch.go pressed Esc at this
+# id when a pane reported blocked; that branch was unreachable the moment
+# this rule became `idle`, and rangerhq-6723 retired it. dispatch answers
+# no blocked screen now — a blocker is the operator's, always. What still
+# keys on the id is verify-detection, which requires the splash fixtures
+# to resolve to THIS rule rather than merely to state `idle`, a check that
+# would be vacuous otherwise now that the fallback says idle too
+# (rangerhq-uglc). Renaming it here means renaming it there.
 #
 # Deliberately NOT anchored on the consent banner: it survives into a live,
 # prompt-accepting composer, and keying on it would strand every grok pane

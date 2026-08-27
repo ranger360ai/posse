@@ -2503,30 +2503,18 @@ func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
 	// the difference and why the seen part is the whole gate.
 	//
 	// `blocked` is one of those settled states — herdr's own default set for
-	// `agent wait` — and it is asked for here so the launcher sees a startup
-	// screen instead of sitting out the whole wait behind one. Only a screen
-	// posse knows (startupScreenDismissals) is acted on; every other blocker
-	// still fails loudly, now immediately rather than at the deadline.
+	// `agent wait` — and it is still asked for here so a blocker fails the
+	// launch immediately and by name instead of sitting out the whole wait
+	// behind one. Nothing is pressed at it. posse pressed Esc at grok's
+	// splash until rangerhq-6723; that screen reports `idle` now
+	// (rangerhq-1xsj) and was never reached in the launch path anyway — it is
+	// drawn 0.6s after this gate opens (rangerhq-3hb5). What is left under
+	// `blocked` is the operator's alone — a permission prompt, claude's trust
+	// dialog — and the launcher may never answer one (rangerhq-4mzt).
 	settle := time.Now().Add(d.StartupWait)
 	status, _, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle)
 	if err != nil {
 		return "", err
-	}
-	if status == "blocked" {
-		if rule, keys := d.startupScreen(target); keys != nil {
-			ready, err := d.clearStartupScreen(id, session, target, rule, keys, settle)
-			if err != nil {
-				return "", err
-			}
-			if ready {
-				return target, nil
-			}
-			if time.Now().Before(settle) {
-				if status, _, err = d.awaitSettled(id, session, target, []string{"idle", "done"}, settle); err != nil {
-					return "", err
-				}
-			}
-		}
 	}
 	if status != "idle" && status != "done" {
 		return "", Die("agent in %s never settled idle (status %q) — check the session (posse peek %s)", session, status, session)
@@ -2557,15 +2545,14 @@ func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
 // whatever screen the CLI eventually draws, a rule matched it.
 //
 // A blocker is never a guess — the fallback only ever says idle — so a
-// blocked state is handed straight back for the caller's startup-screen
-// handling. `working` and the rest are the caller's to reject.
+// blocked state is handed straight back, named. It, `working` and the rest
+// are the caller's to reject.
 //
 // WHEN DETECTION CANNOT BE READ. An `agent explain` that errors is not
 // evidence of unreadiness any more than of readiness, and a launcher that
 // refuses to launch because a diagnostic call failed is worse than the race
 // it is guarding. That case waits out the deadline and then prompts anyway,
-// out loud, naming the error — the same call clearStartupScreen makes when
-// detection cannot answer. A guess herdr *did* report is different: that is
+// out loud, naming the error. A guess herdr *did* report is different: that is
 // a real answer, it says the screen is unrecognized, and it fails loudly.
 // It returns the state and the detection it accepted, so a caller — the
 // live test, for one — can say what the gate actually opened on rather than
@@ -2595,7 +2582,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		status := agentStatusFromResult(res)
 		if status != "idle" && status != "done" {
 			// A blocker is never a guess, so it is reported as herdr gave
-			// it; the caller reads the rule for itself (startupScreen).
+			// it, for the caller to refuse by name.
 			return status, AgentDetection{State: status}, nil
 		}
 		// `agent wait` and `agent explain` read the same detection at two
@@ -2609,8 +2596,8 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		case err != nil:
 			lastErr, lastWhy = err.Error(), ""
 		case det.State == "blocked":
-			// Never a guess — the fallback only ever says idle — and the
-			// caller reads the rule for itself (startupScreen).
+			// Never a guess — the fallback only ever says idle — and it
+			// carries the rule that produced it, for the failure line.
 			return det.State, det, nil
 		case det.Seen() && (det.State == "idle" || det.State == "done"):
 			return det.State, det, nil
@@ -2637,75 +2624,6 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		}
 		time.Sleep(poll)
 	}
-}
-
-// clearStartupScreen presses the keys that clear a known startup screen and
-// reports whether the agent can be prompted straight away.
-//
-// The keys are pressed once. A screen that survives them is not one posse
-// understands, and mashing keys at an agent is how a fleet ends up answering
-// a dialog nobody meant to answer.
-//
-// Then the honest part (measured live on grok 1.0.5, rangerhq-7sbo). Esc
-// moves grok's splash focus into the composer, but it does NOT undraw the
-// splash: the menu, the changelog line and the consent banner stay on the
-// screen, so `startup_splash` goes on matching and herdr goes on saying
-// `blocked` — for a pane that takes a prompt perfectly well. Text typed at
-// that screen lands in the composer, and Enter submits it: the pane went
-// idle → working → done on a probe turn with the splash still drawn. So when
-// the screen we just pressed a key at is still the screen herdr reports,
-// readiness is posse's call, not detection's, and it is yes. Anything else —
-// another blocker, a state herdr cannot read — is not ours to interpret: the
-// caller falls back to the wait and to failing loudly.
-func (d *Dispatcher) clearStartupScreen(id, session, target, rule string, keys []string, settle time.Time) (bool, error) {
-	fmt.Fprintf(d.Out, "· %-14s clearing the startup screen in %s (%s: %s)\n", id, session, rule, strings.Join(keys, " "))
-	if err := d.HB.H.AgentSendKeys(target, keys...); err != nil {
-		return false, err
-	}
-	// herdr's read of the pane lags the keypress by a poll.
-	if d.Poll > 0 && time.Now().Add(d.Poll).Before(settle) {
-		time.Sleep(d.Poll)
-	}
-	again, keysAgain := d.startupScreen(target)
-	if again != rule || keysAgain == nil {
-		return false, nil
-	}
-	fmt.Fprintf(d.Out, "· %-14s %s is still drawn in %s — its composer takes the prompt (rangerhq-7sbo)\n", id, rule, session)
-	return true, nil
-}
-
-// startupScreenDismissals maps an agent-detection rule id to the keys that
-// clear the screen it matched. Keyed on the RULE and never on `blocked`
-// alone: that one state covers both a permission dialog, which the launcher
-// must never answer for the operator, and a startup screen, which nobody
-// will ever dismiss if the launcher does not (rangerhq-7sbo). The ids are
-// ours — they come from the manifests in etc/herdr/agent-detection, so
-// renaming a rule there means renaming it here, and both files say so.
-var startupScreenDismissals = map[string][]string{
-	// grok opens on the New worktree / Resume session / Quit menu with a
-	// changelog line and the "Help improve Grok" consent banner, and never
-	// takes that screen down by itself (rangerhq-37c). Esc is the only key
-	// posse presses there: it moves the focus into the composer, keeping
-	// anything already typed — where Enter picks a menu entry, and [Opt in]
-	// for coding-data retention is on that same screen (rangerhq-sz7u).
-	// What Esc does not do is undraw it; clearStartupScreen has the rest.
-	"startup_splash": {"esc"},
-}
-
-// startupScreen names the screen a blocked agent is sitting on, and the keys
-// that clear it, when it is one posse knows. An explain that cannot be read is
-// not fatal: it means no clearing, and the launch fails as loudly as it did
-// before this existed.
-func (d *Dispatcher) startupScreen(target string) (rule string, keys []string) {
-	det, err := d.HB.H.AgentExplain(target)
-	if err != nil || det.State != "blocked" {
-		return "", nil
-	}
-	keys, ok := startupScreenDismissals[det.Rule.ID]
-	if !ok {
-		return "", nil
-	}
-	return det.Rule.ID, keys
 }
 
 // agentStatusFromResult digs the settled state out of an agent.prompt/wait
