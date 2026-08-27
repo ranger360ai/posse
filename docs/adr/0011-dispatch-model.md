@@ -151,6 +151,27 @@ retires.
   **run record** (§3, deps on both — it touches both files' territory).
   A doc bead fixes the stale records (dispatch.go header, DIRECTION
   sketch). ADR 0006 amended in this commit.
+  *(§3 landed 2026-08-27, rangerhq-o2ki. `bead:` was already there from
+  ADR 0013 §4; `prompted:` is new, written by every launcher under §1's
+  lock, and `promptedRecently` believes the later of it and the process
+  map. Two things §3's prose left open, decided in the build and recorded
+  here because a later reader will ask. **Where the record is read from:**
+  as a FILE, not through `Sessions()` — "when was this prompted" is the
+  record's own content, where a listing answers liveness at the cost of a
+  herdr round trip per bead per pass; they can disagree only for a meta
+  the listing would drop, and there this reads "prompted recently" over a
+  session the caller then declines to prompt, which is the direction every
+  guard in dispatch fails in. `RunHolder` still goes through `Sessions()`,
+  because the holder join needs liveness as well as the record. **What the
+  pass's grace exempts:** the guard is what answers when every other guard
+  abstains on a stale reading, so it stands down wherever a launcher is
+  deciding rather than missing — a holder join that found the session and
+  an operator's `--resume` that answered for it, a row naming another
+  actor (the claim answers that, and must be allowed to fail), a session
+  herdr reports `done` in, and one herdr detects no agent in at all, which
+  is not a lagging status but a crashed CLI the relaunch answers. Pins:
+  `internal/rhq/runrecord_qa_test.go`, and laurie's pass↔pass repro in
+  `launchlock_qa_test.go`, whose skip is gone.)*
 - Handoffs: **security** — a pruned meta also deletes the crew mark, so
   a wipe can turn the operator's own conversation back into
   fleet-promptable; that is the data-loss shape of the meta-sweep race,

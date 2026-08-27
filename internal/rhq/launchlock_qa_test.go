@@ -252,8 +252,6 @@ func TestWatchReleasesLockBetweenPasses(t *testing.T) {
 // ADR 0011 §3 owns the fix (persisted `prompted:` in the meta, read by
 // PromptGrace across processes); repro on that bead.
 func TestTwoPassesDoNotDoubleClaimOneBead(t *testing.T) {
-	t.Skip("rangerhq-o2ki: PromptGrace is per-process until the meta is the run record")
-
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	qaOneBeadRepo(t, b.App)

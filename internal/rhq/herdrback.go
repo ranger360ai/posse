@@ -124,6 +124,17 @@ type HerdrMeta struct {
 	Socket      string    // the herdr server this session was created against (see SocketID)
 	Gen         string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
 	Launched    time.Time // when the persona/recipe command was last typed into Pane
+	// Prompted is when a work prompt was last SENT to this session — the run
+	// record's half of PromptGrace (ADR 0011 §3). It was per-process memory
+	// (`Dispatcher.lastPrompt`) until this landed, so the cockpit's `d` and a
+	// running pass could not see each other's prompts and both prompted one
+	// bead. Written by every launcher under the launch lock (ADR 0011 §1), so
+	// the read-modify-write below cannot interleave with another launcher's.
+	//
+	// Distinct from Launched, which is when the CLI's own command line was
+	// typed: a resumed session is prompted again without being launched
+	// again, and it is the prompt herdr's status lags behind.
+	Prompted time.Time
 }
 
 // SocketID names the herdr server a session belongs to: $HERDR_SOCKET_PATH,
@@ -271,6 +282,7 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Socket:      YamlGet(p, "socket"),
 		Gen:         YamlGet(p, "gen"),
 		Launched:    parseLaunched(YamlGet(p, "launched")),
+		Prompted:    parseLaunched(YamlGet(p, "prompted")),
 	}, true
 }
 
@@ -363,6 +375,12 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	}
 	if !m.Launched.IsZero() {
 		fmt.Fprintf(&s, "launched: %s\n", m.Launched.UTC().Format(time.RFC3339Nano))
+	}
+	// When a work prompt was last sent (ADR 0011 §3). PromptGrace reads this
+	// rather than a per-process map, so a pass and the cockpit refuse each
+	// other's fresh prompts instead of both prompting one bead.
+	if !m.Prompted.IsZero() {
+		fmt.Fprintf(&s, "prompted: %s\n", m.Prompted.UTC().Format(time.RFC3339Nano))
 	}
 	return os.WriteFile(b.metaPath(m.Name), []byte(s.String()), 0o644)
 }
@@ -476,6 +494,7 @@ type HerdrSession struct {
 	Bead        string // the bead dispatch launched this session to work ("" = not a dispatched bead session; ADR 0013 §4)
 	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
 	Dir         string // working directory (from meta; "" for foreign sessions)
+	Repo        string // the checkout Dir is a session worktree of ("" = Dir IS the checkout; rangerhq-09o2)
 	Agent       string
 	Status      string // herdr agent state; "" when no agent detected
 	Focused     bool
@@ -603,7 +622,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
 			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
-			Status: status(ws), Focused: ws.Focused,
+			Repo: m.Repo, Status: status(ws), Focused: ws.Focused,
 		})
 	}
 	for _, ws := range wss {
@@ -1576,6 +1595,74 @@ func (b *HerdrBackend) NoteBead(name, id string) {
 	}
 	m.Bead = id
 	_ = b.writeMeta(m)
+}
+
+// MarkPrompted records that a work prompt was just sent to this session
+// (ADR 0011 §3) — the persisted half of PromptGrace, so the next reader is
+// any launcher rather than only this process.
+//
+// Best effort, deliberately: a prompt that landed must never be reported as
+// a failure because its record could not be written, and a session posse did
+// not create has no record to write. The cost of a missed write is the
+// behaviour that shipped before this — the in-process map still holds — so
+// failing quiet here degrades to the old guard rather than to none.
+//
+// Callers hold the launcher lock (ADR 0011 §1), which is what makes the
+// read-modify-write safe: no other launcher is between this read and write.
+func (b *HerdrBackend) MarkPrompted(name string, at time.Time) {
+	m, ok := b.readMeta(name)
+	if !ok || at.IsZero() || at.Before(m.Prompted) {
+		return
+	}
+	m.Prompted = at
+	_ = b.writeMeta(m)
+}
+
+// RunHolder is the holder join as a LOOKUP (ADR 0011 §3): the live session
+// whose own run record says it was created to work this bead in this repo.
+//
+// It replaces asking herdr about a name pattern. A name answers "is there a
+// session that WOULD be called this", which is a guess about who holds the
+// bead — the lwx/v330 class, where a holder living under the other name in
+// the join went unseen and dispatch launched a twin beside it. `bead:` is
+// what dispatch itself wrote at create, so the record answers directly.
+//
+// The CHECKOUT is compared, not the working directory: one bead id is only
+// unique within its repo, and a per-session worktree's Dir is not the repo
+// dispatch names (rangerhq-09o2), so the record's repo: is what a dispatch
+// dir matches against. Foreign sessions carry no record and never match. A
+// session with no agent (Status "") still matches: it holds the bead and is
+// relaunched in place, which is exactly what the name walk did.
+//
+// The persona is part of the key because it is part of both names this
+// replaces — a session is <persona>'s slot or <persona>'s bead session, and
+// a record pointing at somebody ELSE's session is not the join's answer: it
+// is a session running another PID, and prompting it with this bead's work
+// would be the reassignment nobody asked for.
+func (b *HerdrBackend) RunHolder(dir, persona, bead string) (*HerdrSession, bool) {
+	if dir == "" || persona == "" || bead == "" {
+		return nil, false
+	}
+	sessions, err := b.Sessions()
+	if err != nil {
+		return nil, false
+	}
+	for i := range sessions {
+		s := &sessions[i]
+		if !s.Foreign && s.Bead == bead && s.Agent == persona && s.Checkout() == dir {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+// Checkout is the repo a session's work belongs to: the checkout its own
+// worktree hangs off, or its working directory when it shares one.
+func (s *HerdrSession) Checkout() string {
+	if s.Repo != "" {
+		return s.Repo
+	}
+	return s.Dir
 }
 
 // KillLanding is what a kill did with a session's own git worktree

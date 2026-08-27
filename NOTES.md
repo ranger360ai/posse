@@ -372,6 +372,48 @@ nothing decides anything from it, and a dead or unreadable pid degrades to
 would let the next launcher lock a fresh inode: two holders, one path, no
 error anywhere. `internal/rhq/launchlock.go`.
 
+**The session meta is the run record** (ADR 0011 §3, rangerhq-o2ki). The lock
+serializes launchers; it does not give one a way to *see* what the last one
+did, and the guards it protects read stores that lag a launch by seconds. Two
+fields in the meta close that — `bead:`, the bead this session was created to
+work (ADR 0013 §4), and `prompted:`, when a work prompt was last sent to it —
+and wherever dispatch needs a fact about the run it reads the record it wrote
+rather than inferring one from a name pattern or a snapshot.
+
+- **`prompted:` is PromptGrace's memory.** It was `lastPrompt`, a map in one
+  process, so the cockpit's `d` and a running pass could not see each other's
+  prompts and both prompted one bead: the half of rangerhq-tzdf's
+  "no double-claims" the lock alone did not close, because `Run` reads `bd
+  ready` *before* the fire loop locks, so the waiting pass fires from a list
+  the holder already consumed and every guard then abstains in turn — `busy`
+  is per-pass, `personaActive` reads the fresh agent as idle rather than
+  working, and the `in_progress` check reads the stale row. `prompted:` is the
+  one store that has moved, because the holder wrote it before dropping the
+  lock. `promptedRecently` believes the later of the file and the map (the map
+  still covers a session with no meta) and reads the file **directly**, not
+  through `Sessions()`: "when was this prompted" is the record's own content,
+  where a listing answers liveness at a herdr round trip per bead per pass,
+  and the two can disagree only for a meta the listing would drop — where this
+  reads "prompted recently" over a session the caller then declines to prompt,
+  which is the direction every guard here fails in. The pass's guard stands
+  down wherever a launcher is *deciding* rather than missing: a holder join
+  that found the session and an operator's `--resume` that answered for it, a
+  row naming another actor (the claim answers that, and must be allowed to
+  fail), a session herdr reports `done` in, and one herdr detects no agent in
+  at all — a crashed CLI, which `RelaunchAgent` answers, not a lagging status.
+- **`bead:` makes the holder join a lookup.** `RunHolder(dir, persona, bead)`
+  finds the live session whose own record says it was created for this bead,
+  and the two names the join used to walk — the bead's Dial F name, then the
+  pre-Dial-F slot — stay behind it for sessions with no record to find. The
+  persona is part of the key because it is part of both those names: a record
+  pointing at somebody else's session is not the join's answer, it is a
+  session running another PID. The checkout is compared, not the working
+  directory, since a per-session worktree's `dir:` is not the repo dispatch
+  names — `repo:` is (rangerhq-09o2).
+
+Pins: `internal/rhq/runrecord_qa_test.go`, and the pass↔pass repro in
+`launchlock_qa_test.go` (`TestTwoPassesDoNotDoubleClaimOneBead`).
+
 **The plan-utilization guard** (rangerhq-jgm) takes one shared reading before
 anything else in a pass — before bd is asked for ready work — then applies
 that reading per bead once dispatch knows which runtime the bead will spend

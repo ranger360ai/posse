@@ -572,27 +572,81 @@ func budgetSkipLine(st BudgetState) string {
 	return fmt.Sprintf("budget: %s — not dispatched (raise budget_pass:/budget_day: or let the window pass)", st.Line())
 }
 
+// notePrompted records that a work prompt was just sent, in both places the
+// next reader may be: this process's map, and the session's own run record
+// (ADR 0011 §3). The record is what makes the grace hold across processes —
+// the map is kept because it also covers a session with no meta, which the
+// record cannot.
 func (d *Dispatcher) notePrompted(session string) {
+	at := time.Now()
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.lastPrompt == nil {
 		d.lastPrompt = map[string]time.Time{}
 	}
-	d.lastPrompt[session] = time.Now()
+	d.lastPrompt[session] = at
+	d.mu.Unlock()
+	d.HB.MarkPrompted(session, at)
 }
 
-// promptedRecently reports whether this process prompted the session less
+// promptedRecently reports whether ANY launcher prompted the session less
 // than PromptGrace ago — the window in which herdr may still call it idle
 // even though a turn is under way.
+//
+// It reads the run record and this process's memory and believes the LATER
+// of the two. Two stores, one fact, so the disagreement rule (ADR 0011) has
+// to be stated rather than left to whichever is read first: a prompt either
+// store remembers is a prompt that happened, and the newer reading is the
+// one with more information. The record is the cross-process half — before
+// it existed the cockpit's `d` and a running pass could not see each other
+// and both prompted one bead (rangerhq-tzdf's remaining half) — and the map
+// still covers the session that has no record to read.
+//
+// The record is read as a FILE, not through Sessions(). "When was this
+// prompted" is the record's own content, where Sessions() answers a
+// different question — is this workspace live and ours — at the cost of a
+// herdr round trip on every bead of every pass. The two can disagree only
+// for a meta Sessions() would not list, and there this reads "prompted
+// recently" over a session the caller then declines to prompt, which is the
+// direction every guard in this file fails in.
 func (d *Dispatcher) promptedRecently(session string) (time.Duration, bool) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	t, ok := d.lastPrompt[session]
-	if !ok {
+	last := d.lastPrompt[session]
+	d.mu.Unlock()
+	if m, ok := d.HB.readMeta(session); ok && m.Prompted.After(last) {
+		last = m.Prompted
+	}
+	if last.IsZero() {
 		return 0, false
 	}
-	age := time.Since(t)
+	age := time.Since(last)
 	return age, age < d.PromptGrace
+}
+
+// heldSession names the live session working this bead — the holder join,
+// as a LOOKUP in the record dispatch itself wrote (ADR 0011 §3) rather than
+// an inference from a name pattern. It returns "" when nothing live holds
+// the bead; a session with no agent detected is not a holder, it is a
+// session to relaunch in place.
+//
+// The record is asked first because it is the only one of the three answers
+// that is a FACT about this run: `bead:` was stamped by the launcher that
+// created the session (or by NoteBead when it resumed into one it did not
+// create). The two names follow it, unchanged, because a record is not
+// everywhere yet — a session created before `bead:` landed, or one posse
+// resumed into and could not stamp, still has to be found, and finding it by
+// its Dial F name and then the pre-Dial-F slot is what shipped. Order
+// matters only where they disagree, and where they disagree the record is
+// about this bead while a name is about a naming convention.
+func (d *Dispatcher) heldSession(is RepoIssue, persona string, names ...string) string {
+	if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok && s.Status != "" {
+		return s.Name
+	}
+	for _, name := range names {
+		if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // OrderBeads puts a ready list in the order an operator would work it,
@@ -1258,20 +1312,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			busy[slot] = true
 			continue
 		}
-		// The holder join (ADR 0004 §2): a bead this persona already holds
-		// is joined to its live session by the bead's own Dial F name, then
-		// the pre-Dial-F slot. Walked once — the skip below and the resume
-		// that overrides it are two answers about the SAME session, and
-		// deciding them from different names is what left `--resume`
+		// The holder join (ADR 0004 §2): a bead this persona already holds is
+		// joined to its live session. Walked once — the skip below and the
+		// resume that overrides it are two answers about the SAME session,
+		// and deciding them from different names is what left `--resume`
 		// launching a twin beside an idle slot holder (rangerhq-v330).
 		held := ""
 		if is.Status == "in_progress" && is.Assignee == persona {
-			for _, name := range []string{session, slot} {
-				if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
-					held = name
-					break
-				}
-			}
+			held = d.heldSession(is, persona, session, slot)
 		}
 		// An in_progress bead whose own session (or the pre-Dial-F persona
 		// session) is alive with an agent that has settled: the persona
@@ -1291,6 +1339,47 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// launch creates it.
 		if held != "" {
 			session = held
+		}
+		// PromptGrace, from the run record (ADR 0011 §3). Every guard above
+		// this line reads a store that a launcher which fired seconds ago has
+		// not yet moved: `busy` is this pass's own map, `personaActive` sees a
+		// just-created agent as idle rather than working, and the in_progress
+		// check reads the bead row a claim from the same instant has not
+		// reached. `Run` gathers its ready list BEFORE fireLoop takes the
+		// launcher lock (ADR 0011 §1), so the pass that waits fires from a
+		// list the holder already consumed and every one of those guards
+		// abstains — two prompts and two claims on one bead, which is the
+		// half of rangerhq-tzdf's criterion the lock alone did not close.
+		//
+		// `prompted:` is the store that HAS moved: the holder wrote it before
+		// dropping the lock. So the same refusal the cockpit's `d` has always
+		// made now belongs to the pass, and it is a skip rather than an
+		// error — the bead is being worked, and the next pass reads a row
+		// that says so.
+		//
+		// Exemptions, each naming a launcher that is NOT abstaining.
+		// `held != ""` is the holder join having found the session and the
+		// operator's --resume having answered for it — a decision made with
+		// knowledge, not a guard that missed. A row naming somebody else is
+		// answered by the claim, which is the one guard here that reads a
+		// store nobody can be stale about, and it must be allowed to fail.
+		// The last two are LaunchBead's own, for its reason: the grace
+		// distrusts one specific reading, an agent herdr can SEE and calls
+		// settled, so a session herdr reports "done" in has caught up, and
+		// one it detects no agent in at all is not lagging — it is crashed,
+		// and the relaunch below is the answer to that.
+		//
+		// The record is asked first because it is a file read; only a session
+		// that IS inside the grace costs the herdr listing the last two
+		// exemptions need, so a pass over beads nobody just prompted — every
+		// ordinary pass — makes no extra call at all.
+		mine := is.Assignee == "" || is.Assignee == persona
+		if age, recent := d.promptedRecently(session); recent && held == "" && mine {
+			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
+				fmt.Fprintf(d.Out, "– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
+				busy[slot] = true
+				continue
+			}
 		}
 		ag, _ := d.App.LoadAgent(persona)
 		tier, tierWhy := d.App.BeadTier(d.Tier, is.BdIssue, ag)
@@ -2041,10 +2130,21 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// unguarded: the working/blocked refusal never fired and the launch
 	// created a SECOND agent on the bead its holder was working
 	// (rangerhq-lwx, same failure class as the rangerhq-zom resume storm).
-	names := []string{SessionForBead(persona, is.Dir, is.ID)}
+	// ADR 0011 §3 puts the record dispatch wrote at the head of that join:
+	// `bead:` says which session was created to work this bead, which is a
+	// fact about the run, where a name pattern is a guess that a session
+	// which exists would be called this. The two patterns stay behind it and
+	// unchanged — a session created before `bead:` landed has no record to
+	// find, and losing it here is how a twin gets launched beside a holder.
+	var names []string
+	if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
+		names = append(names, s.Name)
+	}
+	names = append(names, SessionForBead(persona, is.Dir, is.ID))
 	if is.Status == "in_progress" && is.Assignee == persona {
 		names = append(names, SessionFor(persona, is.Dir))
 	}
+	names = dedupeStrings(names)
 	// ADR 0008: the operator's own conversation is not the fleet's to prompt,
 	// and --resume does not override it — the same line Run prints.
 	if held := d.crewHeld(names...); held != "" {
