@@ -594,6 +594,12 @@ ADR 0001 section order, that `skills:` names resolve, and warns when a PID
 has no `## Work prompt` section. Fix findings before dispatching — a PID
 that fails the lint launches, it just does not do what you think it does.
 
+A persona whose `runtime:` names anything other than the built-ins
+(`claude`, `codex`, `grok`) fails this Verify with `unknown runtime` until
+step 8 creates that profile — that is a forward reference, not a lie in
+this step. Leave `runtime:` unset (default `claude`) or pointed at a
+built-in until you get there.
+
 Inspect what the wall will actually enforce for one of them:
 
 ```sh
@@ -882,10 +888,15 @@ $ git config merge.beads.driver 'bd merge %A %O %A %B'
 ```
 
 Give the repo an `AGENTS.md` so a persona landing in it knows the queue
-exists:
+exists. `bd onboard` prints instructions *at a human*, delimiters
+included — piping its output straight into the file leaves that prose,
+not the snippet, as orientation text. Paste only the delimited region,
+into the `AGENTS.md` that `bd init` already created (not "or create it",
+as `bd onboard`'s own text has it):
 
 ```sh
-$ bd onboard >> AGENTS.md
+$ bd onboard | sed -n '/--- BEGIN AGENTS.MD CONTENT ---/,/--- END AGENTS.MD CONTENT ---/p' \
+    | sed '1d;$d' >> AGENTS.md
 ```
 
 **Then reconcile that file with the crew's guardrails, before any persona
