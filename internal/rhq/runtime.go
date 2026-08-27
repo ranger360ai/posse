@@ -268,6 +268,32 @@ type Runtime struct {
 	// operator-owned config key that silences each. Documented, never
 	// written.
 	Interstitials []Interstitial
+	// StateDirs are the directories (and single files) this CLI keeps its
+	// own state in — its config, its credentials, its per-project record.
+	// They join the L2 seatbelt's writable set, because a runtime whose
+	// state dir is read-only inside the sandbox is one that re-runs its
+	// first-run flow every launch, or dies on a config write nobody granted
+	// (seatbelt.go). Declared per runtime rather than listed centrally:
+	// `~/.claude ~/.codex ~/.grok` was a literal in the profile builder, so
+	// a third-party CLI's state dir could not be named at all and
+	// `cage: seatbelt` broke it silently (ADR 0012 D4).
+	//
+	// Paths are absolute or ~-prefixed; a relative one is refused at load,
+	// because the session cwd is already granted and "relative to the CLI's
+	// idea of home" is not a thing this can resolve.
+	StateDirs []string
+	// EnvRequired are the environment variable NAMES a session on this
+	// runtime cannot work without — the Bedrock/Vertex shape, where the CLI
+	// is installed and on PATH and every launch is a dead pane because
+	// AWS_REGION was never in the session's env. Names only: posse never
+	// reads, prints or forwards a value from this list (ADR 0012 D4, and
+	// the envs: rule that values are never displayed anywhere).
+	//
+	// Checked at launch preflight (planLaunch) against the env sets the
+	// session receives plus the launcher's own environment, and reported by
+	// `posse runtime check`. Absent = nothing is required, which is the
+	// truthful default for a CLI that authenticates from its own state dir.
+	EnvRequired []string
 	// CostAdapter names the reading behind this runtime's `account` stage
 	// ("" = no adapter → account-degraded, ADR 0013 §5). Filling the
 	// cost-adapter seam (ADR 0012 D4) is how a runtime leaves that column;
@@ -781,6 +807,11 @@ var (
 var builtinRuntimes = []Runtime{
 	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: ClaudeProjectConfig, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
+		// state_dir, declared rather than listed in the seatbelt builder:
+		// ~/.claude is the CLI's own tree and ~/.claude.json is a FILE, not a
+		// directory — the same grant either way, and both were literals in
+		// SeatbeltWritable until ADR 0012 D4 made the key declarable.
+		StateDirs: []string{"~/.claude", "~/.claude.json"},
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.
 		// account: the transcript scanner (cost.go) is the one adapter that
@@ -789,7 +820,7 @@ var builtinRuntimes = []Runtime{
 		NativeRules: claudeNativeRules, CostAdapter: "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)",
 		Command: `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
-		Egress: []string{"chatgpt.com", "ab.chatgpt.com"},
+		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no
 		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
@@ -798,7 +829,7 @@ var builtinRuntimes = []Runtime{
 		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
 		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
-		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"},
+		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the
 		// only reason grok and codex differ in this column.
@@ -975,6 +1006,39 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	// never writes them; declaring them is how `runtime check` can name the
 	// other voice in the session.
 	rt.NativeRules = YamlList(p, "native_rules")
+	// --- the preflight keys (ADR 0012 D4, rangerhq-tr8k) ---
+	//
+	// state_dir: where this CLI keeps its own state. It joins the L2
+	// seatbelt's writable set, which carried `~/.claude ~/.codex ~/.grok` as
+	// a literal — so a third-party CLI under `cage: seatbelt` got a
+	// read-only state dir and re-ran its first-run flow, or died on a config
+	// write, with nothing in the launch saying why.
+	if v, err := runtimeStateDirs(p); err != nil {
+		return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+	} else {
+		rt.StateDirs = v
+	}
+	// env_required: the variable NAMES a session here cannot work without.
+	// The Bedrock case — claude installed, on PATH, every launch a dead pane
+	// because AWS_REGION was not in the session env — was expressible only
+	// as tribal knowledge in a PID's `envs:` list. Names only; the validator
+	// refuses anything with a value in it.
+	if v, err := runtimeEnvRequired(p); err != nil {
+		return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+	} else {
+		rt.EnvRequired = v
+	}
+	// interstitial_<slug>: the first-run screens a fresh pane of this CLI
+	// opens on, and the operator-owned key that silences each. Declared, not
+	// pressed: rangerhq-6723 retired the launcher's one keystroke table and
+	// hoover's rangerhq-4mzt ruling is that no drawn dialog is the
+	// launcher's to answer, so what a third party can declare here is the
+	// DISMISSAL — the file and the key — and never a key to send.
+	if v, err := declaredInterstitials(p); err != nil {
+		return nil, Die("runtime %s: %s %v", name, AbbrevHome(p), err)
+	} else {
+		rt.Interstitials = v
+	}
 	// UNKNOWN is the third reading, and until now it was silence: a key
 	// nothing recognized was dropped without a word, so `skils_flag:` is a
 	// persona that cannot launch and `slef_sandbox:` is a seatbelt that

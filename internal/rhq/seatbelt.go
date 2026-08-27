@@ -77,7 +77,7 @@ func SeatbeltProfile(persona string, writable []string) string {
 // the day the home moves, and the profile then silently loses the state
 // dir it meant to open (ranger-base-cpyb). Ask the App: it resolved the
 // home this process is actually running against.
-func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
+func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ...string) []string {
 	home, _ := os.UserHomeDir()
 	deniesFiles := false
 	for _, r := range ag.Deny {
@@ -143,10 +143,33 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string) []string {
 	// absent, and ConstitutionGrants below is how that is checked rather
 	// than asserted (ADR 0015 §2/§3/§7).
 	add(a.StateDir)
-	for _, d := range []string{".claude", ".claude.json", ".codex", ".grok", "Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share"} {
+	// The generic caches every CLI on this box writes through. These are
+	// NOT runtime state and stay a literal: they belong to npm, to macOS and
+	// to the XDG layout, not to any engine.
+	for _, d := range []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share"} {
 		if home != "" {
 			add(filepath.Join(home, d))
 		}
+	}
+	// The runtimes' own state dirs. `~/.claude ~/.claude.json ~/.codex
+	// ~/.grok` were spelled here as a literal until ADR 0012 D4, which is
+	// why a third-party CLI declared in runtimes/<name>.yaml got a READ-ONLY
+	// state dir under `cage: seatbelt` and no line anywhere said so: it
+	// re-ran its first-run flow every launch, or died on a config write.
+	//
+	// The union of the built-ins, not just the launching runtime's: that is
+	// what the literal granted, and narrowing it is a separate decision with
+	// its own blast radius (a persona on one engine that shells out to
+	// another). stateDirs is the LAUNCHING runtime's declaration on top —
+	// a caller with no runtime in hand passes none and gets exactly today's
+	// set.
+	for _, rt := range builtinRuntimes {
+		for _, d := range rt.StateDirs {
+			add(ExpandTilde(d))
+		}
+	}
+	for _, d := range stateDirs {
+		add(ExpandTilde(d))
 	}
 	if t := os.Getenv("TMPDIR"); t != "" {
 		add(t)
@@ -252,13 +275,13 @@ func beadsGitDirs(home string) []string {
 
 // RenderSeatbelt writes the profile for a persona session and returns its
 // path (RHQ_HOME/state/gates/<persona>/seatbelt.sb).
-func (a *App) RenderSeatbelt(ag *AgentFile, cwd string) (string, error) {
+func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (string, error) {
 	gatesDir := a.GatesDir(ag.Name)
 	if err := os.MkdirAll(gatesDir, 0o755); err != nil {
 		return "", err
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
-	prof := SeatbeltProfile(ag.Name, a.SeatbeltWritable(ag, cwd, gatesDir))
+	prof := SeatbeltProfile(ag.Name, a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...))
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -273,12 +296,12 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string) (string, error) {
 // by looking whether it is still complete. This one is one line under the
 // set it is a property of; `posse gates <persona>` is where an operator
 // reads it (ADR 0015 verification items 5 and 6).
-func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer) error {
-	prof, err := a.RenderSeatbelt(ag, cwd)
+func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs ...string) error {
+	prof, err := a.RenderSeatbelt(ag, cwd, stateDirs...)
 	if err != nil {
 		return err
 	}
-	writable := a.SeatbeltWritable(ag, cwd, a.GatesDir(ag.Name))
+	writable := a.SeatbeltWritable(ag, cwd, a.GatesDir(ag.Name), stateDirs...)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))

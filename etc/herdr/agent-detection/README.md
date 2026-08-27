@@ -24,6 +24,11 @@ with `HERDR_SOCKET_PATH` pointed at it.
 `herdr server agent-manifests --json` reports which one answered.
 `herdr server reload-agent-manifests` re-reads the override directory.
 
+Authoring a manifest for a CLI herdr has never heard of — as opposed to
+forking one of these — is `docs/runbooks/agent-detection-manifest.md`. Read
+its first section before you start: a standalone manifest for a new agent id
+is ignored outright on herdr 0.8.0 (measured, rangerhq-tr8k).
+
 ## grok.toml (rangerhq-37c, re-decided in rangerhq-1xsj)
 
 A fresh `grok` pane opens on a **startup screen**, not a bare composer: the

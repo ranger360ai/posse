@@ -109,6 +109,7 @@ func runtimeYamlKeys() []string {
 		"project_config",
 		"cage_cred", "egress", "gate_shell",
 		"prompt", "startup_wait", "record", "record_why", "native_rules",
+		"state_dir", "env_required",
 	}
 	for _, t := range Tiers {
 		keys = append(keys, "model_"+t)
@@ -146,6 +147,13 @@ func warnUnknownRuntimeKeys(w io.Writer, name, path string) {
 	}
 	var unknown []string
 	for _, k := range YamlKeysWithPrefix(path, "") {
+		// The interstitial_<slug>: family is open by construction — the slug
+		// names the screen and only the profile's author knows it — so it is
+		// matched by prefix rather than listed. Its SUBkeys are closed and
+		// refuse (declaredInterstitials); this loop only sees top level.
+		if strings.HasPrefix(k, interstitialPrefix) {
+			continue
+		}
 		if !known[k] {
 			unknown = append(unknown, k+":")
 		}
@@ -158,7 +166,7 @@ func warnUnknownRuntimeKeys(w io.Writer, name, path string) {
 	}
 	fmt.Fprintf(w, "posse: runtime %s: %s declares %s — nothing reads %s, so the declaration never arrives (`posse runtime check %s` prints what did)\n",
 		name, AbbrevHome(path), strings.Join(unknown, " "), plural(len(unknown), "that key", "those keys"), name)
-	fmt.Fprintf(w, "       known keys: %s\n", strings.Join(runtimeYamlKeys(), ", "))
+	fmt.Fprintf(w, "       known keys: %s, %s<name>:\n", strings.Join(runtimeYamlKeys(), ", "), interstitialPrefix)
 }
 
 func plural(n int, one, many string) string {
@@ -166,4 +174,140 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// --- the preflight keys (ADR 0012 D4, rangerhq-tr8k) ---
+//
+// Three declarations a third party could not make, each of which broke a
+// launch in a way nothing said out loud: where the CLI keeps its state (so
+// `cage: seatbelt` does not make it read-only), what the session env must
+// carry before a launch is worth attempting, and which first-run screen a
+// fresh pane opens on.
+
+// interstitialPrefix is the key family for a declared first-run screen:
+//
+//	interstitial_update:
+//	  screen: "Update available! → 1. Update now  2. Skip"
+//	  where: ~/.mycli/version.json
+//	  key: dismissed_version
+//	  silence: "the OPERATOR picks 3, once per release"
+//	  danger: "the default option runs a package upgrade"
+//
+// A family rather than a list because flat-YAML has no list-of-maps (see
+// yamlflat.go's deliberate limits), and the same shape `plan_guard_<window>:`
+// already uses for a set whose members posse does not know in advance.
+const interstitialPrefix = "interstitial_"
+
+// interstitialSubkeys is the whole map. UNKNOWN IS A REFUSAL here, unlike a
+// top-level key: the enclosing key is already recognized, so a `silense:`
+// line is not "a newer posse may know this" — it is a dismissal that names
+// no instruction, printed under a screen the operator has to answer by hand.
+var interstitialSubkeys = []string{"screen", "where", "key", "silence", "danger"}
+
+// runtimeScalarOrList reads a key that takes one value or several. The
+// bead's spelling is `state_dir: <path>`, and a scalar read through YamlList
+// returns nothing at all (yamlListLines enters block mode and then finds no
+// `- ` items), so the singular form has to be tried first — otherwise the
+// documented spelling parses as absent, which is the exact silence these
+// keys exist to remove.
+func runtimeScalarOrList(path, key string) []string {
+	if v := YamlGet(path, key); v != "" && !strings.HasPrefix(v, "[") {
+		return []string{v}
+	}
+	return YamlList(path, key)
+}
+
+// runtimeStateDirs validates `state_dir:`. Absolute or ~-prefixed only: the
+// grant it feeds is a seatbelt literal, the session cwd is already writable,
+// and "relative to the CLI's idea of home" is not something this can
+// resolve — a relative path here would silently grant a directory under the
+// session's tree and leave the real state dir read-only, which is the bug
+// with an extra step.
+func runtimeStateDirs(path string) ([]string, error) {
+	var out []string
+	for _, v := range runtimeScalarOrList(path, "state_dir") {
+		if !strings.HasPrefix(v, "~") && !filepath.IsAbs(v) {
+			return nil, fmt.Errorf("state_dir: %q — must be absolute or ~-prefixed (it is a path on this machine, not one relative to the session)", v)
+		}
+		if e := ExpandTilde(v); strings.Contains(e, "..") {
+			return nil, fmt.Errorf("state_dir: %q — no .. elements; name the directory itself", v)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// runtimeEnvRequired validates `env_required:`. NAMES ONLY, and that is
+// enforced rather than documented: a `FOO=bar` entry refuses, because the
+// one guarantee this key makes is that posse never reads, prints or
+// forwards a secret's value — and a list an operator can put a value in is
+// a list that ends up in a `posse runtime check` someone pastes into a bead.
+func runtimeEnvRequired(path string) ([]string, error) {
+	var out []string
+	for _, v := range runtimeScalarOrList(path, "env_required") {
+		if strings.ContainsAny(v, "=$ \t") {
+			return nil, fmt.Errorf("env_required: %q — names only, never values (posse never reads what these hold)", v)
+		}
+		for i, r := range v {
+			ok := r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9')
+			if !ok {
+				return nil, fmt.Errorf("env_required: %q — not an environment variable name", v)
+			}
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// declaredInterstitials reads the interstitial_<slug>: family.
+//
+// Probe stays nil for every declared entry, which prints as "state unknown"
+// rather than as "not silenced": posse cannot read an unknown CLI's config
+// format, and a probe it guessed at would answer "no" for a screen the
+// operator silenced years ago. The three built-ins keep their measured Go
+// probes (interstitial.go) — a declaration names the screen, it does not
+// claim to have looked.
+//
+// Seeded is likewise never declarable. Seeding is posse WRITING the
+// operator's config, and the one place it does that was argued to a
+// standstill in rangerhq-w4uf; a yaml key that turned it on for an
+// arbitrary file would hand that decision to whoever wrote the profile.
+func declaredInterstitials(path string) ([]Interstitial, error) {
+	var out []Interstitial
+	known := map[string]bool{}
+	for _, k := range interstitialSubkeys {
+		known[k] = true
+	}
+	for _, key := range YamlKeysWithPrefix(path, interstitialPrefix) {
+		in := Interstitial{}
+		for _, kv := range YamlMapPairs(path, key) {
+			if !known[kv[0]] {
+				return nil, fmt.Errorf("%s: has %s: — a declared screen takes %s", key, kv[0], strings.Join(interstitialSubkeys, ", "))
+			}
+			switch kv[0] {
+			case "screen":
+				in.Screen = kv[1]
+			case "where":
+				in.Where = kv[1]
+			case "key":
+				in.Key = kv[1]
+			case "silence":
+				in.Silence = kv[1]
+			case "danger":
+				in.Danger = kv[1]
+			}
+		}
+		// A screen with no key silences nothing, and a key with no file is
+		// not a place. Both halves are what `runtime check` prints for an
+		// onboarder to go and set; an entry missing either is a note, not a
+		// dismissal, so it refuses instead of printing a blank.
+		if in.Screen == "" || in.Key == "" || in.Where == "" {
+			return nil, fmt.Errorf("%s: needs screen:, where: and key: — the screen, the file that silences it, and the key in that file", key)
+		}
+		if in.Silence == "" {
+			in.Silence = "the OPERATOR sets " + in.Key + " in " + in.Where + " — this profile did not say how, and posse never writes it"
+		}
+		out = append(out, in)
+	}
+	return out, nil
 }

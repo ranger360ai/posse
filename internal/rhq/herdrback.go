@@ -1296,7 +1296,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
 		// rendered from the PID; the outer shell expands $(cat {file}) first.
 		if cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
-			prof, err := a.RenderSeatbelt(ag, dir)
+			// state_dir: (ADR 0012 D4) — the runtime's own state tree joins
+			// the writable set. Without it a third-party CLI runs under a
+			// sandbox that makes its config read-only, which it reports as a
+			// first-run flow that never sticks rather than as a denial.
+			prof, err := a.RenderSeatbelt(ag, dir, rt.StateDirs...)
 			if err != nil {
 				return nil, err
 			}
@@ -1362,6 +1366,21 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			return nil, err
 		}
 		vars = append(vars, vs...)
+	}
+
+	// env_required (ADR 0012 D4): the runtime declared variable NAMES a
+	// session on it cannot work without, and the env sets are resolved, so
+	// this is the first moment the question can be answered. It refuses
+	// rather than warning because the alternative is the failure it exists
+	// to name — a pane that opens, fails to authenticate, and reads to
+	// herdr as an agent sitting idle.
+	//
+	// Checked here and not at the top: `vars` is what the session gets, and
+	// an operator who exported the name in their own shell has supplied it
+	// just as legitimately as an env set (MissingEnv looks in both). Names
+	// only — nothing on this path reads a value.
+	if missing := MissingEnv(rt, vars); len(missing) > 0 {
+		return nil, EnvRequiredError(rt, missing)
 	}
 
 	// RHQ_HOME rides every session, persona or crew, because any rhq/bd
@@ -1580,7 +1599,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	}
 	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier)
 	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
-		prof, err := b.App.RenderSeatbelt(ag, m.Dir)
+		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
 		if err != nil {
 			return false, err
 		}

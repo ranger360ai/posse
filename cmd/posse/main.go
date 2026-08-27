@@ -992,7 +992,14 @@ func main() {
 			// operator reads ADR 0015 §2's wall off the output, and a
 			// report that silently prints nothing is the failure it exists
 			// to prevent.
-			if err := a.SeatbeltReport(ag, cwd, out); err != nil {
+			// The persona's own runtime declares where its CLI keeps state
+			// (state_dir:, ADR 0012 D4) — a report that left it out would
+			// print a writable set the launch does not use.
+			var stateDirs []string
+			if rt, err := a.LoadRuntime(a.ResolveRuntime("", ag)); err == nil {
+				stateDirs = rt.StateDirs
+			}
+			if err := a.SeatbeltReport(ag, cwd, out, stateDirs...); err != nil {
 				fmt.Fprintf(out, "  seatbelt profile not rendered: %v\n", err)
 			}
 		}
@@ -1157,7 +1164,13 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		a.RuntimeCheck(rt, rhq.NewHerdr(), out)
+		// The grid always prints; the exit status is the preflight's
+		// (ADR 0012 D4). A `check` that reported an uninstalled CLI and then
+		// exited 0 would be the class of green-while-broken this command was
+		// filed to end (rangerhq-tr8k, monica's note on it).
+		if !a.RuntimeCheck(rt, rhq.NewHerdr(), out) {
+			os.Exit(1)
+		}
 
 	case "runtimes":
 		for _, n := range a.ListRuntimes() {
@@ -1548,7 +1561,8 @@ catalog:
   posse env edit|rm <name>       manage an env set ($EDITOR; created if missing)
   posse agents                   list personas
   posse runtimes                 list launch profiles (claude/codex/grok + runtimes/*.yaml)
-  posse runtime check <name>     the ADR 0013 dispatch-contract grid for one launch profile:
+  posse runtime check <name>     the ADR 0013 dispatch-contract grid for one launch profile,
+                                 then the ADR 0012 D4 preflight (exit 1 on a blocking gap):
                                  launch/promptable/work/record/settle/account, who declared each,
                                  and what a missing stage costs. Undeclared reads loud, not silent.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them

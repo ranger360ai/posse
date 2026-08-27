@@ -71,6 +71,60 @@ func (h Herdr) KnownAgentKinds() []string {
 	return nil
 }
 
+// AgentManifest asks herdr whether it has a detection manifest for one agent
+// LABEL, and which version answered. This is the `launch` stage's first
+// observable, asked the way herdr itself resolves it rather than by pattern
+// matching a --help line.
+//
+// It exists beside KnownAgentKinds because the two answer different
+// questions, and the difference is load-bearing for a third party. The kind
+// list is clap's compiled `[possible values:]`; a manifest can also be
+// reached through an `aliases = [...]` entry on another agent's manifest,
+// which is the ONLY route a CLI herdr was not built with has to detection at
+// all (MEASURED on herdr 0.8.0, 2026-08-27: a standalone
+// ~/.config/herdr/agent-detection/<newname>.toml is ignored outright —
+// `agent explain --agent <newname>` answers unknown_agent with a null
+// manifest, and the file never appears in `server agent-manifests` — while
+// `--agent grok-build`, an alias in our own grok.toml, resolves to grok's
+// manifest and matches its rules). A check that only read the kind list
+// would tell an operator who aliased their CLI correctly that it is
+// undetectable.
+//
+// ok is false when herdr could not be asked at all: absent, or an envelope
+// this cannot read. That is UNKNOWN, never a "no" — the same rule
+// KnownAgentKinds applies to parsing --help.
+func (h Herdr) AgentManifest(label string) (version string, known, ok bool) {
+	if !h.Available() || label == "" {
+		return "", false, false
+	}
+	// `agent explain` needs a screen to explain. An empty one is the point:
+	// no rule can match it, so what comes back is purely "is there a
+	// manifest for this label", with fallback_reason distinguishing a known
+	// agent whose screen said nothing (default_known_agent_idle_fallback)
+	// from a label herdr has never heard of (unknown_agent).
+	f, err := os.CreateTemp("", "posse-detect-*.txt")
+	if err != nil {
+		return "", false, false
+	}
+	f.Close()
+	defer os.Remove(f.Name())
+	out, _, _ := h.capture([]string{"agent", "explain", "--file", f.Name(), "--agent", label, "--json"})
+	var v struct {
+		Fallback string  `json:"fallback_reason"`
+		Manifest *string `json:"manifest_version"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(out), &v) != nil {
+		return "", false, false
+	}
+	if v.Manifest != nil {
+		return *v.Manifest, true, true
+	}
+	if v.Fallback == "unknown_agent" {
+		return "", false, true
+	}
+	return "", false, false
+}
+
 type herdrError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

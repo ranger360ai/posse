@@ -86,8 +86,12 @@ func (rt *Runtime) declaredBy(key string) string {
 	return "nothing — " + key + ": unset in " + yaml + ", so this is the loud default"
 }
 
-// RuntimeCheck prints the dispatch-contract grid for one runtime.
-func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) {
+// RuntimeCheck prints the dispatch-contract grid for one runtime, then the
+// preflight (ADR 0012 D4): the gaps that stop a launch working at all, each
+// reported by name. It returns whether the preflight is CLEAN — no blocking
+// gap — so the command can exit non-zero, which is what makes this usable
+// as an onboarding gate rather than as a thing to read and nod at.
+func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	kind := "template-only (no native realizer; every gate goes to the wall)"
 	if rt.Builtin {
 		kind = "built-in"
@@ -129,14 +133,70 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) {
 	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), native_rules:, model_flag:/model_<tier>:,")
 	fmt.Fprintln(w, "  skills_flag: OR skills_cwd:, self_sandbox:, project_config:, egress:, cage_cred:,")
-	fmt.Fprintln(w, "  gate_shell:. Undeclared is loud, never silent — and a key none of these names is")
-	fmt.Fprintln(w, "  warned on load, because a dropped declaration never arrives (ADR 0012 D4).")
+	fmt.Fprintln(w, "  gate_shell:, state_dir:, env_required:, interstitial_<name>:. Undeclared is loud, never")
+	fmt.Fprintln(w, "  silent — and a key none of these names is warned on load, because a dropped")
+	fmt.Fprintln(w, "  declaration never arrives (ADR 0012 D4).")
+
+	return a.writePreflight(rt, h, w)
+}
+
+// writePreflight is the second half of the screen: what a launch on this
+// runtime would find on THIS machine, as opposed to what the profile
+// declares. The two are separate on purpose — a profile can be perfectly
+// authored and still be unlaunchable here because the CLI is not installed,
+// and an operator debugging one of those needs to know which half is wrong.
+func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
+	fmt.Fprintln(w)
+	// state_dir and env_required are declarations, so they print whether or
+	// not they are a gap — an onboarder reading this grid has to be able to
+	// see that the key is UNSET, which is the state that costs them the
+	// evening.
+	if len(rt.StateDirs) > 0 {
+		wrapGrid(w, "state_dir", strings.Join(rt.StateDirs, " ")+" — joins the seatbelt writable set, so `cage: seatbelt` leaves this CLI's own config writable")
+	} else {
+		wrapGrid(w, "state_dir", "none declared. A CLI that keeps state under the home gets a READ-ONLY one under `cage: seatbelt` — it then re-runs its first-run flow every launch, or dies on a config write, and neither says why")
+	}
+	if len(rt.EnvRequired) > 0 {
+		wrapGrid(w, "env_req", strings.Join(rt.EnvRequired, " ")+" — checked by NAME at launch preflight; a missing one refuses the launch. posse never reads what they hold")
+	} else {
+		wrapGrid(w, "env_req", "none declared — this runtime is taken to authenticate from its own state dir. The Bedrock shape (AWS_* in the session env) is declared here, not remembered")
+	}
+
+	gaps := a.RuntimeGaps(rt, h)
+	if len(gaps) == 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  preflight ✓ clean — %s is installed, herdr can name it, and every key in the profile arrives\n", rt.Name)
+		return true
+	}
+	clean := true
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  preflight — %d gap(s):\n", len(gaps))
+	for _, g := range gaps {
+		mark := "⚠️ "
+		if g.Blocking {
+			mark = "✗"
+			clean = false
+		}
+		wrapGrid(w, "", fmt.Sprintf("%s %s: %s", mark, g.Name, g.Line))
+	}
+	if clean {
+		fmt.Fprintln(w, "  nothing blocking — every gap above is a named degrade, not a refusal")
+	}
+	return clean
 }
 
 func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {
 	exe := rt.Exe()
-	seen := "herdr recognition UNKNOWN (herdr not on PATH, or its kind list moved)"
-	if kinds := h.KnownAgentKinds(); kinds != nil {
+	// Asked the way herdr resolves it — a manifest reached through another
+	// agent's `aliases = [...]` counts, and on herdr 0.8.0 that is the only
+	// route a CLI it was not built with has (Herdr.AgentManifest).
+	seen := "herdr recognition UNKNOWN (herdr not on PATH, or its output moved)"
+	if ver, known, ok := h.AgentManifest(exe); ok {
+		seen = fmt.Sprintf("herdr does NOT recognize argv0 %q — no detection here, so work/settle are guesses", exe)
+		if known {
+			seen = fmt.Sprintf("herdr recognizes argv0 %q (detection manifest %s)", exe, ver)
+		}
+	} else if kinds := h.KnownAgentKinds(); kinds != nil {
 		seen = fmt.Sprintf("herdr does NOT recognize argv0 %q — no detection here, so work/settle are guesses", exe)
 		for _, k := range kinds {
 			if k == exe {
@@ -194,12 +254,16 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 			r.note = append(r.note, "  operator silences it: "+in.Silence)
 		}
 		if in.Danger != "" {
-			r.note = append(r.note, "  LAUNCH REFUSE until silenced — "+in.Danger)
-			r.note = append(r.note, "  posse never answers this: nothing blind-sends Enter (ADR 0013 §2).")
+			r.note = append(r.note, "  DEFAULT ACTION MUTATES THE MACHINE — "+in.Danger)
+			// ADR 0013 §2's rule, and then what the code actually does — the
+			// two are not the same yet, and a grid that printed only the rule
+			// would be making a promise nothing keeps (ranger-base-a9y9).
+			r.note = append(r.note, "  ADR 0013 §2 makes this a LAUNCH REFUSE until the operator's own config silences it. NOT ENFORCED at launch yet (ranger-base-a9y9); `posse runtime check` reports it and the launch proceeds.")
+			r.note = append(r.note, "  posse never answers this: nothing blind-sends Enter, and the launcher's one keystroke table was retired in rangerhq-6723 (ADR 0013 §2).")
 		}
 	}
 	if len(rt.Interstitials) == 0 {
-		r.note = append(r.note, "interstitials: none declared. A first-run dialog whose default action mutates the machine is a launch refuse until the operator's own config silences it — posse names that key and never writes it (ADR 0013 §2).")
+		r.note = append(r.note, "interstitials: none declared. Declare one with interstitial_<name>: { screen:, where:, key:, silence:, danger: } — posse NAMES that key and never writes it, and never presses anything at the screen (ADR 0013 §2).")
 	}
 	return r
 }

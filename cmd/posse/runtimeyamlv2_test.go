@@ -60,16 +60,40 @@ func TestRuntimesListsAYamlV2Profile(t *testing.T) {
 	check := exec.Command(bin, "runtime", "check", "test")
 	check.Env = env
 	cout, err := check.CombinedOutput()
-	if err != nil {
-		t.Fatalf("posse runtime check test: %v\n%s", err, cout)
+	// EXIT 1, and that is the contract as of rangerhq-tr8k: this profile
+	// names a CLI that is not installed, a herdr that cannot be asked, and a
+	// key nothing reads. A `check` that reported all three and exited 0
+	// would be the green-while-broken class the command exists to end.
+	if err == nil {
+		t.Errorf("posse runtime check on a profile with blocking gaps must exit non-zero:\n%s", cout)
 	}
 	grid := string(cout)
 	for _, want := range []string{
 		"standard=sol fast=sol (rendered with -c model=%s)",
 		"skills_flag: OR skills_cwd:, self_sandbox:, project_config:",
+		// The preflight, each gap by name (ADR 0012 D4).
+		"preflight — ",
+		"✗ exe:",
+		"✗ yaml:",
+		"skils_flag",
 	} {
 		if !strings.Contains(grid, want) {
 			t.Errorf("posse runtime check missing %q in:\n%s", want, grid)
 		}
+	}
+	// And a profile with nothing to report exits 0 and says so. `sh` is on
+	// every box this suite runs on, and RHQ_HERDR_BIN points at nothing —
+	// which is the UNKNOWN reading, a named degrade, not a refusal.
+	if err := os.WriteFile(filepath.Join(home, "runtimes", "shell.yaml"), []byte("command: sh {file}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ok := exec.Command(bin, "runtime", "check", "shell")
+	ok.Env = env
+	okout, err := ok.CombinedOutput()
+	if err != nil {
+		t.Errorf("a profile whose only gap is UNKNOWN detection must exit 0: %v\n%s", err, okout)
+	}
+	if !strings.Contains(string(okout), "nothing blocking") {
+		t.Errorf("want the non-blocking verdict in:\n%s", okout)
 	}
 }
