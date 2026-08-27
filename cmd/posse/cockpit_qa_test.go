@@ -165,6 +165,13 @@ func TestCockpitTruncCellsNeverOverflows(t *testing.T) {
 			if got != "" && !strings.HasPrefix(s, strings.TrimSuffix(got, "…")) {
 				t.Errorf("truncCells(%q, %d) = %q — not a prefix of the input", s, n, got)
 			}
+			// ...and never cut inside a joined sequence: a trailing ZWJ is
+			// counted as a fold the terminal does not perform
+			// (ranger-base-6889), so the clip would wrap the row it was
+			// clipping to fit.
+			if strings.HasSuffix(got, "\u200d") {
+				t.Errorf("truncCells(%q, %d) = %q — dangling ZWJ", s, n, got)
+			}
 		}
 	}
 }
@@ -783,5 +790,82 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
 	if is := c.selInProg(); is != nil && is.ID != aimed {
 		t.Errorf("ESCAPE: confirm now aims at %s, the operator aimed at %s", is.ID, aimed)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// dispWidth against the terminal's own advance, written verifying rangerhq-53p
+// under rangerhq-196l. Every want below is a measured cursor_x — a pane
+// printing the string, then `tmux display-message -p '#{cursor_x}'` — not
+// another width library's opinion (tmux 3.7b, darwin 25.4.0, TERM=screen).
+
+// The rebuilt table is right at the edges of its ranges and on both sides of
+// the narrow/wide boundaries the fix had to get right to not overshoot. These
+// are 22 measured code points TestCockpitDispWidthTableGaps does not cover.
+func TestCockpitDispWidthMeasuredEdges(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want int
+	}{
+		// The last code point inside each of the table's top ranges. These
+		// are the controls that prove ranger-base-qmjc is a Unicode-version
+		// hole and not a misplaced range boundary.
+		{"🫅", 2}, {"🪽", 2}, {"🪈", 2}, {"🫛", 2}, {"🫨", 2},
+		// Above U+1F000 and genuinely one cell — the reason the unknown tail
+		// stayed narrow rather than being widened wholesale.
+		{"🢰", 1}, {"🝶", 1}, {"🬀", 1},
+		// The fullwidth/halfwidth seam, where being one range off is silent.
+		{"｠", 2}, {"｡", 1}, {"　", 2}, {"〾", 2}, {"〿", 1},
+		// Plane 2/3 CJK and the ideographic description characters.
+		{"𱍐", 2}, {"⿼", 2},
+		// Enclosed CJK at both ends of the reported gap, plus the newer
+		// symbols that landed inside ranges the rebuild already had.
+		{"🈀", 2}, {"🉑", 2}, {"🛜", 2}, {"🟰", 2}, {"🫸", 2},
+		// A combining mark carries no advance of its own.
+		{"́", 0},
+		// Regional indicators stay one cell each: a flag is a pair summing to
+		// two, and three in a row are three.
+		{"🇨🇶", 2}, {"🇦🇦🇦", 3},
+	} {
+		if got := dispWidth(c.in); got != c.want {
+			t.Errorf("dispWidth(%q) = %d, the terminal advances %d", c.in, got, c.want)
+		}
+	}
+}
+
+// ESCAPE ranger-base-qmjc: wideRanges is a Unicode 15.1 snapshot, so every
+// Emoji_Presentation code point added in Unicode 16.0 falls through the table
+// into the under-counting direction rangerhq-53p closed it for. Measured: all
+// seven advance two cells and count one, and a 60-column row built from any of
+// them wraps exactly as the original report described.
+func TestCockpitDispWidthUnicode16Gaps(t *testing.T) {
+	t.Skip("ranger-base-qmjc: wideRanges stops at Unicode 15.1; \U0001FAE9 \U0001FAC6 \U0001FABE \U0001FA89 \U0001FA8F \U0001FADC \U0001FADF undercount by one cell")
+	for _, g := range []string{"\U0001FAE9", "\U0001FAC6", "\U0001FABE", "\U0001FA89", "\U0001FA8F", "\U0001FADC", "\U0001FADF"} {
+		if got := dispWidth(g); got != 2 {
+			t.Errorf("dispWidth(%q) = %d, the terminal advances 2", g, got)
+		}
+	}
+}
+
+// ESCAPE ranger-base-6889: cellScan folds unconditionally. A skin-tone
+// modifier with nothing to modify, a ZWJ with nothing to join, and VS15 after
+// a rune that is wide by East_Asian_Width rather than by emoji presentation
+// are all drawn in full by the terminal and counted as folded here — two cells
+// of drift, worse than the one that opened rangerhq-53p.
+func TestCockpitCellScanFoldGuards(t *testing.T) {
+	t.Skip("ranger-base-6889: lone skin tone, dangling ZWJ and VS15-on-wide fold when the terminal does not")
+	for _, c := range []struct {
+		in   string
+		want int
+	}{
+		{"🏻", 2},   // U+1F3FB with nothing before it
+		{"👨‍", 2},  // ZWJ at the end of the string
+		{"👨‍x", 3}, // ZWJ before a rune it cannot join
+		{"中︎", 2},  // VS15 does not narrow an ideograph
+		{"🀄︎", 2},  // ...nor a wide symbol
+	} {
+		if got := dispWidth(c.in); got != c.want {
+			t.Errorf("dispWidth(%q) = %d, the terminal advances %d", c.in, got, c.want)
+		}
 	}
 }
