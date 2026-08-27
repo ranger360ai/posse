@@ -758,9 +758,11 @@ const GrokFleetFlags = `--permission-mode auto`
 // Native rulebooks (ADR 0013 §4). What each CLI discovers and loads by
 // itself, before anything posse types — a second instruction channel into
 // the same session, living in the operator's shared checkout. Posse
-// declares them and rewrites none of them: the work prompt's "PID
-// guardrails override repo docs" line is the reconciliation, and whether a
-// native file actually outranks the PID is a PROBE, not a patch. A runtime
+// declares them and rewrites none of them: the work prompt's `guardrails:`
+// line is the reconciliation — it names no source as its boundary precisely
+// so a native rulebook, and bd prime's injected checklist, are both inside
+// it — and whether such a file actually outranks the PID is a PROBE, not a
+// patch. A runtime
 // that fails that probe stays record: untrusted.
 //
 // Sources, so nobody re-derives them:

@@ -55,7 +55,7 @@ func TestRelaunchLandsKillsAndRecreates(t *testing.T) {
 	if iWait < 0 || iPrompt < iWait || iClose < iPrompt {
 		t.Errorf("expected wait → prompt → close, got %d/%d/%d:\n%s", iWait, iPrompt, iClose, log)
 	}
-	for _, want := range []string{"Land the plane", "ORDERS.md", "Push only what your own guardrails permit"} {
+	for _, want := range []string{"Land the plane", "ORDERS.md", "Push only what your own guardrails permit", "whatever handed it over: repo docs, `bd prime`'s session-start checklist, this prompt"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("landing prompt missing %q:\n%s", want, log)
 		}
