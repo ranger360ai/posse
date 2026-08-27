@@ -252,7 +252,7 @@ func TestModelCacheHonoursRetryAfterAcrossProcesses(t *testing.T) {
 // as the model being gone, and only the second one may move a launch.
 func TestUnknownCatalogNeverDemotesAnything(t *testing.T) {
 	a := preflightApp(t) // no snapshot, unconfigured lister
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Fell() {
 		t.Errorf("an unreadable catalog must launch the tier as asked, got %q", pf.Line)
 	}
@@ -265,7 +265,7 @@ func TestEmptyCatalogIsUnknownNotAnAccountWithNoModels(t *testing.T) {
 	a := preflightApp(t)
 	cs := newCatalogServer(t) // 200, zero entries
 	a.ModelLister = cs.lister()
-	if pf := a.TierPreflight("richard", "claude", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() {
 		t.Errorf("an empty catalog must read as unknown, got %q", pf.Line)
 	}
 }
@@ -274,7 +274,7 @@ func TestPreflightOffSwitch(t *testing.T) {
 	a := preflightApp(t)
 	writeCfg(t, a, "model_preflight: false\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5") // fable absent
-	if pf := a.TierPreflight("richard", "claude", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() {
 		t.Errorf("model_preflight: false must check nothing, got %q", pf.Line)
 	}
 }
@@ -284,7 +284,7 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
 	// grok maps no model for any tier: {model} renders empty and the CLI
 	// picks its own, so there is nothing for a catalog to disagree with.
-	if pf := a.TierPreflight("hoover", "grok", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("security", "grok", TierStrong, nil); pf.Fell() {
 		t.Errorf("grok has no per-tier model to check, got %q", pf.Line)
 	}
 }
@@ -297,11 +297,11 @@ func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *test
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
 	for _, tier := range Tiers {
-		if pf := a.TierPreflight("hoover", "codex", tier, nil); pf.Fell() {
+		if pf := a.TierPreflight("security", "codex", tier, nil); pf.Fell() {
 			t.Errorf("codex/%s: no catalog posse can read, got %q", tier, pf.Line)
 		}
 	}
-	line := a.PreflightReport("hoover", "codex", TierStrong, nil)
+	line := a.PreflightReport("security", "codex", TierStrong, nil)
 	if !strings.Contains(line, "gpt-5.6-sol") || !strings.Contains(line, "no model catalog") {
 		t.Errorf("report must name the id AND why it went unchecked: %q", line)
 	}
@@ -312,7 +312,7 @@ func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *test
 func TestPreflightAvailableSaysNothing(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-fable-5", "claude-opus-5", "claude-sonnet-5")
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Fell() {
 		t.Errorf("the model is on the account; nothing to say, got %q", pf.Line)
 	}
@@ -325,8 +325,8 @@ func TestPreflightAvailableSaysNothing(t *testing.T) {
 func TestPreflightFallsBackToOpusAndSaysSo(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
-	const want = "richard: tier strong wants claude-fable-5 — unavailable, falling back to claude-opus-5"
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
+	const want = "architect: tier strong wants claude-fable-5 — unavailable, falling back to claude-opus-5"
 	if pf.Line != want {
 		t.Errorf("line =\n  %q\nwant\n  %q", pf.Line, want)
 	}
@@ -340,9 +340,9 @@ func TestPreflightFallsBackToOpusAndSaysSo(t *testing.T) {
 func TestPreflightFallbackAlsoUnavailableIsLoudAndStillLaunches(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-sonnet-5") // neither fable nor opus
-	pf := a.TierPreflight("dinesh", "claude", TierStrong, nil)
+	pf := a.TierPreflight("developer", "claude", TierStrong, nil)
 	for _, want := range []string{
-		"dinesh: tier strong wants claude-fable-5 — unavailable",
+		"developer: tier strong wants claude-fable-5 — unavailable",
 		"claude-opus-5 — ALSO unavailable",
 		"launching on claude-opus-5 anyway",
 	} {
@@ -361,11 +361,11 @@ func TestPreflightFallbackAlsoUnavailableIsLoudAndStillLaunches(t *testing.T) {
 // different RUNTIME, not a cheaper model on the same one.
 func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
 	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  hoover: codex\n")
+	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("hoover", "claude", TierStrong, nil)
+	pf := a.TierPreflight("security", "claude", TierStrong, nil)
 	if pf.Runtime != "codex" || pf.Tier != TierStrong {
-		t.Errorf("hoover must hop runtimes and keep his tier: %+v", pf)
+		t.Errorf("security must hop runtimes and keep its tier: %+v", pf)
 	}
 	// The hop names the RUNTIME, which is the requirement. It reads
 	// "<id> on codex" rather than "codex/strong" because codex maps a model
@@ -381,9 +381,9 @@ func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
 // where a present key replaces the ADR default wholesale.
 func TestNamingOnePersonaKeepsTheDefaultForEveryoneElse(t *testing.T) {
 	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  hoover: codex\n")
+	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Tier != TierStandard || pf.Got != "claude-opus-5" {
 		t.Errorf("the default strong→standard must survive another persona's entry: %+v", pf)
 	}
@@ -393,7 +393,7 @@ func TestFallbackNoneMeansNoSubstitute(t *testing.T) {
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: none\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Tier != TierStrong || pf.Got != "claude-fable-5" {
 		t.Errorf("`none` must leave the launch where it was: %+v", pf)
 	}
@@ -406,7 +406,7 @@ func TestFallbackValueThatIsNeitherATierNorARuntimeIsReportedNotObeyed(t *testin
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: gpt-9\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Tier != TierStrong {
 		t.Errorf("a typo must not move a launch: %+v", pf)
 	}
@@ -419,7 +419,7 @@ func TestFallbackCycleStops(t *testing.T) {
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: standard\n  standard: strong\n")
 	seedCatalog(t, a, time.Minute, "claude-sonnet-5")
-	pf := a.TierPreflight("richard", "claude", TierStrong, nil)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if !strings.Contains(pf.Line, "loops back to") {
 		t.Errorf("a cycle must be reported, not walked: %q", pf.Line)
 	}
@@ -448,10 +448,10 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 	b, fake := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
-	pfPersona(t, b, "richard", TierStrong)
+	pfPersona(t, b, "architect", TierStrong)
 	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
 
-	if err := b.CreateSession(NewSessionOpts{Name: "r1", Agent: "richard", Dir: t.TempDir()}); err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: "r1", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)
 	}
 
@@ -462,7 +462,7 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 	if strings.Contains(log, "claude-fable-5") {
 		t.Errorf("the typed line still names the unavailable model:\n%s", log)
 	}
-	if !strings.Contains(warn.String(), "richard: tier strong wants claude-fable-5 — unavailable, falling back to claude-opus-5") {
+	if !strings.Contains(warn.String(), "architect: tier strong wants claude-fable-5 — unavailable, falling back to claude-opus-5") {
 		t.Errorf("the substitution was silent: %q", warn.String())
 	}
 
@@ -493,10 +493,10 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 
 func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
 	b, fake := newTestBackend(t)
-	pfPersona(t, b, "richard", TierStrong)
+	pfPersona(t, b, "architect", TierStrong)
 	seedCatalog(t, b.App, time.Minute, "claude-fable-5", "claude-opus-5")
 
-	if err := b.CreateSession(NewSessionOpts{Name: "r2", Agent: "richard", Dir: t.TempDir()}); err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: "r2", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	if log := calls(t, fake); !strings.Contains(log, "--model 'claude-fable-5'") {
@@ -511,8 +511,8 @@ func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
 // hermetic default. It must still launch, at the tier it was asked for.
 func TestLaunchWithNoCatalogIsUnchanged(t *testing.T) {
 	b, fake := newTestBackend(t)
-	pfPersona(t, b, "richard", TierStrong)
-	if err := b.CreateSession(NewSessionOpts{Name: "r3", Agent: "richard", Dir: t.TempDir()}); err != nil {
+	pfPersona(t, b, "architect", TierStrong)
+	if err := b.CreateSession(NewSessionOpts{Name: "r3", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	if log := calls(t, fake); !strings.Contains(log, "--model 'claude-fable-5'") {
@@ -556,13 +556,13 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 	t.Run("available", func(t *testing.T) {
 		a := preflightApp(t)
 		seedCatalog(t, a, time.Minute, "claude-fable-5")
-		if got := a.PreflightReport("richard", "claude", TierStrong, nil); got != "claude: tier strong → claude-fable-5 (available)" {
+		if got := a.PreflightReport("architect", "claude", TierStrong, nil); got != "claude: tier strong → claude-fable-5 (available)" {
 			t.Errorf("got %q", got)
 		}
 	})
 	t.Run("unknown", func(t *testing.T) {
 		a := preflightApp(t) // no snapshot, unconfigured lister
-		got := a.PreflightReport("richard", "claude", TierStrong, nil)
+		got := a.PreflightReport("architect", "claude", TierStrong, nil)
 		if !strings.Contains(got, "UNKNOWN") || !strings.Contains(got, "takes the tier as asked") {
 			t.Errorf("unknown must be visibly different from unavailable: %q", got)
 		}
@@ -572,8 +572,8 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 		seedCatalog(t, a, time.Minute, "claude-opus-5")
 		// One rendering: what `posse gates` shows and what a launch prints
 		// are the same bytes, so neither can drift from the other.
-		want := a.TierPreflight("richard", "claude", TierStrong, nil).Line
-		if got := a.PreflightReport("richard", "claude", TierStrong, nil); got != want {
+		want := a.TierPreflight("architect", "claude", TierStrong, nil).Line
+		if got := a.PreflightReport("architect", "claude", TierStrong, nil); got != want {
 			t.Errorf("gates line %q != launch line %q", got, want)
 		}
 	})
@@ -583,7 +583,7 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 		// grok, not codex: codex maps gpt-5.6-* since ranger-base-arm, so
 		// the runtime with nothing to preflight is now the one nobody has
 		// measured a model id for.
-		if got := a.PreflightReport("hoover", "grok", TierStrong, nil); !strings.Contains(got, "maps no model") {
+		if got := a.PreflightReport("security", "grok", TierStrong, nil); !strings.Contains(got, "maps no model") {
 			t.Errorf("got %q", got)
 		}
 	})

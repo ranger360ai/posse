@@ -51,7 +51,7 @@ func qibCrewPattern() *regexp.Regexp {
 }
 
 func TestFixturesNameRolesNotThisCrew(t *testing.T) {
-	t.Skip("ranger-base-idq: modelavail_test.go still names the originating instance's crew")
+	t.Skip("ranger-base-h6fx: 32 other test files still name the originating instance's crew (223 hits); ranger-base-idq cleared modelavail_test.go")
 
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
