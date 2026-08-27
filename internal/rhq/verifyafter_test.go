@@ -903,3 +903,67 @@ func TestVerifyGroupTitleTruncatesToARune(t *testing.T) {
 		t.Errorf("title is %d runes, want %d", n, verifyTitleMax)
 	}
 }
+
+// The incident's real shape, which the single-close orphan test cannot
+// reach: bd's timeout is deterministic PER PARENT, so one pass files some
+// closes and orphans others. ranger-base-o943 and -cpyb timed out every
+// pass while every other close that hour got its verify bead first try
+// (ranger-base-muoo) — and because the poisoned close sits EARLY in close
+// order, the watermark stops there and the healthy closes behind it are
+// re-seen on every pass for as long as the freeze lasts.
+//
+// That is where the 33 duplicates came from, and it is what this pins: a
+// poisoned close costs its own handoff one orphan and nothing else. The
+// healthy closes are still filed on the pass that finds them, they are NOT
+// re-filed while the watermark holds them in view, and once the orphan is
+// adopted the mark clears every one of them at once.
+func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	list := `[{"id":"p-1","title":"poisoned parent","status":"closed","priority":1,` +
+		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-26T16:31:20-04:00"},` +
+		`{"id":"h-1","title":"healthy one","status":"closed","priority":1,` +
+		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-26T16:40:00-04:00"},` +
+		`{"id":"h-2","title":"healthy two","status":"closed","priority":1,` +
+		`"assignee":"gilfoyle","labels":["devops"],"closed_at":"2026-08-26T16:50:00-04:00"}]`
+	repo := vaRepo(t, a, list)
+	os.WriteFile(filepath.Join(repo, "fake-create-fail"), []byte("p-1\n"), 0o644)
+	frozen := time.Date(2026, 8, 26, 16, 30, 37, 0, time.FixedZone("", -4*3600))
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), frozen)
+
+	// Pass one: p-1 times out after bd commits the orphan; h-1 and h-2 are
+	// filed normally. The watermark stays at the freeze, because p-1 is the
+	// earliest candidate and this pass could not answer for it.
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 2 {
+		t.Fatalf("first pass filed %d, want 2 (h-1, h-2) — a poisoned close took the healthy ones with it\nout: %s\nerr: %s", n, out, errs)
+	}
+	if !strings.Contains(errs, "verify-after: p-1:") {
+		t.Errorf("the timed-out filing was not reported:\n%s", errs)
+	}
+	if mark, _ := readVerifyWatermark(a.verifyWatermarkPath(repo)); !mark.Equal(frozen) {
+		t.Errorf("watermark = %s, want the freeze %s — it advanced past a close it could not file for", mark, frozen)
+	}
+
+	// Pass two, with bd healthy again. Every one of the three is answered
+	// from the marker alone: p-1 by the orphan bd committed, h-1 and h-2 by
+	// the verify beads pass one filed. Nothing is created — this is the
+	// create that ran every 6-11 minutes for four and a half hours.
+	os.Remove(filepath.Join(repo, "fake-create-fail"))
+	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	n, out, _ = vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Errorf("second pass filed %d duplicates:\n%s", n, out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "create verify:") {
+		t.Errorf("a duplicate was filed instead of adopting what the store already held:\n%s", calls)
+	}
+	// And the freeze lifts for the whole run, not just for p-1.
+	mark, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+	if !ok {
+		t.Fatal("no watermark after the second pass")
+	}
+	if want, _ := time.Parse(time.RFC3339, "2026-08-26T16:50:00-04:00"); !mark.Equal(want) {
+		t.Errorf("watermark = %s, want the newest close %s — the freeze did not thaw", mark, want)
+	}
+}

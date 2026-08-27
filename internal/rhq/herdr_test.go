@@ -130,11 +130,23 @@ func fakeBd(args []string) int {
 		// the --deps edge never lands. The issue still shows up in the next
 		// `bd list`, because in the wild it does — that is the whole reason
 		// the flood was invisible to a dedupe that reads the edge.
-		if _, err := os.Stat("fake-create-fail"); err == nil {
+		// An EMPTY marker poisons every create; a marker holding parent ids,
+		// one per line, poisons only the creates whose `--deps` names one —
+		// which is the shape the incident actually had. bd's timeout is
+		// deterministic PER PARENT (it is the parent's dependency closure the
+		// daemon walks), so a real pass files some closes and orphans others,
+		// and only a mixed listing can pin that one poisoned close does not
+		// cost the healthy ones their handoff.
+		if fakeBdCreatePoisoned(args) {
 			fakeBdAppendCreated(id, args)
 			fmt.Fprint(os.Stderr, "Error: failed to read response: read unix ->bd.sock: i/o timeout")
 			return 1
 		}
+		// A create that SUCCEEDS lands in the store too — the next `bd list
+		// --all` sees it, which is how a verify bead filed on one pass
+		// dedupes the next one while the watermark still holds its close in
+		// view (ranger-base-muoo).
+		fakeBdAppendCreated(id, args)
 		fmt.Printf(`{"id":%q,"title":"created"}`, id)
 		return 0
 	case "comments": // comments <id> --json → fake-comments.json; comments add → ok
@@ -172,6 +184,39 @@ func fakeBd(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "fake bd: unhandled %s\n", strings.Join(args, " "))
 	return 1
+}
+
+// fakeBdCreatePoisoned reports whether this `bd create` is one the
+// fake-create-fail marker says must time out after committing the issue. An
+// empty marker means every create; a marker listing parent ids (one per
+// line, blanks and `#` comments ignored) means only the creates whose
+// `--deps` names one of them.
+func fakeBdCreatePoisoned(args []string) bool {
+	b, err := os.ReadFile("fake-create-fail")
+	if err != nil {
+		return false
+	}
+	var want []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			want = append(want, l)
+		}
+	}
+	if len(want) == 0 {
+		return true
+	}
+	deps, _ := fakeBdFlag(args, "--deps")
+	for _, d := range strings.Split(deps, ",") {
+		if i := strings.Index(d, ":"); i >= 0 {
+			d = d[i+1:]
+		}
+		for _, w := range want {
+			if strings.TrimSpace(d) == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // fakeBdAppendCreated puts the issue bd just committed into fake-list.json,
