@@ -456,9 +456,12 @@ func promoteCleanGate(w io.Writer, repo, src string) error {
 	if err != nil {
 		return err
 	}
-	if len(specs) == 0 {
-		return Die("%s holds none of %s — is it the constitution directory?", AbbrevHome(src), strings.Join(PromotedPaths, ", "))
-	}
+	// specs is now always len(PromotedPaths) — ranger-base-70ry dropped the
+	// os.Stat that used to make it empty when the working tree held none of
+	// them. The "is there anything to promote?" refusal moved to
+	// promotedAtCommit, which asks the commit instead of the working tree
+	// and already carries the true version of it.
+	//
 	// --ignored=matching so a promoted path that git is forbidden to carry
 	// (the shape ranger-base-h56a found in envs/) is a refusal here rather
 	// than a manifest entry with no commit behind it.
@@ -517,18 +520,26 @@ func unwatchedPaths(repo string, specs []string) []string {
 }
 
 // promotePathspecs is the promoted set as pathspecs relative to the repo
-// root — what git status and git diff are scoped to. Absent paths are left
-// out rather than passed as pathspecs that match nothing.
+// root — what git status, git diff and git ls-tree are scoped to.
+//
+// It used to `os.Stat` each of PromotedPaths under `src` and drop the ones
+// the WORKING TREE did not have. That is ranger-base-70ry: a working tree
+// narrowed by `git sparse-checkout` (or a path merely `rm -rf`'d) reports a
+// path absent that the commit still carries, so every downstream consumer
+// — the clean gate, unwatchedPaths, promotedAtCommit, the diff — was scoped
+// to a subset of the promoted set and never knew the rest existed. All four
+// consumers tolerate a pathspec that matches nothing (measured: `git
+// status`, `git ls-files -v`, `git ls-tree` and `git diff` all exit 0 and
+// simply omit it), so there is no working-tree read left to do here at all
+// — the commit is the only thing that gets to decide the set.
 func promotePathspecs(repo, src string) ([]string, error) {
 	rel, err := filepath.Rel(absResolve(repo), absResolve(src))
 	if err != nil {
 		return nil, err
 	}
-	var specs []string
+	specs := make([]string, 0, len(PromotedPaths))
 	for _, p := range PromotedPaths {
-		if _, err := os.Stat(filepath.Join(src, p)); err == nil {
-			specs = append(specs, path.Join(filepath.ToSlash(rel), p))
-		}
+		specs = append(specs, path.Join(filepath.ToSlash(rel), p))
 	}
 	return specs, nil
 }

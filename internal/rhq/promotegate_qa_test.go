@@ -223,8 +223,6 @@ func TestQAPromoteRefusesASymlinkInThePromotedSet(t *testing.T) {
 // but ratified prose taken OUT of force under a SHA that still attests to it.
 // `git sparse-checkout` reaches it with no adversary at all.
 func TestQAPromoteSetIsDecidedByTheWorkingTree(t *testing.T) {
-	t.Skip("ranger-base-70ry: promotePathspecs still stats the working tree — drop this line when the fix lands")
-
 	unwatch := func(t *testing.T, git func(...string) (string, error), src string) {
 		t.Helper()
 		if out, err := git("update-index", "--skip-worktree",
