@@ -117,18 +117,37 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 	if err != nil {
 		return nil, err
 	}
-	for id, rec := range ledger {
-		// The record covers the removal it was written for. A different
-		// commit dropped this id, so the ledger says nothing about it:
-		// keep it. A record with no commit predates the field and goes on
-		// exempting the id — nothing in a live ledger rides on that arm
-		// (this repo's three lines were backfilled with the commits the
-		// census names), but a ledger written by an older posse must not
-		// start alarming about deletions it already owns.
-		if lb, ok := removed[id]; ok && rec.Commit != "" && rec.Commit != lb.Commit {
+	for id, recs := range ledger {
+		lb, ok := removed[id]
+		if !ok {
 			continue
 		}
-		delete(removed, id)
+		// SOME record for the id must cover the removal the census found.
+		// One record owns one removal (rangerhq-6he5), so an id with two
+		// removals has two records and only one of them names this commit;
+		// asking "does any of them" is what keeps the answer independent
+		// of the order of an append-only file that git merges, rebases
+		// replay and an operator can dedupe by hand (rangerhq-fknq).
+		//
+		// A record with no commit predates the field, and the whole of a
+		// pre-dc2bc16 ledger looks like that: it must go on exempting the
+		// id rather than alarm about deletions it already owns. But the arm
+		// is compatibility, not an override — once ANY record for this id
+		// names a commit, the writer that produced them keys on removals,
+		// and a commit-less line among them cannot claim one those records
+		// do not name. That is rangerhq-6he5 reachable through a single
+		// appended line, and it is the half that goes silent; the arm's own
+		// failure direction is a false alarm, which --record answers.
+		var covered, modern bool
+		for _, rec := range recs {
+			if rec.Commit != "" {
+				modern = true
+				covered = covered || rec.Commit == lb.Commit
+			}
+		}
+		if covered || !modern {
+			delete(removed, id)
+		}
 	}
 	lost := make([]LostBead, 0, len(removed))
 	for _, lb := range removed {
@@ -264,26 +283,34 @@ func beadsHome(dir string) string {
 	return home
 }
 
-// ReadDeletionLedger returns the accounted-for deletions by id. A missing
-// ledger is the normal case — no deletions have been owned yet — and a line
-// that will not parse is skipped rather than failing the read: the ledger's
-// job is to silence what it explains, never to break the check.
-func ReadDeletionLedger(dir string) (map[string]DeletionRecord, error) {
+// ReadDeletionLedger returns the accounted-for deletions, ALL of them, keyed
+// by id and in file order. Since rangerhq-6he5 a record owns one removal
+// rather than an id, so an id legitimately carries one record per removal and
+// a reader that keeps a single record per id keeps whichever line happened to
+// land last — handing the verdict to the line order of an append-only trail
+// that git merges and rebases replay (rangerhq-fknq). The caller asks whether
+// ANY of an id's records covers the removal in hand; the slice is what lets
+// it.
+//
+// A missing ledger is the normal case — no deletions have been owned yet —
+// and a line that will not parse is skipped rather than failing the read: the
+// ledger's job is to silence what it explains, never to break the check.
+func ReadDeletionLedger(dir string) (map[string][]DeletionRecord, error) {
 	b, err := os.ReadFile(beadsPath(dir, beadsDeleted))
 	if os.IsNotExist(err) {
-		return map[string]DeletionRecord{}, nil
+		return map[string][]DeletionRecord{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	recs := map[string]DeletionRecord{}
+	recs := map[string][]DeletionRecord{}
 	for _, line := range strings.Split(string(b), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var r DeletionRecord
 		if json.Unmarshal([]byte(line), &r) == nil && r.ID != "" {
-			recs[r.ID] = r
+			recs[r.ID] = append(recs[r.ID], r)
 		}
 	}
 	return recs, nil

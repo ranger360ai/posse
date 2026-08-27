@@ -163,10 +163,11 @@ func TestRecordedDeletionSilencesTheCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, ok := ledger["q-2"]
-	if !ok {
+	recs, ok := ledger["q-2"]
+	if !ok || len(recs) != 1 {
 		t.Fatalf("ledger lost the id: %+v", ledger)
 	}
+	rec := recs[0]
 	if rec.Reason != "duplicate of q-1" || rec.By != "coordinator" || !rec.At.Equal(now) {
 		t.Errorf("ledger must say who and why: %+v", rec)
 	}
@@ -199,7 +200,8 @@ func TestRecordDeletionsAppends(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ledger) != 2 || ledger["q-1"].Reason != "first" || ledger["q-2"].Reason != "second" {
+	if len(ledger) != 2 || len(ledger["q-1"]) != 1 || len(ledger["q-2"]) != 1 ||
+		ledger["q-1"][0].Reason != "first" || ledger["q-2"][0].Reason != "second" {
 		t.Fatalf("second recording must not shorten the ledger: %+v", ledger)
 	}
 }
@@ -352,5 +354,40 @@ func TestBeadsRedirectFormsAndFallback(t *testing.T) {
 	// And a dir with no redirect is untouched: the pre-cut-over shape.
 	if got := beadsHome(local + "/nope"); got != filepath.Join(local, "nope", beadsDirName) {
 		t.Errorf("no redirect must mean no hop: %q", got)
+	}
+}
+
+// The compatibility arm, and the whole of what rangerhq-fknq left of it: a
+// ledger an rhq older than dc2bc16 wrote carries no commit on any line, and
+// it must go on silencing the deletions it already owns rather than start
+// alarming about them. Narrowing the arm to "no record for this id names a
+// commit" keeps exactly this case and drops the one where a commit-less line
+// rides alongside modern records and re-exempts the id.
+func TestACommitlessLedgerStillExempts(t *testing.T) {
+	newTestBackend(t)
+	repo := blRepo(t)
+	blCommit(t, repo, "two", blLine("q-1", "open"), blLine("q-2", "open"))
+	blCommit(t, repo, "one", blLine("q-1", "open"))
+	blSetLive(t, repo, "q-1")
+	if lost, err := LostBeads(testBd(t), repo); err != nil || len(lost) != 1 {
+		t.Fatalf("setup: lost=%+v err=%v", lost, err)
+	}
+
+	// What an rhq older than dc2bc16 writes: no commit field at all.
+	legacy, err := json.Marshal(DeletionRecord{
+		ID: "q-2", Reason: "duplicate of q-1", By: "coordinator", At: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(beadsPath(repo, beadsDeleted), append(legacy, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, err := LostBeads(testBd(t), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("a ledger written before the commit field must not start alarming: %+v", again)
 	}
 }

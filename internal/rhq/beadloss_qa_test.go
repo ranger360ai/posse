@@ -314,7 +314,6 @@ func TestLedgerOwnsEachLossNotTheID(t *testing.T) {
 // information from an audit trail; it must not turn an owned deletion into a
 // finding (rangerhq-fknq).
 func TestLedgerLineOrderDoesNotDecideTheVerdict(t *testing.T) {
-	t.Skip("rangerhq-fknq: ReadDeletionLedger keeps the last line for an id")
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -348,7 +347,6 @@ func TestLedgerLineOrderDoesNotDecideTheVerdict(t *testing.T) {
 // of modern ones, and a real unaccounted loss is silent again. That is 6he5
 // itself, reached through the file its fix already writes (rangerhq-fknq).
 func TestACommitlessRecordDoesNotReExemptTheID(t *testing.T) {
-	t.Skip("rangerhq-fknq: a commit-less record, last for its id, exempts the id forever")
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
