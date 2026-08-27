@@ -845,19 +845,78 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		}
 	}
 	if f := YamlGet(p, "model_flag"); f != "" {
-		rt.ModelFlag = f + " %s"
+		form, err := printfFlag("model_flag", f)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.ModelFlag = form
+	}
+	// skills_cwd: this runtime discovers skills from the session's working
+	// directory instead of from a flag — the codex/grok shape, which a yaml
+	// runtime could not declare at all: it was skills_flag: or no surface.
+	// The launch materializes <cwd>/.agents/skills/<name> and {skills}
+	// renders nothing; the links ARE the realization (skills.go).
+	skillsCwdDecl, err := runtimeBool(p, "skills_cwd")
+	if err != nil {
+		return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
 	}
 	// skills_flag: the printf form {skills} renders with, given the rendered
-	// skills dir ("--plugin-dir %s"). Absent → this runtime has no skill
-	// surface and a PID that binds skills cannot launch on it.
-	if f := YamlGet(p, "skills_flag"); f != "" {
-		flag := f
+	// skills dir ("--plugin-dir %s", or a glued "--skills=%s"). Absent →
+	// this runtime has no skill surface and a PID that binds skills cannot
+	// launch on it.
+	flagDecl := YamlGet(p, "skills_flag")
+	if flagDecl != "" && skillsCwdDecl {
+		// Two half-bindings at once: the flag would point at the rendered
+		// plugin tree while the links point at the session dir, and neither
+		// the parity line nor `runtime check` could say which one the CLI
+		// actually read. ADR 0021 rejected the same shape for built-ins.
+		return nil, Die("runtime %s: %s declares both skills_flag: and skills_cwd: — a runtime has one skill surface; keep the one you measured", name, AbbrevHome(p))
+	}
+	switch {
+	case skillsCwdDecl:
+		rt.SkillsCwd = true
+		rt.Skills = skillsCwd
+	case flagDecl != "":
+		form, err := printfFlag("skills_flag", flagDecl)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
 		rt.Skills = func(dir string, names []string) (string, bool) {
 			if len(names) == 0 {
 				return "", true
 			}
-			return fmt.Sprintf(flag+" %s", shellQuote(dir)), true
+			return fmt.Sprintf(form, shellQuote(dir)), true
 		}
+	}
+	// self_sandbox: this runtime wraps its own child commands in a sandbox,
+	// so ours cannot wrap it — macOS refuses to nest seatbelts. Undeclarable
+	// until now, which made a self-sandboxing yaml runtime broken in a way
+	// nothing could say out loud: the launch wrapped it anyway (herdrback.go)
+	// and the parity matrix claimed an L2 it did not have. Declaring it costs
+	// the seatbelt tier honestly — CheckParity degrades cage: seatbelt here
+	// and names the nesting refusal.
+	if v, err := runtimeBool(p, "self_sandbox"); err != nil {
+		return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+	} else if v {
+		rt.SelfSandbox = true
+	}
+	// project_config: a file IN THE SESSION DIRECTORY this runtime reads as
+	// configuration because posse made that directory trusted — a channel
+	// from the repo to the box that no model and no PID sits in front of.
+	// Safety-relevant and the reason this key is not cosmetic: undeclared,
+	// parity's trust check (ProjectConfigTrust) silently skips it, so an
+	// unguarded repo→box channel reads as a clean launch. Declared, the
+	// launch degrades unless the PID sets trust_project_config: true.
+	//
+	// project_config_keys: (the JSON-key narrowing claude's built-in uses) is
+	// deliberately not here: without it the whole-file presence predicate
+	// applies, which is the conservative side of the same check.
+	if v := YamlGet(p, "project_config"); v != "" {
+		rel, err := runtimeRelPath("project_config", v)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.ProjectConfig = rel
 	}
 	// cage_cred: the env var this runtime authenticates with inside a
 	// container (cage.go). Absent = undecided, and `cage: container`
@@ -873,6 +932,11 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	rt.Egress = YamlList(p, "egress")
 	// gate_shell: false — this runtime chokes on a wrapper named as the
 	// shell, so the typed line leaves SHELL/GROK_SHELL alone (ADR 0009 §2).
+	//
+	// Not read through runtimeBool: a misspelled value here leaves the gate
+	// shell ON, which is the safe direction (more wall, not less), so
+	// tightening it would refuse launches to prevent nothing. The keys that
+	// DO refuse on a bad value are the ones whose wrong reading costs a gate.
 	if YamlGet(p, "gate_shell") == "false" {
 		rt.NoGateShell = true
 	}
@@ -911,6 +975,12 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	// never writes them; declaring them is how `runtime check` can name the
 	// other voice in the session.
 	rt.NativeRules = YamlList(p, "native_rules")
+	// UNKNOWN is the third reading, and until now it was silence: a key
+	// nothing recognized was dropped without a word, so `skils_flag:` is a
+	// persona that cannot launch and `slef_sandbox:` is a seatbelt that
+	// refuses to nest — a dead wall under a config file that looks right.
+	// Warned rather than refused (runtimeyaml.go).
+	warnUnknownRuntimeKeys(runtimeNoticeWriter, name, p)
 	return rt, nil
 }
 

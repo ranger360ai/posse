@@ -128,7 +128,9 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), native_rules:, model_flag:/model_<tier>:,")
-	fmt.Fprintln(w, "  skills_flag:, egress:, cage_cred:, gate_shell:. Undeclared is loud, never silent.")
+	fmt.Fprintln(w, "  skills_flag: OR skills_cwd:, self_sandbox:, project_config:, egress:, cage_cred:,")
+	fmt.Fprintln(w, "  gate_shell:. Undeclared is loud, never silent — and a key none of these names is")
+	fmt.Fprintln(w, "  warned on load, because a dropped declaration never arrives (ADR 0012 D4).")
 }
 
 func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {

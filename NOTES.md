@@ -1389,18 +1389,21 @@ PID:
   (session-only, additive, verified: `claude --plugin-dir <tree> plugin
   details posse-<persona>` lists the bound skills). `--add-dir` is CLAUDE.md
   dirs and does **not** load skills. A `runtimes/<name>.yaml` opts into the
-  same shape with `skills_flag: --foo` (the flag name only, as
-  `model_flag:`) and is handed the same dir — the layout inside it is the
-  universal Agent-Skills shape and the plugin.json is inert to anything
-  that does not read it.
+  same shape with `skills_flag:` (a printf form, as `model_flag:` —
+  `--foo` renders separated, `--foo=%s` glued) and is handed the same
+  dir — the layout inside it is the universal Agent-Skills shape and the
+  plugin.json is inert to anything that does not read it.
 - **No flag, symlinks in the session dir (codex, grok).** Both CLIs
   discover skills from their *working directory*, so the launch links
   `<session dir>/.agents/skills/<name>` → `RHQ_HOME/skills/<name>` and
   adds `/.agents/skills/` to the repo's `.git/info/exclude` — never the
   repo's own `.gitignore`, which is the operator's file. `{skills}` renders
   nothing there: the links *are* the realization
-  (`Runtime.SkillsCwd`, `App.RenderAgentsSkills`). See **Skill surfaces**
-  below for what else was tried.
+  (`Runtime.SkillsCwd`, `App.RenderAgentsSkills`). A `runtimes/<name>.yaml`
+  declares this shape with `skills_cwd: true`; a profile naming both keys
+  refuses, because a runtime has one skill surface and two half-bindings
+  are not a binding (ADR 0012 D4). See **Skill surfaces** below for what
+  else was tried.
 
 An empty `skills:` renders nothing, placeholder and space alike.
 
@@ -1408,8 +1411,8 @@ An empty `skills:` renders nothing, placeholder and space alike.
 work depends on them, so it goes through the same parity gate as a wall
 rule: a runtime with no surface adds `skills: <names> — <runtime> has no
 per-session skill surface` to `Degraded` — today only a template-only
-`runtimes/*.yaml` that names no `skills_flag:`, the three built-ins all
-materialize — and the launch refuses unless
+`runtimes/*.yaml` that names neither `skills_flag:` nor `skills_cwd:`, the
+three built-ins all materialize — and the launch refuses unless
 `--allow-degraded` (the session is then marked in meta and cockpit, like
 any degraded launch). It is *not* filed under `Unrealized` — nothing is
 being enforced here. A name that resolves to nothing refuses the launch

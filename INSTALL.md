@@ -651,13 +651,38 @@ A profile is flat YAML. Only `command:` is required:
 command: <cli> --some-unattended-flag --rules="$(cat {file})"
 
 # Optional:
-# model_flag: --model          # the flag {model} renders with
+# model_flag: -c model=%s      # the printf form {model} renders with. A value
+#                              # naming %s is used verbatim, so a GLUED dialect
+#                              # (-c model=<id>, --model=<id>) is expressible;
+#                              # a bare flag (`--model`) keeps the separated
+#                              # form. Same rule for skills_flag:.
 # model_strong: <model-id>     # per-tier model ids (ADR 0003)
 # model_standard: <model-id>
 # model_fast: <model-id>
-# skills_flag: --plugin-dir    # this CLI's skill-surface flag; absent means
-#                              # it has none, and a PID with skills: cannot
-#                              # launch on this profile
+# skills_flag: --plugin-dir    # this CLI's skill-surface flag (printf form as
+#                              # above). A runtime has ONE skill surface —
+#                              # declaring this and skills_cwd: together
+#                              # refuses.
+# skills_cwd: true             # ...or this CLI discovers skills from its
+#                              # WORKING DIRECTORY instead of from a flag (the
+#                              # codex/grok shape). The launch materializes
+#                              # <session dir>/.agents/skills/<name> and
+#                              # {skills} renders nothing: the links are the
+#                              # binding. Neither key = no skill surface, and a
+#                              # PID with skills: cannot launch here.
+# self_sandbox: true           # this CLI wraps its own child commands in a
+#                              # sandbox, so posse's must not wrap it — macOS
+#                              # refuses to nest seatbelts. Declaring it makes
+#                              # `cage: seatbelt` degrade here HONESTLY instead
+#                              # of the launch wrapping it and failing.
+# project_config: .foo/cfg.toml  # a file IN THE SESSION DIRECTORY this CLI
+#                              # reads as configuration once the directory is
+#                              # trusted — MCP servers, hooks, notify commands.
+#                              # That is a repo→box channel no PID sits in front
+#                              # of, so the launch degrades when the file is
+#                              # present unless the PID sets
+#                              # `trust_project_config: true`. Relative to the
+#                              # session dir; absolute or `..` refuses.
 # cage_cred: <ENV_VAR>         # the credential a *containerised* session of
 #                              # this runtime authenticates with; absent means
 #                              # `cage: container` refuses here
@@ -687,6 +712,12 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # `runtime check` can name the other voice in
 #                              # the session.
 ```
+
+A key none of these names is **warned about on load** and then dropped:
+`skils_flag:` is a typo, not a declaration, and until it was named it was a
+persona that could not launch under a config file that looked right. A
+present-but-*wrong* value (`skills_cwd: yes`, `model_flag: -c model=%d`)
+refuses the load outright.
 
 Four things about template profiles that will bite you if nobody says them:
 
@@ -722,12 +753,12 @@ Four things about template profiles that will bite you if nobody says them:
    not. **Your `command:` must name it itself** (codex `-a never`, grok
    `--permission-mode auto`, claude `--permission-mode auto`). Omit it and
    your session sits forever on a dialog nobody is watching.
-4. **`model_flag:` always renders with a space** before the id —
-   `-c model= 'gpt-5-codex'`, which is not what a glued dialect parses.
-   If your CLI wants `-c model=<id>` or `--model=<id>`, **omit
-   `model_flag:`/`model_<tier>:` entirely and hardcode the model in
-   `command:`**. You lose per-tier model mapping on that profile. Harness
-   bug, filed: **rangerhq-5p0d**.
+4. **A glued model dialect needs the `%s`.** `model_flag: --model`
+   renders separated — `--model 'gpt-5-codex'`. If your CLI wants
+   `-c model=<id>` or `--model=<id>`, write the printf form:
+   `model_flag: -c model=%s`. (Before rangerhq-2v2s the separated shape was
+   the only one, and a glued dialect had to hardcode its model in
+   `command:` and forfeit per-tier mapping — rangerhq-5p0d.)
 
 A worked example — the local `codex` CLI redeclared as instance data,
 rather than used as the built-in. This is exactly the shape that proves
@@ -735,10 +766,21 @@ the config path for an engine posse does not ship a realizer for:
 
 ```yaml
 # $RHQ_HOME/runtimes/codex-local.yaml
-# Model is hardcoded rather than mapped, because codex's dialect is glued
-# (-c model=<id>) and model_flag: cannot express that — see caveat 4.
 # `-a never` is codex's unattended flag; posse will not add it here.
-command: codex -c model=<model-id> -a never --disable hooks -c allow_login_shell=false -c developer_instructions="$(cat {file})"
+# The model IS mapped: codex's dialect is glued, which model_flag: spells
+# as a printf form (caveat 4).
+command: codex {model} {skills} -a never --disable hooks -c allow_login_shell=false -c developer_instructions="$(cat {file})"
+model_flag: -c model=%s
+model_strong: <model-id>
+model_standard: <model-id>
+model_fast: <model-id>
+# codex reads skills from its working directory, not from a flag — and it
+# sandboxes its own children, so posse's seatbelt must not wrap it.
+skills_cwd: true
+self_sandbox: true
+# A trusted session dir hands codex this file, which can carry MCP servers
+# and notify commands: declaring it is what makes the launch say so.
+project_config: .codex/config.toml
 ```
 
 A second in a different dialect — `grok`, which unlike codex maps tiers
@@ -1267,9 +1309,11 @@ one budget and the caps become conservative, not wrong.
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
 | `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH |
 | launch refuses with a `DEGRADED` list | the wall cannot realize a PID gate on this runtime × cage | `posse gates <persona>` and fix the cause; `--allow-degraded` only knowingly |
-| a persona with `skills:` refuses to launch | the runtime has no skill surface (template profile with no `skills_flag:`) | add `skills_flag:`, or drop the binding |
+| a persona with `skills:` refuses to launch | the runtime has no skill surface (template profile with neither `skills_flag:` nor `skills_cwd:`) | add whichever your CLI has, or drop the binding |
 | session sits forever on a permission dialog | template runtime whose `command:` names no unattended flag | add the CLI's own unattended flag to `command:` (step 8) |
-| `-c model= 'x'` in the launch line | `model_flag:` renders with a space | hardcode the model in `command:` — rangerhq-5p0d |
+| `-c model= 'x'` in the launch line | `model_flag:` was written as a bare flag, which renders separated | write the printf form: `model_flag: -c model=%s` (step 8, caveat 4) |
+| a yaml key you set changed nothing | posse warned `declares <key>:` on load and dropped it — it is a typo or a key this posse does not know | `posse runtimes` prints the warning and the known-key list |
+| `sandbox_apply: Operation not permitted` under `cage: seatbelt` | the CLI sandboxes its own children and seatbelts do not nest | `self_sandbox: true` in the profile, then launch at `cage: shims` |
 | `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.49.1; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a workspace with that name is live — possibly another instance's | `posse list`; see §13 |
