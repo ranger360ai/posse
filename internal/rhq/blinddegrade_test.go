@@ -276,6 +276,7 @@ func TestBlindDegradeIsLoudEveryPass(t *testing.T) {
 // it, so an armed ledger changes nothing a human is watching.
 func TestBlindDegradeIsUnattendedOnly(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
 	r.blind()
 	r.at(4 * time.Hour)
 
