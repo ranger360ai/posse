@@ -6,7 +6,10 @@ folded into §2/§4/Claims; codex rule-suppression decided in §4
 (ranger-base-cl7, ranger-base-00f); §2 busy key gains a per-pass
 ceiling (ranger-base-8h5p); §2/Claims narrowed: grok's typed fallback
 has no `startup_wait:` to measure — pre-turn chrome is a race
-(ranger-base-wjze)*
+(ranger-base-wjze) · amended 2026-08-27: §4 gains the reachability
+half of record — the cage, not only the runtime, decides whether the
+store of record can be written (ranger-base-hxhb, measured in
+ranger-base-rhw/oyta)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -64,7 +67,7 @@ This contract is what **dispatch** requires of that same process.
 
 | stage | observable | declared by | missing → |
 |---|---|---|---|
-| **launch** | argv0 herdr recognizes; PID delivered; unattended flag on the line | runtime template + herdr manifest (ADR 0002 / 0012 D4.1–3,6) | **refuse** the launch |
+| **launch** | argv0 herdr recognizes; PID delivered; unattended flag on the line; cage grants reach `beadsHome(cwd)` (§4 Reachability) | runtime template + herdr manifest (ADR 0002 / 0012 D4.1–3,6) | **refuse** the launch |
 | **promptable** | the work prompt is the first user turn, *without* posse answering a dialog | runtime `prompt: argv` (preferred) or `prompt: typed` + `startup_wait:` | **refuse this launch**, loudly; see §2 |
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
@@ -216,6 +219,36 @@ the runtime does not write the store.
   so a skip is retried, not parked behind a busy key. This is not
   "monica closes the bead."
 
+**Reachability (added 2026-08-27, ranger-base-hxhb).** The record
+stage has two inputs, not one. `record:` grades the runtime's
+*willingness* to write the store; the **cage** decides its
+*reachability*, and a session whose sandbox cannot open the store of
+record cannot do the record stage under any runtime grade. MEASURED
+(ranger-base-rhw, verified both directions in oyta): hoover — runtime
+claude, `record: trusted`, the best grade this section gives — under
+the pre-23c4e54 seatbelt profile had `bd sync`, `bd export` and the
+path-limited commit all denied at the db file / index.lock, while
+`bd create`/`close`/`comments add` "worked" only because the daemon
+socket crosses the cage and exports on a timer nobody watches; with
+the daemon absent, direct mode fails at the same db open, and the
+trusted session records nothing at all. No existing observable sees
+this half: parity grades *denies*, so a cage that denies too much
+prints "all gates realized"; settle looks normal; and the bead —
+the store this contract nominates as truth — shows nothing, which
+is the one signal that cannot be watched for.
+
+So reachability is a **launch observable**, not a post-hoc one:
+before dispatch, the cage's grants must reach `beadsHome(cwd)` and
+its git dirs, judged against the **rendered artifact** — for seatbelt
+the profile's last-match-wins semantics, not the writable list that
+fed it, because a trailing deny naming the target re-denies it
+silently (measured against ranger-base-h15's proposed carve-out) —
+and a miss refuses the launch through the existing parity path,
+`--allow-degraded` and all. The class recurs by construction: every
+future narrowing of the writable set reviews as strictly safer, so
+the check, not the review, is what keeps the record stage loud at
+the next launch instead of quiet until the daemon dies.
+
 **Reap guard.** A session whose bead is still `in_progress` and whose
 cwd is dirty is **not killed**. The 353-line near-miss is a shared
 checkout plus a reap, not a missing `Done:` line. L3's pathspec rule
@@ -331,6 +364,13 @@ it was asked and must say so when the first turn is a limit.
   ADR is that remainder.
 - Metric: `record-skip-rate` by runtime (settled-open / dispatched) —
   how a runtime earns `trusted`.
+- §4 Reachability (2026-08-27): parity gains a reachability row — at
+  launch, the cage about to be used must reach `beadsHome(cwd)` and
+  its git dirs (shims: no file wall, trivially passes; seatbelt: the
+  rendered profile judged behaviorally; codex cage: membership of the
+  `--add-dir` set realizeCodex emits). A miss is the existing
+  degradedError refusal. Cut as ranger-base implementation beads from
+  ranger-base-hxhb.
 
 ## Alternatives rejected
 
@@ -379,6 +419,30 @@ it was asked and must say so when the first turn is a limit.
   the cost is a `native_rules:` surface that means different things per
   runtime. Both prices ASSUMED — no incident has yet been caused by
   codex reading `AGENTS.md` under dispatch.
+- **Fold reachability into `record:`** (a third value, or a
+  `trusted-unreachable` grade — added 2026-08-27, ranger-base-hxhb).
+  `record:` is a per-runtime declaration promoted after a measured
+  close; reachability is a per-launch fact of cwd × cage × rendered
+  profile. The same runtime is reachable in one cage and not another
+  on the same evening, so a launch fact wearing a declaration's
+  clothes is wrong the first time they differ — and it drifts
+  silently, the declaration never re-measured against the cage.
+- **Detect unreachability post-hoc** (gather flags
+  settle-without-sync; a jsonl-drift monitor). The daemon papers over
+  the write verbs on a timer it does not publish, so the defect
+  surfaces only at daemon-down or commit time — after the spend, in
+  the exact stage the store of record can no longer report. rhw ran
+  for a full session doing everything the work prompt asked before
+  anything showed. Post-hoc watching of a store the session cannot
+  write is watching for an absence; the launch check watches a
+  presence.
+- **Check the cage's allow list instead of the rendered artifact**
+  (the cheap version of the launch check). Measured wrong the same
+  way a code review of it would be: SBPL is last-match-wins, and a
+  trailing `(deny file-write*)` naming the beads target re-denies a
+  target the allow list still grants (h15 interaction, measured in
+  oyta). The list is the input; the profile is the semantics; judge
+  the thing that runs.
 - **A fifth store for "this runtime is trusted."** Trust is a built-in
   / yaml default updated after a measured close. Derived auto-promotion
   is a store that can disagree with the bead (ADR 0011's class).
@@ -450,6 +514,17 @@ it was asked and must say so when the first turn is a limit.
   (`dismissed_version` in `~/.codex/version.json`), documented in
   NOTES/INSTALL; `runtime check` prints it against `latest_version`
   because the dismissal expires per release.
+
+- The cage half of record, 2026-08-26 (ranger-base-rhw, A/B'd
+  control-vs-fix in oyta): under the pre-23c4e54 seatbelt profile,
+  `bd sync` / `bd export` / the path-limited commit all fail at the
+  redirect target (ADR 0012 D3-C) with "operation not permitted",
+  while daemon-socket verbs succeed; `bd --sandbox show` fails at the
+  db open, so daemon-down means every bd write verb fails the same
+  way; parity printed "all gates realized" throughout, because it
+  grades denies. And a trailing `(deny file-write*)` naming the beads
+  target re-denies it under last-match-wins — the recurrence path §4
+  Reachability exists to catch.
 
 - Read from source, 2026-08-26 (ranger-base-8h5p): `-n` defaults to 0
   = unlimited (`cmd/posse/main.go`), and `fireLoop` counts a failed
