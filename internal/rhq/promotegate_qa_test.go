@@ -20,9 +20,8 @@ import (
 )
 
 // TestQAPromoteRefusesAnEditGitWasToldToStopWatching is the escape found
-// verifying o943: filed as ranger-base-znma, and SKIPPED until it is fixed
-// rather than left red, so it blocks nobody's suite. Drop the t.Skip when
-// promote reads the commit instead of the working tree.
+// verifying o943: filed as ranger-base-znma, and live since the fix landed
+// (promote reads the commit's blobs, `promotedAtCommit`).
 //
 // `git update-index --skip-worktree` (and `--assume-unchanged`) tell git to
 // stop reporting a file's working-tree state. `git status --porcelain
@@ -35,7 +34,6 @@ import (
 func TestQAPromoteRefusesAnEditGitWasToldToStopWatching(t *testing.T) {
 	for _, flag := range []string{"--skip-worktree", "--assume-unchanged"} {
 		t.Run(strings.TrimPrefix(flag, "--"), func(t *testing.T) {
-			t.Skip("ranger-base-znma: promote copies the working tree, not the commit")
 			a, src, git := promoteFixture(t)
 
 			// A first, honest promote establishes the baseline the operator

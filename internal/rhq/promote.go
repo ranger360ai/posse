@@ -32,6 +32,8 @@ package rhq
 // for, with the trust anchor it lacked).
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -39,9 +41,11 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -359,7 +363,7 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 	// this promote puts in force that the last one did not.
 	printPromoteDiff(w, repo, src, prev, sha)
 
-	files, err := HashPromotedSet(src)
+	set, files, err := promotedAtCommit(repo, src, sha)
 	if err != nil {
 		return err
 	}
@@ -379,7 +383,7 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 	if err := os.MkdirAll(a.Home, 0o755); err != nil {
 		return err
 	}
-	if err := a.copyPromotedSet(w, src, files); err != nil {
+	if err := a.copyPromotedSet(w, set, files); err != nil {
 		return err
 	}
 	m := &PromoteManifest{
@@ -466,6 +470,18 @@ func promoteCleanGate(w io.Writer, repo, src string) error {
 		return Die("the constitution's working tree is dirty, so there is nothing attributable to promote (ADR 0015 §3):\n%s\n"+
 			"  commit it in %s, then promote", indentLines(dirty, "  "), AbbrevHome(repo))
 	}
+	// `git status` cannot report a path git has been told to stop watching
+	// (`update-index --skip-worktree` / `--assume-unchanged`), so neither can
+	// the gate above. Since ranger-base-znma promote reads the commit, so
+	// such a path is no longer a way to put unratified prose in force — but
+	// a local edit there is silently NOT what goes into force, and an
+	// operator who ran `--assume-unchanged` on `config.yaml` months ago
+	// deserves to be told that in one line rather than to wonder.
+	if hidden := unwatchedPaths(repo, specs); len(hidden) > 0 {
+		fmt.Fprintf(w, "note: git is not watching %s (update-index --skip-worktree/--assume-unchanged)\n"+
+			"  promote puts the COMMIT's bytes in force, so any local edit there is not promoted\n",
+			strings.Join(hidden, ", "))
+	}
 	// Everything else in the repo: reported, never a refusal.
 	rest, err := git(repo, "status", "--porcelain")
 	if err == nil {
@@ -475,6 +491,29 @@ func promoteCleanGate(w io.Writer, repo, src string) error {
 		}
 	}
 	return nil
+}
+
+// unwatchedPaths names the promoted paths whose index entry carries the
+// skip-worktree ('S') or assume-unchanged (a lowercase tag) bit — the two
+// ways `git status` is told to stop answering for a file. A read, never a
+// gate: enumerating the ways git can be told to look away is exactly the
+// game promotedAtCommit stops playing.
+func unwatchedPaths(repo string, specs []string) []string {
+	out, err := git(repo, append([]string{"ls-files", "-v", "--"}, specs...)...)
+	if err != nil {
+		return nil
+	}
+	var hidden []string
+	for _, ln := range strings.Split(out, "\n") {
+		if len(ln) < 3 || ln[1] != ' ' {
+			continue
+		}
+		if tag := ln[0]; tag == 'S' || (tag >= 'a' && tag <= 'z') {
+			hidden = append(hidden, strings.TrimSpace(ln[2:]))
+		}
+	}
+	sort.Strings(hidden)
+	return hidden
 }
 
 // promotePathspecs is the promoted set as pathspecs relative to the repo
@@ -492,6 +531,218 @@ func promotePathspecs(repo, src string) ([]string, error) {
 		}
 	}
 	return specs, nil
+}
+
+// ─── the promoted set, read out of the commit ────────────────────────────────
+
+// promotedFile is one file of the promoted set AS THE COMMIT CARRIES IT:
+// the blob's bytes, the mode git records, and the sha256 the manifest will
+// name. Nothing here was read from the working tree.
+type promotedFile struct {
+	Rel  string      // slash path relative to the constitution dir
+	Mode os.FileMode // 0644 or 0755 — the only two a git blob can mean
+	Body []byte      // the blob's bytes, no filters applied
+	Sum  string      // sha256 of Body, or notRegular
+	oid  string      // the blob it came from, for the batch read
+}
+
+// promotedAtCommit is ADR 0015 §3's invariant made structural rather than
+// gated: "the promoted bytes equal the bytes at the recorded SHA."
+//
+// It used to be HashPromotedSet(src) — a walk of the constitution's WORKING
+// TREE, trusted because `git status` had just called that tree clean. It is
+// not the same claim. `git update-index --skip-worktree` (and
+// `--assume-unchanged`) tell git to stop reporting a file's working-tree
+// state, and neither the clean gate nor the launch verify can then see the
+// difference: promote writes the edited bytes into force and the manifest
+// records a SHA whose blob disagrees, while the ratification diff prints
+// "re-promoting the same commit". That is ranger-base-znma, and it is why
+// this reads the object store instead. There is no flag that makes
+// `cat-file` return an edit nobody committed.
+//
+// The gate stays where it was, for the thing it can still answer honestly:
+// an uncommitted edit git DOES report is a refusal naming the path, because
+// silently promoting the old bytes under the operator's nose is its own
+// kind of lie.
+func promotedAtCommit(repo, src, sha string) ([]promotedFile, map[string]string, error) {
+	specs, err := promotePathspecs(repo, src)
+	if err != nil {
+		return nil, nil, err
+	}
+	prefix, err := promoteRelPrefix(repo, src)
+	if err != nil {
+		return nil, nil, err
+	}
+	out, err := gitRaw(repo, append([]string{"ls-tree", "-r", "-z", "--full-tree", sha, "--"}, specs...)...)
+	if err != nil {
+		return nil, nil, err
+	}
+	var set []promotedFile
+	var oids []string
+	for _, ent := range strings.Split(string(out), "\x00") {
+		if ent == "" {
+			continue
+		}
+		f, oid, err := parseLsTreeEntry(ent, prefix)
+		if err != nil {
+			return nil, nil, err
+		}
+		set = append(set, f)
+		if oid != "" {
+			oids = append(oids, oid)
+		}
+	}
+	if len(set) == 0 {
+		return nil, nil, Die("%s carries none of %s at %s — there is nothing to promote",
+			AbbrevHome(repo), strings.Join(PromotedPaths, ", "), short(sha))
+	}
+	bodies, err := gitCatBlobs(repo, oids)
+	if err != nil {
+		return nil, nil, err
+	}
+	files := make(map[string]string, len(set))
+	for i := range set {
+		f := &set[i]
+		if f.Sum == notRegular {
+			files[f.Rel] = notRegular
+			continue
+		}
+		b, ok := bodies[f.oid]
+		if !ok {
+			return nil, nil, Die("%s: %s is in %s but its blob could not be read", f.Rel, short(f.oid), short(sha))
+		}
+		sum := sha256.Sum256(b)
+		f.Body, f.Sum = b, hex.EncodeToString(sum[:])
+		files[f.Rel] = f.Sum
+	}
+	sort.Slice(set, func(i, j int) bool { return set[i].Rel < set[j].Rel })
+	return set, files, nil
+}
+
+// parseLsTreeEntry reads one `ls-tree -r -z` record — `<mode> SP <type> SP
+// <oid> TAB <path>` — into the promoted file it describes. A path git does
+// not carry as a plain blob (a symlink at 120000, a submodule at 160000)
+// comes back as notRegular, the same sentinel the working-tree walk uses,
+// so the one refusal in CmdPromote covers both readings.
+func parseLsTreeEntry(ent, prefix string) (promotedFile, string, error) {
+	head, name, ok := strings.Cut(ent, "\t")
+	if !ok {
+		return promotedFile{}, "", Die("git ls-tree said something posse cannot read: %q", ent)
+	}
+	fields := strings.Fields(head)
+	if len(fields) != 3 {
+		return promotedFile{}, "", Die("git ls-tree said something posse cannot read: %q", ent)
+	}
+	rel := name
+	if prefix != "" {
+		if !strings.HasPrefix(name, prefix) {
+			return promotedFile{}, "", Die("git ls-tree returned %q, which is outside the constitution at %q", name, prefix)
+		}
+		rel = strings.TrimPrefix(name, prefix)
+	}
+	f := promotedFile{Rel: rel}
+	switch fields[0] {
+	case "100644":
+		f.Mode = 0o644
+	case "100755":
+		f.Mode = 0o755
+	default:
+		f.Sum = notRegular
+		return f, "", nil
+	}
+	f.oid = fields[2]
+	return f, f.oid, nil
+}
+
+// promoteRelPrefix is the constitution dir as git spells it inside the repo
+// — "" when the constitution IS the repo root, "rhq/" when it is a
+// subdirectory. ls-tree answers in full repo-relative names; the manifest
+// keys on paths relative to the constitution, the same as the home's.
+func promoteRelPrefix(repo, src string) (string, error) {
+	rel, err := filepath.Rel(absResolve(repo), absResolve(src))
+	if err != nil {
+		return "", err
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." {
+		return "", nil
+	}
+	return rel + "/", nil
+}
+
+// gitCatBlobs reads blob bodies straight out of the object store, in one
+// `cat-file --batch` process rather than one per file. `--batch` applies no
+// smudge, no eol conversion and no `export-subst` — which `git archive`
+// would, and which is why this is not that: the bytes written into the home
+// have to be the blob's bytes, or the manifest's sha256 attests to nothing.
+//
+// The stream is `<oid> SP <type> SP <size> LF <body> LF` per request, in
+// request order.
+func gitCatBlobs(repo string, oids []string) (map[string][]byte, error) {
+	bodies := map[string][]byte{}
+	if len(oids) == 0 {
+		return bodies, nil
+	}
+	want := make([]string, 0, len(oids))
+	seen := map[string]bool{}
+	for _, o := range oids {
+		if !seen[o] {
+			seen[o], want = true, append(want, o)
+		}
+	}
+	cmd := exec.Command("git", "-C", repo, "cat-file", "--batch")
+	cmd.Stdin = strings.NewReader(strings.Join(want, "\n") + "\n")
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, Die("git cat-file --batch: %s", msg)
+	}
+	br := bufio.NewReader(bytes.NewReader(out))
+	for _, oid := range want {
+		hdr, err := br.ReadString('\n')
+		if err != nil {
+			return nil, Die("git cat-file --batch ended before %s", short(oid))
+		}
+		fields := strings.Fields(hdr)
+		if len(fields) != 3 || fields[1] != "blob" {
+			return nil, Die("git cat-file --batch says %s is %s", short(oid), strings.TrimSpace(hdr))
+		}
+		n, err := strconv.Atoi(fields[2])
+		if err != nil {
+			return nil, Die("git cat-file --batch gave %s no readable size: %q", short(oid), hdr)
+		}
+		body := make([]byte, n)
+		if _, err := io.ReadFull(br, body); err != nil {
+			return nil, Die("git cat-file --batch truncated %s: %v", short(oid), err)
+		}
+		if _, err := br.ReadByte(); err != nil {
+			return nil, Die("git cat-file --batch truncated %s: %v", short(oid), err)
+		}
+		bodies[oid] = body
+	}
+	return bodies, nil
+}
+
+// gitRaw is `git` without the trimming — ls-tree's -z records end in NUL and
+// a promoted path is allowed to be spelled with whitespace.
+func gitRaw(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, Die("git %s: %s", strings.Join(args, " "), msg)
+	}
+	return out, nil
 }
 
 // printPromoteDiff is the ratification surface: what the constitution's
@@ -529,38 +780,27 @@ func printPromoteDiff(w io.Writer, repo, src string, prev *PromoteManifest, sha 
 }
 
 // copyPromotedSet writes the promoted set into the home and removes what the
-// constitution no longer has. The removal is bounded to PromotedPaths — it
-// can no more reach `envs/` than the copy can — and every removal is
-// printed, because a file leaving the fleet's prose is as much a change as
-// one arriving.
-func (a *App) copyPromotedSet(w io.Writer, src string, files map[string]string) error {
-	names := make([]string, 0, len(files))
-	for p := range files {
-		names = append(names, p)
-	}
-	sort.Strings(names)
-	for _, rel := range names {
-		from := filepath.Join(src, filepath.FromSlash(rel))
-		to := filepath.Join(a.Home, filepath.FromSlash(rel))
-		info, err := os.Stat(from)
-		if err != nil {
-			return err
-		}
-		b, err := os.ReadFile(from)
-		if err != nil {
-			return err
-		}
+// constitution no longer has. What it writes is what `promotedAtCommit`
+// read out of the object store — never the working tree, so there is no
+// path here that could pick up a byte the recorded SHA does not carry
+// (ranger-base-znma). The removal is bounded to PromotedPaths — it can no
+// more reach `envs/` than the copy can — and every removal is printed,
+// because a file leaving the fleet's prose is as much a change as one
+// arriving.
+func (a *App) copyPromotedSet(w io.Writer, set []promotedFile, files map[string]string) error {
+	for _, f := range set {
+		to := filepath.Join(a.Home, filepath.FromSlash(f.Rel))
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(to, b, info.Mode().Perm()); err != nil {
+		if err := os.WriteFile(to, f.Body, f.Mode); err != nil {
 			return err
 		}
 		// WriteFile's mode applies only when it CREATES the file, so a
 		// second promote over an existing home would keep whatever mode
 		// that file already had. The promoted copy is the constitution's,
 		// modes included.
-		if err := os.Chmod(to, info.Mode().Perm()); err != nil {
+		if err := os.Chmod(to, f.Mode); err != nil {
 			return err
 		}
 	}

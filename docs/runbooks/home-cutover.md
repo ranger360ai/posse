@@ -47,6 +47,19 @@ in this repo essentially always, and neither is prose a promote puts
 in force. (§3 was amended to say so — ranger-base-yb9j; the code says
 so at `promoteCleanGate`.)
 
+What the gate is **not** is the thing that keeps §3's invariant. Since
+ranger-base-znma promote copies the **blobs at the commit** (`git
+cat-file`, at `promotedAtCommit`), never the working tree, so "the
+promoted bytes equal the bytes at the recorded SHA" holds by
+construction — including for a path `git status` has been told to stop
+reporting (`update-index --skip-worktree` / `--assume-unchanged`),
+which the gate cannot see by design. Promote names any such path in a
+note; your local edit there is *not* what goes into force. Two
+consequences worth knowing before the window: a promoted file's mode
+at the home is git's (`0644`, or `0755` for a committed executable
+bit), and a promoted path that is a symlink or a submodule is still a
+refusal, because neither is a blob posse can attest to.
+
 **2. First promote.** `[o943]`
 
 ```sh

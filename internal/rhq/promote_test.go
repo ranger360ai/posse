@@ -127,6 +127,71 @@ func TestPromoteWritesTheSetAndTheManifest(t *testing.T) {
 	}
 }
 
+// The promoted bytes come out of the object store, not off disk
+// (ranger-base-znma), so the two things that used to come from the
+// filesystem have to keep coming from somewhere true: the executable bit
+// (git records it; the manifest's sha256 does not) and a path spelled with
+// whitespace (ls-tree -z is what makes that survivable). Both in one test,
+// because both are the reading of `promotedAtCommit`'s output, not of the
+// tree beside it.
+func TestPromoteTakesModesAndOddNamesFromTheCommit(t *testing.T) {
+	a, src, git := promoteFixture(t)
+	hook := filepath.Join(src, "skills", "thing", "run me.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho thing\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git("add", "-A"); err != nil {
+		t.Fatalf("git add: %s", out)
+	}
+	if out, err := git("commit", "-qm", "a skill with a hook"); err != nil {
+		t.Fatalf("git commit: %s", out)
+	}
+	promote(t, a, PromoteOpts{Source: src})
+
+	to := filepath.Join(a.Home, "skills", "thing", "run me.sh")
+	st, err := os.Stat(to)
+	if err != nil {
+		t.Fatalf("the spaced path was not promoted: %v", err)
+	}
+	if st.Mode().Perm()&0o111 == 0 {
+		t.Errorf("the commit's executable bit did not survive promotion: %v", st.Mode().Perm())
+	}
+	m, err := ReadPromoteManifest(a.PromoteManifestPath())
+	if err != nil || m == nil {
+		t.Fatalf("manifest: %v %v", m, err)
+	}
+	if _, ok := m.Files["skills/thing/run me.sh"]; !ok {
+		t.Errorf("the manifest does not name the spaced path: %v", m.Files)
+	}
+	if v := a.VerifyPromoted(); !v.OK() {
+		t.Errorf("the home promote just wrote does not verify: %s", v.Line())
+	}
+}
+
+// A path git has been told to stop watching is no longer a way into the
+// fleet's prose (ranger-base-znma — promote reads the commit), but the
+// operator's local edit there is silently not what goes into force. Say so,
+// once, without turning it into a gate: enumerating the ways git can be
+// told to look away is the game the commit read stops playing.
+func TestPromoteNotesAPathGitIsNotWatching(t *testing.T) {
+	a, src, git := promoteFixture(t)
+	promote(t, a, PromoteOpts{Source: src})
+	if out, err := git("update-index", "--assume-unchanged", "rhq/config.yaml"); err != nil {
+		t.Fatalf("update-index: %s", out)
+	}
+	if err := os.WriteFile(filepath.Join(src, "config.yaml"), []byte("default_env: private\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := promote(t, a, PromoteOpts{Source: src})
+	if !strings.Contains(out, "not watching") || !strings.Contains(out, "config.yaml") {
+		t.Errorf("promote did not name the unwatched path:\n%s", out)
+	}
+	b, err := os.ReadFile(filepath.Join(a.Home, "config.yaml"))
+	if err != nil || strings.Contains(string(b), "private") {
+		t.Errorf("the unwatched local edit reached the home: %q %v", b, err)
+	}
+}
+
 // Item 7, and the operational clause that matters most: promote never
 // creates, copies, or touches home/envs — nor state/ or personas/. A copy
 // path that widens 0600 publishes tokens, so the cheapest copy that cannot
