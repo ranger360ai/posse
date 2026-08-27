@@ -264,7 +264,7 @@ func TranscriptFiles(project string) []string {
 	return files
 }
 
-// transcriptFiles is TranscriptFiles with the reason it found nothing.
+// transcriptFiles is TranscriptFiles with the reasons it found nothing.
 //
 // "No transcripts here" and "cannot read where the transcripts are" are two
 // different facts and this listing used to return the same empty slice for
@@ -274,26 +274,70 @@ func TranscriptFiles(project string) []string {
 // fresh instance on its first blind pass. Anything else — a permission, a
 // broken mount, a directory replaced by a file — is a read failure and says
 // so.
-func transcriptFiles(project string) ([]string, error) {
+//
+// It walks with os.ReadDir rather than filepath.Glob because Glob discards
+// every I/O error by design (path/filepath/match.go glob(): "ignore I/O
+// error"). Guarding it with one os.Stat on the root caught only the arm
+// stat can see — and stat on a directory needs nothing but +x on its
+// PARENT, so the ADR's own example (root chmod 000) walked straight past
+// the guard and came back empty. Errors are collected, not returned on the
+// first one: a project dir that will not open hides an unknown spend, and
+// the rest of the ledger is still the best floor available.
+func transcriptFiles(project string) ([]string, []error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, []error{err}
 	}
 	root := filepath.Join(home, ".claude", "projects")
-	if _, err := os.Stat(root); err != nil && !os.IsNotExist(err) {
-		return nil, err
+	projects, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // never ran the CLI: no records, not a fault
+		}
+		return nil, []error{err}
 	}
-	// Glob's own error is only a bad pattern, and this pattern is a
-	// constant; the failure that matters is the stat above.
-	files, _ := filepath.Glob(filepath.Join(root, "*", "*.jsonl"))
 	var out []string
-	for _, f := range files {
-		if project == "" || strings.Contains(f, project) {
-			out = append(out, f)
+	var errs []error
+	for _, p := range projects {
+		dir := filepath.Join(root, p.Name())
+		if !p.IsDir() {
+			// Glob resolved this level with os.Stat, so a symlinked project
+			// dir counted; keep that. Anything else here is not a project.
+			if p.Type()&os.ModeSymlink == 0 {
+				continue
+			}
+			st, err := os.Stat(dir)
+			if err != nil {
+				if !os.IsNotExist(err) { // a dangling link points at no records
+					errs = append(errs, err)
+				}
+				continue
+			}
+			if !st.IsDir() {
+				continue
+			}
+		}
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			// This project's spend is unknown, not zero — the same rule
+			// ScanCosts keeps for a file it cannot open, one level up.
+			if !os.IsNotExist(err) { // removed mid-walk: nothing left to count
+				errs = append(errs, err)
+			}
+			continue
+		}
+		for _, e := range ents {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+				continue
+			}
+			f := filepath.Join(dir, e.Name())
+			if project == "" || strings.Contains(f, project) {
+				out = append(out, f)
+			}
 		}
 	}
 	sort.Strings(out)
-	return out, nil
+	return out, errs
 }
 
 // CostReport is everything posse cost prints and the cockpit reads.
@@ -323,12 +367,13 @@ type CostReport struct {
 // ScanCosts scans all transcripts (or those matching project) since a time.
 func ScanCosts(project string, since time.Time) *CostReport {
 	rep := &CostReport{Since: since}
-	files, err := transcriptFiles(project)
-	if err != nil {
-		// The whole ledger, not one file: report nothing read rather than
-		// an empty scan that reads as a quiet day.
+	files, errs := transcriptFiles(project)
+	for _, err := range errs {
+		// A directory that would not open hides an unknown number of
+		// transcripts, so what follows is a floor even if every file it did
+		// find reads cleanly. Report that rather than an empty scan that
+		// reads as a quiet day.
 		rep.noteUnread(err)
-		return rep
 	}
 	for _, f := range files {
 		// A file untouched since `since` holds no record after it, and

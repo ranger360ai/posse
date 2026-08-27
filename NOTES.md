@@ -673,6 +673,19 @@ then stops dispatch on API-equivalent spend.
   on the floor they could read; a **degraded** pass parks instead, because
   there its cap was the only thing counting. Same rule the overflow ledger
   already keeps.
+- **And the listing is a walk, not a glob** (ranger-base-e06g). The first
+  cut of the above guarded `filepath.Glob` with one `os.Stat` on the root —
+  but Glob discards every I/O error by design (`path/filepath/match.go`
+  glob(): "ignore I/O error"), and stat on a directory needs nothing but
+  `+x` on its **parent**, so §3's own example (root `chmod 000`) walked
+  straight past the guard and came back empty: $0 spent, honestly counted.
+  `transcriptFiles` now walks with `os.ReadDir` at both levels and returns
+  every failure that is not `IsNotExist`. A project dir that will not open
+  costs its own spend, not the whole scan — the rest of the ledger is still
+  the best floor available, and it travels with the fact that it is one.
+  The general shape, worth the next reader's minute: **a listing whose
+  failures are load-bearing cannot be a glob**, because Go's glob is
+  specified to be silent about them.
 - **Arming Dial E also chooses the blind policy** (ADR 0018 §1). Dial E
   computes from posse's own transcripts and needs no credential, so it works
   exactly when the plan guard cannot — which is what makes it the floor a
