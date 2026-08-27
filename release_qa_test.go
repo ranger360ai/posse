@@ -328,6 +328,82 @@ esac
 	return runArgs, exit
 }
 
+// ranger-base-v0gm shipped TWO answers to the linked-worktree problem: mount
+// the git dir when git can name it (pinned above), and — when `.git` is a
+// FILE whose gitdir git cannot resolve at all — die up front naming it,
+// instead of failing 40s in through three seedpub tests that look like
+// product failures. Only the first had a pin; this is the second
+// (found verifying that close, ranger-base-nrnc).
+//
+// Hermetic rather than machine-shaped: the skeleton below is a repo root as
+// the script reads one — itself and go.mod — with a `.git` file naming a
+// gitdir that exists nowhere. So the guard is exercised on an ordinary
+// checkout as well as in a session worktree, and no fake git is needed
+// because nothing here resolves for real.
+func TestTestLinuxDiesUpFrontOnAnUnresolvableGitdir(t *testing.T) {
+	const ghost = "/nowhere/does/not/exist/.git/worktrees/ghost"
+
+	scratch := t.TempDir()
+	root := filepath.Join(scratch, "repo")
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile("scripts/test-linux.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "test-linux.sh"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), mod, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: "+ghost+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(scratch, "docker.log")
+	bin := filepath.Join(scratch, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\n" +
+		"{ printf 'DOCKER'; for a; do printf '\\t%s' \"$a\"; done; printf '\\n'; } >>\"${FAKE_DOCKER_LOG:?}\"\n" +
+		"exit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("./scripts/test-linux.sh", "true")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(),
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"FAKE_DOCKER_LOG="+logPath,
+		"XDG_CACHE_HOME="+filepath.Join(scratch, "cache"),
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("an unresolvable gitdir must fail the run, not start one:\n%s", out)
+	}
+	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 1 {
+		t.Errorf("want exit 1, got %v:\n%s", err, out)
+	}
+	// Naming the gitdir is the whole point: the reader has to be told which
+	// pointer dangled, or the message is one more thing to go and find out.
+	if !strings.Contains(string(out), ghost) {
+		t.Errorf("the refusal must name the gitdir %q:\n%s", ghost, out)
+	}
+	// And it must be UP FRONT: no container, so no 40s and no red tests that
+	// read like the product.
+	if b, err := os.ReadFile(logPath); err == nil && strings.Contains(string(b), "DOCKER\trun") {
+		t.Errorf("the container must never start on an unresolvable gitdir:\n%s", b)
+	}
+}
+
 func tlContains(args []string, want string) bool {
 	for _, a := range args {
 		if a == want {
