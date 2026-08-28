@@ -1303,7 +1303,7 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 	}
 	name := s.Name
 	if s.Agent != "" {
-		name += " 🎭" + s.Agent + rhq.RuntimeTierTag(s.Runtime, s.Tier)
+		name += " 🎭" + s.Agent + c.app.RuntimeTierTag(s.Runtime, s.Tier)
 		// The cage above the default tier, and the host sockets it was
 		// opened for: `container+herdr` says the session is caged AND that
 		// it holds a capability over the rest of the herd (ADR 0002 §3).

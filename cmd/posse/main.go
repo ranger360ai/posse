@@ -903,7 +903,11 @@ func main() {
 	case "agents":
 		for _, n := range a.ListAgents() {
 			if ag, err := a.LoadAgent(n); err == nil {
-				fmt.Fprintf(out, "🎭 %s  %s  [%s/%s]\n", n, ag.Description, a.ResolveRuntime("", ag), a.ResolveTier("", ag))
+				// The tier half is the display tier (ADR 0013 §6): this
+				// listing is where an operator reads what a PID runs at,
+				// and `[grok/strong]` claimed a mapping grok does not have.
+				rn := a.ResolveRuntime("", ag)
+				fmt.Fprintf(out, "🎭 %s  %s  [%s/%s]\n", n, ag.Description, rn, a.DisplayTier(rn, a.ResolveTier("", ag)))
 			}
 		}
 

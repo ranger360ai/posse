@@ -40,7 +40,7 @@ func TestWorkPromptAssembly(t *testing.T) {
 
 	// Full context.
 	ctx := PromptContext{
-		Dir: "/r/proj", Runtime: "claude", Tier: "standard", Labels: []string{"code", "feature"},
+		Dir: "/r/proj", Runtime: "claude", TierShown: "standard", Labels: []string{"code", "feature"},
 		From:        []BdRef{{"d-1", "the design bead"}},
 		Unblockers:  []BdRef{{"u-1", "the `spec` it \"builds\" on"}},
 		Designs:     []string{"docs/adr/0002-runtimes-and-gates.md"},
@@ -96,7 +96,7 @@ func TestPromptContext(t *testing.T) {
 
 	is := RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "t", Description: "implements docs/adr/0002-runtimes-and-gates.md §3", Labels: []string{"code"}}, Dir: repo}
 	ctx := b.App.promptContext(bd, is, "codex", "fast", "", ag)
-	if ctx.Runtime != "codex" || ctx.Tier != "fast" || ctx.Operator != "opuser" || ctx.Hook != "Build to the design." || !ctx.HasComments {
+	if ctx.Runtime != "codex" || ctx.TierShown != "fast" || ctx.Operator != "opuser" || ctx.Hook != "Build to the design." || !ctx.HasComments {
 		t.Errorf("basics: %+v", ctx)
 	}
 	if len(ctx.From) != 1 || ctx.From[0].ID != "des-1" {

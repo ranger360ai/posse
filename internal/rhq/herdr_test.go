@@ -1827,8 +1827,8 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 		t.Errorf("--tier fast:\n%s", got)
 	}
 	m4, _ := b.readMeta("h4")
-	if m4.Tier != "fast" || RuntimeTierTag(m4.Runtime, m4.Tier) != "@claude/fast" || RuntimeTierTag("claude", "strong") != "" || RuntimeTierTag("codex", "") != "@codex/strong" {
-		t.Errorf("tier tag: %q %q", m4.Tier, RuntimeTierTag(m4.Runtime, m4.Tier))
+	if m4.Tier != "fast" || b.App.RuntimeTierTag(m4.Runtime, m4.Tier) != "@claude/fast" || b.App.RuntimeTierTag("claude", "strong") != "" || b.App.RuntimeTierTag("codex", "") != "@codex/strong" {
+		t.Errorf("tier tag: %q %q", m4.Tier, b.App.RuntimeTierTag(m4.Runtime, m4.Tier))
 	}
 	if err := b.CreateSession(NewSessionOpts{Name: "h5", Agent: "security", Tier: "huge", AllowDegraded: true}); err == nil {
 		t.Error("unknown tier must fail the launch")

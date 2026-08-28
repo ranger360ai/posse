@@ -1206,9 +1206,14 @@ func (a *App) BeadTier(explicit string, is BdIssue, ag *AgentFile) (tier, why st
 
 // PromptContext is what promptContext assembles for one bead.
 type PromptContext struct {
-	Dir         string
-	Runtime     string
-	Tier        string
+	Dir     string
+	Runtime string
+	// TierShown is the DISPLAY tier (ADR 0013 §6), not the tier dispatch
+	// resolved: on a runtime that maps no model id for it, the header reads
+	// `grok/default`. Named for what it holds so nothing downstream mistakes
+	// it for a resolution — the resolved tier is BeadTier's return, and the
+	// launch still uses that.
+	TierShown   string
 	Labels      []string
 	From        []BdRef  // parents that are not blockers: discovered-from, parent-child, related
 	Unblockers  []BdRef  // blocking parents that closed — the work this builds on
@@ -1239,7 +1244,7 @@ var adrPathRe = regexp.MustCompile(`docs/adr/[A-Za-z0-9._-]+\.md`)
 // tier). Every bd call is best effort: a missing piece is an absent line,
 // never a failed launch.
 func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, ag *AgentFile) PromptContext {
-	ctx := PromptContext{Dir: is.Dir, Runtime: runtime, Tier: tier, Labels: is.Labels, Operator: a.CfgGet("operator", "")}
+	ctx := PromptContext{Dir: is.Dir, Runtime: runtime, TierShown: a.DisplayTier(runtime, tier), Labels: is.Labels, Operator: a.CfgGet("operator", "")}
 	// The same predicate the launch runs, asked without side effects, so the
 	// prompt cannot promise a tree the launch then declines to make
 	// (worktree.go). A config error here is not the prompt's to raise — the
@@ -1357,11 +1362,11 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 	if ctx.Dir != "" {
 		head += "repo: " + AbbrevHome(ctx.Dir)
 	}
-	if ctx.Runtime != "" || ctx.Tier != "" {
+	if ctx.Runtime != "" || ctx.TierShown != "" {
 		if head != "" {
 			head += "  ·  "
 		}
-		head += "runtime/tier: " + ctx.Runtime + "/" + ctx.Tier
+		head += "runtime/tier: " + ctx.Runtime + "/" + ctx.TierShown
 	}
 	if len(ctx.Labels) > 0 {
 		if head != "" {

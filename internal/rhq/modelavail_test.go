@@ -486,7 +486,7 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 	if !strings.Contains(list.String(), FallbackTag) {
 		t.Errorf("posse list does not show the fallback:\n%s", list.String())
 	}
-	if !strings.Contains(list.String(), RuntimeTierTag("claude", TierStandard)) {
+	if !strings.Contains(list.String(), b.App.RuntimeTierTag("claude", TierStandard)) {
 		t.Errorf("posse list must name the tier that is really running:\n%s", list.String())
 	}
 }

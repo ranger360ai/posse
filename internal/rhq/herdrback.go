@@ -1769,20 +1769,32 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	return true, nil
 }
 
-// runtimeTierTag is the listing suffix for a persona session: "" for the
+// RuntimeTierTag is the listing suffix for a persona session: "" for the
 // defaults (claude/strong), else "@runtime/tier" so the cockpit shows what
 // the persona runs on and at what spend (ADR 0002/0003).
-func RuntimeTierTag(runtime, tier string) string {
-	if (runtime == "" || runtime == DefaultRuntime) && (tier == "" || tier == DefaultTier) {
-		return ""
-	}
+//
+// The tier half is the DISPLAY tier (ADR 0013 §6), not the resolved one: a
+// session dispatched at `standard` on grok reads `@grok/default`, because
+// grok maps no model id and the name would otherwise be a guarantee nobody
+// makes. That is also why this is a method — the mapping is a property of
+// the runtime, and a declared runtime's map lives under RHQ_HOME.
+//
+// The suppression is keyed on the DISPLAYED tier too. Only a mapped
+// `strong` on claude renders "" here; a default tier that stopped being
+// mapped would surface as a tag rather than vanish into the empty string,
+// which is the direction this section exists to protect.
+func (a *App) RuntimeTierTag(runtime, tier string) string {
 	if runtime == "" {
 		runtime = DefaultRuntime
 	}
 	if tier == "" {
 		tier = DefaultTier
 	}
-	return "@" + runtime + "/" + tier
+	shown := a.DisplayTier(runtime, tier)
+	if runtime == DefaultRuntime && shown == DefaultTier {
+		return ""
+	}
+	return "@" + runtime + "/" + shown
 }
 
 func dedupeStrings(in []string) []string {
@@ -2166,7 +2178,7 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 		}
 		line := fmt.Sprintf("  %s %s %s  %s", mark, s.Emoji, s.Name, status)
 		if s.Agent != "" {
-			line += "  🎭" + s.Agent + RuntimeTierTag(s.Runtime, s.Tier)
+			line += "  🎭" + s.Agent + b.App.RuntimeTierTag(s.Runtime, s.Tier)
 			if tag := CageTag(s.Cage, s.Sockets); tag != "" {
 				line += "  " + tag
 			}

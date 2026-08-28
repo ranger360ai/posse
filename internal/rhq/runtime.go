@@ -1132,3 +1132,83 @@ func EnsureUnattendedLine(cmd string) string {
 	}
 	return cmd
 }
+
+// ─── Tier display (ADR 0013 §6) ──────────────────────────────────────────────
+
+// TierUnmapped is what a tier renders as on a runtime that does not map it.
+//
+// The three tier names are INTENT — judged / building / mechanical (ADR
+// 0003 §1) — and ADR 0013 §6 amends only their display: a runtime with no
+// model id behind the name does not get to wear it. `grok/strong` read as a
+// quality guarantee on a runtime where {model} renders empty and the CLI
+// picks whatever it likes; `grok/default` says exactly that much and no
+// more. Nothing about resolution moves: dispatch still resolves the tier it
+// resolved before, overflow still never trades `strong` (ADR 0010 §2b), and
+// an explicit --runtime the operator typed still launches.
+const TierUnmapped = "default"
+
+// RuntimeMapsTier reports whether <runtime> renders a model id for <tier>
+// — the predicate the display rule above is keyed on.
+//
+// Deliberately cheaper than LoadRuntime, because the listing paths ask it
+// once per session per redraw: a built-in answers out of its own map with
+// no file touched, and a declared runtime is answered by the two keys that
+// can decide it (model_<tier>:, plus model_standard: for fast's fallback).
+// An unknown runtime maps nothing, which is the honest reading rather than
+// a defensive one — posse cannot promise a model on a CLI it has never
+// heard of.
+func (a *App) RuntimeMapsTier(runtime, tier string) bool {
+	if runtime == "" {
+		runtime = DefaultRuntime
+	}
+	if tier == "" {
+		tier = DefaultTier
+	}
+	for i := range builtinRuntimes {
+		if builtinRuntimes[i].Name == runtime {
+			return builtinRuntimes[i].Model(tier) != ""
+		}
+	}
+	// Past the built-ins this needs an instance to read RHQ_HOME/runtimes
+	// from. A caller without one — a rendering fixture, a row drawn before
+	// refresh — gets "unmapped" rather than a panic in a draw path: this is
+	// a display predicate, and the honest answer when the map cannot be
+	// read is that no mapping is known.
+	if a == nil || a.Home == "" {
+		return false
+	}
+	p := filepath.Join(a.RuntimesDir(), runtime+".yaml")
+	if _, err := os.Stat(p); err != nil {
+		return false
+	}
+	rt := Runtime{Models: map[string]string{}}
+	if id := YamlGet(p, "model_"+tier); id != "" {
+		rt.Models[tier] = id
+	}
+	if tier == TierFast {
+		if id := YamlGet(p, "model_"+TierStandard); id != "" {
+			rt.Models[TierStandard] = id
+		}
+	}
+	return rt.Model(tier) != ""
+}
+
+// DisplayTier is the tier as an operator should READ it for a session on
+// this runtime: the tier's own name where the runtime maps a model for it,
+// else TierUnmapped. Empty in, empty out — a caller with no tier to show
+// has nothing to make honest.
+//
+// A tier that is not one of the three names passes through UNTOUCHED. §6 is
+// a rule about `strong` / `standard` / `fast` — the names that carry the
+// intent — and a session meta holding `premium` is corruption, not a tier
+// this runtime declined to map. Rewriting it to `default` would erase the
+// one place an operator could see it.
+func (a *App) DisplayTier(runtime, tier string) string {
+	if tier == "" || !ValidTier(tier) {
+		return tier
+	}
+	if a.RuntimeMapsTier(runtime, tier) {
+		return tier
+	}
+	return TierUnmapped
+}

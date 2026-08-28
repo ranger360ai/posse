@@ -178,6 +178,22 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	}
 	if ag.Tier != "" && !ValidTier(ag.Tier) {
 		add("tier: %q is not strong | standard | fast", ag.Tier)
+	} else if ag.Runtime != "" && ag.Tier != "" && !a.RuntimeMapsTier(ag.Runtime, ag.Tier) {
+		// ADR 0013 §6: the tier name is intent, and this PID names a runtime
+		// with no model id behind it — {model} renders empty, the CLI picks
+		// its own, and every display of this session reads
+		// <runtime>/default. A WARNING, not a finding: the PID is still
+		// coherent (a lane may well want judged work on this runtime, and an
+		// explicit --runtime the operator typed launches) — what it is not
+		// is a quality guarantee, which is the reading `tier: strong` earns
+		// everywhere else.
+		//
+		// Both halves must be declared HERE for this to fire. A PID with no
+		// runtime: takes config default_runtime at launch, so the same tier
+		// is a fact about the instance rather than about this file, and
+		// `posse runtime check <name>` is where that reader is standing.
+		warn("tier: %s on runtime: %s is intent, not a guarantee — %s maps no model id for it, so {model} renders empty and every display reads %s/%s (ADR 0013 §6)",
+			ag.Tier, ag.Runtime, ag.Runtime, ag.Runtime, TierUnmapped)
 	}
 	if ag.Cage != "" && !ValidCage(ag.Cage) {
 		add("cage: %q is not shims | seatbelt | container", ag.Cage)
