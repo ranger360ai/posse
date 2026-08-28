@@ -1829,8 +1829,8 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 		delete(busy, SessionFor(g.persona, g.is.Dir))
 		// The refill runs the fire path for every free seat, not only for
-		// the one that just settled (ranger-base-t8tq). ADR 0028 §1 says
-		// "re-runs the fire path for the freed seat" and rests on "the
+		// the one that just settled (ranger-base-t8tq). ADR 0028 §1 as
+		// accepted said "re-runs the fire path for the freed seat", on "the
 		// level-triggered tick still sweeps everything, so a lost event
 		// costs latency, never correctness" — but under S4 the tick is
 		// Watch's, and Watch does not get its loop back until this Run
@@ -2275,8 +2275,8 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 	return dispatched, pending, attempts, nil
 }
 
-// refire is ADR 0028 §1's "immediately re-runs the fire path for the freed
-// seat": a fresh bd ready scan (a settle is a hint, never trusted alone —
+// refire is ADR 0028 §1's refill (as amended, ranger-base-t8tq):
+// a fresh bd ready scan (a settle is a hint, never trusted alone —
 // verified against bd here exactly as any other fire does), the same load
 // guard and epoch room every fire attempt checks, and one more fireLoop call
 // under the launcher flock, sharing the busy map the owning Run started with.

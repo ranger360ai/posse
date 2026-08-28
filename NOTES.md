@@ -334,13 +334,17 @@ of the harness core:
    that one goroutine, so `gather` and everything it calls (`mergeBack`,
    `commitQueue`, `fileMergeBlocked`) run exactly as before; only which
    goroutine gets there first changed. Under `--watch` (`Dispatcher.Refill`,
-   ADR 0028 §1) each settle that frees a seat re-runs the fire path for
-   that seat immediately, right there, before the loop looks at anything
-   else pending — a fresh `bd ready` scan under the launcher flock, sharing
-   the busy map the `Run` started with (ADR 0028 §3: live seat occupancy,
-   released at the settle, not reset until the next pass) — so a `Run`
-   under `--watch` keeps refilling for as long as there is ready work for a
-   freed seat, and only returns once the cascade quiets. A one-shot
+   ADR 0028 §1 as amended) each settle re-runs the whole fire path
+   immediately, right there, before the loop looks at anything else
+   pending — a fresh `bd ready` scan under the launcher flock, offered to
+   **every free seat**, not only the one that settled (ranger-base-t8tq:
+   the settle is the level-trigger while a rolling `Run` holds `--watch`'s
+   loop, and it runs the reap sweep too) — sharing the `Run`'s occupancy
+   map (ADR 0028 §3: seats this `Run` fired into, released at their
+   settle; what a fire pass merely *reads* about a seat expires with that
+   pass) — so a `Run` under `--watch` keeps refilling for as long as there
+   is ready work for any free seat, and only returns once the cascade
+   quiets. A one-shot
    `dispatch` (no `--watch`) never sets `Refill` and never refires: it
    fires once, gathers, and returns, exactly as before this ADR. `--watch`
    also wakes the next pass on a herdr settle hint instead of waiting out
