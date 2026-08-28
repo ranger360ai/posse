@@ -331,3 +331,134 @@ func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
 		})
 	}
 }
+
+// The wording ranger-base-6ai5 is about. A restructured accessToken — an
+// object, a number, an array, a boolean — is a shape posse cannot read, not
+// an incomplete credential, and the two have opposite fixes: one is a line in
+// credShapes, the other is a login. Calling the first the second is what
+// makes an operator run /login twice against a change no login can touch.
+//
+// The kind is named because it is what credShapes has to learn; no byte of
+// the value is, including the one nested inside it.
+func TestNonStringAccessTokenSaysTheShapeChanged(t *testing.T) {
+	for _, tc := range []struct{ name, inner, kind string }{
+		{"an object", `{"accessToken":{"token":"` + fixtureSecret + `","type":"oauth"},"refreshToken":"r"}`, "a JSON object"},
+		{"an array", `{"accessToken":["` + fixtureSecret + `"]}`, "a JSON array"},
+		{"a number", `{"accessToken":12345,"refreshToken":"r"}`, "a JSON number"},
+		{"a boolean", `{"accessToken":false}`, "a JSON boolean"},
+		{"a nested envelope", `{"accessToken":{"claudeAiOauth":{"accessToken":"` + fixtureSecret + `"}}}`, "a JSON object"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":`+tc.inner+`}`))
+			if err == nil {
+				t.Fatal("want a shape failure")
+			}
+			msg := err.Error()
+			t.Logf("operator-visible line:\n  %s", msg)
+			if !strings.Contains(msg, "accessToken is present and is "+tc.kind+", not a string") {
+				t.Errorf("want the kind named: %q", msg)
+			}
+			if !strings.Contains(msg, "teach credShapes to read it") {
+				t.Errorf("want the fix that can work: %q", msg)
+			}
+			// The two verdicts that would send the operator somewhere no
+			// change can come from.
+			for _, wrong := range []string{"re-authenticate rather than change posse", "renamed or dropped"} {
+				if strings.Contains(msg, wrong) {
+					t.Errorf("wrong fork %q in: %q", wrong, msg)
+				}
+			}
+			if strings.Contains(msg, fixtureSecret) {
+				t.Errorf("a value reached the error line: %q", msg)
+			}
+		})
+	}
+}
+
+// null is the one non-string that IS honestly "present but empty": it decodes
+// into "" without error, which is exactly what the shape's Token func saw. It
+// stays on the login side of the fork.
+func TestNullAccessTokenIsTheIncompleteCredential(t *testing.T) {
+	_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":{"accessToken":null,"refreshToken":"r"}}`))
+	if err == nil {
+		t.Fatal("want a shape failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "incomplete credential") || !strings.Contains(msg, "re-authenticate rather than change posse") {
+		t.Errorf("null must read as an incomplete credential: %q", msg)
+	}
+	if strings.Contains(msg, "the shape changed") || strings.Contains(msg, "renamed or dropped") {
+		t.Errorf("null is not a shape posse cannot read: %q", msg)
+	}
+}
+
+// The verdict must look the field up the way the parser does. encoding/json
+// folds field names, so a capitalized accessToken is read normally — and an
+// exact map lookup then reports it renamed and prescribes a credShapes entry
+// for a name credShapes already matches.
+//
+// The first case is the control: it measures that the fold is real, which is
+// the whole reason the other two say what they say. If Go ever stopped
+// folding, this one goes red first and the verdicts below become wrong rather
+// than merely unexplained.
+func TestAccessTokenIsMatchedTheWayTheParserMatchesIt(t *testing.T) {
+	t.Run("a capitalized name still yields the token", func(t *testing.T) {
+		tok, meta, err := credentialToken(keychainStore().Name,
+			[]byte(`{"claudeAiOauth":{"AccessToken":"`+fixtureSecret+`","refreshToken":"r"}}`))
+		if err != nil {
+			t.Fatalf("the parser folds field names, so this reads: %v", err)
+		}
+		if tok != fixtureSecret || meta.Shape != "claudeAiOauth.accessToken" {
+			t.Errorf("tok=%q shape=%q", tok, meta.Shape)
+		}
+	})
+	for _, tc := range []struct{ name, inner, want, notWant string }{
+		{
+			name:    "capitalized and empty — a login, not a rename",
+			inner:   `{"AccessToken":"","refreshToken":"r"}`,
+			want:    "re-authenticate rather than change posse",
+			notWant: "renamed or dropped",
+		},
+		{
+			name:    "capitalized and restructured — credShapes, not a login",
+			inner:   `{"AccessToken":{"token":"` + fixtureSecret + `"}}`,
+			want:    "accessToken is present and is a JSON object, not a string",
+			notWant: "renamed or dropped",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":`+tc.inner+`}`))
+			if err == nil {
+				t.Fatal("want a shape failure")
+			}
+			msg := err.Error()
+			t.Logf("operator-visible line:\n  %s", msg)
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("want %q in: %q", tc.want, msg)
+			}
+			if strings.Contains(msg, tc.notWant) {
+				t.Errorf("must not say %q: %q", tc.notWant, msg)
+			}
+			// The reader has to be able to reconcile a verdict about
+			// accessToken with a key list that spells it AccessToken.
+			if !strings.Contains(msg, "case-insensitively") {
+				t.Errorf("want the spelling explained: %q", msg)
+			}
+			if strings.Contains(msg, fixtureSecret) {
+				t.Errorf("a value reached the error line: %q", msg)
+			}
+		})
+	}
+}
+
+// The note only appears when the spelling actually differs — an envelope that
+// spells the field the way posse does gets no aside about casing.
+func TestExactSpellingGetsNoCasingAside(t *testing.T) {
+	_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}`))
+	if err == nil {
+		t.Fatal("want a shape failure")
+	}
+	if strings.Contains(err.Error(), "case-insensitively") {
+		t.Errorf("nothing to explain when the name matches exactly: %q", err)
+	}
+}

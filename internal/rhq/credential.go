@@ -684,21 +684,60 @@ func foundShape(top map[string]json.RawMessage) string {
 	if err := json.Unmarshal(raw, &inner); err != nil || inner == nil {
 		return desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
 	}
-	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + tokenVerdict(inner)
+	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + tokenVerdict(raw, inner)
 }
 
-// tokenVerdict reads the one fork that matters once posse's own envelope has
-// been found, and states which side of it we are on. Presence of the key,
-// never its bytes.
-func tokenVerdict(inner map[string]json.RawMessage) string {
-	if _, ok := inner["accessToken"]; !ok {
+// tokenVerdict states which side of the fork we are on once posse's own
+// envelope has been found. There are three sides, not two: the field is gone
+// (renamed — a line in credShapes), the field is there and empty (an
+// incomplete credential — a login fixes it), or the field is there and is not
+// a string at all (the envelope restructured it — credShapes again, and no
+// number of logins can help). The shape's Token func returns "" for the last
+// two alike, so a verdict that reads only key presence calls a restructured
+// field an empty one and sends the operator to re-authenticate forever about
+// a change only this file can absorb (ranger-base-6ai5).
+//
+// It asks the PARSER for the field rather than looking the name up in the key
+// map, because those two do not agree: encoding/json matches field names
+// case-insensitively, so posse reads `AccessToken` fine while an exact map
+// lookup calls it renamed and sends the operator to teach credShapes a name
+// it already knows. Unmarshalling into a RawMessage yields the value the
+// shape's Token func actually saw, under the same rules; decoding THAT into a
+// string takes the same fork Token took, and jsonKind names what it found
+// without printing a byte of it.
+func tokenVerdict(raw json.RawMessage, inner map[string]json.RawMessage) string {
+	var env struct {
+		AccessToken  json.RawMessage `json:"accessToken"`
+		RefreshToken json.RawMessage `json:"refreshToken"`
+	}
+	// raw decoded as an object at the call site, so this cannot fail.
+	if err := json.Unmarshal(raw, &env); err != nil || env.AccessToken == nil {
 		return "accessToken is not among them, so the field was renamed or dropped: teach credShapes the new name"
 	}
+	// The key list above is spelled the way the store spells it, which need
+	// not be the way posse spells it. Say so, or the verdict looks like it is
+	// about a key the reader cannot find in the list.
+	spelling := ""
+	if _, exact := inner["accessToken"]; !exact {
+		spelling = " (posse matches field names case-insensitively, so the differently-cased key above is that field)"
+	}
+	// The same decode the shape's Token func does, into the same type — so
+	// the fork here cannot disagree with the read that got us here. It is
+	// also why null lands on the empty side: unmarshalling null into a string
+	// is a no-op, so Token saw "" and no error, and the credential really is
+	// incomplete. Everything else is a value Token could not read at all.
+	var tok string
+	if err := json.Unmarshal(env.AccessToken, &tok); err != nil {
+		return "accessToken is present and is " + jsonKind(env.AccessToken) +
+			", not a string, so the shape changed and re-authenticating cannot fix it: teach credShapes to read it" + spelling
+	}
+	// A string reaching here is necessarily the empty one — a non-empty one
+	// would have been returned as the token and this line never reached.
 	v := "accessToken is present but empty, so this is an incomplete credential and not a shape posse cannot read: re-authenticate rather than change posse"
-	if _, ok := inner["refreshToken"]; ok {
+	if env.RefreshToken != nil {
 		v += " (a refreshToken is present, so a refresh that did not complete fits)"
 	}
-	return v
+	return v + spelling
 }
 
 // maxKeyName is the longest key this file will repeat back. Well above every
