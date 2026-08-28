@@ -24,12 +24,31 @@ func TestScoreIssues(t *testing.T) {
 		{ID: "i", Assignee: "", Status: "open", CreatedBy: "dev"},
 	}
 	s := ScoreIssues("dev", issues, map[string]int{"b": 1})
-	want := Score{Persona: "dev", Closed: 3, Reopened: 1, Open: 1, Held: 1, Blocked: 1, AgeAtClose: 4 * time.Hour, Filed: 3, Rejected: 1}
+	want := Score{Persona: "dev", Closed: 3, Reopened: 1, ReopensKnown: true, Open: 1, Held: 1, Blocked: 1, AgeAtClose: 4 * time.Hour, Filed: 3, Rejected: 1}
 	if s != want {
 		t.Errorf("got %+v\nwant %+v", s, want)
 	}
 	if m := s.Metric("closed-no-reopen"); !strings.Contains(m, "→ 2") {
 		t.Errorf("closed-no-reopen: %s", m)
+	}
+	// A nil reopens map is "no history to read", not "nobody reopened
+	// anything": the metric line must say unknown and cap the score, never
+	// spend the zero value as a perfect 3 (ranger-base-0tc).
+	u := ScoreIssues("dev", issues, nil)
+	if u.ReopensKnown {
+		t.Error("nil reopens must score as unknown")
+	}
+	m := u.Metric("closed-no-reopen")
+	if !strings.Contains(m, "3 closed") || !strings.Contains(m, "unknown") || !strings.Contains(m, "≤3") {
+		t.Errorf("unknown reopens must read as a ceiling: %s", m)
+	}
+	if strings.Contains(m, "0 reopened") || strings.Contains(m, "→ 3") {
+		t.Errorf("unknown reopens must not print a number: %s", m)
+	}
+	// Unknown or not, the id stays computed — the scorecard answers it, it
+	// just answers with a bound.
+	if !MetricComputed("closed-no-reopen") {
+		t.Error("closed-no-reopen must count as computed")
 	}
 	// The PIDs' spelling is canonical; the ADR's original stays an alias
 	// (ADR 0001 amendment 2026-08-18).
@@ -262,6 +281,11 @@ func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
 	// says the whole instance would be stuck in after cut-over.
 	if s := card(); !strings.Contains(s, "reopened: ?") {
 		t.Fatalf("a repo with no census of its own must read unknown:\n%s", s)
+	}
+	// The column and the metric line read the same fact: neither may print
+	// a perfect score off the zero value (ranger-base-0tc).
+	if s := card(); strings.Contains(s, "0 reopened") || !strings.Contains(s, "reopens unknown") {
+		t.Errorf("the closed-no-reopen line must say unknown too:\n%s", s)
 	}
 	blRedirect(t, work, filepath.Join(store, beadsDirName))
 	s := card()

@@ -20,15 +20,19 @@ import (
 )
 
 type Score struct {
-	Persona    string
-	Closed     int           // beads assigned to the persona, status closed
-	Reopened   int           // of those, later reopened (git history of issues.jsonl)
-	Open       int           // assigned, status open
-	Held       int           // assigned, status in_progress
-	Blocked    int           // assigned, status blocked
-	AgeAtClose time.Duration // median closed_at − created_at over Closed (0 if none)
-	Filed      int           // created_by the persona
-	Rejected   int           // filed and closed with a reason reading invalid/duplicate/wontfix
+	Persona  string
+	Closed   int // beads assigned to the persona, status closed
+	Reopened int // of those, later reopened (git history of issues.jsonl)
+	// ReopensKnown is false when no scored repo had a readable git history
+	// for the census. Reopened is then an absence of evidence, not a zero,
+	// and every rendering of it has to say so rather than score a perfect 0.
+	ReopensKnown bool
+	Open         int           // assigned, status open
+	Held         int           // assigned, status in_progress
+	Blocked      int           // assigned, status blocked
+	AgeAtClose   time.Duration // median closed_at − created_at over Closed (0 if none)
+	Filed        int           // created_by the persona
+	Rejected     int           // filed and closed with a reason reading invalid/duplicate/wontfix
 }
 
 // NotYetComputable prefixes every metric line the scorecard cannot answer
@@ -61,6 +65,11 @@ func MetricNeeds(id string) string {
 func (s Score) Metric(id string) string {
 	switch id {
 	case "closed-no-reopen":
+		// An unknown must not wear a checkmark: with no history to read
+		// transitions from, the score is a ceiling, not a number.
+		if !s.ReopensKnown {
+			return fmt.Sprintf("%d closed, reopens unknown (no git history for %s) → ≤%d", s.Closed, beadsJSONL, s.Closed)
+		}
 		return fmt.Sprintf("%d closed, %d reopened → %d", s.Closed, s.Reopened, s.Closed-s.Reopened)
 	// The PIDs' spelling is canonical (ADR 0001 amendment); the ADR's
 	// original `findings-survive-triage` stays a computed alias so an
@@ -109,7 +118,7 @@ var rejectWords = []string{"invalid", "duplicate", "dup", "wontfix", "won't fix"
 // ScoreIssues computes one persona's score over a repo's issues; reopens
 // maps issue id → reopen count for that repo.
 func ScoreIssues(persona string, issues []BdIssue, reopens map[string]int) Score {
-	s := Score{Persona: persona}
+	s := Score{Persona: persona, ReopensKnown: reopens != nil}
 	var ages []time.Duration
 	for _, is := range issues {
 		if is.CreatedBy == persona {
@@ -159,6 +168,7 @@ func addScore(a, b Score) Score {
 	}
 	a.Closed += b.Closed
 	a.Reopened += b.Reopened
+	a.ReopensKnown = a.ReopensKnown || b.ReopensKnown
 	a.Open += b.Open
 	a.Held += b.Held
 	a.Blocked += b.Blocked
@@ -234,7 +244,6 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 		return Die("no personas in %s", a.AgentsDir)
 	}
 	totals := map[string]Score{}
-	reopensKnown := false
 	repos := 0
 	for _, dir := range a.BeadsDirs() {
 		issues, err := bd.ListAll(dir)
@@ -243,9 +252,6 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 		}
 		repos++
 		reopens := ReopensFromGit(dir)
-		if reopens != nil {
-			reopensKnown = true
-		}
 		for _, p := range personas {
 			totals[p] = addScore(totals[p], ScoreIssues(p, issues, reopens))
 		}
@@ -253,12 +259,20 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 	if repos == 0 {
 		return Die("no beads repos readable (config beads: list)")
 	}
+	// The column, the metric line and the trailer all read one fact, carried
+	// on the scores themselves (ScoreIssues: reopens != nil), so they cannot
+	// disagree. Every persona is scored over the same repos, so any total
+	// answers it for the card.
+	reopensKnown := false
+	for _, p := range personas {
+		reopensKnown = reopensKnown || totals[p].ReopensKnown
+	}
 	fmt.Fprintf(w, "%-16s %6s %8s %5s %5s %7s %10s %6s %8s\n", "persona", "closed", "reopened", "open", "held", "blocked", "age@close", "filed", "rejected")
 	for _, p := range personas {
 		s := totals[p]
 		s.Persona = p
 		re := fmt.Sprint(s.Reopened)
-		if !reopensKnown {
+		if !s.ReopensKnown {
 			re = "?"
 		}
 		fmt.Fprintf(w, "%-16s %6d %8s %5d %5d %7d %10s %6d %8d\n", p, s.Closed, re, s.Open, s.Held, s.Blocked, fmtAge(s.AgeAtClose), s.Filed, s.Rejected)
