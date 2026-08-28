@@ -3323,10 +3323,21 @@ instead.** This is the same landmine as ranger-base-muoo from the other end:
 `bd create --deps discovered-from:<parent>` starts the same CTE at `<parent>`,
 so a poisoned parent loses its edge to the 30s timeout while the issue itself
 commits — which is how 33 edgeless duplicate verify beads got filed. The
-HANDOFF rung of a dispatch prompt (`internal/rhq/dispatch.go`) has that exact
-shape. The ASK rung does **not**: its target is a freshly created question
-bead with no outgoing edges, so the CTE is empty and returns at once. Leave it
-alone.
+HANDOFF and SPIKE rungs of a dispatch prompt (`internal/rhq/dispatch.go`) have
+that exact shape. The ASK rung does **not**: its target is a freshly created
+question bead with no outgoing edges, so the CTE is empty and returns at once.
+Leave it alone.
+
+Since ranger-base-qbwt the ladder carries the caveat itself: a trailing
+`Provenance:` line (not a seventh rung) tells the persona that the create is
+two writes, to confirm with `bd dep list <new-id>`, to find the bead by title
+rather than re-run a create that failed — the re-run is what files the
+duplicate — and to record `discovered-from: <parent>` as a comment when the
+edge is gone. It is a check-after rather than a preflight because the
+safe/unsafe answer belongs to the graph at create time, hours after the prompt
+renders, and because reading the graph back also catches a create that failed
+for some other reason. ADR 0005 §2 has the reasoning; `verifyafter.go` is the
+harness applying the same rule to itself.
 
 **There is no drop-in fix.** Upstream did fix it, but only past the end of the
 SQLite line:

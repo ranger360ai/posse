@@ -193,3 +193,73 @@ func TestBodySectionAndOptionalHeading(t *testing.T) {
 		t.Errorf("missing optional section must warn only: findings=%v warnings=%v", fs, ws)
 	}
 }
+
+// The provenance caveat under the ladder (ranger-base-qbwt). `bd create
+// --deps discovered-from:<id>` is two writes and only the first is durable:
+// on a parent that can reach a symmetric `relates-to` pair bd's cycle check
+// does not terminate, the client times out at 30s, and the bead is committed
+// with no edge and no id printed (ranger-base-muoo/pkqn). SPIKE and HANDOFF
+// both render that command, so both need the check-after; ASK does not — it
+// dep-adds onto the question bead it just created.
+func TestEscalationLadderProvenanceCaveat(t *testing.T) {
+	l := EscalationLadder("b-1", "")
+
+	// It is a caveat, not a seventh rung: ADR 0005 §2 is six rungs, and the
+	// ladder's own header says "pick the lowest rung that is honest".
+	rungs := 0
+	var lines []string
+	for _, ln := range strings.Split(strings.TrimRight(l, "\n"), "\n") {
+		lines = append(lines, ln)
+		if strings.HasPrefix(ln, "- ") {
+			rungs++
+		}
+	}
+	if rungs != 6 {
+		t.Errorf("ladder must stay six rungs, got %d:\n%s", rungs, l)
+	}
+	if len(lines) != 8 { // header + 6 rungs + the caveat
+		t.Fatalf("ladder shape: %d lines\n%s", len(lines), l)
+	}
+	prov := lines[7]
+	if !strings.HasPrefix(prov, "Provenance: ") {
+		t.Fatalf("the caveat is the last line, unbulleted, after REFUSE:\n%s", l)
+	}
+	if !strings.HasPrefix(lines[6], "- REFUSE — ") {
+		t.Errorf("REFUSE must stay the last rung:\n%s", l)
+	}
+
+	// Every clause the caveat has to carry, one assertion apiece — the
+	// failure is silent, so a persona that loses any one of these has no
+	// way to notice the edge is gone.
+	for _, want := range []string{
+		"`--deps discovered-from:`",                           // which command it is about
+		"two writes, not one",                                 // why the create is not atomic
+		"lose the edge",                                       // what is lost
+		"no id printed",                                       // why <new-id> is not in hand
+		"SPIKE or HANDOFF",                                    // which rungs are exposed
+		"`bd dep list <new-id>`",                              // the check
+		"find the bead by title in `bd list`",                 // recovering the id
+		"never re-run a create that failed",                   // the duplicate the retry files
+		"`bd comments add <new-id> \"discovered-from: b-1\"`", // the durable fallback, id interpolated
+		"note it on b-1",                                      // and the trail on the parent
+	} {
+		if !strings.Contains(prov, want) {
+			t.Errorf("caveat missing %q:\n%s", want, prov)
+		}
+	}
+
+	// The id is the bead's, everywhere it appears.
+	if strings.Contains(prov, "<id>") {
+		t.Errorf("caveat must interpolate the bead id, not print a placeholder:\n%s", prov)
+	}
+	if o := EscalationLadder("other-9", "opuser"); !strings.Contains(o, "discovered-from: other-9\"`") || !strings.Contains(o, "note it on other-9 —") {
+		t.Errorf("caveat must follow the id it was rendered for:\n%s", o)
+	}
+
+	// Fixed text: it renders on a bead with no context at all, because the
+	// rungs it qualifies do.
+	p := workPrompt(RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "t"}}, PromptContext{})
+	if !strings.Contains(p, prov+"\n") {
+		t.Errorf("caveat must render in the bare prompt:\n%s", p)
+	}
+}

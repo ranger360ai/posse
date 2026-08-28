@@ -61,6 +61,7 @@ Context                                                      # assembled from bd
                                                              # fixed text, always rendered
 Escalation (pick the lowest rung that is honest)              # fixed text, §2
 - NOTE … ASSUME … SPIKE … ASK … HANDOFF … REFUSE …
+Provenance: `--deps discovered-from:` is two writes, not one …  # fixed text, §2
 Done: `bd comments add <id> <what you did, paths, ids>` then `bd close <id>`.
 <persona hook: the PID's `## Work prompt` section, verbatim>  # §3
 ```
@@ -93,6 +94,30 @@ behaviour, the ladder says which rung comes first:
 | **ASK** | a gap only the operator can fill and the bead is useless if you guess | `bd create "<question>" -t task -l question -a <operator>` (config `operator:`; unassigned if unset), `bd dep add <id> <qid>` so the bead leaves `bd ready` until answered; comment `BLOCKED: <need> → <qid>` | **stop** |
 | **HANDOFF** | part of the work belongs to another persona | `bd create … -a <persona> -l <their label> --deps discovered-from:<id>`; comment it | continue with your part; if nothing is left, close yours |
 | **REFUSE** | a hard risk line (money · publishing · deployed systems · visibility) or a gate you can't realize | comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk` | **stop** |
+
+The ladder's one trailing line, `Provenance:`, is a caveat on the rungs,
+not a seventh rung. `bd create --deps discovered-from:<id>` is two writes
+and only the first is durable: measured on bd 0.49.1 (ranger-base-muoo,
+mechanism in ranger-base-pkqn), when a symmetric `relates-to` pair is
+reachable from `<id>` the cycle-check CTE does not terminate, the client
+gives up at its 30s socket timeout, and **the bead is committed while the
+edge is not** — exit 1, no id on stdout, nothing naming the edge. SPIKE and
+HANDOFF both render that command, so the ladder tells both to read the
+graph back (`bd dep list <new-id>`), to recover the id by title rather than
+re-run a failed create (the re-run is how 33 duplicate verify beads got
+filed), and to fall back to a comment, which is the provenance that
+survives. ASK is untouched: its `bd dep add <id> <qid>` targets the
+question bead it just created, which has no outgoing edges.
+
+Check-after, not preflight, for three reasons: safety is a property of the
+graph at create time, which is minutes to hours after this text renders and
+after the persona's own beads have landed; a preflight needs `sqlite3` and
+the db's location in every `beads:` repo, on the code path that already has
+a load guard because forking is what costs there; and it is blind to a
+create that fails for any other reason, where reading the graph back is
+not. It is also the rule the harness already applies to itself — ADR 0006
+§3's verify-after dedupes on a marker written in the same breath as the
+issue and treats the comment as the record (`verifyafter.go`).
 
 Dispatch consequences: beads labelled `question` are never routed to a
 persona (they are for humans; `posse ready`/cockpit show them first);
