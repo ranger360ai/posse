@@ -157,7 +157,8 @@ func (a *App) SessionTreePath(repo, session string) (string, error) {
 
 // git runs a git command in dir and returns its trimmed stdout. The error
 // carries git's stderr, which is the only part of a git failure worth
-// reading.
+// reading. A caller that parses a porcelain format wants gitRaw
+// (promote.go) instead — see dirtyPaths.
 func git(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	var out, errb strings.Builder
@@ -618,15 +619,24 @@ func notOnBase(t *SessionTree) string {
 // reported rather than acted on: uncommitted work is the persona's, and the
 // only thing the harness owes it is to never destroy it silently.
 func dirtyPaths(path string) []string {
-	out, err := git(path, "status", "--porcelain")
-	if err != nil || out == "" {
+	// gitRaw, not git: the status column's LEADING SPACE is data here. git()
+	// trims the whole blob, which takes that space off the first line only —
+	// and the ln[3:] below then cuts one real character off the first path
+	// (ranger-base-8ogq). git()'s trim stays: every other caller reads a
+	// whole value (a count, a branch name, a sha) and wants it.
+	out, err := gitRaw(path, "status", "--porcelain")
+	if err != nil {
 		return nil
 	}
 	var paths []string
-	for _, ln := range strings.Split(out, "\n") {
-		if len(ln) > 3 {
-			paths = append(paths, strings.TrimSpace(ln[3:]))
+	for _, ln := range strings.Split(string(out), "\n") {
+		// "XY path": two status columns, a space, then the path — so the
+		// shortest real record is four bytes and anything shorter (the
+		// empty line the trailing newline leaves) is not one.
+		if len(ln) < 4 {
+			continue
 		}
+		paths = append(paths, strings.TrimSpace(ln[3:]))
 	}
 	return paths
 }

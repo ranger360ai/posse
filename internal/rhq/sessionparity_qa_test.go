@@ -57,11 +57,11 @@ func TestLandingTurnAsksTheRuntimeHowToDeliverIt(t *testing.T) {
 // character off it. Second and later lines keep their space and survive, so
 // the bug is invisible in any single-file test.
 //
-// It is a message defect, not a loss: the guard still REFUSES, it just names
-// the tree wrong in the one line the operator reads to recognize it.
+// For a path of normal length that is a message defect and not a loss — the
+// guard still REFUSES, it just names the tree wrong in the one line the
+// operator reads to recognize it. The next test is where it stops being
+// cosmetic.
 func TestDirtyPathsKeepsEveryPathWhole(t *testing.T) {
-	t.Skip("ranger-base-8ogq: git() TrimSpaces the whole porcelain output, so the first dirty path loses its first character — unskip with the fix")
-
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "alpha.txt"), "seed\n")
 	write(t, filepath.Join(repo, "beta.txt"), "seed\n")
@@ -70,8 +70,59 @@ func TestDirtyPathsKeepsEveryPathWhole(t *testing.T) {
 	write(t, filepath.Join(repo, "alpha.txt"), "seed\nchanged\n")
 	write(t, filepath.Join(repo, "beta.txt"), "seed\nchanged\n")
 
+	// The fixture is only worth what its first line is: assert git really
+	// emits the leading-space form here (gitRaw, since git() is the very
+	// trim under test), or a green test proves nothing.
+	raw, err := gitRaw(repo, "status", "--porcelain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(raw), " M alpha.txt") {
+		t.Fatalf("fixture does not produce a worktree-modified FIRST line, so this pins nothing: %q", raw)
+	}
+
 	got := strings.Join(dirtyPaths(repo), " ")
 	if want := "alpha.txt beta.txt"; got != want {
+		t.Errorf("dirtyPaths = %q, want %q", got, want)
+	}
+}
+
+// The same defect's worse half, which the bead (ranger-base-8ogq) called out
+// and did not reproduce: a ONE-character worktree-modified path renders as
+// " M a", four bytes — trim the blob and it is three, which the old
+// `len(ln) > 3` dropped outright. That is not a misnamed path, it is a dirty
+// file reported CLEAN, and the reap guard would have removed the tree.
+func TestDirtyPathsSeesTheShortestPossiblePath(t *testing.T) {
+	repo := wtRepo(t)
+	write(t, filepath.Join(repo, "a"), "seed\n")
+	mustGit(t, repo, "add", "a")
+	mustGit(t, repo, "commit", "-q", "-m", "one short name")
+	write(t, filepath.Join(repo, "a"), "seed\nchanged\n")
+
+	if got := dirtyPaths(repo); len(got) != 1 || got[0] != "a" {
+		t.Errorf("dirtyPaths = %q, want [a] — a dirty file the guard cannot see is one it will destroy", got)
+	}
+}
+
+// The other two porcelain shapes — staged ("M  alpha.txt") and untracked
+// ("?? zulu.txt"), both with the column filled and no leading space to lose.
+// Stated honestly: no mutation of the CURRENT fix breaks this one (the wrong
+// fix, trimming each line before slicing, is caught by the test above, and
+// the trailing TrimSpace(ln[3:]) absorbs the rest). It is breadth, not a
+// discriminating pin: it is here so a future rewrite of this parse — to
+// --porcelain=v2, to -z records — has the forms the other two tests do not
+// cover written down.
+func TestDirtyPathsKeepsStagedAndUntrackedPathsWhole(t *testing.T) {
+	repo := wtRepo(t)
+	write(t, filepath.Join(repo, "alpha.txt"), "seed\n")
+	mustGit(t, repo, "add", "alpha.txt")
+	mustGit(t, repo, "commit", "-q", "-m", "one tracked file")
+	write(t, filepath.Join(repo, "alpha.txt"), "seed\nchanged\n")
+	mustGit(t, repo, "add", "alpha.txt")               // "M  alpha.txt"
+	write(t, filepath.Join(repo, "zulu.txt"), "new\n") // "?? zulu.txt"
+
+	got := strings.Join(dirtyPaths(repo), " ")
+	if want := "alpha.txt zulu.txt"; got != want {
 		t.Errorf("dirtyPaths = %q, want %q", got, want)
 	}
 }
