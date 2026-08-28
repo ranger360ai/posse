@@ -120,12 +120,36 @@ type Dispatcher struct {
 	// prints is a witness when a human typed the command and is one line in
 	// a log nobody opens when a timer did; only the second case fails closed.
 	Unattended bool
+	// Refill says this Run may re-fire a seat the instant its bead settles,
+	// instead of waiting for a later pass to find it free (ADR 0028 §1) —
+	// Watch sets it, and nothing else does, on Unattended's own rule: §4
+	// ratifies that every refill originates in the one watch process, so a
+	// one-shot Run (cmd/posse's `dispatch`, every direct test call) never
+	// sets this and never refires.
+	Refill bool
+	// refillCtx is read only when Refill is set: once it ends, a settling
+	// seat is still judged and freed (mergeBack, commitQueue, the reap — all
+	// unchanged), but the freed seat is not fired into again. The loop is
+	// stopping, and ADR 0028 §1's cascade must not outlive it.
+	refillCtx context.Context
 	// Now is the clock the blind window is measured against; nil = time.Now.
 	// Tests age the clock instead of sleeping ten minutes.
 	Now func() time.Time
 
 	mu         sync.Mutex
 	lastPrompt map[string]time.Time // session → when this process last prompted it
+
+	// outMu serializes every write to Out/errw() against every other one.
+	// Until ADR 0028 §1, exactly one goroutine ever called into a
+	// Dispatcher's print path (Run's own). Now gather() runs on one
+	// goroutine per pending bead, so judging two settles at once — the
+	// point of removing the barrier — means two goroutines may be mid
+	// fmt.Fprintf on the same io.Writer at once. Most Out values in
+	// production and in tests (strings.Builder included) are not safe for
+	// that on their own; this makes every d.printf/d.eprintf call safe
+	// without asking every caller of NewDispatcher to hand in a
+	// synchronized writer.
+	outMu sync.Mutex
 
 	// stranded are the sessions THIS pass created and could not use — a CLI
 	// that never came up, never became promptable, or is sitting on a screen
@@ -236,6 +260,30 @@ func (d *Dispatcher) errw() io.Writer {
 	return os.Stderr
 }
 
+// printf, eprintf and println are d.printf( ...)/Fprintf(d.errw(),
+// ...)/Fprintln(d.Out, ...), serialized by outMu — see its doc. Every write
+// this file makes to Out or errw() goes through one of these three instead
+// of the fmt functions directly, because gather() and everything it calls
+// (mergeBack, commitQueue, fileMergeBlocked, noteSeatSettle) now run
+// concurrently with each other and with Run's own goroutine (ADR 0028 §1).
+func (d *Dispatcher) printf(format string, a ...any) {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	fmt.Fprintf(d.Out, format, a...)
+}
+
+func (d *Dispatcher) eprintf(format string, a ...any) {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	fmt.Fprintf(d.errw(), format, a...)
+}
+
+func (d *Dispatcher) println(a ...any) {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	fmt.Fprintln(d.Out, a...)
+}
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set, no request is
@@ -299,7 +347,7 @@ func (d *Dispatcher) planGuard() {
 	// The first successful reading clears the clock and this same pass
 	// proceeds — no manual reset, no sticky state, no operator action.
 	if d.blindFailed {
-		fmt.Fprintf(d.errw(), "plan guard: reading restored after %s blind\n", BlindFor(now.Sub(d.blindSince)))
+		d.eprintf("plan guard: reading restored after %s blind\n", BlindFor(now.Sub(d.blindSince)))
 	}
 	// The clock counts from when the reading was TAKEN, not from now: a
 	// shared reading five minutes old leaves five minutes of blind budget,
@@ -346,7 +394,7 @@ func (d *Dispatcher) planNoAdapter(err error) {
 	if err == nil {
 		err = &NoPlanAdapter{Why: "no plan-window adapter"}
 	}
-	fmt.Fprintf(d.errw(), "plan guard: %v — thresholds are set, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", err)
+	d.eprintf("plan guard: %v — thresholds are set, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", err)
 }
 
 // unmatchedThresholds names a `plan_guard_<window>:` that gates nothing
@@ -380,7 +428,7 @@ func (d *Dispatcher) unmatchedThresholds(th map[string]float64, u PlanUsage) {
 	sort.Strings(bad)
 	d.planThreshWarned = true
 	for _, name := range bad {
-		fmt.Fprintf(d.errw(), "plan guard: config plan_guard_%s: this provider reports no window by that name (it reports %s) — that threshold gates nothing\n",
+		d.eprintf("plan guard: config plan_guard_%s: this provider reports no window by that name (it reports %s) — that threshold gates nothing\n",
 			name, strings.Join(names, ", "))
 	}
 }
@@ -402,13 +450,13 @@ func (d *Dispatcher) overThreshold(reason string) {
 		// An unreadable ledger is not a licence to spend a pool with no
 		// meter: fail to the pre-overflow behaviour, which costs a skipped
 		// pass and heals itself, rather than to an uncounted week.
-		fmt.Fprintf(d.errw(), "plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
+		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
 			AbbrevHome(d.App.OverflowLogPath()), err)
 		d.overflow = Overflow{}
 		return
 	}
 	d.overflowUsed = n
-	fmt.Fprintf(d.Out, "%s — overflow %s, %d/%d in 7d; eligible beads step over\n", reason, d.overflow.Runtime, n, d.overflow.Cap)
+	d.printf("%s — overflow %s, %d/%d in 7d; eligible beads step over\n", reason, d.overflow.Runtime, n, d.overflow.Cap)
 }
 
 // blindGuard is the guard with no reading to make a decision on.
@@ -449,7 +497,7 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 	// today's outcome — the pass is not gated and it runs.
 	if first || now.Sub(d.blindSaid) >= blindQuiet {
 		d.blindSaid = now
-		fmt.Fprintf(d.errw(), "plan guard: %v — pass not gated\n", err)
+		d.eprintf("plan guard: %v — pass not gated\n", err)
 	}
 }
 
@@ -492,7 +540,7 @@ func (d *Dispatcher) blindFork(blind time.Duration, err error) {
 	// quiet (extending rangerhq-llse), and the hourly tolerance below is the
 	// fail-open note's alone. d.Out, not stderr — this is an outcome the
 	// pass reached, not a warning about one.
-	fmt.Fprintf(d.Out, "plan guard: blind %s (%v) — degraded, running under ledger brake (%s)\n",
+	d.printf("plan guard: blind %s (%v) — degraded, running under ledger brake (%s)\n",
 		BlindFor(blind), err, st.Ledger())
 }
 
@@ -611,7 +659,7 @@ func (d *Dispatcher) budget() BudgetState {
 	// instead, and this is the sighted pass's witness.
 	if st.Unreadable = rep.ReadErr; st.Unreadable != nil && !d.budgetUnread {
 		d.budgetUnread = true
-		fmt.Fprintf(d.errw(), "budget: %d transcript(s) unreadable (%v) — the ledger counts less than was spent\n", rep.Unread, rep.ReadErr)
+		d.eprintf("budget: %d transcript(s) unreadable (%v) — the ledger counts less than was spent\n", rep.Unread, rep.ReadErr)
 	}
 	st.Plan = d.planUsage
 	st.resolve()
@@ -1404,9 +1452,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// command someone reaches for on a sick box and make it silent.
 	if why := d.App.LoadHigh(d.errw()); why != "" {
 		if d.DryRun {
-			fmt.Fprintf(d.Out, "◷ %s — a real pass would be skipped here; --dry-run launches nothing, so routing follows\n", why)
+			d.printf("◷ %s — a real pass would be skipped here; --dry-run launches nothing, so routing follows\n", why)
 		} else {
-			fmt.Fprintf(d.Out, "◷ %s — pass skipped, nothing launched into a saturated box (running sessions are left alone)\n", why)
+			d.printf("◷ %s — pass skipped, nothing launched into a saturated box (running sessions are left alone)\n", why)
 			return 0, nil
 		}
 	}
@@ -1478,7 +1526,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		// pass error and keeps looping, which is the honest version of what
 		// it was already doing silently.
 		for _, err := range failed {
-			fmt.Fprintf(d.Out, "✗ ready scan failed: %v\n", err)
+			d.printf("✗ ready scan failed: %v\n", err)
 		}
 		if len(beads) == 0 && len(failed) > 0 {
 			return 0, Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed))
@@ -1487,7 +1535,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	if len(beads) == 0 {
 		// The start-of-pass sweep above already reaped for this pass; a
 		// quiet pass needs no epilogue reap of its own.
-		fmt.Fprintln(d.Out, "no ready work")
+		d.println("no ready work")
 		return 0, nil
 	}
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).
@@ -1504,10 +1552,19 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// epoch nothing, and letting a diagnostic eat the loop's launch budget
 	// would make the read-only command have a lasting effect. It still runs
 	// under the same room, so what it reports is what a real pass would do.
+	// ADR 0028 §3: the busy map re-denominates from per-pass to live seat
+	// occupancy — one bead per persona per repo at a time, released at that
+	// seat's settle. This Run's fireLoop and every refire it makes (below)
+	// share the one instance, so a seat this Run fires into stays busy for
+	// every later refire this same Run makes, and is released the instant
+	// gather() judges its bead. A one-shot Run never refires (d.Refill is
+	// unset outside Watch), so for it this is exactly the fresh, empty,
+	// pass-local map it always was.
+	busy := map[string]bool{}
 	var dispatched int
 	var pending []*pendingBead
 	if room, ok := d.epochRoom(max); ok {
-		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room)
+		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room, busy)
 		if err != nil {
 			return 0, err
 		}
@@ -1517,27 +1574,73 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 	}
 
-	// Gather: every prompt is in flight; wait for each in launch order.
-	// Waiting serially costs nothing — the sessions work concurrently and
-	// a settle that already happened returns at once — so the pass takes
-	// as long as its slowest bead, not the sum.
+	// Gather: every prompt is in flight, and each is judged the instant it
+	// settles rather than in launch order — one goroutine per pending bead,
+	// fanned into results, so a bead that settles in three minutes is judged
+	// in three minutes even when it launched behind one still running at
+	// seventy-five (rangerhq-tqr's fix, carried the rest of the way). The
+	// judging itself — gather() and everything it calls — is unchanged and
+	// still runs once per bead; what changed is only which goroutine gets
+	// there first.
+	//
+	// ADR 0028 §1: when this Run is Watch's own long-lived one (d.Refill),
+	// a bead that settles and frees its seat is re-fired immediately, right
+	// here, before this loop looks at anything else pending — under the
+	// launcher flock, exactly as any other fire does, and re-verified
+	// against bd and herdr fresh rather than trusted from the settle alone
+	// (refire). A one-shot Run leaves d.Refill unset and this loop drains
+	// exactly as it always gathered: judged, counted, done.
 	if len(pending) > 0 {
-		fmt.Fprintf(d.Out, "… %d prompt(s) in flight, gathering (checking every %ds, up to %s)\n", len(pending), d.PromptWaitMS/1000, d.WaitCeiling)
+		d.printf("… %d prompt(s) in flight, gathering\n", len(pending))
 	}
-	stillWorking := 0
-	for _, p := range pending {
+	type gathered struct {
+		is      RepoIssue
+		persona string
+		working bool
+		err     error
+	}
+	results := make(chan gathered, 8)
+	watch := func(p *pendingBead) {
 		working, err := d.gather(p)
-		if err != nil {
-			fmt.Fprintf(d.Out, "✗ %-14s %v\n", p.is.ID, err)
+		results <- gathered{p.is, p.persona, working, err}
+	}
+	for _, p := range pending {
+		go watch(p)
+	}
+	stillWorking, active := 0, len(pending)
+	for active > 0 {
+		g := <-results
+		active--
+		if g.err != nil {
+			d.printf("✗ %-14s %v\n", g.is.ID, g.err)
+		} else {
+			if g.working {
+				stillWorking++
+			}
+			dispatched++
+		}
+		if !d.Refill || g.working {
 			continue
 		}
-		if working {
-			stillWorking++
+		if d.refillCtx != nil && d.refillCtx.Err() != nil {
+			// The loop is stopping: the seat this settle just freed is
+			// still recorded free (below), but nothing fires into it.
+			continue
 		}
-		dispatched++
+		delete(busy, SessionFor(g.persona, g.is.Dir))
+		more, attempts, err := d.refire(g.persona, dirFilter, max, busy)
+		if err != nil {
+			d.printf("✗ refill %s: %v\n", g.persona, err)
+		} else if !d.DryRun {
+			d.epochAttempts += attempts
+		}
+		for _, np := range more {
+			active++
+			go watch(np)
+		}
 	}
 	if stillWorking > 0 {
-		fmt.Fprintf(d.Out, "◷ %d bead(s) still with their agent — claims kept; a later pass sees them held, not free\n", stillWorking)
+		d.printf("◷ %d bead(s) still with their agent — claims kept; a later pass sees them held, not free\n", stillWorking)
 	}
 
 	// ADR 0013 §5's first obligation, at the end of the pass and after the
@@ -1578,7 +1681,12 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 //
 // A --dry-run pass acts on nothing, and making it queue behind a live pass
 // would turn a read-only command into a blocking one; it runs unlocked.
-func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) (int, []*pendingBead, int, error) {
+// busy is the caller's seat-occupancy map (ADR 0028 §3) — a fresh one from
+// Run for a one-shot pass, or the one Run is sharing across every refire it
+// makes when d.Refill is set. fireLoop only ever reads and writes it while
+// holding the launcher flock below, on the caller's own goroutine; nothing
+// else touches it concurrently (see Run's doc on the gather fan-in).
+func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]bool) (int, []*pendingBead, int, error) {
 	if !d.DryRun {
 		lock, err := lockLaunches(d.App, d.Out)
 		if err != nil {
@@ -1588,15 +1696,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 	}
 
 	dispatched, attempts := 0, 0
-	busy := map[string]bool{} // sessions made busy during this pass
-	outside := 0              // beads whose lane does not contain --persona X
+	outside := 0 // beads whose lane does not contain --persona X
 	var pending []*pendingBead
 	for _, is := range beads {
 		if max > 0 && attempts >= max {
 			break
 		}
 		if !beadIDRe.MatchString(is.ID) {
-			fmt.Fprintf(d.Out, "– %-14q refused: bead id is not a plain token\n", is.ID)
+			d.printf("– %-14q refused: bead id is not a plain token\n", is.ID)
 			continue
 		}
 		// A question is the operator's to answer, never dispatched — and it
@@ -1605,7 +1712,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// costs no attempt in any case (rangerhq-1r2).
 		if hasLabel(is.Labels, "question") {
 			if personaFilter == "" || is.Assignee == personaFilter {
-				fmt.Fprintf(d.Out, "– %-14s for the operator (question) — not dispatched\n", is.ID)
+				d.printf("– %-14s for the operator (question) — not dispatched\n", is.ID)
 			}
 			continue
 		}
@@ -1615,7 +1722,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// read under the launcher lock, right here.
 		lane := d.laneFor(is)
 		if lane.deny != "" {
-			fmt.Fprintf(d.Out, "– %-14s unroutable (%s)\n", is.ID, lane.deny)
+			d.printf("– %-14s unroutable (%s)\n", is.ID, lane.deny)
 			continue
 		}
 		// One bead per persona per repo per pass (§4): the seat walk skips
@@ -1631,7 +1738,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 				outside++
 				continue
 			}
-			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, full)
+			d.printf("– %-14s %s\n", is.ID, full)
 			continue
 		}
 		persona := lane.seats[seat].name
@@ -1649,7 +1756,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			crewNames = append(crewNames, slot)
 		}
 		if held := d.crewHeld(crewNames...); held != "" {
-			fmt.Fprintf(d.Out, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
+			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
 			continue
 		}
 		// Same names, same question, one rung lower: a workspace posse holds
@@ -1659,7 +1766,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// (rangerhq-ynx8). Before the holder join, so a foreign row is never
 		// the session `held` names.
 		if held := d.foreignHeld(crewNames...); held != "" {
-			fmt.Fprintf(d.Out, "– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(held), foreignFreeLine(held))
+			d.printf("– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(held), foreignFreeLine(held))
 			continue
 		}
 		// The holder join (ADR 0004 §2): a bead this persona already holds is
@@ -1679,7 +1786,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// agent gone → the launch creates/relaunches and the claim-held path
 		// resumes); otherwise the operator asks with --resume (rangerhq-zom).
 		if held != "" && !d.Resume {
-			fmt.Fprintf(d.Out, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, held)
+			d.printf("– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, held)
 			continue
 		}
 		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
@@ -1726,7 +1833,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		mine := is.Assignee == "" || is.Assignee == persona
 		if age, recent := d.promptedRecently(session); recent && held == "" && mine {
 			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
-				fmt.Fprintf(d.Out, "– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
+				d.printf("– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
 				busy[slot] = true
 				continue
 			}
@@ -1740,7 +1847,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// Nearly spent → the bead may run a tier down.
 		st := d.passBudget()
 		if st.Stop() {
-			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, budgetSkipLine(st))
+			d.printf("– %-14s %s\n", is.ID, budgetSkipLine(st))
 			continue
 		}
 		// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
@@ -1768,13 +1875,13 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			}
 			if d.planBlind != "" {
 				if OnGuardedMeter(launchRT) {
-					fmt.Fprintf(d.Out, "– %-14s %s — skipped\n", is.ID, d.planBlind)
+					d.printf("– %-14s %s — skipped\n", is.ID, d.planBlind)
 					continue
 				}
 			} else {
 				dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
 				if dec.Skip != "" {
-					fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, dec.Skip)
+					d.printf("– %-14s %s\n", is.ID, dec.Skip)
 					continue
 				}
 				launchRT, moved = dec.Runtime, dec.Moved
@@ -1787,7 +1894,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// sent there stands in for one; with no cap set this never skips
 		// anything and the pass's account line is the whole obligation.
 		if skip := d.uncountedSkip(launchRT); skip != "" {
-			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, skip)
+			d.printf("– %-14s %s\n", is.ID, skip)
 			continue
 		}
 		if st.StepDown() {
@@ -1801,7 +1908,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// politeness, is refused for *this bead* — the persona's next bead
 		// may resolve to a tier it can run, so the slot stays free.
 		if err := d.tierRefusal(ag, launchRT, tier); err != nil {
-			fmt.Fprintf(d.Out, "✗ %-14s %v\n", is.ID, err)
+			d.printf("✗ %-14s %v\n", is.ID, err)
 			continue
 		}
 		if d.DryRun {
@@ -1809,7 +1916,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			if moved {
 				over = fmt.Sprintf(" [%s ← overflow]", launchRT)
 			}
-			fmt.Fprintf(d.Out, "· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, over)
+			d.printf("· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, over)
 			// Booked in memory only (noteUncounted writes no ledger under
 			// --dry-run): a dry pass over a reached cap then shows the same
 			// skips the real one would, and its account line says "would".
@@ -1827,12 +1934,12 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// only for a lane wider than one seat, because a lane of one has no
 		// seat to explain and every single-seat pass report stays as it was.
 		if len(lane.seats) > 1 {
-			fmt.Fprintf(d.Out, "· %-14s %s\n", is.ID, why)
+			d.printf("· %-14s %s\n", is.ID, why)
 		}
 		attempts++
 		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved)
 		if err != nil {
-			fmt.Fprintf(d.Out, "✗ %-14s %v\n", is.ID, err)
+			d.printf("✗ %-14s %v\n", is.ID, err)
 			// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
 			//
 			// A lost claim race is about the BEAD: someone else holds it and
@@ -1858,10 +1965,10 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 			case errors.As(err, &lost):
 			case errors.As(err, &failed):
 				d.strand(session)
-				fmt.Fprintf(d.Out, "– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+				d.printf("– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
 			default:
 				busy[slot] = true
-				fmt.Fprintf(d.Out, "– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
+				d.printf("– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
 			}
 			continue
 		}
@@ -1871,7 +1978,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		if moved {
 			d.overflowUsed++
 			if err := d.App.AppendOverflow(LedgerEntry{At: d.now(), Runtime: launchRT, Bead: is.ID, Persona: persona}); err != nil {
-				fmt.Fprintf(d.errw(), "plan guard: overflow ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
+				d.eprintf("plan guard: overflow ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
 			}
 		}
 		// The account ledger, on the same rule and for a different question:
@@ -1894,9 +2001,60 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 	// ranger-base-69jo was filed about. One line at the end says which it
 	// was, and it names no bead, so nothing here is a dispatch decision.
 	if personaFilter != "" && outside > 0 {
-		fmt.Fprintf(d.Out, "– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
+		d.printf("– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
 	}
 	return dispatched, pending, attempts, nil
+}
+
+// refire is ADR 0028 §1's "immediately re-runs the fire path for the freed
+// seat": a fresh bd ready scan (a settle is a hint, never trusted alone —
+// verified against bd here exactly as any other fire does), the same load
+// guard and epoch room every fire attempt checks, and one more fireLoop call
+// under the launcher flock, narrowed to the one persona whose seat just
+// came free and sharing the busy map the owning Run started with.
+//
+// Only Run's own gather loop calls this, and only when d.Refill is set
+// (Watch's long-lived Run — ADR 0028 §4: no other launch path exists). It
+// does not reset any of the pass-denominated readings (planTrip, overflow,
+// uncounted, stranded, budgetStopped) — those stay whatever the owning
+// Run's own head last set them to, refreshed on the next full pass, exactly
+// as ADR 0028 §2's "only four things are pass-denominated" says the rest of
+// this file already may.
+func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]bool) ([]*pendingBead, int, error) {
+	if why := d.App.LoadHigh(d.errw()); why != "" {
+		d.printf("◷ %s — refill for %s skipped\n", why, persona)
+		return nil, 0, nil
+	}
+	d.rollEpoch(d.now())
+	room, ok := d.epochRoom(max)
+	if !ok {
+		return nil, 0, nil
+	}
+	var beads []RepoIssue
+	if dirFilter != "" {
+		single, err := d.Bd.Ready(dirFilter, "")
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, is := range single {
+			beads = append(beads, RepoIssue{BdIssue: is, Dir: dirFilter})
+		}
+	} else {
+		var failed []error
+		beads, failed = d.Bd.ReadyAll(d.App, "")
+		for _, err := range failed {
+			d.printf("✗ ready scan failed: %v\n", err)
+		}
+	}
+	if len(beads) == 0 {
+		return nil, 0, nil
+	}
+	OrderBeads(beads, d.Resume)
+	_, pending, attempts, err := d.fireLoop(beads, persona, room, busy)
+	if err != nil {
+		return nil, 0, err
+	}
+	return pending, attempts, nil
 }
 
 // pendingBead is a prompted bead whose settle is still being awaited.
@@ -1962,7 +2120,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	// naming a model the session is not running is the exact lie this
 	// preflight exists to kill (rangerhq-oay).
 	if rt, tr, fell := d.effectiveTier(session, runtime, tier); fell != "" {
-		fmt.Fprintf(d.Out, "! %-14s %s\n", is.ID, fell)
+		d.printf("! %-14s %s\n", is.ID, fell)
 		runtime, tier, tierWhy = rt, tr, "fallback"
 	}
 	// The overflow marker, and only when there is one: a launch on the
@@ -1977,7 +2135,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	if l.delivered {
 		how = "prompt on the launch line"
 	}
-	fmt.Fprintf(d.Out, "· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, over)
+	d.printf("· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, over)
 	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
 		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,
 		result: make(chan promptResult, 1), prompted: time.Now()}
@@ -2014,7 +2172,7 @@ func (d *Dispatcher) gather(p *pendingBead) (inFlight bool, err error) {
 		// not the harness's to hand back — what is missing is the screen,
 		// not the work. Same verdict a --wait timeout over an unreadable
 		// agent gets, and for the same reason (rangerhq-khc).
-		fmt.Fprintf(d.Out, "◷ %-14s prompt delivered but %s showed herdr no screen it knows — claim kept, not judged this pass (posse peek %s)\n",
+		d.printf("◷ %-14s prompt delivered but %s showed herdr no screen it knows — claim kept, not judged this pass (posse peek %s)\n",
 			p.is.ID, p.session, p.session)
 		return true, nil
 	}
@@ -2044,17 +2202,17 @@ wait:
 		switch st {
 		case "working":
 			if d.WaitCeiling > 0 && time.Since(p.prompted) >= d.WaitCeiling {
-				fmt.Fprintf(d.Out, "◷ %-14s still working in %s after %s — claim kept, not judged this pass\n", p.is.ID, p.session, waited)
+				d.printf("◷ %-14s still working in %s after %s — claim kept, not judged this pass\n", p.is.ID, p.session, waited)
 				return true, nil
 			}
 			// Settle-based wait: the timeout is a check-in, not a deadline.
 			// Beads run 15–40 min and longer; cutting the agent loose at a
 			// fixed 15 was what unclaimed live work.
-			fmt.Fprintf(d.Out, "◷ %-14s still working after %s — waiting again\n", p.is.ID, waited)
+			d.printf("◷ %-14s still working after %s — waiting again\n", p.is.ID, waited)
 			d.rewait(p)
 			continue
 		case "blocked":
-			fmt.Fprintf(d.Out, "⛔ %-14s blocked in %s — intervene (posse attach %s); claim kept\n", p.is.ID, p.session, p.session)
+			d.printf("⛔ %-14s blocked in %s — intervene (posse attach %s); claim kept\n", p.is.ID, p.session, p.session)
 			return true, nil
 		case "idle", "done":
 			// The leg ran out and the agent has settled since: the prompt
@@ -2074,7 +2232,7 @@ wait:
 			// not proof the prompt never landed, and rangerhq-khc is what
 			// unclaiming on it costs: a 40-minute bead handed back while
 			// its session worked on. Keep the claim; say where to look.
-			fmt.Fprintf(d.Out, "◷ %-14s wait timed out after %s and %s — claim kept, not judged this pass (posse peek %s)\n",
+			d.printf("◷ %-14s wait timed out after %s and %s — claim kept, not judged this pass (posse peek %s)\n",
 				p.is.ID, waited, statusPhrase(p.session, st, sterr), p.session)
 			return true, nil
 		}
@@ -2097,10 +2255,10 @@ wait:
 		}
 		if message, observed := find(p.is.Dir, p.is.ID, p.prompted); observed {
 			if err := d.HB.MarkTurnFailure(p.session, message); err != nil {
-				fmt.Fprintf(d.errw(), "posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
+				d.eprintf("posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
 			}
 			if message != "" {
-				fmt.Fprintf(d.Out, "⛔ %-14s Claude refused the first turn: %s — no work ran; relaunch %s at another tier\n",
+				d.printf("⛔ %-14s Claude refused the first turn: %s — no work ran; relaunch %s at another tier\n",
 					p.is.ID, message, p.session)
 				return false, nil
 			}
@@ -2108,19 +2266,19 @@ wait:
 	}
 	switch {
 	case showErr == nil && after.Status == "closed":
-		fmt.Fprintf(d.Out, "✓ %-14s closed by %s\n", p.is.ID, p.persona)
+		d.printf("✓ %-14s closed by %s\n", p.is.ID, p.persona)
 		d.mergeBack(p.is, p.persona, p.session)
 		d.commitQueue(p.is, p.persona)
 	case settled == "blocked":
-		fmt.Fprintf(d.Out, "⛔ %-14s blocked in %s — intervene (posse attach %s)\n", p.is.ID, p.session, p.session)
+		d.printf("⛔ %-14s blocked in %s — intervene (posse attach %s)\n", p.is.ID, p.session, p.session)
 	case showErr != nil:
 		// The ✓ is the BEAD's to give (ADR 0011, ADR 0013 §4) and bd did not
 		// answer, so there is none. An unreadable store of record is
 		// settle-without-record until it reads.
-		fmt.Fprintf(d.Out, "◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
+		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
 			p.is.ID, settled, showErr, p.session, d.recordClause(p.runtime))
 	default:
-		fmt.Fprintf(d.Out, "◑ %-14s settled %q but issue is %q — review %s%s\n",
+		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
 			p.is.ID, settled, after.Status, p.session, d.recordClause(p.runtime))
 	}
 	return false, nil
@@ -2412,7 +2570,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		d.HB.NoteBead(session, is.ID)
 	}
 	if resolveErr != nil {
-		fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
+		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
 			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}); err != nil {
 			return launched{}, err
@@ -2428,7 +2586,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			return launched{}, err
 		}
 		if relaunched {
-			fmt.Fprintf(d.Out, "· %-14s relaunching %s in %s (agent gone, session kept)\n", is.ID, persona, session)
+			d.printf("· %-14s relaunching %s in %s (agent gone, session kept)\n", is.ID, persona, session)
 		}
 	}
 
@@ -2494,7 +2652,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	if err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
-	fmt.Fprintf(d.Out, "· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
+	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
 	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
 		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
@@ -2524,7 +2682,7 @@ func (d *Dispatcher) claim(is RepoIssue, persona string) (bool, error) {
 		return false, err
 	}
 	if resumed {
-		fmt.Fprintf(d.Out, "· %-14s already claimed by %s — resuming\n", is.ID, persona)
+		d.printf("· %-14s already claimed by %s — resuming\n", is.ID, persona)
 	}
 	return resumed, nil
 }
@@ -2708,7 +2866,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		return "", err
 	}
 	if rt, tr, fell := d.effectiveTier(session, launchRuntime, tier); fell != "" {
-		fmt.Fprintf(d.Out, "! %-14s %s\n", is.ID, fell)
+		d.printf("! %-14s %s\n", is.ID, fell)
 		launchRuntime, tier = rt, tr
 	}
 	if !l.delivered {
@@ -2782,7 +2940,7 @@ func (d *Dispatcher) awaitDelivered(id, session string, wait time.Duration) (tar
 			// that fails is not evidence either way, and here there is even
 			// less at stake — nothing is about to be typed into the pane.
 			// Take herdr at its word that an agent is there and gather.
-			fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%v) — the work prompt is on its launch line; gathering anyway\n", id, session, derr)
+			d.printf("· %-14s herdr cannot explain %s (%v) — the work prompt is on its launch line; gathering anyway\n", id, session, derr)
 			return target, true, nil
 		case det.Seen():
 			return target, true, nil
@@ -2794,7 +2952,7 @@ func (d *Dispatcher) awaitDelivered(id, session string, wait time.Duration) (tar
 			lastWhy, lastGuess = fmt.Sprintf("only %q (%s)", det.State, reason), det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
-			fmt.Fprintf(d.Out, "◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
+			d.printf("◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
 				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw())
 			return target, false, nil
 		}
@@ -2941,7 +3099,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// twenty-two guesses are twenty-two real answers, and one late
 			// diagnostic failure does not outrank them (rangerhq-lhy2).
 			if lastErr != "" && lastWhy == "" {
-				fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
+				d.printf("· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
 				return status, AgentDetection{State: status}, nil
 			}
 			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw())
@@ -2985,7 +3143,7 @@ func (d *Dispatcher) noteTree(id, session string) {
 	if t == nil {
 		return
 	}
-	fmt.Fprintf(d.Out, "· %-14s own tree %s on %s (merges to %s at close)\n",
+	d.printf("· %-14s own tree %s on %s (merges to %s at close)\n",
 		id, AbbrevHome(t.Path), t.Branch, t.Base)
 }
 
@@ -3025,35 +3183,35 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	}
 	lock, err := lockLaunches(d.App, d.Out)
 	if err != nil {
-		fmt.Fprintf(d.errw(), "posse: %s not merged — the launcher lock is unavailable (%v)\n", t.Branch, err)
+		d.eprintf("posse: %s not merged — the launcher lock is unavailable (%v)\n", t.Branch, err)
 		return
 	}
 	defer lock.Release()
 
 	o, err := MergeSessionWork(t)
 	if err != nil {
-		fmt.Fprintf(d.Out, "⚠ %-14s %s not merged onto %s: %v — the branch still holds the work\n", is.ID, t.Branch, t.Base, err)
+		d.printf("⚠ %-14s %s not merged onto %s: %v — the branch still holds the work\n", is.ID, t.Branch, t.Base, err)
 		return
 	}
 	if len(o.Dirty) > 0 {
 		// Uncommitted work is not a merge failure and is not lost — it is
 		// sitting in the tree. Said out loud because the persona reported
 		// the bead done and this is the part of "done" that did not land.
-		fmt.Fprintf(d.Out, "◑ %-14s %d uncommitted path(s) left in %s (%s) — not merged, still in the tree\n",
+		d.printf("◑ %-14s %d uncommitted path(s) left in %s (%s) — not merged, still in the tree\n",
 			is.ID, len(o.Dirty), AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
 	}
 	switch {
 	case o.Merged && o.Commits == 0:
-		fmt.Fprintf(d.Out, "◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
+		d.printf("◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
 	case o.Merged:
 		how := "fast-forwarded"
 		if o.Rebased {
 			how = "rebased and fast-forwarded"
 		}
-		fmt.Fprintf(d.Out, "⤴ %-14s %d commit(s) %s from %s onto %s in %s\n",
+		d.printf("⤴ %-14s %d commit(s) %s from %s onto %s in %s\n",
 			is.ID, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
 	default:
-		fmt.Fprintf(d.Out, "⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, t.Base, o.Reason)
+		d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, t.Base, o.Reason)
 		d.fileMergeBlocked(is, persona, t, o)
 	}
 }
@@ -3082,7 +3240,7 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 	}
 	lock, err := lockLaunches(d.App, d.Out)
 	if err != nil {
-		fmt.Fprintf(d.errw(), "posse: %s jsonl not committed — the launcher lock is unavailable (%v)\n", is.ID, err)
+		d.eprintf("posse: %s jsonl not committed — the launcher lock is unavailable (%v)\n", is.ID, err)
 		return
 	}
 	defer lock.Release()
@@ -3091,11 +3249,11 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 	c, err := d.App.CommitQueueJSONL(d.Bd, is.Dir, msg)
 	switch {
 	case err != nil:
-		fmt.Fprintf(d.Out, "⚠ %-14s the queue jsonl did NOT commit in %s: %v\n", is.ID, AbbrevHome(c.Repo), err)
+		d.printf("⚠ %-14s the queue jsonl did NOT commit in %s: %v\n", is.ID, AbbrevHome(c.Repo), err)
 	case c.SHA != "":
-		fmt.Fprintf(d.Out, "⎘ %-14s %s committed in %s (%s)\n", is.ID, strings.Join(c.Paths, " "), AbbrevHome(c.Repo), c.SHA)
+		d.printf("⎘ %-14s %s committed in %s (%s)\n", is.ID, strings.Join(c.Paths, " "), AbbrevHome(c.Repo), c.SHA)
 	default:
-		fmt.Fprintf(d.Out, "◑ %-14s no queue commit: %s\n", is.ID, c.Skipped)
+		d.printf("◑ %-14s no queue commit: %s\n", is.ID, c.Skipped)
 	}
 }
 
@@ -3121,8 +3279,8 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 			t.Path, t.Repo, t.Base, t.Base, t.Base),
 	})
 	if err != nil {
-		fmt.Fprintf(d.errw(), "posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
+		d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
 		return
 	}
-	fmt.Fprintf(d.Out, "  ↳ filed %s for %s\n", id, persona)
+	d.printf("  ↳ filed %s for %s\n", id, persona)
 }

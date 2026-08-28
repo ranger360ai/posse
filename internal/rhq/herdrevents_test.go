@@ -613,9 +613,11 @@ func TestAgentPanesDegradesToNone(t *testing.T) {
 // ─── the watch loop (the bead's DONE WHEN) ───────────────────────────────────
 
 // A settling session produces a logged hint in the watch process within ~1s,
-// and it changes nothing else: this slice logs, and the tick still decides
-// when the next pass runs.
-func TestWatchLogsSettleHintAndLeavesTheTickAlone(t *testing.T) {
+// and — ADR 0028 §1, the refill this bead ships — that hint wakes the next
+// pass immediately rather than waiting out the (here, hour-long) backoff.
+// ranger-base-0s36 shipped the hint logged and inert ("the tick still sets
+// the next pass"); ranger-base-zk5u is what wires it to actually wake one.
+func TestWatchSettleHintWakesTheNextPassEarly(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()
@@ -633,23 +635,30 @@ func TestWatchLogsSettleHintAndLeavesTheTickAlone(t *testing.T) {
 	d.Hints = nil
 	t.Setenv("HERDR_SOCKET_PATH", s.path)
 
-	tap := newPassTap(1)
+	// Two passes: pass 1 at loop start, pass 2 only if the hint wakes it —
+	// the interval below is long enough that nothing but the hint could
+	// produce it inside this test's deadline.
+	tap := newPassTap(2)
 	d.Out = tap
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan int, 1)
-	// A pass interval long enough that nothing but a bug starts a second
-	// pass during this test.
 	go func() { p, _ := d.Watch(ctx, "", "", 0, time.Hour, time.Hour); done <- p }()
 
 	if req := s.subscribed(); !strings.Contains(req, `"w4:p1"`) {
 		t.Fatalf("the loop must subscribe to the panes herdr reports agents in: %s", req)
 	}
 	s.conn()
-	select {
-	case <-tap.reached:
-	case <-time.After(30 * time.Second):
-		t.Fatalf("the loop never announced a pass:\n%s", tap.String())
+	// Pass 1's own header, before any hint — confirms the loop is up without
+	// racing the settle below against it.
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		if strings.Count(tap.String(), passHeader) >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := strings.Count(tap.String(), passHeader); n < 1 {
+		t.Fatalf("the loop never announced pass 1:\n%s", tap.String())
 	}
 	// The pass pokes the subscription so a seat it found gets subscribed;
 	// that redial is the connection the settle arrives on.
@@ -678,10 +687,11 @@ func TestWatchLogsSettleHintAndLeavesTheTickAlone(t *testing.T) {
 	if !strings.Contains(out, "w4:p1") || !strings.Contains(out, "idle") {
 		t.Errorf("the hint line must say which seat settled and how:\n%s", out)
 	}
-	// Hint-only: the tick still governs. A hint that started a pass would
-	// show a second header here, an hour early.
-	if n := strings.Count(out, passHeader); n != 1 {
-		t.Errorf("this slice logs the hint and nothing else — %d passes, want 1:\n%s", n, out)
+	// The wake: a second pass header well inside the hour-long backoff.
+	select {
+	case <-tap.reached:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("the hint must wake pass 2 rather than wait out the backoff:\n%s", tap.String())
 	}
 	cancel()
 	select {

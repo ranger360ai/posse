@@ -137,7 +137,7 @@ func (d *Dispatcher) epochRoom(max int) (int, bool) {
 	if room > 0 {
 		return room, true
 	}
-	fmt.Fprintf(d.Out, "◷ launch cap: %d of %d attempt(s) spent this epoch — nothing launched until it turns at %s (ADR 0028 §2; raise autostart_max_beads:/-n or dispatch_epoch:)\n",
+	d.printf("◷ launch cap: %d of %d attempt(s) spent this epoch — nothing launched until it turns at %s (ADR 0028 §2; raise autostart_max_beads:/-n or dispatch_epoch:)\n",
 		d.epochAttempts, max, d.epochEnd().Local().Format("15:04:05"))
 	return 0, false
 }

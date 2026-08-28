@@ -320,11 +320,29 @@ of the harness core:
    explicit ask and always resumes.
 5. The prompt's `--wait` runs in a goroutine and the pass moves on to the
    next bead: **fire every routable bead first, then gather** the settles
-   in launch order (rangerhq-tqr). Sessions launch serially (create →
-   await → claim → prompt); only the wait for the work overlaps, so a
-   pass takes as long as its slowest bead, not the sum. Gathering serially
-   is free — the sessions work concurrently and a settle that already
-   happened returns at once.
+   (rangerhq-tqr). Sessions launch serially (create → await → claim →
+   prompt); only the wait for the work overlaps, so a pass takes as long
+   as its slowest bead, not the sum. Gathering itself is one goroutine per
+   pending bead, fanned into `Run`'s own control goroutine as each settles
+   — completion order, not launch order (a bead that settles in three
+   minutes is judged in three minutes even when it launched behind one
+   still running at seventy-five) — but still one judgement at a time on
+   that one goroutine, so `gather` and everything it calls (`mergeBack`,
+   `commitQueue`, `fileMergeBlocked`) run exactly as before; only which
+   goroutine gets there first changed. Under `--watch` (`Dispatcher.Refill`,
+   ADR 0028 §1) each settle that frees a seat re-runs the fire path for
+   that seat immediately, right there, before the loop looks at anything
+   else pending — a fresh `bd ready` scan under the launcher flock, sharing
+   the busy map the `Run` started with (ADR 0028 §3: live seat occupancy,
+   released at the settle, not reset until the next pass) — so a `Run`
+   under `--watch` keeps refilling for as long as there is ready work for a
+   freed seat, and only returns once the cascade quiets. A one-shot
+   `dispatch` (no `--watch`) never sets `Refill` and never refires: it
+   fires once, gathers, and returns, exactly as before this ADR. `--watch`
+   also wakes the next pass on a herdr settle hint instead of waiting out
+   the backoff (`internal/rhq/watch.go`) — the backstop for whatever a
+   `Run`'s own cascade did not catch (a seat freed by something dispatch
+   never fired into), never the refill's own mechanism.
 6. Judge by the **bead**, not the agent: issue closed → ✓; agent settled
    `blocked` → ⛔ flagged (herdr's sidebar already shows it); settled but
    issue still open → ◑ review the session.

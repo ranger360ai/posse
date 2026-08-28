@@ -83,6 +83,12 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// pass of a fresh loop gets the whole grace rather than an instant skip.
 	d.Unattended = true
 	d.blindSince = d.now()
+	// ADR 0028 §1/§4: this loop's own long-lived Run may refire a seat the
+	// instant its bead settles, and nothing else may (Refill's own doc).
+	// refillCtx is what stops that cascade from outliving the loop; it is
+	// never consulted for anything else.
+	d.Refill = true
+	d.refillCtx = ctx
 	// Identity, not liveness: which pid, since when, under what argv. The
 	// lock above is what anything asking "is the loop running?" tests
 	// (rangerhq-gir5); this is what it quotes once the answer is yes.
@@ -98,10 +104,14 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		go d.pulseLoop(ctx, cfg)
 	}
 	// The settle-event channel (ADR 0016 §1, ADR 0028 §1). One subscription
-	// for the life of this loop, and in THIS slice (ranger-base-0s36) the
-	// hint is logged and nothing else: the tick below is untouched, so a
-	// hint changes no dispatch behaviour and a lost one costs not even
-	// latency yet. Waking the next pass early is S4's (ranger-base-zk5u).
+	// for the life of this loop. A hint wakes the next pass immediately
+	// instead of waiting out the backoff (ADR 0028 §1's first trigger); the
+	// tick below is what fires it when no hint arrives at all — the
+	// backstop, not the mechanism. Either way it is Run's own gather loop
+	// that does the actual refiring, verified against bd and herdr fresh
+	// (refire) rather than trusted from the hint: a coalesced, replayed or
+	// entirely lost hint costs this loop latency, waiting out the backstop,
+	// and never correctness.
 	//
 	// No herdr, no socket, a dead server: the subscriber says so once and
 	// this loop goes on ticking. It is a latency path, never a dependency.
@@ -143,8 +153,9 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		}
 		wait = NextInterval(wait, base, maxInterval, n)
 		fmt.Fprintf(d.Out, "   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
-		// One timer per pass, and a hint does NOT reset it: hints are
-		// logged here, the tick still decides when the next pass runs.
+		// One timer per pass; a hint cuts it short instead of waiting it
+		// out (ADR 0028 §1) — the next pass's own fireLoop re-verifies
+		// against bd and herdr before it acts on anything the hint implied.
 		timer := time.NewTimer(wait)
 		for tick := false; !tick; {
 			select {
@@ -158,7 +169,9 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 					hints = nil
 					continue
 				}
-				fmt.Fprintf(d.Out, "   settle hint · %s — logged only, the tick still sets the next pass (ADR 0028 §1)\n", h)
+				fmt.Fprintf(d.Out, "   settle hint · %s — waking the next pass now (ADR 0028 §1)\n", h)
+				timer.Stop()
+				tick = true
 			case <-timer.C:
 				tick = true
 			}

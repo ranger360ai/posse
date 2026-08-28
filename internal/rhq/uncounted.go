@@ -168,7 +168,7 @@ func (d *Dispatcher) noteUncounted(is RepoIssue, persona, runtime string) {
 		return
 	}
 	if err := d.App.AppendUncounted(LedgerEntry{At: d.now(), Runtime: runtime, Bead: is.ID, Persona: persona}); err != nil {
-		fmt.Fprintf(d.errw(), "account: uncounted ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
+		d.eprintf("account: uncounted ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
 	}
 }
 
@@ -213,7 +213,7 @@ func (d *Dispatcher) uncountedReport() {
 			// left the runtime in.
 			brake = fmt.Sprintf("uncounted_cap_%s: %q is not a cap — unlimited and loud", name, p.Raw)
 		}
-		fmt.Fprintf(d.Out, "! account-degraded %s: %s %d bead(s) this pass, %s — no cost adapter reads %s, so none of this spend is in `posse cost`; %s (ADR 0013 §5)\n",
+		d.printf("! account-degraded %s: %s %d bead(s) this pass, %s — no cost adapter reads %s, so none of this spend is in `posse cost`; %s (ADR 0013 §5)\n",
 			name, verb, p.Sent, window, name, brake)
 	}
 }

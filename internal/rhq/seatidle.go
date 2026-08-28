@@ -229,7 +229,7 @@ func (d *Dispatcher) noteSeatLaunch(is RepoIssue, seat, runtime string, at time.
 	path := d.App.SeatCadenceLogPath()
 	d.seatRefills = append(d.seatRefills, SeatIdleAt(path, seat, is.ID, at))
 	if err := d.App.AppendSeatEvent(SeatEvent{At: at, Kind: SeatLaunch, Seat: seat, Bead: is.ID, Detail: runtime}); err != nil {
-		fmt.Fprintf(d.errw(), "seat cadence: launch of %s into %s not recorded (%v) — the next refill of this seat has no window to measure (ADR 0028 §5)\n", is.ID, seat, err)
+		d.eprintf("seat cadence: launch of %s into %s not recorded (%v) — the next refill of this seat has no window to measure (ADR 0028 §5)\n", is.ID, seat, err)
 	}
 }
 
@@ -250,7 +250,7 @@ func (d *Dispatcher) noteSeatSettle(p *pendingBead, state string, at time.Time) 
 	}
 	seat := SessionFor(p.persona, p.is.Dir)
 	if err := d.App.AppendSeatEvent(SeatEvent{At: at, Kind: SeatSettle, Seat: seat, Bead: p.is.ID, Detail: state}); err != nil {
-		fmt.Fprintf(d.errw(), "seat cadence: settle of %s in %s not recorded (%v) — this seat's next refill has no window to measure (ADR 0028 §5)\n", p.is.ID, seat, err)
+		d.eprintf("seat cadence: settle of %s in %s not recorded (%v) — this seat's next refill has no window to measure (ADR 0028 §5)\n", p.is.ID, seat, err)
 	}
 }
 
@@ -270,7 +270,7 @@ func (d *Dispatcher) seatIdleReport() {
 	sort.SliceStable(refills, func(i, j int) bool { return refills[i].Seat < refills[j].Seat })
 	measured := make([]time.Duration, 0, len(refills))
 	for _, r := range refills {
-		fmt.Fprintln(d.Out, r.Line())
+		d.println(r.Line())
 		if r.Measured() {
 			measured = append(measured, r.Idle)
 		}
@@ -279,7 +279,7 @@ func (d *Dispatcher) seatIdleReport() {
 		return
 	}
 	sort.Slice(measured, func(i, j int) bool { return measured[i] < measured[j] })
-	fmt.Fprintf(d.Out, "◷ idle-to-next: %d of %d refill(s) measured — median %s, max %s (ADR 0028 §5 observable 1; no refill has shipped, this is the control arm)\n",
+	d.printf("◷ idle-to-next: %d of %d refill(s) measured — median %s, max %s (ADR 0028 §5 observable 1; no refill has shipped, this is the control arm)\n",
 		len(measured), len(refills), medianDuration(measured).Round(time.Second), measured[len(measured)-1].Round(time.Second))
 }
 

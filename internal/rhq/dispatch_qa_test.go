@@ -807,6 +807,77 @@ func TestDispatchTwoBeadsFreshSessions(t *testing.T) {
 	}
 }
 
+// ADR 0028 §1/§3 (ranger-base-zk5u): with d.Refill set, a persona's seat
+// freed by one bead's settle is refired inside the SAME Run — the settle
+// frees the seat and the fire path re-runs for it immediately, so one Run
+// picks up a second bead ready for that persona instead of leaving it for
+// "a later pass" to find. Two repos, not two beads in one, because the
+// fake bd's `ready` never drops a bead once claimed (it overlays claim
+// state onto the same canned list — the real bd's contract, not this
+// fixture's), which would make the SAME bead reappear ready forever; a
+// second repo's own ready list is untouched by the first repo's claim.
+func TestRunRefillsAFreedSeatInsideOnePass(t *testing.T) {
+	b, fakeA := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	os.WriteFile(filepath.Join(repoA, "fake-ready.json"), []byte(`[{"id":"a-1","title":"t","labels":["go"]}]`), 0o644)
+	os.WriteFile(filepath.Join(repoA, "fake-show.json"), []byte(`[{"id":"a-1","status":"closed"}]`), 0o644)
+	os.WriteFile(filepath.Join(repoB, "fake-ready.json"), []byte(`[{"id":"b-1","title":"u","labels":["go"]}]`), 0o644)
+	os.WriteFile(filepath.Join(repoB, "fake-show.json"), []byte(`[{"id":"b-1","status":"closed"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repoA+"\n  - "+repoB+"\n"), 0o644)
+	agentPerLaunch(t, fakeA)
+	d.Refill = true
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 2 {
+		t.Errorf("want both beads dispatched in one Run, got n=%d:\n%s", n, out)
+	}
+	if strings.Count(out, "closed by ranger") != 2 {
+		t.Errorf("want both beads judged closed inside this one Run:\n%s", out)
+	}
+	c := calls(t, fakeA)
+	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label ranger-003-a-1") || !strings.Contains(c, "workspace create --label ranger-004-b-1") {
+		t.Errorf("want two fresh sessions, one per bead (Dial F):\n%s", c)
+	}
+}
+
+// The same setup with d.Refill unset (a one-shot dispatch, or Watch before
+// this bead) must still leave the second repo's bead for a later pass —
+// refilling is Watch's own (ADR 0028 §4), never a one-shot Run's. The first
+// Run here already dispatches both, because — unlike the same-repo case in
+// TestDispatchTwoBeadsFreshSessions — two different repos are two
+// different seats and neither one's busy map has anything to do with the
+// other; what this pins is that NEITHER one gets a second, refired launch
+// once its own bead settles.
+func TestRunWithoutRefillNeverRefiresAFreedSeat(t *testing.T) {
+	b, fakeA := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repoA := t.TempDir()
+	os.WriteFile(filepath.Join(repoA, "fake-ready.json"), []byte(`[{"id":"a-1","title":"t","labels":["go"]}]`), 0o644)
+	os.WriteFile(filepath.Join(repoA, "fake-show.json"), []byte(`[{"id":"a-1","status":"closed"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repoA+"\n"), 0o644)
+	agentPerLaunch(t, fakeA)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 1 || strings.Count(out, "closed by ranger") != 1 {
+		t.Errorf("want exactly the one bead dispatched and judged, got n=%d:\n%s", n, out)
+	}
+	if strings.Count(calls(t, fakeA), "workspace create") != 1 {
+		t.Errorf("without Refill, a settled seat must not be fired into again:\n%s", calls(t, fakeA))
+	}
+}
+
 // rangerhq-rck: cockpit launches have no cross-launch busy tracking — until
 // herdr flips the session to working, a second launch double-prompts it.
 func TestLaunchBeadTwiceWhileStillIdle(t *testing.T) {
