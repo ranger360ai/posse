@@ -607,3 +607,100 @@ func TestQALegacyUpgradeLeavesForeignHooksAlone(t *testing.T) {
 		t.Errorf("a refused hook must be left byte-identical: %q", string(b))
 	}
 }
+
+// bdShimBody is `bd hooks install`'s real 0.49.x shim for a slot, trimmed to
+// the parts that decide anything: the `# bd-shim v1` header --chain keys on,
+// and the `exec bd hooks run <slot>` body. Planted verbatim rather than
+// paraphrased, because both facts below turn on posse recognizing this exact
+// shape — and on the launch NOT taking it over.
+func bdShimBody(slot string) string {
+	return "#!/usr/bin/env sh\n# bd-shim v1\n# bd-hooks-version: 0.49.1\n" +
+		"if ! command -v bd >/dev/null 2>&1; then\n    exit 0\nfi\n" +
+		"exec bd hooks run " + slot + " \"$@\"\n"
+}
+
+// QA, rangerhq-71ki (verify of rangerhq-j4sq) — the same claim as
+// TestQASessionCreateInstallsNothingIntoABdHookedRepo, but read through
+// CreateSession itself instead of through the two functions it happens to
+// call today. That distinction is not academic: flipping herdrback.go's
+// InstallPrePushHook to InstallPrePushHookChained (which exists, since
+// rangerhq-mgdk) makes INSTALL.md §9's "Session create itself does not pass
+// `--chain`" false while the older pin — and, measured 2026-08-28, the whole
+// of ./internal/rhq — stays green.
+//
+// Two facts, both of which §9 states and neither of which was pinned at the
+// launch boundary:
+//  1. a dispatch into a bd-hooked repo installs NOTHING: both slots stay
+//     byte-identical bd shims and no posse-<slot>/bd-<slot> chain appears.
+//  2. it is not silent about it. The L3 behavior probe (ranger-base-3c3)
+//     degrades naming both slots, and the launch refuses unless the operator
+//     passes --allow-degraded.
+func TestQADispatchIntoABdHookedRepoInstallsNothingAndRefuses(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	b, _ := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	slots := []string{"pre-push", "prepare-commit-msg"}
+	for _, slot := range slots {
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(bdShimBody(slot)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Fact 2 first, because it is what the operator actually meets.
+	err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "dev", Runtime: "claude", Dir: repo})
+	if err == nil {
+		t.Fatal("a dispatch into a bd-hooked repo must refuse: neither gate is realized there")
+	}
+	for _, slot := range slots {
+		if !strings.Contains(err.Error(), slot) {
+			t.Errorf("the refusal must name %s — §9 tells the operator both slots are bd's:\n%v", slot, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "--allow-degraded") {
+		t.Errorf("the refusal must name the way through:\n%v", err)
+	}
+
+	// Fact 1: waive it, and the launch still puts no gate in the repo.
+	mustCreate(t, b, NewSessionOpts{Name: "s2", Agent: "dev", Runtime: "claude", Dir: repo, AllowDegraded: true})
+	if m, _ := b.readMeta("s2"); m == nil || !strings.Contains(m.Degraded, "foreign hook") {
+		t.Errorf("a waived launch must stay marked as degraded: %+v", m)
+	}
+	for _, slot := range slots {
+		got, err := os.ReadFile(filepath.Join(hooks, slot))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != bdShimBody(slot) {
+			t.Fatalf("%s: the launch changed the slot — INSTALL.md §9 says a dispatch cannot, and that session create does not pass --chain:\n%s", slot, got)
+		}
+		for _, side := range []string{"posse-" + slot, "bd-" + slot, "theirs-" + slot} {
+			if _, err := os.Stat(filepath.Join(hooks, side)); err == nil {
+				t.Fatalf("%s exists: the launch built a chain by itself — §9's closing paragraph needs re-checking", side)
+			}
+		}
+	}
+	ents, err2 := os.ReadDir(hooks)
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	for _, e := range ents {
+		body, _ := os.ReadFile(filepath.Join(hooks, e.Name()))
+		if strings.Contains(string(body), "posse-gate") {
+			t.Fatalf("found a posse gate at %s — a dispatch installed one after all", e.Name())
+		}
+	}
+}
