@@ -59,13 +59,23 @@ package rhq
 //     clobbering when they collide — so the operator's dirty tree is not a
 //     reason to skip the merge, and never a reason it loses work.
 //
-// PLACEMENT IS OURS TO ENFORCE. bd does NOT refuse a `.beads` under /tmp
-// (rangerhq-80fx corrected that: `isPathInSafeBoundary` validates the
-// resolved BEADS_DIR, which a redirect always points back at the main repo,
-// so it is always the safe one wherever the worktree sits). Session
+// PLACEMENT IS OURS TO ENFORCE, because bd's net is PARTIAL — not because
+// it is absent (ranger-base-9ypc corrects rangerhq-80fx, which said the
+// latter and fails dangerous). Measured on bd 0.49.1 with a $HOME control on
+// every arm: `FindBeadsDir` runs BEADS_DIR through `CanonicalizePath`, which
+// EvalSymlinks it BEFORE `isPathInSafeBoundary` judges it, so /tmp is judged
+// as /private/tmp and /private IS in unsafePrefixes — every tmp BEADS_DIR is
+// refused, on the worktree-create arm included. But only the ~50 commands
+// that call GetRepoContext ask at all: `bd list`/`bd status` accept /tmp,
+// /var/tmp, even /etc. And `bd worktree create /tmp/<name>` succeeds while
+// writing a redirect that does NOT resolve — the relative path is computed
+// from the unresolved /tmp target and the tree lands at /private/tmp, one
+// component deeper — which stays silent because FindBeadsDir's worktree
+// branch reaches the main repo through git, never the redirect. Session
 // worktrees go under $HOME because a session scratchpad is REAPED, and a
 // reaped worktree under a live session destroys the work in it. WorktreeRoot
-// refuses anything outside $HOME rather than trusting a net nobody holds.
+// refuses anything outside $HOME rather than trusting a net that holds only
+// where someone happens to look.
 
 import (
 	"fmt"

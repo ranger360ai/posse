@@ -77,9 +77,12 @@ func commitIn(t *testing.T, dir, path, body, msg string) {
 
 // ─── placement ───────────────────────────────────────────────────────────────
 
-// The one rule this feature owns, and the reason it owns it: bd does NOT
-// refuse a `.beads` outside $HOME (rangerhq-80fx), so nothing under us stops
-// a session worktree landing in a directory a reaper walks.
+// The one rule this feature owns, and the reason it owns it: bd's own
+// boundary check is PARTIAL (ranger-base-9ypc — it refuses a tmp BEADS_DIR
+// only on the ~50 commands that reach GetRepoContext, and `bd worktree
+// create /tmp/<name>` succeeds while writing a redirect that silently does
+// not resolve), so nothing under us stops a session worktree landing in a
+// directory a reaper walks.
 func TestWorktreeRootMustBeUnderHome(t *testing.T) {
 	a := wtApp(t)
 	if _, err := a.WorktreeRoot(); err != nil {

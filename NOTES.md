@@ -4543,24 +4543,37 @@ What was measured, before and during the build:
 - `git commit -- <path>` on a path git has never seen fails with "pathspec did
   not match any file(s) known to git", so the blessed commit form needs an
   `add` in front of it for a NEW file. Not new behaviour; newly written down.
-- **Put session worktrees under `$HOME` — and do not expect bd to enforce it.**
-  An earlier version of this note claimed bd refuses a `.beads` under `/tmp`
-  ("BEADS_DIR points to unsafe location"). That is **false** on bd 0.49.1
-  (corrected in rangerhq-80fx). Measured on both arms: `BEADS_DIR` set to
-  `/tmp`, `/private/tmp` or `/var/tmp` is accepted by `bd list`, `bd status`
-  and `bd sync`; and `bd worktree create /tmp/<name>` **succeeds** — it makes
-  the worktree and writes a working `redirect`. The refusal string is real but
-  guards a different thing: `isPathInSafeBoundary` has exactly two call sites
-  (`internal/beads/context.go`), both validating the *resolved* `BEADS_DIR`,
-  and neither the init nor the worktree-create arm validates the worktree's own
-  path. It structurally cannot: `bd worktree create` points the redirect at the
-  **main** repo's `.beads` under `$HOME`, so the path that gets validated is
-  always the safe one no matter where the worktree sits. `/tmp` is permitted by
-  design besides — `unsafePrefixes` omits it, and an explicit branch admits
-  `os.TempDir()`. So `$HOME` is **our** constraint to keep, not a net bd holds
-  under us; a session scratchpad is reaped, and a reaped worktree under a live
-  session is exactly the failure that imagined net was assumed to prevent.
-  `WorktreeRoot()` refuses a configured root outside `$HOME`.
+- **Put session worktrees under `$HOME` — bd holds a net, but a partial one.**
+  This note has been wrong twice in opposite directions: first that bd refuses
+  a `.beads` under `/tmp`, then (rangerhq-80fx) that it holds no such net at
+  all. What is measured on bd 0.49.1 — throwaway repo under `$HOME`, a `$HOME`
+  control on every arm (ranger-base-9ypc) — is in between, and the second
+  version is the one that fails dangerous.
+  **The check is real and every tmp path fails it.** `FindBeadsDir` puts
+  `BEADS_DIR` through `CanonicalizePath`, which `EvalSymlinks` it, *before*
+  `isPathInSafeBoundary` judges it — and on macOS `/tmp` resolves to
+  `/private/tmp`, whose `/private` **is** in `unsafePrefixes`. The
+  `os.TempDir()` branch does not admit `/tmp` either (`os.TempDir()` here is
+  `/var/folders/…/T`). So `BEADS_DIR=/tmp/… bd worktree create` fails with
+  "BEADS_DIR points to unsafe location: /private/tmp/…", `/var/tmp` likewise,
+  while the `$HOME` control creates the worktree.
+  **But only the ~50 commands that call `GetRepoContext` ever ask.** `bd list`
+  and `bd status` accept a `BEADS_DIR` under `/tmp`, `/private/tmp`, `/var/tmp`
+  and even `/etc` — the check is unreached, not satisfied. And `bd worktree
+  create /tmp/<name>` (no `BEADS_DIR`) **succeeds and writes a redirect that
+  does not resolve**: the relative path is computed from the unresolved `/tmp`
+  target while the tree lands at `/private/tmp`, one component deeper, so
+  `../../../Users/…/repo/.beads` resolves to `/private/Users/…` and bd's own
+  `worktree list` warns "redirect target does not exist or is not a directory".
+  The `$HOME` control writes `../repo/.beads` and warns about nothing. Nothing
+  notices sooner because `FindBeadsDir`'s worktree branch reaches the main repo
+  through git, never the redirect — so the breakage is silent until something
+  reads that file.
+  `$HOME` is therefore **still ours to enforce**: because the net is partial
+  and silent exactly where it leaks, not because it is absent. The reason
+  stands on its own feet either way — a session scratchpad is reaped, and a
+  reaped worktree under a live session is exactly the failure. `WorktreeRoot()`
+  refuses a configured root outside `$HOME`, resolving symlinks first.
 - The `pre-commit` slot is **already taken by bd's hook**, and the posse gate
   precedent is "foreign hooks are never overwritten" (pre-push, ADR 0002 §3).
   A posse commit gate has to chain or use `core.hooksPath`, not claim the slot.
