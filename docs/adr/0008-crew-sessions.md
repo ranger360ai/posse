@@ -72,6 +72,18 @@ both read, in the pass exactly as it already did in `LaunchBead`. What is
 still uncovered is what §1 already accepts: the operator who types straight
 into a pane stamps no record, and presses `o`.
 
+*Amended 2026-08-28 (ADR 0030, ranger-base-vn3o; lands with
+ranger-base-um9a):* **an orphaned claim defers to its assignee's crew
+session.** The typed route stamps no record, so an in_progress bead no
+live session holds under any name is ambiguous — a crashed run to
+recover, or the operator's hand-work to leave alone. At that recovery
+moment only, a live crew session of the assignee in the bead's repo
+parks the bead (visible line, nothing created, `--resume` does not
+override) instead of twinning it. Ready beads still dispatch — "other
+beads dispatch normally" above now reads: other beads *whose claims are
+not orphaned*. The claim is the operator's shield for hand-work; the
+record (`posse prompt`) remains the precise one.
+
 *Amended 2026-08-21 (ADR 0027, monica pulse — designed as "0013", file
 committed 2026-08-27 under the free number):* one named exception — the watch loop's
 **pulse** may prompt the `pulse_persona` session (config; typically the
