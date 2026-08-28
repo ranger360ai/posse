@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -193,6 +193,17 @@ verify-govern-honesty:
 # when upstream stable moves past the pin. Lifting the pin is the operator's.
 verify-grok-pin:
 	scripts/verify-grok-pin.sh
+
+# ADR 0019 "path 3": a credential file in the Claude Code config directory
+# (ranger-base-zzc, escaped as ranger-base-m6cm). The operator deleted the file
+# on 2026-08-26 03:40; a new one was created at 11:47:07 the same day and
+# nothing noticed for two days. Deleting a file whose defining property is that
+# it regenerates is not a control — this is. Read-only: it prints metadata, never
+# content, and never deletes (that is the operator's, as it was on ranger-base-66y).
+# Exit 1 = a file is there. Exit 2 = no config dir present, i.e. nothing measured.
+# Runbook: docs/runbooks/credential-rotation.md.
+verify-credential-paths:
+	scripts/verify-credential-paths.sh
 
 # The bd version pin (rangerhq-f49). bd 0.49.1 auto-spawns a per-repo daemon on
 # any call and that daemon outlives the binary it was exec'd from: `brew upgrade
