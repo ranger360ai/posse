@@ -289,3 +289,54 @@ func TestWatchRefusesWhenAnotherLoopHoldsTheLock(t *testing.T) {
 		t.Error("a refused loop must not stamp itself over the running one's record")
 	}
 }
+
+// The third arm, and the one the whole rangerhq-ct9 → mugy → ranger-base-rmc
+// line is about: a probe that CANNOT ASK must never answer "no loop".
+// WatchStatus has three outcomes and only two of them were pinned — held
+// reads running, free reads none, and an unanswerable lock (the state dir
+// unreadable, flock unsupported by the filesystem, the fd table full) must
+// come back as an error with no line at all, because plugin/autostart.sh
+// matches on the LINE: a `watch-loop: none` it cannot distinguish from a
+// real one authorises kill-and-replace against a live loop and puts a
+// second one on the same queue.
+//
+// Measured (ranger-base-fjf4): collapsing that arm to `running = false` —
+// one line, the exact shape of the argv probe's old silence-reads-as-death
+// bug — left ., ./cmd/posse and ./internal/rhq all green.
+func TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads through the mode bits, so this fixture cannot block the probe")
+	}
+	a := watchApp(t)
+	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A loop IS running — this is the case where reading the silence as
+	// death costs a live loop, not merely an accurate answer.
+	lock, held, err := lockWatch(a)
+	if err != nil || held {
+		t.Fatalf("could not arrange a running loop: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	if err := os.Chmod(a.StateDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(a.StateDir, 0o755)
+
+	// The fixture's own witness: a probe that still answers has not been
+	// blocked, and everything below it would then be measuring nothing.
+	if running, err := WatchLoopRunning(a); err == nil {
+		t.Fatalf("fixture did not block the probe (running=%v) — the assertions below would prove nothing", running)
+	}
+
+	line, err := WatchStatus(a)
+	if err == nil {
+		t.Fatalf("an unaskable question must be an error, got %q", line)
+	}
+	if strings.Contains(line, "none") {
+		t.Errorf("the hook matches on the line: %q reads as a refutation of a live loop", line)
+	}
+	if line != "" {
+		t.Errorf("a failed probe must emit no line at all, got %q", line)
+	}
+}
