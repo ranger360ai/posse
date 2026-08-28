@@ -115,7 +115,8 @@ func TestDispatchNoAgentDetected(t *testing.T) {
 	}
 }
 
-// ADR 0013 §2's busy-key split, and the test rangerhq-vk2 left behind.
+// ADR 0013 §2's busy-key split AND its ceiling, and the test rangerhq-vk2
+// left behind.
 //
 // vk2's rule was "a session whose agent is gone must cost one detection
 // timeout per pass, not one per bead" — written when a persona had ONE
@@ -125,35 +126,64 @@ func TestDispatchNoAgentDetected(t *testing.T) {
 // persona on the first one is the sterilise ranger-base-3j8 measured — one
 // grok cold start taking the persona's whole queue out of the pass.
 //
-// So the contract this pins now is the ADR's: a launch that never produced
-// a promptable agent is a fact about THAT PANE. The slot stays free, the
-// next bead gets its own fresh session, and nothing is claimed on the way.
-// The cost that vk2 was protecting — one startup wait per failed launch —
-// is now paid per bead, knowingly: see the NOTES entry.
-func TestSessionFailureKeepsThePersonaSlot(t *testing.T) {
+// So the contract this pins is the ADR's, both halves of it:
+//
+//  1. a launch that never produced a promptable agent is a fact about THAT
+//     PANE. The slot stays free and the next bead gets its own fresh
+//     session (the 3j8 pin).
+//  2. exactly one retry. The SECOND session failure of the slot in this
+//     pass benches it — two identical failures on two independent panes
+//     make the persona the better explanation — so the third ready bead is
+//     not launched at all (the ranger-base-8h5p ceiling).
+//
+// Nothing is claimed on the way, in either half.
+func TestSessionFailureKeepsThePersonaSlotOnceThenBenches(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 100 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`, "")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]},{"id":"a-3","title":"v","labels":["go"]}]`, "")
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)
+
+	// Half 1: the first failure keeps the slot, and a-2 got its own fresh
+	// session rather than being skipped behind a-1's failure.
+	if !strings.Contains(out, "keeps its slot") {
+		t.Errorf("the FIRST session failure must keep the slot, got:\n%s", out)
+	}
 	if strings.Contains(out, "skipped for the rest of this pass") {
 		t.Errorf("one un-promptable launch benched the persona — that is the ranger-base-3j8 sterilise:\n%s", out)
 	}
-	if !strings.Contains(out, "keeps its slot") {
-		t.Errorf("want the slot kept and said so, got:\n%s", out)
-	}
-	// The second bead was attempted, in its own session — not skipped
-	// behind the first one's failure.
 	for _, want := range []string{SessionForBead("ranger", repo, "a-1"), SessionForBead("ranger", repo, "a-2")} {
 		if !strings.Contains(out, want) {
 			t.Errorf("bead %s never got its own launch:\n%s", want, out)
 		}
 	}
+
+	// Half 2: the second failure benches the slot, and says it was the
+	// second — the ceiling's whole observable is that this line is not the
+	// "keeps its slot" one.
+	bench := "did not take the launch either — second session failure this pass; " +
+		SessionFor("ranger", repo) + " benched (ADR 0013 §2 ceiling)"
+	if !strings.Contains(out, bench) {
+		t.Errorf("want the second failure benched and named as the second (%q), got:\n%s", bench, out)
+	}
+	if strings.Count(out, "keeps its slot") != 1 {
+		t.Errorf("exactly one retry: the slot is kept once, not twice:\n%s", out)
+	}
+
+	// ...so the third ready bead is never launched. It is reported as the
+	// lane being busy for the pass, exactly like any other benched slot.
+	if s3 := SessionForBead("ranger", repo, "a-3"); strings.Contains(out, s3) {
+		t.Errorf("a-3 launched into a benched slot (%s):\n%s", s3, out)
+	}
+	if !strings.Contains(out, "a-3") || !strings.Contains(out, "go lane busy: ranger") {
+		t.Errorf("want a-3 skipped on the benched lane, got:\n%s", out)
+	}
+
 	if strings.Contains(bdCalls(t, fake), "--claim") {
 		t.Error("no bead may be claimed when the session has no agent")
 	}

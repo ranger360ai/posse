@@ -1324,7 +1324,7 @@ about the *persona*. Dispatch splits the three outcomes of a failed launch:
 | outcome | what it is | slot |
 |---|---|---|
 | claim lost | the **bead**'s — somebody else holds it | free |
-| session failure — no agent, never promptable, unknown screen | this **pane**'s | **free**; the next bead gets its own fresh session |
+| session failure — no agent, never promptable, unknown screen | this **pane**'s | **free once**; the next bead gets its own fresh session, and the pass's *second* such failure benches the slot (the ceiling below) |
 | anything else — runtime will not load, exe missing, cage credential, gates the wall cannot realize | the **persona** on this runtime | benched for the pass |
 
 A pane the pass gave up on is also remembered for the pass, so the
@@ -1347,8 +1347,7 @@ failure of a slot in one pass benches the slot for the rest of the pass
 the 3j8 fix and the ceiling that caps the drain; the benign slow-start case
 lands in `awaitDelivered`'s seen=false outcome on argv runtimes, not here.
 An exec-preflight gate was rejected in the same amendment — posse's PATH is
-not the pane's — see the ADR's alternatives. (Implementation:
-`ranger-base-4ctv`.)
+not the pane's — see the ADR's alternatives.
 
 `record:` is where grok and codex differ, and only for a measured reason:
 the qa lane on grok closed a dispatched bead properly, and 3/3 dispatched

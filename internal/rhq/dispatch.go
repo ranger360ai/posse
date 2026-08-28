@@ -1566,10 +1566,15 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// unset outside Watch), so for it this is exactly the fresh, empty,
 	// pass-local map it always was.
 	busy := map[string]bool{}
+	// ADR 0013 §2 "Ceiling": session failures per slot, on the same
+	// lifetime as busy above and for the same reason — the count that
+	// decides "second failure" must span this Run's refires, or a seat
+	// whose CLI is broken pays a fresh startup wait on every refill.
+	sessFail := map[string]int{}
 	var dispatched int
 	var pending []*pendingBead
 	if room, ok := d.epochRoom(max); ok {
-		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room, busy)
+		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room, busy, sessFail)
 		if err != nil {
 			return 0, err
 		}
@@ -1633,7 +1638,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			continue
 		}
 		delete(busy, SessionFor(g.persona, g.is.Dir))
-		more, attempts, err := d.refire(g.persona, dirFilter, max, busy)
+		more, attempts, err := d.refire(g.persona, dirFilter, max, busy, sessFail)
 		if err != nil {
 			d.printf("✗ refill %s: %v\n", g.persona, err)
 		} else if !d.DryRun {
@@ -1691,7 +1696,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 // makes when d.Refill is set. fireLoop only ever reads and writes it while
 // holding the launcher flock below, on the caller's own goroutine; nothing
 // else touches it concurrently (see Run's doc on the gather fan-in).
-func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]bool) (int, []*pendingBead, int, error) {
+// sessFail is its companion under ADR 0013 §2's ceiling — session failures
+// per slot, same instance, same lifetime, same lock.
+func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]bool, sessFail map[string]int) (int, []*pendingBead, int, error) {
 	if !d.DryRun {
 		lock, err := lockLaunches(d.App, d.Out)
 		if err != nil {
@@ -1954,9 +1961,11 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			// never became promptable, or sat behind a screen posse does not
 			// know. Dial F gives the next bead its own session, so the slot
 			// stays free — one grok cold start no longer sterilises the
-			// persona's whole queue (ranger-base-3j8). The pane is
-			// remembered so the working/blocked guard below does not read a
-			// session this pass just abandoned as the persona being busy.
+			// persona's whole queue (ranger-base-3j8) — but only once: the
+			// ceiling below benches the slot on the pass's SECOND such
+			// failure. The pane is remembered either way so the
+			// working/blocked guard does not read a session this pass just
+			// abandoned as the persona being busy.
 			//
 			// Everything else is about the PERSONA on this runtime — a
 			// runtime that will not load, a missing exe, a credential the
@@ -1970,7 +1979,23 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			case errors.As(err, &lost):
 			case errors.As(err, &failed):
 				d.strand(session)
-				d.printf("– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+				// ADR 0013 §2 "Ceiling" (ranger-base-8h5p): the pane-local
+				// explanation gets exactly ONE retry. A slot's session
+				// failures in a pass are consecutive attempts on fresh Dial
+				// F panes that share everything but the pane, so the second
+				// one makes the shared cause — the persona on this runtime —
+				// the better explanation, and the slot wears the persona
+				// arm's consequence for the rest of the pass. The pane is
+				// stranded either way, so the working/blocked guard ignores
+				// both. claimLost and a launch that was DELIVERED but not
+				// seen never reach this arm and never touch the count.
+				sessFail[slot]++
+				if sessFail[slot] >= 2 {
+					busy[slot] = true
+					d.printf("– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
+				} else {
+					d.printf("– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+				}
 			default:
 				busy[slot] = true
 				d.printf("– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
@@ -2025,7 +2050,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // Run's own head last set them to, refreshed on the next full pass, exactly
 // as ADR 0028 §2's "only four things are pass-denominated" says the rest of
 // this file already may.
-func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]bool) ([]*pendingBead, int, error) {
+func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
 	if why := d.App.LoadHigh(d.errw()); why != "" {
 		d.printf("◷ %s — refill for %s skipped\n", why, persona)
 		return nil, 0, nil
@@ -2055,7 +2080,7 @@ func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]
 		return nil, 0, nil
 	}
 	OrderBeads(beads, d.Resume)
-	_, pending, attempts, err := d.fireLoop(beads, persona, room, busy)
+	_, pending, attempts, err := d.fireLoop(beads, persona, room, busy, sessFail)
 	if err != nil {
 		return nil, 0, err
 	}
