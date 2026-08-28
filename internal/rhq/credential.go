@@ -151,13 +151,25 @@ func NoSourceReason(err error) *NoSource {
 // ReadCredential is the seam. Nothing else in posse may acquire a credential
 // (ADR 0019 D1); a vault, when it is priced (ranger-base-epz8), is a third
 // answer to this call and not a second migration.
-func ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, error) {
+//
+// It hangs off *App for one reason: the session half's expiry lives in the
+// env sets under the posse home, and a seam that cannot find the home
+// returns a permanently zero ExpiresAt for half the credentials it serves
+// (ADR 0019 V5's round-trip, left open by ranger-base-h207 and closed by
+// ranger-base-k6ha). The meter half needs no home and keeps its own
+// home-free entry points below.
+//
+// A nil *App is a legal receiver here — the stamp lookup answers "cannot
+// tell" without a home rather than panicking, because "no expiry known" is
+// already a first-class answer and a seam is not the place to acquire a new
+// way to crash.
+func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, error) {
 	if rt == nil {
 		return "", CredMeta{}, Die("credential read: no runtime named")
 	}
 	switch p {
 	case CredSession:
-		return readSessionCredential(rt)
+		return a.readSessionCredential(rt)
 	case CredMeter:
 		return readMeterCredential(rt.Name)
 	}
@@ -198,10 +210,12 @@ func MeterUnavailable(rt string) error {
 // readSessionCredential wraps the env-set lookup that already exists
 // (CageCredential, ADR 0002 §4 / rangerhq-kiz) — behaviour unchanged, one
 // caller more. The value comes from THIS process's environment, which is
-// where the launch realized the PID's `envs:`; a report over the env sets on
-// disk is `posse refresh`'s (ranger-base-h207), and so is the `# expires=`
-// stamp that will make ExpiresAt non-zero here.
-func readSessionCredential(rt *Runtime) (string, CredMeta, error) {
+// where the launch realized the PID's `envs:`.
+//
+// The expiry comes from the `# expires=` stamp `posse refresh` wrote beside
+// the variable in the env set the launch read it out of (ADR 0019 V5). No
+// stamp is the zero time, which is "cannot tell" and warns nothing.
+func (a *App) readSessionCredential(rt *Runtime) (string, CredMeta, error) {
 	name := CageCredential(rt)
 	if name == "" {
 		return "", CredMeta{}, &NoSource{
@@ -214,7 +228,52 @@ func readSessionCredential(rt *Runtime) (string, CredMeta, error) {
 	if v == "" {
 		return "", CredMeta{}, Die("%s names this runtime's session credential and it is not in this process's environment — mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs:", name)
 	}
-	return v, CredMeta{Source: "env set variable " + name}, nil
+	return v, CredMeta{Source: "env set variable " + name, ExpiresAt: a.sessionExpiry(name, v)}, nil
+}
+
+// sessionExpiry finds the stamp that is true of THIS value.
+//
+// A launched session has a value in its environment and no memory of which
+// env set it came out of; several sets may carry the same variable, and
+// their stamps are about their own values. So the match is on the VALUE:
+// the stamp of a set that holds some other mint under the same name is a
+// date about a credential this process is not holding, and reporting it
+// would be worse than reporting nothing — "cannot tell" is already an
+// honest answer here and a wrong date is not.
+//
+// The comparison is in memory and one-way: nothing is stored, logged or
+// returned but a date. When two sets carry the identical value they are
+// carrying one credential, so the soonest stamp any of them claims is the
+// soonest posse may rely on, and that is what is returned.
+func (a *App) sessionExpiry(key, value string) time.Time {
+	if a == nil || a.EnvsDir == "" || value == "" {
+		return time.Time{}
+	}
+	var soonest time.Time
+	for _, n := range a.ListEnvSets() {
+		b, err := os.ReadFile(filepath.Join(a.EnvsDir, n+".env"))
+		if err != nil {
+			continue
+		}
+		holds := false
+		for _, v := range parseEnvLines(string(b)) {
+			if v.Key == key && v.Value == value {
+				holds = true
+				break
+			}
+		}
+		if !holds {
+			continue
+		}
+		st, ok := readStamps(string(b), key)
+		if !ok || st.Expires.IsZero() {
+			continue
+		}
+		if soonest.IsZero() || st.Expires.Before(soonest) {
+			soonest = st.Expires
+		}
+	}
+	return soonest
 }
 
 // ─── the meter credential: the runtime's own store, per platform ─────────────

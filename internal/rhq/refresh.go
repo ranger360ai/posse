@@ -319,19 +319,19 @@ func (a *App) refreshReport(w io.Writer, o RefreshOpts) error {
 // renderExpiry says what is known and nothing more. A zero time is "cannot
 // tell", which is the honest answer for every credential posse cannot ask;
 // it is never rendered as freshness, and it warns nothing (ADR 0019 D5).
+//
+// The arithmetic is expiryIn's (credexpiry.go) and not this function's, so
+// the report and the two warning surfaces cannot come to disagree about how
+// long "8d" is — the report is where an operator checks the warning they
+// just read, and two roundings would make that check a puzzle.
 func renderExpiry(t, now time.Time) string {
 	if t.IsZero() {
 		return "cannot tell"
 	}
-	d := t.Sub(now)
-	switch {
-	case d <= 0:
+	if d := t.Sub(now); d <= 0 {
 		return "EXPIRED " + t.Format(stampDate)
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%s (in %dh)", t.Format(stampDate), int(d.Hours()))
-	default:
-		return fmt.Sprintf("%s (in %dd)", t.Format(stampDate), int(d.Hours()/24))
 	}
+	return fmt.Sprintf("%s (%s)", t.Format(stampDate), expiryIn(t.Sub(now)))
 }
 
 // ─── the write: a session mint, into an env set, by the operator's hand ──────

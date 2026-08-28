@@ -323,7 +323,7 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-SESSION-MINT")
-	tok, meta, err := ReadCredential(claude, CredSession)
+	tok, meta, err := a.ReadCredential(claude, CredSession)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,14 +333,16 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 	if !strings.Contains(meta.Source, "CLAUDE_CODE_OAUTH_TOKEN") {
 		t.Errorf("the source names the variable the operator put it in: %q", meta.Source)
 	}
-	// No `# expires=` stamp exists yet (ranger-base-h207 writes it), and an
-	// unknown expiry is reported as unknown.
+	// No `# expires=` stamp beside this value, so the expiry is unknown —
+	// and unknown is reported as unknown, never as freshness (ADR 0019 D5).
+	// A stamped one round-trips through this same field: ranger-base-k6ha's
+	// credexpiry_test.go pins that half.
 	if !meta.ExpiresAt.IsZero() {
-		t.Errorf("nothing knows a session mint's expiry today: %v", meta.ExpiresAt)
+		t.Errorf("an unstamped mint has no expiry to report: %v", meta.ExpiresAt)
 	}
 
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-	if _, _, err := ReadCredential(claude, CredSession); err == nil ||
+	if _, _, err := a.ReadCredential(claude, CredSession); err == nil ||
 		!strings.Contains(err.Error(), "claude setup-token") {
 		t.Errorf("a missing mint says how the operator mints one: %v", err)
 	}
@@ -351,7 +353,7 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = ReadCredential(rt, CredSession)
+	_, _, err = a.ReadCredential(rt, CredSession)
 	var ns *NoSource
 	if !errors.As(err, &ns) || ns.Purpose != CredSession {
 		t.Fatalf("want *NoSource for a runtime with no decided session credential: %T %v", err, err)

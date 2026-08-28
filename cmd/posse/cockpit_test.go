@@ -1230,3 +1230,122 @@ func TestCockpitGovBlockSaysPartial(t *testing.T) {
 		t.Errorf("want the partial heading, got:\n%s", out)
 	}
 }
+
+// ─── the credential-expiry segment (ADR 0019 D5, ranger-base-k6ha) ──────────
+
+// The header's fourth state about credentials, and the only one that is not
+// about the plan guard: a posse-owned session mint dies inside a fortnight.
+// It is a WARNING — the shop below it is running, nothing is parked — so it
+// says how long and gets out of the way.
+func TestCockpitCredSegment(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	mint := func(set string, at time.Time) rhq.CredExpiry {
+		return rhq.CredExpiry{Runtime: "claude", Purpose: "session", Set: set,
+			Key: "CLAUDE_CODE_OAUTH_TOKEN", At: at}
+	}
+
+	// Nothing to say draws NOTHING — not an empty column, not a separator.
+	// The golden render (§5) is the control on that: it has no creds and
+	// must keep the header it had before this segment existed.
+	if _, ok := credCol(nil, now); ok {
+		t.Error("an empty warning list drew a column")
+	}
+
+	c, ok := credCol([]rhq.CredExpiry{mint("container", now.Add(6*24*time.Hour))}, now)
+	if !ok || c.text != "cred: claude in 6d" {
+		t.Errorf("approaching: %q ok=%v", c.text, ok)
+	}
+	if c.ansi != aYlw {
+		t.Errorf("approaching is yellow, got %q", c.ansi)
+	}
+
+	// Expired is a different colour AND different words: they cost
+	// different things, and one rendering for both tells the eye nothing.
+	c, _ = credCol([]rhq.CredExpiry{mint("container", now.Add(-time.Hour))}, now)
+	if c.text != "cred: claude EXPIRED" || c.ansi != aRed {
+		t.Errorf("expired: %q %q", c.text, c.ansi)
+	}
+
+	// Several: the soonest is named and the rest are COUNTED. A header
+	// column that listed them would push the shop's own status off an
+	// 80-column pane to report a fortnight of notice.
+	c, _ = credCol([]rhq.CredExpiry{
+		mint("alpha", now.Add(2*24*time.Hour)),
+		mint("zulu", now.Add(9*24*time.Hour)),
+	}, now)
+	if c.text != "cred: claude in 2d +1" {
+		t.Errorf("two warnings: %q", c.text)
+	}
+}
+
+// In the header, in front of the governance segment, and only when there is
+// one. Governance keeps the right edge: it is the row that says whether the
+// shop is delivering, and the credential warning is about a fortnight from
+// now.
+func TestCockpitCredSegmentRendersInTheHeader(t *testing.T) {
+	c := fixture()
+	head := func() string { return stripANSI(c.renderLines(120, 24)[0]) }
+
+	clean := head()
+	if strings.Contains(clean, "cred:") {
+		t.Fatalf("a shop with no expiring credential says nothing:\n%s", clean)
+	}
+	// "Says nothing" is a COLUMN COUNT, not an empty string. An empty
+	// column still costs the flex a separator cell — invisible on a wide
+	// pane and one character off the plan reading on a narrow one — so the
+	// rule is that the column is absent, and that is what is pinned.
+	if n := len(c.headerCols()); n != 3 {
+		t.Errorf("a healthy shop draws %d header columns, want 3", n)
+	}
+	c.creds = []rhq.CredExpiry{{Runtime: "claude", Purpose: "session", Set: "container",
+		Key: "CLAUDE_CODE_OAUTH_TOKEN", At: c.clock().Add(3 * 24 * time.Hour)}}
+	warned := head()
+	i, g := strings.Index(warned, "cred: claude in 3d"), strings.Index(warned, "gov ")
+	if i < 0 {
+		t.Fatalf("the warning is not in the header:\n%s", warned)
+	}
+	if g < 0 || g < i {
+		t.Errorf("governance must keep the right edge:\n%s", warned)
+	}
+	// The plan segment is untouched: two different questions, two columns.
+	if !strings.Contains(warned, "5h 42%") {
+		t.Errorf("the credential warning ate the plan reading:\n%s", warned)
+	}
+	if n := len(c.headerCols()); n != 4 {
+		t.Errorf("a warning adds exactly one column, got %d", n)
+	}
+}
+
+// The scan is what makes the segment true of this box, and the apply is what
+// makes it reach the header. Both tests above set c.creds by hand and would
+// stay green with the scan deleted, the apply deleted, or both — so this
+// walks the whole path: env set on disk → scanPlan → the channel → applyPlan
+// → the drawn header.
+func TestCockpitCredSegmentComesFromTheEnvSetsOnDisk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	a := rhq.NewAppAt(filepath.Join(home, "config"))
+	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	body := "# expires=" + at.AddDate(0, 0, 5).Format("2006-01-02") + "\n" +
+		"CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-FIXTURE\n"
+	if err := os.WriteFile(filepath.Join(a.EnvsDir, "container.env"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c := fixture()
+	c.app, c.now = a, func() time.Time { return at }
+	c.plans = make(chan planRead, 1)
+	c.scanPlan()
+	select {
+	case r := <-c.plans:
+		c.applyPlan(r)
+	default:
+		t.Fatal("the scan landed nothing on the channel")
+	}
+	if got := stripANSI(c.renderLines(120, 24)[0]); !strings.Contains(got, "cred: claude in 4d") {
+		t.Errorf("the stamp on disk never reached the header:\n%s", got)
+	}
+}

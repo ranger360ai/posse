@@ -442,6 +442,41 @@ func (d *Dispatcher) planUnconfigured(ns *NoSource) {
 	d.eprintf("plan guard: %v — thresholds are set, so the guard is UNCONFIGURED on this platform, not blind: no clock is running and no pass will park on this\n", ns)
 }
 
+// credentialExpiry is ADR 0019 D5's unattended surface: one stderr line per
+// pass naming the posse-owned credential that dies soonest, once it is
+// inside the window.
+//
+// It prints and returns. Nothing here parks a bead, degrades a pass, starts
+// a clock or looks at a threshold — expiry is a warning and the READ is the
+// only actuator (D5). A dead session mint stops a launch by failing to
+// authenticate it, which is a loud and specific failure at the moment it
+// matters; this line's whole job is that the operator gets fourteen days'
+// notice before meeting it at 3am.
+//
+// It is not inside planGuard, and that is deliberate twice over: the plan
+// guard only runs where `plan_guard_<window>:` is configured, and a
+// credential expires on a box whose operator armed no meter guard at all;
+// and a warning that lived inside a guard would eventually be read as one.
+//
+// ONE line, not one per credential. The surfaces ADR 0019 D5 asks for are
+// "one stderr line per dispatch pass", and a --watch loop that prints three
+// every pass has invented a log nobody reads. The soonest is the one that
+// needs the verb; the rest are counted, and `posse refresh` lists them all
+// with their dates.
+func (d *Dispatcher) credentialExpiry() {
+	now := d.now()
+	ex := d.App.ExpiringCredentials(now)
+	if len(ex) == 0 {
+		return
+	}
+	more := ""
+	if n := len(ex) - 1; n > 0 {
+		more = fmt.Sprintf(" (+%d more — posse refresh lists them)", n)
+	}
+	d.eprintf("credential expiry: %s%s — a warning and nothing else: no clock is running, nothing parks on this, and the read is still the only actuator\n",
+		ex[0].Warning(now), more)
+}
+
 // unmatchedThresholds names a `plan_guard_<window>:` that gates nothing
 // because this provider reports no such window — a threshold carried over
 // from an adapter that named its windows differently, or a plain typo.
@@ -1527,6 +1562,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// always runs (ADR 0013 §3).
 	d.planGuard()
 	d.noteGuardStreak()
+	d.credentialExpiry()
 
 	// verify-after (ADR 0006 §3) before ready work is gathered, so a verify
 	// bead filed by this pass is dispatched by this pass. --dry-run shows

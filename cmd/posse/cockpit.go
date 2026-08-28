@@ -115,6 +115,18 @@ type cockpit struct {
 	planLine   string
 	planReadAt time.Time // last SUCCESSFUL reading (or cockpit start) — the header's blind clock
 
+	// The credential-expiry segment (ADR 0019 D5, bead ranger-base-k6ha):
+	// the posse-owned session mints that die inside the window, soonest
+	// first, or nil. It rides the plan scan because it is the same
+	// off-the-event-loop tick asking the other half of one question — is
+	// this shop able to authenticate tomorrow — and because a stamp in a
+	// file does not change faster than every two minutes.
+	//
+	// Empty is the overwhelmingly common state and draws NOTHING: the
+	// header keeps the bytes it had before this existed, and the column
+	// only appears when there is something to say.
+	creds []rhq.CredExpiry
+
 	// The governance surface (ADR 0029 §2, bead rangerhq-81y0): the third
 	// rendering of ShopCheck, drawn as a block
 	// above SESSIONS. It is scanned off the event loop like the cost and
@@ -204,6 +216,12 @@ type planRead struct {
 	noAdapter bool      // the guard is armed and nothing here can read a meter (ADR 0012 D4)
 	noSource  bool      // the guard is armed, an adapter ships, and this platform holds no credential (ADR 0019 D3)
 	ledger    bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
+	// creds is the OTHER credential question this scan answers, and it is
+	// unrelated to the guard: which posse-owned session mints expire inside
+	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
+	// because it is read at the same cadence, off the same goroutine, and
+	// lands on the same channel — nothing in the header may do I/O.
+	creds []rhq.CredExpiry
 }
 
 // planOffState classifies a failed read into the two states that are NOT
@@ -253,10 +271,24 @@ func (c *cockpit) scanPlan() {
 		// toward a park that will never come.
 		r.noSource, r.noAdapter = planOffState(err)
 	}
+	// Files under the posse home, read here for the same reason the plan
+	// reading is: the draw path does no I/O. Nothing about this depends on
+	// the guard being armed — a mint expires on a box with no meter guard
+	// at all.
+	r.creds = c.app.ExpiringCredentials(c.clock())
 	select {
 	case c.plans <- r:
 	default:
 	}
+}
+
+// applyPlan lands one scan on the header. Split out of the event loop for
+// takeGov's reason: the scan and the segment are each testable on their own,
+// and the step that JOINS them is the one a refactor drops silently — a
+// header that renders a field nothing assigns is green in every test that
+// sets the field itself.
+func (c *cockpit) applyPlan(r planRead) {
+	c.planLine, c.creds = c.planSegment(r), r.creds
 }
 
 // planSegment is the header's plan segment, and the witness half of
@@ -416,7 +448,7 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 				c.draw()
 			}
 		case r := <-c.plans:
-			c.planLine = c.planSegment(r)
+			c.applyPlan(r)
 			if c.mode == modeNormal {
 				c.draw()
 			}
@@ -1709,6 +1741,63 @@ func (c *cockpit) moveRows(n int) {
 // ─── drawing ─────────────────────────────────────────────────────────────────
 
 // planSuffix appends the plan windows to the header when we have a reading.
+// headerCols is the top line's columns, in drawing order. It is a function
+// rather than a literal inside renderLines because whether the credential
+// column EXISTS is a rule and not a rendering, and a rule that only shows up
+// as a byte or two of padding at one terminal width is a rule no test
+// notices being deleted.
+func (c *cockpit) headerCols() []col {
+	cols := []col{
+		{text: "🤠 posse", ansi: aBold},
+		{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + rhq.VersionString() + planSuffix(c.planLine), ansi: aDim},
+	}
+	// The credential warning goes between them, fixed, and ONLY when there
+	// is one. Appended unconditionally it would spend a separator cell of
+	// the flex column on every frame of every day the shop is healthy —
+	// invisible on a wide pane, one character off the plan reading on a
+	// narrow one — and a header permanently narrower to make room for a
+	// fortnight every few months is the wrong trade (ADR 0019 D5).
+	if cd, ok := credCol(c.creds, c.clock()); ok {
+		cols = append(cols, cd)
+	}
+	// A FIXED column, at the right edge, deliberately: the flex column
+	// truncates from its tail, so a governance segment appended there is
+	// the first thing an 80-column pane throws away — and the row it throws
+	// away is the one that says nothing is being delivered. Fixed, it costs
+	// the clock and the version instead, which is the correct exchange.
+	return append(cols, col{text: c.govSegment(), ansi: aDim})
+}
+
+// credCol is the header's credential-expiry segment (ADR 0019 D5): the
+// posse-owned session mint that dies soonest, once it is inside the window.
+// ok is false when there is nothing to say, and nothing to say is the
+// normal state — see renderLines for why that matters.
+//
+// It shows ONE, with a count of the rest. A header column is glanced at,
+// not read: what it owes the operator is that something needs re-minting
+// and roughly when, and `posse refresh` is four keystrokes away with the
+// dates, the env sets and the verb.
+//
+// Red for already-expired and yellow for approaching, on govCols' rule: the
+// two states cost different things, and one colour for both tells the eye
+// nothing. Neither is a stop — the shop below the header is running, and
+// expiry parks nothing.
+func credCol(ex []rhq.CredExpiry, now time.Time) (col, bool) {
+	if len(ex) == 0 {
+		return col{}, false
+	}
+	e := ex[0]
+	text := "cred: " + e.Runtime + " " + e.Brief(now)
+	if n := len(ex) - 1; n > 0 {
+		text += fmt.Sprintf(" +%d", n)
+	}
+	ansi := aYlw
+	if e.Expired(now) {
+		ansi = aRed
+	}
+	return col{text: text, ansi: ansi}, true
+}
+
 func planSuffix(line string) string {
 	if line == "" {
 		return ""
@@ -1757,20 +1846,7 @@ func (c *cockpit) render(w, h int) string {
 }
 
 func (c *cockpit) renderLines(w, h int) []string {
-	header := []string{
-		layout([]col{
-			{text: "🤠 posse", ansi: aBold},
-			{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + rhq.VersionString() + planSuffix(c.planLine), ansi: aDim},
-			// A FIXED column, at the right edge, deliberately: the flex
-			// column truncates from its tail, so a governance segment
-			// appended there is the first thing an 80-column pane throws
-			// away — and the row it throws away is the one that says
-			// nothing is being delivered. Fixed, it costs the clock and the
-			// version instead, which is the correct exchange.
-			{text: c.govSegment(), ansi: aDim},
-		}, w),
-		"",
-	}
+	header := []string{layout(c.headerCols(), w), ""}
 	footer := c.footerLines(w)
 	vh := viewportH(h)
 	head, foot := len(header), len(footer)
