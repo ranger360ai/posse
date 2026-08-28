@@ -393,3 +393,40 @@ func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
 		t.Errorf("--resume created a Dial F twin beside the agentless slot holder %s (n=%d):\n%s\n%s", slot, n, out, log)
 	}
 }
+
+// The dry pass's copy of the same answer. `--dry-run` is the operator's
+// preview and the fire loop is written so a dry pass "says the same thing a
+// real one would do"; the retarget sits ABOVE that branch, so the preview
+// names the holder. Verifying rangerhq-v330 this was the one measured
+// behaviour with nothing pinning it: before the fix the dry line read
+// `in session ranger-<repo>-a-1` — a session the real pass would not use —
+// and it did so silently, because a dry pass creates nothing for the
+// no-twin assertion above to catch (ranger-base-vw6).
+func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.Resume = true
+	d.DryRun = true
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	slot := SessionFor("ranger", repo)
+	mustCreate(t, b, NewSessionOpts{Name: slot, Dir: repo, Agent: "ranger"})
+	idleClaude(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 1 {
+		t.Errorf("want 1 would-be dispatch into the slot, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "in session "+slot+" ") {
+		t.Errorf("the dry pass did not name the holder %s:\n%s", slot, out)
+	}
+	if dial := SessionForBead("ranger", repo, "a-1"); strings.Contains(out, "in session "+dial) {
+		t.Errorf("the dry pass previewed a Dial F twin beside the idle holder:\n%s", out)
+	}
+}
