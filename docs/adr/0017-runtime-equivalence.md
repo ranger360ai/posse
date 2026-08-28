@@ -2,7 +2,11 @@
 
 *Status: accepted 2026-08-26 · owner: architect · relates 0002 (launch/cage),
 0007 (skills), 0012 D4 (engine seam), 0013 (dispatch contract; §5's account
-promises are wired by this ADR's beads) · source bead ranger-base-il14*
+promises are wired by this ADR's beads) · source bead ranger-base-il14 ·
+amended 2026-08-28: §3 shadow-predicate register updated — a fourth
+behavioural instance (dispatch's turn-outcome read) found and retired,
+the counted-ness pair retired by the D4 cost seam; §4 gains
+`turn_outcome:` and the two declarability shapes (ranger-base-ivf0)*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -112,11 +116,37 @@ declaration is scenery. cost.go/cockpit.go violate it; trust.go and the
 skills state dir (`state/skills/<p>/claude`, a claude-plugin-shaped tree
 whose name leaks into every runtime's path) are noted and accepted.
 
+**Register update (2026-08-28, ranger-base-ivf0).** The snapshot's grep
+missed a fourth behavioural instance, found only when ranger-base-unzn
+drove production `Run` once per *runtime* instead of once per bead:
+dispatch's turn-outcome read was guarded by `p.runtime ==
+DefaultRuntime`, so the same stubbed account refusal that stops the
+pass on claude was never asked for on codex/grok, and an exhausted
+account there printed as an ordinary settle wearing the record-degrade
+explanation (ranger-base-02zr; measured: asked 1× on claude, 0×
+elsewhere). Retired through `turn_outcome:` and the turnfailure.go
+reader registry (ADR 0013 §1, settle row); the seam also fixes who may
+say "blind" — a test-injected reader is the *reader*, never the
+permission, so a stub cannot grant a runtime a reading production
+would not do. The counted-ness pair (cost.go/cockpit) was retired the
+same week by the ADR 0012 D4 cost seam (ranger-base-k7nb; grok gained
+a real adapter), and the per-pass uncounted line plus the
+`uncounted_cap_` brake shipped in ranger-base-9mz — so of §6 item (2),
+what remains is only the create line naming the runtime
+(ranger-base-pjoy's remainder). The name-keyed sites still standing
+(cage.go seeding, credential paths, trust.go's claude dialog) are the
+accepted CLI-own-state class. Method note for the next audit: grep
+found three instances; the consumer-driven parity fixture found the
+fourth. The living copy of this register is a fixture that drives
+production per-runtime, not the grep.
+
 ### 4. Declarability — what Bob can and cannot put in the grid
 
 `runtimes/<name>.yaml` today takes: `command:`, `model_<tier>:`,
 `model_flag:`, `skills_flag:`, `egress:`, `cage_cred:`, `gate_shell:`,
-`prompt:`, `startup_wait:`, `record:`/`record_why:`, `native_rules:`.
+`prompt:`, `startup_wait:`, `record:`/`record_why:`, `native_rules:`
+(since this snapshot, also `state_dir:`, `env_required:`, and — added
+2026-08-28, ranger-base-02zr — `turn_outcome:`).
 
 **Not declarable, and it must become so** (each is a Go field a built-in
 sets that a yaml runtime cannot — the grid has holes exactly where Bob
@@ -135,6 +165,30 @@ would need it):
 
 Present-but-wrong refuses, absent stays loud — the existing `prompt:`/
 `record:` semantics, verbatim.
+
+**Two declarability shapes (added 2026-08-28, ranger-base-ivf0).** The
+grid now carries both, and a future seam picks deliberately rather than
+by imitation of whichever key it sits beside:
+
+- **Registry key** — for a value *code* consumes. `turn_outcome:`'s
+  legal values are the keys of the turnfailure.go reader registry;
+  present-but-unregistered **refuses at load**, naming what is on offer.
+  The refusal is what keeps the p84 class out: a string that parses but
+  names no implementation is a promise the pass would silently break,
+  and the load check makes it unparseable instead.
+- **Enum + free-text `_why:`** — for a measured fact whose consumer is
+  the onboarder and the trust decision, not a code branch:
+  `record:`/`record_why:`, §5's `rules_precedence(_why):`. The enum half
+  validates; the why is provenance no load-time check can or should
+  verify.
+
+The test is one question: *who reads the value?* Code → registry key;
+a human deciding trust → enum-plus-why. This refines, not reverses,
+this section's rejection of yaml-declarable cost adapters: what stays
+rejected is a string naming code that does not exist — a registry key
+over readers that already exist is exactly how a yaml runtime borrows
+one safely (a Bob whose CLI writes claude's transcript shape declares
+`turn_outcome: claude-transcript` and is read today, changing no Go).
 
 **Deliberately NOT yaml-declarable**, and why (a declared non-dimension is
 as useful as a dimension):

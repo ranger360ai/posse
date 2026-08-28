@@ -15,7 +15,11 @@ presses no key at any screen, the layer stands empty as last resort
 placement measurements folded into §4/Claims — where each channel
 lands is now measured, point 4's byte-cap hedge resolved false, the
 suppression decision strengthened, not reopened (ranger-base-xaev,
-ranger-base-93u0; trace in `0013-rules-precedence-probe.md`)*
+ranger-base-93u0; trace in `0013-rules-precedence-probe.md`) ·
+amended 2026-08-28 (later): §1 settle row gains its declared half —
+`turn_outcome:` names the registered reader of the runtime's own first
+turn, and a runtime declaring none wears a per-bead blindness clause
+(ranger-base-02zr, folded by ranger-base-ivf0)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -77,13 +81,41 @@ This contract is what **dispatch** requires of that same process.
 | **promptable** | the work prompt is the first user turn, *without* posse answering a dialog | runtime `prompt: argv` (preferred) or `prompt: typed` + `startup_wait:` | **refuse this launch**, loudly; see §2 |
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
-| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback | herdr (already) | existing ignorance path: claim kept |
+| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
 | **account** | a cost-adapter reading, or an explicit uncounted cap | adapter (ADR 0012 D4) or config `uncounted_cap_<runtime>:` | **account-degraded**: loud every pass; dispatchable; the cap is the brake (§5) |
 
 `posse runtime check <name>` prints this grid for a runtime. Unknown is
 the expensive column to get wrong: a template-only yaml with no
 declarations is `prompt: typed`, `record: untrusted`, uncounted, unmapped
 tiers — dispatchable and noisy, not silent.
+
+**Settle's declared half (added 2026-08-28, ranger-base-02zr).** herdr's
+settle says the pane went quiet; it cannot say whether a model ever
+handled the prompt. Claude writes an allotment refusal as a synthetic
+assistant message, so the same pane-idle covers "worked and skipped the
+bead" and "no work ran" — and the read that separates them used to be
+keyed `p.runtime == DefaultRuntime`, ADR 0017 §3's shadow-predicate
+class, measured to cost exactly what that section predicts: the same
+stubbed refusal driven through production `Run` stops the pass with ⛔
+on claude and is never even asked for on codex/grok, whose line then
+names the *record* degrade — the wrong explanation — for a session that
+never ran a turn (pin: `TestQAParityAccountRefusalIsNamedOnEveryRuntime`).
+Now the read keys on the declaration: `turn_outcome:` names a reader in
+the turnfailure.go registry (present-but-unregistered refuses at load,
+listing what is on offer), the ⛔ line names the runtime whose account
+refused, and a runtime declaring no reader is **turn-blind**: its
+settle-without-close line says posse reads no turn outcome there — an
+exhausted account settles exactly like this, `posse peek` before reading
+it as work. A test-injected reader is the *reader*, never the
+permission: blindness stays the declaration's to say. Reader promotion
+follows `record:`'s pattern — after a measured artifact, not on
+plausibility. codex (`~/.codex/sessions/*.jsonl`) and grok
+(`$GROK_HOME/sessions/<cwd>/<id>/`) are reachable in principle (xaev),
+but nobody has captured what either store records on an account refusal;
+capturing that artifact is ranger-base-e123, and a reader bead follows
+it iff the artifact discriminates. Known open edge: a declared reader
+returning observed=false (transcript not readable yet) still renders
+like a healthy settle — ranger-base-1mei.
 
 No new template placeholder. `{prompt}` is rejected: an unrendered token
 is a literal argv (ADR 0001/0002 lesson). Dispatch that has a prompt file
@@ -406,14 +438,20 @@ Availability preflight is per cost/plan adapter — as shipped, the
 predicate is the runtime's `egress:` naming the catalog host
 (`anthropicAPI`, `modelavail.go`; ranger-base-lzx), not the adapter
 table. No catalog → no preflight. Dead-on-arrival (allotment message, one assistant turn, idle)
-is a **turn outcome**, not a catalog miss (ranger-base-1cc already
-shipped the detection half). A runtime without that probe launches what
-it was asked and must say so when the first turn is a limit.
+is a **turn outcome**, not a catalog miss (ranger-base-1cc shipped the
+detection half; ranger-base-02zr keyed it on `turn_outcome:` instead of
+the runtime's name). A runtime without that probe launches what it was
+asked — and "must say so when the first turn is a limit" is now
+realized: with a reader the ⛔ line names the refusing runtime, without
+one the per-bead turn-blind clause says posse cannot tell (§1 settle
+row).
 
 ## Consequences
 
 - `runtime.go` / yaml: `prompt: argv|typed`, `startup_wait:`,
-  `record: trusted|untrusted`, `native_rules:`, existing `model_<tier>:`.
+  `record: trusted|untrusted`, `native_rules:`, existing `model_<tier>:`;
+  since 2026-08-28 also `turn_outcome: <registry key>` (claude
+  `claude-transcript`, every other runtime none — ranger-base-02zr).
   Built-in defaults after the probe (it held, 2026-08-25): claude
   `typed` (works; argv is an allowed later unify), grok/codex `argv`
   with no `startup_wait:`; claude+grok `record: trusted`, codex
@@ -613,6 +651,17 @@ it was asked and must say so when the first turn is a limit.
   grades denies. And a trailing `(deny file-write*)` naming the beads
   target re-denies it under last-match-wins — the recurrence path §4
   Reachability exists to catch.
+
+- The turn-outcome parity fixture, 2026-08-28 (ranger-base-unzn →
+  ranger-base-02zr): the same stubbed allotment refusal driven through
+  production `Dispatcher.Run` on all three built-ins — claude asked the
+  turn outcome once and printed ⛔; codex and grok asked zero times and
+  printed the ordinary ◑ settle with the record clause. The same day, by
+  hand (runtimewalk probes, ranger-base-nlya): grok's account was
+  returning `402 Payment Required` while a pass would have called it an
+  ordinary settle; codex's account served a turn. Pin:
+  `TestQAParityAccountRefusalIsNamedOnEveryRuntime`
+  (internal/rhq/dispatchparity_qa_test.go).
 
 - Read from source, 2026-08-26 (ranger-base-8h5p): `-n` defaults to 0
   = unlimited (`cmd/posse/main.go`), and `fireLoop` counts a failed
