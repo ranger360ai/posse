@@ -69,10 +69,18 @@ func TestQAPassAndDayWindowsAtFabricatedNoon(t *testing.T) {
 	}
 }
 
+// Live since ranger-base-tvmh: the fixture clock is fabricated and must
+// stay that way. A wall clock here makes the suite red for eleven minutes a
+// night, which is worse than a plain bug — it makes "suite green" mean "and
+// it was not just after midnight", which nobody writes down.
 func TestQAPassAndDayWindowsDoesNotUseWallClock(t *testing.T) {
-	t.Skip("rangerhq-dsk: TestPassAndDayWindows still calls time.Now(); fails local 00:00–00:11")
 	body := qaExtractTest(t, qaBudgetTestSource(t), "TestPassAndDayWindows")
 	if strings.Contains(body, "time.Now()") {
-		t.Fatal("TestPassAndDayWindows still calls time.Now(); fails local 00:00–00:11 inclusive (pass total 8, want 5). Pin the fixture clock (noon), do not min(startOfDay+1m, passStart-1m) — that drops DayTotal to 5 at 00:05")
+		t.Fatal("TestPassAndDayWindows calls time.Now() again; fails local 00:00–00:11 inclusive (pass total 8, want 5). Pin the fixture clock (noon), do not min(startOfDay+1m, passStart-1m) — that drops DayTotal to 5 at 00:05")
+	}
+	// The pin is only a pin if it can see the body it names. An extractor
+	// that returned "" would pass over any fixture at all.
+	if !strings.Contains(body, "startOfDay(now)") || !strings.Contains(body, "PassTotal(passStart)") {
+		t.Fatalf("extractor did not return the fixture body — this pin is blind:\n%s", body)
 	}
 }

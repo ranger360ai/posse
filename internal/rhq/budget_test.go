@@ -125,8 +125,20 @@ func TestBudgetStateResolve(t *testing.T) {
 
 // The two windows are cut from one scan: day by calendar day, pass by the
 // moment the pass began.
+//
+// The clock is FABRICATED at local noon, not read (ranger-base-tvmh). The
+// fixture needs a bead that is inside the day window and outside the pass
+// window, and between local 00:00 and 00:11 inclusive no such instant
+// exists: startOfDay(now)+1m is >= now-10m, so earlier-today lands in the
+// pass total too and PassTotal reads 8. In the first minute it is worse —
+// this-pass is yesterday and DayTotal reads 3. Production is unaffected
+// (after midnight a pass that opened before it contains the whole day
+// window, so the two subsets cannot differ); it is the fixture, not the
+// arithmetic, that needs an hour far from the boundary. Placing the beads
+// relative to each other instead — min(startOfDay+1m, passStart-1m) — moves
+// earlier-today into yesterday and breaks DayTotal, so: a fixed noon.
 func TestPassAndDayWindows(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.Local)
 	passStart := now.Add(-10 * time.Minute)
 	rep := &CostReport{Beads: []*Segment{
 		{Bead: "old-day", Start: now.AddDate(0, 0, -2), CostUSD: 7},
