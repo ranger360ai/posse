@@ -30,7 +30,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -45,12 +47,66 @@ func TestLiveWorktreeSharesOneGraph(t *testing.T) {
 	a := wtApp(t)
 	repo := wtRepo(t)
 
+	// `--no-daemon` on EVERY call, and it is the fix for ranger-base-42mv
+	// rather than a speed knob. bd 0.49.1 auto-starts a per-database daemon
+	// on first use and nothing ever stops it, so a call in a t.TempDir leaves
+	// a process holding a directory that is about to be deleted — this test
+	// filed two such orphans on 2026-08-25, and the daemon holding the temp
+	// dirs open is what defeated t.TempDir's own cleanup, so it leaked a
+	// process AND a directory. Measured 2026-08-28 in a throwaway repo:
+	// `init` + `create` + `list` plain leaves one daemon and a
+	// .beads/daemon.pid; the same three with `--no-daemon` leave neither and
+	// read back the same rows. The daemon is not part of the claim here —
+	// the claim is which database the redirect resolves to, which bd decides
+	// before it ever reaches for a socket. (Contrast liveCageBeadStore in
+	// cageinnerlive_test.go, where a RUNNING daemon is the claim: it imports
+	// a newer JSONL before answering. That fixture keeps its daemon and stops
+	// it in cleanup instead.)
 	bd := func(dir string, args ...string) (string, error) {
-		cmd := exec.Command("bd", args...)
+		cmd := exec.Command("bd", append([]string{"--no-daemon"}, args...)...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 		out, err := cmd.CombinedOutput()
 		return string(out), err
+	}
+	// …and the backstop, because `--no-daemon` on OUR calls does not cover
+	// every bd invocation this test causes. `bd init` installs bd's own git
+	// pre-commit hook, and that hook runs a bare `bd sync --flush-only` with
+	// no such flag — so the `git commit` below starts a daemon in the
+	// throwaway repo whatever we pass (measured 2026-08-28: with every direct
+	// call carrying --no-daemon, one daemon and one .beads/daemon.pid still
+	// appear, written by the hook). That is a second leak vector, it is bd's
+	// hook rather than our code, and cleanup is the only lever we have on it.
+	//
+	// The pid file was written beside this fixture's own database seconds
+	// ago, in a directory nothing else has ever seen, so signalling it is not
+	// a guess about somebody else's process — the shape liveCageBeadStore
+	// uses, and never a global `bd daemon stop-all`, which would take the
+	// live queue's daemon with it. Wait for it to go: t.TempDir's RemoveAll
+	// runs right after and a daemon still writing into `.beads` is what makes
+	// that fail with "directory not empty" — the leaked DIRECTORY half of
+	// ranger-base-42mv.
+	stopLeakedDaemons := func(dirs ...string) {
+		for _, dir := range dirs {
+			b, err := os.ReadFile(filepath.Join(dir, ".beads", "daemon.pid"))
+			if err != nil {
+				continue
+			}
+			pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+			if err != nil || pid <= 0 {
+				continue
+			}
+			t.Logf("reaping the daemon bd's pre-commit hook started here: pid %d in %s", pid, dir)
+			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+				continue
+			}
+			for i := 0; i < 40; i++ {
+				if err := syscall.Kill(pid, 0); err != nil {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
 	}
 	if out, err := bd(repo, "init"); err != nil {
 		t.Skipf("bd init did not take in a throwaway repo: %v %s", err, out)
@@ -65,6 +121,7 @@ func TestLiveWorktreeSharesOneGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopLeakedDaemons(repo, tr.Path) })
 
 	// The control, and it is load-bearing: bd's own pre-commit hook rewrites
 	// the main jsonl during the commit above, so the MAIN checkout can be

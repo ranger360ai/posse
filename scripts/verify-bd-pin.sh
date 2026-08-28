@@ -20,6 +20,17 @@
 #      AFTER that binary was written. A daemon older than its own binary is by
 #      definition running an artifact that no longer exists on disk — the exact
 #      shape the 08-16 rollback missed.
+#   5. every live `bd daemon` process still has a WORKING DIRECTORY, and it is
+#      not a throwaway one (ranger-base-42mv). bd auto-starts a daemon on first
+#      use against a database and nothing ever stops it, so any bd call in a
+#      temp dir — a test fixture, a session scratchpad — leaves a process
+#      holding a sqlite handle to a database nobody can reach any more. Ten
+#      accumulated over twelve days that way, two of them in one evening once a
+#      live test started exercising bd. Same failure class as 4, one level
+#      down: 4 is a process whose BINARY is gone, 5 is one whose DIRECTORY is.
+#      Classification is by cwd and by cwd alone, which is what makes it safe:
+#      the canonical queue's daemon sits in a real repo and is never named, and
+#      the remedy is never `bd daemon stop-all`, which would take it with it.
 #
 # READ-ONLY, AND IT CANNOT ACT. It kills nothing and starts nothing:
 # `Bash(bd daemon:*)` is denied fleet-wide and killing a pid is in no PID.
@@ -31,6 +42,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 pin=etc/bd/version-pin.toml
 fail=0
+leaked=
 
 command -v bd >/dev/null || { echo "verify-bd-pin: bd not on PATH"; exit 2; }
 [ -r "$pin" ] || { echo "verify-bd-pin: missing $pin"; exit 2; }
@@ -138,6 +150,33 @@ proc_start() { # pid -> epoch seconds, empty when unparseable
 	} | epoch
 }
 
+proc_cwd() { # pid -> working directory, empty when unreadable
+	# `lsof` first and PATH-resolved, so the arm is chosen by a `command -v`
+	# — a file test on a name, not an exit status — and the wrong arm is
+	# never entered at all (the BSD/GNU `stat` lesson, ranger-base-tssy).
+	# `-Fn` is lsof's machine-readable form: one `n<path>` line, no columns
+	# to lose a path with a space in it to.
+	if command -v lsof >/dev/null 2>&1; then
+		lsof -p "$1" -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1
+	elif [ -r "/proc/$1/cwd" ]; then
+		readlink "/proc/$1/cwd" 2>/dev/null
+	fi
+}
+
+# The throwaway roots a daemon has no business living under. macOS resolves
+# both /tmp and $TMPDIR through /private, and lsof reports the resolved form,
+# so both spellings are listed rather than resolved at read time.
+is_ephemeral() { # path -> 0 when it is under a temp root
+	case $1 in
+	/tmp/* | /private/tmp/* | /var/tmp/* | /private/var/tmp/* | /var/folders/* | /private/var/folders/*) return 0 ;;
+	esac
+	case ${TMPDIR:-} in
+	'' | /) return 1 ;;
+	esac
+	case $1 in "${TMPDIR%/}"/*) return 0 ;; esac
+	return 1
+}
+
 age() { # epoch -> "12d21h"
 	local s=$(( $(date +%s) - $1 ))
 	[ "$s" -lt 0 ] && s=0
@@ -174,8 +213,28 @@ else
 		elif [ -z "$start" ] || [ -z "$bin_mtime" ]; then
 			verdict="(age unverified — could not read start time or binary mtime)"
 		fi
+		# The cwd layer is REPORTED SEPARATELY from the binary layer above,
+		# never folded into it: a daemon can be running the right binary in a
+		# directory that no longer exists, and collapsing the two verdicts
+		# into one would print `ok` for exactly that process.
+		cwd=$(proc_cwd "$pid")
+		if [ -z "$cwd" ]; then
+			cwd_verdict="(working directory unverified — could not read it)"
+			cwd="?"
+		elif [ ! -d "$cwd" ]; then
+			cwd_verdict="<-- LEAKED: its working directory is gone"
+			leaked="$leaked $pid"
+			fail=$((fail + 1))
+		elif is_ephemeral "$cwd"; then
+			cwd_verdict="<-- EPHEMERAL: a throwaway directory, so nothing will ever reach this database again"
+			leaked="$leaked $pid"
+			fail=$((fail + 1))
+		else
+			cwd_verdict=ok
+		fi
 		printf '  pid %-7s age %-8s %s\n' "$pid" "${when:-?}" "$path"
-		printf '    %s\n' "$verdict"
+		printf '    binary %s\n' "$verdict"
+		printf '    cwd    %s  %s\n' "$cwd" "$cwd_verdict"
 	done
 fi
 
@@ -204,6 +263,16 @@ REMEDIATION IS THE OPERATOR'S. This script kills nothing and starts nothing:
 NOTES.md "beads (bd) substrate" — freeze writers, \`kill -TERM <pid>\`, then
 re-run this and confirm the replacement daemon is on $want_bin.
 EOF
+	if [ -n "$leaked" ]; then
+		cat <<EOF
+
+For the LEAKED/EPHEMERAL rows there is nothing to restart — their databases
+are unreachable, so the reap is the whole remedy. SIGTERM only, one pid at a
+time (it flushes the WAL), and NEVER \`bd daemon stop-all\`, which would take
+the canonical queue's daemon with it:
+   kill -TERM$leaked
+EOF
+	fi
 	exit 1
 fi
 echo "verify-bd-pin: pin intact at $want_ver — command layer and process layer agree"

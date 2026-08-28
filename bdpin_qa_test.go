@@ -11,10 +11,20 @@ package posse
 // every command-layer check and left the orphan running, so the process-layer
 // cases below are the ones that carry this bead.
 //
-// Hermetic: bd, brew and ps are stubbed and HOME is a temp dir, so `make test`
-// needs neither the operator's box nor a live daemon. The stubbed ps speaks
-// the three forms the script uses — `-A ... pid=,args=`, `-p <pid> comm=`,
-// `-p <pid> lstart=` — from a tab-separated fixture.
+// Hermetic: bd, brew, ps and lsof are stubbed and HOME is a temp dir, so
+// `make test` needs neither the operator's box nor a live daemon. The stubbed
+// ps speaks the three forms the script uses — `-A ... pid=,args=`, `-p <pid>
+// comm=`, `-p <pid> lstart=` — from a tab-separated fixture, and the stubbed
+// lsof answers `-p <pid> -a -d cwd -Fn` from the same one. lsof is stubbed
+// rather than left to the box precisely because it is not: a fixture pid that
+// happened to collide with a live process would have the check reading a
+// stranger's working directory.
+//
+// The CWD layer (ranger-base-42mv) is the second process-layer claim: a
+// daemon whose working directory is gone, or is a throwaway one, is holding a
+// database nothing can reach again. bd auto-starts a daemon on any call and
+// stops none, so every bd call in a temp dir leaves one behind — ten in
+// twelve days, two of them filed in one evening by this repo's own live test.
 
 import (
 	"fmt"
@@ -34,6 +44,7 @@ type bpProc struct {
 	comm    string // what `ps -o comm=` reports; "" is the unlinked-binary case
 	started time.Time
 	args    string
+	cwd     string // what `lsof -d cwd` reports; "" means bpStubPS fills in a real, non-temp dir
 }
 
 func bpRoot(t *testing.T) string {
@@ -118,9 +129,21 @@ func bpStubBrew(t *testing.T, dir, state string) {
 // perturbed by whatever daemons the box happens to be running.
 func bpStubPS(t *testing.T, dir string, procs []bpProc) {
 	t.Helper()
+	// An unset cwd stands for "an ordinary daemon in a real repo", and it has
+	// to be a directory that EXISTS and is not under a temp root, or the new
+	// cwd layer would flag every fixture in the file. The test binary's own
+	// working directory is the repo checkout, which is exactly that.
+	real, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var b strings.Builder
 	for _, p := range procs {
-		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", p.pid, p.comm, p.started.Format(bpLstart), p.args)
+		cwd := p.cwd
+		if cwd == "" {
+			cwd = real
+		}
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", p.pid, p.comm, p.started.Format(bpLstart), p.args, cwd)
 	}
 	fixture := filepath.Join(dir, "ps.fixture")
 	if err := os.WriteFile(fixture, []byte(b.String()), 0o644); err != nil {
@@ -139,6 +162,22 @@ esac
 exit 0
 `
 	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// `lsof -p <pid> -a -d cwd -Fn`: one `n<path>` line, and nothing at all
+	// for a pid the fixture does not know — which is the honest "could not
+	// read it" case rather than a wrong answer.
+	lsof := `#!/bin/bash
+F="$PS_FIXTURE"
+pid=""
+while [ $# -gt 0 ]; do
+	case "$1" in -p) pid=$2; shift;; esac
+	shift
+done
+awk -F'\t' -v p="$pid" '$1==p && $5!=""{ print "p" $1; print "n" $5 }' "$F"
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(dir, "lsof"), []byte(lsof), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -505,6 +544,137 @@ func TestQABdPinIgnoresNonDaemonBdProcesses(t *testing.T) {
 	}
 	if !strings.Contains(out, "none running") {
 		t.Errorf("`bd list` and a grep for the phrase must not count as daemons:\n%s", out)
+	}
+}
+
+// ─── the cwd layer (ranger-base-42mv) ───────────────────────────────────────
+//
+// bdDaemonAt is bpDaemon with a working directory. A daemon's cwd is the
+// `.beads` directory beside the database it is serving, which is what makes
+// the classification safe: the canonical queue's is inside a real repo and is
+// never named, whatever else the box is running.
+func bpDaemonAt(pid, argv0, comm string, started time.Time, cwd string) bpProc {
+	p := bpDaemon(pid, argv0, comm, started)
+	p.cwd = cwd
+	return p
+}
+
+// The nine monica reaped by hand on 2026-08-26: session scratchpads and test
+// fixtures that were deleted with the daemon still holding them. The binary
+// is fine, the version is fine, and every command-layer row is green — the
+// directory is what is gone.
+func TestQABdPinFlagsDaemonWhoseWorkingDirectoryIsGone(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	pinned := filepath.Join(home, ".local", "bin", "bd")
+	gone := filepath.Join(t.TempDir(), "deleted-session", ".beads") // never created
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("21232", pinned, pinned, mtime.Add(time.Hour), gone)})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a daemon holding a deleted directory is a failure\n%s", code, out)
+	}
+	if !strings.Contains(out, "LEAKED") {
+		t.Errorf("a daemon whose working directory is gone must be named LEAKED:\n%s", out)
+	}
+	if !strings.Contains(out, "binary ok") {
+		t.Errorf("the binary layer must still read ok — folding the two verdicts together is how this process reads `ok` today:\n%s", out)
+	}
+	if !strings.Contains(out, "kill -TERM 21232") {
+		t.Errorf("the report must hand the operator the exact reap for this pid:\n%s", out)
+	}
+}
+
+// The two this repo filed on 2026-08-25, and the six claude scratchpads
+// before them: the directory is still there for now, but it is a throwaway,
+// so the database behind it is already unreachable in every sense that
+// matters. Flag it while the reap is still cheap.
+func TestQABdPinFlagsDaemonInAThrowawayDirectory(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	pinned := filepath.Join(home, ".local", "bin", "bd")
+	tmp := filepath.Join(t.TempDir(), ".beads") // t.TempDir is /tmp or /var/folders
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("85079", pinned, pinned, mtime.Add(time.Hour), tmp)})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a daemon in a temp dir is a failure\n%s", code, out)
+	}
+	if !strings.Contains(out, "EPHEMERAL") {
+		t.Errorf("a daemon whose cwd exists but is under a temp root must be named EPHEMERAL:\n%s", out)
+	}
+}
+
+// The blast-radius rule from ranger-base-nsm, and the reason the whole layer
+// classifies by cwd: the canonical queue's daemon must come through a run
+// that flags two others, and the reap the report prints must name those two
+// and only those two. `bd daemon stop-all` would take all three.
+func TestQABdPinSparesTheCanonicalDaemonAndNamesOnlyTheLeaked(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	pinned := filepath.Join(home, ".local", "bin", "bd")
+	young := mtime.Add(time.Hour)
+	tmp := filepath.Join(t.TempDir(), ".beads")
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bpStubPS(t, stubs, []bpProc{
+		bpDaemon("92822", pinned, pinned, young), // the live canonical queue
+		bpDaemonAt("85079", pinned, pinned, young, tmp),
+		bpDaemonAt("21232", pinned, pinned, young, filepath.Join(t.TempDir(), "gone", ".beads")),
+	})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	var reap string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "kill -TERM") && strings.Contains(line, "85079") {
+			reap = line
+		}
+	}
+	if reap == "" {
+		t.Fatalf("no reap line naming the leaked daemons:\n%s", out)
+	}
+	if !strings.Contains(reap, "21232") {
+		t.Errorf("the reap must name BOTH leaked daemons, got %q", reap)
+	}
+	if strings.Contains(reap, "92822") {
+		t.Errorf("the reap named the canonical queue's daemon, which is the one thing it must never do: %q", reap)
+	}
+	if !strings.Contains(out, "NEVER `bd daemon stop-all`") {
+		t.Errorf("the report must say why a global stop is not the remedy:\n%s", out)
+	}
+}
+
+// The honest arm. A cwd the probe cannot read is UNVERIFIED, never ok and
+// never LEAKED: `ok` for a process nobody looked at is the 08-16
+// command-layer verdict all over again, and a reap prescribed off a failed
+// read is worse.
+func TestQABdPinCwdUnreadableIsUnverifiedNotOk(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	pinned := filepath.Join(home, ".local", "bin", "bd")
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("41000", pinned, pinned, mtime.Add(time.Hour), "")})
+	// bpStubPS fills an empty cwd with a real directory, so blank the column
+	// the way an lsof that answered nothing would.
+	fixture := filepath.Join(stubs, "ps.fixture")
+	b, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols := strings.SplitN(strings.TrimRight(string(b), "\n"), "\t", 5)
+	if err := os.WriteFile(fixture, []byte(strings.Join(cols[:4], "\t")+"\t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 — unreadable is not a failure, it is unverified\n%s", code, out)
+	}
+	if !strings.Contains(out, "working directory unverified") {
+		t.Errorf("an unreadable cwd must read as unverified:\n%s", out)
+	}
+	for _, bad := range []string{"LEAKED", "EPHEMERAL", "kill -TERM 41000"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("an unread cwd must not be prescribed a reap (%q):\n%s", bad, out)
+		}
 	}
 }
 
