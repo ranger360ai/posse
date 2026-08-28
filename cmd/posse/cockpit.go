@@ -378,7 +378,7 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 		case <-govTick.C:
 			go c.scanGov()
 		case g := <-c.govs:
-			c.gov, c.govFailed, c.govAt = g.set, g.failed, time.Now()
+			c.applyGov(g)
 			if c.mode == modeNormal {
 				c.draw()
 			}
@@ -1426,6 +1426,42 @@ func (c *cockpit) govHeading() string {
 	return h
 }
 
+// govSegment is the header's governance segment, and the residual witness
+// the governance-surface ADR §2 names: "a dead loop pulses nobody, and the
+// residual witness is the operator's glance at the cockpit header."
+//
+// The GOVERNANCE block below is the detail, and it is not enough on its own
+// for that job: it is body, so it scrolls out of the viewport the moment the
+// cursor walks down into READY WORK, and there is no key that scrolls back
+// to it. The header does not scroll. So the header carries the answer and
+// the block carries the reasons (bead rangerhq-mgvx).
+//
+// Three states, kept apart for planSegment's reason — an empty segment is
+// indistinguishable from "this rendering does not do governance", which is
+// exactly the silence a dead loop must not be able to hide in:
+//
+//	gov …            no scan has landed yet. Unknown, not clear.
+//	gov clear        the check ran and found nothing.
+//	gov 1 URGENT …   the summary, plus PARTIAL when a store could not be read.
+//
+// G7 is named rather than counted. Every other row in that count is a
+// condition somebody still has to be told about, and the loop is what tells
+// them: "1 URGENT" with delivery dead understates by exactly the row that
+// matters most. The block spells out which lock is free.
+func (c *cockpit) govSegment() string {
+	if c.govAt.IsZero() {
+		return "gov …"
+	}
+	seg := "gov " + rhq.GovSummary(c.gov)
+	if c.gov.Has("G7") {
+		seg += " · loop dead"
+	}
+	if c.govFailed > 0 {
+		seg += " · partial"
+	}
+	return seg
+}
+
 // govCols is one condition's row: class, G-row, and the detail in the flex
 // column. URGENT is red because the shop is stopped; LANE is plain because
 // the rest of the shop is still flowing and a colour that shouts at both
@@ -1692,6 +1728,13 @@ func (c *cockpit) renderLines(w, h int) []string {
 		layout([]col{
 			{text: "🤠 posse", ansi: aBold},
 			{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + rhq.VersionString() + planSuffix(c.planLine), ansi: aDim},
+			// A FIXED column, at the right edge, deliberately: the flex
+			// column truncates from its tail, so a governance segment
+			// appended there is the first thing an 80-column pane throws
+			// away — and the row it throws away is the one that says
+			// nothing is being delivered. Fixed, it costs the clock and the
+			// version instead, which is the correct exchange.
+			{text: c.govSegment(), ansi: aDim},
 		}, w),
 		"",
 	}
@@ -1845,21 +1888,69 @@ func (c *cockpit) footerLines(w int) []string {
 
 // displayOnly is the non-tty fallback: the refresh loop, drawing the same
 // row model at 80 wide (ADR 0004 §5).
+//
+// It scans governance on the tty path's own cadence, because it draws the
+// tty path's own rows. Without it this rendering answered every governance
+// question with the zero value — no block, and a header that would say
+// nothing at all — so a fleet whose cockpit is piped or logged (the pane is
+// a pipe often enough) reported a dead watch loop as an all-clear. Measured
+// on the scratch rig before the fix: `posse status` said `URGENT G7` and
+// exited 1 while this loop drew a clean shop (bead rangerhq-mgvx).
+//
+// refresh() stays synchronous — it is this loop's whole job — but the shop
+// check talks to bd and the kernel and takes seconds, so it runs off the
+// draw path exactly as it does under the tty, and the header says `gov …`
+// until the first one lands.
 func (c *cockpit) displayOnly() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
+	govTick := time.NewTicker(govEvery)
+	defer govTick.Stop()
+	go c.scanGov()
 	for {
-		c.refresh()
-		fmt.Fprint(c.out, "\033[2J\033[H")
-		c.drawPlain()
+		c.displayFrame()
 		select {
 		case <-stop:
 			return nil
+		case <-govTick.C:
+			go c.scanGov()
 		case <-tick.C:
 		}
 	}
+}
+
+// displayFrame is one non-tty frame: re-read the stores this loop reads
+// synchronously, take whatever the last shop check left on the channel, and
+// draw. Split out of displayOnly so the drain is testable without a signal
+// — the frame, not the loop, is where a landed check becomes a drawn line.
+func (c *cockpit) displayFrame() {
+	c.refresh()
+	c.takeGov()
+	fmt.Fprint(c.out, "\033[2J\033[H")
+	c.drawPlain()
+}
+
+// takeGov applies the last shop check to have landed, if one has. Never
+// waits: a check still running leaves govAt where it was, and the header
+// keeps saying `gov …` rather than drawing an all-clear it has not earned.
+func (c *cockpit) takeGov() bool {
+	select {
+	case g := <-c.govs:
+		c.applyGov(g)
+		return true
+	default:
+		return false
+	}
+}
+
+// applyGov is where a landed check becomes the drawn answer, for both
+// loops. govAt is stamped here and nowhere else: it is what separates "the
+// check found nothing" from "no check has run", and a path that set the set
+// without stamping it would render an all-clear it never earned.
+func (c *cockpit) applyGov(g govRead) {
+	c.gov, c.govFailed, c.govAt = g.set, g.failed, time.Now()
 }
 
 func (c *cockpit) drawPlain() {

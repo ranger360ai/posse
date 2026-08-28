@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-grok-pin verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -172,6 +172,16 @@ verify-prune-guard:
 # aimed at. Allocator is max(live)+1 recomputed at every process start.
 verify-id-recycle:
 	scripts/verify-id-recycle.sh
+
+# The governance surface's honesty when the loop it monitors is dead
+# (rangerhq-mgvx, on rangerhq-81y0's surface). Scratch --session herdr and a
+# scratch RHQ_HOME on both sides; kills its own watch loop with -9 and asserts
+# that `posse status` raises G7 and exits non-zero, that the cockpit HEADER
+# says it, that a stale pidfile naming a live pid cannot suppress it, and that
+# the pulse — and only the pulse — dies with the loop. The control arm (loop
+# alive, surface clear) is what makes the rest a probe.
+verify-govern-honesty:
+	scripts/verify-govern-honesty.sh $(POSSE)
 
 # The grok version pin (rangerhq-y7jr). grok ships `[cli] auto_update = true`
 # and a leader process that downloads a new binary and relaunches itself

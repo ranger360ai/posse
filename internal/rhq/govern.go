@@ -111,6 +111,27 @@ func (s GovSet) Urgent() bool {
 	return false
 }
 
+// Has reports whether the set holds a given G-row. It is how a rendering
+// asks about one condition BY NAME rather than by counting — the summary
+// says how many need a human, and G7 says whether any of them is reaching
+// one, which is not the same question and must not be answered by a number
+// (bead rangerhq-mgvx).
+//
+// A carry-over has no row name (Row() renders "—"), so the empty id matches
+// nothing: asking whether the set holds "" is a bug in the caller, never a
+// hit.
+func (s GovSet) Has(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, c := range s {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // GovInputs is everything the check may read, and the seams the three
 // renderings differ on. Everything else it reads live from the store that
 // owns the fact.
