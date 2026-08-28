@@ -4,7 +4,9 @@
 extends ADR 0012 D4 (plan-guard seam) and ADR 0018 (blind policy);
 supersedes, at the harness level, the "guard does not become portable
 off macOS" consequence of the instance-private credential ADR of the
-same number.*
+same number. Amended 2026-08-28 (ranger-base-1lza): darwin counts
+three stores, not two, and the `.stale-*` evidence clause was measured
+dead — the file self-renews.*
 
 ## Context
 
@@ -87,6 +89,34 @@ build tags, so `make test-linux` compiles and tests every branch:
   ranger-base-17i) ride with the adapter and keep their ordering; this
   ADR does not change how `security` resolves. (Both have since landed
   in that order: the adapter now execs `/usr/bin/security` absolutely.)
+
+  **Darwin has three credential stores, not two** (amended 2026-08-28,
+  ranger-base-1lza):
+
+  1. the keychain — store of record, the meter adapter above
+     (unchanged);
+  2. `envs/<set>.env` mints — posse-owned, scoped, human-gated
+     (unchanged, D1/D4);
+  3. `~/.claude/.credentials.json` — a **recurring unowned byproduct**.
+     Some darwin auth flow writes a full `claudeAiOauth` envelope there
+     on its own schedule. MEASURED (ranger-base-xjj9/m6cm): the
+     operator deleted the file 2026-08-26, two sessions verified clean
+     by 03:40, and a fresh one (994 B, mode 600, new content) appeared
+     at 11:47:07 the same day — read once 101 s later, then frozen for
+     two days while claude wrote `~/.claude` continuously. The frozen
+     mtime is the discriminator that it is *not* the store of record;
+     the regeneration is the proof that it is not a one-off leftover
+     either. Posse never reads it, never wants it, and cannot delete it
+     away — "delete once" was the implicit model and it measured out a
+     treadmill. It is counted and compensated explicitly:
+     - detective: the credential-path sweep — `make
+       verify-credential-paths` + `docs/runbooks/credential-rotation.md`
+       (ranger-base-m6cm, shipped);
+     - preventive: the seatbelt `file-read` deny on credential-file
+       literals, GOOS-shaped so the linux store of record stays
+       readable (ranger-base-hw18);
+     - liveness/revocation of any current instance is the operator's
+       call (ranger-base-tyne), independent of this model.
 - linux (and any non-darwin): `~/.claude/.credentials.json`, fed
   through the **same** `credentialToken`/`credShapes` parser — the
   blob is the same envelope, so ranger-base-okbr's shape diagnostics
@@ -166,7 +196,13 @@ design puts more weight on files. What is actually traded:
   — the account's rotating OAuth pair — never enters a posse-owned
   file. A leaked session mint burns one revocable token, not the
   account. The blast-radius argument from the instance ADR's class
-  split, kept.
+  split, kept. **But "posse-owned" is a narrower wall than it sounds
+  on darwin** (amended 2026-08-28): the rotating pair recurringly sits
+  in an *unowned* plain 600 file — `~/.claude/.credentials.json`, the
+  third store in D2 — below the container wall, written by the
+  runtime's own auth flow on its own schedule. Ownership hygiene does
+  not reach a file posse never writes; the comfort this bullet buys is
+  void in effect until the D2 compensations (sweep + read deny) hold.
 - **What the keychain was actually buying on darwin: less than it
   looked.** MEASURED 2026-08-24: the non-interactive same-user read
   succeeded — the keychain was not protecting this token from personas;
@@ -181,7 +217,12 @@ design puts more weight on files. What is actually traded:
   ships only through `make install` review — load-bearing,
   indefinitely), path-scoped writes (ADR 0014), env-set listings that
   never print values, and the vault destination (ranger-base-epz8) as
-  the real answer to at-rest secrecy when it is priced.
+  the real answer to at-rest secrecy when it is priced. For the unowned
+  darwin file specifically: the detective sweep (`make
+  verify-credential-paths`, ranger-base-m6cm) and the seatbelt
+  file-read deny (ranger-base-hw18) — both in the compensation list by
+  design, because a store nobody owns needs controls nobody has to
+  remember to run.
 
 ## Consequences
 
@@ -216,10 +257,15 @@ design puts more weight on files. What is actually traded:
   posse *owns* under the home), amended in letter, and this paragraph
   is the plain statement of that amendment.
 - **Read `~/.claude/.credentials.json` on darwin too.** One adapter
-  instead of two. On macOS that file is a stale leftover of the
-  keychain login (MEASURED: renamed `.stale-*` on the reference box);
-  making it the source inverts the store of record on the one platform
-  where the record lives elsewhere.
+  instead of two. Rejection stands; the evidence clause is amended
+  (2026-08-28, ranger-base-1lza) — the original citation ("a stale
+  leftover of the keychain login, renamed `.stale-*` on the reference
+  box") described a state gone since 2026-08-26 and mischaracterized
+  the file: it self-renews (D2, store 3). The corrected evidence
+  argues the rejection *harder*: MEASURED, the regenerated file sat
+  two days unrefreshed while claude ran daily and the keychain
+  rotated. Making it the darwin source would invert the store of
+  record onto a snapshot that is provably stale within days.
 - **OS keyring on Linux** (Secret Service / gnome-keyring) as the
   meter store. "Keychain, portably": re-imports the per-binary/unlock
   fragility that broke the guard three times in one day, needs a
