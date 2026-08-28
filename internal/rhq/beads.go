@@ -130,6 +130,91 @@ func (b Bd) InProgress(dir string) ([]BdIssue, error) {
 	return parseBdIssues(out)
 }
 
+// OpenLabeledAny lists the repo's OPEN issues carrying at least one of the
+// labels (`bd list --label-any a,b`). It is the governance surface's G3
+// query: `-l question` / `-l risk` beads are decisions waiting on a human,
+// and unlike Ready they are wanted whether or not they are unblocked — a
+// question that is itself dep-blocked is still a question nobody answered.
+//
+// --limit 0 for the same reason Ready carries it (rangerhq-47v): a capped
+// page of a set the caller is counting is a silent undercount.
+func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	out, err := b.run(dir, "list", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
+	if err != nil {
+		return nil, err
+	}
+	return parseBdIssues(out)
+}
+
+// BdBlocked is one row of `bd blocked --json`: an issue that is not in
+// `bd ready` because something else is holding it, and the ids doing the
+// holding.
+type BdBlocked struct {
+	ID        string   `json:"id"`
+	Status    string   `json:"status"`
+	BlockedBy []string `json:"blocked_by"`
+}
+
+// Blocked lists every blocked issue in the repo with its blockers — ONE
+// call for the whole graph, where `dep list --direction=up` is one call per
+// bead asked about.
+//
+// That difference is the whole reason this exists. The governance surface's
+// G3 asks "does this question hold work out of the queue" of every aging
+// question bead; on the store this was written against that was 24 `dep
+// list` calls per view (~4.5s of the ~5.6s measured, rangerhq-81y0), and
+// this is one. It is also the better question: `dep list --direction=up`
+// answers "what points at me", while this answers "what is actually stuck",
+// which is what the row means.
+func (b Bd) Blocked(dir string) ([]BdBlocked, error) {
+	out, err := b.run(dir, "blocked", "--json")
+	if err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(out)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, nil
+	}
+	var bl []BdBlocked
+	if err := json.Unmarshal(trimmed, &bl); err != nil {
+		return nil, Die("bd blocked: bad JSON: %v", err)
+	}
+	return bl, nil
+}
+
+// BdComment is one row of `bd comments <id> --json`. The text is what the
+// escalation ladder's protocol prefixes (`BLOCKED:`, `REFUSED:`) are read
+// out of — see govern.go's ladderSubtype.
+type BdComment struct {
+	ID      int       `json:"id"`
+	IssueID string    `json:"issue_id"`
+	Author  string    `json:"author"`
+	Text    string    `json:"text"`
+	Created time.Time `json:"created_at"`
+}
+
+// Comments returns an issue's comments, oldest first (bd's own order). The
+// mirror of CommentCount, which is deliberately kept: a caller that only
+// wants "are there any" should not pay to decode them.
+func (b Bd) Comments(dir, id string) ([]BdComment, error) {
+	out, err := b.run(dir, "comments", id, "--json")
+	if err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(out)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, nil
+	}
+	var cs []BdComment
+	if err := json.Unmarshal(trimmed, &cs); err != nil {
+		return nil, Die("bd comments %s: bad JSON: %v", id, err)
+	}
+	return cs, nil
+}
+
 // ClaimLostError reports that the bead is held by somebody else: the claim
 // went to another actor. Callers that race for work (dispatch) treat this as
 // a clean skip; every other claim error is a real failure.

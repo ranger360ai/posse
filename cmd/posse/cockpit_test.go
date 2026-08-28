@@ -1078,3 +1078,88 @@ func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
 		t.Errorf("unguarded stays silent whatever Dial E says, got %q", got)
 	}
 }
+
+// ─── the GOVERNANCE block (bead rangerhq-81y0) ──────────────────────────────
+
+// govFixture is the fixture with a condition set on it — one URGENT, one
+// LANE, and a carry-over with no G-row.
+func govFixture() *cockpit {
+	c := fixture()
+	c.gov = rhq.GovSet{
+		{ID: "G1", Class: rhq.GovLane, Key: "blocked:devops-x", Detail: "devops-x (devops) is blocked on an approval"},
+		{ID: "G7", Class: rhq.GovUrgent, Key: "loop-dead", Detail: "autostart is armed and no watch loop holds the lock"},
+		{Class: rhq.GovLane, Key: "no-live:monica", Detail: "no live session for monica"},
+	}
+	return c
+}
+
+// A clear shop must not spend two lines of a 20-line popup saying so — and
+// the goldens, whose fixture has no conditions, are the proof that it does
+// not.
+func TestCockpitGovBlockHiddenWhenClear(t *testing.T) {
+	c := fixture()
+	c.buildRows()
+	if strings.Contains(stripANSI(c.render(140, 40)), "GOVERNANCE") {
+		t.Error("a clear shop draws no GOVERNANCE block")
+	}
+}
+
+func TestCockpitGovBlockDrawsUrgentFirst(t *testing.T) {
+	c := govFixture()
+	c.buildRows()
+	out := stripANSI(c.render(140, 40))
+	if !strings.Contains(out, "GOVERNANCE (1 URGENT · 2 LANE)") {
+		t.Errorf("want the summary heading, got:\n%s", out)
+	}
+	urgent := strings.Index(out, "loop-dead")
+	if urgent < 0 {
+		urgent = strings.Index(out, "no watch loop")
+	}
+	lane := strings.Index(out, "is blocked on an approval")
+	sessions := strings.Index(out, "SESSIONS (")
+	if urgent < 0 || lane < 0 || sessions < 0 {
+		t.Fatalf("block did not render:\n%s", out)
+	}
+	if !(urgent < lane) {
+		t.Errorf("URGENT must come first:\n%s", out)
+	}
+	if !(lane < sessions) {
+		t.Errorf("the block belongs above SESSIONS:\n%s", out)
+	}
+	// The carry-over keeps its em dash rather than being given a G-row.
+	if !strings.Contains(out, "—") {
+		t.Errorf("a carry-over row must not be given a G-id:\n%s", out)
+	}
+}
+
+// The rows are filler, not cursor items: the block must not move the cursor
+// or change what tab and the keys act on. This is the whole reason it is
+// drawn as a banner rather than as a fourth section.
+func TestCockpitGovBlockIsNotCursorSpace(t *testing.T) {
+	plain, gov := fixture(), govFixture()
+	plain.buildRows()
+	gov.buildRows()
+	if plain.items() != gov.items() {
+		t.Errorf("cursor space changed: %d → %d", plain.items(), gov.items())
+	}
+	if len(gov.rows) <= len(plain.rows) {
+		t.Error("the block drew no rows")
+	}
+	for _, r := range gov.rows[:len(gov.rows)-len(plain.rows)] {
+		if r.kind == rowItem {
+			t.Errorf("a governance row must not be selectable: %+v", r)
+		}
+	}
+}
+
+// An unreadable store is not an all-clear here either: the heading says so
+// in the one word a count alone cannot.
+func TestCockpitGovBlockSaysPartial(t *testing.T) {
+	c := fixture()
+	c.govFailed = 2
+	c.buildRows()
+	out := stripANSI(c.render(140, 40))
+	if !strings.Contains(out, "partial, 2 store(s) unread") {
+		t.Errorf("want the partial heading, got:\n%s", out)
+	}
+}

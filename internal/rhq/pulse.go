@@ -10,17 +10,29 @@ package rhq
 // It starts with the watch loop and dies with it (Watch's ctx), never a
 // second loop of its own — a hand-typed pass never pulses, the same premise
 // as Unattended (watch.go): only a timer with no human witness needs a
-// shop check running behind it. Sensing touches herdr and local git only,
-// never bd and never the plan endpoint; delivery adds one more herdr call
-// (AgentPrompt) and nothing else.
+// shop check running behind it.
+//
+// Sensing is no longer this file's: the condition set moved to govern.go
+// when the governance surface widened it to the G-table (bead rangerhq-81y0
+// — see that file's header). The pulse is now one of three renderings of
+// ShopCheck, and it keeps exactly two things of its own: the fingerprint
+// that dedups DELIVERY, and delivery itself. state/pulse.yaml stays dedup
+// state and is never a record anyone reads for truth.
+//
+// That widening broke ADR 0027 §1's "never bd, never the plan endpoint"
+// boundary, deliberately and with the design's eyes open: G2/G3/G9 are bd
+// facts and G5/G6 are meter facts, and a surface that cannot see them is
+// blind to most of what actually stops a shop. The cost is bounded (a few
+// list calls per tick) and measured on the bead. What the boundary was
+// protecting — silence off a timer nobody is watching — survives as a rule
+// rather than an abstinence: a store that cannot be read is logged and the
+// tick moves on, never a false alarm and never a fatal.
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -77,63 +89,6 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 		}
 	}
 	return cfg, nil
-}
-
-// ShopCheck computes the ADR 0027 §1 condition set:
-//
-//   - (a) any live session whose agent herdr reports blocked
-//   - (b) unpushed commits (@{u}..HEAD) on a config beads: repo — no
-//     upstream configured reads as no condition, not an error
-//   - (c) no live session for persona
-//
-// Each condition is one stable string; the caller sorts nothing further —
-// the return is already sorted so it can be joined straight into a
-// fingerprint and diffed by a later reader without parsing anything.
-//
-// Herdr and local git only — never bd, never the plan endpoint (the same
-// boundary Unattended draws): this runs off a timer with no human watching
-// it spend.
-func ShopCheck(hb *HerdrBackend, beadsDirs []string, persona string) ([]string, error) {
-	sessions, err := hb.Sessions()
-	if err != nil {
-		return nil, err
-	}
-	var conditions []string
-	livePersona := false
-	for _, s := range sessions {
-		if s.Agent == persona {
-			livePersona = true
-		}
-		if s.Status == "blocked" {
-			conditions = append(conditions, "blocked:"+s.Name)
-		}
-	}
-	if !livePersona {
-		conditions = append(conditions, "no-live:"+persona)
-	}
-
-	seen := map[string]bool{}
-	for _, dir := range beadsDirs {
-		if dir == "" || seen[dir] {
-			continue
-		}
-		seen[dir] = true
-		n, err := git(dir, "rev-list", "--count", "@{u}..HEAD")
-		if err != nil {
-			// No upstream (or not a repo at all) is the absence of a
-			// condition, not a failure to read one — a repo this check
-			// cannot ask reads the same as a repo with nothing to report,
-			// which is the point: silence off a timer nobody is watching,
-			// never a false alarm.
-			continue
-		}
-		if count, err := strconv.Atoi(n); err == nil && count > 0 {
-			conditions = append(conditions, fmt.Sprintf("unpushed:%s:%d", dir, count))
-		}
-	}
-
-	sort.Strings(conditions)
-	return conditions, nil
 }
 
 // PulsePath is state/pulse.yaml, the pulse's own fingerprint — machine-local
@@ -224,16 +179,19 @@ func (d *Dispatcher) pulseLoop(ctx context.Context, cfg PulseConfig) {
 // for delivery (ADR 0027 §3-4), fingerprint + bookkeeping to disk, log
 // non-empty.
 func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
-	conditions, err := ShopCheck(d.HB, d.App.BeadsDirs(), cfg.Persona)
-	if err != nil {
-		fmt.Fprintf(d.errw(), "pulse: shop check failed: %v\n", err)
-		return
+	set, failed := ShopCheck(d.govInputs(cfg))
+	// A store that could not be read is a condition set that is PARTIAL,
+	// never one that is empty. Off a timer that is a line in the log, not a
+	// halt: the tick delivers what it did see and says what it could not.
+	for _, err := range failed {
+		fmt.Fprintf(d.errw(), "pulse: shop check partial: %v\n", err)
 	}
+	conditions := set.Keys()
 	path := PulsePath(d.App)
 	state := ReadPulseState(path)
 	state.At = d.now()
 	state.Conditions = conditions
-	state.Fingerprint = strings.Join(conditions, "|")
+	state.Fingerprint = set.Fingerprint()
 
 	if len(conditions) == 0 {
 		// Cleared set resets the renag clock — the next non-empty set, even
@@ -250,7 +208,34 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 		fmt.Fprintf(d.errw(), "pulse: cannot write %s: %v\n", AbbrevHome(path), err)
 	}
 	if len(conditions) > 0 {
-		fmt.Fprintf(d.Out, "pulse: %s\n", strings.Join(conditions, "; "))
+		// The watch-log rendering (the third of the three): the same stable
+		// tokens the prompt carries and the fingerprint is made of, so the
+		// blocked-time-to-intervention metric can be read straight out of
+		// this log against herdr's state changes.
+		fmt.Fprintf(d.Out, "pulse: %s\n", GovLines(set))
+	}
+}
+
+// govInputs is the pulse tick's view of the shop check: the watch process's
+// own guard streak (G4 lives nowhere else) and its cost-scan seam, with the
+// pulse persona marked live so the `no-live:` carry-over keeps meaning what
+// it meant before the widening.
+//
+// Errw is left nil on purpose. A config typo is worth one line where a human
+// asked (`posse status`, dispatch's own passes) and is noise written every
+// two minutes forever here.
+func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
+	return GovInputs{
+		App:               d.App,
+		HB:                d.HB,
+		Bd:                d.Bd,
+		Now:               d.now,
+		Caller:            "pulse",
+		PulsePersona:      cfg.Persona,
+		Pulsing:           true,
+		GuardTrippedSince: d.guardStreak(),
+		Spend:             d.Spend,
+		Plan:              d.Plan,
 	}
 }
 

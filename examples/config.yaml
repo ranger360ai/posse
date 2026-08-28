@@ -447,6 +447,30 @@ dirs:
 # stop the shop.
 # load_guard: 25             # 1-min loadavg ceiling for launching; 0 = off
 
+# ─── governance: what needs a human (`posse status`) ─────────────────────────
+# `posse status` computes the condition set — the closed, enumerated list of
+# things that need a human — live from the stores that own each fact: herdr
+# (a blocked session), bd (a settled holder, an unanswered question, a bead
+# routed to the coordinator), the plan endpoint, the cost ledger, the watch
+# loop's flock, and state/pause.yaml. It exits non-zero when the set is
+# non-empty OR when a store could not be read: unknown is not an all-clear.
+#
+# ALWAYS ON, and there is no arm switch. A surface you have to arm is one
+# more thing that can be off when it is needed; the reads cost nothing that
+# is not already configured (an unarmed plan guard makes no request, and
+# Dial E with no cap scans no transcripts).
+#
+# The same set is drawn as the cockpit's GOVERNANCE block and carried to
+# `pulse_persona:` by the pulse tick. Both keys below are optional; the
+# values shown are the code defaults.
+#
+# One row is NOT answerable from a hand-typed command: the plan guard's
+# streak lives in the --watch loop's own memory, so a `posse status` run
+# from a terminal never reports it. A guard that trips is a SKIP —
+# automatic, self-healing — and only a sustained one is a condition.
+# attn_question_age: 4h      # how long a -l question / -l risk bead may sit open
+# attn_guard_stuck: 2h       # how long the plan guard may skip before it is a condition
+
 # ─── scheduled dispatch (autostart) ──────────────────────────────────────────
 # The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs
 # `posse dispatch --watch` in a workspace, once per herdr server start. The

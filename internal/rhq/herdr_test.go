@@ -103,7 +103,26 @@ func fakeBd(args []string) int {
 		}
 		return 0
 	case "list":
-		if b, err := os.ReadFile("fake-list.json"); err == nil {
+		// One verb, three queries. `--status in_progress` is the claimed
+		// list every caller before the governance surface meant by "list",
+		// so it keeps fake-list.json; `--label-any` is G3's question/risk
+		// query and gets its OWN file with an empty default, because
+		// falling back to fake-list.json would make every fixture in the
+		// suite grow question beads it never declared.
+		file := "fake-list.json"
+		for _, a := range args {
+			if a == "--label-any" {
+				file = "fake-list-labeled.json"
+			}
+		}
+		if b, err := os.ReadFile(file); err == nil {
+			fmt.Print(string(b))
+		} else {
+			fmt.Print("[]")
+		}
+		return 0
+	case "blocked": // blocked --json → fake-blocked.json (the whole graph, one call)
+		if b, err := os.ReadFile("fake-blocked.json"); err == nil {
 			fmt.Print(string(b))
 		} else {
 			fmt.Print("[]")

@@ -159,6 +159,14 @@ type Dispatcher struct {
 	overflow     Overflow
 	overflowUsed int
 
+	// guardTrippedSince is the governance surface's G4 streak clock: when
+	// the plan guard first tripped in the current unbroken run of tripped
+	// passes, zero when the last pass did not trip. It lives here for
+	// blindSince's reason — a fresh loop earning a fresh grace is correct,
+	// not a bug — and it is read by the pulse goroutine, which is why it
+	// goes through mu rather than being touched directly.
+	guardTrippedSince time.Time
+
 	// The account stage (ADR 0013 §5), per uncounted runtime this pass
 	// touched: its `uncounted_cap_<runtime>:`, its rolling-window count and
 	// what this pass sent it (uncounted.go). Like every other reading here
@@ -479,6 +487,33 @@ func (d *Dispatcher) budgetCaps() (pass, day float64) {
 	}
 	d.budgetWarned = true
 	return d.App.BudgetCaps(errw)
+}
+
+// noteGuardStreak advances G4's clock from the verdict planGuard just
+// reached. A tripped pass starts the streak (or leaves a running one
+// alone); any other outcome ends it — under threshold, guard off, no
+// adapter, and blind, which is G5's condition and not this one.
+//
+// It is called once per pass, right after the guard, because the streak is
+// a property of PASSES and not of wall-clock: a loop that stops passing has
+// stopped skipping, and G7 is the row for that.
+func (d *Dispatcher) noteGuardStreak() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.planTrip == "" {
+		d.guardTrippedSince = time.Time{}
+		return
+	}
+	if d.guardTrippedSince.IsZero() {
+		d.guardTrippedSince = d.now()
+	}
+}
+
+// guardStreak is that clock, read from the pulse goroutine.
+func (d *Dispatcher) guardStreak() time.Time {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.guardTrippedSince
 }
 
 // blindQuiet is how long the blind state keeps its mouth shut between
@@ -1346,6 +1381,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// is applied later, after each bead's runtime is known; the pass itself
 	// always runs (ADR 0013 §3).
 	d.planGuard()
+	d.noteGuardStreak()
 
 	// verify-after (ADR 0006 §3) before ready work is gathered, so a verify
 	// bead filed by this pass is dispatched by this pass. --dry-run shows

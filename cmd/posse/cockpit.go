@@ -115,6 +115,22 @@ type cockpit struct {
 	planLine   string
 	planReadAt time.Time // last SUCCESSFUL reading (or cockpit start) — the header's blind clock
 
+	// The governance surface (the archive's governance-surface ADR §2, bead
+	// rangerhq-81y0): the third rendering of ShopCheck, drawn as a block
+	// above SESSIONS. It is scanned off the event loop like the cost and
+	// plan readings — the check talks to herdr, bd, the plan snapshot and
+	// the kernel, and the draw path does no I/O.
+	//
+	// The rows are NOT cursor items: there is no key that acts on a
+	// condition, because conditions heal by themselves and the things a
+	// human does about them are already keys on the sections below. So the
+	// block is filler rows, cursor space is untouched, and nothing about
+	// selection, tab or reselect changes.
+	govs      chan govRead
+	gov       rhq.GovSet
+	govFailed int
+	govAt     time.Time
+
 	// now is the clock the header reads; nil = time.Now. The golden tests
 	// (ADR 0004 §5) pin it so the render is byte-stable.
 	now func() time.Time
@@ -134,6 +150,33 @@ const (
 	// header picking up a reading a dispatch pass took, for free.
 	planEvery = 2 * time.Minute
 )
+
+// govEvery is how often the GOVERNANCE block is recomputed. It is the
+// heaviest of the three scans (a few bd calls per configured repo), so it
+// runs at the cost scan's cadence rather than the 2s redraw's: a condition
+// that has been true for thirty seconds is not less true, and none of these
+// rows is one a human reacts to inside a second.
+const govEvery = 30 * time.Second
+
+// govRead is one shop check's worth of fact, computed off the event loop.
+// failed is a COUNT and not the errors: the block says the set is partial,
+// and `posse status` is where the reasons are printed — the cockpit owns the
+// whole terminal and has nowhere to put a multi-line error.
+type govRead struct {
+	set    rhq.GovSet
+	failed int
+}
+
+// scanGov runs off the event loop; the result lands on c.govs.
+func (c *cockpit) scanGov() {
+	in := rhq.StatusInputs(c.app, c.hb, io.Discard)
+	in.Caller = "cockpit"
+	set, failed := rhq.ShopCheck(in)
+	select {
+	case c.govs <- govRead{set: set, failed: len(failed)}:
+	default:
+	}
+}
 
 // scanCosts runs off the event loop; the result lands on c.costs.
 func (c *cockpit) scanCosts() {
@@ -264,7 +307,8 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 	c := &cockpit{app: a, hb: hb, bd: rhq.NewBd(), out: out,
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
-		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1)}
+		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
+		govs: make(chan govRead, 1)}
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return c.displayOnly()
@@ -309,10 +353,13 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 	c.draw()
 	go c.scanCosts()
 	go c.scanPlan()
+	go c.scanGov()
 	costTick := time.NewTicker(costEvery)
 	defer costTick.Stop()
 	planTick := time.NewTicker(planEvery)
 	defer planTick.Stop()
+	govTick := time.NewTicker(govEvery)
+	defer govTick.Stop()
 	for {
 		select {
 		case <-stop:
@@ -328,6 +375,13 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 			go c.scanCosts()
 		case <-planTick.C:
 			go c.scanPlan()
+		case <-govTick.C:
+			go c.scanGov()
+		case g := <-c.govs:
+			c.gov, c.govFailed, c.govAt = g.set, g.failed, time.Now()
+			if c.mode == modeNormal {
+				c.draw()
+			}
 		case r := <-c.plans:
 			c.planLine = c.planSegment(r)
 			if c.mode == modeNormal {
@@ -1361,6 +1415,33 @@ func (c *cockpit) inprogCols(is rhq.RepoIssue) []col {
 	}
 }
 
+// govHeading is the block's own summary, and it says PARTIAL when a store
+// could not be read — an unreadable store is not an all-clear, and a count
+// rendered without that word would read as one.
+func (c *cockpit) govHeading() string {
+	h := rhq.GovSummary(c.gov)
+	if c.govFailed > 0 {
+		h += fmt.Sprintf(" · partial, %d store(s) unread", c.govFailed)
+	}
+	return h
+}
+
+// govCols is one condition's row: class, G-row, and the detail in the flex
+// column. URGENT is red because the shop is stopped; LANE is plain because
+// the rest of the shop is still flowing and a colour that shouts at both
+// tells the eye nothing.
+func govCols(g rhq.GovCondition) []col {
+	color := ""
+	if g.Class == rhq.GovUrgent {
+		color = aRed
+	}
+	return []col{
+		{kind: colFixed, text: "  " + g.Class, pad: 9, ansi: color},
+		{kind: colFixed, text: g.Row(), pad: 4, ansi: aDim},
+		{kind: colFlex, text: g.Detail},
+	}
+}
+
 // buildRows turns the three lists into the flat row model. Item rows carry
 // their index in cursor space, so the cursor keeps meaning what it always
 // meant (sessions, then issues) and reselect (rangerhq-5li) is untouched.
@@ -1375,6 +1456,18 @@ func (c *cockpit) buildRows() {
 	// One pass per section, in cursor order; item rows carry their index in
 	// cursor space, so the cursor keeps meaning what it always meant and
 	// reselect (rangerhq-5li) needs nothing from the row model.
+	// GOVERNANCE, above everything, and only when it has something to say —
+	// a clear shop must not spend two lines of a 20-line popup saying so,
+	// and the header already carries the shop's other standing numbers.
+	// These rows are filler: they are not in cursor space (see the field's
+	// comment), so tab, reselect and every key below are untouched.
+	if len(c.gov) > 0 || c.govFailed > 0 {
+		rows = append(rows, heading(fmt.Sprintf("GOVERNANCE (%s)", c.govHeading()), secSessions))
+		for _, g := range rhq.GovOrdered(c.gov) {
+			rows = append(rows, row{kind: rowFiller, sec: secSessions, cols: govCols(g)})
+		}
+		rows = append(rows, row{kind: rowFiller, sec: secSessions})
+	}
 	rows = append(rows, heading(fmt.Sprintf("SESSIONS (%d)", len(c.sessions)), secSessions))
 	if len(c.sessions) == 0 {
 		rows = append(rows, none(secSessions))

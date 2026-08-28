@@ -583,3 +583,98 @@ func TestReadyOrdersByPriorityAcrossSources(t *testing.T) {
 		t.Errorf("raising a second-source bead to P1 must move it FORWARD, got %v:\n%s", ids, got)
 	}
 }
+
+// ─── posse status (the governance surface, bead rangerhq-81y0) ───────────────
+
+// emptyHerdrScript answers the two listings Sessions() makes with an empty
+// herd. A status test needs herdr to SUCCEED and say nothing, so that a
+// non-zero exit can only mean "a condition was found".
+const emptyHerdrScript = `#!/bin/sh
+case "$1 $2" in
+  "workspace list") echo '{"workspaces":[]}' ;;
+  "agent list")     echo '{"agents":[]}' ;;
+  *)                echo '{}' ;;
+esac
+exit 0
+`
+
+func statusEnv(t *testing.T, home string, extra ...string) []string {
+	t.Helper()
+	herdr := writeExec(t, t.TempDir(), "herdr", emptyHerdrScript)
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+	return append(append(os.Environ(),
+		"RHQ_HOME="+home,
+		"RHQ_HERDR_BIN="+herdr,
+		"RHQ_BD_BIN="+bd,
+	), extra...)
+}
+
+// The all-clear: nothing needs a human, and the exit code says so. This is
+// the arm that makes the non-zero one below mean anything.
+func TestStatusClearShopExitsZero(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "status")
+	cmd.Env = statusEnv(t, home)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("a clear shop must exit 0: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "nothing needs a human") {
+		t.Errorf("want the all-clear, got:\n%s", out)
+	}
+}
+
+// The design's own observable, in the shape a script would ask it: a shop
+// with autostart armed and no watch loop shows G7 and exits non-zero.
+func TestStatusNonZeroOnANonEmptySet(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"),
+		[]byte("beads:\n  - "+repo+"\nautostart_interval: 5m\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "status")
+	cmd.Env = statusEnv(t, home)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("a non-empty condition set must exit non-zero:\n%s", out)
+	}
+	got := string(out)
+	if !strings.Contains(got, "URGENT") || !strings.Contains(got, "G7") {
+		t.Errorf("want the G7 row, got:\n%s", got)
+	}
+	if strings.Contains(got, "nothing needs a human") {
+		t.Errorf("a set with a condition in it is not an all-clear:\n%s", got)
+	}
+}
+
+// An unreadable store is not an all-clear either — the same rule `posse
+// beads check` keeps, and the one that stops this command being trusted
+// while it is blind.
+func TestStatusNonZeroWhenAStoreCannotBeRead(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// fakeBdScript fails every call while this marker is there.
+	if err := os.WriteFile(filepath.Join(repo, "fake-ready-fail"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "status")
+	cmd.Env = statusEnv(t, home)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("an unreadable store must not exit 0:\n%s", out)
+	}
+	if strings.Contains(string(out), "nothing needs a human") {
+		t.Errorf("unknown is not clear:\n%s", out)
+	}
+}

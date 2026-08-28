@@ -700,6 +700,25 @@ func main() {
 		}
 		fmt.Fprintf(out, "%d bead(s) %s\n", n, verb)
 
+	case "status":
+		// The governance surface as a command (the archive's
+		// governance-surface ADR §2, bead rangerhq-81y0): the same
+		// computation the pulse tick and the cockpit's GOVERNANCE block
+		// render, printed once and answered with an exit code.
+		//
+		// It reads the stores DIRECTLY and depends on no loop — a dead watch
+		// loop is a condition it reports (G7), never a reason it goes quiet.
+		// Non-zero means either "something needs a human" or "the set could
+		// not be read": an unreadable store is not an all-clear, the same
+		// rule `posse beads check` keeps.
+		need(args, 0, "posse status")
+		set, failed := rhq.ShopCheck(rhq.StatusInputs(a, hb, os.Stderr))
+		fmt.Fprintf(out, "shop check · %s · %s\n", rhq.GovSummary(set), rhq.AbbrevHome(a.Home))
+		rhq.GovReport(out, set, failed)
+		if len(set) > 0 || len(failed) > 0 {
+			os.Exit(1)
+		}
+
 	case "cockpit":
 		if err := runCockpit(a, hb, out); err != nil {
 			die(err)
@@ -1633,6 +1652,22 @@ catalog:
                                  Every launch re-hashes the promoted set against
                                  promoted.json: dispatch refuses on a mismatch,
                                  an interactive launch warns DEGRADED.
+
+governance:
+  posse status                   the condition set: what needs a human right now,
+                                 URGENT (the shop is stopped) before LANE (one bead
+                                 or session is). Computed live from the stores that
+                                 own each fact — herdr, bd, the plan endpoint, the
+                                 watch loop's flock, state/pause.yaml — so it depends
+                                 on no loop and reports a dead one itself. Exit
+                                 non-zero when the set is non-empty OR a store could
+                                 not be read (unknown is not an all-clear)
+                               config attn_question_age: (4h) how long a
+                                 -l question / -l risk bead may sit open
+                               config attn_guard_stuck: (2h) how long the plan
+                                 guard may skip before a skip becomes a condition
+                                 (the streak is the --watch loop's own; a fresh
+                                 shell has none and reports no G4)
 
 cockpit (herdr plugin pane — make link-plugin):
   posse cockpit                  interactive oversight: sessions blocked-first +

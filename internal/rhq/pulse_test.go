@@ -81,14 +81,32 @@ func blockedSession(t *testing.T, b *HerdrBackend, fake, name, persona string) {
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(agents), 0o644)
 }
 
+// pulseIn is the pulse tick's inputs against a test backend: armed, no bd
+// (the fake bd is per-repo and these fixtures configure no beads dir), no
+// streak, no ledger scan. The G-table rows have their own file.
+func pulseIn(t *testing.T, b *HerdrBackend, dirs []string, persona string) GovInputs {
+	t.Helper()
+	if dirs == nil {
+		dirs = []string{t.TempDir()}
+	}
+	writeBeadsDirs(b.App, dirs)
+	// The fake bd, serving no fixtures: the G-table's bd rows come back
+	// empty rather than unknown, so these tests assert on the carry-overs
+	// alone. Without it BeadsDirs falls back to the process cwd and the
+	// real bd answers from the operator's own queue.
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RHQ_BD_BIN", exe)
+	return GovInputs{App: b.App, HB: b, Bd: NewBd(), PulsePersona: persona, Pulsing: true}
+}
+
 func TestShopCheckBlockedSession(t *testing.T) {
 	b, fake := newTestBackend(t)
 	blockedSession(t, b, fake, "monica-shop", "monica")
 
-	conditions, err := ShopCheck(b, nil, "monica")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
 	if !containsStr(conditions, "blocked:monica-shop") {
 		t.Errorf("conditions = %v, want blocked:monica-shop", conditions)
 	}
@@ -100,12 +118,21 @@ func TestShopCheckBlockedSession(t *testing.T) {
 
 func TestShopCheckNoLivePersona(t *testing.T) {
 	b, _ := newTestBackend(t)
-	conditions, err := ShopCheck(b, nil, "monica")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
 	if !containsStr(conditions, "no-live:monica") {
 		t.Errorf("conditions = %v, want no-live:monica", conditions)
+	}
+}
+
+// The carry-over is a fact about DELIVERY, so a shop with no pulse armed is
+// not missing anything by it — and `posse status` must not go non-zero on
+// every box where the coordinator's session happens to be closed.
+func TestShopCheckNoLivePersonaOnlyWhenPulsing(t *testing.T) {
+	b, _ := newTestBackend(t)
+	in := pulseIn(t, b, nil, "monica")
+	in.Pulsing = false
+	if conditions := shopKeys(t, in); containsPrefix(conditions, "no-live:") {
+		t.Errorf("a disarmed pulse has nowhere to deliver and nothing to report: %v", conditions)
 	}
 }
 
@@ -113,10 +140,7 @@ func TestShopCheckLivePersonaOtherAgentDoesNotCount(t *testing.T) {
 	b, _ := newTestBackend(t)
 	writePersona(t, b.App, "richard", "code")
 	mustCreate(t, b, NewSessionOpts{Name: "richard-work", Agent: "richard"})
-	conditions, err := ShopCheck(b, nil, "monica")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
 	if !containsStr(conditions, "no-live:monica") {
 		t.Errorf("richard's session must not stand in for monica: %v", conditions)
 	}
@@ -131,10 +155,7 @@ func TestShopCheckUnpushedCommits(t *testing.T) {
 	mustGit(t, repo, "push", "-q", "-u", "origin", "main")
 	commitIn(t, repo, "extra.txt", "x", "extra")
 
-	conditions, err := ShopCheck(b, []string{repo}, "monica")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "monica"))
 	if !containsPrefix(conditions, "unpushed:"+repo+":") {
 		t.Errorf("conditions = %v, want an unpushed: entry for %s", conditions, repo)
 	}
@@ -144,10 +165,7 @@ func TestShopCheckNoUpstreamIsNoCondition(t *testing.T) {
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t) // one commit, no remote, no upstream configured
 
-	conditions, err := ShopCheck(b, []string{repo}, "monica")
-	if err != nil {
-		t.Fatal(err)
-	}
+	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "monica"))
 	if containsPrefix(conditions, "unpushed:") {
 		t.Errorf("no upstream must read as no condition, got %v", conditions)
 	}

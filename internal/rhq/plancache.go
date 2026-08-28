@@ -185,6 +185,23 @@ func (c *PlanCache) share(r PlanReader, e planEntry) {
 	c.store(e)
 }
 
+// LastReadAt is when the shared snapshot's reading was TAKEN, and whether
+// there is one. It makes no request and it never falls back to now.
+//
+// It exists so the blind window is answerable by a process that is not the
+// watch loop (the governance surface's G5, run from a fresh shell). The
+// guard's own blindSince is per-process memory; this file is the instance's
+// record of the same fact, written every time a reading succeeds — so "how
+// long have we been blind" has one answer on the machine rather than one per
+// process. A snapshot holding only a cooldown is not a reading and says so.
+func (c *PlanCache) LastReadAt() (time.Time, bool) {
+	e, have := c.load()
+	if !have || e.At.IsZero() || len(e.Windows) == 0 {
+		return time.Time{}, false
+	}
+	return e.At, true
+}
+
 // Line is the reading as a person reads it: `plan windows: ` and whatever
 // the adapter's windows are called, plus how old the snapshot is once that
 // is worth saying. One
