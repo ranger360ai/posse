@@ -13,6 +13,13 @@ package rhq
 //	verify: <title>   -l qa  [-a <verify_assignee>]  --deps discovered-from:<id>
 //
 // (`-a` only when `verify_assignee:` names one — unset files it unassigned)
+//
+// One close is exempt: one whose `close_reason` says it was REJECTED rather
+// than done (duplicate, invalid, wontfix — scorecard.go's rejectWords). Such
+// a close builds nothing, so the QA session it would file has one reachable
+// verdict; it is skipped and named on stdout. A close with no reason at all
+// is not exempt — unexplained is not rejected.
+//
 // with the closer, the close reason, the commits `git log --grep <id>` finds,
 // and the closer PID's "done when" row for the bead's intent — then comment
 // `verify filed: <qid>` on the closed bead. A closer who filed the verify
@@ -332,6 +339,24 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 			continue // a verify bead is not itself verified — that is a loop
 		}
 		if !hasAnyLabel(is.Labels, pol.Labels) {
+			continue
+		}
+		// A rejected close is not a claim about working software, and the
+		// header above says verify_labels are the labels whose closes are.
+		// `bd close -r "duplicate of x"` builds nothing, so the QA session
+		// this would file has one reachable verdict — "nothing was built" —
+		// at a full session's price (ranger-base-skgs: a duplicate re-cut in
+		// the 08-26 lock storm cost exactly that). The vocabulary is the
+		// scorecard's rejectWords, already trusted to mean the same thing.
+		//
+		// Its limit, stated: only a close that CARRIES the reason is caught.
+		// `bd close` with no -r writes the bare "Closed", and a rationale
+		// left in a comment is invisible here. The rest is process, not code.
+		// Emptiness is not the test either — a doc-only or already-working
+		// close has no commits and still earns verification.
+		if isRejectedClose(is.CloseReason) {
+			fmt.Fprintf(out, "- %-14s no verify bead: close reason is a rejection (%s)\n",
+				is.ID, verifyTruncate(verifyOneLine(is.CloseReason)))
 			continue
 		}
 		cands = append(cands, is)

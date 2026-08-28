@@ -115,6 +115,21 @@ func (a *App) MetricCatalogReport(w io.Writer) error {
 
 var rejectWords = []string{"invalid", "duplicate", "dup", "wontfix", "won't fix", "not a bug"}
 
+// isRejectedClose reports whether a close_reason says the bead was rejected
+// rather than done — the scorecard's `Rejected` column, and verify-after's
+// reason to file no QA session for it (verifyafter.go). One vocabulary, read
+// from the field bd writes when a closer passes `bd close -r <reason>`; a
+// close with no reason at all is not rejected, it is unexplained.
+func isRejectedClose(reason string) bool {
+	r := strings.ToLower(reason)
+	for _, w := range rejectWords {
+		if strings.Contains(r, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // ScoreIssues computes one persona's score over a repo's issues; reopens
 // maps issue id → reopen count for that repo.
 func ScoreIssues(persona string, issues []BdIssue, reopens map[string]int) Score {
@@ -123,14 +138,8 @@ func ScoreIssues(persona string, issues []BdIssue, reopens map[string]int) Score
 	for _, is := range issues {
 		if is.CreatedBy == persona {
 			s.Filed++
-			if is.Status == "closed" {
-				r := strings.ToLower(is.CloseReason)
-				for _, w := range rejectWords {
-					if strings.Contains(r, w) {
-						s.Rejected++
-						break
-					}
-				}
+			if is.Status == "closed" && isRejectedClose(is.CloseReason) {
+				s.Rejected++
 			}
 		}
 		if is.Assignee != persona {

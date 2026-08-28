@@ -64,6 +64,18 @@ it is not a workflow engine. *(Amended 2026-08-20: a `--dry-run` pass
 files nothing — dry-run shows routing without acting, and filing a bead
 is acting. The code said so from the start; the record now does too.)*
 
+*(Amended 2026-08-28, from ranger-base-skgs.)* One close is exempt from
+the scan: one whose `close_reason` matches the scorecard's reject
+vocabulary (`invalid`, `duplicate`, `dup`, `wontfix`, `won't fix`, `not a
+bug`). A rejected close is not a claim about working software, so the
+verify bead it would mint has one reachable verdict — "nothing was
+built" — at a full QA session's price. The skip is named on the pass's
+stdout, and the exemption reads only the reason: a close with no reason
+at all still earns its verify bead, as does a commitless doc-only or
+already-working close. The limit is stated where the rule is: a closer
+who leaves the rationale in a comment instead of `bd close -r <reason>`
+is invisible here, and that half is process, not code.
+
 *(Amended 2026-08-27, from ranger-base-f7pk/bh7q.)* Config gains
 `verify_batch: N` (default 1) and `verify_batch_age:` (default 24h). At
 N=1 the rule is exactly as written above, byte for byte; the seed config

@@ -32,8 +32,15 @@ func vaDependents(t *testing.T, repo, json string) {
 }
 
 func closedList(id, labels, closedAt string) string {
+	return closedListReason(id, labels, closedAt, "Closed")
+}
+
+// closedListReason is closedList with the close_reason spelled out — the
+// field the rejection exemption reads (ranger-base-skgs).
+func closedListReason(id, labels, closedAt, reason string) string {
 	return `[{"id":"` + id + `","title":"gate shell live","status":"closed","priority":1,` +
-		`"assignee":"developer","labels":` + labels + `,"closed_at":"` + closedAt + `","close_reason":"Closed"}]`
+		`"assignee":"developer","labels":` + labels + `,"closed_at":"` + closedAt +
+		`","close_reason":` + fmt.Sprintf("%q", reason) + `}]`
 }
 
 // vaRun runs one sweep and returns (filed, stdout, stderr).
@@ -1342,3 +1349,109 @@ func TestVerifyAfterRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
 // forgedMarkerProbe is the substring that only appears if a payload made it
 // into something the harness wrote.
 const forgedMarkerProbe = "Verify the close of a-2 ("
+
+// A close whose reason says REJECTED — duplicate, invalid, wontfix — mints no
+// verify bead: it is not a claim about working software, and the QA session
+// it would buy has one reachable verdict (ranger-base-skgs; the instance was
+// ranger-base-9xdf, a duplicate re-cut in the 08-26 lock storm).
+//
+// The table carries its own negative control, and the control is the point:
+// the exemption reads the REASON and nothing else. A bare "Closed" — what
+// `bd close` writes with no -r, and exactly what 9xdf carried — still files,
+// so does a reason-less close and so does a plain "fixed". Emptiness is not
+// the test either: a doc-only or already-working close is commitless and
+// still earns verification. Skipping on "no commits" would swallow those.
+func TestVerifyAfterSkipsARejectedClose(t *testing.T) {
+	for _, tc := range []struct {
+		reason string
+		want   int // verify beads filed
+	}{
+		{"duplicate of a-9", 0},
+		{"Duplicate", 0},
+		{"dup of a-9", 0},
+		{"invalid", 0},
+		{"Closed as wontfix", 0},
+		{"won't fix — the design changed", 0},
+		{"not a bug", 0},
+		// The controls. Without these the test is green over a function that
+		// files nothing at all.
+		{"Closed", 1},     // bd's bare default: unexplained is not rejected
+		{"", 1},           // no reason at all: same
+		{"fixed", 1},      // an ordinary done-close
+		{"documented", 1}, // doc-only: commitless and still verified
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			a := b.App
+			closed := "2026-08-18T09:20:06Z"
+			repo := vaRepo(t, a, closedListReason("a-1", `["code"]`, closed, tc.reason))
+			writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+			n, out, errs := vaRun(t, a, testBd(t))
+			if n != tc.want {
+				t.Fatalf("close_reason %q filed %d verify beads, want %d\nout: %s\nerr: %s",
+					tc.reason, n, tc.want, out, errs)
+			}
+			calls := bdCalls(t, fake)
+			if tc.want == 0 {
+				// Absence is not enough on its own — a pass that measured
+				// nothing would satisfy it. The named skip line is the
+				// positive witness that this close was seen and exempted.
+				if !strings.Contains(out, "a-1") || !strings.Contains(out, "no verify bead: close reason is a rejection") {
+					t.Errorf("the skip was silent — the pass must name it:\n%s", out)
+				}
+				if strings.Contains(calls, "create") {
+					t.Errorf("a verify bead was filed for a rejected close:\n%s", calls)
+				}
+				if strings.Contains(calls, "comments add") {
+					t.Errorf("a rejected close was commented on:\n%s", calls)
+				}
+			} else if !strings.Contains(calls, "--deps discovered-from:a-1") {
+				t.Errorf("close_reason %q filed a bead that does not answer a-1:\n%s", tc.reason, calls)
+			}
+			// Either way the watermark passes the close: an exempt close is
+			// decided, not deferred, and must not be re-examined every pass
+			// forever.
+			mark, ok := readVerifyWatermark(a.verifyWatermarkPath(repo))
+			if want, _ := time.Parse(time.RFC3339, closed); !ok || !mark.Equal(want) {
+				t.Errorf("watermark = %s (ok=%v), want the close %s", mark, ok, want)
+			}
+		})
+	}
+}
+
+// The exemption does not consume a batch slot, and does not hold the batch.
+// `verify_batch: 2` over one rejected close and two ordinary ones must file
+// ONE bead answering the two — not hold the pair waiting for a third that
+// the rejected close would never have been.
+func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	row := func(id, reason, at string) string {
+		return `{"id":"` + id + `","title":"t ` + id + `","status":"closed","priority":1,` +
+			`"assignee":"developer","labels":["code"],"closed_at":"` + at +
+			`","close_reason":` + fmt.Sprintf("%q", reason) + `}`
+	}
+	list := "[" + strings.Join([]string{
+		row("a-1", "fixed", "2026-08-18T09:20:06Z"),
+		row("a-2", "duplicate of a-1", "2026-08-18T09:21:06Z"),
+		row("a-3", "shipped", "2026-08-18T09:22:06Z"),
+	}, ",") + "]"
+	repo := vaRepo(t, a, list, "verify_batch: 2")
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d, want 1 full batch of the two real closes\nout: %s\nerr: %s", n, out, errs)
+	}
+	calls := bdCalls(t, fake)
+	if !strings.Contains(calls, "--deps discovered-from:a-1") || !strings.Contains(calls, "discovered-from:a-3") {
+		t.Errorf("the batch does not answer both real closes:\n%s", calls)
+	}
+	if strings.Contains(calls, "comments add a-2") {
+		t.Errorf("the rejected close joined the batch:\n%s", calls)
+	}
+	if strings.Contains(out, "held for a verify batch") {
+		t.Errorf("the batch was held although two real closes were pending:\n%s", out)
+	}
+}
