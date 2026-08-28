@@ -170,3 +170,47 @@ func TestDegradedPassOverUnreadableRootParksOnTheLedger(t *testing.T) {
 		t.Errorf("an empty receipt for a ledger that could not be read:\n%s", out)
 	}
 }
+
+// The without-arm the test above needs, and the third of this bead's three
+// (ranger-base-4s6f): "empty-but-readable root still reads $0 and does not
+// park." Same rig, same real ScanCosts, a root that OPENS and holds no
+// priced record — $0 from a store that read cleanly is a reading, not a
+// fault, so the pass degrades and dispatches.
+//
+// Without it, "a degraded pass over an unreadable root parks" is satisfied
+// by a rig that parks over ANY real scan: the numbers a broken root
+// produces and the numbers a bug in the nil-Spend path produces are the
+// same numbers. This arm is what makes the pair discriminate.
+func TestDegradedPassOverReadableEmptyRootRunsOnTheLedger(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claudeProjects(t, home) // readable; one record, nothing priced in it
+
+	r := newBlindRig(t, ledgerArmedCfg)
+	r.d.Unattended = true
+	r.d.Spend = nil // the real ScanCosts, against a real readable root
+	r.blind()
+	r.at(4 * time.Hour)
+
+	if n := r.run(t); n != 1 {
+		t.Fatalf("$0 over a ledger that opened is a reading: %d dispatched\n%s", n, r.out())
+	}
+	out := r.out()
+	for _, want := range []string{
+		"plan guard: blind 4h00m",
+		"degraded, running under ledger brake",
+		"epoch $0.00/$30.00",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the degraded line must carry %q, got:\n%s", want, out)
+		}
+	}
+	for _, never := range []string{"ledger unreadable", "— skipped"} {
+		if strings.Contains(out, never) {
+			t.Errorf("a readable ledger must not park (%q), got:\n%s", never, out)
+		}
+	}
+	if e := r.err(); strings.Contains(e, "unreadable") {
+		t.Errorf("nothing was unreadable; stderr must not say so: %q", e)
+	}
+}
