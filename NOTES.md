@@ -4210,7 +4210,8 @@ grep -H '^workspace:\|^socket:' ~/.config/rhq/state/herdr/*.yaml | sort | diff /
                                        # is NOT the check. `workspace:` + `socket:` unchanged is.
                                        # /tmp/herdr-metas.before is still the thing you restore
                                        # FROM if a repair goes wrong; it is not a comparand.
-herdr agent explain <pane> ; make verify-detection    # override still active + fixtures still pass
+herdr agent explain <pane> ; make verify-detection    # fixtures still pass (against the CHECKOUT, 53w1);
+                                                      # "install: matches the checkout" is the active-override arm
 herdr plugin list                                     # posse.cockpit still registered
 posse dispatch --dry-run -n 1                         # routes without dispatching
 

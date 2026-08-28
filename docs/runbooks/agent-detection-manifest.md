@@ -177,6 +177,14 @@ automatically. Pin the **rule id**, not just the state: after 1xsj our
 splash rule reports the same `idle` herdr's fallback would, so a state-only
 check passes with the rule deleted (rangerhq-uglc).
 
+It explains against the manifests **in the checkout**, staged into a
+throwaway `XDG_CONFIG_HOME`, so a rule you break fails before anyone
+installs it and no install is needed to run it (ranger-base-53w1 — it used
+to read `~/.config/herdr/agent-detection`, which made it unable to fail a
+committed change). The installed copy is compared to the checkout and
+reported; `--check-install`, which `make install-detection` passes, turns a
+mismatch into a non-zero exit.
+
 Two limits worth knowing before you spend an hour on them:
 
 - **Snapshots are text only.** Rules keyed on `osc_title` / `osc_progress`

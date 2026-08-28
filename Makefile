@@ -152,8 +152,12 @@ install-detection:
 	for f in $(HERDR_DETECTION_SRC); do install -m 0644 "$$f" $(HERDR_DETECTION_DIR)/; done
 	herdr server reload-agent-manifests >/dev/null
 	@for f in $(HERDR_DETECTION_SRC); do echo "installed: $(HERDR_DETECTION_DIR)/$$(basename $$f)"; done
-	@$(MAKE) --no-print-directory verify-detection
+	@scripts/verify-detection.sh --check-install
 
+# Replays the fixtures against the manifests in THIS CHECKOUT, staged into a
+# throwaway XDG_CONFIG_HOME (ranger-base-53w1) — so a committed detection change
+# can fail here before anyone installs it. The install is reported, and only
+# install-detection's own run (--check-install) fails on a mismatch.
 verify-detection:
 	scripts/verify-detection.sh
 

@@ -299,7 +299,10 @@ of the composer, silently:
 $ make install-detection
 ```
 **Verify:** the target prints one `installed:` line per override and then
-runs `verify-detection` without complaint.
+runs `verify-detection --check-install` without complaint — every fixture OK,
+and an `<agent> install: matches the checkout` line for each override. The
+fixtures are replayed against the manifests in the checkout, so that
+`install:` line is the part that speaks to what you just installed.
 
 Everything in this section is **machine-global** and shared by every
 instance on the machine: one binary, one plugin registration, one detection

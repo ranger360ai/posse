@@ -118,11 +118,14 @@ A third, live 2026-08-25 capture
 changelog/tip lines, and **no** consent banner — the banner is not always
 drawn; the menu + Grok Build anchor still must match. The production-width
 boxed capture is `testdata/grok/idle-startup-splash-wide-boxed.txt`, pinned
-twice: `internal/rhq/splashwide_qa_test.go` runs it against the manifest in
-*this checkout* (a committed fix proves itself before deployment), and
-`verify-detection` runs it against the *installed* one (ranger-base-neyn) —
-without that second arm an override that drifts back below `2026.07.16.105`
-passes every fixture while production misses the wide splash again.
+twice: `internal/rhq/splashwide_qa_test.go` and `verify-detection` both run
+it against the manifest in *this checkout* — a committed fix proves itself
+before deployment. verify-detection used to explain against the *installed*
+manifest, which made it unable to fail a committed change at all
+(ranger-base-53w1); the install arm ranger-base-neyn wanted — an override that
+drifts back below `2026.07.16.105` while production misses the wide splash —
+is now a byte comparison against the checkout, reported on every run and
+*failed* by `make install-detection`'s own `--check-install` run.
 
 `verify-detection` requires those splash fixtures to resolve to rule id
 `startup_splash`, not just state `idle`. After rangerhq-1xsj the state is
@@ -218,6 +221,22 @@ this directory is picked up automatically; filenames encode the expected
 state (`blocked-…`, `idle-…`). Capture new ones with `herdr pane read
 <pane> --source detection`.
 
+**It explains against the manifests in this checkout, not the installed
+ones.** The script copies `*.toml` into a throwaway `XDG_CONFIG_HOME` and
+points herdr at that, and fails any fixture whose answer came from another
+file — so no install is needed to run it, and a rule you delete here fails
+here. Before ranger-base-53w1 it explained against
+`~/.config/herdr/agent-detection`, so the fixtures reported OK for anyone who
+had ever run `make install-detection`; the install then being copied over
+first hid it completely.
+
+The installed copy is *reported*, not verified: each agent gets an
+`install: matches the checkout` / `differs …` line, and the exit code stays
+the tree's. `--check-install` turns a mismatch into a failure — it is only
+honest immediately after installing, which is where `make install-detection`
+wires it. Both directions are pinned in
+`internal/rhq/verifydetection_qa_test.go`.
+
 Snapshots are **text only**, so they cannot carry the OSC title/progress
 regions. Rules keyed on those (`osc_progress_working`, `osc_title_*`)
 cannot be pinned this way and have to be checked against a live pane —
@@ -236,8 +255,9 @@ agent:
 1. Save the current upstream: the cached remote
    (`~/.local/state/herdr/agent-detection/remote/<agent>.toml`) **or**, if the
    bundled one is the live source, re-extract it with the `dd` recipe above.
-2. Move our override aside, `herdr server reload-agent-manifests`, and run
-   `make verify-detection`.
+2. Move `etc/herdr/agent-detection/<agent>.toml` aside — that is the copy
+   verify-detection stages — and run `make verify-detection`. (Moving only
+   the installed copy proves nothing now; it is not what the fixtures read.)
 3. If the fixtures still pass, upstream fixed it — delete
    `etc/herdr/agent-detection/<agent>.toml` and
    `~/.config/herdr/agent-detection/<agent>.toml`. Drop the make targets only
