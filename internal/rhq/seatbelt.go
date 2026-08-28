@@ -73,6 +73,7 @@ func sbQuote(p string) string {
 //     of — MEASURED, allowed before the seal and refused after. A literal
 //     deny on the directory does not stop writes INSIDE it (measured:
 //     touch/mkdir/rm in `rhq` still pass), so this costs nothing.
+//
 //   - Keep: literals re-allowed after the deny, because the gates dir the
 //     deny closes is also where the session's own audit trail lands: L1's
 //     `refusals.log` and the gate shell's `shell.log`. Both are appended to
