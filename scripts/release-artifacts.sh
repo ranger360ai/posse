@@ -6,12 +6,17 @@
 #   --rev      commit to build (default: HEAD)
 #   --version  the release tag; default is the annotated/lightweight tag that
 #              points exactly at --rev. Must agree with internal/rhq.Version.
-#   --out      output directory (default: dist), wiped before use
+#   --out      output directory (default: dist). It is EMPTIED before use, so
+#              it is refused unless it is absent, empty, or holds nothing but
+#              this build's own output (posse_*.tar.gz, checksums.txt,
+#              posse.rb) — and / , $HOME and the repo root are refused
+#              outright. There is no --force (ranger-base-9hyc).
 #   GOBIN=<go> which go to build with (default: go)
 #
-# Blast radius: writes only inside <out>; $PWD/.git is opened read-only (one
-# temp worktree, removed on exit) and no network is touched. It does not tag,
-# does not publish, and does not talk to GitHub.
+# Blast radius: writes only inside <out>, and removes only an <out> that holds
+# nothing it did not write; $PWD/.git is opened read-only (one temp worktree,
+# removed on exit) and no network is touched. It does not tag, does not
+# publish, and does not talk to GitHub.
 #
 # Why not goreleaser: it would be a fifth pinned substrate to keep honest (see
 # NOTES.md on what pinning costs here) for four `go build` invocations that
@@ -36,7 +41,7 @@ while [ $# -gt 0 ]; do
 	--rev) REV=${2:?--rev needs a commit}; shift 2 ;;
 	--version) VERSION=${2:?--version needs a tag}; shift 2 ;;
 	--out) OUT=${2:?--out needs a directory}; shift 2 ;;
-	-h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,25p' "$0"; exit 0 ;;
 	*) echo "release-artifacts: unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -82,9 +87,102 @@ EOF
 	exit 1
 fi
 
+# >>> out-guard (ranger-base-9hyc) — the QA control arm excises exactly this
+# region, between these two markers, and puts the two unguarded lines back.
+#
+# `rm -rf "$OUT"` on a path a human typed by hand, at the runbook step next to
+# the irreversible one. The wipe has to stay — a tarball left from the previous
+# version would be picked up by tap-formula.sh's checksums and by the upload
+# glob — so the guard is on WHAT may be wiped: a directory this script could
+# plausibly have written, and nothing else. There is deliberately no --force:
+# the way to wipe a directory holding your own things is to type the rm
+# yourself, so the blast radius is on a command line you wrote.
 case $OUT in /*) ;; *) OUT=$PWD/$OUT ;; esac
+
+# Canonicalise before comparing, or the identity refusals below are string
+# games: `--out .`, `--out $HOME/x/..`, a trailing slash and a symlink pointing
+# into $HOME must all land on the same path the comparison uses.
+if [ -L "$OUT" ] && [ ! -d "$OUT" ]; then
+	echo "release-artifacts: --out is a symlink to a non-directory: $OUT" >&2
+	exit 2
+fi
+if [ -e "$OUT" ] && [ ! -d "$OUT" ]; then
+	echo "release-artifacts: --out exists and is not a directory: $OUT" >&2
+	exit 2
+fi
+if [ -d "$OUT" ]; then
+	OUT=$(cd "$OUT" && pwd -P) || { echo "release-artifacts: cannot enter --out: $OUT" >&2; exit 2; }
+else
+	out_parent=$(dirname "$OUT")
+	out_leaf=$(basename "$OUT")
+	if [ ! -d "$out_parent" ]; then
+		echo "release-artifacts: --out parent directory does not exist: $out_parent" >&2
+		exit 2
+	fi
+	out_parent=$(cd "$out_parent" && pwd -P) ||
+		{ echo "release-artifacts: cannot enter --out parent: $out_parent" >&2; exit 2; }
+	case $out_parent in
+	*/) OUT=$out_parent$out_leaf ;;
+	*) OUT=$out_parent/$out_leaf ;;
+	esac
+fi
+
+# Three paths are refused by identity, however clean they look: / and $HOME
+# because no build output lives there, and the repo root because that is where
+# an --out that expanded empty in a caller lands (OUT=$PWD, and the wipe takes
+# the checkout). The content check below would catch all three on any real
+# machine; these say so in one line instead of listing a stray file.
+repo_path=$(cd "$repo" && pwd -P)
+if [ "$OUT" = "/" ]; then
+	echo "release-artifacts: refusing --out / — that is the filesystem root" >&2
+	exit 2
+fi
+if [ "$OUT" = "$repo_path" ]; then
+	echo "release-artifacts: refusing --out $OUT — that is the repository root" >&2
+	exit 2
+fi
+if [ -n "${HOME:-}" ] && [ -d "$HOME" ] && [ "$OUT" = "$(cd "$HOME" && pwd -P)" ]; then
+	echo "release-artifacts: refusing --out $OUT — that is \$HOME" >&2
+	exit 2
+fi
+
+# An --out that already exists may be wiped only if everything in it is
+# something this script put there (plus posse.rb, which tap-formula.sh writes
+# beside them, and .DS_Store, which Finder writes and which is nobody's work).
+# Anything else is the operator's, and we do not know what it is.
+if [ -d "$OUT" ]; then
+	stray=
+	for entry in "$OUT"/* "$OUT"/.*; do
+		name=${entry##*/}
+		case $name in .|..) continue ;; esac
+		# An unmatched glob stays literal in POSIX sh; -e/-L skips it.
+		[ -e "$entry" ] || [ -L "$entry" ] || continue
+		case $name in
+		posse_*.tar.gz|checksums.txt|posse.rb|.DS_Store)
+			# Allowed as a plain entry only. A DIRECTORY named
+			# posse_x.tar.gz would be removed whole, contents unseen,
+			# so the name alone does not license the wipe.
+			[ -d "$entry" ] || continue
+			;;
+		esac
+		stray=$name
+		break
+	done
+	if [ -n "$stray" ]; then
+		cat >&2 <<EOF
+release-artifacts: refusing to wipe $OUT
+  it holds "$stray", which this script did not write.
+  --out is emptied before the build, so it may name only a directory that is
+  absent, empty, or holds nothing but posse_*.tar.gz, checksums.txt, posse.rb.
+  If that directory is yours to lose, remove it yourself and re-run.
+EOF
+		exit 2
+	fi
+fi
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
+# <<< out-guard (ranger-base-9hyc)
 
 # Same discipline as scripts/clean-build.sh, and for the same reason: personas
 # share this checkout, so the working tree is never what ships.

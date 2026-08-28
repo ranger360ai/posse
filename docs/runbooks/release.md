@@ -115,6 +115,13 @@ $ (cd dist && sha256sum -c checksums.txt)
 ```
 Neither script tags, publishes, or talks to GitHub; both write `dist/` and stop.
 
+`--out` is **emptied** before the build, so `release-artifacts.sh` refuses an
+`--out` holding anything it did not write — and refuses `/`, `$HOME` and the
+repo root by name (`ranger-base-9hyc`). There is no `--force`: if a directory
+of yours is in the way, type the `rm` yourself, so the blast radius is on a
+command line you wrote rather than on a mistyped flag at the step next to the
+irreversible one.
+
 ---
 
 ## Step 0 — push the tag
