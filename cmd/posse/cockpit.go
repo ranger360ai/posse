@@ -97,15 +97,21 @@ type cockpit struct {
 	dispatching bool        // a launch goroutine is in flight (one at a time)
 	results     chan string // launch goroutine → event loop status line
 
-	// Running cost (ADR 0003 §4): a background scan of claude transcripts,
-	// refreshed every costEvery, keyed by bead id; the day total in the
-	// footer. codex/grok sessions show "uncounted".
-	costs         chan *rhq.CostReport
-	costByBead    map[string]float64
-	costToday     float64
-	costAt        time.Time
-	costUncounted int
-	costDayCap    float64 // config budget_day: (ADR 0003 Dial E); 0 = no cap
+	// Running cost (ADR 0003 §4): a background scan of every registered cost
+	// provider's transcripts, refreshed every costEvery, keyed by bead id;
+	// the day total in the footer. A session on a runtime with no adapter
+	// shows "uncounted" and names its runtime (ADR 0012 D4).
+	costs      chan *rhq.CostReport
+	costByBead map[string]float64
+	costToday  float64
+	costAt     time.Time
+	// costUncounted counts those sessions and costUncountedRuntimes names
+	// which runtimes they were on. Carrying the names, not a hardcoded
+	// "codex/grok", is what keeps the footer honest on the commit that gives
+	// a runtime an adapter: the label follows the registry.
+	costUncounted         int
+	costUncountedRuntimes []string
+	costDayCap            float64 // config budget_day: (ADR 0003 Dial E); 0 = no cap
 	// costUnread is how many transcripts the last scan could NOT read
 	// (ADR 0018 §3) — a COUNT and not the error, for the same reason
 	// govRead.failed is: the footer is one line and the cockpit owns the
@@ -222,6 +228,7 @@ func (c *cockpit) applyCost(rep *rhq.CostReport) {
 	c.costByBead = rep.ByBead()
 	c.costToday = rep.DayTotal(time.Now())
 	c.costUncounted = rep.Uncounted
+	c.costUncountedRuntimes = rep.UncountedRuntimes
 	c.costDayCap = rep.DayCap
 	c.costUnread = rep.Unread
 	c.costAt = time.Now()
@@ -1986,7 +1993,11 @@ func (c *cockpit) footerLines(w int) []string {
 	if !c.costAt.IsZero() {
 		unc := ""
 		if c.costUncounted > 0 {
-			unc = fmt.Sprintf(" · %d codex/grok session(s) uncounted", c.costUncounted)
+			if which := strings.Join(c.costUncountedRuntimes, "/"); which != "" {
+				unc = fmt.Sprintf(" · %d %s session(s) uncounted", c.costUncounted, which)
+			} else {
+				unc = fmt.Sprintf(" · %d session(s) uncounted (no adapter)", c.costUncounted)
+			}
 		}
 		// ADR 0018 §3: transcripts the scan could not read are spend that is
 		// missing from this number, not spend that did not happen — so the
@@ -2006,7 +2017,7 @@ func (c *cockpit) footerLines(w int) []string {
 			cap_ = fmt.Sprintf(" of $%.0f budget_day (%s%.0f%%)", c.costDayCap, ge, 100*c.costToday/c.costDayCap)
 		}
 		cost = layout([]col{{kind: colFlex, ansi: aDim, text: fmt.Sprintf(
-			"today %s$%.2f%s api-equiv (claude transcripts, beads only; refreshed %s)%s%s",
+			"today %s$%.2f%s api-equiv (counted runtimes, beads only; refreshed %s)%s%s",
 			ge, c.costToday, cap_, c.costAt.Format("15:04:05"), unc, floor)}}, w)
 	}
 	// ADR 0004 §3: the footer offers the selected section's keys only —

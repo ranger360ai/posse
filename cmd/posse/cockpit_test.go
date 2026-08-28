@@ -250,8 +250,11 @@ func fixture() *cockpit {
 		costToday:     4.5,
 		costDayCap:    20,
 		costUncounted: 1,
-		costAt:        at,
-		status:        "dispatched rangerhq-fei → developer-rangerhq-fei",
+		// The fixture's one uncounted session is the codex one above; the
+		// footer names it from here, never from a hardcoded runtime pair.
+		costUncountedRuntimes: []string{"codex"},
+		costAt:                at,
+		status:                "dispatched rangerhq-fei → developer-rangerhq-fei",
 	}
 	titles := []string{
 		"cockpit v2 (b): IN PROGRESS section — Bd.InProgressAll, holder join and stalled-first sort",
@@ -1427,5 +1430,28 @@ func TestCockpitApplyCostCarriesTheScansReadFailures(t *testing.T) {
 	// And the footer says so, end to end from the report.
 	if line := c.footerLines(200)[1]; !strings.Contains(line, "≥$4.50") || !strings.Contains(line, "3 transcript(s) unreadable") {
 		t.Errorf("footer did not mark the floor from the scan: %q", line)
+	}
+}
+
+// The same wiring one field over, and the reason it is its own test: the
+// uncounted label used to be the literal string "codex/grok", written when
+// neither had an adapter. grok has one now (ADR 0012 D4), so that label names
+// a runtime whose spend IS in the number beside it — a live grok session and
+// a live codex session would print "1 codex/grok session(s) uncounted" and
+// send an operator looking for the wrong gap. The names come from the report,
+// which builds them from the registry, so the footer follows the adapters.
+func TestCockpitFooterNamesTheUncountedRuntimes(t *testing.T) {
+	rep := &rhq.CostReport{Uncounted: 1, UncountedRuntimes: []string{"codex"}}
+	c := &cockpit{}
+	c.applyCost(rep)
+	if len(c.costUncountedRuntimes) != 1 || c.costUncountedRuntimes[0] != "codex" {
+		t.Fatalf("applyCost dropped the runtime names: %v", c.costUncountedRuntimes)
+	}
+	line := c.footerLines(200)[1]
+	if !strings.Contains(line, "1 codex session(s) uncounted") {
+		t.Errorf("the footer must name the runtime the scan could not count: %q", line)
+	}
+	if strings.Contains(line, "grok") {
+		t.Errorf("grok has an adapter; naming it as uncounted is the defect: %q", line)
 	}
 }

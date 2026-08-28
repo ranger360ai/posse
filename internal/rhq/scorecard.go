@@ -80,7 +80,7 @@ func (s Score) Metric(id string) string {
 		}
 		return fmt.Sprintf("%d filed, %d rejected → %d", s.Filed, s.Rejected, s.Filed-s.Rejected)
 	case "cost-per-closed-bead":
-		return "see posse cost — API-equiv $ per bead by tier from claude transcripts (ADR 0003 §4), joined to closes by bead id"
+		return "see posse cost — API-equiv $ per bead by tier from the transcripts of every runtime with a cost adapter (ADR 0003 §4, ADR 0012 D4), joined to closes by bead id"
 	}
 	return NotYetComputable + MetricNeeds(id)
 }

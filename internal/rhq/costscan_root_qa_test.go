@@ -218,3 +218,35 @@ func TestDegradedPassOverReadableEmptyRootRunsOnTheLedger(t *testing.T) {
 		t.Errorf("nothing was unreadable; stderr must not say so: %q", e)
 	}
 }
+
+// ARM D — TWO unreadable project directories are TWO unknown piles of
+// spend, not one.
+//
+// This arm exists because of how the seam re-landed (ranger-base-k7nb).
+// 6217c9f wrote CostProvider.Transcripts as (files, error) — one error per
+// provider — while ARM C's fix, which landed in between, made the locator
+// keep walking and return one error per directory it could not open. The
+// merge had to pick, and picking the single error would have collapsed
+// every unreadable dir into Unread=1 with ARM C still green: it only ever
+// breaks one. So the seam carries []error, and this is the arm that says
+// so. Delete the loop in scanProvider and count the first error only, and
+// this test reads 1 where it must read 2.
+func TestScanCostsCountsEveryUnreadableProjectDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything; this arm needs an unprivileged uid")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := claudeProjects(t, home)
+	second := filepath.Join(root, "p2")
+	if err := os.MkdirAll(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	chmodBack(t, filepath.Join(root, "p"))
+	chmodBack(t, second)
+
+	rep := ScanCosts("", time.Time{})
+	if rep.Unread != 2 {
+		t.Fatalf("two unreadable project dirs are two unknown piles of spend: %d unread (%v)", rep.Unread, rep.ReadErr)
+	}
+}

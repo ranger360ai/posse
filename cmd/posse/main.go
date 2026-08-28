@@ -838,8 +838,9 @@ func main() {
 		}
 
 	case "cost":
-		// API-equivalent spend per bead from Claude Code transcripts (ADR
-		// 0003 §4) — read-only; codex/grok reported as uncounted.
+		// API-equivalent spend per bead from every registered cost provider's
+		// transcripts (ADR 0003 §4, ADR 0012 D4) — read-only; a runtime with
+		// no adapter is reported as uncounted, never as zero.
 		o, err := parseCostFlags(args)
 		if err != nil {
 			die(err)
@@ -1703,8 +1704,9 @@ catalog:
   posse scorecard --catalog      the derived metric catalog: every id the PIDs
                                  and config metric_ids: declare, computed or not
   posse cost [--since <date>] [--project <substr>]
-                                 API-equiv $ per bead from claude transcripts, by
-                                 tier/persona/day; codex/grok reported as uncounted;
+                                 API-equiv $ per bead from every provider with a
+                                 cost adapter, by tier/persona/day; a runtime
+                                 without one is reported as uncounted, not $0;
                                  plus the plan's own rate windows when readable
                                  and the budget_pass:/budget_day: caps in force
   posse cost --plan              just the plan's rate windows, no transcript scan
