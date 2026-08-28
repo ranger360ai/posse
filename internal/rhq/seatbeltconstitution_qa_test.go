@@ -184,7 +184,7 @@ func TestQAOwnMemoryIsWritableThroughTheSymlinkAndNobodyElsesIs(t *testing.T) {
 	}
 	// The profile the kernel reads must carry the RESOLVED path: a symlink
 	// spelling in an SBPL subpath matches nothing.
-	if prof := SeatbeltProfile("dinesh", w); !strings.Contains(prof, sbQuote(absResolve(filepath.Join(personas, "dinesh")))) {
+	if prof := SeatbeltProfile("dinesh", w, SeatbeltCarveOut{}); !strings.Contains(prof, sbQuote(absResolve(filepath.Join(personas, "dinesh")))) {
 		t.Errorf("profile does not grant the resolved memory dir:\n%s", prof)
 	}
 }

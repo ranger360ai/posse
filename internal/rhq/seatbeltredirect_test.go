@@ -53,7 +53,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	if sbHas(w, store) {
 		t.Errorf("the redirect target's repo root must not be writable:\n%s", strings.Join(w, "\n"))
 	}
-	if prof := SeatbeltProfile("hoover", w); !strings.Contains(prof, `(subpath "`+absResolve(filepath.Join(store, beadsDirName))+`")`) {
+	if prof := SeatbeltProfile("hoover", w, SeatbeltCarveOut{}); !strings.Contains(prof, `(subpath "`+absResolve(filepath.Join(store, beadsDirName))+`")`) {
 		t.Errorf("profile must grant the resolved target:\n%s", prof)
 	}
 

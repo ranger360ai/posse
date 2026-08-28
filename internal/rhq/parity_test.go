@@ -190,7 +190,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	if wd := b.App.SeatbeltWritable(dev, repo, gates); !strings.Contains(strings.Join(wd, "\n"), real+"\n") && wd[0] != real {
 		t.Errorf("without Edit/Write denies the repo is writable: %v", wd)
 	}
-	prof := SeatbeltProfile("security", w)
+	prof := SeatbeltProfile("security", w, SeatbeltCarveOut{})
 	for _, want := range []string{"(version 1)", "(allow default)", "(deny file-write*)", `(subpath "` + filepath.Join(real, ".beads") + `")`, `(regex #"^/dev/")`} {
 		if !strings.Contains(prof, want) {
 			t.Errorf("profile missing %q:\n%s", want, prof)

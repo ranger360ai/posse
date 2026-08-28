@@ -45,8 +45,65 @@ func sbQuote(p string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(p) + `"`
 }
 
-// SeatbeltProfile renders the SBPL profile text.
-func SeatbeltProfile(persona string, writable []string) string {
+// SeatbeltCarveOut is the profile's trailing block: what stays unwritable
+// however wide the allow block above it got (ranger-base-h15, and ADR 0014
+// §3's slot — a PID's path-scoped denies join Deny here).
+//
+// It exists because the allow block cannot be made narrow enough. `cwd` is
+// granted whole to any PID that does not deny Edit/Write, and the home is a
+// symlink INTO the constitution repo — so a session dispatched into that
+// repo is handed `rhq/agents`, the PIDs every gate is rendered from, inside
+// an ordinary project grant (ranger-base-6ne, and measured again on
+// ranger-base-0djg). Narrowing the grant is not available: the session is
+// there to work in that tree.
+//
+// The three lists are three different SBPL shapes and are kept apart for
+// that reason, not for tidiness:
+//
+//   - Deny: subpaths, denied after the allow. MEASURED (2026-08-28, macOS
+//     26.4): a trailing deny beats an enclosing allow for touch, `sed -i`,
+//     python, rm, mkdir — and a `subpath` naming a FILE (promoted.json)
+//     denies that file. Same last-match-wins as ADR 0014 §3 measured for
+//     the path-scoped case.
+//
+//   - Seal: literals on the directories an allowed rename could carry a
+//     denied tree out from under its own deny. `mv rhq rhq2` is a write on
+//     `rhq`, which the allow grants and no subpath deny below it names, and
+//     the constitution is then writable at a path the profile never heard
+//     of — MEASURED, allowed before the seal and refused after. A literal
+//     deny on the directory does not stop writes INSIDE it (measured:
+//     touch/mkdir/rm in `rhq` still pass), so this costs nothing.
+//   - Keep: literals re-allowed after the deny, because the gates dir the
+//     deny closes is also where the session's own audit trail lands: L1's
+//     `refusals.log` and the gate shell's `shell.log`. Both are appended to
+//     from INSIDE the cage, and both are created on first append —
+//     measured: a `literal` allow under a denied subpath creates and
+//     appends. Nothing else in that directory (the shims, seatbelt.sb, or
+//     another persona's dir) comes back.
+//
+// A hardlink needs no rule of its own, and the profile deliberately does
+// not carry one: `ln <denied>/x ./x` into a granted directory is REFUSED by
+// the file-write* deny already — measured, under both spellings of the
+// path, with the error on the destination. An earlier reading of this said
+// otherwise; that measurement had renamed the tree in an earlier probe, so
+// the source it linked was no longer under the deny.
+//
+// The residual the tier cannot close is unchanged and named in ADR 0025:
+// SBPL cannot tell an append from a truncation, so the session a log
+// records can still forge it. The deny takes the log out of reach of every
+// OTHER persona's session, which is what item 2 of the bead asked for.
+type SeatbeltCarveOut struct {
+	Deny []string // subpaths no grant above may reach
+	Seal []string // directories whose rename would carry a Deny path away
+	Keep []string // literals re-allowed after the deny
+}
+
+// Empty reports whether the block renders nothing.
+func (c SeatbeltCarveOut) Empty() bool { return len(c.Deny) == 0 && len(c.Seal) == 0 }
+
+// SeatbeltProfile renders the SBPL profile text: the default deny, the
+// allow block, and then the carve-out the allow block cannot outvote.
+func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, ";; posse seatbelt for %s — rendered from the PID at launch; do not edit (rangerhq-5vt)\n", persona)
 	b.WriteString("(version 1)\n(allow default)\n(deny file-write*)\n")
@@ -60,6 +117,25 @@ func SeatbeltProfile(persona string, writable []string) string {
 	b.WriteString("  (regex #\"^/dev/\")\n")
 	b.WriteString("  (literal \"/dev/null\")\n")
 	b.WriteString(")\n")
+	if carve.Empty() {
+		return b.String()
+	}
+	b.WriteString(";; the carve-out (ranger-base-h15): LAST match wins in SBPL, so these\n;; override every grant above them, cwd included.\n")
+	b.WriteString("(deny file-write*\n")
+	for _, p := range carve.Deny {
+		fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
+	}
+	for _, p := range carve.Seal {
+		fmt.Fprintf(&b, "  (literal %s)   ; rename seal\n", sbQuote(p))
+	}
+	b.WriteString(")\n")
+	if len(carve.Keep) > 0 {
+		b.WriteString("(allow file-write*\n")
+		for _, p := range carve.Keep {
+			fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
+		}
+		b.WriteString(")\n")
+	}
 	return b.String()
 }
 
@@ -181,6 +257,132 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	return dedupeStrings(out)
 }
 
+// SeatbeltCarveOut computes the trailing block for a session: the three
+// artifact classes ranger-base-6ne walked through, ENUMERATED at the
+// artifact level and never at a repo root.
+//
+// That enumeration is the constraint, not a style: the store of record
+// lives in the same tree as the constitution, and the writable set follows
+// `.beads/redirect` into it so a caged persona can claim, comment and close
+// (ranger-base-rhw). MEASURED on hoover's live profile (dinesh, 2026-08-26):
+// add the instance repo's `.beads` to this list and `touch` in it is refused
+// — the deny beats the redirect grant exactly as it beats cwd — and the
+// record stage dies with no observable, because parity grades denies and a
+// cage that denies too much still prints "all gates realized". So: name
+// `agents`/`state/gates`/the hook slots, never the tree they sit in, and if
+// that ever changes, re-allow beadsHome(cwd) and beadsGitDirs after the
+// deny.
+//
+//  1. The constitution — the promoted set, `envs/` and the manifest, read
+//     off HomeConstitutionPaths so this list and the detector below cannot
+//     drift apart. `personas/` is not in it: §5's exception is memory, and
+//     memory is not law.
+//  2. `state/gates` — every persona's L1 shims, rendered seatbelt profiles
+//     and refusals logs. Rendered fresh at launch, so persistence was
+//     already bounded; what was not bounded is WITHIN the session, where
+//     rewriting a shim defeats L1 (the Bash(security:*) keychain tripwire
+//     of ranger-base-khu, say) and erases the record that it did.
+//  3. The L3 hook slots, asked of git rather than derived: `core.hooksPath`
+//     moves them, and a worktree's live in the common git dir the profile
+//     grants for commits (ranger-base-flz7 / rangerhq-b38m). Both repos a
+//     session writes get it — its own, and the store of record's when a
+//     redirect points there, since that repo's `.git` is granted too and
+//     its prepare-commit-msg slot is what stamps the beads visibility
+//     guard.
+//
+// writable is the allow block this block will follow: the seal needs to
+// know which ancestors a grant made renamable.
+func (a *App) SeatbeltCarveOut(cwd, gatesDir string, writable []string) SeatbeltCarveOut {
+	var c SeatbeltCarveOut
+	add := func(dst *[]string, p string) {
+		if p != "" {
+			*dst = append(*dst, absResolve(p))
+		}
+	}
+	if a.Home != "" {
+		for _, p := range a.HomeConstitutionPaths() {
+			add(&c.Deny, p)
+		}
+	}
+	if a.StateDir != "" {
+		add(&c.Deny, filepath.Join(a.StateDir, "gates"))
+	}
+	for _, h := range sessionHooksDirs(cwd) {
+		add(&c.Deny, h)
+	}
+	c.Deny = dedupeStrings(c.Deny)
+	// The session's own audit trail, by literal so no new file joins it.
+	// Both are already inside a grant (the gates dir), so this re-allows
+	// rather than widens.
+	if gatesDir != "" {
+		for _, f := range []string{"refusals.log", "shell.log"} {
+			add(&c.Keep, filepath.Join(gatesDir, f))
+		}
+	}
+	c.Seal = renameSeal(c.Deny, writable)
+	return c
+}
+
+// sessionHooksDirs names where git dispatches hooks for the repos a session
+// can write: cwd's, and the store of record's when a redirect puts it in
+// another repo. Asked of git (hooksDir), because a derived path is a
+// statement about a file and not about git's behavior.
+func sessionHooksDirs(cwd string) []string {
+	if cwd == "" {
+		return nil
+	}
+	var out []string
+	if h, err := hooksDir(cwd); err == nil {
+		out = append(out, h)
+	}
+	if home := beadsHome(cwd); home != "" && !underDir(cwd, home) {
+		if h, err := hooksDir(filepath.Dir(home)); err == nil {
+			out = append(out, h)
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// renameSeal names the directories that must be denied as LITERALS so a
+// rename cannot carry a denied tree out from under its own deny. A subpath
+// deny is a statement about a PATH: `mv rhq rhq2` is a write on `rhq`,
+// which no deny below it names, and `rhq2/agents` is then writable — the
+// whole carve-out walked around in one command, silently and reversibly
+// (measured, and refused once the literal is there).
+//
+// It walks up from each denied path while BOTH the directory and its own
+// parent are granted, because a rename needs write on the source and on the
+// destination beside it: the first ancestor whose parent no grant covers
+// cannot be renamed anywhere, and the walk stops there rather than emitting
+// denies for every directory up to /. In the ordinary session — cwd is a
+// project, the home is elsewhere — that is one entry or none; it is the
+// session dispatched INTO the constitution repo that grows the list, which
+// is the session this bead is about.
+func renameSeal(denied, writable []string) []string {
+	var out []string
+	for _, d := range denied {
+		for p := filepath.Dir(d); ; p = filepath.Dir(p) {
+			parent := filepath.Dir(p)
+			if parent == p || !writeGranted(writable, p) || !writeGranted(writable, parent) {
+				break
+			}
+			out = append(out, p)
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// writeGranted reports whether any entry of a writable set covers p — the
+// question the sandbox asks of the allow block, not string equality.
+func writeGranted(writable []string, p string) bool {
+	for _, w := range writable {
+		if underDir(w, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // HomeConstitutionPaths names what at the home is prose in force, and so
 // must be in NO session's writable set (ADR 0015 §2/§3): the promoted set,
 // the manifest that anchors it, and — §7 — the secret env values, which are
@@ -276,7 +478,8 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 		return "", err
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
-	prof := SeatbeltProfile(ag.Name, a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...))
+	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
+	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(cwd, gatesDir, writable))
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -296,14 +499,42 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	if err != nil {
 		return err
 	}
-	writable := a.SeatbeltWritable(ag, cwd, a.GatesDir(ag.Name), stateDirs...)
+	gatesDir := a.GatesDir(ag.Name)
+	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
+	carve := a.SeatbeltCarveOut(cwd, gatesDir, writable)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
 	}
+	// The carve-out under the set it takes back from, for the same reader:
+	// a deny that only a profile knows about is a deny nobody checks.
+	for _, p := range carve.Deny {
+		fmt.Fprintf(out, "    x %s (trailing deny — beats every grant above; ranger-base-h15)\n", AbbrevHome(p))
+	}
+	for _, p := range carve.Seal {
+		fmt.Fprintf(out, "    x %s (rename seal only — writes inside it are unaffected)\n", AbbrevHome(p))
+	}
+	for _, p := range carve.Keep {
+		fmt.Fprintf(out, "    w %s (re-allowed after the deny: the session's own audit trail)\n", AbbrevHome(p))
+	}
+	// A grant that reaches the constitution is still named, deny or no
+	// deny: the carve-out is a wall, not a licence to grant it. What the
+	// deny changes is the verdict — a grant it covers is refused at the
+	// kernel, so it is a PID to fix rather than a hole to close tonight.
 	if bad := a.ConstitutionGrants(writable); len(bad) > 0 {
+		open := false
 		for _, p := range bad {
+			if writeGranted(carve.Deny, p) {
+				fmt.Fprintf(out, "    ✗ GRANT REACHES THE CONSTITUTION: %s — refused by the trailing deny below it (ADR 0015 §2, ranger-base-h15); fix the PID\n", AbbrevHome(p))
+				continue
+			}
 			fmt.Fprintf(out, "    ✗ GRANT REACHES THE CONSTITUTION: %s (ADR 0015 §2)\n", AbbrevHome(p))
+			open = true
+		}
+		// Either way the all-clear below would be a lie — it says the
+		// constitution is in no grant, and it is in one.
+		if !open {
+			fmt.Fprintf(out, "    every grant above that reaches the constitution is taken back by the deny; nothing at %s is writable — ADR 0015 §2/§7\n", AbbrevHome(a.Home))
 		}
 		return nil
 	}

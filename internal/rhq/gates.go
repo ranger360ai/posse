@@ -829,7 +829,7 @@ for rule in $RHQ_TOOLS_DENY; do
     git|"git push"|"git push "*)
       echo "refused by posse gate: git push (deny: $rule) — pre-push hook, session ${RHQ_PERSONA:-?}" >&2
       if [ -n "$RHQ_GATES_DIR" ]; then
-        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) git push [pre-push hook] (deny: $rule)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) git push [pre-push hook] (deny: $rule) session ${RHQ_PERSONA:-?}" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
       fi
       exit 1
       ;;
