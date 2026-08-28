@@ -181,3 +181,53 @@ func TestAuditFlagsAddOnlySilentRevertIsStillTheMechanism(t *testing.T) {
 		t.Fatalf("fixture no longer scans the 3 planted commits:\n%s", out)
 	}
 }
+
+// TestSilentRevertSelfTestRigFailureIsNotAPass is ranger-base-z4vx. The
+// self-test's three arms all depend on a fixture the script plants first, and
+// the harness that is supposed to notice a plant that did not build —
+//
+//	( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" ) || {
+//	    echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
+//
+// — cannot fire: errexit is suppressed for the left operand of `||` and the
+// suppression is inherited into the subshell, so a plant returning non-zero
+// does not abort it and `pwd` writes the script's own toplevel as the fixture
+// path. The two positive arms fail safe (they want n>=1 and get 0). The
+// NEGATIVE control does not: it wants n==0, which a repo nobody planted
+// satisfies, so it reports "a plain move is not flagged" having looked at
+// nothing — the exact class it was added to prevent.
+//
+// This plants that failure (the move rig builds nothing) and asserts the
+// harness does not answer with a pass. Skipped until ranger-base-z4vx closes;
+// remove the skip then. It FAILS at HEAD with the skip removed — verified.
+func TestSilentRevertSelfTestRigFailureIsNotAPass(t *testing.T) {
+	t.Skip("ranger-base-z4vx: the rig guard is dead code and the move control passes on a dead rig")
+
+	script := srScript(t)
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatalf("read %s: %v", script, err)
+	}
+	// Guard the mutation itself: if the function is renamed, this pin must say
+	// so rather than quietly measure nothing.
+	const head = "plant_move() {\n"
+	if !strings.Contains(string(src), head) {
+		t.Fatalf("plant_move() not found in %s; this pin's mutation no longer applies", script)
+	}
+	broken := strings.Replace(string(src), head,
+		head+"  return 2   # ranger-base-z4vx: this rig builds nothing\n", 1)
+
+	dir := t.TempDir()
+	mutant := filepath.Join(dir, "audit-mutant.sh")
+	if err := os.WriteFile(mutant, []byte(broken), 0o755); err != nil {
+		t.Fatalf("write mutant: %v", err)
+	}
+
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with a rig that builds nothing:\n%s", out)
+	}
+	if strings.Contains(out, "a plain move is not flagged") {
+		t.Fatalf("negative control reported a pass for a fixture that was never built:\n%s", out)
+	}
+}
