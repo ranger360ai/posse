@@ -126,8 +126,6 @@ func TestQAOverflowUnreadableLedgerDisablesThePass(t *testing.T) {
 }
 
 func TestQAOverflowTargetCannotBeTheGuardedRuntime(t *testing.T) {
-	t.Skip("ranger-base-ay0h: the guarded runtime is accepted as its own overflow target")
-
 	f := overflowPass(t, "plan_guard_overflow: claude\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 
@@ -141,6 +139,11 @@ func TestQAOverflowTargetCannotBeTheGuardedRuntime(t *testing.T) {
 	}
 	if got := f.ledger(t); len(got) != 0 {
 		t.Fatalf("same-meter target must spend and ledger nothing, got %v", got)
+	}
+	// Off is not enough: the operator has to learn which key turned it off,
+	// or a mistyped target reads as an ordinary tripped guard forever.
+	if e := f.errb.String(); !strings.Contains(e, "plan_guard_overflow: "+GuardedRuntime) || !strings.Contains(e, "overflow off") {
+		t.Fatalf("the refused target must be named on stderr, said %q", e)
 	}
 }
 

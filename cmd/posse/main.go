@@ -1563,8 +1563,10 @@ dispatch (beads):
                                  overflow: false — capped at N beads per
                                  rolling 7d ($StateDir/overflow.log); the cap
                                  is required, and a blind guard never
-                                 overflows. Beads whose own runtime is not on
-                                 the guarded meter launch ungated
+                                 overflows. The target must be a SECOND pool:
+                                 the guarded runtime itself is overflow off.
+                                 Beads whose own runtime is not on the guarded
+                                 meter launch ungated
                                config budget_pass:/budget_day: (API-equiv $)
                                  ADR 0003 Dial E: at 80% of a window a standard
                                  session steps down to fast (parity permitting,

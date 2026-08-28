@@ -74,8 +74,12 @@ type Overflow struct {
 // On reports whether a tripped guard may move anything. A runtime without a
 // cap is deliberately NOT on: §3 makes the cap required, because the cap is
 // the entire difference between this and draining a weekly pool in an
-// afternoon.
-func (o Overflow) On() bool { return o.Runtime != "" && o.Cap > 0 }
+// afternoon. Neither is the guarded runtime itself on: the move's whole
+// premise is that the guard's reading does not apply to the target, and it
+// applies to that one by construction.
+func (o Overflow) On() bool {
+	return o.Runtime != "" && o.Runtime != GuardedRuntime && o.Cap > 0
+}
 
 // PlanGuardOverflow reads config `plan_guard_overflow:` (a runtime name) and
 // `plan_guard_overflow_cap:` (beads per rolling 7 days). Unset — the default
@@ -89,6 +93,15 @@ func (a *App) PlanGuardOverflow(errw io.Writer) Overflow {
 		if raw != "" {
 			fmt.Fprintf(errw, "plan guard: config plan_guard_overflow_cap: %q with no plan_guard_overflow: — overflow off\n", raw)
 		}
+		return Overflow{}
+	}
+	// The target has to be a SECOND pool. Naming the guarded runtime spends
+	// the hot meter through the ladder built to spare it: the trip reading
+	// says this pool is over threshold, and "so use this pool" is not a
+	// judgement on it, it is the guard cancelling itself. Off and named,
+	// same as any other half-configured overflow.
+	if rt == GuardedRuntime {
+		fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s is the runtime the guard meters — a hot pool cannot be its own overflow — overflow off, on-meter beads park on a tripped guard\n", rt)
 		return Overflow{}
 	}
 	n, err := strconv.Atoi(raw)

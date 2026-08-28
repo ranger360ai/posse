@@ -343,6 +343,9 @@ dirs:
 # `overflow: false`. A bead whose own runtime is not on the guarded meter is
 # launched ungated, tripped guard or not. Only sessions this pass creates
 # move; a found session and an explicit --runtime keep what they have.
+# The target must be a SECOND pool: naming the runtime the guard meters
+# (claude) is overflow off with a stderr line — spending the hot meter through
+# the ladder built to spare it is the guard cancelling itself.
 # The cap is REQUIRED: a runtime here without one is overflow off, one
 # stderr line per pass. It counts beads sent to that runtime in a ROLLING 7
 # days, ledgered append-only in $RHQ_HOME/state/overflow.log — the second

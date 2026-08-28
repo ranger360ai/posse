@@ -403,6 +403,10 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: lots\n", Overflow{}, "plan_guard_overflow_cap:"},
 		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: 0\n", Overflow{}, "plan_guard_overflow_cap:"},
 		{"plan_guard_overflow_cap: 20\n", Overflow{}, "with no plan_guard_overflow:"},
+		// The guarded runtime is not a second pool: a target that spends the
+		// meter the trip was read off cancels the guard (ranger-base-ay0h).
+		{"plan_guard_overflow: " + GuardedRuntime + "\nplan_guard_overflow_cap: 1\n",
+			Overflow{}, "is the runtime the guard meters"},
 	} {
 		a := &App{ConfigPath: filepath.Join(t.TempDir(), "config.yaml")}
 		if err := os.WriteFile(a.ConfigPath, []byte(tc.cfg), 0o644); err != nil {
@@ -418,6 +422,26 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 		}
 		if tc.says != "" && !strings.Contains(errb.String(), tc.says) {
 			t.Errorf("%q must name %q, said %q", tc.cfg, tc.says, errb.String())
+		}
+	}
+}
+
+// On() carries the same two invariants the config reader prints for, so an
+// Overflow built any other way cannot move a bead either: no cap is off, and
+// the guarded runtime as target is off (ranger-base-ay0h).
+func TestOverflowOn(t *testing.T) {
+	for _, tc := range []struct {
+		ov   Overflow
+		want bool
+	}{
+		{Overflow{}, false},
+		{Overflow{"grok", 1}, true},
+		{Overflow{"grok", 0}, false},
+		{Overflow{GuardedRuntime, 5}, false},
+		{Overflow{"", 5}, false},
+	} {
+		if got := tc.ov.On(); got != tc.want {
+			t.Errorf("Overflow%+v.On() = %v, want %v", tc.ov, got, tc.want)
 		}
 	}
 }
