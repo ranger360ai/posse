@@ -122,6 +122,14 @@ of yours is in the way, type the `rm` yourself, so the blast radius is on a
 command line you wrote rather than on a mistyped flag at the step next to the
 irreversible one.
 
+`tap-formula.sh --out` is the same rule one file down (`ranger-base-qkd0`): it
+**truncates**, so it takes only a `.rb` that is absent, empty, or a formula a
+previous run rendered. A directory, a symlink, and any file whose first line is
+not the generator's own banner are refused, and there is no `--force` here
+either; `-` (the default) writes to stdout and touches no file. That flag sits
+one argument away from a `--checksums` path in the line above, which is the
+typo it refuses.
+
 ---
 
 ## Step 0 — push the tag
