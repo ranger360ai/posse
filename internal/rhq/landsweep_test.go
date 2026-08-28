@@ -196,3 +196,71 @@ func TestNoteBeadMovesTheBranchRecordToo(t *testing.T) {
 		t.Errorf("the branch still names %q after a-2 resumed into the slot", got)
 	}
 }
+
+// Every tree standing when this landed was cut before the branch was
+// stamped, so the sweep would have nothing but "I cannot tell" to say about
+// all of them. Where the session's meta is still alive it names the bead —
+// the record mergeBack itself reads — and the sweep joins on it, lands the
+// work, and writes the answer onto the branch so the next pass does not need
+// the meta at all.
+func TestSweepBackfillsTheBeadFromASurvivingMeta(t *testing.T) {
+	d, repo, tr := nurlStranded(t, "closed", false) // no branch stamp: a legacy tree
+	session := SessionForBead("ranger", repo, "a-1")
+	if err := d.HB.writeMeta(&HerdrMeta{Name: session, Dir: tr.Path, Repo: tr.Repo, Branch: tr.Branch, Bead: "a-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+		t.Fatalf("a legacy tree whose meta names its bead was not landed: %v\n%s", err, out)
+	}
+	if got := beadOf(tr.Repo, tr.Branch); got != "a-1" {
+		t.Errorf("the sweep did not stamp the branch it joined: beadOf = %q", got)
+	}
+}
+
+// The join is on the BRANCH, not on the session name: a meta whose session
+// was recreated against another tree is a different tree's record, and
+// landing on it would take one bead's close as another's.
+func TestSweepWillNotJoinAMetaThatNamesAnotherBranch(t *testing.T) {
+	d, repo, tr := nurlStranded(t, "closed", false)
+	session := SessionForBead("ranger", repo, "a-1")
+	if err := d.HB.writeMeta(&HerdrMeta{Name: session, Dir: tr.Path, Repo: tr.Repo, Branch: "posse/somewhere-else", Bead: "a-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err == nil {
+		t.Fatalf("a tree was landed on another branch's run record:\n%s", out)
+	}
+	if !strings.Contains(out, "no record says which bead") {
+		t.Errorf("the sweep must say it cannot tell rather than join across branches:\n%s", out)
+	}
+}
+
+// --dry-run stamps nothing either: the backfill is a git config write, and
+// the flag's promise is that a diagnostic pass changes no state.
+func TestSweepUnderDryRunDoesNotBackfillTheStamp(t *testing.T) {
+	d, repo, tr := nurlStranded(t, "closed", false)
+	d.DryRun = true
+	session := SessionForBead("ranger", repo, "a-1")
+	if err := d.HB.writeMeta(&HerdrMeta{Name: session, Dir: tr.Path, Repo: tr.Repo, Branch: tr.Branch, Bead: "a-1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := beadOf(tr.Repo, tr.Branch); got != "" {
+		t.Errorf("--dry-run wrote the branch record: beadOf = %q", got)
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "would land "+tr.Branch) {
+		t.Errorf("--dry-run must still say what it would land:\n%s", out)
+	}
+}

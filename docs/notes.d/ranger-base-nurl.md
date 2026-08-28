@@ -35,6 +35,18 @@ recorded bead is closed; land it under the launcher lock (taken lazily, on
 the first tree that needs it, so an ordinary pass never waits on another
 launcher).
 
+**The transition.** Every tree standing when this landed was cut before the
+stamp existed, so the sweep would have nothing but "I cannot tell" to say
+about all of them. Where the session's meta is still alive it names the bead
+— the record `mergeBack` itself reads — so the sweep joins on it (on the
+BRANCH, not the session name: a meta recreated against another tree is a
+different tree's record), lands the work, and writes the answer onto the
+branch. The backfill happens once, on the first pass that looks, and
+survives the kill that takes the meta away. Measured in `~/src/posse`
+2026-08-28: three of the four branches the bead named have landed since, one
+(`posse/jian-yang-posse-rangerhq-vojc`, 1 commit) is still ahead of main and
+none of the standing trees carries a stamp yet.
+
 **Three things it deliberately does not do.** It never guesses a bead from a
 branch name — persona names and repo basenames both contain `-`, so an
 unrecorded tree is reported and not landed. It never touches a tree whose
@@ -45,8 +57,11 @@ once, this runs every pass, and a bead per pass over a permanently
 conflicted branch is spam. The ⚠ line repeats instead — every pass, which is
 what "observable without a human running the census" means here.
 
-**Pins** (`landsweep_test.go`), all six mutation-checked: unwiring the sweep
-from `Run` fails two; dropping the closed check fails the open-bead arm;
-dropping the "no record" report fails the unrecorded arm; stamping `""` at
-launch fails the survives-the-meta arm; deleting the `--dry-run` branch
-fails the dry-run arm; dropping `NoteBead`'s mirror fails the slot arm.
+**Pins** (`landsweep_test.go`), nine mutations, every one of them red:
+unwiring the sweep from `Run` fails two; dropping the closed check fails the
+open-bead arm; dropping the "no record" report fails the unrecorded arm;
+stamping `""` at launch fails the survives-the-meta arm; deleting the
+`--dry-run` branch fails the dry-run arm; dropping `NoteBead`'s mirror fails
+the slot arm; dropping the meta fallback fails the backfill arm; joining on
+the session name instead of the branch fails the cross-branch arm; letting
+the backfill write under `--dry-run` fails the no-write arm.
