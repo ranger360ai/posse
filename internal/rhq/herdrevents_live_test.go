@@ -3,10 +3,10 @@ package rhq
 // Live pin for ranger-base-0s36: what the installed herdr's events socket
 // actually accepts. herdrevents_test.go proves what posse DOES with the
 // stream; only a real server can say which subscriptions exist, and this is
-// the measurement herdrevents.go's selector list is set from — including the
-// one that contradicts ADR 0016 §1.
+// the measurement herdrevents.go's request shape is built from — including
+// the two facts that contradict ADR 0016 §1.
 //
-//	RHQ_LIVE_HERDR_EVENTS=1 go test ./internal/rhq -run TestLiveHerdrEventSelectors -v
+//	RHQ_LIVE_HERDR_EVENTS=1 go test ./internal/rhq -run TestLiveHerdrEvent -v
 //
 // It subscribes and reads. It creates nothing, types nothing at any pane,
 // and spends no API turn, so it is safe against the live fleet — but it is
@@ -16,14 +16,24 @@ package rhq
 // MEASURED 2026-08-27, herdr 0.8.0, socket protocol 19:
 //
 //	pane.agent_status_changed   unscoped → invalid_request "missing field
-//	                            `pane_id`", and the server closes the socket
-//	pane.updated                unscoped → subscription_started, then the
-//	                            whole PaneInfo (agent_status, workspace_id)
-//	                            on every revision bump
+//	                            `pane_id`", and the server closes the socket;
+//	                            pane-scoped → subscription_started
+//	pane.updated                unscoped → subscription_started, and ~4
+//	                            envelopes/second on a five-seat fleet — but
+//	                            NOT the settle: a settling pane stops
+//	                            emitting, and the transition to idle/done
+//	                            arrives only on pane.agent_status_changed
+//	                            (observed on two seats, 2026-08-27 22:31 and
+//	                            22:35)
 //	workspace.created/.closed   unscoped → subscription_started
 //	pane.agent_detected         unscoped → subscription_started
-//	pushed envelopes            underscored (`pane_updated`), where the
-//	                            subscription is dotted (`pane.updated`)
+//	two subscribes on one conn  the second is not answered; the server
+//	                            closes the connection
+//	an unknown pane id          pane_not_found, and the connection closes —
+//	                            one stale id costs every subscription on it
+//	spelling                    lifecycle envelopes come back underscored
+//	                            (pane_updated), pane-scoped ones dotted
+//	                            (pane.agent_status_changed)
 
 import (
 	"bufio"
@@ -36,19 +46,14 @@ import (
 	"time"
 )
 
-// liveSubscribe sends one events.subscribe for types and returns the raw
-// first answer.
-func liveSubscribe(t *testing.T, sock string, types ...string) string {
+// liveSubscribe sends one events.subscribe and returns the raw first answer.
+func liveSubscribe(t *testing.T, sock string, subs ...map[string]string) string {
 	t.Helper()
 	conn, err := net.DialTimeout("unix", sock, 5*time.Second)
 	if err != nil {
 		t.Fatalf("dial %s: %v", sock, err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	subs := make([]map[string]string, 0, len(types))
-	for _, ty := range types {
-		subs = append(subs, map[string]string{"type": ty})
-	}
 	req, _ := json.Marshal(map[string]any{
 		"id": "posse-live-probe", "method": "events.subscribe",
 		"params": map[string]any{"subscriptions": subs},
@@ -59,12 +64,13 @@ func liveSubscribe(t *testing.T, sock string, types ...string) string {
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
-		t.Fatalf("read answer to %v: %v", types, err)
+		t.Fatalf("read answer to %v: %v", subs, err)
 	}
 	return strings.TrimSpace(line)
 }
 
-func TestLiveHerdrEventSelectors(t *testing.T) {
+func liveSocket(t *testing.T) string {
+	t.Helper()
 	if os.Getenv("RHQ_LIVE_HERDR_EVENTS") == "" {
 		t.Skip("set RHQ_LIVE_HERDR_EVENTS=1 (and HERDR_SOCKET_PATH for a scratch server) — see the file comment")
 	}
@@ -72,57 +78,100 @@ func TestLiveHerdrEventSelectors(t *testing.T) {
 	if _, err := os.Stat(sock); err != nil {
 		t.Skipf("no herdr socket at %s: %v", sock, err)
 	}
+	return sock
+}
 
-	// The refusal ADR 0016 §1 did not have: this is why the settle signal
-	// comes off pane.updated. If a later herdr accepts it unscoped, this
-	// test goes red and the substitution can be retired.
-	if got := liveSubscribe(t, sock, "pane.agent_status_changed"); !strings.Contains(got, "invalid_request") ||
+func TestLiveHerdrEventSelectors(t *testing.T) {
+	sock := liveSocket(t)
+
+	// The refusal ADR 0016 §1 did not have: this is why the settle
+	// subscription is pane-scoped, and why the registry the ADR rejected is
+	// not optional. If a later herdr accepts it unscoped, this goes red and
+	// the registry can be retired.
+	if got := liveSubscribe(t, sock, map[string]string{"type": HerdrPaneSubscription}); !strings.Contains(got, "invalid_request") ||
 		!strings.Contains(got, "pane_id") {
-		t.Errorf("herdr answered pane.agent_status_changed unscoped with %s\n"+
-			"— it used to refuse it for want of a pane_id, which is the whole reason posse subscribes to pane.updated instead", got)
+		t.Errorf("herdr answered %s unscoped with %s\n"+
+			"— it used to refuse it for want of a pane_id, which is the whole reason posse subscribes per pane", HerdrPaneSubscription, got)
 	}
 
-	// The selectors posse does use, each one on its own connection: a
-	// refusal closes the socket, so a list would hide which member failed.
-	for _, ty := range HerdrHintSubscriptions {
-		got := liveSubscribe(t, sock, ty)
-		if !strings.Contains(got, "subscription_started") {
+	// The lifecycle selectors, each on its own connection: a refusal closes
+	// the socket, so a list would hide which member failed.
+	for _, ty := range HerdrLifecycleSubscriptions {
+		if got := liveSubscribe(t, sock, map[string]string{"type": ty}); !strings.Contains(got, "subscription_started") {
 			t.Errorf("herdr will not subscribe to %s unscoped: %s", ty, got)
 		}
 	}
 
-	// And the stream really does carry the status level posse edge-detects,
-	// in the underscored spelling.
+	// A pane id herdr does not know refuses the request that carries it.
+	// Posse answers this by re-reading the pane list on the next dial, so a
+	// changed error code here is a change in what "stale pane" costs.
+	if got := liveSubscribe(t, sock,
+		map[string]string{"type": HerdrPaneSubscription, "pane_id": "wNOSUCH:p9"}); !strings.Contains(got, "pane_not_found") {
+		t.Errorf("an unknown pane id must be refused, and named: %s", got)
+	}
+
+	// And the real request shape posse sends, against the panes this herdr
+	// really has: lifecycle unfiltered plus one scoped subscription each,
+	// all in ONE request, because a second one on the same connection is
+	// not answered.
+	b := &HerdrBackend{App: NewAppAt(t.TempDir()), H: NewHerdr()}
+	panes := b.AgentPanes()
+	if len(panes) == 0 {
+		t.Skip("this herdr reports no agent panes — nothing to scope a subscription to")
+	}
+	subs := herdrSubscriptions(func() []string { return panes })
+	if got := liveSubscribe(t, sock, subs...); !strings.Contains(got, "subscription_started") {
+		t.Errorf("posse's own subscription (%d panes) was refused: %s", len(panes), got)
+	}
+}
+
+// The settle really does arrive, on the pane-scoped subscription, and it
+// decodes into a hint. Needs a seat to finish its turn, so it waits — run it
+// while the fleet is turning over.
+func TestLiveHerdrEventSettleArrives(t *testing.T) {
+	sock := liveSocket(t)
+	b := &HerdrBackend{App: NewAppAt(t.TempDir()), H: NewHerdr()}
+	panes := b.AgentPanes()
+	if len(panes) == 0 {
+		t.Skip("no agent panes to watch")
+	}
 	conn, err := net.DialTimeout("unix", sock, 5*time.Second)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
 	defer conn.Close()
 	req, _ := json.Marshal(map[string]any{
-		"id": "posse-live-stream", "method": "events.subscribe",
-		"params": map[string]any{"subscriptions": []map[string]string{{"type": "pane.updated"}}},
+		"id": "posse-live-settle", "method": "events.subscribe",
+		"params": map[string]any{"subscriptions": herdrSubscriptions(func() []string { return panes })},
 	})
 	conn.Write(append(req, '\n'))
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	wait := 10 * time.Minute
+	if s := os.Getenv("RHQ_LIVE_HERDR_WAIT"); s != "" {
+		if d, err := time.ParseDuration(s); err == nil {
+			wait = d
+		}
+	}
+	conn.SetReadDeadline(time.Now().Add(wait))
 	dec := json.NewDecoder(conn)
 	var ack struct {
 		Result struct{ Type string } `json:"result"`
 	}
 	if err := dec.Decode(&ack); err != nil || ack.Result.Type != "subscription_started" {
-		t.Fatalf("subscribe to pane.updated: %v (%+v)", err, ack)
+		t.Fatalf("subscribe: %v (%+v)", err, ack)
 	}
-	// A live fleet bumps pane revisions constantly; a quiet one may not, and
-	// a timeout here is "nothing happened", not a defect.
-	var env herdrEventEnvelope
-	if err := dec.Decode(&env); err != nil {
-		t.Skipf("no pane event within 30s (a quiet server): %v", err)
+	for {
+		var env herdrEventEnvelope
+		if err := dec.Decode(&env); err != nil {
+			t.Skipf("no seat settled within %s: %v", wait, err)
+		}
+		h := env.hint()
+		if !isSettleHint(h) {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "live settle: %+v\n", h)
+		if h.Kind == "pane_agent_status_changed" && (h.PaneID == "" || h.WorkspaceID == "") {
+			t.Errorf("a settle must name its seat: %+v", h)
+		}
+		return
 	}
-	h := env.hint()
-	if h.Kind != "pane_updated" {
-		t.Errorf("pushed kind = %q, want the underscored spelling", h.Kind)
-	}
-	if h.PaneID == "" || h.WorkspaceID == "" || h.AgentStatus == "" {
-		t.Errorf("pane.updated must carry the level posse edge-detects; got %+v", h)
-	}
-	fmt.Fprintf(os.Stderr, "live pane.updated: %+v\n", h)
 }

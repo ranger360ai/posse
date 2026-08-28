@@ -22,7 +22,8 @@ import (
 // hintServer is the smallest thing that behaves like herdr's events socket:
 // accept, read one subscribe request, answer it, then push whatever the test
 // pushes. It can also refuse, answer wrongly, hang up, and talk nonsense —
-// the four failure shapes the adapter must survive.
+// the failure shapes the adapter must survive. Like the real server it takes
+// exactly one subscribe request per connection.
 type hintServer struct {
 	t    *testing.T
 	path string
@@ -31,8 +32,9 @@ type hintServer struct {
 	subs  chan string   // the raw subscribe request line, one per connection
 	ready chan net.Conn // connections that got their acknowledgement
 
-	mu  sync.Mutex
-	ack func(id string) string // "" hangs up without answering
+	mu       sync.Mutex
+	ack      func(id string) string // "" hangs up without answering
+	ackDelay time.Duration          // held before answering, to open the race a poke lands in
 }
 
 func newHintServer(t *testing.T) *hintServer {
@@ -79,8 +81,11 @@ func (s *hintServer) serve(c net.Conn) {
 	}
 	json.Unmarshal([]byte(line), &req)
 	s.mu.Lock()
-	ack := s.ack
+	ack, delay := s.ack, s.ackDelay
 	s.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	answer := ack(req.ID)
 	if answer == "" {
 		c.Close()
@@ -132,16 +137,16 @@ func (s *hintServer) push(c net.Conn, envelope string) {
 	}
 }
 
-// paneUpdated is herdr's real pushed shape for pane.updated: underscored
-// event name, the whole PaneInfo under "pane".
-func paneUpdated(pane, status string) string {
+// settled is herdr's real pushed shape for a pane-scoped status change:
+// DOTTED event name (the lifecycle envelopes are underscored, these are
+// not), status and ids at the top of data.
+func settled(pane, status string) string {
 	ws := pane
 	if i := strings.Index(pane, ":"); i > 0 {
 		ws = pane[:i]
 	}
-	return fmt.Sprintf(`{"data":{"pane":{"agent":"claude","agent_status":%q,"pane_id":%q,"revision":7,`+
-		`"tab_id":"%s:t1","workspace_id":%q},"type":"pane_updated"},"event":"pane_updated"}`,
-		status, pane, ws, ws)
+	return fmt.Sprintf(`{"data":{"agent":"claude","agent_status":%q,"pane_id":%q,"workspace_id":%q,`+
+		`"type":"pane_agent_status_changed"},"event":"pane.agent_status_changed"}`, status, pane, ws)
 }
 
 func recvHint(t *testing.T, ch <-chan HerdrHint, within time.Duration) HerdrHint {
@@ -166,24 +171,28 @@ func collect(mu *sync.Mutex, lines *[]string) func(string) {
 	}
 }
 
-// The subscribe request is the whole contract with herdr, and one of its
-// four selectors is a measured substitution: protocol 19 REFUSES
-// pane.agent_status_changed without a pane_id (and closes the connection
-// over it), so the settle signal comes off pane.updated instead. This pins
-// the request shape and, with it, that nothing here is pane-scoped.
+func panesAre(ids ...string) func() []string {
+	return func() []string { return ids }
+}
+
+// The subscribe request is the whole contract with herdr, and it is one
+// request per connection: the lifecycle events unfiltered, plus the settle
+// event once per pane. Unscoped pane.agent_status_changed is refused by the
+// real server and takes the connection with it, so a request that grew one
+// would deliver nothing at all.
 func TestHerdrHintsSubscribeRequest(t *testing.T) {
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	herdrHints(ctx, s.path, 20*time.Millisecond, settleGate(), collect(&mu, &lines))
+	herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1", "w2:p1", "w1:p1", ""), nil, isSettleHint, collect(&mu, &lines))
 
 	var req struct {
 		ID     string `json:"id"`
 		Method string `json:"method"`
 		Params struct {
-			Subscriptions []map[string]any `json:"subscriptions"`
+			Subscriptions []map[string]string `json:"subscriptions"`
 		} `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(s.subscribed()), &req); err != nil {
@@ -195,64 +204,190 @@ func TestHerdrHintsSubscribeRequest(t *testing.T) {
 	if req.ID == "" {
 		t.Error("the request needs an id — the acknowledgement is verified against it")
 	}
-	var got []string
+	var lifecycle, scoped []string
 	for _, sub := range req.Params.Subscriptions {
-		got = append(got, fmt.Sprint(sub["type"]))
-		if len(sub) != 1 {
-			t.Errorf("subscription %v is scoped; unfiltered is the point (ADR 0016 §1)", sub)
-		}
-		if sub["type"] == "pane.agent_status_changed" {
-			t.Error("herdr 0.8.0 refuses pane.agent_status_changed without a pane_id and closes the connection — subscribing to it unscoped kills the stream outright")
+		switch sub["type"] {
+		case HerdrPaneSubscription:
+			if sub["pane_id"] == "" {
+				t.Error("herdr refuses pane.agent_status_changed without a pane_id and closes the connection over it")
+			}
+			scoped = append(scoped, sub["pane_id"])
+		default:
+			if len(sub) != 1 {
+				t.Errorf("subscription %v is scoped; the lifecycle events are taken unfiltered (ADR 0016 §1)", sub)
+			}
+			lifecycle = append(lifecycle, sub["type"])
 		}
 	}
-	if strings.Join(got, ",") != strings.Join(HerdrHintSubscriptions, ",") {
-		t.Errorf("subscribed to %v, want %v", got, HerdrHintSubscriptions)
+	if strings.Join(lifecycle, ",") != strings.Join(HerdrLifecycleSubscriptions, ",") {
+		t.Errorf("lifecycle subscriptions = %v, want %v", lifecycle, HerdrLifecycleSubscriptions)
+	}
+	if strings.Join(scoped, ",") != "w1:p1,w2:p1" {
+		t.Errorf("scoped subscriptions = %v; want one per pane, deduplicated, no empties", scoped)
 	}
 }
 
-// The stream is level-triggered — pane.updated repeats the current status on
-// every revision bump — so a settle is the EDGE into idle/done. First
-// sighting is a level, a repeat is not a transition, and a status posse does
-// not read as settled is not a hint.
-func TestHerdrSettleHintsAreEdges(t *testing.T) {
+// What counts as a settle, and what does not. herdr has already done the
+// edge detection for the pane events, so this is a filter and not a state
+// machine — but it is a filter with opinions: `blocked` still holds a bead.
+func TestHerdrSettleHintsFilter(t *testing.T) {
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, settleGate(), collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1", "w2:p1"), nil, isSettleHint, collect(&mu, &lines))
 	c := s.conn()
 
-	// Not hints: the first sighting of a pane (a level, not a transition),
-	// a repeat of a level already seen, a status that is not settled, and an
-	// event kind this consumer does not care about.
-	s.push(c, paneUpdated("w1:p1", "idle"))
-	s.push(c, paneUpdated("w1:p1", "idle"))
-	s.push(c, paneUpdated("w2:p1", "working"))
-	s.push(c, paneUpdated("w2:p1", "blocked"))
-	s.push(c, `{"data":{"pane_id":"w2:p1","type":"pane_scroll_changed"},"event":"pane_scroll_changed"}`)
+	// Not settles: still working, blocked on the operator, an event kind
+	// this consumer does not care about, an envelope it cannot read.
+	s.push(c, settled("w1:p1", "working"))
+	s.push(c, settled("w1:p1", "blocked"))
+	s.push(c, `{"data":{"pane_id":"w1:p1","type":"pane_scroll_changed"},"event":"pane_scroll_changed"}`)
 	s.push(c, `{"event":"","data":{}}`)
-	// Hints: working → idle is the settle the refill will fire on.
-	s.push(c, paneUpdated("w2:p1", "idle"))
+	// A settle.
+	s.push(c, settled("w2:p1", "idle"))
 
 	h := recvHint(t, hints, 5*time.Second)
 	if h.PaneID != "w2:p1" || h.AgentStatus != "idle" || h.WorkspaceID != "w2" {
-		t.Fatalf("first hint = %+v; the settle edge is w2:p1 → idle, and everything before it is level, repeat, unsettled or unknown", h)
+		t.Fatalf("first hint = %+v; working, blocked, an unknown kind and an unreadable envelope are all not settles", h)
 	}
-	if h.Kind != "pane_updated" {
-		t.Errorf("kind = %q, want the underscored spelling herdr pushes", h.Kind)
+	if h.Kind != "pane_agent_status_changed" {
+		t.Errorf("kind = %q — the dotted spelling herdr pushes must fold to the underscored one", h.Kind)
 	}
-
-	// A workspace that closed is a settle too — the seat is not busy.
+	// done is a settle too, and so is a workspace that went away.
+	s.push(c, settled("w1:p1", "done"))
+	if h := recvHint(t, hints, 5*time.Second); h.AgentStatus != "done" || h.PaneID != "w1:p1" {
+		t.Errorf("done hint = %+v", h)
+	}
 	s.push(c, `{"data":{"type":"workspace_closed","workspace":{"workspace_id":"w9"}},"event":"workspace_closed"}`)
 	if h := recvHint(t, hints, 5*time.Second); h.Kind != "workspace_closed" || h.WorkspaceID != "w9" {
 		t.Errorf("workspace_closed hint = %+v", h)
 	}
-	// And a settle already reported does not repeat until the seat works again.
-	s.push(c, paneUpdated("w2:p1", "working"))
-	s.push(c, paneUpdated("w2:p1", "done"))
-	if h := recvHint(t, hints, 5*time.Second); h.AgentStatus != "done" {
-		t.Errorf("done is a settle too: %+v", h)
+}
+
+// A pane cannot be added to a live subscription — the server takes one
+// subscribe per connection — so a newly detected agent pane is answered by
+// redialling with the pane set as it now stands. Silently: nothing failed.
+func TestHerdrHintsResubscribesWhenThePaneSetMoves(t *testing.T) {
+	s := newHintServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var lines []string
+	var panes struct {
+		sync.Mutex
+		ids []string
+	}
+	panes.ids = []string{"w1:p1"}
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, func() []string {
+		panes.Lock()
+		defer panes.Unlock()
+		return append([]string(nil), panes.ids...)
+	}, nil, isSettleHint, collect(&mu, &lines))
+
+	s.subscribed()
+	c := s.conn()
+	// A seat comes up: herdr detects its agent, and the pane set moves.
+	panes.Lock()
+	panes.ids = []string{"w1:p1", "w2:p1"}
+	panes.Unlock()
+	s.push(c, `{"data":{"agent":"claude","pane_id":"w2:p1","workspace_id":"w2","type":"pane_agent_detected"},"event":"pane_agent_detected"}`)
+
+	second := s.subscribed()
+	if !strings.Contains(second, `"w2:p1"`) {
+		t.Fatalf("the new pane must be in the second subscription: %s", second)
+	}
+	c2 := s.conn()
+	s.push(c2, settled("w2:p1", "idle"))
+	if h := recvHint(t, hints, 5*time.Second); h.PaneID != "w2:p1" {
+		t.Fatalf("the settle of the pane that appeared = %+v", h)
+	}
+	mu.Lock()
+	got := append([]string(nil), lines...)
+	mu.Unlock()
+	if len(got) != 0 {
+		t.Errorf("re-subscribing is the adapter keeping up, not an outage; it said: %v", got)
+	}
+}
+
+// The pane set's level-triggered belt: the consumer pokes after every pass,
+// and the subscription redials with the list as it now stands. MEASURED
+// live — a seat that appeared after the subscription was dialled had its
+// settle missed, and no lifecycle event arrived to say the set had moved, so
+// the poke is what makes the set eventually right.
+func TestHerdrHintsRefreshPokeRedials(t *testing.T) {
+	s := newHintServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var lines []string
+	refresh := make(chan struct{}, 1)
+	var panes struct {
+		sync.Mutex
+		ids []string
+	}
+	panes.ids = []string{"w1:p1"}
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, func() []string {
+		panes.Lock()
+		defer panes.Unlock()
+		return append([]string(nil), panes.ids...)
+	}, refresh, isSettleHint, collect(&mu, &lines))
+
+	s.subscribed()
+	s.conn()
+	panes.Lock()
+	panes.ids = []string{"w1:p1", "w7:p1"}
+	panes.Unlock()
+	refresh <- struct{}{}
+
+	if req := s.subscribed(); !strings.Contains(req, `"w7:p1"`) {
+		t.Fatalf("a poke must redial with the pane set as it now stands: %s", req)
+	}
+	c := s.conn()
+	s.push(c, settled("w7:p1", "done"))
+	if h := recvHint(t, hints, 5*time.Second); h.PaneID != "w7:p1" {
+		t.Fatalf("the settle of the seat the poke picked up = %+v", h)
+	}
+	mu.Lock()
+	got := append([]string(nil), lines...)
+	mu.Unlock()
+	if len(got) != 0 {
+		t.Errorf("a poked redial is not an outage; it said: %v", got)
+	}
+}
+
+// A poke that lands in the window between writing the subscribe and reading
+// its acknowledgement is still a poke. Seen live: the pass-end poke arrives
+// there routinely, and reporting it as an outage would put a false
+// "events unavailable" line in the loop's output on every pass.
+func TestHerdrHintsPokeDuringHandshakeIsNotAnOutage(t *testing.T) {
+	s := newHintServer(t)
+	s.mu.Lock()
+	s.ackDelay = 300 * time.Millisecond
+	s.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var lines []string
+	refresh := make(chan struct{}, 1)
+	herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), refresh, isSettleHint, collect(&mu, &lines))
+
+	s.subscribed() // the request is out; the acknowledgement is 300ms away
+	refresh <- struct{}{}
+	s.subscribed() // it redialled
+
+	s.mu.Lock()
+	s.ackDelay = 0
+	s.mu.Unlock()
+	time.Sleep(400 * time.Millisecond)
+	mu.Lock()
+	got := append([]string(nil), lines...)
+	mu.Unlock()
+	for _, l := range got {
+		if strings.Contains(l, "events unavailable") {
+			t.Fatalf("a poke mid-handshake is not an outage: %v", got)
+		}
 	}
 }
 
@@ -265,18 +400,17 @@ func TestHerdrHintsBurstNeverBlocksTheReader(t *testing.T) {
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, settleGate(), collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	c := s.conn()
 
 	// 400 settles with nothing receiving. Each push carries a write
 	// deadline, so a reader that stopped draining fails this as a timeout.
 	for i := 0; i < 200; i++ {
-		s.push(c, paneUpdated("w1:p1", "working"))
-		s.push(c, paneUpdated("w1:p1", "idle"))
+		s.push(c, settled("w1:p1", "working"))
+		s.push(c, settled("w1:p1", "idle"))
 	}
-	// Coalesced, not queued. Nothing received during the burst, so once the
-	// reader has drained the socket the whole 200 settles are one waiting
-	// hint — "look again", not "look again 200 times".
+	// Coalesced, not queued: once the reader has drained the socket the
+	// whole burst is one waiting hint.
 	time.Sleep(300 * time.Millisecond)
 	drained := 0
 	for draining := true; draining; {
@@ -294,8 +428,7 @@ func TestHerdrHintsBurstNeverBlocksTheReader(t *testing.T) {
 		t.Fatalf("the burst left %d hints waiting; the channel holds one", drained)
 	}
 	// Still live afterwards.
-	s.push(c, paneUpdated("w1:p1", "working"))
-	s.push(c, paneUpdated("w1:p1", "done"))
+	s.push(c, settled("w1:p1", "done"))
 	if h := recvHint(t, hints, 5*time.Second); h.AgentStatus != "done" {
 		t.Errorf("the subscription must survive the burst: %+v", h)
 	}
@@ -321,7 +454,7 @@ func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
 			defer cancel()
 			var mu sync.Mutex
 			var lines []string
-			hints := herdrHints(ctx, s.path, 20*time.Millisecond, settleGate(), collect(&mu, &lines))
+			hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 
 			s.subscribed()
 			tc.kill(s, s.conn())
@@ -329,8 +462,7 @@ func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
 			// It redials, and the second subscription delivers.
 			s.subscribed()
 			c2 := s.conn()
-			s.push(c2, paneUpdated("w1:p1", "working"))
-			s.push(c2, paneUpdated("w1:p1", "idle"))
+			s.push(c2, settled("w1:p1", "idle"))
 			if h := recvHint(t, hints, 5*time.Second); h.PaneID != "w1:p1" {
 				t.Fatalf("hint after the redial = %+v", h)
 			}
@@ -354,23 +486,29 @@ func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
 }
 
 // A refusal is an answer, and it is not an acknowledgement. Same for an
-// acknowledgement that answers a request this did not send.
+// acknowledgement that answers a request this did not send. The one refusal
+// that is NOT an outage is a pane that went away between the listing and the
+// subscribe — the next dial re-reads the list, and that is the whole fix.
 func TestHerdrHintsRejectsBadAcknowledgements(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		ack  func(id string) string
-		want string
+		name  string
+		ack   func(id string) string
+		want  string
+		quiet bool
 	}{
-		{"error", func(string) string {
+		{name: "error", ack: func(string) string {
 			return `{"id":"","error":{"code":"invalid_request","message":"missing field pane_id"}}`
-		}, "refused"},
-		{"wrong id", func(string) string {
+		}, want: "refused"},
+		{name: "wrong id", ack: func(string) string {
 			return `{"id":"somebody-else","result":{"type":"subscription_started"}}`
-		}, "not \"posse-hints"},
-		{"wrong type", func(id string) string {
+		}, want: "not \"posse-hints"},
+		{name: "wrong type", ack: func(id string) string {
 			return fmt.Sprintf(`{"id":%q,"result":{"type":"pane_read"}}`, id)
-		}, "not subscription_started"},
-		{"silence", func(string) string { return "" }, "no answer"},
+		}, want: "not subscription_started"},
+		{name: "silence", ack: func(string) string { return "" }, want: "no answer"},
+		{name: "stale pane", ack: func(id string) string {
+			return fmt.Sprintf(`{"id":"%s:sub:0","error":{"code":"pane_not_found","message":"pane w9:p9 not found"}}`, id)
+		}, quiet: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newHintServer(t)
@@ -379,9 +517,21 @@ func TestHerdrHintsRejectsBadAcknowledgements(t *testing.T) {
 			defer cancel()
 			var mu sync.Mutex
 			var lines []string
-			herdrHints(ctx, s.path, 20*time.Millisecond, settleGate(), collect(&mu, &lines))
+			herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w9:p9"), nil, isSettleHint, collect(&mu, &lines))
 			s.subscribed()
 
+			if tc.quiet {
+				// It keeps redialling — with a fresh pane list each time —
+				// and says nothing, because nothing is wrong with herdr.
+				s.subscribed()
+				mu.Lock()
+				got := append([]string(nil), lines...)
+				mu.Unlock()
+				if len(got) != 0 {
+					t.Errorf("a pane that went away is not an outage: %v", got)
+				}
+				return
+			}
 			deadline := time.Now().Add(5 * time.Second)
 			for time.Now().Before(deadline) {
 				mu.Lock()
@@ -407,7 +557,7 @@ func TestHerdrHintsCancelClosesPromptly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, time.Hour, settleGate(), collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, time.Hour, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	s.conn()
 
 	start := time.Now()
@@ -433,7 +583,7 @@ func TestHerdrHintsWithNoSocket(t *testing.T) {
 	var mu sync.Mutex
 	var lines []string
 	dead := filepath.Join(shortTempDir(t), "nothing-here.sock")
-	herdrHints(ctx, dead, 50*time.Millisecond, settleGate(), collect(&mu, &lines))
+	herdrHints(ctx, dead, 50*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	time.Sleep(250 * time.Millisecond)
 	mu.Lock()
 	got := append([]string(nil), lines...)
@@ -443,17 +593,39 @@ func TestHerdrHintsWithNoSocket(t *testing.T) {
 	}
 }
 
+// A herdr that cannot be asked for its panes costs the settle events and
+// leaves the lifecycle ones: degraded, never fatal, and never a subscription
+// this server would refuse.
+func TestAgentPanesDegradesToNone(t *testing.T) {
+	b, fake := newTestBackend(t)
+	os.WriteFile(filepath.Join(fake, "agents.json"),
+		[]byte(`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"},`+
+			`{"agent":"claude","agent_status":"working","pane_id":"w2:p1","workspace_id":"w2"}]`), 0o644)
+	if got := b.AgentPanes(); strings.Join(got, ",") != "w1:p1,w2:p1" {
+		t.Errorf("AgentPanes = %v, want both panes herdr reports an agent in", got)
+	}
+	subs := herdrSubscriptions(nil)
+	if len(subs) != len(HerdrLifecycleSubscriptions) {
+		t.Errorf("with no pane source the request is the lifecycle events alone; got %v", subs)
+	}
+}
+
 // ─── the watch loop (the bead's DONE WHEN) ───────────────────────────────────
 
 // A settling session produces a logged hint in the watch process within ~1s,
 // and it changes nothing else: this slice logs, and the tick still decides
 // when the next pass runs.
 func TestWatchLogsSettleHintAndLeavesTheTickAlone(t *testing.T) {
-	b, _ := newTestBackend(t)
+	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644)
 	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
+	// The seat that is about to settle: the subscription is built per pane,
+	// so a pane herdr does not report an agent in is a pane no hint arrives
+	// for.
+	os.WriteFile(filepath.Join(fake, "agents.json"),
+		[]byte(`[{"agent":"claude","agent_status":"working","pane_id":"w4:p1","workspace_id":"w4"}]`), 0o644)
 
 	s := newHintServer(t)
 	// The production path, end to end: clear the hermetic stub and point the
@@ -470,20 +642,28 @@ func TestWatchLogsSettleHintAndLeavesTheTickAlone(t *testing.T) {
 	// pass during this test.
 	go func() { p, _ := d.Watch(ctx, "", "", 0, time.Hour, time.Hour); done <- p }()
 
+	if req := s.subscribed(); !strings.Contains(req, `"w4:p1"`) {
+		t.Fatalf("the loop must subscribe to the panes herdr reports agents in: %s", req)
+	}
+	s.conn()
 	select {
 	case <-tap.reached:
 	case <-time.After(30 * time.Second):
 		t.Fatalf("the loop never announced a pass:\n%s", tap.String())
 	}
+	// The pass pokes the subscription so a seat it found gets subscribed;
+	// that redial is the connection the settle arrives on.
+	if req := s.subscribed(); !strings.Contains(req, `"w4:p1"`) {
+		t.Fatalf("the post-pass re-subscription must still carry the pane set: %s", req)
+	}
 	c := s.conn()
-	s.push(c, paneUpdated("w4:p1", "working"))
-	settled := time.Now()
-	s.push(c, paneUpdated("w4:p1", "idle"))
+	settledAt := time.Now()
+	s.push(c, settled("w4:p1", "idle"))
 
 	var took time.Duration
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
 		if strings.Contains(tap.String(), "settle hint") {
-			took = time.Since(settled)
+			took = time.Since(settledAt)
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

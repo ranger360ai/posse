@@ -105,10 +105,20 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	//
 	// No herdr, no socket, a dead server: the subscriber says so once and
 	// this loop goes on ticking. It is a latency path, never a dependency.
+	//
+	// The settle event is subscribable only one pane at a time, so the
+	// subscription is built from the panes herdr has an agent in — and this
+	// loop pokes it after every pass, because the pass is what knows a seat
+	// was added (herdrevents.go).
+	refresh := make(chan struct{}, 1)
 	subscribe := d.Hints
 	if subscribe == nil {
 		subscribe = func(ctx context.Context, report func(string)) <-chan HerdrHint {
-			return HerdrSettleHints(ctx, herdrSocketPath(), report)
+			panes := func() []string { return nil }
+			if d.HB != nil {
+				panes = d.HB.AgentPanes
+			}
+			return HerdrSettleHints(ctx, herdrSocketPath(), panes, refresh, report)
 		}
 	}
 	hints := subscribe(ctx, func(line string) { fmt.Fprintf(d.Out, "   %s\n", line) })
@@ -123,6 +133,13 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		}
 		if ctx.Err() != nil {
 			return passes, nil
+		}
+		// The pass just re-read herdr: let the subscription pick up any seat
+		// it found. Coalesced, never blocking — a poke nobody took yet is a
+		// poke that has not been acted on.
+		select {
+		case refresh <- struct{}{}:
+		default:
 		}
 		wait = NextInterval(wait, base, maxInterval, n)
 		fmt.Fprintf(d.Out, "   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
