@@ -2,8 +2,12 @@ package rhq
 
 // The end-of-pass auto-reap (rangerhq-us8): a per-bead session (ADR 0013 §4
 // Dial F, <persona>-<repobase>-<bead>) whose bead the store of record now
-// calls CLOSED, and whose agent herdr calls idle or done, is killed and
+// calls CLOSED, and in which nobody is working any more, is killed and
 // landed exactly as `posse kill` would — one line said about it either way.
+// "Nobody is working any more" is settledForReap below: an agent herdr calls
+// idle or done, or — since ranger-base-kftx — no agent left in there at all,
+// past the grace inside which that is indistinguishable from one still
+// starting.
 // Dial F gives every dispatched bead its own session and never reaps it
 // itself (dispatch.go's own doc: "left idle for the operator or --watch to
 // reap"), so without this an instance accumulates one dead pane per closed
@@ -55,6 +59,7 @@ package rhq
 // it is supposed to defer to (ADR 0011).
 import (
 	"fmt"
+	"time"
 )
 
 // AutoReap is config `auto_reap:` (default true — the reaper runs). `false`
@@ -100,15 +105,21 @@ func (d *Dispatcher) autoReapPass() {
 		if _, recent := d.promptedRecently(s.Name); recent {
 			continue
 		}
-		if s.Status != "idle" && s.Status != "done" {
+		if !d.settledForReap(s) {
 			continue
 		}
 		is, err := d.Bd.Show(s.Dir, s.Bead)
 		if err != nil || is.Status != "closed" {
 			continue
 		}
+		// Two shapes of finished reach here and the operator hand-reaps them
+		// for different reasons, so the line says which one it found.
+		why := "closed"
+		if s.Status == "" {
+			why = "closed, no agent left in it"
+		}
 		if d.DryRun {
-			fmt.Fprintf(d.Out, "would reap %s (bead %s closed)\n", s.Name, s.Bead)
+			fmt.Fprintf(d.Out, "would reap %s (bead %s %s)\n", s.Name, s.Bead, why)
 			continue
 		}
 		// A shared checkout (no session worktree) has no branch for the
@@ -130,9 +141,69 @@ func (d *Dispatcher) autoReapPass() {
 			fmt.Fprintf(d.errw(), "reap: %s not killed: %v\n", s.Name, err)
 			continue
 		}
-		fmt.Fprintf(d.Out, "reaped %s (bead %s closed)\n", s.Name, s.Bead)
+		fmt.Fprintf(d.Out, "reaped %s (bead %s %s)\n", s.Name, s.Bead, why)
 		if line := landing.Line(); line != "" {
 			fmt.Fprintf(d.Out, "  %s\n", line)
 		}
 	}
+}
+
+// settledForReap says nobody is working in this session any more — the half
+// of the predicate herdr answers, the bead being the other half.
+//
+// It covers TWO shapes, and ranger-base-kftx is the second one arriving.
+// MEASURED on the live fleet 2026-08-27: of five sessions with a finished
+// agent over a closed bead, the sweep named two. Three carried herdr status
+// "" — the operator's own first complaint on the us8 thread, "we have a
+// bunch of dead shells".
+//
+//   - idle / done: a settled agent, the shape the spec shipped with. These
+//     are the states the fire loop itself already treats as finished
+//     (AgentWait's idle/done/blocked triad, less `blocked`, which is a
+//     persona waiting on something and not a persona that has stopped).
+//   - "": herdr detects NO agent in the workspace at all (Sessions()'s
+//     status(), which reports a status only where `hasAgent` is true). The
+//     persona's CLI exited — crash, /exit, the operator closing it — and
+//     left a bare shell holding a closed bead. That is neither idle/done nor
+//     working/blocked, so the shipped predicate said nothing about it and it
+//     sat forever.
+//
+// "" is ALSO what a CLI that is still starting looks like: detection is
+// blind for the first seconds of a launch. That ambiguity is not new and
+// posse already has an answer for it, one line of evidence and one number —
+// RelaunchAgent refuses to re-type into a session younger than
+// RelaunchGrace, and dispatch.go's own `else if s.Status == ""` arm relaunches
+// past it. So this asks the same question of the same field rather than
+// coining a second liveness rule for the same ambiguity.
+//
+// RelaunchGrace, not StartupWait, and the bead named StartupWait: ranger-base-ze9p
+// split those two knobs precisely here. StartupWait is the pass's DETECTION
+// patience and tests shorten it to stay fast; RelaunchGrace is "how long a
+// starting CLI may stay invisible to detection", measured against a session's
+// real age, and nothing that shortens a test may shorten it. This is the
+// second question, and in production both are the same 45s the bead asked for.
+//
+// What it is willing to be wrong about: detection blinking on a live agent.
+// Then this kills a CLI mid-turn. It is the same evidence, on the same grace,
+// that RelaunchAgent already acts on by TYPING a persona command into the
+// pane — which lands inside a live CLI's input box if it is wrong — and it is
+// spent here on a session whose bead the store of record calls closed, where
+// no work is expected and where the landing still refuses to remove a dirty
+// tree (it prints KEPT instead) and the shared-checkout warning still fires.
+// Strictly less consequence than the risk already shipped on this signal.
+func (d *Dispatcher) settledForReap(s HerdrSession) bool {
+	switch s.Status {
+	case "idle", "done":
+		return true
+	case "":
+		// No meta is no age, and no age is not "old enough" — the same
+		// fail-closed the unreadable bead gets. Only a meta rewritten or
+		// pruned between Sessions()'s own read and this one reaches it
+		// (Sessions() drops a session it cannot read), which is the same
+		// interleaving RelaunchAgent guards against by comparing workspace
+		// ids; here the safe answer is simply to wait for the next sweep.
+		m, ok := d.HB.readMeta(s.Name)
+		return ok && time.Since(m.Launched) >= d.RelaunchGrace
+	}
+	return false // working, blocked: somebody is in there
 }

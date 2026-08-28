@@ -403,6 +403,39 @@ const FallbackTag = "⤵️fallback"
 // CLI process; this tag carries the separate work outcome.
 const TurnFailureTag = "🛑turn-failed"
 
+// NoBeadTag marks a session the auto-reap can never claim, so that the
+// operator hand-reaping it can see WHY rather than conclude the reaper broke
+// (ranger-base-kftx, option b).
+//
+// The sweep's population is "sessions carrying a `bead:` pointer", never
+// "sessions whose NAME ends in something that looks like a bead id", and
+// that has to stay true: sessionSanitizeRe folds `.` into `-`, so a session
+// name is a LOSSY encoding of a bead id and can never be inverted back into
+// one. A session wearing a per-bead name with no pointer is therefore
+// outside the sweep permanently — nothing later can supply the id, because
+// NoteBead only stamps a session dispatch resumes into, and a closed bead is
+// never dispatched again.
+//
+// MEASURED on the live fleet 2026-08-27: three such sessions, all launched
+// within a second of each other, sat over closed beads while the sweep said
+// nothing about them. At HEAD nothing can create that shape — every hand
+// path (`posse new`, `posse up`/`local`, a recipe) marks the session CREW,
+// which ADR 0008 puts outside every sweep anyway, and dispatch always passes
+// `Bead:` — so what wears this tag is a meta written by a binary from before
+// the pointer landed (4793e00, 2026-08-26). The tag is how those become
+// visible instead of silent while the fleet's installed binary catches up.
+const NoBeadTag = "🏷️no-bead"
+
+// UnpointedBeadSession is what NoBeadTag marks: a persona session that is
+// not the operator's, not the persona's reusable repo slot, and carries no
+// bead pointer for the sweep to ask about. Crew is excluded because a crew
+// session is not MISSING a pointer — ADR 0008 keeps it out of the sweep on
+// its own account, and it is already tagged as such.
+func UnpointedBeadSession(s HerdrSession) bool {
+	return !s.Crew && !s.Foreign && s.Bead == "" &&
+		s.Agent != "" && s.Dir != "" && s.Name != SessionFor(s.Agent, s.Dir)
+}
+
 // EnvPersona is set in every persona session's env by CreateSession: its
 // presence in *posse's own* env means posse was run by a persona, not by the
 // operator.
@@ -2229,6 +2262,9 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 		}
 		if s.Crew {
 			line += "  " + CrewTag
+		}
+		if UnpointedBeadSession(s) {
+			line += "  " + NoBeadTag
 		}
 		if s.Envs != "" {
 			line += "  🔑" + s.Envs // names only — never values

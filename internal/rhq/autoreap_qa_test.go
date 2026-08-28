@@ -239,21 +239,92 @@ func TestAutoReapKeepsASessionWhoseBeadBdCannotRead(t *testing.T) {
 	}
 }
 
+// ─── the dead shells (ranger-base-kftx) ──────────────────────────────────────
+
+// ageLaunch moves a session's `launched:` stamp back, which is the only way
+// a test can say "and this CLI has been gone a while": settledForReap reads
+// that stamp through RelaunchGrace to tell a CLI that has EXITED from one
+// that has not finished starting. RelaunchGrace is deliberately not
+// shortened for tests (ranger-base-ze9p — it is measured against a session's
+// real age), so the session has to be aged instead.
+func ageLaunch(t *testing.T, b *HerdrBackend, session string, by time.Duration) {
+	t.Helper()
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no meta for %s to age", session)
+	}
+	m.Launched = m.Launched.Add(-by)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A session whose CLI exited leaves a bare shell: herdr detects no agent
-// there and reports no status at all. That is neither idle nor done, and
-// the sweep leaves it — these are the "dead shells" the operator still
-// reaps by hand, and this pins that the reaper does not claim them.
-func TestAutoReapKeepsASessionWithNoAgentLeftInIt(t *testing.T) {
+// there and reports no status at all. That is neither idle/done nor
+// working/blocked, and the shipped predicate said nothing about it — three
+// of the five candidates measured on the live fleet 2026-08-27 were this,
+// and they are the operator's own first complaint on the us8 thread ("we
+// have a bunch of dead shells"). Past the launch grace it is a dead shell,
+// and the sweep now claims it.
+func TestAutoReapSweepsASessionWithNoAgentLeftInIt(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
+	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace+time.Minute)
+
+	d.autoReapPass()
+
+	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
+		t.Errorf("a bare shell over a closed bead is a dead shell — the sweep must claim it:\n%s", dispatcherOut(d))
+	}
+	// The two shapes are hand-reaped for different reasons, so the line says
+	// which one it found rather than reporting a settled agent that is not
+	// there.
+	if !strings.Contains(dispatcherOut(d), "reaped ranger-repo-a-1 (bead a-1 closed, no agent left in it)") {
+		t.Errorf("the reap must say it found no agent, not report a settled one:\n%s", dispatcherOut(d))
+	}
+}
+
+// The ambiguity the grace is for: "" is also what a CLI that is still
+// starting looks like, because detection is blind for the first seconds of a
+// launch (rangerhq-vk2, and RelaunchAgent's own refusal). A session launched
+// moments ago is not a dead shell however its bead reads.
+func TestAutoReapKeepsASessionWhoseAgentMayStillBeStarting(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
+	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
+	// Launched just now — inside RelaunchGrace, where no-agent-detected and
+	// agent-not-detected-YET are the same reading.
+	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace/2)
 
 	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
-		t.Error("herdr reports no status for a session with no agent in it — that is not idle/done and the spec's predicate does not cover it")
+		t.Errorf("inside the launch grace a missing agent is a starting one — the sweep must wait:\n%s", dispatcherOut(d))
+	}
+}
+
+// A session herdr calls working or blocked has somebody in it, and the
+// widening above must not have quietly made every non-idle status reapable.
+// `blocked` is the one that would hurt: it is a persona WAITING on
+// something, and it sits in the fire loop's own settled triad.
+func TestAutoReapKeepsABlockedSessionOverAClosedBead(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
+	os.WriteFile(filepath.Join(fake, "agents.json"),
+		[]byte(`[{"agent":"claude","agent_status":"blocked","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
+	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace+time.Minute)
+
+	d.autoReapPass()
+
+	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
+		t.Errorf("blocked is a persona waiting, not a session nobody is in:\n%s", dispatcherOut(d))
 	}
 }
 
@@ -297,6 +368,19 @@ func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
 // Failing closed is right — the name is a lossy encoding of the id
 // (sessionSanitizeRe folds `.` into `-`), so a name is not an id. This pins
 // the boundary so it is a decision on the record rather than a surprise.
+//
+// ranger-base-kftx read those three as hand-launched, and that attribution
+// is CORRECTED: `posse new` marks every session it creates CREW (cmd/posse's
+// `case "new"`, and so do `up`/`local` and every recipe), so a hand-launched
+// session is skipped one arm EARLIER, on ADR 0008 — see
+// TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer. What
+// carries no pointer and no crew mark is a meta written before the pointer
+// landed (4793e00, 2026-08-26; those three carried no `repo:`/`branch:`
+// either, which the worktree launch has stamped since 32ccff0 the day
+// before), or a `posse new` session the operator later released with
+// `posse crew --off`. So the shape stands and this test with it — what
+// changed is that `posse ls` now says so out loud (NoBeadTag) instead of
+// leaving the operator to conclude the reaper broke.
 func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -314,5 +398,102 @@ func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) 
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Error("a session with no bead pointer must not be reaped on the strength of its name alone")
+	}
+}
+
+// ─── the boundary made visible (ranger-base-kftx option b) ───────────────────
+
+// Failing closed on a missing pointer is right and stays right, but doing it
+// SILENTLY is what cost the operator the hand-reaps: three sessions sat over
+// closed beads and `posse dispatch --dry-run` said nothing about them, which
+// reads exactly like a broken reaper. `posse ls` now names them.
+//
+// The negative arms are the point — a tag that fires on everything says
+// nothing. The persona's reusable slot legitimately carries no pointer until
+// a bead resumes into it, and a crew session is not MISSING one.
+func TestListMarksAPerBeadSessionTheSweepCannotReap(t *testing.T) {
+	b, _ := newTestBackend(t)
+	writePersona(t, b.App, "ranger", "[go]")
+	unpointed := filepath.Join(t.TempDir(), "alpha")
+	pointed := filepath.Join(t.TempDir(), "bravo")
+	slotDir := filepath.Join(t.TempDir(), "charlie")
+	crewDir := filepath.Join(t.TempDir(), "delta")
+	for _, d := range []string{unpointed, pointed, slotDir, crewDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "ranger-alpha-zzz1", Dir: unpointed, Agent: "ranger"})
+	mustCreate(t, b, NewSessionOpts{Name: "ranger-bravo-zzz2", Dir: pointed, Agent: "ranger", Bead: "zzz2"})
+	mustCreate(t, b, NewSessionOpts{Name: SessionFor("ranger", slotDir), Dir: slotDir, Agent: "ranger"})
+	mustCreate(t, b, NewSessionOpts{Name: "ranger-delta-zzz4", Dir: crewDir, Agent: "ranger", Crew: true})
+
+	var out strings.Builder
+	if err := b.CmdList(&out); err != nil {
+		t.Fatal(err)
+	}
+	tagged := map[string]bool{}
+	for _, ln := range strings.Split(out.String(), "\n") {
+		for _, name := range []string{"ranger-alpha-zzz1", "ranger-bravo-zzz2", SessionFor("ranger", slotDir), "ranger-delta-zzz4"} {
+			if strings.Contains(ln, name) {
+				tagged[name] = strings.Contains(ln, NoBeadTag)
+			}
+		}
+	}
+	if len(tagged) != 4 {
+		t.Fatalf("expected all four sessions listed, saw %v in:\n%s", tagged, out.String())
+	}
+	if !tagged["ranger-alpha-zzz1"] {
+		t.Errorf("a per-bead-shaped session with no pointer is outside the sweep forever and must say so:\n%s", out.String())
+	}
+	if tagged["ranger-bravo-zzz2"] {
+		t.Errorf("a session the sweep CAN ask about must not wear the tag:\n%s", out.String())
+	}
+	if tagged[SessionFor("ranger", slotDir)] {
+		t.Errorf("the persona's reusable slot carries no pointer by design — tagging it would make the tag noise:\n%s", out.String())
+	}
+	if tagged["ranger-delta-zzz4"] {
+		t.Errorf("ADR 0008 keeps a crew session out of the sweep on its own account, and %s already says so:\n%s", CrewTag, out.String())
+	}
+}
+
+// The correction the measurement needs, pinned rather than argued: what
+// actually keeps a HAND-launched session out of the sweep at HEAD is the
+// crew mark, not the missing pointer. `posse new` (cmd/posse/main.go, `case
+// "new"`), `posse up`/`local` and every recipe pass Crew: true, and the
+// sweep skips on Crew before it ever asks about a bead — so `posse new
+// --bead <id>` would buy nothing: the pointer would sit on a session ADR
+// 0008 already excludes. Releasing it (`posse crew --off`) is the supported
+// way to hand one to dispatch, and dispatch's own NoteBead stamps the
+// pointer the moment it resumes a bead into it.
+func TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "fake-show.json"), []byte(`[{"id":"a-1","status":"closed"}]`), 0o644)
+	name := SessionForBead("ranger", dir, "a-1")
+	// Exactly what `posse new <name> --agent ranger` builds, plus the pointer
+	// option (a) would add: still not reaped, and the pointer is why we know
+	// the crew mark is the arm that fires.
+	if err := b.CreateSession(NewSessionOpts{Name: name, Dir: dir, Agent: "ranger", Bead: "a-1", Crew: true}); err != nil {
+		t.Fatal(err)
+	}
+	idleClaude(t, fake)
+	ageLaunch(t, b, name, d.RelaunchGrace+time.Minute)
+
+	d.autoReapPass()
+
+	if _, ok := b.readMeta(name); !ok {
+		t.Errorf("a hand-launched session is the operator's, however its name reads and whatever pointer it carries:\n%s", dispatcherOut(d))
+	}
+	// And it is not the missing-pointer tag's business either — the crew tag
+	// is the one that explains this session.
+	var out strings.Builder
+	if err := b.CmdList(&out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), NoBeadTag) {
+		t.Errorf("a crew session must be explained by %s, not by the sweep-boundary tag:\n%s", CrewTag, out.String())
 	}
 }
