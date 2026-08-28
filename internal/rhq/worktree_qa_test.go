@@ -752,13 +752,24 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 // says nothing at all, twice. ranger-base-nfgh.
 func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 	wtqaHome(t)
-	b, _ := newTestBackend(t)
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
+	// A real session, so the pass lines that read the RUN RECORD are in
+	// reach too — SessionTreeOf answers Base == "" in this state
+	// independently of the plan.
 	session := SessionForBead("ranger", repo, "a-1")
-	tr, err := b.App.EnsureSessionTree(repo, session, nil)
-	if err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: session, Dir: repo, Cmd: "true", Worktree: true}); err != nil {
 		t.Fatal(err)
+	}
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatal("the session has no meta")
+	}
+	tr := SessionTreeOf(m)
+	if tr == nil {
+		t.Fatalf("the session got no tree: %+v", m)
 	}
 	// A branch cut before posseBase was recorded: nothing can recover its
 	// true base, and baseOf answers "" once HEAD has no branch to fall back
@@ -801,6 +812,12 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 	}
 	if !strings.Contains(ls.String(), tr.Branch) || !strings.Contains(ls.String(), said) {
 		t.Errorf("posse worktrees renders no base for a detached legacy branch:\n%s", ls.String())
+	}
+
+	var pass strings.Builder
+	(&Dispatcher{App: b.App, HB: b, Out: &pass}).noteTree("a-1", session)
+	if !strings.Contains(pass.String(), tr.Branch) || !strings.Contains(pass.String(), "merges to "+said+" at close") {
+		t.Errorf("the pass line renders no base for a detached legacy branch:\n%s", pass.String())
 	}
 }
 
