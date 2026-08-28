@@ -291,14 +291,17 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 	}
 	ids, err := l.List()
 	c.logRead(now, ids, err)
-	c.noteGateRefusal(err)
+	// The notice below has to say what Models is about to RETURN, so it is
+	// told what a failed read falls back to: the prior reading, when there
+	// is one (ranger-base-co5n).
+	c.noteGateRefusal(err, kept(e, have), catalogAge(e, now))
 	if err != nil {
 		var rl *RateLimit
 		if errors.As(err, &rl) {
 			e.RetryAt = now.Add(modelCooldown(rl.RetryAfter))
 			c.store(e)
 		}
-		return e.Models, have && len(e.Models) > 0
+		return e.Models, kept(e, have)
 	}
 	if len(ids) == 0 {
 		// An empty catalog is not an account with no models; it is an
@@ -320,7 +323,16 @@ var gateRefusalNotices sync.Map
 // otherwise silent by design (it launches at the asked-for tier and writes
 // only to model-catalog.log), which is right for an outage and wrong for a
 // refusal we configured ourselves.
-func (c *ModelCache) noteGateRefusal(err error) {
+//
+// Which sentence depends on what the caller is about to be handed, because
+// that bool is the only thing TierPreflight acts on (ranger-base-co5n). With
+// no snapshot the answer really is UNKNOWN and the launch takes the tier as
+// asked. Over a RETAINED catalog the refused refresh changes nothing:
+// Models returns that prior reading as known, TierPreflight rules on it, and
+// a launch may still be demoted by it — so calling it UNKNOWN there
+// describes a launch that does not happen, and hides the fact the operator
+// needs, which is that the reading being ruled on is as old as it is.
+func (c *ModelCache) noteGateRefusal(err error, retained bool, age time.Duration) {
 	var g *GateRefusal
 	if c.Errw == nil || !errors.As(err, &g) {
 		return
@@ -328,7 +340,36 @@ func (c *ModelCache) noteGateRefusal(err error) {
 	if _, loaded := gateRefusalNotices.LoadOrStore(g.Cmd+"\x00"+g.Rule, struct{}{}); loaded {
 		return
 	}
+	if retained {
+		fmt.Fprintf(c.Errw, "posse: %v; tier availability is still %s, launches rule on that reading\n", g, catalogRead(age))
+		return
+	}
 	fmt.Fprintf(c.Errw, "posse: %v; tier availability UNKNOWN, launches take the tier as asked\n", g)
+}
+
+// kept: what a failed read falls back to — the same expression Models
+// returns its bool from, named once so the notice and the return cannot
+// drift apart.
+func kept(e modelEntry, have bool) bool { return have && len(e.Models) > 0 }
+
+// catalogAge is how old the retained reading is, or 0 when there is nothing
+// datable to be old: a snapshot with no `at` is not a snapshot from the
+// epoch, and neither is one written by a clock ahead of ours.
+func catalogAge(e modelEntry, now time.Time) time.Duration {
+	if e.At.IsZero() || now.Before(e.At) {
+		return 0
+	}
+	return now.Sub(e.At)
+}
+
+// catalogRead names the retained reading the way the notice needs it, with
+// the age when there is one — the age is the operator's whole decision:
+// minutes is a blip, a day is a gate that has been refusing since yesterday.
+func catalogRead(age time.Duration) string {
+	if age <= 0 {
+		return "the last catalog reading"
+	}
+	return "the catalog read " + BlindFor(age) + " ago"
 }
 
 // logRead makes the UNKNOWN side of the preflight observable. Before this

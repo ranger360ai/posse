@@ -186,27 +186,72 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 
 // A failed refresh does not make a retained catalog UNKNOWN. Models returns
 // that prior reading as known, so the refusal notice must not contradict the
-// bool on which TierPreflight acts.
+// bool on which TierPreflight acts — and must say how old the reading it
+// hands on is, which is the fact the operator decides on (ranger-base-co5n).
 func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
-	t.Skip("ranger-base-co5n: retained catalog is known but the refusal notice says UNKNOWN")
 	shim := gatedSecurityShim(t)
 	gateRefusalNotices.Delete("security\x00Bash(security:*)")
 
 	var errb strings.Builder
 	home := t.TempDir()
+	now := time.Now()
 	c := &ModelCache{
 		Path:   filepath.Join(home, "model-catalog.json"),
 		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainTokenAt(shim)},
 		Errw:   &errb,
+		Now:    func() time.Time { return now },
 	}
-	c.store(modelEntry{At: time.Now().Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
+	c.store(modelEntry{At: now.Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
 
 	ids, ok := c.Models(time.Hour)
 	if !ok || len(ids) != 1 || ids[0] != "claude-fable-5" {
 		t.Fatalf("failed refresh must retain the last known catalog: %v %v", ids, ok)
 	}
-	if got := errb.String(); !strings.Contains(got, "deny: Bash(security:*)") || strings.Contains(got, "UNKNOWN") {
+	got := errb.String()
+	if !strings.Contains(got, "deny: Bash(security:*)") || strings.Contains(got, "UNKNOWN") {
 		t.Errorf("notice must name the refusal without contradicting known=true: %q", got)
+	}
+	// Positive witness: silence, or the UNKNOWN sentence with the word
+	// filed off, would both satisfy the line above. The notice has to name
+	// the reading the launch is about to rule on, and its age.
+	if !strings.Contains(got, "the catalog read 2h00m ago") {
+		t.Errorf("notice must name the retained reading and how old it is: %q", got)
+	}
+}
+
+// The two halves of the notice are one decision, so pin the seam rather
+// than only the two sentences: kept() is what Models returns its bool from,
+// and a retained-but-empty snapshot is UNKNOWN like any other no-snapshot.
+func TestQAGateRefusalNoticeFollowsTheBoolItReports(t *testing.T) {
+	const key = "security\x00Bash(security:*)"
+	err := &GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}
+	now := time.Now()
+	for _, tc := range []struct {
+		name    string
+		e       modelEntry
+		have    bool
+		want    string
+		wantNot string
+	}{
+		{"no snapshot", modelEntry{}, false, "UNKNOWN", "catalog read"},
+		{"snapshot with no models", modelEntry{At: now.Add(-time.Hour)}, true, "UNKNOWN", "catalog read"},
+		{"retained", modelEntry{At: now.Add(-90 * time.Minute), Models: []string{"claude-fable-5"}}, true, "the catalog read 1h30m ago", "UNKNOWN"},
+		{"retained, undatable", modelEntry{Models: []string{"claude-fable-5"}}, true, "the last catalog reading", "UNKNOWN"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gateRefusalNotices.Delete(key)
+			t.Cleanup(func() { gateRefusalNotices.Delete(key) })
+			var errb strings.Builder
+			c := &ModelCache{Errw: &errb}
+			c.noteGateRefusal(err, kept(tc.e, tc.have), catalogAge(tc.e, now))
+			got := errb.String()
+			if !strings.Contains(got, "deny: Bash(security:*)") {
+				t.Fatalf("every arm names the rule that refused us: %q", got)
+			}
+			if !strings.Contains(got, tc.want) || strings.Contains(got, tc.wantNot) {
+				t.Errorf("want %q and not %q: %q", tc.want, tc.wantNot, got)
+			}
+		})
 	}
 }
 
@@ -223,7 +268,7 @@ func TestQAGateRefusalNoticeIsOnceUnderConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.noteGateRefusal(err)
+			c.noteGateRefusal(err, false, 0)
 		}()
 	}
 	wg.Wait()
