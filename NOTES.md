@@ -1361,6 +1361,57 @@ work with no other copy). `--force` on either command stands the guard
 down and nothing else — the landing still refuses to *remove* a tree that
 holds work. (`internal/rhq/reapguard.go`, `reapguard_qa_test.go`.)
 
+### The ownership refusal: a foreign row is not this home's to kill
+
+The kill's second refusal, and a different question from the first
+(rangerhq-selx). `posse kill <name>` resolves by *label*, and `Resolve`
+falls through to **foreign** rows — live herdr workspaces this `RHQ_HOME`
+holds no session meta for. That fallback is deliberate: `posse peek`,
+focus and the listings exist to show the whole herd, including rows posse
+did not make. Following it into a *destructive* path is the bug. Measured
+across two homes on one herdr server: instance A's `posse kill m1-collide`
+closed instance B's live workspace — exit 0, no warning, no ownership check
+— while the *create* one command earlier had refused the same name
+correctly. The resolver could always see the row was not A's; only the
+destructive path declined to act on it.
+
+So `posse kill` and the cockpit's `x` ask `ForeignKillRefusal` before the
+close, and name the **workspace id** in the refusal — the id is what an
+operator can carry to `herdr workspace list` or to the other home, because
+the *name* is precisely what is not unique across instances:
+
+```
+NOT killed: dispatch is a foreign workspace (w7) — this posse home holds no
+session meta for it, so it belongs to another instance or was made in herdr by
+hand; close it where it lives, or `posse kill dispatch --foreign` to close it
+from here anyway
+```
+
+Two flags, because they are two facts and reading one refusal is no
+evidence about the other: `--force` says "I have looked at *my* session's
+unfinished work" (the reap guard above), `--foreign` says "I mean the row
+that is not this home's". A foreign row carries no meta and so never
+reaches the reap guard at all, which is exactly why `--force` must not
+carry it — a flag typed from habit about one's own dirty tree would
+otherwise close another instance's live agent. The cockpit has no override
+key; `x` on a foreign row refuses at the keypress rather than asking to
+confirm a kill the backend will refuse anyway, and points at the CLI.
+
+`plugin/autostart.sh` is the reachable caller: its `--startup` husk
+replacement kills the autostart session by name, so on a shared server it
+was one restart away from closing the other instance's dispatch loop. It
+already ignores a failed kill and re-checks, so the refusal surfaces as
+`<session> still present after kill — not started` — a hook that does not
+start beats a hook that kills the wrong loop.
+
+What no override can repair is the other side's bookkeeping: the owning
+home's `state/herdr/<name>.yaml` still points at the workspace that was
+closed, and that file is outside this home. Its own next listing prunes it
+(ADR 0011 §2). One more reason the refusal is the default and the flag is
+the exception. (`ForeignKillRefusal` in `internal/rhq/herdrback.go`,
+`internal/rhq/foreignkill_qa_test.go`; the launch half is rangerhq-ynx8's
+`foreignHeld`.)
+
 Which runtime a session gets: `posse new --runtime` / `posse dispatch
 --runtime` > recipe `runtime:` > PID `runtime:` > config
 `default_runtime:` > `claude`. A PID's `command:` is the template for

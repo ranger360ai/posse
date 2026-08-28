@@ -812,7 +812,19 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			}
 		}
 	case key == "x":
-		if c.selSession() != nil {
+		if s := c.selSession(); s != nil {
+			// A foreign row is somebody else's to end (rangerhq-selx), and
+			// the cockpit shows the whole herd on purpose — including rows
+			// this home holds no meta for. Refused at the key rather than
+			// after the y/n, so the operator is not asked to confirm a kill
+			// that will not happen; the backend refuses it too, which is
+			// what makes this a wall and not a hint. There is no cockpit
+			// override: the way through is the CLI's --foreign, which the
+			// refusal names.
+			if err := rhq.ForeignKillRefusal(s); err != nil {
+				c.status = err.Error()
+				break
+			}
 			c.mode, c.confirm = modeConfirm, confirmKill
 		}
 	case key == "u":

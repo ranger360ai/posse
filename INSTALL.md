@@ -1339,14 +1339,19 @@ $ RHQ_HOME=<second home> posse dispatch --watch 5m -n 3
 
 ### Known gaps — read these before running two instances
 
-One hole is still open:
+No hole is open. Closed, and named here because the ADR lists them as
+designed work:
 
-| gap | what actually happens | bead |
-|---|---|---|
-| destructive paths do not refuse foreign workspaces | `posse kill` and cockpit `x` will close a workspace owned by the *other* instance; reachable today via the autostart hook's kill-and-replace | rangerhq-selx |
-
-Closed, and named here because the ADR lists them as designed work:
-
+- **Destructive paths refuse foreign workspaces** (rangerhq-selx) — `posse
+  kill` and the cockpit's `x` refuse a workspace this home holds no session
+  meta for, naming its workspace id so you can ask herdr (or the other
+  home) whose it is. `posse kill <name> --foreign` is you saying you mean
+  that row; `--force` is the reap guard's flag and does **not** carry it.
+  Read-only paths are unchanged — `posse peek`, focus and the listings
+  address foreign rows freely, which is how you see the herd at all. What
+  the override cannot repair is the other home's bookkeeping: its
+  `state/herdr/<name>.yaml` still points at what you just closed, until its
+  own next listing prunes it.
 - **`RHQ_HOME` rides every session** (rangerhq-ysly) — persona and crew
   alike, and into cages, so `posse`/`bd` run inside a session address the
   home that launched it.
@@ -1359,10 +1364,10 @@ Closed, and named here because the ADR lists them as designed work:
   (rangerhq-qfzr, ranger-base-cpyb), so a second `RHQ_HOME` gets its own
   state dir and no grant into the default instance's.
 
-Until `selx` lands, run two instances with your eyes open: do not let either
-instance's autostart hook run while the other has live sessions, and treat
-any cross-talk you hit as a harness bug worth filing — it is cheaper found
-here than on a work machine.
+Still run two instances with your eyes open: the fences above are the ones
+that were designed, not a proof that none is missing. Treat any cross-talk
+you hit as a harness bug worth filing — it is cheaper found here than on a
+work machine.
 
 Accepted and *not* fixed (ADR 0015 D5): the posse binary, the plugin
 registration, the detection manifests and the default cage image tag are

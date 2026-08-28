@@ -1900,6 +1900,42 @@ func (s *HerdrSession) Checkout() string {
 	return s.Dir
 }
 
+// ForeignKillRefusal is the one sentence every destructive path says about a
+// foreign row, and the check itself: nil for a session this home owns, the
+// refusal for one it does not.
+//
+// A foreign row is a live herdr workspace this RHQ_HOME holds no session
+// meta for — another instance's session, or a workspace made in herdr by
+// hand. The meta dir is the ownership record (ADR 0012's instance
+// boundary), so its absence is not "an unmanaged row we may tidy": it is
+// the whole evidence that the row is somebody else's. Read-only paths keep
+// the fallback — peek, focus and the listing exist to show the whole herd —
+// and only the paths that END something ask this.
+//
+// It names the workspace id because the name is precisely what is NOT
+// unique across instances: the id is what an operator carries to `herdr
+// workspace list` or to the other home to find out whose it is.
+//
+// The override is a flag rather than a prompt because destructive paths run
+// unattended (plugin/autostart.sh replaces a restored husk by killing it by
+// name), and a caller that means it must be able to say so in the command
+// itself. autostart deliberately does NOT say it: its husk replacement aims
+// at this home's own session, so on a shared server the refusal is the
+// right outcome and surfaces as its existing "still present after kill —
+// not started".
+//
+// What no override can repair is the other side's bookkeeping: the owning
+// home's state/herdr/<name>.yaml still points at the workspace this just
+// closed, and that file is outside this home — its own next listing prunes
+// it (prunable, ADR 0011 §2). One more reason the refusal, not the
+// override, is the default.
+func ForeignKillRefusal(s *HerdrSession) error {
+	if s == nil || !s.Foreign {
+		return nil
+	}
+	return Die("NOT killed: %s is a foreign workspace (%s) — this posse home holds no session meta for it, so it belongs to another instance or was made in herdr by hand; close it where it lives, or `posse kill %s --foreign` to close it from here anyway", s.Name, s.WorkspaceID, s.Name)
+}
+
 // KillLanding is what a kill did with a session's own git worktree
 // (rangerhq-09o2). Nil Tree means the session shared the checkout — every
 // session before per-session worktrees, and every crew session — and there
@@ -1926,7 +1962,7 @@ type KillLanding struct {
 // gone can say so to git, which is a decision a human should have to make
 // in their own words.
 func (b *HerdrBackend) KillSessionAndLand(name string) (*KillLanding, error) {
-	return b.killAndLand(name, false)
+	return b.killAndLand(name, KillOpts{})
 }
 
 // ForceKillSessionAndLand is the same kill with the ADR 0013 §4 reap guard
@@ -1935,10 +1971,31 @@ func (b *HerdrBackend) KillSessionAndLand(name string) (*KillLanding, error) {
 // holds work (RemoveSessionTree), so a forced kill of a dirty session
 // worktree still keeps the tree and says so.
 func (b *HerdrBackend) ForceKillSessionAndLand(name string) (*KillLanding, error) {
-	return b.killAndLand(name, true)
+	return b.killAndLand(name, KillOpts{Force: true})
 }
 
-func (b *HerdrBackend) killAndLand(name string, force bool) (*KillLanding, error) {
+// KillSessionAndLandOpts is the same kill with every refusal the operator
+// may stand down spelled out — the form `posse kill` itself calls, since it
+// is the one caller that has flags to carry.
+func (b *HerdrBackend) KillSessionAndLandOpts(name string, o KillOpts) (*KillLanding, error) {
+	return b.killAndLand(name, o)
+}
+
+// KillOpts is the consent a kill was given: one field per refusal it may
+// stand down, and the zero value refuses both ways. They are separate flags
+// because they are separate facts, and reading one refusal is no evidence
+// about the other: --force says "I have looked at MY session's unfinished
+// work", --foreign says "I mean the row that is not this home's". A foreign
+// row carries no meta and so never reaches the reap guard at all, which is
+// exactly why --force must not carry it — a flag typed from habit about
+// one's own dirty tree would otherwise close another instance's live agent
+// (rangerhq-selx).
+type KillOpts struct {
+	Force   bool // ADR 0013 §4's reap guard: dirty tree + open bead is killed anyway
+	Foreign bool // the ownership refusal: a workspace this home holds no meta for is closed anyway
+}
+
+func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, error) {
 	// Before anything: the meta is the only record of which tree and branch
 	// belong to this session, and the kill below deletes it (ADR 0011 §3).
 	m, hadMeta := b.readMeta(name)
@@ -1948,7 +2005,7 @@ func (b *HerdrBackend) killAndLand(name string, force bool) (*KillLanding, error
 	// tree is not killed (ADR 0013 §4, reapguard.go). It runs on the shared
 	// checkout too, which is where the near-miss was — there is no session
 	// branch there for the landing below to refuse over.
-	if hadMeta && !force {
+	if hadMeta && !opts.Force {
 		if why := b.ReapRefusal(m); why != "" {
 			return nil, Die("NOT killed: %s — look first (posse attach %s), or `posse kill %s --force`", why, name, name)
 		}
@@ -1957,6 +2014,25 @@ func (b *HerdrBackend) killAndLand(name string, force bool) (*KillLanding, error
 	s, err := b.Resolve(name)
 	if err != nil {
 		return nil, err
+	}
+	// The ownership check (rangerhq-selx), after the row is found and
+	// before it is closed. Resolve falls back to foreign workspaces by
+	// label on purpose, and for `posse peek`/`posse prompt` that is the
+	// point — but a destructive path that follows the fallback closes a
+	// live agent belonging to whoever does own it. Measured across two
+	// RHQ_HOMEs on one herdr: instance A's `posse kill m1-collide` closed
+	// instance B's workspace, exit 0, no warning.
+	//
+	// Ordered after the reap guard above rather than before it, because
+	// the guard reads the meta and Resolve is what makes a row foreign.
+	// The two overlap on one board only — a meta whose workspace is
+	// missing from this listing while a stranger's row wears its label
+	// (rangerhq-yt1p/9nso) — where the guard may speak first. Both refuse,
+	// and neither closes anything, which is the property that matters.
+	if !opts.Foreign {
+		if err := ForeignKillRefusal(s); err != nil {
+			return nil, err
+		}
 	}
 	if err := b.H.CloseWorkspace(s.WorkspaceID); err != nil {
 		return nil, err

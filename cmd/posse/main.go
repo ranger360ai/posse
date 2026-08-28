@@ -202,7 +202,7 @@ func main() {
 		}
 
 	case "kill":
-		args = need(args, 1, "posse kill <name> [--force]")
+		args = need(args, 1, "posse kill <name> [--force] [--foreign]")
 		// A kill is also the moment a session's own worktree is retired:
 		// its branch lands on the repo's branch and the tree goes away
 		// (rangerhq-09o2). It refuses to remove a tree that still holds
@@ -211,18 +211,26 @@ func main() {
 		// And before any of that, the reap guard: a session still holding an
 		// open bead over an uncommitted tree is not killed at all (ADR 0013
 		// §4). --force is the operator saying they have read the refusal.
-		force := false
+		//
+		// And the ownership refusal beside it (rangerhq-selx): a workspace
+		// this home holds no meta for is another instance's session (or a
+		// hand-made herdr one), and a kill by name used to follow Resolve's
+		// label fallback straight into closing it. --foreign is the
+		// operator saying they mean that row; it is its own flag because
+		// --force is about their own session's unfinished work and says
+		// nothing about whose session this is.
+		o := rhq.KillOpts{}
 		for _, f := range args[1:] {
-			if f != "--force" {
+			switch f {
+			case "--force":
+				o.Force = true
+			case "--foreign":
+				o.Foreign = true
+			default:
 				die(rhq.Die("unknown flag: %s", f))
 			}
-			force = true
 		}
-		kill := hb.KillSessionAndLand
-		if force {
-			kill = hb.ForceKillSessionAndLand
-		}
-		landing, err := kill(args[0])
+		landing, err := hb.KillSessionAndLandOpts(args[0], o)
 		if err != nil {
 			die(err)
 		}
@@ -1432,6 +1440,9 @@ sessions (herdr workspaces):
                                  still holding an in_progress bead over uncommitted
                                  work is NOT killed at all (ADR 0013 §4)
       --force                  kill it anyway, once you have read the refusal
+      --foreign                close a workspace this home holds no session meta for
+                               (another instance's session, or one made in herdr by
+                               hand) — refused without it, naming the workspace id
   posse worktrees [--dir <repo>] [--land]
                                  session worktrees and what has not landed yet;
                                  --land merges every branch that will land (it

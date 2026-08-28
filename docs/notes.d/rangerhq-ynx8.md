@@ -57,8 +57,10 @@ Three things that had to be got right:
   Resolve" reads as a regression.
 
 The refusal names both ways out, because unlike a busy session it is
-permanent until the operator acts: `posse kill <name> or rename it in herdr
-to free the name`.
+permanent until the operator acts: `posse kill <name> --foreign or rename it
+in herdr to free the name`. (The flag is rangerhq-selx's, which made the
+kill itself refuse a foreign row; advice naming a command that would now be
+refused is not advice.)
 
 **Residual, and it is a doc line rather than code.** A meta backfilled BY
 HAND defaults `crew: false`, so a by-hand recreate hands the conversation to

@@ -59,7 +59,9 @@ func TestNewHelpCreatesNothing(t *testing.T) {
 		{[]string{"new", "--help"}, 0, "usage: posse new <name>"},
 		{[]string{"new", "-h"}, 0, "usage: posse new <name>"},
 		{[]string{"new", "-x"}, 1, "bad session name '-x'"},
-		{[]string{"kill", "--help"}, 0, "usage: posse kill <name>"},
+		// The override the ownership refusal names has to exist where the
+		// refusal says it does (rangerhq-selx).
+		{[]string{"kill", "--help"}, 0, "usage: posse kill <name> [--force] [--foreign]"},
 		{[]string{"attach", "--help"}, 0, "usage: posse attach <name>"},
 		{[]string{"up", "--help"}, 0, "usage: posse attach <name>"},
 		{[]string{"local", "--help"}, 0, "usage: posse attach <name>"},

@@ -869,3 +869,30 @@ func TestCockpitCellScanFoldGuards(t *testing.T) {
 		}
 	}
 }
+
+// rangerhq-selx: `x` on a foreign row — a live workspace this home holds no
+// session meta for, which the cockpit lists on purpose so the whole herd is
+// visible — is refused at the key. Confirming a kill that the backend will
+// refuse anyway is a worse conversation than saying so at once, and the
+// cockpit offers no override: the refusal names the CLI flag that is one.
+func TestQAForeignRowIsNotKillableFromTheCockpit(t *testing.T) {
+	c := qaProgFixture()
+	c.sessions = append(c.sessions, rhq.HerdrSession{
+		Name: "someone-elses", WorkspaceID: "w9", Emoji: "👽", Status: "working", Foreign: true})
+	c.cursor = len(c.sessions) - 1
+
+	c.handleKey([]byte("x"))
+	if c.mode == modeConfirm {
+		t.Fatalf("x on a foreign row asked to confirm a kill: mode %d", c.mode)
+	}
+	if !strings.Contains(c.status, "w9") || !strings.Contains(c.status, "--foreign") {
+		t.Errorf("the refusal must name the workspace id and the way through: %q", c.status)
+	}
+
+	// Still a sessions key on this home's own rows.
+	c.cursor, c.mode, c.status = 0, modeNormal, ""
+	c.handleKey([]byte("x"))
+	if c.mode != modeConfirm || c.confirm != confirmKill {
+		t.Errorf("x on our own session: mode %d confirm %d status %q", c.mode, c.confirm, c.status)
+	}
+}

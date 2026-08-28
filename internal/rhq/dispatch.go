@@ -2168,7 +2168,10 @@ func foreignHoldLine(session string) string {
 }
 
 func foreignFreeLine(session string) string {
-	return fmt.Sprintf("posse kill %s or rename it in herdr to free the name", session)
+	// --foreign because the kill itself now refuses a foreign row without
+	// it (rangerhq-selx): advice that names a command which will be refused
+	// is not advice.
+	return fmt.Sprintf("posse kill %s --foreign or rename it in herdr to free the name", session)
 }
 
 // launchSession is the shared front half of both dispatch flavors:
