@@ -701,8 +701,8 @@ func main() {
 		fmt.Fprintf(out, "%d bead(s) %s\n", n, verb)
 
 	case "status":
-		// The governance surface as a command (the archive's
-		// governance-surface ADR §2, bead rangerhq-81y0): the same
+		// The governance surface as a command (ADR 0029 §2, bead
+		// rangerhq-81y0): the same
 		// computation the pulse tick and the cockpit's GOVERNANCE block
 		// render, printed once and answered with an exit code.
 		//

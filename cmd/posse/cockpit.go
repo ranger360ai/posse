@@ -115,8 +115,8 @@ type cockpit struct {
 	planLine   string
 	planReadAt time.Time // last SUCCESSFUL reading (or cockpit start) — the header's blind clock
 
-	// The governance surface (the archive's governance-surface ADR §2, bead
-	// rangerhq-81y0): the third rendering of ShopCheck, drawn as a block
+	// The governance surface (ADR 0029 §2, bead rangerhq-81y0): the third
+	// rendering of ShopCheck, drawn as a block
 	// above SESSIONS. It is scanned off the event loop like the cost and
 	// plan readings — the check talks to herdr, bd, the plan snapshot and
 	// the kernel, and the draw path does no I/O.

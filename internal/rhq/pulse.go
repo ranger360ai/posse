@@ -13,8 +13,8 @@ package rhq
 // shop check running behind it.
 //
 // Sensing is no longer this file's: the condition set moved to govern.go
-// when the governance surface widened it to the G-table (bead rangerhq-81y0
-// — see that file's header). The pulse is now one of three renderings of
+// when the governance surface (ADR 0029) widened it to the G-table (bead
+// rangerhq-81y0 — see that file's header). The pulse is now one of three renderings of
 // ShopCheck, and it keeps exactly two things of its own: the fingerprint
 // that dedups DELIVERY, and delivery itself. state/pulse.yaml stays dedup
 // state and is never a record anyone reads for truth.

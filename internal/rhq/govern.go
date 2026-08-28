@@ -2,12 +2,11 @@ package rhq
 
 // The governance surface: where "needs a human" is raised.
 //
-// Design: the archive's governance-surface ADR §1-2 (bead rangerhq-81y0,
-// from rangerhq-e37c; amended for G9 by the archive's coordinator-is-not-a-
-// lane ADR, which this repo restates as ADR 0018). Numbers in that archive
-// do not resolve here — HISTORY.md "ADR numbering" — so it is cited by
-// title. The public restatement is handed off; the design's two load-bearing
-// lines are quoted where they decide something below.
+// Design: ADR 0029 §1-2 (docs/adr/0029-governance-surface.md, restating the
+// archive's governance-surface ADR; bead rangerhq-81y0, from archive bead
+// rangerhq-e37c; amended for G9 by the archive's coordinator-is-not-a-lane
+// ADR, cited by title — that one has no restatement here yet). The design's
+// two load-bearing lines are quoted where they decide something below.
 //
 // **Facts get computed, decisions get beads.** A governance condition is a
 // checkable fact — computable by any process, twice, with the same answer —

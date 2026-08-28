@@ -1,7 +1,7 @@
 package rhq
 
-// The governance surface (the archive's governance-surface ADR §1-2, bead
-// rangerhq-81y0): the G-table computed live, and the three renderings of
+// The governance surface (ADR 0029 §1-2, bead rangerhq-81y0): the G-table
+// computed live, and the three renderings of
 // that one computation.
 //
 // Every test here injects the readings that would otherwise touch the
