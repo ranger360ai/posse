@@ -341,6 +341,15 @@ func (d *Dispatcher) planGuard() {
 	}
 	u, readAt, err := c.Read(planGuardMaxAge(d.App.PlanUsageTTL(d.errw()), d.App.PlanGuardBlindMax(io.Discard)))
 	if err != nil {
+		// Structural absence is not blindness (ADR 0019 D3). It reaches
+		// HERE and not the Reader==nil branch above when the store went
+		// away between the availability check and this read, or when a
+		// caller supplied the reader and no availability question was ever
+		// asked. Same state, so the same answer: guard OFF, no clock.
+		if ns := NoSourceReason(err); ns != nil {
+			d.planUnconfigured(ns)
+			return
+		}
 		d.blindGuard(now, err)
 		return
 	}
@@ -386,15 +395,51 @@ func (d *Dispatcher) planGuard() {
 // why, and says which state this is — because "off" read as "blind", or
 // either read as "fine", is exactly the class of monitoring silence this
 // guard already cost a day to.
+//
+// The credential half of the same state has its own sentence below
+// (planUnconfigured): an adapter that ships and a machine with nothing for
+// it to present are guard-off for a reason one command fixes.
 func (d *Dispatcher) planNoAdapter(err error) {
 	if d.planNoAdapterSaid {
 		return
 	}
-	d.planNoAdapterSaid = true
 	if err == nil {
 		err = &NoPlanAdapter{Why: "no plan-window adapter"}
 	}
+	// A missing CREDENTIAL is a different sentence from a missing adapter,
+	// and the difference is the operator's next move (ADR 0019 D3).
+	if ns := NoSourceReason(err); ns != nil {
+		d.planUnconfigured(ns)
+		return
+	}
+	d.planNoAdapterSaid = true
 	d.eprintf("plan guard: %v — thresholds are set, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", err)
+}
+
+// planUnconfigured is planNoAdapter's sibling for the other structural
+// absence: an adapter posse ships, on a machine that holds no credential it
+// could present (ADR 0019 D3). Same state — the guard is armed and cannot
+// run — so the same outcome, and it shares the once-per-process flag
+// because it is one sentence about one guard.
+//
+// What differs is the sentence, and the difference is worth a branch. "No
+// plan-window adapter serves this machine" is true here and reads as "posse
+// does not support your provider" — a wall. What is actually there is a
+// platform, a store that platform would need, and one command that writes
+// it, which is what *NoSource carries and what this prints. An operator can
+// act on the second without asking anybody.
+//
+// The blind clock never starts: blindSince and blindFailed are untouched,
+// planBlind is never set, so no bead parks and no pass degrades. Blind stays
+// "a source exists and the read failed" (ADR 0018 §1, unamended) — parking
+// a fleet on a condition no retry can change is a brake with no release,
+// and a Linux box that has never run `claude` would hold it forever.
+func (d *Dispatcher) planUnconfigured(ns *NoSource) {
+	if d.planNoAdapterSaid {
+		return
+	}
+	d.planNoAdapterSaid = true
+	d.eprintf("plan guard: %v — thresholds are set, so the guard is UNCONFIGURED on this platform, not blind: no clock is running and no pass will park on this\n", ns)
 }
 
 // unmatchedThresholds names a `plan_guard_<window>:` that gates nothing

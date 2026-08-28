@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -1076,6 +1077,72 @@ func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
 	at = at.Add(time.Hour)
 	if got := c.planSegment(planRead{ledger: true}); got != "" {
 		t.Errorf("unguarded stays silent whatever Dial E says, got %q", got)
+	}
+}
+
+// ADR 0019 D3 (ranger-base-vmqg): the fourth state. An adapter ships, this
+// platform holds no credential for it, and the header must say so as itself
+// — no blind timer counting up toward a park that will never come, and not
+// the third state's words either. "No adapter" reads as "posse does not
+// support your provider"; what is actually missing is one login.
+func TestCockpitPlanNoCredentialSourceIsOffNotBlind(t *testing.T) {
+	at := time.Date(2026, 8, 19, 20, 53, 0, 0, time.UTC)
+	c := &cockpit{now: func() time.Time { return at }}
+
+	got := c.planSegment(planRead{guarded: true, noSource: true})
+	if want := "plan — · guard off, no credential source"; got != want {
+		t.Fatalf("no credential source = %q, want %q", got, want)
+	}
+	// An hour later it is the same line: nothing is counting.
+	at = at.Add(time.Hour)
+	if got := c.planSegment(planRead{guarded: true, noSource: true}); got != "plan — · guard off, no credential source" {
+		t.Errorf("no clock may run on structural absence, got %q", got)
+	}
+	// Dial E does not qualify it — the ledger brake is about blindness, and
+	// this is not blindness.
+	if got := c.planSegment(planRead{guarded: true, noSource: true, ledger: true}); strings.Contains(got, "ledger brake") {
+		t.Errorf("guard-off is not a degrade, got %q", got)
+	}
+	// The third state keeps its own words.
+	if got := c.planSegment(planRead{guarded: true, noAdapter: true}); got != "plan — · guard off, no adapter" {
+		t.Errorf("no adapter = %q, want the unchanged line", got)
+	}
+	// Unarmed says nothing, as ever: there is no guard to be off.
+	if got := c.planSegment(planRead{noSource: true}); got != "" {
+		t.Errorf("unguarded stays silent, got %q", got)
+	}
+}
+
+// planOffState is the classification the header forks on, pinned without a
+// cockpit: both ways a *NoSource arrives read as the same state, and a
+// refusal that is not one reads as the adapter state it is.
+func TestCockpitPlanOffStateReadsBothArrivals(t *testing.T) {
+	ns := &rhq.NoSource{Runtime: "claude", Purpose: rhq.CredMeter, GOOS: "linux",
+		Store: "the Claude Code credentials file", Arm: "log in once with `claude`"}
+	cases := []struct {
+		name               string
+		err                error
+		source, no_adapter bool
+	}{
+		// Caught by the availability check, so the reason arrives flattened
+		// into a sentence AND kept as a value.
+		{"availability check", &rhq.NoPlanAdapter{Why: "no adapter serves this machine", Errs: []error{ns}}, true, false},
+		// Caught by the read: the store went away after that check.
+		{"the read", ns, true, false},
+		{"wrapped", fmt.Errorf("reading the meter: %w", ns), true, false},
+		// A refusal with no credential in it is the third state, unchanged.
+		{"no adapter", &rhq.NoPlanAdapter{Why: "no plan-window adapter is compiled in"}, false, true},
+		// Everything else is blindness and keeps its clock.
+		{"ordinary failure", errors.New("usage endpoint unreachable"), false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			source, noAdapter := planOffState(c.err)
+			if source != c.source || noAdapter != c.no_adapter {
+				t.Errorf("planOffState = (noSource %v, noAdapter %v), want (%v, %v)",
+					source, noAdapter, c.source, c.no_adapter)
+			}
+		})
 	}
 }
 

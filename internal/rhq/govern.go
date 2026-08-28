@@ -329,7 +329,14 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// same reason. An unarmed guard reads nothing and reports nothing: the
 	// blind window is a state of a guard that exists.
 	plan, planErr := in.planReading(now)
-	if planErr != nil {
+	// A read that found no store at all is not blindness and never becomes
+	// a G5 (ADR 0019 D3). Caught here because it can arrive from the READ —
+	// the availability check above returns nil,nil for the state it catches
+	// itself, but a store that went away after that check comes back as an
+	// error, and "monitoring itself is broken" is the wrong diagnosis for a
+	// machine that has simply never been logged in. The guard's own pass
+	// says the true one, once (dispatch.go planUnconfigured).
+	if planErr != nil && NoSourceReason(planErr) == nil {
 		blindFor, past := in.blindPast(now)
 		if past {
 			add("G5", GovUrgent, "guard-blind",

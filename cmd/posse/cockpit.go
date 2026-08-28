@@ -202,7 +202,29 @@ type planRead struct {
 	at        time.Time // when that reading was TAKEN (zero = now) — it may be a shared one, minutes old
 	guarded   bool      // any plan_guard_<window>: configured — then blindness is worth saying
 	noAdapter bool      // the guard is armed and nothing here can read a meter (ADR 0012 D4)
+	noSource  bool      // the guard is armed, an adapter ships, and this platform holds no credential (ADR 0019 D3)
 	ledger    bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
+}
+
+// planOffState classifies a failed read into the two states that are NOT
+// blindness. Both mean the guard is off and no clock is running; they differ
+// in what the operator would do next, which is the whole reason the header
+// says which one it is.
+//
+// It is its own function so the classification can be pinned without a
+// cockpit, a cache and a machine in a particular state — a rule this thin
+// tested only through a rig is a rule nobody re-checks when the error
+// plumbing moves.
+func planOffState(err error) (noSource, noAdapter bool) {
+	if rhq.NoSourceReason(err) != nil {
+		// Asked first and asked through the seam's own reader: a NoSource
+		// arrives BOTH on its own (the store went away after the
+		// availability check) and inside a *NoPlanAdapter (the check caught
+		// it), and both are the same fact about this platform.
+		return true, false
+	}
+	var na *rhq.NoPlanAdapter
+	return false, errors.As(err, &na)
 }
 
 // scanPlan runs off the event loop; the reading lands on c.plans. Read-only
@@ -225,11 +247,11 @@ func (c *cockpit) scanPlan() {
 	if u, at, err := c.app.PlanCache("cockpit").Read(c.app.PlanUsageTTL(io.Discard)); err == nil {
 		r.line, r.at = u.Line(), at
 	} else {
-		// The one failure that is not blindness: no adapter, so no meter and
-		// no clock (ADR 0012 D4). The header must not show a blind timer
-		// counting up toward a park that will never come.
-		var na *rhq.NoPlanAdapter
-		r.noAdapter = errors.As(err, &na)
+		// The failures that are not blindness: no adapter (ADR 0012 D4) and
+		// no credential store on this platform (ADR 0019 D3). Neither has a
+		// clock, so the header must not show a blind timer counting up
+		// toward a park that will never come.
+		r.noSource, r.noAdapter = planOffState(err)
 	}
 	select {
 	case c.plans <- r:
@@ -246,7 +268,11 @@ func (c *cockpit) scanPlan() {
 // start, the same rule the dispatcher's blind window uses.
 //
 // A guard with no adapter is the third state and says so: it is off, not
-// blind, and no clock is running (ADR 0012 D4).
+// blind, and no clock is running (ADR 0012 D4). A guard whose adapter ships
+// and whose platform holds no credential is the fourth, and gets its own
+// words rather than the third's (ADR 0019 D3) — "no adapter" on a box that
+// has simply never run `claude` sends an operator looking for a missing
+// feature instead of running one command.
 //
 // ADR 0018 §1 made blindness two outcomes, so the header names which one is
 // waiting: with Dial E armed an unattended pass past `plan_guard_blind_max:`
@@ -270,6 +296,13 @@ func (c *cockpit) planSegment(r planRead) string {
 	}
 	if !r.guarded {
 		return "" // no guard: nothing to be blind about, nothing to say
+	}
+	if r.noSource {
+		// Not "no adapter": one ships, and what is missing is a credential
+		// this platform has never been given. The dispatch line carries the
+		// store and the command; the header carries which of the two
+		// guard-off states this is, which is what a glance is for.
+		return "plan — · guard off, no credential source"
 	}
 	if r.noAdapter {
 		return "plan — · guard off, no adapter"

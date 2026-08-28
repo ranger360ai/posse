@@ -21,6 +21,7 @@ package rhq
 // Everything here is fail-open: a monitoring failure never halts the fleet.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -116,9 +117,46 @@ var planAdapters = []planAdapter{anthropicPlanAdapter}
 // brake with no release. And "unarmed" means nobody asked for a guard,
 // which is silence on purpose. This is the third thing, and it gets said
 // out loud: the operator armed a guard that cannot exist here.
-type NoPlanAdapter struct{ Why string }
+type NoPlanAdapter struct {
+	Why string
+	// Errs are the adapters' own reasons, kept as VALUES and not only
+	// flattened into Why. A read outcome is read by its TYPE everywhere
+	// else in posse (NoSource, GateRefusal, RateLimit); a reason that
+	// survives only as a substring of a sentence is a reason no caller can
+	// fork on, and ADR 0019 D3 needs exactly that fork.
+	Errs []error
+}
 
 func (e *NoPlanAdapter) Error() string { return e.Why }
+
+// soleNoSource is the structural absence behind this refusal when EVERY
+// adapter's reason is one — nil otherwise, and nil for a refusal with no
+// reasons at all (a build with no adapter compiled in, which is a fact
+// about the binary and not about this machine's credentials).
+//
+// "Every" is load-bearing and is why this is not an errors.As traversal.
+// The line it licenses says a login would arm the guard, and that is only
+// true when a missing credential is the WHOLE of what is missing. With two
+// adapters, one lacking a credential and one lacking an endpoint, the guard
+// is still off for something no login fixes, and the generic sentence is
+// the honest one. One adapter ships today; the rule is written for the
+// second, because the second is when a wrong sentence would appear.
+func (e *NoPlanAdapter) soleNoSource() *NoSource {
+	if len(e.Errs) == 0 {
+		return nil
+	}
+	var first *NoSource
+	for _, err := range e.Errs {
+		var ns *NoSource
+		if !errors.As(err, &ns) {
+			return nil
+		}
+		if first == nil {
+			first = ns
+		}
+	}
+	return first
+}
 
 // PlanAdapter returns the adapter this instance runs, or the reason no
 // shipped one can serve it. The reason is a FACT the caller reports, never
@@ -127,10 +165,12 @@ func (e *NoPlanAdapter) Error() string { return e.Why }
 // receipt).
 func PlanAdapter() (PlanReader, error) {
 	var why []string
+	var errs []error
 	for _, a := range planAdapters {
 		if a.Unavailable != nil {
 			if err := a.Unavailable(); err != nil {
 				why = append(why, fmt.Sprintf("%s (%v)", a.Name, err))
+				errs = append(errs, err)
 				continue
 			}
 		}
@@ -139,7 +179,10 @@ func PlanAdapter() (PlanReader, error) {
 	if len(why) == 0 {
 		return nil, &NoPlanAdapter{Why: "no plan-window adapter is compiled in"}
 	}
-	return nil, &NoPlanAdapter{Why: "no plan-window adapter serves this machine: " + strings.Join(why, "; ")}
+	return nil, &NoPlanAdapter{
+		Why:  "no plan-window adapter serves this machine: " + strings.Join(why, "; "),
+		Errs: errs,
+	}
 }
 
 // RateLimit is the endpoint saying "not now": 429, or a 503 that carries

@@ -113,6 +113,41 @@ func (e *NoSource) Error() string {
 	return s
 }
 
+// NoSourceReason reads err as structural absence, or nil. It is the one
+// place the two ways a NoSource arrives are read as one thing:
+//
+//   - on its own, from a read — the store was there when the adapter was
+//     chosen and gone when the token was wanted, or the caller never asked
+//     the availability question at all;
+//   - inside a *NoPlanAdapter, from the availability check that caught it
+//     BEFORE a reader was built (planusage.go PlanAdapter).
+//
+// Same platform, same store, same one-command fix. Which moment noticed is
+// an implementation detail of the guard's plumbing, and the operator's
+// answer must not depend on it — a race between two code paths deciding
+// whether a fleet parks is the shape of bug this whole outcome class exists
+// to remove.
+//
+// The *NoPlanAdapter arm is asked FIRST and asked by its own rule
+// (soleNoSource): with several adapters, one missing a credential and one
+// missing something else, a plain errors.As would find the NoSource and
+// license a sentence that is not true. Structural absence is the answer
+// only when it is the whole answer.
+func NoSourceReason(err error) *NoSource {
+	if err == nil {
+		return nil
+	}
+	var na *NoPlanAdapter
+	if errors.As(err, &na) {
+		return na.soleNoSource()
+	}
+	var ns *NoSource
+	if errors.As(err, &ns) {
+		return ns
+	}
+	return nil
+}
+
 // ReadCredential is the seam. Nothing else in posse may acquire a credential
 // (ADR 0019 D1); a vault, when it is priced (ranger-base-epz8), is a third
 // answer to this call and not a second migration.
