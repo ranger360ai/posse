@@ -1,0 +1,73 @@
+# Run the repo's own gate — `go vet` and `make test` — on every push to main
+# and every pull request, on BOTH platforms (ranger-base-160, part (b) of
+# ranger-base-dbe).
+#
+# Why this exists at all: `make test-linux` (part (a)) already runs the suite
+# in a Linux container from a mac, but it is a command a human has to REMEMBER.
+# ranger-base-fjj (ServerGen fenced herdr generations on an inode number, which
+# ext4 recycles and APFS does not) and ranger-base-gaf (a test hardcoding
+# /bin/zsh) both reached a tag because the first thing that ever ran the suite
+# on Linux was release.yml — on a tag, which is the worst place to learn it.
+# This puts the platform split at the commit that caused it.
+#
+# BLAST RADIUS: nothing deployed, nothing published, no credential. No token is
+# used and no artifact leaves the runner. What it changes is what a push DOES:
+# two runner jobs per push to main and per PR, and a red one is visible on this
+# public repo. GitHub documents standard runners as free for public repos,
+# macos-latest included.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A superseded run is waste, so a newer push to the same ref cancels the older
+# one. Note the consequence on main: `github.ref` is refs/heads/main for every
+# push to it, so back-to-back merges cancel the earlier commit's run and only
+# the tip is verified. Acceptable because main is fast-forwarded from bead
+# branches that ran this same gate as PRs; drop cancel-in-progress if main ever
+# takes commits that were not gated first.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. This workflow never writes to the repo, the release, or the tap.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # fail-fast off: the whole point is the platform SPLIT. A darwin-only
+    # assumption that reds ubuntu must not cancel the macOS job that would have
+    # shown it passing there — that contrast is the diagnosis.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Full history: `make test` ends in scripts/audit-silent-reverts.sh,
+      # which walks every commit. A shallow clone makes it wrong rather than
+      # loud. Same reason release.yml pins fetch-depth: 0.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Identical to release.yml's Go setup on purpose: the version that gates
+      # a push and the version that builds a tag are the same toolchain, read
+      # from go.mod. check-latest: false so a new patch release upstream cannot
+      # change what CI ran without a commit here.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      - name: vet
+        run: go vet ./...
+
+      # The repo's own gate, not a lighter one. `make test` is `go test ./...`
+      # plus the silent-revert audit — the detector for the failure class a
+      # green suite does not report (rangerhq-8rtf).
+      - name: test
+        run: make test
