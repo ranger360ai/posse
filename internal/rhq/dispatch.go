@@ -158,6 +158,14 @@ type Dispatcher struct {
 	planBlind    string
 	overflow     Overflow
 	overflowUsed int
+
+	// The account stage (ADR 0013 §5), per uncounted runtime this pass
+	// touched: its `uncounted_cap_<runtime>:`, its rolling-window count and
+	// what this pass sent it (uncounted.go). Like every other reading here
+	// it is one pass's, reset by Run. A nil value means "asked, and this
+	// runtime is counted" — the memo that keeps the cap's typo line and the
+	// ledger scan at once per pass rather than once per bead.
+	uncounted map[string]*uncountedPool
 }
 
 // DefaultRelaunchGrace is how long after a launch RelaunchAgent refuses to
@@ -1286,6 +1294,10 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
 	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0
+	// ADR 0013 §5: the account stage's caps, counts and per-pass tallies are
+	// this pass's too — a --watch loop must not report last pass's launches
+	// or brake on a ledger count it took an hour ago.
+	d.uncounted = map[string]*uncountedPool{}
 	// ADR 0013 §2: which panes this pass gave up on is this pass's memory.
 	d.stranded = nil
 
@@ -1417,6 +1429,13 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	if stillWorking > 0 {
 		fmt.Fprintf(d.Out, "◷ %d bead(s) still with their agent — claims kept; a later pass sees them held, not free\n", stillWorking)
 	}
+
+	// ADR 0013 §5's first obligation, at the end of the pass and after the
+	// gather so it sits with the summary: every pass NAMES how many beads it
+	// sent to a runtime no cost adapter reads. Nothing else will — not
+	// `posse cost`, not the cockpit footer, not Dial E's ledger — so this
+	// line is the whole visibility of a second live spend channel.
+	d.uncountedReport()
 
 	// The end-of-pass reaper (rangerhq-us8): guard every session this pass
 	// itself just prompted — a settle read this soon after a fresh prompt is
@@ -1645,6 +1664,16 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 				launchRT, moved = dec.Runtime, dec.Moved
 			}
 		}
+		// ADR 0013 §5, once the runtime this launch is actually going to is
+		// settled — including an overflow move onto a second pool, which is
+		// capped by the pool it lands on. A runtime no cost adapter reads
+		// has no meter to judge against, so the count of beads posse itself
+		// sent there stands in for one; with no cap set this never skips
+		// anything and the pass's account line is the whole obligation.
+		if skip := d.uncountedSkip(launchRT); skip != "" {
+			fmt.Fprintf(d.Out, "– %-14s %s\n", is.ID, skip)
+			continue
+		}
 		if st.StepDown() {
 			// Dial E is untouched by the overflow: it still resolves the
 			// tier, and on a moved bead its step-down is judged against the
@@ -1665,6 +1694,10 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 				over = fmt.Sprintf(" [%s ← overflow]", launchRT)
 			}
 			fmt.Fprintf(d.Out, "· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, over)
+			// Booked in memory only (noteUncounted writes no ledger under
+			// --dry-run): a dry pass over a reached cap then shows the same
+			// skips the real one would, and its account line says "would".
+			d.noteUncounted(is, persona, launchRT)
 			dispatched++
 			attempts++
 			busy[slot] = true
@@ -1721,10 +1754,15 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// count of what was actually sent (ADR 0010 §3).
 		if moved {
 			d.overflowUsed++
-			if err := d.App.AppendOverflow(OverflowEntry{At: d.now(), Runtime: launchRT, Bead: is.ID, Persona: persona}); err != nil {
+			if err := d.App.AppendOverflow(LedgerEntry{At: d.now(), Runtime: launchRT, Bead: is.ID, Persona: persona}); err != nil {
 				fmt.Fprintf(d.errw(), "plan guard: overflow ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
 			}
 		}
+		// The account ledger, on the same rule and for a different question:
+		// the overflow log says which beads the plan guard MOVED, this one
+		// says which went somewhere nothing meters. A bead that is both is
+		// on both — neither number answers the other's question.
+		d.noteUncounted(is, persona, launchRT)
 		busy[slot] = true
 		pending = append(pending, p)
 	}

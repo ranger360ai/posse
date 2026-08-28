@@ -103,26 +103,31 @@ func (a *App) PlanGuardOverflow(errw io.Writer) Overflow {
 // line per overflow launch.
 func (a *App) OverflowLogPath() string { return filepath.Join(a.StateDir, "overflow.log") }
 
-// OverflowEntry is one ledger line: `RFC3339 runtime bead persona`.
-type OverflowEntry struct {
+// LedgerEntry is one line of a launch ledger: `RFC3339 runtime bead persona`.
+// Two ledgers share the shape because they count the same event for two
+// different reasons — this one, which beads the plan guard MOVED to a second
+// pool (ADR 0010 §3), and uncounted.log, which beads went to a runtime no
+// cost adapter reads (ADR 0013 §5). A bead can be both, and then it is on
+// both: neither number answers the other's question.
+type LedgerEntry struct {
 	At      time.Time
 	Runtime string
 	Bead    string
 	Persona string
 }
 
-func (e OverflowEntry) line() string {
+func (e LedgerEntry) line() string {
 	return fmt.Sprintf("%s %s %s %s\n", e.At.UTC().Format(time.RFC3339), e.Runtime, e.Bead, e.Persona)
 }
 
-// AppendOverflow records one overflow launch. Append-only and never rotated
-// or pruned by posse: it is the only evidence of what the second pool was
-// spent on, and the metric (ADR 0010 Consequences) is read off it.
-func (a *App) AppendOverflow(e OverflowEntry) error {
+// appendLedger records one launch. Append-only and never rotated or pruned
+// by posse: it is the only evidence of what a pool with no meter was spent
+// on, and the metrics are read off it.
+func (a *App) appendLedger(path string, e LedgerEntry) error {
 	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(a.OverflowLogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -133,16 +138,16 @@ func (a *App) AppendOverflow(e OverflowEntry) error {
 	return f.Close()
 }
 
-// OverflowCount is how many beads went to this runtime inside the window
-// ending at now — the number the cap is compared against. Counted per
-// runtime, so changing `plan_guard_overflow:` does not charge the new pool
-// for the old one's week.
+// countLedger is how many beads went to this runtime inside the window
+// ending at now — the number a cap is compared against. Counted per runtime,
+// so changing which runtime a cap names does not charge the new pool for the
+// old one's week.
 //
-// A missing ledger is zero, not an error: the first overflow launch creates
-// it. A line that does not parse is skipped — the file is ours to write and
-// a corrupt line is not a launch anyone can date.
-func (a *App) OverflowCount(runtime string, now time.Time) (int, error) {
-	f, err := os.Open(a.OverflowLogPath())
+// A missing ledger is zero, not an error: the first launch creates it. A
+// line that does not parse is skipped — the file is ours to write and a
+// corrupt line is not a launch anyone can date.
+func countLedger(path, runtime string, now time.Time, window time.Duration) (int, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return 0, nil
@@ -150,7 +155,7 @@ func (a *App) OverflowCount(runtime string, now time.Time) (int, error) {
 		return 0, err
 	}
 	defer f.Close()
-	cutoff := now.Add(-OverflowWindow)
+	cutoff := now.Add(-window)
 	n := 0
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -168,6 +173,17 @@ func (a *App) OverflowCount(runtime string, now time.Time) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// AppendOverflow records one overflow launch (ADR 0010 §3).
+func (a *App) AppendOverflow(e LedgerEntry) error {
+	return a.appendLedger(a.OverflowLogPath(), e)
+}
+
+// OverflowCount is the rolling-window count `plan_guard_overflow_cap:` is
+// compared against.
+func (a *App) OverflowCount(runtime string, now time.Time) (int, error) {
+	return countLedger(a.OverflowLogPath(), runtime, now, OverflowWindow)
 }
 
 // overflowDecision is the per-bead ladder's answer for one bead: the runtime

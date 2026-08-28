@@ -386,6 +386,39 @@ dirs:
 # budget_pass: <dollars per pass>
 # budget_day: <dollars per day>
 
+# ─── account-degraded: uncounted runtimes (ADR 0013 §5) ──────────────────────
+# A runtime with no cost adapter is UNCOUNTED — `posse cost` reports it as
+# uncounted and never as $0 (ADR 0003 §4), and the caps above cannot see a
+# cent of it, because they are computed from transcripts only claude writes.
+# Today that is codex and grok, and any `runtimes/<name>.yaml` of your own
+# that declares no `cost_adapter:`; `posse runtime check <name>` says which
+# column a runtime is in.
+#
+# Such a runtime is still dispatchable — refusing it would be refusing half
+# the fleet over a missing reading — but never quiet. Every dispatch pass
+# that sent beads there ends with one line naming how many, and dispatch
+# ledgers each launch, append-only, in $RHQ_HOME/state/uncounted.log.
+#
+# `uncounted_cap_<runtime>:` is the brake: beads posse itself launched onto
+# that runtime per ROLLING 7 days, the same shape and unit as
+# `plan_guard_overflow_cap:` above and for the same reason — the pool has no
+# meter posse can read, so a count of what dispatch sent stands in for one.
+# It is NOT a bill and posse invents no price table; the spend numbers are
+# yours. Past the cap, further beads bound for that runtime are skipped with
+# one line each until the window rolls; the count includes the current pass,
+# so the cap bites inside a pass and not only between them. An unreadable
+# ledger under a set cap parks too — a cap that counts nothing is not a
+# brake.
+#
+# UNSET IS UNLIMITED AND LOUD — the `budget_*` dormancy pattern: nothing is
+# braked, and every pass still names the spend. A value that is not a
+# positive whole number of beads is named on stderr once a pass and leaves
+# the runtime unlimited; a typo must be visible, not a cap that quietly
+# stopped capping. Setting a cap is not how a runtime leaves this column —
+# filling its cost-adapter seam (ADR 0012 D4) is.
+# uncounted_cap_grok: 20     # beads to grok per rolling 7 days
+# uncounted_cap_codex: 20
+
 # ─── load guard ──────────────────────────────────────────────────────────────
 # The 1-minute load average above which this instance launches NOTHING: a
 # dispatch pass over it is skipped whole with one witness line, and `posse

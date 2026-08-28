@@ -314,10 +314,16 @@ func (a *App) accountRow(rt *Runtime) stageRow {
 			missing: "account-degraded, named loudly every pass",
 		}
 	}
-	cap := a.CfgGet("uncounted_cap_"+rt.Name, "")
+	// Parsed, not echoed: a value that is not a positive bead count is not a
+	// cap, and printing it back as one is the grid saying a brake is armed
+	// when nothing is (uncounted.go keeps the same rule for the pass).
+	n, raw := a.UncountedCap(rt.Name, io.Discard)
 	capline := "uncounted_cap_" + rt.Name + ": unset — unlimited and loud (the budget_* dormancy pattern)"
-	if cap != "" {
-		capline = "uncounted_cap_" + rt.Name + ": " + cap + " beads / rolling 7 days"
+	switch {
+	case n > 0:
+		capline = fmt.Sprintf("uncounted_cap_%s: %d beads / rolling 7 days, ledgered in %s", rt.Name, n, AbbrevHome(a.UncountedLogPath()))
+	case raw != "":
+		capline = fmt.Sprintf("uncounted_cap_%s: %q is not a positive bead count — no cap: unlimited and loud", rt.Name, raw)
 	}
 	r := stageRow{
 		stage:   "account",

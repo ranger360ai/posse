@@ -241,7 +241,7 @@ func TestOverflowCapRolling7d(t *testing.T) {
 	var seed strings.Builder
 	// Two inside the window — the cap — plus three that fell out of it, and
 	// one for another pool, which is not this pool's week.
-	for _, e := range []OverflowEntry{
+	for _, e := range []LedgerEntry{
 		{now.Add(-2 * time.Hour), "grok", "old-1", "ranger"},
 		{now.Add(-6 * 24 * time.Hour), "grok", "old-2", "ranger"},
 		{now.Add(-8 * 24 * time.Hour), "grok", "old-3", "ranger"},
@@ -310,7 +310,7 @@ func TestOverflowUntrippedGuardReadsNothing(t *testing.T) {
 	idleClaude(t, fake)
 	// A ledger that would refuse every bead if it were read.
 	os.MkdirAll(b.App.StateDir, 0o755)
-	os.WriteFile(b.App.OverflowLogPath(), []byte(OverflowEntry{time.Now(), "grok", "x", "y"}.line()), 0o644)
+	os.WriteFile(b.App.OverflowLogPath(), []byte(LedgerEntry{time.Now(), "grok", "x", "y"}.line()), 0o644)
 	before, err := os.Stat(b.App.OverflowLogPath())
 	if err != nil {
 		t.Fatal(err)

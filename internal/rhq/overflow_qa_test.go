@@ -164,7 +164,7 @@ func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
 	}
 	// Establish that this environment realizes the hostile condition. A
 	// root test process could otherwise turn the repro into a false pass.
-	if err := f1.b.App.AppendOverflow(OverflowEntry{Runtime: "grok"}); err == nil {
+	if err := f1.b.App.AppendOverflow(LedgerEntry{Runtime: "grok"}); err == nil {
 		t.Skip("test process can append to a 0444 ledger")
 	}
 
