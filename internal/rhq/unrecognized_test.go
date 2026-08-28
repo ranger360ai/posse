@@ -135,11 +135,28 @@ func TestQAWhatHerdrSawOnARealFallbackCapture(t *testing.T) {
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
-	file := filepath.Join("testdata", "grok-startup-splash-wide-boxed.txt")
+	file := filepath.Join("..", "..", "etc", "herdr", "agent-detection",
+		"testdata", "grok", "idle-startup-splash-wide-boxed.txt")
 	if _, err := os.Stat(file); err != nil {
 		t.Skip("capture not present: " + err.Error())
 	}
-	out, err := exec.Command("herdr", "agent", "explain", "--file", file, "--agent", "grok", "--json").CombinedOutput()
+	// ISOLATE THE MANIFEST, or this test reads whatever the operator has
+	// installed and answers differently per box. ranger-base-z6n taught the
+	// posse override to name this exact screen, so once that override was
+	// installed this test hit its own `Seen()` escape hatch and SKIPPED —
+	// the contract with the real binary stopped being checked, silently, and
+	// nobody was told (ranger-base-neyn). An empty override dir pins the
+	// capture to herdr's BUNDLED manifest, which does not name it, so the
+	// fallback this test needs is a property of the binary, not of the box.
+	config := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(config, "herdr", "agent-detection"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("herdr", "agent", "explain", "--file", file, "--agent", "grok", "--json")
+	cmd.Env = append(os.Environ(),
+		"XDG_CONFIG_HOME="+config,
+		"XDG_STATE_HOME="+filepath.Join(config, "state"))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("herdr agent explain: %v\n%s", err, out)
 	}
@@ -148,7 +165,12 @@ func TestQAWhatHerdrSawOnARealFallbackCapture(t *testing.T) {
 		t.Fatalf("detection json: %v\n%s", err, out)
 	}
 	if det.Seen() {
-		t.Skipf("this capture is named now (rule %q) — pick another fallback capture", det.Rule.ID)
+		// Loud on purpose: herdr's bundle learned this screen, which is the
+		// signal to re-check whether etc/herdr/agent-detection/grok.toml can
+		// be retired — and to pick another fallback capture for this test.
+		t.Fatalf("herdr's bundled manifest now names this capture (rule %q) — "+
+			"re-check whether the posse override is still needed, and pick "+
+			"another fallback capture for this test", det.Rule.ID)
 	}
 	got := det.WhatHerdrSaw()
 	if got == "" {

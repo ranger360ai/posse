@@ -117,8 +117,12 @@ A third, live 2026-08-25 capture
 (`idle-startup-splash-no-consent-banner.txt`) has the tagged footer, extra
 changelog/tip lines, and **no** consent banner — the banner is not always
 drawn; the menu + Grok Build anchor still must match. The production-width
-boxed capture is pinned by
-`internal/rhq/splashwide_qa_test.go` and its adjacent testdata file.
+boxed capture is `testdata/grok/idle-startup-splash-wide-boxed.txt`, pinned
+twice: `internal/rhq/splashwide_qa_test.go` runs it against the manifest in
+*this checkout* (a committed fix proves itself before deployment), and
+`verify-detection` runs it against the *installed* one (ranger-base-neyn) —
+without that second arm an override that drifts back below `2026.07.16.105`
+passes every fixture while production misses the wide splash again.
 
 `verify-detection` requires those splash fixtures to resolve to rule id
 `startup_splash`, not just state `idle`. After rangerhq-1xsj the state is

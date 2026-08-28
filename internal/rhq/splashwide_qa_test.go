@@ -24,8 +24,12 @@ func TestQAGrokWideBoxedSplashIsNamedIdle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// go test ./internal/rhq runs with cwd = this package.
-	file := filepath.Join(root, "testdata", "grok-startup-splash-wide-boxed.txt")
+	// go test ./internal/rhq runs with cwd = this package. The capture lives
+	// with the other detection fixtures so scripts/verify-detection.sh — the
+	// gate that runs against the INSTALLED manifest after `make install-detection`
+	// or a `herdr update` — covers the wide layout too (ranger-base-neyn).
+	file := filepath.Join(root, "..", "..", "etc", "herdr", "agent-detection",
+		"testdata", "grok", "idle-startup-splash-wide-boxed.txt")
 	if _, err := os.Stat(file); err != nil {
 		t.Fatal(err)
 	}
