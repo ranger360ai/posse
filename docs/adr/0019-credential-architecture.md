@@ -6,7 +6,9 @@ supersedes, at the harness level, the "guard does not become portable
 off macOS" consequence of the instance-private credential ADR of the
 same number. Amended 2026-08-28 (ranger-base-1lza): darwin counts
 three stores, not two, and the `.stale-*` evidence clause was measured
-dead — the file self-renews.*
+dead — the file self-renews. Amended 2026-08-28 (ranger-base-swqk):
+D5/V6 split the expiry surfaces by purpose — the timer surfaces carry
+session mints only; the meter's expiry is report-only.*
 
 ## Context
 
@@ -171,12 +173,49 @@ nothing notices a credential expiring until the shop stops
 (ranger-base-okbr: 401 at 16:02, an hour of blind passes). The seam's
 `ExpiresAt` comes from the envelope's own `expiresAt` field for the
 meter (ASSUMED field name; present in the known envelope shape) and
-from the `# expires=` stamp for session mints. Surfaced three places:
-the `posse refresh` report; the cockpit header once inside 14 days; one
-stderr line per dispatch pass in the same window. Expiry never gates or
-parks anything by itself — it is a warning, and the read's success or
-failure remains the only actuator. "Cannot tell" is reported as
-exactly that, never as "fresh".
+from the `# expires=` stamp for session mints.
+
+**The surfaces split by purpose** (amended 2026-08-28,
+ranger-base-swqk, ratifying the recorded divergence of
+ranger-base-k6ha; the original letter surfaced both purposes in all
+three places — see Alternatives): the `posse refresh` report answers
+for **both** purposes, on demand. The two timer surfaces — the cockpit
+header once inside 14 days, and one stderr line per dispatch pass in
+the same window — carry the **posse-owned session mints only**. The
+meter credential gets no unasked expiry surface, for three reasons of
+unequal weight:
+
+- **There is no hand to warn** (load-bearing, and independent of any
+  TTL). D4 makes the runtime's login loop the meter credential's only
+  writer and posse a reader that writes nothing; the next rotation
+  happens without an operator. A warning is a request for an action,
+  and the only meter action — "run `claude` once" — is meaningful
+  exactly when that loop is dead, which surfaces as a failed read:
+  blindness, ADR 0018, already loud, already clocked, and arriving on
+  a read the pass was making anyway. This decision's own closing
+  sentence — the read's success or failure remains the only actuator —
+  was always the meter's whole answer.
+- **It would likely never be quiet** (ASSUMED — the one unmeasured
+  number, ranger-base-b1al). D2's store of record "rotates within
+  days"; if the access token's own `expiresAt` horizon is similarly
+  short, every reading sits inside a 14-day window and the line fires
+  every pass forever — a warning that is always on is a warning nobody
+  reads. The token's actual TTL is NOT MEASURED (`security` is denied
+  in crew PIDs; the darwin file is under the hw18 read deny), so this
+  reason is corroboration, not foundation: the decision does not move
+  if it dies.
+- **The cost is per-pass and real** (a design fact, not an estimate):
+  warning about the meter means execing `security` on every dispatch
+  pass and every cockpit tick, against a store the whole instance
+  deliberately reads once per TTL through one shared cache
+  (rangerhq-tdy8). A session mint's stamp, by contrast, is a few
+  hundred bytes in a file posse already owns.
+
+Expiry never gates or parks anything by itself — it is a warning, and
+the read's success or failure remains the only actuator. "Cannot tell"
+is reported as exactly that, never as "fresh"; the timer surfaces'
+silence is ambiguous by construction (nothing expiring, or nothing
+dated), and the report is the one place that says which.
 
 **6. Per-runtime, no speculative config.** The seam is keyed by
 runtime. codex/grok: `session` stays undecided-refuse until their lane
@@ -284,6 +323,23 @@ design puts more weight on files. What is actually traded:
 - **Vault now.** Explicitly parked by the operator (ranger-base-epz8,
   P3): bootstrap inversion for the unattended 3am pass, and "what
   vault means" is undecided. The seam is the concession it collects.
+- **The meter in the timer surfaces (this ADR's own original D5
+  letter).** Rejected 2026-08-28 (ranger-base-swqk) on the three
+  reasons now in D5, after the build recorded the divergence
+  (ranger-base-k6ha). The honest accounting: the load-bearing reason
+  (no hand to warn) is structural and TTL-independent; the noise
+  reason is ASSUMED pending ranger-base-b1al; the cost reason is a
+  per-pass `security` exec that the session-only rule avoids entirely.
+- **An "already expired only" meter line** — the zero-noise
+  compromise: surface the meter unasked only once its envelope date is
+  past. Rejected: at that moment the usage read is failing, and ADR
+  0018 already reports exactly that state, loudly, on a read the pass
+  makes anyway — this line would duplicate an existing signal while
+  arming the very per-pass keychain exec the split avoids, and it
+  warns *at* the bite, which is not what D5's "before it bites" buys.
+  The okbr-shaped outage (an hour of unnoticed blind passes) was a
+  visibility failure of the blind signal, and okbr's shape diagnostics
+  plus ADR 0018's clock are its fix — not a second copy of the alarm.
 
 ## Verification (laurie's checklist)
 
@@ -301,9 +357,14 @@ design puts more weight on files. What is actually traded:
 - V5 (unit): refresh writes 600 under 700; stamps round-trip through
   the seam's `ExpiresAt`; `posse envs` output still never contains a
   value.
-- V6 (unit): an `ExpiresAt` inside 14 days appears in the header and
-  once per pass on stderr; expired renders distinctly; zero renders as
-  "cannot tell" and warns nothing.
+- V6 (unit, amended 2026-08-28 ranger-base-swqk): a session mint's
+  `# expires=` inside 14 days appears in the header and once per pass
+  on stderr; expired renders distinctly; zero renders as "cannot tell"
+  and warns nothing. And the purpose split holds: a meter envelope
+  expiring inside the window appears in the report and in **neither**
+  timer surface — pinned with a positive witness on the same box (a
+  near-expiry session mint that does appear), so the absence half
+  cannot pass by measuring nothing.
 - V7 (unit): one envelope fixture parses identically through the
   keychain-blob path and the file path — the okbr diagnostics are
   provably shared, not forked.
