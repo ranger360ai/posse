@@ -19,8 +19,11 @@ package rhq
 // absolutely, so a shim on PATH no longer reaches it and these tests name
 // the shim to the adapter instead of planting one. They are now a REGRESSION
 // GUARD — if the resolution ever goes back to a bare command name, the
-// refusal must still be told from an outage. TestKeychainReadIgnoresAShimOnPATH
-// is the pin on the absolute resolution itself.
+// refusal must still be told from an outage.
+// TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH is the pin on the
+// absolute resolution itself, and
+// TestQAKeychainStoreIsWiredToTheAbsoluteBinary is the pin on the one line
+// that connects the two.
 
 import (
 	"errors"
@@ -329,5 +332,49 @@ func TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH(t *testing.T) {
 	}
 	if tok != secret {
 		t.Errorf("token came from somewhere other than the named binary: %q", tok)
+	}
+}
+
+// ranger-base-gs0t, verifying ranger-base-ypf5: the WIRING, which the pin
+// above does not reach.
+//
+// TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH asks
+// keychainCmd(securityBin) and keychainStoreAt(stub) — both of which are
+// handed the binary by the test. Nothing asked the one line production
+// actually goes through, keychainStore(). MEASURED: with that line changed
+// to keychainStoreAt("security") — the exact defect ypf5 fixed, the read
+// back on PATH and back inside the persona's own refusal shim — the whole
+// internal/rhq package stays green.
+//
+// The invariant is not "securityBin has the right value", it is "no read
+// posse makes resolves `security` on PATH". Source is the only place to ask
+// that without executing the operator's real keychain (rp2y's class, and a
+// keychain prompt on their screen), and it is how
+// TestVisibilityOverrideIsNeverDispatched asks its own never-question.
+func TestQAKeychainStoreIsWiredToTheAbsoluteBinary(t *testing.T) {
+	body, err := os.ReadFile("credential.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `func keychainStore() runtimeStore { return keychainStoreAt(securityBin) }`) {
+		t.Errorf("keychainStore must hand the adapter securityBin — it is the only wiring between the constant and the read (ranger-base-ypf5)")
+	}
+	// And nothing anywhere execs the bare word a persona's shim answers to.
+	for _, root := range []string{".", "../../cmd"} {
+		filepath.Walk(root, func(p string, fi os.FileInfo, werr error) error {
+			if werr != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+				return nil
+			}
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			for _, form := range []string{`exec.Command("security"`, `keychainStoreAt("security")`, `keychainCmd("security")`} {
+				if strings.Contains(string(b), form) {
+					t.Errorf("%s: %s resolves on PATH, and every persona launch puts a Bash(security:*) refusal shim first there (ranger-base-ypf5/r64)", p, form)
+				}
+			}
+			return nil
+		})
 	}
 }

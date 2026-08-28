@@ -816,6 +816,13 @@ func TestDispatchTwoBeadsFreshSessions(t *testing.T) {
 // state onto the same canned list — the real bd's contract, not this
 // fixture's), which would make the SAME bead reappear ready forever; a
 // second repo's own ready list is untouched by the first repo's claim.
+//
+// NOT a pin on the refill (measured, ranger-base-gs0t): two repos are two
+// seats, so the first fireLoop already fires both and every assertion below
+// holds with d.Refill unset — mutating the refire out of Run leaves this
+// green. What it does pin is that Refill breaks nothing in the two-seat
+// case. TestQARefillFiresASecondBeadIntoTheSameSeat is the discriminating
+// one.
 func TestRunRefillsAFreedSeatInsideOnePass(t *testing.T) {
 	b, fakeA := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -844,6 +851,85 @@ func TestRunRefillsAFreedSeatInsideOnePass(t *testing.T) {
 	c := calls(t, fakeA)
 	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label ranger-003-a-1") || !strings.Contains(c, "workspace create --label ranger-004-b-1") {
 		t.Errorf("want two fresh sessions, one per bead (Dial F):\n%s", c)
+	}
+}
+
+// ranger-base-gs0t, verifying ranger-base-zk5u: the refill's own pin, on the
+// seat the refill is ABOUT.
+//
+// TestRunRefillsAFreedSeatInsideOnePass above fires its two beads out of two
+// repos, which are two different seats — so its whole fixture already
+// dispatches both beads in the FIRST fireLoop and every one of its
+// assertions (n=2, two "closed by ranger", two named workspace creates)
+// holds with d.Refill unset. MEASURED: it does not discriminate the refill.
+//
+// The shape ADR 0028 §1/§3 is about is two beads contending for ONE seat.
+// Without Refill that is TestDispatchTwoBeadsFreshSessions: a-1 fires, a-2
+// is skipped "lane busy", and a-2 waits for a later pass. With Refill, a-1's
+// settle releases the seat inside the same Run and a-2 goes out on it —
+// which is the launch that would not otherwise have happened, and is
+// therefore the only thing that pins the feature. Both arms run here so the
+// wrong one is a failing arm and not an absence.
+func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		refill bool
+		want   int
+	}{
+		{"without refill the second bead waits for a later pass", false, 1},
+		{"with refill it goes out on the seat the first one freed", true, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			writePersona(t, b.App, "ranger", "[go]")
+			repo := t.TempDir()
+			os.WriteFile(filepath.Join(repo, "fake-ready.json"),
+				[]byte(`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`), 0o644)
+			os.WriteFile(filepath.Join(repo, "fake-show.json"),
+				[]byte(`[{"id":"a-1","status":"closed"},{"id":"a-2","status":"closed"}]`), 0o644)
+			os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
+			agentPerLaunch(t, fake)
+			d.Refill = tc.refill
+
+			n, err := d.Run("", "", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, log := dispatcherOut(d), calls(t, fake)
+			if n != tc.want {
+				t.Errorf("want %d dispatched from this one Run, got %d:\n%s", tc.want, n, out)
+			}
+			// The witness that the fixture ran at all: a-1 always goes out
+			// and is always judged, in both arms. An assertion of pure
+			// absence would be satisfied by a Run that did nothing.
+			if !strings.Contains(out, "creating session ranger-003-a-1") || !strings.Contains(out, "closed by ranger") {
+				t.Fatalf("the first bead must launch and be judged in both arms:\n%s", out)
+			}
+			if got := strings.Count(log, "workspace create"); got != tc.want {
+				t.Errorf("want %d session(s) created in one Run, got %d:\n%s", tc.want, got, log)
+			}
+			if tc.refill {
+				if !strings.Contains(log, "workspace create --label ranger-003-a-2") {
+					t.Errorf("a-2 must get its own fresh session inside this Run (Dial F):\n%s", log)
+				}
+				if strings.Count(out, "closed by ranger") != 2 {
+					t.Errorf("both beads must be judged inside the one Run:\n%s", out)
+				}
+				// ADR 0028 §5 observable 4, at this seat: the busy map is
+				// LIVE occupancy, so a-2 may not launch until a-1's settle
+				// released the seat. Ordering in d.Out is the witness — the
+				// refill firing early would put the launch line first and
+				// have run two beads on one persona+repo at once.
+				settle := strings.Index(out, "\u2713 a-1")
+				launch := strings.Index(out, "\u00b7 a-2            creating session")
+				if settle < 0 || launch < 0 || launch < settle {
+					t.Errorf("a-2 must launch only AFTER a-1 settled and freed the seat (settle@%d launch@%d):\n%s", settle, launch, out)
+				}
+			} else if strings.Contains(log, "ranger-003-a-2") {
+				t.Errorf("without Refill a settled seat must not be fired into again:\n%s", log)
+			}
+		})
 	}
 }
 
