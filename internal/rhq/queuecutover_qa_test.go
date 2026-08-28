@@ -9,17 +9,21 @@ package rhq
 // that starts at one fresh commit reports "no lost beads" forever, with no
 // error anywhere, and that is indistinguishable from a healthy fleet.
 //
-// The fixtures below keep the store CLEAN — the working tree matches the
-// last commit and nothing untracked sits in `.beads` — for a reason worth
-// knowing before you extend them: with drift, the script reaches
+// Most fixtures below keep the store CLEAN — the working tree matches the
+// last commit and nothing untracked sits in `.beads`. That used to be
+// load-bearing: with drift the script reached an UNQUALIFIED
+// `git add -A .beads && git commit -m '<msg>'`, a persona cage denying
+// `Bash(git commit unless --)` refused it, and `set -eu` aborted the script
+// between the `mv` and the redirect write with no message at all — measured
+// on lpz4, filed as ranger-base-nzyn. Fixed there: the commit is
+// path-qualified, it runs LAST (after the redirects, where a failure costs
+// one commit and nothing else), and every step below the preflight prints
+// the half-state it left. qcDrift + the three nzyn pins at the bottom cover
+// that, and they are why this file no longer avoids drift.
 //
-//	git add -A .beads && git commit -m '<msg>'
-//
-// an UNQUALIFIED commit, which a persona cage that denies
-// `Bash(git commit unless --)` refuses. `set -eu` then aborts the script
-// between the `mv` and the redirect write — the state measured on lpz4 and
-// filed as ranger-base-nzyn. A clean fixture skips that branch, so these
-// pins run green from a caged session; a drifted one cannot.
+// These tests do NOT strip a persona's gate shim from PATH: post-nzyn
+// nothing here runs a command a cage denies, so a caged session running them
+// is a free extra arm rather than a red suite.
 
 import (
 	"os"
@@ -110,6 +114,14 @@ func qcWork(t *testing.T, dir, store string) string {
 // because `--redirect` APPENDS to a default that is the live posse checkout.
 func qcRun(t *testing.T, constitution, queue, worktrees string, redirects []string, extra ...string) (string, error) {
 	t.Helper()
+	return qcRunEnv(t, nil, constitution, queue, worktrees, redirects, extra...)
+}
+
+// qcRunEnv is qcRun with entries appended to the script's environment — the
+// seam the abort pins drive: a `git` shim on PATH, or a GIT_TEMPLATE_DIR
+// whose pre-commit hook refuses.
+func qcRunEnv(t *testing.T, env []string, constitution, queue, worktrees string, redirects []string, extra ...string) (string, error) {
+	t.Helper()
 	args := []string{qcScript(t),
 		"--constitution", constitution,
 		"--queue", queue,
@@ -124,8 +136,64 @@ func qcRun(t *testing.T, constitution, queue, worktrees string, redirects []stri
 	}
 	args = append(args, extra...)
 	cmd := exec.Command("sh", args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// qcDrift makes the live store differ from the constitution's last commit,
+// the way the real one does every minute it is up: a bead added to the
+// projection and a database beside it. It is what makes the script reach its
+// commit at all.
+func qcDrift(t *testing.T, constitution string) {
+	t.Helper()
+	write(t, filepath.Join(constitution, ".beads", beadsJSONL),
+		`{"id":"q-1","title":"one"}`+"\n"+`{"id":"q-3","title":"three"}`+"\n"+`{"id":"q-4","title":"four, uncommitted"}`+"\n")
+	write(t, filepath.Join(constitution, ".beads", "beads.db"), "not really a database\n")
+}
+
+// qcCageShim puts a `git` on PATH that refuses an unqualified `git commit`
+// the way a persona cage does, and returns the PATH entry for it. Modelled
+// on the rendered gate (skip git's leading global options, then match the
+// verb; `--` counts only with an operand after it) so that what it refuses
+// is what the real one refuses.
+func qcCageShim(t *testing.T) string {
+	t.Helper()
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("no git on PATH: %v", err)
+	}
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "git")
+	write(t, shim, `#!/bin/sh
+qualified() {
+  while [ $# -gt 0 ]; do
+    if [ "$1" = '--' ]; then [ $# -gt 1 ] && return 0; return 1; fi
+    shift
+  done
+  return 1
+}
+verb() {
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -C|-c|--git-dir|--work-tree) [ $# -ge 2 ] || break; shift 2 ;;
+      -*) shift ;;
+      *) printf '%s' "$1"; return 0 ;;
+    esac
+  done
+}
+if [ "$(verb "$@")" = commit ] && ! qualified "$@"; then
+  echo "refused by the cage: git $* (deny: Bash(git commit unless --))" >&2
+  exit 1
+fi
+exec '`+gitBin+`' "$@"
+`)
+	if err := os.Chmod(shim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // The claim the whole replay exists for, asserted the way it fails in
@@ -377,5 +445,160 @@ func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
 	if strings.Contains(body[i:], "/.beads/* ") {
 		t.Error("the rollback moves the store home with a glob that skips dotfiles, " +
 			"so .beads/.gitignore stays behind and beads.db comes back unignored")
+	}
+}
+
+// ─── ranger-base-nzyn: the window, and what an abort in it says ─────────────
+
+// The commit the script makes must be one every session can make. It used to
+// be `git commit -m <msg>` with no pathspec, which a persona cage denying
+// `Bash(git commit unless --)` refuses — and it sat between the mv and the
+// redirect, so the refusal killed bd fleet-wide (see the abort pin below).
+// `git add -A .beads` stages nothing else, so the qualified form is the same
+// commit: measured, same tree sha, deletions included.
+func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
+	shimDir := qcCageShim(t)
+	// The witness that the fixture blocks anything at all: the shim refuses
+	// the unqualified form in a repo of its own. Without it this pin is
+	// green against a shim that never fires.
+	scratch := t.TempDir()
+	mustGit(t, scratch, "init", "-q", "-b", "main", ".")
+	write(t, filepath.Join(scratch, "f"), "x\n")
+	caged := exec.Command(filepath.Join(shimDir, "git"), "-C", scratch, "commit", "-q", "-m", "unqualified")
+	if out, err := caged.CombinedOutput(); err == nil {
+		t.Fatalf("the cage shim does not refuse an unqualified commit; this pin measures nothing:\n%s", out)
+	}
+
+	constitution, _ := qcConstitution(t)
+	qcDrift(t, constitution)
+	queue := filepath.Join(t.TempDir(), "queue")
+	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+
+	out, err := qcRunEnv(t, []string{"PATH=" + shimDir + string(os.PathListSeparator) + os.Getenv("PATH")},
+		constitution, queue, t.TempDir(), []string{project})
+	if err != nil {
+		t.Fatalf("the script cannot run to completion from a caged session: %v\n%s", err, out)
+	}
+	// The drift is IN the queue repo's history, not merely on disk: an
+	// uncommitted store is a store the census cannot read.
+	if head := mustGit(t, queue, "show", "--stat", "--oneline", "HEAD"); !strings.Contains(head, beadsJSONL) {
+		t.Errorf("the live store's drift was not committed in the queue repo:\n%s\n%s", head, out)
+	}
+	if body := mustGit(t, queue, "show", "HEAD:.beads/"+beadsJSONL); !strings.Contains(body, "q-4") {
+		t.Errorf("the committed projection is not the live one: %q", body)
+	}
+}
+
+// The bead's headline (ranger-base-nzyn, hit on lpz4): an abort between the
+// mv and the redirect left the constitution's `.beads` EMPTY, the store in
+// the queue repo, every redirect in the fleet naming the empty directory —
+// and said nothing, because `set -eu` exits silently. Whatever aborts it, it
+// must name the half-state and how to undo it.
+func TestQueueCutoverAbortInTheMoveWindowNamesTheHalfStateAndItsUndo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory mode this fixture blocks the mv with")
+	}
+	constitution, _ := qcConstitution(t)
+	src := filepath.Join(constitution, ".beads")
+	queue := filepath.Join(t.TempDir(), "queue")
+	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+
+	// A read-only store directory: every rename OUT of it fails, which is
+	// this window's failure with no cage and no hook involved.
+	if err := os.Chmod(src, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(src, 0o755) })
+
+	out, err := qcRun(t, constitution, queue, t.TempDir(), []string{project})
+	if err == nil {
+		t.Fatalf("the fixture did not block the move, so this pin measures nothing:\n%s", out)
+	}
+	if _, statErr := os.Stat(filepath.Join(src, beadsJSONL)); statErr != nil {
+		t.Fatalf("the fixture blocked something other than the mv (%v):\n%s", statErr, out)
+	}
+
+	for _, want := range []string{
+		"ABORTED",
+		`stage "move"`,
+		src,
+		filepath.Join(queue, ".beads"),
+		"UNDO",
+		"Rollback",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the abort never says %q:\n%s", want, out)
+		}
+	}
+
+	// The control, on its own fixture: a run that succeeds says none of it.
+	clean, _ := qcConstitution(t)
+	ok, err := qcRun(t, clean, filepath.Join(t.TempDir(), "queue"), t.TempDir(),
+		[]string{qcWork(t, t.TempDir(), filepath.Join(clean, ".beads"))})
+	if err != nil {
+		t.Fatalf("the control run failed: %v\n%s", err, ok)
+	}
+	if strings.Contains(ok, "ABORTED") {
+		t.Errorf("a clean run reports an abort:\n%s", ok)
+	}
+}
+
+// The other half of the fix: the constitution's redirect is written BEFORE
+// anything that can fail for an ordinary reason, and the queue's own commit
+// runs LAST. So the failure laurie actually hit — a refused commit — now
+// leaves a fleet that reads and writes, with one commit outstanding. The
+// trigger here is a pre-commit hook (a full disk and a gate refusal land in
+// the same place); GIT_TEMPLATE_DIR gets it into the repo the script clones.
+func TestQueueCutoverAbortAtTheCommitLeavesTheFleetResolving(t *testing.T) {
+	tmpl := t.TempDir()
+	hook := filepath.Join(tmpl, "hooks", "pre-commit")
+	write(t, hook, "#!/bin/sh\necho 'pre-commit refuses' >&2\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	constitution, _ := qcConstitution(t)
+	qcDrift(t, constitution)
+	queue := filepath.Join(t.TempDir(), "queue")
+	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+
+	out, err := qcRunEnv(t, []string{"GIT_TEMPLATE_DIR=" + tmpl},
+		constitution, queue, t.TempDir(), []string{project})
+	if err == nil {
+		t.Fatalf("the fixture did not block the commit, so this pin measures nothing:\n%s", out)
+	}
+	if !strings.Contains(out, "pre-commit refuses") {
+		t.Fatalf("something other than the hook failed:\n%s", out)
+	}
+
+	store := filepath.Join(queue, ".beads")
+	// The claim, asserted as state and not as prose: bd resolves.
+	got, readErr := os.ReadFile(filepath.Join(constitution, ".beads", beadsRedirect))
+	if readErr != nil {
+		t.Fatalf("the constitution has no redirect after the abort — bd is dead fleet-wide: %v\n%s", readErr, out)
+	}
+	if strings.TrimSpace(string(got)) != store {
+		t.Errorf("the constitution redirects to %q, want %q", strings.TrimSpace(string(got)), store)
+	}
+	if _, statErr := os.Stat(filepath.Join(store, beadsJSONL)); statErr != nil {
+		t.Errorf("the store is not whole in the queue repo: %v", statErr)
+	}
+	if r, readErr := os.ReadFile(filepath.Join(project, ".beads", beadsRedirect)); readErr != nil {
+		t.Errorf("%s: %v", project, readErr)
+	} else if strings.TrimSpace(string(r)) != store {
+		t.Errorf("the fan-out did not run before the commit: %s still names %q",
+			project, strings.TrimSpace(string(r)))
+	}
+
+	// …and it says so, with the one command that finishes it.
+	for _, want := range []string{
+		`stage "commit"`,
+		"reads and\n  writes normally",
+		"git commit -m 'beads: the store of record moves into its own repo (ADR 0015 §4)' -- .beads",
+		"does NOT need a rollback",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the abort never says %q:\n%s", want, out)
+		}
 	}
 }

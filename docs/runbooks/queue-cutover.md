@@ -67,7 +67,19 @@ already redirects. What it does:
 - leaves `~/src/ranger-base/.beads/` holding one file, `redirect`, with the
   untracking **staged and not committed**;
 - rewrites `.beads/redirect` in `~/src/posse` and in every session worktree
-  under `~/.posse/worktrees`.
+  under `~/.posse/worktrees`;
+- commits the live store's drift in the queue repo — **last**, after the
+  redirects, because it is the only step whose failure costs nothing but a
+  commit.
+
+**If it aborts, read what it printed.** Every step past the preflight names
+the half-state it left and the commands that undo it (`ABORTED … in stage
+"<x>"`, then `UNDO:` or `FINISH:`). The order above is what makes those undos
+small: once the constitution's redirect is written, the store is whole in one
+place and the fleet resolves, so nothing after that stage needs the rollback
+below. Only an abort in stage `move` leaves the store split — that one is the
+emergency, and its undo is printed with both paths filled in
+(ranger-base-nzyn, hit for real on the rehearsal).
 
 **4. Update the database's repo id. NOT OPTIONAL.**
 
@@ -154,10 +166,10 @@ Then close one real bead and confirm the pass printed
 
 ## What the rehearsal broke
 
-Rehearsed 2026-08-26 on a full copy of the live store (ranger-base-tjfw).
-Four things were wrong or surprising, and the three the script owns are
-fixed in it — they are recorded because each would have been silent in
-production:
+Rehearsed 2026-08-26 on a full copy of the live store (ranger-base-tjfw),
+and the rehearsal itself verified on ranger-base-lpz4. Five things were wrong
+or surprising, and the four the script owns are fixed in it — they are
+recorded because each would have been silent in production:
 
 1. **A fresh queue repo disarms the bead-loss census.** `LostBeads`
    (`internal/rhq/beadloss.go`) *is* the git log of `.beads/issues.jsonl` in
@@ -181,6 +193,14 @@ production:
    directory that contains the queue repo wrote a `redirect` inside it — a
    one-hop cycle that looks fine until something follows the chain twice.
    Guarded.
+5. **An abort inside the window said nothing** (ranger-base-nzyn, hit while
+   verifying the rehearsal). The queue's commit ran BEFORE the redirect and
+   was unqualified — `git commit -m <msg>` — which a persona cage denying
+   `Bash(git commit unless --)` refuses; `set -eu` then exited silently,
+   leaving `~/src/ranger-base/.beads` empty, the store in the queue repo and
+   every redirect in the fleet naming the empty directory. Fixed three ways:
+   the commit is path-qualified (same tree, measured), it runs last, and
+   every step past the preflight prints its half-state and its undo.
 
 Not rehearsable from a persona session, and therefore untested until the
 window: `bd daemon stop/start` and `bd migrate --update-repo-id` are both

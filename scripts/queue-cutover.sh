@@ -13,7 +13,15 @@
 #   4. leaves the constitution repo holding one file — `.beads/redirect` —
 #      and stages the untracking, without committing;
 #   5. rewrites `.beads/redirect` in every repo named with --redirect, and in
-#      every session worktree under ~/.posse/worktrees.
+#      every session worktree under ~/.posse/worktrees;
+#   6. commits the live store's drift in the QUEUE repo — LAST, because it is
+#      the only step whose failure costs nothing but a commit
+#      (ranger-base-nzyn: it used to run inside the window, and a persona
+#      cage denying `Bash(git commit unless --)` aborted it there).
+#
+# Any of 3–6 can fail for ordinary reasons — a hook, a gate refusal, a full
+# disk, a ^C. Each one prints the half-state it left and the commands that
+# undo it; none of them exits silently.
 #
 # WHAT IT NEVER DOES: stop or start bd's daemon (the operator's, and this
 # script refuses while one is up), commit in the constitution repo, add a git
@@ -66,6 +74,91 @@ die() { printf 'queue-cutover: %s\n' "$*" >&2; exit 1; }
 
 SRC_BEADS=$CONSTITUTION/.beads
 DST_BEADS=$QUEUE/.beads
+RUNBOOK=docs/runbooks/queue-cutover.md
+
+# ─── 0. what an abort leaves behind ──────────────────────────────────────────
+# `set -eu` exits SILENTLY, and everything below the preflight is destructive
+# until the step after it lands. Measured on ranger-base-lpz4 and filed as
+# ranger-base-nzyn: an abort between the mv and the redirect left
+# $CONSTITUTION/.beads EMPTY, the store in the queue repo, every redirect in
+# the fleet naming the empty directory, and said nothing — bd was dead
+# fleet-wide with no message to work from. STAGE names the half-state; the
+# trap prints it, and its undo, on any exit that is not this script's own.
+STAGE=preflight
+
+on_exit() {
+  status=$?
+  [ "$status" = 0 ] && return 0
+  [ "$DRYRUN" = 1 ] && return 0
+  [ "$STAGE" = preflight ] && return 0   # refused before writing anything
+  [ "$STAGE" = done ] && return 0
+  printf '\n' >&2
+  printf 'queue-cutover: ABORTED (exit %s) in stage "%s" — what is on disk now:\n' "$status" "$STAGE" >&2
+  case $STAGE in
+    queue-repo)
+      cat >&2 <<EOF
+  The live store was NOT touched: it is still $SRC_BEADS and bd works.
+  $QUEUE holds a partial repo.
+  UNDO:
+    rm -rf '$QUEUE'
+  then fix the cause and run this again.
+EOF
+      ;;
+    move)
+      cat >&2 <<EOF
+  THE STORE IS SPLIT between $SRC_BEADS and $DST_BEADS
+  and NOTHING redirects yet — bd is dead fleet-wide until this is undone.
+  UNDO (every file back, dotfiles included, then drop the queue repo):
+    for f in '$DST_BEADS'/* '$DST_BEADS'/.[!.]*; do
+      [ -e "\$f" ] && mv -f "\$f" '$SRC_BEADS/'
+    done
+    rm -rf '$QUEUE'
+  then check the store reads: (cd '$CONSTITUTION' && bd --no-daemon list >/dev/null)
+EOF
+      ;;
+    redirect)
+      cat >&2 <<EOF
+  The store is in $DST_BEADS. The constitution is half-pointed at it:
+  check '$SRC_BEADS/redirect' and 'git -C $CONSTITUTION status --short'.
+  UNDO (the store goes home, dotfiles included, and the constitution reverts):
+    rm -f '$SRC_BEADS/redirect'
+    for f in '$DST_BEADS'/* '$DST_BEADS'/.[!.]*; do
+      [ -e "\$f" ] && mv -f "\$f" '$SRC_BEADS/'
+    done
+    rm -rf '$QUEUE'
+    (cd '$CONSTITUTION' && git reset -q HEAD -- .beads .gitignore && git checkout -- .gitignore)
+EOF
+      ;;
+    fanout)
+      cat >&2 <<EOF
+  The move is DONE: the store is $DST_BEADS and
+  '$SRC_BEADS/redirect' names it, so the constitution reads. Only the fleet's
+  other redirects are partial — the ones printed above are done, the rest
+  still name $SRC_BEADS.
+  Re-running this script will (correctly) refuse: the store already
+  redirects. Finish the stragglers by hand:
+    printf '%s\n' '$DST_BEADS' > <repo>/.beads/redirect
+EOF
+      ;;
+    commit)
+      cat >&2 <<EOF
+  The move is COMPLETE and every redirect is written — the fleet reads and
+  writes normally. All that is missing is the queue repo's own commit of the
+  live store's drift, and nothing depends on it.
+  FINISH (after fixing the cause — a hook, a gate, a full disk):
+    (cd '$QUEUE' && git add -A .beads &&
+     git commit -m 'beads: the store of record moves into its own repo (ADR 0015 §4)' -- .beads)
+  This one does NOT need a rollback.
+EOF
+      return 0
+      ;;
+  esac
+  printf 'queue-cutover: full rollback: %s, "Rollback".\n' "$RUNBOOK" >&2
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 # ─── 1. preflight ────────────────────────────────────────────────────────────
 [ -d "$CONSTITUTION/.git" ] || die "$CONSTITUTION is not a git checkout"
@@ -105,6 +198,7 @@ say "queue:        $QUEUE"
 # without a single fetch. Its refs and its remote go away below, and the gc
 # then drops every object the replayed chain does not reach — which is all of
 # the constitution's prose.
+STAGE=queue-repo
 run "git clone --quiet --no-hardlinks --no-checkout '$CONSTITUTION' '$QUEUE'"
 if [ "$DRYRUN" = 1 ]; then
   say "would: replay .beads/ history into $QUEUE and move the live store onto it"
@@ -160,6 +254,7 @@ else
   git -C "$QUEUE" checkout --quiet main
 
   # ─── 3. the live store, moved on top of the replayed tree ─────────────────
+  STAGE=move
   # daemon.pid/lock/sock/log name a path and a process that both stop being
   # true at the mv; they are gitignored and per-location, and carrying them
   # is how a restarted daemon reads a socket nobody is listening on.
@@ -191,13 +286,12 @@ else
   fi
   rm -f "$QUEUE/.git/queue-cutover-shamap"
 
-  git -C "$QUEUE" add -A .beads
-  if ! git -C "$QUEUE" diff --cached --quiet; then
-    git -C "$QUEUE" commit --quiet -m "beads: the store of record moves into its own repo (ADR 0015 §4)"
-    say "committed the live store's drift from the last constitution commit"
-  fi
-
   # ─── 4. the constitution keeps a redirect and nothing else ────────────────
+  # This lands BEFORE the queue's commit, and that order is the fix for
+  # ranger-base-nzyn: from here on the fleet RESOLVES. Everything after can
+  # fail without leaving bd dead — the store is whole, in one place, and the
+  # constitution names it.
+  STAGE=redirect
   rm -rf "$SRC_BEADS"
   mkdir -p "$SRC_BEADS"
   printf '%s\n' "$DST_BEADS" > "$SRC_BEADS/redirect"
@@ -213,6 +307,7 @@ fi
 # creation (internal/rhq/worktree.go), so the ones cut AFTER this are right
 # by construction; the ones already open are not, and they are where the
 # fleet is working right now.
+STAGE=fanout
 targets=$(printf '%s\n' "$REDIRECTS")
 if [ -d "$WORKTREES" ]; then
   more=$(find "$WORKTREES" -maxdepth 3 -type d -name .beads 2>/dev/null | sed 's|/\.beads$||' || true)
@@ -232,6 +327,27 @@ printf '%s\n' "$targets" | while read -r repo; do
   run "printf '%s\n' '$DST_BEADS' > '$repo/.beads/redirect'"
   say "redirect: $repo -> $DST_BEADS"
 done
+
+# ─── 6. the live store's drift, committed in the queue repo ──────────────────
+# Last on purpose. Everything above has to happen inside the window; this does
+# not, and a failure here leaves a fleet that reads and writes normally with
+# one commit outstanding (ranger-base-nzyn).
+if [ "$DRYRUN" = 0 ]; then
+  STAGE=commit
+  git -C "$QUEUE" add -A .beads
+  if ! git -C "$QUEUE" diff --cached --quiet; then
+    # Path-qualified. `git add -A .beads` stages nothing else, so the commit
+    # is byte-identical to the unqualified form (measured: same tree sha,
+    # deletions included) — but the unqualified form is REFUSED by a persona
+    # cage denying `Bash(git commit unless --)`, and that is what aborted the
+    # window on ranger-base-lpz4. A step this script needs must not be a step
+    # only some sessions can run.
+    git -C "$QUEUE" commit --quiet -m "beads: the store of record moves into its own repo (ADR 0015 §4)" -- .beads
+    say "committed the live store's drift from the last constitution commit"
+  fi
+fi
+
+STAGE=done
 
 say ""
 say "next, and NOT this script's (ADR 0015 §4, the operator's window):"
