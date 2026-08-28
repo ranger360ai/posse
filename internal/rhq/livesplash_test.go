@@ -79,7 +79,7 @@ func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
 	d.Poll = 500 * time.Millisecond
 
 	start := time.Now()
-	target, err := d.awaitAgent("live-7sbo", "qalive")
+	target, err := d.awaitAgent("live-7sbo", "qalive", d.StartupWait)
 	t.Logf("awaitAgent: %s target=%q err=%v\n%s", time.Since(start), target, err, out.String())
 	if err != nil {
 		t.Fatalf("awaitAgent refused a live pane herdr calls %q/%q: %v", before.State, before.Rule.ID, err)

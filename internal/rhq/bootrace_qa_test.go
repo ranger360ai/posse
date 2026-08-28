@@ -196,7 +196,7 @@ func TestQALiveGateOpensOnAScreenNotAShellPrompt(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	status, det, err := d.awaitSettled("qa-708f", "qalive", target, []string{"idle", "done", "blocked"}, deadline)
+	status, det, err := d.awaitSettled("qa-708f", "qalive", target, []string{"idle", "done", "blocked"}, deadline, d.StartupWait)
 	opened := time.Since(start)
 	// The screen at the instant the gate returned — the thing the work
 	// prompt would have gone into. Read it before anything else moves.

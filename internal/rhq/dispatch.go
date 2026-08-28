@@ -91,7 +91,16 @@ type Dispatcher struct {
 	NoReap        bool          // --no-reap: skip the end-of-pass auto-reap (autoreap.go) regardless of config auto_reap:
 	PromptWaitMS  int           // one --wait leg: how long to watch before asking the agent whether it is still working (0 = herdr default, indefinite)
 	WaitCeiling   time.Duration // total time a fired prompt may stay in flight before the pass stops waiting on it (claim kept)
-	StartupWait   time.Duration // how long to wait for agent detection, and again for first settle
+	// StartupWait is the pass's DEFAULT patience for agent detection, and
+	// again for first settle. A launch on a runtime that declares its own
+	// startup_wait: (Runtime.StartupWait, MEASURED per runtime) overrides
+	// this per launch — runtimeWait resolves which one a given launch
+	// actually gets. One Dispatcher fires every runtime a pass touches, so
+	// this field alone was never the right place for a per-runtime number
+	// (ranger-base-p84, richard's design note on ranger-base-il14): a pass
+	// mixing claude and a 90s runtime needs 90s for one launch and the
+	// default for the other, not one value for both.
+	StartupWait time.Duration
 	// RelaunchGrace is how young a launch is too young to re-type into: a
 	// CLI that is still starting is invisible to herdr's detection, and a
 	// second command typed at it lands inside its input box (rangerhq-vk2).
@@ -2199,6 +2208,22 @@ func (d *Dispatcher) sessionRuntime(ag *AgentFile) string {
 	return d.App.ResolveRuntime(d.Runtime, ag)
 }
 
+// runtimeWait is the actual startup patience a launch on the named runtime
+// gets: the runtime's own declared startup_wait: (rt.StartupWait > 0) when
+// it has one, else this pass's default (d.StartupWait). It does NOT call
+// rt.Wait() — that falls back to the fixed DefaultStartupWait, which would
+// throw away d.StartupWait entirely and make the pass default unshortenable
+// (every test that sets d.StartupWait to keep the suite fast relies on it
+// standing in for "the default", the same role DefaultStartupWait plays in
+// production). A runtime this posse cannot load is the launch's own error
+// to report elsewhere; here it just falls back like an undeclared one.
+func (d *Dispatcher) runtimeWait(runtime string) time.Duration {
+	if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.StartupWait > 0 {
+		return rt.StartupWait
+	}
+	return d.StartupWait
+}
+
 // tierRefusal applies ADR 0003 §3 to one bead's resolved tier. It runs for
 // every bead, not only for beads whose session this pass creates: a live
 // session is no argument for prompting it at a tier its PID refuses, and
@@ -2407,8 +2432,10 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		}
 	}
 
-	// The persona CLI needs a moment to start before it can take a prompt.
-	target, err := d.awaitAgent(is.ID, session)
+	// The persona CLI needs a moment to start before it can take a prompt —
+	// this launch's own runtime's patience, not necessarily the pass's
+	// default (runtimeWait, ranger-base-p84).
+	target, err := d.awaitAgent(is.ID, session, d.runtimeWait(runtime))
 	if err != nil {
 		// ADR 0013 §2's busy-key split: a CLI that never came up, never
 		// became promptable, or sat behind a screen posse does not know is
@@ -2473,7 +2500,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)
-	target, seen, err := d.awaitDelivered(is.ID, session)
+	target, seen, err := d.awaitDelivered(is.ID, session, d.runtimeWait(runtime))
 	if err != nil {
 		// No agent ever appeared: the CLI did not start, so nothing read
 		// the prompt file and nobody is working this bead. Hand it back.
@@ -2697,14 +2724,17 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 // the startup wait runs out. Detection only — whether that agent can be
 // spoken to is awaitSettled's question, and on the argv path nobody
 // intends to speak to it at all.
-func (d *Dispatcher) awaitTarget(session string, deadline time.Time) (string, error) {
+// wait is only for the failure line — deadline already carries the real
+// budget — but it must be the SAME number the caller derived deadline from
+// (runtimeWait), or the message would name a patience nobody waited.
+func (d *Dispatcher) awaitTarget(session string, deadline time.Time, wait time.Duration) (string, error) {
 	for {
 		t, err := d.HB.AgentTarget(session)
 		if err == nil {
 			return t, nil
 		}
 		if time.Now().After(deadline) {
-			return "", Die("no agent detected in %s after %s — check the session (posse peek %s)", session, d.StartupWait, session)
+			return "", Die("no agent detected in %s after %s — check the session (posse peek %s)", session, wait, session)
 		}
 		time.Sleep(d.Poll)
 	}
@@ -2732,9 +2762,9 @@ func (d *Dispatcher) awaitTarget(session string, deadline time.Time) (string, er
 //     not judge the bead, because starting a settle-wait here would be
 //     waiting on herdr's idle guess, which returns instantly and would read
 //     a session that never worked as one that settled.
-func (d *Dispatcher) awaitDelivered(id, session string) (target string, seen bool, err error) {
-	deadline := time.Now().Add(d.StartupWait)
-	target, err = d.awaitTarget(session, deadline)
+func (d *Dispatcher) awaitDelivered(id, session string, wait time.Duration) (target string, seen bool, err error) {
+	deadline := time.Now().Add(wait)
+	target, err = d.awaitTarget(session, deadline, wait)
 	if err != nil {
 		return "", false, err
 	}
@@ -2765,16 +2795,16 @@ func (d *Dispatcher) awaitDelivered(id, session string) (target string, seen boo
 		}
 		if !time.Now().Add(poll).Before(deadline) {
 			fmt.Fprintf(d.Out, "◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
-				id, session, d.StartupWait, lastWhy, lastGuess.WhatHerdrSaw())
+				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw())
 			return target, false, nil
 		}
 		time.Sleep(poll)
 	}
 }
 
-func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
-	deadline := time.Now().Add(d.StartupWait)
-	target, err := d.awaitTarget(session, deadline)
+func (d *Dispatcher) awaitAgent(id, session string, wait time.Duration) (string, error) {
+	deadline := time.Now().Add(wait)
+	target, err := d.awaitTarget(session, deadline, wait)
 	if err != nil {
 		return "", err
 	}
@@ -2794,8 +2824,8 @@ func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
 	// drawn 0.6s after this gate opens (rangerhq-3hb5). What is left under
 	// `blocked` is the operator's alone — a permission prompt, claude's trust
 	// dialog — and the launcher may never answer one (rangerhq-4mzt).
-	settle := time.Now().Add(d.StartupWait)
-	status, _, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle)
+	settle := time.Now().Add(wait)
+	status, _, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle, wait)
 	if err != nil {
 		return "", err
 	}
@@ -2840,7 +2870,7 @@ func (d *Dispatcher) awaitAgent(id, session string) (string, error) {
 // It returns the state and the detection it accepted, so a caller — the
 // live test, for one — can say what the gate actually opened on rather than
 // re-reading the pane a moment later and asking a different question.
-func (d *Dispatcher) awaitSettled(id, session, target string, until []string, deadline time.Time) (string, AgentDetection, error) {
+func (d *Dispatcher) awaitSettled(id, session, target string, until []string, deadline time.Time, wait time.Duration) (string, AgentDetection, error) {
 	// A guess makes `agent wait` return instantly, so the poll is the only
 	// thing pacing this loop — an unset Poll must not become a busy loop
 	// against herdr.
@@ -2914,7 +2944,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 				fmt.Fprintf(d.Out, "· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
 				return status, AgentDetection{State: status}, nil
 			}
-			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, d.StartupWait, lastWhy, session, lastGuess.WhatHerdrSaw())
+			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw())
 		}
 		time.Sleep(poll)
 	}

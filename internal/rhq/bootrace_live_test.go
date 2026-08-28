@@ -77,7 +77,7 @@ func TestLiveAwaitAgentHoldsThroughTheBootRace(t *testing.T) {
 		time.Sleep(d.Poll)
 	}
 
-	status, det, err := d.awaitSettled("live-3hb5", "qalive", target, []string{"idle", "done", "blocked"}, deadline)
+	status, det, err := d.awaitSettled("live-3hb5", "qalive", target, []string{"idle", "done", "blocked"}, deadline, d.StartupWait)
 	elapsed := time.Since(start)
 	t.Logf("the gate opened after %s on %q: rule=%q visible_idle=%v fallback=%q err=%v\n%s",
 		elapsed, status, det.Rule.ID, det.VisibleIdle, det.FallbackReason, err, out.String())
