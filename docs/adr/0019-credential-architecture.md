@@ -85,7 +85,8 @@ build tags, so `make test-linux` compiles and tests every branch:
 - darwin: the keychain item, existing code moved verbatim. The
   PATH-resolution and exfil concerns (ranger-base-ypf5 /
   ranger-base-17i) ride with the adapter and keep their ordering; this
-  ADR does not change how `security` resolves.
+  ADR does not change how `security` resolves. (Both have since landed
+  in that order: the adapter now execs `/usr/bin/security` absolutely.)
 - linux (and any non-darwin): `~/.claude/.credentials.json`, fed
   through the **same** `credentialToken`/`credShapes` parser — the
   blob is the same envelope, so ranger-base-okbr's shape diagnostics

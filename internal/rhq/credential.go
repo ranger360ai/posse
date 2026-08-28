@@ -21,9 +21,10 @@ package rhq
 // time, not with build tags: `make test-linux` is a release gate and every
 // branch of the switch must compile and be testable from either box.
 //
-//   - darwin: the macOS keychain item, the read moved here verbatim from
-//     the plan adapter. This file does not change how `security` resolves —
-//     ranger-base-ypf5/17i land on the adapter below with their own ordering.
+//   - darwin: the macOS keychain item, read by execing /usr/bin/security
+//     ABSOLUTELY (ranger-base-ypf5) — a PATH lookup here resolved to the
+//     calling persona's own Bash(security:*) shim and refused posse's own
+//     monitoring read.
 //   - anything else: ~/.claude/.credentials.json, Claude Code's own store of
 //     record where there is no keychain, fed through the SAME envelope
 //     parser. One fixture, two paths, one diagnosis (ADR 0019 V7): the shape
@@ -280,16 +281,45 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 // credentials under.
 const KeychainService = "Claude Code-credentials"
 
+// securityBin is macOS's `security`, named ABSOLUTELY and not looked up on
+// PATH (ranger-base-ypf5, part B of ranger-base-r64).
+//
+// Every persona launch prepends that persona's L1 shim dir to PATH
+// (gates.go) and every crew PID denies Bash(security:*) — so while this
+// resolved on PATH, a `posse` command typed inside a persona pane had its
+// OWN monitoring read refused by its own gate: the plan guard went blind and
+// the launch preflight went UNKNOWN. The deny aims at what a persona may
+// run; posse is not the gated party. An absolute path walks past L1 by
+// design (the documented class in the gates.go header: L1 matches the typed
+// word), and the wall for a read is L4, which posse does not run inside.
+//
+// It is /usr/bin/security and nothing else: that is where the base system
+// puts it, the path is SIP-protected, and a configurable one would be a
+// place to point our credential read at an attacker's binary for no benefit
+// anyone asked for.
+const securityBin = "/usr/bin/security"
+
 // keychainStore is the darwin adapter: the read that used to be
 // KeychainToken/KeychainCredential, moved here as it stood. Errors never
 // quote the command's output — that output is the credential blob.
-func keychainStore() runtimeStore {
+func keychainStore() runtimeStore { return keychainStoreAt(securityBin) }
+
+// keychainStoreAt is that adapter with the binary named explicitly. Only a
+// test passes anything but securityBin: a stub cannot be planted at an
+// absolute path, so the tests that pin the refusal parse and the envelope
+// shapes name their stub here instead of putting one on a PATH this code no
+// longer reads.
+func keychainStoreAt(bin string) runtimeStore {
 	return runtimeStore{
 		Name: fmt.Sprintf("keychain item %q", KeychainService),
 		Read: func() ([]byte, error) {
-			out, err := exec.Command("security", "find-generic-password", "-s", KeychainService, "-w").Output()
+			out, err := keychainCmd(bin).Output()
 			if err != nil {
-				if g := gateRefusal("security", err); g != nil {
+				// GateRefusal stays after part B removed its cause: it is
+				// what stops the 08-24 misdiagnosis returning if this ever
+				// regresses to a PATH lookup, and it names the command by
+				// the word a deny rule is spelled with.
+				if g := gateRefusal(filepath.Base(bin), err); g != nil {
 					return nil, g
 				}
 				return nil, Die("keychain item %q unreadable", KeychainService)
@@ -297,6 +327,16 @@ func keychainStore() runtimeStore {
 			return out, nil
 		},
 	}
+}
+
+// keychainCmd is the one place the read's argv is built. It is its own
+// function so a test can ask what binary the adapter RESOLVES TO without
+// running it: exec.Command LookPaths a bare name and records the answer in
+// .Path, so a regression to `security` shows up there as a shim's path
+// rather than /usr/bin/security — and the real keychain is never read to
+// find that out.
+func keychainCmd(bin string) *exec.Cmd {
+	return exec.Command(bin, "find-generic-password", "-s", KeychainService, "-w")
 }
 
 // CredentialsFile is where Claude Code keeps the same OAuth envelope on a
@@ -360,8 +400,14 @@ func credentialsFileStore(goos string) runtimeStore {
 // GateRefusal is one of posse's OWN L1 gate shims refusing a command posse
 // itself ran (ranger-base-r64). Every persona launch prepends that persona's
 // shim dir to PATH (gates.go) and every crew PID denies Bash(security:*), so
-// a `posse` command typed inside a persona pane resolves the keychain read
-// to that persona's refusal shim and gets exit 1.
+// while the keychain read resolved on PATH, a `posse` command typed inside a
+// persona pane got that persona's refusal shim and exit 1.
+//
+// The keychain read no longer resolves on PATH (ranger-base-ypf5), so this
+// type is now a REGRESSION GUARD rather than a live diagnosis: it is what
+// stops the misdiagnosis below returning if any read here ever goes back to
+// a bare command name, and it stays the diagnosis for anything posse execs
+// that still does.
 //
 // It is a distinct type because the two things it is NOT are both worse than
 // it: it is not a credential outage (the item was never reached), and it is

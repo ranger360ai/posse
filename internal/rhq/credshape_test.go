@@ -12,9 +12,6 @@ package rhq
 
 import (
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -272,21 +269,13 @@ func TestNonObjectJSONNamesItsKind(t *testing.T) {
 
 // End to end, through the real exec path and out to the plan guard's blind
 // line: the operator reads what the item HOLDS, not what it lacks. A stub
-// `security` on PATH stands in for the keychain — the real one is never
-// touched, and the wrong shape is the whole point of the fixture.
+// `security` named to the adapter stands in for the keychain — the real one
+// is never touched, and the wrong shape is the whole point of the fixture.
 func TestPlanGuardBlindLineNamesTheShapeItFound(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh")
-	}
-	bin := t.TempDir()
-	stub := "#!/bin/sh\ncat <<'JSON'\n{\"claudeAiOauth\":{\"refreshToken\":\"r\",\"expiresAt\":1},\"userID\":\"u\"}\nJSON\n"
-	if err := os.WriteFile(filepath.Join(bin, "security"), []byte(stub), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n{\"claudeAiOauth\":{\"refreshToken\":\"r\",\"expiresAt\":1},\"userID\":\"u\"}\nJSON\n")
 
 	r := newBlindRig(t, guardOn)
-	keychainOnly(planReaderOf(r.d), keychainToken)
+	keychainOnly(planReaderOf(r.d), keychainTokenAt(bin))
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("a monitoring failure still fails open when attended: %d dispatched\n%s", n, r.out())

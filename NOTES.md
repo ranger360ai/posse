@@ -505,17 +505,29 @@ watching them is the operator's interactive headroom — a fleet that eats the
   (ranger-base-vmqg does that rendering). Until the Linux probe runs (ADR
   0019 V1) the non-darwin path says in its own error text that it is
   built-but-unconfirmed.
-- **Refused by our own gate** (ranger-base-r64) on darwin posse reads that
-  credential by running `security`, and a persona pane puts that persona's
-  L1 shim dir first on PATH — so any `posse` command typed inside a pane
-  whose PID denies `Bash(security:*)` (every crew PID does) has its own read refused.
-  That is a distinct error, not "keychain item unreadable": the blind line
-  and `plan-usage.log` name the deny rule, and the launch preflight — whose
-  UNKNOWN branch is otherwise silent — says it once per process on stderr.
-  The distinction is the point: the two strings used to be identical, and on
-  2026-08-24 a refusal read as an outage and `plan_guard_blind_max: 0` was
-  set for hours in response. Resolving `security` by absolute path is the
-  other half of the fix and waits on ranger-base-17i.
+- **Refused by our own gate** (ranger-base-r64), fixed in two halves and
+  both are in. On darwin posse reads that credential by running `security`,
+  and a persona pane puts that persona's L1 shim dir first on PATH — so
+  while the read resolved on PATH, any `posse` command typed inside a pane
+  whose PID denies `Bash(security:*)` (every crew PID does) had its own read
+  refused, the plan guard blind and the preflight silently UNKNOWN. Part A
+  made the refusal a distinct error rather than "keychain item unreadable":
+  the blind line and `plan-usage.log` name the deny rule, and the launch
+  preflight — whose UNKNOWN branch is otherwise silent — says it once per
+  process on stderr. That distinction was the urgent half: the two strings
+  used to be identical, and on 2026-08-24 a refusal read as an outage and
+  `plan_guard_blind_max: 0` was set for hours in response. **Part B
+  (ranger-base-ypf5) removed the cause**: the adapter execs
+  `/usr/bin/security` ABSOLUTELY, so the shim is no longer in front of
+  posse's own monitoring read. The deny aims at what a *persona* may run,
+  not at the harness — and an absolute path is the documented way past L1
+  (see *fleet security posture*; L1 matches the typed word, and the wall for
+  a read is L4, which posse does not run inside). It landed after the
+  endpoint pin (ranger-base-17i) so that removing the accidental tripwire
+  did not leave the exfil path silent. `GateRefusal` and its tests stay as
+  the regression guard: if any posse read ever goes back to a bare command
+  name, the refusal is still told from an outage instead of repeating
+  08-24.
 - **Above either threshold** the pass still runs. Each bead whose resolved
   runtime is on the guarded meter faces the ADR 0010 ladder (overflow when
   configured and eligible, otherwise park) with a line naming the window and
@@ -2037,7 +2049,9 @@ HTTP response, transport failure, or an empty answer. **Answered
 own `security` read resolved to the persona's `Bash(security:*)` shim and
 was refused. The read now returns that as its own error instead of
 "keychain item unreadable", and the preflight says so once per process on
-stderr rather than only in the log.
+stderr rather than only in the log. Since ranger-base-ypf5 it is not refused
+at all: the read execs `/usr/bin/security` absolutely, so a launch from a
+gated pane probes normally.
 
 Every cache miss that attempts a probe appends a generic outcome to
 `$RHQ_HOME/state/model-catalog.log` (`ok models=N`, HTTP failure, empty

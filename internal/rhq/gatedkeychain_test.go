@@ -15,8 +15,12 @@ package rhq
 // line's shape moves, this fails rather than quietly returning to
 // "unreadable".
 //
-// Part A only. Resolving /usr/bin/security absolutely (part B) must not land
-// before the endpoint pin (ranger-base-17i) — see the bead.
+// Part B landed (ranger-base-ypf5): the adapter execs /usr/bin/security
+// absolutely, so a shim on PATH no longer reaches it and these tests name
+// the shim to the adapter instead of planting one. They are now a REGRESSION
+// GUARD — if the resolution ever goes back to a bare command name, the
+// refusal must still be told from an outage. TestKeychainReadIgnoresAShimOnPATH
+// is the pin on the absolute resolution itself.
 
 import (
 	"errors"
@@ -29,10 +33,12 @@ import (
 	"time"
 )
 
-// gatedSecurityPATH renders a persona's real gates with Bash(security:*)
-// denied and puts the shim dir first on PATH, which is exactly what a
-// persona pane does to any posse command typed inside it.
-func gatedSecurityPATH(t *testing.T) {
+// gatedSecurityShim renders a persona's real gates with Bash(security:*)
+// denied and hands back the path of the rendered `security` shim — the same
+// bytes a persona pane puts first on the PATH of any posse command typed
+// inside it. It is NAMED to the adapter rather than planted on PATH, because
+// since ranger-base-ypf5 the adapter does not read PATH.
+func gatedSecurityShim(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
@@ -43,24 +49,40 @@ func gatedSecurityPATH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return filepath.Join(binDir, "security")
 }
 
-// keychainToken is the darwin adapter alone, asked directly rather than
-// through the GOOS switch: these tests are about that adapter, and a stub
-// `security` on PATH answers on any box — so they run, and mean the same
-// thing, under `make test-linux` (ADR 0019 D2).
-func keychainToken() (string, error) {
-	tok, _, err := readStore(keychainStore())
-	return tok, err
+// keychainStub writes a stand-in `security` and hands back its path. The
+// adapter execs an absolute path, so a stub is named, never planted.
+func keychainStub(t *testing.T, script string) string {
+	t.Helper()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	p := filepath.Join(t.TempDir(), "security")
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// keychainTokenAt is the darwin adapter alone, asked directly rather than
+// through the GOOS switch and with its binary named: these tests are about
+// that adapter, and a stub answers on any box — so they run, and mean the
+// same thing, under `make test-linux` (ADR 0019 D2).
+func keychainTokenAt(bin string) func() (string, error) {
+	return func() (string, error) {
+		tok, _, err := readStore(keychainStoreAt(bin))
+		return tok, err
+	}
 }
 
 // The read names our own gate and the rule that refused it — and does NOT
 // say "unreadable", which is the sentence a real outage says.
 func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 
-	tok, err := keychainToken()
+	tok, err := keychainTokenAt(shim)()
 	if err == nil {
 		t.Fatalf("a gated PATH must not yield a token: %q", tok)
 	}
@@ -82,16 +104,9 @@ func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 // An ordinary exec failure is still the ordinary error: nothing about a
 // missing or broken `security` may be reported as our gate.
 func TestMeterTokenNonRefusalStaysUnreadable(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh")
-	}
-	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "security"), []byte("#!/bin/sh\necho boom >&2\nexit 44\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	bin := keychainStub(t, "#!/bin/sh\necho boom >&2\nexit 44\n")
 
-	_, err := keychainToken()
+	_, err := keychainTokenAt(bin)()
 	var g *GateRefusal
 	if err == nil || errors.As(err, &g) {
 		t.Fatalf("a plain exec failure is not a gate refusal: %v", err)
@@ -104,13 +119,13 @@ func TestMeterTokenNonRefusalStaysUnreadable(t *testing.T) {
 // The plan guard's blind line carries the rule, so the operator reads "our
 // gate refused our reader" where they used to read a credential outage.
 func TestPlanGuardBlindLineNamesTheDenyRule(t *testing.T) {
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 	r := newBlindRig(t, guardOn)
 	// The read fails at the credential, which is the failure this bead is
 	// about — and the keychain is reached only from the compiled-in
 	// endpoint, which is never dialled because the token is asked for
 	// first.
-	keychainOnly(planReaderOf(r.d), keychainToken)
+	keychainOnly(planReaderOf(r.d), keychainTokenAt(shim))
 
 	if n := r.run(t); n != 1 {
 		t.Fatalf("blind still fails open when attended: %d dispatched\n%s", n, r.out())
@@ -129,7 +144,7 @@ func TestPlanGuardBlindLineNamesTheDenyRule(t *testing.T) {
 // outage and wrong for a refusal we configured ourselves, so this one case
 // says so on stderr: once per process, not once per launch.
 func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 	// Process-global by design (app.go's legacyHomeNotices shape); another
 	// test in this binary may have spent this key already.
 	gateRefusalNotices.Delete("security\x00Bash(security:*)")
@@ -140,7 +155,7 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 		Path:   filepath.Join(home, "model-catalog.json"),
 		Log:    filepath.Join(home, "model-catalog.log"),
 		Caller: "preflight",
-		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainToken},
+		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainTokenAt(shim)},
 		Errw:   &errb,
 	}
 
@@ -171,14 +186,14 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 // bool on which TierPreflight acts.
 func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
 	t.Skip("ranger-base-co5n: retained catalog is known but the refusal notice says UNKNOWN")
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 	gateRefusalNotices.Delete("security\x00Bash(security:*)")
 
 	var errb strings.Builder
 	home := t.TempDir()
 	c := &ModelCache{
 		Path:   filepath.Join(home, "model-catalog.json"),
-		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainToken},
+		Lister: &ModelLister{URL: "http://127.0.0.1:1/v1/models", Token: keychainTokenAt(shim)},
 		Errw:   &errb,
 	}
 	c.store(modelEntry{At: time.Now().Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
@@ -220,13 +235,13 @@ func TestQAGateRefusalNoticeIsOnceUnderConcurrency(t *testing.T) {
 // and on 2026-08-24 it read as a credential outage — the response was
 // plan_guard_blind_max: 0 for hours. It must name our own gate instead.
 func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
 	// The read fails at the credential, so the park reason is the refusal
 	// and not the transport — and the keychain is reached only from the
 	// compiled-in endpoint, which is never dialled (credpin.go rule 4).
-	keychainOnly(planReaderOf(r.d), keychainToken)
+	keychainOnly(planReaderOf(r.d), keychainTokenAt(shim))
 	r.at(12 * time.Minute)
 
 	if n := r.run(t); n != 0 {
@@ -250,7 +265,7 @@ func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
 // err.Error() and nothing tests it, so pin it here — the log is the
 // operator's record after the process that printed the blind line is gone.
 func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
-	gatedSecurityPATH(t)
+	shim := gatedSecurityShim(t)
 	home := t.TempDir()
 	c := &PlanCache{
 		Path:   filepath.Join(home, "plan-usage.json"),
@@ -260,7 +275,7 @@ func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
 		// is read only for that url (credpin.go rule 4) and PlanReader asks
 		// for the token first, so the failure is the credential and not the
 		// transport.
-		Reader: &AnthropicPlanReader{URL: PlanUsageURL, Token: keychainToken},
+		Reader: &AnthropicPlanReader{URL: PlanUsageURL, Token: keychainTokenAt(shim)},
 	}
 
 	if _, _, err := c.Read(time.Hour); err == nil {
@@ -279,5 +294,40 @@ func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
 	}
 	if strings.Contains(got, "find-generic-password") {
 		t.Errorf("the log must not quote the command's argv: %q", got)
+	}
+}
+
+// PART B (ranger-base-ypf5), and the pin on it. The adapter must resolve
+// /usr/bin/security ABSOLUTELY, so a persona's Bash(security:*) shim sitting
+// first on PATH cannot reach posse's own monitoring read.
+//
+// Neither half executes the real binary: reading the operator's live
+// keychain in a test is exactly the class of live-state read this package
+// has been burned by, and a `security find-generic-password` here could put
+// a keychain prompt on their screen.
+func TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH(t *testing.T) {
+	// A refusal shim on PATH under the name the adapter used to ask for.
+	// With the old bare-name resolution this is what answered.
+	shimDir := filepath.Dir(gatedSecurityShim(t))
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	// Half one: what the read resolves to, asked without running it.
+	// exec.Command records a bare name's LookPath answer in .Path, so a
+	// regression to `security` lands the shim's path here.
+	if got := keychainCmd(securityBin).Path; got != "/usr/bin/security" {
+		t.Errorf("the keychain read must exec /usr/bin/security absolutely, got %q", got)
+	}
+
+	// Half two: the store execs the binary it was NAMED even with a shim
+	// first on PATH — which is what makes half one's constant the whole
+	// story rather than a value nothing consults.
+	const secret = "sk-ant-oat01-ABSOLUTE-PATH-FIXTURE"
+	stub := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+envelope(secret, time.Now().Add(time.Hour).UnixMilli())+"\nJSON\n")
+	tok, _, err := readStore(keychainStoreAt(stub))
+	if err != nil {
+		t.Fatalf("the named binary must answer, not the shim on PATH: %v", err)
+	}
+	if tok != secret {
+		t.Errorf("token came from somewhere other than the named binary: %q", tok)
 	}
 }

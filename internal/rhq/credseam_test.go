@@ -199,14 +199,9 @@ func TestOneEnvelopeReadsIdenticallyThroughBothStores(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The keychain, through the real exec path: a stub `security`
-			// hands back the same bytes the file holds.
-			bin := t.TempDir()
-			stub := "#!/bin/sh\ncat <<'JSON'\n" + tc.blob + "\nJSON\n"
-			if err := os.WriteFile(filepath.Join(bin, "security"), []byte(stub), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			ktok, kmeta, kerr := readStore(keychainStore())
+			// named to the adapter hands back the same bytes the file holds.
+			bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+tc.blob+"\nJSON\n")
+			ktok, kmeta, kerr := readStore(keychainStoreAt(bin))
 
 			p := credentialsHome(t, tc.blob)
 			fstore, _ := meterStore("claude", "linux")
