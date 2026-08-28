@@ -4,7 +4,8 @@
 architect; amended there 2026-08-22 for G9) · restated 2026-08-27, bead
 ranger-base-evva · §1–2 implemented here as rangerhq-81y0 (govern.go,
 `posse status`, the cockpit GOVERNANCE block, the pulse tick rewired);
-§3 is rangerhq-a2g6, G7's flock probe is rangerhq-mgvx*
+§3 is rangerhq-a2g6, G7's flock probe is rangerhq-mgvx · G6 epoch
+amendment 2026-08-27, bead ranger-base-jbmh*
 
 > Restated from the private archive of the instance this harness was
 > developed in (its governance-surface ADR, bead rangerhq-e37c); incident
@@ -73,6 +74,42 @@ coordinating persona owes, and a widening has no business quietly
 deleting shipped oversight. `no-live:` is gated on the pulse being
 armed: it is a fact about DELIVERY, so on a shop with no pulse it would
 hold `posse status` non-zero forever for no reason.
+
+*(amended here, 2026-08-27, bead ranger-base-jbmh)* **G6 carries the
+epoch window once the rolling-seats epoch re-key lands** (ADR 0028 §2;
+its S3 slice, ranger-base-f0y3). G6's reading was day-plus-plan only,
+and the reason was honest when written: `budget_pass:` measured spend
+from the moment a pass began — a clock only the dispatching process
+held, which fails this section's own test (computable by any process,
+twice, with the same answer). The re-key dissolves that reason: the
+window becomes wall-clock-aligned (`dispatch_epoch:`, default 1h), so
+its start and its spend are the same scan-since-a-time the day window
+already runs. Two facts decide it:
+
+- **Honesty forces it; opportunity alone would not have.** After the
+  re-key, an epoch cap at 100% is a reason dispatch launches nothing —
+  exactly G6's condition — and the epoch is almost always the *tightest*
+  armed dollar window (default 1h against the day). A `posse status`
+  reporting only the day window answers "why is nothing launching" with
+  "budget fine" while the shop is stopped: blind to the very stop G6
+  exists to name. "Unknown is never clear" applies to a window the
+  surface declines to read, not only to a store that failed.
+- **The feared cost is dead on the shipped scan shape** (MEASURED from
+  the code's structure, not timed: `budget()` in dispatch.go already
+  feeds both windows from ONE transcript scan, floor = the earlier of
+  local midnight and the window start; window totals are in-memory sums
+  over the same report — `PassTotal`'s shape). dialE armed already scans
+  from midnight, so the epoch total is a second sum over a report it
+  already holds: zero additional scans on the operator keystroke. One
+  carve: an epoch configured longer than a day moves the scan floor to
+  the epoch start — the same floor rule dispatch applies to a pass that
+  opened before midnight.
+
+Effective when the re-key lands; until then there is no epoch to read
+and dialE's day-only reading is the correct rendering of the caps that
+exist. The dialE change rides its own `-l code` bead, dep-blocked on
+the re-key slice, and replaces dialE's interim comment with a pointer
+here.
 
 **2. The surface is a computed view, rendered three ways — not a store.**
 Every G-row above is a fact already owned by exactly one store (herdr,
