@@ -1133,9 +1133,15 @@ only into an empty or already-posse slot — which is why it leaves an intact
 chain alone, and also why it cannot build one. In a repo where `bd hooks
 install` got there first, both slots are bd's, so every install it attempts
 refuses; and because session create makes them best-effort and discards the
-error, it installs **nothing and says nothing**. That is the state
-rangerhq-f2p5 was filed about — no push gate, no commit guard — reached
-silently, by dispatch. Session create itself does not pass `--chain` (it is
+error, it installs **nothing and says nothing** — that step is silent.
+What happens next is not: the behavioral probe in the paragraph above
+finds neither slot exits 1, reports both as `DEGRADED`, and **the launch
+refuses** (ranger-base-3c3). So the state rangerhq-f2p5 was filed about —
+no push gate, no commit guard — is no longer reached by dispatch at all.
+The operator meets it as a session that will not start, naming both slots
+and `--allow-degraded`, not as a wall that is silently not there; only
+`--allow-degraded` gets in, and that session is marked degraded in its
+meta. Session create itself does not pass `--chain` (it is
 a CLI flag, typed by an operator who can weigh a slot takeover, not a
 default a silent best-effort install should choose on its own), so this is
 still not optional for a repo you dispatch into: run `install-hooks --chain`
