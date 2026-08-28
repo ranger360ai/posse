@@ -203,4 +203,25 @@ func TestInstallSection8ProbeRecipeCarriesAControl(t *testing.T) {
 	if strings.Contains(recipe, "Help text means the parser bound the PID") {
 		t.Error("INSTALL.md §8: the unconditioned verdict \"Help text means the parser bound the PID\" is back — it is a false pass on claude 2.1.250 (ranger-base-1fad)")
 	}
+
+	// The prose above says "repair the probe with a subcommand"; the block
+	// below it is the only thing a cold installer can COPY. Verified
+	// 2026-08-27 (ranger-base-yuhs) that the assertions above all pass with
+	// that block deleted — the words "subcommand" and "--append-system-promt"
+	// both survive in the surrounding prose, so the six checks above went on
+	// green over a §8 with no runnable repair left in it. A recipe nobody can
+	// run is the state ranger-base-1fad was filed about.
+	//
+	// Both arms, because a repair shown only passing is the undiscriminating
+	// probe this very section warns against.
+	for _, want := range []struct{ text, why string }{
+		{`--append-system-prompt="$(cat /tmp/p.md)" mcp list`, "the repair's PROBE arm, runnable as written"},
+		{`--append-system-promt "$(cat /tmp/p.md)" mcp list`, "the repair's CONTROL arm, runnable as written"},
+		{"No MCP servers configured", "what the probe arm prints when the flag bound"},
+		{"unknown option", "what the control arm prints when it did not"},
+	} {
+		if !strings.Contains(recipe, want.text) {
+			t.Errorf("INSTALL.md §8: the subcommand repair is no longer runnable as written — missing %s: %q (ranger-base-1fad, pinned by ranger-base-yuhs)", want.why, want.text)
+		}
+	}
 }
