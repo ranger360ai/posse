@@ -529,6 +529,12 @@ dirs:
 #                              # ever by saying so — an armed loop must never fire the
 #                              # whole ready queue by omission
 #                              #
+#                              # The loop prints this number in the unit it is spent
+#                              # in, once, at the top of its log ("-n 3 = 3 launch
+#                              # attempt(s) per 1h0m0s EPOCH, not per pass"). A number
+#                              # chosen when the pass was the unit is a much smaller
+#                              # ration per hour than it looks (ranger-base-t8tq)
+#                              #
 #                              # This is ONE of three bounds and never the only one
 #                              # (ADR 0020 §5). An epoch's effective width is
 #                              #   min(autostart_max_beads,

@@ -1098,6 +1098,47 @@ func routeWhy(c []routeMatch) string {
 // seats, the seat clause names what each was doing.
 type seatPass struct{ name, doing string }
 
+// seatMap is who the fire path may not fire into, and it keeps TWO clocks
+// (ranger-base-t8tq). ADR 0028 §3 re-denominated seat occupancy from "this
+// pass" to "live" — a seat this Run fired into is busy until that bead
+// settles, which outlives any one fire pass and is what `run` holds. But the
+// same map was also where the fire loop wrote down everything it LEARNED
+// about a seat on the way past: a persona `personaActive` found working, one
+// inside another launcher's prompt grace, one whose CLI failed twice. Those
+// are readings, taken at an instant, and under a one-shot Run they expired
+// with the pass that took them.
+//
+// MEASURED 2026-08-28 (the log of a Run that went 7h09m without returning):
+// under S4's long-lived Run they stopped expiring. Every seat busy at the
+// head of that pass was written down once and never re-read, so hours after
+// those sessions settled the lane line still named them all busy and only the
+// seat that kept settling ever got another bead. A reading cached for seven
+// hours is not occupancy; it is a seat locked out by a fact about the
+// morning.
+//
+// So a reading lives for the fire pass that took it (`pass`, made fresh by
+// every fireLoop call) and the Run's own fires live in `run` (deleted at that
+// seat's settle, in Run's gather loop). Every "for the rest of this pass"
+// line in the loop below means the pass again, and the live read that decides
+// occupancy is taken again the next time the seat is offered work.
+type seatMap struct {
+	run  map[string]bool // seats THIS Run fired into; released at their settle
+	pass map[string]bool // what this fire pass read about a seat; expires with it
+}
+
+func newSeatMap(run map[string]bool) seatMap {
+	return seatMap{run: run, pass: map[string]bool{}}
+}
+
+// taken is the seat walk's question: is this slot spoken for right now.
+func (m seatMap) taken(slot string) bool { return m.run[slot] || m.pass[slot] }
+
+// note benches a slot for this fire pass — a reading, not an occupancy.
+func (m seatMap) note(slot string) { m.pass[slot] = true }
+
+// hold records that this Run put a bead on the slot: busy until it settles.
+func (m seatMap) hold(slot string) { m.run[slot] = true }
+
 // seatFor answers ADR 0020 §2's second question — WHICH SEAT — for a lane
 // whose first question is already answered. It walks the lane in routing
 // order and takes the first candidate that is actually free: not made busy
@@ -1126,7 +1167,7 @@ type seatPass struct{ name, doing string }
 // Returns (index, why, "") on a seat, (-1, "", line) when every seat the
 // filter allows is busy, and (-1, "", "") when --persona put the bead out
 // of scope.
-func (d *Dispatcher) seatFor(l routeLane, is RepoIssue, personaFilter string, busy map[string]bool) (int, string, string) {
+func (d *Dispatcher) seatFor(l routeLane, is RepoIssue, personaFilter string, seats seatMap) (int, string, string) {
 	var passed []seatPass
 	inLane := false
 	for i, m := range l.seats {
@@ -1135,12 +1176,12 @@ func (d *Dispatcher) seatFor(l routeLane, is RepoIssue, personaFilter string, bu
 		}
 		inLane = true
 		slot := SessionFor(m.name, is.Dir)
-		if busy[slot] {
+		if seats.taken(slot) {
 			passed = append(passed, seatPass{m.name, "busy"})
 			continue
 		}
 		if name, st := d.personaActive(m.name, is.Dir); name != "" {
-			busy[slot] = true
+			seats.note(slot)
 			passed = append(passed, seatPass{m.name, st})
 			continue
 		}
@@ -1690,6 +1731,13 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// gather() judges its bead. A one-shot Run never refires (d.Refill is
 	// unset outside Watch), so for it this is exactly the fresh, empty,
 	// pass-local map it always was.
+	//
+	// It holds THIS RUN'S OWN FIRES and nothing else (ranger-base-t8tq).
+	// What a fire pass merely read about a seat — working, inside another
+	// launcher's prompt grace, benched by a failed CLI — is a reading with
+	// the life of that pass and lives in the seatMap beside it; caching one
+	// here made a seat busy at the head of a seven-hour Run busy for seven
+	// hours.
 	busy := map[string]bool{}
 	// ADR 0013 §2 "Ceiling": session failures per slot, on the same
 	// lifetime as busy above and for the same reason — the count that
@@ -1754,7 +1802,24 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			}
 			dispatched++
 		}
-		if !d.Refill || g.working {
+		if !d.Refill {
+			continue
+		}
+		// The sweep, on the event that MAKES a session sweepable
+		// (ranger-base-t8tq). Both of the other call sites — before routing
+		// above, the epilogue below — fire once per Run, which was once per
+		// pass until ADR 0028 §1 made this Run long-lived and then became
+		// once per PROCESS. MEASURED 2026-08-28: one pass ran 7h09m and 22
+		// done-sessions piled up behind it, every one of them swept in the
+		// first seconds after the loop was bounced. A settle is the
+		// moment a per-bead session stops being anybody's, so it is where
+		// the sweep belongs under a rolling Run — including for a bead still
+		// working (its seat frees nothing, but the graveyard behind it is
+		// not about this bead). The sweep reads every bead fresh and swallows
+		// its own read failures (autoreap.go), so a settle it cannot sweep
+		// after costs nothing but the next settle's sweep.
+		d.autoReapPass()
+		if g.working {
 			continue
 		}
 		if d.refillCtx != nil && d.refillCtx.Err() != nil {
@@ -1763,7 +1828,22 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			continue
 		}
 		delete(busy, SessionFor(g.persona, g.is.Dir))
-		more, attempts, err := d.refire(g.persona, dirFilter, max, busy, sessFail)
+		// The refill runs the fire path for every free seat, not only for
+		// the one that just settled (ranger-base-t8tq). ADR 0028 §1 says
+		// "re-runs the fire path for the freed seat" and rests on "the
+		// level-triggered tick still sweeps everything, so a lost event
+		// costs latency, never correctness" — but under S4 the tick is
+		// Watch's, and Watch does not get its loop back until this Run
+		// returns. A Run that keeps refilling never returns, so a seat this
+		// Run did not fire into is a seat nothing ever offers work to again:
+		// MEASURED 2026-08-28, ~90% of a day's closes on the one seat that
+		// kept settling while three seats with ready work in their lanes sat
+		// out seven hours. So the settle is the tick, and it sweeps what the
+		// tick would have. personaFilter is still the operator's --persona,
+		// the busy map still refuses a seat with a bead on it, and each seat
+		// is re-read live (seatMap), so this fires no seat a fresh pass
+		// would not have fired.
+		more, attempts, err := d.refire(personaFilter, dirFilter, max, busy, sessFail)
 		if err != nil {
 			d.printf("✗ refill %s: %v\n", g.persona, err)
 		} else if !d.DryRun {
@@ -1818,9 +1898,12 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 // would turn a read-only command into a blocking one; it runs unlocked.
 // busy is the caller's seat-occupancy map (ADR 0028 §3) — a fresh one from
 // Run for a one-shot pass, or the one Run is sharing across every refire it
-// makes when d.Refill is set. fireLoop only ever reads and writes it while
-// holding the launcher flock below, on the caller's own goroutine; nothing
-// else touches it concurrently (see Run's doc on the gather fan-in).
+// makes when d.Refill is set. It holds the seats this Run FIRED into and
+// nothing else; what this loop merely reads about a seat goes in the
+// seatMap's pass half and expires with this call (ranger-base-t8tq).
+// fireLoop only ever reads and writes both while holding the launcher flock
+// below, on the caller's own goroutine; nothing else touches them
+// concurrently (see Run's doc on the gather fan-in).
 // sessFail is its companion under ADR 0013 §2's ceiling — session failures
 // per slot, same instance, same lifetime, same lock.
 func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]bool, sessFail map[string]int) (int, []*pendingBead, int, error) {
@@ -1832,6 +1915,8 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		defer lock.Release()
 	}
 
+	// The Run's occupancy, plus this fire pass's own readings (seatMap).
+	seats := newSeatMap(busy)
 	dispatched, attempts := 0, 0
 	outside := 0 // beads whose lane does not contain --persona X
 	var pending []*pendingBead
@@ -1866,7 +1951,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// a persona already made busy, so a wide lane fans across SEATS and
 		// never fans one persona N-wide. The busy key is the persona's repo
 		// slot; the session is the bead's own (Dial F).
-		seat, why, full := d.seatFor(lane, is, personaFilter, busy)
+		seat, why, full := d.seatFor(lane, is, personaFilter, seats)
 		if seat < 0 {
 			if full == "" {
 				// --persona X, and X is not in this bead's lane: not this
@@ -1992,7 +2077,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		if age, recent := d.promptedRecently(session); recent && held == "" && mine {
 			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
 				d.printf("– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
-				busy[slot] = true
+				seats.note(slot)
 				continue
 			}
 		}
@@ -2081,7 +2166,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			d.noteUncounted(is, persona, launchRT)
 			dispatched++
 			attempts++
-			busy[slot] = true
+			seats.hold(slot)
 			continue
 		}
 		// ADR 0020 §2.3, on the real path and not only under --dry-run: the
@@ -2135,15 +2220,23 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 				// stranded either way, so the working/blocked guard ignores
 				// both. claimLost and a launch that was DELIVERED but not
 				// seen never reach this arm and never touch the count.
+				//
+				// The bench is this fire pass's (seatMap.note) while the
+				// COUNT is the Run's: a refill offers the slot one more
+				// launch — the same one more a later pass always gave it —
+				// and a slot still broken benches again on that attempt's
+				// own failure. A bench held for the life of a rolling Run
+				// would retire a seat over one bad CLI start
+				// (ranger-base-t8tq).
 				sessFail[slot]++
 				if sessFail[slot] >= 2 {
-					busy[slot] = true
+					seats.note(slot)
 					d.printf("– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
 				} else {
 					d.printf("– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
 				}
 			default:
-				busy[slot] = true
+				seats.note(slot)
 				d.printf("– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
 			}
 			continue
@@ -2167,7 +2260,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// is the prompt's, not this line's — a seat stops being idle when
 		// its agent has the work, not when dispatch finishes bookkeeping.
 		d.noteSeatLaunch(is, slot, launchRT, p.prompted)
-		busy[slot] = true
+		seats.hold(slot)
 		pending = append(pending, p)
 	}
 	// §2.4's other half. A pass filtered to one persona skips every bead
@@ -2186,8 +2279,15 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // seat": a fresh bd ready scan (a settle is a hint, never trusted alone —
 // verified against bd here exactly as any other fire does), the same load
 // guard and epoch room every fire attempt checks, and one more fireLoop call
-// under the launcher flock, narrowed to the one persona whose seat just
-// came free and sharing the busy map the owning Run started with.
+// under the launcher flock, sharing the busy map the owning Run started with.
+//
+// It is NOT narrowed to the persona whose seat came free (ranger-base-t8tq;
+// see the call site for the measurement). personaFilter here is the
+// operator's `--persona`, unset on an ordinary loop — so a settle re-offers
+// the queue to every seat, which is what the pass used to do and what
+// nothing else does once a rolling Run stops returning to Watch's tick. The
+// seat walk is what decides who is free, live, and the busy map is what
+// keeps this Run's own occupied seats out of it.
 //
 // Only Run's own gather loop calls this, and only when d.Refill is set
 // (Watch's long-lived Run — ADR 0028 §4: no other launch path exists). It
@@ -2196,9 +2296,9 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // Run's own head last set them to, refreshed on the next full pass, exactly
 // as ADR 0028 §2's "only four things are pass-denominated" says the rest of
 // this file already may.
-func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
+func (d *Dispatcher) refire(personaFilter, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
 	if why := d.App.LoadHigh(d.errw()); why != "" {
-		d.printf("◷ %s — refill for %s skipped\n", why, persona)
+		d.printf("◷ %s — refill skipped\n", why)
 		return nil, 0, nil
 	}
 	d.rollEpoch(d.now())
@@ -2226,7 +2326,7 @@ func (d *Dispatcher) refire(persona, dirFilter string, max int, busy map[string]
 		return nil, 0, nil
 	}
 	OrderBeads(beads, d.Resume)
-	_, pending, attempts, err := d.fireLoop(beads, persona, room, busy, sessFail)
+	_, pending, attempts, err := d.fireLoop(beads, personaFilter, room, busy, sessFail)
 	if err != nil {
 		return nil, 0, err
 	}

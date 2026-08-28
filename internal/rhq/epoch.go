@@ -121,6 +121,25 @@ func (d *Dispatcher) rollEpoch(now time.Time) bool {
 	return true
 }
 
+// LaunchCapLine says what `-n` is denominated in, in the unit it is actually
+// spent in — the line `--watch` prints once at the top of its log.
+//
+// ADR 0028 §2 re-denominated `-n`/`autostart_max_beads:` from per-PASS to
+// per-EPOCH and the flag looks identical either way, so a number chosen when
+// a pass was minutes long goes on meaning something ten times smaller
+// without ever being edited. MEASURED 2026-08-28 (ranger-base-t8tq): a
+// held-over `-n 6` was the whole hour's ration for the entire shop, one
+// fast-cycling seat spent it, and the only trace was the exhaustion line
+// three seats never got far enough to read. So the loop names the
+// denomination out loud where an operator reading the log meets it first: a
+// stale flag is then a number they can see is wrong, not a silence.
+func LaunchCapLine(max int, epoch time.Duration) string {
+	if max <= 0 {
+		return fmt.Sprintf("◷ launch cap: -n 0 — no cap on launch attempts (set one with autostart_max_beads:; the accounting epoch is %s)", epoch)
+	}
+	return fmt.Sprintf("◷ launch cap: -n %d = %d launch attempt(s) per %s EPOCH, not per pass (ADR 0028 §2; autostart_max_beads:/dispatch_epoch:)", max, max, epoch)
+}
+
 // epochRoom is how many launch attempts `-n` leaves in this epoch, and
 // whether there are any. max ≤ 0 is no cap and always has room.
 //

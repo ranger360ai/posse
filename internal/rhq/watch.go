@@ -132,6 +132,11 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		}
 	}
 	hints := subscribe(ctx, func(line string) { fmt.Fprintf(d.Out, "   %s\n", line) })
+	// The launch ration, said once, at the top of the log this loop writes
+	// for the rest of its life (ranger-base-t8tq, fix ask (b)). See
+	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
+	// and changed under a flag that did not.
+	fmt.Fprintln(d.Out, LaunchCapLine(max, d.App.DispatchEpoch(d.errw())))
 	passes := 0
 	wait := base
 	for {

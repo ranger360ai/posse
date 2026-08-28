@@ -1355,6 +1355,10 @@ autostart_interval: 5m       # ← the arm switch
 autostart_max_beads: 3       # -n per epoch (dispatch_epoch:, default 1h — ADR 0028
                              # §2). A cap is ALWAYS applied (default 3);
                              # 0 means unbounded, and only by saying so.
+                             # The loop names the unit at the top of its log:
+                             # "-n 3 = 3 launch attempt(s) per 1h0m0s EPOCH,
+                             # not per pass" — a per-pass number carried over
+                             # rations the whole shop (ranger-base-t8tq).
 autostart_dry_run: true      # start here: passes route and report, dispatch nothing
 # autostart_resume: false    # defaults ON — see below
 # autostart_session: dispatch

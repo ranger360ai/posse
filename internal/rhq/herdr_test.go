@@ -102,6 +102,15 @@ func fakeBd(args []string) int {
 		} else {
 			fmt.Print("[]")
 		}
+		// fake-ready-next.json (file) is the SECOND answer, swapped in once
+		// the first has been served: a queue that MOVES between two calls of
+		// one Run — a bead closed and dropped, a bead filed since. Real bd's
+		// does; this fixture's never did, and a canned list that answers
+		// every call the same made every mid-Run behaviour untestable
+		// (ranger-base-t8tq). One swap, no counter, no clock.
+		if _, err := os.Stat("fake-ready-next.json"); err == nil {
+			os.Rename("fake-ready-next.json", "fake-ready.json")
+		}
 		return 0
 	case "list":
 		// One verb, three queries. `--status in_progress` is the claimed
