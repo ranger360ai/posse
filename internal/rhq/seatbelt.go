@@ -174,8 +174,9 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		// and refs live outside the tree entirely (rangerhq-09o2). Granting
 		// cwd alone leaves a persona that cannot commit in its own tree —
 		// the same shape as the redirect grant below, for the session's own
-		// repo instead of the store of record. Empty in the main checkout.
-		for _, g := range LinkedGitDirs(cwd) {
+		// repo instead of the store of record. Empty in the main checkout,
+		// and narrowed below the common dir (ranger-base-m2wf).
+		for _, g := range sessionGitGrants(cwd) {
 			add(g)
 		}
 		// The store of record is not under cwd when a redirect moves it
@@ -255,6 +256,59 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		add(w)
 	}
 	return dedupeStrings(out)
+}
+
+// sessionGitGrants is LinkedGitDirs narrowed to what a worktree session
+// actually writes (ranger-base-m2wf, from hoover's posture check on
+// ranger-base-sipu). LinkedGitDirs names two directories, and the second is
+// the COMMON git dir — the operator's main checkout's `.git`, shared with
+// every other session on that repo. Granted whole, as it was, a persona
+// dispatched into an isolated tree could:
+//
+//   - move any ref in the repo it was dispatched into, `refs/heads/main`
+//     included. `git update-ref` is not `git push`, so L1's push shim never
+//     sees it and L3's pre-push never fires; the launcher's own ff-merge of
+//     the session branch fires no hook either (worktree.go). Un-gated, and
+//     the whole point of the worktree model was that it could not happen.
+//   - overwrite the shared `hooks/` slots, disarming L3 for the repo and for
+//     every other worktree on it, persistently. The carve-out already denies
+//     that path (sessionHooksDirs); this takes it out of the grant as well,
+//     so the deny is no longer the only thing standing there.
+//
+// What a commit in a linked worktree really writes outside its own tree,
+// MEASURED under the narrowed profile (seatbeltworktreegit_qa_test.go):
+// `<common>/objects`, `<common>/logs`, and its OWN loose ref
+// `<common>/refs/heads/<branch>` with the `.lock` git renames onto it.
+// Everything else there — `config`, `packed-refs`, `hooks/`, other refs,
+// other sessions' `worktrees/<name>` dirs — stays under the default deny.
+//
+// The ref is granted as that pair of subpaths rather than as hoover's
+// prescribed `(regex #"^<common>/refs/heads/<branch>")`: the pair is
+// strictly narrower (the regex is a prefix match, so it would also cover a
+// sibling branch whose name extends this one) and it needs no second shape
+// in the writable set, which is a []string every caller of SeatbeltWritable
+// reads as subpaths. A detached HEAD has no branch and gets neither entry —
+// a commit there moves only the per-worktree HEAD, which is inside the
+// per-worktree dir this still grants whole.
+//
+// LinkedGitDirs itself is deliberately unchanged: it is also what codex and
+// grok are handed as `--add-dir` roots (herdrback.go), and `--add-dir` is
+// directory-granular. It cannot name a single ref, so any grant that lets
+// those runtimes commit exposes `refs/heads` whole. That gap is ACCEPTED
+// and stated rather than closed — closing it needs an alternate object/ref
+// store spliced on completion, which is a design, not a narrowing.
+func sessionGitGrants(cwd string) []string {
+	dirs := LinkedGitDirs(cwd)
+	if len(dirs) != 2 {
+		return dirs // main checkout: cwd's own grant already covers .git
+	}
+	own, common := dirs[0], dirs[1]
+	out := []string{own, filepath.Join(common, "objects"), filepath.Join(common, "logs")}
+	if b := repoBranch(cwd); b != "" {
+		ref := filepath.Join(common, "refs", "heads", b)
+		out = append(out, ref, ref+".lock")
+	}
+	return out
 }
 
 // SeatbeltCarveOut computes the trailing block for a session: the three

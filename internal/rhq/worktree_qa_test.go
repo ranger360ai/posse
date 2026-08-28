@@ -512,12 +512,35 @@ func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
 		t.Errorf("LinkedGitDirs(main checkout) = %v, want none — .git is already inside it", got)
 	}
 
-	// L2: the seatbelt profile's writable list.
+	// L2: the seatbelt profile's writable list. The per-worktree dir is
+	// granted whole; the COMMON one is shared with the operator's checkout
+	// and every other session, so only the three paths a commit writes
+	// there are named (ranger-base-m2wf, pinned in
+	// seatbeltworktreegit_qa_test.go). A `strings.Contains` on the common
+	// dir would pass on `<common>/objects` and measure nothing.
 	ag := &AgentFile{Name: "p", MemoryDir: t.TempDir()}
-	w := strings.Join(NewAppAt(t.TempDir()).SeatbeltWritable(ag, tr.Path, t.TempDir()), "\n")
-	for _, d := range dirs {
-		if !strings.Contains(w, absResolve(d)) {
-			t.Errorf("seatbelt does not grant %s:\n%s", d, w)
+	set := NewAppAt(t.TempDir()).SeatbeltWritable(ag, tr.Path, t.TempDir())
+	w := strings.Join(set, "\n")
+	for _, p := range []string{
+		dirs[0],
+		filepath.Join(dirs[1], "objects"),
+		filepath.Join(dirs[1], "logs"),
+		filepath.Join(dirs[1], "refs", "heads", tr.Branch),
+	} {
+		if !sbCovers(set, p) {
+			t.Errorf("seatbelt does not grant %s:\n%s", p, w)
+		}
+	}
+	// And the shared half of it is not named. Asked of the entries UNDER
+	// the common dir rather than of the whole set, because this fixture
+	// sits inside TMPDIR and the profile's blanket temp grant covers it —
+	// `sbCovers` would answer yes here for a path no git grant names. The
+	// coverage question is pinned on a fixture outside TMPDIR instead
+	// (seatbeltworktreegit_qa_test.go).
+	base := filepath.Join(dirs[1], "refs", "heads", tr.Base)
+	for _, g := range set {
+		if underDir(dirs[1], g) && underDir(g, base) {
+			t.Errorf("%s grants the branch the launcher merges into (%s):\n%s", g, base, w)
 		}
 	}
 
