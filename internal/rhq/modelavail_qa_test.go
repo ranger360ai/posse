@@ -92,7 +92,6 @@ func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
 // one is the sentence dispatch.go calls "the exact lie this preflight exists
 // to kill".
 func TestQA7vpFallbackMarkSurvivesPosseRelaunch(t *testing.T) {
-	t.Skip("ranger-base-twaq: `posse relaunch` replays the substituted tier and re-derives the mark from it, so the mark is dropped and dispatch then names the tier the session is not running")
 	b, _ := qaFellSession(t, "pr")
 
 	var out strings.Builder
@@ -121,6 +120,77 @@ func TestQA7vpFallbackMarkSurvivesPosseRelaunch(t *testing.T) {
 	d := &Dispatcher{App: b.App, HB: b}
 	if _, tier, fell := d.effectiveTier("pr", "claude", TierStrong); tier != TierStandard || fell == "" {
 		t.Errorf("dispatch tells the persona it is thinking at %q with fell=%q; it is running claude-opus-5", tier, fell)
+	}
+}
+
+// The other arm of the carry (ranger-base-twaq): a session that hopped to
+// another RUNTIME is off its PID's pair by runtime, not by tier, and its
+// mark rides a refresh for the same reason. Without it, collapsing the
+// carry's condition to the tier half alone would silently un-mark every
+// hopped session.
+func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
+	b, _ := newTestBackend(t)
+	b.Warn = &strings.Builder{}
+	qaPID(t, b, "security", TierStrong)
+	writeCfg(t, b.App, "tier_fallback:\n  security: codex\n")
+	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
+	if err := b.CreateSession(NewSessionOpts{Name: "hr", Agent: "security", Dir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := b.readMeta("hr"); m.Runtime != "codex" || m.Fallback == "" {
+		t.Fatalf("board not set up: the create must have hopped and recorded it: %+v", m)
+	}
+
+	var out strings.Builder
+	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "hr", NoLand: true}); err != nil {
+		t.Fatalf("relaunch: %v\n%s", err, out.String())
+	}
+	m, _ := b.readMeta("hr")
+	if m.Runtime != "codex" {
+		t.Fatalf("the refresh moved the runtime as well: %+v", m)
+	}
+	if m.Fallback == "" {
+		t.Errorf("a session still running the substitute RUNTIME wears no mark saying so: %+v", m)
+	}
+	if !strings.Contains(out.String(), "FALLBACK:") {
+		t.Errorf("the receipt does not say the recreate is a hopped one:\n%s", out.String())
+	}
+}
+
+// The negative arm, and the reason the carry is conditioned rather than
+// unconditional (ranger-base-twaq). The mark states a FACT — this session is
+// not running the pair its PID names — so it is carried only while that fact
+// holds. An operator who edits `tier:` down to what the session is really
+// running has made the substitute the asked-for pair, and the old line
+// ("tier strong wants claude-fable-5") is then false. It is dropped.
+//
+// TestQA7vpFallbackMarkSurvivesPosseRelaunch is the control: the same
+// fixture, the same refresh, no PID edit, and the mark stays.
+func TestQA7vpTheCarriedMarkIsDroppedOnceThePIDAsksForWhatIsRunning(t *testing.T) {
+	b, _ := qaFellSession(t, "cu") // architect: tier strong, fell to standard
+
+	qaPID(t, b, "architect", TierStandard) // the operator settles for what it got
+
+	var out strings.Builder
+	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "cu", NoLand: true}); err != nil {
+		t.Fatalf("relaunch: %v\n%s", err, out.String())
+	}
+	m, _ := b.readMeta("cu")
+	if m.Tier != TierStandard {
+		t.Fatalf("the refresh moved the tier: %+v", m)
+	}
+	if m.Fallback != "" {
+		t.Errorf("the session runs exactly what its PID asks for; the mark is a lie now: %q", m.Fallback)
+	}
+	if strings.Contains(out.String(), "FALLBACK:") {
+		t.Errorf("the receipt marks a launch that fell nowhere:\n%s", out.String())
+	}
+	var list strings.Builder
+	if err := b.CmdList(&list); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(list.String(), FallbackTag) {
+		t.Errorf("posse list marks a session that is on its PID's own pair:\n%s", list.String())
 	}
 }
 

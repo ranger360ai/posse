@@ -3,7 +3,8 @@
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
 (ADR 0013 §6: unmapped tier displays as `default`, not the intent name)
 · amended 2026-08-25 (§1/§3: the mapping can miss; rangerhq-oay shipped
-the mechanism, ranger-base-lzx writes it down)*
+the mechanism, ranger-base-lzx writes it down) · amended 2026-08-28
+(§2: the mark survives a relaunch — ranger-base-twaq)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -211,6 +212,23 @@ words:
    is actually thinking at — one probe, one line, the meta as the
    launch's store of record (ADR 0011 §3). `posse cost` was already
    honest: `TierForModel` reads the transcript, not the PID.
+
+   *(Amended 2026-08-28, ranger-base-twaq.)* The mark states a fact —
+   *this session is not running the pair its PID names* — so it lasts
+   as long as the fact does, a refresh included. `posse relaunch`
+   recreates from the meta, which records the pair the last launch
+   **fell to**; asked about the substitute the preflight finds it
+   available and falls nowhere, so the mark used to be re-derived as
+   empty and the session went on running the substitute with nothing
+   anywhere saying so — `posse list`, the cockpit, the receipt and
+   `effectiveTier` all silent, which is the lie this preflight exists
+   to kill. The recreate therefore *carries* the line rather than
+   re-deriving it, for exactly as long as the launching pair still
+   differs from the PID's own; an operator who edits `tier:` down to
+   what the session is really running has made the substitute the
+   asked-for pair, and the mark is dropped. Nothing here moves the
+   pair: a session degraded during an outage stays on the substitute
+   until it is created afresh, which is §3's trade, not this rule's.
 3. **The preflight never refuses.** "A degraded model is worse than
    nothing" is the operator's judgement, recorded in advance as
    `tier_floor:` (and as §3's no-`--allow-degraded` at `fast`). Both

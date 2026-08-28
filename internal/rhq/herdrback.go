@@ -93,6 +93,18 @@ type NewSessionOpts struct {
 	// dispatch; "" for every interactive launch, and what the reap guard
 	// reads to know there is a bead to ask about at all.
 	Bead string
+	// Fallback carries an availability mark this session is ALREADY wearing
+	// into a relaunch (ranger-base-twaq). Only RecreateOpts sets it: a fresh
+	// launch has no history, and its mark is whatever the preflight says.
+	//
+	// A recreate asks for the pair the last launch FELL to, so the preflight
+	// is asked about the substitute, finds it available, and falls nowhere —
+	// which used to blank the mark on a session that is still running the
+	// substitute. The session did not stop being degraded because it was
+	// refreshed; carrying the line is what keeps `posse list`, the receipt,
+	// the cockpit and dispatch's effectiveTier saying so. planLaunch drops
+	// it again the moment the pair stops differing from the PID's own.
+	Fallback string
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
@@ -1326,6 +1338,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if err != nil {
 			return nil, err
 		}
+		ownTier := a.ResolveTier("", ag)
 		tier = a.ResolveTier(o.Tier, ag)
 		if !ValidTier(tier) {
 			return nil, Die("unknown tier %q (strong | standard | fast)", tier)
@@ -1344,6 +1357,19 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if rt, err = a.LoadRuntime(runtime); err != nil {
 				return nil, err
 			}
+		} else if o.Fallback != "" && (runtime != own || tier != ownTier) {
+			// Nothing fell HERE because the pair asked for is already the
+			// substitute — this is a relaunch of a session that fell on an
+			// earlier launch (ranger-base-twaq). The mark rides through, so
+			// a refresh does not silently un-say it.
+			//
+			// Conditioned on the pair still differing from the PID's own,
+			// because that difference is the fact the mark states. An
+			// operator who edits `tier:` down to what the session is really
+			// running has made the substitute the asked-for pair, and the
+			// old line ("tier strong wants ...") would be a lie: it is
+			// dropped rather than carried.
+			fallback = o.Fallback
 		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
