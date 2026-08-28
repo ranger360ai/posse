@@ -540,14 +540,43 @@ func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
 // commit that removed the line, and --diff-merges=first-parent (rangerhq-boco)
 // made a merge's net diff a removal entry too — so merging the branch that
 // dropped the bead re-attributes the drop from the side commit to the merge
-// commit, the ledger's `rec.Commit != lb.Commit` arm stops matching, and an
-// owned deletion alarms as lost forever. Recording it again silences it only
-// by appending a second ledger line for one deletion, which is the input
-// rangerhq-fknq is filed about. Latent while every merge-back is a
-// fast-forward; live the first time a merge commit touches issues.jsonl
+// commit. While the exemption was sha equality that un-recorded the deletion
+// and it alarmed forever; recording it again silenced it only by appending a
+// second ledger line for one deletion, which is the input rangerhq-fknq is
+// filed about. sameRemoval is the fix: one removal, two shas
 // (ranger-base-ntsz).
+// The other half of sameRemoval. Accepting "no re-addition between them"
+// alone exempts an id whose record was written on a line of history the
+// census never walked: the range from an unmerged branch's commit to a drop
+// on main contains no re-addition either — the id was added before the fork
+// — so a real, unowned loss on main goes silent, which is the one thing this
+// mechanism may never do. Ancestry is what makes the ledger's record a claim
+// about THIS history (ranger-base-ntsz).
+func TestALedgerRecordOffThisHistoryOwnsNothing(t *testing.T) {
+	newTestBackend(t)
+	repo := qblRepo(t)
+	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
+	qblGit(t, repo, "branch", "-M", "main")
+
+	// A branch drops q-2 and owns it there. The branch is never merged.
+	qblGit(t, repo, "checkout", "-q", "-b", "side")
+	qblCommit(t, repo, "side drops q-2", qblLine("q-1", "open"))
+	qblLive(t, repo, "q-1")
+	qblRecord(t, repo)
+
+	// main loses q-2 on its own. Nothing owns THAT removal, and the census
+	// walking main never sees the side commit at all.
+	qblGit(t, repo, "checkout", "-q", "main")
+	qblCommit(t, repo, "q-2 vanishes on main", qblLine("q-1", "open"))
+	qblLive(t, repo, "q-1")
+
+	lost := qblLost(t, repo)
+	if len(lost) != 1 || lost[0].ID != "q-2" {
+		t.Fatalf("a record from an unmerged branch owns no removal on main: got %+v", lost)
+	}
+}
+
 func TestLedgerRecordSurvivesAMergeOfTheDroppingCommit(t *testing.T) {
-	t.Skip("ranger-base-ntsz: the census re-attributes a branch's removal to the merge commit, and the ledger is keyed on the commit")
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))

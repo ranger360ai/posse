@@ -117,6 +117,7 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 	if err != nil {
 		return nil, err
 	}
+	home := beadsHome(dir)
 	for id, recs := range ledger {
 		lb, ok := removed[id]
 		if !ok {
@@ -124,10 +125,14 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 		}
 		// SOME record for the id must cover the removal the census found.
 		// One record owns one removal (rangerhq-6he5), so an id with two
-		// removals has two records and only one of them names this commit;
+		// removals has two records and only one of them covers this one;
 		// asking "does any of them" is what keeps the answer independent
 		// of the order of an append-only file that git merges, rebases
 		// replay and an operator can dedupe by hand (rangerhq-fknq).
+		//
+		// Covering is sameRemoval, not sha equality: git attributes one
+		// removal to more than one commit, so the sha the census reports
+		// for a removal moves as history grows (ranger-base-ntsz).
 		//
 		// A record with no commit predates the field, and the whole of a
 		// pre-dc2bc16 ledger looks like that: it must go on exempting the
@@ -142,7 +147,7 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 		for _, rec := range recs {
 			if rec.Commit != "" {
 				modern = true
-				covered = covered || rec.Commit == lb.Commit
+				covered = covered || sameRemoval(home, id, rec.Commit, lb.Commit)
 			}
 		}
 		if covered || !modern {
@@ -171,9 +176,16 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 // seen, has no census and so no findings — nil, nil, not an error (gitBead
 // failing is that case, not a scan failure). --diff-merges=first-parent asks
 // git for a merge commit's net diff against its first parent, which `-p`
-// alone never prints; the walk still visits side-branch commits on their own
-// entries, so a removal that happened on a branch is still attributed to
-// that commit and a merge only adds its own net effect.
+// alone never prints (rangerhq-boco).
+//
+// That makes the commit reported here a moving answer, and rangerhq-boco's
+// claim that it does not — "a removal on a branch is still attributed to that
+// commit" — was wrong (ranger-base-ntsz). The walk does still visit the side
+// commit, but merging the branch shows the same removal in the merge's net
+// diff, and the merge is newer, so the newest-first slot moves off the side
+// commit onto the merge. Nothing downstream may treat this sha as the
+// removal's identity: sameRemoval is how a reader asks whether two shas are
+// one removal.
 func removedBeads(dir string) (map[string]LostBead, error) {
 	out, err := gitBead(beadsHome(dir), "log", "--format=%x00%H %at", "-p", "--diff-merges=first-parent", "--no-renames", "--", beadsJSONL)
 	if err != nil {
@@ -215,6 +227,62 @@ func removedBeads(dir string) (map[string]LostBead, error) {
 		return nil, fmt.Errorf("scanning %s history: %w", beadsJSONL, err)
 	}
 	return removed, nil
+}
+
+// sameRemoval reports whether a deletion recorded against commit rec is the
+// removal the census attributed to commit found — one removal seen under two
+// shas, rather than two removals.
+//
+// git blames a removal on every commit whose diff drops the line, so the sha
+// the census reports moves as history grows: merge the branch that dropped a
+// bead and the merge's first-parent diff drops it again, newer than the side
+// commit the ledger recorded (ranger-base-ntsz). Ancestry alone cannot tell
+// that from a real second loss, because the first drop is an ancestor of the
+// second one too. What separates them is that a second loss needs the line
+// back first: rec and found are the same removal exactly when rec is an
+// ancestor of found and nothing between them puts the id back. A restore in
+// the range is rangerhq-6he5's second loss and must stay a finding.
+//
+// A record naming a commit that is not an ancestor — a rebased-away sha, a
+// record from another line of history — covers nothing, which is the false
+// alarm direction: `--record` answers it, and silence would not.
+func sameRemoval(home, id, rec, found string) bool {
+	if rec == "" || found == "" {
+		return false
+	}
+	if rec == found {
+		return true
+	}
+	if _, err := gitBead(home, "merge-base", "--is-ancestor", rec, found); err != nil {
+		return false
+	}
+	out, err := gitBead(home, "log", "--format=", "-p", "--diff-merges=first-parent",
+		"--no-renames", rec+".."+found, "--", beadsJSONL)
+	if err != nil {
+		return false
+	}
+	return !readdsID(out, id)
+}
+
+// readdsID reports whether any diff in out puts id's line back. A read it
+// cannot finish answers yes: an unreadable range is no proof the bead stayed
+// gone, and this mechanism's failure direction is a noisy alarm, never a
+// quiet one.
+func readdsID(out []byte, id string) bool {
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	// The same monster-line cap removedBeads walks under.
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "+{") {
+			continue
+		}
+		var is BdIssue
+		if json.Unmarshal([]byte(line[1:]), &is) == nil && is.ID == id {
+			return true
+		}
+	}
+	return sc.Err() != nil
 }
 
 // parseCommitStamp splits "<sha> <unix-seconds>".
