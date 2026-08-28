@@ -105,6 +105,7 @@ type SessionTree struct {
 	Path   string // this session's working tree
 	Branch string // the branch checked out in it
 	Base   string // the branch it was cut from — the merge target, recorded on the branch
+	Bead   string // the bead it was cut for, recorded on the branch ("" = not recorded; SessionTreesIn fills it)
 }
 
 // SessionBranch is the branch a session's worktree checks out. The session
@@ -294,6 +295,45 @@ func recordBase(repo, branch, base string) error {
 	}
 	_, err := git(repo, "config", baseKey(branch), base)
 	return err
+}
+
+// beadKey names where a session branch records the bead it was cut FOR — the
+// run record ADR 0011 §3 asks for, kept where baseKey is kept and for the
+// same reason (ranger-base-nurl). The session meta already carries `bead:`,
+// and it is the wrong record for the one question the landing sweep asks:
+// the meta is removed by a kill and by a clearDeadMeta, and both of those
+// leave the tree and its branch standing. A pointer that disappears exactly
+// when the work is stranded cannot be what finds stranded work.
+//
+// It is a POINTER and never a status, on the same rule as the meta's
+// (ADR 0011): what it names is the bead whose store is then asked whether it
+// is closed, so nothing here can disagree with the store of record.
+func beadKey(branch string) string { return "branch." + branch + ".posseBead" }
+
+// recordBead points a session branch at its bead. Written at every launch
+// into the tree rather than only when the branch is cut, because the
+// pre-Dial-F slot session (SessionFor(persona, dir)) is reused across beads
+// and its pointer moves with it — the same semantics NoteBead gives the
+// meta's copy. An empty id clears nothing: an interactive relaunch into a
+// bead session must not erase which bead the branch holds.
+func recordBead(repo, branch, id string) error {
+	if id == "" || branch == "" {
+		return nil
+	}
+	_, err := git(repo, "config", beadKey(branch), id)
+	return err
+}
+
+// beadOf answers which bead a session branch's commits belong to, or "" when
+// nothing recorded it — every branch cut before this landed, and every tree
+// made by hand. "" is not a bead that is open: the sweep says out loud that
+// it cannot tell rather than landing on a guess (landsweep.go).
+func beadOf(repo, branch string) string {
+	out, err := git(repo, "config", "--get", beadKey(branch))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
 }
 
 // baseOf answers the branch a session's work must land on: the one it was
@@ -750,7 +790,10 @@ func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 			if path != "" && strings.HasPrefix(branch, "posse/") {
 				// Each tree's own base: they need not agree, and after an
 				// operator branch switch none of them is today's HEAD.
-				out = append(out, &SessionTree{Repo: repo, Path: path, Branch: branch, Base: baseOf(repo, branch, base)})
+				out = append(out, &SessionTree{
+					Repo: repo, Path: path, Branch: branch,
+					Base: baseOf(repo, branch, base), Bead: beadOf(repo, branch),
+				})
 			}
 		}
 		for _, ln := range strings.Split(list, "\n") {

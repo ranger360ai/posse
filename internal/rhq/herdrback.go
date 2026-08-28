@@ -1256,6 +1256,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 		if t != nil {
 			dir, repo, branch = t.Path, t.Repo, t.Branch
+			// The branch's own copy of `bead:` (worktree.go beadKey): the
+			// meta below carries the same pointer and is removed by every
+			// kill, and the landing sweep has to find a tree whose session
+			// is already gone (ranger-base-nurl). Best effort — a launch
+			// must not fail because a git config write did not.
+			if err := recordBead(t.Repo, t.Branch, o.Bead); err != nil {
+				b.warn("posse: %s not stamped with bead %s (%v) — a later pass cannot tell what it is holding\n", t.Branch, o.Bead, err)
+			}
 		}
 	}
 
@@ -1826,6 +1834,12 @@ func (b *HerdrBackend) NoteBead(name, id string) {
 	}
 	m.Bead = id
 	_ = b.writeMeta(m)
+	// The branch keeps its own copy, because the meta does not survive a
+	// kill and the tree does (worktree.go beadKey, ranger-base-nurl). Same
+	// best-effort rule as the write above.
+	if m.Repo != "" && m.Branch != "" {
+		_ = recordBead(m.Repo, m.Branch, id)
+	}
 }
 
 // NoteBeadFromPrompt is NoteBead for a hand-dispatch (`posse prompt <name>

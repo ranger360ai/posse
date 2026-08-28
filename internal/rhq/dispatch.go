@@ -1593,6 +1593,14 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// so this call is guarded against another launcher's fresh prompt too.
 	d.autoReapPass()
 
+	// And land what nobody watched close (landsweep.go). It runs next to the
+	// reap and for the same reason — a close this instance never judged is
+	// invisible to the pass that fired it — but it reads git rather than the
+	// session list, so it also covers the tree whose session is already
+	// gone. Read-only until it finds a closed bead's unlanded branch, so it
+	// costs a `git worktree list` per repo on the ordinary pass.
+	d.landClosedTrees(dirFilter)
+
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
 	// always runs (ADR 0013 §3).
@@ -3341,10 +3349,14 @@ func (d *Dispatcher) noteTree(id, session string) {
 //
 // It runs where the pass JUDGES a close, which is not every close: a bead
 // whose wait ran out keeps its claim and is not judged this pass, and if the
-// persona closes it afterwards nothing here sees it. That branch is not
-// lost, only unlanded — `posse worktrees` lists it and `--land` finishes it
-// — and the honest fix is a run record that names the bead a tree belongs to
-// (ADR 0011 §3's `bead:`), which is not yet written.
+// persona closes it afterwards nothing here sees it. That is what stranded
+// four closed beads' branches at once (ranger-base-nurl), and the fix this
+// comment used to call unwritten is now landsweep.go: the branch records the
+// bead it was cut for (worktree.go beadKey — ADR 0011 §3's `bead:`, kept
+// where a kill cannot take it), and the next pass lands every tree whose
+// bead the store now calls closed. This stays the FIRST chance to land a
+// close, on the pass that watched it; the sweep is the one that catches the
+// closes nobody watched.
 func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	m, ok := d.HB.readMeta(session)
 	if !ok {
