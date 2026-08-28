@@ -194,6 +194,74 @@ func TestWatchStatusReadsLockThenPidfile(t *testing.T) {
 	}
 }
 
+// The other half of the invariant, and the one nothing pinned: a running
+// loop HOLDS the lock for its whole life, so the hook's probe sees it from
+// outside. TestWatchRefusesWhenAnotherLoopHoldsTheLock proves Watch TAKES
+// the lock; it stays green if Watch drops it the instant after, because it
+// never reaches that line. Measured (ranger-base-w5g2): turning `defer
+// lock.Release()` in Watch into an immediate release left every package
+// green — a live loop would then read as none, and the autostart hook would
+// kill it and put a second loop on the same queue, which is the exact
+// failure the lock replaced a pidfile to prevent (rangerhq-ct9/mugy).
+func TestWatchHoldsTheLockForItsWholeLife(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int)
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
+
+	// Wait for the loop to be up by the fact it stamps, then ask the
+	// question the hook asks — from a second open file description, which
+	// is what makes this the same contention a separate process gets.
+	up := false
+	for i := 0; i < 200 && !up; i++ {
+		if w, ok := ReadWatchPid(WatchPidPath(b.App)); ok && w.Pid == os.Getpid() {
+			up = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !up {
+		cancel()
+		<-done
+		t.Fatal("the loop never started")
+	}
+	running, err := WatchLoopRunning(b.App)
+	if err != nil {
+		cancel()
+		<-done
+		t.Fatalf("probing a live loop: %v", err)
+	}
+	if !running {
+		cancel()
+		<-done
+		t.Fatal("a running loop must hold the lock the whole time it runs — a dropped lock reads as no loop and gets replaced")
+	}
+	// And the same line the hook actually matches on, not just the bool.
+	line, err := WatchStatus(b.App)
+	if err != nil {
+		cancel()
+		<-done
+		t.Fatalf("watch-status against a live loop: %v", err)
+	}
+	if !strings.HasPrefix(line, WatchStatusPrefix+"running") {
+		cancel()
+		<-done
+		t.Fatalf("the hook reads this line; a live loop must say running, got %q", line)
+	}
+
+	cancel()
+	<-done
+
+	if running, err := WatchLoopRunning(b.App); err != nil || running {
+		t.Errorf("a loop that ended must release the lock: running=%v err=%v", running, err)
+	}
+}
+
 // The loop refuses to become the second loop, before it has touched the
 // queue at all.
 func TestWatchRefusesWhenAnotherLoopHoldsTheLock(t *testing.T) {
