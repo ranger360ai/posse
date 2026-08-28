@@ -116,6 +116,15 @@ func fakeBd(args []string) int {
 		// that reads that query back (settleopen.go) is only pinnable
 		// against a fake that does. The labels asked for are honoured, so
 		// a create in another lane is not mistaken for a question.
+		// The `list` mirror of fake-ready-fail: a repo that RESOLVES but
+		// whose bd call fails (a locked database, a repo with no bd init).
+		// UnresolvedDirs cannot see this one, so it is the shape a caller
+		// that folds a failed scan into an empty result gets wrong silently
+		// (ranger-base-ynim).
+		if _, err := os.Stat("fake-list-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "database is locked")
+			return 1
+		}
 		file, want := "fake-list.json", ""
 		for i, a := range args {
 			if a == "--label-any" {

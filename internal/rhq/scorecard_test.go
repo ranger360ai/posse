@@ -1,6 +1,7 @@
 package rhq
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -295,5 +296,115 @@ func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
 	// x-1 closed→open once, x-2 never: 2 closed, 1 of them reopened.
 	if !strings.Contains(s, "closed-no-reopen") || !strings.Contains(s, "→ 1") {
 		t.Errorf("want closed-no-reopen 2 closed → 1 through the hop:\n%s", s)
+	}
+}
+
+// scorecardRig is a card over a fixed persona and a `beads:` list the test
+// writes: one repo per entry, each with its own fake-list.json (and, if the
+// test wants it, the fake-list-fail marker that makes bd's own call fail on
+// a path that DOES resolve).
+func scorecardRig(t *testing.T, dirs ...string) func() (string, error) {
+	t.Helper()
+	b, _ := newTestBackend(t)
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\nlabels: [code]\nmetrics: [closed-no-reopen]\n---\nYou are dev.\n"), 0o644)
+	cfg := "beads:\n"
+	for _, d := range dirs {
+		cfg += "  - " + d + "\n"
+	}
+	os.WriteFile(b.App.ConfigPath, []byte(cfg), 0o644)
+	return func() (string, error) {
+		var out strings.Builder
+		err := b.App.Scorecard(bd, &out, "dev")
+		return out.String(), err
+	}
+}
+
+// scorecardRepo is one beads repo holding n closed beads for "dev".
+func scorecardRepo(t *testing.T, n int, fail bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	var rows []string
+	for i := 0; i < n; i++ {
+		rows = append(rows, `{"id":"z-`+fmt.Sprint(i)+`","status":"closed","assignee":"dev",`+
+			`"created_at":"2026-08-01T00:00:00Z","closed_at":"2026-08-01T01:00:00Z"}`)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fake-list.json"), []byte("["+strings.Join(rows, ",")+"]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if fail {
+		if err := os.WriteFile(filepath.Join(dir, "fake-list-fail"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// The bead (ranger-base-ynim): with two configured repos and one the scan
+// could not read, the card printed a full, healthy-looking table computed
+// from half the data and said nothing about the half it never read. Every
+// column here is a real number that is silently short — worse than the
+// queue scan's version of this (rangerhq-llse), because a queue that comes
+// back empty at least looks like nothing happened.
+func TestScorecardNamesTheReposItCouldNotRead(t *testing.T) {
+	good, bad := scorecardRepo(t, 2, false), scorecardRepo(t, 5, true)
+	card, err := scorecardRig(t, good, bad)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Named, not merely counted: an operator cannot fix a path the card
+	// will not spell.
+	if !strings.Contains(card, AbbrevHome(bad)) {
+		t.Errorf("the unread repo %s must be named on the card:\n%s", bad, card)
+	}
+	if strings.Contains(card, "scorecard scan failed: "+AbbrevHome(good)) {
+		t.Errorf("the repo that WAS read must not be reported as failed:\n%s", card)
+	}
+	// How much of the data the numbers came from, next to the numbers.
+	if !strings.Contains(card, "scored 1 of 2 configured beads repo(s)") {
+		t.Errorf("the card must say how many repos it scored:\n%s", card)
+	}
+	// And the good repo's data still lands — naming the failure is not an
+	// excuse to drop the half that read.
+	if !strings.Contains(card, "2 closed") {
+		t.Errorf("the readable repo's 2 closed beads must still be scored:\n%s", card)
+	}
+}
+
+// The silence half. A caveat that fires on a healthy card is a caveat the
+// operator learns to skip, and this one has to survive being read.
+func TestScorecardSaysNothingWhenEveryRepoReads(t *testing.T) {
+	card, err := scorecardRig(t, scorecardRepo(t, 2, false), scorecardRepo(t, 3, false))()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, no := range []string{"scorecard scan failed", "scored 2 of 2"} {
+		if strings.Contains(card, no) {
+			t.Errorf("a card that read every repo must not print %q:\n%s", no, card)
+		}
+	}
+	if !strings.Contains(card, "5 closed") {
+		t.Errorf("both repos must be summed (2+3 closed):\n%s", card)
+	}
+}
+
+// repos == 0 already died; what it did not do was say WHICH repos, which
+// is the whole of what an operator needs to act on the refusal.
+func TestScorecardRefusalNamesEveryUnreadRepo(t *testing.T) {
+	a, b := scorecardRepo(t, 1, true), scorecardRepo(t, 1, true)
+	card, err := scorecardRig(t, a, b)()
+	if err == nil {
+		t.Fatalf("a card with no readable repo must refuse, got:\n%s", card)
+	}
+	for _, dir := range []string{a, b} {
+		if !strings.Contains(err.Error(), AbbrevHome(dir)) {
+			t.Errorf("the refusal must name %s: %v", dir, err)
+		}
+	}
+	if card != "" {
+		t.Errorf("a refusal must print no table at all:\n%s", card)
 	}
 }

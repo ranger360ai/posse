@@ -245,9 +245,21 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 	}
 	totals := map[string]Score{}
 	repos := 0
+	var failed []error
 	for _, dir := range a.BeadsDirs() {
 		issues, err := bd.ListAll(dir)
 		if err != nil {
+			// A repo the scan could not read has an UNKNOWN history, not an
+			// empty one — the rule ReadyAll already keeps for a queue
+			// (rangerhq-llse, ranger-base-vlrp). Dropping it here is the
+			// quieter hazard: the table still renders, every column is a
+			// plausible number, and each persona's closed/open/filed count
+			// is short by whatever that repo held, with nothing on the page
+			// saying so. UnresolvedDirs is the helper for a caller that
+			// never reaches bd; this one does, so the failure it must name
+			// is bd's own — a locked database or a repo with no bd init as
+			// much as a path that is not there.
+			failed = append(failed, ScanError{Dir: dir, Err: err})
 			continue
 		}
 		repos++
@@ -257,7 +269,29 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 		}
 	}
 	if repos == 0 {
-		return Die("no beads repos readable (config beads: list)")
+		// A present-but-empty `beads:` names no repos to fail, so there is
+		// nothing to list; anything else must say which repo and why, which
+		// is the whole of what an operator can act on here.
+		if len(failed) == 0 {
+			return Die("no beads repos readable (config beads: list)")
+		}
+		named := make([]string, 0, len(failed))
+		for _, err := range failed {
+			named = append(named, err.Error())
+		}
+		return Die("no beads repos readable (config beads: list): %s", strings.Join(named, "; "))
+	}
+	// Above the table, and on w rather than stderr. These numbers ARE the
+	// output of this command: a caveat the operator reads after the count
+	// has already been read, and one that goes to stderr is gone the moment
+	// the card is piped into a file or pasted into a report — which is what
+	// a scorecard is for.
+	for _, err := range failed {
+		fmt.Fprintf(w, "scorecard scan failed: %v\n", err)
+	}
+	if len(failed) > 0 {
+		fmt.Fprintf(w, "scored %d of %d configured beads repo(s) — every number below counts only those; the rest is unknown, not zero\n\n",
+			repos, repos+len(failed))
 	}
 	// The column, the metric line and the trailer all read one fact, carried
 	// on the scores themselves (ScoreIssues: reopens != nil), so they cannot
