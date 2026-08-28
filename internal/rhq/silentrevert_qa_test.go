@@ -3,7 +3,7 @@ package rhq
 // QA pins for the silent-revert detector (scripts/audit-silent-reverts.sh,
 // rangerhq-8rtf, verified under rangerhq-jkhb).
 //
-// Two claims, one live and one pinned open:
+// Three claims:
 //
 //   1. The detector's own --self-test proves the detector FIRES, which is the
 //      only thing that separates "the audit ran" from "the audit works". But
@@ -19,6 +19,15 @@ package rhq
 //      back. The scan used to skip deletions, so that half scored clean and
 //      exited 0. It now treats absence as a state a path can be rolled back
 //      to, and both halves flag. This test is what says so.
+//
+//   3. The harness that proves 1 and 2 is itself proof against a dead fixture
+//      (ranger-base-z4vx). Its rig guard was dead code — errexit is suppressed
+//      for the left operand of `||` — and its NEGATIVE control asserted an
+//      ABSENCE and nothing else, so the control reported a pass over a fixture
+//      that was never built. The guard takes the plant's status on its own
+//      line now, and every arm demands a positive witness that it scanned the
+//      commits the plant means to build. The last two tests here are the two
+//      escapes, one each.
 //
 // Self-contained on purpose (own helpers, own fixture): they must survive
 // whatever the next persona does to the script's neighbours.
@@ -182,52 +191,83 @@ func TestAuditFlagsAddOnlySilentRevertIsStillTheMechanism(t *testing.T) {
 	}
 }
 
-// TestSilentRevertSelfTestRigFailureIsNotAPass is ranger-base-z4vx. The
-// self-test's three arms all depend on a fixture the script plants first, and
-// the harness that is supposed to notice a plant that did not build —
-//
-//	( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" ) || {
-//	    echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
-//
-// — cannot fire: errexit is suppressed for the left operand of `||` and the
-// suppression is inherited into the subshell, so a plant returning non-zero
-// does not abort it and `pwd` writes the script's own toplevel as the fixture
-// path. The two positive arms fail safe (they want n>=1 and get 0). The
-// NEGATIVE control does not: it wants n==0, which a repo nobody planted
-// satisfies, so it reports "a plain move is not flagged" having looked at
-// nothing — the exact class it was added to prevent.
-//
-// This plants that failure (the move rig builds nothing) and asserts the
-// harness does not answer with a pass. Skipped until ranger-base-z4vx closes;
-// remove the skip then. It FAILS at HEAD with the skip removed — verified.
-func TestSilentRevertSelfTestRigFailureIsNotAPass(t *testing.T) {
-	t.Skip("ranger-base-z4vx: the rig guard is dead code and the move control passes on a dead rig")
-
+// srDeadMoveRig writes a copy of the audit script whose move rig — the one the
+// NEGATIVE control reads — has been mutated to build nothing, and returns its
+// path together with the (non-repo) directory to run it from. inject is the
+// line spliced in at the top of plant_move: `return 2` is a rig that FAILS,
+// `return 0` is a rig that reports success and plants nothing. Those are two
+// different escapes and self_test() answers them with two different guards.
+func srDeadMoveRig(t *testing.T, inject string) (mutant, dir string) {
+	t.Helper()
 	script := srScript(t)
 	src, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatalf("read %s: %v", script, err)
 	}
-	// Guard the mutation itself: if the function is renamed, this pin must say
-	// so rather than quietly measure nothing.
+	// Guard the mutation itself: if the function is renamed, these pins must
+	// say so rather than quietly measure nothing.
 	const head = "plant_move() {\n"
 	if !strings.Contains(string(src), head) {
 		t.Fatalf("plant_move() not found in %s; this pin's mutation no longer applies", script)
 	}
-	broken := strings.Replace(string(src), head,
-		head+"  return 2   # ranger-base-z4vx: this rig builds nothing\n", 1)
+	broken := strings.Replace(string(src), head, head+inject, 1)
 
-	dir := t.TempDir()
-	mutant := filepath.Join(dir, "audit-mutant.sh")
+	dir = t.TempDir()
+	mutant = filepath.Join(dir, "audit-mutant.sh")
 	if err := os.WriteFile(mutant, []byte(broken), 0o755); err != nil {
 		t.Fatalf("write mutant: %v", err)
 	}
+	return mutant, dir
+}
 
+// TestSilentRevertSelfTestRigFailureIsNotAPass is ranger-base-z4vx. The
+// self-test's three arms all depend on a fixture the script plants first, and
+// the harness that was supposed to notice a plant that did not build —
+//
+//	( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" ) || {
+//	    echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
+//
+// — could not fire: errexit is suppressed for the left operand of `||` and the
+// suppression is inherited into the subshell, so a plant returning non-zero
+// did not abort it and `pwd` wrote the script's own toplevel as the fixture
+// path. The two positive arms fail safe (they want n>=1 and get 0). The
+// NEGATIVE control does not: it wants n==0, which a repo nobody planted
+// satisfies, so it reported "a plain move is not flagged" having looked at
+// nothing — the exact class it was added to prevent.
+//
+// This plants that failure (the move rig FAILS) and asserts the harness does
+// not answer with a pass. It is not hypothetical: any deny rule, sandbox or
+// git change that breaks `git commit -qm` inside plant_repo lands here — a
+// persona whose gate refuses `git commit` without `--` sees all three rigs
+// build nothing.
+func TestSilentRevertSelfTestRigFailureIsNotAPass(t *testing.T) {
+	mutant, dir := srDeadMoveRig(t, "  return 2   # ranger-base-z4vx: this rig builds nothing\n")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
 		t.Fatalf("self-test exited 0 with a rig that builds nothing:\n%s", out)
 	}
 	if strings.Contains(out, "a plain move is not flagged") {
 		t.Fatalf("negative control reported a pass for a fixture that was never built:\n%s", out)
+	}
+}
+
+// TestSilentRevertNegativeControlHasAPositiveWitness is the other half of
+// ranger-base-z4vx, and it is the half a working rig guard does NOT cover. A
+// plant can report success and still plant nothing — the class
+// TestAuditFlagsAddOnlySilentRevertIsStillTheMechanism guards for the Go
+// fixture. No exit status catches that, so the control cannot rest on an
+// absence alone: it has to show it looked at something. self_test() makes
+// every arm demand the scan report the commit count the plant means to build,
+// and this pin is what says so. Mutating the move rig to `return 0` is a false
+// PASS with exit 0 before that witness and a FAIL with exit 1 after — measured
+// both directions.
+func TestSilentRevertNegativeControlHasAPositiveWitness(t *testing.T) {
+	mutant, dir := srDeadMoveRig(t, "  return 0   # ranger-base-z4vx: reports success, plants nothing\n")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with a rig that reported success and planted nothing:\n%s", out)
+	}
+	if strings.Contains(out, "a plain move is not flagged") {
+		t.Fatalf("negative control reported a pass without a witness that it scanned anything:\n%s", out)
 	}
 }

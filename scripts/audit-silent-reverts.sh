@@ -135,22 +135,56 @@ plant_move() {
   env -u RHQ_PERSONA git commit -qm "move it"
 }
 
+# Every shape above builds exactly three commits, and every arm below checks
+# that it got three. An arm that reads a fixture nobody built is the failure
+# this number exists to catch (ranger-base-z4vx).
+PLANTED=3
+
 self_test() {
   # Prove the detector fires on the real mechanism — BOTH halves — before
   # trusting a clean run against main, and prove it stays quiet on a move.
-  local rc=0 n shape d; d=$(mktemp -d)
+  #
+  # Each arm is only as good as the fixture it reads, so each fixture is proved
+  # TWICE — once from the plant's side and once from the detector's.
+  #
+  # From the plant's side: take the plant's exit status ON ITS OWN LINE. The
+  # earlier spelling `( set -e; "plant_$shape" …; pwd > … ) || { … }` could
+  # never fire, because errexit is suppressed for the LEFT OPERAND of `||` and
+  # that suppression is inherited into the subshell: a plant returning non-zero
+  # did not abort it, `pwd` ran anyway, and this script's own toplevel was
+  # written as the fixture path (ranger-base-z4vx).
+  #
+  # From the detector's side: every arm requires the scan to report $PLANTED
+  # commits. The two positive arms fail safe without it (they want n>=1 and an
+  # empty fixture gives 0), but the NEGATIVE control does not — it asserts an
+  # ABSENCE, and an absence is exactly what a fixture that was never built
+  # hands it. A control that only counts absences needs a positive witness
+  # that it looked at something; scan()'s own SCANNED line is that witness.
+  local rc=0 prc n out scanned shape d; d=$(mktemp -d)
   for shape in modify addonly move; do
-    ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" ) || {
+    ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
+    prc=$?
+    [ "$prc" -eq 0 ] || {
         echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
   done
-  for shape in modify addonly; do
-    n=$( cd "$(cat "$d/$shape")" && scan HEAD | grep -c 'path(s) went backwards' )
-    if [ "$n" -ge 1 ]; then echo "self-test PASS: detector flags the $shape half of the rangerhq-8rtf mechanism"
-    else echo "self-test FAIL: planted $shape revert not detected"; rc=1; fi
+  for shape in modify addonly move; do
+    out=$( cd "$(cat "$d/$shape")" && scan HEAD )
+    n=$(printf '%s\n' "$out" | grep -c 'path(s) went backwards')
+    scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2+0}')
+    [ -n "$scanned" ] || scanned=0
+    if [ "$scanned" -ne "$PLANTED" ]; then
+      echo "self-test FAIL: $shape rig scanned $scanned commits, want $PLANTED — the fixture was never built"
+      rc=1; continue
+    fi
+    case "$shape" in
+      move)
+        if [ "$n" -eq 0 ]; then echo "self-test PASS: a plain move is not flagged (over $scanned planted commits)"
+        else echo "self-test FAIL: plain move flagged as a silent revert"; rc=1; fi ;;
+      *)
+        if [ "$n" -ge 1 ]; then echo "self-test PASS: detector flags the $shape half of the rangerhq-8rtf mechanism"
+        else echo "self-test FAIL: planted $shape revert not detected"; rc=1; fi ;;
+    esac
   done
-  n=$( cd "$(cat "$d/move")" && scan HEAD | grep -c 'path(s) went backwards' )
-  if [ "$n" -eq 0 ]; then echo "self-test PASS: a plain move is not flagged"
-  else echo "self-test FAIL: plain move flagged as a silent revert"; rc=1; fi
   [ "$rc" -eq 0 ] && echo "self-test PASS: detector flags the rangerhq-8rtf mechanism"
   return $rc
 }
