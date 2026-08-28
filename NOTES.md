@@ -4825,10 +4825,22 @@ in `TestSharedIndexCommitHookRefusesHandRolledNextIndex`. Read the sentence
 below as true from that fix forward, and as **false for anything measured
 before it**.
 
-**The residual is the operator**, who is exempt from the wall by design and
-whose `bd sync` commits are exactly the unqualified form. That is a gate
-working as specified, not a hole to plug — but it means the class is not
-extinct, only out of the crew's reach.
+**The residual is two forms, and only one of them is the operator.** The
+operator is exempt from the wall by design, and their `bd sync` commits are
+exactly the unqualified form; a persona is exempt too when the private index
+is placed *inside* `$GIT_DIR` — `GIT_INDEX_FILE=$GIT_DIR/next-index-1` passes,
+because the discriminator asks where git puts its temp index rather than what
+the variable is spelled (see the discriminator note above, and its residual
+stated there). Both are gates working as specified, not holes to plug — but
+the class is neither extinct nor out of the crew's reach: it is narrowed to a
+form a persona has to choose deliberately, and that form still runs the whole
+chain above end to end. Kept measured rather than asserted:
+`TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual`
+(`internal/rhq/privateindex_qa_test.go`) lands a fix through
+`$GIT_DIR/next-index-1` with `RHQ_PERSONA` set, pins the shared index at the
+pre-fix blob afterwards, and pins the next unqualified commit reverting it —
+it goes red the day the residual closes, and this paragraph can be rewritten
+then.
 
 **Why this one is nastier than the mislabel.** The three-hour window it opened
 on main was green: dcca7b5 removed the lock AND restored
