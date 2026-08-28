@@ -73,7 +73,14 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	}
 	blRedirect(t, work, target)
 
-	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
+	// AllowDegraded, and the reason is the claim next door rather than a
+	// convenience: ADR 0013 §4's reachability row (reachability.go) judges
+	// this very line and finds the STORE's git dirs missing from it —
+	// beadsHome is named, beadsGitDirs is not, so `bd sync` there dies on
+	// index.lock exactly as the pre-fix seatbelt did (ranger-base-xqwr).
+	// The launch is refused without this flag. What this test pins is
+	// unchanged: which paths the rendered line makes writable.
+	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true, AllowDegraded: true})
 
 	tree, err := b.App.SessionTreePath(work, "crew")
 	if err != nil {

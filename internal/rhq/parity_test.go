@@ -605,7 +605,12 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	// this is why the concrete check cannot merely append a cosmetic layer
 	// string.
 	nogs := &Runtime{Name: "odd", NoGateShell: true}
-	if p := a.CheckParityIn(ag, nogs, CageShims, TierStrong, repo); len(p.Degraded) != 0 || len(p.Realized) != 2 {
+	// Both gates by name rather than by COUNTING the map: parity gained a
+	// row that is not a PID gate (ADR 0013 §4 reachability), and a count
+	// asserts a number where the claim is "these two, on L3, without L1".
+	if p := a.CheckParityIn(ag, nogs, CageShims, TierStrong, repo); len(p.Degraded) != 0 ||
+		!strings.Contains(p.Realized["Bash(git push:*)"], "L3 pre-push hook") ||
+		!strings.Contains(p.Realized["Bash(git commit unless --)"], "L3 prepare-commit-msg hook") {
 		t.Errorf("identity-verified L3 must realize both git gates without L1: %+v", p)
 	}
 

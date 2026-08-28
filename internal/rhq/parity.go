@@ -361,6 +361,11 @@ func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
 	a.applyL3Probe(&p, ag, rt, dir)
+	// ADR 0013 §4: the cage half of the record stage. Directory-aware for
+	// the same reason L3 is — which .beads bd opens is a fact about a
+	// concrete launch dir, not about a persona — and the dir is already in
+	// hand here (reachability.go, ranger-base-hxhb).
+	a.applyRecordReach(&p, ag, rt, dir)
 	if why := ProjectConfigTrust(rt, ag, dir); why != "" {
 		p.Degraded = append(p.Degraded, why)
 	}
