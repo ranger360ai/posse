@@ -110,14 +110,27 @@ func fakeBd(args []string) int {
 		// query and gets its OWN file with an empty default, because
 		// falling back to fake-list.json would make every fixture in the
 		// suite grow question beads it never declared.
-		file := "fake-list.json"
-		for _, a := range args {
+		//
+		// A create DOES land in the labeled listing though — real bd would
+		// answer a label query with the bead it just filed, and a dedupe
+		// that reads that query back (settleopen.go) is only pinnable
+		// against a fake that does. The labels asked for are honoured, so
+		// a create in another lane is not mistaken for a question.
+		file, want := "fake-list.json", ""
+		for i, a := range args {
 			if a == "--label-any" {
 				file = "fake-list-labeled.json"
+				if i+1 < len(args) {
+					want = args[i+1]
+				}
 			}
 		}
 		if b, err := os.ReadFile(file); err == nil {
-			fmt.Print(string(b))
+			if want == "" {
+				fmt.Print(string(b))
+			} else {
+				fmt.Print(fakeBdFilterLabels(string(b), want))
+			}
 		} else {
 			fmt.Print("[]")
 		}
@@ -130,6 +143,24 @@ func fakeBd(args []string) int {
 		}
 		return 0
 	case "dep": // dep list <id> [--direction=up] --json → fake-deps.json / fake-dependents.json
+		// `dep add <id> <blocker>` writes the edge into the same file the
+		// list serves, because the caller that files one reads the graph
+		// back rather than trusting the exit code (Bd.DepAdd), and a fake
+		// that forgets the edge would make that read a false negative.
+		for i, a := range args {
+			if a == "add" && i+2 < len(args) {
+				// A `fake-dep-add-fail` marker is bd's own worst shape,
+				// opt-in: exit 0 with nothing wrong on the wire and no edge
+				// in the graph (the muoo class). It is what makes a caller
+				// that reads the graph back distinguishable from one that
+				// trusts the status.
+				if _, err := os.Stat("fake-dep-add-fail"); err != nil {
+					fakeBdAddDep(args[i+2])
+				}
+				fmt.Print("{}")
+				return 0
+			}
+		}
 		file := "fake-deps.json"
 		for _, a := range args {
 			if a == "--direction=up" {
@@ -170,15 +201,19 @@ func fakeBd(args []string) int {
 		fakeBdAppendCreated(id, args)
 		fmt.Printf(`{"id":%q,"title":"created"}`, id)
 		return 0
-	case "comments": // comments <id> --json → fake-comments.json; comments add → ok
-		for _, a := range args {
-			if a == "add" {
+	case "comments": // comments <id> --json → fake-comments.json; comments add appends to it
+		// An added comment is READ BACK, because the settle-open count is a
+		// comment the harness wrote on an earlier pass (settleopen.go) and
+		// a fake that dropped it would make every pass look like the first.
+		for i, a := range args {
+			if a == "add" && i+2 < len(args) {
+				fakeBdAddComment(args[i+1], args[i+2])
 				fmt.Print("{}")
 				return 0
 			}
 		}
 		if b, err := os.ReadFile("fake-comments.json"); err == nil {
-			fmt.Print(string(b))
+			fmt.Print(fakeBdCommentsFor(string(b), fakeBdID(args, "comments")))
 		} else {
 			fmt.Print("[]")
 		}
@@ -266,17 +301,106 @@ func fakeBdAppendCreated(id string, args []string) {
 	if b, err := os.ReadFile("fake-list.json"); err == nil {
 		json.Unmarshal(b, &list)
 	}
-	list = append(list, map[string]any{
+	row := map[string]any{
 		"id": id, "title": title, "description": flag("-d"),
 		"status": "open", "labels": strings.Split(flag("-l"), ","),
-	})
+	}
+	list = append(list, row)
 	if b, err := json.Marshal(list); err == nil {
 		os.WriteFile("fake-list.json", b, 0o644)
+	}
+	// And in the labeled listing, which `--label-any` filters: real bd
+	// answers a label query with the bead it just filed, and a dedupe that
+	// reads that query back is only pinnable against a fake that does.
+	var labeled []map[string]any
+	if b, err := os.ReadFile("fake-list-labeled.json"); err == nil {
+		json.Unmarshal(b, &labeled)
+	}
+	labeled = append(labeled, row)
+	if b, err := json.Marshal(labeled); err == nil {
+		os.WriteFile("fake-list-labeled.json", b, 0o644)
 	}
 }
 
 // fakeBdNextID hands out q-1, q-2, … so a test can assert on the id the
 // harness comments back onto the closed bead.
+// fakeBdFilterLabels keeps the issues carrying at least one of a comma-list
+// of labels — `bd list --label-any`'s own contract, which the fake needs
+// once creates land in the labeled listing.
+func fakeBdFilterLabels(body, labels string) string {
+	var list []map[string]any
+	if json.Unmarshal([]byte(body), &list) != nil {
+		return body
+	}
+	want := map[string]bool{}
+	for _, l := range strings.Split(labels, ",") {
+		want[strings.TrimSpace(l)] = true
+	}
+	kept := []map[string]any{}
+	for _, is := range list {
+		ls, _ := is["labels"].([]any)
+		for _, l := range ls {
+			if s, ok := l.(string); ok && want[s] {
+				kept = append(kept, is)
+				break
+			}
+		}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// fakeBdAddDep records `dep add <id> <blocker>` where `dep list <id>` will
+// find it. The fake's dep files are per-repo rather than per-issue, which is
+// enough for a caller that asks about the one bead it just filed against.
+func fakeBdAddDep(blocker string) {
+	var deps []map[string]any
+	if b, err := os.ReadFile("fake-deps.json"); err == nil {
+		json.Unmarshal(b, &deps)
+	}
+	deps = append(deps, map[string]any{"id": blocker, "dependency_type": "blocks"})
+	if b, err := json.Marshal(deps); err == nil {
+		os.WriteFile("fake-deps.json", b, 0o644)
+	}
+}
+
+// fakeBdAddComment appends a comment where `bd comments <id>` will read it
+// back. It carries its issue_id; fixtures written without one keep matching
+// every issue, which is what the suite's older fixtures assume.
+func fakeBdAddComment(id, text string) {
+	var cs []map[string]any
+	if b, err := os.ReadFile("fake-comments.json"); err == nil {
+		json.Unmarshal(b, &cs)
+	}
+	cs = append(cs, map[string]any{"id": len(cs) + 1, "issue_id": id, "text": text, "author": "posse"})
+	if b, err := json.Marshal(cs); err == nil {
+		os.WriteFile("fake-comments.json", b, 0o644)
+	}
+}
+
+// fakeBdCommentsFor serves one issue's comments: entries with no issue_id
+// belong to every issue (the older fixtures), entries with one belong to it.
+func fakeBdCommentsFor(body, id string) string {
+	var cs []map[string]any
+	if id == "" || json.Unmarshal([]byte(body), &cs) != nil {
+		return body
+	}
+	kept := []map[string]any{}
+	for _, c := range cs {
+		if s, _ := c["issue_id"].(string); s == "" || s == id {
+			kept = append(kept, c)
+		}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 func fakeBdNextID() string {
 	p := filepath.Join(fakeDir(), "bd-create-count")
 	n := 0

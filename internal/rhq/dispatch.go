@@ -2280,6 +2280,11 @@ wait:
 	default:
 		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
 			p.is.ID, settled, after.Status, p.session, d.recordClause(p.runtime))
+		// The second time this exact disagreement happens, the re-prompt
+		// stops being a nudge and becomes an infinite polite retry
+		// (settleopen.go, ranger-base-9hm). Only this branch: bd answered,
+		// and what it said is the half of the disagreement being counted.
+		d.noteSettleOpen(p, settled, after.Status)
 	}
 	return false, nil
 }

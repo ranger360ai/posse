@@ -1339,6 +1339,14 @@ scrolling past in a log addressed to the operator who armed this loop
 precisely so they would not have to watch it. Set it to `false` if you want
 that warning and nothing else.
 
+The re-prompt happens **once**. If the same bead settles open a second time
+the loop stops nudging it and files a `-l question` bead for you — naming
+the session, what the agent settled as, what the bead still says, and
+anything uncommitted in that session's worktree — then blocks the stuck bead
+on it, which takes it out of `bd ready`. Answer and close the question bead
+to put the work back in the queue. One question bead per stuck bead, so this
+is a route to you, not a second thing to watch.
+
 **Set `plan_guard_5h:` / `plan_guard_7d:` before you arm anything.** They
 are what keep an unattended loop off your plan's rate windows; under
 `--watch` the guard also fails *closed* after `plan_guard_blind_max:` (10m

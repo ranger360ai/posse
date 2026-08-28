@@ -909,8 +909,24 @@ for a fleet: no herdr, no fleet.
   whole premise is that nobody is reading. The token-burn rangerhq-zom guarded
   against is bounded by bd's own readiness: a persona that files a question
   and deps its bead on it leaves the ready set and is never re-prompted. A
-  persona that settles open with nothing filed is re-prompted every pass —
-  which is the polite-infinite-retry ranger-base-9hm is about.
+  persona that settles open with nothing filed used to be re-prompted every
+  pass; since ranger-base-9hm it is re-prompted **once**.
+- **The second settle-open escalates instead of re-prompting**
+  (ranger-base-9hm, `settleopen.go`). A bead that settles without closing
+  gets a `settled open [<status>]: …` comment from `posse` and one more
+  nudge. If the same bead settles open again under the same status, the
+  agent believes it is done and the bead disagrees — a standing
+  disagreement, not a lost prompt — so dispatch files ONE `-l question`
+  bead for the operator (`settled open twice: <id> — …`, P1, `-a` the
+  `operator:` key) and `bd dep add`s the stuck bead onto it. `bd ready` is
+  what a pass selects from, so the edge is the stop. The escalation names
+  the session, both halves of the disagreement, and **whatever is
+  uncommitted in the session's tree** — the fact that made this urgent
+  (ranger-base-1cc's 353 lines). Only under `--resume`, and never under
+  `--dry-run`. Dedupe is the escalation's own title, not a second write:
+  one open question bead per stuck bead, so bd's non-atomic create
+  (ranger-base-muoo) cannot start a flood. An escalation the operator
+  answers and closes re-arms the rung.
 - **The fan-out cap is always present, and it is now per epoch.**
   `autostart_max_beads:` raises or lowers `-n`; it does not switch it on.
   Absent, the hook passes `-n 3` (rangerhq-v83) — an armed loop that fired

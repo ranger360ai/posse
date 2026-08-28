@@ -331,6 +331,20 @@ func (b Bd) DepList(dir, id string) ([]BdDep, error) {
 	return b.deps(dir, id, "")
 }
 
+// DepAdd makes id depend on (be blocked by) blocker: `bd dep add <id>
+// <blocker>`, whose default type is `blocks`. It is the ASK rung's own
+// mechanism — the edge that takes a bead out of `bd ready` until a question
+// is answered — and dispatch files one for a bead it has stopped
+// re-prompting (settleopen.go).
+//
+// The exit code is deliberately NOT the whole answer for callers: an edge
+// that is already there is a refusal with nothing wrong. Callers that care
+// read the graph back.
+func (b Bd) DepAdd(dir, id, blocker, actor string) error {
+	_, err := b.run(dir, bdArgs(actor, "dep", "add", id, blocker)...)
+	return err
+}
+
 // Dependents returns the issues that depend on this one — the child side of
 // a handoff edge (ADR 0006 §1: `discovered-from` is the edge a handoff
 // leaves behind). `bd dep list --direction=up`.
