@@ -39,14 +39,26 @@ import (
 //
 //	claude --append-system-prompt="$(cat p.md)" mcp list  -> rc=0 "No MCP servers configured."
 //	claude --append-system-prompt "$(cat p.md)" mcp list  -> rc=0 "No MCP servers configured."
-//	claude --append-system-promt  "$(cat p.md)" mcp list  -> rc=1 unknown option
+//	claude --append-system-promt="$(cat p.md)"  mcp list  -> rc=1 unknown option
 //	claude --nosuchflag=zzz                     mcp list  -> rc=1 unknown option
 //
 // Those last four also retire the NOTE on ranger-base-1fad: claude really does
 // bind BOTH the glued and the separated form, and now that is evidenced by a
 // probe whose wrong arm fails rather than by help text that always prints.
 // §8's "glue it unless you have proved the separated form works" still stands
-// as advice for a CLI nobody has probed this way.
+// as advice for a CLI nobody has probed this way. The worked pair itself is
+// now glued on BOTH arms (ranger-base-axpt): the shipped pair varied spelling
+// AND gluing at once, so a reader could credit the control's failure to the
+// separation instead of the typo.
+//
+// A passing pair still only proves the parser ACCEPTED the value, not that
+// the CLI treats it as instructions (ranger-base-axpt) — a real flag with an
+// optional argument passes the same probe:
+//
+//	claude --debug="$(cat p.md)" mcp list  -> rc=0 "No MCP servers configured."
+//
+// --debug is a logging flag, not the unattended-instructions one; §8 now
+// says to check the flag's name against --help before trusting a green pair.
 
 // pidInFlagValue reports whether the PID placeholder in a command template
 // sits inside a flag's value. Two shapes qualify: glued (`--rules=…`,
@@ -192,6 +204,8 @@ func TestInstallSection8ProbeRecipeCarriesAControl(t *testing.T) {
 		{"the probe has proved nothing about", "what a passing control means"},
 		{"subcommand", "the repair for a CLI that short-circuits --help"},
 		{"--append-system-promt", "the measured commander false pass"},
+		{"proves the parser accepted the value, not that the CLI treats it as instructions", "the real-but-wrong-flag caveat"},
+		{"--debug=", "the measured optional-argument false pass"},
 	} {
 		if !strings.Contains(recipe, want.text) {
 			t.Errorf("INSTALL.md §8 probe recipe no longer states %s: missing %q (ranger-base-1fad)", want.why, want.text)
@@ -216,7 +230,7 @@ func TestInstallSection8ProbeRecipeCarriesAControl(t *testing.T) {
 	// probe this very section warns against.
 	for _, want := range []struct{ text, why string }{
 		{`--append-system-prompt="$(cat /tmp/p.md)" mcp list`, "the repair's PROBE arm, runnable as written"},
-		{`--append-system-promt "$(cat /tmp/p.md)" mcp list`, "the repair's CONTROL arm, runnable as written"},
+		{`--append-system-promt="$(cat /tmp/p.md)" mcp list`, "the repair's CONTROL arm, runnable as written"},
 		{"No MCP servers configured", "what the probe arm prints when the flag bound"},
 		{"unknown option", "what the control arm prints when it did not"},
 	} {

@@ -773,9 +773,18 @@ Four things about template profiles that will bite you if nobody says them:
    ```sh
    $ claude --append-system-prompt="$(cat /tmp/p.md)" mcp list
    No MCP servers configured. …                    # rc=0 — bound
-   $ claude --append-system-promt "$(cat /tmp/p.md)" mcp list
+   $ claude --append-system-promt="$(cat /tmp/p.md)" mcp list
    error: unknown option '--append-system-promt'   # rc=1 — control fails
    ```
+
+   **A passing pair proves the parser accepted the value, not that the CLI
+   treats it as instructions.** A real flag that takes an optional argument
+   passes the same pair: `claude --debug="$(cat /tmp/p.md)" mcp list` also
+   comes back `rc=0`, and `--debug` is a logging flag, not the
+   unattended-instructions one — a persona launched with it would come up
+   with no instructions at all, the exact failure this caveat exists to
+   catch. Check your flag's name against the CLI's own `--help` output
+   before trusting a green pair.
 
 2. **`{allow}` and `{deny}` render to nothing.** There is no realizer, so
    the CLI's own polite refusals do not exist and *every* gate goes to the
