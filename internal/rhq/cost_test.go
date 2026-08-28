@@ -230,3 +230,57 @@ func TestScanCostsSkipsStaleFilesOnly(t *testing.T) {
 		t.Errorf("in-window cost %v", got)
 	}
 }
+
+// A receipt that cannot be read in full must say so. ADR 0018 §3 made the
+// GATING path honest (dispatch parks, govern G6 marks a floor); `posse cost`
+// renders the same report, and a day whose transcript root is unreadable
+// printed $0.00 as if counted. Both arms here: the line appears when the
+// scan reported a read failure, and does not when it did not.
+func TestCostReportPrintNamesUnreadableTranscripts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mk := func() *CostReport {
+		s := &Segment{Bead: "a-1", Model: "claude-sonnet-5", Start: time.Now(), Msgs: map[string]*Usage{"a": {Model: "claude-sonnet-5"}}}
+		s.CostUSD = 4
+		return &CostReport{Beads: []*Segment{s}, PassCap: 30, DayCap: 250}
+	}
+	render := func(r *CostReport) string {
+		var b strings.Builder
+		r.Print(&b)
+		return b.String()
+	}
+
+	// The without-arm first: a clean scan claims a total, not a floor.
+	clean := render(mk())
+	for _, unwanted := range []string{"unreadable", "at least", "floor"} {
+		if strings.Contains(clean, unwanted) {
+			t.Errorf("a clean scan must not hedge, found %q:\n%s", unwanted, clean)
+		}
+	}
+	if !strings.Contains(clean, "budget_day $250.00 (spent $4.00 today)") {
+		t.Errorf("clean report lost its day spend:\n%s", clean)
+	}
+
+	rep := mk()
+	rep.noteUnread(fmt.Errorf("open /x/session.jsonl: permission denied"))
+	rep.noteUnread(fmt.Errorf("open /x/other.jsonl: permission denied"))
+	got := render(rep)
+	// Count, first error, and what the omission means — the shape
+	// dispatch's stderr witness already uses (dispatch.go budget()).
+	for _, want := range []string{
+		"unreadable: 2 transcript(s) unreadable",
+		"open /x/session.jsonl: permission denied",
+		"the ledger counts less than was spent",
+		"every total above is a floor",
+		// The Dial E footer measures the day against a cap; when the scan
+		// is partial that reading is a floor too.
+		"budget_day $250.00 (spent at least $4.00 today)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("degraded report missing %q:\n%s", want, got)
+		}
+	}
+	// The second failure is counted, not printed: one error, not a wall.
+	if strings.Contains(got, "other.jsonl") {
+		t.Errorf("only the first error is printed:\n%s", got)
+	}
+}

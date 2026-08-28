@@ -571,6 +571,13 @@ func (r *CostReport) Print(w io.Writer) {
 		return s.Persona
 	}))
 	section("day", groupBy(r.Beads, func(s *Segment) string { return s.Start.Local().Format("2006-01-02") }))
+	if r.ReadErr != nil {
+		// ADR 0018 §3: a transcript the scan could not read is spend that
+		// is missing from every number above, not spend that did not
+		// happen. Same shape dispatch's stderr witness uses, so a receipt
+		// and a pass log name one condition the same way.
+		fmt.Fprintf(w, "\nunreadable: %d transcript(s) unreadable (%v) — the ledger counts less than was spent; every total above is a floor\n", r.Unread, r.ReadErr)
+	}
 	fmt.Fprintf(w, "\ninteractive: %d turns, api-equiv $%.2f (not gated — shown so the ratio is visible)\n", r.InterTurns, r.InterCost)
 	if r.Uncounted > 0 {
 		fmt.Fprintf(w, "uncounted: %d live persona session(s) on codex/grok — no transcript this scanner reads; their spend is not in these numbers\n", r.Uncounted)
@@ -586,7 +593,14 @@ func (r *CostReport) Print(w io.Writer) {
 			caps = append(caps, fmt.Sprintf("budget_pass $%.2f", r.PassCap))
 		}
 		if r.DayCap > 0 {
-			caps = append(caps, fmt.Sprintf("budget_day $%.2f (spent $%.2f today)", r.DayCap, st.DaySpend))
+			// "at least" when the scan could not read everything: the day
+			// spend is what Dial E measures against, and an unreadable
+			// transcript makes it a floor rather than the total.
+			spent := fmt.Sprintf("spent $%.2f today", st.DaySpend)
+			if r.ReadErr != nil {
+				spent = fmt.Sprintf("spent at least $%.2f today", st.DaySpend)
+			}
+			caps = append(caps, fmt.Sprintf("budget_day $%.2f (%s)", r.DayCap, spent))
 		}
 		fmt.Fprintf(w, "budget (ADR 0003 Dial E): %s — at %.0f%% of a window standard steps down to fast, at %.0f%% dispatch stops\n",
 			strings.Join(caps, ", "), BudgetStepDownPct, BudgetStopPct)

@@ -1349,3 +1349,83 @@ func TestCockpitCredSegmentComesFromTheEnvSetsOnDisk(t *testing.T) {
 		t.Errorf("the stamp on disk never reached the header:\n%s", got)
 	}
 }
+
+// The cockpit's money line is read as the day's spend against the cap. When
+// the cost scan could not read every transcript (ADR 0018 §3) that reading
+// is a floor, and the header already distinguishes parked from degraded —
+// the dollars must not be the one line that still claims a total. Both arms,
+// and the narrow one: the marker must survive the truncation that eats the
+// count.
+func TestCockpitCostLineMarksAnUnreadableScanAFloor(t *testing.T) {
+	at := time.Date(2026, 8, 18, 14, 5, 9, 0, time.UTC)
+	mk := func(unread int) string {
+		c := &cockpit{
+			now:        func() time.Time { return at },
+			costToday:  4.5,
+			costDayCap: 20,
+			costAt:     at,
+			costUnread: unread,
+		}
+		return c.footerLines(200)[1]
+	}
+
+	// Without-arm: nothing unread, nothing hedged.
+	clean := mk(0)
+	if !strings.Contains(clean, "today $4.50 of $20 budget_day (22%)") {
+		t.Errorf("clean cost line changed shape: %q", clean)
+	}
+	for _, unwanted := range []string{"≥", "unreadable", "floor"} {
+		if strings.Contains(clean, unwanted) {
+			t.Errorf("a clean scan must not hedge, found %q: %q", unwanted, clean)
+		}
+	}
+
+	got := mk(3)
+	for _, want := range []string{
+		// The floor marker in front of BOTH numbers the scan is short on.
+		"today ≥$4.50 of $20 budget_day (≥22%)",
+		"3 transcript(s) unreadable — a floor, not a total",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("degraded cost line missing %q: %q", want, got)
+		}
+	}
+	// The count is the last thing on the line and a narrow terminal drops
+	// it; the marker is in front precisely so it cannot be dropped with it.
+	narrow := (&cockpit{
+		now: func() time.Time { return at }, costToday: 4.5, costDayCap: 20,
+		costAt: at, costUnread: 3,
+	}).footerLines(30)[1]
+	if strings.Contains(narrow, "unreadable") {
+		t.Fatalf("width 30 was meant to truncate the count away: %q", narrow)
+	}
+	if !strings.Contains(narrow, "≥$4.50") {
+		t.Errorf("the floor marker must survive truncation: %q", narrow)
+	}
+}
+
+// The footer can only mark a floor if the scan's read failures reach it.
+// This is the wiring pin: footerLines is exercised over hand-built fields,
+// so a dropped assignment here is invisible to it — and a dropped assignment
+// here is exactly the defect (the report carried Unread; no display path
+// read it).
+func TestCockpitApplyCostCarriesTheScansReadFailures(t *testing.T) {
+	seg := &rhq.Segment{Bead: "a-1", Model: "claude-sonnet-5", Start: time.Now(), Msgs: map[string]*rhq.Usage{"a": {Model: "claude-sonnet-5"}}}
+	seg.CostUSD = 4.5
+	rep := &rhq.CostReport{Beads: []*rhq.Segment{seg}, Uncounted: 1, DayCap: 20, Unread: 3}
+	c := &cockpit{}
+	c.applyCost(rep)
+	if c.costUnread != 3 {
+		t.Errorf("costUnread = %d, want the scan's 3", c.costUnread)
+	}
+	// The neighbours, so a rewrite that keeps Unread and loses one of them
+	// is caught here rather than by a golden nobody re-reads.
+	if c.costToday != 4.5 || c.costDayCap != 20 || c.costUncounted != 1 || c.costByBead["a-1"] != 4.5 || c.costAt.IsZero() {
+		t.Errorf("applyCost dropped a field: today=%v cap=%v unc=%d byBead=%v at=%v",
+			c.costToday, c.costDayCap, c.costUncounted, c.costByBead, c.costAt)
+	}
+	// And the footer says so, end to end from the report.
+	if line := c.footerLines(200)[1]; !strings.Contains(line, "≥$4.50") || !strings.Contains(line, "3 transcript(s) unreadable") {
+		t.Errorf("footer did not mark the floor from the scan: %q", line)
+	}
+}

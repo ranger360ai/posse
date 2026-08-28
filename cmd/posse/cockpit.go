@@ -106,6 +106,12 @@ type cockpit struct {
 	costAt        time.Time
 	costUncounted int
 	costDayCap    float64 // config budget_day: (ADR 0003 Dial E); 0 = no cap
+	// costUnread is how many transcripts the last scan could NOT read
+	// (ADR 0018 §3) — a COUNT and not the error, for the same reason
+	// govRead.failed is: the footer is one line and the cockpit owns the
+	// whole terminal, so `posse cost` is where the reason is printed. Above
+	// zero, costToday and its budget percentage are a floor, not a total.
+	costUnread int
 
 	// The plan's rate windows (rangerhq-jgm): the current reading in
 	// the header, no history. Never a guessed number — but never silently
@@ -204,6 +210,21 @@ func (c *cockpit) scanCosts() {
 	case c.costs <- rep:
 	default:
 	}
+}
+
+// applyCost lands one scan on the event loop's state — the whole of what
+// the footer knows about money. It is its own function, like applyGov and
+// applyPlan, so the wiring can be pinned: a footer test builds the fields by
+// hand and would stay green if a field stopped being carried across from the
+// report (which is how Unread was missing from the display in the first
+// place, ADR 0018 §3 / ranger-base-c65c).
+func (c *cockpit) applyCost(rep *rhq.CostReport) {
+	c.costByBead = rep.ByBead()
+	c.costToday = rep.DayTotal(time.Now())
+	c.costUncounted = rep.Uncounted
+	c.costDayCap = rep.DayCap
+	c.costUnread = rep.Unread
+	c.costAt = time.Now()
 }
 
 // planRead is one scan's worth of fact. The clock that turns a failed read
@@ -453,11 +474,7 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 				c.draw()
 			}
 		case rep := <-c.costs:
-			c.costByBead = rep.ByBead()
-			c.costToday = rep.DayTotal(time.Now())
-			c.costUncounted = rep.Uncounted
-			c.costDayCap = rep.DayCap
-			c.costAt = time.Now()
+			c.applyCost(rep)
 			if c.mode == modeNormal {
 				c.draw()
 			}
@@ -1966,15 +1983,26 @@ func (c *cockpit) footerLines(w int) []string {
 		if c.costUncounted > 0 {
 			unc = fmt.Sprintf(" · %d codex/grok session(s) uncounted", c.costUncounted)
 		}
+		// ADR 0018 §3: transcripts the scan could not read are spend that is
+		// missing from this number, not spend that did not happen — so the
+		// day total and the percentage computed from it are a floor. The
+		// marker rides in FRONT of both, because this line is one flex
+		// column and a narrow terminal truncates it from the right; the
+		// count follows at the end, where losing it costs only the detail.
+		ge, floor := "", ""
+		if c.costUnread > 0 {
+			ge = "≥"
+			floor = fmt.Sprintf(" · %d transcript(s) unreadable — a floor, not a total", c.costUnread)
+		}
 		cap_ := ""
 		if c.costDayCap > 0 {
 			// Dial E's day window, in the operator's eye before dispatch
 			// acts on it: 80% is where standard starts stepping down.
-			cap_ = fmt.Sprintf(" of $%.0f budget_day (%.0f%%)", c.costDayCap, 100*c.costToday/c.costDayCap)
+			cap_ = fmt.Sprintf(" of $%.0f budget_day (%s%.0f%%)", c.costDayCap, ge, 100*c.costToday/c.costDayCap)
 		}
 		cost = layout([]col{{kind: colFlex, ansi: aDim, text: fmt.Sprintf(
-			"today $%.2f%s api-equiv (claude transcripts, beads only; refreshed %s)%s",
-			c.costToday, cap_, c.costAt.Format("15:04:05"), unc)}}, w)
+			"today %s$%.2f%s api-equiv (claude transcripts, beads only; refreshed %s)%s%s",
+			ge, c.costToday, cap_, c.costAt.Format("15:04:05"), unc, floor)}}, w)
 	}
 	// ADR 0004 §3: the footer offers the selected section's keys only —
 	// `c` on a session does nothing, and `x` on a bead has nothing to kill.
