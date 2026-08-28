@@ -398,9 +398,16 @@ publishes tokens), `state/` (machine-local) or `personas/` (persona memory,
 which is scoped, versioned, and deliberately not ratified). `posse init`
 already seeds `envs/` with its modes, and every env read re-asserts them.
 
-`posse init` writes a manifest too, marked `seeded`: a fresh install
-verifies clean without ever having promoted anything, and a home that never
-had a manifest is simply not checked.
+`posse init` writes a manifest too, marked `seeded`, but **only on a home it
+actually seeded** — one with no constitution and no manifest when it ran. A
+fresh install therefore verifies clean without ever having promoted anything,
+and a home that never had a manifest is simply not checked. Re-running `init`
+on an existing instance (the generics upgrade, §7) never arms the verify: a
+manifest stamped over prose nobody ratified turns the operator's next routine
+`config.yaml` edit into a hard refusal of every dispatched launch, hours
+later and with nothing naming the cause (`ranger-base-h7cd`). Arming §3 is a
+ratification, so `posse promote` is the only thing that does it. Init says
+which of the two happened on every run.
 
 ---
 
@@ -513,7 +520,9 @@ $ posse agent check --all               # lint every PID against ADR 0001
 
 **Upgrading an instance that has the generics?** Re-run `posse init`. It
 moves each generic that is still byte-for-byte the shipped example out of
-`agents/` and onto the shelf, and prints what it moved. It leaves alone —
+`agents/` and onto the shelf, and prints what it moved. It writes no
+`promoted.json` on a home that already has a constitution (§4), so it cannot
+arm the launch verify behind your back. It leaves alone —
 and names — any you edited in place (that one is your persona now, not an
 example), any named by `coordinator:`, `default_persona:` or
 `verify_assignee:`, and all of them on a home `posse promote` manages,
@@ -1472,6 +1481,7 @@ one budget and the caps become conservative, not wrong.
 | `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.49.1; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a workspace with that name is live — possibly another instance's | `posse list`; see §13 |
+| every dispatched launch refuses with `a constitution nobody promoted` right after an ordinary `config.yaml` or PID edit, on a home you never promoted | a `posse init` from a posse older than `ranger-base-h7cd` stamped `promoted.json` over the constitution it found, arming ADR 0015 §3 on files nobody ratified — the edit is the trigger, not the cause | `posse promote <your constitution repo>` makes the anchor true. If this home has no constitution repo yet, `rm $RHQ_HOME/promoted.json` puts it back to unwatched, which is where it was; today's `init` will not re-stamp it |
 
 ---
 

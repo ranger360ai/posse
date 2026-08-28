@@ -3,14 +3,21 @@ package rhq
 // ranger-base-rgx0: `seeded` was weaker than it read, and the retirement
 // believed it.
 //
-// SeedPromoteManifest writes a manifest whenever a home has none, hashing
-// whatever is on disk AT THAT MOMENT — including on an upgrade. Every home
-// created before 95c4b70 therefore got its manifest from a later init, not
-// from the init that seeded it, so on a home where the operator had adopted a
-// generic in place the `seeded` manifest attests to THEIR file. The old rule
-// read that as untouched-since-seeded and retired it. Measured live in two
-// inits: init #1 correctly kept the adopted qa.md and printed why, and then
-// wrote the record that made init #2 take it.
+// SeedPromoteManifest hashes whatever is on disk AT THE MOMENT IT RUNS, and
+// init used to call it on any home that had no manifest — an upgrade
+// included. Every home created before 95c4b70 therefore got its manifest from
+// a later init, not from the init that seeded it, so on a home where the
+// operator had adopted a generic in place the `seeded` manifest attests to
+// THEIR file. The old rule read that as untouched-since-seeded and retired
+// it. Measured live in two inits: init #1 correctly kept the adopted qa.md
+// and printed why, and then wrote the record that made init #2 take it.
+//
+// Since ranger-base-h7cd, init writes no manifest over a home that already
+// has a constitution — but that is not what makes this safe, and this pin
+// must not start passing because of it: every home an older posse
+// initialised still HAS that post-hoc manifest, and the retirement still
+// reads `seeded` (init.go). So the fixture plants it the way that init did,
+// and the pin asks the question it always asked.
 //
 // The fix judges from posse's side of the line instead — the table of digests
 // posse has shipped (exampledigests.go) — so the home's own say-so is never
@@ -92,7 +99,10 @@ func TestAPostHocSeededManifestNeverRetiresAnAdoptedPersona(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// init #1: keeps it, correctly — and writes the manifest that hashes it.
+	// init #1: keeps it, correctly — and, on the posse that was measured here,
+	// writes the manifest that hashes it. A posse since ranger-base-h7cd
+	// writes none over a populated home, so the fixture lays down exactly what
+	// that older init left behind: the state every upgraded home is in today.
 	var out1 strings.Builder
 	if err := a.initFrom(&out1, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init #1: %v", err)
@@ -101,8 +111,19 @@ func TestAPostHocSeededManifestNeverRetiresAnAdoptedPersona(t *testing.T) {
 		t.Fatalf("init #1 already took %s.md — it differs from the example this posse ships:\n%s", mine, out1.String())
 	}
 	man, err := ReadPromoteManifest(a.PromoteManifestPath())
-	if err != nil || man == nil || !man.Seeded {
-		t.Fatalf("fixture: init #1 wrote no seeded manifest (%v)", err)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	if man == nil {
+		if err := a.SeedPromoteManifest(); err != nil {
+			t.Fatalf("fixture: planting the older init's manifest: %v", err)
+		}
+		if man, err = ReadPromoteManifest(a.PromoteManifestPath()); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	if man == nil || !man.Seeded {
+		t.Fatalf("fixture: no seeded manifest to reproduce the hazard with (%+v)", man)
 	}
 	if man.Files["agents/"+mine+".md"] != sha256Bytes([]byte(adopted)) {
 		t.Fatalf(`fixture: the seeded manifest does not attest to the operator's own file,

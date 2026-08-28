@@ -80,12 +80,14 @@ const promoteManifestVersion = 1
 // install) and no commit behind it, which is the honest difference.
 //
 // What `seeded` does NOT mean, and what nothing may read it as: that posse
-// laid these bytes down. SeedPromoteManifest writes a manifest whenever a
-// home has none, hashing whatever is on disk at that moment — on the first
-// manifest-writing init over an older home that is the operator's own files,
-// personas they adopted in place included. The manifest is an ANCHOR ("these
-// bytes were here when posse started watching"), never provenance ("posse
-// wrote these bytes"). Provenance for a seed file has its own answer,
+// laid these bytes down. SeedPromoteManifest hashes whatever is on disk at
+// the moment it runs, and the homes it has already run on include older ones
+// full of the operator's own files, personas they adopted in place included
+// — init stamped every home that had none until ranger-base-h7cd stopped it
+// (init.go: only a home init actually seeded gets one now; an existing
+// instance keeps whatever manifest it already has). The manifest is an ANCHOR
+// ("these bytes were here when posse started watching"), never provenance
+// ("posse wrote these bytes"). Provenance for a seed file has its own answer,
 // isShippedExample in exampledigests.go; taking it off Seeded instead retired
 // an operator's persona out of routing in two inits (ranger-base-rgx0).
 type PromoteManifest struct {
@@ -891,6 +893,13 @@ func warnDanglingDefaultEnv(w io.Writer, a *App) {
 // on PromoteManifest.Seeded), never overwrites an existing manifest, and
 // marks the result seeded: a real manifest with no commit behind it, which is
 // the honest description of a fresh install.
+//
+// WHICH home is freshly seeded is the CALLER'S question, not this function's:
+// by the time init has copied anything, the home it found is unrecoverable
+// from disk. initFrom decides it (an empty promoted set and no manifest) and
+// only calls this then — stamping a home that already had a constitution arms
+// ADR 0015 §3 over prose nobody ratified, and the refusal lands on the
+// unattended fleet at the operator's next config edit (ranger-base-h7cd).
 func (a *App) SeedPromoteManifest() error {
 	if m, err := ReadPromoteManifest(a.PromoteManifestPath()); err != nil || m != nil {
 		return err

@@ -48,6 +48,17 @@ func (a *App) CmdInit(w io.Writer) error {
 // initFrom copies src into RHQ_HOME. Paths inside src are slash-separated
 // (io/fs), paths under Home are the platform's — hence path vs filepath.
 func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
+	// Both facts are about the home init FOUND, and init writes into the
+	// promoted set itself — so they are only knowable here, before the first
+	// copy. What they decide is the manifest stamp at the bottom
+	// (ranger-base-h7cd).
+	before, err := HashPromotedSet(a.Home)
+	if err != nil {
+		return err
+	}
+	man, manErr := ReadPromoteManifest(a.PromoteManifestPath())
+	fresh := manErr == nil && man == nil && len(before) == 0
+
 	for _, d := range []string{a.Home, a.RecipesDir, a.EnvsDir, a.StateDir, a.AgentsDir, a.SkillsDir(), a.ExampleAgentsDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -135,14 +146,44 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	if err := a.retireExamplePIDs(w, src); err != nil {
 		return err
 	}
-	// ADR 0015 §3: a seeded home gets a manifest too, so the launch verify
-	// has a true anchor from the first launch on a clean box instead of
-	// firing on an install nobody promoted. Marked `seeded` — a real
-	// manifest with no commit behind it (promote.go).
-	if err := a.SeedPromoteManifest(); err != nil {
-		return err
+	// ADR 0015 §3: a home this init actually SEEDED gets a manifest too, so
+	// the launch verify has a true anchor from the first launch on a clean
+	// box instead of firing on an install nobody promoted. Marked `seeded` —
+	// a real manifest with no commit behind it (promote.go).
+	//
+	// A home that already had a constitution gets none, and that half is
+	// ranger-base-h7cd. Such a home was launching fine unmanifested — no
+	// manifest is what VerifyPromoted reads as "nothing was promoted here",
+	// and it is what keeps every install predating ADR 0015 running. Stamping
+	// one ARMS the verify over files nobody ratified, and nothing fails at
+	// init time: the operator's next ordinary edit to config.yaml or a PID is
+	// what turns every DISPATCHED launch into a hard refusal, hours later,
+	// with nothing connecting it to the init that caused it. Arming §3 is
+	// what `posse promote` IS — a ratification — and init does not perform
+	// one on the operator's behalf. Measured on the live home before the fix:
+	// one `posse init` stamped 11 personas, config.yaml, 10 recipes and the
+	// skills tree, and said nothing. Re-running init on an existing instance
+	// is an advertised upgrade path (INSTALL.md §7), which is how the
+	// unattended fleet reached it.
+	if fresh {
+		if err := a.SeedPromoteManifest(); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(w, "initialized %s (seed: %s)\n", a.Home, from)
+	// Either way it is said out loud: an armed launch verify and an unarmed
+	// one are the difference between a dispatched launch refusing and not,
+	// and an operator who cannot tell which one they have finds out from the
+	// fleet.
+	switch {
+	case fresh:
+		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes agents/, config.yaml, recipes/ and skills/ against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
+			AbbrevHome(a.PromoteManifestPath()))
+		fmt.Fprintf(w, "  `posse promote` is what re-stamps it after you change any of them\n")
+	case manErr == nil && man == nil:
+		fmt.Fprintf(w, "left this home unstamped: it already had a constitution, and a manifest init wrote over it would arm the launch verify on prose nobody ratified (ADR 0015 §3)\n")
+		fmt.Fprintf(w, "  the verify stays off until you run `posse promote`; until then no launch is refused for it\n")
+	}
 	// A fresh instance has no crew, and that is the shipped state, not a
 	// half-seed: say where the reference PIDs are and how to get a real
 	// one, or the next command an operator runs is a dispatch pass that
