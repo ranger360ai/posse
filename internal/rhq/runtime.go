@@ -498,10 +498,9 @@ func realizeGrok(allow, deny []string, _ string, _ ...string) Realized {
 // readable anyway (codex reads the whole disk); only workspace-write needs
 // it named, so the persona can append to its ORDERS.md.
 func realizeCodex(allow, deny []string, memory string, writable ...string) Realized {
-	has := map[string]bool{}
-	for _, x := range deny {
-		has[x] = true
-	}
+	// ADR 0014 §1: `Edit(**)` is the bare rule written the long way, so the
+	// mode this picks must not depend on which spelling the PID used.
+	has := wholeTreeWriteDeny(deny)
 	if has["Edit"] && has["Write"] {
 		// read-only is a seatbelt, not a prompt: OS-enforced.
 		return Realized{Deny: "-s read-only", Realized: []string{"Edit", "Write"}, Enforced: []string{"Edit", "Write", "NotebookEdit"}}

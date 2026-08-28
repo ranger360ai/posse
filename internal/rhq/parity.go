@@ -176,17 +176,42 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			}
 			p.Realized[rule] = layers
 		case rule == "Edit" || rule == "Write" || rule == "NotebookEdit":
+			a.wholeTreeWriteWall(&p, rule, rule, rt, inner, seatbelt, container, enforced)
+		case isPathScopedWrite(rule):
+			// ADR 0014 §1: a parametrized file-write rule is a subtree deny,
+			// not a tool name. Before this arm it fell to the default below
+			// and `Edit(docs/adr/**)` was classified as an MCP server.
+			d, _ := parsePathScopedWrite(rule)
 			switch {
+			case d.Bare:
+				// `Edit(**)` / `Edit(*)` / `Edit(.)`: the whole tree, so the
+				// bare rule's row verbatim. wholeTreeWriteDeny makes the
+				// renderers read it the same way, so this claims nothing the
+				// seatbelt and the mount do not do.
+				a.wholeTreeWriteWall(&p, rule, d.Tool, rt, inner, seatbelt, container, enforced)
+			case !d.Subtree:
+				// Unrealized by construction, at every tier — the ADR's own
+				// words, because the operator's next question is "then what
+				// do I write instead".
+				p.unrealized(rule, "not a directory-prefix glob; the wall realizes subtrees (Edit(docs/adr/**)), not file filters")
 			case inner:
-				p.Realized[rule] = "L4 mount boundary (repo mounted :ro)"
+				p.Realized[rule] = "L4 :ro overlay (" + d.Path + ")"
 			case seatbelt:
-				p.Realized[rule] = "L2 seatbelt"
-			case enforced[rule]:
-				p.Realized[rule] = rt.Name + " sandbox (OS-enforced)"
+				p.Realized[rule] = "L2 trailing deny (subpath " + d.Path + ")"
+			case enforced[d.Tool]:
+				// Only reachable when the PID ALSO denies the whole tree
+				// bare, which is what turns codex's -s read-only on: the
+				// subtree is inside a tree that is already OS-unwritable, so
+				// the gate holds. `posse agent check` calls the pair
+				// redundant; refusing the launch over it would be a lie in
+				// the other direction. `-s read-only` alone never lands
+				// here — ADR 0014 §2's row is that it has no per-path
+				// surface, and over-enforcement is not realization.
+				p.Realized[rule] = rt.Name + " sandbox (OS-enforced): the whole tree this subtree is in, bought by the PID's bare Edit/Write"
 			case container:
-				p.unrealized(rule, "cage container mounts the repo :ro for this deny, but image "+a.CageImage()+" is not one this posse built (`posse cage build`) — and L2 does not stack under this tier: sandbox-exec around the engine cages the client, not the container")
+				p.unrealized(rule, "cage container overlays this subtree :ro, but image "+a.CageImage()+" is not one this posse built (`posse cage build`) — and L2 does not stack under this tier: sandbox-exec around the engine cages the client, not the container")
 			default:
-				p.unrealized(rule, "needs cage: seatbelt (or codex -s read-only) — native flags are politeness")
+				p.unrealized(rule, "needs cage: seatbelt (or container) — a path-scoped write is not a tool-name deny")
 			}
 		default: // WebFetch, WebSearch, mcp__*, other tool names
 			// ADR 0002 §4 gives WebFetch/WebSearch their own row and every
@@ -443,6 +468,26 @@ func (a *App) CheckTier(ag *AgentFile, rt *Runtime, cage, tier string, allowDegr
 		return degradedError{p}
 	}
 	return nil
+}
+
+// wholeTreeWriteWall is ADR 0002 §4's file-write row: what realizes a deny
+// of writing the whole session tree. gate is the rule as the PID wrote it
+// (so the matrix prints back what the operator typed) and tool is the
+// Edit/Write/NotebookEdit it denies — the two differ only for ADR 0014 §1's
+// long spelling, `Edit(**)`, which is this same row and not a scoped one.
+func (a *App) wholeTreeWriteWall(p *Parity, gate, tool string, rt *Runtime, inner, seatbelt, container bool, enforced map[string]bool) {
+	switch {
+	case inner:
+		p.Realized[gate] = "L4 mount boundary (repo mounted :ro)"
+	case seatbelt:
+		p.Realized[gate] = "L2 seatbelt"
+	case enforced[tool]:
+		p.Realized[gate] = rt.Name + " sandbox (OS-enforced)"
+	case container:
+		p.unrealized(gate, "cage container mounts the repo :ro for this deny, but image "+a.CageImage()+" is not one this posse built (`posse cage build`) — and L2 does not stack under this tier: sandbox-exec around the engine cages the client, not the container")
+	default:
+		p.unrealized(gate, "needs cage: seatbelt (or codex -s read-only) — native flags are politeness")
+	}
 }
 
 func (p *Parity) unrealized(gate, why string) {

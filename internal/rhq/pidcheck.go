@@ -190,6 +190,36 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	} else if len(ag.Sockets) > 0 && ResolveCage("", ag) != CageContainer {
 		add("sockets: %s is a container-tier key and this PID launches at %s — nothing is mounted (add cage: container or drop it)", strings.Join(ag.Sockets, ", "), ResolveCage("", ag))
 	}
+	// Path-scoped writes (ADR 0014). Four things the matrix will say at
+	// launch, said here where the PID is being written instead — and one
+	// (the redundant pair) that only ever costs a line of YAML.
+	scoped := pathScopedWrites(ag.Deny)
+	bare := wholeTreeWriteDeny(ag.Deny)
+	for _, d := range scoped {
+		switch {
+		case d.Bare:
+			warn("deny: %s is the bare rule written the long way (ADR 0014 §1) — write %s", d.Rule, d.Tool)
+		case !d.Subtree:
+			add("deny: %s is not a directory-prefix glob; the wall realizes subtrees (%s(docs/adr/**)), not file filters — no tier realizes this rule (ADR 0014 §1)", d.Rule, d.Tool)
+		default:
+			if bare[d.Tool] {
+				warn("deny: %s is redundant beside the bare %s, which already denies the whole tree (ADR 0014 §1)", d.Rule, d.Tool)
+			}
+			if cage := ResolveCage("", ag); cage == CageShims {
+				add("deny: %s is a path-scoped write and this PID launches at cage %s — a path-scoped write is not a tool-name deny, so nothing realizes it there (add cage: seatbelt or container, ADR 0014 §2)", d.Rule, cage)
+			}
+			// deny-wins (ADR 0001): the extra does not carve a hole in the
+			// denied subtree, so a PID written as if it does is asking for a
+			// grant it will not get. A warning, because the PID still means
+			// something coherent — just less than it looks like.
+			for _, w := range ag.Writable {
+				if pathWithin(d.Path, w) {
+					warn("writable: %s is inside the subtree %s denies — deny wins (ADR 0001), so the extra grants nothing", w, d.Rule)
+				}
+			}
+		}
+	}
+
 	// route_order: a spelling that is not an integer takes the default and
 	// the PID still loads (a lane must not go silent over an ordering
 	// hint) — so the mistake has to surface here, or `route_order: high`
@@ -277,4 +307,18 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 		add("## Guardrails does not carry the four hard risk lines verbatim")
 	}
 	return out, warnings, nil
+}
+
+// pathWithin reports whether p is dir or inside it, comparing the two as a
+// PID spells them: `~` expanded, cleaned, and never across the absolute /
+// relative line — a `writable:` extra and a subtree glob are both relative
+// to the session dir when they are relative at all, and a PID has no
+// session dir to resolve them against. Conservative in the direction that
+// matters: an unrelatable pair is not a finding.
+func pathWithin(dir, p string) bool {
+	dir, p = filepath.Clean(ExpandTilde(dir)), filepath.Clean(ExpandTilde(p))
+	if filepath.IsAbs(dir) != filepath.IsAbs(p) {
+		return false
+	}
+	return dir == p || strings.HasPrefix(p, dir+string(filepath.Separator))
 }

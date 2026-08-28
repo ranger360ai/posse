@@ -79,12 +79,7 @@ func SeatbeltProfile(persona string, writable []string) string {
 // home this process is actually running against.
 func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ...string) []string {
 	home, _ := os.UserHomeDir()
-	deniesFiles := false
-	for _, r := range ag.Deny {
-		if r == "Edit" || r == "Write" || r == "NotebookEdit" {
-			deniesFiles = true
-		}
-	}
+	deniesFiles := deniesFileWrite(ag.Deny)
 	var out []string
 	add := func(p string) {
 		if p == "" {

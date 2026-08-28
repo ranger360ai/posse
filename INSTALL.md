@@ -623,9 +623,13 @@ allow-list dual is the existing `writable:` key: `deny: [Edit, Write]`
 plus `writable: [docs/adr]` means *only* that directory (and `.beads` /
 `.git`, so bd still works). Codex `-s read-only` realizes the *bare*
 deny and over-enforces a scoped one, so a path-scoped PID on codex needs
-the container tier. Until the grammar lands in `posse gates`, a
-parametrized rule still prints as `runtime-native only` and refuses the
-launch — do not put one on a PID you need to dispatch this week.
+the container tier. `posse gates` reads the grammar now: at `shims` a
+scoped rule prints `✗ needs cage: seatbelt (or container) — a path-scoped
+write is not a tool-name deny` and the launch refuses; at `seatbelt` and
+`container` it prints the layer. **The renderers are not there yet** —
+between this and the L2/L4 beads the matrix names a wall the profile does
+not yet emit, so keep a parametrized rule off any PID you need to
+dispatch this week.
 
 ---
 

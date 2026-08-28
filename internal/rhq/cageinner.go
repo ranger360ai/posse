@@ -343,14 +343,144 @@ func (a *App) CageInnerGates() bool {
 // boundary is a property of the mount, not of a rule, so a PID that denies
 // `Write` alone gets `Edit` refused too — enforcing more than was asked is
 // safe in this direction, and pretending the mount is per-rule would not be.
+//
+// A *path-scoped* deny (ADR 0014 §1) is deliberately not this: `:ro` on the
+// whole repo would refuse the paths the PID left open, which is a different
+// gate from the one that was asked for. Those are overlays, and they are
+// ranger-base-yu5's.
 func deniesFileWrite(deny []string) bool {
+	return len(wholeTreeWriteDeny(deny)) > 0
+}
+
+// ─── path-scoped writes (ADR 0014 §1) ────────────────────────────────────────
+
+// pathScopedWrite is a parametrized `Edit(<glob>)` / `Write(<glob>)` /
+// `NotebookEdit(<glob>)` deny, parsed. ADR 0014 §1: such a rule is a
+// *subtree file-write deny*, not a tool-name deny — the same "any of the
+// three" union the bare rule already uses, scoped to a directory.
+//
+// Only two other shapes exist, and both are named rather than guessed at:
+// Bare is the whole tree written the long way (`Edit(**)`), which means
+// exactly what `Edit` means; and a glob that survives the strip below with
+// a metacharacter still in it is a file filter, which no wall we have can
+// express.
+type pathScopedWrite struct {
+	Rule    string // the rule as written, e.g. "Edit(docs/adr/**)"
+	Tool    string // Edit | Write | NotebookEdit
+	Glob    string // the argument, e.g. "docs/adr/**"
+	Bare    bool   // Edit(**) / Edit(*) / Edit(.) — the bare rule, spelled long
+	Subtree bool   // a directory-prefix glob L2/L4 can express
+	Path    string // the subtree as written, unresolved (Subtree only)
+}
+
+// parsePathScopedWrite classifies one deny rule. ok is false for anything
+// that is not a parametrized file-write tool — a bare name, a Bash rule, an
+// MCP server, WebFetch. Deliberately dir-independent: whether a glob names a
+// subtree is a property of the rule, and *which* directory it names is a
+// property of a session, so that half is Resolve's.
+func parsePathScopedWrite(rule string) (pathScopedWrite, bool) {
+	var d pathScopedWrite
+	open := strings.IndexByte(rule, '(')
+	if open < 0 || !strings.HasSuffix(rule, ")") {
+		return d, false
+	}
+	switch rule[:open] {
+	case "Edit", "Write", "NotebookEdit":
+	default:
+		return d, false
+	}
+	d.Rule, d.Tool = rule, rule[:open]
+	d.Glob = strings.TrimSpace(rule[open+1 : len(rule)-1])
+	// The whole tree, however it is spelled. Not a subtree of anything, and
+	// not a separate gate: `posse agent check` says to write `Edit`, and
+	// every wall that reads the bare rule reads this too
+	// (wholeTreeWriteDeny), so the long spelling can never mean less.
+	switch d.Glob {
+	case "", ".", "./", "*", "*/", "**", "**/":
+		d.Bare = true
+		return d, true
+	}
+	// ADR 0014 §1: strip one trailing `/**` or `/`; a remainder with no
+	// glob metacharacter left is a directory prefix, which is what SBPL
+	// `subpath` and a bind-mount can say. `docs/adr/**/*.md` is not, and
+	// `**/*.md` is not.
+	rest := d.Glob
+	if strings.HasSuffix(rest, "/**") {
+		rest = strings.TrimSuffix(rest, "/**")
+	} else {
+		rest = strings.TrimSuffix(rest, "/")
+	}
+	if rest == "" { // "/**" or "/": the filesystem root is still a subtree
+		rest = "/"
+	}
+	if strings.ContainsAny(rest, "*?[") {
+		return d, true // parsed, and named unrealizable by parity
+	}
+	d.Subtree, d.Path = true, rest
+	return d, true
+}
+
+// Resolve names the directory a subtree glob denies, for a session in dir:
+// `~` expands as `writable:` expands it, a relative glob joins the session
+// dir, and the result goes through the same resolver as every seatbelt path
+// so a symlinked spelling cannot dodge the wall. "" when the rule names no
+// subtree, or when a relative glob has no session dir to join — which is the
+// directory-independent matrix's case, and the reason CheckParity never
+// calls this.
+func (d pathScopedWrite) Resolve(dir string) string {
+	if !d.Subtree {
+		return ""
+	}
+	p := ExpandTilde(d.Path)
+	if !filepath.IsAbs(p) {
+		if dir == "" {
+			return ""
+		}
+		p = filepath.Join(dir, p)
+	}
+	return absResolve(p)
+}
+
+// isPathScopedWrite is parsePathScopedWrite's ok, for a switch arm that
+// only needs to know the rule belongs to that arm.
+func isPathScopedWrite(rule string) bool {
+	_, ok := parsePathScopedWrite(rule)
+	return ok
+}
+
+// pathScopedWrites parses every parametrized file-write rule in a deny list,
+// in the order written. The bare-spelling entries come back too: a consumer
+// that wants only the subtrees filters on Subtree, and one that wants to
+// know the whole tree was denied asks wholeTreeWriteDeny.
+func pathScopedWrites(deny []string) []pathScopedWrite {
+	var out []pathScopedWrite
+	for _, r := range deny {
+		if d, ok := parsePathScopedWrite(r); ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// wholeTreeWriteDeny is which of Edit/Write/NotebookEdit a deny list denies
+// over the *whole* tree — the bare name, or ADR 0014 §1's long spelling of
+// it. One predicate for all of them because three copies of the triple is
+// how `Edit(**)` ends up meaning one thing to the matrix and another to the
+// mount: a wall that reads a spelling differently from the wall next to it
+// is the classification error this ADR exists to prevent.
+func wholeTreeWriteDeny(deny []string) map[string]bool {
+	out := map[string]bool{}
 	for _, r := range deny {
 		switch r {
 		case "Edit", "Write", "NotebookEdit":
-			return true
+			out[r] = true
+			continue
+		}
+		if d, ok := parsePathScopedWrite(r); ok && d.Bare {
+			out[d.Tool] = true
 		}
 	}
-	return false
+	return out
 }
 
 // gitCommonDirOutside names the repo's git common dir when it is NOT under
