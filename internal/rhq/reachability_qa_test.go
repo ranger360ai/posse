@@ -287,17 +287,31 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 		t.Errorf("codex -s read-only reaches nothing: %q", row)
 	}
 
-	// The redirect shape, and a finding rather than a fixture: the launch
-	// line names beadsHome(dir) and the SESSION's git dirs (herdrback.go),
-	// never the STORE's — so `bd sync`'s commit of the JSONL is denied at
-	// index.lock exactly as it was under the pre-fix seatbelt. Filed as
-	// ranger-base-jkeh; when that lands, this arm becomes the pass.
-	row := reachRow(f.a.CheckParityIn(open, codex, CageShims, TierStrong, f.work))
-	if !strings.Contains(row, AbbrevHome(filepath.Join(f.store, ".git"))) {
-		t.Errorf("the row must name the git dir no --add-dir covers: %q", row)
+	// The redirect shape — the fleet's own, and the arm this test was
+	// written waiting for. The line used to name beadsHome(dir) and the
+	// SESSION's git dirs, never the STORE's, so `bd sync`'s commit of the
+	// JSONL was denied at index.lock exactly as it was under the pre-fix
+	// seatbelt; launchWritableRoots names all three now (ranger-base-xqwr)
+	// and this is the pass.
+	if row := reachRow(f.a.CheckParityIn(open, codex, CageShims, TierStrong, f.work)); row != "" {
+		t.Errorf("the redirect shape must be reachable: %s", row)
 	}
-	// …and beadsHome itself IS named, which is what ranger-base-0fb fixed:
-	// the row is about the git dir, not about the store dir.
+	// The pass is not vacuous. Strip the store's git dir back off the
+	// rendered line — the exact pre-fix line — and the row must come back
+	// naming it. The strip is asserted to have changed the line, so an arm
+	// that measures nothing fails rather than passes (ranger-base-fm4p).
+	gitDir := filepath.Join(f.store, ".git")
+	line := f.a.renderedLaunchLine(open, codex, TierStrong, f.work)
+	pre := strings.ReplaceAll(line, " --add-dir "+shellQuote(gitDir), "")
+	if pre == line {
+		t.Fatalf("the rendered line never named %s, so the control below measures nothing:\n%s", gitDir, line)
+	}
+	row := codexReachRow(pre, f.work, recordTargets(beadsHome(f.work)))
+	if !strings.Contains(row, AbbrevHome(gitDir)) {
+		t.Errorf("without the store's git dir the row must name it: %q", row)
+	}
+	// …and beadsHome itself is named on both lines, which is what
+	// ranger-base-0fb fixed: this row is about the git dir, not the store dir.
 	if strings.Contains(row, AbbrevHome(filepath.Join(f.store, beadsDirName))+" is in no") {
 		t.Errorf("the .beads grant is on the line; the row must not claim otherwise: %q", row)
 	}

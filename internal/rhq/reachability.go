@@ -172,8 +172,7 @@ func reachProbeReason(out string, err error) string {
 // roots, so what is judged is what runs. A PID's own `command:` that drops
 // {deny} lands here too: it names no roots, and that is a finding.
 func (a *App) renderedLaunchLine(ag *AgentFile, rt *Runtime, tier, dir string) string {
-	roots := append([]string{beadsHome(dir)}, LinkedGitDirs(dir)...)
-	return ag.RenderCommandFor(rt, a.ResolveRuntime("", ag), tier, roots...)
+	return ag.RenderCommandFor(rt, a.ResolveRuntime("", ag), tier, launchWritableRoots(dir)...)
 }
 
 // codexReachRow judges the rendered launch line of a runtime that cages
@@ -197,7 +196,7 @@ func codexReachRow(cmd, dir string, targets []string) string {
 	}
 	for _, t := range targets {
 		if !anyUnderDir(roots, t) {
-			return fmt.Sprintf("%s is in no writable root the rendered launch line names — the workspace is %s and the line's --add-dir set is [%s], so the sandbox denies the store of record and the session records nothing (ADR 0013 §4 reachability, ranger-base-hxhb; the same shape left five dispatched codex sessions silent in ranger-base-0fb). The store's own git dirs are a known omission at this call site — ranger-base-xqwr; until it lands, --allow-degraded is the honest way through",
+			return fmt.Sprintf("%s is in no writable root the rendered launch line names — the workspace is %s and the line's --add-dir set is [%s], so the sandbox denies the store of record and the session records nothing (ADR 0013 §4 reachability, ranger-base-hxhb; the same shape left five dispatched codex sessions silent in ranger-base-0fb). launchWritableRoots names the store, its git dirs and the session tree's own; a target outside all of them means a PID `command:` that drops {deny}, or a store this resolver cannot reach",
 				AbbrevHome(t), AbbrevHome(dir), strings.Join(abbrevAll(roots[1:]), " "))
 		}
 	}

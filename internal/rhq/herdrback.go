@@ -1441,11 +1441,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// is denied — which is exactly what happened to five dispatched codex
 		// sessions before anyone noticed the beads were silent, not the agent
 		// (ranger-base-0fb). Runtimes posse cages itself ignore this.
-		// The writable roots a self-sandboxing runtime is told about: the
-		// store of record when a redirect moves it, and — in a session
-		// worktree — the git dirs that hold this tree's index and the
-		// repo's objects, which sit outside the tree (rangerhq-09o2).
-		cmd = ag.RenderCommandFor(rt, own, tier, append([]string{beadsHome(dir)}, LinkedGitDirs(dir)...)...)
+		//
+		// launchWritableRoots is the whole list — the store, its git dirs
+		// when a redirect moves it out (ranger-base-xqwr: `bd sync` commits
+		// the JSONL and dies on index.lock without them), and this tree's
+		// own git dirs (rangerhq-09o2) — and it is the SAME function ADR
+		// 0013 §4's reachability row judges this line with, so the row and
+		// the launch cannot disagree about what "writable" meant.
+		cmd = ag.RenderCommandFor(rt, own, tier, launchWritableRoots(dir)...)
 		// The PID channel is a launch guarantee too, and this is the one
 		// place it can be checked: the line exists now, and nothing after
 		// this point can put back what a voiding flag discards

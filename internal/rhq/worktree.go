@@ -247,6 +247,48 @@ func LinkedGitDirs(dir string) []string {
 	return []string{gd, cd}
 }
 
+// launchWritableRoots names every directory a self-sandboxing runtime has to
+// be TOLD it may write, because its own sandbox confines writes to the
+// workspace it starts in:
+//
+//   - the store of record, which ADR 0012 D3-C usually puts outside the
+//     session dir — <dir>/.beads holds a redirect and the database lives in
+//     the instance repo it names. Unnamed, every `bd close` and
+//     `bd comments add` is denied and the session goes silent
+//     (ranger-base-0fb, five of them before anyone read the silence as a
+//     cage rather than an agent skipping its bookkeeping).
+//   - that store repo's git dirs, when the redirect leaves the session dir.
+//     `bd sync` COMMITS the JSONL there, so it takes index.lock in the
+//     per-worktree git dir and reads hooks and refs in the common one; with
+//     the .beads granted and its git dirs not, `bd sync` and `bd export`
+//     die on the lock exactly as they did under the pre-23c4e54 seatbelt
+//     (measured, ranger-base-rhw; this call site, ranger-base-xqwr). Same
+//     resolver and same two dirs SeatbeltWritable already grants at L2,
+//     under the same condition — a store already inside the workspace needs
+//     no grant, and <dir>/.git in a linked worktree is a FILE, not a root.
+//   - in a session worktree, this tree's own git dirs, which hold its index
+//     and the repo's objects and sit outside the tree (rangerhq-09o2).
+//
+// THE TRADE, stated rather than closed: --add-dir is directory-granular, so
+// naming the store repo's git dirs grants its refs, hooks and config whole.
+// ADR 0013 §4 and sessionGitGrants already accept that gap for the session's
+// own repo and say so; this extends the same accepted trade to the store's,
+// and nothing narrower is available at this wall — the flag cannot name a
+// ref (ranger-base-xqwr).
+//
+// One function because two callers must agree: planLaunch renders the line
+// the session runs, and renderedLaunchLine renders the line ADR 0013 §4's
+// reachability row JUDGES. Two spellings of "the same roots" is a row that
+// passes a line nobody launches, or refuses one that would have worked.
+func launchWritableRoots(dir string) []string {
+	home := beadsHome(dir)
+	roots := append([]string{home}, LinkedGitDirs(dir)...)
+	if home != "" && !underDir(dir, home) {
+		roots = append(roots, beadsGitDirs(home)...)
+	}
+	return dedupeStrings(roots)
+}
+
 // repoBranch is the branch checked out in the main repo — the base a session
 // branch is cut from and the target the launcher merges back into. "" means
 // a detached HEAD, which has no merge-back and so gets no worktree.

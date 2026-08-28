@@ -73,14 +73,13 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	}
 	blRedirect(t, work, target)
 
-	// AllowDegraded, and the reason is the claim next door rather than a
-	// convenience: ADR 0013 §4's reachability row (reachability.go) judges
-	// this very line and finds the STORE's git dirs missing from it —
-	// beadsHome is named, beadsGitDirs is not, so `bd sync` there dies on
-	// index.lock exactly as the pre-fix seatbelt did (ranger-base-xqwr).
-	// The launch is refused without this flag. What this test pins is
-	// unchanged: which paths the rendered line makes writable.
-	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true, AllowDegraded: true})
+	// No AllowDegraded, and that is half the pin (ranger-base-xqwr): ADR
+	// 0013 §4's reachability row judges this very line, and until the
+	// store's git dirs rode it the row was unrealized and dispatch — which
+	// never allows degradation on its own (ADR 0002 §4) — could not launch
+	// codex in the fleet's own shape at all. A create that returns is the
+	// row realized.
+	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
 
 	tree, err := b.App.SessionTreePath(work, "crew")
 	if err != nil {
@@ -94,14 +93,24 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 		t.Fatalf("the seeded worktree redirect does not reach the store: beadsHome = %q, want %q", h, target)
 	}
 
+	// The STORE's git dirs are the third grant, and the one this bead is
+	// about: `bd sync` COMMITS the JSONL in that repo, so it takes
+	// index.lock there and reads hooks and refs beside it. With .beads
+	// granted and these not, the session records nothing for the same
+	// reason the pre-23c4e54 seatbelt recorded nothing (ranger-base-rhw).
+	storeGits := beadsGitDirs(target)
+	if len(storeGits) == 0 {
+		t.Fatalf("no git dirs resolved for the store at %s — the assertion below would be empty", target)
+	}
+
 	// A line this long spills to the launch script, so the typed line is
 	// the call log and that script together (paneline.go).
 	body, _ := os.ReadFile(b.App.LaunchScript("crew"))
 	log := calls(t, fake) + "\n" + string(body)
-	// The store of record, and the git dirs that hold this tree's index and
-	// the repo's objects: both outside the workspace, both denied unless
-	// named.
-	for _, want := range append([]string{target}, gits...) {
+	// The store of record, the git dirs that repo's `bd sync` commit locks,
+	// and the git dirs that hold this tree's index and the repo's objects:
+	// all outside the workspace, all denied unless named.
+	for _, want := range append(append([]string{target}, storeGits...), gits...) {
 		if !strings.Contains(log, "--add-dir "+shellQuote(want)) {
 			t.Errorf("codex launch does not name %s writable:\n%s", want, log)
 		}
