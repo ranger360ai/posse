@@ -475,6 +475,17 @@ row).
   `--add-dir` set realizeCodex emits). A miss is the existing
   degradedError refusal. Cut as ranger-base implementation beads from
   ranger-base-hxhb.
+- §4 Reachability, the launch half (2026-08-28, ranger-base-xqwr): the
+  row found the codex launch line one grant short — it named
+  `beadsHome(dir)` and the SESSION's git dirs, never the STORE repo's,
+  so `bd sync`'s commit of the JSONL died on its `index.lock` exactly
+  as the pre-23c4e54 seatbelt did (ranger-base-rhw). `launchWritableRoots`
+  is now the one list both the launch and this row read, so they cannot
+  disagree about what "writable" meant. THE TRADE: `--add-dir` is
+  directory-granular, so the store repo's refs, hooks and config are
+  granted whole — the same gap `sessionGitGrants` already accepts and
+  states for the session's own repo, extended to the store's. Nothing
+  narrower exists at that wall; narrowing it needs a different wall.
 
 ## Alternatives rejected
 
