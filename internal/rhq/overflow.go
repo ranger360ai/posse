@@ -156,9 +156,20 @@ func (a *App) appendLedger(path string, e LedgerEntry) error {
 // so changing which runtime a cap names does not charge the new pool for the
 // old one's week.
 //
-// A missing ledger is zero, not an error: the first launch creates it. A
-// line that does not parse is skipped — the file is ours to write and a
-// corrupt line is not a launch anyone can date.
+// A missing ledger is zero, not an error: the first launch creates it.
+//
+// A line that is not a ledger entry is an ERROR, not a skip (ranger-base-lasj).
+// Skipping it reads as "that was not a launch", and the one thing a torn or
+// hand-edited line is not is evidence that nothing was launched — it is a
+// launch nobody can date, so the week's total is unknown. Both callers already
+// fail closed on an unreadable ledger (overThreshold, uncountedSkip), which is
+// the honest answer here too: an unknown count is not a licence to spend a pool
+// with no meter. Whole-blank lines are the one exception: appendLedger writes a
+// newline-terminated line in one call, so a torn write leaves a prefix and
+// never an empty line, and an empty line carries no record to lose.
+//
+// The shape is the one appendLedger writes — RFC3339, runtime, bead, persona —
+// so a short line is a truncated one and counts as corrupt on the same reading.
 func countLedger(path, runtime string, now time.Time, window time.Duration) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -170,14 +181,22 @@ func countLedger(path, runtime string, now time.Time, window time.Duration) (int
 	defer f.Close()
 	cutoff := now.Add(-window)
 	n := 0
+	ln := 0
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
+		ln++
 		fields := strings.Fields(sc.Text())
-		if len(fields) < 2 || fields[1] != runtime {
+		if len(fields) == 0 {
 			continue
 		}
+		if len(fields) < 4 {
+			return 0, fmt.Errorf("line %d is not a ledger entry (%d fields, want %s runtime bead persona)", ln, len(fields), time.RFC3339)
+		}
 		at, err := time.Parse(time.RFC3339, fields[0])
-		if err != nil || at.Before(cutoff) {
+		if err != nil {
+			return 0, fmt.Errorf("line %d is not dated: %v", ln, err)
+		}
+		if fields[1] != runtime || at.Before(cutoff) {
 			continue
 		}
 		n++

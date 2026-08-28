@@ -465,3 +465,55 @@ func TestOverflowBlindGuardNeverOverflows(t *testing.T) {
 		t.Errorf("a blind pass writes nothing to the ledger (%v)", err)
 	}
 }
+
+// countLedger's shape contract (ranger-base-lasj), read straight through both
+// ledgers because both caps hang off it: a line that is not a ledger entry
+// makes the WEEK unknown, not the line zero. A skip would say "no launch
+// happened", which is the one thing a torn write does not tell you, and both
+// callers already fail closed on an error.
+func TestLedgerCorruptLineIsUnknownNotZero(t *testing.T) {
+	b, _ := newTestBackend(t)
+	now := time.Now()
+	good := LedgerEntry{At: now.Add(-time.Hour), Runtime: "grok", Bead: "a-1", Persona: "ranger"}.line()
+
+	for _, tc := range []struct {
+		name  string
+		body  string
+		count int  // when it parses
+		bad   bool // when it does not
+	}{
+		{name: "well formed", body: good + good, count: 2},
+		{name: "blank lines are not records", body: good + "\n   \n" + good, count: 2},
+		{name: "torn timestamp on the target", body: "2026-08-26T12:00 grok prior-1 ranger\n", bad: true},
+		{name: "torn timestamp on another pool", body: good + "2026-08-26T12:00 codex prior-1 ranger\n", bad: true},
+		{name: "truncated line", body: good + "2026-08-26T12:00:00Z grok\n", bad: true},
+		{name: "not a ledger at all", body: "hello\n", bad: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, path := range []string{b.App.OverflowLogPath(), b.App.UncountedLogPath()} {
+				os.MkdirAll(b.App.StateDir, 0o755)
+				if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for name, got := range map[string]func() (int, error){
+				"OverflowCount":  func() (int, error) { return b.App.OverflowCount("grok", now) },
+				"UncountedCount": func() (int, error) { return b.App.UncountedCount("grok", now) },
+			} {
+				n, err := got()
+				switch {
+				case tc.bad && err == nil:
+					t.Errorf("%s counted a corrupt ledger as %d; want an error so the cap fails closed", name, n)
+				case tc.bad:
+					if n != 0 {
+						t.Errorf("%s returned %d alongside its error; an unknown count must not look like a number", name, n)
+					}
+				case err != nil:
+					t.Errorf("%s: %v", name, err)
+				case n != tc.count:
+					t.Errorf("%s = %d, want %d", name, n, tc.count)
+				}
+			}
+		})
+	}
+}

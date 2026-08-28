@@ -186,8 +186,6 @@ func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
 }
 
 func TestQAOverflowCorruptTargetLedgerLineFailsClosed(t *testing.T) {
-	t.Skip("ranger-base-lasj: malformed target lines are silently skipped, so the cap undercounts")
-
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 	if err := os.MkdirAll(f.b.App.StateDir, 0o755); err != nil {
@@ -208,6 +206,18 @@ func TestQAOverflowCorruptTargetLedgerLineFailsClosed(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("corrupt ledger line for the active target was counted as zero and admitted %d launch; want overflow off\n%s",
 			n, dispatcherOut(f.d))
+	}
+	// Zero launches on its own is also what a fixture that never reached the
+	// guard would produce. The witness that this is the fail-closed path is
+	// the ledger's own line naming the corruption, plus the bead parking on
+	// the pre-overflow skip.
+	for _, want := range []string{"overflow ledger", "unreadable", "line 1 is not dated", "overflow off this pass"} {
+		if !strings.Contains(f.errb.String(), want) {
+			t.Fatalf("want stderr naming the unreadable ledger (%q); got:\n%s", want, f.errb.String())
+		}
+	}
+	if out := dispatcherOut(f.d); !strings.Contains(out, "— skipped") {
+		t.Fatalf("the on-meter bead must park on the guard's own line; got:\n%s", out)
 	}
 }
 
