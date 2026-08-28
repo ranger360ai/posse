@@ -569,7 +569,9 @@ func TestSeedScriptPreflightPlantedBeadsIsRed(t *testing.T) {
 // commit can put the name back and still print PREFLIGHT GREEN. This pin
 // is the check. Needle is assembled so this file is not itself a hit.
 func TestSeedSurfaceNameCountIsZero(t *testing.T) {
-	t.Skip("ranger-base-poi: NOTES.md still names the private checkout after 7xpn's 0-count")
+	if qspSeedScript(t) != "" {
+		t.Skip("private archive: the surface this counts is $NEW's, not $OLD's")
+	}
 	needle := "ranger" + "hq"
 	token := regexp.MustCompile(needle + `(-[0-9a-z]+)?`)
 	marker := regexp.MustCompile(`^` + needle + `-[0-9a-z]+$`)
@@ -587,6 +589,14 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 		if d.IsDir() {
 			base := d.Name()
 			if base == ".git" || base == ".beads" {
+				return fs.SkipDir
+			}
+			// docs/runbooks/ is off the seed surface by construction — the
+			// allowlist carries no docs/ (TestPublicationRootCommitHasNoExcludedPaths
+			// pins that it did not cross), and a runbook that drives the
+			// retirement of the operator's old checkout has to name it
+			// (ranger-base-poi). Every other path here ships and is counted.
+			if rel == filepath.Join("docs", "runbooks") {
 				return fs.SkipDir
 			}
 			return nil

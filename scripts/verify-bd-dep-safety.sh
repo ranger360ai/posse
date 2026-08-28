@@ -45,7 +45,7 @@ find_db() {
 		return
 	fi
 	local dir=.beads
-	# One redirect hop, the same as bd 0.49.1 allows (rangerhq: chains are not).
+	# One redirect hop, the same as bd 0.49.1 allows (measured: chains are not).
 	if [ -f "$dir/redirect" ]; then
 		dir=$(tr -d '[:space:]' <"$dir/redirect")
 	fi

@@ -2949,10 +2949,10 @@ was the probe that can tell a real boundary from a DNS outage — which is
 what any future candidate now has to survive.
 
 Also measured while verifying, since the numbers are in this file: `posse
-cage build ~/src/rangerhq` takes **11s** with a warm layer cache (89a's
-~45s was cold) and the image is **1.23GB** on disk by `docker images`.
-The image was removed afterwards; `posse cage` reports "image not built"
-here, as it did before.
+cage build .` over a harness checkout takes **11s** with a warm layer
+cache (89a's ~45s was cold) and the image is **1.23GB** on disk by
+`docker images`. The image was removed afterwards; `posse cage` reports
+"image not built" here, as it did before.
 
 ## Privacy model
 
