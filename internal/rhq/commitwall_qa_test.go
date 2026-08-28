@@ -48,7 +48,7 @@ func commitWallRepo(t *testing.T) (repo string, git func(env []string, args ...s
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	return repo, git, []string{"RHQ_PERSONA=laurie", "RHQ_GATES_DIR=" + gates}
+	return repo, git, []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gates}
 }
 
 // TestQACommitWallRefusalNamesTheInFlightEdit is rangerhq-lvu9's DONE WHEN,
@@ -109,11 +109,11 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 		t.Fatalf("fixture commit: %v %s", err, out)
 	}
 
-	// Persona B (dinesh) writes a half-finished line and stages it.
-	if err := os.WriteFile(shared, []byte("base\nDINESH HALF-WRITTEN\n"), 0o644); err != nil {
+	// Persona B (developer) writes a half-finished line and stages it.
+	if err := os.WriteFile(shared, []byte("base\nDEVELOPER HALF-WRITTEN\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := git([]string{"RHQ_PERSONA=dinesh"}, "add", "shared.txt"); err != nil {
+	if out, err := git([]string{"RHQ_PERSONA=developer"}, "add", "shared.txt"); err != nil {
 		t.Fatalf("stage: %v %s", err, out)
 	}
 
@@ -123,18 +123,18 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 	}
 
 	// …and commits with the blessed form. It lands B's line anyway.
-	if out, err := git(persona, "commit", "-m", "laurie's own message", "--", "shared.txt"); err != nil {
+	if out, err := git(persona, "commit", "-m", "qa's own message", "--", "shared.txt"); err != nil {
 		t.Fatalf("the safe form must still pass the wall: %v %s", err, out)
 	}
 	out, err := git(nil, "show", "HEAD:shared.txt")
 	if err != nil {
 		t.Fatalf("git show: %s", out)
 	}
-	if !strings.Contains(out, "DINESH HALF-WRITTEN") {
+	if !strings.Contains(out, "DEVELOPER HALF-WRITTEN") {
 		t.Fatalf("premise gone: the path-limited commit no longer takes the on-disk file:\n%s", out)
 	}
 	// The check that would have caught it, for the same tree.
-	if out, _ := git(nil, "diff", "HEAD~1", "--", "shared.txt"); !strings.Contains(out, "DINESH HALF-WRITTEN") {
+	if out, _ := git(nil, "diff", "HEAD~1", "--", "shared.txt"); !strings.Contains(out, "DEVELOPER HALF-WRITTEN") {
 		t.Errorf("`git diff HEAD -- <paths>` is the form that sees a staged edit; it did not:\n%s", out)
 	}
 }

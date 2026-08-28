@@ -276,8 +276,8 @@ func TestRetirementNeverTouchesAPersonaTheSeedDoesNotShip(t *testing.T) {
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	mine := filepath.Join(a.AgentsDir, "dinesh.md")
-	body := "---\nname: dinesh\nlabels: [code]\n---\nYou are Dinesh.\n"
+	mine := filepath.Join(a.AgentsDir, "developer.md")
+	body := "---\nname: developer\nlabels: [code]\n---\nYou are Developer.\n"
 	if err := os.WriteFile(mine, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

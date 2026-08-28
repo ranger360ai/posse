@@ -36,7 +36,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	blRedirect(t, work, filepath.Join(store, beadsDirName))
 	gates := t.TempDir()
 
-	denied := &AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
+	denied := &AgentFile{Name: "security", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
 	w := sbApp(t).SeatbeltWritable(denied, work, gates)
 	for _, want := range []string{
 		filepath.Join(store, beadsDirName), // the database, jsonl, socket, lock
@@ -53,7 +53,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	if sbHas(w, store) {
 		t.Errorf("the redirect target's repo root must not be writable:\n%s", strings.Join(w, "\n"))
 	}
-	if prof := SeatbeltProfile("hoover", w, SeatbeltCarveOut{}); !strings.Contains(prof, `(subpath "`+absResolve(filepath.Join(store, beadsDirName))+`")`) {
+	if prof := SeatbeltProfile("security", w, SeatbeltCarveOut{}); !strings.Contains(prof, `(subpath "`+absResolve(filepath.Join(store, beadsDirName))+`")`) {
 		t.Errorf("profile must grant the resolved target:\n%s", prof)
 	}
 
@@ -73,7 +73,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 func TestSeatbeltWithoutARedirectGrantsNothingExtra(t *testing.T) {
 	work := blRepo(t)
 	gates := t.TempDir()
-	ag := &AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
+	ag := &AgentFile{Name: "security", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
 	w := sbApp(t).SeatbeltWritable(ag, work, gates)
 	var rooted []string
 	for _, x := range w {
@@ -93,7 +93,7 @@ func TestSeatbeltIgnoresADanglingRedirect(t *testing.T) {
 	work := blRepo(t)
 	gone := filepath.Join(t.TempDir(), "gone", beadsDirName)
 	blRedirect(t, work, gone)
-	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "security", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if sbHas(w, gone) || sbHas(w, filepath.Dir(gone)) {
 		t.Errorf("a dangling redirect must grant nothing:\n%s", strings.Join(w, "\n"))
 	}
@@ -157,7 +157,7 @@ func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 	blRedirect(t, work, filepath.Join(mid, beadsDirName))
 	blRedirect(t, mid, filepath.Join(store, beadsDirName))
 
-	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "security", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if !sbHas(w, filepath.Join(mid, beadsDirName)) {
 		t.Errorf("bd opens the FIRST hop's database; the profile must grant it:\n%s", strings.Join(w, "\n"))
 	}
@@ -172,7 +172,7 @@ func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 // cwd/.beads and cwd/.git are. So "under cwd" is the wrong boundary in that
 // branch, the target is skipped as already-covered when nothing covers it,
 // and bd is denied its own database. Measured with bd 0.49.1 in
-// ~/laurie-cage-probe/work, redirect `inner/.beads` (bd resolves the
+// ~/qa-cage-probe/work, redirect `inner/.beads` (bd resolves the
 // relative form against the repo root — verified, it built the db there):
 //
 //	bd sync   -> failed to open database: ... work/inner/.beads/beads.db:
@@ -190,7 +190,7 @@ func TestSeatbeltGrantsARedirectThatStaysUnderCwd(t *testing.T) {
 	}
 	blRedirect(t, work, filepath.Join(inner, beadsDirName))
 
-	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "hoover", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
+	w := sbApp(t).SeatbeltWritable(&AgentFile{Name: "security", Deny: []string{"Edit", "Write"}}, work, t.TempDir())
 	if !sbHas(w, filepath.Join(inner, beadsDirName)) {
 		t.Errorf("the redirect target is where bd opens the db, under cwd or not:\n%s", strings.Join(w, "\n"))
 	}

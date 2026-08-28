@@ -75,24 +75,24 @@ func deliveryDispatcher(t *testing.T, b *HerdrBackend, clock *time.Time) *Dispat
 
 func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "monica-work", "monica", "idle", false)
+	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg)
 
 	out := dispatcherOut(d)
-	if !strings.Contains(out, "→ prompted monica-work") {
+	if !strings.Contains(out, "→ prompted coordinator-work") {
 		t.Errorf("no prompt logged:\n%s", out)
 	}
 	log := calls(t, fake)
-	if !strings.Contains(log, "agent prompt monica-work Pulse check:") {
+	if !strings.Contains(log, "agent prompt coordinator-work Pulse check:") {
 		t.Errorf("calls.log missing the pulse prompt:\n%s", log)
 	}
-	if n := strings.Count(log, "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
 		t.Errorf("want exactly one prompt, got %d:\n%s", n, log)
 	}
 
@@ -104,15 +104,15 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 
 func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "monica-work", "monica", "idle", false)
+	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg) // prompts once, sets the renag clock
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
 		t.Fatalf("setup: want exactly one prompt before the suppression window, got %d", n)
 	}
 
@@ -120,25 +120,25 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	d.pulseOnce(cfg)
 
 	log := calls(t, fake)
-	if n := strings.Count(log, "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
 		t.Errorf("renag window must suppress the re-prompt, got %d prompts:\n%s", n, log)
 	}
 }
 
 func TestPulseRenagDoublesUpToMax(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "monica-work", "monica", "idle", false)
+	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 90 * time.Minute}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 90 * time.Minute}
 
 	d.pulseOnce(cfg) // 1st: due immediately (new fingerprint), sets interval = 30m
 
 	clock = clock.Add(30 * time.Minute)
 	d.pulseOnce(cfg) // 2nd: renag elapsed, doubles to 60m
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
 		t.Fatalf("want 2 prompts after the first renag, got %d", n)
 	}
 	state := ReadPulseState(PulsePath(b.App))
@@ -148,7 +148,7 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 
 	clock = clock.Add(60 * time.Minute)
 	d.pulseOnce(cfg) // 3rd: renag elapsed again, would double to 120m but caps at RenagMax=90m
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 3 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 3 {
 		t.Fatalf("want 3 prompts after the second renag, got %d", n)
 	}
 	state = ReadPulseState(PulsePath(b.App))
@@ -159,12 +159,12 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 
 func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 	b, fake := newTestBackend(t)
-	id := personaSession(t, b, fake, "monica-work", "monica", "working", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "working", false)
 	unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg)
 
@@ -186,7 +186,7 @@ func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 	// away, not held behind a renag wait it never actually served.
 	setAgentStatus(t, fake, id, "idle")
 	d.pulseOnce(cfg)
-	if !strings.Contains(calls(t, fake), "agent prompt monica-work") {
+	if !strings.Contains(calls(t, fake), "agent prompt coordinator-work") {
 		t.Errorf("must retry next tick once idle:\n%s", calls(t, fake))
 	}
 }
@@ -197,12 +197,12 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg)
 
 	out := dispatcherOut(d)
-	if !strings.Contains(out, "undeliverable (no live session for monica)") {
+	if !strings.Contains(out, "undeliverable (no live session for coordinator)") {
 		t.Errorf("want an undeliverable line, got:\n%s", out)
 	}
 	if strings.Contains(calls(t, fake), "agent prompt") {
@@ -219,19 +219,19 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 // crewHeld) which treats a crew session as if it did not exist.
 func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "monica-work", "monica", "idle", true)
+	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", true)
 	unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg)
 
-	if !strings.Contains(calls(t, fake), "agent prompt monica-work") {
+	if !strings.Contains(calls(t, fake), "agent prompt coordinator-work") {
 		t.Errorf("a crew-marked session must still receive the pulse:\n%s", calls(t, fake))
 	}
-	s, err := b.Resolve("monica-work")
+	s, err := b.Resolve("coordinator-work")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,15 +245,15 @@ func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 
 func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "monica-work", "monica", "idle", false)
+	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	repo := unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg) // condition present, prompts once
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
 		t.Fatalf("setup: want exactly one prompt, got %d", n)
 	}
 
@@ -268,7 +268,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	commitIn(t, repo, "extra2.txt", "y", "extra2") // same condition shape recurs
 	clock = clock.Add(time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
 		t.Errorf("a fresh episode after a clear must prompt again immediately, got %d prompts", n)
 	}
 }

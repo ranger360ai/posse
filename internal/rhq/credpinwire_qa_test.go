@@ -90,7 +90,7 @@ func TestNoEnvVarPointsTheModelListAtAListener(t *testing.T) {
 // ─── the override that is pinned, over the wire ──────────────────────────────
 
 // ranger-base-dr6u, over the wire and from the listener's side: this is
-// laurie's repro on ranger-base-7nlw with the assertion inverted.
+// qa's repro on ranger-base-7nlw with the assertion inverted.
 //
 // The seam still works end to end, with the reader's own transport and no
 // fake anywhere — the request arrives, the beta header arrives, the body

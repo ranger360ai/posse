@@ -8,7 +8,7 @@ package rhq
 // drives dispatch itself, so a disagreement between what `runtime check`
 // prints and what a launch actually waits shows up here, not just there.
 //
-// richard's design note on ranger-base-il14: one Dispatcher fires every
+// architect's design note on ranger-base-il14: one Dispatcher fires every
 // runtime a pass touches, so the patience has to move per-launch, not live
 // on the Dispatcher alone. Wired via Dispatcher.runtimeWait (dispatch.go).
 

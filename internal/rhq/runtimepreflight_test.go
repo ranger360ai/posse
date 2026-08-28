@@ -31,7 +31,7 @@ func TestStateDirJoinsTheSeatbeltWritableSet(t *testing.T) {
 	}
 
 	work := t.TempDir()
-	ag := &AgentFile{Name: "dinesh", MemoryDir: t.TempDir()}
+	ag := &AgentFile{Name: "developer", MemoryDir: t.TempDir()}
 	w := strings.Join(a.SeatbeltWritable(ag, work, t.TempDir(), rt.StateDirs...), "\n")
 	if !strings.Contains(w, ExpandTilde("~/.mycli")) {
 		t.Errorf("declared state_dir is not writable under seatbelt:\n%s", w)

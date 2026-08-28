@@ -320,7 +320,7 @@ func (rig *overrideRig) seedTheFleetsReading(t *testing.T) {
 
 // HALF A. The override is asked, and it is asked with nothing: no
 // Authorization header, and no keychain read to produce one. This is
-// laurie's repro (ranger-base-7nlw) with the expectation it asked for.
+// qa's repro (ranger-base-7nlw) with the expectation it asked for.
 func TestALoopbackOverrideIsAskedWithoutTheCredential(t *testing.T) {
 	rig := newOverrideRig(t, http.StatusOK, `{"five_hour":{"utilization":7},"seven_day":{"utilization":8}}`, "")
 

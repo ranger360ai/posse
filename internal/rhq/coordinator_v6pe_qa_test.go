@@ -125,15 +125,15 @@ func TestLaunchBeadRefusesCoordinatorPathSpelling(t *testing.T) {
 	}
 }
 
-// Live config names monica, not coordinator. Same identity rule.
-func TestRouteRefusesMonicaNameVariants(t *testing.T) {
+// Live config names business-manager, not coordinator. Same identity rule.
+func TestRouteRefusesConfiguredCoordinatorNameVariants(t *testing.T) {
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	writeCoordinatorPID(t, b.App, "monica")
+	writeCoordinatorPID(t, b.App, "business-manager")
 	writePersona(t, b.App, "developer", "[hygiene]")
-	cfg(t, b.App, "coordinator: monica\n")
+	cfg(t, b.App, "coordinator: business-manager\n")
 
-	for _, spelling := range []string{"Monica", "MONICA", "./monica", "monica/../monica"} {
+	for _, spelling := range []string{"Business-Manager", "BUSINESS-MANAGER", "./business-manager", "business-manager/../business-manager"} {
 		t.Run(spelling, func(t *testing.T) {
 			if _, err := b.App.LoadAgent(spelling); err != nil {
 				t.Skipf("%q does not resolve", spelling)
@@ -169,7 +169,7 @@ func TestCoordinatorKeyAndCanonAgentAgreeOnASCII(t *testing.T) {
 	// ASCII they must agree, or the assignee branch can return a canonical
 	// coordinator the raw-string check missed. Non-ASCII never reaches
 	// CanonAgent: ValidName is [A-Za-z0-9_-].
-	names := []string{"coordinator", "Coordinator", "COORDINATOR", "monica", "Monica"}
+	names := []string{"coordinator", "Coordinator", "COORDINATOR", "business-manager", "Business-Manager"}
 	for _, a := range names {
 		for _, b := range names {
 			if strings.EqualFold(a, b) != (strings.ToLower(a) == strings.ToLower(b)) {

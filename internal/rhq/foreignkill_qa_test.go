@@ -9,7 +9,7 @@ import (
 // (rangerhq-ynx8 is the launch half). `posse kill <name>` resolves by
 // label, and Resolve falls through to workspaces this home holds no meta
 // for — so a kill by name closed another instance's live agent, exit 0, no
-// warning (laurie's M1 rehearsal: instance A's `rhq kill m1-collide` closed
+// warning (qa's M1 rehearsal: instance A's `rhq kill m1-collide` closed
 // instance B's workspace). Now it refuses, names the workspace id, and says
 // what to type if the operator really means that row.
 func TestKillRefusesAForeignWorkspace(t *testing.T) {

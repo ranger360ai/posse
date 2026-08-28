@@ -11,8 +11,8 @@ import (
 // record — which ADR 0012 D3-C puts behind a .beads redirect, outside the
 // session dir — has to be named or every bd write is denied (ranger-base-0fb).
 func TestCodexAddsTheBeadsRedirectTargetAsWritable(t *testing.T) {
-	r := realizeCodex(nil, nil, "/m/personas/dinesh", "/elsewhere/ranger-base/.beads")
-	want := "-s workspace-write --add-dir '/m/personas/dinesh' --add-dir '/elsewhere/ranger-base/.beads'"
+	r := realizeCodex(nil, nil, "/m/personas/developer", "/elsewhere/ranger-base/.beads")
+	want := "-s workspace-write --add-dir '/m/personas/developer' --add-dir '/elsewhere/ranger-base/.beads'"
 	if r.Deny != want {
 		t.Fatalf("codex sandbox flags:\n got %q\nwant %q", r.Deny, want)
 	}

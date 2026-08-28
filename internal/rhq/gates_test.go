@@ -62,7 +62,7 @@ func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
 	os.WriteFile(filepath.Join(realBin, "security"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	gatesDir, binDir, _, err := a.RenderGates("laurie", []string{"Bash(git push:*)", "Bash(security:*)"})
+	gatesDir, binDir, _, err := a.RenderGates("qa", []string{"Bash(git push:*)", "Bash(security:*)"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	_, binDir, _, err := a.RenderGates("dinesh", []string{"Bash(security:*)", "Bash(git push:*)", "Bash(git commit unless --)"})
+	_, binDir, _, err := a.RenderGates("developer", []string{"Bash(security:*)", "Bash(git push:*)", "Bash(git commit unless --)"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 	for _, want := range []string{
 		"refused by posse gate: security find-generic-password",
 		"deny: Bash(security:*)",
-		"this shell is dinesh's pane",
+		"this shell is developer's pane",
 		"gate dir leads its PATH",
 		"a persona has no way past",
 		"operator: run security in a terminal outside posse",
@@ -179,7 +179,7 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 // the form that is not refused is the answer for whoever typed it, and where
 // to run it is the answer only if that was the operator.
 func TestRuleHintComposesSafeFormAndWhere(t *testing.T) {
-	got := ruleHint("dinesh", "security", shimRule{Words: []string{"unlock-keychain"}, Unless: "--"})
+	got := ruleHint("developer", "security", shimRule{Words: []string{"unlock-keychain"}, Unless: "--"})
 	lines := strings.Split(got, "\n")
 	if len(lines) != 4 {
 		t.Fatalf("want the safe form then the three where lines, got %d:\n%s", len(lines), got)
@@ -187,10 +187,10 @@ func TestRuleHintComposesSafeFormAndWhere(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "  safe form: security unlock-keychain … -- <operand>") {
 		t.Errorf("safe form must lead: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "dinesh's pane") || !strings.Contains(lines[3], "outside posse") {
+	if !strings.Contains(lines[1], "developer's pane") || !strings.Contains(lines[3], "outside posse") {
 		t.Errorf("the where lines must follow: %q", got)
 	}
-	if h := ruleHint("dinesh", "git", shimRule{Words: []string{"push"}}); h != "" {
+	if h := ruleHint("developer", "git", shimRule{Words: []string{"push"}}); h != "" {
 		t.Errorf("a positive rule on a command with no where-hint has no hint: %q", h)
 	}
 }
@@ -1263,28 +1263,28 @@ func TestGateShellNeverChainsToAnotherWrapper(t *testing.T) {
 	}
 
 	// 1. An honest render: $SHELL is a shell, and it wins.
-	monica := render(t, "monica", honest)
-	if got := realOf(t, monica); got != honest {
+	coordinator := render(t, "coordinator", honest)
+	if got := realOf(t, coordinator); got != honest {
 		t.Errorf("an honest $SHELL still wins: REAL=%s, want %s", got, honest)
 	}
 	// 2. The chain link: a render whose $SHELL is another persona's
 	//    wrapper. It must refuse it and fall through to the search.
-	jianYang := render(t, "jian-yang", monica)
-	if got := realOf(t, jianYang); got != honest {
+	developer3 := render(t, "developer-3", coordinator)
+	if got := realOf(t, developer3); got != honest {
 		t.Errorf("a wrapper as $SHELL must fall through to the PATH search: REAL=%s, want %s", got, honest)
 	}
-	// 3. The render that closed the cycle on 08-27 — monica again, this
-	//    time under jian-yang's wrapper, with monica already jian-yang's
+	// 3. The render that closed the cycle on 08-27 — coordinator again, this
+	//    time under developer-3's wrapper, with coordinator already developer-3's
 	//    REAL in the buggy world.
-	render(t, "monica", jianYang)
+	render(t, "coordinator", developer3)
 
 	// The spawn canary the RCA asks for, run where a cycle would now be:
-	// under the bug, monica and jian-yang name each other and this hangs
+	// under the bug, coordinator and developer-3 name each other and this hangs
 	// until E2BIG. Time-bounded, so a regression fails the suite instead
 	// of wedging it — which is exactly how the incident presented.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, monica, "-c", "echo canary").CombinedOutput()
+	out, err := exec.CommandContext(ctx, coordinator, "-c", "echo canary").CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("spawn through the gate shell did not terminate — the wrappers are chained: %q", out)
 	}

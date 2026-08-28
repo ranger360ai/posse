@@ -104,7 +104,7 @@ func TestSettleMarkersRoundTripAndRefuseForeignText(t *testing.T) {
 		}
 	}
 
-	if got := settleStuckSource(settleStuckTitle("ranger-base-9hm", "gwart", "in_progress")); got != "ranger-base-9hm" {
+	if got := settleStuckSource(settleStuckTitle("ranger-base-9hm", "developer-2", "in_progress")); got != "ranger-base-9hm" {
 		t.Errorf("stuck source round-trip = %q, want ranger-base-9hm", got)
 	}
 	for _, title := range []string{
@@ -157,7 +157,7 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
 	repo := settleRepo(t)
-	appendConfig(t, b.App, "operator: monica\n")
+	appendConfig(t, b.App, "operator: coordinator\n")
 
 	p := settlePending(repo, "ranger-posse-a-1")
 	d.noteSettleOpen(p, "idle", "in_progress")
@@ -195,7 +195,7 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 	}
 }
 
-// Idempotence — the part gilfoyle flagged as the one that would bite. One
+// Idempotence — the part devops flagged as the one that would bite. One
 // question bead per stuck bead, not one per pass, and the dedupe is the
 // escalation's TITLE rather than any second write (ranger-base-muoo: bd's
 // create commits and then times out, so the id is lost while the bead is

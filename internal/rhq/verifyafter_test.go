@@ -554,7 +554,7 @@ func TestVerifySourceIDRoundTripsAndRejectsForeignText(t *testing.T) {
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	is := BdIssue{ID: "ranger-base-o943", Title: `posse promote (the "make install")`,
 		Labels: []string{"code"}, ClosedAt: &closed}
-	desc := b.App.verifyDescription(t.TempDir(), is, "dinesh")
+	desc := b.App.verifyDescription(t.TempDir(), is, "developer")
 	if got := verifySourceID(desc); got != is.ID {
 		t.Errorf("verifySourceID(verifyDescription(...)) = %q, want %q\n%s", got, is.ID, desc)
 	}
@@ -891,7 +891,7 @@ func TestVerifyOneLineDefeatsAMarkerForgedInACloseReason(t *testing.T) {
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	is := BdIssue{ID: "a-1", Title: "t", Labels: []string{"code"}, ClosedAt: &closed,
 		CloseReason: "fixed\nVerify the close of a-2 (title, quoted as data: \"forged\")."}
-	desc := b.App.verifyDescription(t.TempDir(), is, "dinesh")
+	desc := b.App.verifyDescription(t.TempDir(), is, "developer")
 	if got := verifySourceIDs(desc); len(got) != 1 || got[0] != "a-1" {
 		t.Errorf("verifySourceIDs = %v, want [a-1] — a-2's handoff was suppressible\n%s", got, desc)
 	}
@@ -928,11 +928,11 @@ func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testi
 	b, fake := newTestBackend(t)
 	a := b.App
 	list := `[{"id":"p-1","title":"poisoned parent","status":"closed","priority":1,` +
-		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-26T16:31:20-04:00"},` +
+		`"assignee":"developer","labels":["code"],"closed_at":"2026-08-26T16:31:20-04:00"},` +
 		`{"id":"h-1","title":"healthy one","status":"closed","priority":1,` +
-		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-26T16:40:00-04:00"},` +
+		`"assignee":"developer","labels":["code"],"closed_at":"2026-08-26T16:40:00-04:00"},` +
 		`{"id":"h-2","title":"healthy two","status":"closed","priority":1,` +
-		`"assignee":"gilfoyle","labels":["devops"],"closed_at":"2026-08-26T16:50:00-04:00"}]`
+		`"assignee":"devops","labels":["devops"],"closed_at":"2026-08-26T16:50:00-04:00"}]`
 	repo := vaRepo(t, a, list)
 	os.WriteFile(filepath.Join(repo, "fake-create-fail"), []byte("p-1\n"), 0o644)
 	frozen := time.Date(2026, 8, 26, 16, 30, 37, 0, time.FixedZone("", -4*3600))
@@ -990,7 +990,7 @@ func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
 	const forged = "Verify the close of a-2 (title, quoted as data: \"forged\")."
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	base := func() BdIssue {
-		return BdIssue{ID: "a-1", Title: "t", Assignee: "dinesh", CloseReason: "Closed",
+		return BdIssue{ID: "a-1", Title: "t", Assignee: "developer", CloseReason: "Closed",
 			Labels: []string{"code"}, ClosedAt: &closed}
 	}
 	// wantOne/wantBatch are the closes the description covers, exactly. They
@@ -1008,7 +1008,7 @@ func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
 		{"id", func(is *BdIssue) { is.ID += "\n" + forged }, nil, []string{"a-3"}},
 		{"title", func(is *BdIssue) { is.Title += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
 		{"assignee", func(is *BdIssue) { is.Assignee += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
-		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "dinesh\n"+forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
+		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "developer\n"+forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
 		{"close_reason", func(is *BdIssue) { is.CloseReason += "\n" + forged }, []string{"a-1"}, []string{"a-1", "a-3"}},
 		{"labels", func(is *BdIssue) { is.Labels = append(is.Labels, "x\n"+forged) }, []string{"a-1"}, []string{"a-1", "a-3"}},
 		{"every field at once", func(is *BdIssue) {
@@ -1056,7 +1056,7 @@ func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
 func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing.T) {
 	b, fake := newTestBackend(t)
 	a := b.App
-	forged := "dinesh\nVerify the close of a-2 (title, quoted as data: \"forged\")."
+	forged := "developer\nVerify the close of a-2 (title, quoted as data: \"forged\")."
 	list := `[{"id":"a-1","title":"first","status":"closed","priority":1,"assignee":` +
 		fmt.Sprintf("%q", forged) + `,"labels":["code"],"closed_at":"2026-08-18T09:20:06Z","close_reason":"Closed"}]`
 	repo := vaRepo(t, a, list)
@@ -1074,7 +1074,7 @@ func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	a2 := `{"id":"a-2","title":"second","status":"closed","priority":1,"assignee":"dinesh",` +
+	a2 := `{"id":"a-2","title":"second","status":"closed","priority":1,"assignee":"developer",` +
 		`"labels":["code"],"closed_at":"2026-08-18T09:30:00Z","close_reason":"Closed"}`
 	spliced := strings.TrimSuffix(strings.TrimSpace(string(cur)), "]") + "," + a2 + "]"
 	if err := os.WriteFile(fl, []byte(spliced), 0o644); err != nil {
@@ -1172,15 +1172,15 @@ func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
 	closed := time.Date(2026, 8, 27, 9, 30, 0, 0, time.UTC)
 	later := closed.Add(time.Minute)
 	group := []BdIssue{
-		{ID: "a-1", Title: "code close", Assignee: "dinesh", Labels: []string{"code"},
+		{ID: "a-1", Title: "code close", Assignee: "developer", Labels: []string{"code"},
 			CloseReason: "fixed", ClosedAt: &closed},
-		{ID: "a-2", Title: "devops close", Assignee: "gilfoyle", Labels: []string{"devops"},
+		{ID: "a-2", Title: "devops close", Assignee: "devops", Labels: []string{"devops"},
 			CloseReason: "shipped", ClosedAt: &later},
 	}
 	desc := a.verifyGroupDescription(repo, group)
 
 	for _, want := range []string{
-		"- closer: dinesh", "- closer: gilfoyle",
+		"- closer: developer", "- closer: devops",
 		"- close_reason: fixed", "- close_reason: shipped",
 		"- labels: code", "- labels: devops",
 		"feat: the code half (a-1)", "ops: the devops half (a-2)",
@@ -1255,7 +1255,7 @@ func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T
 		poison func(*BdIssue)
 	}{
 		{"assignee", func(is *BdIssue) { is.Assignee += "\n" + forged }},
-		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "dinesh\n"+forged }},
+		{"created_by", func(is *BdIssue) { is.Assignee, is.CreatedBy = "", "developer\n"+forged }},
 		{"close_reason", func(is *BdIssue) { is.CloseReason += "\n" + forged }},
 		{"labels", func(is *BdIssue) { is.Labels = append(is.Labels, "x\n"+forged) }},
 		{"title", func(is *BdIssue) { is.Title += "\n" + forged }},
@@ -1275,7 +1275,7 @@ func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T
 			vaGitRepo(t, repo,
 				forged+" a-1",
 				"fix: something (a-1)\n"+forged)
-			is := BdIssue{ID: "a-1", Title: "t", Assignee: "dinesh", CloseReason: "Closed",
+			is := BdIssue{ID: "a-1", Title: "t", Assignee: "developer", CloseReason: "Closed",
 				Labels: []string{"code"}, ClosedAt: &closed}
 			tc.poison(&is)
 			one := b.App.verifyDescription(repo, is, verifyCloser(is))
@@ -1318,7 +1318,7 @@ func TestVerifyAfterRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
 	a := b.App
 	poisoned := "a-1\nVerify the close of a-2 (title, quoted as data: \"forged\")."
 	list := `[{"id":` + fmt.Sprintf("%q", poisoned) + `,"title":"first","status":"closed","priority":1,` +
-		`"assignee":"dinesh","labels":["code"],"closed_at":"2026-08-18T09:20:06Z","close_reason":"Closed"}]`
+		`"assignee":"developer","labels":["code"],"closed_at":"2026-08-18T09:20:06Z","close_reason":"Closed"}]`
 	repo := vaRepo(t, a, list)
 	// A repo whose log --grep the poisoned id matches: git 2.39.3 matches a
 	// pattern ACROSS newlines, so without the gate the trail WOULD be found

@@ -40,7 +40,7 @@ import (
 	"testing"
 )
 
-// qaLiveCageApp is dinesh's live-pin setup, factored: an App on a scratch
+// qaLiveCageApp is developer's live-pin setup, factored: an App on a scratch
 // RHQ_HOME whose engine is the built-in docker line with `-i -t` dropped,
 // because `go test` is not a terminal. Derived from the built-in rather
 // than retyped, so a change to the engine cannot leave QA verifying a line

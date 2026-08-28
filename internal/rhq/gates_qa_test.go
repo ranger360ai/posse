@@ -206,7 +206,7 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 }
 
 // rangerhq-t9by — close of rangerhq-2f5r. The wall lmq9 landed covers THIS
-// incident's shared-index half. The four forms gilfoyle measured against the
+// incident's shared-index half. The four forms devops measured against the
 // live hook, driven with the incident's own argv (`git commit -F <file>`,
 // not `-m`): B holds staged work throughout.
 //
@@ -319,16 +319,16 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
-	write("a.txt", "v1\ndinesh line\nLAURIE HALF-WRITTEN\n")
+	write("a.txt", "v1\ndeveloper line\nQA HALF-WRITTEN\n")
 	msg := filepath.Join(t.TempDir(), "msg")
-	if err := os.WriteFile(msg, []byte("msg about dinesh line only\n"), 0o644); err != nil {
+	if err := os.WriteFile(msg, []byte("msg about developer line only\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := git(persona, "commit", "-F", msg, "--", "a.txt"); err != nil {
 		t.Fatalf("blessed form must pass: %v %s", err, out)
 	}
 	body, _ := git(nil, "show", "HEAD:a.txt")
-	if !strings.Contains(body, "dinesh line") || !strings.Contains(body, "LAURIE HALF-WRITTEN") {
+	if !strings.Contains(body, "developer line") || !strings.Contains(body, "QA HALF-WRITTEN") {
 		t.Fatalf("residual: named path commits the file on disk; got %q", body)
 	}
 }

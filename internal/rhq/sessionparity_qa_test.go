@@ -127,7 +127,7 @@ func TestDirtyPathsKeepsStagedAndUntrackedPathsWhole(t *testing.T) {
 	}
 }
 
-// THE CAGE dimension richard added (ranger-base-il14): codex and grok have
+// THE CAGE dimension architect added (ranger-base-il14): codex and grok have
 // no decided container credential, so a caged launch must REFUSE with that
 // reason rather than start a session that cannot authenticate. Verified
 // here rather than by manufacturing a container run the bead forbids.

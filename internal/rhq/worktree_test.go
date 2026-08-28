@@ -118,14 +118,14 @@ func TestEnsureSessionTreeIsPrivateAndIdempotent(t *testing.T) {
 	a := wtApp(t)
 	repo := wtRepo(t)
 
-	tr, err := a.EnsureSessionTree(repo, "dinesh-repo-x-1", nil)
+	tr, err := a.EnsureSessionTree(repo, "developer-repo-x-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tr == nil {
 		t.Fatal("a git repo on a branch must get a session worktree")
 	}
-	if tr.Branch != "posse/dinesh-repo-x-1" || tr.Base != "main" {
+	if tr.Branch != "posse/developer-repo-x-1" || tr.Base != "main" {
 		t.Errorf("branch/base = %q/%q", tr.Branch, tr.Base)
 	}
 	if resolveExisting(tr.Path) == resolveExisting(repo) {
@@ -142,7 +142,7 @@ func TestEnsureSessionTreeIsPrivateAndIdempotent(t *testing.T) {
 		t.Errorf("the worktree shares the common git dir (%s) — its index is not private", gd)
 	}
 
-	again, err := a.EnsureSessionTree(repo, "dinesh-repo-x-1", nil)
+	again, err := a.EnsureSessionTree(repo, "developer-repo-x-1", nil)
 	if err != nil {
 		t.Fatalf("a second launch into the same session must find its tree: %v", err)
 	}
@@ -157,11 +157,11 @@ func TestTwoSessionsGetSeparateTreesAndIndexes(t *testing.T) {
 	a := wtApp(t)
 	repo := wtRepo(t)
 
-	one, err := a.EnsureSessionTree(repo, "dinesh-repo-a-1", nil)
+	one, err := a.EnsureSessionTree(repo, "developer-repo-a-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	two, err := a.EnsureSessionTree(repo, "laurie-repo-b-2", nil)
+	two, err := a.EnsureSessionTree(repo, "qa-repo-b-2", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,32 +169,32 @@ func TestTwoSessionsGetSeparateTreesAndIndexes(t *testing.T) {
 		t.Fatal("two sessions got one tree")
 	}
 
-	// dinesh stages six paths and has not committed yet — the rangerhq-2f5r
+	// developer stages six paths and has not committed yet — the rangerhq-2f5r
 	// posture exactly.
-	write(t, filepath.Join(one.Path, "mine.txt"), "dinesh's fix\n")
+	write(t, filepath.Join(one.Path, "mine.txt"), "developer's fix\n")
 	mustGit(t, one.Path, "add", "mine.txt")
 
-	// laurie commits in her tree, the unqualified way that used to sweep.
-	write(t, filepath.Join(two.Path, "hers.txt"), "laurie's fix\n")
+	// qa commits in its tree, the unqualified way that used to sweep.
+	write(t, filepath.Join(two.Path, "theirs.txt"), "qa's fix\n")
 	mustGit(t, two.Path, "config", "user.email", "l@example.com")
 	mustGit(t, two.Path, "config", "user.name", "l")
-	mustGit(t, two.Path, "add", "hers.txt")
-	mustGit(t, two.Path, "commit", "-q", "-m", "laurie's bead")
+	mustGit(t, two.Path, "add", "theirs.txt")
+	mustGit(t, two.Path, "commit", "-q", "-m", "qa's bead")
 
-	// The sweep: laurie's commit must not carry dinesh's path…
+	// The sweep: qa's commit must not carry developer's path…
 	files := mustGit(t, two.Path, "show", "--name-only", "--format=", "HEAD")
 	if strings.Contains(files, "mine.txt") {
-		t.Errorf("laurie's commit swept dinesh's staged file:\n%s", files)
+		t.Errorf("qa's commit swept developer's staged file:\n%s", files)
 	}
-	// …and dinesh's staging must still be there afterwards.
+	// …and developer's staging must still be there afterwards.
 	staged := mustGit(t, one.Path, "diff", "--cached", "--name-only")
 	if staged != "mine.txt" {
-		t.Errorf("dinesh's index after laurie's commit = %q, want \"mine.txt\"", staged)
+		t.Errorf("developer's index after qa's commit = %q, want \"mine.txt\"", staged)
 	}
-	// The working-tree half of the same incident: laurie's tree never had
-	// dinesh's file to commit in the first place.
+	// The working-tree half of the same incident: qa's tree never had
+	// developer's file to commit in the first place.
 	if _, err := os.Stat(filepath.Join(two.Path, "mine.txt")); err == nil {
-		t.Error("dinesh's in-flight file is visible in laurie's tree")
+		t.Error("developer's in-flight file is visible in qa's tree")
 	}
 }
 

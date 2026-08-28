@@ -6,8 +6,9 @@ package rhq
 // example roles; this pin is the invariant that commit did not encode, and
 // that rangerhq-oay walked back the next day.
 //
-// Tests marked t.Skip pin a filed bug: they encode the expected behavior
-// and fail today. Remove the skip when the bead closes.
+// Live since ranger-base-h6fx: skipped from cd365fa to that bead, which is
+// exactly how the corpus refilled with crew names (223 hits over five days,
+// 339 by the sweep). A skipped invariant is documentation, not a pin.
 
 import (
 	"bytes"
@@ -44,6 +45,10 @@ func qibCrewPattern() *regexp.Regexp {
 		"mon" + "ica",
 		"rich" + "ard",
 		"erl" + "ich",
+		"hol" + "den",
+		"gw" + "art",
+		"jian" + "-yang",
+		"jian" + "Yang",
 		"da" + "ve",
 		"david" + "stacy",
 	}
@@ -51,8 +56,6 @@ func qibCrewPattern() *regexp.Regexp {
 }
 
 func TestFixturesNameRolesNotThisCrew(t *testing.T) {
-	t.Skip("ranger-base-h6fx: 32 other test files still name the originating instance's crew (223 hits); ranger-base-idq cleared modelavail_test.go")
-
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
 	var hits []string

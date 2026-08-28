@@ -198,7 +198,7 @@ func TestCockpitCrewTagAndFooter(t *testing.T) {
 
 func TestCockpitTurnFailureOverridesIdlePresentation(t *testing.T) {
 	c := &cockpit{sessions: []rhq.HerdrSession{{
-		Name: "hoover-posse-6ne", Agent: "hoover", Status: "idle",
+		Name: "security-posse-6ne", Agent: "security", Status: "idle",
 		TurnFailure: "You've reached your Fable 5 limit.",
 	}}}
 	got := stripANSI(renderRow(row{kind: rowItem, cols: c.sessionCols(c.sessions[0])}, 100, false))
@@ -1155,7 +1155,7 @@ func govFixture() *cockpit {
 	c.gov = rhq.GovSet{
 		{ID: "G1", Class: rhq.GovLane, Key: "blocked:devops-x", Detail: "devops-x (devops) is blocked on an approval"},
 		{ID: "G7", Class: rhq.GovUrgent, Key: "loop-dead", Detail: "autostart is armed and no watch loop holds the lock"},
-		{Class: rhq.GovLane, Key: "no-live:monica", Detail: "no live session for monica"},
+		{Class: rhq.GovLane, Key: "no-live:coordinator", Detail: "no live session for coordinator"},
 	}
 	return c
 }

@@ -78,14 +78,14 @@ func writeEnvFile(t *testing.T, a *App, set, body string, mode os.FileMode) stri
 // hole in it.
 func TestRefreshRefusesUnderThePersonaMarkerIncludingTheReport(t *testing.T) {
 	a := refreshApp(t)
-	t.Setenv(EnvPersona, "jian-yang")
+	t.Setenv(EnvPersona, "developer-3")
 	for _, o := range []RefreshOpts{{}, {Runtime: "claude"}} {
 		var w bytes.Buffer
 		err := a.CmdRefresh(&w, opts(o, "tok", nil))
 		if err == nil {
 			t.Fatalf("refresh ran under %s (runtime=%q)", EnvPersona, o.Runtime)
 		}
-		if !strings.Contains(err.Error(), EnvPersona) || !strings.Contains(err.Error(), "jian-yang") {
+		if !strings.Contains(err.Error(), EnvPersona) || !strings.Contains(err.Error(), "developer-3") {
 			t.Errorf("refusal does not name the marker that caused it: %v", err)
 		}
 		if w.Len() > 0 {

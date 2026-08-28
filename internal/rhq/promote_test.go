@@ -300,7 +300,7 @@ func TestPromoteReportsButAllowsDirtyOutsideThePromotedSet(t *testing.T) {
 // pins it in the seed.
 func TestPromoteRefusesUnderThePersonaMarker(t *testing.T) {
 	a, src, _ := promoteFixture(t)
-	t.Setenv(EnvPersona, "dinesh")
+	t.Setenv(EnvPersona, "developer")
 	err := a.CmdPromote(&bytes.Buffer{}, PromoteOpts{Source: src})
 	if err == nil || !strings.Contains(err.Error(), EnvPersona) {
 		t.Fatalf("promote ran under %s: %v", EnvPersona, err)

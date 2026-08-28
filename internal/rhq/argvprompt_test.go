@@ -72,8 +72,8 @@ func TestArgvClaimsBeforeCreatingTheSession(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	argvPersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`,
-		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"gilfoyle"}]`)
-	os.WriteFile(filepath.Join(repo, "fake-claim-lost"), []byte("gilfoyle"), 0o644)
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"devops"}]`)
+	os.WriteFile(filepath.Join(repo, "fake-claim-lost"), []byte("devops"), 0o644)
 	idleClaude(t, fake)
 
 	n, err := d.Run("", "", 0)

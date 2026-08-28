@@ -48,22 +48,22 @@ func TestInstanceTagPrefixesLabelOnlyNotSessionName(t *testing.T) {
 	setInstance(t, b, "work")
 
 	dir := t.TempDir()
-	mustCreate(t, b, NewSessionOpts{Name: "monica", Dir: dir})
+	mustCreate(t, b, NewSessionOpts{Name: "coordinator", Dir: dir})
 
 	log := calls(t, fake)
-	if !strings.Contains(log, "workspace create --label work/monica --no-focus") {
+	if !strings.Contains(log, "workspace create --label work/coordinator --no-focus") {
 		t.Errorf("herdr was not asked for the instance-tagged label:\n%s", log)
 	}
 
 	// The ownership record is the meta dir, and its filename is the NAME.
-	if _, err := os.Stat(b.metaPath("monica")); err != nil {
+	if _, err := os.Stat(b.metaPath("coordinator")); err != nil {
 		t.Errorf("meta not written under the session name: %v", err)
 	}
-	if _, err := os.Stat(b.metaPath("work/monica")); err == nil {
+	if _, err := os.Stat(b.metaPath("work/coordinator")); err == nil {
 		t.Error("the label reached the meta dir — names and labels must not be the same string")
 	}
-	m, ok := b.readMeta("monica")
-	if !ok || m.Name != "monica" {
+	m, ok := b.readMeta("coordinator")
+	if !ok || m.Name != "coordinator" {
 		t.Fatalf("bad meta: %+v (ok=%v)", m, ok)
 	}
 
@@ -74,13 +74,13 @@ func TestInstanceTagPrefixesLabelOnlyNotSessionName(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("want 1 session, got %+v", sessions)
 	}
-	if s := sessions[0]; s.Name != "monica" || s.Foreign {
+	if s := sessions[0]; s.Name != "coordinator" || s.Foreign {
 		t.Errorf("a tagged session must list as this home's own, under its name: %+v", s)
 	}
-	if _, err := b.Resolve("monica"); err != nil {
-		t.Errorf("Resolve(monica): %v", err)
+	if _, err := b.Resolve("coordinator"); err != nil {
+		t.Errorf("Resolve(coordinator): %v", err)
 	}
-	if _, err := b.Resolve("work/monica"); err == nil {
+	if _, err := b.Resolve("work/coordinator"); err == nil {
 		t.Error("the label resolved as a session name — identity is never parsed out of a label")
 	}
 }
@@ -99,13 +99,13 @@ func TestInstanceTagFreesAForeignNamesake(t *testing.T) {
 	// Another instance's session, as this home sees it: a workspace with no
 	// meta here, labelled with a tag that is not ours.
 	saveWSTo(t, fake, append(fakeLoadWSFrom(t, fake),
-		fakeWS{WorkspaceID: "w9", Label: "work/monica"}))
+		fakeWS{WorkspaceID: "w9", Label: "work/coordinator"}))
 
-	if b.HasSession("monica") {
+	if b.HasSession("coordinator") {
 		t.Fatal("another instance's tagged workspace answered for this home's name")
 	}
-	mustCreate(t, b, NewSessionOpts{Name: "monica", Dir: t.TempDir()})
-	if !strings.Contains(calls(t, fake), "workspace create --label fleet/monica") {
+	mustCreate(t, b, NewSessionOpts{Name: "coordinator", Dir: t.TempDir()})
+	if !strings.Contains(calls(t, fake), "workspace create --label fleet/coordinator") {
 		t.Error("the create did not go out under this home's tag")
 	}
 
@@ -118,9 +118,9 @@ func TestInstanceTagFreesAForeignNamesake(t *testing.T) {
 	var foreign, ours int
 	for _, s := range sessions {
 		switch {
-		case s.Foreign && s.Name == "work/monica":
+		case s.Foreign && s.Name == "work/coordinator":
 			foreign++
-		case !s.Foreign && s.Name == "monica":
+		case !s.Foreign && s.Name == "coordinator":
 			ours++
 		default:
 			t.Errorf("unexpected row: %+v", s)
@@ -144,12 +144,12 @@ func TestInstanceTagFreesAForeignNamesake(t *testing.T) {
 func TestNoInstanceTagLeavesLabelsAlone(t *testing.T) {
 	b, fake := newTestBackend(t)
 	hermeticGen(t)
-	mustCreate(t, b, NewSessionOpts{Name: "monica", Dir: t.TempDir()})
-	if log := calls(t, fake); !strings.Contains(log, "workspace create --label monica --no-focus") {
+	mustCreate(t, b, NewSessionOpts{Name: "coordinator", Dir: t.TempDir()})
+	if log := calls(t, fake); !strings.Contains(log, "workspace create --label coordinator --no-focus") {
 		t.Errorf("an untagged home must label a workspace with the bare name:\n%s", log)
 	}
-	if got := b.App.WorkspaceLabel("monica"); got != "monica" {
-		t.Errorf("WorkspaceLabel with no tag = %q, want %q", got, "monica")
+	if got := b.App.WorkspaceLabel("coordinator"); got != "coordinator" {
+		t.Errorf("WorkspaceLabel with no tag = %q, want %q", got, "coordinator")
 	}
 }
 
@@ -161,7 +161,7 @@ func TestNoInstanceTagLeavesLabelsAlone(t *testing.T) {
 func TestInstanceTagKeepsPreTagSessionsOurs(t *testing.T) {
 	b, fake := newTestBackend(t)
 	hermeticGen(t)
-	mustCreate(t, b, NewSessionOpts{Name: "monica", Dir: t.TempDir()})
+	mustCreate(t, b, NewSessionOpts{Name: "coordinator", Dir: t.TempDir()})
 
 	setInstance(t, b, "work")
 
@@ -169,10 +169,10 @@ func TestInstanceTagKeepsPreTagSessionsOurs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sessions) != 1 || sessions[0].Foreign || sessions[0].Name != "monica" {
+	if len(sessions) != 1 || sessions[0].Foreign || sessions[0].Name != "coordinator" {
 		t.Fatalf("a session created before the tag was set must stay ours: %+v", sessions)
 	}
-	if _, err := os.Stat(b.metaPath("monica")); err != nil {
+	if _, err := os.Stat(b.metaPath("coordinator")); err != nil {
 		t.Errorf("its meta was pruned: %v", err)
 	}
 	_ = fake
@@ -190,7 +190,7 @@ func TestBadInstanceTagRefusesTheLaunch(t *testing.T) {
 			hermeticGen(t)
 			setInstance(t, b, tag)
 
-			err := b.CreateSession(NewSessionOpts{Name: "monica", Dir: t.TempDir()})
+			err := b.CreateSession(NewSessionOpts{Name: "coordinator", Dir: t.TempDir()})
 			if err == nil {
 				t.Fatal("a malformed instance tag should refuse the launch")
 			}
@@ -200,7 +200,7 @@ func TestBadInstanceTagRefusesTheLaunch(t *testing.T) {
 			if log := calls(t, fake); strings.Contains(log, "workspace create") {
 				t.Errorf("a workspace was created under a tag posse refused:\n%s", log)
 			}
-			if _, err := os.Stat(b.metaPath("monica")); err == nil {
+			if _, err := os.Stat(b.metaPath("coordinator")); err == nil {
 				t.Error("a refused launch left a meta behind")
 			}
 			if _, err := os.Stat(filepath.Join(fake, "ws.json")); err == nil {

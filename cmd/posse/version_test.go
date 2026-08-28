@@ -50,7 +50,7 @@ func TestVersionNamesTheCommitWithoutTheLdflag(t *testing.T) {
 		t.Errorf("a build of an edited tree reports %q, want %q", got, want)
 	}
 
-	// laurie's case on this bead: an exact tag, sitting in the binary's own
+	// qa's case on this bead: an exact tag, sitting in the binary's own
 	// build info, and the version line still said "dev". Rendered as the
 	// bare version — "0.3.0+v0.3.0" says the same thing twice.
 	if err := os.Remove(scratch); err != nil {

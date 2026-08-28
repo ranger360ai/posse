@@ -1,7 +1,7 @@
 package rhq
 
 // The pulse's sensing half (ADR 0027 §1-2, rangerhq-4ish): condition set,
-// fingerprint, arm switch. Delivery (prompting monica) is rangerhq-44w1;
+// fingerprint, arm switch. Delivery (prompting coordinator) is rangerhq-44w1;
 // its tests live in pulse_delivery_test.go.
 
 import (
@@ -16,7 +16,7 @@ import (
 
 func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
 	a := wtApp(t)
-	os.WriteFile(a.ConfigPath, []byte("default_persona: monica\n"), 0o644)
+	os.WriteFile(a.ConfigPath, []byte("default_persona: coordinator\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
 	if err != nil {
 		t.Fatal(err)
@@ -29,12 +29,12 @@ func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
 func TestLoadPulseConfigArmed(t *testing.T) {
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte(
-		"pulse_interval: 2m\npulse_persona: dinesh\npulse_renag: 30m\npulse_renag_max: 4h\n"), 0o644)
+		"pulse_interval: 2m\npulse_persona: developer\npulse_renag: 30m\npulse_renag_max: 4h\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Armed || cfg.Interval != 2*time.Minute || cfg.Persona != "dinesh" ||
+	if !cfg.Armed || cfg.Interval != 2*time.Minute || cfg.Persona != "developer" ||
 		cfg.Renag != 30*time.Minute || cfg.RenagMax != 4*time.Hour {
 		t.Errorf("bad armed config: %+v", cfg)
 	}
@@ -104,11 +104,11 @@ func pulseIn(t *testing.T, b *HerdrBackend, dirs []string, persona string) GovIn
 
 func TestShopCheckBlockedSession(t *testing.T) {
 	b, fake := newTestBackend(t)
-	blockedSession(t, b, fake, "monica-shop", "monica")
+	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
 
-	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
-	if !containsStr(conditions, "blocked:monica-shop") {
-		t.Errorf("conditions = %v, want blocked:monica-shop", conditions)
+	conditions := shopKeys(t, pulseIn(t, b, nil, "coordinator"))
+	if !containsStr(conditions, "blocked:coordinator-shop") {
+		t.Errorf("conditions = %v, want blocked:coordinator-shop", conditions)
 	}
 	// The session is blocked, not gone — it must not also read as absent.
 	if containsPrefix(conditions, "no-live:") {
@@ -118,9 +118,9 @@ func TestShopCheckBlockedSession(t *testing.T) {
 
 func TestShopCheckNoLivePersona(t *testing.T) {
 	b, _ := newTestBackend(t)
-	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
-	if !containsStr(conditions, "no-live:monica") {
-		t.Errorf("conditions = %v, want no-live:monica", conditions)
+	conditions := shopKeys(t, pulseIn(t, b, nil, "coordinator"))
+	if !containsStr(conditions, "no-live:coordinator") {
+		t.Errorf("conditions = %v, want no-live:coordinator", conditions)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestShopCheckNoLivePersona(t *testing.T) {
 // every box where the coordinator's session happens to be closed.
 func TestShopCheckNoLivePersonaOnlyWhenPulsing(t *testing.T) {
 	b, _ := newTestBackend(t)
-	in := pulseIn(t, b, nil, "monica")
+	in := pulseIn(t, b, nil, "coordinator")
 	in.Pulsing = false
 	if conditions := shopKeys(t, in); containsPrefix(conditions, "no-live:") {
 		t.Errorf("a disarmed pulse has nowhere to deliver and nothing to report: %v", conditions)
@@ -138,11 +138,11 @@ func TestShopCheckNoLivePersonaOnlyWhenPulsing(t *testing.T) {
 
 func TestShopCheckLivePersonaOtherAgentDoesNotCount(t *testing.T) {
 	b, _ := newTestBackend(t)
-	writePersona(t, b.App, "richard", "code")
-	mustCreate(t, b, NewSessionOpts{Name: "richard-work", Agent: "richard"})
-	conditions := shopKeys(t, pulseIn(t, b, nil, "monica"))
-	if !containsStr(conditions, "no-live:monica") {
-		t.Errorf("richard's session must not stand in for monica: %v", conditions)
+	writePersona(t, b.App, "architect", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "architect-work", Agent: "architect"})
+	conditions := shopKeys(t, pulseIn(t, b, nil, "coordinator"))
+	if !containsStr(conditions, "no-live:coordinator") {
+		t.Errorf("architect's session must not stand in for coordinator: %v", conditions)
 	}
 }
 
@@ -155,7 +155,7 @@ func TestShopCheckUnpushedCommits(t *testing.T) {
 	mustGit(t, repo, "push", "-q", "-u", "origin", "main")
 	commitIn(t, repo, "extra.txt", "x", "extra")
 
-	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "monica"))
+	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "coordinator"))
 	if !containsPrefix(conditions, "unpushed:"+repo+":") {
 		t.Errorf("conditions = %v, want an unpushed: entry for %s", conditions, repo)
 	}
@@ -165,7 +165,7 @@ func TestShopCheckNoUpstreamIsNoCondition(t *testing.T) {
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t) // one commit, no remote, no upstream configured
 
-	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "monica"))
+	conditions := shopKeys(t, pulseIn(t, b, []string{repo}, "coordinator"))
 	if containsPrefix(conditions, "unpushed:") {
 		t.Errorf("no upstream must read as no condition, got %v", conditions)
 	}
@@ -195,11 +195,11 @@ func containsPrefix(ss []string, prefix string) bool {
 func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	blockedSession(t, b, fake, "monica-shop", "monica")
+	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
 
 	noUpstream := wtRepo(t) // deterministic: no upstream, so no unpushed: noise
 	os.WriteFile(b.App.ConfigPath, []byte(
-		"pulse_interval: 15ms\npulse_persona: monica\nbeads:\n  - "+noUpstream+"\n"), 0o644)
+		"pulse_interval: 15ms\npulse_persona: coordinator\nbeads:\n  - "+noUpstream+"\n"), 0o644)
 
 	tap := newPassTap(1)
 	d.Out = tap
@@ -211,7 +211,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 
 	deadline := time.After(30 * time.Second)
 	for {
-		if strings.Contains(tap.String(), "pulse: blocked:monica-shop") {
+		if strings.Contains(tap.String(), "pulse: blocked:coordinator-shop") {
 			break
 		}
 		select {
@@ -231,7 +231,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state/pulse.yaml not written: %v", err)
 	}
-	if !strings.Contains(string(state), "blocked:monica-shop") {
+	if !strings.Contains(string(state), "blocked:coordinator-shop") {
 		t.Errorf("state/pulse.yaml missing the condition:\n%s", state)
 	}
 }
@@ -239,7 +239,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 func TestWatchPulseUnarmedNoTicker(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	blockedSession(t, b, fake, "monica-shop", "monica")
+	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644)
 	// No pulse_interval: key at all — disarmed.

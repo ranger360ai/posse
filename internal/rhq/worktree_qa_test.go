@@ -13,7 +13,7 @@ package rhq
 //   - a kill lands the work and refuses to remove a tree that still holds
 //     any;
 //   - the shared-index wall stands down in a tree where no index is shared,
-//     and still stands in the checkout where one is (laurie's finding on
+//     and still stands in the checkout where one is (qa's finding on
 //     this bead).
 //
 // The unit half — placement, the beads redirect, merge mechanics — is
@@ -389,7 +389,7 @@ func TestKillOfASharedCheckoutSessionIsUnchanged(t *testing.T) {
 
 // ─── the wall: right in the checkout, quiet in the tree ──────────────────────
 
-// laurie measured (on this bead) that the prepare-commit-msg wall installs
+// qa measured (on this bead) that the prepare-commit-msg wall installs
 // into the COMMON git dir, so a linked worktree inherits it and is refused
 // there too — under a message that says the index is "shared by every
 // persona", which is exactly what a session worktree's index is not. The arm

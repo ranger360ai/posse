@@ -204,11 +204,11 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 		md := "---\nname: " + name + "\ndescription: t\nallow: [Bash(git push:*)]\n---\nYou are " + name + ", the role of the crew.\n"
 		os.WriteFile(filepath.Join(a.AgentsDir, name+".md"), []byte(md), 0o644)
 	}
-	pid("monica")
+	pid("business-manager")
 	const want = "grants the coordinator's defining permission"
 
 	// No coordinator: configured at all — the important arm.
-	_, ws, err := a.CheckAgent("monica")
+	_, ws, err := a.CheckAgent("business-manager")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 
 	// coordinator: names someone else — drift.
 	os.WriteFile(a.ConfigPath, []byte("coordinator: coordinator\n"), 0o644)
-	_, ws, err = a.CheckAgent("monica")
+	_, ws, err = a.CheckAgent("business-manager")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,8 +229,8 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 	}
 
 	// coordinator: names this PID — no warning.
-	os.WriteFile(a.ConfigPath, []byte("coordinator: monica\n"), 0o644)
-	_, ws, err = a.CheckAgent("monica")
+	os.WriteFile(a.ConfigPath, []byte("coordinator: business-manager\n"), 0o644)
+	_, ws, err = a.CheckAgent("business-manager")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,8 +238,8 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 		t.Errorf("the coordinator itself must not warn on its own grant: %v", ws)
 	}
 	// Case/path spelling still resolves to the same identity (isCoordinator).
-	os.WriteFile(a.ConfigPath, []byte("coordinator: Monica\n"), 0o644)
-	_, ws, err = a.CheckAgent("monica")
+	os.WriteFile(a.ConfigPath, []byte("coordinator: Business-Manager\n"), 0o644)
+	_, ws, err = a.CheckAgent("business-manager")
 	if err != nil {
 		t.Fatal(err)
 	}

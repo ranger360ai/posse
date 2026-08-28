@@ -412,7 +412,7 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 	t.Skip("ranger-base-4l2z: the queue repo's first commit sweeps .beads paths the constitution's root .gitignore excludes")
 	constitution, _ := qcConstitution(t)
 	write(t, filepath.Join(constitution, ".beads", "export-state", "abc.json"),
-		`{"worktree_root":"/Users/someone/.posse/worktrees/posse/dinesh-x"}`+"\n")
+		`{"worktree_root":"/Users/someone/.posse/worktrees/posse/developer-x"}`+"\n")
 	queue := filepath.Join(t.TempDir(), "queue")
 
 	out, _ := qcRun(t, constitution, queue, t.TempDir(), []string{qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))})
@@ -541,7 +541,7 @@ func qcRolledBack(t *testing.T) qcFixture {
 		posse:        qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads")),
 		worktrees:    t.TempDir(),
 	}
-	qcWork(t, filepath.Join(f.worktrees, "posse", "gwart-session"), filepath.Join(constitution, ".beads"))
+	qcWork(t, filepath.Join(f.worktrees, "posse", "developer-2-session"), filepath.Join(constitution, ".beads"))
 	out, err := qcRun(t, f.constitution, f.queue, f.worktrees, []string{f.posse})
 	if err != nil {
 		t.Fatalf("the cutover this rollback undoes did not run: %v\n%s", err, out)
@@ -768,7 +768,7 @@ func TestQueueCutoverAbortInTheMoveWindowNamesTheHalfStateAndItsUndo(t *testing.
 
 // The other half of the fix: the constitution's redirect is written BEFORE
 // anything that can fail for an ordinary reason, and the queue's own commit
-// runs LAST. So the failure laurie actually hit — a refused commit — now
+// runs LAST. So the failure qa actually hit — a refused commit — now
 // leaves a fleet that reads and writes, with one commit outstanding. The
 // trigger here is a pre-commit hook (a full disk and a gate refusal land in
 // the same place); GIT_TEMPLATE_DIR gets it into the repo the script clones.

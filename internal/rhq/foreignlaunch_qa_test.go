@@ -37,7 +37,7 @@ func TestDispatchRefusesAForeignHolder(t *testing.T) {
 		{"--dry-run", func(d *Dispatcher) { d.DryRun = true }},
 		{"normal", func(d *Dispatcher) {}},
 		// --resume overrides a holder's idleness, never somebody else's
-		// ownership: it is the route hoover reached the in_progress bead by.
+		// ownership: it is the route security reached the in_progress bead by.
 		{"--resume", func(d *Dispatcher) { d.Resume = true }},
 	} {
 		t.Run(leg.name, func(t *testing.T) {

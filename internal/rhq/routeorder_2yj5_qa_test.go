@@ -69,7 +69,7 @@ func TestQARouteWhyStaysBareWhenOnlyOneMatches(t *testing.T) {
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "hopper", "[code]", "")
-	writeOrderedPersona(t, b.App, "gilfoyle", "[infra]", "")
+	writeOrderedPersona(t, b.App, "devops", "[infra]", "")
 
 	p, why := routeCode(t, d)
 	if p != "hopper" || why != "label:code" {

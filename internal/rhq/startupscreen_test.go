@@ -9,7 +9,7 @@ package rhq
 // readiness gate opens, so the branch never fired in a launch (rangerhq-3hb5).
 // The machinery went with it; what remains here is the fence it left behind.
 //
-// THE FENCE, and why it is still executable. hoover ruled on rangerhq-4mzt
+// THE FENCE, and why it is still executable. security ruled on rangerhq-4mzt
 // that the launcher may never answer a drawn dialog: "1/Enter" at claude's
 // trust dialog is a capability grant made blind, and that dialog matches
 // herdr's GENERIC `live_blocked_form`, so a dismissal entry for it would
@@ -18,7 +18,7 @@ package rhq
 // own manifests carry). With no table there is nothing to constrain, so the
 // ruling is pinned here as behaviour instead, and the harder way: dispatch
 // answers NO blocked screen, including the one it used to answer. If ADR
-// 0013 layer 3 is ever taken up again for another agent, hoover's two
+// 0013 layer 3 is ever taken up again for another agent, security's two
 // assertions come back with the table.
 //
 // The levers are the same fake-herdr ones: wait-status (what herdr settles
@@ -85,7 +85,7 @@ func TestDispatchAnswersNoBlockedScreen(t *testing.T) {
 }
 
 // The retirement itself, so it cannot be half-undone. A dismissal table is
-// only safe with hoover's two assertions attached (see the file comment), and
+// only safe with security's two assertions attached (see the file comment), and
 // those assertions are gone because the table is. Bringing back a key press
 // in the launch path without them is the regression this pins: `AgentSendKeys`
 // stays a herdr binding with no caller in dispatch.

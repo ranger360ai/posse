@@ -21,11 +21,11 @@ import (
 func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	blockedSession(t, b, fake, "monica-shop", "monica")
+	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
 
 	repo := wtRepo(t)
 	os.WriteFile(b.App.ConfigPath, []byte(
-		"pulse_interval: not-a-duration\npulse_persona: monica\nbeads:\n  - "+repo+"\n"), 0o644)
+		"pulse_interval: not-a-duration\npulse_persona: coordinator\nbeads:\n  - "+repo+"\n"), 0o644)
 
 	const wantPasses = 2
 	tap := newPassTap(wantPasses)
@@ -70,62 +70,62 @@ func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 // idle-only, the crew seam) but all of them raise the condition set with an
 // unpushed repo, deliberately, so the target session's status can be held
 // fixed. Nothing exercised the shape the bead names and the incident is
-// about: a DIFFERENT persona's session goes blocked, and monica — idle, and
+// about: a DIFFERENT persona's session goes blocked, and coordinator — idle, and
 // the only session that must be prompted — gets exactly one prompt naming
 // it. Two live sessions with two different herdr statuses is also the only
 // arrangement in which pulseTarget's "first match by agent" can pick wrong.
 func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) {
 	b, fake := newTestBackend(t)
-	writePersona(t, b.App, "dinesh", "code")
-	writePersona(t, b.App, "monica", "code")
-	mustCreate(t, b, NewSessionOpts{Name: "dinesh-work", Agent: "dinesh"})
-	mustCreate(t, b, NewSessionOpts{Name: "monica-work", Agent: "monica"})
+	writePersona(t, b.App, "developer", "code")
+	writePersona(t, b.App, "coordinator", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-work", Agent: "developer"})
+	mustCreate(t, b, NewSessionOpts{Name: "coordinator-work", Agent: "coordinator"})
 
 	ids := map[string]string{}
 	for _, w := range fakeLoadWSFrom(t, fake) {
 		ids[w.Label] = w.WorkspaceID
 	}
-	if ids["dinesh-work"] == "" || ids["monica-work"] == "" {
+	if ids["developer-work"] == "" || ids["coordinator-work"] == "" {
 		t.Fatalf("fixture: both sessions must exist, got %v", ids)
 	}
-	// One listing, two agents, two statuses — blocked dinesh, idle monica.
+	// One listing, two agents, two statuses — blocked developer, idle coordinator.
 	agents := fmt.Sprintf(
 		`[{"agent":"claude","agent_status":"blocked","pane_id":%q,"workspace_id":%q},`+
 			`{"agent":"claude","agent_status":"idle","pane_id":%q,"workspace_id":%q}]`,
-		ids["dinesh-work"]+":p1", ids["dinesh-work"], ids["monica-work"]+":p1", ids["monica-work"])
+		ids["developer-work"]+":p1", ids["developer-work"], ids["coordinator-work"]+":p1", ids["coordinator-work"])
 	if err := os.WriteFile(filepath.Join(fake, "agents.json"), []byte(agents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "monica", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg)
 
 	log := calls(t, fake)
-	if n := strings.Count(log, "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
 		t.Fatalf("a blocked session must yield exactly one prompt, got %d:\n%s", n, log)
 	}
-	if !strings.Contains(log, "agent prompt monica-work Pulse check:") {
+	if !strings.Contains(log, "agent prompt coordinator-work Pulse check:") {
 		t.Errorf("the prompt must carry the fixed marker:\n%s", log)
 	}
-	if !strings.Contains(log, "blocked:dinesh-work") {
+	if !strings.Contains(log, "blocked:developer-work") {
 		t.Errorf("the prompt must name the condition it was raised by:\n%s", log)
 	}
-	if strings.Contains(log, "agent prompt dinesh-work") {
+	if strings.Contains(log, "agent prompt developer-work") {
 		t.Errorf("the blocked session is the SUBJECT of the pulse, never its target:\n%s", log)
 	}
 
 	// Renag honours the backoff on the same set, and releases after it.
 	clock = clock.Add(10 * time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
 		t.Errorf("inside the renag window the same set must not re-prompt, got %d", n)
 	}
 	clock = clock.Add(21 * time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt monica-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
 		t.Errorf("past the renag window the same set must re-prompt once, got %d", n)
 	}
 }

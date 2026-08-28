@@ -45,7 +45,7 @@ func qApp(t *testing.T, queue string) *App {
 	if queue != "" {
 		write(t, a.ConfigPath, "queue_repo: "+queue+"\n")
 	} else {
-		write(t, a.ConfigPath, "coordinator: monica\n")
+		write(t, a.ConfigPath, "coordinator: coordinator\n")
 	}
 	return a
 }
@@ -70,7 +70,7 @@ func TestQueueCommitIsInertUntilTheStoreHasMoved(t *testing.T) {
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
 	before := mustGit(t, repo, "rev-parse", "HEAD")
-	c, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by developer")
 	if err != nil {
 		t.Fatalf("an unconfigured instance must not error: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestQueueCommitLandsTheProjectionThroughARedirect(t *testing.T) {
 	a := qApp(t, repo)
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
-	c, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by developer")
 	if err != nil {
 		t.Fatalf("CommitQueueJSONL: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestQueueCommitNamesOnlyItsOwnPaths(t *testing.T) {
 	write(t, filepath.Join(repo, "somebody-elses.txt"), "staged by another hand\n")
 	mustGit(t, repo, "add", "somebody-elses.txt")
 
-	if _, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by dinesh"); err != nil {
+	if _, err := a.CommitQueueJSONL(NewBd(), work, "beads: q-1 closed by developer"); err != nil {
 		t.Fatalf("CommitQueueJSONL: %v", err)
 	}
 	files := mustGit(t, repo, "show", "--name-only", "--format=", "HEAD")
@@ -155,7 +155,7 @@ func TestQueueCommitSaysSoWhenTheProjectionDidNotMove(t *testing.T) {
 	repo := qRepo(t)
 	a := qApp(t, repo)
 
-	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, filepath.Join(repo, ".beads")), "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, filepath.Join(repo, ".beads")), "beads: q-1 closed by developer")
 	if err != nil {
 		t.Fatalf("CommitQueueJSONL: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestQueueCommitNeverPushes(t *testing.T) {
 	a := qApp(t, repo)
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
-	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
 	if err != nil || c.SHA == "" {
 		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
 	}
@@ -230,7 +230,7 @@ func TestQueueCommitFlushesBeforeItCommits(t *testing.T) {
 	fake := os.Getenv("RHQ_FAKE_DIR")
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
-	if _, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh"); err != nil {
+	if _, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer"); err != nil {
 		t.Fatalf("CommitQueueJSONL: %v", err)
 	}
 	log, err := os.ReadFile(filepath.Join(fake, "bd-calls.log"))
@@ -331,7 +331,7 @@ func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 	store := filepath.Join(queue, ".beads")
 	work := qWork(t, store) // a project checkout, redirecting to the queue
 
-	ag := &AgentFile{Name: "dinesh"}
+	ag := &AgentFile{Name: "developer"}
 	got := NewAppAt(t.TempDir()).SeatbeltWritable(ag, work, t.TempDir())
 
 	var sawStore bool
@@ -381,7 +381,7 @@ func TestQueueCommitInstallsTheStampItCommitsThrough(t *testing.T) {
 		t.Fatalf("the fixture already carries %s — a repo the cutover has not stamped is the case under test", slot)
 	}
 
-	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
 	if err != nil || c.SHA == "" {
 		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
 	}
@@ -418,7 +418,7 @@ func TestQueueCommitRefusesThroughANeuteredStamp(t *testing.T) {
 	}
 
 	before := mustGit(t, repo, "rev-parse", "HEAD")
-	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
 	if err == nil {
 		t.Fatalf("the projection committed through a neutered stamp: %+v", c)
 	}
@@ -464,7 +464,7 @@ func TestQueueCommitRestampsASlotConfigHasReMarked(t *testing.T) {
 	write(t, a.ConfigPath, "queue_repo: "+repo+"\nbeads_visibility:\n  "+repo+": private\n")
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
-	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
 	if err != nil || c.SHA == "" {
 		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
 	}

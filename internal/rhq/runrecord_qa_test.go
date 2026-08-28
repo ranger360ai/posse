@@ -6,7 +6,7 @@ package rhq
 // in that record rather than an inference from a session name.
 //
 // The pass↔pass half of the grace is pinned next door, in
-// launchlock_qa_test.go :: TestTwoPassesDoNotDoubleClaimOneBead (laurie's
+// launchlock_qa_test.go :: TestTwoPassesDoNotDoubleClaimOneBead (qa's
 // repro, rangerhq-o2ki). These pin the pair the ADR names in prose — "the
 // cockpit's `d` and a running pass cannot see each other's prompts" — in
 // both directions, because they are different code paths: `d` is LaunchBead

@@ -29,7 +29,7 @@ import (
 // `rhq/` holds the home, the home reached through a SYMLINK the way
 // ~/.config/rhq reaches it, a second repo as the store of record, and a
 // redirect from one to the other so the record stage is in the picture —
-// dinesh's constraint on this bead is that the deny must never cost it.
+// developer's constraint on this bead is that the deny must never cost it.
 type sbFixture struct {
 	a           *App
 	repo, store string // the session's repo (cwd) and the store of record
@@ -53,21 +53,21 @@ func sbNewFixture(t *testing.T) sbFixture {
 	}
 	a := NewAppAt(home)
 	homeWithConstitution(t, a, "")
-	sbMkdir(t, filepath.Join(a.PersonasDir(), "dinesh"))
-	sbWrite(t, filepath.Join(a.PersonasDir(), "dinesh", "ORDERS.md"), "memory is not law\n")
+	sbMkdir(t, filepath.Join(a.PersonasDir(), "developer"))
+	sbWrite(t, filepath.Join(a.PersonasDir(), "developer", "ORDERS.md"), "memory is not law\n")
 	sbWrite(t, filepath.Join(repo, "README"), "project work\n")
 	// Two personas' gate artifacts: the session's own, and one it has no
 	// business writing at all.
-	gates := sbMkdir(t, a.GatesDir("dinesh"))
+	gates := sbMkdir(t, a.GatesDir("developer"))
 	sbWrite(t, filepath.Join(sbMkdir(t, filepath.Join(gates, "bin")), "git"), "#!/bin/sh\n")
-	sbWrite(t, filepath.Join(sbMkdir(t, filepath.Join(a.GatesDir("gilfoyle"), "bin")), "security"), "#!/bin/sh\n")
+	sbWrite(t, filepath.Join(sbMkdir(t, filepath.Join(a.GatesDir("devops"), "bin")), "security"), "#!/bin/sh\n")
 	// The store of record, reached by a redirect the way ~/src/posse
 	// reaches ~/src/ranger-base/.beads.
 	sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(repo, beadsDirName))
 	sbWrite(t, filepath.Join(repo, beadsDirName, beadsRedirect), filepath.Join(store, beadsDirName)+"\n")
 
-	ag := &AgentFile{Name: "dinesh", MemoryDir: filepath.Join(a.PersonasDir(), "dinesh")}
+	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
 	return sbFixture{a: a, repo: repo, store: store, gates: gates, ag: ag}
 }
 
@@ -112,7 +112,7 @@ func TestQACwdGrantStillReachesTheConstitutionAndTheGates(t *testing.T) {
 	f := sbNewFixture(t)
 	w := f.writable(t)
 	for _, p := range append(f.a.HomeConstitutionPaths(),
-		filepath.Join(f.a.StateDir, "gates", "gilfoyle"),
+		filepath.Join(f.a.StateDir, "gates", "devops"),
 		filepath.Join(f.repo, ".git", "hooks")) {
 		if !writeGranted(w, p) {
 			t.Errorf("premise gone: %s is no longer inside the allow block:\n  %s", p, strings.Join(w, "\n  "))
@@ -131,7 +131,7 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 	c := f.carve(t)
 	for _, p := range append(f.a.HomeConstitutionPaths(),
 		filepath.Join(f.a.StateDir, "gates"),
-		filepath.Join(f.a.StateDir, "gates", "gilfoyle", "bin", "security"),
+		filepath.Join(f.a.StateDir, "gates", "devops", "bin", "security"),
 		filepath.Join(f.repo, ".git", "hooks"),
 		filepath.Join(f.store, ".git", "hooks"), // the store of record's slot: its .git is granted too
 	) {
@@ -145,7 +145,7 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 			t.Errorf("%s must stay writable — the deny is enumerated at the artifact level: %v", p, c.Deny)
 		}
 	}
-	prof := SeatbeltProfile("dinesh", f.writable(t), c)
+	prof := SeatbeltProfile("developer", f.writable(t), c)
 	allow := strings.Index(prof, "(allow file-write*\n")
 	deny := strings.Index(prof, ";; the carve-out")
 	if allow < 0 || deny < allow {
@@ -156,7 +156,7 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 	}
 }
 
-// dinesh's constraint (measured on hoover's live profile, 2026-08-26): the
+// developer's constraint (measured on security's live profile, 2026-08-26): the
 // trailing deny beats the redirect grant too, so a deny list that ever
 // names the instance repo kills the record stage — `bd sync`, `bd export`,
 // the commit of the jsonl — with no observable, since parity grades denies
@@ -220,7 +220,7 @@ func TestQACarveOutIsSmallForAnOrdinaryProject(t *testing.T) {
 	if len(c.Seal) != 1 || !sbHas(c.Seal, filepath.Join(work, ".git")) {
 		t.Errorf("seal for an ordinary project should be just <cwd>/.git: %v", c.Seal)
 	}
-	if !sbDenied(c, filepath.Join(f.a.StateDir, "gates", "gilfoyle")) {
+	if !sbDenied(c, filepath.Join(f.a.StateDir, "gates", "devops")) {
 		t.Errorf("another persona's gates are writable from an ordinary project too: %v", c.Deny)
 	}
 }
@@ -310,14 +310,14 @@ func sbTry(t *testing.T, p sbProbe, withCarve bool) bool {
 	if withCarve {
 		carve, name = f.carve(t), "walled.sb"
 	}
-	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("dinesh", w, carve)), p.sh(f))
+	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("developer", w, carve)), p.sh(f))
 }
 
 // The bead's own test shape, executed: render for a PID with cwd = the
 // constitution repo, and assert a write to rhq/agents/x is refused while a
 // write to rhq/README stays allowed — plus the gate artifacts, the hook
 // slots, the two escapes a subpath deny does not close by itself, and the
-// record stage dinesh's constraint protects.
+// record stage developer's constraint protects.
 func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 	if !SeatbeltAvailable() {
 		t.Skip("no sandbox-exec on this host")
@@ -327,13 +327,13 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 	}
 	probes := []sbProbe{
 		{"write a PID into the constitution", func(f sbFixture) string { return "touch " + home(f, "agents", "PWNED.md") }, false},
-		{"rewrite an existing PID in place", func(f sbFixture) string { return "sed -i '' s/x/y/ " + home(f, "agents", "dinesh.md") }, false},
+		{"rewrite an existing PID in place", func(f sbFixture) string { return "sed -i '' s/x/y/ " + home(f, "agents", "developer.md") }, false},
 		{"append to config.yaml", func(f sbFixture) string { return "echo x >> " + home(f, "config.yaml") }, false},
 		{"truncate the promote manifest", func(f sbFixture) string { return ": > " + home(f, PromoteManifestFile) }, false},
 		{"write an env secret", func(f sbFixture) string { return "echo K=v >> " + home(f, "envs", "default.env") }, false},
 		{"delete a promoted directory", func(f sbFixture) string { return "rm -rf " + home(f, "recipes") }, false},
 		{"rewrite ANOTHER persona's L1 shim", func(f sbFixture) string {
-			return "echo pwn > " + filepath.Join(f.a.StateDir, "gates", "gilfoyle", "bin", "security")
+			return "echo pwn > " + filepath.Join(f.a.StateDir, "gates", "devops", "bin", "security")
 		}, false},
 		{"rewrite this session's own L1 shim", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "bin", "git") }, false},
 		{"rewrite the rendered seatbelt profile", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "seatbelt.sb") }, false},
@@ -352,7 +352,7 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 			return "mv " + filepath.Join(f.repo, "rhq", "state") + " " + filepath.Join(f.repo, "rhq", "state2")
 		}, false},
 		{"hardlink a PID out and write through it", func(f sbFixture) string {
-			return "ln " + home(f, "agents", "dinesh.md") + " " + filepath.Join(f.repo, "hard.md") + " && echo pwn >> " + filepath.Join(f.repo, "hard.md")
+			return "ln " + home(f, "agents", "developer.md") + " " + filepath.Join(f.repo, "hard.md") + " && echo pwn >> " + filepath.Join(f.repo, "hard.md")
 		}, false},
 		{"reach the constitution through the other spelling", func(f sbFixture) string {
 			return "touch " + filepath.Join(f.repo, "rhq", "agents", "PWNED2.md")

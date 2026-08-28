@@ -69,7 +69,7 @@ func homeWithConstitution(t *testing.T, a *App, personas string) {
 	for _, d := range []string{"agents", "recipes", "skills", "envs", "state"} {
 		sbMkdir(t, filepath.Join(a.Home, d))
 	}
-	for _, f := range []string{"config.yaml", PromoteManifestFile, "agents/dinesh.md", "envs/default.env"} {
+	for _, f := range []string{"config.yaml", PromoteManifestFile, "agents/developer.md", "envs/default.env"} {
 		if err := os.WriteFile(filepath.Join(a.Home, f), []byte("x\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -87,11 +87,11 @@ func homeWithConstitution(t *testing.T, a *App, personas string) {
 func TestQAConstitutionAreaIsInNoWritableSet(t *testing.T) {
 	root := sbRoot(t)
 	a := NewAppAt(filepath.Join(root, "home"))
-	personas := sbMkdir(t, filepath.Join(root, "constitution", "rhq", "personas", "dinesh"))
+	personas := sbMkdir(t, filepath.Join(root, "constitution", "rhq", "personas", "developer"))
 	homeWithConstitution(t, a, filepath.Dir(personas))
 
-	ag := &AgentFile{Name: "dinesh", MemoryDir: filepath.Join(a.PersonasDir(), "dinesh")}
-	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("dinesh"))
+	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
+	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("developer"))
 
 	if bad := a.ConstitutionGrants(w); len(bad) > 0 {
 		t.Errorf("the writable set reaches the constitution %v:\n  %s", bad, strings.Join(w, "\n  "))
@@ -99,7 +99,7 @@ func TestQAConstitutionAreaIsInNoWritableSet(t *testing.T) {
 	// Spelled out one path at a time as well, because ConstitutionGrants is
 	// as much under test as the profile is: a list that had quietly gone
 	// empty would satisfy the assertion above and nothing else.
-	for _, p := range append(a.HomeConstitutionPaths(), filepath.Join(a.Home, "agents", "dinesh.md"), a.Home) {
+	for _, p := range append(a.HomeConstitutionPaths(), filepath.Join(a.Home, "agents", "developer.md"), a.Home) {
 		if sbCovers(w, p) {
 			t.Errorf("%s must be in no writable set (ADR 0015 §2/§7):\n  %s", p, strings.Join(w, "\n  "))
 		}
@@ -115,9 +115,9 @@ func TestQAStateStaysWritableAndIsDerivedFromTheHome(t *testing.T) {
 	root := sbRoot(t)
 	a := NewAppAt(filepath.Join(root, "home"))
 	homeWithConstitution(t, a, "")
-	gates := a.GatesDir("dinesh")
+	gates := a.GatesDir("developer")
 	cwd := sbMkdir(t, filepath.Join(root, "work"))
-	ag := &AgentFile{Name: "dinesh", MemoryDir: filepath.Join(a.PersonasDir(), "dinesh")}
+	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
 	w := a.SeatbeltWritable(ag, cwd, gates)
 
 	for _, p := range []string{a.StateDir, gates, filepath.Join(a.StateDir, "skills")} {
@@ -128,7 +128,7 @@ func TestQAStateStaysWritableAndIsDerivedFromTheHome(t *testing.T) {
 	// Derived, not spelled: a second home in the same process gets its own
 	// grant and not the first's — the property a literal path cannot have.
 	other := NewAppAt(filepath.Join(root, "home2"))
-	wo := other.SeatbeltWritable(ag, cwd, other.GatesDir("dinesh"))
+	wo := other.SeatbeltWritable(ag, cwd, other.GatesDir("developer"))
 	if sbCovers(wo, a.StateDir) {
 		t.Errorf("a profile rendered for %s grants %s's state:\n  %s", other.Home, a.Home, strings.Join(wo, "\n  "))
 	}
@@ -153,18 +153,18 @@ func TestQAOwnMemoryIsWritableThroughTheSymlinkAndNobodyElsesIs(t *testing.T) {
 	a := NewAppAt(filepath.Join(root, "home"))
 	constitution := filepath.Join(root, "constitution")
 	personas := filepath.Join(constitution, "rhq", "personas")
-	for _, p := range []string{"dinesh", "gilfoyle"} {
+	for _, p := range []string{"developer", "devops"} {
 		sbMkdir(t, filepath.Join(personas, p))
 	}
 	homeWithConstitution(t, a, personas)
 
-	ag := &AgentFile{Name: "dinesh", MemoryDir: filepath.Join(a.PersonasDir(), "dinesh")}
-	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("dinesh"))
+	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
+	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("developer"))
 
 	// Granted under BOTH spellings, because they resolve to one directory.
 	for _, p := range []string{
-		filepath.Join(a.PersonasDir(), "dinesh", "ORDERS.md"),
-		filepath.Join(personas, "dinesh", "ORDERS.md"),
+		filepath.Join(a.PersonasDir(), "developer", "ORDERS.md"),
+		filepath.Join(personas, "developer", "ORDERS.md"),
 	} {
 		if !sbCovers(w, p) {
 			t.Errorf("own memory %s is not writable:\n  %s", p, strings.Join(w, "\n  "))
@@ -172,8 +172,8 @@ func TestQAOwnMemoryIsWritableThroughTheSymlinkAndNobodyElsesIs(t *testing.T) {
 	}
 	// Denied under both, for the same reason.
 	for _, p := range []string{
-		filepath.Join(a.PersonasDir(), "gilfoyle", "ORDERS.md"),
-		filepath.Join(personas, "gilfoyle", "ORDERS.md"),
+		filepath.Join(a.PersonasDir(), "devops", "ORDERS.md"),
+		filepath.Join(personas, "devops", "ORDERS.md"),
 		personas,
 		constitution,
 		filepath.Join(constitution, ".git"),
@@ -184,7 +184,7 @@ func TestQAOwnMemoryIsWritableThroughTheSymlinkAndNobodyElsesIs(t *testing.T) {
 	}
 	// The profile the kernel reads must carry the RESOLVED path: a symlink
 	// spelling in an SBPL subpath matches nothing.
-	if prof := SeatbeltProfile("dinesh", w, SeatbeltCarveOut{}); !strings.Contains(prof, sbQuote(absResolve(filepath.Join(personas, "dinesh")))) {
+	if prof := SeatbeltProfile("developer", w, SeatbeltCarveOut{}); !strings.Contains(prof, sbQuote(absResolve(filepath.Join(personas, "developer")))) {
 		t.Errorf("profile does not grant the resolved memory dir:\n%s", prof)
 	}
 }
@@ -198,15 +198,15 @@ func TestQAConstitutionGrantsCatchesAWritableExtra(t *testing.T) {
 	homeWithConstitution(t, a, "")
 	cwd := sbMkdir(t, filepath.Join(root, "work"))
 
-	ag := &AgentFile{Name: "dinesh", Writable: []string{filepath.Join(a.Home, "agents")}}
-	bad := a.ConstitutionGrants(a.SeatbeltWritable(ag, cwd, a.GatesDir("dinesh")))
+	ag := &AgentFile{Name: "developer", Writable: []string{filepath.Join(a.Home, "agents")}}
+	bad := a.ConstitutionGrants(a.SeatbeltWritable(ag, cwd, a.GatesDir("developer")))
 	if len(bad) != 1 || bad[0] != filepath.Join(a.Home, "agents") {
 		t.Errorf("ConstitutionGrants = %v, want just the agents dir", bad)
 	}
 	// A grant INSIDE the area is the same breach spelled smaller, and
 	// containment the other way round is the only thing that sees it.
-	ag2 := &AgentFile{Name: "dinesh", Writable: []string{filepath.Join(a.Home, "agents", "dinesh.md")}}
-	if bad := a.ConstitutionGrants(a.SeatbeltWritable(ag2, cwd, a.GatesDir("dinesh"))); len(bad) != 1 {
+	ag2 := &AgentFile{Name: "developer", Writable: []string{filepath.Join(a.Home, "agents", "developer.md")}}
+	if bad := a.ConstitutionGrants(a.SeatbeltWritable(ag2, cwd, a.GatesDir("developer"))); len(bad) != 1 {
 		t.Errorf("a grant inside the promoted set is a breach too: got %v", bad)
 	}
 }
@@ -220,7 +220,7 @@ func TestQAGatesPrintsTheConstitutionVerdictOverTheSet(t *testing.T) {
 	a := NewAppAt(filepath.Join(root, "home"))
 	homeWithConstitution(t, a, "")
 	cwd := sbMkdir(t, filepath.Join(root, "work"))
-	ag := &AgentFile{Name: "dinesh", MemoryDir: filepath.Join(a.PersonasDir(), "dinesh")}
+	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
 
 	var b strings.Builder
 	if err := a.SeatbeltReport(ag, cwd, &b); err != nil {
@@ -292,7 +292,7 @@ func TestQAConstitutionExclusionListStaysComplete(t *testing.T) {
 	// The other direction, so the list cannot be "completed" by adding the
 	// home wholesale: the three things at the home a session MUST keep are
 	// not in it, and NotPromoted names two of them.
-	for _, p := range []string{a.StateDir, a.PersonasDir(), a.GatesDir("dinesh")} {
+	for _, p := range []string{a.StateDir, a.PersonasDir(), a.GatesDir("developer")} {
 		if got[p] {
 			t.Errorf("%s must NOT be an exclusion — a session needs it (ADR 0015 §5, and state/ is what the runtime data IS)", p)
 		}
@@ -315,8 +315,8 @@ func TestQAConstitutionGrantsCatchesEnvsAndTheManifest(t *testing.T) {
 		{"a single env file inside them", filepath.Join(a.EnvsDir, "default.env")},
 		{"the promote manifest", a.PromoteManifestPath()},
 	} {
-		ag := &AgentFile{Name: "dinesh", Writable: []string{tc.grant}}
-		w := a.SeatbeltWritable(ag, cwd, a.GatesDir("dinesh"))
+		ag := &AgentFile{Name: "developer", Writable: []string{tc.grant}}
+		w := a.SeatbeltWritable(ag, cwd, a.GatesDir("developer"))
 		if bad := a.ConstitutionGrants(w); len(bad) == 0 {
 			t.Errorf("a grant on %s (%s) is unreported:\n  %s", tc.what, tc.grant, strings.Join(w, "\n  "))
 		}

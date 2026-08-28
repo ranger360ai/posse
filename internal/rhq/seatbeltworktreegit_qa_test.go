@@ -1,6 +1,6 @@
 package rhq
 
-// ranger-base-m2wf (from hoover's posture check, ranger-base-sipu): the L2
+// ranger-base-m2wf (from security's posture check, ranger-base-sipu): the L2
 // grant for a session worktree named the COMMON git dir — the operator's
 // main checkout's `.git`, shared with every other worktree on that repo —
 // and named it whole. Measured writable from a live caged session:
@@ -62,8 +62,8 @@ func wgNewFixture(t *testing.T) wgFixture {
 
 	// The session's tree, on its own branch — the launcher's shape, slash
 	// and all, because the branch ref is then a file two directories deep.
-	branch := "posse/gwart-probe"
-	tree := filepath.Join(root, "trees", "gwart")
+	branch := "posse/developer-2-probe"
+	tree := filepath.Join(root, "trees", "developer-2")
 	mustGit(t, repo, "worktree", "add", "-q", "-b", branch, tree)
 	commitIn(t, tree, "work.txt", "session work\n", "session work")
 	// A sibling session on the same repo: its index and HEAD live in the
@@ -80,11 +80,11 @@ func wgNewFixture(t *testing.T) wgFixture {
 		a: a, repo: repo, tree: tree,
 		own: absResolve(dirs[0]), common: absResolve(dirs[1]),
 		other:  absResolve(filepath.Join(dirs[1], "worktrees", "other")),
-		gates:  sbMkdir(t, a.GatesDir("gwart")),
+		gates:  sbMkdir(t, a.GatesDir("developer-2")),
 		branch: branch,
 		head:   mustGit(t, tree, "rev-parse", "HEAD"),
 	}
-	f.ag = &AgentFile{Name: "gwart", MemoryDir: sbMkdir(t, filepath.Join(a.Home, "personas", "gwart"))}
+	f.ag = &AgentFile{Name: "developer-2", MemoryDir: sbMkdir(t, filepath.Join(a.Home, "personas", "developer-2"))}
 	if f.head == mustGit(t, repo, "rev-parse", "refs/heads/main") {
 		t.Fatal("the session branch and main are the same commit — a ref move would not be observable")
 	}
@@ -231,7 +231,7 @@ func wgTry(t *testing.T, p wgProbe, narrowed bool) (bool, string) {
 	if narrowed {
 		w, name = f.writable(t), "narrowed.sb"
 	}
-	prof := sbRenderProfile(t, name, SeatbeltProfile("gwart", w, SeatbeltCarveOut{}))
+	prof := sbRenderProfile(t, name, SeatbeltProfile("developer-2", w, SeatbeltCarveOut{}))
 	ok, out := wgRun(t, prof, p.sh(f))
 	if ok && p.witness != nil {
 		p.witness(t, f)
@@ -347,7 +347,7 @@ func TestQAWorktreeGrantRefusesSharedGitStateUnderSandboxExec(t *testing.T) {
 	}
 }
 
-// hoover's ask on the bead, in one measurement: a plain worktree commit
+// security's ask on the bead, in one measurement: a plain worktree commit
 // stays green under the narrowing — under the REAL rendered profile, carve-
 // out and all, not the stripped one the probe table varies. The witness is
 // the branch ref, which must have moved to a commit that did not exist when

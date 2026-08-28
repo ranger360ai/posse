@@ -11,7 +11,7 @@ package rhq
 //     retired and branch deleted by the reap;
 //   - a worktree the reap CANNOT retire (uncommitted work) — the kill still
 //     happens, so the one thing that must not happen is silence;
-//   - the shared-checkout dirty warning, which is the whole of monica's
+//   - the shared-checkout dirty warning, which is the whole of coordinator's
 //     08-25 sharpening #2 and had no test at all;
 //   - the two ways the sweep can be asked a question it cannot answer —
 //     bd unreadable, agent gone — where it must fail closed, not open.
@@ -165,7 +165,7 @@ func TestAutoReapNamesAWorktreeItCouldNotRetire(t *testing.T) {
 	}
 }
 
-// ─── the shared-checkout warning (monica's sharpening #2) ────────────────────
+// ─── the shared-checkout warning (coordinator's sharpening #2) ────────────────────
 
 // A session with no worktree has no branch for the landing to refuse over,
 // so the landing's own KEPT line cannot fire and the kill is silent. The
@@ -292,8 +292,8 @@ func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
 //
 // MEASURED on the live fleet, 2026-08-27: five sessions had a settled agent
 // and a closed bead; `posse dispatch --dry-run` named two. The other three
-// (gwart-posse-ranger-base-i0s8, holden-posse-rangerhq-rukj,
-// jian-yang-posse-ranger-base-82u, all launched 04:04) carried no `bead:`.
+// (developer-2-posse-ranger-base-i0s8, reviewer-posse-rangerhq-rukj,
+// developer-3-posse-ranger-base-82u, all launched 04:04) carried no `bead:`.
 // Failing closed is right — the name is a lossy encoding of the id
 // (sessionSanitizeRe folds `.` into `-`), so a name is not an id. This pins
 // the boundary so it is a decision on the record rather than a surprise.

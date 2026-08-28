@@ -161,11 +161,11 @@ func find(set GovSet, id string) *GovCondition {
 func TestGovG2SettledHolder(t *testing.T) {
 	b, fake := newTestBackend(t)
 	dir := govRepo(t, b)
-	writePersona(t, b.App, "dinesh", "code")
-	mustCreate(t, b, NewSessionOpts{Name: "dinesh-x", Agent: "dinesh", Dir: dir, Bead: "bd-1"})
-	sessionAgent(t, fake, "dinesh-x", "idle")
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+	sessionAgent(t, fake, "developer-x", "idle")
 	writeJSON(t, dir, "fake-list.json", []map[string]any{
-		{"id": "bd-1", "status": "in_progress", "assignee": "dinesh", "title": "held"},
+		{"id": "bd-1", "status": "in_progress", "assignee": "developer", "title": "held"},
 	})
 
 	set := shopSet(t, govIn(t, b))
@@ -183,11 +183,11 @@ func TestGovG2SettledHolder(t *testing.T) {
 func TestGovG2WorkingHolderIsNotACondition(t *testing.T) {
 	b, fake := newTestBackend(t)
 	dir := govRepo(t, b)
-	writePersona(t, b.App, "dinesh", "code")
-	mustCreate(t, b, NewSessionOpts{Name: "dinesh-x", Agent: "dinesh", Dir: dir, Bead: "bd-1"})
-	sessionAgent(t, fake, "dinesh-x", "working")
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+	sessionAgent(t, fake, "developer-x", "working")
 	writeJSON(t, dir, "fake-list.json", []map[string]any{
-		{"id": "bd-1", "status": "in_progress", "assignee": "dinesh", "title": "held"},
+		{"id": "bd-1", "status": "in_progress", "assignee": "developer", "title": "held"},
 	})
 
 	if g := find(shopSet(t, govIn(t, b)), "G2"); g != nil {
@@ -201,7 +201,7 @@ func TestGovG2NoSessionIsNotACondition(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
 	writeJSON(t, dir, "fake-list.json", []map[string]any{
-		{"id": "bd-1", "status": "in_progress", "assignee": "dinesh", "title": "held"},
+		{"id": "bd-1", "status": "in_progress", "assignee": "developer", "title": "held"},
 	})
 	if g := find(shopSet(t, govIn(t, b)), "G2"); g != nil {
 		t.Errorf("an interrupted run is not settled-but-holding: %+v", *g)
@@ -221,11 +221,11 @@ func TestGovG2SubtypedByLadderPrefix(t *testing.T) {
 		t.Run(tc.key, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			dir := govRepo(t, b)
-			writePersona(t, b.App, "dinesh", "code")
-			mustCreate(t, b, NewSessionOpts{Name: "dinesh-x", Agent: "dinesh", Dir: dir, Bead: "bd-1"})
-			sessionAgent(t, fake, "dinesh-x", "idle")
+			writePersona(t, b.App, "developer", "code")
+			mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+			sessionAgent(t, fake, "developer-x", "idle")
 			writeJSON(t, dir, "fake-list.json", []map[string]any{
-				{"id": "bd-1", "status": "in_progress", "assignee": "dinesh", "title": "held"},
+				{"id": "bd-1", "status": "in_progress", "assignee": "developer", "title": "held"},
 			})
 			writeJSON(t, dir, "fake-comments.json", []map[string]any{
 				{"id": 1, "text": "an earlier one"},
@@ -528,12 +528,12 @@ func TestGovG7LiveLoopClearsIt(t *testing.T) {
 func TestGovG8Paused(t *testing.T) {
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.StateDir, 0o755)
-	os.WriteFile(PausePath(b.App), []byte("by: monica\nat: 2026-08-27T09:00:00Z\nwhy: waiting on the operator\n"), 0o644)
+	os.WriteFile(PausePath(b.App), []byte("by: coordinator\nat: 2026-08-27T09:00:00Z\nwhy: waiting on the operator\n"), 0o644)
 	g := find(shopSet(t, govIn(t, b)), "G8")
 	if g == nil || g.Key != "paused" || g.Class != GovUrgent {
 		t.Fatalf("G8 = %+v, want paused URGENT", g)
 	}
-	if !strings.Contains(g.Detail, "monica") || !strings.Contains(g.Detail, "waiting on the operator") {
+	if !strings.Contains(g.Detail, "coordinator") || !strings.Contains(g.Detail, "waiting on the operator") {
 		t.Errorf("the pause line must name who and why: %q", g.Detail)
 	}
 }
@@ -555,10 +555,10 @@ func TestGovG8MalformedPauseIsStillAPause(t *testing.T) {
 func TestGovG9ReadyBeadOnTheCoordinator(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
-	appendConfig(t, b.App, "coordinator: monica\n")
+	appendConfig(t, b.App, "coordinator: coordinator\n")
 	writeJSON(t, dir, "fake-ready.json", []map[string]any{
-		{"id": "bd-c", "status": "open", "assignee": "monica", "title": "triage"},
-		{"id": "bd-d", "status": "open", "assignee": "dinesh", "title": "code"},
+		{"id": "bd-c", "status": "open", "assignee": "coordinator", "title": "triage"},
+		{"id": "bd-d", "status": "open", "assignee": "developer", "title": "code"},
 	})
 	set := shopSet(t, govIn(t, b))
 	g := find(set, "G9")
@@ -572,15 +572,15 @@ func TestGovG9ReadyBeadOnTheCoordinator(t *testing.T) {
 	}
 }
 
-// The refusal it mirrors compares IDENTITY, not the string: `Monica` and
-// `./monica` reach the same PID, and a G9 that compared strings would go
+// The refusal it mirrors compares IDENTITY, not the string: `Coordinator` and
+// `./coordinator` reach the same PID, and a G9 that compared strings would go
 // quiet on exactly the spellings that walk past dispatch's refusal.
 func TestGovG9MatchesTheRefusalsIdentityCompare(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
-	appendConfig(t, b.App, "coordinator: monica\n")
+	appendConfig(t, b.App, "coordinator: coordinator\n")
 	writeJSON(t, dir, "fake-ready.json", []map[string]any{
-		{"id": "bd-c", "status": "open", "assignee": "Monica", "title": "triage"},
+		{"id": "bd-c", "status": "open", "assignee": "Coordinator", "title": "triage"},
 	})
 	if g := find(shopSet(t, govIn(t, b)), "G9"); g == nil {
 		t.Error("a case-shifted coordinator name is still the coordinator")
@@ -593,7 +593,7 @@ func TestGovG9NoCoordinatorNoRow(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
 	writeJSON(t, dir, "fake-ready.json", []map[string]any{
-		{"id": "bd-c", "status": "open", "assignee": "monica", "title": "triage"},
+		{"id": "bd-c", "status": "open", "assignee": "coordinator", "title": "triage"},
 	})
 	if g := find(shopSet(t, govIn(t, b)), "G9"); g != nil {
 		t.Errorf("no coordinator: means no G9: %+v", *g)
@@ -609,7 +609,7 @@ func TestGovUnreadableStoreIsNotAnAllClear(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
 	os.WriteFile(filepath.Join(dir, "fake-ready-fail"), nil, 0o644)
-	appendConfig(t, b.App, "coordinator: monica\n")
+	appendConfig(t, b.App, "coordinator: coordinator\n")
 	set, failed := ShopCheck(govIn(t, b))
 	if len(failed) == 0 {
 		t.Fatalf("a bd scan that failed must come back as an error, got set=%v", set.Keys())
@@ -712,7 +712,7 @@ func TestGovReportEmptyButPartial(t *testing.T) {
 // A carry-over has no G-row and must not be given one: inventing G10 would
 // make the design's "closed, enumerated set" not closed.
 func TestGovCarryOverHasNoRowName(t *testing.T) {
-	if got := (GovCondition{Key: "no-live:monica"}).Row(); got != "—" {
+	if got := (GovCondition{Key: "no-live:coordinator"}).Row(); got != "—" {
 		t.Errorf("Row() = %q, want the em dash", got)
 	}
 }

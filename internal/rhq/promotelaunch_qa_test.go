@@ -167,9 +167,9 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	}
 	// The live instance as of 2026-08-26: 17 PIDs, 7 recipes, a skills tree,
 	// an 8KB config, and the three directories promote must not carry.
-	names := []string{"architect", "business-manager", "developer", "devops", "dinesh",
-		"erlich", "gilfoyle", "hoover", "jared", "laurie", "monica", "product",
-		"qa", "ranger", "reviewer", "richard", "security"}
+	names := []string{"architect", "architect-2", "business-manager", "coordinator",
+		"developer", "developer-2", "developer-3", "devops", "devops-2", "product",
+		"qa", "qa-2", "ranger", "reviewer", "security", "security-2", "support"}
 	for _, n := range names {
 		write("agents/"+n+".md", fmt.Sprintf(pidBody, n), 0o644)
 	}
@@ -182,7 +182,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	write("envs/default.env", "TOKEN=live-secret\n", 0o600)
 	write("envs/container.env", "OAUTH=live-secret\n", 0o600)
 	write("state/herdr/meta.json", "{}\n", 0o644)
-	write("personas/dinesh/ORDERS.md", "lessons\n", 0o644)
+	write("personas/developer/ORDERS.md", "lessons\n", 0o644)
 	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("rhq/envs/\nrhq/state/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 
 	// Step 1's precondition, as the runbook now words it: persona memory is
 	// dirty (it is written at every session end) and must not block.
-	if err := os.WriteFile(filepath.Join(src, "personas", "dinesh", "ORDERS.md"), []byte("a lesson learned today\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "personas", "developer", "ORDERS.md"), []byte("a lesson learned today\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,15 +274,15 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	// Item 2: an edited PID is NOT in force until it is promoted.
 	inForce := func() string {
 		t.Helper()
-		ag, err := a.LoadAgent("dinesh")
+		ag, err := a.LoadAgent("developer")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return ag.Body
 	}
 	before := inForce()
-	if err := os.WriteFile(filepath.Join(src, "agents", "dinesh.md"),
-		[]byte(fmt.Sprintf(pidBody, "dinesh")+"\nAN EDIT NOBODY RATIFIED\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "agents", "developer.md"),
+		[]byte(fmt.Sprintf(pidBody, "developer")+"\nAN EDIT NOBODY RATIFIED\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if inForce() != before {
@@ -291,7 +291,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	if v := a.VerifyPromoted(); !v.OK() {
 		t.Errorf("editing the CONSTITUTION tripped the HOME's verify: %s", v.Line())
 	}
-	gitIn("commit", "-qam", "pid: dinesh")
+	gitIn("commit", "-qam", "pid: developer")
 	out.Reset()
 	if err := a.CmdPromote(&out, PromoteOpts{Source: src}); err != nil {
 		t.Fatal(err)
@@ -309,18 +309,18 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	b.App = a
 	var warn bytes.Buffer
 	b.Warn = &warn
-	pid := filepath.Join(a.AgentsDir, "gilfoyle.md")
+	pid := filepath.Join(a.AgentsDir, "devops.md")
 	body, _ := os.ReadFile(pid)
 	if err := os.WriteFile(pid, append(body, []byte("cage: shims\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "dinesh", Bead: "x-1"}); err == nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "developer", Bead: "x-1"}); err == nil {
 		t.Error("dispatch launched on a corrupted promoted set")
 	}
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: t.TempDir(), Agent: "dinesh"}); err != nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: t.TempDir(), Agent: "developer"}); err != nil {
 		t.Errorf("an interactive launch was refused: %v", err)
 	}
-	if !strings.Contains(warn.String(), "DEGRADED") || !strings.Contains(warn.String(), "agents/gilfoyle.md") {
+	if !strings.Contains(warn.String(), "DEGRADED") || !strings.Contains(warn.String(), "agents/devops.md") {
 		t.Errorf("no DEGRADED line naming the drift:\n%s", warn.String())
 	}
 	if err := a.CmdPromote(&bytes.Buffer{}, PromoteOpts{Source: src}); err != nil {
@@ -331,7 +331,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 		t.Fatalf("re-promote did not clear the mismatch: %s", v.Line())
 	}
 	t.Logf("live-shape rehearsal: %d promoted files, verify cost %v", len(v.Manifest.Files), v.Elapsed)
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s3", Dir: t.TempDir(), Agent: "dinesh", Bead: "x-1"}); err != nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s3", Dir: t.TempDir(), Agent: "developer", Bead: "x-1"}); err != nil {
 		t.Errorf("dispatch still refused after the re-promote: %v", err)
 	}
 }
