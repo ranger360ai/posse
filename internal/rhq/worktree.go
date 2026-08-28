@@ -249,6 +249,12 @@ func repoBranch(repo string) string {
 // orDetached names a base for a human when there may not be one: a session
 // branch cut before posseBase was recorded has no answer, and saying so
 // beats printing an empty string mid-sentence.
+//
+// Every sentence that renders a base goes through it — the persona's work
+// prompt, the pass's tree and merge-back lines, `posse worktrees`, and the
+// merge-back bead's own title and body. Base == "" is reachable at all of
+// them (ranger-base-nfgh), and the ones that skipped it read "never merge
+// to  yourself".
 func orDetached(base string) string {
 	if base == "" {
 		return "the branch it was cut from"
@@ -750,7 +756,7 @@ func ListSessionTrees(w io.Writer, dirs []string) error {
 		return nil
 	}
 	for _, t := range trees {
-		fmt.Fprintf(w, "%s\n  %s → %s  ·  %s\n", t.Branch, AbbrevHome(t.Path), t.Base, treeState(t))
+		fmt.Fprintf(w, "%s\n  %s → %s  ·  %s\n", t.Branch, AbbrevHome(t.Path), orDetached(t.Base), treeState(t))
 	}
 	return nil
 }
@@ -793,7 +799,7 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string) error {
 		case o.Merged:
 			fmt.Fprintf(w, "⤴ %s %d commit(s) onto %s\n", t.Branch, o.Commits, t.Base)
 		default:
-			fmt.Fprintf(w, "⚠ %s did NOT reach %s: %s\n", t.Branch, t.Base, o.Reason)
+			fmt.Fprintf(w, "⚠ %s did NOT reach %s: %s\n", t.Branch, orDetached(t.Base), o.Reason)
 		}
 		if len(o.Dirty) > 0 {
 			fmt.Fprintf(w, "  %d uncommitted path(s) stay in %s\n", len(o.Dirty), AbbrevHome(t.Path))

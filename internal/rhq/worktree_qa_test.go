@@ -751,7 +751,6 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 // already says "the branch it was cut from" there (orDetached); the prompt
 // says nothing at all, twice. ranger-base-nfgh.
 func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
-	t.Skip("ranger-base-nfgh: the work prompt renders an empty base — unskip with the fix")
 	wtqaHome(t)
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
@@ -778,6 +777,30 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 		if strings.Contains(p, empty) {
 			t.Errorf("the work prompt names no branch where a base belongs (%q):\n%s", empty, p[i:])
 		}
+	}
+	// Absence of the empty shape is satisfied by a paragraph that stopped
+	// rendering at all (reverting the guard to `if base == ""` answers no
+	// tree and no paragraph), so both sentences need a positive witness:
+	// the phrase orDetached hands a human when there is no base to name.
+	said := orDetached("")
+	for _, want := range []string{
+		"fast-forwards " + tr.Branch + " onto\n  " + said + " in ",
+		"never merge to " + said + " yourself",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("the worktree paragraph does not say the base is unknowable (%q):\n%s", want, p[i:])
+		}
+	}
+
+	// Same class, same state, the other sentences that render a base. The
+	// pass lines and the merge-back bead need a Dispatcher; `posse
+	// worktrees` is the one a person reads with nothing else running.
+	var ls strings.Builder
+	if err := ListSessionTrees(&ls, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ls.String(), tr.Branch) || !strings.Contains(ls.String(), said) {
+		t.Errorf("posse worktrees renders no base for a detached legacy branch:\n%s", ls.String())
 	}
 }
 

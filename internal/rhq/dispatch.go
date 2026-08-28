@@ -1458,12 +1458,17 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 		lines = append(lines, head)
 	}
 	if t := ctx.Tree; t != nil {
+		// A legacy branch under a detached checkout has no base to name
+		// (baseOf falls back to the repo's branch, and there isn't one).
+		// orDetached says so; interpolating "" put an empty branch name in
+		// the middle of two sentences instead (ranger-base-nfgh).
+		base := orDetached(t.Base)
 		lines = append(lines,
 			"your own worktree: "+AbbrevHome(t.Path)+"  ·  branch "+t.Branch+"\n"+
 				"  Nobody else has this tree, this index or this HEAD — commit normally, and\n"+
 				"  commit everything you want kept: posse fast-forwards "+t.Branch+" onto\n"+
-				"  "+t.Base+" in "+AbbrevHome(t.Repo)+" when the bead closes, and only commits move.\n"+
-				"  Still never push, and never merge to "+t.Base+" yourself — that is the launcher's.")
+				"  "+base+" in "+AbbrevHome(t.Repo)+" when the bead closes, and only commits move.\n"+
+				"  Still never push, and never merge to "+base+" yourself — that is the launcher's.")
 	}
 	if len(ctx.From) > 0 {
 		lines = append(lines, "from: "+fenceRefs(ctx.From)+" (discovered-from / design bead)")
@@ -3260,7 +3265,7 @@ func (d *Dispatcher) noteTree(id, session string) {
 		return
 	}
 	d.printf("· %-14s own tree %s on %s (merges to %s at close)\n",
-		id, AbbrevHome(t.Path), t.Branch, t.Base)
+		id, AbbrevHome(t.Path), t.Branch, orDetached(t.Base))
 }
 
 // mergeBack is option A (rangerhq-jbyr, the operator's ruling): the launcher
@@ -3327,7 +3332,7 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 		d.printf("⤴ %-14s %d commit(s) %s from %s onto %s in %s\n",
 			is.ID, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
 	default:
-		d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, t.Base, o.Reason)
+		d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, orDetached(t.Base), o.Reason)
 		d.fileMergeBlocked(is, persona, t, o)
 	}
 }
@@ -3378,8 +3383,9 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 // never a chat — and a merge nobody is told about is how a closed bead's
 // code sits on a branch forever.
 func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTree, o MergeOutcome) {
+	base := orDetached(t.Base)
 	id, err := d.Bd.Create(is.Dir, BdNew{
-		Title:    fmt.Sprintf("merge-back blocked: %s does not land on %s", t.Branch, t.Base),
+		Title:    fmt.Sprintf("merge-back blocked: %s does not land on %s", t.Branch, base),
 		Assignee: persona,
 		Labels:   []string{"code"},
 		Deps:     []string{"discovered-from:" + is.ID},
@@ -3391,8 +3397,8 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 				"Resolve it in the worktree (rebase onto %s and fix the conflicts), then a\n"+
 				"launcher pass or `posse kill` lands it. The branch is untouched and still\n"+
 				"holds every commit.",
-			persona, is.ID, o.Commits, t.Branch, t.Base, o.Reason,
-			t.Path, t.Repo, t.Base, t.Base, t.Base),
+			persona, is.ID, o.Commits, t.Branch, base, o.Reason,
+			t.Path, t.Repo, base, base, base),
 	})
 	if err != nil {
 		d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
