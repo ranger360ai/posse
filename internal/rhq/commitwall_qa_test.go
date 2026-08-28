@@ -141,16 +141,15 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 
 // TestQACommitWallPrescribesADiffThatCatchesStagedWork is the escape found
 // verifying rangerhq-lvu9's close, filed as ranger-base-erba: the added
-// line prescribes `git diff -- <paths>` and calls a clean result "what
+// line prescribed `git diff -- <paths>` and called a clean result "what
 // makes the safe form actually safe". The sibling test above measures that
 // this is false whenever the other persona has staged — the same class of
 // over-promise rangerhq-lvu9 was filed to remove, one remove down.
 //
-// Skipped until erba lands: the fix is a wording change (`git diff HEAD --
-// <paths>`, which does see a staged edit), not a behaviour change.
+// Fixed by wording (ranger-base-erba): the refusal now prescribes
+// `git diff HEAD -- <paths>`, which does see a staged edit, and claims only
+// what NOTES.md measures — the form bounds the paths, not the content.
 func TestQACommitWallPrescribesADiffThatCatchesStagedWork(t *testing.T) {
-	t.Skip("ranger-base-erba: the refusal prescribes `git diff -- <paths>`, which is clean over another persona's staged edit")
-
 	repo, git, persona := commitWallRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
