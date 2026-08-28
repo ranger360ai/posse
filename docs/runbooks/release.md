@@ -128,6 +128,12 @@ This fires the workflow. **Watch it.** It must reach `Draft release vX.Y.Z
 staged.` If it dies before `build artifacts`, the version number is spent — fix
 forward to the next patch, do not re-cut.
 
+`vX.Y.Z` is the only shape `resolve the tag` accepts — `v`, digits and dots,
+nothing else — because that string is what the five steps after it hand to a
+shell, and git will happily let you tag `v1.0$(id)` (ranger-base-qqxm). A
+suffixed tag such as `v0.4.0-rc1` is refused there, loudly, before anything is
+built; widening the guard is a deliberate edit to `.github/workflows/release.yml`.
+
 ## Step 1 — publish the draft *(operator)*
 
 `github.com/ranger360ai/posse/releases` → the `vX.Y.Z` **draft**.

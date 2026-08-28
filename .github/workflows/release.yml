@@ -50,15 +50,36 @@ jobs:
           go-version-file: go.mod
           check-latest: false
 
+      # EVERY attacker-influenced value reaches a run: block through env, never
+      # through ${{ }}. GitHub substitutes a ${{ }} into the script TEXT before
+      # bash parses it, so a dispatched tag `v1"; id; :"` would RUN here — on
+      # this line, before the guard below ever looks at it, in a job holding
+      # contents: write (ranger-base-u9at, ranger-base-qqxm). Via env it is
+      # data: bash sees `tag="$INPUT_TAG"` whatever the value contains.
       - name: resolve the tag
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        # `[[ =~ ]]` is bash. It is the runner default today; stated so the
+        # guard cannot be quietly disarmed by a shell that does not have it.
+        shell: bash
         run: |
-          tag="${{ inputs.tag }}"
-          [ -n "$tag" ] || tag="${GITHUB_REF_NAME}"
-          case "$tag" in
-            v[0-9]*) ;;
-            *) echo "release: refusing to build a non-version ref: $tag" >&2; exit 1 ;;
-          esac
+          tag="$INPUT_TAG"
+          [ -n "$tag" ] || tag="$GITHUB_REF_NAME"
+          # An allowlist, not a prefix check — this guard is the only thing
+          # between a tag name and five downstream shells. `case v[0-9]*)` was
+          # a prefix check: it passed `v0.3.0$(id)`, backtick-id, `v9;curl evil`,
+          # and `git check-ref-format` accepts every one of those as a REAL tag
+          # name (only space and `*` are refused). So pushing such a tag reached
+          # the steps below through GITHUB_REF_NAME on the ordinary
+          # `on: push: tags: v*` trigger, with no workflow_dispatch involved.
+          # Anchored and whole-string: `v`, digits and dots, nothing else. Widen
+          # it deliberately if a release ever needs a pre-release suffix; never
+          # by loosening the anchors.
+          if [[ ! $tag =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "release: refusing to build a non-version ref: $tag" >&2
+            exit 1
+          fi
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse "$tag^{commit}")" >>"$GITHUB_OUTPUT"
 
@@ -76,28 +97,37 @@ jobs:
       # the `ref:` above. Kept explicit so the artifacts state their commit
       # rather than inheriting whatever HEAD happens to be.
       - name: build artifacts
-        run: scripts/release-artifacts.sh --rev "${{ steps.tag.outputs.sha }}" --version "${{ steps.tag.outputs.tag }}"
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.tag.outputs.sha }}
+        run: scripts/release-artifacts.sh --rev "$SHA" --version "$TAG"
 
       # Rendered here rather than hand-written in the tap, and attached to the
       # release so the operator copies a file instead of transcribing four
       # sha256s. See docs/runbooks/release.md.
       - name: render the Homebrew formula
-        run: scripts/tap-formula.sh --version "${{ steps.tag.outputs.tag }}" --checksums dist/checksums.txt --out dist/posse.rb
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: scripts/tap-formula.sh --version "$TAG" --checksums dist/checksums.txt --out dist/posse.rb
 
       - name: draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ steps.tag.outputs.sha }}
         run: |
-          gh release create "${{ steps.tag.outputs.tag }}" \
+          gh release create "$TAG" \
             --draft \
-            --title "posse ${{ steps.tag.outputs.tag }}" \
+            --title "posse $TAG" \
             --generate-notes \
-            --target "${{ steps.tag.outputs.sha }}" \
+            --target "$SHA" \
             dist/posse_*.tar.gz dist/checksums.txt dist/posse.rb
 
       - name: what happens next
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          echo "Draft release ${{ steps.tag.outputs.tag }} staged. Two operator steps remain:"
+          echo "Draft release $TAG staged. Two operator steps remain:"
           echo "  1. review and Publish the draft on GitHub"
           echo "  2. copy dist/posse.rb into ranger360ai/homebrew-tap as Formula/posse.rb and push"
           echo "See docs/runbooks/release.md."
