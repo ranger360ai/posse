@@ -127,6 +127,27 @@ as a new bug rather than a missing config line. The guard also does not key
 on `RHQ_PERSONA`: the launcher's commit is subject to it exactly as a
 persona's is. Step 5 before step 6, always.
 
+This step is no longer the *only* thing standing between a launcher commit
+and an unguarded store of record (ranger-base-mp0v). Every queue commit
+reconciles the slot first and then probes it — ADR 0023 identity plus
+behavior, the same pair a launch applies to the session dir — and refuses
+the commit when it cannot vouch for what is there:
+
+- **slot missing** (this step skipped): written, stamped from config, and
+  the commit goes through it.
+- **stamp stale** (step 5 landed after step 6, or config re-marked later):
+  restamped on the next close, so the drift lasts one close rather than
+  forever.
+- **slot foreign** (bd's own shim, a hand-rolled hook, a neutered one):
+  install will not overwrite it and the probe cannot vouch for it, so the
+  jsonl does **not** commit and the pass says so — `⚠ <id> the queue jsonl
+  did NOT commit in <repo>: its beads visibility stamp is not armed …`. Run
+  this step; `install-hooks` chains bd's shim rather than refusing it.
+
+Run it anyway at the window: it is the earliest moment the wall can be up,
+and it is the form that chains. What changed is that forgetting it is a
+refusal you can see, not a stream of unguarded commits.
+
 **7. Restart the daemon, in the new repo.**
 
 ```sh

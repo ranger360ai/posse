@@ -358,3 +358,117 @@ func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 		t.Errorf("the queue repo's git dir is not writable, so nothing can commit the projection:\n  %s", strings.Join(got, "\n  "))
 	}
 }
+
+// ranger-base-mp0v — ranger-base-3c3's defect, one repo over. The
+// prepare-commit-msg slot in the QUEUE repo carries the beads visibility
+// stamp, and after the cutover it is the only wall between a launcher
+// commit and the store of record's history. Until this, one runbook step
+// installed it (scripts/queue-cutover.sh, step 6) and nothing ever looked
+// again: the launch probe reads the SESSION dir, and no session starts in
+// the queue repo. So the commit path reconciles the slot itself, and a
+// close cannot commit unstamped merely because the step was skipped.
+func TestQueueCommitInstallsTheStampItCommitsThrough(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	write(t, a.ConfigPath, "queue_repo: "+repo+"\nbeads_visibility:\n  "+repo+": private\n")
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+
+	// The arm proves nothing if the fixture is already armed: `git init`
+	// leaves prepare-commit-msg.sample, never the slot itself.
+	slot := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
+	if _, err := os.Stat(slot); err == nil {
+		t.Fatalf("the fixture already carries %s — a repo the cutover has not stamped is the case under test", slot)
+	}
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	if err != nil || c.SHA == "" {
+		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
+	}
+	body, err := os.ReadFile(slot)
+	if err != nil {
+		t.Fatalf("the projection committed with nothing in the slot: %v", err)
+	}
+	if string(body) != CommitGuardHook(VisibilityPrivate) {
+		t.Errorf("the slot does not carry the render config's visibility calls for:\n%s", body)
+	}
+	if fi, _ := os.Stat(slot); fi != nil && fi.Mode()&0o111 == 0 {
+		t.Errorf("the hook is not executable: %v", fi.Mode())
+	}
+}
+
+// The other half, and the one that fails toward disclosure: a slot that is
+// there but is not ours. Nothing can tell a foreign hook that refuses
+// everything from one that refuses only the probe, so posse does not
+// guess — it will not commit the store of record through a wall it cannot
+// vouch for, and says so on the pass rather than committing unguarded.
+func TestQueueCommitRefusesThroughANeuteredStamp(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+
+	// What "neutered" looks like from git's side: present, executable,
+	// plausible, and exit 0 on everything.
+	const neutered = "#!/bin/sh\nexit 0\n"
+	slot := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
+	write(t, slot, neutered)
+	if err := os.Chmod(slot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	if err == nil {
+		t.Fatalf("the projection committed through a neutered stamp: %+v", c)
+	}
+	if c.SHA != "" {
+		t.Errorf("a refusal reported a commit: %+v", c)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Errorf("HEAD moved in the queue repo: %s -> %s", before, after)
+	}
+	// The refusal has to be actionable: which slot, and what to run.
+	for _, want := range []string{"prepare-commit-msg", "install-hooks", AbbrevHome(slot)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must carry %q, got: %v", want, err)
+		}
+	}
+	// …and the foreign file is untouched. That is why it stays neutered and
+	// why the refusal is the only outcome left: install will not overwrite a
+	// hook it did not write (ADR 0002 §3).
+	if b, _ := os.ReadFile(slot); string(b) != neutered {
+		t.Errorf("the reconcile overwrote a foreign hook:\n%s", b)
+	}
+}
+
+// The stamp is config-driven and install-time — a repo re-marked in
+// `beads_visibility:` after the one install keeps the old stamp until
+// somebody reinstalls. The queue repo is where that drifts unseen, because
+// nobody launches a session there to restamp it. Reconciling on the commit
+// path is what closes it: the next close carries the mark config actually
+// says. Ordered the way the runbook warns about — the two config edits land
+// together, so the first close after them is where the drift shows.
+func TestQueueCommitRestampsASlotConfigHasReMarked(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo) // unmarked in beads_visibility: — fail closed, public
+	if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
+	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPublic) {
+		t.Fatalf("fixture: the slot does not carry the public stamp to drift from")
+	}
+
+	write(t, a.ConfigPath, "queue_repo: "+repo+"\nbeads_visibility:\n  "+repo+": private\n")
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by dinesh")
+	if err != nil || c.SHA == "" {
+		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
+	}
+	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPrivate) {
+		t.Errorf("the slot still carries the stamp config no longer calls for")
+	}
+}

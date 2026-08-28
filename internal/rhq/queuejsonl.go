@@ -25,6 +25,7 @@ package rhq
 // commit says one line on the pass instead.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,38 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 		return QueueCommit{Repo: q, Store: store, Skipped: AbbrevHome(store) + " is not inside " + AbbrevHome(q)}, nil
 	}
 	c := QueueCommit{Repo: q, Store: store}
+
+	// ranger-base-3c3's defect, one repo over (ranger-base-mp0v). The
+	// prepare-commit-msg slot in THIS repo carries the beads visibility
+	// stamp, and after the cutover this is the repo the jsonl commits land
+	// in — so an absent, foreign or wrongly-stamped slot here is a launcher
+	// that commits the store of record unguarded, silently, toward
+	// disclosure. Nothing installed it but one runbook step
+	// (scripts/queue-cutover.sh, performed once) and nothing ever asked it a
+	// question: the launch probe (applyL3Probe) reads the SESSION dir, and
+	// no session starts in the queue repo.
+	//
+	// So reconcile it exactly as a launch reconciles the session dir's
+	// (herdrback), then probe. Reconcile is best effort for the same reason
+	// it is there — a legitimate foreign chain is expected to make install
+	// refuse — and the probe is what rules: ADR 0023 identity (the file at
+	// the dispatch path is byte-for-byte the render config's visibility
+	// calls for) plus behavior (that render, exec'd fresh, still refuses).
+	// Reconciling first also re-stamps a slot config has since re-marked,
+	// which is otherwise install-time-only and drifts unseen.
+	//
+	// A probe that does not hold refuses the commit. That costs the loss
+	// census this close's line (beadloss.go) and says so on the pass, which
+	// is the cheaper of the two failures: an uncommitted projection is
+	// recoverable by the next close, an unguarded one is disclosed.
+	a.InstallCommitGuardHook(q) //nolint:errcheck // best effort, as at launch; the probe below is the verdict
+	if probe := a.probeL3Hooks(q, false); !probe.CommitGuard {
+		why := probe.CommitGuardDegraded
+		if !probe.Repo {
+			why = AbbrevHome(q) + " is not a git repository — queue_repo: must name a checkout"
+		}
+		return c, fmt.Errorf("its beads visibility stamp is not armed, and an unguarded jsonl commit is the disclosure this hook exists to refuse — %s", why)
+	}
 
 	// The database is the store of record and the JSONL is a projection of
 	// it; committing without exporting first commits the state before the
