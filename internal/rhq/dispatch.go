@@ -45,6 +45,7 @@ package rhq
 // `d` take turns instead of interleaving three launchers over one bd queue.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +74,13 @@ type Dispatcher struct {
 	// scan Claude transcripts; tests inject a hermetic answer. The bool says
 	// an outcome was observed; an empty message is a healthy first answer.
 	TurnOutcome func(dir, bead string, since time.Time) (string, bool)
+	// Hints is the settle-event channel Watch listens on (ADR 0016 §1, ADR
+	// 0028 §1). nil = subscribe to the herdr socket this posse resolves.
+	// Tests inject their own, and newTestDispatcher hands back a nil
+	// channel, so no test reaches a real herdr server unless it says so
+	// (ADR 0016 §3) — the subscription DIALS, where every other herdr read
+	// in the suite goes through the fake CLI.
+	Hints func(ctx context.Context, report func(string)) <-chan HerdrHint
 
 	DryRun        bool
 	Resume        bool          // re-prompt in_progress beads even when the holder's session is alive and idle

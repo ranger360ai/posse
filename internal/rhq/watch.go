@@ -97,6 +97,21 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	} else if cfg.Armed {
 		go d.pulseLoop(ctx, cfg)
 	}
+	// The settle-event channel (ADR 0016 §1, ADR 0028 §1). One subscription
+	// for the life of this loop, and in THIS slice (ranger-base-0s36) the
+	// hint is logged and nothing else: the tick below is untouched, so a
+	// hint changes no dispatch behaviour and a lost one costs not even
+	// latency yet. Waking the next pass early is S4's (ranger-base-zk5u).
+	//
+	// No herdr, no socket, a dead server: the subscriber says so once and
+	// this loop goes on ticking. It is a latency path, never a dependency.
+	subscribe := d.Hints
+	if subscribe == nil {
+		subscribe = func(ctx context.Context, report func(string)) <-chan HerdrHint {
+			return HerdrSettleHints(ctx, herdrSocketPath(), report)
+		}
+	}
+	hints := subscribe(ctx, func(line string) { fmt.Fprintf(d.Out, "   %s\n", line) })
 	passes := 0
 	wait := base
 	for {
@@ -111,10 +126,25 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		}
 		wait = NextInterval(wait, base, maxInterval, n)
 		fmt.Fprintf(d.Out, "   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
-		select {
-		case <-ctx.Done():
-			return passes, nil
-		case <-time.After(wait):
+		// One timer per pass, and a hint does NOT reset it: hints are
+		// logged here, the tick still decides when the next pass runs.
+		timer := time.NewTimer(wait)
+		for tick := false; !tick; {
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return passes, nil
+			case h, ok := <-hints:
+				if !ok {
+					// The subscriber is gone for good (ctx ended, or it
+					// stopped); wait out the timer on a nil channel.
+					hints = nil
+					continue
+				}
+				fmt.Fprintf(d.Out, "   settle hint · %s — logged only, the tick still sets the next pass (ADR 0028 §1)\n", h)
+			case <-timer.C:
+				tick = true
+			}
 		}
 	}
 }
