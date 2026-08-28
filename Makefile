@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -286,3 +286,21 @@ cleanroom-shell:
 
 cleanroom-reset:
 	scripts/cleanroom.sh reset
+
+# ---------------------------------------------------------------------------
+# runtime contract walk (ranger-base-nlya)
+#
+# The ADR 0013 six-stage contract, walked end to end on ONE real runtime by
+# the production dispatch path: it launches its own scratch herdr session,
+# fires a throwaway bead at a throwaway PID, and scores every stage with ADR
+# 0017 §2's verdicts. It is not in `make test` and never will be — it SPENDS
+# A REAL TURN on the runtime under test. Run it before switching a lane back
+# onto a runtime, and after any runtime version bump.
+#
+#	make verify-runtime-walk RUNTIME=codex
+#
+# An exhausted account is scored UNKNOWN(failing) and stops the walk before
+# it spends anything — a fact about the bill, never a runtime defect.
+verify-runtime-walk:
+	@test -n "$(RUNTIME)" || { echo "usage: make verify-runtime-walk RUNTIME=grok|codex|claude"; exit 2; }
+	RHQ_LIVE_RUNTIME=$(RUNTIME) $(GOBIN) test ./internal/rhq -run TestLiveRuntimeContractWalk -v -count=1 -timeout 30m
