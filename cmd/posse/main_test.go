@@ -379,8 +379,13 @@ func TestDispatchRefusesBadCount(t *testing.T) {
 // (`timeoutMS > 0`), so `posse prompt sess hi --wait --timeout soon` waits
 // as long as herdr will. Missing-arg already dies; the hole is the dropped
 // error. Unskipped FAIL (HEAD b79e0a2): herdr is asked; the flag is not named.
+//
+// RHQ_HERDR_BIN points at a file that is not there, so the first check past
+// the flag loop is a fork/exec failure naming it — which is the positive
+// control too (the accepted-count rows): only a value the loop took can
+// reach herdr at all, so a validCount that refused everything would not
+// pass this test.
 func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
-	t.Skip("ranger-base-sknr: posse prompt/wait --timeout still drop strconv.Atoi; soon/3x/-1 become 0 = herdr default (unbounded)")
 	bin := buildRhq(t)
 	home := t.TempDir()
 	env := append(os.Environ(),
@@ -390,18 +395,25 @@ func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
 	)
 
 	for _, c := range []struct {
-		args []string
-		want string
+		args     []string
+		want     string
+		accepted bool // the count is good: it must reach herdr, not die here
 	}{
-		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "soon"}, "--timeout needs"},
-		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "3x"}, "--timeout needs"},
-		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", "-1"}, "--timeout needs"},
-		{[]string{"prompt", "sess", "hi", "--wait", "--timeout", ""}, "--timeout needs"},
-		{[]string{"prompt", "sess", "hi", "--wait", "--timeout"}, "--timeout needs"},
-		{[]string{"wait", "sess", "--timeout", "soon"}, "--timeout needs"},
-		{[]string{"wait", "sess", "--timeout", "3x"}, "--timeout needs"},
-		{[]string{"wait", "sess", "--timeout", "-1"}, "--timeout needs"},
-		{[]string{"wait", "sess", "--timeout"}, "--timeout needs"},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", "soon"}, want: "--timeout needs"},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", "3x"}, want: "--timeout needs"},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", "-1"}, want: "--timeout needs"},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", ""}, want: "--timeout needs"},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout"}, want: "--timeout needs"},
+		{args: []string{"wait", "sess", "--timeout", "soon"}, want: "--timeout needs"},
+		{args: []string{"wait", "sess", "--timeout", "3x"}, want: "--timeout needs"},
+		{args: []string{"wait", "sess", "--timeout", "-1"}, want: "--timeout needs"},
+		{args: []string{"wait", "sess", "--timeout", ""}, want: "--timeout needs"},
+		{args: []string{"wait", "sess", "--timeout"}, want: "--timeout needs"},
+		// Accepted counts reach the next check instead of dying here.
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", "500"}, want: "herdr-must-not-run", accepted: true},
+		{args: []string{"prompt", "sess", "hi", "--wait", "--timeout", "0"}, want: "herdr-must-not-run", accepted: true},
+		{args: []string{"wait", "sess", "--timeout", "500"}, want: "herdr-must-not-run", accepted: true},
+		{args: []string{"wait", "sess", "--timeout", "0"}, want: "herdr-must-not-run", accepted: true},
 	} {
 		cmd := exec.Command(bin, c.args...)
 		cmd.Env = env
@@ -417,7 +429,7 @@ func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
 			t.Errorf("posse %s: exit %d, output %q; want exit 1 containing %q",
 				strings.Join(c.args, " "), code, out, c.want)
 		}
-		if strings.Contains(got, "herdr workspace list") {
+		if !c.accepted && strings.Contains(got, "herdr workspace list") {
 			t.Errorf("posse %s reached herdr — the bad count was accepted:\n%s",
 				strings.Join(c.args, " "), got)
 		}
