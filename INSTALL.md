@@ -738,16 +738,40 @@ Four things about template profiles that will bite you if nobody says them:
    dialects that work: claude `--append-system-prompt "$(cat {file})"`,
    codex `-c developer_instructions="$(cat {file})"`, grok
    `--rules="$(cat {file})"`. **Probe your CLI before trusting it** — this
-   costs no API turn, because the parser fails or the help prints first:
+   costs no API turn, because the parser fails or the help prints first.
+   Run it as a **pair**: your real flag, and a control flag you know is
+   bogus.
 
    ```sh
    $ printf -- '---\nname: x\n---\nhello\n' > /tmp/p.md
-   $ <cli> <your flags> --your-flag="$(cat /tmp/p.md)" --help
+   $ <cli> <your flags> --your-flag="$(cat /tmp/p.md)" --help  # the probe
+   $ <cli> <your flags> --nosuchflag=zzz --help                # the control
    ```
 
-   Help text means the parser bound the PID. `error: unexpected argument
-   '---` means it ate it — and had you launched for real, the persona
-   would have come up with no instructions at all.
+   **The control has to fail; a probe only discriminates if its wrong arm
+   fails.** Control refused and probe printing help means the parser bound
+   the PID. Control refused and the probe saying `error: unexpected
+   argument '---` means it ate the PID — and had you launched for real,
+   the persona would have come up with no instructions at all.
+
+   **If the control prints help too, the probe has proved nothing about
+   your flag** — that CLI answers `--help` before it parses, so a
+   misspelled or nonexistent flag comes back just as green as a working
+   one. This is not hypothetical and it is not rare: measured 2026-08-27,
+   clap refuses the control (grok 1.0.5 and codex 0.147.0 both
+   `rc=2 unexpected argument '--nosuchflag'`) and commander does not —
+   claude 2.1.250 prints help, rc=0, for `--append-system-promt`, which is
+   the `skils_flag:` typo class three paragraphs up wearing a green light.
+   Repair the probe by dropping `--help` for any cheap read-only
+   **subcommand**, which has to parse the whole line before it can
+   dispatch, and re-run the pair against that:
+
+   ```sh
+   $ claude --append-system-prompt="$(cat /tmp/p.md)" mcp list
+   No MCP servers configured. …                    # rc=0 — bound
+   $ claude --append-system-promt "$(cat /tmp/p.md)" mcp list
+   error: unknown option '--append-system-promt'   # rc=1 — control fails
+   ```
 
 2. **`{allow}` and `{deny}` render to nothing.** There is no realizer, so
    the CLI's own polite refusals do not exist and *every* gate goes to the
