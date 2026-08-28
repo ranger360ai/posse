@@ -208,3 +208,54 @@ func TestCrewSessionDoesNotStallTheFleet(t *testing.T) {
 		t.Errorf("the operator's session was prompted:\n%s", calls(t, fake))
 	}
 }
+
+// ADR 0008's shield asked for the bead's session by NAME — `<persona>-<repo>-<bead>`
+// and the pre-Dial-F slot — so a crew session the operator made under any other
+// name held nothing. Measured (ranger-base-adb7): a crew session created by hand,
+// handed the bead, and prompted; the next --resume pass saw an in_progress bead
+// with no session under either conventional name, made its own, and ran the bead
+// to close out from under the operator's conversation. The run record (ADR 0011 §3)
+// is what LaunchBead already joins on — the pass must ask the same question.
+func TestDispatchSkipsCrewSessionHoldingTheBeadUnderAnyName(t *testing.T) {
+	for _, leg := range []struct {
+		name   string
+		ready  string
+		resume bool
+	}{
+		{"--resume over a hand-claimed bead", `[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`, true},
+		{"fresh routing", `[{"id":"a-1","title":"t","labels":["go"]}]`, false},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			writePersona(t, b.App, "ranger", "[go]")
+			repo := qaRepo(t, b.App, leg.ready,
+				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+			// The operator's own session: `posse new ranger-staffing`, then the
+			// bead handed to it by hand. Neither Dial F name, and crew-marked.
+			crew := "ranger-staffing"
+			mustCreate(t, b, NewSessionOpts{Name: crew, Dir: repo, Agent: "ranger", Crew: true, Bead: "a-1"})
+			idleClaude(t, fake)
+			agentPerLaunch(t, fake)
+
+			d := newTestDispatcher(t, b)
+			d.Resume = leg.resume
+			n, err := d.Run("", "", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "held by crew session " + crew + " (operator's) — skipped"
+			if n != 0 || !strings.Contains(dispatcherOut(d), want) {
+				t.Errorf("want %q and nothing dispatched, got n=%d:\n%s", want, n, dispatcherOut(d))
+			}
+			if log := calls(t, fake); strings.Contains(log, "workspace create --label "+SessionForBead("ranger", repo, "a-1")) {
+				t.Errorf("a fleet twin was born beside the operator's session:\n%s", log)
+			}
+			if log := calls(t, fake); strings.Contains(log, "agent prompt") {
+				t.Errorf("something was prompted while the operator held the bead:\n%s", log)
+			}
+			if strings.Contains(bdCalls(t, fake), "--claim") {
+				t.Errorf("bead claimed behind the operator's back:\n%s", bdCalls(t, fake))
+			}
+		})
+	}
+}

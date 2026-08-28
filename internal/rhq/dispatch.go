@@ -854,9 +854,13 @@ func (d *Dispatcher) promptedRecently(session string) (time.Duration, bool) {
 // its Dial F name and then the pre-Dial-F slot is what shipped. Order
 // matters only where they disagree, and where they disagree the record is
 // about this bead while a name is about a naming convention.
-func (d *Dispatcher) heldSession(is RepoIssue, persona string, names ...string) string {
-	if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok && s.Status != "" {
-		return s.Name
+//
+// runHolder is the record's answer, resolved by the caller — the ADR 0008
+// shield asks the same question one rung earlier and must ask it of the same
+// session, so the lookup happens once per bead and both guards read it.
+func (d *Dispatcher) heldSession(runHolder *HerdrSession, names ...string) string {
+	if runHolder != nil && runHolder.Status != "" {
+		return runHolder.Name
 	}
 	for _, name := range names {
 		if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
@@ -1869,17 +1873,38 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		persona := lane.seats[seat].name
 		slot := SessionFor(persona, is.Dir)
 		session := SessionForBead(persona, is.Dir, is.ID)
-		// ADR 0008: a bead whose own session is the operator's — or, when
-		// this bead would resume into it, the pre-Dial-F slot — is left
-		// alone. No fleet twin is made for it and --resume does not
-		// override; the operator finishes it or releases the session
-		// (cockpit `o`, `posse crew <name> --off`). Reported before the
-		// --dry-run branch so a dry pass says the same thing a real one
-		// would do.
-		crewNames := []string{session}
+		// The run record (ADR 0011 §3), read ONCE and used by all three
+		// questions below — is this session the operator's, is it somebody
+		// else's, is it the holder. `bead:` is a fact about the run where a
+		// name is a guess that a session which exists would be called this,
+		// so it heads every name list here exactly as it heads LaunchBead's.
+		//
+		// Reading it above the crew check rather than only at the holder
+		// join is the ranger-base-adb7 fix: a session the operator made by
+		// hand carries neither Dial F name, so the shield below asked about
+		// two names that did not exist and answered "nobody holds this" —
+		// crew marking protected the SESSION and left the BEAD open, and the
+		// next --resume pass built a twin on it and ran it to close.
+		var runHolder *HerdrSession
+		if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
+			runHolder = s
+		}
+		// ADR 0008: a bead whose own session is the operator's — the session
+		// the run record names, this bead's Dial F name, or, when this bead
+		// would resume into it, the pre-Dial-F slot — is left alone. No
+		// fleet twin is made for it and --resume does not override; the
+		// operator finishes it or releases the session (cockpit `o`,
+		// `posse crew <name> --off`). Reported before the --dry-run branch
+		// so a dry pass says the same thing a real one would do.
+		var crewNames []string
+		if runHolder != nil {
+			crewNames = append(crewNames, runHolder.Name)
+		}
+		crewNames = append(crewNames, session)
 		if is.Status == "in_progress" && is.Assignee == persona {
 			crewNames = append(crewNames, slot)
 		}
+		crewNames = dedupeStrings(crewNames)
 		if held := d.crewHeld(crewNames...); held != "" {
 			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
 			continue
@@ -1901,7 +1926,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// launching a twin beside an idle slot holder (rangerhq-v330).
 		held := ""
 		if is.Status == "in_progress" && is.Assignee == persona {
-			held = d.heldSession(is, persona, session, slot)
+			held = d.heldSession(runHolder, session, slot)
 		}
 		// An in_progress bead whose own session (or the pre-Dial-F persona
 		// session) is alive with an agent that has settled: the persona

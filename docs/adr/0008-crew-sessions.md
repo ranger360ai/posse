@@ -58,6 +58,20 @@ Other beads of that persona/repo dispatch normally into their own
 per-bead sessions — under Dial F the "fleet twin" is automatic and needs
 no `-fleet` suffix.
 
+*Amended 2026-08-28 (ranger-base-adb7):* **which session is the bead's is a
+lookup, not a name.** The shield above shipped asking herdr for two names —
+the Dial F `<persona>-<repo>-<bead>` and the pre-Dial-F slot — so a crew
+session the operator made by hand (`posse new jared-staffing`, then the bead
+handed to it) held nothing: both names resolved to nothing, the pass read
+"no session holds this bead", and `--resume` built a fleet twin that ran the
+bead to close out from under the operator's own conversation. The mark
+protected the SESSION and left the BEAD open. So the run record (ADR 0011 §3
+`bead:`, which `posse prompt` stamps for a hand-dispatch via
+`NoteBeadFromPrompt`) heads the name list this shield and the holder join
+both read, in the pass exactly as it already did in `LaunchBead`. What is
+still uncovered is what §1 already accepts: the operator who types straight
+into a pane stamps no record, and presses `o`.
+
 *Amended 2026-08-21 (ADR 0027, monica pulse — designed as "0013", file
 committed 2026-08-27 under the free number):* one named exception — the watch loop's
 **pulse** may prompt the `pulse_persona` session (config; typically the

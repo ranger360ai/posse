@@ -149,9 +149,13 @@ live pin both sides of the cliff and the spill are measured from.
   dispatch treats it as if it did not exist** — never prompted, never
   relaunched, never counted busy; `posse new`/recipes/cockpit `p`/`posse prompt`
   without `RHQ_PERSONA` set the mark, cockpit `o` and `--off` clear it, and
-  a bead whose own session is crew is reported `held by crew session <name>
+  a bead whose session is crew is reported `held by crew session <name>
   (operator's) — skipped` (there is no timer and `--resume` does not
-  override — release it first). `posse list` and the cockpit tag it `👤`.
+  override — release it first). **Which session is the bead's is asked of the
+  run record first** (`bead:`, ADR 0011 §3), then of the two name patterns:
+  a crew session the operator made by hand carries neither Dial F name, so
+  a name-only shield protected the SESSION and left the BEAD open for a
+  fleet twin (ranger-base-adb7). `posse list` and the cockpit tag it `👤`.
 - `posse claim <id> [--as <persona>] [--dir]` / `posse done <id> …` — atomic
   claim (`bd update --claim`) and close, with the persona as bd actor. The
   claim's outcome is read from the bead, never from bd's exit code (see the

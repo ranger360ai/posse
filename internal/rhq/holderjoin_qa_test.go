@@ -430,3 +430,50 @@ func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
 		t.Errorf("the dry pass previewed a Dial F twin beside the idle holder:\n%s", out)
 	}
 }
+
+// The record's arm of the holder join, with no name to fall back on. Both
+// name patterns are guesses that a session which exists would be CALLED
+// this; `bead:` is what the launcher wrote. A holder living under neither
+// name — `posse new <anything>` plus a work prompt, which NoteBeadFromPrompt
+// stamps — is found only by the record, and deleting that arm leaves the
+// whole package green (measured, ranger-base-adb7): the pass then treats the
+// bead as unheld and builds a twin beside a live holder, which is the
+// rangerhq-v330 class one naming scheme further out.
+func TestRunRecordHolderIsJoinedUnderAnyName(t *testing.T) {
+	for _, leg := range []struct {
+		name   string
+		resume bool
+		want   string
+	}{
+		{"normal pass", false, "held by ranger, ranger-staffing idle"},
+		{"--resume", true, "→ ranger-staffing"},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			writePersona(t, b.App, "ranger", "[go]")
+			repo := qaRepo(t, b.App,
+				`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+				// Still open at the gather: a bead that reads closed would have
+				// the end-of-pass reaper kill the holder before it is measured.
+				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+			// Fleet, not crew: this is the join, not ADR 0008's shield.
+			holder := "ranger-staffing"
+			mustCreate(t, b, NewSessionOpts{Name: holder, Dir: repo, Agent: "ranger", Bead: "a-1"})
+			idleClaude(t, fake)
+			agentPerLaunch(t, fake)
+
+			d := newTestDispatcher(t, b)
+			d.Resume = leg.resume
+			if _, err := d.Run("", "", 0); err != nil {
+				t.Fatal(err)
+			}
+			out := dispatcherOut(d)
+			if !strings.Contains(out, leg.want) {
+				t.Errorf("want %q, got:\n%s", leg.want, out)
+			}
+			if log := calls(t, fake); strings.Contains(log, "workspace create --label "+SessionForBead("ranger", repo, "a-1")) {
+				t.Errorf("a twin was created beside the record's holder:\n%s", log)
+			}
+		})
+	}
+}
