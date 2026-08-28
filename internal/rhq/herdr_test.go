@@ -1086,7 +1086,51 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	// machine is red per-day, not per-commit. Quiet by construction; the
 	// tests that want the guard to fire set this field.
 	a.Load1 = func() (float64, error) { return 0, nil }
-	return &HerdrBackend{App: a, H: Herdr{Bin: exe}}, fake
+	b := &HerdrBackend{App: a, H: Herdr{Bin: exe}}
+	captureWarn(t, b)
+	return b, fake
+}
+
+// captureWarn points a test backend's warning stream at a per-test buffer.
+// A nil Warn is os.Stderr (herdrback.go), and for a test binary that is two
+// harms at once (ranger-base-ihd2):
+//
+//   - Blind assertions. planLaunch passes b.warnWriter() to
+//     EnsureSessionTree, TierPreflight and LoadHigh, so a test asserting on
+//     the writer it handed CreateSession/RelaunchSession reads a stream
+//     those lines never enter — the guard cannot fail, and the regression it
+//     names lands green (measured on ranger-base-ljiu).
+//   - Misattributed failures. `go test` suppresses a passing package's
+//     output and dumps the whole buffered stream only when the package
+//     fails, so a passing test's warning surfaces directly above whichever
+//     OTHER test failed. ranger-base-ljiu was filed off exactly that shape.
+//
+// io.Discard would fix the second and make the first worse. The buffer is
+// dumped through t.Logf on failure, which attributes it to the test that
+// provoked it. A test that wants to READ the stream asks warnBuf, or sets
+// its own Warn.
+func captureWarn(t *testing.T, b *HerdrBackend) {
+	t.Helper()
+	buf := &syncBuf{}
+	b.Warn = buf
+	t.Cleanup(func() {
+		if t.Failed() {
+			if s := buf.String(); s != "" {
+				t.Logf("b.Warn (the launch's warning stream):\n%s", s)
+			}
+		}
+	})
+}
+
+// warnBuf is the buffer captureWarn gave b.Warn, for a test that wants to
+// read the warning stream without holding one of its own.
+func warnBuf(t *testing.T, b *HerdrBackend) *syncBuf {
+	t.Helper()
+	buf, ok := b.Warn.(*syncBuf)
+	if !ok {
+		t.Fatalf("b.Warn is %T, not the buffer the harness gave it", b.Warn)
+	}
+	return buf
 }
 
 // gatePrefixRe is the L1 prefix on every typed persona line: ADR 0002 §3's

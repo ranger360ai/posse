@@ -57,7 +57,9 @@ func liveBackend(t *testing.T, pane string) *HerdrBackend {
 	os.WriteFile(filepath.Join(a.StateDir, "herdr", "qalive.yaml"), []byte(fmt.Sprintf(
 		"name: qalive\nworkspace: %s\npane: %s\nemoji: x\nsocket: %s\n",
 		strings.SplitN(pane, ":", 2)[0], pane, os.Getenv("HERDR_SOCKET_PATH"))), 0o644)
-	return &HerdrBackend{App: a, H: Herdr{Bin: bin}}
+	b := &HerdrBackend{App: a, H: Herdr{Bin: bin}}
+	captureWarn(t, b)
+	return b
 }
 
 func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {

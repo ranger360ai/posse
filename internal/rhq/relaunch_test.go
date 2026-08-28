@@ -300,7 +300,9 @@ func TestRelaunchKeepsTheRecipeWhenTheRecreateFailsAfterTheKill(t *testing.T) {
 	if !strings.Contains(warn.String(), "recipe kept: s1") {
 		t.Errorf("posse list must report the kept recipe: %q", warn.String())
 	}
-	b.Warn = nil
+	// Left as this buffer, not reset to nil: nil is the test binary's own
+	// stderr (ranger-base-ihd2), so the retry below would print its warnings
+	// under whichever other test in the package fails.
 
 	// And the advertised retry actually rebuilds the session.
 	os.Remove(filepath.Join(fake, "create-error"))
