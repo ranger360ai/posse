@@ -65,6 +65,9 @@ type RelaunchOpts struct {
 // it fails there, the session's recipe is written back (keepRecipe) and the
 // error carries both ways out — the retry and the hand-rebuilt command —
 // so a failure costs a restart, never the session's identity.
+//
+// The preflight and the landing turn run unserialized; everything from the
+// kill down runs under the launcher lock (replace, ranger-base-w4h5).
 func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	// Read the meta before anything calls Sessions(): a meta whose
 	// workspace has already died is pruned on read, and that file is the
@@ -129,10 +132,42 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 		}
 	}
 
+	// Everything destructive runs under ONE launcher lock (ADR 0011 §1),
+	// taken here rather than at the top of the call.
+	//
+	// The whole RelaunchSession cannot take it: landThePlane waits up to
+	// DefaultLandTimeout (10m) for an agent's turn to settle, and a launcher
+	// lock held for ten minutes is every dispatch pass, every `posse new`
+	// and every listing's prune queued behind one operator's refresh. The
+	// preflight is read-only and the landing turn destroys nothing, so
+	// neither needs the serialization; from here down every step writes the
+	// meta dir.
+	//
+	// Nor is it one lock per destructive step. The kill and the recreate are
+	// one critical section or they are none: between them the name is free,
+	// and a launcher that takes it there leaves this pass with a session
+	// killed and a recreate that can never succeed — the rangerhq-v52t loss,
+	// arrived at from the other side. Under one lock a create for this name
+	// is either finished before the kill (holdsRecorded and mustNotOrphan
+	// both read it) or has not begun.
+	//
+	// underLaunchLock and not lockLaunches: a relaunch reached from inside a
+	// pass that already holds the lock must run, not deadlock on its own
+	// open file description.
+	return underLaunchLock(b.App, w, func() error { return b.replace(w, m, recreate, plan) })
+}
+
+// replace is relaunch's destructive half — kill, recreate, and the rollback
+// between them — and it runs under the launcher lock its caller took.
+func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpts, plan *launchPlan) error {
+	name := m.Name
+	// The kill's own unlink (closeRecorded: CloseWorkspace, then remove the
+	// meta) is a check-then-act over the meta dir too, and it is covered by
+	// being here: no create for this name can land between the two.
 	if err := b.closeRecorded(m); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "killed %s\n", o.Name)
+	fmt.Fprintf(w, "killed %s\n", name)
 
 	if ws, err := b.recreateSession(recreate, plan); err != nil {
 		if ws != "" {
@@ -143,7 +178,7 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 			return Die("%s was closed and its replacement workspace %s came up, but did not finish starting: %v\n"+
 				"  retry with:\n    posse relaunch %s\n"+
 				"  or rebuild it by hand:\n    %s",
-				o.Name, ws, err, o.Name, RecoverCommand(m))
+				name, ws, err, name, RecoverCommand(m))
 		}
 		if kept := b.keepRecipe(m); kept != "" {
 			// The record on disk still names a workspace this pass could not
@@ -153,14 +188,14 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 				"  its record in %s still names workspace %s, which this pass could not prove dead — nothing was blanked\n"+
 				"  look at it first:\n    posse list\n"+
 				"  or rebuild it by hand:\n    %s",
-				o.Name, err, b.metaPath(o.Name), kept, RecoverCommand(m))
+				name, err, b.metaPath(name), kept, RecoverCommand(m))
 		}
 		return Die("%s was closed but could not be recreated: %v\n"+
 			"  its recipe was kept in %s — retry with:\n    posse relaunch %s\n"+
 			"  or rebuild it by hand:\n    %s",
-			o.Name, err, b.metaPath(o.Name), o.Name, RecoverCommand(m))
+			name, err, b.metaPath(name), name, RecoverCommand(m))
 	}
-	fmt.Fprintf(w, "ready: posse attach %s\n", o.Name)
+	fmt.Fprintf(w, "ready: posse attach %s\n", name)
 	return nil
 }
 
@@ -256,11 +291,51 @@ func (b *HerdrBackend) recreateSession(o NewSessionOpts, p *launchPlan) (string,
 // exists to prevent. Refusing costs a retry and nothing else: the session is
 // left running with its record intact, a stale snapshot clears on the next
 // pass, and a meta another herdr holds says so and says which.
+//
+// Proof and act were two steps over a file another actor writes, which is
+// rangerhq-3a5t's shape one caller over: between mustNotOrphan answering
+// and os.Remove landing, a create for this name can pass the same guard
+// legitimately (the old workspace really is dead) and writeMeta a fresh
+// meta at this very path. The unlink then deletes the NEW record — a live
+// session with nothing on disk naming it, i2g9's damage reached through the
+// write/delete interleave instead of a stale snapshot.
+//
+// So the act is taken under the launcher lock (ADR 0011 §1) and the proof
+// is taken AGAIN inside it, reclaim's pattern verbatim: locking the unlink
+// alone would still act on evidence read before the lock, which is the same
+// race one step over. Under the lock a create for this name is either
+// finished — and the re-read sees its meta, naming a workspace herdr
+// answers for, so the guard refuses — or has not begun, because every
+// create takes this lock (CreateSession, and RelaunchSession's own tail).
+//
+// underLaunchLock and not tryLockLaunches, which is where this parts from
+// the prune: contention there means "spare the file", a safe answer a
+// listing can give. Here the caller is mid-relaunch and its own tail holds
+// the lock, so treating this process's lock as contention would refuse
+// every relaunch. Nesting runs the body directly.
+//
+// The outer proof is kept, and is not the guard: it is the fail-fast, so a
+// relaunch reached with the lock free is refused without first queueing
+// behind a firing pass. What decides is the one inside.
 func (b *HerdrBackend) clearDeadMeta(name string) error {
+	if err := b.provenClearable(name); err != nil {
+		return err
+	}
+	return underLaunchLock(b.App, b.warnWriter(), func() error {
+		if err := b.provenClearable(name); err != nil {
+			return err
+		}
+		os.Remove(b.metaPath(name))
+		return nil
+	})
+}
+
+// provenClearable is clearDeadMeta's proof and its refusal, in the words the
+// caller prints — asked twice, once outside the lock and once inside it.
+func (b *HerdrBackend) provenClearable(name string) error {
 	if err := b.mustNotOrphan(name); err != nil {
 		return Die("%s was NOT closed and its record was left in place: %v", name, err)
 	}
-	os.Remove(b.metaPath(name))
 	return nil
 }
 
@@ -286,17 +361,42 @@ func (b *HerdrBackend) clearDeadMeta(name string) error {
 // mustNotOrphan is asked of the FILE and not of m: after an ordinary kill
 // there is no file, and a name with no record has nothing to protect — so
 // the ordinary rollback still pays nothing and still writes the recipe.
+//
+// And the write is the act of a check-then-act, exactly as the unlink is
+// (rangerhq-3a5t): between mustNotOrphan and writeMeta a create for this
+// name can write a fresh meta, and blanking workspace:/pane: over it is the
+// cpeh damage — a LIVE session's workspace id gone from the only place it
+// is recorded. So it goes under the launcher lock with the proof re-asked
+// inside, the same shape as clearDeadMeta, and what it may not blank it
+// names to the caller instead.
 func (b *HerdrBackend) keepRecipe(m *HerdrMeta) (kept string) {
 	if err := b.mustNotOrphan(m.Name); err != nil {
-		if cur, ok := b.readMeta(m.Name); ok && cur.Workspace != "" {
-			return cur.Workspace
-		}
-		return m.Workspace
+		return b.recordedWorkspace(m)
 	}
-	r := *m
-	r.Workspace, r.Pane, r.Launched = "", "", time.Time{}
-	_ = b.writeMeta(&r)
-	return ""
+	// Best effort to the end: a lock this pass cannot take is not a reason to
+	// replace the error the operator needs to read, and a recipe that was not
+	// written costs the retry `posse relaunch` already is.
+	_ = underLaunchLock(b.App, b.warnWriter(), func() error {
+		if err := b.mustNotOrphan(m.Name); err != nil {
+			kept = b.recordedWorkspace(m)
+			return nil
+		}
+		r := *m
+		r.Workspace, r.Pane, r.Launched = "", "", time.Time{}
+		_ = b.writeMeta(&r)
+		return nil
+	})
+	return kept
+}
+
+// recordedWorkspace is the workspace id a refused blanking is protecting:
+// whatever the file names NOW, since a create may have rewritten it under
+// this pass, and only failing that the id this pass came in holding.
+func (b *HerdrBackend) recordedWorkspace(m *HerdrMeta) string {
+	if cur, ok := b.readMeta(m.Name); ok && cur.Workspace != "" {
+		return cur.Workspace
+	}
+	return m.Workspace
 }
 
 // closeRecorded is relaunch's destructive half, and it is aimed by the
