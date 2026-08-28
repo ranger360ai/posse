@@ -301,6 +301,282 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	}
 }
 
+// qaGuardRepo builds a throwaway repo carrying the shared-index guard and
+// one commit on main, and returns a runner that drives git as a persona
+// (extra = the persona env) or, with nil, as the operator. HOME is the repo
+// so nothing here reads the operator's ~/.gitconfig.
+func qaGuardRepo(t *testing.T) (string, func(extra []string, args ...string) (string, error)) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_EDITOR=true",
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(extra []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), env...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	git(nil, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(nil, "add", "a.txt")
+	git(nil, "commit", "-qm", "a1", "--", "a.txt")
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	return repo, git
+}
+
+// ranger-base-08a2. The guard's git-driven exemption was written as "an
+// operation is in progress", justified as "git refuses a pathspec during
+// those outright". Measured on git 2.39.3, that premise holds for exactly
+// two of the five markers, and each arm below is one row of the table in
+// sharedIndexBody's doc comment — run rather than read.
+//
+// The subtests each get their own repo: these are git *states*, and one
+// probe's cleanup is the next probe's fixture otherwise.
+func TestQAGuardExemptsOnlyWhereGitRefusesAPathspec(t *testing.T) {
+	personaEnv := func(t *testing.T) []string {
+		return []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	}
+	writeIn := func(t *testing.T, repo, name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// diverge leaves main at a3 with a2 revertable-with-conflict, which is
+	// the second of the two REVERT_HEAD states.
+	diverge := func(t *testing.T, repo string, git func([]string, ...string) (string, error)) string {
+		t.Helper()
+		writeIn(t, repo, "a.txt", "a2\n")
+		git(nil, "commit", "-qm", "a2", "--", "a.txt")
+		sha, _ := git(nil, "rev-parse", "HEAD")
+		writeIn(t, repo, "a.txt", "a3\n")
+		git(nil, "commit", "-qm", "a3", "--", "a.txt")
+		return strings.TrimSpace(sha)
+	}
+
+	// The window rangerhq-lrnp's own blessed recipe opens: `git revert
+	// --no-commit` DOES write REVERT_HEAD, so under the old list every
+	// unqualified commit was exempt for as long as the revert was unfinished
+	// — rangerhq-nyqj, inside the way through.
+	t.Run("revert --no-commit exempts nothing", func(t *testing.T) {
+		repo, git := qaGuardRepo(t)
+		persona := personaEnv(t)
+		writeIn(t, repo, "b.txt", "b\n")
+		git(nil, "add", "b.txt")
+		git(nil, "commit", "-qm", "add b", "--", "b.txt")
+		if out, err := git(persona, "revert", "--no-commit", "HEAD"); err != nil {
+			t.Fatalf("git revert --no-commit: %v %s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(repo, ".git", "REVERT_HEAD")); err != nil {
+			t.Fatalf("the fixture is the exemption's own trigger; REVERT_HEAD must be there: %v", err)
+		}
+		writeIn(t, repo, "theirs.txt", "theirs\n")
+		git(nil, "add", "theirs.txt")
+		out, err := git(persona, "commit", "-m", "sweep")
+		if err == nil || !strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+			t.Fatalf("REVERT_HEAD must not exempt an unqualified commit: %v %s", err, out)
+		}
+		if !strings.Contains(out, "A revert is in progress (REVERT_HEAD)") {
+			t.Errorf("the refusal must say a revert is in progress:\n%s", out)
+		}
+		if out, _ := git(nil, "diff", "--cached", "--name-only", "HEAD"); !strings.Contains(out, "theirs.txt") {
+			t.Errorf("the other persona's staged file must survive the refusal, got %q", out)
+		}
+		// And the exemption bought nothing, because the safe form works here.
+		if out, err := git(persona, "commit", "-m", "Revert add b", "--", "b.txt"); err != nil {
+			t.Fatalf("a pathspec IS accepted mid-revert — that is why no exemption is owed: %v %s", err, out)
+		}
+	})
+
+	// A conflicted revert finished with a message of the persona's own:
+	// $2 is "message", so only the marker ever exempted this.
+	t.Run("a conflicted revert finished by hand is refused", func(t *testing.T) {
+		repo, git := qaGuardRepo(t)
+		persona := personaEnv(t)
+		sha := diverge(t, repo, git)
+		if out, err := git(persona, "revert", "--no-edit", sha); err == nil {
+			t.Fatalf("the fixture needs a CONFLICTED revert: %s", out)
+		}
+		writeIn(t, repo, "a.txt", "resolved\n")
+		git(nil, "add", "a.txt")
+		out, err := git(persona, "commit", "-m", "mine")
+		if err == nil || !strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+			t.Fatalf("a conflicted revert's REVERT_HEAD must not exempt either: %v %s", err, out)
+		}
+		if !strings.Contains(out, "finish it:  git commit -F - -- <the paths that are yours>") {
+			t.Errorf("the refusal must name the form that works here:\n%s", out)
+		}
+		// The path-limited commit ENDS the revert — this is why refusing
+		// costs nothing, and it is the claim the whole change rests on.
+		if out, err := git(persona, "commit", "-m", "mine", "--", "a.txt"); err != nil {
+			t.Fatalf("the way through must land: %v %s", err, out)
+		}
+		for _, marker := range []string{"REVERT_HEAD", "MERGE_MSG", "AUTO_MERGE", "sequencer"} {
+			if _, err := os.Stat(filepath.Join(repo, ".git", marker)); err == nil {
+				t.Errorf("the path-limited commit must finish the revert, %s left behind", marker)
+			}
+		}
+		if out, _ := git(nil, "revert", "--continue"); !strings.Contains(out, "no cherry-pick or revert in progress") {
+			t.Errorf("git itself must agree the revert is over, got %q", out)
+		}
+	})
+
+	// `git revert --continue` reaches the slot as $2=merge, so it was the
+	// `case "$2" in merge|squash)` arm that carried it, not REVERT_HEAD.
+	// Both are gone: it is refused, worded by the message-file test, and the
+	// same path-limited commit is the way on.
+	t.Run("git revert --continue is refused", func(t *testing.T) {
+		repo, git := qaGuardRepo(t)
+		persona := personaEnv(t)
+		sha := diverge(t, repo, git)
+		git(persona, "revert", "--no-edit", sha)
+		writeIn(t, repo, "a.txt", "resolved\n")
+		git(nil, "add", "a.txt")
+		out, err := git(persona, "revert", "--continue")
+		if err == nil || !strings.Contains(out, "refused by posse gate") {
+			t.Fatalf("git revert --continue must not be exempt: %v %s", err, out)
+		}
+		if !strings.Contains(out, "git prepared this commit itself (revert)") {
+			t.Errorf("the message-file test must word this one:\n%s", out)
+		}
+		if out, err := git(persona, "commit", "-m", "Revert a2", "--", "a.txt"); err != nil {
+			t.Fatalf("the way through must land: %v %s", err, out)
+		}
+	})
+
+	// `git merge --squash` is the same hole one arm over: SQUASH_MSG, no
+	// MERGE_HEAD, $2=squash on the bare commit git invites — and a pathspec
+	// is accepted throughout.
+	t.Run("merge --squash exempts nothing", func(t *testing.T) {
+		repo, git := qaGuardRepo(t)
+		persona := personaEnv(t)
+		git(nil, "checkout", "-q", "-b", "side")
+		writeIn(t, repo, "s.txt", "s\n")
+		git(nil, "add", "s.txt")
+		git(nil, "commit", "-qm", "side", "--", "s.txt")
+		git(nil, "checkout", "-q", "main")
+		writeIn(t, repo, "a.txt", "a2\n")
+		git(nil, "commit", "-qm", "a2", "--", "a.txt")
+		if out, err := git(nil, "merge", "--squash", "side"); err != nil {
+			t.Fatalf("git merge --squash: %v %s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(repo, ".git", "SQUASH_MSG")); err != nil {
+			t.Fatalf("the fixture needs SQUASH_MSG, which is what makes $2 squash: %v", err)
+		}
+		writeIn(t, repo, "theirs.txt", "theirs\n")
+		git(nil, "add", "theirs.txt")
+		// Bare, so git names the message source itself ($2=squash) — the
+		// arm that used to exit 0 before anything else was even read.
+		out, err := git(persona, "commit")
+		if err == nil || !strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+			t.Fatalf("$2=squash must not exempt an unqualified commit: %v %s", err, out)
+		}
+		if out, err := git(persona, "commit", "-m", "squashed", "--", "s.txt"); err != nil {
+			t.Fatalf("a pathspec IS accepted after --squash: %v %s", err, out)
+		}
+		if out, _ := git(nil, "diff", "--cached", "--name-only", "HEAD"); !strings.Contains(out, "theirs.txt") {
+			t.Errorf("the other persona's staged file must survive, got %q", out)
+		}
+	})
+
+	// The positive control, and the exemption's stated justification run
+	// rather than read: in these two states git refuses a pathspec itself,
+	// so a refusal would leave no way through. Note the persona's commit
+	// carries its OWN message ($2=message) — the marker is what holds it.
+	for _, tc := range []struct {
+		name, fatal string
+		start       func(t *testing.T, repo string, git func([]string, ...string) (string, error), sha string) string
+		marker      string
+	}{
+		{
+			name: "a conflicted merge stays exempt", fatal: "cannot do a partial commit during a merge",
+			marker: "MERGE_HEAD",
+			start: func(t *testing.T, repo string, git func([]string, ...string) (string, error), sha string) string {
+				out, _ := git(nil, "merge", "--no-edit", "side")
+				return out
+			},
+		},
+		{
+			name: "a conflicted cherry-pick stays exempt", fatal: "cannot do a partial commit during a cherry-pick",
+			marker: "CHERRY_PICK_HEAD",
+			start: func(t *testing.T, repo string, git func([]string, ...string) (string, error), sha string) string {
+				out, _ := git(nil, "cherry-pick", sha)
+				return out
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, git := qaGuardRepo(t)
+			persona := personaEnv(t)
+			git(nil, "checkout", "-q", "-b", "side")
+			writeIn(t, repo, "a.txt", "side\n")
+			git(nil, "commit", "-qm", "side", "--", "a.txt")
+			sideSha, _ := git(nil, "rev-parse", "HEAD")
+			git(nil, "checkout", "-q", "main")
+			writeIn(t, repo, "a.txt", "mainc\n")
+			git(nil, "commit", "-qm", "mainc", "--", "a.txt")
+			if out := tc.start(t, repo, git, strings.TrimSpace(sideSha)); !strings.Contains(out, "CONFLICT") {
+				t.Fatalf("the fixture needs a conflict: %s", out)
+			}
+			if _, err := os.Stat(filepath.Join(repo, ".git", tc.marker)); err != nil {
+				t.Fatalf("the fixture needs %s: %v", tc.marker, err)
+			}
+			writeIn(t, repo, "a.txt", "resolved\n")
+			git(nil, "add", "a.txt")
+			// git's own refusal, which is the whole justification for the
+			// exemption. If this ever stops being fatal, the exemption is
+			// owed a re-measurement, not a rename.
+			if out, err := git(persona, "commit", "-m", "partial", "--", "a.txt"); err == nil ||
+				!strings.Contains(out, tc.fatal) {
+				t.Fatalf("git must refuse a pathspec here — the exemption rests on it: %v %s", err, out)
+			}
+			if out, err := git(persona, "commit", "-m", "mine"); err != nil ||
+				strings.Contains(out, "refused by posse gate") {
+				t.Fatalf("the only form git allows here must pass the gate: %v %s", err, out)
+			}
+		})
+	}
+
+	// The residual this bead did NOT close, pinned so that closing it is a
+	// decision rather than a drift: a pathspec IS accepted mid-rebase, yet
+	// `git rebase --continue` still has commits to replay and reaches the
+	// slot as $2=message with $GIT_DIR/index — nothing tells it apart from a
+	// typed `git commit`. GIT_REFLOG_ACTION would, and is the caller's to
+	// spell (rangerhq-cqq1). So during a rebase the wall is down.
+	t.Run("a rebase stays exempt, and that is the residual", func(t *testing.T) {
+		repo, git := qaGuardRepo(t)
+		persona := personaEnv(t)
+		writeIn(t, repo, "a.txt", "a2\n")
+		git(nil, "commit", "-qm", "a2", "--", "a.txt")
+		git(nil, "checkout", "-q", "-b", "side", "HEAD~1")
+		writeIn(t, repo, "a.txt", "side\n")
+		git(nil, "commit", "-qm", "side", "--", "a.txt")
+		if out, err := git(nil, "rebase", "main"); err == nil {
+			t.Fatalf("the fixture needs a conflicted rebase: %s", out)
+		}
+		writeIn(t, repo, "a.txt", "resolved\n")
+		git(nil, "add", "a.txt")
+		// A pathspec works here — which is why this exemption is wider than
+		// its justification, and why the comment says so out loud.
+		if out, err := git(persona, "commit", "-m", "partial", "--", "a.txt"); err != nil {
+			t.Fatalf("a pathspec is accepted mid-rebase: %v %s", err, out)
+		}
+		writeIn(t, repo, "theirs.txt", "theirs\n")
+		git(nil, "add", "theirs.txt")
+		if out, err := git(persona, "rebase", "--continue"); err != nil ||
+			strings.Contains(out, "refused by posse gate") {
+			t.Fatalf("git rebase --continue is still exempt (the residual): %v %s", err, out)
+		}
+	})
+}
+
 // rangerhq-b38m: git runs hooks from core.hooksPath when it is set, and
 // hooksDir() never read it — so both gates landed in .git/hooks, install
 // reported success, §9's probes (which run the file directly) went green, and

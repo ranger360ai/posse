@@ -1289,13 +1289,38 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // Keyed on RHQ_PERSONA, like the pre-push gate keys on RHQ_TOOLS_DENY: the
 // operator's own commits in the same tree are untouched.
 //
-// Commits git drives itself are let through WHEN GIT LEAVES A MARKER TO SEE:
-// merge, cherry-pick, a rebase, and a revert the persona is finishing by
-// hand all write one before prepare-commit-msg runs, and during a conflicted
-// merge git refuses a pathspec outright ("cannot do a partial commit during
-// a merge"), so refusing them would leave no way through rather than a safer
-// one. `git commit --amend` is NOT one of them — it takes a pathspec and
-// sweeps without one, so it is refused.
+// THE EXEMPTION IS "GIT REFUSES A PATHSPEC HERE", NOT "AN OPERATION IS IN
+// PROGRESS" — the two are not the same set, and the difference was a hole
+// (ranger-base-08a2). Measured on git 2.39.3, macOS 26.4.1, each state
+// probed for both what git accepts and what the hook sees:
+//
+//	state                     pathspec?   git's own completion   verdict
+//	MERGE_HEAD (conflict)     fatal       $2=merge or message    exempt
+//	MERGE_HEAD (--no-commit)  fatal       $2=merge or message    exempt
+//	CHERRY_PICK_HEAD          fatal       $2=message             exempt
+//	rebase-merge              ACCEPTED    $2=message, no marker  exempt, residual
+//	REVERT_HEAD (conflict)    ACCEPTED    $2=merge               REFUSED
+//	REVERT_HEAD (--no-commit) ACCEPTED    n/a                    REFUSED
+//	SQUASH_MSG ($2=squash)    ACCEPTED    n/a                    REFUSED
+//
+// So merge and cherry-pick keep their exemption on its stated merits: there
+// is no safe form to name, and both carry git's completion even when the
+// persona types the message ($2=message mid-merge), which is why the MARKER
+// and not `case "$2"` is what holds them.
+//
+// REVERT_HEAD and the `case "$2" in merge|squash)` arm are gone. Both waved
+// an UNQUALIFIED commit through a state where a pathspec works — measured,
+// `git revert --no-commit <sha>` then `git add <another persona's paths> &&
+// git commit -m x` landed them, which is rangerhq-nyqj exactly, inside the
+// window rangerhq-lrnp's own blessed recipe opens. `git merge --squash` is
+// the same shape one arm over. Neither strands anything: `git revert
+// --continue` is refused now, and the path-limited commit finishes a
+// conflicted revert outright — verified end to end, REVERT_HEAD, MERGE_MSG
+// and AUTO_MERGE all cleared, tree clean, a following `--continue` correctly
+// reporting "no cherry-pick or revert in progress". A rebase is the one
+// exemption that is wider than it wants to be, and the hook says so where it
+// stands. `git commit --amend` is NOT one of them either — it takes a
+// pathspec and sweeps without one, so it is refused.
 //
 // A CLEAN `git revert` IS REFUSED, and that is the verdict rather than an
 // oversight (rangerhq-lrnp, laurie). Measured on git 2.39.3: it writes no
@@ -1305,9 +1330,10 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // both unusable as an exemption, and each would take the wall down silently
 // rather than narrow it (measured, this is the rangerhq-cqq1 lesson again):
 // AUTO_MERGE outlives the revert that wrote it and is still there for the
-// next plain commit, and MERGE_MSG outlives a revert this hook refuses.
-// Widening the `case "$2"` arm to `revert` is worse still — $2 is "message",
-// so that arm would wave every unqualified commit through.
+// next plain commit, and MERGE_MSG outlives a revert this hook refuses. Nor
+// is REVERT_HEAD an answer for the states that DO write one: see the table
+// above — a pathspec works there, so an exemption buys nothing and costs
+// the wall.
 //
 // So the way through is NAMED IN THE REFUSAL instead, and it is two steps
 // (verified end to end under the gate): `git revert --no-commit <sha>`, then
@@ -1326,18 +1352,30 @@ const sharedIndexMarker = "# posse-gate shared-index"
 const sharedIndexBody = `
 # ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
 [ -n "$RHQ_PERSONA" ] || exit 0
-# The two message forms git names itself; no pathspec is possible there.
-case "$2" in
-  merge|squash) exit 0 ;;
-esac
 posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
-# The markers a git-driven operation leaves BEFORE its commit. A clean
-# 'git revert' leaves none of them (rangerhq-lrnp, measured on git 2.39.3):
-# it is refused, and the refusal below names the two-step way through. Do
-# NOT widen this to "$2" (it is "message" for a revert AND for every
-# unqualified commit), nor to MERGE_MSG or AUTO_MERGE — both outlive the
-# operation that wrote them, so either would leave the wall down.
-for posse_f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+# THE EXEMPTION ASKS ONE QUESTION: is there a safe form to point at? "An
+# operation is in progress" is not that question (ranger-base-08a2). git
+# refuses a pathspec outright in exactly two states — MERGE_HEAD and
+# CHERRY_PICK_HEAD ("cannot do a partial commit during a merge" / "during a
+# cherry-pick"), measured in both the conflicted and the --no-commit form —
+# so refusing there would leave no way through rather than a safer one.
+# These are also the two that carry git's own completion when the persona
+# types the message: 'git commit -m mine' mid-merge arrives as $2=message,
+# so the marker, not "$2", is what has to hold it.
+for posse_f in MERGE_HEAD CHERRY_PICK_HEAD; do
+  if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
+done
+# A rebase is the third exemption and the only one WIDER than it wants to be.
+# A pathspec IS accepted mid-rebase (measured), but a rebase has commits left
+# to replay, so 'git rebase --continue' is the only way on and it reaches
+# this slot as $2=message with $GIT_DIR/index — indistinguishable from a
+# typed 'git commit'. GIT_REFLOG_ACTION=rebase (continue) does discriminate
+# and is unusable for the same reason GIT_INDEX_FILE's name was: it is the
+# caller's to spell (rangerhq-cqq1). So the residual is stated rather than
+# closed: during a rebase, an unqualified persona commit is exempt. It is
+# bounded by the crew PIDs, which forbid rewriting history in the shared
+# checkout at all — a rebase there is already out of bounds.
+for posse_f in rebase-merge rebase-apply; do
   if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
 done
 # A LINKED WORKTREE HAS NO SHARED INDEX (rangerhq-09o2, measured by laurie on
@@ -1429,12 +1467,25 @@ fi
     posse_staged=$(git diff --cached --name-only HEAD 2>/dev/null | tr '\n' ' ')
     echo "git prepared this commit itself (revert): it staged the change into the"
     echo "shared index BEFORE this hook could refuse, so the change is sitting there"
-    echo "now. It is bounded — git revert only starts from an index matching HEAD —"
-    echo "so these paths are yours and nobody else's:"
+    echo "now. It starts bounded — git revert only begins from an index matching"
+    echo "HEAD — so these paths are the revert's, plus anything you staged after it:"
     echo "  finish it:  git commit -F - -- $posse_staged"
     echo "  or undo it: git restore --source=HEAD --staged --worktree -- $posse_staged"
     echo "  next time:  git revert --no-commit <sha>, then the path-limited commit."
     echo "Never 'git reset --hard' here: this tree is shared, and it is not yours."
+  elif [ -e "$posse_gitdir/REVERT_HEAD" ]; then
+    # ranger-base-08a2: a revert the persona is finishing with a message of
+    # their own. REVERT_HEAD is no longer an exemption — a pathspec IS
+    # accepted mid-revert — so it is free to word the refusal, which is all
+    # it was ever safe for.
+    posse_staged=$(git diff --cached --name-only HEAD 2>/dev/null | tr '\n' ' ')
+    echo "A revert is in progress (REVERT_HEAD) and its change is already staged in"
+    echo "the shared index — along with anything else that is staged there, which is"
+    echo "why this form is refused and not exempted: a pathspec works here."
+    echo "  staged now: $posse_staged"
+    echo "  finish it:  git commit -F - -- <the paths that are yours>"
+    echo "That commit ends the revert on its own — no 'git revert --continue' after"
+    echo "it, and REVERT_HEAD, MERGE_MSG and AUTO_MERGE go with it (measured)."
   fi
 } >&2
 if [ -n "$RHQ_GATES_DIR" ]; then
