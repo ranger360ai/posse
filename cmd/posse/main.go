@@ -1304,6 +1304,47 @@ func main() {
 			die(err)
 		}
 
+	case "refresh":
+		// The one credential WRITE in posse, and the operator's own hand is
+		// the only thing that performs it (ADR 0019 D4, ranger-base-h207).
+		// It refuses without a TTY and under the persona env marker; the
+		// second spelling of that gate is `Bash(posse refresh:*)` in every
+		// crew PID, which is the constitution's side and not this repo's.
+		args, help := argLead(args)
+		usage := "posse refresh [<runtime> [session|meter]] [--env-set <name>] [--paste] [--expires <YYYY-MM-DD>]"
+		if help {
+			fmt.Fprintf(out, "usage: %s\n", usage)
+			os.Exit(0)
+		}
+		var ro rhq.RefreshOpts
+		for len(args) > 0 {
+			switch v := args[0]; {
+			case v == "--paste":
+				ro.Paste, args = true, args[1:]
+			case v == "--env-set", v == "--expires":
+				if len(args) < 2 {
+					die(rhq.Die("%s needs a value — usage: %s", v, usage))
+				}
+				if v == "--env-set" {
+					ro.EnvSet = args[1]
+				} else {
+					ro.Expires = args[1]
+				}
+				args = args[2:]
+			case strings.HasPrefix(v, "-"):
+				die(rhq.Die("unknown flag: %s — usage: %s", v, usage))
+			case ro.Runtime == "":
+				ro.Runtime, args = v, args[1:]
+			case ro.Purpose == "":
+				ro.Purpose, args = rhq.CredPurpose(v), args[1:]
+			default:
+				die(rhq.Die("usage: %s", usage))
+			}
+		}
+		if err := a.CmdRefresh(out, ro); err != nil {
+			die(err)
+		}
+
 	case "help", "-h", "--help":
 		help()
 	case "version", "--version":
@@ -1604,6 +1645,28 @@ dispatch (beads):
 catalog:
   posse envs                     list env sets (key names only)
   posse env edit|rm <name>       manage an env set ($EDITOR; created if missing)
+  posse refresh                  ADR 0019 D4 — credentials: what this box has, where
+                                 each one lives, when it dies, and the fix. The one
+                                 credential WRITE in posse, and the operator's own
+                                 hand is the only thing that performs it: it refuses
+                                 without a TTY and under RHQ_PERSONA, and every crew
+                                 PID adds Bash(posse refresh:*) to deny: (that half
+                                 lives in the constitution's PIDs, not in this repo).
+                                 No argument = the report, and nothing is written.
+  posse refresh <runtime> [session|meter] [--env-set <name>] [--paste] [--expires <YYYY-MM-DD>]
+                                 session: runs the runtime's own mint (claude
+                                 setup-token — its browser flow is the human gate),
+                                 then writes the pasted token into the env set, 0600
+                                 in a 0700 dir, above a '# minted=' stamp and a
+                                 '# expires=' one only when --expires says so — posse
+                                 cannot ask a setup-token when it dies and reports
+                                 what it cannot tell as exactly that. --paste skips
+                                 the mint for a box with no browser. A metered key
+                                 (ANTHROPIC_API_KEY, or an sk-ant-api… value) is
+                                 refused on the money line.
+                                 meter: writes NOTHING and never will — the rotating
+                                 OAuth token's only writer is the runtime's own login
+                                 loop, and it prints where that store is instead.
   posse agents                   list personas
   posse runtimes                 list launch profiles (claude/codex/grok + runtimes/*.yaml)
   posse runtime check <name>     the ADR 0013 dispatch-contract grid for one launch profile,
