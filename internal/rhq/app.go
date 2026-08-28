@@ -20,12 +20,7 @@ const (
 	FallbackEmoji = "⚙️"
 )
 
-// Build is the git SHA (+ "-dirty") stamped by the Makefile via -ldflags.
-// "dev" means the binary was built some other way.
-var Build = "dev"
-
-// VersionString is what `posse version` and the cockpit header show.
-func VersionString() string { return Version + "+" + Build }
+// Build and VersionString live in version.go.
 
 type App struct {
 	Home       string

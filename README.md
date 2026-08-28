@@ -85,13 +85,15 @@ posse`, with the install itself having exited 0. Put it in your shell's rc
 file, not just the current shell. That binary carries the seed tree embedded,
 so `posse init` needs no repo beside it. `@latest` resolves to the newest
 release tag — currently `v0.3.0` — which trails `main`, so what installs is
-the tag, not the tree whose README you are reading. A known stamping bug
-makes that build's `posse version` still report `0.3.0+dev`; `go version -m
-$(command -v posse)` shows the module version that actually installed. `make
-install` stays the path for a fleet, because its build has a commit to name.
+the tag, not the tree whose README you are reading. That build says so:
+`posse version` prints `0.3.0`, the tag it came from, where a build of a
+later commit prints `0.3.0+<sha>`. `make install` stays the path for a
+fleet, because a fleet wants the exact commit.
 
 `posse version` prints `0.3.0+<sha>[-dirty]` for a build made here, and the
-cockpit header shows the same, so "which build is live" is one glance. `make
+cockpit header shows the same, so "which build is live" is one glance. The
+sha comes from the Makefile's `-ldflags` stamp, or, for a build made any
+other way, from the binary's own build info (ranger-base-bzu). `make
 build` never touches the live binary; only `make install` does, and that
 target is denied to fleet personas in `.claude/settings.json` — a human
 promotes.
