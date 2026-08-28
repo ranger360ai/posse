@@ -203,8 +203,32 @@ cfg() {
 		sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'
 }
 
+# Is the key THERE, regardless of what it says? `cfg` answers with the value,
+# and an empty value is indistinguishable from an absent key in that answer —
+# which for the one key whose PRESENCE is the arm switch is the difference
+# between "you have not armed this" and "your arm is broken". The match
+# mirrors cfg's own so the two can never disagree about what counts as the
+# key (ranger-base-cxyk).
+haskey() {
+	[ -f "$CONFIG" ] || return 1
+	grep -q "^$1:" "$CONFIG"
+}
+
 interval=$(cfg autostart_interval)
 if [ -z "$interval" ]; then
+	# A bare `autostart_interval:` is a BROKEN ARM, not a disarm. The seed
+	# config promises there is no off-value for this key — disarming is done
+	# by commenting it out — so reading an empty one as off would invent the
+	# very off-value that paragraph says does not exist, and say "no
+	# autostart_interval:" about a key the deployer can see in the file. It
+	# cannot be defaulted either: `posse dispatch --watch` has no default
+	# interval and dies on the empty argument, so the only choice is where
+	# that failure lands — here, or inside the herdr session's log. Same
+	# stand-down as a missing binary below: named, loud, nothing armed.
+	if haskey autostart_interval; then
+		say "autostart_interval: in $CONFIG is present but empty — give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm" >&2
+		exit 1
+	fi
 	say "disarmed (no autostart_interval: in $CONFIG)"
 	exit 0
 fi

@@ -504,8 +504,10 @@ dirs:
 # DISARMED BY DEFAULT, AND THE DISARM IS A COMMENT. Presence of the
 # `autostart_interval:` key — not its value — is the arm switch, which is why
 # it ships commented out and why disarming is done by commenting it out again
-# rather than by setting some off-value. Nothing else in this file starts a
-# process on its own.
+# rather than by setting some off-value. There is no off-value, and a bare
+# `autostart_interval:` with nothing after it is not one: it is a broken arm,
+# and the hook refuses it by name and exits nonzero rather than reading it as
+# a disarm. Nothing else in this file starts a process on its own.
 #
 # Arm it last, and in this order: a dry-run pass, then a hand-run pass, then
 # `autostart_dry_run: true` for a cycle, then live. The plan guard or the

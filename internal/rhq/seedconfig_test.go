@@ -74,8 +74,12 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		}
 	}
 
-	// autostart_interval's presence alone arms the unattended loop, so it
-	// gets the stronger check: not merely empty, absent.
+	// autostart_interval's presence alone is the arm switch, so it gets the
+	// stronger check: not merely empty, absent. A present-but-empty key is
+	// not the middle ground it looks like — the hook refuses it by name and
+	// exits 1 rather than reading it as a disarm (ranger-base-cxyk), so a
+	// seed that declared it bare would ship a fresh instance whose herdr
+	// startup hook fails, not one that is disarmed.
 	if yamlHasKey(cfg, "autostart_interval") {
 		t.Error("seed config declares autostart_interval: — presence is the arm switch; a fresh instance must ship disarmed")
 	}

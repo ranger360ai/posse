@@ -492,6 +492,48 @@ func TestAutostartDisarmed(t *testing.T) {
 	}
 }
 
+// A bare `autostart_interval:` is the one shape that is neither armed nor
+// disarmed, and it used to read as disarmed — which made the seed config's
+// "presence, not value, is the arm switch" paragraph a lie and made the one
+// diagnostic the deployer gets ("no autostart_interval:") point away from the
+// key sitting in their file (ranger-base-cxyk). It cannot be defaulted:
+// `posse dispatch --watch` has no default interval (cmd/posse/main.go dies
+// with "--watch needs an interval"), so the hook refuses it here rather than
+// arming a session that dies in a log.
+//
+// Every variant below is the same shape after cfg()'s trailing-comment and
+// whitespace strip — including the operator who commented out the VALUE and
+// left the key, which is the likeliest way to reach this by hand.
+func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
+	for name, line := range map[string]string{
+		"bare":       "autostart_interval:\n",
+		"whitespace": "autostart_interval:   \n",
+		"comment":    "autostart_interval: # 5m\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newHookWorld(t, line)
+			w.sessionExists(t)
+
+			r := w.run(t, "--startup")
+			if r.code == 0 {
+				t.Errorf("a bare autostart_interval: was accepted (exit 0):\n%s", r.out)
+			}
+			if r.calls != "" {
+				t.Errorf("the hook armed something off an empty interval:\n%s", r.calls)
+			}
+			if !strings.Contains(r.out, "autostart_interval:") || !strings.Contains(r.out, "present but empty") {
+				t.Errorf("the refusal does not name the key and what is wrong with it:\n%s", r.out)
+			}
+			// The old message asserted the key was absent while the deployer
+			// was looking at it. That sentence is the bug, not just the
+			// exit code, so it is pinned separately.
+			if strings.Contains(r.out, "no autostart_interval:") {
+				t.Errorf("the hook still reports the present key as absent:\n%s", r.out)
+			}
+		})
+	}
+}
+
 // ── the resume arm (ranger-base-f0g) ────────────────────────────────────────
 //
 // The armed loop is the one the OPERATOR gets, and before this it was
