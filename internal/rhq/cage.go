@@ -458,6 +458,14 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 		return home, nil
 	}
 	p := filepath.Join(home, ".claude.json")
+	// Same read-amend-write race trust.go locks against (ranger-base-5qnt):
+	// two launches of this same caged persona under this same RHQ_HOME can
+	// interleave the read and the write. Held across read, amend and write.
+	unlock, err := lockClaudeConfig(p)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	state := map[string]any{}
 	if b, err := os.ReadFile(p); err == nil {
 		if err := json.Unmarshal(b, &state); err != nil {
@@ -473,11 +481,7 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 	// (trust.go), because it is the same dialog on the same build — the
 	// only difference is which HOME's file it lands in.
 	claudeSeedProject(state, dir)
-	b, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return home, os.WriteFile(p, append(b, '\n'), 0o600)
+	return home, writeJSONInPlace(p, state)
 }
 
 // ─── rendering the launch ────────────────────────────────────────────────────
