@@ -733,6 +733,7 @@ func fakeHerdr(args []string) int {
 			`{"type":"workspace_create","workspace":{"workspace_id":%q,"label":%q},"tab":{"tab_id":"%s:t1"},"root_pane":{"pane_id":"%s:p1"}}`,
 			id, label, id, id))
 	case "workspace list":
+		fakeUnhideWhenLocked()
 		// Like real herdr, a workspace's agent_status mirrors the agent
 		// detected in it (agents.json), unless the test set it directly.
 		ws := fakeHiddenFromList(fakeLoadWS())
@@ -1040,6 +1041,42 @@ func fakeProbeLaunchLock() {
 		f.Close()
 	}
 	os.WriteFile(filepath.Join(fakeDir(), "launch-lock-probe"), []byte(ans), 0o644)
+}
+
+// fakeUnhideWhenLocked is ranger-base-rrg2's lever: a workspace hidden from
+// `workspace list` becomes visible the moment the launcher lock is HELD.
+//
+// That is the window the preflight cannot cover, planted from outside the
+// process under test: a listing read before the lock does not show the
+// workspace, and every listing the destructive tail takes does. It is keyed
+// to the lock rather than to a call count on purpose — a count is a fixture
+// about how many listings each phase happens to take today, and would go
+// green (or red) on any change to either that has nothing to do with the
+// race.
+//
+// Held is measured the way fakeProbeLaunchLock measures it, and for the same
+// reason: flock is per open file description, so only another process can
+// tell contended from free.
+//
+// The lever is `unhide-when-locked` holding the lock path; it fires once and
+// takes `hidden-from-list` with it, so the world it reveals is settled.
+func fakeUnhideWhenLocked() {
+	p := filepath.Join(fakeDir(), "unhide-when-locked")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(strings.TrimSpace(string(b)), os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return // measured nothing; leave the plant hidden rather than guess
+	}
+	defer f.Close()
+	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		return // free: the pass is still in its preflight
+	}
+	os.Remove(p)
+	os.Remove(filepath.Join(fakeDir(), "hidden-from-list"))
 }
 
 // fakeNextWSID hands out w1, w2, … per fake dir, monotonically.

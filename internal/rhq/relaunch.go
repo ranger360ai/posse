@@ -67,7 +67,12 @@ type RelaunchOpts struct {
 // so a failure costs a restart, never the session's identity.
 //
 // The preflight and the landing turn run unserialized; everything from the
-// kill down runs under the launcher lock (replace, ranger-base-w4h5).
+// kill down runs under the launcher lock (replace, ranger-base-w4h5). What
+// the preflight proves about herdr it therefore proves about a listing read
+// minutes before the kill, so replace re-asks it inside the lock and refuses
+// there while a refusal is still free (ranger-base-rrg2). The plan is not
+// re-resolved: it is a value carried into the recreate, so preflight and
+// create cannot disagree about it by construction.
 func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	// Read the meta before anything calls Sessions(): a meta whose
 	// workspace has already died is pruned on read, and that file is the
@@ -95,16 +100,13 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	fmt.Fprintf(w, "checked %s: %s\n", o.Name, describePlan(recreate, plan))
 
 	// The one obstacle to the recreate that does not live in the plan, and
-	// the only one the preflight used to walk past.
-	if other, label, err := b.nameWornElsewhere(m); err != nil {
-		return Die("%s was NOT closed: this herdr did not list its workspaces (%v)", o.Name, err)
-	} else if other != "" {
-		// The obstacle's OWN label, not the session name: that is the string
-		// `herdr workspace list` prints, and under an instance tag the two
-		// differ (rangerhq-ouf9).
-		return Die("%s cannot be recreated as it stands, so it was NOT closed: herdr workspace %s is also labelled '%s' and posse did not create it, so the recreate could not take the name back.\n"+
-			"  rename or close %s in herdr (herdr workspace list), then relaunch again",
-			o.Name, other, label, other)
+	// the only one the preflight used to walk past. Asked here it is the
+	// fail-fast, not the guard: this answer is about the listing snapshot
+	// this pass holds, read before the lock the destructive tail takes, so
+	// what decides is the same question re-asked inside it (replace,
+	// ranger-base-rrg2).
+	if err := b.provenNameTakeable(m); err != nil {
+		return err
 	}
 
 	if !o.NoLand {
@@ -161,6 +163,37 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 // between them — and it runs under the launcher lock its caller took.
 func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpts, plan *launchPlan) error {
 	name := m.Name
+	// The preflight's name proof, re-asked here — reclaim's and
+	// clearDeadMeta's pattern applied to the one obstacle that lives in
+	// herdr rather than in the plan (ranger-base-rrg2).
+	//
+	// nameWornElsewhere was answered before the landing turn and before the
+	// lock, and a proof taken outside the serialization is a fact about the
+	// instant it was read, not about the instant the kill lands. In between
+	// — up to DefaultLandTimeout of it — a `posse new`, a second launcher or
+	// a hand-run `herdr workspace create` can put this name on a workspace
+	// that is not this session's. The old order then killed the session and
+	// met that workspace one line later at nameFree, which refused: a
+	// session destroyed for a reason that WAS knowable, which is
+	// rangerhq-v52t's loss reached from the other side.
+	//
+	// Here it costs nothing. Nothing has been destroyed yet, so a refusal
+	// leaves the session running with its record intact and the operator's
+	// next move is the one the message already prints.
+	//
+	// One listing answers the create's whole name question. nameFree's other
+	// two arms cannot fire on the far side of the kill — the syntax was
+	// proved when this name was created, and mustNotOrphan reads the meta
+	// closeRecorded has just removed — so what is left is HasSession, and a
+	// session row is either this meta's own (excluded by id) or a workspace
+	// wearing the label, which is exactly what nameWornElsewhere reads.
+	//
+	// Under the lock that reading is decisive in the direction that matters:
+	// a create for this name is either finished, and its workspace is in the
+	// listing this reads, or has not begun.
+	if err := b.provenNameTakeable(m); err != nil {
+		return err
+	}
 	// The kill's own unlink (closeRecorded: CloseWorkspace, then remove the
 	// meta) is a check-then-act over the meta dir too, and it is covered by
 	// being here: no create for this name can land between the two.
@@ -469,11 +502,16 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 //
 // The recreate needs the name free (nameFree), and a herdr workspace
 // labelled <name> that this session's record does not point at is still
-// there on the far side of the kill — so it is a refusal the preflight can
-// raise while it costs nothing, which is rangerhq-v52t's rule applied to the
-// one obstacle that lives in herdr rather than in the plan. Without it the
-// kill happens, the create fails on a name it can never take, and a session
-// is destroyed for a reason that was knowable before anything was touched.
+// there on the far side of the kill — so it is a refusal that can be raised
+// while it costs nothing, which is rangerhq-v52t's rule applied to the one
+// obstacle that lives in herdr rather than in the plan. Without it the kill
+// happens, the create fails on a name it can never take, and a session is
+// destroyed for a reason that was knowable before anything was touched.
+//
+// "Before anything was touched" is why it is asked twice (provenNameTakeable,
+// ranger-base-rrg2): the preflight's answer is about a listing read before
+// the landing turn, and the answer that decides is the one taken under the
+// launcher lock, one line before the kill.
 //
 // It is also what keeps the rest of relaunch pointed at its own session on
 // the rangerhq-9jk1 board. Resolve falls back to a foreign row only when
@@ -497,6 +535,29 @@ func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err er
 		}
 	}
 	return "", "", nil
+}
+
+// provenNameTakeable is nameWornElsewhere's refusal in the words both
+// callers print — asked twice, once outside the launcher lock as the
+// fail-fast and once inside it as the guard, the same shape as
+// provenClearable (rangerhq-3a5t, ranger-base-rrg2).
+//
+// A listing this pass could not read decides nothing either, and on this
+// side of the kill "cannot tell" and "taken" cost the same thing: a retry.
+func (b *HerdrBackend) provenNameTakeable(m *HerdrMeta) error {
+	other, label, err := b.nameWornElsewhere(m)
+	if err != nil {
+		return Die("%s was NOT closed: this herdr did not list its workspaces (%v)", m.Name, err)
+	}
+	if other == "" {
+		return nil
+	}
+	// The obstacle's OWN label, not the session name: that is the string
+	// `herdr workspace list` prints, and under an instance tag the two
+	// differ (rangerhq-ouf9).
+	return Die("%s cannot be recreated as it stands, so it was NOT closed: herdr workspace %s is also labelled '%s' and posse did not create it, so the recreate could not take the name back.\n"+
+		"  rename or close %s in herdr (herdr workspace list), then relaunch again",
+		m.Name, other, label, other)
 }
 
 // describePlan is the preflight's receipt: what the recreate resolved to,

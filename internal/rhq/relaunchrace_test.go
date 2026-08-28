@@ -232,3 +232,85 @@ func TestRelaunchInsideAHeldLaunchLockDoesNotDeadlock(t *testing.T) {
 		t.Errorf("the session was not replaced under the held lock: workspace %q, was %q", now, was)
 	}
 }
+
+// ranger-base-rrg2: the preflight's name proof is taken outside the lock the
+// destructive tail takes, and up to DefaultLandTimeout can pass between the
+// two. A workspace that starts wearing the session's name in that window is
+// invisible to the preflight and fatal at nameFree — so the tail re-asks the
+// question under the lock, where a refusal costs nothing.
+//
+// armNameTakenUnderTheLock plants that workspace: it is in the fake's world
+// from the start, hidden from `workspace list` until the launcher lock is
+// held, so the preflight reads a listing without it and everything from the
+// kill down reads one with it.
+func armNameTakenUnderTheLock(t *testing.T, b *HerdrBackend, fake, name, ws string) {
+	t.Helper()
+	saveWSTo(t, fake, append(fakeLoadWSFrom(t, fake), fakeWS{WorkspaceID: ws, Label: name}))
+	hideFromTheListing(t, fake, ws)
+	if err := os.MkdirAll(filepath.Dir(LaunchLockPath(b.App)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fake, "unhide-when-locked"),
+		[]byte(LaunchLockPath(b.App)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRelaunchRefusesANameTakenAfterThePreflight(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", raceSock)
+	b, fake := newTestBackend(t)
+	mustCreate(t, b, NewSessionOpts{Name: "s1"})
+	was := metaOf(t, b, "s1")
+	armNameTakenUnderTheLock(t, b, fake, "s1", "wX")
+	os.Remove(filepath.Join(fake, "calls.log"))
+
+	var out strings.Builder
+	err := b.RelaunchSession(&out, RelaunchOpts{Name: "s1", NoLand: true})
+
+	if err == nil {
+		t.Fatalf("relaunch went through over a name it could never take back:\n%s", out.String())
+	}
+	// The plant must really have been invisible to the preflight, or this
+	// measures the refusal that already existed rather than the new one.
+	if !strings.Contains(out.String(), "checked s1:") {
+		t.Fatalf("the preflight refused, so the window under test was never entered: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(err.Error(), "wX") || !strings.Contains(err.Error(), "NOT closed") {
+		t.Errorf("the refusal must name the workspace in the way and say the session was left alone: %v", err)
+	}
+	// The whole point: the refusal came BEFORE anything was destroyed.
+	if log := calls(t, fake); strings.Contains(log, "workspace close") {
+		t.Errorf("the session was killed for a reason that was knowable before the kill (ranger-base-rrg2):\n%s", log)
+	}
+	if m := metaOf(t, b, "s1"); m.Workspace != was.Workspace {
+		t.Errorf("the record of a still-running session was rewritten: workspace %q, want %q", m.Workspace, was.Workspace)
+	}
+}
+
+// And the control: the same lever, nothing planted under it. The re-proof
+// must refuse a taken name and only a taken name — without this the fix is
+// indistinguishable from a relaunch that refuses whenever the lock is held,
+// which is every relaunch.
+func TestRelaunchStillReplacesTheSessionWhenTheNameIsFreeUnderTheLock(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", raceSock)
+	b, fake := newTestBackend(t)
+	mustCreate(t, b, NewSessionOpts{Name: "s1"})
+	was := metaOf(t, b, "s1")
+	// A workspace revealed under the lock that does NOT wear the name.
+	armNameTakenUnderTheLock(t, b, fake, "someone-else", "wX")
+	os.Remove(filepath.Join(fake, "calls.log"))
+
+	var out strings.Builder
+	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "s1", NoLand: true}); err != nil {
+		t.Fatalf("relaunch refused over a workspace that does not wear its name: %v\n%s", err, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(fake, "unhide-when-locked")); err == nil {
+		t.Fatal("the lever never fired, so this pass measured nothing: no listing was taken under the launcher lock")
+	}
+	if now := metaOf(t, b, "s1").Workspace; now == was.Workspace || now == "" {
+		t.Errorf("the session was not replaced: workspace %q, was %q", now, was.Workspace)
+	}
+	if log := calls(t, fake); !strings.Contains(log, "workspace create") {
+		t.Errorf("no workspace was created, so this pass measured nothing:\n%s", log)
+	}
+}
