@@ -757,3 +757,56 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 		}
 	}
 }
+
+// ─── placement, adversarially: a root that only LOOKS like it is under $HOME ──
+
+// The under-$HOME rule exists because a session scratchpad is reaped and a
+// reaped worktree destroys the only copy of a persona's work. A textual
+// prefix test would pass a symlink that sits under $HOME and lands in the
+// reaper's path — `~/scratch -> /private/tmp/x` reads as "under $HOME" and is
+// not. WorktreeRoot must refuse it.
+//
+// Pinned on rangerhq-qnjo, where the surrounding claim ("bd holds no net
+// under us") turned out to be right for the wrong reason: bd DOES refuse a
+// BEADS_DIR that resolves under /tmp — because it canonicalises through
+// EvalSymlinks BEFORE validating. This is the same resolution step, and it is
+// the only thing standing between a persona's work and a reaper.
+func TestQAWorktreeRootRefusesASymlinkOutOfHome(t *testing.T) {
+	a := wtApp(t)
+	home := os.Getenv("HOME")
+
+	// The control: a real directory under $HOME is accepted, so a refusal
+	// below means "outside", not "unwritable" or "missing".
+	inside := filepath.Join(home, "trees")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, a.ConfigPath, "worktrees: "+inside+"\n")
+	if got, err := a.WorktreeRoot(); err != nil || got != inside {
+		t.Fatalf("a real dir under $HOME must be accepted: got %q, %v", got, err)
+	}
+
+	// The attack: same shape, same prefix, but the bytes lead out of $HOME.
+	reaped := t.TempDir() // a sibling temp dir — what a scratchpad looks like
+	link := filepath.Join(home, "scratch")
+	if err := os.Symlink(reaped, link); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(link, home+string(filepath.Separator)) {
+		t.Fatalf("the fixture is not shaped like the attack: %s is not textually under %s", link, home)
+	}
+	write(t, a.ConfigPath, "worktrees: "+link+"\n")
+	got, err := a.WorktreeRoot()
+	if err == nil {
+		t.Fatalf("a symlink under $HOME pointing at %s was accepted as %q — a reaper walks there", reaped, got)
+	}
+	if !strings.Contains(err.Error(), "outside $HOME") {
+		t.Errorf("the refusal must name the rule it enforces, got: %v", err)
+	}
+
+	// And through the link's own children, not just the link itself.
+	write(t, a.ConfigPath, "worktrees: "+filepath.Join(link, "posse")+"\n")
+	if _, err := a.WorktreeRoot(); err == nil {
+		t.Errorf("a path THROUGH a symlink out of $HOME was accepted")
+	}
+}
