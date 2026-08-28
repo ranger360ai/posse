@@ -30,14 +30,25 @@ package rhq
 // WHAT WAS MEASURED, so the next reader does not have to (bd 0.49.1, git
 // 2.39.3, in a throwaway repo with a tracked `.beads/issues.jsonl`):
 //
-//   - A linked worktree with NO `.beads/redirect` forks the graph. bd finds
-//     the checked-out `issues.jsonl`, reports "fresh clone detected", and
-//     builds a second database beside it. That is the failure this seeds
-//     against, and it is silent.
-//
 //   - With an ABSOLUTE `redirect`, bd reads and writes the main database
 //     from the worktree, creates no database of its own, and the graph does
 //     not fork. A bead filed in the worktree is in the main repo's db.
+//
+//   - CORRECTED 2026-08-28 (ranger-base-vczf). This block used to say that a
+//     linked worktree with NO redirect forks the graph — bd finding the
+//     checked-out `issues.jsonl`, reporting "fresh clone detected", building
+//     a second database beside it. It does not, on this bd. bd 0.49.1
+//     resolves a linked worktree to the MAIN checkout's `.beads` by itself,
+//     and while the main checkout has one it does not read the worktree's
+//     `redirect` at all — a redirect pointing at a different LIVE database is
+//     ignored and bd goes on reading the main graph. Measured in all three
+//     shapes: worktree with a checked-out `.beads`, worktree with none, and
+//     a main checkout holding a jsonl but no database yet, where the "fresh
+//     clone" database is built in the MAIN checkout. bd falls back to the
+//     worktree's own redirect only when the main checkout has no `.beads`,
+//     which is the one shape seedBeadsRedirect declines to write for.
+//     TestLiveWorktreeBdResolvesTheWorktreeItself pins that, so the day it
+//     changes is a red test.
 //
 //   - The staleness trap named in rangerhq-09o2 does NOT fire through a
 //     correct redirect. A worktree checkout does materialize the tracked
@@ -450,6 +461,17 @@ func seedTree(t *SessionTree, a *App) error {
 // resolve against the worktree ROOT and not against `.beads/` — one `..` off
 // and bd warns once and silently falls back to a stale path (rangerhq-09o2).
 // An absolute path has no such arithmetic to get wrong.
+//
+// Who reads it, since bd 0.49.1 does not (see the CORRECTED bullet above):
+// POSSE does. beadsHome (beadloss.go) resolves this file, and the seatbelt
+// writable set and the codex launch line are built from what it answers
+// (ADR 0012 D3-C). A worktree with no redirect leaves beadsHome answering
+// the worktree's own `.beads`, so a caged persona is granted a directory bd
+// never opens and denied the one it does — `failed to open database: …
+// operation not permitted`, which is ranger-base-0fb verbatim, out of a bd
+// resolution that was correct all along. So this is not belt-and-braces for
+// the graph on today's bd; it is the cage's only account of where the store
+// is, and it stays the belt for a bd that loses the worktree resolution.
 func seedBeadsRedirect(t *SessionTree) error {
 	src := filepath.Join(t.Repo, ".beads")
 	if st, err := os.Stat(src); err != nil || !st.IsDir() {
