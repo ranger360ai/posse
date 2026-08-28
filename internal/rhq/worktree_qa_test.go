@@ -694,11 +694,30 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
 
 	var out strings.Builder
+	// The tree lines are written to b.Warn, NOT to the writer
+	// RelaunchSession takes: EnsureSessionTree is reached through
+	// planLaunch, which passes b.warnWriter(), and a nil Warn there is the
+	// test binary's own stderr. Left unset, every assertion below about
+	// what the relaunch REPORTED reads a buffer those lines never enter —
+	// the "SHARED checkout" guard could not fail, and the q5p1 demotion it
+	// exists to catch would land green. Worse for the next reader: the
+	// lines still print, and `go test` dumps a package's stderr only when
+	// the package fails, so they surface under whichever OTHER test failed
+	// (ranger-base-ljiu was filed off exactly that). Both streams, one
+	// buffer.
+	b.Warn = &out
 	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "s-detached", NoLand: true, Force: true}); err != nil {
 		t.Fatalf("relaunch under a detached checkout: %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "SHARED checkout") {
 		t.Errorf("the relaunch reported a live private tree as shared:\n%s", out.String())
+	}
+	// The positive witness the absence above needs: a guard that reads a
+	// stream nothing writes to is satisfied by measuring nothing, so pin
+	// the line the CORRECT arm prints — the deferral that names the tree
+	// this relaunch kept.
+	if !strings.Contains(out.String(), "keeps its own tree on "+before.Branch) {
+		t.Errorf("the relaunch said nothing about the tree it kept under a detached checkout:\n%s", out.String())
 	}
 
 	// The record the kill will read, not just the plan the launch used.
