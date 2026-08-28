@@ -215,9 +215,17 @@ live store was moved rather than copied.
 
 ```sh
 cd ~/src/ranger-queue && bd daemon stop
-mv ~/src/ranger-queue/.beads/* ~/src/ranger-base/.beads/     # the store goes home
-rm  ~/src/ranger-base/.beads/redirect
-cd ~/src/ranger-base && git reset -q HEAD -- .beads .gitignore && git checkout -- .gitignore
+# The store goes home — DOTFILES INCLUDED. `.beads/*` alone leaves
+# `.beads/.gitignore` (tracked, and the only thing ignoring the database)
+# and `.local_version` behind, so the constitution comes back with a 10MB
+# `beads.db` untracked AND unignored, one `git add -A` from being committed
+# (ranger-base-g1js). Same loop the script's own undos print.
+for f in ~/src/ranger-queue/.beads/* ~/src/ranger-queue/.beads/.[!.]*; do
+  [ -e "$f" ] && mv -f "$f" ~/src/ranger-base/.beads/
+done
+rm -f ~/src/ranger-base/.beads/redirect   # -f: an abort in stage `move` never wrote one
+cd ~/src/ranger-base && git reset -q HEAD -- .beads .gitignore &&
+  git checkout -- .gitignore .beads/.gitignore   # the root ignore AND the one that hides beads.db
 # put every redirect back
 printf '%s\n' ~/src/ranger-base/.beads > ~/src/posse/.beads/redirect
 for w in ~/.posse/worktrees/*/*; do
@@ -225,6 +233,18 @@ for w in ~/.posse/worktrees/*/*; do
 done
 cd ~/src/ranger-base && bd migrate --update-repo-id && bd daemon start
 ```
+
+Then check the repo came back the way it went in — this is the step that
+catches a half-rollback while it is still cheap:
+
+```sh
+git -C ~/src/ranger-base status --porcelain -- .beads .gitignore
+```
+
+Only ` M .beads/issues.jsonl` and ` M .beads/deleted.jsonl` (the window's
+drift, which is real work and stays). A `??` line, or ` D .beads/.gitignore`,
+means the store did not come home whole — do not commit anything until it
+does.
 
 Then unset `queue_repo:` in config. `rm -rf ~/src/ranger-queue` last, once
 `bd ready` answers from the constitution repo again.

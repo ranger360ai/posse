@@ -428,24 +428,247 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 	}
 }
 
-// ranger-base-g1js, the other half: the runbook's rollback moves the store
+// ranger-base-g1js, the other half: the runbook's rollback moved the store
 // home with `mv ~/src/ranger-queue/.beads/* ...`, and that glob does not
-// match dotfiles. Rehearsed on lpz4: `.beads/.gitignore` stays behind, and
-// the constitution repo comes back with `beads.db` UNTRACKED AND UNIGNORED —
-// one `git add -A` away from committing 10MB of binary database into the
-// repo ADR 0015 exists to keep clean, with the tracked `.gitignore` showing
-// as deleted beside it.
-func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
-	t.Skip("ranger-base-g1js: the rollback's `mv .beads/*` leaves .beads/.gitignore in the queue repo")
+// match dotfiles. Rehearsed on lpz4: `.beads/.gitignore` stayed behind — the
+// only thing ignoring the database — and the constitution repo came back
+// with `beads.db` UNTRACKED AND UNIGNORED, one `git add -A` away from
+// committing 10MB of binary database into the repo ADR 0015 exists to keep
+// clean, with the tracked `.gitignore` showing as deleted beside it.
+//
+// These pins RUN the runbook's own block rather than reading it. A prose
+// assertion over a recipe goes green the moment the recipe is reworded, and
+// this block had three independent ways to be wrong (the glob, a bare `rm`
+// that errors when no redirect was ever written, and a `git checkout` that
+// restores the root ignore only). Each has a control arm below driving the
+// block as it read BEFORE the fix through the same rig: without one, a
+// rollback that moved nothing would satisfy every assertion here.
+
+// qcRollbackBlock is the first fenced shell block under the runbook's
+// "## Rollback" — the thing the operator pastes.
+func qcRollbackBlock(t *testing.T) string {
+	t.Helper()
 	body := qcRunbook(t)
 	i := strings.Index(body, "## Rollback")
 	if i < 0 {
 		t.Fatal("the runbook has no rollback section")
 	}
-	if strings.Contains(body[i:], "/.beads/* ") {
-		t.Error("the rollback moves the store home with a glob that skips dotfiles, " +
-			"so .beads/.gitignore stays behind and beads.db comes back unignored")
+	rest := body[i:]
+	const fence = "```sh\n"
+	open := strings.Index(rest, fence)
+	if open < 0 {
+		t.Fatal("the rollback section has no shell block to run")
 	}
+	rest = rest[open+len(fence):]
+	end := strings.Index(rest, "```")
+	if end < 0 {
+		t.Fatal("the rollback section's shell block is unterminated")
+	}
+	return rest[:end]
+}
+
+// qcRollbackBefore is that block as it read before this bead (posse 43f0ec5),
+// verbatim. It is the control: the rig has to be able to SEE the defect, or
+// the pin above it measures nothing.
+const qcRollbackBefore = `cd ~/src/ranger-queue && bd daemon stop
+mv ~/src/ranger-queue/.beads/* ~/src/ranger-base/.beads/     # the store goes home
+rm  ~/src/ranger-base/.beads/redirect
+cd ~/src/ranger-base && git reset -q HEAD -- .beads .gitignore && git checkout -- .gitignore
+# put every redirect back
+printf '%s\n' ~/src/ranger-base/.beads > ~/src/posse/.beads/redirect
+for w in ~/.posse/worktrees/*/*; do
+  [ -d "$w/.beads" ] && printf '%s\n' ~/src/ranger-base/.beads > "$w/.beads/redirect"
+done
+cd ~/src/ranger-base && bd migrate --update-repo-id && bd daemon start
+`
+
+// qcRollbackRun points a rollback block's four live paths at the fixture and
+// hands it to `sh` the way the operator's terminal does — no `set -e`,
+// because a pasted block does not stop at the first error either, which is
+// exactly why a `rm` that fails has to be caught by reading its output.
+// `bd` is stubbed: the block's three bd calls are the operator's and denied
+// to personas (runbook, "Who runs it"). Every mv, rm and git in it is real.
+func qcRollbackRun(t *testing.T, block string, f qcFixture) string {
+	t.Helper()
+	for _, sub := range [][2]string{
+		{"~/src/ranger-queue", f.queue},
+		{"~/src/ranger-base", f.constitution},
+		{"~/src/posse", f.posse},
+		{"~/.posse/worktrees", f.worktrees},
+	} {
+		block = strings.ReplaceAll(block, sub[0], sub[1])
+	}
+	if strings.Contains(block, "~/") {
+		t.Fatalf("the rollback block still names a live path after substitution:\n%s", block)
+	}
+	stub := t.TempDir()
+	write(t, filepath.Join(stub, "bd"), "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(stub, "bd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", block)
+	cmd.Env = append(os.Environ(), "PATH="+stub+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, _ := cmd.CombinedOutput()
+	return string(out)
+}
+
+type qcFixture struct{ constitution, queue, posse, worktrees string }
+
+// qcRolledBack is the state a rollback undoes: a COMPLETED cutover, with the
+// live store's drift and the two dotfiles the glob misses (`.beads/.gitignore`
+// is the tracked one that hides the database; `.local_version` is bd's).
+func qcRolledBack(t *testing.T) qcFixture {
+	t.Helper()
+	constitution, _ := qcConstitution(t)
+	// Two edits that make the fixture's `.beads` the live one's shape, and
+	// both are load-bearing here. bd's real ignore file also covers
+	// `.local_version` and `last-touched` — the other dotfile the glob
+	// leaves behind — and the live constitution TRACKS `.beads/metadata.json`
+	// (`git -C ~/src/ranger-base ls-files .beads`), so bd's own stamp of it
+	// during the window does not read as an untracked surprise the rollback
+	// never caused.
+	write(t, filepath.Join(constitution, ".beads", ".gitignore"),
+		"*.db\n*.db?*\ndaemon.log\ndaemon.pid\nredirect\n.local_version\nlast-touched\n")
+	write(t, filepath.Join(constitution, ".beads", "metadata.json"), "{}\n")
+	mustGit(t, constitution, "add", ".beads/.gitignore", ".beads/metadata.json")
+	mustGit(t, constitution, "commit", "-q", "-m", "beads: bd's ignore file and its stamp", "--", ".beads")
+
+	qcDrift(t, constitution)
+	write(t, filepath.Join(constitution, ".beads", ".local_version"), "0.49.1\n")
+	f := qcFixture{
+		constitution: constitution,
+		queue:        filepath.Join(t.TempDir(), "queue"),
+		posse:        qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads")),
+		worktrees:    t.TempDir(),
+	}
+	qcWork(t, filepath.Join(f.worktrees, "posse", "gwart-session"), filepath.Join(constitution, ".beads"))
+	out, err := qcRun(t, f.constitution, f.queue, f.worktrees, []string{f.posse})
+	if err != nil {
+		t.Fatalf("the cutover this rollback undoes did not run: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(f.queue, ".beads", ".gitignore")); err != nil {
+		t.Fatalf("the fixture has no dotfile for the glob to miss, so it measures nothing: %v", err)
+	}
+	return f
+}
+
+// The bead's headline, asserted where it bites: not "does the block mention
+// dotfiles" but "is the database ignored again when the block has run".
+func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
+	block := qcRollbackBlock(t)
+
+	t.Run("the store comes home whole", func(t *testing.T) {
+		f := qcRolledBack(t)
+		out := qcRollbackRun(t, block, f)
+
+		for _, name := range []string{".gitignore", ".local_version", beadsJSONL} {
+			if _, err := os.Stat(filepath.Join(f.constitution, ".beads", name)); err != nil {
+				t.Errorf(".beads/%s did not come home: %v\n%s", name, err, out)
+			}
+		}
+		// The window's drift is real work: a rollback that restores `.beads`
+		// out of HEAD would satisfy every ignore assertion below and throw
+		// away every bead written during the window.
+		if body := readFile(t, filepath.Join(f.constitution, ".beads", beadsJSONL)); !strings.Contains(body, "q-4") {
+			t.Errorf("the rollback clobbered the window's drift instead of carrying it home: %q", body)
+		}
+		status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
+		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+			if line == "" {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(line, "??"):
+				t.Errorf("the constitution came back with an UNIGNORED file — one `git add -A` from being committed: %q\nstatus:\n%s\n%s", line, status, out)
+			case strings.Contains(line, "D"):
+				t.Errorf("the rollback left a tracked file deleted: %q\nstatus:\n%s\n%s", line, status, out)
+			}
+		}
+		if !strings.Contains(status, beadsJSONL) {
+			t.Errorf("the drift the window produced is not in the tree at all:\n%s\n%s", status, out)
+		}
+	})
+
+	// The control. Same rig, same fixture, the pre-fix block: it must leave
+	// exactly the wreckage the bead measured, or the arm above proves
+	// nothing about the glob.
+	t.Run("the control: the glob-only block leaves the dotfiles behind", func(t *testing.T) {
+		f := qcRolledBack(t)
+		out := qcRollbackRun(t, qcRollbackBefore, f)
+		status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
+		if !strings.Contains(status, "?? .beads/beads.db") {
+			t.Errorf("the rig cannot see an unignored database, so the pin above measures nothing:\n%s\n%s", status, out)
+		}
+		if !strings.Contains(status, "D .beads/.gitignore") {
+			t.Errorf("the rig cannot see the ignore file left behind:\n%s\n%s", status, out)
+		}
+	})
+}
+
+// The same block's second defect, and the one an operator meets first: the
+// rollback is also what you run after an abort in stage `move`, where no
+// redirect was ever written. A bare `rm` on a path that is not there prints
+// an error into the middle of a window nobody is calm in.
+func TestQueueRollbackRunsCleanWhenNoRedirectWasEverWritten(t *testing.T) {
+	const missing = "No such file"
+	t.Run("the block says nothing about a redirect that was never written", func(t *testing.T) {
+		f := qcRolledBack(t)
+		if err := os.Remove(filepath.Join(f.constitution, ".beads", beadsRedirect)); err != nil {
+			t.Fatalf("the fixture still has a redirect, so this measures nothing: %v", err)
+		}
+		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		if strings.Contains(out, missing) {
+			t.Errorf("the rollback errors on a redirect an aborted cutover never wrote:\n%s", out)
+		}
+	})
+	t.Run("the control: the bare rm does", func(t *testing.T) {
+		f := qcRolledBack(t)
+		if err := os.Remove(filepath.Join(f.constitution, ".beads", beadsRedirect)); err != nil {
+			t.Fatal(err)
+		}
+		if out := qcRollbackRun(t, qcRollbackBefore, f); !strings.Contains(out, missing) {
+			t.Errorf("the rig does not surface the bare rm's error, so the pin above measures nothing:\n%s", out)
+		}
+	})
+}
+
+// The block's third defect: `git checkout -- .gitignore` restores the ROOT
+// ignore and never `.beads/.gitignore`. With the dotfile-safe move in front
+// of it that looks like a belt — until the rollback is run a second time,
+// which is exactly what an operator who ran the OLD block and then took the
+// runbook's last line (`rm -rf ~/src/ranger-queue`) has to do. By then the
+// ignore file is on no disk anywhere and git is the only copy left.
+func TestQueueRollbackRestoresTheIgnoreThatHidesTheDatabase(t *testing.T) {
+	f := qcRolledBack(t)
+	qcRollbackRun(t, qcRollbackBefore, f) // the half-rollback that left it behind
+	if err := os.RemoveAll(f.queue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", ".gitignore")); err == nil {
+		t.Fatal("the half-rollback did not leave the ignore file behind, so this measures nothing")
+	}
+
+	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", ".gitignore")); err != nil {
+		t.Errorf("re-running the rollback never restores .beads/.gitignore, so the database stays unignored: %v\n%s", err, out)
+	}
+	if status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads"); strings.Contains(status, "??") {
+		t.Errorf("the constitution is still carrying an unignored file:\n%s\n%s", status, out)
+	}
+	// And it did not pay for that by throwing the window's work away.
+	if body := readFile(t, filepath.Join(f.constitution, ".beads", beadsJSONL)); !strings.Contains(body, "q-4") {
+		t.Errorf("the second rollback clobbered the drift the first one carried home: %q", body)
+	}
+}
+
+// readFile is os.ReadFile with the test's error handling.
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
 }
 
 // ─── ranger-base-nzyn: the window, and what an abort in it says ─────────────
