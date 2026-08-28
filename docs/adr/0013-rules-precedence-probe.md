@@ -104,6 +104,12 @@ per-session artifacts grok writes under
 | `--rules <PID>` | 5853 B, ends `…</browser_verification>\n\n<human_rules>\n<PID marker>\n</human_rules>` | `prompt_mode: extend`; `agents_md_files: [<home>/Agents.md, <proj>/Agents.md, <proj>/Claude.md]` with full contents |
 | control, no `--rules` | 5779 B, **no** `<human_rules>` block | identical `agents_md_files` |
 | `--rules` + `--system-prompt-override` | **29 B** — the override text alone; **no `<human_rules>`, PID marker absent** | identical `agents_md_files` |
+| `--rules` + `--system-prompt` (compat alias) | **19 B** — the override text alone; **no `<human_rules>`, PID marker absent** | project rulebook carried in full |
+
+The last row was measured later (2026-08-28, ranger-base-64qx) with a
+19-byte override text of its own; re-running the row above it on that
+same text also gives 19 B, so the two byte counts differ by the fixture,
+not by the flag. Both arms leave nothing of the PID.
 
 Three facts:
 
@@ -126,6 +132,16 @@ Three facts:
    system prompt and `--rules`."* The built-in grok template does not use
    the flag, so nothing in the fleet is affected today; a hand-written
    PID `command:` is the path that could. Filed separately.
+
+   Re-measured 2026-08-28 for ranger-base-64qx, same rig and same
+   no-spend controls: the **compat alias `--system-prompt`** — grok's
+   own `--help` names it — voids the PID exactly as thoroughly (19 B, no
+   `<human_rules>`, no PID marker), while `prompt_context.json` still
+   carries the project `Agents.md` with its content in full. A check
+   that knew only the canonical spelling would pass that line, which is
+   why `Runtime.PIDVoid` lists both. The fix is a refusal at every path
+   that renders a persona line; ADR 0013 carries the decision and why it
+   is not the repair `Unattended` gets.
 
 The same doc states grok's own conflict rule for instruction files:
 *"files in deeper directories appear later in its context and take

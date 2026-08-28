@@ -312,6 +312,25 @@ every native rulebook in place (vendor-documented). No built-in
 template uses the flag; a PID's own hand-written `command:` is the
 reachable path (ranger-base-64qx).
 
+**Decided (ranger-base-64qx): a launch line that voids the PID channel
+is REFUSED, not repaired.** `Runtime.PIDVoid` declares the flags that
+make a runtime ignore the PID its own template delivers — grok's
+`--system-prompt-override` and the compat alias `--system-prompt`, both
+measured on 1.0.5 — and every path that renders a persona line
+(`planLaunch`, `RelaunchAgent`) refuses when the rendered line names
+one. The unattended flag next door gets a *repair* because it is absent
+and appendable; this one is present and ignored, so there is nothing to
+restore: the measured arm already carried `--rules`, and appending it
+again buys a launch that looks fixed and is not. The repair that would
+work — rewriting the operator's override text to carry the PID — is an
+edit to a hand-written `command:`, which posse does not make. A refusal
+rather than a DEGRADED launch, because `degraded` is for a gate no wall
+layer could realize, and a persona that is not in the session at all is
+not a weaker persona. Built-in declaration only, like `Unattended` and
+for the same reason: on a template-only runtime posse knows no CLI's
+dialect, and a guessed flag name would refuse launches for a spelling
+nobody measured.
+
 **Decided (ranger-base-00f): dispatch does not use the codex override.**
 `native_rules:` stays a declaration, not a switch, on every runtime:
 
@@ -579,6 +598,10 @@ it was asked and must say so when the first turn is a limit.
   decided downstream and is not locally observable; and
   `--system-prompt-override` silently discards `--rules` — the PID
   channel — while leaving every native rulebook (ranger-base-64qx).
+  Re-measured 2026-08-28 for that bead: the compat alias
+  `--system-prompt` voids it identically (19 B of override text, no
+  `<human_rules>`, no PID marker, `agents_md_files` intact), so the
+  refusal lists both spellings.
 
 - The cage half of record, 2026-08-26 (ranger-base-rhw, A/B'd
   control-vs-fix in oyta): under the pre-23c4e54 seatbelt profile,

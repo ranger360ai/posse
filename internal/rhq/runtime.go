@@ -217,6 +217,38 @@ type Runtime struct {
 	// spelling in a hand-written PID beats an implicit one from here, and
 	// it is visible in `ps` where a silent override would not be.
 	Unattended string
+	// PIDVoid names the flags that make this runtime IGNORE the PID
+	// channel — the flag its own template delivers the persona identity
+	// document on. A rendered launch line naming one is REFUSED
+	// (ranger-base-64qx): what would open is not a degraded persona
+	// session, it is a different session, carrying every native rulebook
+	// and none of the persona.
+	//
+	// MEASURED on grok 1.0.5, 2026-08-28, both spellings
+	// (docs/adr/0013-rules-precedence-probe.md): with
+	// `--system-prompt-override` — or its compat alias `--system-prompt` —
+	// on a line that also carries `--rules`, the assembled
+	// `system_prompt.txt` is the override text alone (19 B), with no
+	// `<human_rules>` block and no PID marker, while `prompt_context.json`
+	// still carries the project rulebook in `agents_md_files` in full.
+	// Vendor-documented besides ($GROK_HOME/docs/user-guide/
+	// 12-project-rules.md): "Grok uses the text verbatim and skips both the
+	// default system prompt and --rules."
+	//
+	// Why a refusal, when Unattended above gets a REPAIR: the unattended
+	// flag is absent and appendable, so posse can put it back. The PID flag
+	// here is present and ignored — the measured arm already had `--rules`
+	// on the line — so there is nothing to restore, and appending it again
+	// would buy a launch that looks fixed and is not. The only repair that
+	// would work is rewriting the operator's override TEXT to carry the
+	// PID, and a hand-written `command:` is the one template posse does not
+	// get to edit.
+	//
+	// Empty = this runtime has no such flag, or nobody has measured one.
+	// Built-in only, like Unattended and for the same reason: on a
+	// template-only runtime posse knows no CLI's dialect, and a guessed
+	// flag name would refuse launches for a spelling nobody measured.
+	PIDVoid []string
 	// CageCred names the env var an authenticated *caged* session of this
 	// runtime needs (`cage_cred:` in a template-only runtime's yaml). A
 	// container has no keychain, and the on-disk credential files are
@@ -408,6 +440,35 @@ func (rt *Runtime) EnsureUnattended(cmd string) string {
 		}
 	}
 	return cmd + " " + rt.Unattended
+}
+
+// PIDVoided reports which of this runtime's PIDVoid flags a rendered launch
+// line names ("" = none), so the launch can be refused before a persona
+// session opens without its PID (ranger-base-64qx).
+//
+// Matched on the flag's own token — `--flag` or `--flag=value` — the same
+// way EnsureUnattended matches its key, so a longer flag that merely starts
+// with one of these is a different flag and does not fire. It is also why
+// grok's two spellings are both listed rather than one being a prefix of
+// the other: `--system-prompt-override` is not `--system-prompt`.
+//
+// Unlike EnsureUnattended this does NOT first check that the line starts
+// this runtime's CLI, and the asymmetry is deliberate. There, acting on a
+// line posse cannot identify means typing a flag at a program that would
+// fail outright, so an unrecognizable line is left alone. Here, acting
+// wrongly costs a loud refusal that names the flag it saw and the PID it
+// was protecting; staying silent costs a persona session that runs as
+// somebody else with nothing observable to say so. The recoverable error is
+// the one to make.
+func (rt *Runtime) PIDVoided(cmd string) string {
+	for _, w := range strings.Fields(cmd) {
+		for _, f := range rt.PIDVoid {
+			if w == f || strings.HasPrefix(w, f+"=") {
+				return f
+			}
+		}
+	}
+	return ""
 }
 
 // ModelText is what {model} renders to for a tier: the runtime's flag with
@@ -773,6 +834,14 @@ const GrokFleetFlags = `--permission-mode auto`
 //   - grok 1.0.5, docs/user-guide/12-project-rules.md, in its own order,
 //     every match in a directory loaded (not first-wins), plus *.md under
 //     the rules dirs at each level from repo root to cwd.
+//
+// GrokPIDVoid is grok's PIDVoid set: the flag that replaces the system
+// prompt, and the compat alias its own --help names for it. Both spellings
+// were measured on 1.0.5 — see Runtime.PIDVoid for the numbers. The alias
+// is listed because a check that knew only the canonical spelling would
+// pass a line that voids the PID exactly as thoroughly.
+var GrokPIDVoid = []string{"--system-prompt-override", "--system-prompt"}
+
 var (
 	claudeNativeRules = []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude/rules/*.md"}
 	codexNativeRules  = []string{"AGENTS.md", "AGENTS.override.md", "~/.codex/AGENTS.md"}
@@ -841,7 +910,7 @@ var builtinRuntimes = []Runtime{
 		// start exceeding 45s on a clean screen (ranger-base-3j8) was a
 		// problem about reaching a composer; argv needs no composer.
 		Prompt: PromptArgv, Record: RecordTrusted, RecordWhy: "the qa lane closed a dispatched bead on 2026-08-24 (ADR 0013 §4)",
-		NativeRules: grokNativeRules, Interstitials: GrokInterstitials,
+		NativeRules: grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
 		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 

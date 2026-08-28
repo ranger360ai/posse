@@ -1387,6 +1387,19 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// worktree — the git dirs that hold this tree's index and the
 		// repo's objects, which sit outside the tree (rangerhq-09o2).
 		cmd = ag.RenderCommandFor(rt, own, tier, append([]string{beadsHome(dir)}, LinkedGitDirs(dir)...)...)
+		// The PID channel is a launch guarantee too, and this is the one
+		// place it can be checked: the line exists now, and nothing after
+		// this point can put back what a voiding flag discards
+		// (ranger-base-64qx). A rendered line naming one of this runtime's
+		// PIDVoid flags would open a session carrying every native rulebook
+		// and no persona, so it is refused rather than launched marked —
+		// `degraded` is for a gate the wall could not realize, and a
+		// persona that is not in the session is not a weaker persona.
+		if f := rt.PIDVoided(cmd); f != "" {
+			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
+				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",
+				o.Agent, rt.Name, f, rt.Name, f)
+		}
 		// ADR 0013 §2, and the reason it is HERE and not further down: the
 		// prompt is an argument to the RUNTIME, so it goes on the runtime's
 		// line before any wall wraps it. Appended after the seatbelt prefix
@@ -1729,6 +1742,14 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 		}
 	}
 	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier)
+	// Same refusal as planLaunch's, on the one other path that renders a
+	// persona line (ranger-base-64qx). It is reachable even though the
+	// create was refused: a PID edited after its session opened is
+	// re-rendered here, and this path retypes into a LIVE pane, so without
+	// it a crashed CLI comes back as a session with no persona in it.
+	if f := rt.PIDVoided(inner); f != "" {
+		return false, Die("%s: the rendered %s line names %s, which makes %s discard the PID — refusing to retype a persona session that would carry none (ranger-base-64qx)", m.Agent, rt.Name, f, rt.Name)
+	}
 	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
 		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
 		if err != nil {
