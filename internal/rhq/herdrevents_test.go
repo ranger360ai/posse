@@ -20,18 +20,24 @@ import (
 )
 
 // hintWait is the one budget every wait in this file uses. Nothing here
-// talks to anything but a Unix socket in a temp dir, and run alone each of
-// these steps completes in tens of milliseconds — the budget is headroom for
-// the scheduler, not for the code. It has to be: `go test ./...` runs three
-// package binaries at once, and this fleet's box carries a dozen live
-// worktree sessions running their own suites. At 5s these waits went red
-// about one full run in three, at exactly 5.01s, while the same tests passed
-// alone in 0.1s (ranger-base-5fw5, ranger-base-fsil).
+// talks to anything but a Unix socket in a temp dir, and the budget is
+// headroom for the scheduler, not for the code.
 //
-// It still discriminates. What these tests are pinned against is delivery
-// falling back to the loop's tick or the adapter's backoff, and every test
-// that has one sets it to an hour — three orders of magnitude the far side
-// of this. A budget that only fails on a genuine hang is the point.
+// The 30s is MEASURED, not chosen (ranger-base-5fw5). Instrumenting every
+// wait in this file and running the set 25 times under a concurrent
+// `go test ./...` loop (load average 70-140 on 8 cores) put 1175 waits at
+// p50 0ms and p95 22ms — and gave two waits of 5177ms and 6095ms, both of
+// them the subscribe handshake, both over the 5s these budgets used to be.
+// That tail is the whole flake: TestWatchSettleHintWakesTheNextPassEarly and
+// its neighbours went red at exactly 5.01s about one full run in three while
+// passing alone in 0.1s (ranger-base-5fw5, ranger-base-fsil). 30s is ~5x the
+// worst wait this box has produced.
+//
+// It still discriminates, and the mutation checks on ranger-base-5fw5 say so:
+// what these tests are pinned against is delivery falling back to the loop's
+// tick or the adapter's backoff, and every test that has one sets it to an
+// hour — three orders of magnitude the far side of this. A budget that only
+// fails on a genuine hang is the point.
 const hintWait = 30 * time.Second
 
 // hintServer is the smallest thing that behaves like herdr's events socket:
