@@ -11,7 +11,11 @@ half of record — the cage, not only the runtime, decides whether the
 store of record can be written (ranger-base-hxhb, measured in
 ranger-base-rhw/oyta); §2 layer 3's only instance retired — dispatch
 presses no key at any screen, the layer stands empty as last resort
-(rangerhq-6723, ranger-base-xqft)*
+(rangerhq-6723, ranger-base-xqft) · amended 2026-08-28: xaev
+placement measurements folded into §4/Claims — where each channel
+lands is now measured, point 4's byte-cap hedge resolved false, the
+suppression decision strengthened, not reopened (ranger-base-xaev,
+ranger-base-93u0; trace in `0013-rules-precedence-probe.md`)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -281,6 +285,33 @@ silences its discovery. So the original "no flag on either CLI silences
 project rules" was false for codex, and dispatch has a choice it must
 not make silently (dinesh's DIVERGED on cl7).
 
+**Placement (MEASURED 2026-08-28, ranger-base-xaev; trace in
+`0013-rules-precedence-probe.md`; codex 0.147.0, grok 1.0.5, no billed
+turn).** Where each channel lands in the assembled prompt. Codex: the
+PID (`developer_instructions`) is prepended verbatim to codex's own
+first `developer` message, index 0 of the model-visible input list;
+the native rulebooks are one later `user` message — `~/.codex/AGENTS.md`
+first, a literal `--- project-doc ---`, then the project doc —
+immediately before the argv work prompt, and `AGENTS.override.md`
+*replaces* `AGENTS.md` when both exist. Grok: the PID (`--rules`) is a
+`<human_rules>` block at the tail of the locally-assembled system
+prompt; the native rulebooks are not in the system prompt at all —
+they ride a separate structured `agents_md_files` field whose
+model-visible placement is decided by grok's own harness downstream
+and is not observable from any local artifact. So the structure
+*supports* the PID-wins prompt line on codex (stronger role, earlier
+position — though codex's own harness text endorses `AGENTS.md` as an
+authority twice) and leaves it structurally unmeasurable on grok,
+whose shipped docs declare later-in-context wins on conflict. The
+revisit trigger below did not fire. Structure is not behavior: the
+billed half is parked on the operator money question ranger-base-6rcv.
+
+One hazard from the same probe: grok's `--system-prompt-override`
+silently discards `--rules` — the entire PID channel — while leaving
+every native rulebook in place (vendor-documented). No built-in
+template uses the flag; a PID's own hand-written `command:` is the
+reachable path (ranger-base-64qx).
+
 **Decided (ranger-base-00f): dispatch does not use the codex override.**
 `native_rules:` stays a declaration, not a switch, on every runtime:
 
@@ -301,10 +332,14 @@ not make silently (dinesh's DIVERGED on cl7).
    yields "codex honors my `AGENTS.md` by hand and ignores it under
    posse." This ADR already rejected the session-copy variant on the
    operator's-file ground; a flag differs in mechanism, not effect.
-4. *It is only half measured.* The probe removed the *project* marker;
-   whether the byte cap also governs `~/.codex/AGENTS.md` (same
-   `native_rules` list) was not tested — "single rulebook" is ASSUMED
-   even where the flag works.
+4. *It cannot deliver what it promised.* MEASURED (ranger-base-xaev,
+   2026-08-28, previously the ASSUMED half): `project_doc_max_bytes`
+   is a *project-doc* byte cap, not a rulebook switch. At `=0` the
+   project doc goes while `~/.codex/AGENTS.md` survives at full
+   length in the same user message; at `=40` the project doc
+   truncates mid-marker with the home doc untouched. The flag never
+   yields a single rulebook while a home `AGENTS.md` exists — so the
+   suppression on offer was always partial, wearing a total name.
 
 The key joins §2 layer 2 as an operator-owned fact posse **documents
 and never writes**: an operator who wants codex doc-free sets
@@ -425,12 +460,15 @@ it was asked and must say so when the first turn is a limit.
   added 2026-08-26 after cl7 falsified "no such flag exists"). Rejected
   in §4: no fleet invariant gained (grok cannot join), silent re-enable
   on a key rename with no observable, a dispatched-vs-interactive split
-  over the operator's own file, and the `~/.codex/AGENTS.md` channel
-  never probed under the cap. Priced honestly: the saving is one argv
-  token and the retirement of the cmfj collision class on one runtime;
-  the cost is a `native_rules:` surface that means different things per
-  runtime. Both prices ASSUMED — no incident has yet been caused by
-  codex reading `AGENTS.md` under dispatch.
+  over the operator's own file — and, measured after the rejection
+  (xaev, 2026-08-28), the `~/.codex/AGENTS.md` channel survives the
+  cap at full length, so the flag never produced a single rulebook in
+  the first place. Priced honestly: the saving is one argv token and
+  the *partial* retirement of the cmfj collision class on one runtime
+  (the home doc still rides); the cost is a `native_rules:` surface
+  that means different things per runtime. The saving's ceiling is now
+  MEASURED; that no incident has yet been caused by codex reading
+  `AGENTS.md` under dispatch stays ASSUMED.
 - **Fold reachability into `record:`** (a third value, or a
   `trusted-unreachable` grade — added 2026-08-27, ranger-base-hxhb).
   `record:` is a per-runtime declaration promoted after a measured
@@ -527,6 +565,21 @@ it was asked and must say so when the first turn is a limit.
   NOTES/INSTALL; `runtime check` prints it against `latest_version`
   because the dismissal expires per release.
 
+- **The xaev placement probe, 2026-08-28** (codex 0.147.0, grok 1.0.5,
+  no billed turn; trace `0013-rules-precedence-probe.md`): codex PID =
+  `developer` role at index 0, prepended to codex's own developer
+  message; native rulebooks = one `user` message (home doc,
+  `--- project-doc ---`, project doc) immediately before the argv
+  turn; `AGENTS.override.md` replaces `AGENTS.md`.
+  `project_doc_max_bytes` caps the project doc only — at `=0`,
+  `~/.codex/AGENTS.md` survives at full length, so the flag never
+  yields a single rulebook. Grok PID = `<human_rules>` at the tail of
+  the locally-assembled system prompt; native rulebooks = a separate
+  `agents_md_files` structured field whose model-visible placement is
+  decided downstream and is not locally observable; and
+  `--system-prompt-override` silently discards `--rules` — the PID
+  channel — while leaving every native rulebook (ranger-base-64qx).
+
 - The cage half of record, 2026-08-26 (ranger-base-rhw, A/B'd
   control-vs-fix in oyta): under the pre-23c4e54 seatbelt profile,
   `bd sync` / `bd export` / the path-limited commit all fail at the
@@ -548,14 +601,15 @@ it was asked and must say so when the first turn is a limit.
   in one pass are consecutive attempts by construction (any success
   sets the busy key).
 
-**ASSUMED** (still, after the probe)
+**ASSUMED** (still, after both probes)
 
 - Whether any native rulebook outranks the PID channel in live model
-  behavior. The precedence probe is ranger-base-xaev; until it is
-  measured, the PID-wins prompt line is the reconciliation and codex
-  stays `record: untrusted`.
-- Whether codex's byte cap also governs `~/.codex/AGENTS.md`. Matters
-  only if the §4 suppression decision is ever revisited.
+  behavior. The structural half is now measured (xaev): placement
+  supports PID-wins on codex and is unmeasurable locally on grok. The
+  behavioral half needs a billed turn and is parked on the operator
+  money question ranger-base-6rcv; until it is measured, the PID-wins
+  prompt line is the reconciliation and codex stays
+  `record: untrusted`.
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
 - That deterministic persona faults dominate what the session-failure
