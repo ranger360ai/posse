@@ -108,7 +108,7 @@ func runtimeYamlKeys() []string {
 		"self_sandbox",
 		"project_config",
 		"cage_cred", "egress", "gate_shell",
-		"prompt", "startup_wait", "record", "record_why", "native_rules",
+		"prompt", "startup_wait", "record", "record_why", "native_rules", "turn_outcome",
 		"state_dir", "env_required",
 	}
 	for _, t := range Tiers {

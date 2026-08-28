@@ -394,7 +394,10 @@ func TestDispatchMarksAProviderRefusalAsTurnFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)
-	if n != 1 || !strings.Contains(out, "Claude refused the first turn") ||
+	// Named by the RUNTIME, not by the provider: the same line is what a
+	// codex or grok refusal would print once a reader for it exists
+	// (ranger-base-02zr, turnoutcome_qa_test.go).
+	if n != 1 || !strings.Contains(out, "claude refused the first turn") ||
 		!strings.Contains(out, "no work ran") || strings.Contains(out, "review") {
 		t.Errorf("provider refusal was presented as an ordinary settle, n=%d:\n%s", n, out)
 	}

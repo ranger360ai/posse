@@ -732,6 +732,16 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # bead. Until then dispatch still launches, but
 #                              # a session that settles with the bead still
 #                              # open is never ✓ and gets re-prompted.
+# turn_outcome: claude-transcript
+#                              # which READER sees what this CLI's own first
+#                              # turn did — the fact that tells an exhausted
+#                              # account apart from an agent that settled
+#                              # without closing its bead. The value names a
+#                              # reader posse ships (today: claude-transcript,
+#                              # the ~/.claude/projects/*.jsonl scanner); a
+#                              # name nothing implements REFUSES at load.
+#                              # Left out, dispatch says so on every
+#                              # settle-without-close line for this runtime.
 # native_rules: [AGENTS.md]   # rulebook files this CLI discovers and loads by
 #                              # itself, ahead of anything posse types. Posse
 #                              # rewrites none of them — declaring them is how

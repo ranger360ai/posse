@@ -12,9 +12,58 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
+
+// TurnOutcomeReader reads the runtime-owned outcome of one settled turn:
+// the message a refusal carried (empty = the turn was answered normally)
+// and whether an outcome was READ AT ALL. The two are separate because
+// "nothing to report" and "nothing readable" are different facts, and only
+// the first one may clear a failure marker.
+type TurnOutcomeReader func(dir, bead string, since time.Time) (message string, observed bool)
+
+// TurnOutcomeClaudeTranscript is the one reader that exists: claude's own
+// JSONL transcript under ~/.claude/projects. A runtime whose CLI writes
+// that same shape declares `turn_outcome: claude-transcript` and is read by
+// it; anything else needs a reader here first (ADR 0012 D4's adapter seam).
+const TurnOutcomeClaudeTranscript = "claude-transcript"
+
+// turnOutcomeReaders maps a runtime's declared turn_outcome: adapter to the
+// code that implements it. The map is the whole registry: a name that is
+// not a key here is refused at load, so a declaration can never promise a
+// reading nothing performs.
+//
+// codex writes ~/.codex/sessions/*.jsonl and grok writes
+// $GROK_HOME/sessions/<cwd>/<id>/ (MEASURED, ranger-base-xaev), so both are
+// reachable in principle and neither has a reader yet — which is a declared
+// blindness on those runtimes, printed on the settle line, not a silence.
+var turnOutcomeReaders = map[string]TurnOutcomeReader{
+	TurnOutcomeClaudeTranscript: FindClaudeTurnOutcome,
+}
+
+// TurnOutcomeAdapters is every registered adapter name, sorted — what a
+// refused declaration lists so the operator can see what is on offer.
+func TurnOutcomeAdapters() []string {
+	names := make([]string, 0, len(turnOutcomeReaders))
+	for name := range turnOutcomeReaders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// TurnOutcomeReaderFor is the reader a runtime's declaration resolves to,
+// or nil when it declares none. nil is the honest answer for every runtime
+// but claude today: posse cannot tell an exhausted account from an ordinary
+// settle there, and saying so is this seam's whole point (ranger-base-02zr).
+func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
+	if rt == nil {
+		return nil
+	}
+	return turnOutcomeReaders[rt.TurnOutcomeAdapter]
+}
 
 // FindClaudeTurnOutcome finds the first assistant outcome for this dispatch prompt.
 // It scans only the Claude project directory for dir, only files touched by

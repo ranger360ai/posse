@@ -1184,7 +1184,9 @@ launch → promptable → work → record → settle → account
 
 — of which four are observed (herdr, the bead, the cost adapter) and two
 are **declared** per runtime, in the built-in table or in
-`runtimes/<name>.yaml`:
+`runtimes/<name>.yaml`. The settle stage has a declared half too
+(`turn_outcome:`): herdr sees the pane settle either way, and only the
+runtime's own record says whether a turn actually ran.
 
 | key | values | what it says |
 |---|---|---|
@@ -1192,6 +1194,7 @@ are **declared** per runtime, in the built-in table or in
 | `startup_wait:` | duration, default 45s | how long a launch may take to reach a promptable screen. Measured per runtime — 45s is a *claude* number |
 | `record:` (+ `record_why:`) | `untrusted` (default) / `trusted` | whether a **dispatched** session of this runtime has been MEASURED to close its bead |
 | `native_rules:` | file names | the rulebooks this CLI discovers by itself, ahead of anything posse types |
+| `turn_outcome:` | a reader name (`claude-transcript`), default none | whether posse can read what this runtime's own first turn DID — the fact that separates an exhausted account from an agent that worked and skipped the bead |
 
 `posse runtime check <name>` prints the grid: each stage's observable, who
 declared it, and what a missing one costs — always a named degrade or a
@@ -1206,6 +1209,12 @@ loud**, every row naming the key that would change it. A *present but
 misspelled* value is the opposite case and refuses at load: `record:
 trused` silently reading as untrusted is exactly the silence this contract
 removes.
+
+`turn_outcome:` is a **registry key, not prose**: the value names a reader
+that exists in `internal/rhq/turnfailure.go` (today there is exactly one,
+`claude-transcript`), and a value no reader implements refuses at load for
+the same reason `record: trused` does — a declaration that promises a
+reading nothing performs is worse than no declaration.
 
 `native_rules:` is a declaration, not a switch — and codex 0.147.0 *has*
 a switch (`-c project_doc_max_bytes=0` drops the project `AGENTS.md` from
@@ -1387,6 +1396,39 @@ in the loop dispatch exists to replace. A `record: trusted` runtime gets the
 same honest `◑` and no clause: a runtime measured to close its beads that
 has stopped closing them is a signal, not a footnote.
 (`internal/rhq/recordskip_qa_test.go`.)
+
+### The other half of that line: what posse cannot see (ADR 0013 §1 settle)
+
+A settled pane is not a turn. Claude writes an allotment refusal as a
+synthetic assistant message, so a pass that reads the transcript can stop
+the bead with `⛔ … refused the first turn … no work ran` and tag the
+session — but that read is a per-runtime **declaration** (`turn_outcome:`),
+not a property of the name `claude`. Until `ranger-base-02zr` it was keyed
+on the name, so the reader was never even asked on codex or grok, and an
+exhausted account there printed as an ordinary settle-without-close.
+MEASURED the same day: grok's account was answering `402 Payment Required`
+while a pass called it a settle.
+
+A runtime that declares no reader now says so on the bead's own line:
+
+```
+◑ a-1   settled "idle" but issue is "in_progress" — review ranger-posse-a-1
+        (codex is record: untrusted — the claim is kept and --resume re-prompts it;
+         posse reads no turn outcome on codex — an account that refused the turn
+         settles exactly like this, so posse peek ranger-posse-a-1 before reading
+         it as work that ran)
+```
+
+Both clauses can be true at once and they say different things: the first
+is a **declared degrade** (nothing was lost, `--resume` retries), the
+second is a **fact posse does not have**. Neither is a verdict — the two
+causes are still one `posse peek` apart, and a harness that guessed here
+would be guessing exactly where it just admitted it cannot see. The
+per-pass half of the same honesty is the account-degraded report (ADR 0013
+§5); this is its per-bead half. codex writes `~/.codex/sessions/*.jsonl`
+and grok writes `$GROK_HOME/sessions/<cwd>/<id>/` (`ranger-base-xaev`), so
+both are reachable in principle — building those readers is a decision, not
+an oversight. (`internal/rhq/turnoutcome_qa_test.go`.)
 
 ### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
 

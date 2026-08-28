@@ -332,6 +332,20 @@ type Runtime struct {
 	// until then `uncounted_cap_<runtime>:` is the brake and unset means
 	// unlimited and loud.
 	CostAdapter string
+	// TurnOutcomeAdapter names the reader behind this runtime's TURN
+	// OUTCOME — whether posse can see what the CLI's own first turn did,
+	// as opposed to whether herdr saw the pane settle. "" = no reader, and
+	// that is a DEGRADE with a line on it (dispatch.go's settle clause):
+	// an account that refused the turn settles exactly like an agent that
+	// worked and skipped the bead, and until ranger-base-02zr the two were
+	// the same sentence on codex and grok.
+	//
+	// The value is a registry key (turnfailure.go), not prose: a name no
+	// reader implements is refused at load, so a runtime that declares a
+	// reading gets one. Beside CostAdapter on purpose — same seam (ADR
+	// 0012 D4), same rule that the DECLARATION is what dispatch keys on
+	// and never the runtime's name (ADR 0017 §3).
+	TurnOutcomeAdapter string
 }
 
 // PromptMode is how dispatch delivers the work prompt here. The zero value
@@ -366,6 +380,10 @@ func (rt *Runtime) RecordTrust() string {
 // Counted: does a cost adapter read this runtime's spend? False is the
 // account-degraded column (ADR 0013 §5) — never a claim that spend was $0.
 func (rt *Runtime) Counted() bool { return rt.CostAdapter != "" }
+
+// ReadsTurnOutcome: can posse read what this runtime's own turn did? False
+// is the blind column — never a claim that the turn was healthy.
+func (rt *Runtime) ReadsTurnOutcome() bool { return TurnOutcomeReaderFor(rt) != nil }
 
 // Model returns the model id for a tier on this runtime ("" = leave the
 // runtime to its default). fast falls back to standard when unmapped.
@@ -888,7 +906,12 @@ var builtinRuntimes = []Runtime{
 		// exists, and it reads ~/.claude/projects/*.jsonl.
 		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
 		NativeRules: claudeNativeRules, CostAdapter: "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)",
-		Command: `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
+		// turn_outcome: the same transcript, read for a different fact —
+		// claude writes an allotment refusal as a synthetic assistant
+		// message, so a pass can tell an exhausted account from a settle.
+		// The only runtime with a reader today (ranger-base-02zr).
+		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
+		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
@@ -1071,6 +1094,18 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		}
 		rt.Record = v
 		rt.RecordWhy = YamlGet(p, "record_why")
+	}
+	// turn_outcome: which registered reader sees this runtime's own first
+	// turn. Absent is the loud default — the settle line says posse cannot
+	// tell a refused turn from a worked one here. Present-but-unregistered
+	// refuses rather than degrading quietly: a yaml that names a reading
+	// nobody performs is a promise the pass would silently break.
+	if v := YamlGet(p, "turn_outcome"); v != "" {
+		if turnOutcomeReaders[v] == nil {
+			return nil, Die("runtime %s: %s has turn_outcome: %q — no reader by that name (have: %s; ADR 0012 D4)",
+				name, AbbrevHome(p), v, strings.Join(TurnOutcomeAdapters(), ", "))
+		}
+		rt.TurnOutcomeAdapter = v
 	}
 	// native_rules: the rulebook files this CLI loads on its own. Posse
 	// never writes them; declaring them is how `runtime check` can name the

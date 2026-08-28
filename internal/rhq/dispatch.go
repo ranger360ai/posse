@@ -2524,18 +2524,27 @@ wait:
 
 	// The agent settling is not success — the bead's own status is.
 	after, showErr := d.Bd.Show(p.is.Dir, p.is.ID)
-	if (showErr != nil || after.Status != "closed") && p.runtime == DefaultRuntime {
-		find := d.TurnOutcome
-		if find == nil {
-			find = FindClaudeTurnOutcome
+	if showErr != nil || after.Status != "closed" {
+		// WHICH runtime this is, is not the question — whether posse can
+		// read this runtime's own turn outcome is, and that is a
+		// declaration (ADR 0017 §3: no name-keyed branch stands in for a
+		// dimension). nil reader = blind, and the ◑ line below says so.
+		find := d.turnOutcomeReader(p.runtime)
+		message, observed := "", false
+		if find != nil {
+			message, observed = find(p.is.Dir, p.is.ID, p.prompted)
 		}
-		if message, observed := find(p.is.Dir, p.is.ID, p.prompted); observed {
+		if observed {
 			if err := d.HB.MarkTurnFailure(p.session, message); err != nil {
 				d.eprintf("posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
 			}
 			if message != "" {
-				d.printf("⛔ %-14s Claude refused the first turn: %s — no work ran; relaunch %s at another tier\n",
-					p.is.ID, message, p.session)
+				// Named by the RUNTIME whose account refused, not by the
+				// provider claude happens to be: the same line is what a
+				// codex or grok refusal prints the day one of them has a
+				// reader.
+				d.printf("⛔ %-14s %s refused the first turn: %s — no work ran; relaunch %s at another tier\n",
+					p.is.ID, runtimeName(p.runtime), message, p.session)
 				return false, nil
 			}
 		}
@@ -2552,10 +2561,10 @@ wait:
 		// answer, so there is none. An unreadable store of record is
 		// settle-without-record until it reads.
 		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
-			p.is.ID, settled, showErr, p.session, d.recordClause(p.runtime))
+			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime, p.session))
 	default:
 		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
-			p.is.ID, settled, after.Status, p.session, d.recordClause(p.runtime))
+			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime, p.session))
 		// The second time this exact disagreement happens, the re-prompt
 		// stops being a nudge and becomes an infinite polite retry
 		// (settleopen.go, ranger-base-9hm). Only this branch: bd answered,
@@ -2563,6 +2572,79 @@ wait:
 		d.noteSettleOpen(p, settled, after.Status)
 	}
 	return false, nil
+}
+
+// turnOutcomeReader is how this pass reads the turn outcome of a session on
+// this runtime, or nil when the runtime declares no reader (turnfailure.go).
+//
+// The predicate this replaced was `p.runtime == DefaultRuntime` — an ADR
+// 0017 §3 shadow predicate: a runtime NAME standing in for a dimension
+// (whether this CLI's turn outcome is readable). It was the last behavioural
+// one in the dispatch path, and what it cost is measured on
+// ranger-base-02zr: the same stubbed refusal that stops the pass on claude
+// was never even asked for on codex and grok, so an exhausted account there
+// printed as an ordinary settle-without-close.
+//
+// d.TurnOutcome, when a test injects one, is the READER — never the
+// permission to read. Blindness stays the declaration's to say, so a test
+// cannot accidentally give a runtime a reading production would not do.
+func (d *Dispatcher) turnOutcomeReader(runtime string) TurnOutcomeReader {
+	rt, err := d.App.LoadRuntime(runtime)
+	if err != nil || !rt.ReadsTurnOutcome() {
+		return nil
+	}
+	if d.TurnOutcome != nil {
+		return d.TurnOutcome
+	}
+	return TurnOutcomeReaderFor(rt)
+}
+
+// settleClause is everything a settle-without-close on THIS runtime needs
+// beside the bare disagreement: the declared record degrade (below), and
+// the declared turn-outcome blindness (turnBlindClause). Both are
+// per-runtime declarations, both can be true at once, and they read as one
+// parenthesis because they are one answer to one question — how much of
+// this line is news?
+func (d *Dispatcher) settleClause(runtime, session string) string {
+	var parts []string
+	for _, c := range []string{d.recordClause(runtime), d.turnBlindClause(runtime, session)} {
+		if c != "" {
+			parts = append(parts, c)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
+}
+
+// turnBlindClause is the per-bead half of the account-degraded report (ADR
+// 0013 §5), and the cheap rung of ranger-base-02zr: on a runtime posse
+// cannot read a turn outcome for, this exact line is ALSO what an exhausted
+// account looks like — no model handled the prompt, the CLI settled anyway,
+// and the bead is open because no work ran. MEASURED the same day the bead
+// was filed: grok's account was returning `402 Payment Required` while a
+// pass called it an ordinary settle.
+//
+// So the line says which fact posse does not have, rather than a sentence
+// that only fits the other explanation. It names no verdict — the two
+// causes are still one line apart, and pretending otherwise would be the
+// harness guessing where it just admitted it cannot see.
+func (d *Dispatcher) turnBlindClause(runtime, session string) string {
+	if d.turnOutcomeReader(runtime) != nil {
+		return ""
+	}
+	return fmt.Sprintf("posse reads no turn outcome on %s — an account that refused the turn settles exactly like this, so posse peek %s before reading it as work that ran", runtimeName(runtime), session)
+}
+
+// runtimeName is what a line calls this runtime. Empty means the launch
+// took the default, and a blank in a sentence about which runtime posse
+// cannot read is the one word the reader needs.
+func runtimeName(runtime string) string {
+	if runtime == "" {
+		return DefaultRuntime
+	}
+	return runtime
 }
 
 // recordClause is what a settle-without-close means on THIS runtime (ADR
@@ -2581,12 +2663,15 @@ wait:
 // a runtime measured to close its beads that stopped closing them is the
 // signal `record-skip-rate` exists to catch, and a reassuring parenthesis
 // beside it would be the harness explaining away its own evidence.
+//
+// Bare text, no parentheses: settleClause wraps whichever clauses are true
+// into the one parenthesis the line carries.
 func (d *Dispatcher) recordClause(runtime string) string {
 	rt, err := d.App.LoadRuntime(runtime)
 	if err != nil || rt.RecordTrust() != RecordUntrusted {
 		return ""
 	}
-	return fmt.Sprintf(" (%s is record: untrusted — the claim is kept and --resume re-prompts it)", rt.Name)
+	return fmt.Sprintf("%s is record: untrusted — the claim is kept and --resume re-prompts it", rt.Name)
 }
 
 // rewait watches the same agent for another leg after a --wait timeout.

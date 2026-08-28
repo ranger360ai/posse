@@ -104,7 +104,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 		a.promptableRow(rt),
 		workRow(),
 		recordRow(rt),
-		settleRow(),
+		settleRow(rt),
 		a.accountRow(rt),
 	} {
 		r.write(w)
@@ -296,13 +296,24 @@ func recordRow(rt *Runtime) stageRow {
 	return r
 }
 
-func settleRow() stageRow {
-	return stageRow{
+func settleRow(rt *Runtime) stageRow {
+	r := stageRow{
 		stage:   "settle",
 		value:   "herdr idle/done/blocked from a MATCHED rule — Seen(), not the idle-fallback",
 		by:      "herdr detection (nothing to declare)",
 		missing: "the existing ignorance path: the claim is kept",
 	}
+	// The settle stage has a declared half, and it is the one that separates
+	// two settles that look identical to herdr: a turn that ran, and a turn
+	// an exhausted account refused (ranger-base-02zr). herdr sees the pane go
+	// idle either way; only the runtime's own record says which happened.
+	if rt.ReadsTurnOutcome() {
+		r.note = append(r.note, "turn outcome: READ by the "+rt.TurnOutcomeAdapter+" adapter — an account that refused the turn stops the bead with ⛔ instead of settling as ◑, and the session is tagged in `posse list`.")
+	} else {
+		r.note = append(r.note, "turn outcome: NOT READ — no turn_outcome: adapter declared, so an exhausted account and an agent that worked without closing its bead are the SAME ◑ line. The settle line says so per bead; `turn_outcome: "+strings.Join(TurnOutcomeAdapters(), "|")+"` is what changes it (ADR 0012 D4's reader seam).")
+	}
+	r.note = append(r.note, "declared by: "+rt.declaredBy("turn_outcome"))
+	return r
 }
 
 func (a *App) accountRow(rt *Runtime) stageRow {
