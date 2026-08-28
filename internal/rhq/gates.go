@@ -366,9 +366,12 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	}
 	sort.Strings(cmds)
 	log := filepath.Join(gatesDir, "refusals.log")
+	// The refusal path's own `date`, resolved exactly the way each shimmed
+	// binary is — see refusalTimestamp for why a bare name is not safe here.
+	dateBin := resolveOutside("date", binDir)
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
-		script := renderShim(persona, c, real, log, rules[c])
+		script := renderShim(persona, c, real, log, dateBin, rules[c])
 		if err := os.WriteFile(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
@@ -502,14 +505,35 @@ func ruleCond(cmd string, r shimRule) string {
 	return strings.Join(conds, " && ")
 }
 
+// refusalTimestamp is the shell expression posse_refuse expands for the log
+// line's time. It is rendered from an ABSOLUTE path, not the bare name
+// `date`, because the shim dir leads the session's PATH by construction
+// (ADR 0009 §1): under a PID carrying `Bash(date:*)` the bare form made the
+// refusal path call this persona's OWN date shim, which refused, logged,
+// and called `date` again — an unbounded fork chain on the one verb the
+// refusal itself uses (ranger-base-hr5x). Every other command in the shim
+// is a shell builtin or an $RHQ_GATE_* expansion, so this is the whole
+// cycle: with it broken, a bare `date` elsewhere in the gates costs one
+// refused child, not a fork storm.
+//
+// "" when `date` is nowhere outside the gates — vanishingly unlikely, and
+// the answer is a line that keeps its shape with the time unknown rather
+// than one that reopens the loop.
+func refusalTimestamp(dateBin string) string {
+	if dateBin == "" {
+		return "-"
+	}
+	return "$(" + shQuote(dateBin) + " -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
 // renderShim writes the POSIX sh shim for one command.
-func renderShim(persona, cmd, real, log string, rules []shimRule) string {
+func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n", persona)
 	fmt.Fprintf(&b, "RHQ_GATE_LOG=%s\n", shQuote(log))
 	fmt.Fprintf(&b, "posse_refuse() {\n  echo \"refused by posse gate: %s $* (deny: $RHQ_GATE_RULE)\" >&2\n", cmd)
 	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && echo \"$RHQ_GATE_HINT\" >&2\n")
-	fmt.Fprintf(&b, "  echo \"$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ) %s $* (deny: $RHQ_GATE_RULE)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", cmd)
+	fmt.Fprintf(&b, "  echo \"%s %s $* (deny: $RHQ_GATE_RULE)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", refusalTimestamp(dateBin), cmd)
 	// A negative rule needs one helper: does argv carry the qualifier WITH
 	// an operand? The bare token is not enough — `git commit --` with an
 	// empty pathspec commits the shared index exactly like the bare form

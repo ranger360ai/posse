@@ -2055,3 +2055,130 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 		t.Errorf("commit-only probe: %+v", got)
 	}
 }
+
+// ranger-base-hr5x: `date` is the one real binary the refusal path itself
+// runs, and it ran it by BARE NAME. The shim dir leads the session's PATH by
+// construction (ADR 0009 §1), so under a PID carrying Bash(date:*) the
+// refusal called this persona's own date shim — which refused, logged, and
+// called `date` again: an unbounded fork chain, the shape that cost the
+// fleet a day in ranger-base-f0ay.
+//
+// The pin is behavioral and BOUNDED. A decoy `date` sits at the head of the
+// PATH the shim runs under, in FRONT of the shim dir, so the lookup this
+// test asks about lands on a script that does not recurse: the wrong arm
+// costs one extra process instead of a fork storm, which is what makes the
+// deny-date arm safe to run on a live box. The decoy is planted in the
+// CHILD's env only — on the process PATH it would be what render time
+// resolves, and the test would be measuring itself.
+func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	if _, err := exec.LookPath("date"); err != nil {
+		t.Skip("no date")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	// A git stub, so an escape from either arm leaks into a file instead of
+	// running a real `git push`.
+	realBin := t.TempDir()
+	leaked := filepath.Join(t.TempDir(), "leaked")
+	if err := os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	gatesDir, binDir, _, err := a.RenderGates("developer", []string{"Bash(git push:*)", "Bash(date:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoyDir := t.TempDir()
+	witness := filepath.Join(decoyDir, "witness")
+	if err := os.WriteFile(filepath.Join(decoyDir, "date"),
+		[]byte("#!/bin/sh\necho DECOY >>'"+witness+"'\necho DECOY-TIME\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sep := string(os.PathListSeparator)
+	childPath := decoyDir + sep + binDir + sep + PathOutsideGates("")
+
+	// The control, and it is not decoration: "the decoy was never called" is
+	// also what a PATH that could never reach it says. Measure the
+	// instrument first (the fm4p lesson).
+	probe := exec.Command("/bin/sh", "-c", "date +%s")
+	probe.Env = []string{"PATH=" + childPath}
+	if out, err := probe.CombinedOutput(); err != nil || !strings.Contains(string(out), "DECOY-TIME") {
+		t.Fatalf("control: a bare `date` on the child's PATH must reach the decoy: %v %q", err, out)
+	}
+	// That call is itself the decoy's first mark: the assertion below is a
+	// no-growth test, so the mark proves the witness file records calls.
+	calls := func() int {
+		b, err := os.ReadFile(witness)
+		if err != nil {
+			return 0
+		}
+		return len(strings.Fields(string(b)))
+	}
+	if n := calls(); n != 1 {
+		t.Fatalf("control: the decoy must record its own call, got %d marks", n)
+	}
+
+	run := func(shim string, args ...string) (string, int) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, filepath.Join(binDir, shim), args...)
+		cmd.Env = []string{"PATH=" + childPath, "RHQ_GATES_DIR=" + gatesDir}
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("%s %v: %v", shim, args, err)
+		}
+		return string(out), code
+	}
+	for _, tc := range []struct {
+		shim string
+		args []string
+	}{
+		{"git", []string{"push", "origin", "main"}},
+		// The verb the refusal itself uses: the recursive arm.
+		{"date", []string{"-u", "+%Y"}},
+	} {
+		out, code := run(tc.shim, tc.args...)
+		if code != 1 || !strings.Contains(out, "refused by posse gate: "+tc.shim) {
+			t.Errorf("%s %v: code=%d out=%q", tc.shim, tc.args, code, out)
+		}
+	}
+	if n := calls(); n != 1 {
+		t.Errorf("the refusal path looked `date` up on PATH (%d decoy calls, 1 is the control's) — in a session the shim dir LEADS that PATH, so this is the fork chain", n)
+	}
+	if _, err := os.Stat(leaked); err == nil {
+		t.Error("shim exec'd the real git")
+	}
+	logb, _ := os.ReadFile(filepath.Join(gatesDir, "refusals.log"))
+	lines := strings.Split(strings.TrimSpace(string(logb)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("one line per refusal, not a chain of them: %q", logb)
+	}
+	stamp := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z `)
+	for _, l := range lines {
+		if !stamp.MatchString(l) {
+			t.Errorf("a refusal line must carry a real UTC timestamp, not a decoy's and not an empty substitution: %q", l)
+		}
+	}
+	// And the rendered script says so on its face, so the bare form is not
+	// reintroduced by someone copying the line.
+	body, err := os.ReadFile(filepath.Join(binDir, "date"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "$(date ") {
+		t.Errorf("posse_refuse must not spell `date` bare:\n%s", body)
+	}
+	// The escape hatch is the other way the loop could reopen: when `date`
+	// is nowhere outside the gates, the line loses its time rather than its
+	// bound.
+	if strings.Contains(refusalTimestamp(""), "date") {
+		t.Errorf("the unresolvable fallback must not spell `date` either: %q", refusalTimestamp(""))
+	}
+}
