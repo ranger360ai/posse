@@ -20,6 +20,8 @@ package rhq
 // worktree_test.go. These go through dispatch and through real git hooks.
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -163,6 +165,11 @@ func wtqaPassWithWork(t *testing.T, extra func(repo, tree string)) (*Dispatcher,
 	wtqaHome(t)
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
+	// The merge-back rung says half of what it says on errw (a handoff that
+	// could not be filed is an error, not a pass line), so the pass's stderr
+	// is captured rather than left to leak into the suite's own — where a
+	// non-verbose `go test` prints it above some other package's failure.
+	dispatcherErr(t, d)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)
@@ -261,6 +268,121 @@ func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
 			t.Errorf("the filed bead is missing %q:\n%s", want, call)
 		}
 	}
+}
+
+// ranger-base-eul1: bd 0.49.1 can COMMIT the issue and fail on the `--deps`
+// edge alone (verifyMarkerPrefix has the measurement). The exit code cannot
+// tell that apart from a create that landed nothing, so the pass must read
+// the graph back: a P1 that is really sitting in the persona's queue must be
+// reported as filed — by id — not as "could not file", or the operator goes
+// looking for a handoff that exists and nothing ever retries it.
+func TestMergeBlockedCreateThatCommittedTheIssueIsReportedFiledEdgeless(t *testing.T) {
+	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
+		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+		write(t, filepath.Join(repo, "fake-create-fail"), "")
+	})
+	out := dispatcherOut(d)
+
+	if strings.Contains(wtqaErr(d), "could not file the merge-back bead") {
+		t.Errorf("a bead bd committed was reported as not filed:\n%s", out)
+	}
+	if !strings.Contains(out, "WITHOUT its discovered-from:a-1 edge") {
+		t.Errorf("the pass did not say the edge is missing:\n%s", out)
+	}
+	// Named, because an id is what the operator types next.
+	id := mergeBlockedID(t, repo)
+	if !strings.Contains(out, "filed "+id+" for ranger WITHOUT") {
+		t.Errorf("the edgeless bead %s is not named on the pass:\n%s", id, out)
+	}
+	// And the provenance the edge did not carry: in the description, and
+	// commented back onto the close it came out of.
+	bd := bdCalls(t, fakeDir())
+	if !strings.Contains(bd, mergeBlockedMarkerPrefix+"a-1") {
+		t.Errorf("the filed bead's description does not name the close it came from:\n%s", bd)
+	}
+	if !strings.Contains(bd, "comments add a-1 merge-back blocked: filed "+id) {
+		t.Errorf("no pointer back from a-1 to %s:\n%s", id, bd)
+	}
+}
+
+// The other arm, which is what keeps the read honest: a create that
+// committed NOTHING is still reported as not filed. A read-back that reports
+// "filed" off any failure would be worse than the bug it replaces.
+func TestMergeBlockedCreateThatLandedNothingStillSaysSo(t *testing.T) {
+	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
+		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+		write(t, filepath.Join(repo, "fake-create-hard-fail"), "")
+	})
+	out := dispatcherOut(d) + wtqaErr(d)
+
+	if !strings.Contains(wtqaErr(d), "could not file the merge-back bead for a-1") {
+		t.Errorf("a handoff that does not exist must be reported as missing:\n%s", out)
+	}
+	if strings.Contains(out, "WITHOUT its discovered-from") {
+		t.Errorf("the pass claimed an edgeless bead that was never committed:\n%s", out)
+	}
+	// The witness that the fixture is the one it claims to be: the create
+	// was attempted, and the store really holds no merge-back bead — an
+	// assertion of pure absence is otherwise satisfied by a pass that never
+	// got as far as filing.
+	if bd := bdCalls(t, fakeDir()); !strings.Contains(bd, "create merge-back blocked") {
+		t.Fatalf("the pass never tried to file the merge-back bead:\n%s", bd)
+	}
+	if b, err := os.ReadFile(filepath.Join(repo, "fake-list-labeled.json")); err == nil && strings.Contains(string(b), "merge-back blocked") {
+		t.Fatalf("the fixture committed the issue after all — this is the poisoned arm, not the hard-fail one:\n%s", b)
+	}
+}
+
+// The dedupe the two harness-side siblings already have (fileVerifyBead's
+// marker, escalateSettleOpen's title+label): a merge-back bead that is
+// already open for this branch is not filed twice — the edgeless orphan of a
+// timed-out create is exactly what would otherwise be re-filed every pass
+// that judges the close (the muoo flood's shape).
+func TestMergeBlockedDoesNotFileASecondBeadForTheSameBranch(t *testing.T) {
+	d, _, _ := wtqaPassWithWork(t, func(repo, tree string) {
+		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+		branch, err := git(tree, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, filepath.Join(repo, "fake-list-labeled.json"), fmt.Sprintf(
+			`[{"id":"m-9","title":%q,"status":"open","labels":["code"]}]`,
+			mergeBlockedTitle(branch, "main")))
+	})
+	out := dispatcherOut(d)
+
+	if !strings.Contains(out, "m-9 already filed for ranger") {
+		t.Errorf("the open merge-back bead was not recognised:\n%s", out)
+	}
+	if bd := bdCalls(t, fakeDir()); strings.Contains(bd, "create merge-back blocked") {
+		t.Errorf("a second merge-back bead was filed:\n%s", bd)
+	}
+}
+
+// mergeBlockedID is the id the fake bd handed the merge-back create, read
+// out of the store the create landed in — so the pin names the bead that
+// exists rather than the one the id counter happens to be on.
+func mergeBlockedID(t *testing.T, repo string) string {
+	t.Helper()
+	var list []struct {
+		ID    string   `json:"id"`
+		Title string   `json:"title"`
+		Label []string `json:"labels"`
+	}
+	b, err := os.ReadFile(filepath.Join(repo, "fake-list-labeled.json"))
+	if err != nil {
+		t.Fatalf("no labeled listing: %v", err)
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, is := range list {
+		if strings.HasPrefix(is.Title, "merge-back blocked: ") {
+			return is.ID
+		}
+	}
+	t.Fatalf("bd committed no merge-back bead:\n%s", b)
+	return ""
 }
 
 // The same refusal through the pass (ranger-base-5s2o): the operator's
@@ -892,3 +1014,8 @@ func TestQAWorktreeRootRefusesASymlinkOutOfHome(t *testing.T) {
 		t.Errorf("a path THROUGH a symlink out of $HOME was accepted")
 	}
 }
+
+// wtqaErr is what the pass wrote to errw — the writer dispatcherErr attached
+// in wtqaPassWithWork. The merge-back rung reports a handoff it could NOT
+// file there, so a pin that reads only d.Out cannot see it.
+func wtqaErr(d *Dispatcher) string { return d.Err.(*strings.Builder).String() }

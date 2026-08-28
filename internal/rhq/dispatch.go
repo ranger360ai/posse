@@ -3442,31 +3442,105 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 	}
 }
 
+// MergeBlockedLabel routes the merge-back handoff back into a code lane, and
+// is therefore also the listing the dedupe reads back.
+const MergeBlockedLabel = "code"
+
+// mergeBlockedMarkerPrefix opens the description line naming the close this
+// handoff came out of. It is in the description because the `discovered-from`
+// edge is a write bd can lose while committing the issue
+// (verifyMarkerPrefix), and a P1 assigned to a persona with no provenance is
+// a bead nobody can trace back to the work it is about.
+const mergeBlockedMarkerPrefix = "discovered-from: "
+
 // fileMergeBlocked hands a stuck merge to the persona whose branch it is.
 // ADR 0006 §1: a handoff is a bead, never a comment on someone else's and
 // never a chat — and a merge nobody is told about is how a closed bead's
 // code sits on a branch forever.
 func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTree, o MergeOutcome) {
 	base := orDetached(t.Base)
+	title := mergeBlockedTitle(t.Branch, base)
+	if id, err := d.openMergeBlocked(is.Dir, title); err != nil {
+		// The read is the dedupe, not the handoff: a graph that will not
+		// answer must not cost a blocked merge the bead that says where its
+		// code is. Say so and file — a duplicate is visible, a missing
+		// handoff is not.
+		d.eprintf("posse: %s could not be checked for an existing merge-back bead (%v) — filing one\n", is.ID, err)
+	} else if id != "" {
+		d.printf("  ↳ %s already filed for %s — not re-filed\n", id, persona)
+		return
+	}
 	id, err := d.Bd.Create(is.Dir, BdNew{
-		Title:    fmt.Sprintf("merge-back blocked: %s does not land on %s", t.Branch, base),
+		Title:    title,
 		Assignee: persona,
-		Labels:   []string{"code"},
+		Labels:   []string{MergeBlockedLabel},
 		Deps:     []string{"discovered-from:" + is.ID},
 		Priority: "1",
 		Actor:    "posse",
 		Description: fmt.Sprintf(
-			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\nworktree: %s\nrepo:     %s\n\n"+
+			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n\n"+
 				"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
 				"Resolve it in the worktree (rebase onto %s and fix the conflicts), then a\n"+
 				"launcher pass or `posse kill` lands it. The branch is untouched and still\n"+
 				"holds every commit.",
 			persona, is.ID, o.Commits, t.Branch, base, o.Reason,
+			mergeBlockedMarkerPrefix, is.ID,
 			t.Path, t.Repo, base, base, base),
 	})
 	if err != nil {
-		d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
-		return
+		// bd may have committed the issue and failed on the `--deps` edge
+		// alone (verifyMarkerPrefix has the measurement). The exit code
+		// cannot tell those apart, so the graph decides what the pass
+		// reports: a bead that IS there is filed — edgeless, and named — not
+		// missing, or the operator goes looking for a handoff that exists
+		// and the persona holds a P1 nobody can trace.
+		filed, ferr := d.openMergeBlocked(is.Dir, title)
+		switch {
+		case ferr != nil:
+			d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work, and the graph would not say whether one landed anyway (%v)\n",
+				is.ID, err, t.Branch, ferr)
+			return
+		case filed == "":
+			d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
+			return
+		}
+		id = filed
+		d.printf("  ↳ filed %s for %s WITHOUT its discovered-from:%s edge (%v) — its provenance is the description and a comment on %s\n",
+			id, persona, is.ID, err, is.ID)
+	} else {
+		d.printf("  ↳ filed %s for %s\n", id, persona)
 	}
-	d.printf("  ↳ filed %s for %s\n", id, persona)
+	// The breadcrumb that survives a lost edge, the way verify-after's does
+	// (fileVerifyBead): the bead exists either way, so a failed comment is a
+	// lost pointer, not lost work, and re-filing to get one would duplicate
+	// the handoff.
+	if err := d.Bd.Comment(is.Dir, is.ID, "merge-back blocked: filed "+id, "posse"); err != nil {
+		d.eprintf("posse: %s not commented with %s (%v) — the bead exists, the pointer back does not\n", is.ID, id, err)
+	}
+}
+
+// mergeBlockedTitle is the handoff's title and its dedupe key in one. The
+// branch is cut per bead (SessionForBead), so branch+base names exactly the
+// merge this bead is about — the same trick escalateSettleOpen plays with
+// settleStuckTitle, and for the same reason: the `discovered-from` edge is
+// the one field of a create bd can commit the issue without
+// (verifyMarkerPrefix), so nothing that must be found again may live there.
+func mergeBlockedTitle(branch, base string) string {
+	return fmt.Sprintf("merge-back blocked: %s does not land on %s", branch, base)
+}
+
+// openMergeBlocked is the id of the OPEN merge-back bead already filed for
+// this branch, or "" for none. Closed does not count: a persona that
+// resolved one and the merge that is blocked again are two handoffs.
+func (d *Dispatcher) openMergeBlocked(dir, title string) (string, error) {
+	open, err := d.Bd.OpenLabeledAny(dir, MergeBlockedLabel)
+	if err != nil {
+		return "", err
+	}
+	for _, b := range open {
+		if b.Title == title {
+			return b.ID, nil
+		}
+	}
+	return "", nil
 }

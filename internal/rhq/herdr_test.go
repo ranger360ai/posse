@@ -184,6 +184,14 @@ func fakeBd(args []string) int {
 		return 0
 	case "create": // create <title> … --json → a fresh id, counted per fake dir
 		id := fakeBdNextID()
+		// bd's OTHER failure, and the one the poisoned shape must be told
+		// apart from: the create fails having committed NOTHING, so the
+		// handoff really does not exist and a caller that reads the graph
+		// back must still say so.
+		if _, err := os.Stat("fake-create-hard-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "Error: database is locked")
+			return 1
+		}
 		// bd 0.49.1's non-atomic create (ranger-base-muoo), opt-in with a
 		// fake-create-fail marker: against a parent whose dependency closure
 		// is tangled the daemon COMMITS the issue and then outruns the
