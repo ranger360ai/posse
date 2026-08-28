@@ -56,8 +56,7 @@ func containsAddDir(s string) bool { return strings.Contains(s, "--add-dir") }
 // really launches it: a session worktree (rangerhq-09o2) of a repo whose
 // .beads is an ADR 0012 D3-C redirect.
 func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	b, fake := newTestBackend(t)
+	b, fake := newTestBackend(t) // its own temp $HOME
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -330,10 +330,9 @@ func TestSettleOpenWritesNothingWithoutResumeOrUnderDryRun(t *testing.T) {
 // the open bead — is what made this urgent rather than untidy. It is the
 // first fact a human deciding whether to kill the session needs.
 func TestSettleEscalationNamesUncommittedWorkInTheTree(t *testing.T) {
-	// newTestBackend leaves $HOME alone, and DefaultWorktreeRoot reads it:
-	// without this the session tree below is cut under the OPERATOR's live
-	// ~/.posse/worktrees (measured, ranger-base-9hm).
-	t.Setenv("HOME", t.TempDir())
+	// The session tree below is cut under $HOME (DefaultWorktreeRoot), which
+	// newTestBackend makes a temp one — without that it lands in the
+	// OPERATOR's live ~/.posse/worktrees (ranger-base-9hm, -gvrh).
 	b, _ := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	repo := wtRepo(t)

@@ -1043,6 +1043,13 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	t.Helper()
 	home := t.TempDir()
 	fake := t.TempDir()
+	// $HOME is the operator's real one unless a test says otherwise, and
+	// plenty of what this package reads hangs off it — ~/.claude, ~/.grok,
+	// ~/.codex, and DefaultWorktreeRoot's ~/.posse/worktrees. That last one
+	// is not a read: a test reaching EnsureSessionTree cut a real git
+	// worktree in the operator's live ~/.posse (ranger-base-gvrh). Every
+	// backend test gets a temp HOME, the way wtApp already does.
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("RHQ_FAKE_HERDR", "1")
 	t.Setenv("RHQ_FAKE_DIR", fake)
 	exe, err := os.Executable()

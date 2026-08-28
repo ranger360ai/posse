@@ -112,6 +112,37 @@ func TestWorktreeRootHonoursConfig(t *testing.T) {
 	}
 }
 
+// The backend harness must hand out a temp $HOME too, not just wtApp:
+// DefaultWorktreeRoot reads $HOME at call time, so a backend test that
+// reaches EnsureSessionTree without one cuts a real git worktree in the
+// operator's live ~/.posse (ranger-base-gvrh — a stray tree was found
+// there). The root check runs before anything writes, so this test cannot
+// itself litter the operator's home when it fails.
+func TestNewTestBackendGetsATempHome(t *testing.T) {
+	real := os.Getenv("HOME")
+	b, _ := newTestBackend(t)
+	home := os.Getenv("HOME")
+	if home == real {
+		t.Fatalf("newTestBackend left $HOME at the operator's own %s — every write under it is real", real)
+	}
+	// The write itself: this is the call that made the stray tree. It runs
+	// only after the $HOME check above, so a regression fails before it can
+	// cut anything.
+	tree, err := b.App.EnsureSessionTree(wtRepo(t), "ranger-posse-a-1", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree == nil {
+		t.Fatal("no session tree was cut, so this test measured nothing")
+	}
+	if real != "" && pathUnder(tree.Path, filepath.Join(real, ".posse")) {
+		t.Fatalf("session tree %s was cut in the operator's live ~/.posse", tree.Path)
+	}
+	if !pathUnder(tree.Path, home) {
+		t.Fatalf("session tree %s was cut outside the test's $HOME %s", tree.Path, home)
+	}
+}
+
 // ─── making the tree ─────────────────────────────────────────────────────────
 
 func TestEnsureSessionTreeIsPrivateAndIdempotent(t *testing.T) {

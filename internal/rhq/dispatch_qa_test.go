@@ -815,7 +815,7 @@ func TestDispatchTwoBeadsFreshSessions(t *testing.T) {
 	if strings.Contains(bdCalls(t, fake), "update a-2 --claim") {
 		t.Errorf("busy-skipped bead must not be claimed:\n%s", bdCalls(t, fake))
 	}
-	if !strings.Contains(calls(t, fake), "workspace create --label ranger-003-a-1") {
+	if !strings.Contains(calls(t, fake), "workspace create --label "+SessionForBead("ranger", repo, "a-1")) {
 		t.Errorf("session must be named for the bead:\n%s", calls(t, fake))
 	}
 	// Second pass: the queued bead goes out in a fresh session of its own.
@@ -827,7 +827,7 @@ func TestDispatchTwoBeadsFreshSessions(t *testing.T) {
 		t.Errorf("queued bead not dispatched on the next pass:\n%s", dispatcherOut(d2))
 	}
 	c := calls(t, fake)
-	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label ranger-003-a-2") || !strings.Contains(c, "agent prompt w2:p1") {
+	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label "+SessionForBead("ranger", repo, "a-2")) || !strings.Contains(c, "agent prompt w2:p1") {
 		t.Errorf("second bead must get its own fresh session:\n%s", c)
 	}
 	// The first bead's session is left idle for the operator to reap; it
@@ -879,7 +879,7 @@ func TestRunRefillsAFreedSeatInsideOnePass(t *testing.T) {
 		t.Errorf("want both beads judged closed inside this one Run:\n%s", out)
 	}
 	c := calls(t, fakeA)
-	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label ranger-003-a-1") || !strings.Contains(c, "workspace create --label ranger-004-b-1") {
+	if strings.Count(c, "workspace create") != 2 || !strings.Contains(c, "workspace create --label "+SessionForBead("ranger", repoA, "a-1")) || !strings.Contains(c, "workspace create --label "+SessionForBead("ranger", repoB, "b-1")) {
 		t.Errorf("want two fresh sessions, one per bead (Dial F):\n%s", c)
 	}
 }
@@ -933,14 +933,14 @@ func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
 			// The witness that the fixture ran at all: a-1 always goes out
 			// and is always judged, in both arms. An assertion of pure
 			// absence would be satisfied by a Run that did nothing.
-			if !strings.Contains(out, "creating session ranger-003-a-1") || !strings.Contains(out, "closed by ranger") {
+			if !strings.Contains(out, "creating session "+SessionForBead("ranger", repo, "a-1")) || !strings.Contains(out, "closed by ranger") {
 				t.Fatalf("the first bead must launch and be judged in both arms:\n%s", out)
 			}
 			if got := strings.Count(log, "workspace create"); got != tc.want {
 				t.Errorf("want %d session(s) created in one Run, got %d:\n%s", tc.want, got, log)
 			}
 			if tc.refill {
-				if !strings.Contains(log, "workspace create --label ranger-003-a-2") {
+				if !strings.Contains(log, "workspace create --label "+SessionForBead("ranger", repo, "a-2")) {
 					t.Errorf("a-2 must get its own fresh session inside this Run (Dial F):\n%s", log)
 				}
 				if strings.Count(out, "closed by ranger") != 2 {
@@ -956,7 +956,7 @@ func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
 				if settle < 0 || launch < 0 || launch < settle {
 					t.Errorf("a-2 must launch only AFTER a-1 settled and freed the seat (settle@%d launch@%d):\n%s", settle, launch, out)
 				}
-			} else if strings.Contains(log, "ranger-003-a-2") {
+			} else if strings.Contains(log, SessionForBead("ranger", repo, "a-2")) {
 				t.Errorf("without Refill a settled seat must not be fired into again:\n%s", log)
 			}
 		})
@@ -1022,7 +1022,7 @@ func TestLaunchBeadTwiceWhileStillIdle(t *testing.T) {
 	if _, err := d.LaunchBead(two); err != nil {
 		t.Errorf("different bead must get its own session: %v", err)
 	}
-	if !strings.Contains(calls(t, fake), "workspace create --label ranger-003-a-2") || !strings.Contains(calls(t, fake), "agent prompt w2:p1") {
+	if !strings.Contains(calls(t, fake), "workspace create --label "+SessionForBead("ranger", repo, "a-2")) || !strings.Contains(calls(t, fake), "agent prompt w2:p1") {
 		t.Errorf("want a second session for a-2:\n%s", calls(t, fake))
 	}
 	// Once herdr reports the first bead's session done, or the grace has

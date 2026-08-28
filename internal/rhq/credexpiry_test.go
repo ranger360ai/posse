@@ -341,8 +341,7 @@ func TestAnUndatedOrHealthyBoxSaysNothingOnThePass(t *testing.T) {
 // on a box whose operator never armed a meter guard, and a warning nested
 // inside that guard would be silent on exactly that box.
 func TestARealPassPrintsTheCredentialWarning(t *testing.T) {
-	b, _ := newTestBackend(t)
-	t.Setenv("HOME", t.TempDir()) // newTestBackend gives no temp $HOME
+	b, _ := newTestBackend(t) // its own temp $HOME
 	a := b.App
 	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
 		t.Fatal(err)

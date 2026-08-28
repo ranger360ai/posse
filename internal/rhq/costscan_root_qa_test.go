@@ -144,10 +144,13 @@ func TestDegradedPassOverUnreadableRootParksOnTheLedger(t *testing.T) {
 		t.Skip("root reads anything; this needs an unprivileged uid")
 	}
 	home := t.TempDir()
+	r := newBlindRig(t, ledgerArmedCfg)
+	// After the rig, not before: newTestBackend gives every backend test a
+	// temp $HOME of its own (ranger-base-gvrh), and this test needs $HOME to
+	// be the one whose ledger root it just broke.
 	t.Setenv("HOME", home)
 	chmodBack(t, claudeProjects(t, home))
 
-	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
 	r.d.Spend = nil // the real ScanCosts, against a real broken root
 	r.blind()
@@ -183,10 +186,11 @@ func TestDegradedPassOverUnreadableRootParksOnTheLedger(t *testing.T) {
 // same numbers. This arm is what makes the pair discriminate.
 func TestDegradedPassOverReadableEmptyRootRunsOnTheLedger(t *testing.T) {
 	home := t.TempDir()
+	r := newBlindRig(t, ledgerArmedCfg)
+	// After the rig, for the reason its without-arm gives (ranger-base-gvrh).
 	t.Setenv("HOME", home)
 	claudeProjects(t, home) // readable; one record, nothing priced in it
 
-	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
 	r.d.Spend = nil // the real ScanCosts, against a real readable root
 	r.blind()
