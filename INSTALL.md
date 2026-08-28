@@ -1124,11 +1124,30 @@ names the file — check the two `mv`s above; the one whose source was missing
 printed `No such file or directory` and is easy to scroll past. Until that
 is fixed, no commit in that repo can succeed, the operator's included.
 
-Persona launch runs the first two behavioral probes itself (both slots in
-one shell invocation). Ownership markers still decide whether posse may
-replace a hook, but they are never enforcement evidence: a working foreign
-chain passes, while a slot that does not exit 1 is reported as `DEGRADED` and
-the session refuses unless the operator explicitly allows degradation.
+Those three probes are what **you** check by hand. They are not what a
+persona launch checks, and a chain that passes all three can still be
+refused. Since ADR 0023 the launch never runs the hook at the dispatch
+path at all; its verdict on a slot is **byte identity** against posse's own
+current render — the file at `git rev-parse --git-path hooks`/`<slot>` is
+byte-for-byte the render posse would write, or the chain dispatcher above
+with `posse-<slot>` byte-for-byte that render, both `+x`. The behavioral
+half still runs, but on a private temp copy of *posse's own render*: it
+catches a renderer regression (a bad render, a broken `/bin/sh`) and says
+nothing about what is planted in your repo.
+
+So **a foreign hook is refused however well it behaves.** A hand-written
+chain that refuses under `RHQ_PERSONA` with exit 1 and stands down without
+it — all three probes green — is still reported `DEGRADED` as "foreign
+hook, posse cannot vouch for a hook it did not write", and the session
+refuses unless the operator explicitly allows degradation (measured against
+exactly that hook, ranger-base-nlhz). Nothing the file does can change that
+verdict, because nothing asks it: a black-box probe cannot tell a hook that
+refuses everything from one that refuses only the probe, so the launcher
+stopped asking. The way to make a launch pass is
+the chain above, byte for byte. Ownership markers still decide whether
+posse may *replace* a hook, and they are still never enforcement evidence —
+identity is not a marker, it is the whole file checked against the whole
+file posse would have written.
 
 Re-running `bd hooks install` — after a `bd` upgrade, or in a second clone
 — overwrites both slots and takes the chain with them. Run the three probes
@@ -1138,16 +1157,17 @@ chain alone, and also why it cannot build one. In a repo where `bd hooks
 install` got there first, both slots are bd's, so every install it attempts
 refuses; and because session create makes them best-effort and discards the
 error, it installs **nothing and says nothing** — that step is silent.
-What happens next is not: the behavioral probe in the paragraph above
-finds neither slot exits 1, reports both as `DEGRADED`, and **the launch
-refuses** (ranger-base-3c3). So the state rangerhq-f2p5 was filed about —
-no push gate, no commit guard — is no longer reached by dispatch at all.
-The operator meets it as a session that will not start, naming both slots
-and `--allow-degraded`, not as a wall that is silently not there; only
-`--allow-degraded` gets in, and that session is marked degraded in its
-meta. Session create itself does not pass `--chain` (it is
-a CLI flag, typed by an operator who can weigh a slot takeover, not a
-default a silent best-effort install should choose on its own), so this is
+What happens next is not: bd's shim is not posse's render, so the identity
+check in the paragraph above reports both slots `DEGRADED` — foreign — and
+**the launch refuses** (ranger-base-3c3). Whether bd's shim would refuse a
+persona's push never comes up; nothing runs it. So the state rangerhq-f2p5
+was filed about — no push gate, no commit guard — is no longer reached by
+dispatch at all. The operator meets it as a session that will not start,
+naming both slots and `--allow-degraded`, not as a wall that is silently not
+there; only `--allow-degraded` gets in, and that session is marked degraded
+in its meta. Session create itself does not pass `--chain` (it is a CLI
+flag, typed by an operator who can weigh a slot takeover, not a default a
+silent best-effort install should choose on its own), so this is
 still not optional for a repo you dispatch into: run `install-hooks --chain`
 by hand once — or the manual block above, if the occupying hook is not bd's
 shim — and run the three probes, in every clone.

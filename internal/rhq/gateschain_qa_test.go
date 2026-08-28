@@ -704,3 +704,145 @@ func TestQADispatchIntoABdHookedRepoInstallsNothingAndRefuses(t *testing.T) {
 		}
 	}
 }
+
+// qaWorkingForeignChain is a foreign hook that PASSES all three of §9's own
+// printed probes: it refuses under RHQ_PERSONA with exit 1 in either slot,
+// and stands down (exit 0) for the operator. Nothing about it is broken —
+// which is the whole point of ranger-base-nlhz.
+const qaWorkingForeignChain = `#!/bin/sh
+if [ -n "$RHQ_PERSONA" ]; then echo "refused by posse gate: foreign but working"; exit 1; fi
+exit 0
+`
+
+// ranger-base-nlhz: §9 used to tell the operator "a working foreign chain
+// passes", and explained the bd-hooked repo's refusal as the behavioral probe
+// finding neither slot exits 1. Since ADR 0023 neither is true: the launch
+// never execs the dispatched file, and its verdict is byte identity against
+// posse's own render. This pins the fact and the sentence together — the
+// sibling test above asserts only THAT a bd-hooked repo refuses, which is why
+// it stayed green while the doc's account of the cause went stale.
+//
+// The fixture carries its own witness: the three probes are run against the
+// planted chain first, so a hook that silently failed to be "working" is a
+// red test rather than a refusal credited to the wrong cause.
+func TestQAWorkingForeignChainIsRefusedOnIdentityNotBehavior(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	b, _ := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	hooks := filepath.Join(repo, ".git", "hooks")
+	slots := []string{"pre-push", "prepare-commit-msg"}
+	for _, slot := range slots {
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(qaWorkingForeignChain), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Witness: §9's three probes, verbatim, against what was just planted.
+	msg := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	if err := os.WriteFile(msg, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	probes := []struct {
+		what string
+		cmd  *exec.Cmd
+		env  []string
+		want int
+	}{
+		{"pre-push under a persona", exec.Command("sh", "-c",
+			`printf 'refs/heads/main a refs/heads/main b\n' | .git/hooks/pre-push origin x`),
+			[]string{"RHQ_PERSONA=probe", "RHQ_TOOLS_DENY=Bash(git push:*)"}, 1},
+		{"prepare-commit-msg under a persona",
+			exec.Command(filepath.Join(hooks, "prepare-commit-msg"), msg),
+			[]string{"RHQ_PERSONA=probe"}, 1},
+		{"prepare-commit-msg for the operator",
+			exec.Command(filepath.Join(hooks, "prepare-commit-msg"), msg, "message"),
+			nil, 0},
+	}
+	for _, p := range probes {
+		p.cmd.Dir = repo
+		p.cmd.Env = append(qaEnvWithout("RHQ_PERSONA", "RHQ_TOOLS_DENY"), p.env...)
+		out, err := p.cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("%s: %v", p.what, err)
+		}
+		if code != p.want {
+			t.Fatalf("the fixture is not a working chain — %s exited %d, want %d:\n%s", p.what, code, p.want, out)
+		}
+	}
+
+	// And it is refused anyway, on identity.
+	err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "dev", Runtime: "claude", Dir: repo})
+	if err == nil {
+		t.Fatal("a foreign hook is refused however well it behaves (ADR 0023) — this one passed all three probes and the launch let it through")
+	}
+	for _, slot := range slots {
+		if !strings.Contains(err.Error(), slot) {
+			t.Errorf("the refusal must name %s:\n%v", slot, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "a hook it did not write") {
+		t.Errorf("the refusal must name identity as the reason — §9 explains it that way:\n%v", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-degraded") {
+		t.Errorf("the refusal must name the way through:\n%v", err)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "s2", Agent: "dev", Runtime: "claude", Dir: repo, AllowDegraded: true})
+	if m, _ := b.readMeta("s2"); m == nil || !strings.Contains(m.Degraded, "foreign hook") {
+		t.Errorf("a waived launch must stay marked as degraded: %+v", m)
+	}
+
+	// The sentence, next to the fact.
+	doc, err2 := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	for _, gone := range []string{
+		"a working foreign\nchain passes",
+		"the behavioral probe in the paragraph above\nfinds neither slot exits 1",
+	} {
+		if strings.Contains(string(doc), gone) {
+			t.Errorf("INSTALL.md §9 still explains the launch verdict with behavior of the dispatched hook: %q", gone)
+		}
+	}
+	for _, want := range []string{
+		"a foreign hook is refused however well it behaves",
+		"byte identity",
+	} {
+		if !strings.Contains(string(doc), want) {
+			t.Errorf("INSTALL.md §9 no longer states the ADR 0023 verdict: %q", want)
+		}
+	}
+}
+
+// qaEnvWithout is os.Environ() with the named variables removed, so a probe
+// that must run as the operator does not inherit this process's persona env.
+func qaEnvWithout(names ...string) []string {
+	var out []string
+	for _, e := range os.Environ() {
+		drop := false
+		for _, n := range names {
+			if strings.HasPrefix(e, n+"=") {
+				drop = true
+			}
+		}
+		if !drop {
+			out = append(out, e)
+		}
+	}
+	return out
+}

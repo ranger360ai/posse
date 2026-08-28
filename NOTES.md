@@ -1981,11 +1981,16 @@ env. It cannot see through `env -i` — nothing in-process can; that is
 the container tier's job. Install: `posse gates install-hooks [repo]`
 (replaces its own hook, refuses to overwrite a foreign one — chain by
 hand). Persona launch reconciles the pre-push slot when the PID denies git
-push and always reconciles `prepare-commit-msg`, then runs both gated
-operations in one shell invocation and requires exit 1. A working foreign
-chain therefore counts without a marker; a planted pass-through body does
-not count even if it kept one. Failure is `DEGRADED`, visible before herdr
-is touched, and L3 disappears from concrete parity. The probe is launch-time
+push and always reconciles `prepare-commit-msg`, then decides each slot on
+**byte identity** against its own current render — that render, or the
+prescribed chain dispatcher with `posse-<slot>` byte-equal to it (ADR 0023).
+The file at the dispatch path is never exec'd; the behavioral half runs
+posse's own render from a private temp file, so it catches a renderer
+regression and nothing about what is planted. A foreign chain therefore does
+not count however well it behaves, and a planted pass-through body does not
+count even if it kept a marker: markers gate replacement, never realization.
+Failure is `DEGRADED`, visible before herdr is touched, and L3 disappears
+from concrete parity. The probe is launch-time
 evidence, not a permanent lock: at `cage: shims` the session can still edit
 the slot after the probe (the TOCTOU residual); the L2/L4 hook carve-out is
 what removes that capability. Chain foreign slots per INSTALL.md §9.
