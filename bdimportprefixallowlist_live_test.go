@@ -6,8 +6,18 @@ package posse
 //	issue. It clears the importer's batch gate and is then overruled by the
 //	storage layer's own single-prefix check. What actually admits the row is
 //	bd's LENIENT auto-import, which skips prefix validation altogether — and
-//	it admits a disallowed prefix just as happily, one command later, at
-//	exit 0, silently.
+//	it admits a disallowed prefix just as happily, in the same command that
+//	then reports the refusal at exit 1.
+//
+//	CORRECTED 2026-08-28 (ranger-base-gebs). This pin previously asserted the
+//	opposite of its third arm — that the refusal was a rollback and the NEXT
+//	ordinary bd command was the writer. It was green because inDB read the
+//	database with `?immutable=1`, which does not read the -wal. The refusing
+//	command commits the row to the WAL; the next command merely CHECKPOINTS
+//	it into the main file, at which point a WAL-blind reader can finally see
+//	it. Measured: after the refusal, wal_bytes=98912 and a WAL-aware read
+//	says 1 while the immutable read still says 0. There is no silent second
+//	writer. Exit 1 was never a rollback.
 //
 //	RHQ_LIVE_BD=1 go test . -run TestLiveBdImportPrefixAllowList -v
 //
@@ -115,10 +125,21 @@ func bdPrefixRig(t *testing.T) (string, func(...string) (string, error), func(st
 // inDB answers from the JSONL-independent side: the row is in the database or
 // it is not. `bd show` cannot be the instrument here — running it is one of the
 // things under test.
+//
+// It reads a `cp -a` SNAPSHOT of .beads rather than the live file, and opens it
+// without `?immutable=1`. Both halves matter. immutable does not read the -wal,
+// so it reports a committed row as absent until some later command checkpoints
+// — that single flag is what made the earlier version of this pin assert, and
+// pass, the opposite mechanism. Opening the live database read-write instead
+// would checkpoint it, and the checkpoint is one of the things under test; the
+// snapshot carries beads.db-wal and recovers it out of harm's way.
 func inDB(t *testing.T, root, id string) bool {
 	t.Helper()
-	out, err := exec.Command("sqlite3",
-		"file:"+filepath.Join(root, ".beads", "beads.db")+"?immutable=1",
+	snap := filepath.Join(t.TempDir(), "beads")
+	if out, err := exec.Command("cp", "-a", filepath.Join(root, ".beads"), snap).CombinedOutput(); err != nil {
+		t.Fatalf("snapshot .beads: %v %s", err, out)
+	}
+	out, err := exec.Command("sqlite3", filepath.Join(snap, "beads.db"),
 		"SELECT count(*) FROM issues WHERE id='"+id+"';").Output()
 	if err != nil {
 		t.Fatalf("sqlite3 read: %v", err)
@@ -171,33 +192,74 @@ func TestLiveBdImportPrefixAllowListDoesNotReachTheCreate(t *testing.T) {
 		}
 	})
 
-	// Trap 2, corrected. The strict refusal IS a rollback. What plants the row
-	// is the next ordinary bd command, at exit 0, saying nothing.
-	t.Run("a disallowed prefix lands on the next command, silently", func(t *testing.T) {
+	// Trap 2. The refusal is NOT a rollback: the command that reports the
+	// prefix mismatch at exit 1 has already committed the row. Measured
+	// deterministic 3/3 with a WAL-aware read; the earlier version of this
+	// pin asserted the reverse and passed only because its reader could not
+	// see the WAL (see the CORRECTED note in the header).
+	t.Run("the refusing command has already written the row", func(t *testing.T) {
 		root, bd, appendRow := bdPrefixRig(t)
 		appendRow("zzspike-6yf2")
+
+		// Negative control on the reader itself. Without this, an inDB that
+		// always answered "yes" would satisfy every assertion below.
+		if inDB(t, root, "zzspike-6yf2") {
+			t.Fatalf("the row is in the database before any import ran — inDB is not discriminating")
+		}
 
 		out, err := bd("sync", "--import-only")
 		if err == nil {
 			t.Fatalf("a disallowed prefix was accepted by the F3 command:\n%s", out)
 		}
-		if inDB(t, root, "zzspike-6yf2") {
-			t.Fatalf("the refused row was written by the refusing command itself:\n%s", out)
+		if !strings.Contains(out, "prefix mismatch") {
+			t.Errorf("refused, but not by the batch gate this arm is about:\n%s", out)
+		}
+		if !inDB(t, root, "zzspike-6yf2") {
+			t.Fatalf("exit 1 really was a rollback here; the trap this pin is about is gone or has moved:\n%s", out)
 		}
 
-		// One read. No flags, no import, nothing that announces a write.
-		readOut, readErr := bd("list", "--limit", "1")
-		if readErr != nil {
-			t.Fatalf("plain read failed, so this arm measured nothing: %v\n%s", readErr, readOut)
+		// And it stays wedged: the row is in the database, so every later
+		// import fails identically. This is the half the runbook's recovery
+		// step turns on — the JSONL line is not where the row lives now.
+		again, againErr := bd("sync", "--import-only")
+		if againErr == nil {
+			t.Errorf("the second import recovered on its own, so the wedge is not permanent:\n%s", again)
 		}
-		// Measured deterministic, 3/3 on a copy of a real 964-row store and
-		// again here. If bd ever stops doing this the pin should go red loudly
-		// — that is good news, and good news nobody reads is a SKIP.
 		if !inDB(t, root, "zzspike-6yf2") {
-			t.Fatalf("the disallowed row did not land on the next read; the silent writer this pin is about is gone or has moved:\n%s", readOut)
+			t.Errorf("the row left the database between the two imports:\n%s", again)
 		}
-		if strings.Contains(readOut, "zzspike") {
-			t.Errorf("the read did name the prefix it imported, which would make this survivable:\n%s", readOut)
+	})
+
+	// The instrument, pinned as a finding in its own right. `?immutable=1` is
+	// the natural way to read a database you must not disturb, and on bd it is
+	// wrong: it reports a committed row as absent until some later command
+	// checkpoints the WAL. Anyone auditing an import this way — the runbook's
+	// reader included — gets a clean answer that is not true.
+	t.Run("immutable=1 cannot see the row the refusal committed", func(t *testing.T) {
+		root, bd, appendRow := bdPrefixRig(t)
+		appendRow("zzspike-6yf3")
+
+		out, err := bd("sync", "--import-only")
+		if err == nil {
+			t.Fatalf("a disallowed prefix was accepted by the F3 command:\n%s", out)
+		}
+		immutable, immErr := exec.Command("sqlite3",
+			"file:"+filepath.Join(root, ".beads", "beads.db")+"?immutable=1",
+			"SELECT count(*) FROM issues WHERE id='zzspike-6yf3';").Output()
+		if immErr != nil {
+			t.Fatalf("sqlite3 immutable read: %v", immErr)
+		}
+		if !inDB(t, root, "zzspike-6yf3") {
+			t.Fatalf("the WAL-aware read cannot see it either, so this arm measured nothing:\n%s", out)
+		}
+		// Deliberately red rather than skipped if this expires. The runbook
+		// tells the operator not to audit an import with immutable=1; if the
+		// two readers ever agree, that instruction is stale and somebody has
+		// to be told, and a SKIP tells nobody.
+		if strings.TrimSpace(string(immutable)) != "0" {
+			t.Errorf("immutable=1 saw the row (%s) — bd now checkpoints inside the refusing "+
+				"command, the two readers no longer disagree, and $RB/docs/runbooks/0012-cutover.md "+
+				"§1 F8 needs its instrument note updated", strings.TrimSpace(string(immutable)))
 		}
 	})
 }
