@@ -653,3 +653,61 @@ func treeOf(t *testing.T, root string) string {
 	}
 	return b.String()
 }
+
+// ─── V4's other spelling: the seed every instance starts from ───────────────
+
+// The binary refuses a persona session and a pipe (the tests above). ADR 0019
+// D4 asks for the guardrail twice, prose and rule, so the deny line has to be
+// in the PIDs `posse init` lays down — otherwise a fresh instance carries the
+// gate once and the crew's own file never says the verb is not theirs
+// (ranger-base-kryn). Same shape as TestShippedPIDsDenyPromote, and for the
+// same reason: politeness against a determined session.
+func TestShippedPIDsDenyRefresh(t *testing.T) {
+	dir := filepath.Join("..", "..", "examples", "agents")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := &App{AgentsDir: dir}
+	n := 0
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		n++
+		ag, err := seed.LoadAgent(strings.TrimSuffix(e.Name(), ".md"))
+		if err != nil {
+			t.Fatalf("%s: %v", e.Name(), err)
+		}
+		found := false
+		for _, d := range ag.Deny {
+			if d == "Bash(posse refresh:*)" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s does not deny Bash(posse refresh:*) (ADR 0019 D4)", e.Name())
+			continue
+		}
+		// And it has to be a rule L1 can realize, or the second spelling is
+		// prose on the tier most of the fleet runs at — and parity would call
+		// every launch DEGRADED, which is how a fence becomes muscle memory
+		// for --allow-degraded.
+		var refreshRule shimRule
+		for _, r := range ParseShimRules(ag.Deny)["posse"] {
+			if strings.Contains(r.Rule, "refresh") {
+				refreshRule = r
+			}
+		}
+		if refreshRule.Rule == "" {
+			t.Errorf("%s: the refresh deny does not parse into a posse shim rule", e.Name())
+			continue
+		}
+		if kind, faithful := matcherFor("posse", refreshRule); !faithful {
+			t.Errorf("%s: %s realizes only as %q — parity will call every launch DEGRADED", e.Name(), refreshRule.Rule, kind)
+		}
+	}
+	if n < 5 {
+		t.Fatalf("read only %d shipped PIDs", n)
+	}
+}

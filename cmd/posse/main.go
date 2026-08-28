@@ -1309,7 +1309,8 @@ func main() {
 		// the only thing that performs it (ADR 0019 D4, ranger-base-h207).
 		// It refuses without a TTY and under the persona env marker; the
 		// second spelling of that gate is `Bash(posse refresh:*)` in every
-		// crew PID, which is the constitution's side and not this repo's.
+		// crew PID — shipped in the seed's examples (ranger-base-kryn), and
+		// the operator's own to keep in a persona they hired.
 		args, help := argLead(args)
 		usage := "posse refresh [<runtime> [session|meter]] [--env-set <name>] [--paste] [--expires <YYYY-MM-DD>]"
 		if help {
@@ -1650,8 +1651,9 @@ catalog:
                                  credential WRITE in posse, and the operator's own
                                  hand is the only thing that performs it: it refuses
                                  without a TTY and under RHQ_PERSONA, and every crew
-                                 PID adds Bash(posse refresh:*) to deny: (that half
-                                 lives in the constitution's PIDs, not in this repo).
+                                 PID adds Bash(posse refresh:*) to deny: (the seed's
+                                 example PIDs ship that line; a hired crew PID is the
+                                 operator's own file to keep it in).
                                  No argument = the report, and nothing is written.
   posse refresh <runtime> [session|meter] [--env-set <name>] [--paste] [--expires <YYYY-MM-DD>]
                                  session: runs the runtime's own mint (claude

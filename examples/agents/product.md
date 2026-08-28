@@ -14,6 +14,7 @@ allow:
 deny:
   - Bash(git push:*)
   - Bash(posse promote:*)
+  - Bash(posse refresh:*)
 metrics:
   - spec-clarity
   - closed-no-reopen

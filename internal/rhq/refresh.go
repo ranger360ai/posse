@@ -14,10 +14,11 @@ package rhq
 //     on the command and not on its branches, because that is what the deny
 //     line an operator writes can express.
 //   - The gate is spelled twice, as `posse promote`'s is. The second
-//     spelling is `Bash(posse refresh:*)` in every crew PID, which is the
-//     INSTANCE's side: this repo ships the mechanism and does not edit the
-//     constitution's personas. If you are reading this because you added a
-//     crew persona, that deny line is yours to add.
+//     spelling is `Bash(posse refresh:*)` in every crew PID. The seed's
+//     example PIDs carry it (ranger-base-kryn), so a fresh instance starts
+//     with the gate spelled twice; a live crew persona is the operator's own
+//     file, which this repo does not edit. If you are reading this because
+//     you added one, that deny line is yours to add.
 //   - The mint it runs is the RUNTIME's own (`claude setup-token`), whose
 //     browser flow is the human gate. posse does not stand in it.
 //   - For a `meter` credential it writes NOTHING, ever. The rotating OAuth
@@ -312,7 +313,8 @@ func (a *App) refreshReport(w io.Writer, o RefreshOpts) error {
 		fmt.Fprintln(w)
 	}
 	fmt.Fprintf(w, "this command is the operator's: it refuses under %s and without a TTY, and every crew PID\n", EnvPersona)
-	fmt.Fprintln(w, "adds Bash(posse refresh:*) to deny: — that half lives in the constitution, not in this repo.")
+	fmt.Fprintln(w, "adds Bash(posse refresh:*) to deny: — the seed's example PIDs ship that line (ranger-base-kryn),")
+	fmt.Fprintln(w, "and a hired crew PID is the operator's own file to keep it in.")
 	return nil
 }
 

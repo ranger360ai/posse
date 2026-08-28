@@ -62,8 +62,12 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		}
 		// The declaration must not have eaten the list beside it: skills:
 		// sits between two block lists in the frontmatter, and the flat-YAML
-		// reader takes them one key at a time.
-		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 3 {
+		// reader takes them one key at a time. The counts move whenever the
+		// shelf PIDs do — deny went 3 → 4 when ADR 0019 D4's
+		// `Bash(posse refresh:*)` joined the promote line (ranger-base-kryn);
+		// what is pinned is that every list survives the key beside it, not
+		// the numbers themselves.
+		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 4 {
 			t.Errorf("%s frontmatter around skills:: intents %v metrics %v deny %v", name, ag.Intents, ag.Metrics, ag.Deny)
 		}
 	}
