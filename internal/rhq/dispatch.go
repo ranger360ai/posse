@@ -166,6 +166,12 @@ type Dispatcher struct {
 	// runtime is counted" — the memo that keeps the cap's typo line and the
 	// ledger scan at once per pass rather than once per bead.
 	uncounted map[string]*uncountedPool
+
+	// ADR 0028 §5 observable 1: the idle-to-next window measured for every
+	// seat this pass refilled (seatidle.go). One pass's, reset by Run like
+	// every other reading here. Nothing reads it back to make a decision —
+	// it is printed and it is on the ledger, and that is all it is for.
+	seatRefills []SeatRefill
 }
 
 // DefaultRelaunchGrace is how long after a launch RelaunchAgent refuses to
@@ -1300,6 +1306,8 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	d.uncounted = map[string]*uncountedPool{}
 	// ADR 0013 §2: which panes this pass gave up on is this pass's memory.
 	d.stranded = nil
+	// ADR 0028 §5 observable 1: so is what this pass measured (seatidle.go).
+	d.seatRefills = nil
 
 	// The load guard (ranger-base-innx) comes before every other reading
 	// this pass takes, because it is the only one that costs nothing to
@@ -1436,6 +1444,12 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// `posse cost`, not the cockpit footer, not Dial E's ledger — so this
 	// line is the whole visibility of a second live spend channel.
 	d.uncountedReport()
+
+	// ADR 0028 §5 observable 1, in the same place and for the same reason:
+	// a per-seat figure nothing else will ever report, said once per pass
+	// after the gather so it sits with the summary rather than scattered
+	// through the launches.
+	d.seatIdleReport()
 
 	// The end-of-pass reaper (rangerhq-us8): guard every session this pass
 	// itself just prompted — a settle read this soon after a fresh prompt is
@@ -1763,6 +1777,11 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 		// says which went somewhere nothing meters. A bead that is both is
 		// on both — neither number answers the other's question.
 		d.noteUncounted(is, persona, launchRT)
+		// ADR 0028 §5 observable 1, on the same rule as both ledgers above:
+		// written after the launch, never after the decision. The instant
+		// is the prompt's, not this line's — a seat stops being idle when
+		// its agent has the work, not when dispatch finishes bookkeeping.
+		d.noteSeatLaunch(is, slot, launchRT, p.prompted)
 		busy[slot] = true
 		pending = append(pending, p)
 	}
@@ -1803,6 +1822,15 @@ type pendingBead struct {
 type promptResult struct {
 	res json.RawMessage
 	err error
+	// at is when herdr's wait RETURNED, stamped in the waiting goroutine
+	// rather than read off the clock in gather. The pass gathers its
+	// pending beads in launch order, so a bead that settled in three
+	// minutes behind one that ran seventy-five is not read for seventy-two
+	// more — and reading `now` there would date its settle at the moment
+	// the barrier let go, which is the very latency ADR 0028 §5 observable
+	// 1 is measuring. A settle timestamp taken after the barrier makes the
+	// baseline flatter than the shop really is.
+	at time.Time
 }
 
 // fire launches the session, claims the bead, and submits the prompt with
@@ -1861,13 +1889,13 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		// asked for directly — there is no prompt call to hang it off.
 		go func() {
 			res, err := d.HB.H.AgentWait(l.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
-			p.result <- promptResult{res, err}
+			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	default:
 		text := prompt()
 		go func() {
 			res, err := d.HB.H.AgentPrompt(l.target, text, true, d.PromptWaitMS)
-			p.result <- promptResult{res, err}
+			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	}
 	d.notePrompted(session)
@@ -1889,11 +1917,12 @@ func (d *Dispatcher) gather(p *pendingBead) (inFlight bool, err error) {
 		return true, nil
 	}
 	var settled string
+	var settledAt time.Time
 wait:
 	for {
 		r := <-p.result
 		if r.err == nil {
-			settled = agentStatusFromResult(r.res)
+			settled, settledAt = agentStatusFromResult(r.res), r.at
 			break
 		}
 		// A --wait that ran out of time is not a failed prompt: herdr took
@@ -1928,7 +1957,14 @@ wait:
 		case "idle", "done":
 			// The leg ran out and the agent has settled since: the prompt
 			// plainly landed, so judge the bead as on any other settle.
-			settled = st
+			//
+			// This one is a POLL, not a wait: the settle happened somewhere
+			// inside the leg that just ran out and only its discovery is
+			// datable, so the seat's idle window measured off it is short
+			// by up to one leg. Named here because that is the only
+			// systematic bias in observable 1's baseline, and it biases
+			// against the number this slice exists to protect.
+			settled, settledAt = st, time.Now()
 			break wait
 		default:
 			// herdr cannot say what the agent is doing — no detection, a
@@ -1941,6 +1977,14 @@ wait:
 			return true, nil
 		}
 	}
+
+	// ADR 0028 §5 observable 1: the seat came free here, and the ledger is
+	// where the seat's NEXT launch will find the timestamp to subtract
+	// (seatidle.go). Written before the bead is judged, because judging it
+	// merges a worktree and commits a queue — work that belongs to the bead
+	// and not to the seat, and that must not be inside the window the ADR
+	// calls idle.
+	d.noteSeatSettle(p, settled, settledAt)
 
 	// The agent settling is not success — the bead's own status is.
 	after, showErr := d.Bd.Show(p.is.Dir, p.is.ID)
@@ -2008,7 +2052,7 @@ func (d *Dispatcher) recordClause(runtime string) string {
 func (d *Dispatcher) rewait(p *pendingBead) {
 	go func() {
 		res, err := d.HB.H.AgentWait(p.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
-		p.result <- promptResult{res, err}
+		p.result <- promptResult{res: res, err: err, at: time.Now()}
 	}()
 }
 
