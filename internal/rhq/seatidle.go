@@ -233,17 +233,25 @@ func (d *Dispatcher) noteSeatLaunch(is RepoIssue, seat, runtime string, at time.
 	}
 }
 
-// noteSeatSettle records that a seat's bead settled. A settle that did not
-// free the seat is recorded WITH ITS STATE and not silently dropped: a
-// blocked seat is a real thing that happened to it, and a reader who cannot
-// see the blocked settles cannot tell a seat nobody refilled from a seat
-// waiting on a human.
+// noteSeatSettle records that a seat's bead settled AND the settle freed
+// the seat. A settle in any other state is dropped here, at the writer, and
+// never reaches the ledger.
 //
-// A settle whose state does not free the seat is written and then ignored
-// by SeatIdleAt, which reads only the newest settle of any kind — so a
-// blocked settle that is later freed by hand fails into the "previous
-// settle not observed" branch rather than charging the operator's response
-// time to dispatch.
+// Refuse-at-write, not write-and-ignore, because the reader cannot do it:
+// SeatIdleAt takes the newest settle of ANY kind and never looks at the
+// state column, so a `settle <seat> <bead> blocked` line that reached this
+// file would open a real idle window and charge the operator's response
+// time to dispatch — the number ADR 0028 §5 exists to keep clean. The
+// SeatFreeing guard below is the only thing standing between the two.
+//
+// What the drop costs, stated rather than assumed: seat-cadence.log carries
+// no blocked settles at all, so a seat nobody refilled and a seat waiting on
+// a human are the same absence in this ledger, and anything aggregated off
+// it — a later "after" run against this baseline included — is taken over
+// freeing settles only. The loss is not silent in the report: the dropped
+// settle leaves the seat's newest event a `launch`, so the next refill fails
+// SeatIdleAt's `last.Kind != SeatSettle` guard and prints "previous settle
+// not observed" instead of a figure.
 func (d *Dispatcher) noteSeatSettle(p *pendingBead, state string, at time.Time) {
 	if d.DryRun || !SeatFreeing(state) {
 		return

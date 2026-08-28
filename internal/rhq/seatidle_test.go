@@ -142,6 +142,59 @@ func TestSeatBlockedSettleDoesNotFreeTheSeat(t *testing.T) {
 	}
 }
 
+// What the dropped blocked settle does to the NEXT refill, which is the
+// only thing the ledger's reader ever sees of it (ranger-base-yuu8).
+//
+// Two arms, because the writer guard is the whole control. The first is the
+// real sequence: a-1 settles blocked, nothing is written, so the seat's
+// newest event stays a-1's LAUNCH and a-2's refill fails SeatIdleAt's
+// last.Kind guard into "previous settle not observed" — not a figure taken
+// across a human's response time. The second plants that same line by hand
+// to show what the guard is holding back: SeatIdleAt never reads the state
+// column, so a blocked settle that reached this file WOULD be measured.
+// Nothing downstream would catch it.
+func TestSeatBlockedSettleLeavesTheNextRefillUnmeasured(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	dir := "/tmp/posse"
+	seat := SessionFor("ranger", dir)
+	path := b.App.SeatCadenceLogPath()
+
+	prev := RepoIssue{BdIssue: BdIssue{ID: "a-0"}, Dir: dir}
+	d.noteSeatLaunch(prev, seat, "claude", seatAt(t, "2026-08-27T10:00:00Z"))
+	d.noteSeatSettle(&pendingBead{is: prev, persona: "ranger"}, "idle", seatAt(t, "2026-08-27T10:10:00Z"))
+	is := RepoIssue{BdIssue: BdIssue{ID: "a-1"}, Dir: dir}
+	d.noteSeatLaunch(is, seat, "claude", seatAt(t, "2026-08-27T10:20:00Z"))
+	d.noteSeatSettle(&pendingBead{is: is, persona: "ranger"}, "blocked", seatAt(t, "2026-08-27T10:25:00Z"))
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "settle "+seat+" a-0 idle") {
+		t.Fatalf("the freeing settle is the fixture's witness that anything was written at all:\n%s", body)
+	}
+	if strings.Contains(string(body), "blocked") {
+		t.Fatalf("a blocked settle must not reach the ledger:\n%s", body)
+	}
+
+	r := SeatIdleAt(path, seat, "a-2", seatAt(t, "2026-08-27T18:00:00Z"))
+	if r.Measured() {
+		t.Fatalf("the refill after a blocked settle must not carry a figure, got %s (after %s)", r.Idle, r.After)
+	}
+	if !strings.Contains(r.Why, "previous settle not observed") || !strings.Contains(r.Why, "a-1") {
+		t.Errorf("want the refusal to name the launch it could not see past, got %q", r.Why)
+	}
+
+	planted := seatLedger(t,
+		"2026-08-27T10:20:00Z launch ranger-posse a-1 claude",
+		"2026-08-27T10:25:00Z settle ranger-posse a-1 blocked",
+	)
+	if p := SeatIdleAt(planted, "ranger-posse", "a-2", seatAt(t, "2026-08-27T18:00:00Z")); !p.Measured() {
+		t.Fatalf("the hazard arm measures nothing: SeatIdleAt already filters the state column, so the writer guard is no longer the control this test and noteSeatSettle's comment say it is (%q)", p.Why)
+	}
+}
+
 // The pass wiring, end to end: pass 1 has no window to measure, pass 2
 // measures the one pass 1 opened, and the account line names the seat.
 func TestDispatchPassEmitsSeatIdleFigures(t *testing.T) {
