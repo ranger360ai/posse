@@ -1600,6 +1600,38 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0028 §5 observable 1: so is what this pass measured (seatidle.go).
 	d.seatRefills = nil
 
+	// PAUSE (ADR 0029 §3, bead rangerhq-a2g6) comes first, ahead of even the
+	// load guard: a human meant this stop, and a paused shop that answered
+	// with the machine's reason instead of the human's would be the surface
+	// naming the wrong stopper. One stat of state/pause.yaml — it forks
+	// nothing, so it is as safe to take on a saturated box as the load
+	// reading below it.
+	//
+	// A pass IN FLIGHT is not this gate's business: it is taken at the fire
+	// loop's entry and never inside it, which is §3's "a pass in flight
+	// finishes first" — the same contract ctrl-c already keeps.
+	//
+	// Nothing else is stopped. autoReapPass, landClosedTrees and
+	// verify-after all sit below this line on purpose: they reap, land and
+	// file for work that ALREADY ran, and a pause is a stop on spending, not
+	// an instruction to abandon what the shop is holding. The pulse
+	// goroutine (watch.go) is started outside Run entirely and keeps
+	// ticking, so a paused shop still escalates — pause stops spend, not
+	// oversight.
+	//
+	// --dry-run reports and gets out of the way, for the load guard's own
+	// reason: the diagnostic launches nothing, so hiding the routing behind
+	// the gate would make the one command someone runs to ask "what would
+	// happen if I resumed" the one command that goes quiet.
+	if p := ReadPause(PausePath(d.App)); p.Present {
+		if d.DryRun {
+			d.printf("◷ %s — a real pass would decline here; --dry-run launches nothing, so routing follows\n", PauseLine(p))
+		} else {
+			d.printf("◷ %s — nothing dispatched (`posse resume` lifts it; the pulse keeps ticking)\n", PauseLine(p))
+			return 0, nil
+		}
+	}
+
 	// The load guard (ranger-base-innx) comes before every other reading
 	// this pass takes, because it is the only one that costs nothing to
 	// take and because the readings below it fork: `bd`, the plan endpoint,
@@ -3106,6 +3138,16 @@ func (d *Dispatcher) unclaimAfterPromptFailure(is RepoIssue, persona string, res
 // the cockpit's dispatch action — Run owns the blocking loop flavor that
 // watches the agent settle.
 func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
+	// PAUSE (ADR 0029 §3): "every pass — watch, hand-typed, cockpit `d` —
+	// checks it first". This is the cockpit's `d`, the one launch path that
+	// does not go through Run, and a stop the operator can walk around by
+	// pressing a key is not a stop. Read before the launcher lock rather
+	// than under it, for the same reason the gate in Run sits at the fire
+	// loop's entry: a pause landing between this read and the launch is a
+	// launch in flight, and those finish.
+	if p := ReadPause(PausePath(d.App)); p.Present {
+		return "", Die("refused: %s — `posse resume` lifts it", PauseLine(p))
+	}
 	// ADR 0011 §1: the cockpit's `d` is a launcher too, and every guard
 	// below — crew-held, working/blocked, prompted-recently — reads state a
 	// running pass is mutating. Held for the whole body, so the check and

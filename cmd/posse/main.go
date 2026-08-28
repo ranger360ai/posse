@@ -724,6 +724,53 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "pause":
+		// PAUSE (ADR 0029 §3, bead rangerhq-a2g6): stop dispatching until
+		// told otherwise. The why is mandatory — it is what every declining
+		// pass prints, and the file shape is what makes "pauses with a
+		// recorded why: 100%" a metric rather than a hope.
+		//
+		// Arguments are joined, so both `posse pause "why"` and an unquoted
+		// why work. A stop is typed in a hurry, and a shell quoting slip is
+		// not a reason for the shop to keep spending.
+		args = need(args, 1, `posse pause "<why>"   (the why is mandatory: every declining pass prints it)`)
+		by, err := rhq.PauseActor(a)
+		if err != nil {
+			die(err)
+		}
+		// A second pause keeps the first. Overwriting would move `at:`
+		// forward and lose the reason the shop actually stopped for, and the
+		// intent — dispatch stops — is already in force.
+		if p := rhq.ReadPause(rhq.PausePath(a)); p.Present {
+			fmt.Fprintf(out, "already %s — the standing pause is kept (`posse resume` first to change it)\n", rhq.PauseLine(p))
+			break
+		}
+		p, err := rhq.WritePause(a, by, strings.Join(args, " "), time.Now(), os.Stderr)
+		if err != nil {
+			die(err)
+		}
+		fmt.Fprintf(out, "%s\n", rhq.PauseLine(p))
+		fmt.Fprintf(out, "dispatch declines every pass until `posse resume`; the pulse keeps ticking — a paused shop still escalates\n")
+
+	case "resume":
+		// The other half. Idempotent: resuming a shop that is not paused is
+		// not an error, because an off switch that can fail is one more thing
+		// to get right while the shop is stopped.
+		need(args, 0, "posse resume")
+		by, err := rhq.PauseActor(a)
+		if err != nil {
+			die(err)
+		}
+		p, err := rhq.ClearPause(a)
+		if err != nil {
+			die(err)
+		}
+		if !p.Present {
+			fmt.Fprintln(out, "not paused — nothing to resume")
+			break
+		}
+		fmt.Fprintf(out, "resumed by %s · lifted a pause%s; the next pass dispatches\n", by, rhq.PauseClause(p))
+
 	case "cockpit":
 		if err := runCockpit(a, hb, out); err != nil {
 			die(err)
@@ -1750,6 +1797,20 @@ governance:
                                  guard may skip before a skip becomes a condition
                                  (the streak is the --watch loop's own; a fresh
                                  shell has none and reports no G4)
+  posse pause "<why>"            stop dispatching until told otherwise. Writes
+                                 state/pause.yaml (by:, at:, why: — the why is
+                                 mandatory and is what every declining pass
+                                 prints). Every pass checks it at the fire
+                                 loop's entry — watch, hand-typed, cockpit d —
+                                 and a pass in flight finishes first.
+                                 PAUSE STOPS SPEND, NOT OVERSIGHT: the pulse
+                                 keeps ticking, so a paused shop still escalates
+                                 blocked sessions and aging questions. Nothing
+                                 mechanical ever writes this file — the guard,
+                                 the blind window and Dial E SKIP a pass and
+                                 heal; only a human pauses. The operator, and
+                                 the coordinator; a second pause keeps the first
+  posse resume                   lift it. Idempotent
 
 cockpit (herdr plugin pane — make link-plugin):
   posse cockpit                  interactive oversight: sessions blocked-first +

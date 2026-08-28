@@ -690,3 +690,105 @@ func TestStatusNonZeroWhenAStoreCannotBeRead(t *testing.T) {
 		t.Errorf("unknown is not clear:\n%s", out)
 	}
 }
+
+// ─── pause / resume (ADR 0029 §3, bead rangerhq-a2g6) ────────────────────────
+
+// pauseEnv is statusEnv plus an explicit RHQ_PERSONA. Explicit because
+// os.Environ() carries whatever the shell running the suite had, and a
+// persona session has that variable set: without this line the operator arm
+// below would pass for the operator and refuse for every persona running
+// the same suite (the class ranger-base-rp2y and the gate-shim-on-PATH one
+// cost a day each).
+func pauseEnv(t *testing.T, home, persona string) []string {
+	t.Helper()
+	return statusEnv(t, home, "RHQ_PERSONA="+persona)
+}
+
+// The command half of §3's first observable, end to end: the file, the two
+// lines, the standing-pause rule, and an idempotent resume.
+func TestPauseAndResumeCommands(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"),
+		[]byte("beads:\n  - "+repo+"\ncoordinator: coordinator\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(persona string, args ...string) (string, error) {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Env = pauseEnv(t, home, persona)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	pausePath := filepath.Join(home, "state", "pause.yaml")
+
+	// Resume before any pause: not an error, and it says so.
+	if out, err := run("", "resume"); err != nil || !strings.Contains(out, "not paused") {
+		t.Fatalf("resume on an unpaused shop = %q, %v", out, err)
+	}
+
+	// The why need not be one shell word — a stop is typed in a hurry.
+	out, err := run("", "pause", "waiting on the", "operator")
+	if err != nil {
+		t.Fatalf("pause: %v\n%s", err, out)
+	}
+	for _, want := range []string{"paused", rhq.PauseOperator, "waiting on the operator", "the pulse keeps ticking"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("pause must say %q:\n%s", want, out)
+		}
+	}
+	file, err := os.ReadFile(pausePath)
+	if err != nil {
+		t.Fatalf("no pause file: %v", err)
+	}
+	for _, want := range []string{"by: " + rhq.PauseOperator, "at: 20", "why: waiting on the operator"} {
+		if !strings.Contains(string(file), want) {
+			t.Errorf("state/pause.yaml must carry %q:\n%s", want, file)
+		}
+	}
+
+	// A why is mandatory, and the usage says so rather than stopping the
+	// shop for an unrecorded reason.
+	if out, err := run("", "pause"); err == nil || !strings.Contains(out, "why") {
+		t.Errorf("pause with no reason = %q, %v — want the usage", out, err)
+	}
+
+	// The condition set sees it, which is the whole G8 row.
+	if out, _ := run("", "status"); !strings.Contains(out, "G8") || !strings.Contains(out, "waiting on the operator") {
+		t.Errorf("posse status must report the pause:\n%s", out)
+	}
+
+	// A second pause keeps the first: overwriting would move at: forward and
+	// lose the reason the shop actually stopped for.
+	out, err = run("", "pause", "something else")
+	if err != nil {
+		t.Fatalf("a second pause is not an error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "already paused") || !strings.Contains(out, "waiting on the operator") {
+		t.Errorf("the standing pause must be kept and named:\n%s", out)
+	}
+	if after, _ := os.ReadFile(pausePath); string(after) != string(file) {
+		t.Errorf("a second pause rewrote the file:\n%s", after)
+	}
+
+	// Only the operator and the coordinator.
+	if out, err := run("developer", "pause", "no"); err == nil || !strings.Contains(out, "refused") {
+		t.Errorf("a stranger paused the shop: %q, %v", out, err)
+	}
+
+	// And resume lifts it, naming what it lifted.
+	out, err = run("coordinator", "resume")
+	if err != nil {
+		t.Fatalf("resume: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "resumed by coordinator") || !strings.Contains(out, "waiting on the operator") {
+		t.Errorf("resume must name who lifted it and what:\n%s", out)
+	}
+	if _, err := os.Stat(pausePath); !os.IsNotExist(err) {
+		t.Errorf("the pause file survived resume: %v", err)
+	}
+	if out, err := run("", "resume"); err != nil || !strings.Contains(out, "not paused") {
+		t.Fatalf("the second resume = %q, %v", out, err)
+	}
+}

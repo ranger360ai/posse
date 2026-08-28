@@ -232,9 +232,9 @@ func (a *App) attnAge(key string, def time.Duration, errw io.Writer) time.Durati
 
 // PausePath is state/pause.yaml — §3's file, and the one legitimately NEW
 // store the design adds: pause intent is a new fact with a single writer,
-// not a copy of another store's. §3 (`posse pause` / `posse resume` and the
-// pass gate) is its own bead; this file only READS it, and reads a file
-// nobody has written yet as the absence of a pause.
+// not a copy of another store's. This file only READS it, and reads a file
+// nobody has written yet as the absence of a pause; the write half and the
+// pass gate are pause.go and dispatch.go (§3, bead rangerhq-a2g6).
 func PausePath(a *App) string { return filepath.Join(a.StateDir, "pause.yaml") }
 
 // Pause is what state/pause.yaml says. Present=false is the ordinary case.
@@ -396,7 +396,7 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// a human meant it. The line names the pauser and the why, which is the
 	// whole reason the file shape makes both mandatory.
 	if p := ReadPause(PausePath(in.App)); p.Present {
-		add("G8", GovUrgent, "paused", "paused"+pauseClause(p))
+		add("G8", GovUrgent, "paused", PauseLine(p))
 	}
 
 	// ── carry-over · unpushed commits on a beads repo ────────────────────
@@ -432,7 +432,11 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	return set, failed
 }
 
-func pauseClause(p Pause) string {
+// PauseClause is the "— by X, at Y, why: Z" tail every rendering of a pause
+// shares: G8's detail here, and §3's own pause/resume/decline lines
+// (pause.go). One vocabulary — a pause named two ways is a pause somebody
+// has to correlate.
+func PauseClause(p Pause) string {
 	var parts []string
 	if p.By != "" {
 		parts = append(parts, "by "+p.By)
