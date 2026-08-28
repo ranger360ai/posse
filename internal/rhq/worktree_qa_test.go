@@ -448,6 +448,46 @@ func TestKillLandsTheWorkAndRetiresTheTree(t *testing.T) {
 	}
 }
 
+// The consequence, and why a false Merged is worse than a noisy one
+// (ranger-base-dybv): the kill retires the tree and deletes the branch on
+// the strength of that flag. A tree whose HEAD is off its branch answers
+// every branch-shaped question with "nothing unlanded", so the kill used to
+// merge nothing, report a clean landing and then remove the only copy.
+func TestKillKeepsATreeWhoseWorkIsOnNoBranch(t *testing.T) {
+	wtqaHome(t)
+	b, _ := newTestBackend(t)
+	repo := wtRepo(t)
+	write(t, b.App.ConfigPath, "")
+
+	if err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: repo, Cmd: "true", Worktree: true}); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := b.readMeta("s1")
+	if !ok || m.Branch == "" {
+		t.Fatalf("the session got no tree: %+v", m)
+	}
+	mustGit(t, m.Dir, "checkout", "-q", "--detach")
+	commitIn(t, m.Dir, "fix.txt", "the work\n", "s1: the fix")
+	head := mustGit(t, m.Dir, "rev-parse", "HEAD")
+
+	landing, err := b.KillSessionAndLand("s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Kept == "" {
+		t.Fatalf("a tree holding the only copy of %s was retired: %q", head[:12], landing.Line())
+	}
+	if !strings.Contains(landing.Kept, head[:12]) {
+		t.Errorf("the kill did not name the commit it refused to lose: %q", landing.Kept)
+	}
+	if _, err := os.Stat(filepath.Join(m.Dir, "fix.txt")); err != nil {
+		t.Errorf("the worktree holding the work was removed: %v", err)
+	}
+	if _, err := git(repo, "cat-file", "-e", head+"^{commit}"); err != nil {
+		t.Errorf("the commit itself is gone from the repo: %v", err)
+	}
+}
+
 func TestKillKeepsATreeItCannotLand(t *testing.T) {
 	wtqaHome(t)
 	b, _ := newTestBackend(t)

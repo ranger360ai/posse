@@ -615,14 +615,14 @@ func seedWorktreeLinks(t *SessionTree, a *App) error {
 // ─── merging a session's work back ───────────────────────────────────────────
 
 // MergeOutcome is what one merge-back attempt did. Nothing here is inferred:
-// Commits is counted, Merged is only true when the main checkout's branch
-// really moved (or had nothing to move for), and Reason names the obstacle
-// in the operator's words when it did not.
+// Commits is counted, Merged is only true when the base is MEASURED to
+// contain the session's work (landed asks), and Reason names the obstacle in
+// the operator's words when it did not.
 type MergeOutcome struct {
 	Branch  string
 	Base    string
-	Commits int      // commits on the branch that base did not have
-	Merged  bool     // base now contains them
+	Commits int      // commits holding the session's work that base did not have
+	Merged  bool     // base now contains them — measured, never assumed
 	Rebased bool     // base had moved, so the branch was replayed onto it
 	Dirty   []string // uncommitted paths left in the worktree (never merged)
 	Reason  string   // why not merged ("" when Merged)
@@ -649,8 +649,12 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		return o, nil
 	}
 	if !branchExists(t.Repo, t.Branch) {
-		o.Merged, o.Reason = true, ""
-		return o, nil // nothing was ever committed on it, or it is already gone
+		// The branch is gone. That is USUALLY "nothing was ever committed on
+		// it" — and used to be read as that and nothing else, which is a
+		// guess, and the wrong one whenever the tree is still sitting on
+		// commits the branch was retired out from under. landed asks the
+		// tree instead of guessing.
+		return landed(o, t), nil
 	}
 	o.Dirty = dirtyPaths(t.Path)
 	n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch)
@@ -661,8 +665,12 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		return o, Die("git rev-list --count %s..%s: unreadable answer %q", t.Base, t.Branch, n)
 	}
 	if o.Commits == 0 {
-		o.Merged = true
-		return o, nil
+		// Nothing ahead of the base ON THE BRANCH is not nothing ahead of it
+		// in the TREE: a worktree whose HEAD is detached takes the persona's
+		// commits with it and leaves the branch where it was cut. That read
+		// as "nothing to merge" and reported a successful close over work no
+		// ref would ever reach (ranger-base-dybv).
+		return landed(o, t), nil
 	}
 	// `git merge` moves the branch the repo has CHECKED OUT, which is not
 	// necessarily the one this session was cut from: the operator's checkout
@@ -677,8 +685,7 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		return o, nil
 	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
-		o.Merged = true
-		return o, nil
+		return landed(o, t), nil
 	}
 	// Not a fast-forward: the repo's branch moved while the session worked.
 	// Replay the session's commits onto it — in the SESSION's tree, so the
@@ -703,8 +710,99 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		o.Reason = fmt.Sprintf("%s still would not fast-forward after the rebase: %v", t.Base, err)
 		return o, nil
 	}
-	o.Merged = true
-	return o, nil
+	return landed(o, t), nil
+}
+
+// landed is the ONE place this file is allowed to say a merge happened, and
+// it says it from a measurement: the base either reaches the commit the
+// session's work is on, or it does not.
+//
+// Why it exists (ranger-base-dybv). Merged used to be INFERRED — from `git
+// merge`'s exit status on the happy path, and from a guess on two others: a
+// branch that does not exist was read as "nothing was ever committed", and a
+// branch with nothing ahead of the base was read as "nothing to land".
+// Neither holds when the persona's commits are in the TREE and not on the
+// branch — a detached worktree HEAD, or a branch retired out from under a
+// live tree — and both returned Merged with an empty Reason. That is a close
+// reporting success over work that is in no tree anyone will ever check out,
+// measured twice in the field (rangerhq-81y0/eb03495, rangerhq-vojc/6217c9f)
+// and, because a false Merged is what lets `posse kill` go on to retire the
+// tree, the same read that would DESTROY it.
+//
+// The question is asked of the tree's HEAD as it is NOW, never of a sha
+// captured on the way in: a rebase legitimately rewrites the work, so the
+// pre-rebase sha is on nothing afterwards while the tree's HEAD is on the
+// base, and only the second is the fact anyone cares about.
+func landed(o MergeOutcome, t *SessionTree) MergeOutcome {
+	head, ok := workHead(t)
+	if !ok {
+		// No tree and no branch: there is no commit left for this session to
+		// strand and none for anything here to lose. (A `posse kill --force`
+		// can reach this having thrown work away — that is the operator's
+		// documented override, and it is loud where it is taken.)
+		o.Merged, o.Reason = true, ""
+		return o
+	}
+	if reaches(t.Repo, t.Base, head) {
+		o.Merged, o.Reason = true, ""
+		return o
+	}
+	o.Merged = false
+	// Report the honest count: the branch's own is 0 in exactly the case
+	// this guard exists for, and "0 commit(s) did NOT reach main" reads as
+	// nothing being wrong.
+	if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+head); err == nil {
+		if c, cerr := strconv.Atoi(n); cerr == nil && c > o.Commits {
+			o.Commits = c
+		}
+	}
+	if o.Reason != "" {
+		return o
+	}
+	if branchExists(t.Repo, t.Branch) && !reaches(t.Repo, t.Branch, head) {
+		o.Reason = fmt.Sprintf("%s in %s is on neither %s nor %s — the tree's HEAD is off its own branch, so no merge here can reach it; `git -C %s branch -f %s HEAD` puts the work back on the branch and the next pass lands it",
+			abbrevSHA(head), AbbrevHome(t.Path), t.Base, t.Branch, AbbrevHome(t.Path), t.Branch)
+		return o
+	}
+	o.Reason = fmt.Sprintf("%s in %s is not on %s and no branch here reaches it — the work is unreferenced and a retire would lose it; `git -C %s branch -f %s HEAD` names it again",
+		abbrevSHA(head), AbbrevHome(t.Path), t.Base, AbbrevHome(t.Path), t.Branch)
+	return o
+}
+
+// workHead is the commit this session's work is ON, asked in the order the
+// answer survives: the WORKTREE's HEAD first — that is where a persona's
+// commit lands whatever branch, or no branch, is checked out there — then
+// the branch, for a tree that has already been retired. ("", false) is a
+// session with neither, which is nothing left to land.
+func workHead(t *SessionTree) (string, bool) {
+	if sha, err := git(t.Path, "rev-parse", "HEAD"); err == nil && sha != "" {
+		return sha, true
+	}
+	if sha, err := git(t.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+t.Branch); err == nil && sha != "" {
+		return sha, true
+	}
+	return "", false
+}
+
+// reaches is the fast-forward precondition, asked of git rather than assumed
+// from an exit status somewhere else: does ref already contain sha?
+func reaches(repo, ref, sha string) bool {
+	if ref == "" || sha == "" {
+		return false
+	}
+	_, err := git(repo, "merge-base", "--is-ancestor", sha, ref)
+	return err == nil
+}
+
+// abbrevSHA shortens a sha for a sentence a human reads. Not `git
+// rev-parse --short`: this runs on a path where the repo may be the thing
+// that is broken, and a message about lost work must not need another git
+// call to render.
+func abbrevSHA(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // notOnBase says why the repo's checkout cannot take this session's work

@@ -483,6 +483,82 @@ func TestMergeSessionWorkRefusesAConflictAndKeepsEverything(t *testing.T) {
 	}
 }
 
+// ranger-base-dybv, the shape that cost rangerhq-vojc a day: the persona's
+// commits are in the TREE and the branch does not reach them, so every
+// question asked of the branch answers "nothing to land" and the close
+// reports success over work that is on no base, and one `posse kill` away
+// from gone.
+//
+// One arm per sentence the refusal can say, plus the control — an assertion
+// that a merge did NOT happen is satisfied by a fixture that could never
+// have merged at all, and a shared prescription makes two reasons look like
+// one until something asks them apart.
+func TestMergeSessionWorkRefusesWorkTheBranchDoesNotReach(t *testing.T) {
+	cases := []struct {
+		name    string
+		detach  bool
+		killRef bool   // delete the branch too, so nothing names the work
+		want    string // the phrase only this arm says
+	}{
+		{name: "head on the branch (control)"},
+		{name: "head off the branch", detach: true, want: "on neither main nor "},
+		{name: "no branch reaches it", detach: true, killRef: true, want: "no branch here reaches it"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.detach {
+				mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			}
+			commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+			if c.killRef {
+				mustGit(t, repo, "branch", "-D", tr.Branch)
+			}
+			head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+			o, err := MergeSessionWork(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.want == "" {
+				if !o.Merged || o.Commits != 1 {
+					t.Fatalf("the control did not land: %+v", o)
+				}
+				return
+			}
+			if o.Merged {
+				t.Fatalf("work on no branch was reported merged: %+v", o)
+			}
+			if o.Commits != 1 {
+				t.Errorf("outcome = %+v, want the tree's one unlanded commit counted, not the branch's zero", o)
+			}
+			// The sentence has to carry the sha and the way back: this is
+			// the only place the commit is named, and nothing else knows it.
+			if !strings.Contains(o.Reason, head[:12]) {
+				t.Errorf("the reason does not name the stranded commit %s: %q", head[:12], o.Reason)
+			}
+			if !strings.Contains(o.Reason, "branch -f "+tr.Branch+" HEAD") {
+				t.Errorf("the reason does not say how to get the work back: %q", o.Reason)
+			}
+			if !strings.Contains(o.Reason, c.want) {
+				t.Errorf("the reason does not say which obstacle this is (want %q): %q", c.want, o.Reason)
+			}
+			// And nothing was moved to say it.
+			if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err == nil {
+				t.Error("the work reached the main checkout after all")
+			}
+			if _, err := os.Stat(filepath.Join(tr.Path, "fix.txt")); err != nil {
+				t.Errorf("the tree that holds the only copy was disturbed: %v", err)
+			}
+		})
+	}
+}
+
 func TestMergeSessionWorkReportsUncommittedWork(t *testing.T) {
 	a := wtApp(t)
 	tr, err := a.EnsureSessionTree(wtRepo(t), "s-1", nil)
