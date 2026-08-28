@@ -106,8 +106,8 @@ multi-writer store. Therefore **lane concurrency == seat count, and
 hiring is the concurrency knob** — deliberately: adding concurrency is
 an operator act (a PID file in git), visible, attributable, reversible.
 
-**5. Pass caps stay denominated in beads; the coupling becomes law
-instead of folklore.** A pass's effective width is
+**5. The width caps stay denominated in beads; the coupling becomes law
+instead of folklore.** An epoch's effective width is
 
     min(autostart_max_beads, floor(budget_pass / cost-per-bead), free seats with ready work)
 
@@ -118,9 +118,19 @@ unit both are actually denominated in. A seat-denominated cap would
 re-denominate spend authority so that a hire silently raises it, a
 ratio change nobody decided (the same principle that keeps
 `verify_batch` out of the seed config). Sizing rule for the operator:
-`autostart_max_beads` ≈ seats you want started per pass;
+`autostart_max_beads` ≈ seats you want started per epoch;
 `budget_pass` ≥ that × measured per-bead cost. The formula is this
 ADR's; the numbers are the operator's (question bead filed).
+
+*Amended 2026-08-27 by ADR 0028 §2 (ranger-base-f0y3): the unit of both
+bounds was THE PASS and is now the wall-clock epoch (`dispatch_epoch:`,
+default 1h). Nothing else in this section moves — the same three bounds,
+the same beads denominator, the same reason. The re-denomination is what
+keeps the law true once the pass stops being a unit of time at all: ADR
+0028 §1 makes the dispatch `Run` long-lived, so "per pass" would have
+become "per evening" and this width would have bounded nothing. The
+config key `budget_pass:` is unchanged; the window it names is the
+epoch, and the output says so.*
 
 **6. The verify gate's fan-in is batched — ratified as built**
 (`verify_batch: N`, commit 8b7bed9, ranger-base-f7pk). One verify bead

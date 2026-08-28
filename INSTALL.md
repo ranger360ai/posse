@@ -1301,7 +1301,8 @@ inside it — runs out of the same instance the arm decision was read from.
 
 ```yaml
 autostart_interval: 5m       # ← the arm switch
-autostart_max_beads: 3       # -n per pass. A cap is ALWAYS applied (default 3);
+autostart_max_beads: 3       # -n per epoch (dispatch_epoch:, default 1h — ADR 0028
+                             # §2). A cap is ALWAYS applied (default 3);
                              # 0 means unbounded, and only by saying so.
 autostart_dry_run: true      # start here: passes route and report, dispatch nothing
 # autostart_resume: false    # defaults ON — see below

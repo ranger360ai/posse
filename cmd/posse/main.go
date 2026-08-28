@@ -1495,7 +1495,8 @@ dispatch (beads):
                                  earned one, then route ready beads to personas —
                                  find-or-create session, claim, prompt --wait,
                                  report closed/blocked/review per bead
-                                 (-n caps launch attempts, failures included,
+                                 (-n caps launch attempts per dispatch_epoch:
+                                 (default 1h — ADR 0028 §2), failures included,
                                  taking beads in priority then age order;
                                  operator questions cost no attempt; -n 0 is
                                  no cap, and anything that is not a count is
@@ -1515,8 +1516,8 @@ dispatch (beads):
                                  the reaper would kill — a per-bead session
                                  whose bead is closed and whose agent herdr
                                  calls idle/done; never a crew session, the
-                                 persona's own reusable slot, or a bead this
-                                 same pass just prompted)
+                                 persona's own reusable slot, or a session any
+                                 launcher prompted within the prompt grace)
       --resume                 re-prompt in_progress beads whose persona
                                  session is alive and idle, and take them
                                  before fresh work (default: only interrupted
@@ -1570,6 +1571,9 @@ dispatch (beads):
                                  never below tier_floor: or a pinned tier), at
                                  100% dispatch stops with a line per bead;
                                  both unset = dormant, nothing is even scanned.
+                                 budget_pass: measures one dispatch_epoch:
+                                 (default 1h, wall-clock aligned — ADR 0028 §2),
+                                 which -n also bounds launch attempts per.
                                  Arming either also arms the blind plan
                                  guard's degrade (ADR 0018) — and an
                                  unreadable cost scan is not $0 spent, so it

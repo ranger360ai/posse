@@ -166,7 +166,7 @@ func TestDegradedPassOverUnreadableRootParksOnTheLedger(t *testing.T) {
 		t.Errorf("a pass whose ledger counted nothing must not claim a brake:\n%s", out)
 	}
 	// The receipt this bead is named for: zeroes printed as if counted.
-	if strings.Contains(out, "pass $0.00/$30.00") {
+	if strings.Contains(out, "epoch $0.00/$30.00") {
 		t.Errorf("an empty receipt for a ledger that could not be read:\n%s", out)
 	}
 }

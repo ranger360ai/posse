@@ -141,7 +141,7 @@ var OpsPatterns = []OpsPattern{
 	{
 		Class: "guard",
 		Why:   "a live guard/budget/autostart value — what is set HERE",
-		ERE: `(plan_guard_[a-z0-9_]*|budget_pass|budget_day|plan_usage_ttl|autostart_[a-z_]*)` +
+		ERE: `(plan_guard_[a-z0-9_]*|budget_pass|budget_day|plan_usage_ttl|dispatch_epoch|autostart_[a-z_]*)` +
 			`[[:space:]]*:[[:space:]]*([0-9]|true|false)`,
 	},
 	{

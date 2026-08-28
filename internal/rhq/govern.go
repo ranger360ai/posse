@@ -685,11 +685,15 @@ func overThresholdWindow(a *App, u PlanUsage, errw io.Writer) string {
 
 // dialE is G6's reading: the DAY window and the plan windows.
 //
-// The pass window is deliberately absent. `budget_pass:` measures the spend
-// of the beads one pass dispatched, from the moment that pass began — a
-// number that only exists inside a pass. A view rendered outside one has no
-// pass to measure, and reporting the day's spend under the pass cap would
-// be a made-up number wearing a real cap's name.
+// The `budget_pass:` window is deliberately absent, and since ADR 0028 §2
+// the reason has changed under it. It used to be that the window did not
+// exist outside a pass: it opened when `Run` did, so a view rendered from
+// another process had no pass to measure, and the day's spend under the pass
+// cap would have been a made-up number wearing a real cap's name. The epoch
+// is on the wall clock and any process can compute it, so that objection is
+// gone — what keeps the row out now is only that G6's content is ADR 0029's
+// to decide, and a scan of a second window is a cost this view does not take
+// on its own authority (ranger-base-f0y3 filed the question).
 //
 // Unset caps mean Dial E is dormant and NOTHING is scanned — the same
 // dormancy dispatch keeps, and the reason this row costs a transcript scan

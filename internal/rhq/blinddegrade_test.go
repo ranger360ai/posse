@@ -55,7 +55,7 @@ func TestBlindDegradesUnderArmedLedger(t *testing.T) {
 		"plan guard: blind 4h00m",
 		"usage endpoint unreachable",
 		"degraded, running under ledger brake",
-		"pass $8.20/$30.00",
+		"epoch $8.20/$30.00",
 		"day $8.20/$250.00",
 	} {
 		if !strings.Contains(out, want) {
@@ -109,8 +109,8 @@ func TestBlindDegradeIsBoundedByMoneyNotTheClock(t *testing.T) {
 		wantLine string
 	}{
 		{"a week blind, ledger quiet", 7 * 24 * time.Hour, 1.00, 1, "degraded, running under ledger brake"},
-		{"a minute past the budget, ledger spent", 11 * time.Minute, 40, 0, "budget: pass $40.00 of $30.00"},
-		{"a week blind, ledger spent", 7 * 24 * time.Hour, 40, 0, "budget: pass $40.00 of $30.00"},
+		{"a minute past the budget, ledger spent", 11 * time.Minute, 40, 0, "budget: epoch $40.00 of $30.00"},
+		{"a week blind, ledger spent", 7 * 24 * time.Hour, 40, 0, "budget: epoch $40.00 of $30.00"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newBlindRig(t, ledgerArmedCfg)
@@ -431,9 +431,9 @@ func TestBudgetStateLedger(t *testing.T) {
 		st   BudgetState
 		want string
 	}{
-		{BudgetState{PassCap: 30, PassSpend: 8.2, DayCap: 250, DaySpend: 146}, "pass $8.20/$30.00, day $146.00/$250.00"},
+		{BudgetState{PassCap: 30, PassSpend: 8.2, DayCap: 250, DaySpend: 146}, "epoch $8.20/$30.00, day $146.00/$250.00"},
 		{BudgetState{DayCap: 250, DaySpend: 146}, "day $146.00/$250.00"},
-		{BudgetState{PassCap: 30}, "pass $0.00/$30.00"},
+		{BudgetState{PassCap: 30}, "epoch $0.00/$30.00"},
 		{BudgetState{}, "no cap set"},
 	} {
 		if got := tc.st.Ledger(); got != tc.want {

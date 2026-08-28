@@ -683,12 +683,21 @@ then stops dispatch on API-equivalent spend.
   exactly today's behaviour, and it is free. A value that is not a positive
   number is named on stderr and that window stays uncapped, the plan guard's
   rule for the same reason.
-- **The windows.** `pass` is the spend of the beads *this pass* fired,
-  measured from the moment `Run` starts — a fired bead burns tokens while
-  the next one launches, so it genuinely grows within a pass and is not
-  merely last pass's number. `day` is the local calendar day's bead spend,
-  the same total the cockpit footer shows. Interactive sessions are in
-  neither (Dial G: visible, never gated). One scan per bead feeds both.
+- **The windows.** `epoch` is the spend of the beads fired since the current
+  wall-clock epoch opened (`dispatch_epoch:`, default 1h — ADR 0028 §2; it
+  was *this pass* until then, and the config key is still `budget_pass:`) —
+  a fired bead burns tokens while the next one launches, so it genuinely
+  grows within an epoch and is not merely the last one's number. `day` is
+  the local calendar day's bead spend, the same total the cockpit footer
+  shows. Interactive sessions are in neither (Dial G: visible, never gated).
+  One scan per bead feeds both.
+- **The epoch is on the wall clock, not on the loop's.** Local midnight plus
+  whole epochs, so a dispatch loop that dies and restarts mid-epoch measures
+  against the window it was already in. A window that opened at `Run` start
+  handed a fresh `budget_pass:` to every crash — spend authority created by
+  a restart, which is the one thing ADR 0028 §2 exists to close. The spend
+  itself is never stored for this: it is re-derived from the transcripts
+  against the recomputed opening.
 - **The tightest window drives both rungs**, and when `plan_guard_*` is
   configured the plan's 5h/7d utilization joins the comparison as a third
   and fourth window — the soft landing before the guard's hard skip. No
@@ -872,14 +881,21 @@ for a fleet: no herdr, no fleet.
   and deps its bead on it leaves the ready set and is never re-prompted. A
   persona that settles open with nothing filed is re-prompted every pass —
   which is the polite-infinite-retry ranger-base-9hm is about.
-- **The fan-out cap is always present.** `autostart_max_beads:` raises or
-  lowers `-n`; it does not switch it on. Absent, the hook passes `-n 3`
-  (rangerhq-v83) — an armed loop that fired the whole ready queue in one
-  pass would be the worst case reached by omission, and at the measured
-  (instance-side) median cost per dispatched bead, firing a 20-bead queue
-  in a single pass would eat a large fraction of a 5h window. `autostart_max_beads: 0` still means unbounded,
-  for whoever wants it, explicitly. A value that is not a count is named on
-  stderr and replaced with 3, because `-n` would otherwise parse it as 0.
+- **The fan-out cap is always present, and it is now per epoch.**
+  `autostart_max_beads:` raises or lowers `-n`; it does not switch it on.
+  Absent, the hook passes `-n 3` (rangerhq-v83) — an armed loop that fired
+  the whole ready queue at once would be the worst case reached by omission,
+  and at the measured (instance-side) median cost per dispatched bead,
+  firing a 20-bead queue would eat a large fraction of a 5h window.
+  `autostart_max_beads: 0` still means unbounded, for whoever wants it,
+  explicitly. A value that is not a count is named on stderr and replaced
+  with 3, because `-n` would otherwise parse it as 0. Since ADR 0028 §2 the
+  cap bounds attempts per `dispatch_epoch:` (default 1h) rather than per
+  pass: the passes inside one epoch share it, a pass that finds it spent
+  says so and launches nothing, and the next epoch hands it back. Unlike
+  the spend cap it is bounded PER PROCESS — a loop restarted mid-epoch
+  starts counting again, because nothing outside the process can re-derive
+  a launch count, and money is the bound that had to survive a restart.
 - **The plan-utilization guard is the point.** `plan_guard_5h` /
   `plan_guard_7d` run at the top of every pass; arming without them is
   arming a token loop nobody is watching (the analyst, rangerhq-jgm). The guard is

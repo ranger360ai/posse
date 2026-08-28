@@ -53,6 +53,11 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		"plan_guard_5h", "plan_guard_7d", "plan_guard_blind_max",
 		"plan_guard_overflow", "plan_guard_overflow_cap",
 		"budget_pass", "budget_day",
+		// dispatch_epoch: denominates both of the caps above and
+		// autostart_max_beads: below (ADR 0028 §2). A seed that shipped it
+		// set would change how much spend authority and how many launches a
+		// fresh instance gets per unit time without anyone deciding to.
+		"dispatch_epoch",
 		"autostart_interval", "autostart_max_interval", "autostart_max_beads",
 		"autostart_dry_run", "autostart_resume", "autostart_session", "autostart_dir",
 	} {

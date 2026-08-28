@@ -352,10 +352,31 @@ dirs:
 # plan_guard_overflow: codex      # runtime name; unset = skip the pass
 # plan_guard_overflow_cap: 5      # beads to that runtime per rolling 7 days
 
+# ─── the dispatch epoch (ADR 0028 §2) ────────────────────────────────────────
+# The accounting window the two caps below and `autostart_max_beads:` are
+# denominated in: `budget_pass:` is the spend of ONE EPOCH, and `-n` bounds
+# the launch attempts made in one. Wall-clock aligned — local midnight plus
+# whole epochs — so a dispatch loop that dies and restarts mid-epoch measures
+# against the same window it was already in, rather than being handed a fresh
+# budget by its own crash.
+#
+# Default 1h, and that number is ASSUMED rather than measured: it is the unit
+# an operator reading `posse cost` already thinks in, and it fits ~12 passes
+# of a 5m loop, so the epoch is an accounting window and not a pass by
+# another name. Tune it against your own numbers — a longer epoch is a
+# tighter shop (the same dollars and launches spread over more wall-clock),
+# a shorter one is a looser one.
+#
+# The name `budget_pass:` is unchanged: it is public vocabulary and renaming
+# it would break every config in the field. What the output says is `epoch`,
+# because that is the window the number was taken over.
+# dispatch_epoch: 1h           # 1h, 30m, or bare seconds
+
 # ─── budget caps (ADR 0003 Dial E) ───────────────────────────────────────────
 # API-equivalent dollars, measured by the same method as `posse cost`.
-# `budget_pass:` is the spend of the beads one dispatch pass fires, from the
-# moment it starts; `budget_day:` is the local calendar day's bead spend
+# `budget_pass:` is the spend of the beads one dispatch EPOCH fires, from the
+# moment that epoch opened (`dispatch_epoch:` above, default 1h — it was the
+# pass until ADR 0028 §2); `budget_day:` is the local calendar day's bead spend
 # (interactive sessions are in neither — Dial G keeps them visible and
 # ungated). Both unset by default and then Dial E is dormant: no scan, no
 # arithmetic, exactly today's behaviour.
@@ -383,7 +404,7 @@ dirs:
 # alternative was tuning `plan_guard_blind_max:` by hand every time the caps
 # changed, which was measured failing (three changes in two days, each on a
 # wrong diagnosis) on 2026-08-26.
-# budget_pass: <dollars per pass>
+# budget_pass: <dollars per epoch>
 # budget_day: <dollars per day>
 
 # ─── account-degraded: uncounted runtimes (ADR 0013 §5) ──────────────────────
@@ -497,25 +518,32 @@ dirs:
 # and dispatch-watch.pid (which pid, since when, under what argv).
 # autostart_interval: 5m       # base pass interval (30s, 5m, or bare seconds) — THE ARM SWITCH
 # autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval)
-# autostart_max_beads: 3       # -n, launch attempts per pass. A cap is ALWAYS present:
-#                              # absent key = 3, and 0 (unbounded) only ever by saying so —
-#                              # an armed loop must never fire the whole ready queue by omission
+# autostart_max_beads: 3       # -n, launch attempts per EPOCH (dispatch_epoch:, default
+#                              # 1h — ADR 0028 §2; it was per pass before). A cap is
+#                              # ALWAYS present: absent key = 3, and 0 (unbounded) only
+#                              # ever by saying so — an armed loop must never fire the
+#                              # whole ready queue by omission
 #                              #
 #                              # This is ONE of three bounds and never the only one
-#                              # (ADR 0020 §5). A pass's effective width is
+#                              # (ADR 0020 §5). An epoch's effective width is
 #                              #   min(autostart_max_beads,
 #                              #       floor(budget_pass / your cost-per-bead),
 #                              #       free seats with ready work)
 #                              # so raising this alone does nothing: budget_pass:
-#                              # above is a spend bound, and the third bound is
-#                              # the roster — lane concurrency IS seat count, and
-#                              # hiring (a PID file in git) is the knob (§4).
-#                              # Sizing rule: set this to the seats you want
-#                              # started per pass, then budget_pass: to at least
-#                              # that many times your measured per-bead cost. The
-#                              # caps stay denominated in BEADS on purpose: spend
-#                              # is incurred per bead, and a seat-denominated cap
-#                              # would let a hire silently raise spend authority.
+#                              # above is a spend bound over the same epoch, and the
+#                              # third bound is the roster — lane concurrency IS seat
+#                              # count, and hiring (a PID file in git) is the knob (§4).
+#                              # Sizing rule: set this to the seats you want started
+#                              # per epoch, then budget_pass: to at least that many
+#                              # times your measured per-bead cost. The caps stay
+#                              # denominated in BEADS on purpose: spend is incurred
+#                              # per bead, and a seat-denominated cap would let a hire
+#                              # silently raise spend authority.
+#                              #
+#                              # It is bounded PER PROCESS: a dispatch loop restarted
+#                              # mid-epoch starts its count again, where the spend cap
+#                              # does not (it is re-derived from the transcripts). The
+#                              # money bound is the restart-proof one.
 # autostart_dry_run: true      # passes route and report, dispatch nothing
 # autostart_resume: false      # THE ONLY KEY HERE THAT DEFAULTS ON. Absent, the loop
 #                              # passes --resume: a bead whose persona settled without

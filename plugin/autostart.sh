@@ -15,7 +15,8 @@
 #   autostart_interval:      base pass interval (30s, 5m, or bare seconds)
 #                            — PRESENCE OF THIS KEY IS THE ARM SWITCH
 #   autostart_max_interval:  backoff cap for quiet passes (default: posse's 8x)
-#   autostart_max_beads:     -n, launch attempts per pass — RAISES OR LOWERS
+#   autostart_max_beads:     -n, launch attempts per dispatch_epoch: (default
+#                            1h, ADR 0028 §2) — RAISES OR LOWERS
 #                            A CAP THAT IS ALWAYS PRESENT (default: 3).
 #                            0 means unbounded, and only ever by saying so:
 #                            an armed loop must never fire the whole ready

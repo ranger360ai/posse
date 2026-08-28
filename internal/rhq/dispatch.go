@@ -125,7 +125,16 @@ type Dispatcher struct {
 	// pass. Reset by Run, like every other per-pass reading.
 	stranded map[string]bool
 
-	passStart time.Time // when Run's current pass began — Dial E's pass window
+	// The dispatch epoch (ADR 0028 §2, epoch.go): the wall-clock-aligned
+	// window `budget_pass:` and `-n` are both denominated in, and the one
+	// reading in this struct that a pass does NOT reset — it turns on a
+	// clock, not on a Run. epochAttempts is the launch attempts already
+	// spent inside it; epochWarned keeps a malformed `dispatch_epoch:` to
+	// one line per process.
+	epochStart    time.Time
+	epochAttempts int
+	epochWarned   bool
+
 	planUsage PlanUsage // this pass's plan reading, when the guard took one
 
 	// The blind window (rangerhq-6h1). blindSince is the last SUCCESSFUL
@@ -541,6 +550,12 @@ func (d *Dispatcher) now() time.Time {
 // transcripts per remaining bead to re-learn that would be the most
 // expensive way to say no. The memory lasts one pass — Run clears it — so a
 // raised cap or a new day is picked up by the next one.
+//
+// The WINDOW it caches a verdict about is now the epoch (ADR 0028 §2), but
+// the CACHE stays per-pass deliberately. A stop remembered for a whole epoch
+// would hold a raised cap or a corrected typo out for up to an hour, and the
+// only cost of re-reading is a scan that always answers with less spending,
+// never more.
 func (d *Dispatcher) passBudget() BudgetState {
 	if d.budgetStopped != nil {
 		return *d.budgetStopped
@@ -554,6 +569,12 @@ func (d *Dispatcher) passBudget() BudgetState {
 
 // budget is Dial E's reading right now (ADR 0003 §4). With no cap set it is
 // the zero value and nothing is scanned — dormant is free.
+//
+// `budget_pass:` denominates the EPOCH since ADR 0028 §2, so the window
+// opens at d.epochStart rather than at this Run's start. The scan below is
+// unchanged and needs no widening: an epoch is anchored at local midnight
+// (epoch.go), so it never opens before the day window's floor — except under
+// an injected clock in a test, which the guard still covers.
 func (d *Dispatcher) budget() BudgetState {
 	var st BudgetState
 	st.PassCap, st.DayCap = d.budgetCaps()
@@ -562,17 +583,19 @@ func (d *Dispatcher) budget() BudgetState {
 	}
 	now := time.Now()
 	// One scan feeds both windows. It starts at local midnight (the day
-	// window's floor), or at the pass if the pass opened before midnight.
+	// window's floor), or at the epoch if the epoch opened before midnight
+	// — which only an injected clock can produce, since a wall-clock epoch
+	// is anchored on that same midnight.
 	since := startOfDay(now)
-	if !d.passStart.IsZero() && d.passStart.Before(since) {
-		since = d.passStart
+	if !d.epochStart.IsZero() && d.epochStart.Before(since) {
+		since = d.epochStart
 	}
 	scan := d.Spend
 	if scan == nil {
 		scan = func(t time.Time) *CostReport { return ScanCosts("", t) }
 	}
 	rep := scan(since)
-	st.PassSpend, st.DaySpend = rep.PassTotal(d.passStart), rep.DayTotal(now)
+	st.PassSpend, st.DaySpend = rep.PassTotal(d.epochStart), rep.DayTotal(now)
 	// ADR 0018 §3: what the scan could not read travels with the numbers it
 	// did read, so nobody downstream mistakes a floor for a total. Said once
 	// per pass on stderr — the degraded pass says it on its own park line
@@ -626,7 +649,7 @@ func tierPinned(why string) bool {
 // and the two ways out. One shape, so the pass report and the cockpit's
 // refusal read the same.
 func budgetSkipLine(st BudgetState) string {
-	return fmt.Sprintf("budget: %s — not dispatched (raise budget_pass:/budget_day: or let the window pass)", st.Line())
+	return fmt.Sprintf("budget: %s — not dispatched (raise budget_pass:/budget_day: or let the window turn)", st.Line())
 }
 
 // notePrompted records that a work prompt was just sent, in both places the
@@ -1333,12 +1356,18 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 // to one persona, max caps launch attempts — successes and failures alike,
 // so a pass is bounded in wall-clock even when sessions are failing
 // (0 = no cap). Returns the number of beads dispatched (not skipped).
+//
+// Since ADR 0028 §2 `max` is the cap for the EPOCH this pass falls in, not
+// for this pass alone: passes inside one epoch share it, and it refills when
+// the epoch turns.
 func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) {
-	// The pass window opens here (ADR 0003 Dial E): every bead this pass
-	// fires starts burning tokens while the next one launches, so spend
-	// since this moment is what `budget_pass:` caps. Reset the sticky stop
-	// too — a new pass gets a fresh reading.
-	d.passStart = time.Now()
+	// The accounting window (ADR 0003 Dial E, re-denominated by ADR 0028
+	// §2): every bead fired starts burning tokens while the next one
+	// launches, so spend since the EPOCH opened is what `budget_pass:` caps
+	// — a window on the wall clock, which a Run restart cannot reset and
+	// this pass therefore only points itself at. Reset the sticky stop
+	// anyway: a new pass gets a fresh reading, epoch or no epoch.
+	d.rollEpoch(time.Now())
 	d.budgetStopped, d.budgetWarned, d.budgetUnread = nil, false, false
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
@@ -1381,9 +1410,10 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// per-bead session graveyard just regrew. Sweeping here too, before
 	// routing, means even a pass that never reaches its own epilogue still
 	// reaps what the PREVIOUS pass closed. autoReapPass reads every bead
-	// fresh (its own doc), so it is exactly as safe here as at the end, and
-	// nothing has been prompted yet this pass to guard against.
-	d.autoReapPass(nil)
+	// fresh (its own doc), so it is exactly as safe here as at the end — and
+	// since ADR 0028 §3 its prompt guard reads the session's own run record,
+	// so this call is guarded against another launcher's fresh prompt too.
+	d.autoReapPass()
 
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
@@ -1454,9 +1484,28 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).
 	OrderBeads(beads, d.Resume)
 
-	dispatched, pending, err := d.fireLoop(beads, personaFilter, max)
-	if err != nil {
-		return 0, err
+	// ADR 0028 §2: `-n`/`autostart_max_beads` bound launch attempts per
+	// EPOCH, not per pass. The cap's intent was always "bound unattended
+	// launches per unit of time" — it only read as per-pass because the pass
+	// WAS the unit — and once a Run refills seats continuously, a per-pass
+	// cap bounds nothing. So the pass fires with the room the epoch has
+	// left, and books what it actually spent.
+	//
+	// A --dry-run pass books nothing: it launches nothing, so it costs the
+	// epoch nothing, and letting a diagnostic eat the loop's launch budget
+	// would make the read-only command have a lasting effect. It still runs
+	// under the same room, so what it reports is what a real pass would do.
+	var dispatched int
+	var pending []*pendingBead
+	if room, ok := d.epochRoom(max); ok {
+		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room)
+		if err != nil {
+			return 0, err
+		}
+		dispatched, pending = fired, p
+		if !d.DryRun {
+			d.epochAttempts += attempts
+		}
 	}
 
 	// Gather: every prompt is in flight; wait for each in launch order.
@@ -1495,22 +1544,22 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// through the launches.
 	d.seatIdleReport()
 
-	// The end-of-pass reaper (rangerhq-us8): guard every session this pass
-	// itself just prompted — a settle read this soon after a fresh prompt is
-	// exactly the race PromptGrace exists for elsewhere, and a bead closed
-	// mid-pass is safer left for the NEXT pass's fresh read.
-	justPrompted := map[string]bool{}
-	for _, p := range pending {
-		justPrompted[p.session] = true
-	}
-	d.autoReapPass(justPrompted)
+	// The end-of-pass reaper (rangerhq-us8). The "do not reap what was just
+	// prompted" guard is inside the sweep now and keys on PromptGrace over
+	// the run record (ADR 0028 §3), so this pass has nothing to hand it: a
+	// session it prompted seconds ago is covered, one it prompted an hour
+	// ago whose bead is closed and whose agent is idle is a session to reap,
+	// and so is one another launcher prompted that this pass never saw.
+	d.autoReapPass()
 	return dispatched, nil
 }
 
 // fireLoop is the launching half of a pass: every routable bead gets a
 // session, a claim and a prompt, and the prompts are left in flight for Run
 // to gather. It returns the beads a --dry-run pass counted (a real one
-// counts them at the gather) and the pending prompts.
+// counts them at the gather), the pending prompts, and the attempts it made
+// — the last so Run can charge them to the epoch's `-n` (ADR 0028 §2).
+// `max` here is the room LEFT in the epoch, not the operator's cap.
 //
 // This is the pass's critical section (ADR 0011 §1). Creating a session,
 // claiming a bead and prompting it is a check-then-act sequence against bd,
@@ -1520,11 +1569,11 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 //
 // A --dry-run pass acts on nothing, and making it queue behind a live pass
 // would turn a read-only command into a blocking one; it runs unlocked.
-func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) (int, []*pendingBead, error) {
+func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) (int, []*pendingBead, int, error) {
 	if !d.DryRun {
 		lock, err := lockLaunches(d.App, d.Out)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, 0, err
 		}
 		defer lock.Release()
 	}
@@ -1838,7 +1887,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int) 
 	if personaFilter != "" && outside > 0 {
 		fmt.Fprintf(d.Out, "– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
 	}
-	return dispatched, pending, nil
+	return dispatched, pending, attempts, nil
 }
 
 // pendingBead is a prompted bead whose settle is still being awaited.

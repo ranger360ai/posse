@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // reapCandidate is a per-bead session in a plain (non-worktree) checkout of
@@ -34,7 +35,7 @@ func TestAutoReapKillsAClosedIdleSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Error("a session whose bead is closed and whose agent is idle must be reaped")
@@ -54,7 +55,7 @@ func TestAutoReapKillsAClosedDoneSession(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "agents.json"),
 		[]byte(`[{"agent":"claude","agent_status":"done","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Error("agent_status done is a settled state too — the session must be reaped")
@@ -68,7 +69,7 @@ func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	workingClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("a session herdr still calls working must not be reaped, however its bead reads")
@@ -82,7 +83,7 @@ func TestAutoReapKeepsAnOpenIdleSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "in_progress")
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("an idle session whose bead is still open must not be reaped — the persona stopped on it, and gather's own line is what raises that, not the reaper")
@@ -100,7 +101,7 @@ func TestAutoReapKeepsACrewSession(t *testing.T) {
 	}
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-crew"); !ok {
 		t.Error("ADR 0008: a crew session is never reaped, closed bead or not")
@@ -122,7 +123,7 @@ func TestAutoReapKeepsTheNonPerBeadSlot(t *testing.T) {
 	}
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta(slot); !ok {
 		t.Error("the persona's own repo slot (no bead suffix) must never be reaped")
@@ -137,7 +138,7 @@ func TestAutoReapDryRunOnlyLists(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("--dry-run must not actually kill anything")
@@ -155,7 +156,7 @@ func TestAutoReapOffByConfig(t *testing.T) {
 	idleClaude(t, fake)
 	os.WriteFile(b.App.ConfigPath, []byte("auto_reap: false\n"), 0o644)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("auto_reap: false must turn the sweep off entirely (today's behaviour)")
@@ -170,18 +171,41 @@ func TestAutoReapOffByFlag(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass(nil)
+	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("--no-reap must turn the sweep off for this pass")
 	}
 }
 
-// A bead this pass itself just prompted is never a reap candidate on that
-// same pass, however herdr and bd read it right now — the settle race that
-// PromptGrace exists for elsewhere. It is fair game on the pass after,
-// once it is no longer this pass's own prompt.
-func TestAutoReapSkipsASessionThisPassJustPrompted(t *testing.T) {
+// agePrompt moves a session's `Prompted:` record back, which is the only
+// way a test can say "and then some time passed": since ADR 0028 §3 the
+// reap's prompt guard reads that record (PromptGrace over `promptedRecently`)
+// rather than a set of names this pass fired at, so a later PASS is no
+// longer automatically a later PROMPT. MarkPrompted refuses to move the
+// stamp backwards — it is a high-water mark — so this writes the record.
+func agePrompt(t *testing.T, b *HerdrBackend, session string, by time.Duration) {
+	t.Helper()
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no run record for %s to age", session)
+	}
+	m.Prompted = m.Prompted.Add(-by)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A bead just prompted is never a reap candidate, however herdr and bd read
+// it right now — the settle race that PromptGrace exists for elsewhere. It
+// is fair game once that grace has passed.
+//
+// The guard is PromptGrace over the run record since ADR 0028 §3, so both
+// halves are stronger than the pass-scoped set they replace: the same pass
+// is covered because it just prompted, and so is a prompt from a launcher
+// this dispatcher never shared memory with (the second pass below runs on a
+// fresh Dispatcher and still sees it).
+func TestAutoReapSkipsASessionJustPrompted(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -199,15 +223,26 @@ func TestAutoReapSkipsASessionThisPassJustPrompted(t *testing.T) {
 		t.Errorf("a session this pass just prompted must not be reaped in the same pass:\n%s", dispatcherOut(d))
 	}
 
-	// A later pass: the bead is closed and no longer ready, and this
-	// session was not this pass's own prompt — it is fair game now.
+	// A fresh dispatcher, standing in for a second launcher with none of
+	// this one's memory: inside PromptGrace it must STILL refuse, because
+	// the record is what it reads.
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte(`[]`), 0o644)
+	dOther := newTestDispatcher(t, b)
+	if _, err := dOther.Run("", "", 0); err != nil {
+		t.Fatalf("cross-process pass: %v", err)
+	}
+	if _, ok := b.readMeta(session); !ok {
+		t.Errorf("a session prompted seconds ago must survive ANOTHER launcher's sweep too (ADR 0028 §3):\n%s", dispatcherOut(dOther))
+	}
+
+	// A later pass, once the grace has passed: fair game.
+	agePrompt(t, b, session, d.PromptGrace+time.Minute)
 	d2 := newTestDispatcher(t, b)
 	if _, err := d2.Run("", "", 0); err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
 	if _, ok := b.readMeta(session); ok {
-		t.Error("the session should have been reaped on the pass after the one that prompted it")
+		t.Error("the session should have been reaped on the first pass past PromptGrace")
 	}
 	if !strings.Contains(dispatcherOut(d2), "reaped "+session) {
 		t.Errorf("expected a reap line on the later pass, got:\n%s", dispatcherOut(d2))

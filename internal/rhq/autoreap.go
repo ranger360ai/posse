@@ -23,10 +23,31 @@ package rhq
 //     §2) — so a bead pointer alone does not mean "this name is disposable".
 //     Only a session whose own name is not the bare persona/repo slot is
 //     Dial F's to reap; the slot is what the next resume rejoins.
-//   - PROMPTED THIS PASS: a settle read moments after a fresh prompt is the
+//   - PROMPTED RECENTLY: a settle read moments after a fresh prompt is the
 //     same race PromptGrace exists for in the fire loop — a bead that closed
-//     mid-pass is safer left for the next pass's read than reaped on this
-//     one's.
+//     moments ago is safer left for the next sweep's read than reaped on
+//     this one's.
+//
+// That last guard used to key on `justPrompted`, the set of sessions THIS
+// PASS had fired at, and ADR 0028 §3 re-keys it onto `promptedRecently` —
+// the same question asked of the session's own run record (ADR 0011 §3),
+// which is persisted and cross-process. Two reasons, and the second is the
+// one the ADR is about:
+//
+//   - The in-memory set could only see prompts this process sent. A session
+//     the cockpit's `d` or a second launcher prompted a second ago was, to
+//     this sweep, a session nobody had touched — the same blindness the run
+//     record was introduced to end (rangerhq-tzdf's remaining half).
+//   - It was denominated in PASSES. Under ADR 0028 §1 a pass is the whole
+//     life of a long-lived Run, so a set carried "for the pass" would grow
+//     without bound and guard sessions prompted hours ago; the grace this
+//     was always reaching for is PromptGrace, and now it says so.
+//
+// It is a WIDER guard in the direction that matters and a narrower one where
+// narrowing is correct: it covers prompts this process never sent, and it
+// stops covering a session prompted 75 minutes ago whose bead the store now
+// calls closed and whose agent herdr calls idle — which is precisely a
+// session to reap.
 //
 // And it reads the bead fresh, at reap time, never from the pass's own
 // gathered results: `--resume` can close a bead between one pass's gather
@@ -48,13 +69,13 @@ func (a *App) AutoReap() bool {
 // — a real pass with real beads gathers for 15m-4h, and every --watch
 // instance on record has died somewhere inside that window, so the epilogue
 // alone left the sweep starved). It reads every bead fresh (see below), so
-// either call site is equally safe. justPrompted names sessions this same
-// pass fired a prompt at (pendingBead.session) — never a reap candidate,
-// whatever herdr says about them right now; it is nil at the start-of-pass
-// call, since nothing has been prompted yet. A read failure is this sweep's
-// own to swallow: a pass that dispatched real work does not fail because a
-// reap sweep could not list sessions.
-func (d *Dispatcher) autoReapPass(justPrompted map[string]bool) {
+// either call site is equally safe — and since ADR 0028 §3 they are also
+// the same call: the prompt guard is a question about the SESSION now, not
+// an argument about what this pass did, so neither site has to tell the
+// other what it fired. A read failure is this sweep's own to swallow: a pass
+// that dispatched real work does not fail because a reap sweep could not
+// list sessions.
+func (d *Dispatcher) autoReapPass() {
 	if d.NoReap || !d.App.AutoReap() {
 		return
 	}
@@ -73,7 +94,10 @@ func (d *Dispatcher) autoReapPass(justPrompted map[string]bool) {
 		if s.Name == SessionFor(s.Agent, s.Dir) {
 			continue
 		}
-		if justPrompted[s.Name] {
+		// ADR 0028 §3, and PromptGrace's own window: any launcher's prompt
+		// counts, and the run record is where a prompt this process never
+		// sent is legible.
+		if _, recent := d.promptedRecently(s.Name); recent {
 			continue
 		}
 		if s.Status != "idle" && s.Status != "done" {

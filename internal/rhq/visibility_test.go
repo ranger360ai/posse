@@ -58,6 +58,9 @@ func TestScanOps(t *testing.T) {
 		{"operator set plan_guard_5h: 70 / plan_guard_7d: 85", "guard"},
 		{"autostart is ARMED (autostart_interval: 5m, autostart_dry_run: true)", "guard"},
 		{"my own budget_day: 250 revised to 400/300", "guard"},
+		// dispatch_epoch: is the same class of fact and arrived with ADR
+		// 0028 §2 — what THIS shop's spend and launch windows are set to.
+		{"we run dispatch_epoch: 30m here, so budget_pass buys half as much", "guard"},
 		{"on Max 5x the fleet's marginal cost is inside the plan", "plan"},
 		{"the operator is on the SuperGrok plan this month", "plan"},
 		// Shell, quoted in beads about these very hooks: 22 of the 37 beads
