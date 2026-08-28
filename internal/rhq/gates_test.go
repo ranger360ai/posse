@@ -103,6 +103,98 @@ func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
 	}
 }
 
+// The operator's own terminal IS a persona pane — the `!` prefix runs in the
+// current session, whose PATH leads with that persona's shim dir — so the
+// crew's keychain tripwire refuses HIS credential read too, and the line used
+// to name the rule and stop (ranger-base-kn99, raised on ranger-base-okbr).
+// It now says where the command does run. A table and not a blanket: the git
+// shim must NOT carry it, or a refusal aimed at the persona reads as the
+// escape ranger-base-khu declined on purpose.
+func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	// Stubs, so an escape from any arm below leaks into a file instead of
+	// running the real `security` or a real `git push`.
+	leaked := filepath.Join(t.TempDir(), "leaked")
+	realBin := t.TempDir()
+	for _, c := range []string{"security", "git"} {
+		os.WriteFile(filepath.Join(realBin, c), []byte("#!/bin/sh\necho LEAK "+c+" >>'"+leaked+"'\n"), 0o755)
+	}
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, binDir, _, err := a.RenderGates("dinesh", []string{"Bash(security:*)", "Bash(git push:*)", "Bash(git commit unless --)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(cmd string, args ...string) string {
+		out, err := exec.Command(filepath.Join(binDir, cmd), args...).CombinedOutput()
+		ee, ok := err.(*exec.ExitError)
+		if !ok || ee.ExitCode() != 1 {
+			t.Fatalf("%s %v must be refused with exit 1: %v %s", cmd, args, err, out)
+		}
+		return string(out)
+	}
+
+	// The argv the operator actually typed during the outage.
+	sec := run("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
+	for _, want := range []string{
+		"refused by posse gate: security find-generic-password",
+		"deny: Bash(security:*)",
+		"this shell is dinesh's pane",
+		"gate dir leads its PATH",
+		"a persona has no way past",
+		"operator: run security in a terminal outside posse",
+	} {
+		if !strings.Contains(sec, want) {
+			t.Errorf("the security refusal must say %q, got:\n%s", want, sec)
+		}
+	}
+
+	// The negative control, with its own witness: git IS gated and IS
+	// refused — an absence measured over a shim that refused nothing would
+	// pass for the wrong reason.
+	push := run("git", "push")
+	if !strings.Contains(push, "deny: Bash(git push:*)") {
+		t.Fatalf("git push must be refused, or the control measures nothing:\n%s", push)
+	}
+	commit := run("git", "commit", "-m", "x")
+	if !strings.Contains(commit, "safe form: git commit … -- <operand>") {
+		t.Fatalf("git commit must still name its safe form:\n%s", commit)
+	}
+	for _, out := range []string{push, commit} {
+		if strings.Contains(out, "outside posse") || strings.Contains(out, "pane") {
+			t.Errorf("the where-hint is a table, not a blanket:\n%s", out)
+		}
+	}
+	if _, err := os.Stat(leaked); err == nil {
+		b, _ := os.ReadFile(leaked)
+		t.Fatalf("a shim exec'd the real binary: %s", b)
+	}
+}
+
+// Both hints compose rather than one shadowing the other, safe form first:
+// the form that is not refused is the answer for whoever typed it, and where
+// to run it is the answer only if that was the operator.
+func TestRuleHintComposesSafeFormAndWhere(t *testing.T) {
+	got := ruleHint("dinesh", "security", shimRule{Words: []string{"unlock-keychain"}, Unless: "--"})
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want the safe form then the three where lines, got %d:\n%s", len(lines), got)
+	}
+	if !strings.HasPrefix(lines[0], "  safe form: security unlock-keychain … -- <operand>") {
+		t.Errorf("safe form must lead: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "dinesh's pane") || !strings.Contains(lines[3], "outside posse") {
+		t.Errorf("the where lines must follow: %q", got)
+	}
+	if h := ruleHint("dinesh", "git", shimRule{Words: []string{"push"}}); h != "" {
+		t.Errorf("a positive rule on a command with no where-hint has no hint: %q", h)
+	}
+}
+
 // The rendered shim refuses matching argv (message, exit 1, refusals.log)
 // and execs the real binary otherwise; PATH prefix on the typed line.
 func TestRenderedShimRefusesAndPasses(t *testing.T) {

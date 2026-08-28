@@ -416,28 +416,64 @@ func resolveOutside(cmd, binDir string) string {
 
 func shQuote(s string) string { return shellQuote(s) }
 
-// ruleHint is the second line of the refusal for a NEGATIVE rule: the form
-// that is not refused, spelled out of the rule itself. Derived rather than
-// written per rule so the grammar stays general — the git-specific advice
-// ("-F -", "not '.'") belongs to the git-specific L3 hook, not here.
-func ruleHint(cmd string, r shimRule) string {
-	if r.Unless == "" {
+// whereHints names the commands whose refusal a HUMAN plausibly triggers
+// himself, and which therefore earn a line saying WHERE the command does
+// run. The operator's terminal is a persona pane: the `!` prefix runs in the
+// current session, whose PATH leads with this shim dir, so the crew's
+// keychain tripwire refused the operator's own credential read and the line
+// named the rule and stopped (ranger-base-kn99, raised on ranger-base-okbr).
+//
+// A table and not a blanket, because the line is only honest where the
+// refused reader might BE the operator. `security` is a tripwire on the crew
+// — nothing in a pane should read the keychain, and the operator reads it
+// constantly. A deny like Bash(git push:*) is the opposite: a control on an
+// action that is the launcher's by design, where "run it outside posse"
+// reads as the escape ranger-base-khu declined on purpose. One line per
+// entry, deliberately: each entry is a judgment someone made.
+var whereHints = map[string]bool{"security": true}
+
+// whereHint is that line, or "" when cmd is not one a human types himself.
+// It names the pane rather than offering a way past — a persona has none,
+// and saying so is what keeps this from reading as an escape hatch.
+func whereHint(persona, cmd string) string {
+	if !whereHints[cmd] {
 		return ""
 	}
-	words := strings.Join(r.Words, " ")
-	if words != "" {
-		words += " "
-	}
-	hint := fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
-	if sp := spoilersFor(cmd, r); len(sp.Opts) > 0 {
-		hint += fmt.Sprintf(", and without %s — %s", strings.Join(sp.Opts, "/"), sp.Why)
-	}
-	return hint
+	return fmt.Sprintf("  this shell is %s's pane: posse's gate dir leads its PATH, so\n"+
+		"  every shell in it is gated and a persona has no way past that.\n"+
+		"  operator: run %s in a terminal outside posse.", persona, cmd)
 }
 
-// setVars renders the assignment of the refusal's two variables for r.
-func setVars(cmd string, r shimRule) string {
-	return fmt.Sprintf("RHQ_GATE_RULE=%s; RHQ_GATE_HINT=%s", shQuote(r.Rule), shQuote(ruleHint(cmd, r)))
+// ruleHint is what the refusal says under the rule it names: for a NEGATIVE
+// rule the form that is not refused, spelled out of the rule itself, and for
+// a command a human plausibly types himself the pane he typed it in and
+// where it does run. Both when both apply. Derived rather than written per
+// rule so the grammar stays general — the git-specific advice ("-F -",
+// "not '.'") belongs to the git-specific L3 hook, not here.
+func ruleHint(persona, cmd string, r shimRule) string {
+	var lines []string
+	if r.Unless != "" {
+		words := strings.Join(r.Words, " ")
+		if words != "" {
+			words += " "
+		}
+		hint := fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
+		if sp := spoilersFor(cmd, r); len(sp.Opts) > 0 {
+			hint += fmt.Sprintf(", and without %s — %s", strings.Join(sp.Opts, "/"), sp.Why)
+		}
+		lines = append(lines, hint)
+	}
+	if w := whereHint(persona, cmd); w != "" {
+		lines = append(lines, w)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// setVars renders the assignment of the refusal's two variables for r. A
+// multi-line hint stays one assignment: the newlines sit inside the single
+// quotes shQuote puts round them, and `echo` in posse_refuse prints them.
+func setVars(persona, cmd string, r shimRule) string {
+	return fmt.Sprintf("RHQ_GATE_RULE=%s; RHQ_GATE_HINT=%s", shQuote(r.Rule), shQuote(ruleHint(persona, cmd, r)))
 }
 
 // ruleCond renders the test for one rule against the positional params in
@@ -506,7 +542,7 @@ func renderShim(persona, cmd, real, log string, rules []shimRule) string {
 			verbs = append(verbs, r)
 			continue
 		}
-		fmt.Fprintf(&b, "if %s; then %s; posse_refuse \"$@\"; fi\n", ruleCond(cmd, r), setVars(cmd, r))
+		fmt.Fprintf(&b, "if %s; then %s; posse_refuse \"$@\"; fi\n", ruleCond(cmd, r), setVars(persona, cmd, r))
 	}
 	if len(verbs) > 0 {
 		fmt.Fprintf(&b, "# Skip %s's leading global options, then match the first non-option\n", cmd)
@@ -521,7 +557,7 @@ func renderShim(persona, cmd, real, log string, rules []shimRule) string {
 		}
 		b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
 		for _, r := range verbs {
-			fmt.Fprintf(&b, "  if %s; then %s; return 0; fi\n", ruleCond(cmd, r), setVars(cmd, r))
+			fmt.Fprintf(&b, "  if %s; then %s; return 0; fi\n", ruleCond(cmd, r), setVars(persona, cmd, r))
 		}
 		b.WriteString("  return 0\n}\n")
 		// Called directly, not through $(...): the matcher sets the rule and
