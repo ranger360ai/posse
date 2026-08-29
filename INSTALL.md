@@ -1048,6 +1048,12 @@ $ cat >> AGENTS.md <<'EOF'
 - Close the bead, and commit **naming your own paths** (`git commit -F - --
   <paths>`) — every persona shares this checkout and its index, so an
   unqualified commit takes whatever another persona has staged.
+- **A new file needs two steps here** — `git add -- <the new paths>`, then
+  `git commit -F - -- <all your paths>`. A pathspec only matches a file git
+  already has an index entry for, so the path-limited form alone answers
+  `did not match any file(s) known to git`. Scope that add with `--`; never
+  `git add -A` or `git add .`, which stage every persona's file into the
+  shared index.
 - **A `git revert` is two steps here** — `git revert --no-commit <sha>`, then
   `git commit -F - -- <the paths it touched>`. A plain `git revert` is refused
   by the same gate (it names no paths), and it is refused only *after* git has

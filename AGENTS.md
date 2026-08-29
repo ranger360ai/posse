@@ -24,6 +24,12 @@ bd sync               # Sync with git
   unqualified commit takes whatever another persona has staged, and the
   `prepare-commit-msg` gate refuses one. In your own worktree nothing is
   shared, the gate stands down, and the ordinary form is fine.
+- **A NEW file needs two steps** (rangerhq-4pbt): `git add -- <the new
+  paths>`, then `git commit -F - -- <all your paths>`. A pathspec only matches
+  a file git already has an index entry for, so the path-limited form on its
+  own answers `did not match any file(s) known to git`. Scope that add with
+  `--`; never `git add -A` or `git add .`, which stage every persona's file
+  into the shared index.
 - **In the shared checkout a revert is two steps**: `git revert --no-commit
   <sha>`, then `git commit -F - -- <the paths it touched>`. A plain
   `git revert` names no paths, so the same gate refuses it — after git has

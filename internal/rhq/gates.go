@@ -142,6 +142,40 @@ var qualifierSpoilers = map[string]spoiler{
 	},
 }
 
+// qualifierPrereqs is the other git-specific fact the L1 hint carries, and
+// it is a PREREQUISITE of the safe form rather than a hole in it
+// (rangerhq-4pbt). `unless --` demands a pathspec, and a pathspec only
+// matches a file git already has an index entry for — so the one form this
+// rule permits cannot introduce a NEW file. Measured, git 2.39.3: `git
+// commit -F - -- <untracked>` answers `error: pathspec '<p>' did not match
+// any file(s) known to git` and exits 1 before either wall is reached, so
+// neither layer gets to say anything. The persona's obvious next reach is
+// `git add` + `git commit`, which IS refused — by the same message that
+// just failed them. Two refusals and no way through is how the private
+// GIT_INDEX_FILE recipe gets reinvented (rangerhq-8rtf, rangerhq-2f5r), so
+// the route is named here rather than left to be rediscovered.
+//
+// Two lines, not the whole recipe: the L1 shim refuses the UNQUALIFIED form
+// and cannot know whether a new file is involved, so this rides on every
+// such refusal and has to earn its width. The full form, with the residual
+// it opens, is in the L3 hook — which is git-specific by construction.
+//
+// Keyed like the spoilers, by command and subcommand.
+var qualifierPrereqs = map[string]string{
+	"git commit": "  a NEW file has no index entry yet, so no pathspec matches it: run\n" +
+		"  `git add -- <the new paths>` first, scoped and never bare, then the\n" +
+		"  same path-limited commit (measured, rangerhq-4pbt).",
+}
+
+// prereqFor returns the prerequisite line for r under cmd, or "". Only a
+// negative rule has a qualifier with a prerequisite.
+func prereqFor(cmd string, r shimRule) string {
+	if r.Unless == "" {
+		return ""
+	}
+	return qualifierPrereqs[strings.TrimSpace(cmd+" "+strings.Join(r.Words, " "))]
+}
+
 // spoilersFor returns the spoiler table entry for r under cmd. Only a
 // negative rule has a qualifier to spoil.
 func spoilersFor(cmd string, r shimRule) spoiler {
@@ -473,7 +507,11 @@ func whereHint(persona, cmd string) string {
 // a command a human plausibly types himself the pane he typed it in and
 // where it does run. Both when both apply. Derived rather than written per
 // rule so the grammar stays general — the git-specific advice ("-F -",
-// "not '.'") belongs to the git-specific L3 hook, not here.
+// "not '.'") belongs to the git-specific L3 hook, not here. The two keyed
+// tables are the one seam where a command-specific fact reaches this layer,
+// and both hold a fact about the QUALIFIER rather than advice about the
+// command: what satisfies it and lies (qualifierSpoilers), and what it
+// presumes of its own operand (qualifierPrereqs).
 func ruleHint(persona, cmd string, r shimRule) string {
 	var lines []string
 	if r.Unless != "" {
@@ -486,6 +524,9 @@ func ruleHint(persona, cmd string, r shimRule) string {
 			hint += fmt.Sprintf(", and without %s — %s", strings.Join(sp.Opts, "/"), sp.Why)
 		}
 		lines = append(lines, hint)
+		if pre := prereqFor(cmd, r); pre != "" {
+			lines = append(lines, pre)
+		}
 	}
 	if w := whereHint(persona, cmd); w != "" {
 		lines = append(lines, w)
@@ -1523,6 +1564,18 @@ fi
   echo "  over an edit someone has staged and sees none of it. Even clean, this"
   echo "  form bounds the PATHS, not the CONTENT; only a private worktree closes"
   echo "  the rest (rangerhq-09o2)."
+  echo "  a NEW file cannot be committed by that form alone (rangerhq-4pbt): a"
+  echo "  pathspec only matches a file git already has an index entry for, so an"
+  echo "  untracked path answers \"did not match any file(s) known to git\" and"
+  echo "  never reaches this hook. Two steps, and the add is scoped:"
+  echo "    git add -- <the new paths>"
+  echo "    git commit -F - -- <all your paths>"
+  echo "  never a bare 'git add -A' or 'git add .' — those stage every persona's"
+  echo "  new and modified file into this shared index, which is what the rule"
+  echo "  above exists to keep you out of. The window between the add and the"
+  echo "  commit is the residual: your staged entry is in the shared index until"
+  echo "  the commit takes it, so keep the two adjacent and name the new paths in"
+  echo "  the commit too."
   if [ "$posse_form" = "a commit from a private GIT_INDEX_FILE" ]; then
     echo "A private index also leaves the shared .git/index holding the PRE-FIX blobs"
     echo "for every path you just committed, so the next unqualified commit reverts"
