@@ -2396,15 +2396,27 @@ Three different things get called "permissions"; keep them apart
   unconditionally, `go test`/`make` are arbitrary exec), and no pattern
   can close it: the matcher cannot express "no `-i` anywhere in the
   argv".
-- **The wall is L1–L3, ours, on every runtime.** Rendered fresh from the
-  PID at every launch: **L1** PATH shims for every shell-verb deny
+- **The wall is L1–L3, ours on every runtime whose shell we type and in
+  every repo whose hook is ours.** Neither condition is rhetorical and
+  each has a name: **L1** holds on a runtime because ADR 0009's **gate
+  shell** is typed there as `SHELL`/`GROK_SHELL`, and `gate_shell: false`
+  (`Runtime.NoGateShell`) for a runtime that chokes on a wrapper drops
+  that runtime straight back to unrealized; **L3 is per-repo**, counted
+  only in the repo the session launches into and only while the hook file
+  there is byte-for-byte the one we render (ADR 0023 — identity, then a
+  behaviour probe of our own render). `CheckParity` — `CheckParityIn` for
+  L3's directory-aware half — is the per-launch source of truth for both,
+  and it recomputes rather than remembers; under `cage: container` it also
+  answers no unless the image carries a Linux posse to render L1/L3
+  *inside* (cageinner.go). Rendered fresh from the PID at every launch:
+  **L1** PATH shims for every shell-verb deny
   (`Bash(git push:*)` → `gates/<persona>/bin/git` refuses, logs to
   `refusals.log`, execs the real binary otherwise; PATH prefixed on the
   typed line, and the **gate shell** typed as `SHELL`/`GROK_SHELL`);
   **L3** the git pre-push hook honouring `RHQ_TOOLS_DENY`
   for the one verb that is a hard risk line. Both cost nothing per
   session and are on for every persona session — claude included — but
-  **L3 is per-repo**: the hook is installed in the repo the session
+  the hook is installed in the repo the session
   launches into (skipped when a foreign `pre-push` hook is already
   there — we never overwrite one), and is absent from every *other*
   repo reachable from that pane unless `posse gates install-hooks <repo>`
@@ -2419,9 +2431,11 @@ Three different things get called "permissions"; keep them apart
   gate shell, rendered per persona and typed on every runtime,
   re-prepends the gates dir inside the command string and inside the
   runtime's user-command slot. Verified live on claude, codex and grok
-  (rangerhq-e43), so parity counts L1 on every runtime again;
-  `gate_shell: false` for a runtime that chokes on a wrapper drops it
-  back to unrealized there. Residual: on a *persistent-shell* backend
+  (rangerhq-e43), so parity counts L1 on every runtime again — and that
+  is the rule for the next runtime we add: its PATH behaviour is
+  **verified per runtime in a live session** (`command -v git` resolving
+  into `gates/<persona>/bin`), never assumed from the fact that we typed
+  the shell. Residual: on a *persistent-shell* backend
   only the login-capture guard applies, and
   `gates/<persona>/shell.log` is the detector.
 - **The boundary is L2/L4, only when declared.** `Edit`/`Write`-class
