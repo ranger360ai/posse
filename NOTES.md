@@ -351,6 +351,35 @@ of the harness core:
    the backoff (`internal/rhq/watch.go`) — the backstop for whatever a
    `Run`'s own cascade did not catch (a seat freed by something dispatch
    never fired into), never the refill's own mechanism.
+   A refill **says whose seat it is refilling** (ranger-base-59jd): the fire
+   path enumerates per bead, so on the first live refill, under `--persona
+   gwart`, every settle reprinted a wall of `– <bead> … lane busy` lines and
+   `– 131 ready bead(s) outside gwart's lane — skipped by --persona`,
+   attributed to nothing — true lines, unowned, and on a loop they read as a
+   rogue persona-filtered process holding the watch. A refill now prints
+   `↻ refill for settled seat <seat> (<bead> settled) — re-offering N ready
+   bead(s) to every free seat` before the enumeration and one
+   `↻ … : N launched, M skipped (<counts by reason>)` after it, its per-bead
+   skips counted rather than printed because under a rolling `Run` they are
+   the same lines at every settle. Launches, `✗` errors and every other
+   report are untouched, and a fire pass that is NOT a refill — the head of a
+   `Run`, every one-shot `dispatch`, every `--dry-run` — still enumerates per
+   bead (`internal/rhq/refillreport.go`).
+
+   **Which arm a measured idle-to-next window belongs to is read off the call
+   path, not off a constant.** ADR 0028 §5 observable 1 shipped before the
+   refill and stamped every line "no refill has shipped, this is the control
+   arm" — a string that could not become false, so the before/after
+   comparison it exists for would have read as all-before. A window is a
+   treatment window when the launch that CLOSED it was made by a refill
+   (`SeatRefill.Rolling`, set from the live call path): the line reads
+   `[ADR 0028 §5 obs.1 rolling]` against `[… baseline]`, and the pass line
+   counts them — `no window here was closed by a refill — control arm`, or
+   `K of N window(s) closed by a refill — treatment arm`. A rolling `Run`'s
+   first launch into each seat still comes from the head of its pass, so that
+   window is a baseline one and is stamped as one; keying the arm on the
+   `Refill` flag instead would put "before" data inside the "after" figure
+   (`internal/rhq/seatidle.go`, `docs/notes.d/ranger-base-59jd.md`).
 6. Judge by the **bead**, not the agent: issue closed → ✓; agent settled
    `blocked` → ⛔ flagged (herdr's sidebar already shows it); settled but
    issue still open → ◑ review the session.

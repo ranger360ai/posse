@@ -247,6 +247,12 @@ type Dispatcher struct {
 	// every other reading here. Nothing reads it back to make a decision —
 	// it is printed and it is on the ledger, and that is all it is for.
 	seatRefills []SeatRefill
+
+	// The refill this fire pass is speaking for, or nil when the pass is the
+	// head of a Run rather than a settle's refill (refillreport.go). Set by
+	// refire around its own fireLoop call and nowhere else; it decides how
+	// the enumeration REPORTS and never what it does.
+	refilling *refillFor
 }
 
 // DefaultRelaunchGrace is how long after a launch RelaunchAgent refuses to
@@ -1924,7 +1930,8 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			// still recorded free (below), but nothing fires into it.
 			continue
 		}
-		delete(busy, SessionFor(g.persona, g.is.Dir))
+		seat := SessionFor(g.persona, g.is.Dir)
+		delete(busy, seat)
 		// The refill runs the fire path for every free seat, not only for
 		// the one that just settled (ranger-base-t8tq). ADR 0028 §1 as
 		// accepted said "re-runs the fire path for the freed seat", on "the
@@ -1940,7 +1947,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		// the busy map still refuses a seat with a bead on it, and each seat
 		// is re-read live (seatMap), so this fires no seat a fresh pass
 		// would not have fired.
-		more, attempts, err := d.refire(personaFilter, dirFilter, max, busy, sessFail)
+		more, attempts, err := d.refire(seat, g.is.ID, personaFilter, dirFilter, max, busy, sessFail)
 		if err != nil {
 			d.printf("✗ refill %s: %v\n", g.persona, err)
 		} else if !d.DryRun {
@@ -2022,7 +2029,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			break
 		}
 		if !beadIDRe.MatchString(is.ID) {
-			d.printf("– %-14q refused: bead id is not a plain token\n", is.ID)
+			d.skipf(skipBadID, "– %-14q refused: bead id is not a plain token\n", is.ID)
 			continue
 		}
 		// A question is the operator's to answer, never dispatched — and it
@@ -2031,7 +2038,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// costs no attempt in any case (rangerhq-1r2).
 		if hasLabel(is.Labels, "question") {
 			if personaFilter == "" || is.Assignee == personaFilter {
-				d.printf("– %-14s for the operator (question) — not dispatched\n", is.ID)
+				d.skipf(skipQuestion, "– %-14s for the operator (question) — not dispatched\n", is.ID)
 			}
 			continue
 		}
@@ -2041,7 +2048,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// read under the launcher lock, right here.
 		lane := d.laneFor(is)
 		if lane.deny != "" {
-			d.printf("– %-14s unroutable (%s)\n", is.ID, lane.deny)
+			d.skipf(skipUnroutable, "– %-14s unroutable (%s)\n", is.ID, lane.deny)
 			continue
 		}
 		// One bead per persona per repo per pass (§4): the seat walk skips
@@ -2057,7 +2064,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 				outside++
 				continue
 			}
-			d.printf("– %-14s %s\n", is.ID, full)
+			d.skipf(skipLaneBusy, "– %-14s %s\n", is.ID, full)
 			continue
 		}
 		persona := lane.seats[seat].name
@@ -2110,7 +2117,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		}
 		guard := namesThrough(crewNames, holder)
 		if h := d.crewHeld(guard...); h != "" {
-			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
+			d.skipf(skipCrewHeld, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
 			continue
 		}
 		// Same names, same question, one rung lower: a workspace posse holds
@@ -2120,7 +2127,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// (rangerhq-ynx8). A foreign row the join DID pick as holder is
 		// caught here, so it is never the session this pass fires into.
 		if h := d.foreignHeld(guard...); h != "" {
-			d.printf("– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(h), foreignFreeLine(h))
+			d.skipf(skipForeign, "– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(h), foreignFreeLine(h))
 			continue
 		}
 		// An in_progress bead whose own session (or the pre-Dial-F persona
@@ -2138,7 +2145,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// left the retarget below blind to a bare slot shell and the pass
 		// creating a Dial F twin beside it (ranger-base-6bu).
 		if holder != "" && holderStatus != "" && !d.Resume {
-			d.printf("– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, holder)
+			d.skipf(skipSettled, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, holder)
 			continue
 		}
 		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
@@ -2195,7 +2202,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		mine := is.Assignee == "" || is.Assignee == persona
 		if age, recent := d.promptedRecently(session); recent && holder == "" && mine {
 			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
-				d.printf("– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
+				d.skipf(skipGrace, "– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
 				seats.note(slot)
 				continue
 			}
@@ -2209,7 +2216,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// Nearly spent → the bead may run a tier down.
 		st := d.passBudget()
 		if st.Stop() {
-			d.printf("– %-14s %s\n", is.ID, budgetSkipLine(st))
+			d.skipf(skipBudget, "– %-14s %s\n", is.ID, budgetSkipLine(st))
 			continue
 		}
 		// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
@@ -2237,13 +2244,13 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			}
 			if d.planBlind != "" {
 				if OnGuardedMeter(launchRT) {
-					d.printf("– %-14s %s — skipped\n", is.ID, d.planBlind)
+					d.skipf(skipPlanGuard, "– %-14s %s — skipped\n", is.ID, d.planBlind)
 					continue
 				}
 			} else {
 				dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
 				if dec.Skip != "" {
-					d.printf("– %-14s %s\n", is.ID, dec.Skip)
+					d.skipf(skipPlanGuard, "– %-14s %s\n", is.ID, dec.Skip)
 					continue
 				}
 				launchRT, moved = dec.Runtime, dec.Moved
@@ -2261,11 +2268,11 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// bead cap below is the stand-in for the ABSENCE of one. Both skip;
 		// only one of them says how much of the pool is left.
 		if skip := d.grokPoolSkip(launchRT); skip != "" {
-			d.printf("– %-14s %s\n", is.ID, skip)
+			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
 			continue
 		}
 		if skip := d.uncountedSkip(launchRT); skip != "" {
-			d.printf("– %-14s %s\n", is.ID, skip)
+			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
 			continue
 		}
 		if st.StepDown() {
@@ -2359,13 +2366,13 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 				sessFail[slot]++
 				if sessFail[slot] >= 2 {
 					seats.note(slot)
-					d.printf("– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
+					d.skipf(skipBenched, "– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
 				} else {
-					d.printf("– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+					d.skipf(skipSessFail, "– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
 				}
 			default:
 				seats.note(slot)
-				d.printf("– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
+				d.skipf(skipBenched, "– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
 			}
 			continue
 		}
@@ -2398,7 +2405,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 	// ranger-base-69jo was filed about. One line at the end says which it
 	// was, and it names no bead, so nothing here is a dispatch decision.
 	if personaFilter != "" && outside > 0 {
-		d.printf("– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
+		d.skipNf(outsideLaneSkip(personaFilter), outside, "– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
 	}
 	return dispatched, pending, attempts, nil
 }
@@ -2417,6 +2424,11 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // seat walk is what decides who is free, live, and the busy map is what
 // keeps this Run's own occupied seats out of it.
 //
+// seat and settled name the settle that triggered it — the refill's report
+// is written under them (refillreport.go): a header before the enumeration
+// and one summary line for its skips after, so a refill's lines can be told
+// from a pass's. That is reporting only; nothing here decides on them.
+//
 // Only Run's own gather loop calls this, and only when d.Refill is set
 // (Watch's long-lived Run — ADR 0028 §4: no other launch path exists). It
 // does not reset any of the pass-denominated readings (planTrip, overflow,
@@ -2424,9 +2436,9 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // Run's own head last set them to, refreshed on the next full pass, exactly
 // as ADR 0028 §2's "only four things are pass-denominated" says the rest of
 // this file already may.
-func (d *Dispatcher) refire(personaFilter, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
+func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
 	if why := d.App.LoadHigh(d.errw()); why != "" {
-		d.printf("◷ %s — refill skipped\n", why)
+		d.printf("◷ refill for settled seat %s skipped: %s\n", seat, why)
 		return nil, 0, nil
 	}
 	d.rollEpoch(d.now())
@@ -2454,7 +2466,17 @@ func (d *Dispatcher) refire(personaFilter, dirFilter string, max int, busy map[s
 		return nil, 0, nil
 	}
 	OrderBeads(beads, d.Resume)
+	// The enumeration below is a refill's, and says so — header, then one
+	// summary line for the skips instead of a per-bead wall repeated at
+	// every settle (refillreport.go, ranger-base-59jd). endRefill is paired
+	// with beginRefill on the error path too: the field must not outlive
+	// this call or the next ordinary fire pass would report as a refill.
+	d.beginRefill(seat, settled, len(beads))
 	_, pending, attempts, err := d.fireLoop(beads, personaFilter, room, busy, sessFail)
+	// len(pending) and not fireLoop's count: on the real path that count is
+	// made at the gather, not at the fire, and only --dry-run increments it
+	// here. What this refill launched is what it left in flight.
+	d.endRefill(len(pending))
 	if err != nil {
 		return nil, 0, err
 	}

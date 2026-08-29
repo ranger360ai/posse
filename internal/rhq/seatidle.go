@@ -1,6 +1,6 @@
 package rhq
 
-// Idle-to-next per seat — ADR 0028 §5 observable 1, the control arm.
+// Idle-to-next per seat — ADR 0028 §5 observable 1, both arms.
 //
 // A seat is one (persona, repo): SessionFor's key, the unit ADR 0020 §2
 // seats a bead into and the unit ADR 0028 §3 hands back at settle. Its
@@ -9,6 +9,17 @@ package rhq
 // gather barrier plus the --watch sleep; ADR 0028 §1 claims to shrink it to
 // seconds. A claim nobody measured before the change is unfalsifiable
 // after it, so this ships FIRST and alone.
+//
+// WHICH ARM A WINDOW BELONGS TO IS READ OFF THE CODE, NOT OFF A CONSTANT
+// (ranger-base-59jd). Every line this file printed said "no refill has
+// shipped, this is the control arm" — true when the instrument shipped
+// first and alone, a lie the moment §1's refill went live, and unnoticed
+// because nothing was keyed on anything. A window belongs to the treatment
+// arm when the launch that CLOSED it was made by a refill (Rolling below),
+// which is the fact the ADR is about; a rolling Run's own first launch into
+// a seat came from the head of its pass, so it is a baseline window and is
+// stamped as one. The report says how many of each it saw and names the arm
+// from that, so the before/after comparison partitions itself.
 //
 // It DECIDES NOTHING. No guard reads this ledger, no launch is refused on
 // it, no cap counts it — it is a measurement, and the whole point of the
@@ -143,6 +154,12 @@ type SeatRefill struct {
 	Launched time.Time
 	Idle     time.Duration
 	Why      string // "" = measured; else why there is no figure
+	// Rolling: the launch that closed this window was made by ADR 0028 §1's
+	// refill rather than by the head of a pass — the treatment arm. Set by
+	// the pass wiring from the live call path (noteSeatLaunch), never from a
+	// build flag or a hardcoded string, so it flips itself the day the
+	// refill code becomes reachable and stays honest when it is not.
+	Rolling bool
 }
 
 // Measured says this refill carries a real number.
@@ -206,10 +223,19 @@ func (r SeatRefill) Line() string {
 	if !r.Measured() {
 		return fmt.Sprintf("◷ idle-to-next %-14s —       %s: %s", r.Seat, r.Bead, r.Why)
 	}
-	return fmt.Sprintf("◷ idle-to-next %-14s %s  (%s settled %s → %s launched %s) [ADR 0028 §5 obs.1 baseline]",
+	return fmt.Sprintf("◷ idle-to-next %-14s %s  (%s settled %s → %s launched %s) [%s]",
 		r.Seat, r.Idle.Round(time.Second),
 		r.After, r.Settled.Local().Format("15:04:05"),
-		r.Bead, r.Launched.Local().Format("15:04:05"))
+		r.Bead, r.Launched.Local().Format("15:04:05"), r.arm())
+}
+
+// arm stamps the window with the code path that closed it, so a line lifted
+// out of a log on its own still says which arm it belongs to.
+func (r SeatRefill) arm() string {
+	if r.Rolling {
+		return "ADR 0028 §5 obs.1 rolling"
+	}
+	return "ADR 0028 §5 obs.1 baseline"
 }
 
 // ─── the pass's half (ADR 0028 §5 observable 1) ──────────────────────────────
@@ -227,7 +253,13 @@ func (d *Dispatcher) noteSeatLaunch(is RepoIssue, seat, runtime string, at time.
 		return
 	}
 	path := d.App.SeatCadenceLogPath()
-	d.seatRefills = append(d.seatRefills, SeatIdleAt(path, seat, is.ID, at))
+	r := SeatIdleAt(path, seat, is.ID, at)
+	// The arm, taken from the call path this launch came in on: d.refilling
+	// is set only for the duration of a refill's own fireLoop (refire), so
+	// this is "the refill made this launch" and not "the process was built
+	// with refills" (ranger-base-59jd).
+	r.Rolling = d.refilling != nil
+	d.seatRefills = append(d.seatRefills, r)
 	if err := d.App.AppendSeatEvent(SeatEvent{At: at, Kind: SeatLaunch, Seat: seat, Bead: is.ID, Detail: runtime}); err != nil {
 		d.eprintf("seat cadence: launch of %s into %s not recorded (%v) — the next refill of this seat has no window to measure (ADR 0028 §5)\n", is.ID, seat, err)
 	}
@@ -287,8 +319,31 @@ func (d *Dispatcher) seatIdleReport() {
 		return
 	}
 	sort.Slice(measured, func(i, j int) bool { return measured[i] < measured[j] })
-	d.printf("◷ idle-to-next: %d of %d refill(s) measured — median %s, max %s (ADR 0028 §5 observable 1; no refill has shipped, this is the control arm)\n",
-		len(measured), len(refills), medianDuration(measured).Round(time.Second), measured[len(measured)-1].Round(time.Second))
+	d.printf("◷ idle-to-next: %d of %d refill(s) measured — median %s, max %s (ADR 0028 §5 observable 1; %s)\n",
+		len(measured), len(refills), medianDuration(measured).Round(time.Second), measured[len(measured)-1].Round(time.Second), seatIdleArm(refills))
+}
+
+// seatIdleArm names the arm this report's measured windows belong to, from
+// the windows themselves. A run that closed none of them by a refill is the
+// control arm and says so; one that closed any is the treatment arm and says
+// how many, because a rolling Run's first launch into each seat is still a
+// baseline window and folding the two together would make the "after"
+// figure quietly include "before" data.
+func seatIdleArm(refills []SeatRefill) string {
+	rolling, measured := 0, 0
+	for _, r := range refills {
+		if !r.Measured() {
+			continue
+		}
+		measured++
+		if r.Rolling {
+			rolling++
+		}
+	}
+	if rolling == 0 {
+		return "no window here was closed by a refill — control arm"
+	}
+	return fmt.Sprintf("%d of %d window(s) closed by a refill — treatment arm", rolling, measured)
 }
 
 // medianDuration is the middle of a SORTED slice, the low middle of an even
