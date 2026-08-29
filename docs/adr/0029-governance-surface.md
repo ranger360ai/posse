@@ -5,7 +5,8 @@ architect; amended there 2026-08-22 for G9) · restated 2026-08-27, bead
 ranger-base-evva · §1–2 implemented here as rangerhq-81y0 (govern.go,
 `posse status`, the cockpit GOVERNANCE block, the pulse tick rewired);
 §3 is rangerhq-a2g6, G7's flock probe is rangerhq-mgvx · G6 epoch
-amendment 2026-08-27, bead ranger-base-jbmh*
+amendment 2026-08-27, bead ranger-base-jbmh · G7 arm-reading amendment
+2026-08-29, bead ranger-base-yznr*
 
 > Restated from the private archive of the instance this harness was
 > developed in (its governance-surface ADR, bead rangerhq-e37c); incident
@@ -55,7 +56,7 @@ stopped) and LANE (one bead or session is stopped, the rest flows):
 | G4 | plan guard skipping, sustained past `attn_guard_stuck` (default 2h) | the guard's own reading, re-taken at view time; streak from the watch process's clock | URGENT (self-healing; urgent only when sustained) |
 | G5 | guard blind past `plan_guard_blind_max` | planusage fetch fails now | URGENT — monitoring itself is broken |
 | G6 | Dial E stop / budget ≥ 100% | cost scan vs caps | URGENT for spend, heals at the window |
-| G7 | watch loop dead while autostart armed | the loop's flock (post-migration; pidfile+argv husk check until then) | URGENT — the meta-condition: no other condition gets delivered |
+| G7 | watch loop dead while autostart armed, or the arm itself broken | the loop's flock, and config.yaml's arm reading (a bare `autostart_interval:` is a refused arm, not an armed one) | URGENT — the meta-condition: no other condition gets delivered |
 | G8 | paused (§3) | `state/pause.yaml` | URGENT by intent — reported, never alarmed |
 | G9 | ready bead routed to the coordinator, whom dispatch refuses to hire (ADR 0033, restating the archive's coordinator-is-not-a-lane ADR) | bd assignee/labels + config `coordinator:` | LANE |
 
@@ -111,6 +112,20 @@ exist. The dialE change rides its own `-l code` bead, dep-blocked on
 the re-key slice, and replaces dialE's interim comment with a pointer
 here.
 
+*(amended 2026-08-29, bead ranger-base-yznr — descriptive accuracy, not
+a design change)* **G7's "armed" is the startup hook's reading, not key
+presence.** A present-but-empty `autostart_interval:` is a broken arm —
+plugin/autostart.sh refuses it by name and exits 1 rather than arming
+anything (ranger-base-cxyk) — so G7 also fires off the config, key
+`arm-broken`, without consulting the flock (nothing is armed to be
+running); a valued key keeps the flock probe and key `loop-dead`. The
+table stays closed at nine: the fact is the same one — nothing is
+delivering, and nothing will at the next herdr start — only the cause
+differs, and it differs by KEY, which is what the delivery fingerprint
+moves on. Decided in code on ranger-base-i6h; the same amendment retires
+the row's pidfile+argv husk parenthetical, the flock probe having
+shipped (rangerhq-mgvx).
+
 **2. The surface is a computed view, rendered three ways — not a store.**
 Every G-row above is a fact already owned by exactly one store (herdr,
 bd, the plan endpoint, the kernel's flock, the pause file). A durable
@@ -129,7 +144,8 @@ the loop that writes it is healthy. So:
   for delivery, never a record anyone reads for truth.
 - **Honesty when the loop is dead:** the view does not depend on the
   loop — `posse status` reads the stores directly and reports G7 itself,
-  via the flock probe (release *is* death, no staleness class). What
+  via the arm reading and the flock probe (release *is* death, no
+  staleness class). What
   dies with the loop is *delivery* only, stated plainly: a dead loop
   pulses nobody, and the residual witness is the operator's glance at
   the cockpit header — which is ADR 0027's own arming premise ("no
