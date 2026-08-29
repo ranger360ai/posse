@@ -4,7 +4,8 @@
 (ADR 0013 §6: unmapped tier displays as `default`, not the intent name)
 · amended 2026-08-25 (§1/§3: the mapping can miss; rangerhq-oay shipped
 the mechanism, ranger-base-lzx writes it down) · amended 2026-08-28
-(§2: the mark survives a relaunch — ranger-base-twaq)*
+(§2: the mark survives a relaunch — ranger-base-twaq) · amended
+2026-08-29 (§1: the grok column ruling — ranger-base-tg7c)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -52,6 +53,63 @@ a **cost** lever only — measured 2026-08-25, moving a session to luna did
 not lift an account-level usage wall, because that wall is on the account
 and not on the model, so dispatch's budget step-down buys a cheaper model
 there and no extra allotment.
+
+*(Amended 2026-08-29, ranger-base-tg7c — the architect's ruling on the
+grok column rangerhq-jp6 built and routed here for review. Self-contained
+on purpose: it names the column's values so it stands whether it lands
+before or after jp6's own amendment.)* Two calls.
+
+**The shape stands: `strong` = `standard` = grok-4.6, `fast` = grok-4.5**
+— the codex shape, ratified over the strong=4.6 / standard=4.5 map
+rangerhq-jp6 originally asked for. `standard` is the everyday lane, and
+this table's precedent (the arm amendment above) names the box default
+there so the launch is a fact, not a demotion: standard=grok-4.5 would
+have quietly moved ordinary grok work below the model it runs on today,
+justified only by a pool saving nobody has priced — xAI publishes no
+per-model rate against the weekly pool, and grok-4.5 has never run on
+this box (181 of 181 priced turns in `~/.grok/sessions` are grok-4.6;
+MEASURED, rangerhq-jp6). And the asked-for map left `fast` unmapped, so
+its fallback rendered the same id as `standard` — a map where dispatch's
+budget step-down (standard → fast) buys nothing at all. `fast` =
+grok-4.5 is ratified as a **capability** step-down for mechanical work;
+that it also saves pool is ASSUMED, plausible, and unpriced — nothing
+may cite this row as a saving.
+
+**`--reasoning-effort` stays OUT of the tier map.** It is arguably
+grok's bigger spend dial (more positions than the model dial), and the
+answer is still no, three times over:
+
+- The load-bearing number does not exist: nothing on this box can price
+  an effort step against the weekly pool — no usage endpoint, no
+  per-model rate; grokpool.go has to *estimate* the meter at all. A
+  spend dial with no gauge cannot be tiered honestly.
+- The vocabulary is not uniform across the two models this map names:
+  MEASURED 2026-08-29 (grok 1.0.5, `~/.grok/models_cache.json`),
+  grok-4.6 offers xhigh/high/medium/low, grok-4.5 only
+  high/medium/low — **no xhigh**. So a per-tier effort is not one new
+  key, it is a validity matrix (tier→model × model→efforts) plus a
+  second placeholder that, unrendered, is a literal argv to the CLI
+  (the ADR 0001 lesson) — which is exactly why this was not a ten-line
+  change and got routed here.
+- Both models default to `high`, so leaving effort unset runs each at
+  its shipped default — the same posture this table takes toward
+  models. And the exit hatch needs no new vocabulary: a declared
+  runtime's or PID's `command:` can append `--reasoning-effort <v>`
+  literally today, fleet-wide or per-persona.
+
+Revival condition, written down so this is a decision and not a taboo:
+a measured pool cost per effort step (an xAI usage endpoint, or an
+operator-funded A/B on the weekly pool). If that number arrives and is
+material, the shape to build is `model_effort_<tier>:` + `{effort}`
+with per-model validity enforced in `runtime check` — and not before.
+
+Alternatives rejected: (a) standard=grok-4.5 — rests on an unpriced
+saving and demotes the everyday lane, above; (b) a per-tier effort key
+now — the clever one; four positions of a dial nobody can read, priced
+above; (c) smuggling effort through the model value (`"grok-4.6
+--reasoning-effort low"` as the map's string) — `{model}` renders one
+argv token via `ModelFlag`, and a map whose values are secretly command
+lines makes every reader of the map wrong.
 
 Rendering: built-in templates gain **`{model}`** → `--model <id>` /
 `-c model=<id>` / `-m <id>`, empty when the tier has no mapping. PIDs
