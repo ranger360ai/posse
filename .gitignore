@@ -5,3 +5,7 @@
 /bin/posse-release
 /dist/
 .beads/
+
+# python bytecode, e.g. from verify-bd-argv-gate.sh importing the parser
+__pycache__/
+*.pyc

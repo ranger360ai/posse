@@ -33,8 +33,11 @@ command -v python3 >/dev/null 2>&1 || {
   exit 2
 }
 
-python3 - <<'PY'
+# -B: importing the parser below must not leave a __pycache__ in scripts/.
+python3 -B - <<'PY'
 import importlib.util, itertools, json, os, subprocess, sys
+
+sys.dont_write_bytecode = True          # belt to -B's braces
 
 WRAP = "scripts/bd-argv-gate.sh"
 PARS = "scripts/bd-argv-gate.py"
