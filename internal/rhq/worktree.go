@@ -706,6 +706,36 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		o.Reason = why
 		return o, nil
 	}
+	// THE BELT BEHIND THE COMMIT WALL (ranger-base-ak3e). The L3 arm that
+	// refuses a persona commit touching the constitution keys on RHQ_PERSONA
+	// and so stands down to `env -i` — the residual PrePushHook documents for
+	// its own marker. This is the same class asked where a session cannot
+	// reach: the launcher's own process, operator-side, under the launcher
+	// lock, about a branch that is already written. A commit that got past
+	// the hook still does not become main's.
+	//
+	// Reported, never repaired: the branch keeps every commit, the sweep
+	// prints its ⚠ line on every pass, and the operator lands it by hand once
+	// they have read the diff. That is the intended workflow rather than a
+	// degradation of it — ADR 0015 §3 makes putting constitution prose in
+	// force the operator's act, and an unattended fast-forward is not that.
+	if hit, why := constitutionOnBranch(t); why != "" {
+		o.Reason = why
+		return o, nil
+	} else if len(hit) > 0 {
+		// Already on the base under other shas is not a landing to refuse:
+		// there is nothing left to land, and printing a refusal every pass
+		// over work that is already on main is ranger-base-g2xf's shape with
+		// a different sentence.
+		if head, ok := workHead(t); ok {
+			if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
+				o.Equivalent, o.Merged, o.Reason = equivNotes(eq), true, ""
+				return o, nil
+			}
+		}
+		o.Reason = constitutionLandRefusal(t, hit)
+		return o, nil
+	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
 		return landed(o, t), nil
 	}
@@ -786,6 +816,52 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 			return o, nil
 		}
 	}
+}
+
+// constitutionOnBranch names the constitution-class paths a session branch
+// would land, rendered as the pairs the refusal prints. Two returns and not
+// one because "nothing in the class" and "git would not say" are different
+// answers and only the first is safe to land on: a diff that cannot be read
+// is reported as an obstacle, never waved through. The class is read from the
+// REPO the branch lands in, so a session worktree of the constitution repo
+// gets the promoted set and a session anywhere else gets the settings files.
+//
+// The three-dot form, so a base that moved on carrying somebody else's
+// constitution commit is not this branch's to answer for.
+//
+// The head is workHead's and not a sha read on the way in, for one reason
+// that survives: when the WORKTREE is gone, workHead falls back to the branch
+// ref, and a retired tree's branch is exactly the population the landing
+// sweep exists for (landsweep.go). The neighbouring case — a tree whose HEAD
+// is detached off its own branch (ranger-base-dybv) — never reaches here:
+// notOnBase refuses it first, and for a better reason.
+func constitutionOnBranch(t *SessionTree) ([]string, string) {
+	head, ok := workHead(t)
+	if !ok {
+		return nil, ""
+	}
+	out, err := git(t.Repo, "diff", "--name-only", "-z", "--no-renames", t.Base+"..."+head)
+	if err != nil {
+		return nil, fmt.Sprintf("git could not diff %s...%s in %s (%v), so whether %s touches the constitution is unknown — nothing lands on an unread diff (ADR 0015 §2/§3)",
+			t.Base, abbrevSHA(head), AbbrevHome(t.Repo), err, t.Branch)
+	}
+	var paths []string
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return ConstitutionTouched(ConstitutionClassIn(t.Repo), paths), ""
+}
+
+// constitutionLandRefusal is the sentence the sweep prints and the operator
+// acts on: the paths, the rule, and the commands that finish the job by hand
+// — none of which the launcher will run for them.
+func constitutionLandRefusal(t *SessionTree, hit []string) string {
+	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. %s still holds every commit and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`, then `posse promote`",
+		strings.Join(hit, ", "), t.Branch,
+		AbbrevHome(t.Repo), t.Base, t.Branch,
+		AbbrevHome(t.Repo), t.Branch)
 }
 
 // mergeRebaseAttempts bounds the replay loop in MergeSessionWork. It is a

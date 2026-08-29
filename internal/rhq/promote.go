@@ -104,6 +104,51 @@ func ConstitutionRepoPaths() []string {
 // `rhq/config.yaml` in some unrelated repo from widening the wall there.
 const ConstitutionRepoMarker = ConstitutionSourceDir + "/agents"
 
+// ConstitutionClassIn is the class as the repo at top spells it, and is the
+// GO reading of exactly what the commit wall's constitution arm renders into
+// sh (gates.go constitutionGuardBody): the two settings files in every repo,
+// plus ConstitutionRepoPaths in a repo whose top level carries
+// ConstitutionRepoMarker.
+//
+// Two readers, one list, on purpose (ranger-base-ak3e). The hook is the L3
+// arm and stands down to `env -i`; the launcher's land path is the belt
+// behind it, runs operator-side and cannot be env-scrubbed by the session it
+// is judging. A belt spelled from a second list is a belt that drifts, and
+// the day it drifts is the day the shim tier is the only one holding.
+func ConstitutionClassIn(top string) []string {
+	class := []string{ClaudeProjectConfig, ClaudeProjectConfigLocal}
+	if fi, err := os.Stat(filepath.Join(top, filepath.FromSlash(ConstitutionRepoMarker))); err == nil && fi.IsDir() {
+		class = append(class, ConstitutionRepoPaths()...)
+	}
+	return class
+}
+
+// InConstitutionClass names the class member a repo-relative, slash-separated
+// path falls under, "" when none. Exact match or directory prefix — one rule,
+// so `rhq/config.yaml` (a file) and `rhq/agents` (a tree) need no second case.
+// This is the Go spelling of the hook's `case "$p" in "$m"|"$m"/*)` arm.
+func InConstitutionClass(class []string, p string) string {
+	for _, m := range class {
+		if p == m || strings.HasPrefix(p, m+"/") {
+			return m
+		}
+	}
+	return ""
+}
+
+// ConstitutionTouched names every (path, class member) pair in paths, in the
+// order the paths came, each rendered as the refusal prints it. Empty is the
+// ordinary case and the only one that lands.
+func ConstitutionTouched(class, paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if m := InConstitutionClass(class, p); m != "" {
+			out = append(out, p+" (class: "+m+")")
+		}
+	}
+	return out
+}
+
 // PromoteManifestFile is the manifest's name at the home, BESIDE the
 // promoted copy: not under state/, which stays session-writable, and so
 // would be a trust anchor any session could rewrite.
