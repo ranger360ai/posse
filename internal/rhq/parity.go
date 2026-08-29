@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -608,13 +609,50 @@ func (p Parity) String() string {
 	} else {
 		b.WriteString(" DEGRADED\n")
 	}
-	for gate, layer := range p.Realized {
-		fmt.Fprintf(&b, "    ✓ %-28s %s\n", gate, layer)
+	for _, gate := range realizedOrder(p.Realized) {
+		fmt.Fprintf(&b, "    ✓ %-28s %s\n", gate, p.Realized[gate])
 	}
 	for _, u := range p.Degraded {
 		fmt.Fprintf(&b, "    ✗ %s\n", u)
 	}
 	return b.String()
+}
+
+// realizedOrder fixes the order of the ✓ half of a block (rangerhq-epes).
+// Realized is a map, so it used to print in Go's randomized iteration
+// order: the content was stable but the lines moved, and the whole use of
+// this matrix in review is "did this change move it?" — a question asked
+// with a diff. The order chosen is the shape the ✗ half already has: the
+// PID's deny rules first, then the gates that are not deny rules at all,
+// each in a fixed place rather than wherever its name happens to sort.
+func realizedOrder(realized map[string]string) []string {
+	gates := make([]string, 0, len(realized))
+	for gate := range realized {
+		gates = append(gates, gate)
+	}
+	sort.Slice(gates, func(i, j int) bool {
+		if ri, rj := gateRank(gates[i]), gateRank(gates[j]); ri != rj {
+			return ri < rj
+		}
+		return gates[i] < gates[j]
+	})
+	return gates
+}
+
+// gateRank groups the ✓ lines: 0 the PID's deny rules, then the three
+// gates that are computed rather than typed, in the order CheckParity
+// reaches them.
+func gateRank(gate string) int {
+	switch {
+	case strings.HasPrefix(gate, "egress: "):
+		return 1
+	case strings.HasPrefix(gate, "skills: "):
+		return 2
+	case gate == RecordReachGate:
+		return 3
+	default:
+		return 0
+	}
 }
 
 // ResolveCage: explicit (--cage / dispatch) > PID cage: > shims.
