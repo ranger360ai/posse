@@ -23,16 +23,33 @@ type Score struct {
 	Persona  string
 	Closed   int // beads assigned to the persona, status closed
 	Reopened int // of those, later reopened (git history of issues.jsonl)
-	// ReopensKnown is false when no scored repo had a readable git history
-	// for the census. Reopened is then an absence of evidence, not a zero,
-	// and every rendering of it has to say so rather than score a perfect 0.
-	ReopensKnown bool
-	Open         int           // assigned, status open
-	Held         int           // assigned, status in_progress
-	Blocked      int           // assigned, status blocked
-	AgeAtClose   time.Duration // median closed_at − created_at over Closed (0 if none)
-	Filed        int           // created_by the persona
-	Rejected     int           // filed and closed with a reason reading invalid/duplicate/wontfix
+	// ReposScored is how many beads repos this score sums, and
+	// ReposWithHistory how many of those had a readable git history for the
+	// census. Reopened is exact only when the two agree: at zero it is an
+	// absence of evidence rather than a zero, and in between it is a floor —
+	// the repos with no history could hold any number of reopens. Every
+	// rendering has to say which of the three it is holding, rather than
+	// print a partial count as if it were the whole (ranger-base-0tc for the
+	// none case, ranger-base-od6g for the floor).
+	ReposScored      int
+	ReposWithHistory int
+	Open             int           // assigned, status open
+	Held             int           // assigned, status in_progress
+	Blocked          int           // assigned, status blocked
+	AgeAtClose       time.Duration // median closed_at − created_at over Closed (0 if none)
+	Filed            int           // created_by the persona
+	Rejected         int           // filed and closed with a reason reading invalid/duplicate/wontfix
+}
+
+// ReopensKnown reports whether Reopened counts every repo this score sums.
+func (s Score) ReopensKnown() bool {
+	return s.ReposWithHistory > 0 && s.ReposWithHistory == s.ReposScored
+}
+
+// ReopensPartial reports whether Reopened is a floor: read from some of the
+// scored repos and unreadable in the rest.
+func (s Score) ReopensPartial() bool {
+	return s.ReposWithHistory > 0 && s.ReposWithHistory < s.ReposScored
 }
 
 // NotYetComputable prefixes every metric line the scorecard cannot answer
@@ -67,7 +84,13 @@ func (s Score) Metric(id string) string {
 	case "closed-no-reopen":
 		// An unknown must not wear a checkmark: with no history to read
 		// transitions from, the score is a ceiling, not a number.
-		if !s.ReopensKnown {
+		if !s.ReopensKnown() {
+			// A partial read is a floor, and the score it licenses is still a
+			// ceiling: the repos with no history could hold any number more.
+			if s.ReopensPartial() {
+				return fmt.Sprintf("%d closed, ≥%d reopened (git history for %d of %d beads repos) → ≤%d",
+					s.Closed, s.Reopened, s.ReposWithHistory, s.ReposScored, s.Closed-s.Reopened)
+			}
 			return fmt.Sprintf("%d closed, reopens unknown (no git history for %s) → ≤%d", s.Closed, beadsJSONL, s.Closed)
 		}
 		return fmt.Sprintf("%d closed, %d reopened → %d", s.Closed, s.Reopened, s.Closed-s.Reopened)
@@ -133,7 +156,10 @@ func isRejectedClose(reason string) bool {
 // ScoreIssues computes one persona's score over a repo's issues; reopens
 // maps issue id → reopen count for that repo.
 func ScoreIssues(persona string, issues []BdIssue, reopens map[string]int) Score {
-	s := Score{Persona: persona, ReopensKnown: reopens != nil}
+	s := Score{Persona: persona, ReposScored: 1}
+	if reopens != nil {
+		s.ReposWithHistory = 1
+	}
 	var ages []time.Duration
 	for _, is := range issues {
 		if is.CreatedBy == persona {
@@ -177,7 +203,8 @@ func addScore(a, b Score) Score {
 	}
 	a.Closed += b.Closed
 	a.Reopened += b.Reopened
-	a.ReopensKnown = a.ReopensKnown || b.ReopensKnown
+	a.ReposScored += b.ReposScored
+	a.ReposWithHistory += b.ReposWithHistory
 	a.Open += b.Open
 	a.Held += b.Held
 	a.Blocked += b.Blocked
@@ -303,19 +330,21 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 			repos, repos+len(failed))
 	}
 	// The column, the metric line and the trailer all read one fact, carried
-	// on the scores themselves (ScoreIssues: reopens != nil), so they cannot
-	// disagree. Every persona is scored over the same repos, so any total
-	// answers it for the card.
-	reopensKnown := false
-	for _, p := range personas {
-		reopensKnown = reopensKnown || totals[p].ReopensKnown
-	}
+	// on the scores themselves (ScoreIssues: reopens != nil, counted per
+	// repo), so they cannot disagree. Every persona is scored over the same
+	// repos, so any total answers the repo counts for the card.
+	coverage := totals[personas[0]]
 	fmt.Fprintf(w, "%-16s %6s %8s %5s %5s %7s %10s %6s %8s\n", "persona", "closed", "reopened", "open", "held", "blocked", "age@close", "filed", "rejected")
 	for _, p := range personas {
 		s := totals[p]
 		s.Persona = p
 		re := fmt.Sprint(s.Reopened)
-		if !s.ReopensKnown {
+		switch {
+		case s.ReopensPartial():
+			// A floor wears its sign: some scored repo's history was
+			// unreadable, so this count is at least, never exactly.
+			re = "≥" + re
+		case !s.ReopensKnown():
 			re = "?"
 		}
 		fmt.Fprintf(w, "%-16s %6d %8s %5d %5d %7d %10s %6d %8d\n", p, s.Closed, re, s.Open, s.Held, s.Blocked, fmtAge(s.AgeAtClose), s.Filed, s.Rejected)
@@ -331,7 +360,11 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 			fmt.Fprintf(w, "  %-32s %s\n", id, totals[p].Metric(id))
 		}
 	}
-	if !reopensKnown {
+	switch {
+	case coverage.ReopensPartial():
+		fmt.Fprintf(w, "\nreopened: ≥ — git history of %s read for %d of the %d scored beads repo(s); the rest holds an unknown number of reopens, not zero\n",
+			beadsJSONL, coverage.ReposWithHistory, coverage.ReposScored)
+	case !coverage.ReopensKnown():
 		fmt.Fprintln(w, "\nreopened: ? — no git history of .beads/issues.jsonl to read transitions from")
 	}
 	return nil

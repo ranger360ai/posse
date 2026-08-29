@@ -25,7 +25,7 @@ func TestScoreIssues(t *testing.T) {
 		{ID: "i", Assignee: "", Status: "open", CreatedBy: "dev"},
 	}
 	s := ScoreIssues("dev", issues, map[string]int{"b": 1})
-	want := Score{Persona: "dev", Closed: 3, Reopened: 1, ReopensKnown: true, Open: 1, Held: 1, Blocked: 1, AgeAtClose: 4 * time.Hour, Filed: 3, Rejected: 1}
+	want := Score{Persona: "dev", Closed: 3, Reopened: 1, ReposScored: 1, ReposWithHistory: 1, Open: 1, Held: 1, Blocked: 1, AgeAtClose: 4 * time.Hour, Filed: 3, Rejected: 1}
 	if s != want {
 		t.Errorf("got %+v\nwant %+v", s, want)
 	}
@@ -36,7 +36,7 @@ func TestScoreIssues(t *testing.T) {
 	// anything": the metric line must say unknown and cap the score, never
 	// spend the zero value as a perfect 3 (ranger-base-0tc).
 	u := ScoreIssues("dev", issues, nil)
-	if u.ReopensKnown {
+	if u.ReopensKnown() {
 		t.Error("nil reopens must score as unknown")
 	}
 	m := u.Metric("closed-no-reopen")
@@ -406,5 +406,130 @@ func TestScorecardRefusalNamesEveryUnreadRepo(t *testing.T) {
 	}
 	if card != "" {
 		t.Errorf("a refusal must print no table at all:\n%s", card)
+	}
+}
+
+// ranger-base-od6g. The reopen count was "known" if ANY scored repo had a
+// readable census history, because addScore OR-ed the flag — so with two
+// `beads:` entries and one of them unreadable, the column, the metric line
+// and the trailer all printed a sum computed from half the histories as if
+// it were the whole count. Same class of overstatement ranger-base-0tc
+// fixed for the none case: a number that is short must not render as exact.
+func TestPartialReopenHistoryScoresAsAFloor(t *testing.T) {
+	closed := func(ids ...string) []BdIssue {
+		var out []BdIssue
+		for _, id := range ids {
+			out = append(out, BdIssue{ID: id, Assignee: "dev", Status: "closed"})
+		}
+		return out
+	}
+	read := ScoreIssues("dev", closed("a", "b"), map[string]int{"a": 1})
+	blind := ScoreIssues("dev", closed("c"), nil)
+
+	if !read.ReopensKnown() || read.ReopensPartial() {
+		t.Errorf("one repo whose history read is known, not a floor: %+v", read)
+	}
+	if blind.ReopensKnown() || blind.ReopensPartial() {
+		t.Errorf("one repo with no history is neither known nor a floor: %+v", blind)
+	}
+	sum := addScore(read, blind)
+	if sum.ReposScored != 2 || sum.ReposWithHistory != 1 {
+		t.Fatalf("want history for 1 of 2 scored repos: %+v", sum)
+	}
+	if sum.ReopensKnown() {
+		t.Errorf("a count missing one repo history is not known: %+v", sum)
+	}
+	if !sum.ReopensPartial() {
+		t.Fatalf("a count read from only some repos is a floor: %+v", sum)
+	}
+	m := sum.Metric("closed-no-reopen")
+	for _, want := range []string{"3 closed", "≥1 reopened", "1 of 2", "≤2"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("the floor line must carry %q: %s", want, m)
+		}
+	}
+	// The two renderings it must never borrow: the exact count of the
+	// all-known case, and the no-evidence wording of the none case.
+	if strings.Contains(m, "3 closed, 1 reopened") || strings.Contains(m, "unknown") {
+		t.Errorf("a floor is neither exact nor no evidence: %s", m)
+	}
+	// Either end of the range is untouched: every repo blind stays the
+	// unknown of ranger-base-0tc, every repo read stays an exact count.
+	if m := addScore(blind, blind).Metric("closed-no-reopen"); !strings.Contains(m, "unknown") || strings.Contains(m, "≥") {
+		t.Errorf("no history anywhere is still unknown, not a floor: %s", m)
+	}
+	if m := addScore(read, read).Metric("closed-no-reopen"); !strings.Contains(m, "4 closed, 2 reopened → 2") {
+		t.Errorf("every history read is still an exact count: %s", m)
+	}
+}
+
+// scorecardHistoryRepo is one beads repo that both answers `bd list --all`
+// with n closed beads for "dev" and tracks a census whose git history holds
+// exactly one reopen (h-0 closed→open→closed).
+func scorecardHistoryRepo(t *testing.T, n int) string {
+	t.Helper()
+	dir := blRepo(t)
+	var rows []string
+	for i := 0; i < n; i++ {
+		rows = append(rows, `{"id":"h-`+fmt.Sprint(i)+`","status":"closed","assignee":"dev"}`)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fake-list.json"), []byte("["+strings.Join(rows, ",")+"]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range []string{"closed", "open", "closed"} {
+		blCommit(t, dir, "sync", blLine("h-0", st))
+	}
+	return dir
+}
+
+// The command level: the column, the metric line and the trailer are three
+// renderings of one fact, so pin all three across the three states — none
+// read, some read, all read.
+func TestScorecardSaysWhenOnlySomeReposHaveReopenHistory(t *testing.T) {
+	row := func(card string) string {
+		t.Helper()
+		for _, ln := range strings.Split(card, "\n") {
+			if strings.HasPrefix(ln, "dev ") {
+				return ln
+			}
+		}
+		t.Fatalf("no dev row on the card:\n%s", card)
+		return ""
+	}
+	hist := scorecardHistoryRepo(t, 2)  // 2 closed, 1 reopened, history read
+	blind := scorecardRepo(t, 3, false) // 3 closed, no git at all
+	card, err := scorecardRig(t, hist, blind)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(row(card), "≥1") {
+		t.Errorf("the reopened column must wear the sign of a floor:\n%s", card)
+	}
+	for _, want := range []string{"5 closed", "≥1 reopened", "git history for 1 of 2 beads repos",
+		"read for 1 of the 2 scored beads repo(s)"} {
+		if !strings.Contains(card, want) {
+			t.Errorf("the card must say %q:\n%s", want, card)
+		}
+	}
+	// Neither of the other two states may be borrowed: not the "?" of no
+	// history at all, and not the exact count of a full read.
+	for _, no := range []string{"reopened: ?", "5 closed, 1 reopened"} {
+		if strings.Contains(card, no) {
+			t.Errorf("a partial read must not render as %q:\n%s", no, card)
+		}
+	}
+	// The control: every scored repo history read, and the caveat is gone —
+	// a floor sign on a healthy card is a sign the operator learns to skip.
+	full, err := scorecardRig(t, hist, scorecardHistoryRepo(t, 3))()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(full, "5 closed, 2 reopened → 3") {
+		t.Errorf("two read histories must sum to an exact count:\n%s", full)
+	}
+	for _, no := range []string{"≥", "reopened: ?", "scored beads repo(s)"} {
+		if strings.Contains(full, no) {
+			t.Errorf("a fully read card must not print %q:\n%s", no, full)
+		}
 	}
 }
