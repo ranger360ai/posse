@@ -72,6 +72,32 @@
 # deletion the commit does not mention" is just "flag every deletion" wearing a
 # hat.
 #
+# THE THIRD REJECTED HEURISTIC, and it is the one that keeps getting proposed:
+# exempt the PAIR — a path added and then deleted with no other commit touching
+# it in between, both inside the scanned range. It looks like it clears nothing
+# but throwaway probe fixtures. It does not. That pair is the EXACT shape of
+# plant_addonly below, i.e. of the add-only half of the rangerhq-8rtf mechanism:
+# the fix lands one new file from a private index, and the next commit off the
+# stale shared index deletes it, with nothing in between. Measured 2026-08-29
+# (ranger-base-hvbj) by implementing it and running this script's own harness:
+# the addonly arm turns into "self-test FAIL: planted addonly revert not
+# detected", and three Go pins red with it — TestAuditFlagsAddOnlySilentRevert
+# (exit 0, want 1), TestSilentRevertSelfTestStillFires and
+# TestSilentRevertSelfTestHasTheStrnumArm. It cannot ship without deleting the
+# pin rangerhq-ypn1 landed. It also fails at the job it was proposed for: on
+# this repo's own history it cleared ONE of the two probe hits and left the
+# other (that path had four states, not two), and it silently un-flagged
+# e82338c, a rename+edit already triaged in the allow file. Rejected on the
+# measurement, not on taste.
+#
+# PROBE FIXTURES, since two pairs landed here on 2026-08-29 (ranger-base-hvbj).
+# A fixture bead that has a session commit a file to prove a commit lands is a
+# legitimate measurement, and the ADD is never flagged — only the REMOVAL is.
+# So a probe fixture that lands STAYS: write it to docs/probes/<bead-id>.md and
+# leave it there. Cleaning it up is what costs a triage line, and restoring a
+# deleted one costs a second, because re-adding a blob the path already held is
+# itself a backwards move. See docs/probes/README.md.
+#
 # STATES ARE COMPARED AS STRINGS, DELIBERATELY (ranger-base-hhcu). ci.yml gave
 # two different verdicts for the same 422 commits on the same tree: ubuntu-latest
 # flagged b26975f (cmd/posse/cockpit.go "-> content of 1fdf9da"), macos-latest
