@@ -294,19 +294,33 @@ func TestCockpitResizeThroughTheFloor(t *testing.T) {
 // measured — the only lines in a width-aware view that do not know the width.
 // The markers reach normal mode too, wherever the model overflows the pane.
 func TestCockpitChromeLinesRespectWidth(t *testing.T) {
-	t.Skip("rangerhq-nm8: peek banner is 30 cells at any width; markers overflow below w=12")
-	narrow := qaFixture()
+	// Each clipped line needs a witness that it was drawn at all: the ↑
+	// marker only appears once the cursor has scrolled, so a sweep from
+	// cursor 0 measures the ↓ half and passes over an unclipped ↑.
+	var sawUp, sawDown bool
 	for w := 1; w <= 12; w++ {
-		narrow.qaAt(0, 12) // small enough that both markers show
-		for _, ln := range strings.Split(qaPlain(narrow.render(w, 12)), "\r\n") {
-			if n := dispWidth(ln); n > w {
-				t.Errorf("normal-mode marker w=%d: %d cells: %q", w, n, ln)
+		narrow := qaFixture()
+		for cur := 0; cur < narrow.qaItems(); cur++ {
+			narrow.qaAt(cur, 12) // small enough that both markers show
+			_, up, down := visible(narrow.offset, len(narrow.rows), viewportH(12))
+			sawUp, sawDown = sawUp || up, sawDown || down
+			for _, ln := range strings.Split(qaPlain(narrow.render(w, 12)), "\r\n") {
+				if n := dispWidth(ln); n > w {
+					t.Errorf("normal-mode marker w=%d cursor=%d: %d cells: %q", w, cur, n, ln)
+				}
 			}
 		}
+	}
+	if !sawUp || !sawDown {
+		t.Fatalf("fixture drew no marker to measure: up=%v down=%v", sawUp, sawDown)
 	}
 	c := qaFixture()
 	c.mode = modePeek
 	c.peekText = strings.Repeat("a peeked line\n", 20)
+	c.qaAt(0, 24)
+	if banner := "── peek (any key to return) ──"; !strings.Contains(qaPlain(c.render(80, 24)), banner) {
+		t.Fatalf("peek at w=80 drew no banner to measure: want %q", banner)
+	}
 	for w := 1; w <= 60; w++ {
 		c.qaAt(0, 24)
 		for i, ln := range strings.Split(qaPlain(c.render(w, 24)), "\r\n") {
@@ -315,12 +329,14 @@ func TestCockpitChromeLinesRespectWidth(t *testing.T) {
 			}
 		}
 	}
+	// An empty cockpit has no markers; this is the header and footer chrome
+	// at the same widths, so the sweep is not blind to them either.
 	empty := &cockpit{}
 	for w := 1; w <= 12; w++ {
 		empty.qaAt(0, 24)
 		for _, ln := range strings.Split(qaPlain(empty.render(w, 24)), "\r\n") {
 			if n := dispWidth(ln); n > w {
-				t.Errorf("marker w=%d: %d cells: %q", w, n, ln)
+				t.Errorf("empty-cockpit chrome w=%d: %d cells: %q", w, n, ln)
 			}
 		}
 	}

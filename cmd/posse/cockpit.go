@@ -1914,14 +1914,14 @@ func (c *cockpit) bodyLines(w, vh int) []string {
 	n, up, down := visible(c.offset, total, vh)
 	out := make([]string, 0, vh)
 	if up {
-		out = append(out, paint(fmt.Sprintf("  ↑ %d more", c.offset), aDim))
+		out = append(out, paint(truncCells(fmt.Sprintf("  ↑ %d more", c.offset), w), aDim))
 	}
 	for i := c.offset; i < c.offset+n && i < total; i++ {
 		r := c.rows[i]
 		out = append(out, renderRow(r, w, r.kind == rowItem && r.item == c.cursor))
 	}
 	if down {
-		out = append(out, paint(fmt.Sprintf("  ↓ %d more", total-c.offset-n), aDim))
+		out = append(out, paint(truncCells(fmt.Sprintf("  ↓ %d more", total-c.offset-n), w), aDim))
 	}
 	return fitLines(out, vh)
 }
@@ -1929,7 +1929,7 @@ func (c *cockpit) bodyLines(w, vh int) []string {
 // peekLines shows the tail of a pane inside the same viewport, clipped to it
 // rather than appended below the list (ADR 0004 §4).
 func (c *cockpit) peekLines(w, vh int) []string {
-	out := []string{paint("── peek (any key to return) ──", aDim)}
+	out := []string{paint(truncCells("── peek (any key to return) ──", w), aDim)}
 	if vh == minViewport {
 		// One line: spend it on the pane. The footer already says "any key
 		// returns", so the banner is the redundant half of the pair.
