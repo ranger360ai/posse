@@ -2,7 +2,9 @@
 
 *Status: accepted 2026-08-27 · owner: architect · extends ADR 0002 §3's
 commit guard · re-scopes the provenance promise in AGENTS.md and the
-work-prompt blueprints (ADR 0005) · from ranger-base-yuwy*
+work-prompt blueprints (ADR 0005) · from ranger-base-yuwy · amended
+2026-08-29: §3 and Verification 2 rewritten for the unkeyed wall, operator
+ruling rangerhq-lt2w (ranger-base-5imp)*
 
 > Two personas held edits in NOTES.md on the same afternoon. One declined
 > to sweep and paid a deferred bead and two days; the other's *blessed*
@@ -69,10 +71,15 @@ NOTES.md. Two routes, both keeping `git log --grep <id>` true:
   commit keeps its own bead id through the replay.
 
 **3. The wall.** The prepare-commit-msg guard (ADR 0002 §3 slot, same
-marker, keyed on `RHQ_PERSONA`, shared-checkout-only via the git-dir ==
-git-common-dir discriminator it already computes) gains a third arm: a
-persona commit whose index changes root `NOTES.md` is refused, naming
-both routes. Feasible and measured (2026-08-27, git 2.39.3): during
+marker, shared-checkout-only via the git-dir == git-common-dir
+discriminator it already computes; unkeyed — the operator ruling on
+rangerhq-lt2w, 2026-08-28, retired the `RHQ_PERSONA` keying this section
+was written against) gains a third arm: a commit whose index changes root
+`NOTES.md` is refused, naming both routes. The arm inherits the unkeyed
+wall and stays that way: the sweep it closes corrupts the record whoever
+typed the commit, a per-arm `RHQ_PERSONA` test would re-spell the
+carve-out the ruling retired, and the operator's routes are the same two
+(fragments, or the worktree a curation bead runs in anyway). Feasible and measured (2026-08-27, git 2.39.3): during
 `git commit -- <paths>` the hook runs with `GIT_INDEX_FILE` set to the
 `next-index-<pid>.lock` temp index and `git diff --cached --name-only
 HEAD` lists exactly the pathspec'd changed paths. The arm must run
@@ -139,7 +146,9 @@ the verify trail already looks.
    `git commit -- NOTES.md` → refused, message names `docs/notes.d/` and
    the worktree route; `git commit -- <other>` → lands, NOTES.md
    untouched and still dirty.
-2. Same commit with `RHQ_PERSONA` unset (operator) → lands.
+2. Same commit with `RHQ_PERSONA` unset (operator) → refused identically
+   (the wall is unkeyed since rangerhq-lt2w; before the ruling this row
+   read "→ lands", which is now the opposite of what happens).
 3. Session worktree, `RHQ_PERSONA` set: `git commit -- NOTES.md` → lands
    (git-dir ≠ common-dir exits the guard first).
 4. `git commit --amend -- NOTES.md` in the shared checkout as a persona →
