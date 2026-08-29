@@ -210,3 +210,47 @@ func TestSecretsAreInNoSessionsWritableSet(t *testing.T) {
 		t.Errorf("state/ is granted by design and must not be flagged: %v", bad)
 	}
 }
+
+// The wiring, not the function: every launch re-asserts the modes on BOTH
+// credential stores. Pinned at planLaunch because deleting the call site is
+// invisible to a test that only calls TightenSecretPerms itself — the belt
+// existing and the belt being worn are two different claims.
+func TestEveryLaunchReAssertsBothCredentialStores(t *testing.T) {
+	b, _ := newTestBackend(t)
+	a := b.App
+	writeVoidPID(t, a, "dev", "claude", "")
+	for _, d := range []string{a.EnvsDir, a.SecretsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	envFile := filepath.Join(a.EnvsDir, "default.env")
+	secretFile := filepath.Join(a.SecretsDir, "meter.env")
+	for _, f := range []string{envFile, secretFile} {
+		if err := os.WriteFile(f, []byte("K=v\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		os.Chmod(f, 0o644)
+	}
+	os.Chmod(a.EnvsDir, 0o755)
+	os.Chmod(a.SecretsDir, 0o755)
+
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "dev"}); err != nil {
+		t.Fatalf("planLaunch: %v", err)
+	}
+	for _, c := range []struct {
+		path string
+		want os.FileMode
+	}{
+		{a.EnvsDir, 0o700}, {envFile, 0o600},
+		{a.SecretsDir, 0o700}, {secretFile, 0o600},
+	} {
+		st, err := os.Stat(c.path)
+		if err != nil {
+			t.Fatalf("%s: %v", c.path, err)
+		}
+		if st.Mode().Perm() != c.want {
+			t.Errorf("after a launch %s is %04o, want %04o", AbbrevHome(c.path), st.Mode().Perm(), c.want)
+		}
+	}
+}

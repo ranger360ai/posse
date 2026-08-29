@@ -2,10 +2,12 @@ package rhq
 
 // Harness credentials: secrets/<name>.env, dir 700, files 600.
 //
-// ADR 0019 D1 (the instance-private credential architecture, accepted
-// 2026-08-28, option (b) — ~/src/rangerhq/docs/adr/0019-credential-
-// architecture.md, not in this public tree) splits credentials into two
-// reader classes, and the split is the trust model, not a mechanism:
+// ADR 0019 D1 splits credentials into two reader classes, and the split is
+// the trust model, not a mechanism. That ADR is the instance-private one of
+// the same number — accepted 2026-08-28, option (b) — which names this
+// instance's credential topology and so stays in the private tree (ADR 0012
+// D6); rangerhq-5s5d carries the path. The public ADR 0019 in docs/ is the
+// provider seam, and the two meet at ReadCredential (see below).
 //
 //	envs/<set>.env    a SESSION credential. Injected into exactly the
 //	                  sessions whose PID `envs:` names, so the persona and
