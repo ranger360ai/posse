@@ -182,6 +182,38 @@ this branch as the recipe, so it says so.
    **refuse** until that config silences it. Nothing blind-sends Enter.
    The coordinator's string-match Escape watchdog is a stopgap and is
    not the architecture.
+
+   **Amended 2026-08-29 (ranger-base-9r33, from ranger-base-a9y9 and the
+   ranger-base-gu9z verify), because the refuse above was documentation
+   and nothing else — `Interstitial.Danger` reached `runtime check` and no
+   launch path, so codex dispatched onto the very menu this paragraph
+   gates.** The refuse now runs, and wiring it settled the two questions
+   a9y9 left open:
+
+   - **Who refuses.** Anything DISPATCHED refuses, and it refuses **above
+     the claim** — `launchSession`, not `planLaunch`, because the argv
+     ladder above claims the bead first and a refusal any later would
+     hand back a bead it had already taken. `planLaunch` carries the same
+     rule for every other bead-carrying path. An **interactive** launch
+     warns `DEGRADED` and proceeds. That is §3 of ADR 0015's asymmetry,
+     and here it is load-bearing rather than analogous: the operator's
+     remedy for codex's menu is to ANSWER it, in a codex session, so a
+     posse that refused interactive launches would have walled off the
+     only way to clear its own refusal.
+   - **The escape hatch is that asymmetry**, and there is no config key
+     for one. An operator who has decided to live with the screen opens
+     the session themselves; a launch nobody is watching does not get to
+     make that decision.
+
+   And the refusal is a **reading, never ignorance**: probes are
+   tri-state (silenced / not silenced / unknown) and only the middle one
+   refuses. An unreadable `~/.codex/version.json` — a box codex has never
+   checked a release on — is unknown, and refusing there would refuse in
+   the probe's own words ("cannot tell whether the update menu is
+   silenced"). The screen is still not unguarded: herdr's `update_menu`
+   rule names it `blocked`, so a launch that meets it fails by name. A
+   `runtimes/<name>.yaml` interstitial has no probe at all, so declaring
+   a screen documents it and never walls the declarer's own launches.
 3. **Declared keystrokes** — last resort, keyed on a herdr *rule id*
    (today: none — grok's splash was the only entry, retired in
    rangerhq-6723 once detection stopped calling it a blocker

@@ -179,19 +179,35 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 	}
 
 	// interstitials — a declared first-run screen whose probe says the
-	// operator has not silenced it yet. Non-blocking: the launcher does not
-	// refuse on one today (ADR 0013 §2 says it should — ranger-base-a9y9 is
-	// that change, held back because wiring it alters what the operator's
-	// own codex launches do), and a probe that answers "unknown"
-	// — which is every DECLARED interstitial, since posse cannot read an
+	// operator has not silenced it yet. A probe that answers "unknown" —
+	// which is every DECLARED interstitial, since posse cannot read an
 	// unknown CLI's config format — is not a finding at all.
+	//
+	// BLOCKING exactly when the launcher refuses on it (ranger-base-9r33):
+	// a screen whose default action mutates the machine is a launch refuse
+	// for anything dispatched, so this runtime cannot take work until it is
+	// silenced, which is what `blocking` means here. Every other unsilenced
+	// screen stays non-blocking: it costs a session that opens un-promptable
+	// and times out, which is a degrade an onboarder should see and not a
+	// runtime that cannot take work.
+	//
+	// And a reading of UNKNOWN is a gap in the same non-blocking sense
+	// whatever the danger, because the launcher does not refuse on one
+	// either — it is still worth a line, since the onboarder is the one who
+	// can go and look at the file posse could not read.
 	for _, in := range rt.Interstitials {
 		if in.Probe == nil || in.Seeded {
 			continue
 		}
-		if ok, why := in.Probe(); !ok {
-			add("interstitial", fmt.Sprintf("%s is NOT silenced — %s. %s", in.Key, why, in.Silence), false)
+		sil := in.Probe()
+		if sil.Silenced {
+			continue
 		}
+		if sil.Unknown {
+			add("interstitial", fmt.Sprintf("%s: %s. %s", in.Key, sil.Why, in.Silence), false)
+			continue
+		}
+		add("interstitial", fmt.Sprintf("%s is NOT silenced — %s. %s", in.Key, sil.Why, in.Silence), in.Danger != "")
 	}
 	return gaps
 }

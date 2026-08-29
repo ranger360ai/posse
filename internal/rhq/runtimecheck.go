@@ -256,14 +256,17 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 	// Layer 2 of §2: what the operator has to silence before a fresh pane
 	// of this runtime is promptable at all, and whether they have.
 	for _, in := range rt.Interstitials {
-		state := "state unknown"
+		state := "state unknown — posse cannot read this CLI's config format"
 		if in.Probe != nil {
-			ok, why := in.Probe()
-			mark := "NOT SILENCED"
-			if ok {
-				mark = "silenced"
+			sil := in.Probe()
+			switch {
+			case sil.Unknown:
+				state = "state unknown: " + sil.Why
+			case sil.Silenced:
+				state = "silenced: " + sil.Why
+			default:
+				state = "NOT SILENCED: " + sil.Why
 			}
-			state = mark + ": " + why
 		}
 		r.note = append(r.note, "interstitial: "+in.Screen)
 		r.note = append(r.note, "  key: "+in.Key+" in "+in.Where+" — "+state)
@@ -274,10 +277,12 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 		}
 		if in.Danger != "" {
 			r.note = append(r.note, "  DEFAULT ACTION MUTATES THE MACHINE — "+in.Danger)
-			// ADR 0013 §2's rule, and then what the code actually does — the
-			// two are not the same yet, and a grid that printed only the rule
-			// would be making a promise nothing keeps (ranger-base-a9y9).
-			r.note = append(r.note, "  ADR 0013 §2 makes this a LAUNCH REFUSE until the operator's own config silences it. NOT ENFORCED at launch yet (ranger-base-a9y9); `posse runtime check` reports it and the launch proceeds.")
+			// ADR 0013 §2's rule, and then what the code actually does. The
+			// two were not the same until ranger-base-9r33 wired the refusal;
+			// a grid that printed only the rule was making a promise nothing
+			// kept, and one that printed only the rule NOW would hide the
+			// asymmetry an operator meets the moment they type `posse new`.
+			r.note = append(r.note, "  LAUNCH REFUSE until the operator's own config silences it (ADR 0013 §2): anything dispatched — a pass, the cockpit's `d`, a recipe — refuses before it claims. An INTERACTIVE launch warns DEGRADED and proceeds, because answering this screen is what you would open a session to do.")
 			r.note = append(r.note, "  posse never answers this: nothing blind-sends Enter, and the launcher's one keystroke table was retired in rangerhq-6723 (ADR 0013 §2).")
 		}
 	}
