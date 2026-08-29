@@ -12,8 +12,15 @@ package rhq
 // on codex and grok. Those cost real sessions on the operator's own accounts
 // and the bead says so — "COST: real sessions. Opt-in, operator-run, never
 // CI." A test file is the wrong place to spend somebody's money.
+//
+// That live half HAS since been run, once, by hand and with the operator's
+// authorization: ranger-base-i0qp, 2026-08-29, real codex and real grok.
+// Its table is the answer to this bead and lives on those two beads, not in
+// this file. Two cells it could not fill without handing fixture beads back
+// to the shared queue are pinned at the bottom of this file instead.
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,14 +46,25 @@ func TestPromptDeliveryColumnIsWhatTheLandingTurnMustAsk(t *testing.T) {
 	}
 }
 
-// The gap ranger-base-ewq9 names: landThePlane (relaunch.go:484) types the
-// landing prompt into every runtime, where every other AgentPrompt call site
-// branches on PromptMode first (dispatch.go:1915, herdrback.go:1231). On
-// codex and grok that is delivery by the one mechanism ADR 0013 measured as
-// unreliable there — so the turn that writes a session's lessons down and
-// commits them is unverified on two of three runtimes.
+// ranger-base-ewq9, RE-SCOPED BY MEASUREMENT — read this before writing an
+// argv landing path, because the failure this test was filed against is not
+// there. landThePlane still consults no PromptMode where every other
+// AgentPrompt call site does, and that inconsistency is why the bead stays
+// open. What was PREDICTED — that the typed landing prompt does not reach a
+// codex or grok pane — was measured on real sessions (the QA lane's live
+// pass, 2026-08-29, ranger-base-i0qp) and REFUTED: four landings, both runtimes, including on
+// a pane that had never had a turn, and grok's landing turn did the durable
+// half in full (ORDERS.md lessons + a bead comment). ADR 0013 §2's "a pane
+// with no turn matches no rule" did not reproduce on manifest
+// 2026.07.16.105.
+//
+// So this stays a SKIP rather than becoming a pin, in either direction: an
+// assertion that landThePlane branches on PromptMode is red today for a
+// defect nobody has been able to observe, and an assertion that it does NOT
+// branch is an inverted pin that would go red on the fix. What is pinned is
+// the column above — the input the decision would read.
 func TestLandingTurnAsksTheRuntimeHowToDeliverIt(t *testing.T) {
-	t.Skip("ranger-base-ewq9: landThePlane types into codex and grok, which are prompt: argv precisely because typing was measured unreliable — unskip with the fix")
+	t.Skip("ranger-base-ewq9: landThePlane consults no PromptMode where every other AgentPrompt caller does — a CONSISTENCY bead since 2026-08-29, not a delivery failure: typed landing was measured working on real codex and grok (ranger-base-i0qp)")
 }
 
 // THE REAP GUARD's message defect (ranger-base-8ogq, the bead's 4d9x).
@@ -163,5 +181,139 @@ func TestCageCredentialRefusesTheUndecidedRuntimes(t *testing.T) {
 	}
 	if err := CheckCageCredential(claude, []string{"CLAUDE_CODE_OAUTH_TOKEN"}); err != nil {
 		t.Errorf("claude: an authenticated caged launch was refused: %v", err)
+	}
+}
+
+// ─── the two cells the live pass could not fill (ranger-base-i0qp) ───────────
+//
+// The QA lane's operator-authorized live pass (2026-08-29) filled every
+// other row of this bead's table on real codex and real grok sessions. Two cells came
+// back honestly NOT MEASURED, both for good reasons:
+//
+//   merge-back from the DISPATCH LOOP — the live pass landed both runtimes'
+//   branches through `posse worktrees --land` (the sweep), including the
+//   conflict path. Driving the loop's own trigger would have meant handing
+//   the fixture beads back to the shared queue, which is the one thing that
+//   fixture existed to avoid.
+//
+//   prune on READ — no session died underneath its meta during the pass, so
+//   only prune-on-KILL was exercised (six times, both runtimes).
+//
+// Both were argued AGNOSTIC BY CONSTRUCTION, and an argument from reading is
+// what these two tests turn into a measurement. Neither costs a session.
+
+// MERGE-BACK, per runtime, through the function the dispatch loop calls when
+// it judges a close (dispatch.go gather -> d.mergeBack). It takes the bead,
+// the persona and the SESSION NAME — the runtime reaches it only as a field
+// on the meta it reads, and MergeSessionWork below it never sees one at all.
+// So the pin is the whole table producing the same landing: same ⤴ line,
+// same commit count, same work on the repo's own branch.
+//
+// MUTATION-CHECKED, because a green parity table is exactly the shape that
+// can be green for no reason: with `if m.Runtime != DefaultRuntime { return }`
+// added at the top of mergeBack, claude PASSES and codex and grok both FAIL —
+// the three arms this table is for. (Gutting mergeBack entirely fails all
+// three, which is the control that says the pin measures this function and
+// not the fixture.)
+func TestMergeBackLandsEveryRuntimesSessionTheSameWay(t *testing.T) {
+	for _, rt := range parityRuntimes {
+		t.Run(rt.name, func(t *testing.T) {
+			wtqaHome(t)
+			b, fake := newTestBackend(t)
+			parityPersona(t, b.App, "ranger", "[go]", rt.name)
+			repo := wtqaRepo(t, b.App, `[]`, `[{"id":"a-1","status":"closed"}]`)
+			idleClaude(t, fake)
+
+			session := SessionForBead("ranger", repo, "a-1")
+			mustCreate(t, b, NewSessionOpts{
+				Name: session, Dir: repo, Agent: "ranger", Runtime: rt.name,
+				Worktree: true, Bead: "a-1",
+			})
+			m, ok := b.readMeta(session)
+			if !ok {
+				t.Fatal("the session has no meta")
+			}
+			// The fixture is only worth what its runtime field says: a
+			// session that recorded `claude` would make all three subtests
+			// the same test three times.
+			if m.Runtime != rt.name {
+				t.Fatalf("meta records runtime %q, want %q — this row measures nothing", m.Runtime, rt.name)
+			}
+			tr := SessionTreeOf(m)
+			if tr == nil {
+				t.Fatalf("a dispatched session got no tree: %+v", m)
+			}
+			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: the fix")
+
+			var out strings.Builder
+			d := &Dispatcher{App: b.App, HB: b, Out: &out}
+			d.mergeBack(RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}, "ranger", session)
+
+			if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+				t.Fatalf("%s: a closed bead's commit did not reach %s: %v\n%s", rt.name, tr.Base, err, out.String())
+			}
+			for _, want := range []string{"a-1", "1 commit(s)", "fast-forwarded", tr.Branch, tr.Base} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("%s: the merge-back line does not say %q:\n%s", rt.name, want, out.String())
+				}
+			}
+		})
+	}
+}
+
+// PRUNE ON READ, per runtime. Sessions() is where a meta whose workspace
+// died is unlinked, and its decision reads the herdr listing, the socket and
+// the server generation — the runtime is carried through as an output field
+// and is never an input. Three metas differing ONLY in `runtime:`, all three
+// naming a workspace this server can prove is gone.
+//
+// The wrong arm is in the same test on purpose: three more metas, same three
+// runtimes, written against ANOTHER herdr's socket. Those must all be KEPT,
+// because "this server never held it" is not "it died" (rangerhq-snd).
+//
+// MUTATION-CHECKED, three ways. A runtime gate on the prune (`if m.Runtime ==
+// "grok" { continue }`) fails the dead arm on grok alone. Making
+// cannotAnswerFor answer "" — this server can speak for every meta — fails
+// the kept arm on all three. And one that does NOT kill it, worth writing
+// down: deleting the cannotAnswerFor call from the LISTING side changes
+// nothing, because reclaim re-asks it under the launch lock before the
+// unlink. The socket guard has two arms, and the second one is the one that
+// actually holds the file.
+func TestPruneOnReadIsBlindToTheRuntime(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", raceSock)
+	b, _ := newTestBackend(t)
+	warn := &syncBuf{}
+	b.Warn = warn
+
+	// A live session keeps the board non-empty: an empty listing is one of
+	// the three shapes Sessions() refuses to prune on at all, and a test
+	// that hit it would spare every meta for a reason that has nothing to
+	// do with runtimes.
+	mustCreate(t, b, NewSessionOpts{Name: "live"})
+
+	runtimeMeta := func(name, runtime, socket string) {
+		t.Helper()
+		if err := os.MkdirAll(b.metaDir(), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write(t, b.metaPath(name), "name: "+name+"\nworkspace: w404\npane: w404:p1\nemoji: x\n"+
+			"runtime: "+runtime+"\nsocket: "+socket+"\n")
+	}
+	for _, rt := range parityRuntimes {
+		runtimeMeta("dead-"+rt.name, rt.name, raceSock)                   // ours, and gone
+		runtimeMeta("foreign-"+rt.name, rt.name, "/tmp/other/herdr.sock") // another server's
+	}
+
+	if _, err := b.Sessions(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, rt := range parityRuntimes {
+		if _, ok := b.readMeta("dead-" + rt.name); ok {
+			t.Errorf("%s: a meta whose workspace this server proved dead was kept — prune-on-read is not runtime-blind", rt.name)
+		}
+		if _, ok := b.readMeta("foreign-" + rt.name); !ok {
+			t.Errorf("%s: a meta written against ANOTHER herdr was deleted — absence from this listing is not death (rangerhq-snd)", rt.name)
+		}
 	}
 }
