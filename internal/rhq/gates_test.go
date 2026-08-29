@@ -51,6 +51,39 @@ func TestParseShimRulesSecurityStarIsWholeVerb(t *testing.T) {
 	}
 }
 
+// grantsGitPush is the ADR 0033 §5 drift alarm's whole trigger: every PID
+// allow: spelling that hands a persona `git push` has to come back with the
+// rule, or the alarm is quiet about push authority sitting off the
+// coordinator. TestCheckAgentCoordinatorParity drives one spelling
+// (`Bash(git push:*)`), so the function's OTHER arm — the whole-verb rule,
+// where a PID is granted all of git and push with it — was held by nothing:
+// rewriting `len(r.Words) == 0 || …` to `len(r.Words) > 0 && …` left all
+// three packages green (measured, ranger-base-telz).
+//
+// The spellings this table does NOT list are the alarm's measured blind
+// spots, not settled behavior: bare `Bash`, `Bash(*)`, and the wildcard and
+// option-bearing forms (`Bash(git * push)`, `Bash(git -C x push)`) all grant
+// push and all return "" today — ranger-base-b2os. Widening grantsGitPush to
+// catch them must keep every row below firing.
+func TestGrantsGitPushRuleShapes(t *testing.T) {
+	for _, fires := range []string{
+		"Bash(git push:*)",           // the coordinator's own spelling
+		"Bash(git push)",             // exact
+		"Bash(git push origin main)", // a narrower push is still a push
+		"Bash(git:*)",                // whole verb — push included
+		"Bash(git)",                  // whole verb, bare
+	} {
+		if got := grantsGitPush([]string{"Edit", fires, "Bash(bd:*)"}); got != fires {
+			t.Errorf("%s grants push; grantsGitPush returned %q", fires, got)
+		}
+	}
+	for _, quiet := range []string{"Bash(git log:*)", "Bash(bd:*)", "Edit", "Bash(pushd:*)"} {
+		if got := grantsGitPush([]string{quiet}); got != "" {
+			t.Errorf("%s grants no push; grantsGitPush returned %q", quiet, got)
+		}
+	}
+}
+
 func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
