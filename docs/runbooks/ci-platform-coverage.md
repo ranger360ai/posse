@@ -1,9 +1,18 @@
 # CI platform coverage — what the gate reaches, what it cannot, and what each
 # route would cost
 
-Status: **costed plan awaiting an operator pick** (ranger-base-4fxz).
-Nothing here is built. `.github/workflows/ci.yml` is unchanged by this
-document.
+Status: **PICKED AND BUILT** (ranger-base-4fxz costed it; ranger-base-5cj4
+carried the decision). The operator picked **route D for both platforms** on
+2026-08-28: rhel/fedora and omarchy/arch are covered by clean-room images, not
+by rows in `.github/workflows/ci.yml`. Route B (self-hosted) was not picked for
+either; route A (a container row in `ci.yml`) was not picked for either.
+
+`.github/workflows/ci.yml` is therefore **unchanged**, and so is
+`scripts/test-linux.sh` — no per-distro seam was cut there and
+`TestTestLinuxScriptIsTheReleaseGateOnLinux` (ranger-base-lsj) is untouched.
+What was built is in `etc/cleanroom/` and `scripts/cleanroom.sh`; §5 records
+it. Everything above §5 is the costing that led to the pick and is left as it
+was measured.
 
 The ask, 2026-08-26, verbatim: *"vet on a release schedule, not every push.
 begs the question, releases are bigger milestones. not ubuntu, we want macos,
@@ -206,25 +215,60 @@ originals survived.
 
 ---
 
-## 5. The pick
+## 5. The pick, and what it built
 
-One line per platform is enough to unblock this.
-
-| platform | options | recommendation |
+| platform | options offered | **picked, 2026-08-28** |
 |---|---|---|
 | **macOS** | already done | nothing to decide |
 | **rhel/fedora** | A (container row in `ci.yml`) · B (self-hosted) · D (clean-room image) · none | **D** |
-| **omarchy / arch** | A (labelled *arch*, x86_64 only) · B · D · none | **D**, and never label a container row "omarchy" |
+| **omarchy / arch** | A (labelled *arch*, x86_64 only) · B · D · none | **D** |
 
 Reasoning in one sentence: the Go suite cannot see the distro, the userland
 can, and the clean room is the instrument that already looks at the userland —
 so D buys the coverage that was actually asked for, at no CI cost, without
 pretending a container is a distro.
 
-If the answer is instead *"ubuntu + macOS is enough"*, that is a complete and
-defensible answer; the one thing it should not do is leave the `cmp` defect
-unfixed, because that one is real on RHEL-family boxes whether or not anything
-ever tests them.
+### What was built (ranger-base-5cj4)
+
+- `etc/cleanroom/Dockerfile.{debian,fedora,rhel,arch}` — the old single
+  `Dockerfile` became `Dockerfile.debian`, and `fedora:44`, `almalinux:10` and
+  `archlinux:latest` sit beside it. Same five newcomer packages on all four,
+  same `go.dev/dl` toolchain on all four (holding the toolchain constant is
+  what isolates the distro), and **`diffutils` on none of them** — `cmp` being
+  absent is the finding, not a setup step.
+- `scripts/cleanroom.sh` — `CLEANROOM_DISTRO=` selects the Dockerfile, the
+  image tag and the container name, so all four coexist. `--platform` is now
+  passed to build and run alike (ranger-base-1qm5), and `arch` is pinned to
+  `linux/amd64` because official Arch publishes no arm64 image.
+- `scripts/cleanroom.sh verify` gained an `/etc/os-release` identity assertion:
+  without it a stale image, or a hand-set `CLEANROOM_IMAGE`, passes every other
+  check while measuring a distro nobody asked for.
+- `scripts/cleanroom.sh hook-deps` — the probe that pays for the route. It
+  reports the external commands the generated hooks call against the selected
+  distro's userland and exits non-zero on any `MISSING`. Its command list is a
+  contract that can drift from `gates.go`; that risk is written down in
+  `etc/cleanroom/README.md`.
+- `make cleanroom-distros`, `make cleanroom-hook-deps`, `make
+  cleanroom-verify-all` (all four, keeps going after a red one).
+
+### What the pick deliberately did NOT buy
+
+- **The kernel, an init system, a desktop.** A container is not a distro. Said
+  in §3A and it did not stop being true for route D.
+- **omarchy.** `arch` is the Arch *base*. omarchy is Arch plus a curated
+  desktop and dotfiles layer, and no container route reaches it. The image says
+  so, the README says so, and a verdict that calls it omarchy coverage is
+  wrong.
+- **Each distro's own packaged Go.** `dnf install golang` and `pacman -S go`
+  are plausible newcomer routes on three of the four, and no clean room
+  exercises them — taking the packaged toolchain would vary the toolchain and
+  the distro at once. Named and uncovered.
+- **macOS install routes.** Still open as ranger-base-hza, exactly as §3D said
+  it would be. This work does not close it.
+
+`ranger-base-rmgz` — the `cmp` defect — is unaffected by this pick and stays
+open on its own merits: it is real on RHEL-family boxes whether or not
+anything ever tests them.
 
 ---
 
