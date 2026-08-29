@@ -271,3 +271,104 @@ func TestSilentRevertNegativeControlHasAPositiveWitness(t *testing.T) {
 		t.Fatalf("negative control reported a pass without a witness that it scanned anything:\n%s", out)
 	}
 }
+
+// --- ranger-base-hhcu: the detector's verdict must not depend on the awk -----
+//
+// ci.yml gave two answers for the same 422 commits on the same tree:
+// ubuntu-latest flagged b26975f (cmd/posse/cockpit.go "-> content of 1fdf9da"),
+// macos-latest did not, and the linux verdict was the wrong one — the three
+// states of that path are three distinct blobs. Two of them ABBREVIATE to
+// `6e51571` and `6e44262`, both valid scientific notation; a field, and every
+// element split out of one, is a STRNUM, and awk compares two strnums
+// numerically. Both overflow to +inf, so a coercing awk called them equal.
+// Measured 2026-08-29 over this repo's own history: gawk 5.3.2 flags b26975f,
+// mawk 1.3.4, busybox awk and darwin's BWK awk 20200816 do not — ubuntu-latest
+// runs gawk, and that is the entire split. It matters in the other direction
+// too: the same coercion can HIDE a real rollback, so on a coercing awk a clean
+// run was worth less than it read.
+//
+// The script answers it in two independent layers — raw_log's --no-abbrev and
+// the `""` in states_awk's capture — so ONE outcome assertion would be green
+// with either one gone. These three pins are one per layer plus the arm that
+// carries them, because an arm nothing pins is an arm that can be deleted.
+
+// srMutateScript writes a copy of the audit script with old replaced by new,
+// and returns it with a (non-repo) directory to run it from. It fails if old
+// is not present, so a rename cannot turn these pins into no-ops.
+func srMutateScript(t *testing.T, old, new string) (mutant, dir string) {
+	t.Helper()
+	script := srScript(t)
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatalf("read %s: %v", script, err)
+	}
+	if strings.Count(string(src), old) != 1 {
+		t.Fatalf("mutation target %q appears %d times in %s, want 1; this pin no longer applies",
+			old, strings.Count(string(src), old), script)
+	}
+	dir = t.TempDir()
+	mutant = filepath.Join(dir, "audit-mutant.sh")
+	if err := os.WriteFile(mutant, []byte(strings.Replace(string(src), old, new, 1)), 0o755); err != nil {
+		t.Fatalf("write mutant: %v", err)
+	}
+	return mutant, dir
+}
+
+// TestSilentRevertSelfTestHasTheStrnumArm pins the arm itself. Deleting it
+// leaves every other test in this file green, because they all read an exit
+// status the deleted arm no longer contributes to.
+func TestSilentRevertSelfTestHasTheStrnumArm(t *testing.T) {
+	script := srScript(t)
+	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
+		t.Skipf("not a git checkout: %v", err)
+	}
+	out, code := srAudit(t, script, ".", "--self-test")
+	if code != 0 {
+		t.Fatalf("self-test failed: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"self-test PASS: a <digit>e<digits> blob id is not a silent revert",
+		"self-test PASS: raw_log emits full 40-hex blob ids",
+		"self-test PASS: states_awk compares ids as strings, not numbers",
+		"self-test PASS: the strnum rig does fire on a real repeat",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("self-test no longer reports %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestAuditStringComparisonHasItsOwnPin is layer two. Dropping the `""` that
+// makes states_awk's captured ids plain strings must red the self-test — and on
+// EVERY platform, which is why that arm reads a synthetic stream whose two ids
+// are `0000100` and `00001e2`: both are the number 100 to all four awks
+// measured, no overflow required, so the pin does not itself depend on running
+// under gawk. Fed the fixture's real ids instead, this mutation is invisible on
+// darwin, mawk and busybox — the blind spot that let the defect ship.
+func TestAuditStringComparisonHasItsOwnPin(t *testing.T) {
+	mutant, dir := srMutateScript(t,
+		`esrc[ne]=m[3] ""; edst[ne]=m[4] ""; est[ne]=m[5]`,
+		`esrc[ne]=m[3]; edst[ne]=m[4]; est[ne]=m[5]`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with states_awk comparing blob ids as numbers:\n%s", out)
+	}
+	if !strings.Contains(out, "states_awk coerced two distinct blob ids to one number") {
+		t.Fatalf("the strnum arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditFullBlobIdsHaveTheirOwnPin is layer one. git's default abbreviation
+// is 7 hex, short enough that a blob id lands on the <digit>e<digits> shape
+// about once in 270; at 40 hex the whole id has to cooperate. Dropping
+// --no-abbrev must red the self-test on its own.
+func TestAuditFullBlobIdsHaveTheirOwnPin(t *testing.T) {
+	mutant, dir := srMutateScript(t, "--raw --no-abbrev \\", "--raw \\")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with raw_log emitting abbreviated blob ids:\n%s", out)
+	}
+	if !strings.Contains(out, "raw_log emitted") {
+		t.Fatalf("the abbreviation arm did not name the defect it exists for:\n%s", out)
+	}
+}

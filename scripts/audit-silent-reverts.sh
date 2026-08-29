@@ -63,6 +63,32 @@
 # deletion the commit does not mention" is just "flag every deletion" wearing a
 # hat.
 #
+# STATES ARE COMPARED AS STRINGS, DELIBERATELY (ranger-base-hhcu). ci.yml gave
+# two different verdicts for the same 422 commits on the same tree: ubuntu-latest
+# flagged b26975f (cmd/posse/cockpit.go "-> content of 1fdf9da"), macos-latest
+# did not. Neither blob was ever repeated — the three states are 6e51571afa45…,
+# 6e44262db4c1… and 05e20b38efc9…, all distinct. But the first two ABBREVIATE to
+# `6e51571` and `6e44262`, both valid scientific notation, and a field (or an
+# element split out of one) is a STRNUM: awk compares two strnums NUMERICALLY
+# when both look like numbers. Both overflow to +inf, +inf == +inf, and the path
+# "went backwards" to a state it never held.
+#
+# Measured 2026-08-29 over this repo's own 433 commits, one captured raw log fed
+# to four awks: gawk 5.3.2 flags b26975f; mawk 1.3.4, busybox awk and darwin's
+# BWK awk 20200816 do not. mawk and BWK reject an overflowed string as a strnum,
+# gawk does not — `printf '6e51571 6e44262\n' | gawk '{print ($1==$2)}'` is 1 and
+# is 0 everywhere else. gawk is therefore the only one of the four that
+# reproduces ubuntu-latest's verdict, over the same history, naming the same
+# commit and the same path — the runner's awk was not probed directly, but
+# nothing else measured produces that output. That is the whole of the split,
+# and it is why nobody could triage their way out of it from a mac. Note also
+# that `make test-linux` cannot see it: its golang:1.26 image is debian, whose
+# /usr/bin/awk is mawk (measured), so the container agreed with darwin.
+# Note the direction that matters more than the false positive: the same coercion
+# can HIDE a real rollback, so on a coercing awk a clean run was worth less than
+# it read. Hence raw_log's --no-abbrev and the `""` in states_awk's capture, with
+# the `numeric` self-test arm pinning one layer each.
+#
 # LIMITS, so nobody reads a clean run as more than it is:
 #   - Exact-blob only. A PARTIAL revert (some hunks of a file) is invisible here.
 #   - A legitimate revert commit is flagged too; that is why triage is a file
@@ -135,6 +161,46 @@ plant_move() {
   env -u RHQ_PERSONA git commit -qm "move it"
 }
 
+# NUMERIC-ID control — ranger-base-hhcu. n.txt holds three distinct states, and
+# the first and third abbreviate to <digit>e<digits>, which is a NUMBER to awk.
+# Nothing here went backwards, so the detector must stay silent. The two
+# contents are chosen rather than generated so the shape is deterministic:
+# `numeric-shaped blob 1059` hashes to 7e1599240849…, `…1259` to 5e004138631…,
+# and both keep ten digits after the `e`, so any abbreviation git picks between
+# 6 and 12 characters is still scientific notation with an exponent that
+# overflows a double. At 40 hex they are plainly unequal; at 7 they are not.
+plant_numeric() {
+  local r; r=$(mktemp -d)/r; mkdir -p "$r"; cd "$r" || return 2
+  git init -q .; git config user.email t@t; git config user.name t
+  printf 'numeric-shaped blob 1059\n' > n.txt; printf 'o\n' > other.txt
+  env -u RHQ_PERSONA git add -A
+  env -u RHQ_PERSONA git commit -qm "add n.txt"            # state 1: 7e15992…
+  printf 'plain\n' > n.txt
+  env -u RHQ_PERSONA git commit -qam "edit n.txt"          # state 2
+  printf 'numeric-shaped blob 1259\n' > n.txt
+  env -u RHQ_PERSONA git commit -qam "edit n.txt again"    # state 3: 5e00413…
+  # Fixture witness: the hazard has to actually BE here, or this arm is a
+  # negative control that measured nothing (ranger-base-z4vx). Exactly two of
+  # the three abbreviated destination ids must read as scientific notation.
+  git log --reverse --no-merges --raw --format= HEAD -- n.txt |
+    awk '$4 ~ /^[0-9]e[0-9]+$/ {n++} END {exit !(n==2)}' || return 2
+}
+
+# The synthetic raw log arm (iii) reads: three commits over one path, whose
+# states are `0000100`, `0000042` and then $1. Both `0000100` and `00001e2` are
+# the number 100 to every awk measured, so passing 00001e2 is a stream where a
+# strnum comparison sees a rollback and a string comparison does not; passing
+# 0000100 is a real repeat, which must be flagged either way. Hand-built because
+# git will not produce ids of that shape on demand.
+numeric_stream() {
+  printf '__C__\t1111111111111111111111111111111111111111\tt\tadd n.txt\n'
+  printf ':000000 100644 0000000 0000100 A\tn.txt\n'
+  printf '__C__\t2222222222222222222222222222222222222222\tt\tedit n.txt\n'
+  printf ':100644 100644 0000100 0000042 M\tn.txt\n'
+  printf '__C__\t3333333333333333333333333333333333333333\tt\tedit n.txt again\n'
+  printf ':100644 100644 0000042 %s M\tn.txt\n' "$1"
+}
+
 # Every shape above builds exactly three commits, and every arm below checks
 # that it got three. An arm that reads a fixture nobody built is the failure
 # this number exists to catch (ranger-base-z4vx).
@@ -160,14 +226,14 @@ self_test() {
   # ABSENCE, and an absence is exactly what a fixture that was never built
   # hands it. A control that only counts absences needs a positive witness
   # that it looked at something; scan()'s own SCANNED line is that witness.
-  local rc=0 prc n out scanned shape d; d=$(mktemp -d)
-  for shape in modify addonly move; do
+  local rc=0 prc n out scanned shape d fdir nonhex an; d=$(mktemp -d)
+  for shape in modify addonly move numeric; do
     ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
     prc=$?
     [ "$prc" -eq 0 ] || {
         echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
   done
-  for shape in modify addonly move; do
+  for shape in modify addonly move numeric; do
     out=$( cd "$(cat "$d/$shape")" && scan HEAD )
     n=$(printf '%s\n' "$out" | grep -c 'path(s) went backwards')
     scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2+0}')
@@ -180,6 +246,48 @@ self_test() {
       move)
         if [ "$n" -eq 0 ]; then echo "self-test PASS: a plain move is not flagged (over $scanned planted commits)"
         else echo "self-test FAIL: plain move flagged as a silent revert"; rc=1; fi ;;
+      numeric)
+        # Three assertions, because the fix has two independent layers and an
+        # arm that only checks the outcome is green when EITHER survives.
+        fdir=$(cat "$d/numeric")
+        # (i) the outcome: on this history, as production runs it, nothing moved
+        #     backwards. Red today without both layers, on gawk.
+        if [ "$n" -eq 0 ]; then echo "self-test PASS: a <digit>e<digits> blob id is not a silent revert (over $scanned planted commits)"
+        else echo "self-test FAIL: a <digit>e<digits> blob id read as a silent revert"; rc=1; fi
+        # (ii) layer one: raw_log hands states_awk full 40-hex ids. Dropping
+        #      --no-abbrev reds this and nothing else.
+        nonhex=$( cd "$fdir" && raw_log HEAD |
+                  awk '/^:/ && $4 !~ /^[0-9a-f]{40}$/ {n++} END {print n+0}' )
+        if [ "${nonhex:-1}" -eq 0 ]; then echo "self-test PASS: raw_log emits full 40-hex blob ids"
+        else echo "self-test FAIL: raw_log emitted ${nonhex:-?} abbreviated blob id(s)"; rc=1; fi
+        # (iii) layer two: states_awk compares states as STRINGS, pinned on a
+        #       SYNTHETIC stream rather than on the fixture's real ids. That is
+        #       deliberate: the +inf collision only happens on an awk that takes
+        #       an OVERFLOWED numeric string as a strnum, and of the four awks
+        #       measured only gawk does, so (i) and (ii) above are undiscriminating
+        #       on darwin, mawk and busybox — exactly the blind spot that let this
+        #       ship. `0000100` and `00001e2` are both plainly 100, no overflow
+        #       involved, and ALL FOUR awks compare them equal as strnums
+        #       (measured 2026-08-29). So this arm reds on every platform the
+        #       moment the `""` leaves states_awk's capture, and it is the pin
+        #       that layer actually has. states_awk is split out of scan() so it
+        #       can be fed a stream raw_log would never emit.
+        an=$( numeric_stream 00001e2 | states_awk )
+        if [ "$(printf '%s\n' "$an" | awk -F'\t' '/^SCANNED/{print $2+0}')" != "3" ]; then
+          echo "self-test FAIL: the synthetic strnum stream did not parse — nothing was measured"; rc=1
+        elif printf '%s\n' "$an" | grep -q 'path(s) went backwards'; then
+          echo "self-test FAIL: states_awk coerced two distinct blob ids to one number"; rc=1
+        else
+          echo "self-test PASS: states_awk compares ids as strings, not numbers"
+        fi
+        # (iii-control) the same rig with a genuine repeat MUST fire, or the
+        # assertion above is an absence nobody proved could be a presence.
+        an=$( numeric_stream 0000100 | states_awk )
+        if printf '%s\n' "$an" | grep -q 'path(s) went backwards'; then
+          echo "self-test PASS: the strnum rig does fire on a real repeat"
+        else
+          echo "self-test FAIL: the strnum rig cannot detect anything — arm (iii) proves nothing"; rc=1
+        fi ;;
       *)
         if [ "$n" -ge 1 ]; then echo "self-test PASS: detector flags the $shape half of the rangerhq-8rtf mechanism"
         else echo "self-test FAIL: planted $shape revert not detected"; rc=1; fi ;;
@@ -189,9 +297,21 @@ self_test() {
   return $rc
 }
 
-scan() {
-  git log --reverse --no-merges --no-renames --raw \
-      --format="__C__%x09%H%x09%an%x09%s" "$1" |
+# The raw log every scan reads. --no-abbrev is load-bearing (ranger-base-hhcu):
+# git's default abbreviation is 7 hex, which is short enough that a blob id
+# lands on the <digit>e<digits> shape roughly once in 270, and that shape is
+# a NUMBER to awk. Full 40-hex ids are not immune in principle, but the shape
+# needs all 40 characters to cooperate, which is ~6e-8 rather than 0.4%.
+# The string comparison in states_awk is the actual fix; this is the cheap
+# second layer, and each is pinned by its own assertion in the numeric arm.
+raw_log() {
+  git log --reverse --no-merges --no-renames --raw --no-abbrev \
+      --format="__C__%x09%H%x09%an%x09%s" "$1"
+}
+
+# The state machine, reading a raw log on stdin. Split out of scan() so a
+# self-test arm can feed it a stream raw_log itself would never emit.
+states_awk() {
   awk '
     # A path holds an ordered list of STATES. ABSENT is one of them: a path
     # starts absent, an add moves it to a blob, a delete moves it back. Going
@@ -226,7 +346,15 @@ scan() {
       ne++
       epath[ne]=substr($0,t+1)
       split(substr($0,1,t-1),m," ")
-      esrc[ne]=m[3]; edst[ne]=m[4]; est[ne]=m[5]
+      # FORCE STRING, and do it HERE so there is exactly one place that can be
+      # got wrong (ranger-base-hhcu). A field, and every element split out of
+      # one, is a STRNUM: awk compares two strnums NUMERICALLY when both look
+      # like numbers. A blob id of the form <digit>e<digits> is valid
+      # scientific notation whose value overflows to +inf, and +inf == +inf, so
+      # an awk that coerces calls two unrelated blobs EQUAL and reports that a
+      # path went back to a state it never held. Concatenating "" makes these
+      # plain strings once, and every comparison below inherits it.
+      esrc[ne]=m[3] ""; edst[ne]=m[4] ""; est[ne]=m[5]
       next
     }
     END {
@@ -244,6 +372,8 @@ scan() {
       printf "SCANNED\t%d\n", ci
     }'
 }
+
+scan() { raw_log "$1" | states_awk; }
 
 [ "${1:-}" = "--self-test" ] && { self_test; exit $?; }
 

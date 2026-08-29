@@ -18,6 +18,18 @@
 # `make test` (go test + the silent-revert audit) — so green here means green
 # there. Nothing else: it does not build artifacts and does not touch GitHub.
 #
+# ONE MEASURED LIMIT ON THAT CLAIM (ranger-base-hhcu): "linux" is not one
+# userland. This image is debian-based and its /usr/bin/awk is mawk 1.3.4
+# (measured 2026-08-29 in golang:1.26); ubuntu-latest's coerces numeric-looking
+# strings where mawk does not, and the difference was enough to make
+# scripts/audit-silent-reverts.sh report a silent revert on ubuntu-latest and
+# none here, over the identical 422 commits. So a green run here rules out the
+# platform split this script was built for — syscalls, filesystem semantics,
+# /bin/zsh — and does NOT rule out a difference between two linux DISTRIBUTIONS'
+# shell tools. Anything that shells out to awk/sed/stat wants a pin that does
+# not depend on which one is installed, the way that audit's `numeric` self-test
+# arm now does.
+#
 # Usage:
 #   scripts/test-linux.sh                 vet + make test, on linux
 #   scripts/test-linux.sh <cmd...>        run <cmd> in the container instead
