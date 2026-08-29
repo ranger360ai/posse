@@ -88,6 +88,35 @@ func fakeBd(args []string) int {
 			break
 		}
 	}
+	// bd 0.49.1's THIRD failure shape, opt-in with a `fake-json-error`
+	// marker: a --json verb that exits 1 having printed
+	// `{"error": "..."}` on STDOUT with stderr empty (measured on `bd dep
+	// list <missing-id> --json`, rangerhq-aas). A runner reading stderr
+	// only sees nothing and quotes the exit status. The marker's contents
+	// are the message, so a test can pin that its own sentence survives.
+	if b, err := os.ReadFile("fake-json-error"); err == nil && hasArg(args, "--json") {
+		msg := strings.TrimSpace(string(b))
+		if msg == "" {
+			msg = `resolving x: no issue found matching "x"`
+		}
+		enc, _ := json.Marshal(map[string]string{"error": msg})
+		// A `fake-json-error-stderr` marker beside it fills the OTHER
+		// channel too, which is the only fixture that can tell the two
+		// precedences apart: with stdout alone, either order reads the
+		// same sentence.
+		if e, err := os.ReadFile("fake-json-error-stderr"); err == nil {
+			fmt.Fprint(os.Stderr, strings.TrimSpace(string(e)))
+		}
+		fmt.Printf("%s\n", enc)
+		return 1
+	}
+	// The same verb failing with a payload that is NOT that shape — a
+	// plain listing on stdout, stderr empty — which must NOT be quoted at
+	// the operator as if it were a reason.
+	if _, err := os.Stat("fake-opaque-error"); err == nil && hasArg(args, "--json") {
+		fmt.Print(`[{"id":"a-1","title":"one"}]`)
+		return 1
+	}
 	switch sub {
 	case "ready":
 		// The scan failing the way it fails in the wild: bd exits non-zero
@@ -266,6 +295,15 @@ func fakeBd(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "fake bd: unhandled %s\n", strings.Join(args, " "))
 	return 1
+}
+
+func hasArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 // fakeBdCreatePoisoned reports whether this `bd create` is one the

@@ -48,11 +48,33 @@ func (b Bd) run(dir string, args ...string) ([]byte, error) {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(errb.String())
 		if msg == "" {
+			msg = bdStdoutError(out.Bytes())
+		}
+		if msg == "" {
 			msg = err.Error()
 		}
 		return nil, Die("bd %s: %s", strings.Join(args, " "), msg)
 	}
 	return out.Bytes(), nil
+}
+
+// bdStdoutError recovers the reason from a --json verb that reported its
+// failure on STDOUT. bd 0.49.1 prints `{"error": "..."}` there and leaves
+// stderr empty for at least `dep list` (measured, rangerhq-aas), so a
+// runner that reads stderr only hands the operator "exit status 1" and
+// drops the sentence that says what went wrong.
+//
+// It returns "" for anything that is not that shape — a JSON array, a
+// half-written page, an object with no error key — so the caller keeps its
+// err.Error() fallback rather than quoting a payload at the operator.
+func bdStdoutError(stdout []byte) string {
+	var v struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(stdout), &v) != nil {
+		return ""
+	}
+	return strings.TrimSpace(v.Error)
 }
 
 type BdIssue struct {
