@@ -8,7 +8,10 @@ same number. Amended 2026-08-28 (ranger-base-1lza): darwin counts
 three stores, not two, and the `.stale-*` evidence clause was measured
 dead — the file self-renews. Amended 2026-08-28 (ranger-base-swqk):
 D5/V6 split the expiry surfaces by purpose — the timer surfaces carry
-session mints only; the meter's expiry is report-only.*
+session mints only; the meter's expiry is report-only. Amended
+2026-08-29 (ranger-base-5fly): the "`secrets/` directory now"
+rejection is overturned by the instance page's acceptance — the dir is
+built as a store, empty; this page's seam stays the only acquirer.*
 
 ## Context
 
@@ -80,7 +83,11 @@ behaviour) and `meter` (what posse presents to the provider's usage and
 models endpoints — replaces both `KeychainToken` callers). The seam is
 the vault insertion point (ranger-base-epz8): a vault is a third
 provider answering the same `Read`, not a second migration. Nothing
-else in posse may acquire a credential except through this seam.
+else in posse may acquire a credential except through this seam. Where
+a harness credential *resides* is the instance page's D1:
+`RHQ_HOME/secrets/` (dir 700, files 600; built empty, rangerhq-5s5d) —
+a store this seam will read when a resident arrives, never a second
+acquisition path.
 
 **2. The meter reads the store of record, per platform.** One provider
 ("runtime store"), platform adapters chosen by `runtime.GOOS` — no
@@ -313,11 +320,20 @@ design puts more weight on files. What is actually traded:
   Two writers on one rotating credential; maximal blast radius for a
   freshness bug. Standing rejection, unchanged.
 - **A `secrets/` directory now** (harness-credential class made
-  concrete). The class split is kept conceptually, but posse has zero
-  resident harness credentials — the meter token measured 403 out of
-  every mintable form. An empty directory with a loader is a cathedral
-  for a congregation of none; the seam (D1) is where a future resident
-  plugs in.
+  concrete). Rejected here 2026-08-26: posse has zero resident harness
+  credentials — the meter token measured 403 out of every mintable
+  form — and an empty directory with a loader is a cathedral for a
+  congregation of none. **Overturned 2026-08-28**: the operator
+  accepted the instance ADR of the same number (option (b),
+  rangerhq-q65q), whose D1 orders the directory built empty because
+  the class split is the trust model, not a convenience; it landed as
+  rangerhq-5s5d (af4353d). The pages reconcile because `secrets/` is a
+  *store*, not a second acquirer: nothing under it reaches a session,
+  no PID key can name it, `posse envs` cannot list it (pinned,
+  `secrets_test.go`), and a future resident reaches its caller only
+  through this page's D1 seam. What survives of the rejection is the
+  residency claim: the dir stays empty, init seeds no
+  `plan-guard.env`, and the plan guard is not a consumer.
 - **Vault now.** Explicitly parked by the operator (ranger-base-epz8,
   P3): bootstrap inversion for the unattended 3am pass, and "what
   vault means" is undecided. The seam is the concession it collects.
