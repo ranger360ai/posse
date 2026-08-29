@@ -188,6 +188,60 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 // since rangerhq-mgdk one call reports both slots, so the operator is handed
 // both blocks at once and may paste either first. Pinning only A-then-B
 // would pin one half of the claim.
+// ranger-base-q32o — found verifying rangerhq-pon3's close (ranger-base-wst3).
+// The rendered prescription's first step is an unconditional
+// `mv <slot> theirs-<slot>`. That is right for a FOREIGN slot and wrong for a
+// slot posse has already chained: there `theirs-<slot>` already holds the
+// other tool's hook, so the mv destroys it and leaves the old dispatcher in
+// its place — a file whose last line is `exec "$d/theirs-<slot>" "$@"`, which
+// is now itself. Every push the gate PERMITS then spins forever; a refusal
+// exits before the exec, so the wall still looks correct.
+//
+// Reached by posse's own instructions: chain a foreign hook, then remove
+// posse-<slot> (`remove this file to uninstall`, the line inside that very
+// file), then re-run install-hooks and follow what it prints.
+//
+// This asserts the STRUCTURE, never running the loop: a test that hangs when
+// it fails is worse than no test.
+func TestQAChainPrescriptionOnAnAlreadyChainedSlot(t *testing.T) {
+	t.Skip("ranger-base-q32o: the prescription clobbers theirs-<slot>; unskip with the fix")
+
+	bin := buildRhq(t)
+	home, repo := qaForeignBoth(t)
+	hooks := filepath.Join(repo, ".git", "hooks")
+
+	// Chain pre-push the ordinary way.
+	first, _ := qaInstallHooks(t, bin, home, repo)
+	if out, code := qaSh(t, home, qaPrescription(t, first, "pre-push", bin)); code != 0 {
+		t.Fatalf("the ordinary chain must land: %d\n%s", code, out)
+	}
+	theirs := filepath.Join(hooks, "theirs-pre-push")
+	want, err := os.ReadFile(theirs)
+	if err != nil {
+		t.Fatalf("theirs-pre-push must exist after chaining: %v", err)
+	}
+
+	// The documented uninstall, which is what makes the slot re-prescribable.
+	if err := os.Remove(filepath.Join(hooks, "posse-pre-push")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-run and follow whatever it prints, exactly as an operator would.
+	second, _ := qaInstallHooks(t, bin, home, repo)
+	qaSh(t, home, qaPrescription(t, second, "pre-push", bin))
+
+	got, err := os.ReadFile(theirs)
+	if err != nil {
+		t.Fatalf("theirs-pre-push must survive: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("the prescription overwrote the other tool's hook.\nwas:\n%s\nnow:\n%s", want, got)
+	}
+	if strings.Contains(string(got), `exec "$d/theirs-pre-push"`) {
+		t.Error("theirs-pre-push now execs itself: every permitted push hangs forever")
+	}
+}
+
 func TestQAInstallRefusalPrescriptionsRunInEitherOrder(t *testing.T) {
 	bin := buildRhq(t)
 	home, repo := qaForeignBoth(t)

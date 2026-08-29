@@ -205,6 +205,83 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 	}
 }
 
+// ranger-base-l1at — found verifying rangerhq-ojnw's close (ranger-base-wst3).
+// The spoiler table lists `--include` as a literal and renderSpoiled emits a
+// `--*) ;;` arm ahead of the cluster pattern, so every UNAMBIGUOUS PREFIX git
+// accepts for that option — `--inc`, `--incl`, `--inclu`, `--includ` — falls
+// through the wall and sweeps the shared index. Measured live: refused as
+// `--include`, through as `--inc`, and the commit took another persona's
+// staged file.
+//
+// Half one is the premise and it is NOT skipped: if git ever stops accepting
+// the abbreviation, or stops sweeping with it, the guard arm below is
+// pinning a ghost and this half says so first (the TestQA2f5rIncidentFourForms
+// shape). Half two is the wall, skipped until l1at lands.
+func TestQACommitWallL1IncludeAbbreviations(t *testing.T) {
+	// The shortest prefix git itself resolves. `--in` and `--i` are
+	// ambiguous for `git commit` and git rejects them (measured, 2.50.1),
+	// so they are not spoilers and are not listed here.
+	abbrevs := []string{"--includ", "--inclu", "--incl", "--inc"}
+
+	// Half one: real git accepts each abbreviation AND it sweeps.
+	for _, opt := range abbrevs {
+		_, git, write := qaCommitRepo(t)
+		write("a.txt", "MINE-EDITED")                         // tracked, edited, not staged
+		write("c.txt", "THEIRS")                              // another persona's...
+		if out, err := git(nil, "add", "c.txt"); err != nil { // ...staged work
+			t.Fatalf("add: %v %s", err, out)
+		}
+		if out, err := git(nil, "commit", "-m", "x", opt, "--", "a.txt"); err != nil {
+			t.Fatalf("premise: git must accept %s as --include: %v %s", opt, err, out)
+		}
+		out, _ := git(nil, "show", "--name-only", "--format=", "HEAD")
+		if !strings.Contains(out, "c.txt") {
+			t.Errorf("premise: `git commit %s -- a.txt` must sweep the shared index; it took %q", opt, out)
+		}
+	}
+
+	// Half two: the wall must refuse every spelling git accepts.
+	t.Skip("ranger-base-l1at: the spoiler table matches `--include` literally; unskip with the fix")
+
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	realBin := t.TempDir()
+	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, opt := range abbrevs {
+		argv := []string{"commit", "-m", "x", opt, "--", "a.go"}
+		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		if code != 1 || !strings.Contains(string(out), "refused by posse gate") {
+			t.Errorf("git %s must be refused at L1: %d %s", strings.Join(argv, " "), code, out)
+		}
+	}
+	// The way through must not narrow: these are not prefixes of --include.
+	for _, argv := range [][]string{
+		{"commit", "-m", "x", "--", "a.go"},
+		{"commit", "--signoff", "-m", "x", "--", "a.go"},
+		{"commit", "--fixup=HEAD", "--", "a.go"},
+		{"commit", "-m", "x", "--", "--inc"},
+	} {
+		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.HasPrefix(string(out), "real git ") {
+			t.Errorf("git %s must pass: %v %s", strings.Join(argv, " "), err, out)
+		}
+	}
+}
+
 // rangerhq-t9by — close of rangerhq-2f5r. The wall lmq9 landed covers THIS
 // incident's shared-index half. The four forms devops measured against the
 // live hook, driven with the incident's own argv (`git commit -F <file>`,
