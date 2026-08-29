@@ -3862,8 +3862,9 @@ live in `~/.grok/config.toml`:
 
 ```toml
 [cli]
-auto_update = false           # kills the update check and the leader's self-update
-maximum_version = "1.0.5"     # soft ceiling: the updater never installs above this
+auto_update = false                    # kills the update check and the leader's self-update
+maximum_version = "1.0.5"              # soft ceiling: the updater never INSTALLS above this
+required_maximum_version = "1.0.5"     # hard ceiling: grok refuses to START above this
 ```
 
 `maximum_version` is the belt: a soft bound caps the updater's *target* even if
@@ -3886,23 +3887,38 @@ operator's own preferences and grok rewrites it itself (`dismissed_version`,
   `version.json`'s `checked_at` from a script — it would not have moved either
   way. Don't use that as evidence.
 
-**The harder gate, and why it is not set.** `required_maximum_version` is a
-*hard* bound: grok exits at startup above it. Probed live —
+**The harder gate, set 2026-08-28 (operator ruling, rangerhq-iy3y).**
+`required_maximum_version` is a *hard* bound: grok exits at startup above it,
+where `maximum_version` alone only refuses to *install* — a gate with a hinge on
+it, since a hand-run `grok update`, a managed-config push from xAI, or
+`auto_update` flipped back on in `/settings` can all land a binary past a soft
+ceiling and it will still run. The ruling is the same philosophy as the bd pin:
+an unreviewed upgrade must refuse to start rather than run silently.
+
+Probed live before it was applied, both arms, and the **config key** gates — not
+only the `GROK_*` env override:
 
 ```
-$ GROK_REQUIRED_MAXIMUM_VERSION=1.0.4 grok -p "x" -m no-such-model-xyz
+# required_maximum_version = "1.0.4" in config.toml, binary 1.0.5:
+$ grok -p "x" -m no-such-model-xyz
 This version of Grok (1.0.5) is newer than the maximum allowed by your organization (1.0.4).
 Install an approved version through your organization's approved method …
+
+# required_maximum_version = "1.0.5": starts, and fails later on auth/model —
+# past the version gate. Lowering only the SOFT ceiling refuses nothing.
 ```
 
-— and, importantly, **only the agent path is gated**: `--version`, `update`,
-`inspect`, `doctor` and `models` all run normally above the ceiling, so an
-out-of-range install stays diagnosable and recoverable
-(`grok update --version 1.0.5` is allowed above a ceiling by design). That
-makes it a clean gate: an unreviewed upgrade becomes a loud fleet-wide refusal
-instead of a silent surface change. It is deliberately **not** set, because the
-blast radius — every dispatched grok pane and the operator's own grok stop
-starting — is the operator's to accept, not a persona's: rangerhq-iy3y.
+**Only the agent path is gated**: `--version`, `update`, `inspect`, `doctor` and
+`models` all run normally above the ceiling, so an out-of-range install stays
+diagnosable and recoverable (`grok update --version 1.0.5` is allowed above a
+ceiling by design, and the old binary is still in `downloads/`). So the failure
+is loud, self-describing — grok names the ceiling in the refusal — and about two
+minutes to undo.
+
+**Know the blast radius before you raise the binary**: the moment grok is out of
+range, every dispatched grok pane *and* the operator's own interactive grok stop
+starting, at once. That is the gate working. Recovery is
+`grok update --version 1.0.5`, or the symlink rollback below.
 
 Bounds resolve across layers by tightening only (floor takes the highest,
 ceiling the lowest), the `GROK_*_VERSION` env overrides can only tighten
@@ -3929,8 +3945,9 @@ cp -a ~/.grok/downloads/grok-1.0.5-macos-aarch64 /tmp/ # THE rollback binary
 #     splash detection ---
 grok update --check --json                 # confirm the target
 grok update --version <new>                # explicit; allowed above the ceiling
-# then raise BOTH in etc/grok/version-pin.toml and ~/.grok/config.toml:
-#   posse_pinned_version / maximum_version
+# then raise ALL THREE in etc/grok/version-pin.toml and ~/.grok/config.toml:
+#   posse_pinned_version / maximum_version / required_maximum_version
+# (raise required_maximum_version FIRST or grok will not start on the new build)
 make verify-grok-pin && make verify-detection
 ```
 Rollback is `ln -sfn ../downloads/grok-1.0.5-macos-aarch64 ~/.grok/bin/grok`

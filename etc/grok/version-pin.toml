@@ -32,11 +32,23 @@ auto_update = false
 # pane — it only refuses to move. Raise it deliberately, with the re-audit done.
 maximum_version = "1.0.5"
 
-# Deliberately NOT set: required_maximum_version. That one is a hard bound —
-# grok refuses to START above it — which turns an unreviewed upgrade into a
-# fleet-wide outage rather than a no-op. It is the stronger gate and it is the
-# operator's call, not the devops lane's: rangerhq-iy3y.
+# The braces. A HARD bound: grok refuses to START above it, so a binary that
+# ends up past the pin anyway — a hand-run `grok update`, a managed-config push
+# from xAI, auto_update flipped back on in /settings — stops the fleet loudly
+# instead of quietly running an un-re-audited build. maximum_version alone only
+# refuses to INSTALL; that is a gate with a hinge on it.
 #
+# The cost is real and was measured before it was accepted: every dispatched
+# grok pane AND the operator's own interactive grok stop starting at once, the
+# moment the binary is out of range. Recovery is ~2 minutes and the failure is
+# self-describing — grok names the ceiling in the refusal, and --version,
+# update, inspect, doctor and models all keep working above it, so
+# `grok update --version 1.0.5` (old binary still in ~/.grok/downloads/) undoes
+# it. OPERATOR RULING 2026-08-28, rangerhq-iy3y: set it — same philosophy as
+# the bd pin, an unreviewed upgrade must refuse to start rather than run
+# silently. Raise it only with the re-audit done.
+required_maximum_version = "1.0.5"
+
 # Deliberately NOT set: minimum_version / required_minimum_version. Those are
 # anti-downgrade floors; a floor is the wrong direction for a pin and would
 # block rolling back to a known-good build.

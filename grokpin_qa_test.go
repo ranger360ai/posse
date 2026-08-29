@@ -32,6 +32,7 @@ const gpGoodCfg = `[cli]
 installer = "internal"
 auto_update = false
 maximum_version = "1.0.5"
+required_maximum_version = "1.0.5"
 `
 
 func gpRoot(t *testing.T) string {
@@ -120,25 +121,49 @@ func gpRun(t *testing.T, root, grokHome, binDir string) (string, int) {
 	return string(out), code
 }
 
+// gpRowFailed: did THIS row fail, on its own line?
+//
+// A bare Contains(out, "FAIL") is satisfied by any other failing row, so once a
+// fixture can fail more than one check the whole-output form stops naming which.
+// Every row assertion here goes through this.
+func gpRowFailed(out, label string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, label) && strings.Contains(line, "FAIL") {
+			return true
+		}
+	}
+	return false
+}
+
 func TestQAGrokPinDeclarationAndMakefile(t *testing.T) {
 	pin, err := os.ReadFile("etc/grok/version-pin.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(pin)
+	// The soft ceiling is asserted with a leading newline ON PURPOSE.
+	// `maximum_version = "1.0.5"` is a SUFFIX of `required_maximum_version =
+	// "1.0.5"`, so a bare Contains for it is satisfied by the hard-ceiling line
+	// alone — delete the soft ceiling and the assertion stays green over its own
+	// bug. Anchoring to line start is what makes the two rows independent.
 	for _, want := range []string{
-		`posse_pinned_version = "1.0.5"`,
-		`auto_update = false`,
-		`maximum_version = "1.0.5"`,
+		"\nposse_pinned_version = \"1.0.5\"",
+		"\nauto_update = false",
+		"\nmaximum_version = \"1.0.5\"",
+		// OPERATOR RULING 2026-08-28 (rangerhq-iy3y): the hard bound is SET.
+		// grok refuses to start above it, so an unreviewed upgrade is a loud
+		// fleet-wide stop instead of a silent un-re-audited run.
+		"\nrequired_maximum_version = \"1.0.5\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("etc/grok/version-pin.toml missing %q", want)
 		}
 	}
-	// Floors and the hard ceiling are deliberately unset (rangerhq-iy3y).
-	for _, refuse := range []string{"required_maximum_version =", "minimum_version =", "required_minimum_version ="} {
+	// Floors stay unset: a floor is the wrong direction for a pin and would
+	// block rolling back to the known-good build the recovery path depends on.
+	for _, refuse := range []string{"\nminimum_version =", "\nrequired_minimum_version ="} {
 		if strings.Contains(body, refuse) {
-			t.Errorf("version-pin.toml must not set %q — floors block rollback; the hard ceiling is the operator's (rangerhq-iy3y)", refuse)
+			t.Errorf("version-pin.toml must not set %q — floors block rollback (rangerhq-iy3y)", refuse)
 		}
 	}
 
@@ -179,12 +204,12 @@ func TestQAGrokPinScriptFailsWhenAutoUpdateIsOn(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
 	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = true\nmaximum_version = \"1.0.5\"\n")
+	cfg := gpCfg(t, "[cli]\nauto_update = true\nmaximum_version = \"1.0.5\"\nrequired_maximum_version = \"1.0.5\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
 	}
-	if !strings.Contains(out, "config auto_update") || !strings.Contains(out, "FAIL") {
+	if !gpRowFailed(out, "config auto_update") {
 		t.Errorf("must FAIL the auto_update row:\n%s", out)
 	}
 }
@@ -193,12 +218,12 @@ func TestQAGrokPinScriptFailsWhenMaximumVersionDrifts(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
 	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.6\"\n")
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.6\"\nrequired_maximum_version = \"1.0.5\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
 	}
-	if !strings.Contains(out, "config maximum_version") || !strings.Contains(out, "FAIL") {
+	if !gpRowFailed(out, "config maximum_version") {
 		t.Errorf("must FAIL the maximum_version row:\n%s", out)
 	}
 }
@@ -375,6 +400,109 @@ func TestQAGrokPinUnreadableAnswerFailsInsteadOfPassing(t *testing.T) {
 			}
 			if strings.Contains(out, "offline") || strings.Contains(out, "pin intact") {
 				t.Errorf("an unreadable answer must not read as offline/intact:\n%s", out)
+			}
+		})
+	}
+}
+
+// --- the hard ceiling (rangerhq-iy3y) -------------------------------------
+//
+// OPERATOR RULING 2026-08-28: set required_maximum_version, so a grok that ends
+// up above the pin refuses to START rather than quietly running an un-re-audited
+// build. maximum_version alone only refuses to INSTALL — a gate with a hinge.
+//
+// Measured against the live 1.0.5 binary before it was applied, both arms:
+//   required_maximum_version = "1.0.4"  -> "This version of Grok (1.0.5) is
+//                                          newer than the maximum allowed by
+//                                          your organization (1.0.4)."
+//   required_maximum_version = "1.0.5"  -> starts (fails later, on auth/model)
+// and the CONFIG KEY gates, not only GROK_REQUIRED_MAXIMUM_VERSION. The same
+// probe with only the SOFT ceiling lowered started fine, which is the whole
+// distinction these two rows exist to keep apart.
+
+// The state the ruling exists to make impossible: the pin declares a hard
+// ceiling and the live config has none. That is a silent un-gate — the fleet
+// keeps starting — so it must read as FAIL, not as an absent/skipped row.
+func TestQAGrokPinFailsWhenRequiredMaximumVersionIsUnset(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.5\"\n")
+	out, code := gpRun(t, root, cfg, bin)
+	if code != 1 {
+		t.Fatalf("unset hard ceiling: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "config required_max_ver") {
+		t.Errorf("must FAIL the required_max_ver row when it is unset:\n%s", out)
+	}
+	if strings.Contains(out, "pin intact") {
+		t.Errorf("an unset hard ceiling is not an intact pin:\n%s", out)
+	}
+}
+
+func TestQAGrokPinFailsWhenRequiredMaximumVersionDrifts(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.5\"\nrequired_maximum_version = \"1.0.6\"\n")
+	out, code := gpRun(t, root, cfg, bin)
+	if code != 1 {
+		t.Fatalf("drifted hard ceiling: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "config required_max_ver") || !strings.Contains(out, "1.0.6") {
+		t.Errorf("must FAIL the required_max_ver row naming the drift:\n%s", out)
+	}
+}
+
+// The two ceilings must be read INDEPENDENTLY, and this is the pin that says so.
+//
+// `maximum_version` is a suffix of `required_maximum_version`, so the extractor
+// separates them only by its `^` anchor. Lose that anchor, or paste the wrong
+// key into either read, and one row starts answering for both: a drifted soft
+// ceiling would be reported as an ok hard one, or the hard ceiling could vanish
+// behind a soft one that happens to match. Each arm below drifts exactly ONE
+// key and requires exactly one row to fail — a shared read cannot satisfy both.
+// The second arm deliberately writes required_ FIRST, so a `head -1` over an
+// unanchored match would capture the wrong value.
+func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
+	for _, tc := range []struct {
+		name, cfg, wantFail, wantOK string
+	}{
+		{
+			name:     "soft drifts, hard holds",
+			cfg:      "[cli]\nauto_update = false\nmaximum_version = \"1.0.6\"\nrequired_maximum_version = \"1.0.5\"\n",
+			wantFail: "config maximum_version",
+			wantOK:   "config required_max_ver",
+		},
+		{
+			name:     "hard drifts, soft holds, hard listed first",
+			cfg:      "[cli]\nauto_update = false\nrequired_maximum_version = \"1.0.6\"\nmaximum_version = \"1.0.5\"\n",
+			wantFail: "config required_max_ver",
+			wantOK:   "config maximum_version",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+			out, code := gpRun(t, root, gpCfg(t, tc.cfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1\n%s", code, out)
+			}
+			var failed, ok bool
+			for _, line := range strings.Split(out, "\n") {
+				if strings.Contains(line, tc.wantFail) && strings.Contains(line, "FAIL") {
+					failed = true
+				}
+				if strings.Contains(line, tc.wantOK) && strings.HasSuffix(strings.TrimRight(line, " "), "ok") {
+					ok = true
+				}
+			}
+			if !failed {
+				t.Errorf("%q must FAIL on its own line:\n%s", tc.wantFail, out)
+			}
+			if !ok {
+				t.Errorf("%q must still read ok — the rows are not independent:\n%s", tc.wantOK, out)
 			}
 		})
 	}

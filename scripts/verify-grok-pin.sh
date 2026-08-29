@@ -8,6 +8,15 @@
 # contractual (see the re-audit list below and NOTES.md "grok substrate"), so an
 # unreviewed roll-forward silently retires those findings.
 #
+# Two ceilings, and they are not the same gate. maximum_version is soft: the
+# updater will not INSTALL above it, but a binary that got there some other way
+# still starts. required_maximum_version is hard — grok refuses to start above
+# it (measured, rangerhq-iy3y: the config key gates, not only the env var), so
+# an unreviewed upgrade is a loud fleet-wide stop rather than a silent run.
+# Both are declared in the pin file and both are checked below; an UNSET hard
+# ceiling reads empty and FAILs, because that is the state this pin exists to
+# make impossible.
+#
 # This script is also the gate: when upstream stable moves past the pinned
 # version it prints the re-audit list. Lifting the pin is an operator action and
 # is gated on the security lane re-running that list against the new build.
@@ -26,9 +35,11 @@ val() { sed -n "s/^$1 *= *\"\{0,1\}\([^\"#]*\)\"\{0,1\}.*/\1/p" "$2" | head -1 |
 
 want_ver=$(val posse_pinned_version "$pin")
 want_max=$(val maximum_version "$pin")
+want_req=$(val required_maximum_version "$pin")
 live_ver=$(grok --version 2>/dev/null | awk '{print $2}')
 cfg_auto=$(val auto_update "$cfg")
 cfg_max=$(val maximum_version "$cfg")
+cfg_req=$(val required_maximum_version "$cfg")
 
 # The authority on what the updater will actually do — grok's own answer, not
 # our reading of the config file. Network call; empty when offline.
@@ -57,6 +68,7 @@ echo "grok version pin — $pin"
 chk_row "grok --version"            "$want_ver"  "$live_ver"
 chk_row "config auto_update"        "false"      "$cfg_auto"
 chk_row "config maximum_version"    "$want_max"  "$cfg_max"
+chk_row "config required_max_ver"   "$want_req"  "$cfg_req"
 case "$live_auto" in
   true | false)
     chk_row "grok update: autoUpdate"  "false"     "$live_auto" ;;
