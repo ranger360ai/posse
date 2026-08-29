@@ -392,3 +392,80 @@ func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
 		}
 	}
 }
+
+// TestQAConstitutionWallHoldsOverHostilePathShapes is the arm's shell read as
+// shell: every place a path could stop being a path on its way from `git
+// diff` to the `case` arm — a glob character becoming a pattern, a space
+// splitting a word, git's own quoting wrapping the name, a leading dash
+// reaching an option parser.
+//
+// The CONTROL is what makes the rest mean anything: an ordinary persona
+// commit in the same repo, in the same path-limited form, must still land.
+// Without it every row above is satisfied by a wall that refuses everything,
+// which is the shape a broken `case` arm actually takes.
+//
+// WHAT THIS CORPUS MEASURES, mutation-checked rather than claimed
+// (2026-08-29, three defences broken one at a time):
+//
+//	`-z` and the `tr`      LOAD-BEARING. Drop them and git's own path
+//	                       quoting wraps the name — the quote, backslash,
+//	                       UTF-8 and newline rows go red, and each of those
+//	                       is a constitution commit landing.
+//	`set -f`               not measured here. Dropping it keeps every row
+//	                       green: a staged path that globs expands to files
+//	                       under the same class member, so the failure is
+//	                       over-matching, which this class cannot turn into
+//	                       a hole.
+//	IFS narrowed to \n     not measured here either, and for the same
+//	                       reason: `rhq/agents/a b.md` split on the space
+//	                       leaves `rhq/agents/a`, which the prefix arm still
+//	                       catches.
+//
+// Both unmeasured defences stay. They are correct and they cost nothing, and
+// "fail-closed for THIS class" is a property of today's class rather than of
+// the code — but nothing here proves them, and a later reader must not take
+// a green run as if it did.
+func TestQAConstitutionWallHoldsOverHostilePathShapes(t *testing.T) {
+	repo, git, persona := constitutionWallRepo(t, true)
+	for _, name := range []string{
+		"rhq/agents/a b.md",
+		"rhq/agents/a*c.md",
+		"rhq/agents/a[b].md",
+		"rhq/agents/a?b.md",
+		"rhq/agents/a\"b.md",
+		"rhq/agents/a\\b.md",
+		"rhq/agents/é—ü.md",
+		"rhq/agents/a$b.md",
+		"rhq/agents/-x.md",
+		"rhq/agents/a\nb.md",
+		"rhq/agents/nested/deep/x.md",
+	} {
+		t.Run(strings.ReplaceAll(name, "/", "_"), func(t *testing.T) {
+			full := filepath.Join(repo, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Skipf("this filesystem will not hold %q: %v", name, err)
+			}
+			if err := os.WriteFile(full, []byte("drafted\n"), 0o644); err != nil {
+				t.Skipf("this filesystem will not hold %q: %v", name, err)
+			}
+			defer os.Remove(full)
+			if out, err := git(persona, "add", "--", name); err != nil {
+				t.Skipf("git will not stage %q: %v %s", name, err, out)
+			}
+			defer git(persona, "restore", "--staged", "--", name)
+			out, err := git(persona, "commit", "-m", "edit the law", "--", name)
+			if err == nil {
+				t.Fatalf("a persona commit touching %q landed — the path stopped being a path somewhere in the arm's shell:\n%s", name, out)
+			}
+			if !strings.Contains(out, "a persona commit touching the constitution") {
+				t.Errorf("refused, but not by this arm — %q:\n%s", name, out)
+			}
+		})
+	}
+	t.Run("CONTROL ordinary work still lands", func(t *testing.T) {
+		stageAt(t, repo, git, persona, "docs/note.md", "ordinary\n")
+		if out, err := git(persona, "commit", "-m", "draft", "--", "docs/note.md"); err != nil {
+			t.Fatalf("the wall refuses everything, which makes every row above meaningless: %v\n%s", err, out)
+		}
+	})
+}
