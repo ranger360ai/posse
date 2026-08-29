@@ -10,8 +10,10 @@ live, marker dropped, cwd-elsewhere boundary clause added
 the commit read, not the clean gate, keeps bytes == SHA
 (ranger-base-znma via ranger-base-70ci; the set half is open in
 ranger-base-70ry) · execution rides with the rhq
-retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · informs 0002
-§3, 0012 D3-C, 0014 §3*
+retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · amended
+2026-08-29: §3's fence widens to bd's destructive/egress verbs
+(ranger-base-u9ud, from ranger-base-3bqn) · informs 0002
+§3, 0012 D3-C, 0014 §3, 0025*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -172,6 +174,76 @@ the same way twice:
   runtimes — and `promote` itself refuses to run when the persona env
   marker is set. Both are politeness against a determined session;
   the manifest check is what notices.
+- **The fence widens to bd's destructive and egress verbs** *(amended
+  2026-08-29, ranger-base-u9ud, from ranger-base-3bqn/az93)*. This
+  bullet is the precedent being reused, not the subject: a shipped PID
+  `deny:` set is an ADR-level decision, not a devops close's to edit,
+  and the question this amendment answers is the bd analogue of the
+  one above — **yes**, the verbs join it.
+
+  Reason it needed an ADR line at all: `Bash(bd <verb>:*)` was
+  measured unfaithful before this (ranger-base-az93). A Bash
+  permission rule matches a **token prefix** of the typed line, and
+  any of bd's four value-taking global options — `--actor --db
+  --dolt-auto-commit --lock-timeout`, **MEASURED**: bd 0.49.1 has
+  eighteen global options, not the seven first counted — placed before
+  the verb moves it out of the prefix: `bd --no-daemon daemon --help`
+  ran straight past `Bash(bd daemon:*)`. An allow-list posture
+  (`deny: Bash(bd:*)` plus allow the safe verbs) does not fix it
+  either — deny beats allow (ADR 0001), so the catch-all swallows every
+  allow and kills `bd show`/`bd ready`/`bd close` fleet-wide. What
+  fixes it is the mechanism this section already leans on: the L1
+  PATH shim (`internal/rhq/gates.go`, the same `posse_verb_match`
+  machinery the `promote` rule above renders through) skips leading
+  global options before matching the verb, and it already carried
+  entries for `git` and `posse`. It now carries one for `bd`
+  (`globalValueOpts["bd"]`, the four options above), so every
+  `Bash(bd <verb>:*)` rule in a PID renders **option-aware** instead of
+  best-effort — a reordered spelling resolves the same as the plain
+  one, on every runtime the shim reaches (claude, grok, codex — not
+  claude alone, unlike a Claude-only hook).
+
+  The rule list (from `bd --help` on 0.49.1; staged and measured
+  ranger-base-az93/3bqn):
+
+  `Bash(bd daemon:*)` · `Bash(bd daemons:*)` · `Bash(bd admin:*)` ·
+  `Bash(bd delete:*)` · `Bash(bd doctor:*)` · `Bash(bd hook:*)` ·
+  `Bash(bd hooks:*)` · `Bash(bd import:*)` · `Bash(bd init:*)` ·
+  `Bash(bd migrate:*)` · `Bash(bd rename:*)` ·
+  `Bash(bd rename-prefix:*)` · `Bash(bd repair:*)` ·
+  `Bash(bd repo:*)` · `Bash(bd federation:*)` ·
+  `Bash(bd config set:*)` · `Bash(bd config unset:*)` ·
+  `Bash(bd dep relate:*)` · `Bash(bd relate:*)` ·
+  `Bash(bd sync --full:*)` · `Bash(bd jira:*)` · `Bash(bd linear:*)` ·
+  `Bash(bd setup:*)`
+
+  Shape: daemon lifecycle, delete, doctor, hook(s), import, init,
+  migrate, rename(-prefix), repair, repo, federation, config
+  set/unset, and relate rewrite or remove store state; `sync --full`
+  is the one `sync` spelling that commits and pushes rather than
+  reading; `setup` writes agent instruction files, a second promotion
+  surface this ADR did not create; `jira`/`linear` are egress, kept
+  denied on their own terms — hard risk line 4 (visibility), per
+  hoover on ranger-base-3bqn: `--push` moves the whole private store,
+  closed RCAs and credential-location names included, to an external
+  tracker, and they stay off any future allow-list even though no
+  credential exists to egress with today (`bd config set` is itself
+  denied, and the `JIRA_`/`LINEAR_` env vars are absent). This list is
+  additive to each PID's existing `Bash(bd:*)` allow — deny wins (ADR
+  0001) — not a replacement for it.
+
+  **Known residual, stated rather than assumed away.** The L1 shim
+  renders on `PATH`; it never sees `bd` reached by an absolute path
+  (`/Users/.../bd daemon stop`). That half is not this ADR's to close.
+  `scripts/bd-argv-gate.{sh,py}` — a PreToolUse hook the operator may
+  install, not one posse renders (ADR 0014 §5 unamended) — is the
+  answer for that spelling on claude, and its allow-list posture also
+  closes a class the PID deny-list structurally cannot: a hidden verb
+  (`bd daemons`) no one has enumerated yet. Both layers are
+  **cooperative**, never `enforced`, in ADR 0025's vocabulary — held
+  in-process, defeated by an emptied environment, an alias, or a
+  script that calls bd — never a cage. The wall against a session that
+  means it is the L2/L4 boundary, unchanged by this amendment.
 
 **4. The queue gets its own tree.** A new repo (proposed
 `~/src/ranger-queue`; name is the operator's to veto at ratification)
@@ -362,6 +434,13 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
   operating model; macOS ACL maintenance would be a fourth policy
   regime; and detection (manifest) plus a promotion step buys the
   same assurance without fighting the platform.
+- **Leave the bd verbs as a hand-maintained `.claude/settings.json`
+  deny list** (the status quo this amendment replaces, az93's
+  rai0/3bqn work). Claude-only, per-repo rather than per-PID, and
+  proven evadable by the same token-prefix gap the shim fix closes —
+  keeping the rule there and not in the PID leaves grok and codex
+  fenceless and reopens the reordering hole every time the file is
+  hand-edited instead of rendered.
 
 ## Verification (QA's checklist)
 
@@ -411,6 +490,15 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    env file does *not* trip the launch verify (it is out of scope by
    design); with `default_env:` naming a missing set, promote prints
    the warning. *(Unverified until o943 is built and the window runs.)*
+8. Every example PID in `examples/agents/` carries the full bd rule
+   list from the amendment above, in addition to its existing
+   `Bash(bd:*)` allow. `posse gates <p>` for one of them: each
+   `Bash(bd <verb>:*)` rule renders `option-aware` (not
+   `best-effort`), and `bd --db /tmp/x daemon stop` is refused the
+   same as `bd daemon stop` — the reordered spelling and the plain one
+   resolve to the same verb. Pinned in `internal/rhq/bdshim_test.go`
+   (ranger-base-3bqn: emptying `globalValueOpts["bd"]` fails both the
+   refuse arm and, separately, the `--actor daemon show x` pass arm).
 
 ## Measured versus assumed
 

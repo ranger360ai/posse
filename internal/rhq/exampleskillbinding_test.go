@@ -64,10 +64,12 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		// sits between two block lists in the frontmatter, and the flat-YAML
 		// reader takes them one key at a time. The counts move whenever the
 		// shelf PIDs do — deny went 3 → 4 when ADR 0019 D4's
-		// `Bash(posse refresh:*)` joined the promote line (ranger-base-kryn);
-		// what is pinned is that every list survives the key beside it, not
-		// the numbers themselves.
-		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 4 {
+		// `Bash(posse refresh:*)` joined the promote line (ranger-base-kryn),
+		// then 4 → 27 when ADR 0015 §3's amendment added bd's 23
+		// destructive/egress verbs (ranger-base-u9ud); what is pinned is
+		// that every list survives the key beside it, not the numbers
+		// themselves.
+		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 27 {
 			t.Errorf("%s frontmatter around skills:: intents %v metrics %v deny %v", name, ag.Intents, ag.Metrics, ag.Deny)
 		}
 	}
