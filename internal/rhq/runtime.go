@@ -180,14 +180,20 @@ type Runtime struct {
 	// permitted — verified 2026-08-17), so our seatbelt tier cannot wrap it;
 	// its own sandbox is what enforces Edit/Write there.
 	SelfSandbox bool
-	// ProjectConfig names a file *in the session directory* that this
+	// ProjectConfig names the files *in the session directory* that this
 	// runtime reads as configuration at launch because posse made the session
 	// directory trusted. That is a channel from the repo to the box which no
-	// model and no PID sits in front of, so the launch checks it and refuses
+	// model and no PID sits in front of, so the launch checks them and refuses
 	// unless the PID opts in — see ProjectConfigTrust in parity.go. Empty =
 	// this runtime takes no project-config surface from the session dir, which
 	// is the safe default for every template-only runtime.
-	ProjectConfig string
+	//
+	// A list because one runtime's project scope can be more than one file:
+	// claude reads `.claude/settings.json` and `.claude/settings.local.json`
+	// as the same scope, from the same directory, under the same keys
+	// (measured, rangerhq-9u8). `project_config:` in a runtime yaml still
+	// declares exactly one path.
+	ProjectConfig []string
 	// ProjectConfigKeys narrows the check to the top-level JSON keys that
 	// declare a repo-to-box executable channel. Empty preserves the
 	// whole-file presence predicate (codex). A keyed file that cannot be
@@ -791,6 +797,26 @@ const CodexProjectConfig = ".codex/config.toml"
 // the header of trust.go).
 const ClaudeProjectConfig = ".claude/settings.json"
 
+// ClaudeProjectConfigLocal is the second half of that same project scope:
+// claude's local settings file, gitignored by convention and read out of the
+// session dir exactly like its shared sibling.
+//
+// MEASURED on claude 2.1.251 (rangerhq-9u8), scratch dirs, no API turn, each
+// arm with a fresh CLAUDE_CONFIG_DIR and ANTHROPIC_BASE_URL pointed at a dead
+// port so nothing could reach the API: a `SessionStart` hook declared in
+// .claude/settings.local.json ran — before the first turn, and before the CLI
+// even resolved credentials (the run ended on "Not logged in · Please run
+// /login" with the hook's witness file already written). It ran identically
+// whether the fleet's own `--settings` JSON was passed or not: `--settings`
+// adds a source, it does not replace the project's, so ClaudeFleetSettings
+// suppresses nothing. The negative arm — the same dirs with no settings file
+// — wrote no witness, so the rig discriminates.
+//
+// Gitignored is not a security property: an attacker who can write the repo
+// can write this path too, and there it is invisible to `git status`. Same
+// class, same check.
+const ClaudeProjectConfigLocal = ".claude/settings.local.json"
+
 // GrokFleetFlags is what a grok persona session needs to run unattended —
 // verified in rangerhq-vjl on grok 1.0.x (the headless mode matrix on
 // 1.0.0, the live fleet sessions on 1.0.5 after the CLI self-updated
@@ -893,7 +919,7 @@ var (
 // an allowed later unify"). ranger-base-dg5 is the dispatch half that reads
 // this column.
 var builtinRuntimes = []Runtime{
-	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: ClaudeProjectConfig, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
+	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: []string{ClaudeProjectConfig, ClaudeProjectConfigLocal}, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
 		// state_dir, declared rather than listed in the seatbelt builder:
 		// ~/.claude is the CLI's own tree and ~/.claude.json is a FILE, not a
@@ -912,7 +938,7 @@ var builtinRuntimes = []Runtime{
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
 		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
-	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: CodexProjectConfig, Unattended: "-a never",
+	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no
@@ -1040,7 +1066,7 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		if err != nil {
 			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
 		}
-		rt.ProjectConfig = rel
+		rt.ProjectConfig = []string{rel}
 	}
 	// cage_cred: the env var this runtime authenticates with inside a
 	// container (cage.go). Absent = undecided, and `cage: container`

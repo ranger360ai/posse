@@ -297,13 +297,26 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 // Degraded entry and never an Unrealized one — like the cage shortfall, it
 // says what this launch gives away, not which gate went unenforced.
 func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
-	if rt == nil || rt.ProjectConfig == "" || dir == "" {
+	if rt == nil || len(rt.ProjectConfig) == 0 || dir == "" {
 		return ""
 	}
 	if ag != nil && ag.TrustProjectConfig {
 		return ""
 	}
-	p := filepath.Join(dir, rt.ProjectConfig)
+	// Every file in the runtime's project scope, in declared order; the first
+	// one with something to say is the message. One line names one file
+	// because one file is enough to refuse the launch, and the operator's next
+	// move (remove it, or opt the PID in) is the same either way.
+	for _, rel := range rt.ProjectConfig {
+		if why := projectConfigTrustFile(rt, filepath.Join(dir, rel)); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
+// projectConfigTrustFile classifies one file of the runtime's project scope.
+func projectConfigTrustFile(rt *Runtime, p string) string {
 	if len(rt.ProjectConfigKeys) == 0 {
 		if _, err := os.Stat(p); err != nil {
 			return ""

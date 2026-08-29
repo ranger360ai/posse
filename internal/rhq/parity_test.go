@@ -463,7 +463,8 @@ func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
 	settingsDir := filepath.Join(repo, ".claude")
 	settings := filepath.Join(settingsDir, "settings.json")
 
-	if claude.ProjectConfig != ClaudeProjectConfig || len(claude.ProjectConfigKeys) != 2 ||
+	if len(claude.ProjectConfig) != 2 || claude.ProjectConfig[0] != ClaudeProjectConfig ||
+		claude.ProjectConfig[1] != ClaudeProjectConfigLocal || len(claude.ProjectConfigKeys) != 2 ||
 		claude.ProjectConfigKeys[0] != "hooks" || claude.ProjectConfigKeys[1] != "mcpServers" {
 		t.Fatalf("claude project-config declaration: %+v", claude)
 	}
@@ -560,6 +561,74 @@ func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
 	}
 	if log := calls(t, fake); !strings.Contains(log, "claude") {
 		t.Errorf("no claude line typed:\n%s", log)
+	}
+}
+
+// rangerhq-9u8: `.claude/settings.local.json` is the same project scope as
+// its shared sibling, and the check has to cover it. MEASURED on claude
+// 2.1.251 with a fresh CLAUDE_CONFIG_DIR per arm and the API pointed at a
+// dead port: a SessionStart hook declared in the local file ran before the
+// first turn (before the CLI even resolved credentials), with or without the
+// fleet's own `--settings` JSON on the line, while the same dirs with no
+// settings file ran no hook. Gitignored is not a security property: whoever
+// can write the repo can write that path, where `git status` will not show
+// it.
+func TestClaudeLocalProjectSettingsAreTheSameSurface(t *testing.T) {
+	b, _ := newTestBackend(t)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "trusting.md"),
+		[]byte("---\nname: trusting\ntrust_project_config: true\ndeny: [Bash(git push:*)]\n---\nYou are trusting.\n"), 0o644)
+	dev, _ := b.App.LoadAgent("dev")
+	trusting, _ := b.App.LoadAgent("trusting")
+	claude, _ := b.App.LoadRuntime("claude")
+	codex, _ := b.App.LoadRuntime("codex")
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".claude"), 0o755)
+	local := filepath.Join(repo, ClaudeProjectConfigLocal)
+
+	// The shared file is what this fleet's own repos carry: permissions only,
+	// clean. The local file is the arm nothing pinned before this bead.
+	os.WriteFile(filepath.Join(repo, ClaudeProjectConfig), []byte(`{"permissions":{"allow":["Read"]}}`), 0o644)
+	os.WriteFile(local, []byte(`{"permissions":{"allow":["Bash(ls:*)"]}}`), 0o644)
+	if p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
+		t.Fatalf("permission-only local settings are clean: %+v", p)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "loc-permissions", Agent: "dev", Runtime: "claude", Dir: repo})
+
+	os.WriteFile(local, []byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"id"}]}]}}`), 0o644)
+	p := b.App.CheckParityIn(dev, claude, CageShims, TierStrong, repo)
+	if len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], ClaudeProjectConfigLocal) ||
+		!strings.Contains(p.Degraded[0], "matched top-level project config keys: hooks") {
+		t.Fatalf("a hooks-declaring local settings file must degrade: %+v", p)
+	}
+	if len(p.Unrealized) != 0 {
+		t.Errorf("project config is degradation, not an unrealized gate: %+v", p.Unrealized)
+	}
+	if err := b.CreateSession(NewSessionOpts{Name: "loc-refuse", Agent: "dev", Runtime: "claude", Dir: repo}); err == nil ||
+		!strings.Contains(err.Error(), ClaudeProjectConfigLocal) || !strings.Contains(err.Error(), "--allow-degraded") {
+		t.Fatalf("launch must refuse and name the local file: %v", err)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "loc-waived", Agent: "dev", Runtime: "claude", Dir: repo, AllowDegraded: true})
+	if m, _ := b.readMeta("loc-waived"); m == nil || !strings.Contains(m.Degraded, ClaudeProjectConfigLocal) {
+		t.Errorf("a waived launch must stay marked: %+v", m)
+	}
+	if err := b.CreateSession(NewSessionOpts{Name: "loc-fast", Agent: "dev", Runtime: "claude", Dir: repo, Tier: TierFast, AllowDegraded: true}); err == nil ||
+		!strings.Contains(err.Error(), "never accepted") {
+		t.Errorf("fast + local hooks must refuse despite the waiver: %v", err)
+	}
+	if p := b.App.CheckParityIn(trusting, claude, CageShims, TierStrong, repo); len(p.Degraded) != 0 {
+		t.Errorf("PID opt-in clears the whole scope, local file included: %+v", p)
+	}
+	// Failing closed applies to the local file too, and only claude reads it.
+	os.WriteFile(local, []byte(`[]`), 0o644)
+	if why := ProjectConfigTrust(claude, dev, repo); !strings.Contains(why, ClaudeProjectConfigLocal) ||
+		!strings.Contains(why, "classification failed: not a top-level JSON object") {
+		t.Errorf("an unclassifiable local file must fail closed: %q", why)
+	}
+	if why := ProjectConfigTrust(codex, dev, repo); why != "" {
+		t.Errorf("codex takes no claude surface: %q", why)
 	}
 }
 

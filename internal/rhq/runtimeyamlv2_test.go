@@ -161,7 +161,7 @@ func TestSelfSandboxIsDeclarable(t *testing.T) {
 func TestProjectConfigIsDeclarable(t *testing.T) {
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "trustcli", "command: trustcli --sys {file}\nproject_config: .trustcli/config.toml\n")
-	if rt.ProjectConfig != filepath.FromSlash(".trustcli/config.toml") {
+	if len(rt.ProjectConfig) != 1 || rt.ProjectConfig[0] != filepath.FromSlash(".trustcli/config.toml") {
 		t.Fatalf("project_config: %q", rt.ProjectConfig)
 	}
 	dir := t.TempDir()
@@ -285,7 +285,7 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 	}, "\n"))
 
 	if rt.ModelFlag != "-c model=%s" || !rt.SkillsCwd || !rt.SelfSandbox ||
-		rt.ProjectConfig != filepath.FromSlash(".testcli/config.toml") {
+		len(rt.ProjectConfig) != 1 || rt.ProjectConfig[0] != filepath.FromSlash(".testcli/config.toml") {
 		t.Fatalf("scratch profile did not load all five: %+v", rt)
 	}
 

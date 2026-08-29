@@ -63,10 +63,12 @@ package rhq
 //
 // The launch check is unchanged by all of this, and is MORE load-bearing
 // for it: it fires on settings content, so it does not depend on which of
-// claude's gates is holding. Claude's built-in runtime names this file plus
-// the top-level keys above; permission-only settings stay clean, while a
-// match or an unclassifiable file degrades the launch before this trust
-// seed is written. Naming `mcpServers` there is deliberately conservative
+// claude's gates is holding. Claude's built-in runtime names this file, its
+// local sibling `.claude/settings.local.json` (the same scope and the same
+// pre-turn exec channel — measured, rangerhq-9u8, ADR 0002 amendment
+// 2026-08-28), and the top-level keys above; permission-only settings stay
+// clean, while a match or an unclassifiable file degrades the launch before
+// this trust seed is written. Naming `mcpServers` there is deliberately conservative
 // — a key claude ignores today is a key it may honor tomorrow.
 
 import (

@@ -687,3 +687,97 @@ into. Parity prints this as the class line's note, never as a computed claim
   L3 exists" that no longer finds the backstop reading is the cheap pin.
 
 No decision here reopens ADR 0025 — it confirms it.
+
+## Amendment 2026-08-28 — `.claude/settings.local.json` is the same scope (measured, rangerhq-9u8)
+
+### Context
+
+The 2026-08-26 amendment closed with "This amendment does not scan
+`.claude/settings.local.json`, which is the operator's gitignored local
+scope … If measurement shows the directory seed bypasses either boundary,
+that is a new security finding." That deferral was the follow-on this
+bead was filed to settle. It is now measured, on claude **2.1.251**, in
+scratch directories, **no API turn**: each arm ran with its own fresh
+`CLAUDE_CONFIG_DIR` and `ANTHROPIC_BASE_URL` pointed at a dead port, so
+nothing could reach the API and nothing touched the operator's config.
+
+1. **The local file is a live pre-turn exec channel.** A `SessionStart`
+   hook declared *only* in `.claude/settings.local.json` ran — before the
+   first turn, and before the CLI resolved credentials at all: the run
+   ended on `Not logged in · Please run /login` with the hook's witness
+   file already written. `.claude/settings.json` with the same hook
+   behaved identically. The negative arm — the same directories with no
+   settings file — wrote no witness, so the rig discriminates.
+2. **The fleet's own `--settings` does not suppress it.** Passing
+   `ClaudeFleetSettings` on the line changed nothing in either arm:
+   `--settings` adds a settings source, it does not replace the
+   project's, and hooks from the sources merge. There is no flag posse
+   types that closes this channel.
+3. **The trust check is per event, not per source.** The binary's
+   `Skipping <event> hook execution - workspace trust not accepted` guard
+   is one early return over the whole hook event, taken before any
+   source's hooks are consulted. So the 2026-08-27 amendment's finding
+   (interactive+untrusted skips, interactive+trusted runs, headless runs
+   either way) applies to the local file verbatim — including the part
+   `SeedClaudeTrust` is the enabling act for.
+
+The stated reason for the carve-out — that this is "the operator's
+gitignored local scope" — is not a security property. Gitignored means
+whoever can write the repo can write that path, and `git status` will not
+show it afterwards. That makes it the *less* visible half of one scope,
+not a safer one.
+
+### Decision
+
+Claude's project-config surface is **both files**, under the same keys.
+
+1. `Runtime.ProjectConfig` becomes a **list** of paths relative to the
+   session dir: the project scope can be more than one file. Codex is
+   `[.codex/config.toml]`, unchanged in behavior; claude is
+   `[.claude/settings.json, .claude/settings.local.json]` with
+   `ProjectConfigKeys: [hooks, mcpServers]` applied to each.
+2. `ProjectConfigTrust` classifies each file in declared order and
+   returns the first verdict there is something to say about. One line
+   names one file: one file is enough to refuse, and the way out (remove
+   it, or `trust_project_config: true` on the PID) is the same either way.
+3. `project_config:` in a runtime yaml still declares exactly one path,
+   loaded as a one-element list. Nothing about the yaml surface changes.
+4. Everything else is §4's existing machine, inherited: `Degraded` never
+   `Unrealized`, refusal by default, `--allow-degraded` marks the session,
+   no waiver at tier `fast`, re-checked on relaunch.
+
+`.mcp.json` stays out, for the reason the 2026-08-27 amendment measured:
+its own approval gate reads identically trusted and untrusted, so the
+directory seed unlocks nothing there.
+
+### Consequences
+
+- Cost of switching it on, which the bead required be priced first: the
+  keyed predicate is what makes it free. The fleet's own checkouts carry
+  permission-only settings in both files, so they classify clean and no
+  Claude PID has to opt in. A repo that grows `hooks` or `mcpServers` in
+  *either* file refuses its next launch and names which file.
+- `internal/rhq/parity.go` (the loop plus `projectConfigTrustFile`),
+  `internal/rhq/runtime.go` (the field, the `ClaudeProjectConfigLocal`
+  const carrying the measurement, both table rows),
+  `internal/rhq/runtimeyaml.go` (one-element list). `NOTES.md` carries the
+  same correction.
+- Pins: `TestClaudeLocalProjectSettingsAreTheSameSurface` (permission-only
+  local clean; hooks-declaring local degrades, refuses naming the file,
+  waives, marks, refuses at `fast`, clears on PID opt-in; unclassifiable
+  local fails closed; codex takes no claude surface) plus the declaration
+  arm in `TestClaudeProjectConfigTrustIsKeyedAndFailsClosed`. Both die
+  when the local path is dropped from the table; the behavioral one also
+  dies when the check stops iterating past the first file.
+
+### Alternatives rejected
+
+- **Leave the local file out and file a finding instead.** The finding is
+  this amendment; the fix is one path in a list. Filing without fixing
+  would leave the detector claiming a scope it does not cover.
+- **Detect any `.claude/*.json`.** The scope claude reads is two named
+  files; globbing a directory invents a predicate the runtime does not
+  have and would flag files nothing loads.
+- **Suppress project settings from the launch line instead.** Measured
+  above: `--settings` adds a source, it does not replace one. There is
+  nothing to type.

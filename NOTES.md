@@ -1756,9 +1756,10 @@ Everything in codex's template above is a fix, not decoration:
   `Runtime.ProjectConfig` names the file and `ProjectConfigKeys` optionally
   narrows it to top-level JSON keys (`parity.go`). Codex keeps the original
   whole-file predicate: any `.codex/config.toml` is a hit. Claude names
-  `.claude/settings.json` with `hooks` and `mcpServers`: either top-level key
-  is a hit regardless of value, while a readable object carrying only
-  `permissions` is clean. An existing keyed file that is unreadable,
+  **both** `.claude/settings.json` and `.claude/settings.local.json` — one
+  scope, two files, checked in that order (rangerhq-9u8) — with `hooks` and
+  `mcpServers`: either top-level key in either file is a hit regardless of
+  value, while a readable object carrying only `permissions` is clean. An existing keyed file that is unreadable,
   malformed, or not an object fails closed because the launch cannot prove
   the channel absent. A hit is a `Degraded` entry, so `posse new`/`posse
   dispatch`/the cockpit **refuse** and name the file plus the matched keys or
@@ -3991,11 +3992,25 @@ opposite shape. What the shipped binary does:
   debug log, never spawned. The live project-MCP channel is `.mcp.json`,
   and it sits behind its own "⏸ Pending approval" gate that reads
   identically trusted and untrusted.
+- **`.claude/settings.local.json` is the same channel, not a safer one**
+  (measured 2026-08-28 on 2.1.251, a fresh `CLAUDE_CONFIG_DIR` per arm and
+  `ANTHROPIC_BASE_URL` on a dead port, no API turn — rangerhq-9u8). A
+  `SessionStart` hook declared only there ran before the first turn and
+  before the CLI resolved credentials at all: the run ended on "Not logged
+  in - Please run /login" with the hook's witness file already written,
+  while the same dirs with no settings file ran nothing. The fleet's own
+  `--settings` JSON suppresses none of it — `--settings` adds a source,
+  hooks merge across sources, and there is no flag posse can type that
+  closes this channel. The trust gate above is one early return per hook
+  *event*, taken before any source is consulted, so it covers this file
+  identically. Gitignored is not a security property: whoever can write the
+  repo can write that path, and `git status` will not show it afterwards.
+  Hence both files are in the check (ADR 0002 amendment 2026-08-28).
 
 None of that moves the launch check, and it makes it *more* load-bearing:
 the check fires on settings content, so it does not depend on which of
 claude's gates is holding, or on the docs and the binary agreeing next
-release. Claude declares that settings path with
+release. Claude declares those settings paths with
 `ProjectConfigKeys: [hooks, mcpServers]`: presence of either key degrades
 before trust is seeded, while this repo's permission-only file stays clean.
 Naming `mcpServers` is deliberately conservative — a key claude ignores
