@@ -37,9 +37,16 @@ import (
 	"time"
 )
 
-// DefaultPulsePersona is who the pulse watches for absence (condition c)
-// when config pulse_persona: is unset.
-const DefaultPulsePersona = "monica"
+// pulsePersona is who the pulse watches for absence (condition c) and
+// delivers to. Config `pulse_persona:` when set; otherwise the instance's
+// `coordinator:` (ADR 0018 §1) — the same persona ADR 0027 §3 named, spelled
+// as the config key that already holds it rather than as a name compiled in.
+// The engine ships carrying no crew name (App.Coordinator's rangerhq-gk4k
+// rule, ranger-base-q3gp): a fresh deployer whose config names neither gets
+// "", which is a pulse with no target at all — sensed, drawn by `posse
+// status`, delivered to nobody — and not a permanent no-live: condition for
+// a persona that never existed here.
+func pulsePersona(a *App) string { return a.CfgGet("pulse_persona", a.Coordinator()) }
 
 // DefaultPulseRenag and DefaultPulseRenagMax are the renag backoff bounds
 // (ADR 0027 §3) when pulse_renag:/pulse_renag_max: are unset: re-prompt an
@@ -74,7 +81,7 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 	cfg := PulseConfig{
 		Armed:    true,
 		Interval: interval,
-		Persona:  a.CfgGet("pulse_persona", DefaultPulsePersona),
+		Persona:  pulsePersona(a),
 		Renag:    DefaultPulseRenag,
 		RenagMax: DefaultPulseRenagMax,
 	}
@@ -266,6 +273,17 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		return
 	}
 
+	if cfg.Persona == "" {
+		// Neither pulse_persona: nor coordinator: is set, so there is no
+		// target to deliver to — a different thing from a target that is
+		// asleep, which is condition (c) and is sensed. Say so on the same
+		// line the no-live case uses: an armed pulse that reaches nobody
+		// must be visible in the watch log, not silent.
+		fmt.Fprintf(d.Out, "pulse: %s → undeliverable (no pulse_persona: and no coordinator:)\n",
+			strings.Join(state.Conditions, "; "))
+		return
+	}
+
 	sessions, err := d.HB.Sessions()
 	if err != nil {
 		fmt.Fprintf(d.errw(), "pulse: cannot read sessions: %v\n", err)
@@ -317,6 +335,12 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 // Crew: the whole point of the ADR 0008 §2 carve-out is that this prompt may
 // reach the operator's own conversation.
 func pulseTarget(sessions []HerdrSession, persona string) (name, status string, found bool) {
+	if persona == "" {
+		// A session herdr reports with no agent would otherwise match, and
+		// delivering a shop check into an arbitrary session is worse than
+		// not delivering one.
+		return "", "", false
+	}
 	for _, s := range sessions {
 		if s.Agent == persona {
 			return s.Name, s.Status, true

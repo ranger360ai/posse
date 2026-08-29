@@ -272,3 +272,58 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 		t.Errorf("a fresh episode after a clear must prompt again immediately, got %d prompts", n)
 	}
 }
+
+// An armed pulse whose target is "" — no pulse_persona:, no coordinator:
+// (ranger-base-q3gp) — delivers to nobody and says so. The fixture is the
+// arm that makes it a pin rather than a tautology: a live IDLE session with
+// no agent at all, which `s.Agent == persona` would have matched on the
+// empty string, delivering a shop check into whatever session happened to
+// be agentless.
+func TestPulseWithNoPersonaDeliversToNobody(t *testing.T) {
+	b, fake := newTestBackend(t)
+	mustCreate(t, b, NewSessionOpts{Name: "agentless"})
+	ws := fakeLoadWSFrom(t, fake)
+	for _, w := range ws {
+		if w.Label == "agentless" {
+			setAgentStatus(t, fake, w.WorkspaceID, "idle")
+		}
+	}
+	unpushedRepo(t, b)
+
+	clock := time.Now()
+	d := deliveryDispatcher(t, b, &clock)
+	cfg := PulseConfig{Armed: true, Persona: "", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+
+	d.pulseOnce(cfg)
+
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "undeliverable (no pulse_persona: and no coordinator:)") {
+		t.Errorf("want the no-target line, got:\n%s", out)
+	}
+	if strings.Contains(calls(t, fake), "agent prompt") {
+		t.Errorf("a pulse with no target must prompt nobody:\n%s", calls(t, fake))
+	}
+	// The conditions were still sensed and logged — a pulse with no target
+	// is blind delivery, not blind sensing.
+	if !strings.Contains(out, "unpushed") {
+		t.Errorf("the tick must still sense and log its conditions:\n%s", out)
+	}
+}
+
+// The same rule one level down, pinned where it lives: deliverPulse's guard
+// is the one a caller trips, and this is the belt behind it — an empty
+// persona matches no session, including the agentless one whose Agent field
+// is also "" (mutate either guard away on its own and one of the two tests
+// goes red).
+func TestPulseTargetEmptyPersonaMatchesNothing(t *testing.T) {
+	sessions := []HerdrSession{
+		{Name: "agentless", Agent: "", Status: "idle"},
+		{Name: "qa-work", Agent: "qa", Status: "idle"},
+	}
+	if name, _, found := pulseTarget(sessions, ""); found {
+		t.Errorf("empty persona matched %q; it must match nothing", name)
+	}
+	if name, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" {
+		t.Errorf("named persona must still match: %q %v", name, found)
+	}
+}

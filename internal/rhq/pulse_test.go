@@ -40,15 +40,48 @@ func TestLoadPulseConfigArmed(t *testing.T) {
 	}
 }
 
-func TestLoadPulseConfigDefaultPersona(t *testing.T) {
+// An unset pulse_persona: falls back to the instance's coordinator: and to
+// nothing else — the engine ships no persona name of its own (ranger-base-q3gp,
+// App.Coordinator's rangerhq-gk4k rule). Both arms matter: the fallback that
+// fires, and the one that has nowhere to fall.
+func TestLoadPulseConfigDefaultPersonaIsTheCoordinator(t *testing.T) {
+	a := wtApp(t)
+	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\n"), 0o644)
+	cfg, err := LoadPulseConfig(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Persona != "product" {
+		t.Errorf("persona = %q, want the configured coordinator %q", cfg.Persona, "product")
+	}
+}
+
+func TestLoadPulseConfigDefaultPersonaEmptyWithoutCoordinator(t *testing.T) {
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Persona != DefaultPulsePersona {
-		t.Errorf("persona = %q, want default %q", cfg.Persona, DefaultPulsePersona)
+	if cfg.Persona != "" {
+		t.Errorf("persona = %q, want \"\" — no coordinator: means no compiled-in target", cfg.Persona)
+	}
+	if !cfg.Armed {
+		t.Error("an armed pulse with no target is still armed; it senses and delivers to nobody")
+	}
+}
+
+// pulse_persona: still wins over coordinator: — the fallback is a default,
+// not an override.
+func TestLoadPulseConfigPersonaBeatsCoordinator(t *testing.T) {
+	a := wtApp(t)
+	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\npulse_persona: qa\n"), 0o644)
+	cfg, err := LoadPulseConfig(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Persona != "qa" {
+		t.Errorf("persona = %q, want the explicit pulse_persona: %q", cfg.Persona, "qa")
 	}
 }
 

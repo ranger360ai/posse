@@ -2,7 +2,20 @@
 
 *Status: accepted 2026-08-21 (design on rangerhq-wxd) · owner: architect ·
 amends 0008 §2 (crew carve-out) · implemented rangerhq-4ish (sensing,
-d9fa52f) + rangerhq-44w1 (delivery, 18cb114)*
+d9fa52f) + rangerhq-44w1 (delivery, 18cb114) · amended 2026-08-28
+(ranger-base-q3gp: the §3 default)*
+
+> **The §3 default, amended 2026-08-28 (ranger-base-q3gp).** §3 named
+> `monica` as `pulse_persona:`'s default and the code compiled that string
+> in. ADR 0012 App.A 5 says shipped code must not name this instance's
+> crew, so the default is now config `coordinator:` (ADR 0018 §1) — the
+> persona this ADR meant all along, spelled as the key that already holds
+> it. Behaviour here is unchanged (`coordinator: monica`). For an instance
+> that names neither key the target is `""`: the tick still senses and
+> still draws its conditions, and delivery goes nowhere and says so, in
+> place of a permanent `no-live:monica` for a persona that never existed
+> there. Pins: `TestLoadPulseConfigDefaultPersonaIsTheCoordinator`,
+> `TestPulseWithNoPersonaDeliversToNobody`.
 
 > **Numbering note.** This design was cited as "ADR 0013" in bead comments
 > (rangerhq-wxd/4ish/44w1/0l6t) and in the pulse code, but the file was
@@ -56,7 +69,7 @@ default, not a misconfiguration.
 **§3 — Delivery: level-triggered hint, renag backoff.** On a non-empty
 set that is *due* — a fingerprint not yet prompted, or an unchanged one
 whose renag interval has elapsed — the pulse prompts `pulse_persona`'s
-live session (default `monica`), **idle-only**, with a fixed
+live session, **idle-only**, with a fixed
 `Pulse check:`-prefixed one-liner. The prompt carries **no authority**:
 it names the observed conditions as hints to re-verify against live state
 (rhq list, git, bd) — the stores stay the record, the PID stays the

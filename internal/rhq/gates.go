@@ -1402,8 +1402,8 @@ done
 for posse_f in rebase-merge rebase-apply; do
   if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
 done
-# A LINKED WORKTREE HAS NO SHARED INDEX (rangerhq-09o2, measured by laurie on
-# this hook). git keeps a per-worktree index in the per-worktree git dir, so
+# A LINKED WORKTREE HAS NO SHARED INDEX (rangerhq-09o2, measured on this
+# hook). git keeps a per-worktree index in the per-worktree git dir, so
 # in a session worktree there is nothing for an unqualified commit to sweep —
 # the wall would refuse a form that is safe, under a message ("shared by every
 # persona") that is no longer true of that tree. The discriminator is git's
