@@ -47,7 +47,7 @@ func TestDispatchUndeclaredStartupWaitUsesThePassDefault(t *testing.T) {
 // be what dispatch actually waits, not the pass's default — a pass mixing
 // personas on different runtimes is wrong for whichever one this ignores.
 func TestDispatchUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
-	b, _ := newTestBackend(t)
+	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	// The pass default is deliberately large and round so it cannot be
 	// mistaken for the runtime's own number below.
@@ -72,9 +72,7 @@ func TestDispatchUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
 	// agents.json absent → herdr never sees an agent in the launched pane,
 	// so the launch runs out its startup wait and refuses by name.
 
-	start := time.Now()
 	n, err := d.Run("", "", 0)
-	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,9 +86,51 @@ func TestDispatchUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
 	if strings.Contains(out, d.StartupWait.String()) {
 		t.Errorf("the refusal must not name the pass default (%s) when the runtime declared its own:\n%s", d.StartupWait, out)
 	}
-	// A generous ceiling, well under the 3s pass default: proof the launch
-	// did not actually sit out the default's clock before refusing.
-	if elapsed > 1*time.Second {
-		t.Errorf("dispatch took %s to refuse — looks like it waited the pass default (%s) instead of slowcli's 80ms", elapsed, d.StartupWait)
+	// Proof the launch did not sit out the default's clock before refusing.
+	// A wall-clock ceiling was the obvious way to say that and it was the
+	// wrong one: this pass costs ~365ms of fake-herdr/bd forks before it
+	// waits for anything, so a 1s ceiling left ~600ms of margin over a cost
+	// that grows with machine load, and the test false-failed 6 of 20 runs
+	// at loadavg ~24, every failure just over the ceiling and none near 3s
+	// (ranger-base-2jl5, the same class as rangerhq-g6lx/3ig1).
+	//
+	// The detection loop asks herdr `agent list` once per d.Poll until its
+	// deadline (awaitTarget → HB.AgentTarget → H.Agents), so the number of
+	// asks is a COUNTABLE difference where the elapsed time was a racy one:
+	// an 80ms deadline at Poll 10ms admits at most 8 asks on top of the
+	// pass's own fixed handful, a 3s one admits 300. Load can only ever
+	// LOWER a count — a slower box fits fewer polls into the same window —
+	// so unlike a duration this cannot drift up into its ceiling. Measured
+	// on darwin/arm64, 8 cores, this test alone (agent-list calls):
+	//
+	//	                     idle box   loadavg ~13-32
+	//	80ms, as shipped     14-16      10-12
+	//	3s (deadline forced
+	//	from d.StartupWait)  188-192    90-104
+	//
+	// 30 sits above the ceiling the shipped path can structurally reach
+	// (12 fixed + 8 polls) and a third of the way to the wrong path's floor
+	// under the worst load measured. A count over it is not a timing flake:
+	// either the deadline grew, or this pass grew new herdr calls — and the
+	// second reds every box identically instead of the loaded ones.
+	const maxAgentAsks = 30
+	if asks := countCalls(t, fake, "agent list"); asks > maxAgentAsks {
+		t.Errorf("dispatch asked herdr for an agent %d times (ceiling %d) — looks like it waited the pass default (%s) instead of slowcli's 80ms:\n%s",
+			asks, maxAgentAsks, d.StartupWait, calls(t, fake))
 	}
+}
+
+// countCalls is how many of the fake herdr's logged calls begin with the
+// given argv prefix. Whole words from the start of the line, so a prefix
+// cannot be counted inside a longer subcommand or inside a persona command
+// the launch typed.
+func countCalls(t *testing.T, fake, prefix string) int {
+	t.Helper()
+	n := 0
+	for _, line := range strings.Split(calls(t, fake), "\n") {
+		if line == prefix || strings.HasPrefix(line, prefix+" ") {
+			n++
+		}
+	}
+	return n
 }
