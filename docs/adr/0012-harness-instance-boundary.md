@@ -1,7 +1,8 @@
 # ADR 0012 — the harness/instance boundary, and the public split
 
 *Status: accepted 2026-08-20 · executed at publication 2026-08-22 ·
-owner: architect · amended 2026-08-24 (ADR 0013: D4.1 dispatch delivery)*
+owner: architect · amended 2026-08-24 (ADR 0013: D4.1 dispatch delivery) ·
+amended 2026-08-28 (ranger-base-cqbq: App.A 5 reaches code-tree comments)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -247,6 +248,18 @@ document, don't generalize yet), and per-runtime egress allowlists (ADR
   restatement.
 - **Private-tracker ids in text**: inert provenance markers; HISTORY.md
   documents the convention (D3). No mass sweep.
+- **Crew names in the shipped code tree** (amended 2026-08-28,
+  ranger-base-cqbq): App.A 5 reaches every line cmd/, internal/, and
+  etc/ ship — comments included, not string literals alone — because
+  D2's "persona names become roles" carries no code/prose carve-out.
+  The edge is the tree, not the syntax: docs/ and the root narrative
+  files are the development record, where the crew are historical
+  actors and the no-mass-sweep convention above governs them as it
+  governs ids. In the code tree an archive id stays either way; the
+  name beside it becomes a role or goes. The two rules are not in
+  tension: D6 grandfathers *ids* (nothing promises to resolve), D2
+  depersonalizes *names* (any deployer could have written it) — a
+  comment reading "measured (rangerhq-lrnp)" satisfies both.
 - **Cut-over sequencing** (an instance-side runbook owns the detail):
   land the visibility guard and the scrubs; independent pre-publication
   clearance of the extraction file set; create and publish the repo —
