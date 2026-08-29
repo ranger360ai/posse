@@ -111,6 +111,14 @@ func (r shimRule) Verb() bool {
 var globalValueOpts = map[string][]string{
 	"git":   {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"},
 	"posse": {},
+	// bd 0.49.1 (0d99d153) has eighteen global options — not the seven the
+	// az93 write-up counted — and exactly these four take their value as a
+	// separate word (**MEASURED**, `bd --help`). The other fourteen are
+	// booleans and skip singly. Without this entry `bd --db /tmp/x daemon
+	// stop` resolves to the verb `/tmp/x` and the shim waves it through,
+	// which is the same hole in the wall that a `Bash(bd daemon:*)`
+	// permission rule has in the typed line (ranger-base-3bqn, from az93).
+	"bd": {"--actor", "--db", "--dolt-auto-commit", "--lock-timeout"},
 }
 
 // spoiler names the options that SATISFY a negative rule's qualifier and
