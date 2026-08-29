@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -327,4 +328,113 @@ func TestChangelogDisclosesTheEndpointPinVulnerabilityWhereAReleaseWillCarryIt(t
 			markers, headings)
 	}
 	t.Logf("the endpoint-pin disclosure ships under: %v", carriers)
+}
+
+// ---------------------------------------------------------------------------
+// The step CI actually runs.
+//
+// Every assertion above this line reads the workflow. Reading a guard is not
+// evidence of one, so this lifts the `draft the release` script out of
+// release.yml verbatim and RUNS it, with a stub `gh` recording the argv it was
+// handed. Both branches are exercised: the section is there, and it is not.
+// (What still cannot be run here is gh's own prepending of --notes-file to
+// --generate-notes — that is GitHub state. docs/runbooks/release.md names it
+// in "still unproven" and Step 1 reads the draft body.)
+
+func draftReleaseScript(t *testing.T) string {
+	t.Helper()
+	for _, b := range ghRunBlocks(releaseWorkflow(t)) {
+		if b.step == "draft the release" {
+			return b.body
+		}
+	}
+	t.Fatal(`release.yml has no step named "draft the release"`)
+	return ""
+}
+
+// stubGh writes a `gh` on PATH that appends its argv, one per line, to a file.
+func stubGh(t *testing.T, dir string) (bin, argvFile string) {
+	t.Helper()
+	bin = filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argvFile = filepath.Join(dir, "gh-argv")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >>" + argvFile + "; done\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, argvFile
+}
+
+func runDraftStep(t *testing.T, cwd string, env ...string) (argv []string, stdout string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin, argvFile := stubGh(t, dir)
+	path := filepath.Join(dir, "draft.sh")
+	if err := os.WriteFile(path, []byte(draftReleaseScript(t)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "-eo", "pipefail", path)
+	cmd.Dir = cwd
+	cmd.Env = append(os.Environ(), append([]string{"PATH=" + bin + ":" + os.Getenv("PATH")}, env...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("draft step failed: %v\n%s", err, out)
+	}
+	raw, err := os.ReadFile(argvFile)
+	if err != nil {
+		t.Fatalf("the stub gh was never called: %v\n%s", err, out)
+	}
+	for _, a := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		argv = append(argv, a)
+	}
+	return argv, string(out)
+}
+
+func TestReleaseDraftStepHandsGhTheChangelogSection(t *testing.T) {
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(t.TempDir(), "release-notes.md")
+
+	// v0.0.0 has no section of its own, so this takes the Unreleased fallback
+	// — the shape a real cut has before the rename, and the one that must
+	// still put text in front of gh.
+	argv, stdout := runDraftStep(t, repo, "TAG=v0.0.0", "SHA=deadbeef", "NOTES="+notes)
+
+	for _, want := range []string{"release", "create", "v0.0.0", "--draft", "--generate-notes", "--target", "deadbeef", "--notes-file", notes} {
+		if !slices.Contains(argv, want) {
+			t.Errorf("gh was not handed %q.\nargv: %v\nstep output:\n%s", want, argv, stdout)
+		}
+	}
+	body, err := os.ReadFile(notes)
+	if err != nil {
+		t.Fatalf("the step named a notes file it never wrote: %v", err)
+	}
+	if !strings.Contains(string(body), "RHQ_PLAN_USAGE_URL") {
+		t.Errorf("the notes file handed to gh does not carry the disclosure:\n%s", body)
+	}
+
+	// The other branch: a reader that emits nothing must leave --notes-file
+	// off entirely rather than hand gh an empty file, and must say so.
+	empty := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(empty, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(empty, "scripts", "release-notes.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notes2 := filepath.Join(t.TempDir(), "empty-notes.md")
+	argv2, stdout2 := runDraftStep(t, empty, "TAG=v0.0.0", "SHA=deadbeef", "NOTES="+notes2)
+	if slices.Contains(argv2, "--notes-file") {
+		t.Errorf("gh got --notes-file for an empty notes file.\nargv: %v", argv2)
+	}
+	if !slices.Contains(argv2, "--generate-notes") {
+		t.Errorf("the no-section branch dropped --generate-notes too — that release would have no notes at all.\nargv: %v", argv2)
+	}
+	if !strings.Contains(stdout2, "no CHANGELOG section") {
+		t.Errorf("the no-section branch was silent; the operator has to be told before Step 1.\noutput:\n%s", stdout2)
+	}
 }
