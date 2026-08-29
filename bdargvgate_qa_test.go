@@ -319,6 +319,13 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 		t.Skip("no python3")
 	}
 	// Each row names the fast-path arm that keeps it off the builtin answer.
+	// No row here may be spelled with & < or >: Go's encoding/json escapes
+	// those as \u00xx and the wrapper keeps any \u payload on the slow path,
+	// so such a row is held by the *'\u'* arm and witnesses nothing about the
+	// arm it claims (measured — `cd /tmp && b\d …` marshals with \u0026, and
+	// was in the first cut of this table mislabelled as a b\ witness). The
+	// compound and redirect spellings are swept by `make verify-bd-argv-gate`,
+	// which builds its payloads with python's json.
 	// Delete that arm from scripts/bd-argv-gate.sh and its rows must fail:
 	// three of the four arms have a witness here, and the fourth is documented
 	// in the script as unreachable under JSON escaping (a command's `"`
@@ -329,7 +336,6 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 		{`*b\\*`, `b\d daemon stop`},
 		{`*b\\*`, `b\d ship --help`},
 		{`*b\\*`, `/usr/local/bin/b\d admin reset`},
-		{`*b\\*`, `cd /tmp && b\d daemon stop`},
 		{`*b\\*`, `b"d" daemon stop`},   // a command `"` is `\"` in the payload
 		{`*b\\*`, `"b""d" daemon stop`}, // ditto
 		{`*b\'*`, "b''d daemon stop"},
