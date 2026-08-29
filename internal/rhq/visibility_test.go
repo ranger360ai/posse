@@ -61,6 +61,14 @@ func TestScanOps(t *testing.T) {
 		// dispatch_epoch: is the same class of fact and arrived with ADR
 		// 0028 §2 — what THIS shop's spend and launch windows are set to.
 		{"we run dispatch_epoch: 30m here, so budget_pass buys half as much", "guard"},
+		// The two keys ADR 0003's 2026-08-25 amendment §4 put beside
+		// plan_usage_ttl:
+		// `model_preflight: false` says ONE deployment has its availability
+		// check switched off — the same fact as `autostart_dry_run: false`.
+		// `model_probe_ttl: 0` says that deployment reads its account
+		// credential at every launch, a cadence fact about a credential read.
+		{"we run model_preflight: false on this box", "guard"},
+		{"model_probe_ttl: 0 here, so every launch asks", "guard"},
 		{"on Max 5x the fleet's marginal cost is inside the plan", "plan"},
 		{"the operator is on the SuperGrok plan this month", "plan"},
 		// Shell, quoted in beads about these very hooks: 22 of the 37 beads
@@ -72,6 +80,7 @@ func TestScanOps(t *testing.T) {
 		// the key with a live value is the instance's.
 		{"Config budget_pass: / budget_day: (API-equivalent dollars)", ""},
 		{"dispatch: plan-guard overflow — plan_guard_overflow:/plan_guard_overflow_cap:", ""},
+		{"config model_preflight: / model_probe_ttl: are documented in examples/config.yaml", ""},
 		{"the plan-usage adapter reads the token from the macOS keychain", ""},
 		{"env sets, personas and skills are config under ~/.config/rhq/", ""},
 	} {
