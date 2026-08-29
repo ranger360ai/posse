@@ -49,33 +49,6 @@ func runGate(t *testing.T, env []string, command string) gateResult {
 	return runGateRaw(t, env, string(payload))
 }
 
-// runParser drives the parser DIRECTLY, with the sh wrapper out of the way.
-// The wrapper's whole contract is that it is looser than this, so the two have
-// to be run separately to be compared (ranger-base-hthx).
-func runParser(t *testing.T, command string) gateResult {
-	t.Helper()
-	payload, err := json.Marshal(map[string]any{
-		"session_id": "qa",
-		"tool_name":  "Bash",
-		"tool_input": map[string]any{"command": command},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("python3", "-S", "-E", "scripts/bd-argv-gate.py")
-	cmd.Stdin = strings.NewReader(string(payload))
-	var out, errb strings.Builder
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	err = cmd.Run()
-	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
-		code = ee.ExitCode()
-	} else if err != nil {
-		t.Fatalf("running the parser: %v", err)
-	}
-	return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
-}
-
 func runGateRaw(t *testing.T, env []string, payload string) gateResult {
 	t.Helper()
 	cmd := exec.Command("sh", "scripts/bd-argv-gate.sh")
@@ -180,16 +153,24 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		`/usr/local/bin/b\d admin reset`:   "admin",
 		`env b\d --db /tmp/x admin reset`:  "admin",
 		`PATH=/x b\d delete ranger-base-1`: "delete",
-		`cd /tmp && b\d daemon stop`:       "daemon",
 		`echo hi | b\d import`:             "import",
-		"b''d daemon stop":                 "daemon",
-		"'b''d' daemon stop":               "daemon",
-		"'b'd daemon stop":                 "daemon",
-		"b'd' daemon stop":                 "daemon",
-		`b""d daemon stop`:                 "daemon",
-		`"b""d" daemon stop`:               "daemon",
-		`"b"d daemon stop`:                 "daemon",
-		`b"d" daemon stop`:                 "daemon",
+		// RIG CAVEAT, measured and inherited from the pin this replaces:
+		// Go's encoding/json escapes &, < and > as \u00xx, and the wrapper
+		// keeps any payload containing \u on the slow path. So a row spelled
+		// with those characters cannot exercise the fast path HERE however it
+		// behaves in the harness (node's JSON.stringify does not escape them),
+		// and `cd /tmp && b\d ...` is deliberately NOT in this table — it
+		// would be green over a broken fast path. The compound and redirect
+		// spellings are swept by `make verify-bd-argv-gate`, which builds its
+		// payloads with python's json and does not escape them.
+		"b''d daemon stop":   "daemon",
+		"'b''d' daemon stop": "daemon",
+		"'b'd daemon stop":   "daemon",
+		"b'd' daemon stop":   "daemon",
+		`b""d daemon stop`:   "daemon",
+		`"b""d" daemon stop`: "daemon",
+		`"b"d daemon stop`:   "daemon",
+		`b"d" daemon stop`:   "daemon",
 	}
 	for command, want := range refused {
 		reason := denied(t, runGate(t, nil, command))
@@ -356,7 +337,7 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 		{`*b\'*`, "b'd' daemon stop"},
 	} {
 		wrapper := denied(t, runGate(t, nil, row.command))
-		parser := denied(t, runParser(t, row.command))
+		parser := denied(t, parserGate(t, row.command))
 		if parser == "" {
 			t.Errorf("fixture measures nothing: the parser does not refuse %q, so the wrapper deferring to it proves nothing", row.command)
 			continue
@@ -392,19 +373,26 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 		"go test ./...", "git status", "brew upgrade", "make verify-bd-pin",
 		"grep -rn 'lib' .", `sed 's/a/b/' f`, "cd /tmp && ls",
 	} {
-		if wrapper, parser := denied(t, runGate(t, nil, command)), denied(t, runParser(t, command)); wrapper != "" || parser != "" {
+		if wrapper, parser := denied(t, runGate(t, nil, command)), denied(t, parserGate(t, command)); wrapper != "" || parser != "" {
 			t.Errorf("must be left alone: %s -> wrapper %q, parser %q", command, wrapper, parser)
 		}
 	}
 }
 
-// ─── ranger-base-hthx / ranger-base-4txk: LIVE DEFECTS, GREEN ON PURPOSE ─────
+// ─── ranger-base-4txk: LIVE DEFECT, GREEN ON PURPOSE ────────────────────────
 //
-// Found verifying the close of ranger-base-3bqn (ranger-base-7ol6). Both pins
-// below assert what the shipped gate DOES, not what it should do, per NOTES.md
-// on silent reverts: a defect with no pin is a defect whose fix nobody can
-// date. Each names the bead that closes it and says how to invert it. They go
-// red the day that bead lands, which is the point.
+// Found verifying the close of ranger-base-3bqn (ranger-base-7ol6). The pin
+// below asserts what the shipped gate DOES, not what it should do, per
+// NOTES.md on silent reverts: a defect with no pin is a defect whose fix
+// nobody can date. It names the bead that closes it and says how to invert
+// it, and goes red the day that bead lands, which is the point.
+//
+// Its sibling, TestQABdArgvGateFastPathIsReachableByAShellSpelling, pinned
+// ranger-base-hthx the same way and has been INVERTED as its own comment
+// instructed: the fast path defers now, so those spellings sit in
+// TestQABdArgvGateResolvesTheVerb's refused table above, with
+// TestQABdArgvGateFastPathIsLooserThanTheParser holding the general property
+// and `make verify-bd-argv-gate` sweeping the whole quoting alphabet.
 
 // parserGate runs the PARSER directly, skipping the sh wrapper. The two must
 // agree; where they do not, the wrapper is the fence and the parser is right.
@@ -430,52 +418,6 @@ func parserGate(t *testing.T, command string) gateResult {
 		code = ee.ExitCode()
 	}
 	return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
-}
-
-// LIVE DEFECT ranger-base-hthx. The wrapper's fast path answers from a shell
-// builtin when the payload carries no "bd" substring, on the premise that
-// every refusal below it requires bd to be named. The parser does not work
-// that way: it resolves the command word with shlex FIRST and then asks
-// whether the BASENAME is bd, so the spellings below are refused by the parser
-// and never reach it. MEASURED live through the real harness, against the copy
-// installed at ~/.config/posse/gate (byte-identical to scripts/): "bd ship
-// --help" was refused and the same line with a backslash in the command word
-// RAN, exit 0 — az93's discriminating pair again, one character apart, against
-// the shipped fence.
-//
-// RIG CAVEAT, measured: Go's encoding/json escapes &, < and > as \u00xx by
-// default, and the wrapper keeps any payload containing \u on the slow path.
-// So no case spelled with those characters can exercise the fast path HERE,
-// however it behaves in the harness (node's JSON.stringify does not escape
-// them). Keep these rows free of & < >; the live arms are on the bead.
-//
-// TO INVERT when ranger-base-hthx lands: move these spellings into
-// TestQABdArgvGateResolvesTheVerb's refused table and delete this test.
-func TestQABdArgvGateFastPathIsReachableByAShellSpelling(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("no python3")
-	}
-	// The control. Same verb, spelled so the payload carries "bd": without a
-	// refusal here the arms below would pass over a gate that refuses nothing.
-	if denied(t, runGate(t, nil, "bd admin reset")) == "" {
-		t.Fatal("control: `bd admin reset` must be refused — this fixture is not measuring the gate")
-	}
-	for _, command := range []string{
-		`b\d admin reset`,
-		`b\d rename-prefix old new`,
-		`'b''d' daemon stop`,
-		`b"d" daemon stop`,
-		`PATH=/x b\d jira sync --push`,
-	} {
-		if denied(t, parserGate(t, command)) == "" {
-			t.Errorf("the parser must refuse %q — this pin's premise is that only the wrapper misses it", command)
-			continue
-		}
-		if reason := denied(t, runGate(t, nil, command)); reason != "" {
-			t.Errorf("ranger-base-hthx looks FIXED for %q (%s) — invert this test: "+
-				"move these spellings into TestQABdArgvGateResolvesTheVerb's refused table and delete it", command, reason)
-		}
-	}
 }
 
 // LIVE DEFECT ranger-base-4txk, the other direction: the gate refuses ordinary

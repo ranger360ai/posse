@@ -62,11 +62,33 @@ the payload *and* its quote-stripped form. Both, not just the stripped one:
 deleting backslashes also eats JSON escapes, and `a\nbd` would collapse into
 the single word `anbd` and stop matching.
 
-**Pins.** The shell spellings are in the same refusal table as the literal
-`bd` (`TestQABdArgvGateResolvesTheVerb`), together with the counterparts that
-must still pass — `b\d show`, which is an escaped spelling of an *allowed*
-verb, plus `b" "d` (runs `b d`) and `b\\d` (literal `b\d`) — because widening
-the fast path must not widen the refusal.
+**Pins.** ranger-base-7ol6 had already pinned this defect green-on-purpose as
+`TestQABdArgvGateFastPathIsReachableByAShellSpelling`, with instructions for
+the day it was fixed: *move these spellings into
+`TestQABdArgvGateResolvesTheVerb`'s refused table and delete this test*. Done
+exactly that. Its `parserGate` helper survives and is what the new test uses.
+
+So the shell spellings now sit in the same refusal table as the literal `bd`,
+together with the counterparts that must still pass — `b\d show`, which is an
+escaped spelling of an *allowed* verb, plus `b" "d` (runs `b d`) and `b\\d`
+(literal `b\d`) — because widening the fast path must not widen the refusal.
+
+**The rig caveat that pin recorded is load-bearing and is kept.** Go's
+`encoding/json` escapes `&`, `<` and `>` as `\u00xx`, and the wrapper keeps
+any payload containing `\u` on the slow path. So a row spelled with those
+characters cannot exercise the fast path from a Go pin however it behaves in
+the harness — node's `JSON.stringify` does not escape them. Measured, with
+Go's `json.Marshal`:
+
+    cd /tmp && b\d show x   ->   "cd /tmp \u0026\u0026 b\\d show x"
+    echo hi | b\d show x    ->   "echo hi | b\\d show x"
+
+so the first is forced onto the slow path by the `\u` arm no matter what the
+`b\` arm does, and the second is not. A `cd /tmp && b\d …`
+row was in the first cut of this table and has been **removed**, because it
+would have been green over a completely broken fast path. Compound and
+redirect spellings are covered by `make verify-bd-argv-gate` instead, which
+builds its payloads with python's `json` and does not escape them.
 
 `TestQABdArgvGateFastPathIsLooserThanTheParser` asserts **agreement** between
 the two programs rather than "was refused": a table of expected refusals can
