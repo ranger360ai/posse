@@ -1022,7 +1022,7 @@ func main() {
 				fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
 				failed = true
 			} else {
-				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit when RHQ_PERSONA is set — the index is shared; rangerhq-lmq9)\n", rhq.AbbrevHome(c))
+				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit from any shell in this checkout — the index is shared; rangerhq-lmq9, rangerhq-lt2w)\n", rhq.AbbrevHome(c))
 				// The same slot carries the beads visibility guard, and its
 				// verdict is stamped into the file — so say which one was
 				// stamped and where it came from, or an operator has to read a
@@ -1814,7 +1814,7 @@ catalog:
                                  over it, and refusals.log
   posse gates install-hooks [dir] [--chain]
                                     L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
-                                    and prepare-commit-msg refusing an unqualified commit under RHQ_PERSONA
+                                    and prepare-commit-msg refusing an unqualified commit from any shell
                                     plus ops-class content added to .beads/*.jsonl in a repo that
                                     config beads_visibility: does not mark private (unmarked = public).
                                     Both slots are attempted even if one is foreign. --chain takes over

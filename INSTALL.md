@@ -1103,7 +1103,13 @@ Install the L3 gates — a `pre-push` hook that refuses `git push` in any
 persona session whose PID denies it, and a `prepare-commit-msg` hook that
 refuses a commit which does not name its own paths (every persona shares
 this checkout and its index, so an unqualified commit takes whatever
-another persona has staged). A clean `git revert` names no paths and is
+another persona has staged). **It covers your own shell too**, not just
+dispatched sessions: it was keyed on `RHQ_PERSONA` until rangerhq-lt2w, and
+the exemption was retired because an unqualified commit does not only sweep
+— it restages every path from the shared index, which is how a hand-typed
+`bd sync:` commit silently reverted a landed P1 fix for nearly four hours
+(rangerhq-8rtf). In a linked worktree the guard stands down entirely; there
+the index is yours alone. A clean `git revert` names no paths and is
 refused too — it leaves git no marker to be recognized by (rangerhq-lrnp) —
 and the refusal names the two-step form above.
 
@@ -1173,9 +1179,11 @@ hands that stdin, untouched, to bd's shim, which reads it.
 
 The `[ -x … ] || exit 0` line is not decoration. `exec` on a file that is
 not there exits **126**, and a `prepare-commit-msg` that exits non-zero
-blocks *every* commit in the repo — including the operator's own, which the
-gate itself is careful to exempt (the gate keys on `RHQ_PERSONA`; a failed
-`exec` keys on nothing). That state is one silent `mv` away: if `bd hooks
+blocks *every* commit in the repo — including the ones the gate itself
+passes: the path-limited form it prescribes, a merge, a rebase continue,
+and every commit in a linked worktree, where the gate stands down outright.
+The gate refuses one form and names a way out; a failed `exec` refuses all
+of them and names none. That state is one silent `mv` away: if `bd hooks
 install` never took a slot — older `bd` planted no `prepare-commit-msg` at
 all, and `bd hooks install --beads` / `--shared` write to `.beads/hooks/` and
 `.beads-hooks/` rather than `.git/hooks` — the `mv` above prints `No such
@@ -1193,21 +1201,25 @@ $ RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
     sh -c 'printf "refs/heads/main a refs/heads/main b\n" | .git/hooks/pre-push origin x'; echo $?
 $ t=$(mktemp); RHQ_PERSONA=probe .git/hooks/prepare-commit-msg "$t"; echo $?; rm -f "$t"
 $ t=$(mktemp); env -u RHQ_PERSONA -u RHQ_TOOLS_DENY .git/hooks/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
+$ t=$(mktemp); GIT_INDEX_FILE="$(git rev-parse --git-dir)/next-index-$$" \
+    .git/hooks/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
 ```
-The first two must print `refused by posse gate: …` and exit **1**. The third
-must print no refusal and exit **0**: the commit guard keys on
-`RHQ_PERSONA`, so **your own commits in that tree are unaffected**. Inside a
-persona session the safe form is `git commit -F - -- <paths>`. A gate that
-prints its refusal but exits 0 is not installed — re-read the chain.
+The first **three** must print `refused by posse gate: …` and exit **1** —
+the third is your own shell, with no persona in the environment at all, and
+it is refused since rangerhq-lt2w exactly like a persona's. The fourth must
+print no refusal and exit **0**: it hands the hook the temp index git itself
+uses for `git commit -F - -- <paths>`, which is the way through for everyone
+in that checkout, you included. A gate that prints its refusal but exits 0
+is not installed — re-read the chain.
 
-A **non-zero third probe that prints no refusal** is the other failure: the
+A **non-zero fourth probe that prints no refusal** is the other failure: the
 chain names a neighbour that is not there, or is not executable. The message
 names the file — check the two `mv`s above; the one whose source was missing
 printed `No such file or directory` and is easy to scroll past. Until that
 is fixed, no commit in that repo can succeed, the operator's included.
 
-Those three probes are what **you** check by hand. They are not what a
-persona launch checks, and a chain that passes all three can still be
+Those four probes are what **you** check by hand. They are not what a
+persona launch checks, and a chain that passes all four can still be
 refused. Since ADR 0023 the launch never runs the hook at the dispatch
 path at all; its verdict on a slot is **byte identity** against posse's own
 current render — the file at `git rev-parse --git-path hooks`/`<slot>` is
@@ -1218,8 +1230,8 @@ catches a renderer regression (a bad render, a broken `/bin/sh`) and says
 nothing about what is planted in your repo.
 
 So **a foreign hook is refused however well it behaves.** A hand-written
-chain that refuses under `RHQ_PERSONA` with exit 1 and stands down without
-it — all three probes green — is still reported `DEGRADED` as "foreign
+chain that refuses with exit 1 and passes the path-limited form — all four
+probes green — is still reported `DEGRADED` as "foreign
 hook, posse cannot vouch for a hook it did not write", and the session
 refuses unless the operator explicitly allows degradation (measured against
 exactly that hook, ranger-base-nlhz). Nothing the file does can change that

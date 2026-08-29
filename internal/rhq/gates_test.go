@@ -1769,6 +1769,9 @@ func TestSharedIndexCommitHook(t *testing.T) {
 		return string(out), err
 	}
 	persona := []string{"RHQ_PERSONA=developer", "RHQ_GATES_DIR=" + gates}
+	// An operator shell: the gates dir, so its refusals are logged, and no
+	// RHQ_PERSONA at all — the environment the wall used to exempt.
+	operator := []string{"RHQ_GATES_DIR=" + gates}
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -1777,8 +1780,11 @@ func TestSharedIndexCommitHook(t *testing.T) {
 	write("a.txt", "a")
 	write("b.txt", "b")
 	git(nil, "add", "a.txt", "b.txt")
-	if out, err := git(nil, "commit", "-qm", "init"); err != nil {
-		t.Fatalf("operator's own commit must pass: %v %s", err, out)
+	// Path-limited even for the first commit: since rangerhq-lt2w the wall
+	// covers every shell in this tree, so the fixture takes the same form it
+	// prescribes.
+	if out, err := git(nil, "commit", "-qm", "init", "--", "a.txt", "b.txt"); err != nil {
+		t.Fatalf("path-limited first commit must pass: %v %s", err, out)
 	}
 
 	// Shape 1: git add + git commit — the form that swept d15c55a.
@@ -1815,10 +1821,19 @@ func TestSharedIndexCommitHook(t *testing.T) {
 		!strings.Contains(out, "refused by posse gate: an unqualified git commit") {
 		t.Errorf("`git commit --` must be refused: %v %s", err, out)
 	}
-	// The operator, in the same tree, is untouched — this is the same argv
-	// that was just refused.
-	if out, err := git(nil, "commit", "-m", "operator"); err != nil {
-		t.Errorf("operator's unqualified commit must pass: %v %s", err, out)
+	// The operator, in the same tree, gets the same wall — the whole of
+	// rangerhq-lt2w. This is the same argv that was just refused under a
+	// persona, and it is refused with no RHQ_PERSONA in the environment at
+	// all; the refusal names the shell it could not attribute to a persona,
+	// and it reaches refusals.log like any other.
+	if out, err := git(operator, "commit", "-m", "operator"); err == nil ||
+		!strings.Contains(out, "refused by posse gate: an unqualified git commit") ||
+		!strings.Contains(out, "session operator") {
+		t.Errorf("the operator's unqualified commit must be refused too: %v %s", err, out)
+	}
+	// And the way through is the same one the crew has: name the paths.
+	if out, err := git(operator, "commit", "-m", "operator, path-limited", "--", "a.txt"); err != nil {
+		t.Errorf("the operator's path-limited commit must pass: %v %s", err, out)
 	}
 	// Commits git drives itself cannot take a pathspec, so they pass.
 	git(nil, "checkout", "-q", "-b", "side", "HEAD~1")
@@ -1837,8 +1852,8 @@ func TestSharedIndexCommitHook(t *testing.T) {
 		t.Errorf("a cherry-pick must pass (CHERRY_PICK_HEAD, no pathspec possible): %v %s", err, out)
 	}
 	logb, _ := os.ReadFile(filepath.Join(gates, "refusals.log"))
-	if n := strings.Count(string(logb), "[prepare-commit-msg hook]"); n != 4 {
-		t.Errorf("refusals.log: %d lines, want 4:\n%s", n, logb)
+	if n := strings.Count(string(logb), "[prepare-commit-msg hook]"); n != 5 {
+		t.Errorf("refusals.log: %d lines, want 5 (four persona forms + the operator's):\n%s", n, logb)
 	}
 	// Re-install replaces ours; a foreign prepare-commit-msg is left alone.
 	p, err := installCommitGuard(repo)
@@ -1946,7 +1961,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 	write(repo, "fix.go", "v1")
 	write(repo, "other.txt", "o")
 	git(repo, nil, "add", "-A")
-	if out, err := git(repo, nil, "commit", "-qm", "base"); err != nil {
+	if out, err := git(repo, nil, "commit", "-qm", "base", "--", "fix.go", "other.txt"); err != nil {
 		t.Fatalf("base commit: %v %s", err, out)
 	}
 	head, _ := git(repo, nil, "rev-parse", "HEAD")
@@ -1988,6 +2003,31 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 		}
 		if now, _ := git(repo, nil, "rev-parse", "HEAD"); strings.TrimSpace(now) != head {
 			t.Fatalf("GIT_INDEX_FILE=<tmp>/%s moved HEAD: %s", name, now)
+		}
+	}
+	// And every spelling is refused with NO RHQ_PERSONA in the environment
+	// either (rangerhq-lt2w): the private-index half of rangerhq-8rtf used to
+	// reproduce end to end from a shell the wall exempted, which is what made
+	// the exemption expensive rather than free.
+	{
+		dir := t.TempDir()
+		env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
+		write(repo, "fix.go", "v2-THE-FIX")
+		if out, err := git(repo, env, "read-tree", "HEAD"); err != nil {
+			t.Fatalf("read-tree, no persona: %v %s", err, out)
+		}
+		if out, err := git(repo, env, "add", "--", "fix.go"); err != nil {
+			t.Fatalf("add, no persona: %v %s", err, out)
+		}
+		out, err := git(repo, env, "commit", "-m", "the fix")
+		if err == nil {
+			t.Errorf("a private GIT_INDEX_FILE with no persona must be refused, it landed: %s", out)
+		} else if !strings.Contains(out, "refused by posse gate: a commit from a private GIT_INDEX_FILE") ||
+			!strings.Contains(out, "session operator") {
+			t.Errorf("refused as the wrong form, or not named as the operator's: %s", out)
+		}
+		if now, _ := git(repo, nil, "rev-parse", "HEAD"); strings.TrimSpace(now) != head {
+			t.Fatalf("the no-persona private index moved HEAD: %s", now)
 		}
 	}
 	git(repo, nil, "checkout", "-q", "--", "fix.go")

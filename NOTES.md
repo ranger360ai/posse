@@ -4886,10 +4886,11 @@ Two measured reasons. `pre-commit` is bd's, bd reinstalls it, and a wall a
 third-party tool silently replaces on its next install is not a wall. And
 `git commit --no-verify` **skips `pre-commit` while `prepare-commit-msg`
 still runs** — so the free slot is also the stronger one. Both hooks see the
-same `GIT_INDEX_FILE`, verified across all four forms. The guard keys on
-`RHQ_PERSONA`, the way the pre-push gate keys on `RHQ_TOOLS_DENY`, so the
-operator's own commits in the same tree are untouched; it is installed at
-every persona session create and by `posse gates install-hooks`, and is *not*
+same `GIT_INDEX_FILE`, verified across all four forms. The guard is **not**
+keyed on `RHQ_PERSONA` — it covers every shell in the shared checkout, the
+operator's own included (rangerhq-lt2w; it was keyed that way, the way the
+pre-push gate keys on `RHQ_TOOLS_DENY`, until the exemption was retired). It
+is installed at every persona session create and by `posse gates install-hooks`, and is *not*
 keyed on a deny rule, because what makes the commit unsafe is the tree the
 session was dispatched into, not anything the PID says. Session create then
 executes a persona probe against the slot and counts L3 only when the hook
@@ -5011,9 +5012,15 @@ forms, 2026-08-22:
 | `git commit -F - -- <paths>` + bd's pre-commit hook | stale **for `.beads/issues.jsonl` only** | bd's hook re-flushes it, so it self-heals (rangerhq-be7k) |
 
 So the blessed form is clean against this, and the wall refuses the private
-form for personas — verified against the live hook: with `RHQ_PERSONA` set the
-private-index recipe is refused, and with it unset the full chain reproduces
-end to end (fix lands, index stale, next `bd sync` reverts it).
+form — verified against the live hook, with `RHQ_PERSONA` set and with it
+unset. The table's third column is the half rangerhq-lt2w closed: springing a stale
+index takes an *unqualified* commit, the operator's hand-typed `bd sync:` was
+exactly that form and exactly the shell the wall exempted, so the whole chain
+reproduced end to end from it (fix lands, index stale, next `bd sync` reverts
+it). No shell in the checkout makes that commit now. Pinned in
+`TestSharedIndexCommitHookRefusesHandRolledNextIndex` (every private-index
+spelling refused with no persona in the environment) and in the residual test
+named below.
 
 **That was true of the recipe's spelling before it was true of the recipe
 (rangerhq-cqq1).** As written on 2026-08-22 this paragraph said the class was
@@ -5025,21 +5032,28 @@ in `TestSharedIndexCommitHookRefusesHandRolledNextIndex`. Read the sentence
 below as true from that fix forward, and as **false for anything measured
 before it**.
 
-**The residual is two forms, and only one of them is the operator.** The
-operator is exempt from the wall by design, and their `bd sync` commits are
-exactly the unqualified form; a persona is exempt too when the private index
-is placed *inside* `$GIT_DIR` — `GIT_INDEX_FILE=$GIT_DIR/next-index-1` passes,
-because the discriminator asks where git puts its temp index rather than what
-the variable is spelled (see the discriminator note above, and its residual
-stated there). Both are gates working as specified, not holes to plug — but
-the class is neither extinct nor out of the crew's reach: it is narrowed to a
-form a persona has to choose deliberately, and that form still runs the whole
-chain above end to end. Kept measured rather than asserted:
+**The residual is one form, and it no longer reaches the end of the chain
+(rangerhq-lt2w).** The operator *was* the second form — exempt from the wall
+by design, with `bd sync:` commits that are exactly the unqualified shape —
+and the operator ruled that exemption away on 2026-08-28: the wall now covers
+every shell in the checkout, and `bd sync` itself never committed anything
+("Does NOT stage or commit - that's the user's job", bd 0.49.1), so the fix
+was the wall, not bd. What is left is the private index placed *inside*
+`$GIT_DIR`: `GIT_INDEX_FILE=$GIT_DIR/next-index-1` passes, because the
+discriminator asks where git puts its temp index rather than what the variable
+is spelled (see the discriminator note above, and its residual stated there).
+That is a gate working as specified, not a hole to plug — and it still MAKES a
+stale shared index under a persona who chooses it deliberately. What it no
+longer does is SPRING one: the only form that restages every path from the
+shared index is the unqualified commit, and there is now no shell that gets to
+make one here. Kept measured rather than asserted:
 `TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual`
 (`internal/rhq/privateindex_qa_test.go`) lands a fix through
 `$GIT_DIR/next-index-1` with `RHQ_PERSONA` set, pins the shared index at the
-pre-fix blob afterwards, and pins the next unqualified commit reverting it —
-it goes red the day the residual closes, and this paragraph can be rewritten
+pre-fix blob afterwards, pins the follow-up `bd sync:` commit being REFUSED
+with no persona in the environment and HEAD keeping the fix, and carries the
+control that the path-limited way through does not revert it either. It goes
+red the day the making half closes too, and this paragraph can be rewritten
 then.
 
 **Why this one is nastier than the mislabel.** The three-hour window it opened

@@ -86,7 +86,10 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 	if out, err := git(nil, "add", "-A"); err != nil {
 		t.Fatalf("fixture add: %v %s", err, out)
 	}
-	if out, err := git(nil, "commit", "-qm", "base"); err != nil {
+	// Path-limited, like every commit in this tree since rangerhq-lt2w: the
+	// wall no longer exempts a shell with no RHQ_PERSONA, so an unqualified
+	// fixture commit would be refused by the very hook under test.
+	if out, err := git(nil, "commit", "-qm", "base", "--", "fix.go", "other.txt"); err != nil {
 		t.Fatalf("fixture base commit: %v %s", err, out)
 	}
 	return repo, witness, git, []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
@@ -102,11 +105,11 @@ func TestQAPrivateIndexRefusedThroughTheChain(t *testing.T) {
 	head, _ := git(nil, "rev-parse", "HEAD")
 	head = strings.TrimSpace(head)
 	read := func() string { b, _ := os.ReadFile(witness); return string(b) }
-	// The fixture's own base commit is the operator's, so it PASSED the gate
+	// The fixture's own base commit is path-limited, so it PASSED the gate
 	// and already reached bd's hook — which is itself the first evidence the
 	// chain is wired. Clear it, or every arm below inherits that line.
 	if got := read(); !strings.Contains(got, "reached[") {
-		t.Fatalf("fixture: the operator's base commit must have reached bd's hook, got %q", got)
+		t.Fatalf("fixture: the base commit must have reached bd's hook, got %q", got)
 	}
 	if err := os.Truncate(witness, 0); err != nil {
 		t.Fatal(err)
@@ -161,15 +164,21 @@ func TestQAPrivateIndexRefusedThroughTheChain(t *testing.T) {
 
 // TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual pins the boundary the
 // fix chose, by measuring what it costs rather than by repeating the sentence
-// that describes it: `$GIT_DIR/next-index-<digits>` is exempt, and it still
-// runs rangerhq-8rtf end to end under a persona — the commit lands, the SHARED
-// index is left holding the pre-fix blob, and the next unqualified commit
-// reverts the landed fix in silence.
+// that describes it: `$GIT_DIR/next-index-<digits>` is exempt, so under a
+// persona the commit lands and the SHARED index is left holding the pre-fix
+// blob. That half of rangerhq-8rtf is intact and measured here.
+//
+// The SECOND half is gone as of rangerhq-lt2w, and this test is where that is
+// measured too: springing a stale index took an unqualified commit, the
+// operator's hand-typed `bd sync:` was exactly that form, and the wall now
+// refuses it from any shell. So the residual makes a stale index and no
+// longer a silent revert — both arms below, plus the path-limited control
+// that shows the way through does not revert either.
 //
 // This test passing is not "the residual is fine". It is the measurement any
 // claim about the class being out of the crew's reach has to be read against;
-// if a later change closes the residual, this test goes red and the doc
-// sentence it guards can finally be written without a caveat.
+// if a later change closes the making half too, this test goes red and the
+// doc sentence it guards can finally be written without a caveat.
 func TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual(t *testing.T) {
 	repo, _, git, persona := qaPrivateIndexChainRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "fix.go"), []byte("v2-THE-FIX\n"), 0o644); err != nil {
@@ -203,19 +212,39 @@ func TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual(t *testing.T) {
 		t.Errorf("expected the SHARED index to be stale at v1, got %q", blob)
 	}
 
-	// …so the next unqualified commit — the operator's `bd sync`, which the
-	// wall exempts by design — silently reverts the landed fix.
+	// …and here is where rangerhq-8rtf now STOPS. The chain's second half was
+	// the next unqualified commit — the operator's hand-typed `bd sync:`,
+	// which the wall exempted by design — restaging every path from the stale
+	// index and reverting the fix in silence. Since rangerhq-lt2w that shell
+	// is walled like any other, so the stale index is still made and no
+	// longer sprung: the reverting form is refused, with no RHQ_PERSONA in
+	// the environment at all, and HEAD keeps the fix.
 	if err := os.WriteFile(filepath.Join(repo, "other.txt"), []byte("synced\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := git(nil, "add", "other.txt"); err != nil {
 		t.Fatalf("add other.txt: %v %s", err, out)
 	}
-	if out, err := git(nil, "commit", "-qm", "bd sync: batch"); err != nil {
-		t.Fatalf("operator commit: %v %s", err, out)
+	out, err := git(nil, "commit", "-qm", "bd sync: batch")
+	if err == nil {
+		t.Fatalf("the operator's unqualified `bd sync:` commit must be refused since "+
+			"rangerhq-lt2w — it landed: %s", out)
 	}
-	if out, _ := git(nil, "show", "HEAD:fix.go"); !strings.Contains(out, "v1") {
-		t.Errorf("rangerhq-8rtf no longer reproduces through the residual — the residual "+
-			"is closed, and NOTES.md's account of it is now the thing that is stale: %s", out)
+	if !strings.Contains(out, "refused by posse gate: an unqualified git commit") ||
+		!strings.Contains(out, "session operator") {
+		t.Errorf("refused as the wrong form, or not named as the operator's: %s", out)
+	}
+	if out, _ := git(nil, "show", "HEAD:fix.go"); !strings.Contains(out, "v2-THE-FIX") {
+		t.Errorf("HEAD lost the fix — something still springs the stale index: %s", out)
+	}
+	// The way through does not revert it either: a path-limited commit takes
+	// the named path from DISK, so fix.go is untouched by one that does not
+	// name it, and refreshed by one that does. This is the control — without
+	// it "the revert is closed" would rest on the refusal alone.
+	if out, err := git(nil, "commit", "-qm", "bd sync: batch", "--", "other.txt"); err != nil {
+		t.Fatalf("the path-limited form must land: %v %s", err, out)
+	}
+	if out, _ := git(nil, "show", "HEAD:fix.go"); !strings.Contains(out, "v2-THE-FIX") {
+		t.Errorf("the path-limited follow-up reverted the fix: %s", out)
 	}
 }

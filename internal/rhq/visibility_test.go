@@ -290,8 +290,15 @@ func TestCommitGuardHookCarriesBothWalls(t *testing.T) {
 		if !strings.Contains(h, "posse_beads_visibility='"+vis+"'") {
 			t.Errorf("%s: the hook must record the stamp it was written with", vis)
 		}
-		if !strings.Contains(h, `[ -n "$RHQ_PERSONA" ] || exit 0`) {
+		if !strings.Contains(h, "the shared-index guard (rangerhq-lmq9)") ||
+			!strings.Contains(h, "an unqualified git commit") {
 			t.Errorf("%s: the shared-index wall must survive", vis)
+		}
+		// And it must survive UNKEYED: the operator carve-out is gone
+		// (rangerhq-lt2w), so no arm of this hook may stand down on an
+		// empty RHQ_PERSONA.
+		if strings.Contains(h, `[ -n "$RHQ_PERSONA" ] || exit 0`) {
+			t.Errorf("%s: the operator carve-out is back in the rendered wall", vis)
 		}
 		for _, p := range OpsPatterns {
 			if !strings.Contains(h, p.ERE) {

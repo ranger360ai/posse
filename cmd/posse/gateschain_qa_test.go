@@ -211,7 +211,7 @@ func TestQAInstallRefusalPrescriptionsRunInEitherOrder(t *testing.T) {
 
 // qaAssertBothSlotsChained is the end state both prescription orders owe:
 // each gate installed behind its dispatcher, each slot refusing its probe
-// with exit 1, and the operator's own commit still landing.
+// with exit 1, and the form the gate passes still landing.
 func qaAssertBothSlotsChained(t *testing.T, repo string) {
 	t.Helper()
 	hooks := filepath.Join(repo, ".git", "hooks")
@@ -249,17 +249,20 @@ func qaAssertBothSlotsChained(t *testing.T, repo string) {
 		}
 	}
 
-	// The operator's own commit must still work — a dispatcher whose
-	// neighbour is missing exits 127 and takes every commit with it.
+	// The commit the gate PASSES must still work — a dispatcher whose
+	// neighbour is missing exits 127 and takes every commit with it,
+	// including this one. Path-limited because since rangerhq-lt2w the wall
+	// covers a shell with no RHQ_PERSONA too, so the unqualified form is no
+	// longer a way to ask this question.
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a"), 0o644)
 	add := exec.Command(gitOutsideGates(t), "-C", repo, "add", "a.txt")
 	add.Env = []string{"PATH=" + rhq.PathOutsideGates("")}
 	add.Run()
-	ci := exec.Command(gitOutsideGates(t), "-C", repo, "commit", "-qm", "operator commit")
+	ci := exec.Command(gitOutsideGates(t), "-C", repo, "commit", "-qm", "operator commit", "--", "a.txt")
 	ci.Env = []string{"PATH=" + rhq.PathOutsideGates(""), "HOME=" + t.TempDir(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	if out, err := ci.CombinedOutput(); err != nil {
-		t.Errorf("the operator's own commit must survive the chain: %v %s", err, out)
+		t.Errorf("a path-limited commit must survive the chain: %v %s", err, out)
 	}
 }
 

@@ -993,9 +993,13 @@ func legacyChainHookDispatcherWith(slot, neighbor string) string {
 // chainRender renders the dispatcher body. guard adds the line that makes a
 // missing neighbour a DEGRADE instead of a dead repo: `exec` on a file that
 // is not there exits 126/127, and a prepare-commit-msg that exits non-zero
-// blocks EVERY commit in the repo — the operator's included, whom the gate
-// itself is careful to exempt (it keys on RHQ_PERSONA; an exec failure keys
-// on nothing). That state is reachable without doing anything wrong: the mv
+// blocks EVERY commit in the repo — including the ones the gate itself
+// passes: the path-limited form it names as the way through, a merge, a
+// rebase continue, and every commit in a linked worktree, where the gate
+// stands down outright. The gate refuses one form and leaves a way out; an
+// exec failure refuses all of them and leaves none (it keys on nothing —
+// not on RHQ_PERSONA, which the gate itself stopped keying on in
+// rangerhq-lt2w). That state is reachable without doing anything wrong: the mv
 // that creates bd-<slot> fails silently in a pasted block if `bd hooks
 // install` never took that slot (older bd planted no prepare-commit-msg at
 // all; `--beads`/`--shared` write elsewhere entirely). With the guard, the
@@ -1331,8 +1335,29 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // `git commit --no-verify` skips pre-commit while prepare-commit-msg still
 // runs, so this slot is the stronger of the two. Both verified.
 //
-// Keyed on RHQ_PERSONA, like the pre-push gate keys on RHQ_TOOLS_DENY: the
-// operator's own commits in the same tree are untouched.
+// NOT KEYED ON RHQ_PERSONA — the wall applies to every shell in the shared
+// checkout, the operator's own included (OPERATOR RULING 2026-08-28,
+// rangerhq-lt2w). It was keyed on it until then, the way the pre-push gate
+// keys on RHQ_TOOLS_DENY, so that "the operator's own commits in the same
+// tree are untouched" (rangerhq-lmq9). What retired that: the exemption's
+// second half. An unqualified commit does not only SWEEP, it also REVERTS —
+// it restages every path from a shared index that a private-index commit
+// left holding pre-fix blobs, which is how ef8d35f was undone for 3h52m by
+// dcca7b5, a hand-typed `bd sync:` commit (rangerhq-8rtf). `bd sync` itself
+// does not commit ("Does NOT stage or commit - that's the user's job",
+// bd 0.49.1), so the reverting half was never bd's to fix: it is the
+// unqualified form, and the operator's `bd sync:` commits are exactly that
+// form. A wall that stops the crew from making the stale index but lets the
+// operator spring it is half a wall.
+//
+// WHAT THIS COSTS, stated rather than discovered: every hand commit in a
+// hooked, non-worktree checkout now needs a pathspec, and there is no
+// override env for this arm (the visibility guard above has one; this one
+// does not — adding it would be re-spelling the carve-out, which is the
+// decision that was just taken away). The way through is always there: the
+// path-limited form in the ordinary case, and the three states where git
+// refuses a pathspec (merge, cherry-pick, rebase) keep their exemptions
+// below on their own merits. A linked worktree still stands down entirely.
 //
 // THE EXEMPTION IS "GIT REFUSES A PATHSPEC HERE", NOT "AN OPERATION IS IN
 // PROGRESS" — the two are not the same set, and the difference was a hole
@@ -1396,7 +1421,9 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // wall exists to prevent.
 const sharedIndexBody = `
 # ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
-[ -n "$RHQ_PERSONA" ] || exit 0
+# No RHQ_PERSONA test: this wall covers every shell in the shared checkout,
+# the operator's own included (rangerhq-lt2w). The tree is what makes the
+# commit unsafe, and the tree does not care who typed it.
 posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # THE EXEMPTION ASKS ONE QUESTION: is there a safe form to point at? "An
 # operation is in progress" is not that question (ranger-base-08a2). git
@@ -1417,9 +1444,10 @@ done
 # typed 'git commit'. GIT_REFLOG_ACTION=rebase (continue) does discriminate
 # and is unusable for the same reason GIT_INDEX_FILE's name was: it is the
 # caller's to spell (rangerhq-cqq1). So the residual is stated rather than
-# closed: during a rebase, an unqualified persona commit is exempt. It is
-# bounded by the crew PIDs, which forbid rewriting history in the shared
-# checkout at all — a rebase there is already out of bounds.
+# closed: during a rebase, an unqualified commit is exempt. It is bounded
+# by the crew PIDs, which forbid rewriting history in the shared checkout at
+# all — a rebase there is already out of bounds — and, for the operator, by
+# a rebase being a deliberate act rather than a routine one.
 for posse_f in rebase-merge rebase-apply; do
   if [ -e "$posse_gitdir/$posse_f" ]; then exit 0; fi
 done
@@ -1480,7 +1508,7 @@ if [ -n "$posse_idx" ] && [ -n "$posse_realdir" ]; then
   fi
 fi
 {
-  echo "refused by posse gate: $posse_form — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+  echo "refused by posse gate: $posse_form — prepare-commit-msg hook, session ${RHQ_PERSONA:-operator}"
   echo "This working tree's .git/index is shared by every persona (rangerhq-nyqj):"
   echo "an unqualified commit takes whatever anyone else has staged, -a takes"
   echo "every persona's modified tracked file, and -i takes the shared index ON"
@@ -1632,11 +1660,12 @@ fi
 }
 
 // CommitGuardHook is the whole prepare-commit-msg hook for a repo whose
-// beads db carries the given visibility: the visibility guard first (it
-// applies to the operator's commits too — a mis-routed bead is a public
-// artifact whoever typed it), then the shared-index guard, which keys on
-// RHQ_PERSONA because the shared tree is a fleet problem, not the
-// operator's.
+// beads db carries the given visibility: the visibility guard first (a
+// mis-routed bead is a public artifact whoever typed it), then the
+// shared-index guard. Both apply to the operator's own commits — the second
+// one since rangerhq-lt2w, because a stale shared index reverts whoever
+// springs it, and the operator's unqualified `bd sync:` commits are the
+// form that sprang it.
 func CommitGuardHook(visibility string) string {
 	return commitGuardHead + visibilityGuardBody(visibility) + sharedIndexBody
 }

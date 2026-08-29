@@ -115,8 +115,21 @@ func TestQADocChainRefusesFirstAndOtherwiseReachesBdsHook(t *testing.T) {
 	if err := os.Truncate(witness, 0); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 0 {
-		t.Errorf("no RHQ_PERSONA (the operator's own commit) must pass: code=%d %q", code, out)
+	// The form that passes is the path-limited one — git's own next-index
+	// temp file in the git dir — for a persona and, since rangerhq-lt2w,
+	// for a shell with no RHQ_PERSONA too: the carve-out that used to make
+	// THIS the passing arm is gone, so an unqualified commit is refused
+	// whoever types it.
+	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 1 ||
+		!strings.Contains(out, "refused by posse gate: an unqualified git commit") {
+		t.Errorf("no RHQ_PERSONA must be refused too (rangerhq-lt2w): code=%d %q", code, out)
+	}
+	if read() != "" {
+		t.Errorf("a refused commit must not reach bd's hook: %q", read())
+	}
+	safe := "GIT_INDEX_FILE=" + filepath.Join(repo, ".git", "next-index-4242")
+	if out, code := runHook(t, repo, "prepare-commit-msg", "", safe); code != 0 {
+		t.Errorf("a path-limited commit must pass: code=%d %q", code, out)
 	}
 	if got := read(); !strings.Contains(got, "COMMIT_EDITMSG message]") {
 		t.Errorf("bd's prepare-commit-msg hook must get $1 and $2 unchanged: %q", got)
@@ -132,8 +145,9 @@ func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
 	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 0 {
-		t.Errorf("the operator's commit must survive a missing neighbour: code=%d %q", code, out)
+	safe := "GIT_INDEX_FILE=" + filepath.Join(repo, ".git", "next-index-4242")
+	if out, code := runHook(t, repo, "prepare-commit-msg", "", safe); code != 0 {
+		t.Errorf("a commit the gate passes must survive a missing neighbour: code=%d %q", code, out)
 	}
 	// A neighbour that is there but not executable execs to 126 just the
 	// same, so the guard is -x, not -e.
@@ -141,8 +155,8 @@ func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
 		[]byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := runHook(t, repo, "prepare-commit-msg", ""); code != 0 {
-		t.Errorf("the operator's commit must survive a non-executable neighbour: code=%d %q", code, out)
+	if out, code := runHook(t, repo, "prepare-commit-msg", "", safe); code != 0 {
+		t.Errorf("a commit the gate passes must survive a non-executable neighbour: code=%d %q", code, out)
 	}
 	// And the degrade is only about the neighbour: the gate behind the
 	// dispatcher still refuses what it refused before.
@@ -160,8 +174,11 @@ func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
 }
 
 // rangerhq-xo65, the same defect from git's side: with the chain naming a
-// neighbour that is not there, a plain operator commit — no RHQ_PERSONA, the
-// case the guard exists to exempt — must still land.
+// neighbour that is not there, the commit the gate itself PASSES — the
+// path-limited form it prescribes, typed here with no RHQ_PERSONA at all —
+// must still land. Since rangerhq-lt2w that shell is walled like any other,
+// which is exactly why this arm matters: an exec failure would take the one
+// form left with it.
 func TestQAOperatorCanCommitThroughAChainMissingItsNeighbour(t *testing.T) {
 	repo, _ := qaChainRepo(t)
 	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
@@ -283,12 +300,26 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	}
 
 	// And the arm that says why no exemption was added: AUTO_MERGE OUTLIVES
-	// the revert that wrote it. The operator's own revert completes (the
-	// guard exempts them), leaves AUTO_MERGE in the git dir, and the next
-	// unqualified persona commit must still be refused — exempting on that
-	// file would have taken the wall down for good.
+	// the revert that wrote it. Since rangerhq-lt2w no shell completes a
+	// clean revert in one step — the guard covers the operator too — so the
+	// lingering file is produced the only way it still can be: with the hook
+	// out of the slot, which is also what a repo hooked later looks like.
+	// Then the guard goes back in and the next unqualified persona commit
+	// must still be refused; exempting on that file would have taken the
+	// wall down for good.
+	slot := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
+	body, err := os.ReadFile(slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(slot); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := git(nil, "revert", "--no-edit", "HEAD"); err != nil {
-		t.Fatalf("the operator's own revert is untouched by the guard: %v %s", err, out)
+		t.Fatalf("a revert with no hook in the slot must complete: %v %s", err, out)
+	}
+	if err := os.WriteFile(slot, body, 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".git", "AUTO_MERGE")); err != nil {
 		t.Fatalf("AUTO_MERGE is expected to linger past a completed revert: %v", err)
