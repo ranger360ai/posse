@@ -733,23 +733,79 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		o.Reason = fmt.Sprintf("%s moved on and %s has uncommitted changes (%s), which git will not rebase over", t.Base, AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
 		return o, nil
 	}
-	if _, err := git(t.Path, "rebase", t.Base); err != nil {
-		_, _ = git(t.Path, "rebase", "--abort")
-		o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the branch is untouched and still holds the work", t.Base, t.Branch)
-		return o, nil
+	// The rebase and the fast-forward under it are ONE compare-and-swap on
+	// the base's ref: the rebase computes a new tip from the base it read,
+	// and `merge --ff-only` is the swap, which git refuses unless the base
+	// is still exactly where the rebase read it. So a refusal here has two
+	// meanings that used to print as one — this branch cannot land, or the
+	// swap LOST — and only the second is a retry.
+	//
+	// It loses often, because the base is the one store in this path the
+	// launcher lock does not govern (ADR 0011 §1): the operator commits on
+	// main in the shared checkout while the rebase runs. Measured on
+	// ranger-base-c02a — rebased onto 523dc33, main took 5ea6b23 forty
+	// seconds later, the ff refused, a merge-back-blocked bead was filed at
+	// 09:57:11, and the very next pass landed the same untouched branch at
+	// 09:57:26. Fifteen seconds, and a bead for a human (ranger-base-59fs).
+	//
+	// Retried on the MEASURED move and on nothing else: the base's sha is
+	// read before the rebase and compared with the one the ff refused over,
+	// so a branch that genuinely cannot fast-forward still reports on the
+	// first attempt and pays nothing for this loop. Bounded because the
+	// launcher lock is held across it and a base that never holds still is
+	// a report, not a spin.
+	for attempt := 1; ; attempt++ {
+		wasAt := refSHA(t.Repo, t.Base)
+		if _, err := git(t.Path, "rebase", t.Base); err != nil {
+			_, _ = git(t.Path, "rebase", "--abort")
+			o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the branch is untouched and still holds the work", t.Base, t.Branch)
+			return o, nil
+		}
+		o.Rebased = true
+		// The rebase is the slow half, and the operator can switch branches
+		// during it. Ask again rather than trust the answer from before it.
+		if why := notOnBase(t); why != "" {
+			o.Reason = why
+			return o, nil
+		}
+		_, err := git(t.Repo, "merge", "--ff-only", t.Branch)
+		if err == nil {
+			return landed(o, t), nil
+		}
+		nowAt := refSHA(t.Repo, t.Base)
+		if nowAt == wasAt || wasAt == "" || nowAt == "" {
+			// The base is where the rebase left it, so the refusal is about
+			// this branch and replaying it again would only ask git the same
+			// question twice.
+			o.Reason = fmt.Sprintf("%s still would not fast-forward after the rebase: %v", t.Base, err)
+			return o, nil
+		}
+		if attempt >= mergeRebaseAttempts {
+			o.Reason = fmt.Sprintf("%s moved again under every one of %d replays (last %s → %s) and never held still long enough for %s to fast-forward onto it — %s still holds every commit and the next pass retries",
+				t.Base, mergeRebaseAttempts, abbrevSHA(wasAt), abbrevSHA(nowAt), t.Branch, t.Branch)
+			return o, nil
+		}
 	}
-	o.Rebased = true
-	// The rebase is the slow half, and the operator can switch branches
-	// during it. Ask again rather than trust the answer from before it.
-	if why := notOnBase(t); why != "" {
-		o.Reason = why
-		return o, nil
+}
+
+// mergeRebaseAttempts bounds the replay loop in MergeSessionWork. It is a
+// bound and not a budget: every attempt past the first is evidence that the
+// base moved under the last one, so the only thing a bigger number buys is a
+// longer hold on the launcher lock while a busy base keeps winning. Three
+// covers the fleet's measured cadence — main in posse moves every few
+// minutes, and the rebase itself is seconds.
+const mergeRebaseAttempts = 3
+
+// refSHA is where a ref points right now, "" when it does not resolve. The
+// whole reason it exists is to be asked TWICE around a slow operation, so
+// that "the fast-forward refused" can be told apart from "the base moved out
+// from under it" instead of the two sharing one sentence.
+func refSHA(repo, ref string) string {
+	sha, err := git(repo, "rev-parse", "--verify", "--quiet", ref)
+	if err != nil {
+		return ""
 	}
-	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err != nil {
-		o.Reason = fmt.Sprintf("%s still would not fast-forward after the rebase: %v", t.Base, err)
-		return o, nil
-	}
-	return landed(o, t), nil
+	return sha
 }
 
 // landed is the ONE place this file is allowed to say a merge happened, and

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -445,6 +446,168 @@ func TestMergeSessionWorkRebasesWhenTheBaseMoved(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repo, "other.txt")); err != nil {
 		t.Errorf("the merge lost what main already had: %v", err)
 	}
+}
+
+// ranger-base-59fs: the base moving DURING the rebase, which is the one
+// thing the rebase exists to absorb and the one thing nothing re-asked
+// after it. `notOnBase` was re-asked (the operator switching branches), the
+// base's POSITION was not, so a fast-forward that lost the race printed the
+// same "would not fast-forward" sentence as a branch that genuinely cannot
+// land, and the launcher filed a merge-back-blocked bead for a human — 15
+// seconds before the next pass landed the same untouched branch.
+//
+// The seam is git's own `post-rewrite` hook: it fires exactly once per
+// rebase, from the COMMON hooks dir, for a rebase run in a linked worktree
+// (measured, git 2.50.1) — so a commit made from it lands on the base in
+// precisely the window between the rebase finishing and the ff running.
+//
+// Three arms, because the claim has three halves: it recovers, it does not
+// replay when nothing moved, and it stops.
+func TestMergeSessionWorkReplaysWhenTheBaseMovesUnderTheRebase(t *testing.T) {
+	cases := []struct {
+		name string
+		// moves is how many rebases the operator commits under. 0 is the
+		// control: without it, "the loop recovered" is indistinguishable
+		// from "there was never a race".
+		moves      int
+		wantMerged bool
+		wantRebase int    // post-rewrite firings — the loop's real trip count
+		wantReason string // "" when it must land
+	}{
+		{
+			name:  "nothing moves under the rebase, so it replays once and lands",
+			moves: 0, wantMerged: true, wantRebase: 1,
+		},
+		{
+			name:  "the base moves under the first rebase, so the second lands it",
+			moves: 1, wantMerged: true, wantRebase: 2,
+		},
+		{
+			name:       "the base moves under every replay, so it stops and says which",
+			moves:      mergeRebaseAttempts,
+			wantMerged: false, wantRebase: mergeRebaseAttempts,
+			wantReason: "never held still",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+			// The base has to have moved ALREADY, or MergeSessionWork
+			// fast-forwards on the first try and never reaches a rebase at
+			// all — the hook would then never fire and every arm here would
+			// measure nothing.
+			commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
+			count := raceOnRebase(t, repo, c.moves)
+
+			o, err := MergeSessionWork(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := countIn(t, count); got != c.wantRebase {
+				t.Errorf("the rebase ran %d time(s), want %d — the fixture did not race the way this arm needs", got, c.wantRebase)
+			}
+			if o.Merged != c.wantMerged {
+				t.Fatalf("Merged = %v, want %v (reason %q)", o.Merged, c.wantMerged, o.Reason)
+			}
+			if !o.Rebased {
+				t.Error("Rebased = false over a base that had moved")
+			}
+			if c.wantMerged {
+				if o.Reason != "" {
+					t.Errorf("a landed merge carries a reason: %q", o.Reason)
+				}
+				// Both halves of the race are on the base: the session's
+				// work, and everything the operator committed while it was
+				// being replayed. A retry that dropped either would still
+				// satisfy "Merged".
+				for _, f := range append([]string{"fix.txt", "other.txt"}, racedFiles(c.moves)...) {
+					if _, err := os.Stat(filepath.Join(repo, f)); err != nil {
+						t.Errorf("%s is not in the main checkout after the merge: %v", f, err)
+					}
+				}
+				return
+			}
+			if !strings.Contains(o.Reason, c.wantReason) {
+				t.Errorf("reason = %q, want it to say %q", o.Reason, c.wantReason)
+			}
+			if strings.Contains(o.Reason, "still would not fast-forward after the rebase") {
+				t.Error("a lost race still reports as a branch that cannot land — that is the sentence this bead was filed over")
+			}
+			// Giving up costs nothing: the work is still named by the
+			// branch, so the next pass (or `posse worktrees --land`) has
+			// everything it needs.
+			head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			if !reaches(repo, tr.Branch, head) {
+				t.Errorf("%s does not reach the tree's work %s — giving up stranded it", tr.Branch, abbrevSHA(head))
+			}
+			if reaches(repo, tr.Base, head) {
+				t.Error("the base reaches the work, so this arm never measured a refusal at all")
+			}
+		})
+	}
+}
+
+// raceOnRebase installs the `post-rewrite` hook that makes the operator
+// commit on the base while a rebase is finishing, `moves` times, and returns
+// the path of the counter every firing bumps. The counter is the positive
+// witness: an assertion that a merge did or did not happen is payable by a
+// fixture that never raced, and this is the only thing that can tell them
+// apart.
+//
+// The hook commits path-limited because the crew's L1 shim is on PATH in a
+// persona's session and refuses the sweeping forms — a fixture spelled `git
+// commit -qm <msg>` is red for those personas and green for everyone else.
+func raceOnRebase(t *testing.T, repo string, moves int) string {
+	t.Helper()
+	hooks := mustGit(t, repo, "rev-parse", "--git-path", "hooks")
+	if !filepath.IsAbs(hooks) {
+		hooks = filepath.Join(repo, hooks)
+	}
+	count := filepath.Join(t.TempDir(), "rebases")
+	hook := filepath.Join(hooks, "post-rewrite")
+	write(t, hook, "#!/bin/sh\n"+
+		"n=$(cat "+shq(count)+" 2>/dev/null || echo 0)\n"+
+		"n=$((n+1))\n"+
+		"echo \"$n\" > "+shq(count)+"\n"+
+		"if [ \"$n\" -le "+strconv.Itoa(moves)+" ]; then\n"+
+		"  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_REFLOG_ACTION GIT_AUTHOR_DATE GIT_COMMITTER_DATE\n"+
+		"  cd "+shq(repo)+" || exit 0\n"+
+		"  echo \"$n\" > \"raced-$n.txt\"\n"+
+		"  git add -- \"raced-$n.txt\"\n"+
+		"  git commit -q -m \"the operator commits on the base mid-rebase ($n)\" -- \"raced-$n.txt\"\n"+
+		"fi\n"+
+		"exit 0\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+func racedFiles(moves int) []string {
+	var f []string
+	for i := 1; i <= moves; i++ {
+		f = append(f, "raced-"+strconv.Itoa(i)+".txt")
+	}
+	return f
+}
+
+func countIn(t *testing.T, path string) int {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatalf("unreadable rebase count %q: %v", b, err)
+	}
+	return n
 }
 
 // The failure that must never cost work: a conflict leaves the branch, the
