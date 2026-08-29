@@ -19,6 +19,9 @@ package rhq
 // docs/ and the root narrative files stay outside: there the crew are
 // historical actors and D6's no-mass-sweep governs them, as it governs ids.
 //
+// WIDENED again by rangerhq-gk4k to examples/ — the seed tree embed.go ships
+// inside the binary — see qibShippedRoots.
+//
 // An archive id survives a sweep either way — "measured (rangerhq-lrnp)" is
 // the shape the amendment names: D6 grandfathers *ids* (nothing promises to
 // resolve one), D2 depersonalizes *names* (any deployer could have written
@@ -33,6 +36,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -50,6 +54,22 @@ func qibRepoRoot(t *testing.T) string {
 	}
 	return root
 }
+
+// qibShippedRoots are the trees a deployer receives. Three of them are the
+// code trees ADR 0012 D6's amendment names in as many words; examples/ is the
+// fourth, and it is the one that ships hardest — embed.go carries it INTO the
+// binary and `posse init` copies it into a fresh RHQ_HOME (ADR 0012 D5), so a
+// crew name landing there is not a comment a deployer reads past, it is the
+// config and the PIDs their instance starts with. D2's "persona names become
+// roles" is the rule; the amendment's list was answering whether COMMENTS
+// count, not carving out the seed. Measured before widening (rangerhq-gk4k):
+// with `# verify_assignee: <a crew name>` appended to examples/config.yaml —
+// the exact line that bead was filed for — both pins in this file passed.
+var qibShippedRoots = []string{"cmd", "internal", "etc", "examples"}
+
+// qibRootFloor is the per-root witness: how many files the walk must actually
+// read there before an absence of hits means anything.
+var qibRootFloor = map[string]int{"cmd": 5, "internal": 150, "etc": 1, "examples": 15}
 
 // Assembled so this file itself does not contain the banned spellings.
 func qibCrewPattern() *regexp.Regexp {
@@ -86,8 +106,8 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
 	var hits []string
-	scanned := 0
-	for _, rel := range []string{"cmd", "internal", "etc"} {
+	scanned := map[string]int{}
+	for _, rel := range qibShippedRoots {
 		err := filepath.WalkDir(filepath.Join(root, rel), func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -102,7 +122,7 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			scanned++
+			scanned[rel]++
 			relPath, _ := filepath.Rel(root, path)
 			for i, line := range bytes.Split(body, []byte("\n")) {
 				if loc := re.FindIndex(line); loc != nil {
@@ -117,12 +137,33 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	}
 	// A pin that measures pure absence is satisfied by measuring nothing
 	// (the fm4p lesson, and the guard q3gp put on the pin below): say how
-	// many files were actually read. The floor is well under the ~280 the
-	// trees hold, so it fails on a broken walk and not on ordinary growth.
-	if scanned < 200 {
-		t.Fatalf("only %d files read under cmd/ internal/ etc/ — the walk found nothing to pin", scanned)
+	// many files were actually read — and say it PER ROOT, because a total
+	// is a witness the big roots can pay on their own: examples/ is 25 files
+	// against ~285, so a walk that read none of it still clears any total
+	// floor. Each floor is well under what its root holds, so it fails on a
+	// broken walk and not on ordinary growth.
+	//
+	// The floors are read off qibRootFloor and not off the walk list, so
+	// deleting a root from qibShippedRoots — the cheapest way to make this
+	// pin stop complaining — fails it at 0 files rather than passing it by
+	// having nothing to say.
+	for _, rel := range qibShippedRoots {
+		if _, ok := qibRootFloor[rel]; !ok {
+			t.Fatalf("root %s/ is walked with no floor in qibRootFloor — an unwitnessed root", rel)
+		}
 	}
-	t.Logf("read %d files under cmd/ internal/ etc/", scanned)
+	floored := make([]string, 0, len(qibRootFloor))
+	for rel := range qibRootFloor {
+		floored = append(floored, rel)
+	}
+	sort.Strings(floored)
+	for _, rel := range floored {
+		if scanned[rel] < qibRootFloor[rel] {
+			t.Fatalf("only %d files read under %s/ (floor %d) — the walk found nothing to pin there",
+				scanned[rel], rel, qibRootFloor[rel])
+		}
+		t.Logf("read %d files under %s/", scanned[rel], rel)
+	}
 	if len(hits) > 0 {
 		t.Errorf("ADR 0012 App.A 5: the shipped tree names the originating instance (%d hits):\n  %s",
 			len(hits), strings.Join(hits, "\n  "))
