@@ -84,16 +84,21 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 	}
 
 	for _, q := range []crQuote{
+		// The whole sentence since rangerhq-pwpx: the class carries its own
+		// one-line fix, so that the 80% of this section stands in the error
+		// itself whether or not the operator ever reaches this page.
 		{"unreadable", unreadable.Error(),
-			`keychain item "Claude Code-credentials" unreadable`},
+			"keychain item \"Claude Code-credentials\" unreadable — this binary's keychain ACL " +
+				"may have been dropped by `make install`; grant access when prompted, or run `claude` once"},
 
 		{"401 stale",
 			(&AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}).Error(),
-			"usage endpoint returned 401 Unauthorized: credential stale — waiting for an interactive refresh"},
+			"usage endpoint returned 401 Unauthorized: credential stale — run `claude` once to refresh"},
 
 		{"403 wrong kind",
 			(&AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden}).Error(),
-			"usage endpoint returned 403 Forbidden: this credential is not entitled to plan windows — not a freshness problem"},
+			"usage endpoint returned 403 Forbidden: this credential is not entitled to plan windows — " +
+				"a setup-token never will be, and this is not a freshness problem"},
 
 		{"429 rate-limited",
 			(&RateLimit{Status: "429 Too Many Requests", RetryAfter: time.Hour}).Error(),
