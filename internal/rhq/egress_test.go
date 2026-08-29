@@ -210,7 +210,12 @@ func TestEgressWatcherOutlivesTheExecAndThenTakesTheRouteDown(t *testing.T) {
 	// name is exactly the confusion the argv0 launcher exists to avoid.
 	seen := filepath.Join(t.TempDir(), "watcher-argv")
 	stub := filepath.Join(t.TempDir(), "stub")
-	os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+seen+"\n"), 0o755)
+	// One line per write, with a pause between them. The stub is another
+	// process, so a read of this file lands mid-write whatever it writes —
+	// writing the argv a line at a time only makes that certain instead of
+	// occasional, which is what keeps the wait below honest: take the first
+	// non-empty read and this test is red every time (ranger-base-yl8j).
+	os.WriteFile(stub, []byte("#!/bin/sh\n: > "+seen+"\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> "+seen+"; sleep 0.05; done\n"), 0o755)
 	old := cageReaperBin
 	cageReaperBin = func() (string, error) { return stub, nil }
 	defer func() { cageReaperBin = old }()
@@ -224,18 +229,29 @@ func TestEgressWatcherOutlivesTheExecAndThenTakesTheRouteDown(t *testing.T) {
 	if b, _ := os.ReadFile(touched); string(b) != "down\nup\n" {
 		t.Errorf("a launch replaces the previous route rather than joining it: %q", b)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	var argv []byte
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(seen); err == nil && len(b) > 0 {
-			argv = b
+	// Wait for the three things the assertion wants, not for the file to
+	// stop being empty: "non-empty" is not "finished" when another process
+	// is still writing it, and a short read here reports a watcher that was
+	// handed two of three arguments by a launcher that always passes all
+	// three. When they never arrive, the failure names the last read.
+	want := []string{CageReapFlag, planFile, fmt.Sprint(os.Getpid())}
+	deadline := time.Now().Add(egressWait)
+	var argv string
+	for {
+		b, _ := os.ReadFile(seen)
+		argv = string(b)
+		got := true
+		for _, w := range want {
+			got = got && strings.Contains(argv, w)
+		}
+		if got {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			t.Errorf("the watcher is handed the plan and the pid the exec will not change; in %s it was handed %q, wanted all of %q", egressWait, argv, want)
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-	if !strings.Contains(string(argv), CageReapFlag) || !strings.Contains(string(argv), planFile) ||
-		!strings.Contains(string(argv), fmt.Sprint(os.Getpid())) {
-		t.Errorf("the watcher is handed the plan and the pid the exec will not change: %q", argv)
 	}
 
 	// And the watcher itself: while its parent is still the engine it does
@@ -390,7 +406,8 @@ func TestEgressProxyRefusesUnknownHostsAndLogsThemLikeL1(t *testing.T) {
 	}
 }
 
-// egressWait is the one budget every wait around the real proxy uses. It is
+// egressWait is the one budget every wait on another process in this file
+// uses — the rendered proxy, and the forked watcher's argv. It is
 // headroom for the scheduler, not for the code: 200 timed starts of this
 // proxy under a concurrent `go test ./...` at load 12-15 came up in p50 74ms,
 // p99 135ms, max 157ms. It has to be headroom, because the load this box
