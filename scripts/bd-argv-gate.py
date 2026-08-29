@@ -66,7 +66,8 @@ ALLOWED = {
 
 # Carve-outs inside an allowed verb, keyed by verb. Each entry names the
 # subcommands that stay refused and the option tokens that stay refused
-# anywhere in the segment.
+# anywhere in the segment. Spell an opt in its bare `--flag` form only: the
+# scan in verdict() strips `=value`, so one entry covers both spellings.
 SUBDENY = {
     "dep": {"subs": {"relate"}, "opts": set()},
     "sync": {"subs": set(), "opts": {"--full"}},
@@ -397,7 +398,27 @@ def verdict(command):
             nxt, _ = resolve_verb(tail)
             if nxt in sub["subs"]:
                 return "`bd %s %s` is refused" % (verb, nxt)
-            bad = [t for t in tail if t in sub["opts"]]
+            # `--flag=value` is the SAME FLAG to pflag, so an exact-token
+            # scan missed it: `sync --full` was refused and `sync --full=true`
+            # — pull, merge, export, commit, PUSH — was waved through
+            # (MEASURED, ranger-base-il8u; `list --limit 1 --json=true` prints
+            # exactly what `--json` prints). The L1 shim grew the same arm one
+            # layer down (ranger-base-vct2); this is that hole at the layer the
+            # operator's PreToolUse hook actually runs.
+            #
+            # The value is NOT read. `--full=false` disables the flag, but
+            # deciding that means reimplementing strconv.ParseBool's spellings
+            # of false, and a fence that argues about truthiness is one
+            # respelling from being wrong. So every `--full=...` is refused and
+            # the bare flag is the spelling that works — the wall standing
+            # wider than the rule, which is the same trade vct2 made.
+            #
+            # Prefix abbreviation is not a third spelling to cover: pflag
+            # rejects it. `list --limit 1 --jso` is "Error: unknown flag:
+            # --jso" (MEASURED, 0.49.1) — unlike git's parse-options, where
+            # every unambiguous prefix is the flag.
+            bad = [t for t in tail
+                   if t in sub["opts"] or t.split("=", 1)[0] in sub["opts"]]
             if bad:
                 return "`bd %s %s` is refused" % (verb, bad[0])
     return None

@@ -134,6 +134,20 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"BD=bd; $BD daemon stop":                    "$BD",
 		"bd --no-daemon 'daemon' stop":              "daemon",
 
+		// A FLAG'S VALUE IS PART OF THE FLAG (ranger-base-il8u). pflag takes
+		// `--flag=value` as the SAME flag, and SUBDENY's opts were scanned by
+		// exact token membership: `bd sync --full` was refused (the row
+		// above) and `bd sync --full=true` — pull, merge, export, commit,
+		// PUSH — was waved through, at the layer the operator's PreToolUse
+		// hook actually runs. The property over the whole SUBDENY table is
+		// TestQABdArgvGateRefusesEveryDeniedOptInBothSpellings below; these
+		// rows are here because this is the table people read, and because
+		// the escaped one exercises the sh WRAPPER's slow path for a `=`
+		// spelling, which nothing else does.
+		"bd sync --full=true":           "sync --full=true",
+		"bd sync --dry-run --full=true": "sync --full=true",
+		`b\d sync --full=true`:          "sync --full=true",
+
 		// A REDIRECTION IS PUNCTUATION, AND IT MUST NOT HIDE A VERB
 		// (ranger-base-4txk). The fix that stopped reading `>` as the verb had
 		// to consume the redirect's TARGET too, and had to reach the command
@@ -211,6 +225,20 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"bd dep add a b",
 		"bd sync",
 		"bd version",
+
+		// The `=` spelling is stripped to the flag NAME and then matched by
+		// MEMBERSHIP (ranger-base-il8u) — not by prefix, and not by substring.
+		// These keep the fix from degenerating into "refuse any argument with
+		// --full in it", each red under a different wrong shape of the scan
+		// (MUTATION-CHECKED, one arm at a time):
+		//   startswith  -> `--fullish` is a DIFFERENT flag, and is refused
+		//   `o in t`    -> a commit message that merely quotes the flag
+		// The third row is the measurement this bead rests on, standing as a
+		// regression: `--json=true` prints exactly what `--json` prints, and a
+		// verb with no SUBDENY entry gets no opinion from the gate either way.
+		"bd sync --fullish=1",
+		"bd sync -m 'not --full but close'",
+		"bd list --limit 1 --json=true",
 		"bd",        // bd's own usage
 		"bd --json", // options only, still usage
 		"bd help daemon",
@@ -435,6 +463,111 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 			t.Errorf("must be left alone: %s -> wrapper %q, parser %q", command, wrapper, parser)
 		}
 	}
+}
+
+// TestQABdArgvGateRefusesEveryDeniedOptInBothSpellings pins ranger-base-il8u:
+// SUBDENY's opts were scanned by exact token membership, and pflag takes
+// `--flag=value` as the same flag. MEASURED against the shipped parser, one
+// JSON payload per line on stdin:
+//
+//	bd sync --full         -> deny
+//	bd sync --push --full  -> deny        (the flag has no position, vct2)
+//	bd sync --full=true    -> NO output, exit 0
+//
+// `bd sync --full` is the one spelling of sync that pulls, merges, exports,
+// commits and PUSHES, and `--json=true` was measured printing exactly what
+// `--json` prints, so the third line is that sync with the fence asleep. The
+// L1 shim grew this arm in ranger-base-vct2; L2 is the layer the operator's
+// PreToolUse hook actually runs, and it still had the hole — which also
+// retires vct2's claim that L2 had closed it on claude. A layer is credited
+// with the spellings someone tested, not with the ones nobody typed.
+//
+// The table is read OUT OF THE PARSER rather than restated here: an opt added
+// to SUBDENY is covered the day it lands, not the day someone remembers this
+// file. Every opt is asserted in five spellings and four positions, and each
+// arm carries its near miss — `--fullish=1` must stay silent, so a scan
+// written as a prefix or substring test fails here rather than passing by
+// being indiscriminate.
+func TestQABdArgvGateRefusesEveryDeniedOptInBothSpellings(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	table := subdenyOpts(t)
+	// A table that came back empty — a rename, a botched edit, an import that
+	// half-worked — makes every loop below vacuously green. That is the same
+	// "pass" a deleted fence produces, so it is a failure here.
+	if len(table) == 0 {
+		t.Fatal("no SUBDENY opts came back from the parser; this test would measure nothing")
+	}
+	for verb, opts := range table {
+		for _, opt := range opts {
+			// `--full=false` DISABLES the flag and is refused anyway. Reading
+			// the value means reimplementing strconv.ParseBool's spellings of
+			// false, and a fence that argues about truthiness is one
+			// respelling from being wrong — so the wall stands wider than the
+			// rule, exactly as it does at L1. Pinned so that widening is a
+			// decision someone made, not an accident someone can quietly undo.
+			for _, spelling := range []string{
+				opt, opt + "=true", opt + "=false", opt + "=1", opt + "=",
+			} {
+				// A flag has no position: before the denied one, after it, and
+				// with a GLOBAL option moved in front of the verb, which is the
+				// reordering this whole gate exists for (ranger-base-3bqn).
+				for _, command := range []string{
+					"bd " + verb + " " + spelling,
+					"bd " + verb + " --dry-run " + spelling,
+					"bd " + verb + " " + spelling + " --json",
+					"bd --no-daemon " + verb + " " + spelling,
+				} {
+					reason := denied(t, runGate(t, nil, command))
+					if reason == "" {
+						t.Errorf("MUST be refused, was waved through: %s", command)
+						continue
+					}
+					// Naming the token as TYPED, not the canonical flag: the
+					// operator reading the refusal is looking for the thing
+					// they wrote.
+					if want := verb + " " + spelling; !strings.Contains(reason, want) {
+						t.Errorf("refusal of %q must name %q, said: %s", command, want, reason)
+					}
+				}
+			}
+			for _, near := range []string{opt + "ish", opt + "ish=1", opt + "-x=1"} {
+				command := "bd " + verb + " " + near
+				if reason := denied(t, runGate(t, nil, command)); reason != "" {
+					t.Errorf("%q is a DIFFERENT flag and must pass through, was refused: %s",
+						command, reason)
+				}
+			}
+		}
+	}
+}
+
+// subdenyOpts reads SUBDENY's option tokens out of the parser itself. Import,
+// not a regexp over the source: a table restated in a test is a table that
+// drifts, and the drift is always in the direction of the test still passing.
+// -B and dont_write_bytecode keep a __pycache__ out of scripts/, the same
+// courtesy verify-bd-argv-gate.sh pays for the same import.
+func subdenyOpts(t *testing.T) map[string][]string {
+	t.Helper()
+	const prog = `import importlib.util, json, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("gate", "scripts/bd-argv-gate.py")
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+json.dump({k: sorted(v["opts"]) for k, v in m.SUBDENY.items() if v["opts"]}, sys.stdout)
+`
+	cmd := exec.Command("python3", "-B", "-S", "-E", "-c", prog)
+	var out, errb strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("reading SUBDENY out of the parser: %v (%s)", err, errb.String())
+	}
+	var table map[string][]string
+	if err := json.Unmarshal([]byte(out.String()), &table); err != nil {
+		t.Fatalf("SUBDENY did not come back as JSON: %q (%v)", out.String(), err)
+	}
+	return table
 }
 
 // ─── ranger-base-4txk: LIVE DEFECT, GREEN ON PURPOSE ────────────────────────
