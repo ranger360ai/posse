@@ -265,6 +265,21 @@ func changelogHeadings(t *testing.T) []string {
 
 var changelogVersionHeading = regexp.MustCompile(`^v[0-9][0-9.]*`)
 
+// newestChangelogVersion is the first `## vX.Y.Z` heading in CHANGELOG.md —
+// the section a release reader is guaranteed to be able to emit. It fails
+// loudly rather than returning "", because a caller that got an empty tag
+// would exercise the very branch it means to be the control for.
+func newestChangelogVersion(t *testing.T) string {
+	t.Helper()
+	for _, h := range changelogHeadings(t) {
+		if v := changelogVersionHeading.FindString(h); v != "" {
+			return v
+		}
+	}
+	t.Fatalf("CHANGELOG.md has no `## vX.Y.Z` heading: %v", changelogHeadings(t))
+	return ""
+}
+
 // The endpoint-pin disclosure has to be inside a section the RELEASE READER
 // emits — not merely somewhere in the file. Text above the first heading, or
 // under a heading no release names, is text nobody downloading a release ever
@@ -399,12 +414,18 @@ func TestReleaseDraftStepHandsGhTheChangelogSection(t *testing.T) {
 	}
 	notes := filepath.Join(t.TempDir(), "release-notes.md")
 
-	// v0.0.0 has no section of its own, so this takes the Unreleased fallback
-	// — the shape a real cut has before the rename, and the one that must
-	// still put text in front of gh.
-	argv, stdout := runDraftStep(t, repo, "TAG=v0.0.0", "SHA=deadbeef", "NOTES="+notes)
+	// The tag whose section the reader CAN emit, taken from the changelog
+	// itself rather than written here (ranger-base-qlrx). This arm used to
+	// ask for v0.0.0 and reach the `## Unreleased` fallback, which made it a
+	// pin on the rename being OUTSTANDING: cutting v0.4.0 renamed that
+	// heading and the arm silently became the empty-reader branch below,
+	// asserting the opposite of what it is named for. Reading the newest
+	// version heading holds either way — before a cut it is the last
+	// release's section, after one it is this cut's.
+	tag := newestChangelogVersion(t)
+	argv, stdout := runDraftStep(t, repo, "TAG="+tag, "SHA=deadbeef", "NOTES="+notes)
 
-	for _, want := range []string{"release", "create", "v0.0.0", "--draft", "--generate-notes", "--target", "deadbeef", "--notes-file", notes} {
+	for _, want := range []string{"release", "create", tag, "--draft", "--generate-notes", "--target", "deadbeef", "--notes-file", notes} {
 		if !slices.Contains(argv, want) {
 			t.Errorf("gh was not handed %q.\nargv: %v\nstep output:\n%s", want, argv, stdout)
 		}
@@ -413,8 +434,18 @@ func TestReleaseDraftStepHandsGhTheChangelogSection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the step named a notes file it never wrote: %v", err)
 	}
-	if !strings.Contains(string(body), "RHQ_PLAN_USAGE_URL") {
-		t.Errorf("the notes file handed to gh does not carry the disclosure:\n%s", body)
+	// AGREEMENT, not a marker: whatever the reader prints for this tag is
+	// what must reach gh, byte for byte. A `Contains` on the disclosure's own
+	// vocabulary would go red the first release whose newest section is not
+	// the one carrying it — which section carries it is
+	// TestChangelogDisclosesTheEndpointPinVulnerabilityWhereAReleaseWillCarryIt's
+	// question, not this one's.
+	exit, want, errOut := runReleaseNotes(t, "--file", "CHANGELOG.md", "--version", tag)
+	if exit != 0 || strings.TrimSpace(want) == "" {
+		t.Fatalf("the reader emitted nothing for %s (exit %d) — this arm would pass for the wrong reason\nstderr: %s", tag, exit, errOut)
+	}
+	if got := strings.TrimSpace(string(body)); got != strings.TrimSpace(want) {
+		t.Errorf("the notes file handed to gh is not what the reader printed for %s.\ngot:\n%s\nwant:\n%s", tag, got, want)
 	}
 
 	// The other branch: a reader that emits nothing must leave --notes-file

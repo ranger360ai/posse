@@ -320,11 +320,23 @@ func golden(t *testing.T, name string, got string) {
 	}
 }
 
+// versionMask is the release version, blanked to a token of its own LENGTH,
+// so the goldens pin the header's shape without pinning the number
+// (ranger-base-qlrx: bumping to 0.4.0 reddened all three). Same length on
+// purpose — the header is width-truncated, so a substitution that changed
+// the line's length would move every column after it and the goldens would
+// stop meaning anything. What the version actually IS is
+// cmd/posse.TestVersionNamesTheCommitWithoutTheLdflag's question.
+func versionMask() (from, to string) {
+	return rhq.Version, strings.Repeat("V", len(rhq.Version))
+}
+
 // ADR 0004 §5: render(w,h) is a pure function of the row model, drawn to a
 // size. Three sizes, one fixed clock, byte-for-byte.
 func TestCockpitGolden(t *testing.T) {
 	defer func(b string) { rhq.Build = b }(rhq.Build)
 	rhq.Build = "test"
+	from, to := versionMask()
 	for _, sz := range []struct {
 		name string
 		w, h int
@@ -343,7 +355,11 @@ func TestCockpitGolden(t *testing.T) {
 					t.Errorf("line wider than %d (%d runes): %q", sz.w, n, ln)
 				}
 			}
-			golden(t, "cockpit-"+sz.name, strings.ReplaceAll(out, "\r\n", "\n"))
+			body := strings.ReplaceAll(out, "\r\n", "\n")
+			if !strings.Contains(body, from+"+test") {
+				t.Fatalf("the header does not carry %q — the mask below would be a no-op and the golden would pin nothing", from+"+test")
+			}
+			golden(t, "cockpit-"+sz.name, strings.ReplaceAll(body, from, to))
 		})
 	}
 }
