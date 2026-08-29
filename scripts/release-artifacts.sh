@@ -239,15 +239,44 @@ echo "release-artifacts: $VERSION from $sha"
 # uploading THAT name 404s at install time on a box nobody tested. Measured.
 bottle_tag() { # $1=goos $2=goarch -> the brew bottle tag
 	case $1/$2 in
-	# One macOS tag per arch, at HOMEBREW_MACOS_OLDEST_SUPPORTED (sonoma, 14).
-	# brew falls back to a bottle built for an OLDER macOS
-	# (OS::Mac::Bottles::Collector#find_older_compatible_tag), so sonoma covers
-	# sequoia, tahoe and whatever comes next without a new asset per release
-	# of macOS — verified by pouring an arm64_sonoma bottle on macOS 26 Tahoe.
-	# Anything older than sonoma is a Homebrew that brew itself calls
-	# unsupported; it builds from source, as it did before this bead.
-	darwin/arm64) printf arm64_sonoma ;;
-	darwin/amd64) printf sonoma ;;
+	# ONE macOS tag per arch, and the tag names the OLDEST macOS we cover, not
+	# the newest — brew's fallback runs downwards only (ranger-base-olwk).
+	# OS::Mac::Bottles::Collector#find_older_compatible_tag keeps a candidate
+	# whose `to_macos_version <= tag_version`, so a bottle built for an older
+	# macOS pours on a newer one and NEVER the other way round. One tag at the
+	# floor therefore covers every macOS above it, present and future, with no
+	# new asset per macOS release; a tag above a box's macOS covers nothing.
+	#
+	# THE FLOOR IS BIG SUR (11), NOT SONOMA. The first cut of this file read
+	# HOMEBREW_MACOS_OLDEST_SUPPORTED (14) as "the oldest macOS Homebrew
+	# supports". That constant is the oldest macOS Homebrew *builds bottles
+	# for*; the oldest it RUNS on is HOMEBREW_MACOS_OLDEST_ALLOWED (10.15), and
+	# MacOSVersion::SYMBOLS still carries ventura 13, monterey 12, big_sur 11.
+	# So macOS 11-13 ran a supported brew, matched no bottle, took the
+	# build-from-source path and met its fatal Command Line Tools gate — the
+	# defect this whole section exists to close, still open for three macOS
+	# releases. Measured against the PUBLISHED v0.4.0 tap on Homebrew 6.0.20:
+	# `brew fetch --bottle-tag=ventura` answered "Bottle for tag :ventura is
+	# unavailable", and so did arm64_ventura, arm64_monterey, monterey, big_sur.
+	# Measured again through brew's own Collector, one call per target tag:
+	# with {arm64_sonoma, sonoma} every tag below 14 resolves to NONE; with
+	# {arm64_big_sur, big_sur} every macOS from 11 up to tahoe resolves.
+	#
+	# WHY NOT LOWER. big_sur is the oldest macOS that exists on arm64 at all,
+	# so arm64 has no floor below it. Intel could go one lower, to catalina
+	# (10.15, HOMEBREW_MACOS_OLDEST_ALLOWED) — deliberately not taken: brew's
+	# own note in macos_version.rb removes the catalina symbol in September
+	# 2026 or later — next month — and a removed symbol makes
+	# `to_macos_version` raise, which the collector rescues by SKIPPING the
+	# tag. A catalina-only Intel floor would therefore stop covering Intel
+	# entirely the moment that lands: a wider floor today, bought with a total
+	# regression for every Intel Mac in weeks. big_sur's own removal is dated
+	# September 2027 or later, in the same note that removes macOS x86_64
+	# support outright, so that tag and that platform expire together. macOS
+	# 10.15 Intel is what is left on the source path, and INSTALL.md §2 names
+	# it rather than misdiagnosing it.
+	darwin/arm64) printf arm64_big_sur ;;
+	darwin/amd64) printf big_sur ;;
 	# Linux has NO older-version fallback — the collector override is
 	# macOS-only — so these two tags are exact and complete.
 	linux/arm64) printf arm64_linux ;;

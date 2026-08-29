@@ -209,7 +209,7 @@ Ten assets must be present before you press Publish:
 ```
 posse_X.Y.Z_darwin_arm64.tar.gz          posse_X.Y.Z_darwin_amd64.tar.gz
 posse_X.Y.Z_linux_arm64.tar.gz           posse_X.Y.Z_linux_amd64.tar.gz
-posse-X.Y.Z.arm64_sonoma.bottle.tar.gz   posse-X.Y.Z.sonoma.bottle.tar.gz
+posse-X.Y.Z.arm64_big_sur.bottle.tar.gz  posse-X.Y.Z.big_sur.bottle.tar.gz
 posse-X.Y.Z.arm64_linux.bottle.tar.gz    posse-X.Y.Z.x86_64_linux.bottle.tar.gz
 checksums.txt                            posse.rb
 ```
@@ -304,7 +304,7 @@ $ base=https://github.com/ranger360ai/posse/releases/download/vX.Y.Z
 $ curl -sL -O "$base/checksums.txt" -O "$base/posse.rb"
 $ for a in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
 >   curl -sLO "$base/posse_X.Y.Z_$a.tar.gz"; done
-$ for t in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+$ for t in arm64_big_sur big_sur arm64_linux x86_64_linux; do
 >   curl -sLO "$base/posse-X.Y.Z.$t.bottle.tar.gz"; done
 $ shasum -a 256 -c checksums.txt          # GitHub's bytes match the manifest
 $ curl -sL -o tap.rb https://raw.githubusercontent.com/ranger360ai/homebrew-tap/main/Formula/posse.rb
@@ -315,7 +315,7 @@ $ for h in $(grep -oE '[a-f0-9]{64}' tap.rb); do
 **Verify:** eight `OK` lines, `diff` silent, all eight files `OK`.
 
 The digest grep is `[a-f0-9]{64}`, not `sha256 "…"`: the bottle block spells
-its hashes `sha256 cellar: :any_skip_relocation, arm64_sonoma: "…"`, so the
+its hashes `sha256 cellar: :any_skip_relocation, arm64_big_sur: "…"`, so the
 narrower pattern silently skips all four bottles and prints four confident
 `OK`s about half the release.
 (`shasum -a 256 -c` is the macOS spelling; `sha256sum -c` is GNU's. The

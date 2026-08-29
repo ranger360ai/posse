@@ -198,18 +198,32 @@ there is nothing here to debug: take the checkout path below, which needs Go
 and nothing else. (Maintainers: `docs/runbooks/release.md`.)
 
 If brew answers `Your Command Line Tools are too outdated`, **you are on a tap
-older than this page.** Releases since `ranger-base-9vg3` ship Homebrew
-*bottles* — prebuilt kegs brew pours straight into the Cellar — and pouring one
-never enters the path that error comes from. Before that, the formula carried
-per-architecture tarballs and no bottle, so brew took its build-from-source
-path and ran its **fatal** developer-tools checks before unpacking anything: on
-a Mac whose Command Line Tools are behind its macOS the install died there,
-having never read our formula, on the route sold two paragraphs up as "a
-release binary, no Go needed".
+that has no bottle for your macOS** — either one older than this page, or one
+whose bottles stop above the macOS you run. A bottle is a prebuilt keg brew
+pours straight into the Cellar, and pouring one never enters the path that
+error comes from. Without one, brew takes its build-from-source path and runs
+its **fatal** developer-tools checks before unpacking anything: on a Mac whose
+Command Line Tools are behind its macOS the install dies there, having never
+read our formula, on the route sold two paragraphs up as "a release binary, no
+Go needed".
 
-If you see it anyway: `brew update` and re-run, so you get the tap's current
-formula. If it persists, the release you are installing predates bottles —
-update the Command Line Tools (Software Update, or `sudo xcode-select
+**Which macOS is covered, and why it is a floor.** brew only ever falls back
+*downwards*: a bottle built for an older macOS pours on a newer one, never the
+reverse. So a release ships one bottle per architecture, tagged at the *oldest*
+macOS it covers, and everything above that tag pours from it.
+
+| release | oldest macOS it pours on |
+|---|---|
+| v0.3.0 and earlier | no bottles at all — every Mac built from source |
+| v0.4.0 | 14 Sonoma (so 13 Ventura and older still built from source) |
+| since `ranger-base-olwk` | 11 Big Sur, both architectures |
+
+So: **`brew update` and re-run first.** If you are on macOS 13 Ventura, 12
+Monterey or 11 Big Sur, that is the whole fix — nothing is wrong on your
+machine, v0.4.0 simply had no bottle that far down. If it persists you are
+below the floor: **macOS 10.15 Catalina**, Intel only, which no release of
+ours bottles and which Homebrew itself stops supporting from September 2026.
+Update the Command Line Tools (Software Update, or `sudo xcode-select
 --install`) and re-run, or take the checkout path, which does not go through
 brew at all.
 

@@ -306,6 +306,19 @@ probe_tap() {
 	local published=$tapdir/Formula/posse.rb
 	[ -f "$published" ] || { bad "the tap has no Formula/posse.rb"; return; }
 
+	# Render with the generator AS IT WAS AT THE RELEASE TAG, not as it is at
+	# HEAD. The published formula was rendered when the release was cut, so
+	# comparing it to HEAD's generator reports every later generator change as
+	# tap drift — a red instrument that is right about nothing.
+	local gen=$ROOT/tap-formula.sh gensrc
+	if ( cd "$REPO_ROOT" && git rev-parse -q --verify "$VERSION" >/dev/null 2>&1 ) &&
+		( cd "$REPO_ROOT" && git show "$VERSION:scripts/tap-formula.sh" ) > "$gen" 2>/dev/null; then
+		gensrc="scripts/tap-formula.sh at $VERSION"
+	else
+		cp "$REPO_ROOT/scripts/tap-formula.sh" "$gen"
+		gensrc="scripts/tap-formula.sh at HEAD (no $VERSION tag here)"
+	fi
+
 	# Regenerate from the shas the published formula itself carries. If the
 	# generator and the tap disagree, one of them was edited by hand — which is
 	# the failure the generator exists to make unavailable.
@@ -325,29 +338,36 @@ probe_tap() {
 	# bottled release, while the summary still printed "every probe agreed".
 	# The anti-hand-edit check is the strongest thing `tap` mode does; it has to
 	# be reconstructible or it is not being run.
-	local btag
-	for btag in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+	#
+	# THE TAG LIST IS THE RELEASE'S OWN, NOT A LIST WRITTEN HERE (ranger-base-olwk).
+	# The macOS floor moves — v0.4.0 shipped arm64_sonoma/sonoma, later releases
+	# ship arm64_big_sur/big_sur — and a list spelled out in this probe reports
+	# every such move as a published tap with a missing bottle, on the one
+	# instrument whose job is to say whether the published tap is sound. So the
+	# tags are read out of the generator fetched above, at the release's own
+	# tag: exactly the tags that release asked for are exactly the tags its
+	# formula must carry. The pattern is the generator's own assignment form,
+	# `BDX=$(bottle_digest <tag>)`, anchored at column 0 so `bottle_digest() {`
+	# — the definition — never enters the list.
+	local btags btag
+	btags=$(sed -n 's/^[A-Z][A-Z]*=\$(bottle_digest \([a-z0-9_]*\)).*/\1/p' "$gen")
+	if [ -z "$btags" ]; then
+		# Not a parse failure: a release before ranger-base-9vg3 asked for no
+		# bottles at all, and its formula rightly carries none. Saying which it
+		# is keeps a pre-bottle probe from reading as a broken tap.
+		skip "$gensrc renders no bottle block — $VERSION predates bottles, so there is nothing here to check"
+		return
+	fi
+	for btag in $btags; do
 		local bsha
-		# `sonoma:` is a suffix of `arm64_sonoma:`, so the tag is anchored on the
-		# character before it. Unanchored, the sonoma lookup takes whichever of
-		# the two lines comes first and the two digests silently swap.
+		# `big_sur:` is a suffix of `arm64_big_sur:`, so the tag is anchored on
+		# the character before it. Unanchored, the big_sur lookup takes whichever
+		# of the two lines comes first and the two digests silently swap.
 		bsha=$(awk -v t="$btag" '
 			$0 ~ ("(^|[ ,])" t ":") { if (match($0, /[a-f0-9]{64}/)) { print substr($0, RSTART, RLENGTH); exit } }' "$published")
 		[ -n "$bsha" ] || { bad "the published formula carries no bottle sha256 for $btag — brew has no prebuilt keg for that platform and will build from source there"; return; }
 		printf '%s  posse-%s.%s.bottle.tar.gz\n' "$bsha" "$BARE" "$btag" >> "$sums"
 	done
-	# Render with the generator AS IT WAS AT THE RELEASE TAG, not as it is at
-	# HEAD. The published formula was rendered when the release was cut, so
-	# comparing it to HEAD's generator reports every later generator change as
-	# tap drift — a red instrument that is right about nothing.
-	local gen=$ROOT/tap-formula.sh gensrc
-	if ( cd "$REPO_ROOT" && git rev-parse -q --verify "$VERSION" >/dev/null 2>&1 ) &&
-		( cd "$REPO_ROOT" && git show "$VERSION:scripts/tap-formula.sh" ) > "$gen" 2>/dev/null; then
-		gensrc="scripts/tap-formula.sh at $VERSION"
-	else
-		cp "$REPO_ROOT/scripts/tap-formula.sh" "$gen"
-		gensrc="scripts/tap-formula.sh at HEAD (no $VERSION tag here)"
-	fi
 	local regenerated=$ROOT/regenerated.rb
 	if sh "$gen" --version "$VERSION" --checksums "$sums" --repo "$REPO" > "$regenerated" 2>/dev/null; then
 		if diff -q "$regenerated" "$published" >/dev/null; then
@@ -385,7 +405,7 @@ probe_tap() {
 	# matters for a pour: brew verifies the bottle it downloads against the
 	# formula, so one wrong bottle digest breaks `brew install` on exactly one
 	# platform — the one whoever cut the release does not run.
-	for btag in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+	for btag in $btags; do
 		local bwant bgot bfile=posse-$BARE.$btag.bottle.tar.gz
 		bwant=$(awk -v p="$bfile" '$2 == p { print $1 }' "$sums")
 		if ! curl -fsSL -o "$ROOT/$bfile" "https://github.com/$REPO/releases/download/$VERSION/$bfile"; then
@@ -624,10 +644,17 @@ probe_bottle() {
 		return
 	fi
 
-	# The bottle this box would be served. One tag per arch, and brew falls back
-	# to an older macOS tag on its own, so sonoma is what a Tahoe box pours.
-	local tag=sonoma
-	[ "$(uname -m)" = arm64 ] && tag=arm64_sonoma
+	# The bottle this box would be served — read out of `bottle_tag()` in
+	# release-artifacts.sh rather than spelled here (ranger-base-olwk). One tag
+	# per arch, naming the OLDEST macOS covered, and brew falls back to an older
+	# macOS tag on its own, so that one tag is what this box pours whatever it
+	# runs. Spelling it here instead made the probe go red on the day the floor
+	# moved — which is the day it most needs to be able to run.
+	local goarch=amd64 tag
+	[ "$(uname -m)" = arm64 ] && goarch=arm64
+	tag=$(sed -n "s|^[[:space:]]*darwin/$goarch)[[:space:]]*printf \([a-z0-9_]*\).*|\1|p" \
+		"$REPO_ROOT/scripts/release-artifacts.sh" | head -1)
+	[ -n "$tag" ] || { bad "could not read darwin/$goarch's bottle tag out of scripts/release-artifacts.sh — without it this arm cannot name the file it is looking for"; return; }
 	local bottle=$D/dist/posse-$ver.$tag.bottle.tar.gz
 	if [ -f "$bottle" ]; then
 		ok "release-artifacts.sh wrote $(basename "$bottle") ($(wc -c <"$bottle" | tr -d ' ') bytes)"

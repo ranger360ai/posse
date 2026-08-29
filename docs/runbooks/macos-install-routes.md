@@ -247,11 +247,32 @@ succeeds and the pour check is the single line that fails.
   404s at install time. First observed as exactly that 404.
 - **An `arm64_sonoma` bottle pours on macOS 26 Tahoe.**
   `OS::Mac::Bottles::Collector#find_older_compatible_tag` falls back to a
-  bottle built for an older macOS, so **one tag per arch, at
-  `HOMEBREW_MACOS_OLDEST_SUPPORTED` (sonoma, 14), covers every macOS Homebrew
-  supports** — present and future — without an asset per macOS release. Linux
+  bottle built for an older macOS, so **one tag per arch covers every macOS
+  above it** — present and future — without an asset per macOS release. Linux
   has no such fallback (the override is macOS-only), so `x86_64_linux` and
   `arm64_linux` are exact.
+
+  **The fallback runs downwards ONLY, and that makes the tag a floor**
+  (`ranger-base-olwk`). The candidate is kept when
+  `candidate.to_macos_version <= tag_version`, so a tag ABOVE a box's macOS
+  matches nothing. v0.4.0 read `HOMEBREW_MACOS_OLDEST_SUPPORTED` (14) as "the
+  oldest macOS Homebrew supports" and tagged there; that constant is the oldest
+  macOS Homebrew *builds bottles for*, while the oldest it *runs on* is
+  `HOMEBREW_MACOS_OLDEST_ALLOWED` (10.15) and `MacOSVersion::SYMBOLS` still
+  carries ventura 13, monterey 12, big_sur 11. Measured against the published
+  v0.4.0 tap on Homebrew 6.0.20, one `brew fetch --formula --bottle-tag=TAG`
+  per tag: `arm64_tahoe`/`arm64_sequoia`/`arm64_sonoma` poured, and
+  `arm64_ventura`, `arm64_monterey`, `ventura`, `monterey`, `big_sur` each
+  answered `Bottle for tag … is unavailable`. Measured again through brew's own
+  `Collector#find_matching_tag`, which is the arm that shows the fix as well as
+  the defect: with `{arm64_sonoma, sonoma}` every macOS below 14 resolves to
+  NONE; with `{arm64_big_sur, big_sur}` every macOS from 11 to tahoe resolves.
+  The floor is now big_sur — the oldest macOS arm64 has at all. Catalina
+  (10.15, Intel) was considered and rejected as the Intel floor: brew's own
+  note removes the `catalina` symbol in September 2026 or later, an unknown
+  symbol makes `to_macos_version` raise and the collector SKIP the tag, so a
+  catalina-only Intel floor would stop covering Intel entirely the moment that
+  lands (measured: an unknown symbol is tolerated and skipped, not fatal).
 - **No `INSTALL_RECEIPT.json` is needed in the bottle.** `Tab.for_keg` returns
   an empty tab when the file is absent, and brew writes its own at pour time —
   confirmed by reading the receipt out of the poured keg (`poured_from_bottle:

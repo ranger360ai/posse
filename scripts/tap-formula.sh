@@ -149,6 +149,18 @@ base=https://github.com/$REPO/releases/download/$VERSION
 # is fatal for the same reason a missing tarball is: the formula would install
 # fine everywhere the releaser looked and build from source everywhere else.
 #
+# THE MACOS TAGS NAME THE OLDEST MACOS COVERED, NOT THE NEWEST (ranger-base-olwk).
+# brew's fallback runs downwards only — `find_older_compatible_tag` keeps a
+# candidate whose `to_macos_version <= tag_version` — so `arm64_big_sur` pours
+# on everything from Big Sur to Tahoe and beyond, while the `arm64_sonoma` this
+# block carried through v0.4.0 covered nothing below macOS 14. That left
+# Ventura, Monterey and Big Sur on brew's build-from-source path and its fatal
+# Command Line Tools gate, which is the defect the block exists to close.
+# Measured through brew's own Collector on 6.0.20, one call per target tag:
+# {arm64_sonoma, sonoma} answers NONE for every macOS below 14; {arm64_big_sur,
+# big_sur} answers for every macOS from 11 up. The floor and the reasons it is
+# not lower are written out at `bottle_tag()` in release-artifacts.sh.
+#
 # `cellar :any_skip_relocation` is a claim, and it is true here: the keg is one
 # static Go binary and two markdown files, so nothing in it mentions the
 # Homebrew prefix and brew has nothing to rewrite. It is also what lets one
@@ -160,8 +172,8 @@ bottle_digest() {
 	printf '%s' "$d"
 }
 
-BDA=$(bottle_digest arm64_sonoma)
-BDI=$(bottle_digest sonoma)
+BDA=$(bottle_digest arm64_big_sur)
+BDI=$(bottle_digest big_sur)
 BLA=$(bottle_digest arm64_linux)
 BLI=$(bottle_digest x86_64_linux)
 
@@ -223,10 +235,10 @@ class Posse < Formula
 
   bottle do
     root_url "$base"
-    sha256 cellar: :any_skip_relocation, arm64_sonoma: "$BDA"
-    sha256 cellar: :any_skip_relocation, sonoma:       "$BDI"
-    sha256 cellar: :any_skip_relocation, arm64_linux:  "$BLA"
-    sha256 cellar: :any_skip_relocation, x86_64_linux: "$BLI"
+    sha256 cellar: :any_skip_relocation, arm64_big_sur: "$BDA"
+    sha256 cellar: :any_skip_relocation, big_sur:       "$BDI"
+    sha256 cellar: :any_skip_relocation, arm64_linux:   "$BLA"
+    sha256 cellar: :any_skip_relocation, x86_64_linux:  "$BLI"
   end
 
   on_macos do

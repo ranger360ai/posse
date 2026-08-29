@@ -94,6 +94,30 @@ is scanned and no version of brew can get it wrong. On the published v0.4.0
 tap the fix is `brew update` — `INSTALL.md` §2 now says so, and says how to
 tell before installing.
 
+**`brew install` still needed a developer toolchain on macOS 13 and older.**
+
+*Affected: v0.4.0 on macOS 13 Ventura, 12 Monterey and 11 Big Sur. Fixed in the
+generators; it reaches deployers with the next release's bottles and formula.*
+
+v0.4.0 shipped one bottle per architecture tagged `sonoma`, chosen by reading
+`HOMEBREW_MACOS_OLDEST_SUPPORTED` (14) as "the oldest macOS Homebrew supports".
+It is not: that constant is the oldest macOS Homebrew *builds bottles for*, and
+the oldest it *runs on* is `HOMEBREW_MACOS_OLDEST_ALLOWED` (10.15). brew falls
+back only downwards — an older bottle pours on a newer macOS, never the reverse
+— so every Mac on macOS 13 or older matched no bottle, took the
+build-from-source path, and met the same fatal `Your Command Line Tools are too
+outdated` gate the entry below says v0.4.0 closed. Measured against the
+published tap on Homebrew 6.0.20: `brew fetch --bottle-tag=ventura` — and
+`arm64_ventura`, `monterey`, `arm64_monterey`, `big_sur` — each answered
+`Bottle for tag … is unavailable`.
+
+The floor is now **11 Big Sur** on both architectures, the oldest macOS arm64
+has at all, so every Mac from Big Sur up pours a bottle and none of them needs
+Xcode. The asset count is unchanged: it is the same four bottles, tagged lower.
+macOS 10.15 Catalina, Intel only, is what is left on the source path — Homebrew
+stops supporting it from September 2026 — and `INSTALL.md` §2 now names it
+instead of telling a Ventura reader their tap is out of date.
+
 ## v0.4.0
 
 ### Security
@@ -168,9 +192,11 @@ posse-<version>.<tag>.bottle.tar.gz`.
 **Upgrade guidance.** Nothing to do if `brew install` already worked for you —
 the binary and its contents are unchanged. If it did **not**, `brew update` and
 re-run: with a tap carrying this release's formula, stale Command Line Tools
-stop mattering. One tag per architecture at the oldest macOS Homebrew supports
-covers newer macOS too, so this does not need a new release each time Apple
-ships one.
+stop mattering on **macOS 14 Sonoma and newer**. brew falls back only
+*downwards*, so this release's one tag per architecture covers every macOS
+above Sonoma without a new release each time Apple ships one — and covers none
+below it. macOS 13 Ventura and older still built from source here, and still
+met the gate; that is the `ranger-base-olwk` entry above.
 
 ## v0.3.0
 

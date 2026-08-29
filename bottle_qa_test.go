@@ -28,9 +28,11 @@ package posse
 // nobody tested, which is the failure this whole file is arranged around.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -64,7 +66,7 @@ func parseBottleBlock(t *testing.T, body string) bottleBlock {
 		case in && strings.HasPrefix(s, `root_url "`):
 			b.rootURL = quoted(s)
 		case in && strings.HasPrefix(s, "sha256 "):
-			// sha256 cellar: :any_skip_relocation, arm64_sonoma: "…"
+			// sha256 cellar: :any_skip_relocation, arm64_big_sur: "…"
 			rest := strings.TrimPrefix(s, "sha256 ")
 			var cellar string
 			if strings.HasPrefix(rest, "cellar:") {
@@ -153,7 +155,7 @@ func bottleAssetOf(sha, version string) string {
 func TestTapFormulaRefusesAChecksumsFileMissingABottle(t *testing.T) {
 	dir := t.TempDir()
 	const version = "0.3.0"
-	missing := "posse-" + version + ".arm64_sonoma.bottle.tar.gz"
+	missing := "posse-" + version + ".arm64_big_sur.bottle.tar.gz"
 	checksums := writeChecksums(t, dir, version, missing)
 	out := filepath.Join(dir, "posse.rb")
 
@@ -177,13 +179,22 @@ func TestTapFormulaRefusesAChecksumsFileMissingABottle(t *testing.T) {
 // the two generators, run against each other
 // ---------------------------------------------------------------------------
 
-// The tags a release must carry, in one place. macOS gets ONE tag per arch, at
-// HOMEBREW_MACOS_OLDEST_SUPPORTED: brew falls back to a bottle built for an
-// older macOS (OS::Mac::Bottles::Collector#find_older_compatible_tag), so a
-// sonoma bottle pours on sequoia and tahoe — verified by pouring one on macOS
-// 26. Linux has no such fallback, the override being macOS-only, so its two
-// tags are exact and complete.
-var bottleTags = []string{"arm64_sonoma", "sonoma", "arm64_linux", "x86_64_linux"}
+// The tags a release must carry, in one place. macOS gets ONE tag per arch,
+// and that tag names the OLDEST macOS covered, not the newest: brew's fallback
+// runs downwards only — OS::Mac::Bottles::Collector#find_older_compatible_tag
+// keeps a candidate whose `to_macos_version <= tag_version` — so one tag at
+// the floor covers every macOS above it and nothing below it. Linux has no
+// such fallback, the override being macOS-only, so its two tags are exact and
+// complete.
+//
+// THE FLOOR IS BIG SUR (ranger-base-olwk). Through v0.4.0 it was sonoma, read
+// off HOMEBREW_MACOS_OLDEST_SUPPORTED (14) as "the oldest macOS Homebrew
+// supports" — but that constant is the oldest macOS Homebrew BUILDS BOTTLES
+// FOR, and the oldest it RUNS on is HOMEBREW_MACOS_OLDEST_ALLOWED (10.15).
+// macOS 11-13 therefore ran a supported brew, matched no bottle, and still met
+// the fatal Command Line Tools gate on the route INSTALL.md sells as needing no
+// toolchain. macOSBottleFloor below is the arm that keeps the floor down.
+var bottleTags = []string{"arm64_big_sur", "big_sur", "arm64_linux", "x86_64_linux"}
 
 // releaseFixture builds a throwaway repo that scripts/release-artifacts.sh
 // will accept, and runs it with a stub `go` — so the whole release path
@@ -486,5 +497,286 @@ func TestMacosInstallProbeBottleModeIsWiredAndControlled(t *testing.T) {
 	// hides the option it is documenting.
 	if !strings.Contains(src, "sed -n '2,69p'") {
 		t.Error("the --help range moved; re-check that it still ends at the last header line and not inside the code")
+	}
+
+	// NO BOTTLE TAG IS SPELLED IN THE PROBE (ranger-base-olwk). The macOS floor
+	// moves — v0.4.0 shipped sonoma, this release ships big_sur — and a list
+	// written here goes red on exactly the change it should be measuring: `tap`
+	// mode would report the published tap as missing a bottle it never had, and
+	// `bottle` mode would look for a file release-artifacts.sh no longer writes.
+	// Both now read the tags out of the generator, so this asserts the spelling
+	// stayed out rather than that one particular spelling stayed in.
+	for _, line := range strings.Split(src, "\n") {
+		s := strings.TrimSpace(line)
+		if !strings.HasPrefix(s, "for btag in ") {
+			continue
+		}
+		if s != "for btag in $btags; do" {
+			t.Errorf("scripts/macos-install-probe.sh names bottle tags itself: %q — read them from the generator ($btags) instead, or the probe goes red the next time the macOS floor moves", s)
+		}
+	}
+	for _, want := range []string{
+		"btags=$(sed -n 's/^[A-Z][A-Z]*=\\$(bottle_digest ", // tap mode: the release's own generator
+		"darwin/$goarch)", // bottle mode: bottle_tag() at HEAD
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("scripts/macos-install-probe.sh no longer derives its bottle tags (%q missing) — the loops above would then be iterating over an empty list and passing", want)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// the floor (ranger-base-olwk)
+// ---------------------------------------------------------------------------
+
+// MacOSVersion::SYMBOLS, read out of
+// Library/Homebrew/macos_version.rb on Homebrew 6.0.20, 2026-08-29 — the same
+// brew whose Collector produced the resolutions below. Restated here because
+// CI has no Homebrew: the pin is a snapshot, and the runbook says which brew
+// it was taken from so a future reader can retake it.
+//
+// `HOMEBREW_MACOS_OLDEST_ALLOWED` is 10.15 and `HOMEBREW_MACOS_OLDEST_SUPPORTED`
+// is 14. The gap between them is the whole of this bead: SUPPORTED is the
+// oldest macOS Homebrew builds bottles for, ALLOWED is the oldest it runs on,
+// and a Mac in between runs a working brew that finds none of our bottles.
+var macOSSymbolVersions = map[string]float64{
+	"golden_gate": 27,
+	"tahoe":       26,
+	"sequoia":     15,
+	"sonoma":      14,
+	"ventura":     13,
+	"monterey":    12,
+	"big_sur":     11,
+	"catalina":    10.15,
+}
+
+// How INSTALL.md must name each one, so the page and the formula cannot drift:
+// the reader has to be able to look up their own macOS and find out whether it
+// pours.
+var macOSSymbolLabels = map[string]string{
+	"tahoe":    "26 Tahoe",
+	"sequoia":  "15 Sequoia",
+	"sonoma":   "14 Sonoma",
+	"ventura":  "13 Ventura",
+	"monterey": "12 Monterey",
+	"big_sur":  "11 Big Sur",
+	"catalina": "10.15 Catalina",
+}
+
+// splitBottleTag parses a bottle tag the way Utils::Bottles::Tag does: an
+// `arm64_` prefix is the arch and the remainder is the macOS symbol; anything
+// else is x86_64. `ok` is false for a tag whose system is not a macOS symbol —
+// the Linux tags, and any symbol this brew has dropped. That is not a
+// convenience: brew rescues MacOSVersion::Error in find_older_compatible_tag
+// and SKIPS such a candidate, which is exactly what makes a floor built on a
+// symbol scheduled for removal (catalina, September 2026) a trap.
+func splitBottleTag(tag string) (arch string, version float64, ok bool) {
+	sym := tag
+	arch = "x86_64"
+	if strings.HasPrefix(tag, "arm64_") {
+		arch, sym = "arm64", strings.TrimPrefix(tag, "arm64_")
+	}
+	v, ok := macOSSymbolVersions[sym]
+	return arch, v, ok
+}
+
+// resolveBottleTag is OS::Mac::Bottles::Collector#find_matching_tag, modelled:
+// the first declared candidate with a matching arch whose macOS version is <=
+// the box's. The exact-match pass brew runs first is folded in, since equality
+// satisfies `<=`; the two can differ in WHICH tag is returned when a formula
+// declares several for one arch, never in WHETHER one is. This test asks only
+// whether one is, so the difference cannot hide anything from it.
+func resolveBottleTag(declared []string, arch string, version float64) (string, bool) {
+	for _, cand := range declared {
+		cArch, cVer, ok := splitBottleTag(cand)
+		if !ok || cArch != arch {
+			continue
+		}
+		if cVer <= version {
+			return cand, true
+		}
+	}
+	return "", false
+}
+
+// macOSBottleFloor is the oldest macOS the declared tags cover, per arch. A
+// formula with no macOS tag for an arch has no floor there at all, which is
+// the pre-bottle defect restored for half the Macs in the world.
+func macOSBottleFloor(t *testing.T, declared []string) map[string]float64 {
+	t.Helper()
+	floor := map[string]float64{}
+	for _, tag := range declared {
+		arch, ver, ok := splitBottleTag(tag)
+		if !ok {
+			continue
+		}
+		if cur, seen := floor[arch]; !seen || ver < cur {
+			floor[arch] = ver
+		}
+	}
+	return floor
+}
+
+// renderWithGeneratorsOwnTags runs scripts/tap-formula.sh over a checksums
+// file built from the tags THE GENERATOR ASKS FOR, and returns the bottle tags
+// the rendered formula declares.
+//
+// The fixture in tapformula_qa_test.go cannot be used here. It lists the tags
+// by name, so moving the floor makes the generator ask for a bottle the
+// fixture never wrote and the render exits 1 — the test would fail, loudly and
+// about the wrong thing, and the coverage assertions below would never run at
+// all. Measured: with the floor put back to sonoma the fixture-fed render dies
+// with "exit status 1" and says nothing about macOS. Reading the tags out of
+// the generator instead is what lets a raised floor render cleanly and fail on
+// the assertion that is actually about it.
+func renderWithGeneratorsOwnTags(t *testing.T) []string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("scripts", "tap-formula.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The generator's own assignment form, `BDX=$(bottle_digest <tag>)`,
+	// anchored at column 0 so the function's definition is not a match.
+	re := regexp.MustCompile(`(?m)^[A-Z][A-Z]*=\$\(bottle_digest ([a-z0-9_]+)\)`)
+	var asks []string
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		asks = append(asks, m[1])
+	}
+	if len(asks) == 0 {
+		t.Fatal("no `BDX=$(bottle_digest <tag>)` lines in scripts/tap-formula.sh — either the generator stopped rendering a bottle block, or this pattern stopped matching it; both make everything below vacuous")
+	}
+
+	const version = "0.3.0"
+	dir := t.TempDir()
+	var b strings.Builder
+	for _, a := range tapFormulaFixture {
+		b.WriteString(a.digest + "  posse_" + version + "_" + a.goos + "_" + a.goarch + ".tar.gz\n")
+	}
+	for i, tag := range asks {
+		// One distinct digest per tag, so a renderer that put the right sha on
+		// the wrong tag would still be visible to the callers of this helper.
+		b.WriteString(strings.Repeat(fmt.Sprintf("%d", i%10), 64) + "  posse-" + version + "." + tag + ".bottle.tar.gz\n")
+	}
+	checksums := filepath.Join(dir, "checksums.txt")
+	if err := os.WriteFile(checksums, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, err := exec.Command("sh", "scripts/tap-formula.sh",
+		"--version", "v"+version, "--checksums", checksums,
+		"--repo", "ranger360ai/posse").Output()
+	if err != nil {
+		t.Fatalf("tap-formula.sh could not render from a manifest built from its own bottle_digest calls (%v): %v", asks, err)
+	}
+	declared := parseBottleBlock(t, string(body)).order
+	if len(declared) == 0 {
+		t.Fatal("the rendered formula declares no bottle tags — every assertion below would be vacuous")
+	}
+	return declared
+}
+
+// THE DEFECT ranger-base-olwk: brew's fallback runs downwards only, so the
+// macOS tag a release ships is a FLOOR — every macOS above it pours, every
+// macOS below it takes the build-from-source path and meets the fatal Command
+// Line Tools gate. v0.4.0 put that floor at sonoma (14) while brew itself
+// still runs on 10.15, so macOS 11, 12 and 13 were left in exactly the state
+// the bottles were introduced to end. Measured against the published tap on
+// Homebrew 6.0.20, `brew fetch --formula --bottle-tag=TAG` once per tag:
+// arm64_tahoe/arm64_sequoia/arm64_sonoma poured; arm64_ventura, arm64_monterey,
+// ventura, monterey and big_sur each answered "Bottle for tag … is unavailable".
+//
+// This asserts coverage rather than spelling: it runs brew's own resolver over
+// the tags the GENERATOR renders, for every macOS Homebrew still runs on.
+func TestEveryMacOSHomebrewRunsOnFindsABottle(t *testing.T) {
+	declared := renderWithGeneratorsOwnTags(t)
+	floor := macOSBottleFloor(t, declared)
+	for _, arch := range []string{"arm64", "x86_64"} {
+		if _, ok := floor[arch]; !ok {
+			t.Fatalf("the formula declares no macOS bottle tag for %s (declared: %v) — every Mac of that architecture builds from source and hits the Command Line Tools gate", arch, declared)
+		}
+	}
+
+	// big_sur is the floor this bead set, and the lowest one available on both
+	// architectures: arm64 macOS does not exist below it.
+	const wantFloor = 11
+	for _, arch := range []string{"arm64", "x86_64"} {
+		if floor[arch] > wantFloor {
+			t.Errorf("the %s bottle floor is macOS %v, want %v or lower — brew never falls back UPWARDS, so every Mac below %v matches no bottle, builds from source, and dies at `Your Command Line Tools are too outdated` on the route INSTALL.md sells as needing no toolchain (declared: %v)",
+				arch, floor[arch], float64(wantFloor), floor[arch], declared)
+		}
+	}
+
+	// And the coverage itself, one macOS at a time, through the resolver.
+	for sym, ver := range macOSSymbolVersions {
+		if ver < wantFloor {
+			continue // below the floor by design; the doc arm below names it
+		}
+		for _, arch := range []string{"arm64", "x86_64"} {
+			got, ok := resolveBottleTag(declared, arch, ver)
+			if !ok {
+				t.Errorf("macOS %s (%v) on %s resolves to no bottle in %v — that box takes brew's build-from-source path", sym, ver, arch, declared)
+				continue
+			}
+			if _, _, valid := splitBottleTag(got); !valid {
+				t.Errorf("macOS %s on %s resolved to %q, which is not a macOS tag", sym, arch, got)
+			}
+		}
+	}
+
+	// THE WRONG ARM. Everything above is worth nothing unless the model can
+	// answer "no" — and the tag set that shipped in v0.4.0 is the case it must
+	// answer "no" for. If this loop ever finds a bottle, the resolver modelled
+	// here is not brew's and the coverage assertions are decoration.
+	shipped := []string{"arm64_sonoma", "sonoma", "arm64_linux", "x86_64_linux"}
+	for _, sym := range []string{"ventura", "monterey", "big_sur"} {
+		for _, arch := range []string{"arm64", "x86_64"} {
+			if got, ok := resolveBottleTag(shipped, arch, macOSSymbolVersions[sym]); ok {
+				t.Fatalf("the v0.4.0 tag set %v resolves macOS %s/%s to %q; it must not — brew falls back only to OLDER macOS, and measuring the published tap gave `Bottle for tag :%s is unavailable`. This model is not brew's, so nothing above this line means anything.",
+					shipped, sym, arch, got, sym)
+			}
+		}
+	}
+}
+
+// The doc half of ranger-base-olwk. The floor is only useful to a deployer who
+// can look up their own macOS and find out which side of it they are on, and
+// the page told a Ventura reader on the current tap that their tap was old —
+// a misdiagnosis that routes them away from the one thing that would have
+// worked. So INSTALL.md must name the floor the generator actually renders,
+// and must name every macOS Homebrew still runs on that the floor leaves out.
+func TestInstallMdNamesTheBottleFloorTheGeneratorRenders(t *testing.T) {
+	declared := renderWithGeneratorsOwnTags(t)
+	floor := macOSBottleFloor(t, declared)
+
+	page, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The floor, named. Lowest of the two arches: it is the oldest macOS that
+	// pours anything, and it is what the page's table row claims.
+	lowest := 0.0
+	for _, v := range floor {
+		if lowest == 0 || v < lowest {
+			lowest = v
+		}
+	}
+	for sym, ver := range macOSSymbolVersions {
+		label, named := macOSSymbolLabels[sym]
+		if !named {
+			continue // golden_gate has shipped no name a reader would recognise
+		}
+		switch {
+		case ver == lowest:
+			if !strings.Contains(string(page), label) {
+				t.Errorf("INSTALL.md never says %q, and that is the oldest macOS the generator's bottles cover — a reader cannot tell whether their Mac pours", label)
+			}
+		case ver < lowest:
+			// Below the floor: still a macOS Homebrew runs on, still hits the
+			// Command Line Tools gate, and the page owes it an honest answer
+			// rather than "your tap is old".
+			if !strings.Contains(string(page), label) {
+				t.Errorf("macOS %s is below the bottle floor (%v) and INSTALL.md never names it — that reader is told to `brew update`, which cannot help them", label, lowest)
+			}
+		}
 	}
 }

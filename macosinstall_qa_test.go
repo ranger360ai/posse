@@ -77,6 +77,15 @@ func TestInstallMdCarriesTheMeasuredMacOSFindings(t *testing.T) {
 				"the trust line failed",
 		},
 		{
+			name:  "the bottle fallback is documented as running downwards only",
+			token: "brew only ever falls back",
+			why: "ranger-base-olwk: the macOS tag a release ships is a FLOOR, because " +
+				"`find_older_compatible_tag` keeps a candidate whose `to_macos_version <= " +
+				"tag_version`. Without that sentence the table under it is a list of version " +
+				"numbers with no rule, and the page cannot tell a Ventura reader on the current " +
+				"tap why v0.4.0 refused them and what actually fixes it",
+		},
+		{
 			name:  "a 404 on a bottle named for a version nobody asked for is an old brew",
 			token: "posse-64.arm64_sonoma.bottle.tar.gz",
 			why: "ranger-base-63q3: a formula with no `version` stanza leaves brew to scan one out " +
