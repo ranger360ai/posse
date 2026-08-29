@@ -1053,11 +1053,26 @@ Then wire the three git-side pieces, and verify each rather than assuming
 
 ```sh
 $ bd hooks install
-$ ls .git/hooks
+$ h=$(git rev-parse --git-path hooks); echo "$h"
+$ ls "$h"
 ```
 **Verify:** `pre-commit` (flushes pending bd changes into `issues.jsonl`
 before the commit) and `post-merge` (imports after a pull) are present.
 Without these, the database and the git-tracked JSONL drift apart.
+
+**`$h` is where git runs hooks, and it is not always `.git/hooks`.** Ask
+git rather than assuming, here and everywhere below: `core.hooksPath`
+overrides the git dir outright, at any config level, and the slot under
+`.git/hooks` then stays inert however well the file in it behaves. That is
+not an exotic case in *this* recipe — `bd hooks install --beads` and
+`--shared` set `core.hooksPath` themselves (bd 0.49.1 prints `Git config
+set: core.hooksPath=.beads/hooks`), and husky and the pre-commit framework
+set it too. If `echo "$h"` prints anything other than `.git/hooks`, then
+every hook path in this section is `$h`, and nothing sitting in
+`.git/hooks` is running — including bd's default install, whose own help
+says it writes to `.git/hooks/` in the current repository and says nothing
+about `core.hooksPath`. Installing or probing `.git/hooks` under a set
+`core.hooksPath` certifies a wall that is not there (rangerhq-b38m).
 
 `bd hooks install` also plants shims in two slots the posse L3 gates want —
 `pre-push` and `prepare-commit-msg` — and it plants them *silently*, over
@@ -1215,26 +1230,27 @@ A hook that is neither ours nor bd's `# bd-shim v1` shim is still refused,
 
 ```sh
 $ cd ~/src/<your-work-repo>
-$ mv .git/hooks/pre-push           .git/hooks/bd-pre-push
-$ mv .git/hooks/prepare-commit-msg .git/hooks/bd-prepare-commit-msg
+$ h=$(git rev-parse --git-path hooks)
+$ mv "$h"/pre-push           "$h"/bd-pre-push
+$ mv "$h"/prepare-commit-msg "$h"/bd-prepare-commit-msg
 $ posse gates install-hooks ~/src/<your-work-repo>
-$ mv .git/hooks/pre-push           .git/hooks/posse-pre-push
-$ mv .git/hooks/prepare-commit-msg .git/hooks/posse-prepare-commit-msg
-$ cat > .git/hooks/pre-push <<'EOF'
+$ mv "$h"/pre-push           "$h"/posse-pre-push
+$ mv "$h"/prepare-commit-msg "$h"/posse-prepare-commit-msg
+$ cat > "$h"/pre-push <<'EOF'
 #!/bin/sh
 d=$(dirname "$0")
 "$d/posse-pre-push" "$@" </dev/null || exit $?
 [ -x "$d/bd-pre-push" ] || exit 0
 exec "$d/bd-pre-push" "$@"
 EOF
-$ cat > .git/hooks/prepare-commit-msg <<'EOF'
+$ cat > "$h"/prepare-commit-msg <<'EOF'
 #!/bin/sh
 d=$(dirname "$0")
 "$d/posse-prepare-commit-msg" "$@" || exit $?
 [ -x "$d/bd-prepare-commit-msg" ] || exit 0
 exec "$d/bd-prepare-commit-msg" "$@"
 EOF
-$ chmod +x .git/hooks/pre-push .git/hooks/prepare-commit-msg
+$ chmod +x "$h"/pre-push "$h"/prepare-commit-msg
 ```
 
 Copy that chain exactly (this is exactly what `--chain` writes, for a
@@ -1257,32 +1273,51 @@ and every commit in a linked worktree, where the gate stands down outright.
 The gate refuses one form and names a way out; a failed `exec` refuses all
 of them and names none. That state is one silent `mv` away: if `bd hooks
 install` never took a slot — older `bd` planted no `prepare-commit-msg` at
-all, and `bd hooks install --beads` / `--shared` write to `.beads/hooks/` and
-`.beads-hooks/` rather than `.git/hooks` — the `mv` above prints `No such
-file or directory`, every later line succeeds, and the chain you just pasted
-names a hook that is not there. The guard degrades that to "gate only",
-which is all posse promises in that slot anyway (rangerhq-xo65).
+all — the `mv` above prints `No such file or directory`, every later line
+succeeds, and the chain you just pasted names a hook that is not there. The
+guard degrades that to "gate only", which is all posse promises in that slot
+anyway (rangerhq-xo65). `bd hooks install --beads` / `--shared` used to be
+the other way in, writing to `.beads/hooks/` and `.beads-hooks/` rather than
+`.git/hooks`; they set `core.hooksPath` to exactly that directory, so `$h`
+follows them there and the `mv`s find bd's shim like any other install.
 
 `posse gates install-hooks` prints this same chain, with the slot and paths
 filled in, whenever it finds a hook that is not its own.
 
-**Verify — by running the hooks, not by reading them:**
+**Verify — by running the hooks git would run, not by reading them:**
 
 ```sh
-$ RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
-    sh -c 'printf "refs/heads/main a refs/heads/main b\n" | .git/hooks/pre-push origin x'; echo $?
-$ t=$(mktemp); RHQ_PERSONA=probe .git/hooks/prepare-commit-msg "$t"; echo $?; rm -f "$t"
-$ t=$(mktemp); env -u RHQ_PERSONA -u RHQ_TOOLS_DENY .git/hooks/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
+$ git config --get core.hooksPath
+$ h=$(git rev-parse --git-path hooks); echo "$h"
+$ printf 'refs/heads/main a refs/heads/main b\n' \
+    | RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' "$h"/pre-push origin x; echo $?
+$ t=$(mktemp); RHQ_PERSONA=probe "$h"/prepare-commit-msg "$t"; echo $?; rm -f "$t"
+$ t=$(mktemp); env -u RHQ_PERSONA -u RHQ_TOOLS_DENY "$h"/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
 $ t=$(mktemp); GIT_INDEX_FILE="$(git rev-parse --git-dir)/next-index-$$" \
-    .git/hooks/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
+    "$h"/prepare-commit-msg "$t" message; echo $?; rm -f "$t"
 ```
-The first **three** must print `refused by posse gate: …` and exit **1** —
-the third is your own shell, with no persona in the environment at all, and
+The first two lines print no `$?`; they are the rest of the block's control.
+`core.hooksPath` empty and `$h` = `.git/hooks` is the ordinary case. Anything
+else and the hooks live where git chose, `.git/hooks` is inert, and probing a
+literal `.git/hooks/<slot>` measures a file git will never run: if anything
+refusing is still sitting in it — a stale bd shim, a chain built before the
+redirect — all four probes come back green over a repo with no wall
+(rangerhq-b38m). So every probe in the block runs `"$h"/<slot>`, which is the
+path `posse gates install-hooks` prints and the one a launch checks.
+
+Of the four hook probes, the first **three** must print `refused by posse
+gate: …` and exit **1** — the third is your own shell, with no persona in the
+environment at all, and
 it is refused since rangerhq-lt2w exactly like a persona's. The fourth must
 print no refusal and exit **0**: it hands the hook the temp index git itself
 uses for `git commit -F - -- <paths>`, which is the way through for everyone
 in that checkout, you included. A gate that prints its refusal but exits 0
 is not installed — re-read the chain.
+
+**`No such file or directory` and exit 127** on any probe means the gates are
+not where git dispatches: run `posse gates install-hooks` again and compare
+the path it prints with `$h`. It is a hook that was never installed, not a
+hook that let you through.
 
 A **non-zero fourth probe that prints no refusal** is the other failure: the
 chain names a neighbour that is not there, or is not executable. The message

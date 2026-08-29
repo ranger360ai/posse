@@ -803,7 +803,9 @@ func TestQADocChainMatchesTheRenderedDispatcher(t *testing.T) {
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		want := chainHookDispatcherWith(slot, "bd-"+slot)
 		// The block as INSTALL.md pastes it: a heredoc into the slot.
-		open := "$ cat > .git/hooks/" + slot + " <<'EOF'\n"
+		// §9 asks git for the dispatch dir rather than assuming .git/hooks
+		// (rangerhq-b38m), so the heredoc target is `"$h"/<slot>`.
+		open := "$ cat > \"$h\"/" + slot + " <<'EOF'\n"
 		i := strings.Index(doc, open)
 		if i < 0 {
 			t.Errorf("INSTALL.md §9 no longer writes %s with a heredoc", slot)

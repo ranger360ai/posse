@@ -35,6 +35,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -433,4 +434,171 @@ func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
 			t.Errorf("degradation missing %q in:\n%s", want, joined)
 		}
 	}
+}
+
+// ─── rangerhq-b38m: §9's own Verify, run against a redirected dispatch dir ───
+//
+// The install half of rangerhq-b38m was fixed in code (hooksDir asks git), but
+// INSTALL.md §9 still told the operator to `mv` and to probe a literal
+// `.git/hooks/<slot>`. Under a set `core.hooksPath` that is the same defect one
+// layer up, and it fails the same way — silently green: the gates install where
+// git dispatches, the operator probes a directory git never consults, and
+// whatever refusing file is sitting there (a stale bd shim, a chain built
+// before the redirect) passes all four probes over a repo with no wall.
+//
+// So pin the recipe by RUNNING it, not by reading it: extract §9's Verify block
+// out of INSTALL.md verbatim and run it over two fixtures whose verdicts must
+// differ. Both arms carry a witness, because "did not read 1/1/1/0" is
+// otherwise satisfied by a block that measures nothing.
+//
+//	ARMED   gates at the dispatch dir, .git/hooks empty — §9 must read 1/1/1/0.
+//	HOLLOW  gates in .git/hooks, dispatch dir empty — §9 must NOT, while the
+//	        pre-fix spelling still does. That is the bead's false green,
+//	        reproduced: four green probes over a wall git will never run.
+func TestQADocSection9VerifyProbesFollowGitsDispatchDir(t *testing.T) {
+	block := qaSection9VerifyBlock(t)
+	if !strings.Contains(block, `"$h"/pre-push`) || !strings.Contains(block, `"$h"/prepare-commit-msg`) {
+		t.Fatalf("INSTALL.md §9's Verify block no longer runs the slot at git's dispatch dir:\n%s", block)
+	}
+	if !strings.Contains(block, "git config --get core.hooksPath") {
+		t.Error("INSTALL.md §9's Verify block no longer shows the operator core.hooksPath (rangerhq-b38m)")
+	}
+	preFix := strings.ReplaceAll(block, `"$h"/`, ".git/hooks/")
+	if preFix == block {
+		t.Fatal("the pre-fix spelling is identical to the block — the control would measure nothing")
+	}
+	green := []int{1, 1, 1, 0}
+
+	t.Run("armed at the dispatch dir", func(t *testing.T) {
+		repo, gitdirHooks := qaHookRepo(t)
+		elsewhere := filepath.Join(repo, "myhooks")
+		if err := os.Mkdir(elsewhere, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		qaGit(t, repo, "config", "core.hooksPath", elsewhere)
+		qaInstallBothGates(t, repo)
+		qaHasSlots(t, elsewhere, true)
+		qaHasSlots(t, gitdirHooks, false)
+
+		got, out := qaRunSection9Probes(t, repo, block)
+		if !qaCodesAre(got, green) {
+			t.Errorf("§9's Verify read %v over an installed wall, want %v:\n%s", got, green, out)
+		}
+	})
+
+	t.Run("hollow: armed only where git does not look", func(t *testing.T) {
+		repo, gitdirHooks := qaHookRepo(t)
+		qaInstallBothGates(t, repo) // no redirect yet: these land in .git/hooks
+		empty := filepath.Join(repo, "myhooks")
+		if err := os.Mkdir(empty, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		qaGit(t, repo, "config", "core.hooksPath", empty)
+		qaHasSlots(t, gitdirHooks, true)
+		qaHasSlots(t, empty, false)
+
+		// The witness: this repo has no wall, and the pre-fix spelling says
+		// it does. Without this the arm below could pass for any reason.
+		bad, badOut := qaRunSection9Probes(t, repo, preFix)
+		if !qaCodesAre(bad, green) {
+			t.Fatalf("the fixture is not the false green it is meant to be — the .git/hooks spelling read %v, want %v:\n%s", bad, green, badOut)
+		}
+		got, out := qaRunSection9Probes(t, repo, block)
+		if qaCodesAre(got, green) {
+			t.Errorf("§9's Verify certified a wall git will never run (rangerhq-b38m):\n%s", out)
+		}
+	})
+}
+
+// qaInstallBothGates installs the two L3 gates into repo, wherever git says
+// this repo's hooks are dispatched from.
+func qaInstallBothGates(t *testing.T, repo string) {
+	t.Helper()
+	if _, err := InstallPrePushHook(repo); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := (&App{}).InstallCommitGuardHook(repo); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// qaHasSlots asserts both L3 slots are, or are not, present in dir. The
+// fixtures below are only discriminating while exactly one directory is armed.
+func qaHasSlots(t *testing.T, dir string, want bool) {
+	t.Helper()
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+		_, err := os.Stat(filepath.Join(dir, slot))
+		if want && err != nil {
+			t.Fatalf("fixture: %s is missing from %s: %v", slot, dir, err)
+		}
+		if !want && err == nil {
+			t.Fatalf("fixture: %s is also in %s — the two arms would not differ", slot, dir)
+		}
+	}
+}
+
+func qaCodesAre(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// qaSection9VerifyBlock returns the shell block under §9's "Verify — by
+// running the hooks" heading, as the operator would paste it: the `$ ` prompt
+// stripped, continuation lines untouched.
+func qaSection9VerifyBlock(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(b)
+	i := strings.Index(doc, "**Verify — by running the hooks")
+	if i < 0 {
+		t.Fatal("INSTALL.md §9: the hook Verify block is gone — the pin has stopped reading its subject")
+	}
+	rest := doc[i:]
+	open := strings.Index(rest, "```sh\n")
+	if open < 0 {
+		t.Fatal("INSTALL.md §9: the hook Verify heading is no longer followed by a shell block")
+	}
+	rest = rest[open+len("```sh\n"):]
+	end := strings.Index(rest, "```")
+	if end < 0 {
+		t.Fatal("INSTALL.md §9: the hook Verify block has no terminator")
+	}
+	var lines []string
+	for _, ln := range strings.Split(rest[:end], "\n") {
+		lines = append(lines, strings.TrimPrefix(ln, "$ "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// qaRunSection9Probes runs the pasted block in repo and returns the exit codes
+// its `echo $?` lines printed, in order, plus the whole transcript.
+func qaRunSection9Probes(t *testing.T, repo, script string) ([]int, string) {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Dir = repo
+	cmd.Env = qaEnvWithout("RHQ_PERSONA", "RHQ_TOOLS_DENY", "GIT_INDEX_FILE")
+	b, _ := cmd.CombinedOutput()
+	out := string(b)
+	var codes []int
+	for _, ln := range strings.Split(out, "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		n, err := strconv.Atoi(ln)
+		if err == nil {
+			codes = append(codes, n)
+		}
+	}
+	return codes, out
 }
