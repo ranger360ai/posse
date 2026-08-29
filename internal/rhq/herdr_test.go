@@ -1475,7 +1475,7 @@ func TestPersonaToolEnv(t *testing.T) {
 		// rule as the PID wrote it.
 		"--env RHQ_TOOLS_DENY=Bash(git push:*)",
 		"GATES claude --allowedTools 'Bash(bd:*)' 'Edit' " +
-			"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push)' 'Bash(git -* push *)'",
+			"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push *)'",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("calls.log missing %q:\n%s", want, log)

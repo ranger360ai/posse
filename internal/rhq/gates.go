@@ -274,13 +274,29 @@ func ParseShimRules(deny []string) map[string][]shimRule {
 //	                             anchored both ends, whitespace collapsed
 //
 // The prefix form is why the option spellings walk past: `git -C x push`
-// does not start with `git push`. So each subcommand rule also gets its
-// option-blind wildcard pair, `<cmd> -* <words>` and `<cmd> -* <words> *`
-// — a leading option, anything, then the words as their own tokens. The
-// pair rather than one `<words>*`: keeping the token boundary explicit is
-// what leaves `git --no-pager log -- push.txt` and `git -c … commit -m
-// "push it"` alone (both verified running, along with the nine option
-// spellings verified refused).
+// does not start with `git push`. So each subcommand PREFIX rule also gets
+// one option-blind wildcard, `<cmd> -* <words> *` — a leading option,
+// anything, then the words as their own tokens, then anything. The
+// trailing ` *` rather than `<words>*`: keeping the token boundary
+// explicit is what leaves `git --no-pager log -- push.txt` and `git -c …
+// commit -m "push it"` alone (both verified running, along with the nine
+// option spellings verified refused).
+//
+// It was a pair until rangerhq-ky3: `<cmd> -* <words>` rode alongside for
+// the bare spelling, `git -C <r> push` with nothing after it. `*` is `.*`,
+// so a rule ENDING in the words matches any `git -…` command whose last
+// word is one of them — `git -C <r> log --grep push` was refused live
+// (claude 2.1.234, and grok 1.0.5 on the same rule text), `git -C <r>
+// stash push` with it, while `--grep=push` ran. No spelling separates the
+// two: the real bare form and the false positive are both `git -`,
+// anything, ` push` at the end, and the dialect has neither negation nor a
+// way to say "option tokens only" (a glob has no repetition of a group).
+// At L0 a false positive is a hard block the model cannot ask its way past
+// — the ground rangerhq-3mc rejected a single `Bash(git -* push*)` on — so
+// the exact half goes and its coverage goes with it. The cost, stated:
+// `git <globals> push` with no further args draws no polite refusal, only
+// L1's hard one (TestShimSkipsGlobalOptionsBeforeSubcommand). L0 is
+// politeness, never the wall.
 //
 // A whole-verb rule (Bash(bd)) is the other half of the same miss: claude
 // reads it as *exact*, so `bd show x` walks past a rule the shim reads as
@@ -318,6 +334,12 @@ func L0Spellings(deny []string) []string {
 		// cannot swallow a commit that does carry the qualifier. Anything
 		// longer might be the safe form, and refusing it at L0 would refuse
 		// the very form the wall is pointing at.
+		// The option-blind form here keeps the shape rangerhq-ky3 removed
+		// below, and carries its false positive with it (`git -C <r> log
+		// --grep commit` is refused, measured). The trade is not the same
+		// one: this branch has no ` *` half to fall back on, so dropping it
+		// would leave the negative rule with no option-blind L0 cover at
+		// all. Filed rather than decided here: ranger-base-xll2.
 		if r.Unless != "" {
 			words := strings.Join(r.Words, " ")
 			add("Bash(" + cmd + " " + words + ")")
@@ -328,12 +350,11 @@ func L0Spellings(deny []string) []string {
 		switch {
 		case len(r.Words) == 0:
 			add("Bash(" + cmd + ":*)")
-		case r.Verb():
-			base := cmd + " -* " + strings.Join(r.Words, " ")
-			add("Bash(" + base + ")")
-			if !r.Exact {
-				add("Bash(" + base + " *)")
-			}
+		case r.Verb() && !r.Exact:
+			// Only the prefix rule gets it: on an exact rule a trailing ` *`
+			// would refuse `git -C <r> push origin main`, which the PID's
+			// exact rule — and the shim reading it — do not.
+			add("Bash(" + cmd + " -* " + strings.Join(r.Words, " ") + " *)")
 		}
 		// A rule leading with an option (Bash(rm -rf /)) is a literal argv
 		// prefix in both matchers — it is already spelled where it means.

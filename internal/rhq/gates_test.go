@@ -332,6 +332,10 @@ func TestShimSkipsGlobalOptionsBeforeSubcommand(t *testing.T) {
 		{"--no-pager", "push", "origin", "main"},
 		{"--literal-pathspecs", "push", "origin", "main"},
 		{"--namespace", "x", "-C", ".", "--no-optional-locks", "push"},
+		// The spelling L0 gave up when the exact half of its option-blind
+		// pair went (rangerhq-ky3): a push behind a global option with no
+		// further arguments. L0 is politeness; this is the wall.
+		{"-C", ".", "push"},
 	}
 	for _, args := range refused {
 		out, errs, code := run(args...)
@@ -536,9 +540,12 @@ func TestL0SpellingsCoverTheOptionSpellings(t *testing.T) {
 		}
 	}
 	// And must leave read-only/ordinary git alone. `push` as a value and a
-	// path that merely starts with push are the cases that make the pair
-	// (`git -* push` + `git -* push *`) worth the extra rule over one
-	// `git -* push*`.
+	// path that merely starts with push are the cases that make the token
+	// boundary (`git -* push *`) worth writing over one `git -* push*`.
+	// The last two are rangerhq-ky3: a command that starts with `git -` and
+	// ENDS with the bare word `push`. They were refused live on claude
+	// 2.1.234 by the exact half of the old pair (`Bash(git -* push)`),
+	// which is why there is no longer an exact half.
 	for _, cmd := range []string{
 		"git status -s",
 		"git log --oneline",
@@ -551,24 +558,45 @@ func TestL0SpellingsCoverTheOptionSpellings(t *testing.T) {
 		"git --no-pager log --oneline -- push.txt",
 		"git -C /r pushy",
 		"git commit -m push",
+		"git -C /r log --grep push",
+		"git -C /r stash push",
 	} {
 		if deniedByAny(rules, cmd) {
 			t.Errorf("L0 must not refuse %q — rules %q", cmd, rules)
 		}
 	}
+	// The stated cost of dropping the exact half (rangerhq-ky3): a real
+	// push behind global options and with NO further arguments draws no
+	// polite refusal. It is indistinguishable from the false positives
+	// above in claude's dialect — both are `git -`, anything, ` push` at
+	// the end — and L1 refuses it hard either way, which is the trade L0 is
+	// allowed to make (ADR 0002 §3). Pinned so a future widening has to
+	// look at it: TestShimSkipsGlobalOptionsBeforeSubcommand holds the
+	// other side.
+	for _, cmd := range []string{
+		"git -C /r push",
+		"git --namespace x -C /r --no-optional-locks push",
+	} {
+		if deniedByAny(rules, cmd) {
+			t.Errorf("unexpected coverage of %q — if the exact half is back, so is the false positive above", cmd)
+		}
+	}
 }
 
-// The other shapes: exact rules take no trailing wildcard, a whole-verb rule
-// is *exact* at L0 and needs `:*` to mean the verb, a rule leading with an
-// option is a literal argv prefix in both matchers, and non-Bash rules are
-// other layers' business.
+// The other shapes: an exact rule is widened by nothing at all — the
+// trailing ` *` would refuse arguments the PID's rule does not, and the
+// option-blind form that used to cover it ended in the words, which is the
+// false positive rangerhq-ky3 removed. A whole-verb rule is *exact* at L0
+// and needs `:*` to mean the verb, a rule leading with an option is a
+// literal argv prefix in both matchers, and non-Bash rules are other
+// layers' business.
 func TestL0SpellingsShapes(t *testing.T) {
 	for _, tc := range []struct {
 		deny []string
 		want []string
 	}{
-		{[]string{"Bash(git push)"}, []string{"Bash(git push)", "Bash(git -* push)"}},
-		{[]string{"Bash(git push --force:*)"}, []string{"Bash(git push --force:*)", "Bash(git -* push --force)", "Bash(git -* push --force *)"}},
+		{[]string{"Bash(git push)"}, []string{"Bash(git push)"}}, // exact: the option-blind half it used to get ended in the words (rangerhq-ky3)
+		{[]string{"Bash(git push --force:*)"}, []string{"Bash(git push --force:*)", "Bash(git -* push --force *)"}},
 		{[]string{"Bash(bd)"}, []string{"Bash(bd)", "Bash(bd:*)"}},
 		{[]string{"Bash(bd:*)"}, []string{"Bash(bd:*)"}}, // already the verb — no duplicate
 		{[]string{"Bash(rm -rf /)"}, []string{"Bash(rm -rf /)"}},
@@ -679,18 +707,20 @@ func TestGrokDialectIsWhyGrokIsNotWidened(t *testing.T) {
 	if !grokDenyMatch("Bash(git ?ush *)", "git push ../nope.git HEAD:refs/heads/q") {
 		t.Error("grok's `?` refused `git push …` live — Bash(git ?ush *)")
 	}
-	// One false positive is NOT grok's: an unquoted trailing `push` word
-	// ends the command, so `Bash(git -* push)` matches it in both dialects.
-	// Filed rather than fixed here (rangerhq-ky3) — it is the claude pair's
-	// defect and this bead is grok's. `git -C . stash push` is the same
-	// shape (nested subcommand, command ends with the word); live on
-	// grok 1.0.5 and claude 2.1.239 (rangerhq-bzw).
+	// One false positive was NOT grok's: an unquoted trailing `push` word
+	// ends the command, so `Bash(git -* push)` matched it in both dialects
+	// — `git -C /r log --grep push` and `git -C /r stash push` (nested
+	// subcommand, command ends with the word), live on grok 1.0.5 and
+	// claude 2.1.239 (rangerhq-bzw). That was the claude pair's defect and
+	// the exact half is gone with it (rangerhq-ky3), so it is now clean on
+	// both sides — the widening no longer emits a rule that ENDS in the
+	// words, and neither dialect can reach these.
 	for _, cmd := range []string{
 		"git -C /r log --grep push",
 		"git -C /r stash push",
 	} {
-		if !deniedByAny(rules, cmd) || !grokDeniedByAny(rules, cmd) {
-			t.Errorf("shared false positive %q went away — close rangerhq-ky3", cmd)
+		if deniedByAny(rules, cmd) || grokDeniedByAny(rules, cmd) {
+			t.Errorf("rangerhq-ky3's false positive is back on %q — rules %q", cmd, rules)
 		}
 	}
 	// The wildcard half is a different shape: any ` push ` token AFTER a

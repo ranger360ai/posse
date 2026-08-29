@@ -1149,19 +1149,27 @@ rangerhq-3mc). Claude matches a `Bash(...)` rule three ways — exact,
 `:*` as a literal prefix of the command string, and `*` as a wildcard
 (`.*`, anchored, whitespace collapsed) — so `Bash(git push:*)` never
 matched `git -C <repo> push`, and the polite refusal was missing on
-exactly the spellings the L1 shim has to catch. Each subcommand deny now
-also ships its option-blind pair, `Bash(git -* push)` and `Bash(git -*
-push *)`; a whole-verb deny (`Bash(bd)`, which claude reads as *exact*)
-also ships `Bash(bd:*)`. Verified on claude 2.1.234: nine option
-spellings refused, and `git -c … commit -m "push it"`, `git --no-pager
-log -- push.txt` and `git pushy` still run — the token boundary in the
-pair is what buys that, and is why it is a pair rather than one `git -*
-push*`. `allow:` is never widened (that would grant more than the PID
-says), `RHQ_TOOLS_DENY` still carries the PID's own rules, and parity is
-unchanged: L0 is politeness, never the wall. Known false positive in the
-pair: a command that starts with `git -` and *ends* with the bare word
-`push` — `git -C <r> log --grep push` — is refused, while `--grep=push`
-runs (rangerhq-ky3). Grok's realizer deliberately does **not** do this:
+exactly the spellings the L1 shim has to catch. Each subcommand *prefix*
+deny now also ships one option-blind wildcard, `Bash(git -* push *)`; a
+whole-verb deny (`Bash(bd)`, which claude reads as *exact*) also ships
+`Bash(bd:*)`. Verified on claude 2.1.234: nine option spellings refused,
+and `git -c … commit -m "push it"`, `git --no-pager log -- push.txt` and
+`git pushy` still run — the token boundary is what buys that, and is why
+it is written ` push *` rather than `push*`. `allow:` is never widened
+(that would grant more than the PID says), `RHQ_TOOLS_DENY` still carries
+the PID's own rules, and parity is unchanged: L0 is politeness, never the
+wall. It shipped as a *pair*, with `Bash(git -* push)` alongside for the
+bare spelling, and that half is **gone** (rangerhq-ky3): `*` is `.*`, so a
+rule ending in the words matched any `git -…` command whose last word was
+one of them — `git -C <r> log --grep push` and `git -C <r> stash push`
+were refused, while `--grep=push` ran. Nothing in the dialect separates
+that from the real `git -C <r> push`: both are `git -`, anything, ` push`
+at the end, and there is no negation and no way to say "option tokens
+only". So the false positive goes and its coverage with it — a push behind
+global options with no further arguments draws no polite refusal now, only
+L1's hard one. The same shape survives in the negative rule's widening for
+want of a fallback half, false positive included (ranger-base-xll2).
+Grok's realizer deliberately does **not** do this:
 its dialect is verified now (rangerhq-625) and the wildcard is real, but
 grok matches a shell-parsed segment with the quotes off, which turns the
 pair into a false-positive generator there — see *Grok specifics*.
@@ -1814,7 +1822,8 @@ self-updated mid-verification; no behaviour below differed).**
   which is L1's job.
 - **The dialect, probed rule by rule (grok 1.0.5, rangerhq-625).** `*` IS
   a wildcard mid-string, not a literal: with `Bash(git -* push)` +
-  `Bash(git -* push *)` typed, all ten option spellings of a push —
+  `Bash(git -* push *)` typed (the pair as it stood then; the first half
+  is gone since rangerhq-ky3), all ten option spellings of a push —
   `-C`, `-c`, `--git-dir=`/`--work-tree=` and their separated forms, `-p`,
   `--no-pager`, `--literal-pathspecs`, a stacked `--namespace x -C <r>
   --no-optional-locks` — were refused, and nothing reached the throwaway
@@ -1841,9 +1850,12 @@ self-updated mid-verification; no behaviour below differed).**
   false positive is a hard block the model cannot ask its way past (the
   ground rangerhq-3mc rejected a single `Bash(git -* push*)` on). The true
   positive is not lost — L1 holds on grok (next bullet) and the shim
-  refuses every one of those spellings. One false positive is *not*
-  grok's: an unquoted trailing `push` word (`git -C <r> log --grep push`)
-  is refused by the pair on claude too — rangerhq-ky3.
+  refuses every one of those spellings. One of the false positives was
+  *not* grok's: an unquoted trailing `push` word (`git -C <r> log --grep
+  push`) was refused by the pair on claude too, which is why claude no
+  longer emits the half that ended in the words — rangerhq-ky3. What is
+  left of the pair (`Bash(git -* push *)`) still refuses a quoted `push`
+  on grok and still does not on claude, so the bullet above stands.
 - **`git push` is on grok's own dangerous list.** Under `--permission-mode
   auto` it is cancelled outright with nobody there to approve it
   (`User cancelled the execution for tool run_terminal_command`), rule or
@@ -4796,7 +4808,11 @@ sense`), so a rule that demands a pathspec excludes `-a` by construction.
 Claude's dialect has no negation, so `L0Spellings` widens a negative rule
 into the two **exact** shapes that are unsafe whatever follows —
 `Bash(git commit)` and `Bash(git -* commit)` — and nothing longer, because
-anything longer might be the safe form.
+anything longer might be the safe form. The second carries rangerhq-ky3's
+false positive (`git -C <r> log --grep commit` is refused, measured) and
+keeps it for now: with no wildcard half to fall back on, dropping it would
+leave the negative rule no option-blind L0 cover at all — ranger-base-xll2
+decides which way that goes.
 
 *L3, the hook — and the slot is `prepare-commit-msg`, not `pre-commit`.*
 Two measured reasons. `pre-commit` is bd's, bd reinstalls it, and a wall a

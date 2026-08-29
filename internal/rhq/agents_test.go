@@ -71,7 +71,7 @@ deny:
 	// same argv the shim does (L0Spellings, rangerhq-3mc); allow: does not —
 	// widening an allow list would grant more than the PID says.
 	want := "--allowedTools 'Bash(bd:*)' 'Bash(git commit: msg with spaces)' " +
-		"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push)' 'Bash(git -* push *)'"
+		"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push *)'"
 	if !strings.HasSuffix(cmd, want) {
 		t.Errorf("bad tool rendering:\n got %q\nwant suffix %q", cmd, want)
 	}
