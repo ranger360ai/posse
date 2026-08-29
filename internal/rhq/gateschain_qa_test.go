@@ -15,10 +15,48 @@ import (
 	"testing"
 )
 
+// docChainDispatcher is §9's dispatcher for slot, read out of INSTALL.md
+// itself rather than retyped here.
+//
+// That distinction is the whole of ranger-base-m45t's finding against
+// rangerhq-xo65: this file used to hold its own copy of the chain, so every
+// pin below ran a body no shipped path renders. Deleting the neighbour guard
+// from BOTH chainRender and INSTALL.md left all three packages green
+// (measured 2026-08-29) — the byte pin below saw doc and render agree, and
+// the execution pins ran the third copy, which still had the guard. A pin
+// whose fixture is a copy of the thing under test measures the copy.
+//
+// So the doc is the fixture now, and TestQADocChainMatchesTheRenderedDispatcher
+// holds the renderer to it: a guard dropped from the doc is caught by
+// execution, one dropped from the renderer by that byte pin, and one dropped
+// from both is caught by both.
+func docChainDispatcher(t *testing.T, slot string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The block as INSTALL.md pastes it: a heredoc into the slot. §9 asks git
+	// for the dispatch dir rather than assuming .git/hooks (rangerhq-b38m),
+	// so the heredoc target is `"$h"/<slot>`.
+	open := "$ cat > \"$h\"/" + slot + " <<'EOF'\n"
+	i := strings.Index(string(b), open)
+	if i < 0 {
+		t.Fatalf("INSTALL.md §9 no longer writes %s with a heredoc", slot)
+	}
+	rest := string(b)[i+len(open):]
+	j := strings.Index(rest, "EOF\n")
+	if j < 0 {
+		t.Fatalf("INSTALL.md §9's %s heredoc has no terminator", slot)
+	}
+	return rest[:j]
+}
+
 // qaChainRepo builds the state §9 leaves behind: posse-<slot> holds the gate,
 // bd-<slot> stands in for `bd hooks install`'s shim (it records the argv and
 // stdin it was handed, which is the only way to see whether the chain reached
-// it and with what), and <slot> is §9's dispatcher, copied verbatim.
+// it and with what), and <slot> is §9's dispatcher — the bytes of it, taken
+// from the doc.
 func qaChainRepo(t *testing.T) (repo, witness string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -36,7 +74,7 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 	}
 	hooks := filepath.Join(repo, ".git", "hooks")
 	witness = filepath.Join(t.TempDir(), "bd.log")
-	for slot, stdin := range map[string]string{"pre-push": " </dev/null", "prepare-commit-msg": ""} {
+	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		if err := os.Rename(filepath.Join(hooks, slot), filepath.Join(hooks, "posse-"+slot)); err != nil {
 			t.Fatal(err)
 		}
@@ -45,11 +83,7 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 		if err := os.WriteFile(filepath.Join(hooks, "bd-"+slot), []byte(bd), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		chain := "#!/bin/sh\nd=$(dirname \"$0\")\n" +
-			"\"$d/posse-" + slot + "\" \"$@\"" + stdin + " || exit $?\n" +
-			"[ -x \"$d/bd-" + slot + "\" ] || exit 0\n" +
-			"exec \"$d/bd-" + slot + "\" \"$@\"\n"
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(chain), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(docChainDispatcher(t, slot)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -795,31 +829,19 @@ func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
 // pin it byte for byte, with bd's names filled in, so drift is a red test
 // rather than a repo that cannot commit.
 func TestQADocChainMatchesTheRenderedDispatcher(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc := string(b)
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		want := chainHookDispatcherWith(slot, "bd-"+slot)
-		// The block as INSTALL.md pastes it: a heredoc into the slot.
-		// §9 asks git for the dispatch dir rather than assuming .git/hooks
-		// (rangerhq-b38m), so the heredoc target is `"$h"/<slot>`.
-		open := "$ cat > \"$h\"/" + slot + " <<'EOF'\n"
-		i := strings.Index(doc, open)
-		if i < 0 {
-			t.Errorf("INSTALL.md §9 no longer writes %s with a heredoc", slot)
-			continue
-		}
-		rest := doc[i+len(open):]
-		j := strings.Index(rest, "EOF\n")
-		if j < 0 {
-			t.Errorf("INSTALL.md §9's %s heredoc has no terminator", slot)
-			continue
-		}
-		if got := rest[:j]; got != want {
+		if got := docChainDispatcher(t, slot); got != want {
 			t.Errorf("INSTALL.md §9's %s chain has drifted from chainHookDispatcherWith:\n got %q\nwant %q", slot, got, want)
 		}
+	}
+	// The doc is also the fixture every execution pin in this file runs
+	// (qaChainRepo), so the two halves of that agreement are checked by
+	// different means: drift is red here, and a guard the doc loses is red
+	// where the hooks actually run. Neither alone survives ranger-base-m45t's
+	// mutation of BOTH copies at once.
+	if !strings.Contains(docChainDispatcher(t, "prepare-commit-msg"), "[ -x \"$d/bd-prepare-commit-msg\" ] || exit 0\n") {
+		t.Error("the neighbour guard is the line rangerhq-xo65 bought; §9 must still paste it")
 	}
 }
 

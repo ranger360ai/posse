@@ -17,6 +17,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ─── the two halves must agree ───────────────────────────────────────────────
@@ -199,6 +200,84 @@ func TestNameStaysReusableOnThisServersOwnEmptyBoard(t *testing.T) {
 
 		if err := b.RelaunchSession(io.Discard, RelaunchOpts{Name: "alpha"}); err != nil {
 			t.Fatalf("relaunch must recover a session whose workspace is gone from its own server: %v", err)
+		}
+	})
+}
+
+// ─── and the arm the PRUNE still takes (rangerhq-7dn4, ranger-base-m45t) ─────
+
+// The other half of the same close, which nothing held: rangerhq-7dn4 moved
+// the empty-listing arm out of cannotAnswerFor and DELIBERATELY left it on
+// the delete side, where a refusal costs a kept file the next listing takes
+// back rather than a name. Before that move the write-side pins covered it
+// by accident; after it, deleting the arm outright left the whole of
+// ./internal/rhq green (measured 2026-08-29, verifying the close).
+//
+// The parity table above cannot see it: its `guarded` flag is read off the
+// prune's own warning, so an arm that stops firing turns that table's rows
+// into early returns rather than failures — a mutation that makes a test
+// SKIP instead of fail.
+//
+// So: aged past the grace and off an EMPTY board, the meta survives on the
+// arm alone; the same meta on a board holding one other workspace is pruned,
+// which is the witness that nothing else is doing the keeping.
+func TestPruneKeepsAMetaOnThisServersOwnEmptyBoard(t *testing.T) {
+	// Aged past PruneGrace so the 9nso grace is not what keeps it, and off
+	// the listing so the per-id query would call it dead.
+	age := func(t *testing.T, b *HerdrBackend, name string) {
+		t.Helper()
+		m, ok := b.readMeta(name)
+		if !ok {
+			t.Fatalf("setup: no meta for %s", name)
+		}
+		m.Launched = time.Now().Add(-2 * PruneGrace)
+		if err := b.writeMeta(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("empty board: kept", func(t *testing.T) {
+		t.Setenv("HERDR_SOCKET_PATH", "")
+		b, fake := newTestBackend(t)
+		mustCreate(t, b, NewSessionOpts{Name: "alpha", Cmd: "claude"})
+		age(t, b, "alpha")
+		saveWSTo(t, fake, nil)
+
+		var warn strings.Builder
+		b.Warn = &warn
+		if _, err := b.Sessions(); err != nil {
+			t.Fatal(err)
+		}
+		if _, kept := b.readMeta("alpha"); !kept {
+			t.Fatalf("this herdr listing nothing is not evidence that a session died — the "+
+				"prune keeps the file and says so (rangerhq-7dn4 kept this arm on the delete "+
+				"side on purpose):\n%s", warn.String())
+		}
+		if !strings.Contains(warn.String(), "does not hold their workspaces") {
+			t.Errorf("the keep must be reported, not silent:\n%s", warn.String())
+		}
+	})
+
+	// The witness: on a board that holds anything at all, the arm does not
+	// fire and the same aged, unlisted meta IS pruned. Without this the arm
+	// could be doing nothing and the assertion above would still be green.
+	t.Run("one workspace on the board: pruned", func(t *testing.T) {
+		t.Setenv("HERDR_SOCKET_PATH", "")
+		b, fake := newTestBackend(t)
+		mustCreate(t, b, NewSessionOpts{Name: "alpha", Cmd: "claude"})
+		mustCreate(t, b, NewSessionOpts{Name: "bystander", Cmd: "claude"})
+		age(t, b, "alpha")
+		bm, _ := b.readMeta("bystander")
+		saveWSTo(t, fake, []fakeWS{{WorkspaceID: bm.Workspace, Label: "bystander"}})
+
+		var warn strings.Builder
+		b.Warn = &warn
+		if _, err := b.Sessions(); err != nil {
+			t.Fatal(err)
+		}
+		if _, kept := b.readMeta("alpha"); kept {
+			t.Fatalf("a non-empty board is evidence: an aged meta whose workspace is not on it "+
+				"must be pruned, or the arm above proves nothing:\n%s", warn.String())
 		}
 	})
 }
