@@ -31,7 +31,7 @@ func TestPlanReaderAuthFailureClasses(t *testing.T) {
 		never  string
 	}{
 		{name: "401", status: http.StatusUnauthorized, auth: true, stale: true,
-			says: "credential stale — waiting for an interactive refresh"},
+			says: "credential stale — run `claude` once to refresh"},
 		// MUST NOT say refresh: a setup token is not entitled to plan
 		// windows and refreshing it produces the same 403 forever (ADR
 		// 0019 D2 as amended, measured on ranger-base-0qp).
@@ -96,7 +96,7 @@ func TestBlindSkipOn401NamesTheCredentialCondition(t *testing.T) {
 	if !strings.Contains(out, "— skipped") {
 		t.Fatalf("a parked pass must say why:\n%s", out)
 	}
-	for _, want := range []string{"blind 12m", "401", "credential stale — waiting for an interactive refresh"} {
+	for _, want := range []string{"blind 12m", "401", "credential stale — run `claude` once to refresh"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the park line must carry %q, got:\n%s", want, out)
 		}
@@ -140,7 +140,7 @@ func TestGovG5CredentialBlindGetsItsOwnKey(t *testing.T) {
 		says string
 	}{
 		{"401", &AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}, "guard-credential:401",
-			"credential stale — waiting for an interactive refresh"},
+			"credential stale — run `claude` once to refresh"},
 		{"403", &AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden}, "guard-credential:403",
 			"not entitled to plan windows"},
 		{"429", &RateLimit{Status: "429 Too Many Requests"}, "guard-blind", "monitoring itself is broken"},

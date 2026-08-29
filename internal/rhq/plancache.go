@@ -143,7 +143,7 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		return e.Windows, e.At, nil
 	}
 	if have && now.Before(e.RetryAt) {
-		return nil, time.Time{}, Die("usage endpoint rate-limited, not asking again for %s", BlindFor(e.RetryAt.Sub(now)))
+		return nil, time.Time{}, &planCooldownErr{Left: e.RetryAt.Sub(now)}
 	}
 	u, err := r.Read()
 	// The read log is written either way. A request that left the machine is
@@ -164,6 +164,29 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 	c.share(r, planEntry{At: now, Windows: u})
 	return u, now, nil
 }
+
+// planCooldownErr is the refusal to ask again while a Retry-After the endpoint
+// asked for is still running. Its SENTENCE is its own — nobody asked the
+// endpoint anything this time, so quoting a status line would be a fiction —
+// and its CLASS is still the 429 that bought it, which is what the *RateLimit
+// underneath is for: a surface that names failure classes (PlanFailureOf)
+// must name the hour after a 429 the same way it names the 429, or the
+// cockpit header goes back to saying "blind" for the whole tail of it (bead
+// rangerhq-pwpx).
+//
+// Nothing else changes with it. plancache's own 429 branch and its read log
+// are only reached by a read that was actually made, and this returns before
+// either.
+type planCooldownErr struct {
+	Left time.Duration
+	rl   RateLimit
+}
+
+func (e *planCooldownErr) Error() string {
+	return fmt.Sprintf("usage endpoint rate-limited, not asking again for %s", BlindFor(e.Left))
+}
+
+func (e *planCooldownErr) Unwrap() error { return &e.rl }
 
 // share is store with credpin.go rule 5 in front of it: an answer only
 // becomes the instance's fact when the reader that fetched it was still

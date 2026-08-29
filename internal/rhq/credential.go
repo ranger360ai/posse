@@ -297,6 +297,12 @@ type runtimeStore struct {
 	// non-darwin path's honest disclaimer (ADR 0019 V1) and is empty for a
 	// path that has been run against a live login.
 	Note string
+	// Fix is the one-line move an operator makes when this store is there
+	// and did not yield a credential — ADR 0019 D2's unreadable row, which
+	// is the class that MUST NOT be reported as staleness. It differs by
+	// store, which is why it lives here and not on the error type: the
+	// keychain's cause is a per-binary ACL and a plain file's is not.
+	Fix string
 }
 
 func (s runtimeStore) absent() *NoSource {
@@ -306,13 +312,101 @@ func (s runtimeStore) absent() *NoSource {
 	return s.Absent()
 }
 
-// fail attaches the store's Note without hiding the error: %w keeps
-// errors.As working, which is what GateRefusal and RateLimit are read with.
-func (s runtimeStore) fail(err error) error {
-	if err == nil || s.Note == "" {
+// failRead is a failure of the READ itself — `security` exited non-zero, the
+// file would not open — given this store's note, this store's class and this
+// store's one-line fix, so the sentence an operator gets names the move and
+// not only the symptom (ADR 0019 D2's unreadable row, bead rangerhq-pwpx).
+//
+// The note is attached without hiding the error: %w keeps errors.As working,
+// which is what GateRefusal and RateLimit are read with.
+//
+// A GATE REFUSAL is the one thing that gets neither: the item was never
+// reached, so it is not an outage of this store and must not wear this
+// store's diagnosis (2026-08-24, GateRefusal's own header has the receipt).
+func (s runtimeStore) failRead(err error) error {
+	if err == nil {
+		return nil
+	}
+	err = s.note(err)
+	var g *GateRefusal
+	if errors.As(err, &g) {
+		return err
+	}
+	return &CredUnreadable{Store: s.Name, Fix: s.Fix, Err: err}
+}
+
+// failShape is a failure of the ENVELOPE — the store answered and what it
+// answered is not a credential posse can find. Same class, and deliberately
+// NO fix.
+//
+// ADR 0019 V7 is why: the shape diagnostics ranger-base-okbr bought with an
+// hour of stopped shop are ONE piece of code for both platforms, and the
+// store's name is the only thing that may differ between the two sentences
+// (credseam_test.go pins that byte for byte). A per-store fix here would
+// fork it — and would fork it into a wrong sentence, because a keychain that
+// answered with a renamed key did not lose an ACL and re-granting one fixes
+// nothing. The move for this failure is already the last clause of the
+// diagnosis itself: teach credShapes the new name.
+func (s runtimeStore) failShape(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &CredUnreadable{Store: s.Name, Err: s.note(err)}
+}
+
+func (s runtimeStore) note(err error) error {
+	if s.Note == "" {
 		return err
 	}
 	return fmt.Errorf("%w%s", err, s.Note)
+}
+
+// CredUnreadable is a store of record that IS there and did not hand back a
+// credential: `security` exited non-zero, the item is gone, the envelope is
+// not JSON, or it holds no token in any shape posse knows.
+//
+// It is a distinct type for the reason AuthFailure and RateLimit are (ADR
+// 0019 D2, bead rangerhq-pwpx). The three things it is NOT are each a
+// different next move: it is not staleness (nothing an interactive refresh
+// clears — saying "refresh" here sent the operator at the wrong half of the
+// system on 2026-08-24), it is not structural absence (*NoSource, which is
+// the guard OFF and has no clock), and it is not posse's own gate refusing
+// the read (*GateRefusal, which is not a credential condition at all).
+//
+// Fix is the store's own one-line move and rides on the sentence, so the
+// 80% of the runbook is in the error whether or not the runbook page is
+// there (ADR 0019 D5).
+type CredUnreadable struct {
+	// Store is the store as an operator would name it when going to look.
+	Store string
+	// Fix is the one-line move. Empty is allowed and prints nothing extra:
+	// a store with no known move says the symptom and stops.
+	Fix string
+	// Err is what went wrong. It never quotes the credential — that rule is
+	// this file's and this type does not relax it.
+	Err error
+}
+
+func (e *CredUnreadable) Error() string {
+	if e.Fix == "" {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("%v — %s", e.Err, e.Fix)
+}
+
+func (e *CredUnreadable) Unwrap() error { return e.Err }
+
+// CredUnreadableReason is AuthFailureReason's sibling for this class: the
+// *CredUnreadable inside err, or nil.
+func CredUnreadableReason(err error) *CredUnreadable {
+	if err == nil {
+		return nil
+	}
+	var cu *CredUnreadable
+	if errors.As(err, &cu) {
+		return cu
+	}
+	return nil
 }
 
 // meterUnconfirmed is ADR 0019 V1 stated where it bites: the non-darwin
@@ -362,11 +456,11 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 	}
 	blob, err := store.Read()
 	if err != nil {
-		return "", CredMeta{}, store.fail(err)
+		return "", CredMeta{}, store.failRead(err)
 	}
 	tok, meta, err := credentialToken(store.Name, blob)
 	if err != nil {
-		return "", CredMeta{}, store.fail(err)
+		return "", CredMeta{}, store.failShape(err)
 	}
 	return tok, meta, nil
 }
@@ -406,6 +500,13 @@ func keychainStore() runtimeStore { return keychainStoreAt(securityBin) }
 func keychainStoreAt(bin string) runtimeStore {
 	return runtimeStore{
 		Name: fmt.Sprintf("keychain item %q", KeychainService),
+		// ADR 0019 D2's unreadable row, in the operator's own verbs. The
+		// ACL is hypothetical on purpose — it is the cause that has
+		// actually bitten (three times on 2026-08-24, every one of them a
+		// `make install`) and the message says "may", because a keychain
+		// that answered and held nothing usable is the same class and is
+		// fixed by the second half of the same line.
+		Fix: "this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once",
 		Read: func() ([]byte, error) {
 			out, err := keychainCmd(bin).Output()
 			if err != nil {
@@ -457,7 +558,11 @@ func credentialsFileStore(goos string) runtimeStore {
 	if perr != nil {
 		name = "the Claude Code credentials file under $HOME/.claude"
 	}
-	s := runtimeStore{Name: name, Note: meterUnconfirmed}
+	// Not the keychain's sentence: there is no per-binary ACL on a plain
+	// file, and telling an operator to re-grant one would send them looking
+	// for a thing this platform does not have.
+	s := runtimeStore{Name: name, Note: meterUnconfirmed,
+		Fix: "log in once with `claude` — its own login loop writes that file and posse reads it there"}
 	s.Absent = func() *NoSource {
 		if perr != nil {
 			return nil // the read reports it; this is not absence, it is not knowing

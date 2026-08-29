@@ -241,9 +241,9 @@ type AuthFailure struct {
 
 func (e *AuthFailure) Error() string {
 	if e.Code == http.StatusForbidden {
-		return fmt.Sprintf("usage endpoint returned %s: this credential is not entitled to plan windows — not a freshness problem", e.Status)
+		return fmt.Sprintf("usage endpoint returned %s: this credential is not entitled to plan windows — a setup-token never will be, and this is not a freshness problem", e.Status)
 	}
-	return fmt.Sprintf("usage endpoint returned %s: credential stale — waiting for an interactive refresh", e.Status)
+	return fmt.Sprintf("usage endpoint returned %s: credential stale — run `claude` once to refresh", e.Status)
 }
 
 // Stale reports whether an interactive refresh is the move — 401 and only
@@ -264,6 +264,72 @@ func AuthFailureReason(err error) *AuthFailure {
 		return af
 	}
 	return nil
+}
+
+// ─── the four failure classes, as a word a header has room for ───────────────
+
+// PlanFailure is which of ADR 0019 D2's four credential-failure classes a
+// failed plan read is, in the few words a surface with no room for the whole
+// sentence can print (bead rangerhq-pwpx).
+//
+// The sentences stay on the errors, where they already are — this is only
+// their SHORT NAME, and it is derived from the error's TYPE. No surface may
+// reach the class by matching on prose: that is the rule AuthFailure,
+// RateLimit and GateRefusal were each given a type to keep, and a cockpit
+// header grepping for "401" would undo all three at once.
+//
+// The empty class is not a fifth one. It is every read failure that is not a
+// credential condition at all — a dead socket, a 500, a response of the
+// wrong shape — and those surfaces say "blind" and nothing more, because
+// "blind" is exactly what they are.
+type PlanFailure string
+
+const (
+	// PlanFailUnreadable: the store of record is there and did not yield a
+	// credential (`security` failed, or the envelope held no token). NOT
+	// stale, NOT a refresh — saying so was the 2026-08-24 misdiagnosis.
+	PlanFailUnreadable PlanFailure = "credential unreadable"
+	// PlanFailStale: 401. An interactive refresh clears it.
+	PlanFailStale PlanFailure = "credential stale (401)"
+	// PlanFailForbidden: 403. A refresh never clears it.
+	PlanFailForbidden PlanFailure = "credential not entitled (403)"
+	// PlanFailRateLimited: 429, or the cooldown one bought.
+	PlanFailRateLimited PlanFailure = "rate limited"
+	// PlanFailGated: posse's own L1 shim refused posse's own read. It is
+	// listed here so a header can say it is NOT a credential outage — the
+	// reading that got `plan_guard_blind_max: 0` set for hours.
+	PlanFailGated PlanFailure = "our own gate, not the credential"
+)
+
+// PlanFailureOf names err's class, or "" for a failure that is not one.
+//
+// Order is load-bearing in one place: a gate refusal is asked about FIRST,
+// because it is the class whose whole point is not being mistaken for the
+// one below it. The rest cannot overlap — the reader returns exactly one of
+// them — and are ordered for reading.
+func PlanFailureOf(err error) PlanFailure {
+	if err == nil {
+		return ""
+	}
+	var g *GateRefusal
+	if errors.As(err, &g) {
+		return PlanFailGated
+	}
+	var cu *CredUnreadable
+	if errors.As(err, &cu) {
+		return PlanFailUnreadable
+	}
+	if af := AuthFailureReason(err); af != nil {
+		if af.Stale() {
+			return PlanFailStale
+		}
+		return PlanFailForbidden
+	}
+	var rl *RateLimit
+	if errors.As(err, &rl) {
+		return PlanFailRateLimited
+	}
+	return ""
 }
 
 // retryAfter parses the header's two forms (RFC 9110 §10.2.3): delta

@@ -248,7 +248,13 @@ type planRead struct {
 	guarded   bool      // any plan_guard_<window>: configured — then blindness is worth saying
 	noAdapter bool      // the guard is armed and nothing here can read a meter (ADR 0012 D4)
 	noSource  bool      // the guard is armed, an adapter ships, and this platform holds no credential (ADR 0019 D3)
-	ledger    bool      // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
+	// class is WHICH failure a blind read was, in the few words the header
+	// has room for (ADR 0019 D2's four classes, bead rangerhq-pwpx). Empty
+	// is every failure that is not a credential condition — a dead socket, a
+	// 500, a body of the wrong shape — and the header says "blind" alone,
+	// because blind alone is what those are.
+	class  string
+	ledger bool // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
 	// creds is the OTHER credential question this scan answers, and it is
 	// unrelated to the guard: which posse-owned session mints expire inside
 	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
@@ -303,6 +309,11 @@ func (c *cockpit) scanPlan() {
 		// clock, so the header must not show a blind timer counting up
 		// toward a park that will never come.
 		r.noSource, r.noAdapter = planOffState(err)
+		// Blind is two questions, and until now the header only answered
+		// the first. "Guard blind 40m" was every word of it true on
+		// 2026-08-22 and said nothing an operator could act on; the class
+		// is the half that names the next move (ADR 0019 D2).
+		r.class = string(rhq.PlanFailureOf(err))
 	}
 	// Files under the posse home, read here for the same reason the plan
 	// reading is: the draw path does no I/O. Nothing about this depends on
@@ -331,6 +342,12 @@ func (c *cockpit) applyPlan(r planRead) {
 // IS configured, say the blind instead of nothing: `plan — · guard blind 14m`.
 // The clock is time since the last successful reading, floored at cockpit
 // start, the same rule the dispatcher's blind window uses.
+//
+// A blind read also says WHICH failure it was when that is a credential
+// class — `plan — · guard blind 14m · credential stale (401)`. The clock is
+// how long, the class is what, and the operator needed both: "blind 40m" on
+// 2026-08-22 was true and unactionable, and the same header on a 403 must
+// say the opposite thing from the 401 (ADR 0019 D2, bead rangerhq-pwpx).
 //
 // A guard with no adapter is the third state and says so: it is off, not
 // blind, and no clock is running (ADR 0012 D4). A guard whose adapter ships
@@ -373,6 +390,12 @@ func (c *cockpit) planSegment(r planRead) string {
 		return "plan — · guard off, no adapter"
 	}
 	seg := "plan — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
+	// The class before the policy: what broke, then what the shop does about
+	// it. A read that is blind for a reason no class covers says nothing
+	// extra rather than an empty separator.
+	if r.class != "" {
+		seg += " · " + r.class
+	}
 	if r.ledger {
 		seg += " — ledger brake"
 	}
