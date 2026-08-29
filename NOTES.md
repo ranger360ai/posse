@@ -4633,10 +4633,33 @@ What was measured, before and during the build:
   worktrees share one beads database**. The graph does not fork. posse writes
   the redirect itself rather than shelling out to it — deterministic, no
   mutation of the repo's `.gitignore`, and testable without bd.
-- **Without a redirect the graph DOES fork, silently.** Measured on bd 0.49.1:
-  a linked worktree with no redirect makes bd read the checked-out
-  `issues.jsonl`, report "fresh clone detected", and build a second database
-  beside it. That is the failure the seeding exists to prevent.
+- **CORRECTED 2026-08-28 (ranger-base-vczf): a redirect-less linked worktree
+  does NOT fork the graph.** This bullet used to say it did — that bd would
+  read the checked-out `issues.jsonl`, report "fresh clone detected", and
+  build a second database beside it, and that preventing that was what the
+  seeding was for. Re-measured on bd 0.49.1 and it does not hold. **bd
+  resolves a linked worktree to the MAIN checkout's `.beads` itself**, and
+  while the main checkout has one it does not read the worktree's `redirect`
+  at all — a redirect pointing at a different LIVE database is ignored and bd
+  goes on reading the main graph. The "fresh clone" shape does not fork
+  either: with a tracked jsonl and no database yet, bd builds `beads.db` in
+  the MAIN checkout's `.beads` and the worktree reads it. bd falls back to
+  the worktree's own redirect only when the main checkout has no `.beads` at
+  all, which is the one shape `seedBeadsRedirect` declines to write for.
+  `TestLiveWorktreeBdResolvesTheWorktreeItself` pins that, so the day it
+  changes is a red test.
+- **So the redirect is read by posse, not by bd.** `beadsHome` (beadloss.go)
+  resolves it, and the seatbelt writable set and the codex launch line are
+  built from what it answers (ADR 0012 D3-C). With no redirect
+  `beadsHome(tree)` answers the worktree's own `.beads` — a directory bd
+  never opens — so a caged persona is granted the wrong path and denied the
+  right one, and bd reports `failed to open database: … operation not
+  permitted` out of a resolution that was correct all along. That is
+  ranger-base-0fb verbatim. The redirect is not belt-and-braces for the graph
+  on today's bd; it is the cage's only account of where the store is, and it
+  stays the belt for a bd that loses the worktree resolution. The full
+  five-row table, and what it does to the pin, are in
+  `docs/notes.d/ranger-base-vczf.md`.
 - **The redirect posse writes is ABSOLUTE.** bd's relative form resolves
   against the worktree ROOT, not against `.beads/` — one `..` off and bd warns
   once and silently falls back to a stale path. An absolute path has no such
