@@ -62,7 +62,9 @@ Per dimension, per runtime, exactly one of:
 - **PARITY** — measured to behave as claude does (the exercised baseline).
 - **DECLARED DIFFERENCE** — measured or designed to differ, and the
   difference is *data*: a field value plus a why. codex `SelfSandbox`
-  cannot nest under seatbelt; grok has no cost adapter; a template-only
+  cannot nest under seatbelt; codex's cost adapter reads tokens and
+  prices none of them (the example was "grok has no cost adapter" until
+  grok gained one — ranger-base-0lg6/mykq); a template-only
   runtime realizes no gates. These are first-class runtimes, not failures,
   and nothing may render them as failures.
 - **UNKNOWN** — nobody measured it. This is the loud state: `runtime

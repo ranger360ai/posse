@@ -124,14 +124,17 @@ floor, per-bead beside the account stage. Three rules follow:
   differently (a bead count needs no calibration; a percentage needs the
   factor).
 - **The bead cap's lifetime is the account-degraded column's** (ADR
-  0013 §5). `uncounted_cap_grok:` applies because no `cost_adapter:`
-  reads grok. The day one does (ranger-base-0lg6), the cap goes dead by
-  §5's existing law — `uncountedFor` returns nil for a counted runtime
-  before it ever reads the key — and it must go dead **loudly**: a set
-  `uncounted_cap_<runtime>:` on a counted runtime is named once per pass
-  as not applying, pointing at the brake that does. A silently dead key
-  is the cap-that-stopped-capping failure `uncounted.go` is written
-  against.
+  0013 §5). That day came (ranger-base-0lg6, ratified ranger-base-mykq):
+  the column's predicate is now `Runtime.CostPriced()`, grok's adapter
+  carries provider-reported dollars, and `uncounted_cap_grok:` is dead
+  by §5's existing law — `uncountedFor` returns nil for a priced runtime
+  before it ever reads the key. codex's cap SURVIVES its adapter,
+  because that adapter prices nothing it reads (read-but-unpriced keeps
+  the column). The dead key must still die **loudly**: a set
+  `uncounted_cap_<runtime>:` on a priced runtime is named once per pass
+  as not applying, pointing at the brake that does — unbuilt as of
+  2026-08-29, cut as ranger-base-ql08. A silently dead key is the
+  cap-that-stopped-capping failure `uncounted.go` is written against.
 
 **4. Pool exhausted underneath us: skip, as today — plus the cap.** There
 is no reading to take; a launch that the runtime rate-limits shows up as

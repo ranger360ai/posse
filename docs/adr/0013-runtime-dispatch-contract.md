@@ -19,7 +19,11 @@ ranger-base-93u0; trace in `0013-rules-precedence-probe.md`) ·
 amended 2026-08-28 (later): §1 settle row gains its declared half —
 `turn_outcome:` names the registered reader of the runtime's own first
 turn, and a runtime declaring none wears a per-bead blindness clause
-(ranger-base-02zr, folded by ranger-base-ivf0)*
+(ranger-base-02zr, folded by ranger-base-ivf0) · amended 2026-08-29:
+§5's predicate ratified as `Runtime.CostPriced()` — do the runtime's
+DOLLARS reach `posse cost` — not "is there an adapter"; read-but-unpriced
+(codex) keeps the brake and the degrade's reason clause branches; §1
+account row updated (ranger-base-0lg6, ratified in ranger-base-mykq)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -82,7 +86,7 @@ This contract is what **dispatch** requires of that same process.
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
 | **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
-| **account** | a cost-adapter reading, or an explicit uncounted cap | adapter (ADR 0012 D4) or config `uncounted_cap_<runtime>:` | **account-degraded**: loud every pass; dispatchable; the cap is the brake (§5) |
+| **account** | dollars in `posse cost` — a cost-adapter reading that *prices* (`CostPriced()`), or an explicit uncounted cap | adapter registry (ADR 0012 D4; registering IS the declaration — no `cost_adapter:` field, a second hand-kept declaration drifted, ranger-base-0lg6) or config `uncounted_cap_<runtime>:` | **account-degraded**, two ways — UNCOUNTED (nothing reads it) or UNPRICED (read, never priced): loud every pass; dispatchable; the cap is the brake (§5) |
 
 `posse runtime check <name>` prints this grid for a runtime. Unknown is
 the expensive column to get wrong: a template-only yaml with no
@@ -429,19 +433,48 @@ probe ever measures codex's native `AGENTS.md` overriding the PID
 guardrails line, suppression returns as a mitigation applied to a
 measurement — not as a default.
 
-### 5. Account — uncounted is a degrade, not a zero
+### 5. Account — no dollar meter is a degrade, not a zero
 
-Uncounted-never-$0 stands (ADR 0003 §4). Two live spend channels with a
-human eyeballing them is the hole. A runtime with no cost adapter is
-**account-degraded**:
+Uncounted-never-$0 stands (ADR 0003 §4). A live spend channel with a
+human eyeballing it is the hole. The predicate is `Runtime.CostPriced()`
+— do this runtime's DOLLARS reach `posse cost` — and NOT "is there an
+adapter", because those came apart (ranger-base-0lg6; this section
+originally said "a runtime with no cost adapter", ratified as amended in
+ranger-base-mykq). Two ways to fail it, both **account-degraded**, and
+they are different facts the degrade line must not print the same
+sentence about (`accountDegrade`, uncounted.go):
+
+- **UNCOUNTED** — nothing reads the runtime; its sessions are absent
+  from every total. The state this section was written for.
+- **UNPRICED** — an adapter reads it (turns, tokens, per-bead
+  attribution) and prices none of what it reads. codex is this: a plan
+  seat reports no cost and no list rate applies to one. "No cost
+  adapter reads codex" is a false sentence, and was printed every pass.
+
+The vocabulary is not new — the cockpit has printed `$uncounted` /
+`$unpriced` / a figure since codex's adapter landed (`sessionCost`,
+cmd/posse/cockpit.go); this amendment brings the account stage and the
+dispatch degrade into line with it. Both states keep the obligations,
+because what the cap stands in for is a missing DOLLAR meter, equally
+missing whether nothing reads the pool or something reads it and cannot
+price it:
 
 - every pass names how many launches it sent there;
 - config `uncounted_cap_<runtime>:` (beads / rolling 7 days, same shape
   as ADR 0010's overflow cap) is the brake; **unset = unlimited and
   loud**, the budget_* dormancy pattern;
-- filling the cost-adapter seam (0012 D4) is how a runtime *leaves*
-  this column. Numbers and which meters to read are the operator's;
-  the mechanism does not invent a price table.
+- registering an adapter that *prices* (0012 D4) is how a runtime
+  *leaves* this column; registering one that only reads is not — keying
+  the brake on "has an adapter" would have removed the only brake on a
+  subscription seat on the strength of a token count. Numbers and which
+  meters to read are the operator's; the mechanism does not invent a
+  price table.
+
+There is no `cost_adapter:` declaration to write anywhere: the registry
+is the only answer, resolved per call. The hand-kept string this ADR
+originally implied drifted within two days of the fleet gaining a second
+adapter (ranger-base-0lg6), which is ADR 0017 §3's second-declaration
+class doing exactly what that register predicts.
 
 No autonomous spending: the cap is a count of beads posse itself
 launched, not a bill.
@@ -729,6 +762,9 @@ row).
   `record: untrusted`.
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
+  (Resolved 2026-08-29: both exist — grok's carries provider-reported
+  dollars and left the column, ranger-base-k7nb/0lg6; codex's reads and
+  prices nothing, so its cap stands — §5 as amended in ranger-base-mykq.)
 - That deterministic persona faults dominate what the session-failure
   arm still catches after argv. Read from the mechanism (the benign
   case migrated to seen=false), not tallied from a fleet; the
