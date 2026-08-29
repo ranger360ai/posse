@@ -62,6 +62,18 @@ const (
 	confirmUnclaim
 )
 
+// confirmTarget is what a modeConfirm y acts on, remembered when the key
+// armed it. The lists under the cursor move while a confirm is up — the
+// results channel refreshes in ANY mode, so a launch landing between `u`
+// and `y` re-sorts IN PROGRESS or drops a row out of it — and resolving
+// the cursor at y time then acts on whatever slid into that offset rather
+// than on what the operator aimed at (rangerhq-sei). So: identity, not
+// position — dir+id for a bead, the session name for a kill.
+type confirmTarget struct {
+	dir, id string // confirmUnclaim: the claimed bead
+	name    string // confirmKill: the session
+}
+
 // section is which of the three lists a row (or the cursor) belongs to, in
 // draw order: SESSIONS · IN PROGRESS · READY WORK (ADR 0004 §2). Cursor
 // space runs in the same order, so the section a cursor is in is a range
@@ -90,8 +102,9 @@ type cockpit struct {
 	width       int             // terminal size at the last draw; paging keys read it
 	height      int
 	mode        cockpitMode
-	confirm     confirmKind // what a y answers in modeConfirm
-	input       []rune      // prompt buffer
+	confirm     confirmKind   // what a y answers in modeConfirm
+	target      confirmTarget // what that y acts on, aimed when the key was pressed
+	input       []rune        // prompt buffer
 	peekText    string
 	status      string      // last action result, shown in the footer
 	dispatching bool        // a launch goroutine is in flight (one at a time)
@@ -757,6 +770,36 @@ func (c *cockpit) selIssue() *rhq.RepoIssue {
 	return nil
 }
 
+// inProgTarget is the bead a modeConfirm y aimed at, if it is still
+// claimed — matched by identity, so a re-sort does not move it and a
+// disappearance reads as nil rather than as the row that took its place.
+func (c *cockpit) inProgTarget() *rhq.RepoIssue {
+	if c.target.id == "" {
+		return nil
+	}
+	for i := range c.inprog {
+		if c.inprog[i].Dir == c.target.dir && c.inprog[i].ID == c.target.id {
+			return &c.inprog[i]
+		}
+	}
+	return nil
+}
+
+// sessionTarget is the session a modeConfirm y aimed at, if it is still
+// listed. Same reasoning as inProgTarget: the sessions list re-sorts
+// blocked-first on every refresh.
+func (c *cockpit) sessionTarget() *rhq.HerdrSession {
+	if c.target.name == "" {
+		return nil
+	}
+	for i := range c.sessions {
+		if c.sessions[i].Name == c.target.name {
+			return &c.sessions[i]
+		}
+	}
+	return nil
+}
+
 // items is how many selectable rows the cursor has to walk.
 func (c *cockpit) items() int { return len(c.sessions) + len(c.inprog) + len(c.issues) }
 
@@ -866,18 +909,23 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 	case modeConfirm:
 		yes := key == "y" || key == "Y"
 		if c.confirm == confirmUnclaim {
-			is := c.selInProg()
+			is := c.inProgTarget()
 			switch {
 			case !yes:
 				c.status = "unclaim cancelled"
 			case is == nil:
+				// The aimed bead left IN PROGRESS while the confirm was up
+				// (its holder closed it, or a `d` landed). Say so: falling
+				// through silently leaves the pre-`u` status line standing,
+				// which reads as if the unclaim happened (rangerhq-sei).
+				c.status = c.target.id + " is no longer claimed — nothing unclaimed"
 			default:
 				// ADR 0004 §3: actor none — bd's default actor is the
 				// operator, and this is the operator's hand, attributed as
 				// such. The assignee is cleared with the claim: taking a
 				// bead off a stalled holder puts it back in the pool, which
 				// is the whole point of the key.
-				if err := c.bd.Unclaim(is.Dir, is.ID, "", false); err != nil {
+				if err := c.bd.Unclaim(c.target.dir, c.target.id, "", false); err != nil {
 					c.status = err.Error()
 				} else {
 					c.status = "unclaimed " + is.ID
@@ -887,31 +935,35 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			c.mode = modeNormal
 			return false, nil
 		}
-		if yes {
-			if s := c.selSession(); s != nil {
-				landing, err := c.hb.KillSessionAndLand(s.Name)
-				switch {
-				case err != nil:
-					// Including the ADR 0013 §4 reap guard: a session still
-					// holding an open bead over an uncommitted tree is not
-					// killed here either, and the refusal is one line
-					// because this is the one line there is room for. The
-					// way through it is `posse kill <name> --force`, which
-					// the refusal names.
-					c.status = err.Error()
-				case landing.Line() != "":
-					// The worktree's fate is the half of a kill that can
-					// lose work, so it goes on the status line rather than
-					// into a stream the cockpit does not show
-					// (rangerhq-09o2).
-					c.status = "killed " + s.Name + " — " + landing.Line()
-				default:
-					c.status = "killed " + s.Name
-				}
-				c.refresh()
-			}
-		} else {
+		s := c.sessionTarget()
+		switch {
+		case !yes:
 			c.status = "kill cancelled"
+		case s == nil:
+			// Same hazard as the unclaim arm: the sessions list re-sorts and
+			// loses rows on every refresh, and a refresh runs in any mode.
+			c.status = c.target.name + " is gone — nothing killed"
+		default:
+			landing, err := c.hb.KillSessionAndLand(c.target.name)
+			switch {
+			case err != nil:
+				// Including the ADR 0013 §4 reap guard: a session still
+				// holding an open bead over an uncommitted tree is not
+				// killed here either, and the refusal is one line
+				// because this is the one line there is room for. The
+				// way through it is `posse kill <name> --force`, which
+				// the refusal names.
+				c.status = err.Error()
+			case landing.Line() != "":
+				// The worktree's fate is the half of a kill that can
+				// lose work, so it goes on the status line rather than
+				// into a stream the cockpit does not show
+				// (rangerhq-09o2).
+				c.status = "killed " + c.target.name + " — " + landing.Line()
+			default:
+				c.status = "killed " + c.target.name
+			}
+			c.refresh()
 		}
 		c.mode = modeNormal
 		return false, nil
@@ -1041,12 +1093,14 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 				break
 			}
 			c.mode, c.confirm = modeConfirm, confirmKill
+			c.target = confirmTarget{name: s.Name}
 		}
 	case key == "u":
 		// ADR 0004 §3: claimed beads only — there is nothing to unclaim on
 		// a session or a ready row.
-		if c.selInProg() != nil {
+		if is := c.selInProg(); is != nil {
 			c.mode, c.confirm = modeConfirm, confirmUnclaim
+			c.target = confirmTarget{dir: is.Dir, id: is.ID}
 		}
 	case key == "v":
 		s := c.actSession()
@@ -2072,13 +2126,11 @@ func (c *cockpit) footerLines(w int) []string {
 			{kind: colFlex, text: string(c.input)},
 		}, w)}
 	case modeConfirm:
-		ask := fmt.Sprintf("kill %s? (y/n)", name)
+		// Both arms name what the key aimed at, for the same reason the
+		// handler acts on it: the cursor is not where it was (rangerhq-sei).
+		ask := fmt.Sprintf("kill %s? (y/n)", c.target.name)
 		if c.confirm == confirmUnclaim {
-			id := ""
-			if is := c.selInProg(); is != nil {
-				id = is.ID
-			}
-			ask = fmt.Sprintf("unclaim %s? (y/n)", id)
+			ask = fmt.Sprintf("unclaim %s? (y/n)", c.target.id)
 		}
 		return []string{"", "", layout([]col{{kind: colFlex, text: ask, ansi: aRed}}, w)}
 	case modePeek:

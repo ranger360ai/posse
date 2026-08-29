@@ -11,6 +11,9 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -771,21 +774,32 @@ func TestQAShortAgeEdges(t *testing.T) {
 // keystrokes the only thing that refreshes is the results channel (a launch
 // finishing), which calls refresh() in any mode. Does the confirm keep
 // pointing at the bead the operator aimed at?
+// rangerhq-sei: `u` and `x` are confirmed one keystroke later, and a refresh
+// runs in ANY mode — the results channel calls c.refresh() while the confirm
+// is still up. So the confirm must act on what the key AIMED at, by identity,
+// and refuse out loud when that is gone. Re-resolving the cursor hands back a
+// different bead (or kills a different session).
+//
+// The cursor itself is allowed to move: reselect keeps it on the aimed row
+// while the row exists and falls back to the same offset when it does not.
+// That fallback is right for a cursor and wrong for a confirm, which is why
+// the fix is at the confirm and these pins are on what bd was told to do.
 func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
-	t.Skip("rangerhq-sei: the confirm re-reads the cursor, so a refresh mid-confirm retargets the unclaim")
-	c := qaProgFixture()
+	c, log := qaUnclaimFixture(t)
 	c.cursor = len(c.sessions) + 1 // second in-progress row
 	aimed := c.selInProg().ID
 	c.handleKey([]byte("u"))
 	if c.mode != modeConfirm || c.confirm != confirmUnclaim {
 		t.Fatalf("u did not arm the confirm")
 	}
+	if !strings.Contains(qaPlain(strings.Join(c.footerLines(120), "\n")), "unclaim "+aimed) {
+		t.Fatalf("the footer must name the bead u aimed at")
+	}
 
 	// A refresh in which the aimed bead still exists but the list re-sorts
 	// (its holder went from working to blocked, say).
 	sel := c.selected()
-	reordered := []rhq.RepoIssue{c.inprog[3], c.inprog[1], c.inprog[0], c.inprog[2]}
-	c.inprog = reordered
+	c.inprog = []rhq.RepoIssue{c.inprog[3], c.inprog[1], c.inprog[0], c.inprog[2]}
 	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
 	if got := c.selInProg().ID; got != aimed {
 		t.Errorf("confirm retargeted after a re-sort: aimed %s, now %s", aimed, got)
@@ -794,7 +808,9 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 		t.Errorf("footer no longer names the aimed bead")
 	}
 
-	// A refresh in which the aimed bead is gone (the holder closed it).
+	// A refresh in which the aimed bead is gone (the holder closed it). The
+	// cursor lands on another claimed bead — that is reselect doing its job —
+	// and the confirm must not follow it there.
 	sel = c.selected()
 	var left []rhq.RepoIssue
 	for _, is := range c.inprog {
@@ -804,9 +820,138 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 	}
 	c.inprog = left
 	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
-	if is := c.selInProg(); is != nil && is.ID != aimed {
-		t.Errorf("ESCAPE: confirm now aims at %s, the operator aimed at %s", is.ID, aimed)
+	under := ""
+	if is := c.selInProg(); is != nil {
+		under = is.ID
 	}
+	if under == aimed {
+		t.Fatalf("fixture is not exercising the hazard: the cursor is still on %s", aimed)
+	}
+	if !strings.Contains(qaPlain(strings.Join(c.footerLines(120), "\n")), "unclaim "+aimed) {
+		t.Errorf("the footer asks about the row the cursor drifted onto, not the aimed bead")
+	}
+
+	c.handleKey([]byte("y"))
+	if got := qaBdLog(t, log); strings.Contains(got, "update") {
+		t.Errorf("ESCAPE: y unclaimed something after the aimed bead left the list: bd %q", got)
+	}
+	if !strings.Contains(c.status, aimed) || !strings.Contains(c.status, "nothing unclaimed") {
+		t.Errorf("a refused unclaim must say so and name the bead: status %q", c.status)
+	}
+	if c.mode != modeNormal {
+		t.Errorf("the confirm must close: mode %d", c.mode)
+	}
+
+	// Positive witness for the assertion of absence above: the same fake bd,
+	// the same key sequence, an aimed bead that is still there — one update.
+	// Without this, a bd that never ran at all would read as a clean refusal.
+	c2, log2 := qaUnclaimFixture(t)
+	c2.cursor = len(c2.sessions) + 1
+	still := c2.selInProg()
+	c2.handleKey([]byte("u"))
+	c2.handleKey([]byte("y"))
+	if got := qaBdLog(t, log2); !strings.Contains(got, "update "+still.ID) {
+		t.Errorf("control: y on a bead that is still claimed must unclaim it: bd %q", got)
+	}
+	if c2.status != "unclaimed "+still.ID {
+		t.Errorf("control status: %q", c2.status)
+	}
+}
+
+// rangerhq-sei, the half that predates it: `x` has the identical shape, so a
+// sessions list that loses the aimed row mid-confirm retargets a KILL. The
+// backend is deliberately absent here — the fixed handler refuses before it
+// would reach one, and a handler that re-resolves the cursor dereferences it.
+func TestQAKillTargetSurvivesRefresh(t *testing.T) {
+	c := qaProgFixture()
+	c.cursor = 0
+	aimed := c.sessions[0].Name
+	c.handleKey([]byte("x"))
+	if c.mode != modeConfirm || c.confirm != confirmKill {
+		t.Fatalf("x did not arm the confirm")
+	}
+
+	// The aimed session ends on its own (its bead closed, herdr reaped it).
+	sel := c.selected()
+	c.sessions = c.sessions[1:]
+	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
+	if c.selSession() == nil || c.selSession().Name == aimed {
+		t.Fatalf("fixture is not exercising the hazard: cursor on %v", c.selSession())
+	}
+	if !strings.Contains(qaPlain(strings.Join(c.footerLines(120), "\n")), "kill "+aimed) {
+		t.Errorf("the footer asks about the row the cursor drifted onto, not the aimed session")
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("ESCAPE: y reached the backend for a session that is gone: %v", r)
+			}
+		}()
+		c.handleKey([]byte("y"))
+	}()
+	if !strings.Contains(c.status, aimed) || !strings.Contains(c.status, "nothing killed") {
+		t.Errorf("a refused kill must say so and name the session: status %q", c.status)
+	}
+	if c.mode != modeNormal {
+		t.Errorf("the confirm must close: mode %d", c.mode)
+	}
+}
+
+// qaUnclaimFixture is qaProgFixture wired to a bd that records its argv and
+// answers every list with an empty one, so an unclaim is a fact on disk
+// rather than an inference from the status line. The herdr and the app are
+// real enough for the c.refresh() a successful unclaim ends with — without
+// them that refresh either panics or overwrites the status it is meant to
+// leave standing.
+func qaUnclaimFixture(t *testing.T) (*cockpit, string) {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "bd.log")
+	bd := writeExec(t, dir, "bd", `#!/bin/sh
+echo "$@" >> `+log+`
+case "$1" in
+update|--actor) printf '{}\n' ;;
+*) printf '[]\n' ;;
+esac
+exit 0
+`)
+	herdr := writeExec(t, dir, "herdr", `#!/bin/sh
+case "$1 $2" in
+"workspace list") printf '%s\n' '{"result":{"workspaces":[]}}' ;;
+"agent list") printf '%s\n' '{"result":{"agents":[]}}' ;;
+*) printf '%s\n' '{"result":{}}' ;;
+esac
+exit 0
+`)
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+dir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &rhq.App{Home: home, ConfigPath: filepath.Join(home, "config.yaml"), StateDir: filepath.Join(home, "state")}
+
+	c := qaProgFixture()
+	c.app, c.bd = a, rhq.Bd{Bin: bd}
+	c.hb = &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard}
+	// bd runs with cmd.Dir set to the bead's repo, so the fixture's dir has
+	// to be one that exists — otherwise every call dies at chdir and the
+	// "nothing was unclaimed" arm passes for the wrong reason.
+	for i := range c.inprog {
+		c.inprog[i].Dir = dir
+	}
+	return c, log
+}
+
+func qaBdLog(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
