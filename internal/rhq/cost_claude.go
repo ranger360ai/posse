@@ -20,6 +20,13 @@ type claudeCost struct{}
 
 func (claudeCost) Runtime() string { return "claude" }
 
+// Reads/Prices: the reading this repo was built around, and the only one
+// that ends in dollars from a rate card of our own (PriceTable).
+func (claudeCost) Reads() string {
+	return "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)"
+}
+func (claudeCost) Prices() bool { return true }
+
 func (claudeCost) PriceFor(model string) (Price, bool) { return PriceFor(model) }
 
 // Transcripts uses the locator that distinguishes "no transcripts here" from

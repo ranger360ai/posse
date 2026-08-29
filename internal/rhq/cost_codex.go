@@ -70,6 +70,17 @@ type codexCost struct{}
 
 func (codexCost) Runtime() string { return "codex" }
 
+// Reads/Prices: turns, tokens and per-bead attribution, and NEVER a dollar
+// — the subscription seat reports no cost and no list rate applies to one
+// (PriceFor below). So codex is READ but UNPRICED: its sessions are not in
+// CostReport.Uncounted, its beads print a blank rather than 0.00, and it
+// keeps ADR 0013 §5's brake, because the thing that brake stands in for —
+// no dollar meter on this pool — is exactly still the case.
+func (codexCost) Reads() string {
+	return "rollout scanner (~/.codex/sessions/**/rollout-*.jsonl, tokens only, ADR 0012 D4)"
+}
+func (codexCost) Prices() bool { return false }
+
 // PriceFor never prices a codex model. The work ran on a subscription seat,
 // not on the API: there is no rate that applies, and inventing one at another
 // provider's list rates would put fabricated dollars in the same total as

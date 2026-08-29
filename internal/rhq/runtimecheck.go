@@ -336,10 +336,10 @@ func settleRow(rt *Runtime) stageRow {
 }
 
 func (a *App) accountRow(rt *Runtime) stageRow {
-	if rt.Counted() {
+	if rt.CostPriced() {
 		return stageRow{
 			stage:   "account",
-			value:   "counted — " + rt.CostAdapter,
+			value:   "counted — " + rt.CostReading(),
 			by:      "cost adapter (ADR 0012 D4)",
 			missing: "account-degraded, named loudly every pass",
 		}
@@ -355,11 +355,23 @@ func (a *App) accountRow(rt *Runtime) stageRow {
 	case raw != "":
 		capline = fmt.Sprintf("uncounted_cap_%s: %q is not a positive bead count — no cap: unlimited and loud", rt.Name, raw)
 	}
+	// Two degrades, not one, and the grid has to say which (ranger-base-0lg6):
+	// nothing reads this runtime, or something reads it and prices none of
+	// what it reads. Both are account-degraded — the cap is the brake for
+	// both, because what the cap stands in for is a missing DOLLAR meter,
+	// which is equally missing either way — but "no cost adapter reads this
+	// runtime" is a false sentence about codex, whose rollouts posse counts
+	// turn by turn.
 	r := stageRow{
 		stage:   "account",
 		value:   "UNCOUNTED — no cost adapter reads this runtime. Uncounted is a degrade, never $0 (ADR 0003 §4)",
 		by:      "nothing — the ADR 0012 D4 adapter seam is unfilled here",
 		missing: "account-degraded: dispatchable, named loudly every pass; the cap is the brake (ADR 0013 §5)",
+	}
+	if reading := rt.CostReading(); reading != "" {
+		r.value = "UNPRICED — " + reading + " reads this runtime's turns, tokens and beads and prices none of them. Unpriced is a degrade, never $0 (ADR 0003 §4)"
+		r.by = "cost adapter (ADR 0012 D4) — reading, not pricing"
+		r.note = append(r.note, "`posse cost` counts these sessions (they are NOT in its uncounted line) and prints a BLANK in the $ column; the cockpit shows `$unpriced` rather than `$uncounted`.")
 	}
 	r.note = append(r.note, capline)
 	r.note = append(r.note, "the cap counts beads posse itself launched, not a bill — no autonomous spending.")

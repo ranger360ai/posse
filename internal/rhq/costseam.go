@@ -2,11 +2,19 @@ package rhq
 
 // The cost seam (ADR 0012 D4).
 //
-// A provider adapter answers three questions and nothing else:
+// A provider adapter answers four questions and nothing else:
 //
+//	what it reads      — Reads()/Prices(): the account stage's own facts,
+//	                     including whether this reading ends in dollars
 //	price table        — what does this model id cost per MTok
 //	transcript locator — where does this provider leave its records
 //	record decoder     — how does one of those files become []*Segment
+//
+// The first is here rather than on the runtime table because a hand-kept
+// second declaration drifts: grok gained an adapter and its `cost_adapter:`
+// line was never written, so for two days the dispatch pass said "no cost
+// adapter reads grok" about spend that was already in `posse cost`
+// (ranger-base-0lg6). The registry is the only answer now.
 //
 // Everything downstream of []*Segment is arithmetic: Total/Sum, ByBead,
 // DayTotal/PassTotal, the groupings and the printing all live in cost.go and
@@ -32,6 +40,28 @@ type CostProvider interface {
 	// runtimes/<name>.yaml and herdr's session records spell it. It is the
 	// key that decides whether a live session is counted or uncounted.
 	Runtime() string
+
+	// Reads describes, for a human, WHAT this adapter reads: the value the
+	// `account` row of `posse runtime check` prints and the reason clause
+	// the dispatch degrade prints. Never empty — an account stage that
+	// cannot say what stands behind it is one nobody can audit.
+	Reads() string
+
+	// Prices reports whether what Reads() describes ends in DOLLARS —
+	// whether a segment this adapter decodes ever carries money, from a
+	// rate table or from the provider's own reported number.
+	//
+	// False is neither "free" nor "unreadable". It is the third state the
+	// cockpit already prints as `$unpriced` beside `$uncounted` and a
+	// figure (cmd/posse/cockpit.go): turns, tokens and per-bead
+	// attribution are all read, and no dollar ever is — the
+	// subscription-seat shape, where the provider reports no cost and no
+	// list rate applies to a plan seat. A runtime in that state keeps ADR
+	// 0013 §5's brake and its loud line, because the fact the brake stands
+	// in for — no dollar meter on this pool — still holds; only the reason
+	// clause changes, and it has to, because "no adapter reads this
+	// runtime" is false there (ranger-base-0lg6).
+	Prices() bool
 
 	// PriceFor resolves a model id to list rates per MTok. ok is false when
 	// the id is not recognised, and then the zero Price is returned rather
@@ -84,8 +114,13 @@ func CostProviders() []CostProvider {
 	return out
 }
 
-// CountedRuntimes names the runtimes that have an adapter — exactly what
-// `posse cost` can put a number on. Anything else is uncounted.
+// CountedRuntimes names the runtimes that have an adapter — exactly the
+// ones `posse cost` reads at all. Anything else is uncounted, its sessions
+// absent from every total rather than counted as zero.
+//
+// Read, not priced: an adapter here may still return false from Prices(),
+// and then the runtime's turns and tokens are counted while its dollars
+// never are. `Runtime.CostPriced()` is that narrower question.
 func CountedRuntimes() []string {
 	out := make([]string, 0, len(costProviders))
 	for _, p := range CostProviders() {

@@ -3,9 +3,10 @@ package rhq
 // QA pin for the leg of the cost seam that has no consumer
 // (ranger-base-8tut, found verifying the ranger-base-k7nb close).
 //
-// costseam.go says an adapter answers three questions — price table,
-// transcript locator, record decoder. Two of the three are wired: the scan
-// calls Transcripts and Decode. Nothing in production ever calls PriceFor.
+// costseam.go says an adapter answers four questions — what it reads, price
+// table, transcript locator, record decoder. Three of the four are wired:
+// the scan calls Transcripts and Decode, and the account stage calls
+// Reads/Prices. Nothing in production ever calls PriceFor.
 //
 // MEASURED 2026-08-29, and the measurement is a compile: delete the
 // PriceFor line from the CostProvider interface and `go build ./...` stays
@@ -34,6 +35,9 @@ import (
 type tablePricedCost struct{}
 
 func (tablePricedCost) Runtime() string { return "qa-tablepriced" }
+
+func (tablePricedCost) Reads() string { return "qa fixture (a rate card of its own)" }
+func (tablePricedCost) Prices() bool  { return true }
 
 func (tablePricedCost) PriceFor(model string) (Price, bool) {
 	if model == "qa-model-1" {

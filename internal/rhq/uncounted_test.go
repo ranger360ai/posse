@@ -5,9 +5,14 @@ package rhq
 // bd, the test binary re-execing as both — and no plan guard and no budget
 // caps, so the only thing deciding anything here is the account stage.
 //
-// grok is the fixture's runtime because it is a shipped built-in with no
-// `cost_adapter:`: the uncounted column is a property of the runtime table,
-// not of a yaml a test invented.
+// codex is the fixture's runtime because it is a shipped built-in whose
+// dollars posse cannot read: its adapter counts turns and tokens and prices
+// none of them, which is the account stage's degrade. The column is a
+// property of the shipped adapters, not of a yaml a test invented.
+//
+// It was grok until ranger-base-0lg6, when grok's adapter — which reads the
+// provider's own per-turn dollars — was finally reflected in the account
+// stage and grok became counted.
 
 import (
 	"fmt"
@@ -18,10 +23,10 @@ import (
 	"time"
 )
 
-// grokPID pins a persona to the uncounted runtime. Nothing else is declared,
+// codexPID pins a persona to the account-degraded runtime. Nothing else is declared,
 // so parity is clean and the bead's labels pick the tier.
-func grokPID(name string) string {
-	return "---\nname: " + name + "\ndescription: test\nlabels: [go]\nruntime: grok\n---\nYou are " + name + ".\n"
+func codexPID(name string) string {
+	return "---\nname: " + name + "\ndescription: test\nlabels: [go]\nruntime: codex\n---\nYou are " + name + ".\n"
 }
 
 type uncountedFixture struct {
@@ -41,7 +46,7 @@ func uncountedPass(t *testing.T, cfg, ready string, personas ...string) *uncount
 	d, errb := planDispatcher(t, b, nil)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	for _, p := range personas {
-		if err := os.WriteFile(filepath.Join(b.App.AgentsDir, p+".md"), []byte(grokPID(p)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(b.App.AgentsDir, p+".md"), []byte(codexPID(p)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -52,8 +57,8 @@ func uncountedPass(t *testing.T, cfg, ready string, personas ...string) *uncount
 	return &uncountedFixture{d: d, errb: errb, b: b, fake: fake, repo: repo}
 }
 
-// oneGrokBead is the common case: one ready bead, one seat, one launch.
-func oneGrokBead(t *testing.T, cfg string) *uncountedFixture {
+// oneCodexBead is the common case: one ready bead, one seat, one launch.
+func oneCodexBead(t *testing.T, cfg string) *uncountedFixture {
 	t.Helper()
 	return uncountedPass(t, cfg, `[{"id":"a-1","title":"t","labels":["go"]}]`, "ranger")
 }
@@ -88,7 +93,7 @@ func (f *uncountedFixture) seedUncounted(t *testing.T, es ...LedgerEntry) {
 // unlimited, not off — and the pass says out loud how many beads it sent to
 // a runtime nothing meters, naming the key that would brake it.
 func TestUncountedUnsetIsUnlimitedAndLoud(t *testing.T) {
-	f := oneGrokBead(t, "")
+	f := oneCodexBead(t, "")
 
 	n, err := f.d.Run("", "", 0)
 	if err != nil {
@@ -99,10 +104,10 @@ func TestUncountedUnsetIsUnlimitedAndLoud(t *testing.T) {
 		t.Fatalf("unset is unlimited: the bead must launch, got n=%d:\n%s", n, out)
 	}
 	for _, want := range []string{
-		"account-degraded grok: sent 1 bead(s) this pass",
+		"account-degraded codex: sent 1 bead(s) this pass",
 		"1 in the last 7d",
-		"no cost adapter reads grok",
-		"uncounted_cap_grok: is unset — unlimited and loud",
+		"prices none of them",
+		"uncounted_cap_codex: is unset — unlimited and loud",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the pass must say %q:\n%s", want, out)
@@ -118,8 +123,8 @@ func TestUncountedUnsetIsUnlimitedAndLoud(t *testing.T) {
 		t.Fatalf("want exactly one ledger line, got %v", l)
 	}
 	fields := strings.Fields(l[0])
-	if len(fields) != 4 || fields[1] != "grok" || fields[2] != "a-1" || fields[3] != "ranger" {
-		t.Errorf("ledger line = %q, want `RFC3339 grok a-1 ranger`", l[0])
+	if len(fields) != 4 || fields[1] != "codex" || fields[2] != "a-1" || fields[3] != "ranger" {
+		t.Errorf("ledger line = %q, want `RFC3339 codex a-1 ranger`", l[0])
 	}
 	if _, err := time.Parse(time.RFC3339, fields[0]); err != nil {
 		t.Errorf("ledger timestamp %q is not RFC3339: %v", fields[0], err)
@@ -157,16 +162,16 @@ func TestUncountedCountedRuntimeSaysNothing(t *testing.T) {
 // launches to that runtime, and the skip line names the numbers that stopped
 // it. Nothing is claimed and nothing is appended.
 func TestUncountedCapSkipsFurtherLaunches(t *testing.T) {
-	f := oneGrokBead(t, "uncounted_cap_grok: 2\n")
+	f := oneCodexBead(t, "uncounted_cap_codex: 2\n")
 	now := time.Now()
 	f.seedUncounted(t,
-		LedgerEntry{now.Add(-2 * time.Hour), "grok", "old-1", "ranger"},
-		LedgerEntry{now.Add(-6 * 24 * time.Hour), "grok", "old-2", "ranger"},
+		LedgerEntry{now.Add(-2 * time.Hour), "codex", "old-1", "ranger"},
+		LedgerEntry{now.Add(-6 * 24 * time.Hour), "codex", "old-2", "ranger"},
 	)
 
 	n, _ := f.d.Run("", "", 0)
 	out := dispatcherOut(f.d)
-	if n != 0 || !strings.Contains(out, "account-degraded: uncounted_cap_grok 2/2 in 7d — skipped") {
+	if n != 0 || !strings.Contains(out, "account-degraded: uncounted_cap_codex 2/2 in 7d — skipped") {
 		t.Fatalf("a reached cap must skip and say so, got n=%d:\n%s", n, out)
 	}
 	if calls := bdCalls(t, f.fake); strings.Contains(calls, "--claim") {
@@ -187,20 +192,20 @@ func TestUncountedCapSkipsFurtherLaunches(t *testing.T) {
 // one's. With room left the bead launches and the report carries both
 // numbers.
 func TestUncountedCapRolling7d(t *testing.T) {
-	f := oneGrokBead(t, "uncounted_cap_grok: 3\n")
+	f := oneCodexBead(t, "uncounted_cap_codex: 3\n")
 	now := time.Now()
 	f.seedUncounted(t,
-		LedgerEntry{now.Add(-2 * time.Hour), "grok", "old-1", "ranger"},
-		LedgerEntry{now.Add(-8 * 24 * time.Hour), "grok", "old-2", "ranger"},
-		LedgerEntry{now.Add(-30 * 24 * time.Hour), "grok", "old-3", "ranger"},
-		LedgerEntry{now.Add(-time.Hour), "codex", "old-4", "ranger"},
+		LedgerEntry{now.Add(-2 * time.Hour), "codex", "old-1", "ranger"},
+		LedgerEntry{now.Add(-8 * 24 * time.Hour), "codex", "old-2", "ranger"},
+		LedgerEntry{now.Add(-30 * 24 * time.Hour), "codex", "old-3", "ranger"},
+		LedgerEntry{now.Add(-time.Hour), "gemini", "old-4", "ranger"},
 	)
 
-	if got, err := f.b.App.UncountedCount("grok", now); err != nil || got != 1 {
-		t.Errorf("UncountedCount(grok) = %d, %v — want 1 (entries past 7d do not count)", got, err)
+	if got, err := f.b.App.UncountedCount("codex", now); err != nil || got != 1 {
+		t.Errorf("UncountedCount(codex) = %d, %v — want 1 (entries past 7d do not count)", got, err)
 	}
-	if got, _ := f.b.App.UncountedCount("codex", now); got != 1 {
-		t.Errorf("UncountedCount(codex) = %d, want 1 — the count is per runtime", got)
+	if got, _ := f.b.App.UncountedCount("gemini", now); got != 1 {
+		t.Errorf("UncountedCount(gemini) = %d, want 1 — the count is per runtime", got)
 	}
 
 	n, err := f.d.Run("", "", 0)
@@ -211,7 +216,7 @@ func TestUncountedCapRolling7d(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("a cap with room must not skip, got n=%d:\n%s", n, out)
 	}
-	if !strings.Contains(out, "account-degraded grok: sent 1 bead(s) this pass, 2/3 in 7d (uncounted_cap_grok:)") {
+	if !strings.Contains(out, "account-degraded codex: sent 1 bead(s) this pass, 2/3 in 7d (uncounted_cap_codex:)") {
 		t.Errorf("the report must carry the window count against the cap:\n%s", out)
 	}
 	if got := len(f.uncountedLedger(t)); got != 5 {
@@ -224,7 +229,7 @@ func TestUncountedCapRolling7d(t *testing.T) {
 // second bead. Without this a --watch loop with a long gather could spend a
 // whole week's cap in one pass and only notice next pass.
 func TestUncountedCapBitesInsideOnePass(t *testing.T) {
-	f := uncountedPass(t, "uncounted_cap_grok: 1\n",
+	f := uncountedPass(t, "uncounted_cap_codex: 1\n",
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
 		"ranger", "scout")
 
@@ -233,7 +238,7 @@ func TestUncountedCapBitesInsideOnePass(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("exactly one launch fits under a cap of 1, got n=%d:\n%s", n, out)
 	}
-	if !strings.Contains(out, "account-degraded: uncounted_cap_grok 1/1 in 7d — skipped") {
+	if !strings.Contains(out, "account-degraded: uncounted_cap_codex 1/1 in 7d — skipped") {
 		t.Errorf("the second bead must be stopped by the cap, not by a seat:\n%s", out)
 	}
 	if strings.Contains(out, "lane busy") {
@@ -251,7 +256,7 @@ func TestUncountedCapBitesInsideOnePass(t *testing.T) {
 func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 	for _, raw := range []string{"lots", "0", "-3"} {
 		t.Run(raw, func(t *testing.T) {
-			f := oneGrokBead(t, "uncounted_cap_grok: "+raw+"\n")
+			f := oneCodexBead(t, "uncounted_cap_codex: "+raw+"\n")
 
 			n, _ := f.d.Run("", "", 0)
 			out := dispatcherOut(f.d)
@@ -259,7 +264,7 @@ func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 				t.Fatalf("a malformed cap must not brake, got n=%d:\n%s", n, out)
 			}
 			lines := strings.Split(strings.TrimRight(f.errb.String(), "\n"), "\n")
-			want := fmt.Sprintf("uncounted_cap_grok: %q is not a positive bead count", raw)
+			want := fmt.Sprintf("uncounted_cap_codex: %q is not a positive bead count", raw)
 			if len(lines) != 1 || !strings.Contains(lines[0], want) {
 				t.Errorf("want exactly one stderr line naming the key, got %q", f.errb.String())
 			}
@@ -274,7 +279,7 @@ func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 // armed case's clothes. The same rule the overflow ledger and Dial E keep:
 // an unreadable ledger is not a licence to spend.
 func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
-	f := oneGrokBead(t, "uncounted_cap_grok: 5\n")
+	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.MkdirAll(f.b.App.UncountedLogPath(), 0o755); err != nil {
 		t.Fatal(err)
@@ -293,7 +298,7 @@ func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
 // --dry-run acts on nothing: no ledger line, and the report says what the
 // pass WOULD have sent rather than what it did.
 func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
-	f := oneGrokBead(t, "")
+	f := oneCodexBead(t, "")
 	f.d.DryRun = true
 
 	n, err := f.d.Run("", "", 0)
@@ -301,7 +306,7 @@ func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(f.d)
-	if n != 1 || !strings.Contains(out, "account-degraded grok: would send 1 bead(s) this pass") {
+	if n != 1 || !strings.Contains(out, "account-degraded codex: would send 1 bead(s) this pass") {
 		t.Fatalf("a dry pass must report in the conditional, got n=%d:\n%s", n, out)
 	}
 	if l := f.uncountedLedger(t); l != nil {
@@ -309,12 +314,17 @@ func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
 	}
 }
 
-// An ADR 0010 overflow move onto an uncounted pool is on BOTH ledgers: the
-// overflow log answers "what did the plan guard move", this one answers
-// "what went somewhere nothing meters". Neither number answers the other's
-// question, and the cap that applies is the pool the bead LANDS on.
+// An ADR 0010 overflow move onto an account-degraded pool is on BOTH
+// ledgers: the overflow log answers "what did the plan guard move", this one
+// answers "what went somewhere posse cannot price". Neither number answers
+// the other's question, and the cap that applies is the pool the bead LANDS
+// on.
+//
+// The target is codex, not grok: since ranger-base-0lg6 an overflow move
+// onto grok lands on a COUNTED pool and this ledger correctly stays empty
+// (TestOverflowOntoACountedPoolIsNotUncountedSpend below).
 func TestUncountedCountsAnOverflowMove(t *testing.T) {
-	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
+	f := overflowPass(t, "plan_guard_overflow: codex\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
@@ -325,7 +335,7 @@ func TestUncountedCountsAnOverflowMove(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("the eligible bead must still move, got n=%d:\n%s", n, out)
 	}
-	if !strings.Contains(out, "account-degraded grok: sent 1 bead(s) this pass") {
+	if !strings.Contains(out, "account-degraded codex: sent 1 bead(s) this pass") {
 		t.Errorf("a bead moved onto an uncounted pool is still uncounted spend:\n%s", out)
 	}
 	if got := len(f.ledger(t)); got != 1 {

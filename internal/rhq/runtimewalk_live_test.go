@@ -332,13 +332,17 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 		sheet.score("settle", walkWorking, "state %q from matched rule %q", ex.State, ex.Rule.ID)
 	}
 
-	// account. What the pass could say about the money. Uncounted is a
-	// DECLARED difference on a runtime with no adapter (ADR 0003 §4), not
-	// a break — and the cell exists so that a runtime that GAINS an
-	// adapter shows up here as a change.
-	if rt.Counted() {
-		sheet.score("account", walkWorking, "a cost adapter reads %s", name)
-	} else {
+	// account. What the pass could say about the money. Not counted is a
+	// DECLARED difference (ADR 0003 §4), not a break — and the cell exists
+	// so that a runtime that GAINS an adapter shows up here as a change.
+	// Three states since ranger-base-0lg6: priced, read-but-unpriced, and
+	// nothing reading it at all.
+	switch {
+	case rt.CostPriced():
+		sheet.score("account", walkWorking, "a cost adapter prices %s: %s", name, rt.CostReading())
+	case rt.CostRead():
+		sheet.score("account", walkDeclared, "UNPRICED — %s reads %s and prices none of it; uncounted_cap_%s is the only brake", rt.CostReading(), name, name)
+	default:
 		sheet.score("account", walkDeclared, "UNCOUNTED — no cost adapter reads %s; uncounted_cap_%s is the only brake", name, name)
 	}
 

@@ -332,12 +332,6 @@ type Runtime struct {
 	// `posse runtime check`. Absent = nothing is required, which is the
 	// truthful default for a CLI that authenticates from its own state dir.
 	EnvRequired []string
-	// CostAdapter names the reading behind this runtime's `account` stage
-	// ("" = no adapter → account-degraded, ADR 0013 §5). Filling the
-	// cost-adapter seam (ADR 0012 D4) is how a runtime leaves that column;
-	// until then `uncounted_cap_<runtime>:` is the brake and unset means
-	// unlimited and loud.
-	CostAdapter string
 	// TurnOutcomeAdapter names the reader behind this runtime's TURN
 	// OUTCOME — whether posse can see what the CLI's own first turn did,
 	// as opposed to whether herdr saw the pane settle. "" = no reader, and
@@ -348,9 +342,12 @@ type Runtime struct {
 	//
 	// The value is a registry key (turnfailure.go), not prose: a name no
 	// reader implements is refused at load, so a runtime that declares a
-	// reading gets one. Beside CostAdapter on purpose — same seam (ADR
-	// 0012 D4), same rule that the DECLARATION is what dispatch keys on
-	// and never the runtime's name (ADR 0017 §3).
+	// reading gets one. Same seam as the cost adapter (ADR 0012 D4), same
+	// rule that the DECLARATION is what dispatch keys on and never the
+	// runtime's name (ADR 0017 §3) — but the cost side has no field here
+	// at all: its registry is keyed by runtime name, so a second
+	// declaration on this struct could only drift, and did (0lg6). Ask
+	// CostRead/CostPriced/CostReading below.
 	TurnOutcomeAdapter string
 }
 
@@ -383,9 +380,44 @@ func (rt *Runtime) RecordTrust() string {
 	return RecordUntrusted
 }
 
-// Counted: does a cost adapter read this runtime's spend? False is the
-// account-degraded column (ADR 0013 §5) — never a claim that spend was $0.
-func (rt *Runtime) Counted() bool { return rt.CostAdapter != "" }
+// CostRead: is any cost adapter reading this runtime at all? This is the
+// question `posse cost` calls counted/uncounted (CostReport.Uncounted, the
+// cockpit's `$uncounted`): false means the sessions are absent from every
+// total — never a claim that the spend was $0.
+//
+// Resolved through the registry, like ReadsTurnOutcome below and for the
+// same reason. There is deliberately no `cost_adapter:` field to declare:
+// registering the adapter is the whole act, and a runtime gains and loses
+// this column on the commit that adds or removes one, with nothing here to
+// edit (ranger-base-0lg6).
+func (rt *Runtime) CostRead() bool {
+	_, ok := CostProviderFor(rt.Name)
+	return ok
+}
+
+// CostPriced: do this runtime's DOLLARS reach `posse cost`? The narrower
+// question, and the one ADR 0013 §5's brake keys on — a runtime that is
+// read but never priced (codex: a plan seat reports no cost and no list
+// rate applies) has no dollar meter either, which is what
+// `uncounted_cap_<runtime>:` stands in for.
+//
+// False is never a claim that spend was $0; it is one of the two degrades,
+// and CostReading says which.
+func (rt *Runtime) CostPriced() bool {
+	p, ok := CostProviderFor(rt.Name)
+	return ok && p.Prices()
+}
+
+// CostReading is what the adapter reading this runtime reads, for display —
+// "" when none reads it. The two degrades are told apart by exactly this:
+// "" is UNCOUNTED (nothing reads it), non-empty with CostPriced false is
+// UNPRICED (this reads it, and prices none of it).
+func (rt *Runtime) CostReading() string {
+	if p, ok := CostProviderFor(rt.Name); ok {
+		return p.Reads()
+	}
+	return ""
+}
 
 // ReadsTurnOutcome: can posse read what this runtime's own turn did? False
 // is the blind column — never a claim that the turn was healthy.
@@ -928,10 +960,11 @@ var builtinRuntimes = []Runtime{
 		StateDirs: []string{"~/.claude", "~/.claude.json"},
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.
-		// account: the transcript scanner (cost.go) is the one adapter that
-		// exists, and it reads ~/.claude/projects/*.jsonl.
+		// account: nothing to declare — the adapter registry is the whole
+		// declaration (cost_claude.go), and claude is COUNTED because that
+		// adapter prices what it reads.
 		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
-		NativeRules: claudeNativeRules, CostAdapter: "transcript scanner (~/.claude/projects/*.jsonl, ADR 0003 §4)",
+		NativeRules: claudeNativeRules,
 		// turn_outcome: the same transcript, read for a different fact —
 		// claude writes an allotment refusal as a synthetic assistant
 		// message, so a pass can tell an exhausted account from a settle.

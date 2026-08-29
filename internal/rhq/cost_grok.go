@@ -60,6 +60,17 @@ type grokCost struct{}
 
 func (grokCost) Runtime() string { return "grok" }
 
+// Reads/Prices: grok's own per-turn `costUsdTicks` is money, so this
+// adapter's segments carry dollars even though PriceFor never prices one —
+// the provider priced it already (Segment.NotePricedTurn). grok is COUNTED,
+// and the account stage says so since ranger-base-0lg6; before that its
+// builtin declared no adapter and every pass called this spend unreadable
+// while `posse cost` was already totalling it.
+func (grokCost) Reads() string {
+	return "session scanner (~/.grok/sessions/*/*/updates.jsonl, provider-reported dollars, ADR 0012 D4)"
+}
+func (grokCost) Prices() bool { return true }
+
 // PriceFor never prices a grok model: grok reports dollars itself, so there
 // is no rate card to consult and none to let go stale.
 func (grokCost) PriceFor(string) (Price, bool) { return Price{}, false }

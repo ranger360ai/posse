@@ -1,15 +1,33 @@
 package rhq
 
-// Account-degraded (ADR 0013 §5) — a runtime no cost adapter reads.
+// Account-degraded (ADR 0013 §5) — a runtime whose DOLLARS posse cannot see.
 //
 // ADR 0003 §4 already refuses to call an unreadable channel $0: `posse cost`
-// reports codex/grok as UNCOUNTED, never as zero. That is honesty about the
-// display and it puts no brake on the channel. Two live spend channels with
-// a human eyeballing them is the hole this file closes.
+// reports such a runtime as UNCOUNTED, never as zero. That is honesty about
+// the display and it puts no brake on the channel. A live spend channel with
+// a human eyeballing it is the hole this file closes.
 //
-// A runtime whose `cost_adapter:` is empty is **account-degraded**: still
-// dispatchable — refusing it would be refusing the fleet's second half over
-// a missing reading — but never quiet. Two obligations:
+// **Which runtimes.** The test is `Runtime.CostPriced()` — do this runtime's
+// dollars reach `posse cost` — and NOT "is there an adapter", because those
+// came apart (ranger-base-0lg6). Two ways to fail it, both degrades, both
+// braked here, and they are DIFFERENT FACTS that this file must not print
+// the same sentence about (accountDegrade):
+//
+//	UNCOUNTED  nothing reads the runtime; its sessions are absent from every
+//	           total. The state this file was written for.
+//	UNPRICED   an adapter reads it — turns, tokens, per-bead attribution —
+//	           and prices none of what it reads. codex: a plan seat reports
+//	           no cost and no list rate applies to one. Saying "no cost
+//	           adapter reads codex" here would be false, and it was.
+//
+// The brake covers both because what the brake stands in for is a missing
+// DOLLAR meter, and that is equally missing either way. Registering an
+// adapter that PRICES is how a runtime leaves this file; registering one
+// that only reads is not, and neither is setting a cap.
+//
+// Either way the runtime stays dispatchable — refusing it would be refusing
+// the fleet's second half over a missing reading — but never quiet. Two
+// obligations:
 //
 //	every pass names how many beads it sent there (uncountedReport)
 //	`uncounted_cap_<runtime>:` is the brake (uncountedSkip)
@@ -31,6 +49,19 @@ import (
 	"strings"
 	"time"
 )
+
+// accountDegrade is the reason clause every line in this file shares: WHY
+// this runtime's dollars are not in `posse cost`. It is a sentence, not a
+// word, because the two degrades are two different facts and the operator
+// acts on them differently — one needs an adapter written, the other needs
+// nothing written at all, because there is no dollar to read.
+func accountDegrade(rt *Runtime) string {
+	if reading := rt.CostReading(); reading != "" {
+		return "the " + reading + " adapter counts " + rt.Name +
+			"'s turns and tokens but prices none of them, so no dollars of this spend are in `posse cost`"
+	}
+	return "no cost adapter reads " + rt.Name + ", so none of this spend is in `posse cost`"
+}
 
 // UncountedWindow is the rolling window the cap counts over — the same seven
 // days, and the same unit (beads, not dollars), as ADR 0010's overflow cap,
@@ -88,6 +119,9 @@ type uncountedPool struct {
 	Raw  string // what the key said, so the report can tell unset from unusable
 	Used int    // beads in the rolling window, including this pass's
 	Sent int    // beads this pass sent there
+	// Why is accountDegrade's sentence for this runtime, resolved once with
+	// the loaded Runtime so the report does not have to load it again.
+	Why string
 	// Unreadable is the ledger read failure, when there was one: Used is
 	// then not a count and no cap can be judged against it.
 	Unreadable error
@@ -109,12 +143,12 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 		d.uncounted = map[string]*uncountedPool{}
 	}
 	rt, err := d.App.LoadRuntime(name)
-	if err != nil || rt.Counted() {
+	if err != nil || rt.CostPriced() {
 		d.uncounted[name] = nil
 		return nil
 	}
 	n, raw := d.App.UncountedCap(name, d.errw())
-	p := &uncountedPool{Cap: n, Raw: raw}
+	p := &uncountedPool{Cap: n, Raw: raw, Why: accountDegrade(rt)}
 	if used, err := d.App.UncountedCount(name, d.now()); err != nil {
 		p.Unreadable = err
 	} else {
@@ -141,7 +175,7 @@ func (d *Dispatcher) uncountedSkip(name string) string {
 	// ledger nobody can count is the unarmed case wearing the armed case's
 	// clothes, and this pool has no second meter to fall back to.
 	if p.Unreadable != nil {
-		return fmt.Sprintf("account-degraded: %s is uncounted and %s is unreadable (%v) — a cap that counts nothing is not a brake; skipped",
+		return fmt.Sprintf("account-degraded: no dollars are counted for %s and %s is unreadable (%v) — a cap that counts nothing is not a brake; skipped",
 			name, AbbrevHome(d.App.UncountedLogPath()), p.Unreadable)
 	}
 	if p.Used >= p.Cap {
@@ -213,7 +247,7 @@ func (d *Dispatcher) uncountedReport() {
 			// left the runtime in.
 			brake = fmt.Sprintf("uncounted_cap_%s: %q is not a cap — unlimited and loud", name, p.Raw)
 		}
-		d.printf("! account-degraded %s: %s %d bead(s) this pass, %s — no cost adapter reads %s, so none of this spend is in `posse cost`; %s (ADR 0013 §5)\n",
-			name, verb, p.Sent, window, name, brake)
+		d.printf("! account-degraded %s: %s %d bead(s) this pass, %s — %s; %s (ADR 0013 §5)\n",
+			name, verb, p.Sent, window, p.Why, brake)
 	}
 }

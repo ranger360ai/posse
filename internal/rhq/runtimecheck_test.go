@@ -51,8 +51,8 @@ func TestUnknownRuntimeIsNoisyNotSilent(t *testing.T) {
 	if rt.RecordTrust() != RecordUntrusted {
 		t.Errorf("undeclared record must be untrusted: %q", rt.RecordTrust())
 	}
-	if rt.Counted() {
-		t.Error("a template-only runtime has no cost adapter")
+	if rt.CostRead() || rt.CostPriced() || rt.CostReading() != "" {
+		t.Error("a template-only runtime has no cost adapter: nothing reads it and nothing prices it")
 	}
 	if len(rt.NativeRules) != 0 || len(rt.Interstitials) != 0 {
 		t.Errorf("nothing is declared for an unknown runtime: %+v %+v", rt.NativeRules, rt.Interstitials)
@@ -138,11 +138,14 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 	a := checkApp(t)
 	for _, c := range []struct {
 		name, prompt, record string
-		counted              bool
+		// read/priced are the account stage's two facts since
+		// ranger-base-0lg6, and they come apart on codex: its rollout
+		// scanner counts turns and tokens and prices none of them.
+		read, priced bool
 	}{
-		{"claude", PromptTyped, RecordTrusted, true},
-		{"codex", PromptArgv, RecordUntrusted, false},
-		{"grok", PromptArgv, RecordTrusted, false},
+		{"claude", PromptTyped, RecordTrusted, true, true},
+		{"codex", PromptArgv, RecordUntrusted, true, false},
+		{"grok", PromptArgv, RecordTrusted, true, true},
 	} {
 		rt, err := a.LoadRuntime(c.name)
 		if err != nil {
@@ -154,8 +157,14 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 		if rt.RecordTrust() != c.record {
 			t.Errorf("%s record: %q want %q", c.name, rt.RecordTrust(), c.record)
 		}
-		if rt.Counted() != c.counted {
-			t.Errorf("%s counted: %v want %v", c.name, rt.Counted(), c.counted)
+		if rt.CostRead() != c.read {
+			t.Errorf("%s cost read: %v want %v", c.name, rt.CostRead(), c.read)
+		}
+		if rt.CostPriced() != c.priced {
+			t.Errorf("%s cost priced: %v want %v", c.name, rt.CostPriced(), c.priced)
+		}
+		if (rt.CostReading() != "") != c.read {
+			t.Errorf("%s reading %q disagrees with read=%v — a reading that names nothing, or nothing naming a reading", c.name, rt.CostReading(), c.read)
 		}
 		if c.record == RecordTrusted && rt.RecordWhy == "" {
 			t.Errorf("%s is trusted with no measurement named", c.name)
