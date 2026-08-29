@@ -472,14 +472,46 @@ func (b *HerdrBackend) SetCrew(name string, crew bool) error {
 	return b.writeMeta(m)
 }
 
+// CrewMarkMissed is the one sentence both operator prompt paths say when
+// the mark did not land, and the reason it is a sentence rather than a
+// silence (rangerhq-sk6p).
+//
+// The shield is the meta, not the prompt. An operator who typed into a
+// session has every reason to believe ADR 0008 engaged — that is what
+// prompting means everywhere else — and the only tell that it did not was
+// a missing 👤 in a list they may never open. A mark that cannot be
+// recorded is exactly the case where the belief is wrong, so it is the case
+// that has to speak. SetCrew and cockpit `o` already Die with a reason;
+// this is the same fact said where a prompt cannot fail over it.
+//
+// It names why rather than assuming the foreign case: a workspace with no
+// meta and a meta that would not write are both "unrecorded", and an
+// operator reading the line needs to know which one they have.
+func CrewMarkMissed(name, why string) string {
+	return fmt.Sprintf("the crew mark was NOT recorded on %s (%s) — dispatch reads ADR 0008's shield from the session meta, not from the prompt, so nothing marks this conversation as yours", name, why)
+}
+
 // MarkCrew records that the operator just started a conversation with this
-// session (cockpit `p`). Best effort by design: a prompt must never fail
-// over its marker, and a foreign workspace has no meta to mark.
-func (b *HerdrBackend) MarkCrew(name string) {
-	if m, ok := b.readMeta(name); ok && !m.Crew {
-		m.Crew = true
-		_ = b.writeMeta(m)
+// session (cockpit `p`). Best effort by design — a prompt must never fail
+// over its marker — so it returns the line to show instead of an error:
+// "" when the mark is recorded, CrewMarkMissed when it is not.
+func (b *HerdrBackend) MarkCrew(name string) string {
+	m, ok := b.readMeta(name)
+	if !ok {
+		// The foreign case, in ForeignKillRefusal's vocabulary: no meta is
+		// not "an unmanaged row", it is the evidence the row is somebody
+		// else's — and a mark this home cannot write is one the home that
+		// DOES hold the meta will not read.
+		return CrewMarkMissed(name, "this posse home holds no session meta for it, so it belongs to another instance or was made in herdr by hand")
 	}
+	if m.Crew {
+		return ""
+	}
+	m.Crew = true
+	if err := b.writeMeta(m); err != nil {
+		return CrewMarkMissed(name, err.Error())
+	}
+	return ""
 }
 
 // MarkCrewOnOperatorPrompt is `posse prompt`'s half of the same rule: the
@@ -487,11 +519,15 @@ func (b *HerdrBackend) MarkCrew(name string) {
 // person starting a conversation marks the session crew, and a persona
 // handing work to another persona (an orchestrator persona) marks nothing —
 // otherwise the dispatch primitive would quietly retire the fleet.
-func (b *HerdrBackend) MarkCrewOnOperatorPrompt(name string) {
+//
+// A persona's prompt returns "": nothing was meant to be recorded, so there
+// is nothing the operator's mental model got wrong. Only a mark that was
+// owed and missed has a line.
+func (b *HerdrBackend) MarkCrewOnOperatorPrompt(name string) string {
 	if os.Getenv(EnvPersona) != "" {
-		return
+		return ""
 	}
-	b.MarkCrew(name)
+	return b.MarkCrew(name)
 }
 
 // MarkTurnFailure persists a provider refusal found after a dispatch turn

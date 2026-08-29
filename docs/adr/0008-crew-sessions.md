@@ -34,6 +34,7 @@ the operator's hands; never by a clock.**
 | dispatch `CreateSession` | `Crew: false` (fleet) |
 | cockpit `p`, `posse prompt <session>` **without** `RHQ_PERSONA` in the caller's env | `Crew: true` — the operator started a conversation. With `RHQ_PERSONA` set, the prompt is a persona's (a coordinating persona orchestrating) and marks nothing |
 | cockpit `o` / `posse crew <session> [--off]` | explicit toggle either way |
+| cockpit `p`, `posse prompt <session>` where this home holds **no session meta** (a foreign workspace) | nothing recorded — and both paths say so in one line. The shield is the meta, not the prompt, so the operator who just started a conversation there has to be told it did not engage (rangerhq-sk6p) |
 | session dies | marker dies with the meta |
 
 Why not "operator prompted within N minutes": a conversation has no

@@ -106,6 +106,69 @@ func TestCrewMarkedByOperatorPromptOnly(t *testing.T) {
 	b.MarkCrewOnOperatorPrompt("handmade")
 }
 
+// rangerhq-sk6p: a mark that could not be recorded says so. Best effort
+// stayed best effort — no path fails — but the operator who just started a
+// conversation is told that ADR 0008 did not engage, rather than left to
+// infer it from an emoji that is not there.
+func TestCrewMarkMissedIsReported(t *testing.T) {
+	b, _ := newTestBackend(t)
+	mustCreate(t, b, NewSessionOpts{Name: "fleet"})
+
+	// Recorded: the first mark, and the second one that finds it already
+	// set. Neither has anything to warn about.
+	if got := b.MarkCrew("fleet"); got != "" {
+		t.Errorf("a recorded mark must say nothing, got %q", got)
+	}
+	if m, _ := b.readMeta("fleet"); !m.Crew {
+		t.Error("the mark was reported recorded but the meta does not carry it")
+	}
+	if got := b.MarkCrew("fleet"); got != "" {
+		t.Errorf("an already-crew session must say nothing, got %q", got)
+	}
+
+	// No meta — the foreign workspace, the case the bead is about.
+	missed := b.MarkCrew("handmade")
+	for _, want := range []string{"handmade", "NOT recorded", "no session meta", "ADR 0008"} {
+		if !strings.Contains(missed, want) {
+			t.Errorf("the missed-mark line must name %q: %q", want, missed)
+		}
+	}
+
+	// A meta that will not take the write is missed too, and says which of
+	// the two it is: "no session meta" would be a lie here.
+	if os.Geteuid() == 0 {
+		t.Log("running as root: the unwritable-meta arm cannot be built, skipping it")
+	} else {
+		mustCreate(t, b, NewSessionOpts{Name: "readonly"})
+		if err := os.Chmod(b.metaPath("readonly"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+		if f, err := os.OpenFile(b.metaPath("readonly"), os.O_WRONLY, 0); err == nil {
+			f.Close()
+			t.Skip("this filesystem ignores the read-only bit: the write cannot be made to fail")
+		}
+		missed := b.MarkCrew("readonly")
+		if !strings.Contains(missed, "readonly") || !strings.Contains(missed, "NOT recorded") {
+			t.Errorf("an unwritable meta must be reported missed: %q", missed)
+		}
+		if strings.Contains(missed, "no session meta") {
+			t.Errorf("the meta IS there — the line must name the write failure: %q", missed)
+		}
+	}
+
+	// The persona arm marks nothing by design, so it has nothing to report:
+	// a coordinator prompting a meta-less session is not an operator whose
+	// belief about the shield is wrong.
+	t.Setenv(EnvPersona, "coordinator")
+	if got := b.MarkCrewOnOperatorPrompt("handmade"); got != "" {
+		t.Errorf("a persona's prompt has no mark to miss, got %q", got)
+	}
+	t.Setenv(EnvPersona, "")
+	if got := b.MarkCrewOnOperatorPrompt("handmade"); got == "" {
+		t.Error("the operator's prompt on a meta-less session must report the missed mark")
+	}
+}
+
 // A session `posse new` + `posse prompt` launched by hand never runs
 // through dispatch's own launchSession, so it never gets the bead: pointer
 // autoReapPass needs (ranger-base-v674's second gap). `posse prompt` stamps

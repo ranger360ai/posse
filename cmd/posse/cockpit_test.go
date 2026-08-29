@@ -1556,3 +1556,98 @@ func TestCockpitEventLoopDrainsProgress(t *testing.T) {
 		}
 	}
 }
+
+// rangerhq-sk6p: `p` on a row posse holds no session meta for cannot record
+// the crew mark, and the status line says so. The operator who just started
+// a conversation there would otherwise read "prompted <name>" and believe
+// ADR 0008 engaged; the only other tell is a 👤 that is not in a list they
+// may not be looking at.
+//
+// Both arms in one cockpit, over one herdr: the owned row is the control —
+// the same keystrokes on a session with a meta say nothing extra, so the
+// warning cannot be an unconditional suffix.
+func TestCockpitPromptWarnsWhenTheCrewMarkCannotBeRecorded(t *testing.T) {
+	home := t.TempDir()
+	binDir := t.TempDir()
+	herdr := filepath.Join(binDir, "herdr")
+	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+case "$1 $2" in
+"workspace list")
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"owned","agent_status":"idle"},{"workspace_id":"w2","label":"stranger","agent_status":"idle"}]}}'
+  exit 0;;
+"agent list")
+  printf '%s\n' '{"result":{"agents":[{"agent":"claude","agent_status":"idle","pane_id":"p1","workspace_id":"w1"},{"agent":"claude","agent_status":"idle","pane_id":"p2","workspace_id":"w2"}]}}'
+  exit 0;;
+"agent prompt")
+  printf '%s\n' '{"result":{"submitted":true}}'
+  exit 0;;
+esac
+printf '%s\n' '{"error":{"code":"no","message":"unexpected '"$1 $2"'"}}'
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The meta IS the ownership record: `owned` has one, `stranger` does
+	// not, and nothing else about the two rows differs.
+	metaDir := filepath.Join(home, "state", "herdr")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "owned.yaml"),
+		[]byte("name: owned\nworkspace: w1\npane: p1\nemoji: 🙂\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ServerGen() stats the operator's live herdr socket unless this points
+	// it somewhere else (ranger-base-ouf9): a test must not read the box.
+	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "no-such.sock"))
+
+	a := &rhq.App{
+		Home:       home,
+		ConfigPath: filepath.Join(home, "config.yaml"),
+		StateDir:   filepath.Join(home, "state"),
+	}
+	c := &cockpit{
+		app: a,
+		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+	}
+	c.refresh()
+	c.buildRows()
+
+	rowFor := func(name string) int {
+		t.Helper()
+		for i, s := range c.sessions {
+			if s.Name == name {
+				return i
+			}
+		}
+		t.Fatalf("no session row %q in %+v", name, c.sessions)
+		return -1
+	}
+	prompt := func(name string) string {
+		t.Helper()
+		c.cursor, c.mode, c.status = rowFor(name), modeNormal, ""
+		for _, k := range []string{"p", "h", "i", "\r"} {
+			if _, err := c.handleKey([]byte(k)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return c.status
+	}
+
+	// The foreign row: prompted, and told the mark did not land.
+	got := prompt("stranger")
+	for _, want := range []string{"prompted stranger", "NOT recorded", "no session meta", "ADR 0008"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("p on a foreign row must say %q: %q", want, got)
+		}
+	}
+
+	// The control: a session with a meta is marked, and says only that it
+	// was prompted.
+	if got := prompt("owned"); got != "prompted owned" {
+		t.Errorf("p on an owned row: status %q, want %q", got, "prompted owned")
+	}
+	if b, err := os.ReadFile(filepath.Join(metaDir, "owned.yaml")); err != nil || !strings.Contains(string(b), "crew: true") {
+		t.Errorf("the control's mark was not recorded (%v): %s", err, b)
+	}
+}

@@ -941,10 +941,17 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			} else {
 				// The operator just started a conversation here: the session
 				// is theirs until they hand it back with `o` (ADR 0008).
+				// A mark that could not be recorded rides the status line
+				// beside the prompt, the way a kill's worktree fate does —
+				// silence there would leave the operator believing the
+				// shield engaged (rangerhq-sk6p).
 				name := s.Name
-				c.hb.MarkCrew(name)
+				missed := c.hb.MarkCrew(name)
 				c.refresh() // c.sessions is replaced — s is stale past here
 				c.status = "prompted " + name
+				if missed != "" {
+					c.status += " — " + missed
+				}
 			}
 		case key == "\x7f" || key == "\b":
 			if len(c.input) > 0 {

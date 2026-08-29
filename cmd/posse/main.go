@@ -274,8 +274,11 @@ func main() {
 		}
 		// The operator starting a conversation makes the session crew; a
 		// persona's prompt marks nothing (ADR 0008). After the prompt took,
-		// so a failed prompt is not a conversation.
-		hb.MarkCrewOnOperatorPrompt(name)
+		// so a failed prompt is not a conversation. A mark that was owed and
+		// did not land is a warning, not a silence (rangerhq-sk6p).
+		if missed := hb.MarkCrewOnOperatorPrompt(name); missed != "" {
+			fmt.Fprintf(out, "warning: %s\n", missed)
+		}
 		// A hand-launched session (`posse new` + `posse prompt`, never
 		// through dispatch's own launchSession) has no bead: pointer
 		// unless this stamps it — autoReapPass skips s.Bead=="" forever

@@ -792,3 +792,76 @@ func TestPauseAndResumeCommands(t *testing.T) {
 		t.Fatalf("the second resume = %q, %v", out, err)
 	}
 }
+
+// rangerhq-sk6p: `posse prompt` on a session this home holds no meta for
+// warns that the crew mark did not land. Same defect as cockpit `p`, other
+// entry point — and this one runs the built binary because the contract is
+// what the operator SEES on stdout, not what MarkCrew returns.
+func TestPromptWarnsWhenTheCrewMarkCannotBeRecorded(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	binDir := t.TempDir()
+	herdr := filepath.Join(binDir, "herdr")
+	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+case "$1 $2" in
+"workspace list")
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"owned","agent_status":"idle"},{"workspace_id":"w2","label":"stranger","agent_status":"idle"}]}}'
+  exit 0;;
+"agent list")
+  printf '%s\n' '{"result":{"agents":[{"agent":"claude","agent_status":"idle","pane_id":"p1","workspace_id":"w1"},{"agent":"claude","agent_status":"idle","pane_id":"p2","workspace_id":"w2"}]}}'
+  exit 0;;
+"agent prompt")
+  printf '%s\n' '{"result":{"submitted":true}}'
+  exit 0;;
+esac
+printf '%s\n' '{"error":{"code":"no","message":"unexpected '"$1 $2"'"}}'
+exit 1
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	metaDir := filepath.Join(home, "state", "herdr")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "owned.yaml"),
+		[]byte("name: owned\nworkspace: w1\npane: p1\nemoji: 🙂\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(name string) string {
+		t.Helper()
+		cmd := exec.Command(bin, "prompt", name, "hello")
+		cmd.Env = []string{
+			"HOME=" + t.TempDir(),
+			"RHQ_HOME=" + home,
+			"RHQ_HERDR_BIN=" + herdr,
+			// ServerGen() would otherwise stat the operator's live socket
+			// (ranger-base-ouf9).
+			"HERDR_SOCKET_PATH=" + filepath.Join(home, "no-such.sock"),
+			"PATH=" + os.Getenv("PATH"),
+		}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("posse prompt %s: %v\n%s", name, err, out)
+		}
+		return string(out)
+	}
+
+	got := run("stranger")
+	for _, want := range []string{"warning:", "NOT recorded", "no session meta", "ADR 0008"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompting a foreign session must warn %q:\n%s", want, got)
+		}
+	}
+
+	// The control: a session with a meta is marked, and warns about nothing.
+	if got := run("owned"); strings.Contains(got, "warning") {
+		t.Errorf("prompting an owned session must warn about nothing:\n%s", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(metaDir, "owned.yaml")); err != nil || !strings.Contains(string(b), "crew: true") {
+		t.Errorf("the control's mark was not recorded (%v): %s", err, b)
+	}
+}
