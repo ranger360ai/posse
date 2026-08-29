@@ -72,3 +72,61 @@ One trap recorded there for the next reader: `bd687f4`'s own commit message
 credits `73e38c9` with committing the `.pyc`. It did not. `git log
 --diff-filter=A` on the path names `916b5f9`, which is what the audit prints
 too; chasing the sha in the message finds nothing.
+
+### A SECOND READING, AND THE MARGIN NOBODY HAD MEASURED
+
+Run 1 was taken at `44a4143`; two commits landed on main while it ran, so it
+was re-run at the rebased HEAD `8237db9` with the box under real fleet load
+(loadavg 14 rising to 29 — roughly double run 1's):
+
+                       run 1 (load 11-16)   run 2 (load 14-29)    delta
+    internal/rhq            636.076s            748.969s         +17.7%
+    posse                   106.175s            176.011s         +65.8%
+    cmd/posse                71.773s            107.187s         +49.3%
+    make test, wall          665.45s            761.76s          +14.5%
+    user + sys               493.45s            489.27s           -0.8%
+
+**The CPU is invariant.** Same tree, same work, double the load, and the
+user+sys total moves by less than one percent while the wall moves 15-18%.
+That is the "internal/rhq is not CPU-bound" claim measured against a control
+rather than inferred from one slice — and 493s of CPU over 665s of wall on
+eight cores is 0.74 of a single core, agreeing with ranger-base-7xla's 0.67
+over a 136.2s slice.
+
+Two things follow, and the second is the one worth keeping:
+
+- **748.969s is the new worst reading**, 25% past go's 600s default. Two runs,
+  two regimes, both would have been timeout panics without `-timeout 25m`.
+- **The ceiling is robust to load, and that is the point.** At double the
+  loadavg the slowest package reached 49% of the 25m budget. Load costs ~18%;
+  it does not cost 150%. So what will eventually trip this ceiling is not the
+  box's mood — it is *growth*, which is exactly the thing `test-times.sh`'s
+  300s line was put there to watch and the thing a bigger `-timeout` would
+  hide. 25m is not under-specified and does not want raising again.
+
+### THE RED IN RUN 2 IS ranger-base-ci9e, AND IT IS WORSE THAN FILED
+
+Run 2's `internal/rhq` was FAIL, not timeout, on one test:
+`TestQALateExplainErrorStillFailsLoudlyNamingTheGuess` (1.69s). That is
+`ranger-base-ci9e`, open with dinesh, which already diagnoses the mechanism:
+`verify_nx85_qa_test.go:41` builds an ordering out of three wall clocks, and a
+fixed 700ms sleep does not slow down when the dispatcher's window does.
+
+The bead's own title says *"deterministically red on any box ~3x slower than
+this one"*, and its evidence is emulated linux/amd64. **That understates the
+exposure.** Measured here at `8237db9`, native darwin, no emulation, loadavg
+~21, `go test ./internal/rhq -run ExplainError -count=3 -v`:
+
+    FAIL 1.69s    PASS 1.20s    PASS 1.27s
+
+Three consecutive runs of one binary. It is not a slow-box property: on this
+box, under the fleet load this box actually carries, it is an intermittent at
+roughly one in three, and the boundary sits near 1.5s (every pass observed
+0.78-1.38s, every fail at or above 1.69s). An intermittent is worse than a
+deterministic red — it lands on a random diff and is green on the re-run that
+would have investigated it. Recorded on ci9e.
+
+Which is the whole thesis of this bead arriving twice in one afternoon: a red
+that belongs to the box and not to the commit. The timeout was one instance
+and is closed; `bd687f4` was a second and is triaged; this is a third and it
+already has a home.
