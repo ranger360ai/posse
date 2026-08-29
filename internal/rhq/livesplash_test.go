@@ -15,12 +15,21 @@ package rhq
 //
 //	herdr --session <s> server &                       # scratch, not the fleet
 //	export HERDR_SOCKET_PATH=~/.config/herdr/sessions/<s>/herdr.sock
-//	herdr workspace create --cwd <scratch> --no-focus  # note the pane id
+//	herdr workspace create --cwd <scratch> --label qalive --no-focus  # pane id
 //	herdr pane run <pane> "grok --permission-mode auto"   # GrokFleetFlags
 //	RHQ_LIVE_PANE=<pane> go test ./internal/rhq -run TestLiveAwaitAgent -v
 //
 // It never prompts: awaitAgent stops at a promptable target, so this costs
 // no agent turn. Tear down with `herdr workspace close` + `herdr server stop`.
+//
+// `--label qalive` is load-bearing, not cosmetic: liveBackend writes the meta
+// as `qalive`, herdr otherwise labels the workspace after the --cwd basename,
+// and Sessions()'s stranger guard then drops the meta — `workspace w1 is
+// labelled "cwd", not "qalive"` (rangerhq-6bg7, spared not deleted per
+// rangerhq-yt1p). Without it every addressing path, Resolve and AgentTarget
+// included, cannot see the session, and the test spends the whole StartupWait
+// before failing as if awaitAgent had refused the pane. bootrace_live_test.go
+// carries the word for the same reason.
 //
 // The pane may be sitting on the splash or on a bare composer; since
 // rangerhq-1xsj made the splash a seen `idle` both are the same case, and

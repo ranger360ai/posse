@@ -2122,9 +2122,14 @@ self-updated mid-verification; no behaviour below differed).**
   nothing** — the menu, changelog and banner stay, so detection keeps
   reporting `startup_splash`/`blocked` and `agent wait --until idle`
   simply times out. The splash is decoration over a live composer. Which
-  means (a) the "send Esc and wait for idle" fix does not work, and the
+  means (a) the "send Esc and wait for idle" fix does not work, and ~~the
   launcher instead presses Esc once and prompts past *the same* screen if
-  it is still reported (`clearStartupScreen` in dispatch.go), and (b) the
+  it is still reported (`clearStartupScreen` in dispatch.go)~~ **the
+  launcher presses nothing at any screen — the special case was retired in
+  rangerhq-6723: `clearStartupScreen`, `startupScreenDismissals` and
+  `startupScreen` are gone, and `awaitAgent` waits for a settled state and
+  refuses anything that is not `idle`/`done`
+  (`docs/notes.d/rangerhq-6723.md`)**, and (b) the
   first-run state 37c measured is either already consumed on this machine
   or was the boot race all along — a prompt typed before grok's TUI took
   input, which fits the coordinator's incident too. Whether `startup_splash` should
