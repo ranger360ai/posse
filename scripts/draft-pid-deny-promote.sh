@@ -37,27 +37,73 @@ for pid in "$dir"/*.md; do
         skipped=$((skipped + 1))
         continue
     fi
-    # The deny: list, block style (`deny:` then `  - <rule>` lines), is the
-    # one shape posse's own PID reader and every shipped PID use. A PID
-    # written in flow style (`deny: [a, b]`) or carrying no deny: at all is
-    # REPORTED, never rewritten by regex — a mangled PID is prose in force.
-    if ! grep -q '^deny:[[:space:]]*$' "$pid"; then
-        echo "  SKIP $(basename "$pid"): no block-style 'deny:' — add '  - $RULE' by hand" >&2
+    # Two deny: shapes are in the wild and BOTH are drafted into:
+    #
+    #   block  `deny:` on its own line, then `  - <rule>` lines.
+    #          Every PID shipped in examples/agents/ is this shape.
+    #   inline `deny: [a, b]`, the whole list on one line. Every LIVE crew
+    #          PID is this shape, which is why the block-only version of
+    #          this script drafted 0 of 11 at the retirement window and the
+    #          edit went in by hand (ranger-base-j2io, MEASURED 2026-08-28).
+    #
+    # Anything else — a flow list broken across lines, a `deny:` with a
+    # value that is neither, no `deny:` at all — is REPORTED, never
+    # rewritten by regex. A mangled PID is prose in force.
+    if grep -q '^deny:[[:space:]]*\[.*\][[:space:]]*$' "$pid"; then
+        shape=inline
+    elif grep -q '^deny:[[:space:]]*$' "$pid"; then
+        shape=block
+    else
+        echo "  SKIP $(basename "$pid"): no block-style or single-line inline 'deny:' — add '$RULE' by hand" >&2
         skipped=$((skipped + 1))
         continue
     fi
+
     tmp="$pid.draft.$$"
-    awk -v rule="  - $RULE" '
-        BEGIN { indeny = 0; done = 0 }
-        {
-            if (indeny && substr($0, 1, 4) != "  - ") { print rule; indeny = 0; done = 1 }
-            print
-            if (!done && $0 ~ /^deny:[[:space:]]*$/) { indeny = 1 }
-        }
-        END { if (indeny) print rule }
-    ' "$pid" > "$tmp"
+    if [ "$shape" = inline ]; then
+        # Append inside the brackets, unquoted, which is the spelling the
+        # live PIDs already carry and posse's PID reader already parses.
+        awk -v rule="$RULE" '
+            BEGIN { done = 0 }
+            !done && $0 ~ /^deny:[[:space:]]*\[.*\][[:space:]]*$/ {
+                open = index($0, "[")
+                shut = 0
+                for (i = length($0); i > open; i--) {
+                    if (substr($0, i, 1) == "]") { shut = i; break }
+                }
+                if (shut > 0) {
+                    inner = substr($0, open + 1, shut - open - 1)
+                    sub(/[ \t]+$/, "", inner)
+                    if (inner ~ /^[ \t]*$/) sep = ""; else sep = ", "
+                    print substr($0, 1, open) inner sep rule substr($0, shut)
+                    done = 1
+                    next
+                }
+            }
+            { print }
+        ' "$pid" > "$tmp"
+    else
+        awk -v rule="  - $RULE" '
+            BEGIN { indeny = 0; done = 0 }
+            {
+                if (indeny && substr($0, 1, 4) != "  - ") { print rule; indeny = 0; done = 1 }
+                print
+                if (!done && $0 ~ /^deny:[[:space:]]*$/) { indeny = 1 }
+            }
+            END { if (indeny) print rule }
+        ' "$pid" > "$tmp"
+    fi
+
+    # A rewrite that did not land the rule is a rewrite that did nothing we
+    # can vouch for: drop the draft rather than move a file we cannot name.
+    if ! grep -qF -- "$RULE" "$tmp"; then
+        rm -f "$tmp"
+        echo "  SKIP $(basename "$pid"): $shape rewrite did not land the rule — add '$RULE' by hand" >&2
+        skipped=$((skipped + 1))
+        continue
+    fi
     mv "$tmp" "$pid"
-    echo "  drafted $(basename "$pid")"
+    echo "  drafted $(basename "$pid") ($shape)"
     changed=$((changed + 1))
 done
 
