@@ -135,6 +135,15 @@ LA=$(digest linux arm64)
 LI=$(digest linux amd64)
 base=https://github.com/$REPO/releases/download/$VERSION
 
+# NO `version` STANZA, on purpose (ranger-base-hza). brew scans the version out
+# of the url — `.../v0.3.0/posse_0.3.0_darwin_arm64.tar.gz` — and an explicit
+# `version "0.3.0"` beside it is the one thing `brew audit --strict` rejects in
+# this formula: "`version 0.3.0` is redundant with version scanned from URL".
+# Measured on Homebrew 6.0.20 against all four os/arch pairs, both arms: with
+# the stanza, audit fails on all four (which is also the proof that the scan
+# resolves 0.3.0 on all four, not just the one this box runs); without it,
+# audit is clean on all four, `brew info` reads `stable 0.3.0`, and the install
+# and the `test do` block — which asks for `version.to_s` — are unchanged.
 render() {
 	cat <<EOF
 $MARKER in $REPO. Do not hand-edit:
@@ -142,7 +151,6 @@ $MARKER in $REPO. Do not hand-edit:
 class Posse < Formula
   desc "Dispatcher binding personas, env sets and recipes to herdr and beads"
   homepage "https://github.com/$REPO"
-  version "$bare"
   license "Apache-2.0"
 
   on_macos do

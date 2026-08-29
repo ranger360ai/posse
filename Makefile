@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -300,6 +300,17 @@ cleanroom-reset:
 
 cleanroom-distros:
 	scripts/cleanroom.sh distros
+
+# The macOS half of the same question (ranger-base-hza). cleanroom.sh is Linux
+# by construction, so zsh's PATH and the Homebrew tap were written and never
+# run; this runs them. Same cadence as the clean room — before a release, not
+# per push — and the same exit convention as verify-credential-paths.sh: 2 is
+# nothing measured, which is not a pass. It changes nothing on the box; `brew`
+# mode reaches a real tap/trust/install through a scratch Homebrew prefix.
+# Findings and what it deliberately does not cover:
+# docs/runbooks/macos-install-routes.md.
+macos-install-probe:
+	scripts/macos-install-probe.sh all
 
 # What the generated hooks call, against this distro's userland. A MISSING
 # line is a FINDING (ranger-base-rmgz was one), never a cue to install it.

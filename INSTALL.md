@@ -73,6 +73,14 @@ dies `command not found` with both tools correctly installed:
 $ export PATH="$HOME/.local/bin:$PATH"
 ```
 
+On macOS, `~/.zshrc` is the right file and `~/.zshenv` is the wrong one, which
+is backwards from how they read. macOS runs `/usr/libexec/path_helper` from
+`/etc/zprofile` — *after* `.zshenv` and *before* `.zshrc` — and it prepends the
+system paths to whatever it finds. So an export in `.zshenv` is still there at
+login and is no longer first, which is the ambiguity in the paragraph below
+rather than a fix for it. Measured both ways, and the rest of the table is in
+docs/runbooks/macos-install-routes.md §1.
+
 ```sh
 $ go version && herdr --version && bd version && git --version
 ```
@@ -117,6 +125,17 @@ $ brew install ranger360ai/tap/posse             # a release binary, no Go neede
 **Verify:** `posse version` prints `0.3.0+<sha>`, where the sha is the
 commit the release was cut from, and `which posse` answers
 `/opt/homebrew/bin/posse` (`/home/linuxbrew/.linuxbrew/bin/posse` on Linux).
+
+That Verify has a prerequisite nobody mentions. **On Apple Silicon
+`/opt/homebrew/bin` is not on the default PATH** — what puts it there is the
+`eval "$(/opt/homebrew/bin/brew shellenv)"` line Homebrew's own installer
+prints once, under "Next steps", and never repeats. If you skipped it,
+`brew install` succeeds and `posse` is still `command not found`: the exact
+failure this route is advertised as avoiding. Check with `grep shellenv
+~/.zprofile`, and add the line there if it is missing. On an Intel Mac the
+prefix is `/usr/local`, which *is* on the default PATH, so none of this
+happens — which is why it can survive being written down.
+
 Check the second one: if you have ever run `make install` from a checkout on
 this machine, `~/.local/bin/posse` is earlier on `$PATH` and will answer
 `posse version` for you, which makes a broken brew install look fine —
@@ -129,7 +148,10 @@ wants the checkout, so come back to step 3 when you want it.
 not load formulae from a third-party tap until you say so; until then
 `brew tap-info ranger360ai/tap` reads `Untrusted` and brew, in its own
 words, "is currently ignoring formulae, casks and commands from these taps
-because tap trust is required". `brew trust --formula
+because tap trust is required". **`tap-info` still reads `Untrusted` after you
+run the trust line** — it reports *tap* trust, and the narrow grant we
+recommend is a *formula* grant, so it never flips. Do not read that as the
+trust line having failed. Read `trust.json`, which is the thing that changed. `brew trust --formula
 ranger360ai/tap/posse` grants **this one formula and nothing else**. The
 grant is one string appended to `~/.homebrew/trust.json` (or
 `$XDG_CONFIG_HOME/homebrew/trust.json` if that is set) — read the file
@@ -174,6 +196,29 @@ found`, **the tap is not published yet** — it exists only once a release has
 been cut, and the error never says so. Nothing on your machine is broken and
 there is nothing here to debug: take the checkout path below, which needs Go
 and nothing else. (Maintainers: `docs/runbooks/release.md`.)
+
+If brew answers `Your Command Line Tools are too outdated`, that is real and
+it is not about our formula. The formula ships per-architecture tarballs and
+no bottle, so brew takes its build-from-source path and runs its **fatal**
+developer-tools checks before it unpacks anything — on a route sold two
+paragraphs up as "a release binary, no Go needed". Update the Command Line
+Tools (Software Update, or `sudo xcode-select --install`) and re-run, or take
+the checkout path, which does not go through brew at all.
+
+**One thing not to do: download the tarball from the releases page in a
+browser.** Both routes on this page — `brew`, and the `curl` lines in step 1 —
+leave a binary Gatekeeper does not stop. A browser does not: it attaches
+`com.apple.quarantine`, and our binaries carry Go's ad-hoc signature rather
+than a notarized one, so the first run **hangs** — no output, no error, no
+exit code, nothing to search for. If you have already downloaded one that way,
+clear it *before* running it:
+
+```sh
+$ xattr -d com.apple.quarantine posse
+```
+
+If you ran it first and it hung, clearing the attribute afterwards will not
+give that copy back. Delete it and extract the tarball again.
 
 Homebrew installs the binary and **nothing else**: herdr and the pinned bd
 in step 1 are still yours to install, and `brew install beads` is still the
