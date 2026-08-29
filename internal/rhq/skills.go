@@ -52,6 +52,27 @@ func (a *App) ResolveSkills(names []string) (paths, unknown []string) {
 	return paths, unknown
 }
 
+// SkillDescription is the `description:` a skill's SKILL.md frontmatter
+// declares, "" when the file has no frontmatter block, no such key, or an
+// empty value. Not decoration: `name` and `description` are the two
+// required Agent-Skills frontmatter keys, and codex enforces that by
+// silence — it renders each discovered skill as one `- <name>: <description>`
+// line and drops a SKILL.md carrying no description entirely, so the
+// binding materializes and the persona has nothing (verified codex-cli
+// 0.147.0, rangerhq-3zr; claude and grok fall back to the body's first
+// paragraph instead — rangerhq-1qd). Read
+// through the same flat-YAML subset as everything else: a folded or
+// literal block scalar (`description: >-`) reads as present, which is what
+// a real YAML parser downstream will also make of it.
+func SkillDescription(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return ""
+	}
+	front, _ := agentFrontmatter(string(b))
+	return yamlGetLines(front, "description")
+}
+
 // ListSkills returns the names under RHQ_HOME/skills carrying a SKILL.md,
 // sorted. Stat, not ReadDir modes: an entry is usually a symlink to a dir.
 func (a *App) ListSkills() []string {

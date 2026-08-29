@@ -1586,7 +1586,10 @@ being enforced here. A name that resolves to nothing refuses the launch
 outright rather than binding a dangling symlink; `posse agent check` finds
 it first, along with a PID whose own `command:` forgot `{skills}` while
 `skills:` is non-empty (the `{model}` rule again: never leave a token
-unrendered, never silently skip one). Binding is additive — the
+unrendered, never silently skip one) and a bound `SKILL.md` carrying no
+`description:` — the third of the same kind, because codex drops such a
+skill in silence and the persona launches believing it has one
+(rangerhq-3zr; `App.SkillDescription`). Binding is additive — the
 runtime's global skills still load; posse guarantees presence, not absence.
 Isolation is a cage question, named out of scope by the ADR.
 
@@ -1623,8 +1626,9 @@ re-checks it:
 - **codex silently skips a `SKILL.md` with no `description:`.** It never
   reaches the prompt and nothing says so — grok and claude fall back to the
   body's first paragraph, codex does not. A bound skill missing that one
-  frontmatter line is bound to nothing on codex (rangerhq-1qd; a lint for
-  it is filed separately).
+  frontmatter line is bound to nothing on codex (rangerhq-1qd). `posse
+  agent check` reports it (rangerhq-3zr), and the E2E arm below re-measures
+  it against the installed CLIs.
 - **grok reads `<cwd>/.agents/skills/`** as `project` scope, and its skill
   discovery deliberately ignores git's ignore rules — so `.git/info/exclude`
   hides the dir from `git status` without hiding it from the CLI. (Both

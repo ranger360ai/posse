@@ -272,10 +272,24 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	// and a PID whose own command: forgot {skills} would launch without the
 	// skills it declares — the {model} rule again: never leave a token
 	// unrendered, never silently skip one either.
-	if _, unknown := a.ResolveSkills(ag.Skills); len(unknown) > 0 {
-		for _, s := range unknown {
-			add("skills: unknown skill %q — no %s", s, AbbrevHome(filepath.Join(a.SkillPath(s), "SKILL.md")))
+	// A third of the same kind (rangerhq-3zr): the SKILL.md is there and
+	// carries no `description:`. codex renders the skills it discovers as
+	// one `- <name>: <description>` line each and drops one without a
+	// description entirely — no warning, nothing in the model-visible
+	// prompt — so the name resolves, the launch materializes the link,
+	// parity calls it realized, and the persona has nothing. claude and
+	// grok fall back to the body, which is exactly what makes it silent:
+	// the same binding works on two runtimes out of three.
+	paths, unknown := a.ResolveSkills(ag.Skills)
+	for _, s := range unknown {
+		add("skills: unknown skill %q — no %s", s, AbbrevHome(filepath.Join(a.SkillPath(s), "SKILL.md")))
+	}
+	for _, p := range paths {
+		if SkillDescription(p) != "" {
+			continue
 		}
+		add("skills: %q has no description: in the frontmatter of %s — description is a required Agent-Skills key and codex drops a skill without one silently (codex-cli 0.147.0), so this binding materializes and the persona still has nothing",
+			filepath.Base(p), AbbrevHome(filepath.Join(p, "SKILL.md")))
 	}
 	if len(ag.Skills) > 0 && ag.Command != "" && !strings.Contains(ag.Command, "{skills}") {
 		add("command: has no {skills} while skills: names %s — this PID's own runtime would launch without them (add {skills} or drop command: for the built-in template)", strings.Join(ag.Skills, ", "))

@@ -121,6 +121,16 @@ finding; a PID whose own `command:` lacks `{skills}` while `skills:` is
 non-empty is a finding (ORDERS lesson: never leave a token unrendered,
 never silently skip one either — same rule as `{model}`).
 
+*Amended 2026-08-28 (rangerhq-3zr): a third finding of the same kind — a
+bound `SKILL.md` whose frontmatter carries no `description:`. `name` and
+`description` are the two required Agent-Skills keys, and codex renders
+each discovered skill as one `- <name>: <description>` line and drops one
+without a description entirely (verified codex-cli 0.147.0), so the name
+resolves, the launch materializes the link, parity calls it realized, and
+the persona has nothing. claude and grok fall back to the body, which is
+what makes it silent: the same binding works on two runtimes out of
+three.*
+
 **Cage interplay.** Seatbelt denies writes only — reading
 `RHQ_HOME/skills` is fine; the container tier mounts it read-only. Skills
 that ship scripts run *inside* the cage like anything else.
@@ -130,8 +140,8 @@ that ship scripts run *inside* the cage like anything else.
 - `runtime.go`: `Skills func(dir string, names []string) (flag string, ok bool)`
   per built-in; `{skills}` in the three templates. `skills.go` (~80 lines):
   `SkillsDir`, `ResolveSkills`, `RenderClaudeSkills`. `agents.go`:
-  `Skills []string`. `parity.go`: one more row. `pidcheck.go`: two
-  findings. `CreateSession`: render + env. Scaffold gains `skills:` with
+  `Skills []string`. `parity.go`: one more row. `pidcheck.go`: three
+  findings (the third added by rangerhq-3zr). `CreateSession`: render + env. Scaffold gains `skills:` with
   a hint.
 - The claude path is buildable today; codex/grok are verify-then-build in
   a separate bead so the first bead doesn't wait on their answers

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -402,7 +403,8 @@ func TestSkillsLaunchAndRelaunch(t *testing.T) {
 	}
 }
 
-// §5: the two linter findings.
+// §5: the linter findings for a name that resolves to nothing and a PID
+// whose own command: forgot {skills}.
 func TestCheckAgentSkills(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
@@ -434,6 +436,75 @@ func TestCheckAgentSkills(t *testing.T) {
 	}
 	if fs, _, _ := a.CheckAgent("fresh"); len(fs) != 0 {
 		t.Errorf("scaffold has findings: %v", fs)
+	}
+}
+
+// §5, the third finding of the same kind (rangerhq-3zr): the SKILL.md
+// resolves and carries no `description:`, which codex drops in silence.
+//
+// Measured on codex-cli 0.147.0 with `codex debug prompt-input` over a
+// throwaway cwd carrying .agents/skills/probeskill: with a description the
+// dumped prompt carries one `- probeskill: <description> (file: …)` row,
+// and with the key absent, empty, or the whole frontmatter block missing
+// the name does not appear anywhere in the 29 KB of model-visible input.
+//
+// The two arms that pin the *reader* rather than the outcome are `folded`
+// and `bodyonly`: a block scalar is a description a real YAML parser
+// downstream will render, and a `description:` line in the body is not one
+// — a check that read the whole file instead of the frontmatter block
+// would call that PID clean and drop the finding.
+func TestCheckAgentSkillNeedsDescription(t *testing.T) {
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	os.MkdirAll(a.AgentsDir, 0o755)
+	os.MkdirAll(a.SkillsDir(), 0o755)
+	for _, tc := range []struct {
+		name    string
+		skill   string
+		finding bool
+	}{
+		{"described", "---\nname: described\ndescription: what it is for\n---\nbody\n", false},
+		{"folded", "---\nname: folded\ndescription: >-\n  what it is for\n---\nbody\n", false},
+		{"nokey", "---\nname: nokey\n---\nA first paragraph claude and grok fall back to.\n", true},
+		{"empty", "---\nname: empty\ndescription:\n---\nbody\n", true},
+		{"nulled", "---\nname: nulled\ndescription: ~\n---\nbody\n", true},
+		{"nofront", "A first paragraph and no frontmatter block at all.\n", true},
+		{"bodyonly", "---\nname: bodyonly\n---\ndescription: this line is body, not frontmatter\n", true},
+	} {
+		dir := filepath.Join(a.SkillsDir(), tc.name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(tc.skill), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(a.AgentsDir, tc.name+".md"),
+			[]byte("---\nname: "+tc.name+"\nskills: ["+tc.name+"]\n---\nYou are "+tc.name+", the tester of the crew.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fs, _, err := a.CheckAgent(tc.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got string
+		for _, f := range fs {
+			if strings.Contains(f, "has no description:") {
+				got = f
+			}
+			if strings.Contains(f, "unknown skill") {
+				t.Fatalf("%s: the fixture must resolve: %v", tc.name, fs)
+			}
+		}
+		switch {
+		case tc.finding && got == "":
+			t.Errorf("%s: no description: is a finding, got %v", tc.name, fs)
+		case tc.finding && !strings.Contains(got, strconv.Quote(tc.name)):
+			t.Errorf("%s: the finding must name the skill: %s", tc.name, got)
+		case tc.finding && !strings.Contains(got, AbbrevHome(filepath.Join(dir, "SKILL.md"))):
+			t.Errorf("%s: the finding must name the file to fix: %s", tc.name, got)
+		case !tc.finding && got != "":
+			t.Errorf("%s: a described skill is not a finding: %s", tc.name, got)
+		}
 	}
 }
 
