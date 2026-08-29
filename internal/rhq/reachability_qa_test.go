@@ -307,6 +307,70 @@ func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
 	}
 }
 
+// TestQARecordReachAbstainsBeforeItRendersTheProfile pins the ORDER of the two
+// guards in applyRecordReach, which nothing else does.
+//
+// seatbeltReachRow carries its own apply-refusal guard, so on any host where
+// RenderSeatbelt SUCCEEDS the two guards are indistinguishable: delete the one
+// in applyRecordReach and the render still happens, the row still comes back
+// unmeasured, and every other pin in this file stays green. MEASURED
+// (ranger-base-lmat, verifying ranger-base-heur): that mutation leaves the
+// whole internal/rhq package green, 562s.
+//
+// The order is load-bearing in exactly the session heur is about. There the
+// .sb is itself a write the cage may deny, so RenderSeatbelt fails FIRST and
+// applyRecordReach reports "the seatbelt profile ... cannot be rendered"
+// through unrealized() — a second finding drawn from the same unmeasured fact,
+// and one that degrades the launch just as the first one did.
+//
+// The fixture blocks the render by taking the write away from the gates dir,
+// not by uncaging anything: the seam is the reader and the filesystem, so this
+// runs identically on a host that will apply a profile and in a session that
+// will not.
+func TestQARecordReachAbstainsBeforeItRendersTheProfile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through a 0500 directory; this fixture cannot block the render")
+	}
+	f := rchNew(t)
+	rchFakeApplyRefusal(t, rchKernelRefusal)
+
+	// Take the write away from where RenderSeatbelt must land the .sb.
+	gates := filepath.Dir(f.a.GatesDir(f.ag.Name))
+	if err := os.MkdirAll(gates, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(gates, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(gates, 0o755) })
+
+	// The fixture is the experiment: if the render still succeeds, everything
+	// below is green for the wrong reason (ranger-base-z4vx).
+	if _, err := f.a.RenderSeatbelt(f.ag, f.work, f.rt.StateDirs...); err == nil {
+		t.Fatalf("fixture did not block the render — this pin would measure nothing")
+	}
+
+	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)
+	got := p.Realized[RecordReachGate]
+	if !strings.Contains(got, "NOT MEASURED") || !strings.Contains(got, rchKernelRefusal) {
+		t.Fatalf("an unappliable probe is unmeasured whether or not the profile renders: %q", got)
+	}
+	// The row the wrong order produces. It is true — the render did fail — but
+	// it is a finding about the launch drawn from a process fact, and it
+	// degrades on a measurement that never happened.
+	if strings.Contains(got, "cannot be rendered") {
+		t.Errorf("the render was asked before the abstention: %q", got)
+	}
+	if row := reachRow(p); row != "" {
+		t.Fatalf("a check that did not run must not degrade the launch: %s", row)
+	}
+	for _, u := range p.Unrealized {
+		if strings.HasPrefix(u, RecordReachGate+" — ") {
+			t.Fatalf("unrealized carries the row: %s", u)
+		}
+	}
+}
+
 // The wrong arm, and it runs in both worlds: a probe failure that is NOT an
 // apply refusal is still a finding. `sandbox-exec -f <missing profile>`
 // fails before it ever applies anything —
