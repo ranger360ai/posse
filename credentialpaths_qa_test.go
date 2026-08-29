@@ -11,9 +11,10 @@ package posse
 //
 // Two of them are the whole point:
 //   - the RENAMED form. On 2026-08-23 the file was renamed, not removed
-//     (.credentials.json.stale-20260823, same bytes, same mode). ADR 0019 D5
-//     line 201 words the check as the exact path and passes on that box. The
-//     matcher is a glob or it is theatre.
+//     (.credentials.json.stale-20260823, same bytes, same mode). The instance
+//     ADR 0019 D5 used to word the check as the exact path, which passes on
+//     that box; it was reconciled to the glob on 2026-08-29 (rangerhq-m10j)
+//     and this arm is why. The matcher is a glob or it is theatre.
 //   - the EMPTY arm. With no config directory present the script has measured
 //     nothing, and "no findings" would be a pass earned by looking at nothing
 //     (the negative-control trap in NOTES). It must exit 2, not 0.
@@ -89,7 +90,7 @@ func TestQACredentialPathsFindsTheExactName(t *testing.T) {
 	}
 }
 
-// The arm ADR 0019 D5 line 201 does not have. A rename changes the name, not
+// The arm the exact-path wording did not have. A rename changes the name, not
 // the exposure.
 func TestQACredentialPathsFindsTheRenamedStaleForm(t *testing.T) {
 	out, code := cpRun(t, cpHome(t, ".credentials.json.stale-20260823"))
@@ -210,9 +211,15 @@ func TestQACredentialRotationRunbookCarriesTheCheck(t *testing.T) {
 	for _, want := range []string{
 		"make verify-credential-paths", // the command, runnable as written
 		".credentials.json*",           // the glob, so doc and script cannot drift
-		"rangerhq-m10j",                // what is still parked, and on whom
-		"rangerhq-q65q",                // the gate this section is explicitly NOT behind
-		"ranger-base-66y",              // deleting is the operator's
+		"rangerhq-m10j",                // whose page this is
+		// Until 2026-08-29 this arm read "rangerhq-q65q" — the operator
+		// decision the page's other three moves were parked behind, named
+		// so a reader could see this section was NOT waiting with them.
+		// They have landed, so that reference went with them and the arm
+		// holds the fact that outlasted it instead: the file self-renews,
+		// which is why the sweep exists and a delete is not a control.
+		"ranger-base-1lza",
+		"ranger-base-66y", // deleting is the operator's
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("runbook must carry %q", want)

@@ -34,7 +34,7 @@ to the report too**, because the deny line that spells the same gate,
 
 ```
 posse: posse refresh is the operator's hand and nothing else (ADR 0019 D4):
-       refusing under RHQ_PERSONA=gilfoyle — every crew PID also denies
+       refusing under RHQ_PERSONA=developer-3 — every crew PID also denies
        Bash(posse refresh:*), and this is the same rule spelled in the binary
 posse: posse refresh is interactive-only (ADR 0019 D4): stdin is not a
        terminal, so there is no human here to be the gate — run it from your

@@ -129,7 +129,7 @@ func TestTheRunbookQuotesTheRefusalsRefreshActuallyGives(t *testing.T) {
 	page := crRunbook(t)
 	a := refreshApp(t)
 
-	t.Setenv(EnvPersona, "gilfoyle")
+	t.Setenv(EnvPersona, "developer-3")
 	err := a.CmdRefresh(discard{}, opts(RefreshOpts{}, "", nil))
 	if err == nil {
 		t.Fatal("refresh ran under the persona marker")
