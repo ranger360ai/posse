@@ -408,6 +408,76 @@ func TestShimSkipsGlobalOptionsBeforeSubcommand(t *testing.T) {
 	}
 }
 
+// The other flag rule ADR 0001 ships. `Bash(git push --force:*)` had the
+// same positional miss ranger-base-vct2 measured on bd — `git push --tags
+// --force` moved the flag out of $2 and RAN — and the membership scan fixes
+// it here for free, so this is the pin that says so. git is NOT in
+// verbValueOpts (its parse-options separates required from optional
+// arguments and nobody has measured `push`'s), which shows up as the
+// over-refusal in the last refused row rather than as a way through.
+func TestShimMatchesAVerbFlagWhereverItSits(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	realBin := t.TempDir()
+	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, binDir, _, err := a.RenderGates("developer", []string{"Bash(git push --force:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(binDir, "git")
+	run := func(args ...string) (string, string, int) {
+		cmd := exec.Command(shim, args...)
+		var out, errb strings.Builder
+		cmd.Stdout, cmd.Stderr = &out, &errb
+		err := cmd.Run()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		return out.String(), errb.String(), code
+	}
+	refused := [][]string{
+		{"push", "--force"},
+		{"push", "--tags", "--force"},
+		{"push", "origin", "main", "--force"},
+		{"push", "--force", "origin", "main"},
+		{"-C", "/tmp/other", "push", "--dry-run", "--force"},
+		{"push", "--force=1"}, // not a git spelling, but the flag is named
+		// No verbValueOpts entry for `git push`, so a remote named `--force`
+		// is refused as well: the wall standing wider than the rule.
+		{"push", "--repo", "--force"},
+	}
+	for _, args := range refused {
+		out, errs, code := run(args...)
+		if code != 1 || !strings.Contains(errs, "refused by posse gate: git "+strings.Join(args, " ")+" (deny: Bash(git push --force:*))") || out != "" {
+			t.Errorf("git %s must be refused: code=%d out=%q err=%q", strings.Join(args, " "), code, out, errs)
+		}
+	}
+	passed := [][]string{
+		{"push", "origin", "main"},
+		{"push", "--tags"},
+		{"push", "--", "--force"}, // end of options: a refspec, not the flag
+		{"commit", "-m", "--force"},
+		{"-C", "push", "status"},
+	}
+	for _, args := range passed {
+		out, errs, code := run(args...)
+		if code != 0 || strings.TrimSpace(out) != "real git "+strings.Join(args, " ") {
+			t.Errorf("git %s must pass through: code=%d out=%q err=%q", strings.Join(args, " "), code, out, errs)
+		}
+	}
+	// And parity may claim it: git has a global-option table, so the rule is
+	// realized rather than best-effort.
+	r := ParseShimRules([]string{"Bash(git push --force:*)"})["git"][0]
+	if kind, faithful := matcherFor("git", r); kind != "subcommand, option-aware, flag anywhere in the segment" || !faithful {
+		t.Errorf("git push --force must be claimed flag-anywhere, got %q faithful=%v", kind, faithful)
+	}
+}
+
 // claudeDenyMatch models claude's Bash rule matcher (2.1.234) so the table
 // below can assert what the emitted rules DO, not just how they read. Three
 // forms, in the CLI's own order: `<c>:*` is a literal prefix of the command

@@ -191,7 +191,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			r := ParseShimRules([]string{rule})[cmd][0]
 			kind, faithful := matcherFor(cmd, r)
 			if !faithful {
-				p.unrealized(rule, fmt.Sprintf("L1 shim has no global-option table for %s, so an option taking a separate value before %q hides it (deny the whole verb: Bash(%s)) — best-effort only", cmd, r.Words[0], cmd))
+				p.unrealized(rule, matcherWhy(cmd, r))
 				continue
 			}
 			layers := "L1 shim (" + kind + ")"

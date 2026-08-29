@@ -500,6 +500,18 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    (ranger-base-3bqn: emptying `globalValueOpts["bd"]` fails both the
    refuse arm and, separately, the `--actor daemon show x` pass arm).
 
+   The one rule in the list that names a FLAG rather than a verb,
+   `Bash(bd sync --full:*)`, is verified separately and differently: a
+   flag has no position, so `bd sync --push --full` and `bd sync
+   --dry-run --full` must be refused exactly as `bd sync --full` is,
+   `--full=true` with them. Both ran past the rule until
+   ranger-base-vct2; the shim now matches the flag anywhere in `sync`'s
+   own arguments, and `posse gates <p>` renders that rule
+   `option-aware, flag anywhere in the segment`. Pinned in the same
+   file, both ways — the refuse arms above, and the pass arms where the
+   word only looks like the flag (`bd sync -m --full` is a commit
+   message, `bd sync -- --full` an operand).
+
 ## Measured versus assumed
 
 | claim | status |

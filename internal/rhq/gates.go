@@ -88,6 +88,61 @@ func (r shimRule) Verb() bool {
 	return len(r.Words) > 0 && !strings.HasPrefix(r.Words[0], "-")
 }
 
+// Lead and OptTail split a verb rule into the words matched BY POSITION and
+// the trailing long options matched by MEMBERSHIP in what follows them.
+//
+// `Bash(bd sync --full:*)` rendered as a test of $1 against `sync` and $2
+// against `--full`, which reads the flag as if it had a position. cobra
+// does not give it one: `--full` is a plain flag on `bd sync`, so any other
+// flag in front of it moved it out of $2 and past the wall — `bd sync
+// --push --full` and `bd sync --dry-run --full` both RAN (**MEASURED** on
+// the rendered shim, ranger-base-vct2). Same class as rangerhq-2zm one
+// level down: there it was a global option before the VERB, here it is any
+// option before the FLAG, and `bd sync --full` is the one spelling of sync
+// that commits AND pushes.
+//
+// The split is where the option run starts, so a rule naming a
+// sub-subcommand (`bd dep relate --x`) keeps `dep relate` positional.
+//
+// Only LONG options are taken this way. A short one clusters (`-qf` is `-q
+// -f`), and a cluster interacts with the verb's own value-taking short
+// options in ways no rule in ADR 0015 §3 needs today; such a rule keeps the
+// positional matcher and matcherFor stops calling it faithful, rather than
+// getting a membership test that quietly misses `-qf`.
+func (r shimRule) Lead() []string {
+	if !r.Verb() {
+		return r.Words
+	}
+	for i, w := range r.Words {
+		if strings.HasPrefix(w, "-") {
+			return r.Words[:i]
+		}
+	}
+	return r.Words
+}
+
+// optWords is everything after the lead — the option run, plus anything
+// written behind it.
+func (r shimRule) optWords() []string {
+	return r.Words[len(r.Lead()):]
+}
+
+// OptTail is the option run when every word in it is a LONG option, else
+// nil. Nil is the signal to match the whole rule positionally, exactly as
+// before — and matcherFor reads the same two calls to tell a rule that has
+// no option run (faithful) from one whose run it declined (best-effort).
+func (r shimRule) OptTail() []string {
+	if !r.Verb() || len(r.optWords()) == 0 {
+		return nil
+	}
+	for _, w := range r.optWords() {
+		if !strings.HasPrefix(w, "--") {
+			return nil
+		}
+	}
+	return r.optWords()
+}
+
 // globalValueOpts lists, per command, the options that may appear BEFORE
 // the subcommand AND take their value as a separate argument — the ones
 // that must be consumed in pairs or the value is mistaken for the
@@ -119,6 +174,69 @@ var globalValueOpts = map[string][]string{
 	// which is the same hole in the wall that a `Bash(bd daemon:*)`
 	// permission rule has in the typed line (ranger-base-3bqn, from az93).
 	"bd": {"--actor", "--db", "--dolt-auto-commit", "--lock-timeout"},
+}
+
+// verbValueOpts is globalValueOpts one level in: per "<cmd> <lead words>",
+// the options of THAT SUBCOMMAND which take their value as a separate word.
+// The membership scan for an OptTail rule must consume them in pairs or an
+// option's VALUE is mistaken for the denied flag — `bd sync -m --full` is a
+// commit message, not a full sync (**MEASURED**, `bd sync --help`, bd
+// 0.49.1: `-m/--message string` and `--set-mode string` are its only two).
+//
+// Keyed the way the rule is written, like qualifierSpoilers: `Bash(bd sync
+// --full:*)` looks up "bd sync".
+//
+// A MISSING entry is not a hole and does not cost the parity claim: nothing
+// is paired, so an option's value that happens to be spelled like the
+// denied flag is refused too. The wall stands wider than the rule — the
+// cheap error of this class, one respelling away — rather than not standing.
+// `Bash(git push --force:*)`, the other flag rule ADR 0001 ships, has no
+// entry for exactly this reason: git's parse-options separates required
+// from OPTIONAL arguments (`--repo=<r>` takes a following word,
+// `--force-with-lease` does not), and no entry is better than one guessed.
+// Whoever measures git's belongs here. An entry with NO options declares,
+// like posse's above, that the subcommand has none.
+//
+// The residual this table cannot fix is SPELLING, not position: git accepts
+// every unambiguous prefix of a long option, so a rule naming a git flag
+// must carry the abbreviations too. That is the spoilers' `LongMin` +
+// longArms mechanism (ranger-base-l1at, landed) and a DENIED flag has no
+// equivalent yet — deliberately, because wiring one without a measured
+// shortest prefix would be machinery no pin can reach. `git push --force`
+// looks like it needs none (`--force` is an exact match, which git's
+// parse-options prefers over its longer `--force-*` siblings), but that is
+// derived from the option list, not measured, and it cannot be measured
+// from a PID that denies the verb: ranger-base-0zln carries it.
+//
+// bd's parser abbreviates nothing — `bd list --js` answers `unknown flag:
+// --js` (**MEASURED**) — which is why the spelling set for `--full` closes
+// at the long form and `--full=value`.
+var verbValueOpts = map[string][]string{
+	"bd sync": {"-m", "--message", "--set-mode"},
+}
+
+// verbValueOptsFor returns the value-taking options of r's subcommand, with
+// any option the rule itself denies removed. Denying a value-taking flag
+// (`Bash(bd sync --set-mode:*)`) must not render a scan that shifts past
+// that very flag as somebody's value — the deny wins over the pairing.
+func verbValueOptsFor(cmd string, r shimRule) []string {
+	denied := map[string]bool{}
+	for _, o := range r.OptTail() {
+		denied[o] = true
+	}
+	var out []string
+	for _, o := range verbValueOpts[verbKey(cmd, r)] {
+		if !denied[o] {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// verbKey is the verbValueOpts key for r under cmd: the command plus the
+// rule's positional lead ("bd sync", "bd dep relate").
+func verbKey(cmd string, r shimRule) string {
+	return strings.TrimSpace(cmd + " " + strings.Join(r.Lead(), " "))
 }
 
 // spoiler names the options that SATISFY a negative rule's qualifier and
@@ -211,8 +329,15 @@ func spoiledFunc(cmd string, r shimRule) string {
 	if len(spoilersFor(cmd, r).Opts) == 0 {
 		return ""
 	}
-	name := "posse_spoiled"
-	for _, w := range r.Words {
+	return shIdent("posse_spoiled", r.Words...)
+}
+
+// shIdent builds a sh function name from a prefix and some rule words, with
+// everything outside [A-Za-z0-9] mapped to `_` so an option or a hyphenated
+// subcommand (`rename-prefix`) cannot render an unnameable function.
+func shIdent(prefix string, words ...string) string {
+	name := prefix
+	for _, w := range words {
 		name += "_" + strings.Map(func(c rune) rune {
 			if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
 				return c
@@ -237,6 +362,62 @@ func longArms(long, min string) []string {
 		out = append(out, long[:n])
 	}
 	return out
+}
+
+// flagInFunc names the sh helper that answers "does this subcommand's own
+// argv carry <opt>?" for one rule and one of its OptTail options.
+func flagInFunc(r shimRule, opt string) string {
+	return shIdent("posse_flagin", append(append([]string{}, r.Lead()...), opt)...)
+}
+
+// renderFlagIn writes that helper: walk the segment the verb matcher is
+// looking at, looking for opt.
+//
+// It walks the whole segment, lead words included, rather than shifting
+// past them. It reads the same — a lead word is a plain token, so it is
+// neither the denied option nor one of the value-taking ones — and it keeps
+// the helper independent of how many words the rule's lead has, which its
+// NAME (flagInFunc) does not record.
+//
+// Two things it must NOT call a match, both measured on bd 0.49.1:
+//
+//   - an option's VALUE. `bd sync -m --full` is the commit message
+//     "--full", so the verb's value-taking options are consumed in pairs
+//     from verbValueOpts, exactly as globalValueOpts pairs the command's.
+//   - an operand. pflag stops parsing at `--`, so `bd sync -- --full` hands
+//     `--full` to the subcommand as a positional and no full sync happens.
+//
+// …and one it MUST, which the positional matcher also missed: `--full=true`
+// is the same flag (**MEASURED**: `bd list --limit 1 --json=true` prints
+// the JSON that `--json` does). `--full=false` is then refused too — the
+// cheap error of this class, one respelling away, versus the expensive one
+// of the wall not being there.
+//
+// The spelling set is closed for this parser: pflag takes no abbreviations
+// (`bd list --js` answers `unknown flag: --js`, **MEASURED**), which is what
+// separates it from git's parse-options, where a literal arm misses every
+// abbreviation on the way to the option (ranger-base-l1at). A rule naming a
+// flag on a parser that DOES abbreviate needs those arms here, the way
+// renderSpoiled gets them from longArms — see verbValueOpts for why this
+// one does not have them yet (ranger-base-0zln).
+//
+// The arms are baked in rather than passed in a variable, following
+// renderSpoiled: a glob pattern that reaches `case` through an expansion is
+// one more place for the shim to mean something other than it says.
+func renderFlagIn(name string, valueOpts []string, opt string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n", name)
+	if len(valueOpts) > 0 {
+		quoted := make([]string, 0, len(valueOpts))
+		for _, o := range valueOpts {
+			quoted = append(quoted, shQuote(o))
+		}
+		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || return 1\n        shift 2\n        continue ;;\n", strings.Join(quoted, "|"))
+	}
+	b.WriteString("      --) return 1 ;;\n") // past here every word is an operand
+	fmt.Fprintf(&b, "      %s|%s*) return 0 ;;\n", shQuote(opt), shQuote(opt+"="))
+	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
+	return b.String()
 }
 
 // renderSpoiled writes the sh helper: does argv, up to the first `--`,
@@ -281,11 +462,32 @@ func matcherFor(cmd string, r shimRule) (kind string, faithful bool) {
 		return "literal argv prefix", true
 	case r.Unless != "" && globalValueOpts[cmd] != nil:
 		return "subcommand, option-aware, negative match", true
+	case len(r.optWords()) > 0 && r.OptTail() == nil:
+		// A short option in the tail: matched where it is written, which a
+		// cluster walks past. Parity says so rather than claiming it (see
+		// shimRule.Lead for why the membership scan stops at long options).
+		return "subcommand, positional flag, best-effort", false
+	case r.OptTail() != nil && globalValueOpts[cmd] != nil:
+		// A MISSING verbValueOpts entry does not cost the claim. It only
+		// means nothing is paired at that level, so an option's value that
+		// happens to be spelled like the denied flag is refused too — the
+		// wall standing wider than the rule, not a way through it.
+		return "subcommand, option-aware, flag anywhere in the segment", true
 	case globalValueOpts[cmd] != nil:
 		return "subcommand, option-aware", true
 	default:
 		return "subcommand, best-effort", false
 	}
+}
+
+// matcherWhy is what parity prints instead of a claim when matcherFor says
+// best-effort. Two different holes reach it and they have different exits,
+// so one canned sentence for both would send the reader to the wrong table.
+func matcherWhy(cmd string, r shimRule) string {
+	if len(r.optWords()) > 0 && r.OptTail() == nil {
+		return fmt.Sprintf("L1 shim matches %q by position and a short option clusters (`-qf` is `-q -f`), so a cluster carries it past (spell the rule with the long option) — best-effort only", r.optWords()[0])
+	}
+	return fmt.Sprintf("L1 shim has no global-option table for %s, so an option taking a separate value before %q hides it (deny the whole verb: Bash(%s)) — best-effort only", cmd, r.Words[0], cmd)
 }
 
 // ParseShimRules groups the shell-verb denies by command. Rules that are
@@ -580,8 +782,17 @@ func setVars(persona, cmd string, r shimRule) string {
 // scope (the raw argv, or what is left after the globals are skipped).
 func ruleCond(cmd string, r shimRule) string {
 	conds := []string{}
-	for i, w := range r.Words {
+	// A trailing long-option run is matched by MEMBERSHIP in what follows
+	// the lead, never by position: a flag has no position (ranger-base-vct2).
+	positional := r.Words
+	if r.OptTail() != nil {
+		positional = r.Lead()
+	}
+	for i, w := range positional {
 		conds = append(conds, fmt.Sprintf("[ \"$%d\" = %s ]", i+1, shQuote(w)))
+	}
+	for _, o := range r.OptTail() {
+		conds = append(conds, fmt.Sprintf("%s \"$@\"", flagInFunc(r, o)))
 	}
 	if r.Exact {
 		conds = append(conds, fmt.Sprintf("[ \"$#\" -eq %d ]", len(r.Words)))
@@ -653,6 +864,18 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) strin
 		}
 		seenSpoiled[fn] = true
 		b.WriteString(renderSpoiled(fn, spoilersFor(cmd, r)))
+	}
+	// And one per option a rule matches by membership rather than position.
+	seenFlagIn := map[string]bool{}
+	for _, r := range rules {
+		for _, o := range r.OptTail() {
+			fn := flagInFunc(r, o)
+			if seenFlagIn[fn] {
+				continue
+			}
+			seenFlagIn[fn] = true
+			b.WriteString(renderFlagIn(fn, verbValueOptsFor(cmd, r), o))
+		}
 	}
 	// Rules that lead with an option are a literal argv prefix: matched
 	// where they are written. Rules that name a subcommand are matched

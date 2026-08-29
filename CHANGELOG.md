@@ -13,6 +13,28 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ### Fixed
 
+**A deny rule naming a subcommand's flag — `Bash(bd sync --full:*)`,
+`Bash(git push --force:*)` — only refused the flag in one position.**
+
+*Affected: every PID carrying a rule of that shape, on every runtime.*
+
+The PATH shim rendered a two-word rule as a test of the subcommand followed by
+a test of the very next word, so any other flag in front of the denied one
+moved it out of position and the command ran: `bd sync --push --full` and `git
+push --tags --force` both walked past rules written to stop them. A flag has no
+position — the parsers these rules describe accept it anywhere after the
+subcommand — so the shim now looks for it anywhere in that subcommand's own
+arguments, `--flag=value` included.
+
+Two things it still does not treat as the flag: an option's value (`bd sync -m
+--full` is a commit message) and an operand after `--`. Where the flag could be
+a value the shim cannot rule out, it refuses — a rule may now stop a spelling
+that is technically something else, which a respelling gets past.
+
+Rules naming a *short* flag (`-f`) are unchanged and still matched by position;
+`posse gates` reports them best-effort rather than claiming them, because a
+short flag can hide inside a cluster.
+
 **`brew install ranger360ai/tap/posse` 404s on any Homebrew older than 6.0.14.**
 
 *Affected: the published v0.4.0 formula. Fixed in the generator; it reaches
