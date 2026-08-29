@@ -37,17 +37,30 @@ omarchy and rhel/fedora."* The route picked to cover the two Linux families
   `prepare-commit-msg` hook losing its revert-recovery paragraph on a box with
   no `cmp` — was found this way and could not have been found the other way.
 
+**The first run of the finished set widened that defect.** `cmp` is absent on
+**three of the four** — `fedora`, `rhel` and `arch`; only `debian` ships it in
+the newcomer baseline. `ranger-base-rmgz` and the runbook had both recorded
+Fedora as shipping diffutils by default, because the image those numbers came
+from had run `dnf install golang git make` first and picked diffutils up
+transitively. Measured against a clean baseline it does not. That correction
+cost one command and is the clearest argument for the route there is.
+
 Full costing, with every reproduction command: `docs/runbooks/ci-platform-coverage.md`.
 
 | `CLEANROOM_DISTRO=` | base image | notes |
 |---|---|---|
 | `debian` *(default)* | `debian:trixie-slim` | Every clean-room pass before `ranger-base-5cj4` ran in this one. |
-| `fedora` | `fedora:44` | Fedora userland. |
-| `rhel` | `almalinux:10` | The RHEL family. **This is the one that finds `cmp`.** |
-| `arch` | `archlinux:latest` | Arch base. **amd64 only** — see below. |
+| `fedora` | `fedora:44` | Fedora userland. Reproduces `ranger-base-rmgz`. |
+| `rhel` | `almalinux:10` | The RHEL family. Reproduces `ranger-base-rmgz`. |
+| `arch` | `archlinux:latest` | Arch base. **amd64 only** — see below. Reproduces `ranger-base-rmgz`. |
 
 Each distro has its own image tag (`posse-cleanroom-<distro>:1`) and its own
 container name, so all four can sit side by side without clobbering each other.
+
+> The pre-`ranger-base-5cj4` image was tagged `posse-cleanroom:1` with a
+> container named `posse-cleanroom`. Nothing uses those names any more. If one
+> is still on your box it is inert — `docker rmi posse-cleanroom:1` and
+> `docker rm posse-cleanroom` when you want the space back.
 
 > ### `arch` is not omarchy. Never write it up as though it were.
 > omarchy is Arch **plus** a curated desktop and a dotfiles layer.

@@ -311,15 +311,20 @@ cleanroom-hook-deps:
 # walk that stopped at the first failure would leave the rest unmeasured and
 # look like a pass.
 cleanroom-verify-all:
-	@rc=0; bad=""; \
+	@rc=0; broken=""; findings=""; \
 	for d in debian fedora rhel arch; do \
 	  echo "=== cleanroom: $$d ==="; \
-	  if CLEANROOM_DISTRO=$$d scripts/cleanroom.sh verify && \
-	     CLEANROOM_DISTRO=$$d scripts/cleanroom.sh hook-deps; then :; \
-	  else rc=1; bad="$$bad $$d"; fi; \
+	  if CLEANROOM_DISTRO=$$d scripts/cleanroom.sh verify; then :; \
+	  else rc=1; broken="$$broken $$d"; fi; \
+	  if CLEANROOM_DISTRO=$$d scripts/cleanroom.sh hook-deps; then :; \
+	  else rc=1; findings="$$findings $$d"; fi; \
 	  echo; \
 	done; \
-	if [ $$rc -ne 0 ]; then echo "cleanroom: FAILED on:$$bad" >&2; fi; \
+	if [ -n "$$broken" ]; then \
+	  echo "cleanroom: INSTRUMENT BROKEN on:$$broken — do not test in those until fixed" >&2; fi; \
+	if [ -n "$$findings" ]; then \
+	  echo "cleanroom: HOOK-DEP FINDINGS on:$$findings — a command the generated hooks call is missing there." >&2; \
+	  echo "cleanroom: that is a product defect to file (ranger-base-rmgz), NOT a broken clean room." >&2; fi; \
 	exit $$rc
 
 # ---------------------------------------------------------------------------

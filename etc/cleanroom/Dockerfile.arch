@@ -40,9 +40,11 @@ FROM archlinux:latest
 #
 # NOT INSTALLED, DELIBERATELY: nothing is added to make a posse failure go
 # away. diffutils in particular is never installed anywhere in this set —
-# ranger-base-rmgz is exactly the defect a userland without `cmp` produces.
-# Arch's base group happens to ship it; that is Arch's choice, not ours, and
-# `scripts/cleanroom.sh hook-deps` reports what is actually there.
+# ranger-base-rmgz is exactly the defect a userland without `cmp` produces,
+# and MEASURED 2026-08-28 this image does not have `cmp`. Arch is therefore a
+# third distro that reproduces rmgz, alongside fedora and rhel; only debian
+# ships `cmp` in the newcomer baseline. `scripts/cleanroom.sh hook-deps`
+# reports what is actually there.
 RUN pacman -Syu --noconfirm --needed --disable-sandbox \
       ca-certificates \
       curl \

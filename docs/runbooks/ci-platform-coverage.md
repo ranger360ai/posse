@@ -66,12 +66,32 @@ cause, and it is not a test artifact:
 if [ -f "$posse_gitdir/MERGE_MSG" ] && cmp -s "$1" "$posse_gitdir/MERGE_MSG"; then
 ```
 
-`cmp` ships in **diffutils**. It is installed by default on Debian, Ubuntu and
-Fedora, and is *not* installed on a minimal AlmaLinux/RHEL 10 (it is in
-`baseos`, available, uninstalled). Absent, that test is simply false, and the
+`cmp` ships in **diffutils**. Absent, that test is simply false, and the
 refusal a user hits mid-`git revert` loses the paragraph that tells them git
 already staged the change and names the two ways out. The wall still refuses;
-its recovery instructions quietly vanish. Filed as its own bead.
+its recovery instructions quietly vanish. Filed as its own bead
+(ranger-base-rmgz).
+
+> **CORRECTION, 2026-08-28 (ranger-base-5cj4).** This paragraph originally read
+> "installed by default on Debian, Ubuntu and Fedora, and *not* installed on a
+> minimal AlmaLinux/RHEL 10". **The Fedora half was wrong, and the defect is
+> wider than one distro family.** Measured against the finished clean-room
+> images — each carrying only the newcomer baseline `ca-certificates curl git
+> less make` — `cmp` is absent on **fedora:44, almalinux:10 AND
+> archlinux:latest**, and present only on `debian:trixie-slim`:
+>
+> ```
+> make cleanroom-verify-all      # or: CLEANROOM_DISTRO=fedora make cleanroom-hook-deps
+> debian  ok cmp        fedora  MISSING cmp
+> rhel    MISSING cmp   arch    MISSING cmp
+> ```
+>
+> The original number was confounded by its own setup: `probe-fedora:1` was
+> built with `dnf -y install golang git make`, which pulls diffutils in
+> transitively, so the probe measured its own scaffolding rather than a Fedora
+> a newcomer would have. **A probe image built to run the suite is not a probe
+> image for what the distro ships.** ranger-base-rmgz is correspondingly wider
+> than filed.
 
 Of the fourteen external commands the generated hooks call — `date tr rm
 printf head grep mv mktemp dirname sort env cmp chmod cat` — `cmp` is the

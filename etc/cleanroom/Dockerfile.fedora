@@ -33,12 +33,16 @@ FROM fedora:44
 # --allowerasing: fedora:44 ships curl-minimal, and the full `curl` replaces
 # it. --setopt=install_weak_deps=False is Fedora's --no-install-recommends.
 #
-# NOT INSTALLED, DELIBERATELY: diffutils. fedora:44's base image has no `cmp`
-# either, and ranger-base-rmgz is precisely the defect a userland without `cmp`
-# produces. Adding it here would hide the class of finding this image exists to
-# surface. Whatever `cmp` ends up present is a transitive dependency of the
-# five packages above, and `scripts/cleanroom.sh hook-deps` reports the truth
-# rather than assuming it.
+# NOT INSTALLED, DELIBERATELY: diffutils. ranger-base-rmgz is precisely the
+# defect a userland without `cmp` produces, and adding it here would hide the
+# class of finding this image exists to surface.
+#
+# MEASURED 2026-08-28, and it CORRECTS the record: this image has no `cmp`.
+# ranger-base-rmgz and the runbook both said Fedora ships diffutils by default.
+# It does not — the earlier probe image had run `dnf install golang git make`,
+# which pulls diffutils in transitively, so the measurement was confounded by
+# its own setup. A Fedora box with only the newcomer baseline reproduces rmgz
+# exactly as AlmaLinux does.
 RUN dnf -y install --allowerasing --setopt=install_weak_deps=False \
       ca-certificates \
       curl \
