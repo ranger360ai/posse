@@ -37,11 +37,30 @@ var tapFormulaFixture = []struct{ goos, goarch, digest string }{
 	{"linux", "amd64", "44444444444444444444444444444444444444444444444444444444dddddddd"},
 }
 
+// The four bottles (ranger-base-9vg3), each with a digest that names its own
+// slot, distinct from every tarball digest above. A renderer that wired a
+// tarball's sha into a bottle tag — or one bottle tag's sha into another —
+// would install fine on the releaser's machine and pour a 404 or a checksum
+// mismatch everywhere else.
+var tapBottleFixture = []struct{ tag, digest string }{
+	{"arm64_sonoma", "55555555555555555555555555555555555555555555555555555555eeeeeeee"},
+	{"sonoma", "66666666666666666666666666666666666666666666666666666666ffffffff"},
+	{"arm64_linux", "7777777777777777777777777777777777777777777777777777777799999999"},
+	{"x86_64_linux", "8888888888888888888888888888888888888888888888888888888800000000"},
+}
+
 func writeChecksums(t *testing.T, dir, version string, skip string) string {
 	t.Helper()
 	var b strings.Builder
 	for _, a := range tapFormulaFixture {
 		name := "posse_" + version + "_" + a.goos + "_" + a.goarch + ".tar.gz"
+		if name == skip {
+			continue
+		}
+		b.WriteString(a.digest + "  " + name + "\n")
+	}
+	for _, a := range tapBottleFixture {
+		name := "posse-" + version + "." + a.tag + ".bottle.tar.gz"
 		if name == skip {
 			continue
 		}

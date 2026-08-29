@@ -13,10 +13,13 @@
 #   scripts/macos-install-probe.sh quarantine   Gatekeeper on a downloaded binary
 #   scripts/macos-install-probe.sh tap          the published tap, read-only
 #   scripts/macos-install-probe.sh brew         tap/trust/install, scratch prefix
-#   scripts/macos-install-probe.sh all          all four
+#   scripts/macos-install-probe.sh bottle       THIS release's bottles, end to end
+#   scripts/macos-install-probe.sh all          all five
 #
 # Options:
-#   --version vX.Y.Z   which release to probe (default: v0.3.0)
+#   --version vX.Y.Z   which release to probe (default: v0.3.0). `bottle` mode
+#                      ignores it and uses internal/rhq.Version at HEAD, which
+#                      is the only version it can build.
 #   --keep             do not delete the scratch root on exit
 #   --stub-clt-gate    `brew` mode only, and it makes the result NOT a user's
 #                      result — see THE CLT GATE below
@@ -28,7 +31,13 @@
 # BLAST RADIUS. Everything this script writes lives under one scratch root it
 # creates and deletes. It never writes $HOME, never touches /opt/homebrew,
 # ~/.homebrew/trust.json, ~/.zprofile, ~/.zshrc, or the operator's brew cache,
-# and it installs nothing on the box. `brew` mode gets there by cloning
+# and it installs nothing on the box. The one exception is `bottle` mode, which
+# runs scripts/release-artifacts.sh: that adds a detached git worktree of HEAD
+# under $TMPDIR and removes it on exit, and it runs `go build` four times. It
+# still writes nothing into the repo and nothing into any live Homebrew.
+# `bottle` mode also listens on a loopback port for the length of the probe —
+# it has to, because a Homebrew `root_url` is a URL and the bottles under test
+# are not published yet. `brew` mode gets there by cloning
 # Homebrew into the scratch root and pointing HOMEBREW_CACHE, HOMEBREW_LOGS,
 # HOMEBREW_TEMP, XDG_CONFIG_HOME and HOME at it — XDG_CONFIG_HOME is the one
 # that matters, because it is where `brew trust` writes trust.json, and without
@@ -41,8 +50,8 @@
 # $TMPDIR, which on macOS is where a scratch root naturally goes. Pointing
 # HOMEBREW_TEMP inside the scratch root is what makes a scratch prefix legal.
 #
-# THE CLT GATE. The formula ships no bottle, so brew takes its build-from-
-# source path (formula_installer.rb, `unless pour_bottle?`) and runs the fatal
+# THE CLT GATE. A formula with no bottle makes brew take its build-from-source
+# path (formula_installer.rb, `unless pour_bottle?`) and run the fatal
 # developer-tools diagnostics BEFORE it unpacks anything. On a Mac whose
 # Command Line Tools are behind the running macOS, `brew install` dies with
 # "Your Command Line Tools are too outdated" without ever reading our formula —
@@ -52,6 +61,12 @@
 # of the SCRATCH brew so the rest of the route can be measured on a box that
 # cannot pass it; it says so loudly, because a run with it on no longer answers
 # the question a user is asking.
+#
+# ranger-base-9vg3 is the fix: the release now ships bottles, so brew pours and
+# never enters that path. `bottle` mode is the arm that proves it for the
+# CURRENT tree, without waiting for a release to be cut and published — and it
+# runs its own control, a second install with the bottle block deleted, so a
+# green result cannot come from a box that would have installed either way.
 set -uo pipefail
 
 VERSION=v0.3.0
@@ -81,15 +96,15 @@ die()  { printf 'macos-install-probe: %s\n' "$*" >&2; exit 2; }
 MODE=
 while [ $# -gt 0 ]; do
 	case $1 in
-	paths|quarantine|tap|brew|all) MODE=$1; shift ;;
+	paths|quarantine|tap|brew|bottle|all) MODE=$1; shift ;;
 	--version) VERSION=${2:?--version needs a tag}; shift 2 ;;
 	--keep) KEEP=1; shift ;;
 	--stub-clt-gate) STUB_CLT=1; shift ;;
-	-h|--help) sed -n '2,57p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,69p' "$0"; exit 0 ;;
 	*) die "unknown argument: $1 (try --help)" ;;
 	esac
 done
-[ -n "$MODE" ] || die "name a probe: paths | quarantine | tap | brew | all"
+[ -n "$MODE" ] || die "name a probe: paths | quarantine | tap | brew | bottle | all"
 case $VERSION in v[0-9]*) ;; *) die "--version must look like vX.Y.Z, got: $VERSION" ;; esac
 BARE=${VERSION#v}
 
@@ -451,10 +466,12 @@ PY
 	"$brew" install "$FORMULA" >"$ROOT/install.log" 2>&1
 	if grep -q "Command Line Tools are too outdated" "$ROOT/install.log"; then
 		bad "brew install $FORMULA refused: this box's Command Line Tools are behind macOS $(sw_vers -productVersion)."
-		note "the formula ships no bottle, so brew runs its fatal build-from-source"
-		note "diagnostics before unpacking a prebuilt binary. The fix is the operator's"
-		note "(Software Update, or sudo xcode-select --install). Re-run with"
-		note "--stub-clt-gate to measure the rest of the route anyway."
+		note "The PUBLISHED formula ships no bottle, so brew runs its fatal"
+		note "build-from-source diagnostics before unpacking a prebuilt binary."
+		note "ranger-base-9vg3 fixed the generator; a release cut and pushed into the"
+		note "tap since then clears this. Until one is, that is what this line means."
+		note "\`macos-install-probe.sh bottle\` measures the fix on THIS tree without"
+		note "waiting for a release; --stub-clt-gate measures the rest of this route."
 		return
 	fi
 	if ! grep -q "Cellar/posse" "$ROOT/install.log"; then
@@ -462,6 +479,17 @@ PY
 		return
 	fi
 	ok "brew install $FORMULA"
+
+	# POURED or BUILT is the whole of ranger-base-9vg3, and on a box with
+	# current developer tools both look like a successful install. So it is
+	# asked directly: a published formula that stopped shipping bottles would
+	# otherwise regress silently and only for people with stale tools — the
+	# exact population that cannot report it.
+	if grep -q "Pouring posse-" "$ROOT/install.log"; then
+		ok "the published formula POURED a bottle: $(grep -o 'Pouring posse-[^ ]*' "$ROOT/install.log" | head -1)"
+	else
+		bad "the published formula installed WITHOUT pouring a bottle — brew took its build-from-source path, which is fatal on a Mac whose Command Line Tools are behind its macOS (ranger-base-9vg3). Re-render the tap from scripts/tap-formula.sh."
+	fi
 
 	local installed=$B/prefix/bin/posse
 	if [ ! -x "$installed" ]; then bad "no posse in the scratch prefix's bin"; return; fi
@@ -481,12 +509,256 @@ PY
 	fi
 }
 
+# ---------------------------------------------------------------------------
+# bottle — the bottles THIS tree builds, poured into a scratch prefix
+# ---------------------------------------------------------------------------
+# `brew` mode above measures the PUBLISHED tap, so it cannot answer anything
+# about a fix until a release has been cut, drafted, published and pushed into
+# the tap — four operator steps. This mode answers it now, for the tree in
+# front of you, by running the real generators and pouring what they produce:
+#
+#   scripts/release-artifacts.sh   builds the four tarballs AND the four bottles
+#   scripts/tap-formula.sh         renders the formula, bottle block included
+#   a loopback HTTP server          stands in for the GitHub release the bottles
+#                                   are not on yet — a Homebrew root_url is a URL
+#   a scratch Homebrew + local tap  installs it the way a user would
+#
+# The ONLY thing edited between the generator and brew is the base URL: the
+# rendered `root_url` and the four source `url`s are pointed at the loopback
+# server. Every sha256, every bottle tag, every filename and the whole shape of
+# the formula are the generator's own output, because those are the things
+# under test. The substitution is counted, and a count that is not 5 is a
+# failure rather than a silent no-op.
+#
+# AND IT RUNS ITS OWN CONTROL. After the poured install succeeds, the same
+# formula is re-installed with the bottle block deleted. On a box whose Command
+# Line Tools are behind its macOS that second install must DIE at the gate —
+# that is what makes the first result mean something. On a box with current
+# tools it will install anyway, and the probe says so instead of claiming a
+# discrimination it did not get.
+probe_bottle() {
+	head_ "bottle — this tree's bottles, generated, served and poured"
+	command -v git >/dev/null || { skip "no git"; return; }
+	command -v /usr/bin/python3 >/dev/null || { skip "no /usr/bin/python3 — nothing to serve the bottles with"; return; }
+	command -v "${GOBIN:-go}" >/dev/null || { skip "no go — the artifacts cannot be built here"; return; }
+
+	# The version is the SOURCE's, read the way release-artifacts.sh reads it
+	# (from the commit, not the working tree) so the two cannot disagree and
+	# turn a version mismatch into a confusing build refusal.
+	local ver
+	ver=$(git -C "$REPO_ROOT" show HEAD:internal/rhq/app.go 2>/dev/null |
+		sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+	[ -n "$ver" ] || { skip "could not read internal/rhq.Version at HEAD"; return; }
+	note "building v$ver from HEAD ($(git -C "$REPO_ROOT" rev-parse --short HEAD))"
+
+	local D=$ROOT/bottle
+	mkdir -p "$D"
+	if ! ( cd "$REPO_ROOT" && "$REPO_ROOT/scripts/release-artifacts.sh" \
+		--rev HEAD --version "v$ver" --out "$D/dist" ) >"$ROOT/artifacts.log" 2>&1; then
+		bad "scripts/release-artifacts.sh failed: $(tail -3 "$ROOT/artifacts.log" | tr '\n' ' ')"
+		return
+	fi
+
+	# The bottle this box would be served. One tag per arch, and brew falls back
+	# to an older macOS tag on its own, so sonoma is what a Tahoe box pours.
+	local tag=sonoma
+	[ "$(uname -m)" = arm64 ] && tag=arm64_sonoma
+	local bottle=$D/dist/posse-$ver.$tag.bottle.tar.gz
+	if [ -f "$bottle" ]; then
+		ok "release-artifacts.sh wrote $(basename "$bottle") ($(wc -c <"$bottle" | tr -d ' ') bytes)"
+	else
+		bad "no bottle for this box's tag: expected $(basename "$bottle"), got: $(ls "$D/dist" | tr '\n' ' ')"
+		return
+	fi
+
+	# The keg layout has to be `<name>/<version>/…` and it has to match what the
+	# formula's `def install` would leave behind, or a poured install and a
+	# source install differ in their contents and nobody finds out.
+	local listing
+	listing=$(tar tzf "$bottle" | sed 's:/$::' | sort)
+	local want
+	for want in "posse/$ver/bin/posse" "posse/$ver/share/doc/posse/README.md" "posse/$ver/share/doc/posse/INSTALL.md"; do
+		case $listing in
+		*"$want"*) ok "the bottle holds $want" ;;
+		*) bad "the bottle is missing $want — a poured install would differ from a source one" ;;
+		esac
+	done
+
+	# Serve it. A Homebrew root_url is a URL, and these bottles are not on a
+	# release yet, so loopback is the only honest stand-in.
+	local port
+	port=$(/usr/bin/python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()' 2>/dev/null)
+	[ -n "$port" ] || { skip "could not find a free loopback port"; return; }
+	/usr/bin/python3 -m http.server "$port" --bind 127.0.0.1 --directory "$D/dist" >"$ROOT/http.log" 2>&1 &
+	local server=$!
+	disown "$server" 2>/dev/null
+	local i
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		curl -fsS -o /dev/null "http://127.0.0.1:$port/checksums.txt" 2>/dev/null && break
+		sleep 1
+	done
+	if ! curl -fsS -o /dev/null "http://127.0.0.1:$port/checksums.txt" 2>/dev/null; then
+		kill "$server" 2>/dev/null
+		skip "the loopback server did not come up on $port"
+		return
+	fi
+
+	# Render, then repoint the base URL and NOTHING else.
+	if ! "$REPO_ROOT/scripts/tap-formula.sh" --version "v$ver" \
+		--checksums "$D/dist/checksums.txt" --repo "$REPO" \
+		--out "$D/dist/posse.rb" >"$ROOT/render.log" 2>&1; then
+		kill "$server" 2>/dev/null
+		bad "scripts/tap-formula.sh failed: $(tail -2 "$ROOT/render.log" | tr '\n' ' ')"
+		return
+	fi
+	local base=https://github.com/$REPO/releases/download/v$ver
+	local rewrites
+	rewrites=$(grep -c -- "$base" "$D/dist/posse.rb")
+	if [ "$rewrites" != 5 ]; then
+		kill "$server" 2>/dev/null
+		bad "expected 5 references to the release base URL (root_url + four urls), found $rewrites — the substitution below would be measuring the wrong formula"
+		return
+	fi
+	# ONLY root_url moves. The four source `url`s stay on github, and they must:
+	# this formula carries no `version` stanza on purpose (ranger-base-hza), so
+	# brew SCANS the version out of the first url — and Version.detect only
+	# recognises the GitHub *release* URL shape. Point a source url at a bare
+	# host and `posse_0.3.0_darwin_arm64.tar.gz` resolves to version "64"
+	# (measured, both with and without a /v0.3.0/ path segment), after which brew
+	# asks for `posse-64.<tag>.bottle.tar.gz` and everything 404s. Nothing
+	# downloads those urls on this arm anyway — a poured install never fetches
+	# the source — so leaving them alone costs nothing and keeps the version, the
+	# bottle filename and the pour all being the generator's own answer.
+	sed -i '' "s|root_url \"$base\"|root_url \"http://127.0.0.1:$port\"|" "$D/dist/posse.rb"
+	if [ "$(grep -c "root_url \"http://127.0.0.1:$port\"" "$D/dist/posse.rb")" != 1 ]; then
+		kill "$server" 2>/dev/null
+		bad "the root_url substitution did not take — the probe would be fetching bottles from the real release"
+		return
+	fi
+	ok "the rendered formula's root_url points at the loopback server; its version, tags, sha256s and bottle filenames are the generator's"
+
+	# A local tap. brew wants a git repo, so it gets one.
+	local tapsrc=$D/tap
+	mkdir -p "$tapsrc/Formula"
+	cp "$D/dist/posse.rb" "$tapsrc/Formula/posse.rb"
+	( cd "$tapsrc" && git init -q . &&
+		git -c user.email=probe@example.invalid -c user.name=probe add Formula/posse.rb &&
+		git -c user.email=probe@example.invalid -c user.name=probe commit -qm bottle-probe -- Formula/posse.rb
+	) >"$ROOT/tapinit.log" 2>&1 || { kill "$server" 2>/dev/null; skip "could not build the local tap fixture"; return; }
+
+	local B=$D/brew
+	mkdir -p "$B/home" "$B/cfg" "$B/cache" "$B/logs" "$B/tmp"
+	# Reuse `brew` mode's clone when there is one — on APFS `cp -Rc` is a
+	# clonefile, so `all` does not pay for Homebrew's history twice.
+	if [ -d "$ROOT/brew/prefix" ]; then
+		cp -Rc "$ROOT/brew/prefix" "$B/prefix" 2>/dev/null || cp -R "$ROOT/brew/prefix" "$B/prefix"
+	else
+		say "  cloning Homebrew into the scratch root (~200 MB, once per run)"
+		git clone --depth=1 -q https://github.com/Homebrew/brew "$B/prefix" 2>/dev/null ||
+			{ kill "$server" 2>/dev/null; skip "could not clone Homebrew"; return; }
+		( cd "$B/prefix" && git fetch -q --unshallow --tags 2>/dev/null )
+	fi
+
+	export HOME="$B/home" XDG_CONFIG_HOME="$B/cfg"
+	export HOMEBREW_CACHE="$B/cache" HOMEBREW_LOGS="$B/logs" HOMEBREW_TEMP="$B/tmp"
+	export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+	local brew=$B/prefix/bin/brew
+	note "scratch brew: $("$brew" --version 2>/dev/null | head -1)"
+	note "this box: macOS $(sw_vers -productVersion) $(uname -m), CLT $(pkgutil --pkg-info=com.apple.pkg.CLTools_Executables 2>/dev/null | sed -n 's/^version: //p')"
+
+	if ! "$brew" tap "$TAP" "$tapsrc" >"$ROOT/btap.log" 2>&1; then
+		kill "$server" 2>/dev/null
+		bad "brew tap of the local fixture failed: $(tail -2 "$ROOT/btap.log" | tr '\n' ' ')"
+		return
+	fi
+	"$brew" trust --formula "$FORMULA" >"$ROOT/btrust.log" 2>&1
+
+	# THE MEASUREMENT.
+	"$brew" install "$FORMULA" >"$ROOT/binstall.log" 2>&1
+	local log=$ROOT/binstall.log
+	if grep -q "Command Line Tools are too outdated" "$log"; then
+		kill "$server" 2>/dev/null
+		bad "brew still hit the Command Line Tools gate WITH a bottle in the formula — the bottle was not poured. That is ranger-base-9vg3 unfixed:"
+		grep -iE "bottle|building|pouring|source" "$log" | sed 's/^/            /' | head -6
+		return
+	fi
+	if grep -q "Pouring posse-$ver.$tag.bottle.tar.gz" "$log"; then
+		ok "brew POURED posse-$ver.$tag.bottle.tar.gz — the build-from-source path, and its fatal developer-tools checks, were never entered"
+	elif grep -q Pouring "$log"; then
+		bad "brew poured something else: $(grep Pouring "$log" | head -1)"
+	else
+		bad "brew did not pour: $(tail -4 "$log" | tr '\n' ' ')"
+		kill "$server" 2>/dev/null
+		return
+	fi
+
+	local installed=$B/prefix/bin/posse
+	if [ -x "$installed" ]; then
+		BARE=$ver
+		case "$(run_bounded "$installed")" in
+		ran) ok "the poured posse reports $ver: $(cat "$installed.out")" ;;
+		*) bad "the poured posse did not report $ver" ;;
+		esac
+	else
+		bad "no posse in the scratch prefix's bin after the pour"
+	fi
+	if [ -f "$B/prefix/Cellar/posse/$ver/share/doc/posse/INSTALL.md" ]; then
+		ok "the poured keg carries the docs the formula's \`doc.install\` names"
+	else
+		bad "the poured keg has no share/doc/posse/INSTALL.md — the bottle and \`def install\` disagree"
+	fi
+
+	# THE CONTROL. Same box, same brew, same formula minus the bottle block.
+	"$brew" uninstall "$FORMULA" >/dev/null 2>&1
+	local tapped
+	tapped=$("$brew" --repository "$TAP" 2>/dev/null)/Formula/posse.rb
+	if [ ! -f "$tapped" ]; then
+		kill "$server" 2>/dev/null
+		note "control skipped — could not find the tapped formula to strip"
+		return
+	fi
+	/usr/bin/python3 - "$tapped" <<'PYEOF'
+import re, sys
+p = sys.argv[1]
+src = open(p).read()
+out = re.sub(r"\n  bottle do\n.*?\n  end\n", "\n", src, count=1, flags=re.S)
+if out == src:
+    sys.exit("the bottle block was not found, so the control would not be a control")
+open(p, "w").write(out)
+PYEOF
+	if [ $? != 0 ]; then
+		kill "$server" 2>/dev/null
+		bad "could not strip the bottle block for the control arm"
+		return
+	fi
+	# Unlike the arm above, the control DOES fetch a source tarball, and the
+	# sha256s in this formula are the ones we just built — not the published
+	# release's. So its urls move to the loopback server too. That costs the
+	# version scan (brew will call it "64"; see above) and costs nothing else:
+	# the developer-tools gate fires in `install`, after the download and before
+	# anything is unpacked, so what the version string says never enters it.
+	sed -i '' "s|$base|http://127.0.0.1:$port|g" "$tapped"
+	"$brew" install "$FORMULA" >"$ROOT/bcontrol.log" 2>&1
+	kill "$server" 2>/dev/null
+	if grep -q "Command Line Tools are too outdated" "$ROOT/bcontrol.log"; then
+		ok "CONTROL: with the bottle block deleted, the same install on this box dies at the Command Line Tools gate — so the pour above is the difference, not the box"
+	elif grep -q "Cellar/posse" "$ROOT/bcontrol.log"; then
+		note "CONTROL: this box installs the bottle-LESS formula too, so its developer tools are current."
+		note "         The pour above is measured, but this run does not discriminate the CLT"
+		note "         gate. Re-run on a box whose Command Line Tools are behind its macOS"
+		note "         (or after ranger-base-3m40) to get the contrast."
+	else
+		bad "CONTROL: the bottle-less install neither poured, installed nor hit the gate: $(tail -3 "$ROOT/bcontrol.log" | tr '\n' ' ')"
+	fi
+}
+
 case $MODE in
 paths) probe_paths ;;
 quarantine) probe_quarantine ;;
 tap) probe_tap ;;
 brew) probe_brew ;;
-all) probe_paths; probe_quarantine; probe_tap; probe_brew ;;
+bottle) probe_bottle ;;
+all) probe_paths; probe_quarantine; probe_tap; probe_brew; probe_bottle ;;
 esac
 
 printf '\n'

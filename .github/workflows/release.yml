@@ -1,12 +1,13 @@
-# Cut a posse release: build the four artifacts, render the Homebrew formula,
-# and stage them on a GitHub Release (rangerhq-i0n0).
+# Cut a posse release: build the four tarballs and the four Homebrew bottles,
+# render the formula, and stage them all on a GitHub Release (rangerhq-i0n0,
+# ranger-base-9vg3).
 #
 # Trigger: pushing a tag `vX.Y.Z`. That push is the operator's — nothing here
 # fires on a branch commit, and nothing here touches ranger360ai/homebrew-tap.
 #
 # THE RELEASE IS CREATED AS A DRAFT, ON PURPOSE. A published GitHub Release is
 # an outward-facing act and the last human check on what leaves the machine
-# (crew guardrail 4); the operator reviews the four tarballs and presses
+# (crew guardrail 4); the operator reviews the eight artifacts and presses
 # Publish. Flip `--draft` off below only as a deliberate decision, in a commit
 # that says so.
 name: release
@@ -96,6 +97,13 @@ jobs:
       # --rev names the same commit that is checked out, by construction of
       # the `ref:` above. Kept explicit so the artifacts state their commit
       # rather than inheriting whatever HEAD happens to be.
+      #
+      # This writes EIGHT artifacts, not four: the four tarballs and the four
+      # Homebrew bottles built from the same binaries (ranger-base-9vg3). The
+      # bottles are what stop `brew install` entering its build-from-source
+      # path, which is fatal on a Mac whose Command Line Tools are behind its
+      # macOS. They are plain tars of the keg — no brew and no Mac needed to
+      # build them, which is why this job is still one ubuntu runner.
       - name: build artifacts
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -143,7 +151,8 @@ jobs:
             echo "release: no CHANGELOG section for $TAG — the notes are the generated commit list only" >&2
           fi
           gh release create "$TAG" "${args[@]}" \
-            dist/posse_*.tar.gz dist/checksums.txt dist/posse.rb
+            dist/posse_*.tar.gz dist/posse-*.bottle.tar.gz \
+            dist/checksums.txt dist/posse.rb
 
       - name: what happens next
         env:
@@ -152,4 +161,9 @@ jobs:
           echo "Draft release $TAG staged. Two operator steps remain:"
           echo "  1. review and Publish the draft on GitHub"
           echo "  2. copy dist/posse.rb into ranger360ai/homebrew-tap as Formula/posse.rb and push"
+          echo ""
+          echo "The draft carries four bottles beside the four tarballs. Their names are"
+          echo "brew's, not ours — posse-<version>.<tag>.bottle.tar.gz, ONE dash — and brew"
+          echo "fetches them from the release by that exact name. Renaming one 404s the"
+          echo "install on the platform nobody tested."
           echo "See docs/runbooks/release.md."

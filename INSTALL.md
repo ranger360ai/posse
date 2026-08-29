@@ -197,13 +197,25 @@ been cut, and the error never says so. Nothing on your machine is broken and
 there is nothing here to debug: take the checkout path below, which needs Go
 and nothing else. (Maintainers: `docs/runbooks/release.md`.)
 
-If brew answers `Your Command Line Tools are too outdated`, that is real and
-it is not about our formula. The formula ships per-architecture tarballs and
-no bottle, so brew takes its build-from-source path and runs its **fatal**
-developer-tools checks before it unpacks anything — on a route sold two
-paragraphs up as "a release binary, no Go needed". Update the Command Line
-Tools (Software Update, or `sudo xcode-select --install`) and re-run, or take
-the checkout path, which does not go through brew at all.
+If brew answers `Your Command Line Tools are too outdated`, **you are on a tap
+older than this page.** Releases since `ranger-base-9vg3` ship Homebrew
+*bottles* — prebuilt kegs brew pours straight into the Cellar — and pouring one
+never enters the path that error comes from. Before that, the formula carried
+per-architecture tarballs and no bottle, so brew took its build-from-source
+path and ran its **fatal** developer-tools checks before unpacking anything: on
+a Mac whose Command Line Tools are behind its macOS the install died there,
+having never read our formula, on the route sold two paragraphs up as "a
+release binary, no Go needed".
+
+If you see it anyway: `brew update` and re-run, so you get the tap's current
+formula. If it persists, the release you are installing predates bottles —
+update the Command Line Tools (Software Update, or `sudo xcode-select
+--install`) and re-run, or take the checkout path, which does not go through
+brew at all.
+
+A successful install now says `Pouring posse-<version>.<tag>.bottle.tar.gz`.
+That line is the difference: it means brew unpacked a prebuilt binary and asked
+your machine for no toolchain at all.
 
 **One thing not to do: download the tarball from the releases page in a
 browser.** Both routes on this page — `brew`, and the `curl` lines in step 1 —

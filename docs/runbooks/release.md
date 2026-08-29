@@ -1,7 +1,8 @@
 # RUNBOOK — cutting a posse release
 
-The maintainer's procedure for `vX.Y.Z`: four tarballs, a GitHub Release,
-and the Homebrew formula that `brew install ranger360ai/tap/posse` resolves.
+The maintainer's procedure for `vX.Y.Z`: four tarballs, four Homebrew bottles,
+a GitHub Release, and the formula that `brew install ranger360ai/tap/posse`
+resolves.
 Deployers do not need this file — they need `INSTALL.md`. This is the other
 side of INSTALL.md step 2.
 
@@ -12,7 +13,16 @@ short of publishing anything.
 
 **What is automated:** pushing a `vX.Y.Z` tag fires
 `.github/workflows/release.yml`, which vets, runs `make test`, builds the four
-tarballs, renders the formula, and stages a **draft** release.
+tarballs **and the four bottles**, renders the formula, and stages a **draft**
+release.
+
+**The bottles are not optional (`ranger-base-9vg3`).** A formula with no bottle
+makes `brew install` take its build-from-source path, and brew runs its *fatal*
+developer-tools diagnostics before it unpacks anything — so on a Mac whose
+Command Line Tools are behind its macOS the install dies with `Your Command
+Line Tools are too outdated`, on the one route INSTALL.md sells as "a release
+binary, no Go needed". A release that ships tarballs and no bottles reintroduces
+that, and it fails only for people who cannot easily report it.
 
 If that run needs to be retried, dispatch the workflow manually with the
 existing tag. `workflow_dispatch` checks out the requested tag before vetting
@@ -115,6 +125,23 @@ $ scripts/tap-formula.sh --version vX.Y.Z --checksums dist/checksums.txt --out d
 $ (cd dist && sha256sum -c checksums.txt)
 ```
 Neither script tags, publishes, or talks to GitHub; both write `dist/` and stop.
+`release-artifacts.sh` writes eight archives: the four tarballs and, from the
+same four binaries, the four bottles. A bottle is not a build — it is the keg
+`def install` would have left in the Cellar, tarred as `posse/X.Y.Z/…` — which
+is why one Linux runner with no brew on it can produce all four.
+
+On a Mac, the whole of that is runnable end to end before anything is tagged:
+
+```sh
+$ scripts/macos-install-probe.sh bottle
+```
+It builds the artifacts, renders the formula, serves the bottles on loopback,
+taps and installs into a scratch Homebrew prefix, and then re-installs the same
+formula with the bottle block deleted as its control. **Verify:** `brew POURED
+posse-X.Y.Z.<tag>.bottle.tar.gz`, and — on a box whose Command Line Tools are
+behind its macOS — a `CONTROL:` line saying the bottle-less arm died at the
+gate. If the control says this box installs either way, the pour is still
+measured but that run did not discriminate the defect.
 
 `--out` is **emptied** before the build, so `release-artifacts.sh` refuses an
 `--out` holding anything it did not write — and refuses `/`, `$HOME` and the
@@ -177,13 +204,22 @@ built; widening the guard is a deliberate edit to `.github/workflows/release.yml
 
 `github.com/ranger360ai/posse/releases` → the `vX.Y.Z` **draft**.
 
-Six assets must be present before you press Publish:
+Ten assets must be present before you press Publish:
 
 ```
-posse_X.Y.Z_darwin_arm64.tar.gz    posse_X.Y.Z_darwin_amd64.tar.gz
-posse_X.Y.Z_linux_arm64.tar.gz     posse_X.Y.Z_linux_amd64.tar.gz
-checksums.txt                      posse.rb
+posse_X.Y.Z_darwin_arm64.tar.gz          posse_X.Y.Z_darwin_amd64.tar.gz
+posse_X.Y.Z_linux_arm64.tar.gz           posse_X.Y.Z_linux_amd64.tar.gz
+posse-X.Y.Z.arm64_sonoma.bottle.tar.gz   posse-X.Y.Z.sonoma.bottle.tar.gz
+posse-X.Y.Z.arm64_linux.bottle.tar.gz    posse-X.Y.Z.x86_64_linux.bottle.tar.gz
+checksums.txt                            posse.rb
 ```
+
+**Do not rename a bottle.** Those names are brew's, not ours: it fetches
+`<name>-<version>.<tag>.bottle.tar.gz` from the formula's `root_url` — **one**
+dash between name and version. Brew's own cache, its documentation and every
+`brew bottle` output spell the same file with **two**, so the wrong spelling
+looks more correct than the right one and 404s at install time on whichever
+platform nobody tried.
 
 Nothing is downloadable until you publish — and the formula's URLs 404 until
 you do, which makes step 3 fail in a way that looks like a bad formula.
@@ -268,13 +304,20 @@ $ base=https://github.com/ranger360ai/posse/releases/download/vX.Y.Z
 $ curl -sL -O "$base/checksums.txt" -O "$base/posse.rb"
 $ for a in darwin_arm64 darwin_amd64 linux_arm64 linux_amd64; do
 >   curl -sLO "$base/posse_X.Y.Z_$a.tar.gz"; done
+$ for t in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+>   curl -sLO "$base/posse-X.Y.Z.$t.bottle.tar.gz"; done
 $ shasum -a 256 -c checksums.txt          # GitHub's bytes match the manifest
 $ curl -sL -o tap.rb https://raw.githubusercontent.com/ranger360ai/homebrew-tap/main/Formula/posse.rb
 $ diff posse.rb tap.rb                     # the tap serves the release's own formula
-$ for h in $(grep -o 'sha256 "[a-f0-9]*"' tap.rb | cut -d'"' -f2); do
+$ for h in $(grep -oE '[a-f0-9]{64}' tap.rb); do
 >   grep -q "$h" checksums.txt && echo "OK $h" || echo "MISS $h"; done
 ```
-**Verify:** four `OK` lines, `diff` silent, all four tarballs `OK`.
+**Verify:** eight `OK` lines, `diff` silent, all eight files `OK`.
+
+The digest grep is `[a-f0-9]{64}`, not `sha256 "…"`: the bottle block spells
+its hashes `sha256 cellar: :any_skip_relocation, arm64_sonoma: "…"`, so the
+narrower pattern silently skips all four bottles and prints four confident
+`OK`s about half the release.
 (`shasum -a 256 -c` is the macOS spelling; `sha256sum -c` is GNU's. The
 `golang` image carries both, a bare Debian may carry only the second.)
 

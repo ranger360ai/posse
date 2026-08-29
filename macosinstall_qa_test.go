@@ -37,10 +37,14 @@ func TestTapFormulaOmitsTheRedundantVersionStanza(t *testing.T) {
 		t.Fatalf("the generated formula carries %q; brew audit --strict rejects it as "+
 			"redundant with the version scanned from the URL", line)
 	}
-	// The witness: brew can only scan what the urls carry.
+	// The witness: brew can only scan what the urls carry. `root_url` is the
+	// bottle block's (ranger-base-9vg3) and is deliberately excluded — brew
+	// scans the version from the SOURCE urls, and counting root_url here would
+	// both inflate the count and demand a version segment that stanza has no
+	// reason to carry.
 	urls := 0
 	for _, line := range strings.Split(rendered, "\n") {
-		if strings.Contains(line, "url \"") {
+		if strings.Contains(line, "url \"") && !strings.Contains(line, "root_url \"") {
 			urls++
 			if !strings.Contains(line, "/v0.3.0/") || !strings.Contains(line, "_0.3.0_") {
 				t.Fatalf("url has no scannable version, so dropping the stanza loses it: %s", strings.TrimSpace(line))
@@ -106,10 +110,19 @@ func TestInstallMdCarriesTheMeasuredMacOSFindings(t *testing.T) {
 				"ad-hoc-signed binary that carries it blocks with no output and no exit code",
 		},
 		{
-			name:  "the bottle-less formula runs brew's fatal developer-tools checks",
+			name:  "the error a pre-bottle tap still produces is named and explained",
 			token: "Your Command Line Tools are too outdated",
 			why: "brew takes its build-from-source path for a formula with no bottle, so an outdated " +
-				"CLT refuses the install before our formula is ever read",
+				"CLT refuses the install before our formula is ever read. ranger-base-9vg3 ships " +
+				"bottles and the page now says the error means an older tap — but the string has to " +
+				"stay, because it is what someone on one will paste into a search box",
+		},
+		{
+			name:  "a poured install is what the page tells the reader to look for",
+			token: "Pouring posse-<version>.<tag>.bottle.tar.gz",
+			why: "ranger-base-9vg3: pouring a bottle is the whole difference between an install that " +
+				"needs a toolchain and one that does not, and it is the one line on screen that " +
+				"distinguishes them",
 		},
 		{
 			name:  "tap-info reports tap trust, not formula trust",

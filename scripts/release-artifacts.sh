@@ -1,6 +1,6 @@
 #!/bin/sh
-# Build the posse release artifacts for GitHub Releases — the tarballs the
-# Homebrew tap's formula downloads (rangerhq-i0n0).
+# Build the posse release artifacts for GitHub Releases — the tarballs and the
+# Homebrew bottles the tap's formula downloads (rangerhq-i0n0, ranger-base-9vg3).
 #
 # Usage: scripts/release-artifacts.sh [--rev <commit>] [--version vX.Y.Z] [--out <dir>]
 #   --rev      commit to build (default: HEAD)
@@ -8,9 +8,9 @@
 #              points exactly at --rev. Must agree with internal/rhq.Version.
 #   --out      output directory (default: dist). It is EMPTIED before use, so
 #              it is refused unless it is absent, empty, or holds nothing but
-#              this build's own output (posse_*.tar.gz, checksums.txt,
-#              posse.rb) — and / , $HOME and the repo root are refused
-#              outright. There is no --force (ranger-base-9hyc).
+#              this build's own output (posse_*.tar.gz, posse-*.bottle.tar.gz,
+#              checksums.txt, posse.rb) — and / , $HOME and the repo root are
+#              refused outright. There is no --force (ranger-base-9hyc).
 #   GOBIN=<go> which go to build with (default: go)
 #
 # Blast radius: writes only inside <out>, and removes only an <out> that holds
@@ -158,7 +158,7 @@ if [ -d "$OUT" ]; then
 		# An unmatched glob stays literal in POSIX sh; -e/-L skips it.
 		[ -e "$entry" ] || [ -L "$entry" ] || continue
 		case $name in
-		posse_*.tar.gz|checksums.txt|posse.rb|.DS_Store)
+		posse_*.tar.gz|posse-*.bottle.tar.gz|checksums.txt|posse.rb|.DS_Store)
 			# Allowed as a plain entry only. A DIRECTORY named
 			# posse_x.tar.gz would be removed whole, contents unseen,
 			# so the name alone does not license the wipe.
@@ -173,7 +173,8 @@ if [ -d "$OUT" ]; then
 release-artifacts: refusing to wipe $OUT
   it holds "$stray", which this script did not write.
   --out is emptied before the build, so it may name only a directory that is
-  absent, empty, or holds nothing but posse_*.tar.gz, checksums.txt, posse.rb.
+  absent, empty, or holds nothing but posse_*.tar.gz, posse-*.bottle.tar.gz,
+  checksums.txt, posse.rb.
   If that directory is yours to lose, remove it yourself and re-run.
 EOF
 		exit 2
@@ -202,6 +203,72 @@ git -C "$repo" worktree add --detach --quiet "$src" "$REV"
 
 echo "release-artifacts: $VERSION from $sha"
 
+# ---------------------------------------------------------------------------
+# Bottles (ranger-base-9vg3)
+# ---------------------------------------------------------------------------
+# A bottle is what stops `brew install` entering its build-from-source path,
+# and that path is fatal on a Mac whose Command Line Tools are behind its
+# macOS: brew runs `fatal_build_from_source_checks` — Xcode, the CLT version,
+# the SDK — BEFORE it unpacks anything, so the one route INSTALL.md sells as
+# "a release binary, no Go needed" was the one route that needed a toolchain.
+# Measured on Homebrew 6.0.20 / macOS 26.4.1 arm64, both arms: with a bottle
+# brew prints `Pouring posse-0.3.0.arm64_sonoma.bottle.tar.gz` and installs;
+# with the bottle block deleted, the same install on the same box dies with
+# `Your Command Line Tools are too outdated`.
+#
+# A bottle is NOT a build. It is the keg — what `def install` would have left
+# in the Cellar — tarred up as `<name>/<version>/...`. So it is made here, from
+# the binary we just cross-compiled, on whatever box cuts the release: no brew,
+# no Mac, no `brew bottle`, and by construction the same bytes as the tarball
+# beside it. `brew bottle` would additionally stamp an INSTALL_RECEIPT.json;
+# brew tolerates its absence (`Tab.for_keg` returns an empty tab) and writes
+# its own at pour time — verified by pouring one of these.
+#
+# THE KEG LAYOUT IS THE FORMULA'S `def install`, AND THE TWO MUST AGREE.
+# scripts/tap-formula.sh renders `bin.install "posse"` and
+# `doc.install "README.md", "INSTALL.md"`, so the keg is bin/posse plus
+# share/doc/posse/{README.md,INSTALL.md} and nothing else — LICENSE ships in
+# the tarball and is not installed by the formula. A bottle that disagrees
+# with `def install` gives a poured install different contents from a source
+# one, silently. tapformula_qa_test.go pins the two against each other.
+#
+# THE FILENAME IS BREW'S, NOT OURS. brew asks the root_url for
+# `#{name}-#{version}.#{tag}.bottle.tar.gz` — ONE dash (Bottle::Filename
+# #url_encode). Its own cache spells the same file with two (`posse--0.3.0…`),
+# which is the spelling every doc and every `brew bottle` output shows, and
+# uploading THAT name 404s at install time on a box nobody tested. Measured.
+bottle_tag() { # $1=goos $2=goarch -> the brew bottle tag
+	case $1/$2 in
+	# One macOS tag per arch, at HOMEBREW_MACOS_OLDEST_SUPPORTED (sonoma, 14).
+	# brew falls back to a bottle built for an OLDER macOS
+	# (OS::Mac::Bottles::Collector#find_older_compatible_tag), so sonoma covers
+	# sequoia, tahoe and whatever comes next without a new asset per release
+	# of macOS — verified by pouring an arm64_sonoma bottle on macOS 26 Tahoe.
+	# Anything older than sonoma is a Homebrew that brew itself calls
+	# unsupported; it builds from source, as it did before this bead.
+	darwin/arm64) printf arm64_sonoma ;;
+	darwin/amd64) printf sonoma ;;
+	# Linux has NO older-version fallback — the collector override is
+	# macOS-only — so these two tags are exact and complete.
+	linux/arm64) printf arm64_linux ;;
+	linux/amd64) printf x86_64_linux ;;
+	*) echo "release-artifacts: no bottle tag for $1/$2" >&2; exit 1 ;;
+	esac
+}
+
+bottle_from() { # $1=stage dir $2=goos $3=goarch
+	_tag=$(bottle_tag "$2" "$3")
+	_keg=$tmp/keg/$2-$3/posse/$bare
+	mkdir -p "$_keg/bin" "$_keg/share/doc/posse"
+	cp "$1/posse" "$_keg/bin/posse"
+	for _doc in README.md INSTALL.md; do
+		cp "$1/$_doc" "$_keg/share/doc/posse/$_doc"
+	done
+	_bottle=$OUT/posse-${bare}.${_tag}.bottle.tar.gz
+	(cd "$tmp/keg/$2-$3" && tar -czf "$_bottle" posse)
+	echo "  $(basename "$_bottle")  $(wc -c <"$_bottle" | tr -d ' ') bytes"
+}
+
 # CGO off everywhere. It is what makes one machine able to build all four
 # targets, and it is what makes the linux tarballs work on a musl box as well
 # as a glibc one — verified cross-compiling all four from darwin/arm64.
@@ -222,12 +289,14 @@ for platform in $PLATFORMS; do
 	# gzip's timestamp — not reproducible, but comparably diffable.
 	(cd "$stage" && tar -czf "$tarball" $(ls | sort))
 	echo "  $(basename "$tarball")  $(wc -c <"$tarball" | tr -d ' ') bytes"
+
+	bottle_from "$stage" "$goos" "$goarch"
 done
 
 # checksums.txt is what the formula renderer reads and what a human verifies a
 # download against, so it is plain `sha256  name` in the OUT directory's own
 # terms — no paths, so `shasum -c` works from inside the download dir.
 sum() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
-(cd "$OUT" && sum posse_${bare}_*.tar.gz > checksums.txt)
+(cd "$OUT" && sum posse_${bare}_*.tar.gz posse-${bare}.*.bottle.tar.gz > checksums.txt)
 echo "release-artifacts: wrote $OUT/checksums.txt"
 cat "$OUT/checksums.txt" | sed 's/^/  /'

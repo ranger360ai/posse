@@ -135,6 +135,36 @@ LA=$(digest linux arm64)
 LI=$(digest linux amd64)
 base=https://github.com/$REPO/releases/download/$VERSION
 
+# THE BOTTLE BLOCK (ranger-base-9vg3) — what stops `brew install` needing a
+# toolchain. Without it brew takes its build-from-source path and runs the
+# FATAL developer-tools diagnostics before it unpacks anything, so on a Mac
+# whose Command Line Tools are behind its macOS the install dies with "Your
+# Command Line Tools are too outdated" having never read this formula — on the
+# route INSTALL.md sells as "a release binary, no Go needed". Measured both
+# arms on Homebrew 6.0.20 / macOS 26.4.1 arm64: with this block brew pours,
+# without it the same box refuses.
+#
+# The four tags are scripts/release-artifacts.sh's `bottle_tag()`, and the four
+# assets are what it wrote beside the tarballs. A tag missing from the manifest
+# is fatal for the same reason a missing tarball is: the formula would install
+# fine everywhere the releaser looked and build from source everywhere else.
+#
+# `cellar :any_skip_relocation` is a claim, and it is true here: the keg is one
+# static Go binary and two markdown files, so nothing in it mentions the
+# Homebrew prefix and brew has nothing to rewrite. It is also what lets one
+# bottle serve /opt/homebrew and /usr/local alike.
+bottle_digest() {
+	name=posse-${bare}.$1.bottle.tar.gz
+	d=$(awk -v n="$name" '$2 == n || $2 == "*"n { print $1; exit }' "$CHECKSUMS")
+	[ -n "$d" ] || { echo "tap-formula: $name is not in $CHECKSUMS" >&2; exit 1; }
+	printf '%s' "$d"
+}
+
+BDA=$(bottle_digest arm64_sonoma)
+BDI=$(bottle_digest sonoma)
+BLA=$(bottle_digest arm64_linux)
+BLI=$(bottle_digest x86_64_linux)
+
 # NO `version` STANZA, on purpose (ranger-base-hza). brew scans the version out
 # of the url — `.../v0.3.0/posse_0.3.0_darwin_arm64.tar.gz` — and an explicit
 # `version "0.3.0"` beside it is the one thing `brew audit --strict` rejects in
@@ -152,6 +182,14 @@ class Posse < Formula
   desc "Dispatcher binding personas, env sets and recipes to herdr and beads"
   homepage "https://github.com/$REPO"
   license "Apache-2.0"
+
+  bottle do
+    root_url "$base"
+    sha256 cellar: :any_skip_relocation, arm64_sonoma: "$BDA"
+    sha256 cellar: :any_skip_relocation, sonoma:       "$BDI"
+    sha256 cellar: :any_skip_relocation, arm64_linux:  "$BLA"
+    sha256 cellar: :any_skip_relocation, x86_64_linux: "$BLI"
+  end
 
   on_macos do
     on_arm do

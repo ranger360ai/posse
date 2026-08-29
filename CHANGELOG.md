@@ -59,6 +59,34 @@ If either variable has ever been pointed at a host you do not control on an
 affected build, treat the account's OAuth token as exposed and reissue it by
 signing out of Claude Code and back in.
 
+### Fixed
+
+**`brew install ranger360ai/tap/posse` no longer needs a working developer
+toolchain.**
+
+*Affected: v0.3.0 and every earlier build, on macOS only. Fixed in this
+release.*
+
+The Homebrew route is advertised as "a release binary, no Go needed", and for
+one class of Mac it was the opposite. The formula shipped per-architecture
+tarballs and **no bottle**, so brew took its build-from-source path and ran its
+*fatal* developer-tools diagnostics before it unpacked anything. On a Mac whose
+Command Line Tools are behind the running macOS, the install died with `Your
+Command Line Tools are too outdated` — having never read our formula, and
+naming Xcode rather than us.
+
+Releases now ship four Homebrew bottles beside the four tarballs, and the
+formula carries a `bottle do` block pointing at them. brew pours the prebuilt
+keg and never enters that path. A successful install now prints `Pouring
+posse-<version>.<tag>.bottle.tar.gz`.
+
+**Upgrade guidance.** Nothing to do if `brew install` already worked for you —
+the binary and its contents are unchanged. If it did **not**, `brew update` and
+re-run: with a tap carrying this release's formula, stale Command Line Tools
+stop mattering. One tag per architecture at the oldest macOS Homebrew supports
+covers newer macOS too, so this does not need a new release each time Apple
+ships one.
+
 ## v0.3.0
 
 First tagged release. See the release notes on GitHub.
