@@ -197,16 +197,53 @@ var globalValueOpts = map[string][]string{
 // Whoever measures git's belongs here. An entry with NO options declares,
 // like posse's above, that the subcommand has none.
 //
-// The residual this table cannot fix is SPELLING, not position: git accepts
-// every unambiguous prefix of a long option, so a rule naming a git flag
-// must carry the abbreviations too. That is the spoilers' `LongMin` +
-// longArms mechanism (ranger-base-l1at, landed) and a DENIED flag has no
-// equivalent yet — deliberately, because wiring one without a measured
-// shortest prefix would be machinery no pin can reach. `git push --force`
-// looks like it needs none (`--force` is an exact match, which git's
-// parse-options prefers over its longer `--force-*` siblings), but that is
-// derived from the option list, not measured, and it cannot be measured
-// from a PID that denies the verb: ranger-base-0zln carries it.
+// The other residual this table cannot fix is SPELLING, not position: git
+// accepts every unambiguous prefix of a long option, so a rule naming a git
+// flag may have to carry the abbreviations too. That is the spoilers'
+// `LongMin` + longArms mechanism (ranger-base-l1at, landed), and a DENIED
+// flag has no equivalent because the one denied git flag ADR 0001 ships
+// needs none — **MEASURED**, not derived (ranger-base-0zln, git 2.50.1 /
+// Apple Git-155).
+//
+// It could not be measured on `push`: every PID carrying the rule denies
+// the verb, so `git push --forc` is refused by this shim before git's
+// parse-options ever sees it — the gate working, not the answer. It was
+// measured on `git switch`, whose table has the same shape and the same
+// option NAME, with the exact option declared TENTH after its longer
+// sibling (`-C, --force-create` at position 2, `-f, --force` at 12):
+//
+//	git switch --force          fatal: missing branch or commit argument
+//	git switch --forc           error: ambiguous option: forc (could be
+//	                            --force-create or --force)      [exit 129]
+//	git switch --for/--fo/--f   the same ambiguity error
+//	git switch --force-c        resolves to --force-create
+//
+// Two rules, both measured there. An EXACT long name wins outright even
+// when a longer sibling is declared ahead of it, so `--force` reaches the
+// command. And a proper prefix matching more than one name is refused BY
+// GIT, exit 129, before the command runs. `git push`'s table carries three
+// names under `--force` — `--force`, `--force-with-lease`,
+// `--force-if-includes`, all three present in this binary (`strings`) and
+// in the git-push(1) it ships — plus `--follow-tags`, so every proper
+// prefix of `--force` (`--forc`, `--for`, `--fo`, `--f`) is ambiguous and
+// git rejects it itself. The wall does not have to. This does not rest on
+// push's table being exactly as documented either: options can only ADD
+// ambiguity, never remove it, so ONE `--force-*` sibling suffices and
+// there are two.
+//
+// So the spelling set for `--force` closes at the long form and
+// `--force=value`, which is what renderFlagIn already emits. `--force=1`
+// is not a git spelling (`error: option 'force' takes no value`, measured
+// the same way): refusing it is the wall standing wider than the rule, not
+// a way through it. Do not build longArms for a denied flag until some
+// rule needs it, and not then without a per-option measurement.
+//
+// What is NOT closed is a spelling the RULE does not name — `git push -f`
+// (a separately registered short option, not a prefix of `--force`),
+// `--force-with-lease`, and a `+refspec` all force-push past this rule.
+// That is the rule's scope rather than the shim's fidelity, so matcherFor
+// may still claim it; L3 decides on effect and catches all three.
+// ranger-base-zs6b carries it.
 //
 // bd's parser abbreviates nothing — `bd list --js` answers `unknown flag:
 // --js` (**MEASURED**) — which is why the spelling set for `--full` closes
@@ -398,8 +435,10 @@ func flagInFunc(r shimRule, opt string) string {
 // separates it from git's parse-options, where a literal arm misses every
 // abbreviation on the way to the option (ranger-base-l1at). A rule naming a
 // flag on a parser that DOES abbreviate needs those arms here, the way
-// renderSpoiled gets them from longArms — see verbValueOpts for why this
-// one does not have them yet (ranger-base-0zln).
+// renderSpoiled gets them from longArms. The one git flag rule ADR 0001
+// ships needs none even so: git refuses every proper prefix of `--force` as
+// ambiguous itself, and `--force=1` as taking no value — **MEASURED**, see
+// verbValueOpts (ranger-base-0zln).
 //
 // The arms are baked in rather than passed in a variable, following
 // renderSpoiled: a glob pattern that reaches `case` through an expansion is
