@@ -295,9 +295,9 @@ func TestDialFWorkingHolderIsRefusedWhenSlotAlsoExists(t *testing.T) {
 
 // Display shows Dial F (not crew). A crew mark on the unused slot fallback
 // must not retarget `d`. crewHeld on the whole name list, before picking the
-// live holder, is the shape that would.
+// live holder, is the shape that did (rangerhq-2um2); the guards now ask
+// about the join's holder and the names ahead of it (namesThrough).
 func TestCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
-	t.Skip("rangerhq-2um2: crewHeld(names) refuses Dial F because the unused slot is crew")
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -318,6 +318,88 @@ func TestCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
 	}
 	if log := calls(t, fake); !strings.Contains(log, "agent prompt w2:p1") {
 		t.Errorf("the Dial F holder was not prompted:\n%s", log)
+	}
+}
+
+// The pass's copy of the same false refusal. rangerhq-2um2 names both paths:
+// fireLoop asked crewHeld about its whole `crewNames` list too, so a crew
+// mark on the unused slot skipped a bead whose live Dial F session was the
+// holder — the shield freezing the fleet on a session that is not the
+// operator's.
+func TestDispatchResumeCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.Resume = true
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	slot := SessionFor("ranger", repo)
+	dial := SessionForBead("ranger", repo, "a-1")
+	os.WriteFile(filepath.Join(fake, "agents.json"),
+		[]byte(`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"},`+
+			`{"agent":"claude","agent_status":"idle","pane_id":"w2:p1","workspace_id":"w2"}]`), 0o644)
+	mustCreate(t, b, NewSessionOpts{Name: slot, Dir: repo, Agent: "ranger", Crew: true})
+	mustCreate(t, b, NewSessionOpts{Name: dial, Dir: repo, Agent: "ranger"})
+	setWSStatus(t, fake, slot, "idle")
+	setWSStatus(t, fake, dial, "idle")
+	agentPerLaunch(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log := dispatcherOut(d), calls(t, fake)
+	if strings.Contains(out, "held by crew session") {
+		t.Errorf("the pass refused the Dial F holder because the unused slot %s is crew:\n%s", slot, out)
+	}
+	if n != 1 {
+		t.Errorf("want 1 resumed into the Dial F holder, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(log, "agent prompt w2:p1") {
+		t.Errorf("the Dial F holder %s was not re-prompted:\n%s\n%s", dial, out, log)
+	}
+	if strings.Contains(log, "agent prompt w1:p1") {
+		t.Errorf("the operator's crew slot was prompted:\n%s", log)
+	}
+}
+
+// The other arm of the same truncation, and the reason it keeps the names
+// AHEAD of the holder: the pass's join (heldSession) only adopts a name that
+// has an agent, so the operator's crew session with its agent gone is not
+// the holder — and a guard narrowed to the holder alone would stop seeing
+// it. ADR 0008 fails closed: a crew mark is the operator's whether or not
+// herdr can see an agent in the pane (ranger-base-adb7's shape, one agent
+// further out).
+func TestDispatchSkipsAgentlessCrewHolderUnderResume(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.Resume = true
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	// The operator's own session, holding the bead by the run record, with
+	// no agent herdr can see: `posse new ranger-staffing` and the agent quit.
+	crew := "ranger-staffing"
+	mustCreate(t, b, NewSessionOpts{Name: crew, Dir: repo, Agent: "ranger", Crew: true, Bead: "a-1"})
+	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
+	agentPerLaunch(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log := dispatcherOut(d), calls(t, fake)
+	want := "held by crew session " + crew + " (operator's) — skipped"
+	if n != 0 || !strings.Contains(out, want) {
+		t.Errorf("want %q and nothing dispatched, got n=%d:\n%s", want, n, out)
+	}
+	if strings.Contains(log, "workspace create --label "+SessionForBead("ranger", repo, "a-1")) {
+		t.Errorf("a fleet twin was born beside the operator's agentless session:\n%s", log)
+	}
+	if strings.Contains(bdCalls(t, fake), "--claim") {
+		t.Errorf("bead claimed behind the operator's back:\n%s", bdCalls(t, fake))
 	}
 }
 

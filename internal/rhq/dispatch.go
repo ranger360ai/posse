@@ -2037,28 +2037,33 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			crewNames = append(crewNames, slot)
 		}
 		crewNames = dedupeStrings(crewNames)
-		if held := d.crewHeld(crewNames...); held != "" {
-			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, held)
+		// The holder join (ADR 0004 §2): a bead this persona already holds is
+		// joined to its live session. Walked once — the skip below and the
+		// resume that overrides it are two answers about the SAME session,
+		// and deciding them from different names is what left `--resume`
+		// launching a twin beside an idle slot holder (rangerhq-v330).
+		//
+		// Walked HERE, above the two ownership guards, only so they can be
+		// asked about the session this pass will act on; nothing branches on
+		// it until below.
+		held := ""
+		if is.Status == "in_progress" && is.Assignee == persona {
+			held = d.heldSession(runHolder, session, slot)
+		}
+		guard := namesThrough(crewNames, held)
+		if h := d.crewHeld(guard...); h != "" {
+			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
 			continue
 		}
 		// Same names, same question, one rung lower: a workspace posse holds
 		// no meta for is not this persona's session and this pass does not
 		// launch into it or prompt it — including under --resume, which
 		// overrides the holder's idleness, never somebody else's ownership
-		// (rangerhq-ynx8). Before the holder join, so a foreign row is never
-		// the session `held` names.
-		if held := d.foreignHeld(crewNames...); held != "" {
-			d.printf("– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(held), foreignFreeLine(held))
+		// (rangerhq-ynx8). A foreign row the join DID pick as holder is
+		// caught here, so it is never the session this pass fires into.
+		if h := d.foreignHeld(guard...); h != "" {
+			d.printf("– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(h), foreignFreeLine(h))
 			continue
-		}
-		// The holder join (ADR 0004 §2): a bead this persona already holds is
-		// joined to its live session. Walked once — the skip below and the
-		// resume that overrides it are two answers about the SAME session,
-		// and deciding them from different names is what left `--resume`
-		// launching a twin beside an idle slot holder (rangerhq-v330).
-		held := ""
-		if is.Status == "in_progress" && is.Assignee == persona {
-			held = d.heldSession(runHolder, session, slot)
 		}
 		// An in_progress bead whose own session (or the pre-Dial-F persona
 		// session) is alive with an agent that has settled: the persona
@@ -2882,6 +2887,35 @@ func (d *Dispatcher) strand(session string) {
 	d.stranded[session] = true
 }
 
+// namesThrough truncates a launcher's join list at the name the join picked
+// as holder, for the ownership guards below to ask about.
+//
+// crewHeld and foreignHeld answer one question — is this session somebody
+// else's? — about the session the launcher is going to act on. The join
+// carries FALLBACK names behind the holder (ADR 0004 §2: the run record,
+// then the bead's Dial F name, then the pre-Dial-F slot), and a name behind
+// the holder is one the row never displayed and this launch will never
+// touch. Asking the guards about it froze `d` on a live Dial F holder
+// whenever the operator's unused slot happened to be crew — a false
+// refusal, not a double launch (rangerhq-2um2).
+//
+// Names AHEAD of the holder stay in the list. A session the join skipped for
+// want of an agent is still one this launcher may create or relaunch into,
+// and a crew mark on it is still the operator's (ranger-base-adb7) — as is
+// the whole list when the join found no holder at all, because then the
+// launcher creates the head name itself.
+func namesThrough(names []string, holder string) []string {
+	if holder == "" {
+		return names
+	}
+	for i, n := range names {
+		if n == holder {
+			return names[:i+1]
+		}
+	}
+	return names
+}
+
 // crewHeld returns the first of these session names that is a live crew
 // session — the operator's own conversation (ADR 0008) — or "".
 func (d *Dispatcher) crewHeld(names ...string) string {
@@ -3210,34 +3244,42 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		names = append(names, SessionFor(persona, is.Dir))
 	}
 	names = dedupeStrings(names)
-	// ADR 0008: the operator's own conversation is not the fleet's to prompt,
-	// and --resume does not override it — the same line Run prints.
-	if held := d.crewHeld(names...); held != "" {
-		return "", Die("%s is held by crew session %s (operator's) — not dispatched", is.ID, held)
-	}
-	// And the row with no meta at all, which is the same refusal with the
-	// crew mark missing rather than false (rangerhq-ynx8). Beside the crew
-	// check because it answers the same question — is this name somebody
-	// else's? — and must answer it before the holder loop below adopts the
-	// row as the bead's holder.
-	if held := d.foreignHeld(names...); held != "" {
-		return "", Die("%s %s — not dispatched; %s", is.ID, foreignHoldLine(held), foreignFreeLine(held))
-	}
-	session = names[0]
-	status := ""
+	// Whichever name is live is the holder — the session the IN PROGRESS row
+	// displayed. Picked BEFORE the ownership guards so they can ask about
+	// the session `d` will act on rather than about every fallback name
+	// behind it (namesThrough, rangerhq-2um2).
+	holder, status := "", ""
 	for _, name := range names {
 		s, err := d.HB.Resolve(name)
 		if err != nil {
 			continue
 		}
-		// Whichever name is live is the holder: guard it, then launch into
-		// it (a session with no agent is relaunched in place by
-		// launchSession — "re-prompt the holder, or launch it if gone").
-		session, status = name, s.Status
+		holder, status = name, s.Status
+		break
+	}
+	guard := namesThrough(names, holder)
+	// ADR 0008: the operator's own conversation is not the fleet's to prompt,
+	// and --resume does not override it — the same line Run prints.
+	if held := d.crewHeld(guard...); held != "" {
+		return "", Die("%s is held by crew session %s (operator's) — not dispatched", is.ID, held)
+	}
+	// And the row with no meta at all, which is the same refusal with the
+	// crew mark missing rather than false (rangerhq-ynx8). Beside the crew
+	// check because it answers the same question — is this name somebody
+	// else's? — and must answer it before the launch adopts the row as the
+	// bead's holder.
+	if held := d.foreignHeld(guard...); held != "" {
+		return "", Die("%s %s — not dispatched; %s", is.ID, foreignHoldLine(held), foreignFreeLine(held))
+	}
+	session = names[0]
+	if holder != "" {
+		// Launch into the holder (a session with no agent is relaunched in
+		// place by launchSession — "re-prompt the holder, or launch it if
+		// gone").
+		session = holder
 		if status == "working" || status == "blocked" {
 			return "", Die("%s is %s — not dispatched", session, status)
 		}
-		break
 	}
 	ag, _ := d.App.LoadAgent(persona)
 	tier, tierWhy := d.App.BeadTier(d.Tier, is.BdIssue, ag)
