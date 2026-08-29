@@ -110,17 +110,39 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: scripts/tap-formula.sh --version "$TAG" --checksums dist/checksums.txt --out dist/posse.rb
 
+      # The notes OPEN with the CHANGELOG section for this version and the
+      # generated commit list follows (ranger-base-5356): gh's own help says
+      # "Additional release notes can be prepended to automatically generated
+      # notes", and --notes-file sets the same body --notes does. That
+      # combination is GitHub state and is never exercised on a developer
+      # machine, so it is READ, not run — docs/runbooks/release.md Step 1 has
+      # the operator check the draft's body before Publish, which is where a
+      # gh that ever stopped prepending would be caught.
+      #
+      # release-notes.sh is called WITHOUT --require here, deliberately. By this
+      # step the tag is pushed and the number is spent; a missing CHANGELOG
+      # section must degrade to the generated notes, never kill the release.
+      # The strict arm is `make release-notes VERSION=vX.Y.Z`, before the tag.
       - name: draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
           SHA: ${{ steps.tag.outputs.sha }}
+          NOTES: ${{ runner.temp }}/release-notes.md
+        # Arrays are bash, like the tag guard above; stated so the flag cannot
+        # be quietly dropped by a shell that splits "${args[@]}" differently.
+        shell: bash
         run: |
-          gh release create "$TAG" \
-            --draft \
-            --title "posse $TAG" \
-            --generate-notes \
-            --target "$SHA" \
+          scripts/release-notes.sh --version "$TAG" >"$NOTES"
+          args=(--draft --title "posse $TAG" --generate-notes --target "$SHA")
+          if [ -s "$NOTES" ]; then
+            args+=(--notes-file "$NOTES")
+            echo "release: notes will open with the CHANGELOG section for $TAG:"
+            sed -n '1,40p' "$NOTES"
+          else
+            echo "release: no CHANGELOG section for $TAG — the notes are the generated commit list only" >&2
+          fi
+          gh release create "$TAG" "${args[@]}" \
             dist/posse_*.tar.gz dist/checksums.txt dist/posse.rb
 
       - name: what happens next

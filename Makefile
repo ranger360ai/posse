@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -82,6 +82,16 @@ tap-formula: release-artifacts
 	scripts/tap-formula.sh --version '$(VERSION)' --checksums dist/checksums.txt --out dist/posse.rb
 	@echo "--- dist/posse.rb (copy into ranger360ai/homebrew-tap as Formula/posse.rb) ---"
 	@cat dist/posse.rb
+
+# What the release's notes will OPEN with: the CHANGELOG section for VERSION,
+# printed while the version number is still free (ranger-base-5356). `--require`
+# fails when that version has no section of its own, so the outstanding rename of
+# `## Unreleased` is a precondition of the tag rather than something noticed in a
+# published release. The workflow's own call is deliberately LENIENT — after the
+# tag is pushed a number cannot be reused, so nothing there may burn one.
+release-notes:
+	@[ -n "$(VERSION)" ] || { echo "make release-notes: VERSION=vX.Y.Z (HEAD carries no exact tag)" >&2; exit 2; }
+	scripts/release-notes.sh --version '$(VERSION)' --require
 
 # Unit tests are hermetic: the test binary re-execs as a fake herdr.
 # The silent-revert audit runs here (0.2s) because rangerhq-8rtf is precisely

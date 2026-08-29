@@ -5,9 +5,10 @@ and the Homebrew formula that `brew install ranger360ai/tap/posse` resolves.
 Deployers do not need this file — they need `INSTALL.md`. This is the other
 side of INSTALL.md step 2.
 
-Five things in this repo point here (`Makefile`, `INSTALL.md` §15,
-`scripts/tap-formula.sh`, and `.github/workflows/release.yml` twice), because
-the machinery deliberately stops short of publishing anything.
+Six files in this repo point here (`Makefile`, `INSTALL.md` §15,
+`CHANGELOG.md`, `scripts/tap-formula.sh`, `scripts/release-notes.sh`, and
+`.github/workflows/release.yml`), because the machinery deliberately stops
+short of publishing anything.
 
 **What is automated:** pushing a `vX.Y.Z` tag fires
 `.github/workflows/release.yml`, which vets, runs `make test`, builds the four
@@ -130,6 +131,29 @@ either; `-` (the default) writes to stdout and touches no file. That flag sits
 one argument away from a `--checksums` path in the line above, which is the
 typo it refuses.
 
+**6. The CHANGELOG has a section for the version being cut.**
+
+```sh
+$ make release-notes VERSION=vX.Y.Z
+```
+**Verify:** exit 0, and what it prints is what you want a stranger reading the
+release page to see first. That text is prepended to the release's notes, above
+the generated commit list, by the `draft the release` step.
+
+`--require` is what this target adds over the workflow's own call: it FAILS when
+`vX.Y.Z` has no section of its own, which is how the outstanding rename of
+`## Unreleased` gets caught while the version number is still free. The
+workflow is deliberately lenient — by the time it runs, the tag is pushed and
+the number is spent, so a missing section degrades to the generated commit list
+rather than burning a release.
+
+**A security fix is disclosed here and nowhere else.** Findings about software
+others might run are held privately until the fix lands, then disclosed
+(NOTES.md, *Privacy model*); the CHANGELOG entry is that disclosure, so it
+names the flaw, the affected versions, the fixed version, and what a deployer
+should do — and it stays inside the software's own posture. Nothing about how
+THIS instance is configured belongs in it.
+
 ---
 
 ## Step 0 — push the tag
@@ -163,6 +187,14 @@ checksums.txt                      posse.rb
 
 Nothing is downloadable until you publish — and the formula's URLs 404 until
 you do, which makes step 3 fail in a way that looks like a bad formula.
+
+**Read the notes body before you press Publish.** It must OPEN with the
+CHANGELOG section for this version — the same text `make release-notes` printed
+in precondition 6 — with GitHub's generated commit list underneath. If the
+section is missing, the workflow said so in its own log (`no CHANGELOG section
+for vX.Y.Z`), and the notes are editable right here: paste it in. This is the
+check that catches a `gh` that ever stops prepending `--notes-file` to
+`--generate-notes`, which is not something a developer machine can test.
 
 ## Step 2 — create the tap *(operator, once ever)*
 
@@ -261,6 +293,12 @@ Stated plainly, so nobody mistakes this runbook for a guarantee:
   `permissions: contents: write` covers it, `gh` is preinstalled on
   `ubuntu-latest`, and `--generate-notes` works with no prior release — read,
   not run.
+- **`--notes-file` prepending to `--generate-notes`** is the same class. gh's
+  own help states it ("Additional release notes can be prepended to
+  automatically generated notes"), and `scripts/release-notes.sh` — the half
+  that picks the text — is covered by the Go suite and runnable by hand. What
+  is unproven here is only that gh puts the file above the generated list. Step
+  1 reads the draft's body, which is where that would show.
 - **linux/amd64 unless explicitly requested.** On an Apple-silicon machine,
   plain `make test-linux` runs linux/arm64 while GitHub's `ubuntu-latest` is
   amd64. Run `PLATFORM=linux/amd64 make test-linux` to cover the CI architecture
