@@ -732,6 +732,18 @@ tiers, and `posse agent check` warns. And at `container` a denied subtree
 the cage cannot otherwise write is not mounted at all: that is a stronger
 wall than `:ro`, not a missing one.
 
+**Three of the shipped skeletons already carry it**, one of each shape, so
+you can copy rather than invent. `architect` is the allow-list — `deny:
+Edit, Write` plus `writable: [docs/adr]`: it writes ADRs and nothing else
+in the repo. `developer` and `qa` are the deny-list — `Edit(docs/adr/**)`
+/ `Write(docs/adr/**)`: the repo is theirs except the ADR that constrains
+them. All three declare `cage: seatbelt`, and that is not decoration — at
+`shims` the rule is unrealized and `posse dispatch` refuses the launch.
+QA takes the developer's shape rather than the reviewer's on purpose:
+`harden-suite` commits tests, so a bare `Edit`/`Write` wall would be the
+wrong shape. `reviewer` and `security` keep that bare wall and get nothing
+path-scoped — they are already stricter.
+
 ---
 
 ## 8. A launch profile of your own

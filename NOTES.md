@@ -2790,11 +2790,31 @@ Three different things get called "permissions"; keep them apart
   after the cwd allow (last match wins, measured 2026-08-25) and, at
   container, a `:ro` overlay of that directory — never by a hook.
   `writable:` is the allow-list dual at both L2 and L4. The matrix and
-  renderers land with that ADR's implementation beads; until they do, a
-  parametrized rule still hits parity's default arm. Verified on this host:
+  both renderers are in, and so are the example PIDs that use them
+  (ranger-base-ccd): **architect** is the allow-list — `deny: Edit, Write`
+  plus `writable: [docs/adr]`, so the repo is unwritable except the one
+  directory it writes; **developer** and **qa** are the deny-list —
+  `Edit(docs/adr/**)` / `Write(docs/adr/**)`, so the repo is writable
+  except the ADRs that constrain them. QA takes the developer's shape and
+  not the reviewer's because `harden-suite` commits tests: it is
+  mixed-intent, so it is not the verifier shape. All three declare `cage:
+  seatbelt`, which is the whole point of the key — at `shims` a
+  path-scoped write is not a tool-name deny, `posse gates` prints `✗ needs
+  cage: seatbelt (or container)`, and the launch refuses (dispatch never
+  passes `--allow-degraded`). Reviewer and security keep the bare
+  `Edit`/`Write` wall; nothing path-scoped goes on them, they are already
+  stricter. Verified on this host:
   `touch` in the repo → Operation not permitted, `ORDERS.md` append and
-  `.beads/` writes succeed, claude/codex/grok all start under it. **Codex cannot be wrapped**: it
-  sandboxes its own child commands with `sandbox-exec`, and macOS refuses
+  `.beads/` writes succeed, claude/codex/grok all start under it. Measured
+  on this host 2026-08-29 over the rendered profiles, each arm with the
+  control that must NOT match: under developer's, `touch docs/adr/x`,
+  `sed -i` on an ADR and a `python` `open().write` there all fail while `touch
+  internal/x` **and `touch docs/x`** succeed — the sibling is what shows
+  the deny is the subtree and not the parent; under architect's, `touch
+  docs/adr/x` and `sed -i` on an ADR succeed while `touch internal/x` and
+  `touch docs/x` fail, and `.beads/` stays writable so claim/comment/close
+  survive the wall. **Codex cannot be wrapped**: it sandboxes its own
+  child commands with `sandbox-exec`, and macOS refuses
   to nest (`sandbox_apply: Operation not permitted`) — the parity check
   reports `cage: seatbelt` on codex as incompatible (use `shims`; codex's
   read-only is OS-enforced there); the launcher never wraps a

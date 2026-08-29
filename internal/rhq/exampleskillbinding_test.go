@@ -68,9 +68,12 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		// then 4 → 27 when ADR 0015 §3's amendment added bd's 23
 		// destructive/egress verbs (ranger-base-u9ud), then 27 → 28 when the
 		// commit wall's L1 half reached the seed (`Bash(git commit unless --)`,
-		// ranger-base-09b7); what is pinned is that every list survives the key
-		// beside it, not the numbers themselves.
-		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 28 {
+		// ranger-base-09b7), then 28 → 30 when ADR 0014's file-write wall
+		// reached the seed (architect's bare `Edit`/`Write`, developer's
+		// `Edit(docs/adr/**)`/`Write(docs/adr/**)`, ranger-base-ccd); what is
+		// pinned is that every list survives the key beside it, not the
+		// numbers themselves.
+		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 30 {
 			t.Errorf("%s frontmatter around skills:: intents %v metrics %v deny %v", name, ag.Intents, ag.Metrics, ag.Deny)
 		}
 	}
@@ -82,17 +85,39 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 
 	ag, _ := a.LoadAgent("architect")
 	const claim = "skills: distributed-systems"
-	for _, name := range []string{"claude", "codex", "grok"} {
-		rt, err := a.LoadRuntime(name)
+	// ADR 0014 (ranger-base-ccd) gave the shelf PIDs a file-write wall, and a
+	// wall is a per-runtime fact. Every runtime is checked at the PID's OWN
+	// cage, which is what a launch does: claude and grok realize every gate
+	// at `seatbelt`, and codex realizes none of it because macOS will not
+	// nest its child sandbox inside ours. That is ADR 0014's own conclusion
+	// ("codex is the worst runtime for this feature"), it is pinned where the
+	// wall lives (pathscopedseed_qa_test.go), and here the one expected row is
+	// NAMED rather than tolerated — a second degradation, or a different one,
+	// still reds this test. The skill claim is asserted on all three either
+	// way, which is what this file is about.
+	seatbeltForTest(t)
+	for _, tc := range []struct {
+		name string
+		want string // the one degraded row, "" for none
+	}{
+		{"claude", ""},
+		{"grok", ""},
+		{"codex", "does not nest"},
+	} {
+		rt, err := a.LoadRuntime(tc.name)
 		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+			t.Fatalf("%s: %v", tc.name, err)
 		}
-		p := a.CheckParity(ag, rt, CageShims, ag.Tier)
-		if len(p.Degraded) != 0 {
-			t.Errorf("%s: degraded on the shipped example: %v", name, p.Degraded)
+		cage := ResolveCage("", ag)
+		p := a.CheckParity(ag, rt, cage, ag.Tier)
+		switch {
+		case tc.want == "" && len(p.Degraded) != 0:
+			t.Errorf("%s @ %s: degraded on the shipped example: %v", tc.name, cage, p.Degraded)
+		case tc.want != "" && (len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], tc.want)):
+			t.Errorf("%s @ %s: want exactly one degraded row containing %q, got %v", tc.name, cage, tc.want, p.Degraded)
 		}
 		if p.Realized[claim] == "" {
-			t.Errorf("%s: %q not realized: %+v", name, claim, p.Realized)
+			t.Errorf("%s: %q not realized: %+v", tc.name, claim, p.Realized)
 		}
 	}
 
@@ -104,7 +129,11 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}
-		mustCreate(t, b, NewSessionOpts{Name: "arch-" + name, Agent: "architect", Runtime: name, Dir: dir})
+		// codex launches --allow-degraded for the reason above: this test is
+		// about the skill surface, and codex has no tier at which the shelf
+		// architect's write wall is clean.
+		mustCreate(t, b, NewSessionOpts{Name: "arch-" + name, Agent: "architect", Runtime: name, Dir: dir,
+			AllowDegraded: name == "codex"})
 		if name == "claude" {
 			if log := callsSourced(t, fake); !strings.Contains(log, "--plugin-dir '"+tree+"'") {
 				t.Errorf("claude must launch pointed at the tree:\n%s", log)

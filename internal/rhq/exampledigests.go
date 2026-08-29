@@ -60,6 +60,7 @@ var shippedExampleDigests = map[string][]string{
 		"dd66d0842310140ad27835b837ab4dd20bee835be6093ec72843da04bef99d0e", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"b4144f893833d1fb2553308b6238f3472f2ef0278252f0692a78bcf3fbfd5e39", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
 		"b0f690a30d5c5b781899e9f27c79aa6832ad83b3afe308ce6f6bd42f00f0aa95", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
+		"00a402f48c63cd2ca274187bea2e888990434b9d59dea480f3183efe6a803b43", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write + writable: [docs/adr], cage: seatbelt (ADR 0014 §1)
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -77,6 +78,7 @@ var shippedExampleDigests = map[string][]string{
 		"f25b7c0d58c339fb325066e77dbda50ed2cf3f05db749d2653be3b2d06b1abcb", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"bf7025530a59a0fbc99f461374c3f70efb014cd47766a09d7a22d6daefc409b8", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
 		"7ccf32359553066004eeeae23167d1318551e74b56353130f4b22d03f21ca328", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
+		"cbb8fb9bde58876066e14ce25d5f91db03f701df7c129fb0032758fae7489e26", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write(docs/adr/**), cage: seatbelt (ADR 0014 §1)
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76
@@ -106,6 +108,7 @@ var shippedExampleDigests = map[string][]string{
 		"b79572a439fd2bf84df9ac64db045be51d5dd5c3cda879ace11d3575fe03bd1c", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"d22b750b79561763a14a25def379eecb22236abbfff41b99b1ff3fdd5bfe850f", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
 		"fa648aec120575968b94821fb944ab6478bdcdb423f1bd60702e2f42bc58defb", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
+		"05d05ec74110283e95ce149ca0164e36ded4f38d2dc9048c675557d32d26eeae", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write(docs/adr/**), cage: seatbelt (ADR 0014 §1)
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay

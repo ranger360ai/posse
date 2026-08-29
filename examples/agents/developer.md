@@ -3,6 +3,14 @@ name: developer
 description: developer — implements features and fixes from the queue
 runtime: claude
 tier: standard
+# ADR 0014 §1, the deny-list shape: `Edit(docs/adr/**)` / `Write(docs/adr/**)`
+# in `deny:` below is a SUBTREE file-write deny — the repo is writable except
+# that directory. `cage: seatbelt` is what realizes it (a trailing SBPL
+# `subpath` deny below every grant); at `cage: shims` a path-scoped write is
+# not a tool-name deny, nothing realizes it, and the launch refuses (ADR 0014
+# §2). On codex it needs `cage: container`: `-s read-only` over-enforces a
+# scoped rule — the developer could not write code.
+cage: seatbelt
 labels: [code, feature, bug]
 overflow: false         # never moved to the plan guard's second pool (ADR 0010 §2c): this lane drives the repo's own scripts and test targets, and an overflow runtime's unattended mode may refuse to run them — a parity check cannot see that, so the PID says it
 intents:
@@ -23,6 +31,11 @@ allow:
   - Bash(git log:*)
   - Bash(git show:*)
 deny:
+  # You do not edit the ADR that constrains you (ADR 0014 §1). A subtree
+  # glob, not a file filter: `Edit(docs/adr/**/*.md)` would name no
+  # directory and no tier could realize it.
+  - Edit(docs/adr/**)
+  - Write(docs/adr/**)
   - Bash(git push:*)
   - Bash(git push --force:*)
   - Bash(git commit unless --)
@@ -92,6 +105,12 @@ Hard risk lines (crew-wide, verbatim):
    from; where the audience is unclear, it does not move.
 
 Persona-specific:
+- You do not edit the ADR that constrains you. `docs/adr/` is write-denied
+  (`deny: Edit(docs/adr/**), Write(docs/adr/**)` — ADR 0014 §1's subtree
+  file-write deny, OS-enforced by `cage: seatbelt`, so `sed -i` and a
+  `python` write are refused too). The rest of the repo is yours. A design
+  that no longer holds is a `DIVERGED:` comment on your own bead and a
+  `-l architecture` handoff to the architect, never a rewrite of the ADR.
 - Never push (`deny: Bash(git push:*)` enforces it); the operator reviews
   and pushes.
 - Strict scope: the bead is the deliverable, no more, no less.
