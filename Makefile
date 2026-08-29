@@ -99,8 +99,39 @@ release-notes:
 # also re-skipped its regression pin. A script that has to be REMEMBERED is
 # the same objection rangerhq-2f5r raised about the private-index discipline,
 # so it gets a trigger rather than a runbook entry.
+#
+# `-timeout 25m` IS LOAD-BEARING (ranger-base-2ggb, and gilfoyle's
+# ranger-base-2ad3/7xla on the same invariant). go test's default is 10m PER
+# PACKAGE and internal/rhq spends most of it. Darwin, three sessions, one day
+# (2026-08-29): STANDALONE 484.6s / 509.6s / 510.0s / 549.3s / 623.2s; under
+# `go test ./...` 491.7s and 537.1s green, then 600.8s / 601.0s / 601.1s —
+# which is not an assertion, it is the ceiling arriving as a timeout panic.
+# `./...` runs the three packages CONCURRENTLY and starves the long one, so
+# the concurrent column is the one that decides the colour, and the worst
+# standalone reading is already past the default on its own.
+#
+# The red it throws names NO TEST through the house filter (`go test ./... |
+# grep -E '^(---|ok|FAIL)'` prints a bare `FAIL ... 601.010s`) and unfiltered
+# it is a goroutine dump, which reads as a hang in product code. It has
+# already cost cycles. The flag does not pretend the package got faster; it
+# stops a busy machine from being reported as a broken change.
+#
+# 25m and not 20m because `make test-linux` runs this same target and
+# `PLATFORM=linux/amd64` — emulated on an arm mac — is over 600s every time
+# (native linux/arm64 is 112.3s, nowhere near). 25m clears the worst darwin
+# reading by 2.4x and leaves the emulated rehearsal room. The cost is that a
+# genuine deadlock takes 25m to surface; a hang needing a faster answer is one
+# worth a `-timeout` on the command line.
+#
+# There is no long pole to cut instead — 1442 tests, none over 10.3s, the top
+# ten only 14% of the run; docs/notes.d/ranger-base-2ggb.md has the
+# distribution and the one structural lever (t.Parallel, blocked by t.Setenv).
+#
+# So `make test` is the suite command, not a convenience wrapper: a bare
+# `go test ./...` still carries the 10m default and is still a coin flip on a
+# loaded box. suitetimeout_qa_test.go pins the flag and the floor.
 test:
-	$(GOBIN) test ./...
+	$(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
 vet:

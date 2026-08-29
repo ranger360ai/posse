@@ -2,9 +2,15 @@
 
 Contributions are welcome — bug reports, fixes, and harness improvements
 alike. Build and test locally before opening a pull request
-(`go build ./... && go vet ./... && go test ./...`), keep changes
+(`go build ./... && go vet ./... && make test`), keep changes
 self-contained, and read the section below: it is the bar every
 contribution is held to.
+
+Run the suite through `make test`, not a bare `go test ./...`. The target
+adds `-timeout 25m`, and it is load-bearing: `internal/rhq` is a long serial
+package that has been measured at and past `go test`'s default 10m per-package
+ceiling, so on a busy machine the bare command times out and reports a panic
+that names no test — a red belonging to the box, wearing your diff's clothes.
 
 If you develop on macOS, run `make test-linux` too. It runs the same
 `go vet ./... && make test` inside a throwaway Linux container (docker

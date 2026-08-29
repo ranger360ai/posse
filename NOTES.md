@@ -4923,6 +4923,27 @@ and the deletion rule needs the path's add inside the scanned range, so a short
 
 ## Testing
 
+**The suite command is `make test`, not a bare `go test ./...`**
+(ranger-base-2ggb, with gilfoyle's ranger-base-2ad3 and 7xla on the same
+invariant). The target adds `-timeout 25m` and the flag is load-bearing: go's
+default is 10m PER PACKAGE, and `internal/rhq` has been measured on darwin
+between 484.6s and 623.2s standalone — the worst reading already past the
+default — and at 600.8s / 601.0s / 601.1s under `./...`, which is not an
+assertion but the ceiling arriving as a timeout panic, because `./...` runs
+the three packages concurrently and starves the long one. That red belongs to
+the box, lands on whoever ran the suite to verify an unrelated diff, and names
+NO TEST through the house filter (`| grep -E '^(---|ok|FAIL)'` prints a bare
+`FAIL … 601.010s`). There is no long pole to cut instead — 1442 tests, none
+over 10.3s, the top ten only 14% of the run — and the one structural lever
+(`t.Parallel`; the package is a single serial stream at two-thirds of one
+core) is blocked by 55 test files calling `t.Setenv`/`t.Chdir`. 25m rather
+than 20m because `make test-linux` runs this same target and its
+`PLATFORM=linux/amd64` arm — emulated — is over 600s every time, while native
+linux/arm64 is 112.3s and nowhere near. `suitetimeout_qa_test.go` keeps the
+flag on, keeps its value above the measurement, and sweeps for new entry
+points that route around the target. Numbers and the distribution:
+`docs/notes.d/ranger-base-2ggb.md`.
+
 `go test ./...` (also `make test`) is hermetic: the test binary re-execs as
 a fake `herdr` when `RHQ_FAKE_HERDR=1` (state under `RHQ_FAKE_DIR`), so no
 real herdr server is involved. `RHQ_HERDR_BIN` / `RHQ_BD_BIN` point the
