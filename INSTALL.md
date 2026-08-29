@@ -122,7 +122,7 @@ $ brew tap ranger360ai/tap                       # clone the tap
 $ brew trust --formula ranger360ai/tap/posse     # read the next paragraph before running this
 $ brew install ranger360ai/tap/posse             # a release binary, no Go needed
 ```
-**Verify:** `posse version` prints `0.3.0+<sha>`, where the sha is the
+**Verify:** `posse version` prints `0.4.0+<sha>`, where the sha is the
 commit the release was cut from, and `which posse` answers
 `/opt/homebrew/bin/posse` (`/home/linuxbrew/.linuxbrew/bin/posse` on Linux).
 
@@ -248,7 +248,7 @@ never touches the live binary.
 ```sh
 $ ./bin/posse-go version
 ```
-**Verify:** `0.3.0+<sha>` (a `-dirty` suffix just means the tree has
+**Verify:** `0.4.0+<sha>` (a `-dirty` suffix just means the tree has
 uncommitted edits; on a fresh clone it will not).
 
 ---
@@ -311,11 +311,11 @@ shell profile, not just this shell.
 
 That build carries the seed tree (`examples/`) embedded, so `posse init`
 works with no repo beside it. `@latest` installs the newest release tag —
-currently `v0.3.0`, which trails `main`.
+currently `v0.4.0`, which trails `main`.
 
-**Verify:** `posse version` prints `0.3.0` — the tag, with no `+<sha>`,
+**Verify:** `posse version` prints `0.4.0` — the tag, with no `+<sha>`,
 which is how a release install reads. Installed off a later commit
-(`@main`, or once the tag moves) it prints `0.3.0+<sha>` instead, naming
+(`@main`, or once the tag moves) it prints `0.4.0+<sha>` instead, naming
 that commit out of the binary's own build info (ranger-base-bzu).
 
 It is not the promotion path a fleet should use: the tag lags, and the fleet

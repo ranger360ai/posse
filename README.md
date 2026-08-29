@@ -84,13 +84,13 @@ Skip that second line and the very next command is `zsh: command not found:
 posse`, with the install itself having exited 0. Put it in your shell's rc
 file, not just the current shell. That binary carries the seed tree embedded,
 so `posse init` needs no repo beside it. `@latest` resolves to the newest
-release tag — currently `v0.3.0` — which trails `main`, so what installs is
+release tag — currently `v0.4.0` — which trails `main`, so what installs is
 the tag, not the tree whose README you are reading. That build says so:
-`posse version` prints `0.3.0`, the tag it came from, where a build of a
-later commit prints `0.3.0+<sha>`. `make install` stays the path for a
+`posse version` prints `0.4.0`, the tag it came from, where a build of a
+later commit prints `0.4.0+<sha>`. `make install` stays the path for a
 fleet, because a fleet wants the exact commit.
 
-`posse version` prints `0.3.0+<sha>[-dirty]` for a build made here, and the
+`posse version` prints `0.4.0+<sha>[-dirty]` for a build made here, and the
 cockpit header shows the same, so "which build is live" is one glance. The
 sha comes from the Makefile's `-ldflags` stamp, or, for a build made any
 other way, from the binary's own build info (ranger-base-bzu). `make
