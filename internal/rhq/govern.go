@@ -379,15 +379,36 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// read as "no loop": that inference is what kill-and-replaces a live
 	// loop, and here it would raise a false alarm on the one row whose
 	// whole job is to be believed.
+	//
+	// "Armed" is the HOOK's reading, not "the key is there". A bare
+	// `autostart_interval:` is a broken arm: plugin/autostart.sh refuses it
+	// by name and exits 1 rather than arming anything (ranger-base-cxyk),
+	// and CfgGet cleans the line the same way its cfg() does, so the two
+	// agree about the three shapes that read empty (bare, whitespace-only,
+	// value commented out). Gating on presence alone made this row say
+	// "autostart is armed" about a config nothing will ever arm from and
+	// point the operator at a dead loop instead of at the empty key in
+	// their file — the same false diagnostic, on the one row whose whole
+	// job is to be believed (ranger-base-i6h).
 	if yamlHasKey(in.App.ConfigPath, "autostart_interval") {
-		running, err := WatchLoopRunning(in.App)
-		switch {
-		case err != nil:
-			failed = append(failed, fmt.Errorf("watch-loop lock: %w — G7 unknown", err))
-		case !running:
-			add("G7", GovUrgent, "loop-dead",
-				fmt.Sprintf("autostart is armed and no watch loop holds %s — nothing is being delivered",
-					AbbrevHome(WatchLockPath(in.App))))
+		if in.App.CfgGet("autostart_interval", "") == "" {
+			// Still G7, and still URGENT: the table is closed at nine, the
+			// fact is the same one (nothing is delivering, and nothing
+			// will at the next herdr start), and only the cause differs —
+			// so it differs by KEY, which is what the fingerprint moves on.
+			add("G7", GovUrgent, "arm-broken",
+				fmt.Sprintf("autostart_interval: in %s is present but empty — the herdr startup hook refuses it and arms nothing; give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm",
+					AbbrevHome(in.App.ConfigPath)))
+		} else {
+			running, err := WatchLoopRunning(in.App)
+			switch {
+			case err != nil:
+				failed = append(failed, fmt.Errorf("watch-loop lock: %w — G7 unknown", err))
+			case !running:
+				add("G7", GovUrgent, "loop-dead",
+					fmt.Sprintf("autostart is armed and no watch loop holds %s — nothing is being delivered",
+						AbbrevHome(WatchLockPath(in.App))))
+			}
 		}
 	}
 

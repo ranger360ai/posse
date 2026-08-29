@@ -506,6 +506,55 @@ func TestGovG7DisarmedAutostartIsNotACondition(t *testing.T) {
 	}
 }
 
+// A bare `autostart_interval:` is a BROKEN arm, not an armed one: the hook
+// refuses it and arms nothing (ranger-base-cxyk), so the row must name the
+// empty key rather than report a dead loop under a config that will never
+// start one. Gating G7 on presence alone said "autostart is armed" about
+// exactly that config (ranger-base-i6h). Three subtests for the shapes the
+// hook's cfg() and CfgGet both read as empty.
+func TestGovG7BareIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
+	for name, line := range map[string]string{
+		"bare":       "autostart_interval:\n",
+		"whitespace": "autostart_interval:   \n",
+		"comment":    "autostart_interval: # 5m\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			appendConfig(t, b.App, line)
+			g := find(shopSet(t, govIn(t, b)), "G7")
+			if g == nil {
+				t.Fatal("a broken arm delivers nothing — G7 must still fire")
+			}
+			if g.Key != "arm-broken" || g.Class != GovUrgent {
+				t.Errorf("G7 = %+v, want arm-broken URGENT", *g)
+			}
+			if strings.Contains(g.Detail, "is armed") {
+				t.Errorf("a refused key is not armed: %q", g.Detail)
+			}
+			if !strings.Contains(g.Detail, "autostart_interval:") ||
+				!strings.Contains(g.Detail, b.App.ConfigPath) ||
+				!strings.Contains(g.Detail, "present but empty") {
+				t.Errorf("the row must name the key and the file it is in: %q", g.Detail)
+			}
+		})
+	}
+}
+
+// And the broken arm does not depend on the lock: a live loop clears
+// loop-dead, never arm-broken — the next herdr start still refuses the key.
+func TestGovG7BrokenArmSurvivesALiveLoop(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval:\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	if g := find(shopSet(t, govIn(t, b)), "G7"); g == nil || g.Key != "arm-broken" {
+		t.Errorf("G7 = %+v, want arm-broken even with a loop up", g)
+	}
+}
+
 // And a loop that IS running clears it — the same lock a second --watch
 // refuses on.
 func TestGovG7LiveLoopClearsIt(t *testing.T) {

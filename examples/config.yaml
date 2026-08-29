@@ -552,7 +552,9 @@ default_emoji: ⚙️
 # rather than by setting some off-value. There is no off-value, and a bare
 # `autostart_interval:` with nothing after it is not one: it is a broken arm,
 # and the hook refuses it by name and exits nonzero rather than reading it as
-# a disarm. Nothing else in this file starts a process on its own.
+# a disarm. `posse status` reads it the same way and says so as G7
+# (`arm-broken`), so the two surfaces never disagree about whether you are
+# armed. Nothing else in this file starts a process on its own.
 #
 # Arm it last, and in this order: a dry-run pass, then a hand-run pass, then
 # `autostart_dry_run: true` for a cycle, then live. The plan guard or the

@@ -1700,8 +1700,22 @@ func (c *cockpit) govSegment() string {
 		return "gov …"
 	}
 	seg := "gov " + rhq.GovSummary(c.gov)
-	if c.gov.Has("G7") {
-		seg += " · loop dead"
+	for _, g := range c.gov {
+		if g.ID != "G7" {
+			continue
+		}
+		// One row, two causes: a loop that died, and an arm the hook
+		// refuses outright (a bare `autostart_interval:`). The header must
+		// not call the second one a dead loop — the block below it names
+		// the empty key, and a header disagreeing with its own block is
+		// the diagnostic pointing away from the cause again
+		// (ranger-base-i6h).
+		if g.Key == "arm-broken" {
+			seg += " · arm broken"
+		} else {
+			seg += " · loop dead"
+		}
+		break
 	}
 	if c.govFailed > 0 {
 		seg += " · partial"

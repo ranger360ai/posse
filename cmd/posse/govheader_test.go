@@ -85,6 +85,31 @@ func TestCockpitGovHeaderSaysLoopDeadOnlyForG7(t *testing.T) {
 	}
 }
 
+// G7 has two causes, and the header must name the one it has. A bare
+// `autostart_interval:` is an arm the hook refuses, not a loop that died:
+// the block under this header says "present but empty", so a header saying
+// "loop dead" over it points at the wrong thing in the same glance
+// (ranger-base-i6h).
+func TestCockpitGovHeaderNamesABrokenArmNotADeadLoop(t *testing.T) {
+	c := fixture()
+	c.govAt = c.clock()
+	c.gov = rhq.GovSet{
+		{ID: "G7", Class: rhq.GovUrgent, Key: "arm-broken",
+			Detail: "autostart_interval: in /x/config.yaml is present but empty"},
+	}
+	c.buildRows()
+	got := headerOf(c, 140, 40)
+	if !strings.Contains(got, "gov 1 URGENT") {
+		t.Errorf("want the summary in the header, got %q", got)
+	}
+	if !strings.Contains(got, "arm broken") {
+		t.Errorf("G7 must still be named in the header, got %q", got)
+	}
+	if strings.Contains(got, "loop dead") {
+		t.Errorf("a refused arm is not a dead loop: %q", got)
+	}
+}
+
 // An unreadable store is not an all-clear in the header either.
 func TestCockpitGovHeaderSaysPartial(t *testing.T) {
 	c := fixture()
