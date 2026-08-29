@@ -464,14 +464,24 @@ func TestSeedScriptPreflightCheck4SameLineDoesNotHideProse(t *testing.T) {
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
 	}
-	t.Skip("ranger-base-8fz: check 4 exception is line-level; a marker hides prose on the same line")
 	old := qspFakeOld(t)
 	dest := filepath.Join(t.TempDir(), "new")
 	if _, _, code := qspSeed(t, script, old, dest); code != 0 {
 		t.Fatalf("setup seed: exit %d", code)
 	}
 	// Marker + unexcused prose on one line. Check 3/5 (grep -o) catch this;
-	// check 4 (grep -n | grep -vE) currently does not.
+	// check 4 (grep -n | grep -vE) does not — ranger-base-8fz, closed
+	// non-applicable per ranger-base-0z3u: the defective script lives only in
+	// the retired private archive, and this published tree skips above.
+	// This test also held a second, UNCONDITIONAL t.Skip naming 8fz, which
+	// would have stayed silent through the one event it exists for. It is
+	// gone: the day a re-seed puts the runbook back here, this pin goes RED
+	// with the repro instead of SKIP, which is what the close asked for ("fix
+	// it then, before any publication run"). Both arms were measured against
+	// the archive's script (ranger-base-t049): line-level check 4 RED,
+	// per-occurrence check 4 GREEN. The fix shape is check 3's — match per
+	// OCCURRENCE with grep -o and anchor the exception's id to end-of-match,
+	// so an excused marker cannot swallow the rest of its line.
 	line := "see " + "ranger" + "-base" + "-3jg vs the " + "ranger" + "-base" + " repo\n"
 	f, err := os.OpenFile(filepath.Join(dest, "NOTES.md"), os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
