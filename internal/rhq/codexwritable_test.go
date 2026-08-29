@@ -221,3 +221,71 @@ func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
 		}
 	}
 }
+
+// launchWritableRoots grants the STORE repo's git dirs, and it grants them
+// ONLY when the redirect moves the store out of the session dir. That
+// condition is not decoration. With no redirect, beadsGitDirs' first entry is
+// <dir>/.git, which in a linked worktree is a FILE, not a directory — and
+// --add-dir is directory-granular, so putting it on the line widens the codex
+// cage past the trade ADR 0013 §4 states, over a path that is not even a root.
+//
+// MEASURED while verifying ranger-base-xqwr's close (ranger-base-ecdp):
+// deleting `!underDir(dir, home)` from launchWritableRoots left the whole
+// internal/rhq package green. Both of the bead's own pins judge the redirect
+// shape, so both keep passing over the over-grant — an inverted arm nothing
+// held. This is that arm.
+func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *testing.T) {
+	repo := wtRepo(t)
+	tree := filepath.Join(t.TempDir(), "wt")
+	mustGit(t, repo, "worktree", "add", "-q", "-b", "sess", tree)
+	if got := LinkedGitDirs(tree); len(got) != 2 {
+		t.Fatalf("the fixture is not a linked worktree, so neither arm below means anything: LinkedGitDirs(%s) = %v", tree, got)
+	}
+	own := filepath.Join(tree, ".git")
+	if st, err := os.Stat(own); err != nil || st.IsDir() {
+		t.Fatalf("a linked worktree's .git must be the FILE this test is about: %v", err)
+	}
+
+	// NO REDIRECT: the store is <tree>/.beads, inside the workspace codex
+	// writes anyway, so nothing extra is granted for it.
+	if err := os.MkdirAll(filepath.Join(tree, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The absence below is about a path the resolver really would have
+	// produced — without this witness the arm passes by measuring nothing
+	// (ranger-base-fm4p).
+	if g := beadsGitDirs(beadsHome(tree)); len(g) == 0 || g[0] != own {
+		t.Fatalf("positive witness: beadsGitDirs of a store inside the tree must resolve %s first, got %v", own, g)
+	}
+	plain := launchWritableRoots(tree)
+	for _, r := range plain {
+		if r == own {
+			t.Errorf("no redirect moved the store out, so the launch line must not name the worktree's .git FILE writable: %v", plain)
+		}
+	}
+	if !containsString(plain, beadsHome(tree)) {
+		t.Errorf("the store of record is granted in every shape (ranger-base-0fb): %v", plain)
+	}
+
+	// REDIRECT: the store moves to another repo, and now its git dirs ride
+	// the line — the grant this test's negative arm must not be read as
+	// denying (ranger-base-xqwr).
+	store := blRepo(t)
+	blRedirect(t, tree, filepath.Join(store, beadsDirName))
+	if h := beadsHome(tree); h != filepath.Join(store, beadsDirName) {
+		t.Fatalf("the redirect does not reach the store: beadsHome = %q", h)
+	}
+	moved := launchWritableRoots(tree)
+	sg := beadsGitDirs(beadsHome(tree))
+	if len(sg) == 0 {
+		t.Fatal("no git dirs resolved for the moved store — the assertion below would be empty")
+	}
+	for _, g := range sg {
+		if !containsString(moved, g) {
+			t.Errorf("a store outside the session dir must carry its git dirs (bd sync commits the JSONL there): %s missing from %v", g, moved)
+		}
+	}
+	if containsString(moved, own) {
+		t.Errorf("the worktree's own .git FILE is never a root, redirect or not: %v", moved)
+	}
+}
