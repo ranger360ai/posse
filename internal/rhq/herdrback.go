@@ -1247,7 +1247,8 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or set config load_guard: 0 to launch anyway",
 			why, o.Name)
 	}
-	a.TightenEnvPerms(os.Stderr) // every launch re-asserts 700/600 on envs/
+	a.TightenEnvPerms(os.Stderr)    // every launch re-asserts 700/600 on envs/
+	a.TightenSecretPerms(os.Stderr) // and on secrets/, which no launch reads
 
 	// The instance tag is checked here, with the other refusals that are
 	// knowable before anything is touched (rangerhq-ouf9). It gates every

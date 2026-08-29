@@ -442,7 +442,9 @@ func writeGranted(writable []string, p string) bool {
 // HomeConstitutionPaths names what at the home is prose in force, and so
 // must be in NO session's writable set (ADR 0015 §2/§3): the promoted set,
 // the manifest that anchors it, and — §7 — the secret env values, which are
-// not promoted but are no session's to write either.
+// not promoted but are no session's to write either. `secrets/` joins them
+// on the same terms one class up (ADR 0019 D1): a store a session may not
+// be handed is not a store a session may edit.
 //
 // The three things at the home that are deliberately NOT here: `state/`,
 // which is granted above because it is what a session's runtime data IS;
@@ -453,7 +455,7 @@ func (a *App) HomeConstitutionPaths() []string {
 	for _, p := range PromotedPaths {
 		out = append(out, filepath.Join(a.Home, p))
 	}
-	return append(out, filepath.Join(a.Home, "envs"), a.PromoteManifestPath())
+	return append(out, a.EnvsDir, a.SecretsDir, a.PromoteManifestPath())
 }
 
 // ConstitutionGrants reports which of those a writable set reaches. Empty

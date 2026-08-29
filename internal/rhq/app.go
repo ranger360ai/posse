@@ -27,6 +27,12 @@ type App struct {
 	ConfigPath string
 	RecipesDir string
 	EnvsDir    string
+	// SecretsDir is the harness-credential store (secrets.go, ADR 0019 D1):
+	// the other reader class, sibling to EnvsDir and never its fallback.
+	// Both hold plaintext KEY=VALUE credentials under the home; what
+	// separates them is that an env set is injected into the sessions a PID
+	// names and this one is injected into nothing, ever.
+	SecretsDir string
 	StateDir   string
 	AgentsDir  string
 	// ExamplesDir is the reference shelf: what `posse init` lays down to
@@ -85,6 +91,7 @@ func NewAppAt(home string) *App {
 		ConfigPath:  filepath.Join(home, "config.yaml"),
 		RecipesDir:  filepath.Join(home, "recipes"),
 		EnvsDir:     filepath.Join(home, "envs"),
+		SecretsDir:  filepath.Join(home, "secrets"),
 		StateDir:    filepath.Join(home, "state"),
 		AgentsDir:   filepath.Join(home, "agents"),
 		ExamplesDir: filepath.Join(home, "examples"),

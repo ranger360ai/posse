@@ -59,7 +59,7 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	man, manErr := ReadPromoteManifest(a.PromoteManifestPath())
 	fresh := manErr == nil && man == nil && len(before) == 0
 
-	for _, d := range []string{a.Home, a.RecipesDir, a.EnvsDir, a.StateDir, a.AgentsDir, a.SkillsDir(), a.ExampleAgentsDir()} {
+	for _, d := range []string{a.Home, a.RecipesDir, a.EnvsDir, a.SecretsDir, a.StateDir, a.AgentsDir, a.SkillsDir(), a.ExampleAgentsDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
@@ -140,6 +140,15 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			os.Chmod(filepath.Join(a.EnvsDir, e.Name()), 0o600)
 		}
 	}
+	// secrets/ is seeded EMPTY, and that is the whole seeding (ADR 0019 D1):
+	// the directory is the class split made real, so a harness credential has
+	// somewhere to live that no PID key can name. There is no seed file and
+	// there is deliberately no plan-guard.env — the plan guard is not a
+	// consumer (P1 measured 403 for every mintable form; the meter token
+	// stays the runtime's own). No copyDir here on purpose: a seed tree that
+	// grew a secrets/ directory would be shipping a credential file in the
+	// binary.
+	os.Chmod(a.SecretsDir, 0o700)
 	// Existing installs: the generics are already in agents/, and shipping
 	// a new binary that merely stops seeding them leaves every one of them
 	// routing. Retire them here, on the terms below.

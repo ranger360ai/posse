@@ -16,6 +16,9 @@ import (
 type EnvVar struct{ Key, Value string }
 
 func (a *App) envFilePath(name string) (string, error) {
+	if !storeName(name) {
+		return "", Die("env set name must be a file stem, not a path: %q", name)
+	}
 	f := filepath.Join(a.EnvsDir, name+".env")
 	if _, err := os.Stat(f); err == nil {
 		return f, nil
@@ -25,6 +28,16 @@ func (a *App) envFilePath(name string) (string, error) {
 		return f, nil
 	}
 	return "", Die("env set not found: %s (looked in %s)", name, a.EnvsDir)
+}
+
+// storeName reports whether name may be resolved inside a credential store
+// directory. A set name is a file stem, never a path: a PID's `envs:` is
+// prose the operator (and, below the promotion gate, a persona) writes, and
+// `envs: [../secrets/plan-guard]` must not be a way to inject a HARNESS
+// credential into a session — ADR 0019 D1's one-hand rule is the invariant,
+// and this is where the two directories stay two.
+func storeName(name string) bool {
+	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\`)
 }
 
 func parseEnvLines(data string) []EnvVar {
@@ -62,6 +75,17 @@ func (a *App) EnvSetVars(name string) ([]EnvVar, error) {
 // set is a plaintext secret store, so every launch re-asserts the modes.
 // Cheap, idempotent, silent when nothing drifted (rangerhq-f2b).
 func (a *App) TightenEnvPerms(w io.Writer) {
+	tightenCredentialDir(w, a.EnvsDir, "env sets are readable by every process in their session")
+}
+
+// tightenCredentialDir is that belt for one credential store: the directory
+// to 700, every .env file in it to 600, one line per path it had to fix.
+// Both stores are plaintext credentials under the home and drift the same
+// way, so they tighten the same way (ADR 0019 D1's perms parity) — the only
+// thing that differs is `why`, the half-sentence that tells the operator
+// what a widened mode would have exposed. A store that is not there is not
+// a drift: nothing to fix, nothing to say.
+func tightenCredentialDir(w io.Writer, dir, why string) {
 	fix := func(p string, want os.FileMode) {
 		st, err := os.Stat(p)
 		if err != nil {
@@ -69,15 +93,15 @@ func (a *App) TightenEnvPerms(w io.Writer) {
 		}
 		if got := st.Mode().Perm(); got&0o077 != 0 {
 			if err := os.Chmod(p, want); err == nil {
-				fmt.Fprintf(w, "posse: %s was %04o — tightened to %04o (env sets are readable by every process in their session)\n", AbbrevHome(p), got, want)
+				fmt.Fprintf(w, "posse: %s was %04o — tightened to %04o (%s)\n", AbbrevHome(p), got, want, why)
 			}
 		}
 	}
-	fix(a.EnvsDir, 0o700)
-	ents, _ := os.ReadDir(a.EnvsDir)
+	fix(dir, 0o700)
+	ents, _ := os.ReadDir(dir)
 	for _, e := range ents {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".env") {
-			fix(filepath.Join(a.EnvsDir, e.Name()), 0o600)
+			fix(filepath.Join(dir, e.Name()), 0o600)
 		}
 	}
 }
