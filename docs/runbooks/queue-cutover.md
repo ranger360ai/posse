@@ -17,7 +17,10 @@ the constitution's git log stops being queue flushes.
 
 **Who runs it.** The operator. Three of the steps are denied to personas by
 construction (`bd daemon`, `bd migrate`, `make install`), which is why the
-rehearsal could not cover them and why they are called out below.
+rehearsal could not cover them and why they are called out below — with the
+caveat, measured 2026-08-29, that the first of those denies is spelled
+against the singular word only and `bd daemons` walks past it
+(ranger-base-llp1; the note under *What the rehearsal broke* has it).
 
 ---
 
@@ -28,18 +31,47 @@ rehearsal could not cover them and why they are called out below.
    installing early costs nothing.
 2. Read the two config edits in step 5 — **the visibility stamp is the one
    that bites**, and it has to be in config *before* hooks are installed.
+   Inside the retirement window they are typed in the **constitution** and
+   committed, not at the home; step 5 says why, and where in the order.
 
 ## The window
 
 Run it top to bottom. Steps 1–4 are one script.
 
-**1. Stop the daemon.** It holds the database open and re-exports it on a
-timer; moving the directory under a live daemon leaves a process writing to
-a path nobody reads.
+**1. Stop the daemon — and *check* that it stopped.** It holds the database
+open and re-exports it on a timer; moving the directory under a live daemon
+leaves a process writing to a path nobody reads.
 
 ```sh
-cd ~/src/ranger-base && bd daemon stop
+pkill -f 'posse cockpit' || true        # see the third bullet, do this first
+bd daemons list                         # workspace paths and pids
+bd daemons stop ~/src/ranger-base       # a pid works here too
+bd daemons list                         # MUST come back without that workspace
 ```
+
+Three things about this step were wrong or unstated until the live window
+(**MEASURED 2026-08-28**, ranger-base-j2io). Read them before typing:
+
+- **Plural, and it takes an argument.** This step used to read `cd
+  ~/src/ranger-base && bd daemon stop`. bd 0.49.1 ships *both* groups —
+  `bd daemon` (singular: `start`/`stop`/`status`/`logs`/`restart`/`killall`,
+  acting on the current workspace) and `bd daemons` (plural:
+  `list`/`health`/`stop <workspace-path|pid>`/`logs`/`killall`, acting
+  across repos). The form that did the job at the window was the plural with
+  the workspace named. Because both spellings parse, getting this wrong is
+  not a usage error you see — it is a no-op you have to notice.
+- **A success line is not a stopped daemon.** The stop printed success while
+  a daemon its *own* invocation had auto-started went on running. Any bd
+  command auto-starts one; the stop is therefore racing itself. That is what
+  the second `bd daemons list` is for, and when it does not come back clean,
+  killing the pid the list names is the honest form. Independently measured
+  a day earlier in a different setting — `docs/notes.d/ranger-base-42mv.md`
+  found the same exit-0-and-still-running behaviour against a fixture store,
+  and reached the same conclusion: the pid is the handle.
+- **Sweep orphan cockpit processes first.** Three week-old `posse cockpit`
+  processes were respawning daemons faster than they could be stopped, so
+  the list never emptied and step 3's preflight refused in a loop that
+  cannot be won by retrying. Kill those before the first stop.
 
 **2. Quiesce the fleet.** No dispatch pass and no persona session should be
 mid-`bd close`. `posse dispatch --watch-status` says whether a loop is
@@ -100,8 +132,8 @@ queue. bd fails its daemon closed while the mismatch stands and drops
 `.beads/daemon-error` saying so, which is the check: after the migrate, that
 file should be gone and `bd info` should report a daemon.
 
-**5. Two config edits**, in `~/.config/rhq/config.yaml` (`~/.config/posse`
-after the promote):
+**5. Two config edits.** *Where you type them* depends on whether a promote
+is still ahead of you.
 
 ```yaml
 beads_visibility:
@@ -110,6 +142,29 @@ beads_visibility:
                                   # from end to end.
 queue_repo: ~/src/ranger-queue    # the launcher commits the jsonl here
 ```
+
+**Inside the retirement window, type them in the CONSTITUTION** —
+`~/src/ranger-base/rhq/config.yaml` — and commit them, *before* the home
+half's promote. **MEASURED 2026-08-28** (ranger-base-j2io): this beat this
+step's old edit-the-home instruction, and it is now the written order.
+`config.yaml` is a **promoted path**, so an edit made only at the home is
+drift that the next `posse promote` reverts to whatever the constitution
+says — and the line whose reversion is silent for hours is the visibility
+stamp, for exactly the reason step 6 spells out. Edited in the constitution
+and committed, the promote carries them and the promoted home is right the
+first time; it also makes them ratified rather than hand-applied, which is
+what ADR 0015 §3 asks of anything in force.
+
+The slot is **after step 4 and before the promote**, and not earlier.
+Do not fold these into the pre-window commit (`retirement-window.md` P2):
+before the promote the home is still a symlink onto the constitution, so a
+P2 edit is live the moment it is written, and `queue_repo:` would name
+`~/src/ranger-queue` for however long the window is away — a repo step 3 has
+not created yet. `retirement-window.md`'s driver table carries the slot.
+
+**Standalone, with no promote in the sequence**, edit the home's
+`config.yaml` directly — `~/.config/rhq/config.yaml` before the cutover,
+`~/.config/posse/config.yaml` after.
 
 **6. Install the gate hooks in the queue repo.**
 
@@ -152,7 +207,11 @@ refusal you can see, not a stream of unguarded commits.
 
 ```sh
 cd ~/src/ranger-queue && bd daemon start
+bd daemons list        # the queue workspace, and nothing naming the old path
 ```
+
+Same instrument as step 1, for the same reason: the start is reported, the
+daemon is observed.
 
 Never `--auto-push`. Never add a git remote: the queue repo is created
 without one, and a repo with no remote cannot push whatever any future bd
@@ -224,9 +283,15 @@ recorded because each would have been silent in production:
    every step past the preflight prints its half-state and its undo.
 
 Not rehearsable from a persona session, and therefore untested until the
-window: `bd daemon stop/start` and `bd migrate --update-repo-id` are both
+window: `bd daemon stop`/`start` and `bd migrate --update-repo-id` are both
 denied to personas. Steps 1, 4 and 7 are the operator's, and step 4 is the
 one to watch.
+
+That deny is spelled against the **singular** word, and step 1 above now
+types the plural. `bd daemons list` is not covered by it and runs from a
+persona session today — measured 2026-08-29, filed as ranger-base-llp1. Do
+not read step 1's new spelling as a fence you can lean on: it is the form
+that works, not a form personas are stopped from typing.
 
 ## Rollback
 
@@ -235,7 +300,7 @@ constitution repo's `.beads` deletion is **staged, not committed**, and the
 live store was moved rather than copied.
 
 ```sh
-cd ~/src/ranger-queue && bd daemon stop
+bd daemons stop ~/src/ranger-queue && bd daemons list   # verify, per step 1
 # The store goes home — DOTFILES INCLUDED. `.beads/*` alone leaves
 # `.beads/.gitignore` (tracked, and the only thing ignoring the database)
 # and `.local_version` behind, so the constitution comes back with a 10MB

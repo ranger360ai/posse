@@ -2,7 +2,18 @@
 
 *ranger-base-3rv9 step 4 · the driver for `queue-cutover.md` and
 `home-cutover.md`, which interleave and cannot be run back to back ·
-ordering and preconditions measured 2026-08-27 on ranger-base-6y83*
+ordering and preconditions measured 2026-08-27 on ranger-base-6y83 ·
+**run for real 2026-08-28**, and corrected from what that run measured —
+ranger-base-j2io*
+
+**The window has been executed.** All three files are kept, and are kept
+in the imperative, because the sequence is re-runnable: the rollbacks at
+the end of both halves walk it backwards, and a second instance walks it
+forwards. The `2026-08-27` preconditions table at the foot of this file is
+a record of that one run's starting state, not a claim about today's.
+Everything marked **MEASURED 2026-08-28** is errata from the live run —
+three lines in these runbooks were wrong, and they are corrected in place
+rather than appended, so what you read is what to type.
 
 The two halves of the window are written as separate runbooks because
 they have separate subjects — the beads store moves repos, the home
@@ -20,10 +31,17 @@ at four separate points:
 
 | step | what refuses a persona | where |
 |---|---|---|
-| queue 1, 7 | `bd daemon stop` / `start` | denied to personas |
+| queue 1, 7 | `bd daemon stop` / `start` | denied to personas — **singular spelling only**, see below |
 | queue 4 | `bd migrate --update-repo-id` | denied to personas |
-| home 2, 8 | `posse promote` | `internal/rhq/promote.go` — refuses under `RHQ_PERSONA` (ADR 0015 §3) |
+| home 3, 8 | `posse promote` | `internal/rhq/promote.go` — refuses under `RHQ_PERSONA` (ADR 0015 §3) |
 | pre-window | `make install` | denied to personas |
+
+One of those four is weaker than it reads. The deny is `Bash(bd daemon:*)`,
+a prefix match on the typed word, and bd 0.49.1 also answers to `bd
+daemons` — `bd daemons list` runs from a persona session today, measured
+2026-08-29, and so would `bd daemons stop`/`killall` (filed as
+ranger-base-llp1). Queue step 1 now types the plural because that is the
+form that works, not because it is fenced. The other three rows hold.
 
 A persona session that reaches this file should stop here and say so.
 
@@ -45,7 +63,7 @@ window:
 - **add `constitution: ~/src/ranger-base/rhq`** — absent today. Without
   it the constitution path lives only in `promoted.json`, and a home
   rebuilt from scratch does not know where to promote from.
-  `home-cutover.md` step 2 asks for it in so many words.
+  `home-cutover.md` step 3 asks for it in so many words.
 - **four stale command spellings in comments**, at `config.yaml` lines
   **1, 3, 14, 113** — these say `rhq <verb>` where the command is now
   `posse`. Promote copies comments verbatim into the new home, so a
@@ -61,8 +79,10 @@ window:
 ## The order
 
 Steps 1–3 and 7 are `queue-cutover.md`; 4–6, 8 and 10 are
-`home-cutover.md`. Both runbooks' own numbering is kept, so a step here
-names a step there.
+`home-cutover.md`, and step 4 carries one queue step with it. Both
+runbooks' own numbering is kept, so a step here names a step there —
+including `home-cutover.md`'s renumbering of its own steps 2–5, which the
+window's measured order forced (ranger-base-j2io).
 
 | # | runbook | step |
 |---|---|---|
@@ -70,10 +90,10 @@ names a step there.
 | 1 | queue | 1–2 · stop the daemon; quiesce the fleet |
 | 2 | queue | 3 · `scripts/queue-cutover.sh` |
 | 3 | queue | 4 · `bd migrate --update-repo-id` — **not optional**, and the step to watch: the repo-id mismatch arms bd's git-history backfill to delete issues, and it fails the daemon closed until it is run |
-| 4 | home | 1–4 · promote; carry envs (`umask 077`, `cp -p`); carry state; link personas |
-| 5 | home | 5 · `rm ~/.config/rhq` — a symlink; the tree it points at is untouched |
+| 4 | home | 1–2 · preconditions; `rm ~/.config/rhq` — a symlink; the tree it points at is untouched. **Before the promote, not after**: promote refuses onto a symlinked home, and until `~/.config/posse` exists the symlink *is* the home (ranger-base-j2io, measured at the window) · then queue **5** · the two config edits — typed in the **constitution**, `rhq/config.yaml`, and committed, so the promote in the next row carries them and the promoted home never drifts |
+| 5 | home | 3–5 · promote; carry envs (`umask 077`, `cp -p`); carry state; link personas |
 | 6 | — | **the two alias inodes**: `rm ~/.local/bin/rhq` and `rm ~/src/posse/plugin/bin/rhq`. **Before step 8, not after** — while either exists the fence step 8 ratifies is defeated by typing the old spelling, because PID rules match the typed word |
-| 7 | queue | 5–8 · two config edits (**visibility stamp before the hooks**); install gate hooks in the queue repo; restart the daemon there; commit the constitution's staged untracking |
+| 7 | queue | 6–8 · install gate hooks in the queue repo (**queue 5's visibility stamp landed at step 4, and must be in force before this**); restart the daemon there and confirm with `bd daemons list`; commit the constitution's staged untracking |
 | 8 | home | 8 · `scripts/draft-pid-deny-promote.sh`, read the diff, commit, `posse promote` — the first change put through the step ADR 0015 adds |
 | 9 | both | home 6 + queue 9 · **verify** (ADR 0015 verification items 1, 6, 7) |
 | 10 | home | 7 · **only after 9 passes** · delete the env values from the constitution tree |
