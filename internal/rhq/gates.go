@@ -1039,8 +1039,9 @@ func hooksDir(dir string) (string, error) {
 // body in one place also lets installHook recognize that exact arrangement:
 // the dispatcher and the other tool's hook stay foreign, while the
 // marker-owned posse hook behind them can still be refreshed on every launch.
-// `theirs-<slot>` is the generic name the printed prescription uses; the
-// operator names the file after the tool that owns it, so recognition goes
+// `theirs-<slot>` is the generic name the printed prescription reaches for
+// first (chainNeighbourName picks another when that one is taken), and the
+// operator renames the file after the tool that owns it, so recognition goes
 // through chainHookDispatcherWith.
 func chainHookDispatcher(slot string) string {
 	return chainHookDispatcherWith(slot, "theirs-"+slot)
@@ -1149,15 +1150,25 @@ func chainDispatcher(dir, hooks, slot string) string {
 		probe = `RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
   sh -c 'printf "refs/heads/main a refs/heads/main b\n" | ./` + slot + ` origin x'; echo $?`
 	}
+	neighbour := chainNeighbourName(hooks, slot)
+	collision := ""
+	if neighbour != "theirs-"+slot {
+		collision = fmt.Sprintf(`
+theirs-%[1]s is already taken. A bare mv onto an existing file destroys it
+without a word, and here that file is a hook — so the slot moves aside to
+%[2]s instead. Nothing below touches theirs-%[1]s; read it
+once the chain has run and delete it yourself if it is dead.
+`, slot, neighbour)
+	}
 	// Flush-left and cd'd into the hooks dir on purpose: this is meant to
 	// be pasted, and an indented heredoc body would write a shebang with
 	// leading spaces and never reach its terminator.
 	return fmt.Sprintf(`Chain it — each hook in its own file, ours dispatched first and its exit
 status checked (INSTALL.md §9). Appending to ours is not a chain: our
 refusal is an exit, so nothing pasted after it runs.
-
+%[6]s
 cd %[1]s
-mv %[2]s theirs-%[2]s
+mv %[2]s %[7]s
 posse gates install-hooks %[3]s
 mv %[2]s posse-%[2]s
 cat > %[2]s <<'EOF'
@@ -1169,7 +1180,31 @@ Then verify by running the slot, not by reading it — from that same dir:
 %[5]s
 
 It must print "refused by posse gate" and exit 1. A slot that prints the
-refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), chainHookDispatcher(slot), probe)
+refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), chainHookDispatcherWith(slot, neighbour), probe, collision, neighbour)
+}
+
+// chainNeighbourName is the name chainDispatcher's first step moves the
+// occupied slot to. `theirs-<slot>` is what INSTALL.md §9 calls it, but the
+// step is a bare `mv`, and a bare `mv` onto an existing file destroys it
+// silently. That name is taken in exactly the arrangement where an operator
+// following posse's own instructions ends up re-reading this prescription: a
+// slot already holding posse's dispatcher, with theirs-<slot> beside it. The
+// paste used to overwrite the third party's hook with the dispatcher, which
+// then `exec`s into itself forever — invisibly, because the loop sits past
+// the gate's refusal and only a PERMITTED push ever reaches it
+// (ranger-base-q32o). So the name is chosen against the directory rather than
+// assumed: a free name destroys nothing, and the dispatcher takes any plain
+// sibling filename (chainDispatcherNeighbour), so the chain it builds is
+// recognized and refreshed like any other.
+func chainNeighbourName(hooks, slot string) string {
+	name := "theirs-" + slot
+	for i := 2; i < 100; i++ {
+		if _, err := os.Lstat(filepath.Join(hooks, name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("theirs-%s-%d", slot, i)
+	}
+	return name
 }
 
 // bdShimMarker identifies bd's own hook shim: `bd hooks install` plants a
@@ -1203,28 +1238,50 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		// A chain made from our printed prescription is deliberately foreign
 		// at the slot: overwriting it would discard the other tool's hook. Its
 		// posse-* member is ours, though, and must not become a frozen copy of
-		// an older gate just because it lives behind the dispatcher. Refresh
-		// only a marker-owned member of the exact dispatcher we prescribe.
+		// an older gate just because it lives behind the dispatcher. So behind
+		// the exact dispatcher we prescribe, a marker-owned member is
+		// refreshed and a MISSING one is restored; only a member that is there
+		// and foreign stops us, and it stops us with its own words.
 		chained := filepath.Join(hooks, "posse-"+slot)
 		if neighbour, isChain := chainDispatcherNeighbour(string(b), slot); isChain {
-			if owned, readErr := os.ReadFile(chained); readErr == nil && ownsHook(string(owned), marker, legacy) {
-				if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+			owned, readErr := os.ReadFile(chained)
+			switch {
+			case readErr == nil && ownsHook(string(owned), marker, legacy):
+				// The ordinary refresh.
+			case os.IsNotExist(readErr):
+				// RESTORE. The slot is our own dispatcher byte for byte, so
+				// the file it runs first is ours to write and there is
+				// nothing there to overwrite. This state is reached by
+				// posse's own instructions: in a chained repo the marker line
+				// saying "remove this file to uninstall" lives in
+				// posse-<slot>, not in the slot, and removing it leaves every
+				// push exiting 127. Re-running install-hooks is the operator's
+				// natural repair, and it used to refuse and print the chain
+				// prescription instead — whose first step, a bare `mv <slot>
+				// theirs-<slot>`, destroyed the third party's hook and left a
+				// dispatcher exec'ing into itself forever (ranger-base-q32o).
+				// Re-chaining was never the repair here; restoring the gate is.
+			case readErr != nil:
+				return "", readErr
+			default:
+				return "", Die("%s is posse's chain dispatcher, but %s is not a posse hook — not overwriting.\nThe dispatcher runs that file first: restore posse's %s gate there, or delete the dispatcher and re-run install-hooks to build the chain afresh.", AbbrevHome(p), AbbrevHome(chained), slot)
+			}
+			if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+				return "", err
+			}
+			// Upgrade a chain written before rangerhq-xo65 while we are
+			// here. Its unconditional `exec` kills every commit in the
+			// repo the moment its neighbour is missing, and a repo
+			// chained by an earlier posse would otherwise carry that
+			// forever. Safe because the body matched our own render byte
+			// for byte: we know exactly what it is, and we write back the
+			// same shape, same neighbour, plus the guard.
+			if string(b) == legacyChainHookDispatcherWith(slot, neighbour) {
+				if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755); err != nil {
 					return "", err
 				}
-				// Upgrade a chain written before rangerhq-xo65 while we are
-				// here. Its unconditional `exec` kills every commit in the
-				// repo the moment its neighbour is missing, and a repo
-				// chained by an earlier posse would otherwise carry that
-				// forever. Safe because the body matched our own render byte
-				// for byte: we know exactly what it is, and we write back the
-				// same shape, same neighbour, plus the guard.
-				if string(b) == legacyChainHookDispatcherWith(slot, neighbour) {
-					if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755); err != nil {
-						return "", err
-					}
-				}
-				return chained, nil
 			}
+			return chained, nil
 		}
 		if chain && isBdShim(string(b)) {
 			return chainBdShim(hooks, slot, script)
