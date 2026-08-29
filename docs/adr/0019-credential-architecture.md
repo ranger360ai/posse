@@ -195,15 +195,13 @@ unequal weight:
   a read the pass was making anyway. This decision's own closing
   sentence — the read's success or failure remains the only actuator —
   was always the meter's whole answer.
-- **It would likely never be quiet** (ASSUMED — the one unmeasured
-  number, ranger-base-b1al). D2's store of record "rotates within
-  days"; if the access token's own `expiresAt` horizon is similarly
-  short, every reading sits inside a 14-day window and the line fires
-  every pass forever — a warning that is always on is a warning nobody
-  reads. The token's actual TTL is NOT MEASURED (`security` is denied
-  in crew PIDs; the darwin file is under the hw18 read deny), so this
-  reason is corroboration, not foundation: the decision does not move
-  if it dies.
+- **It would never be quiet** (MEASURED — ranger-base-b1al, operator's
+  terminal 2026-08-29: the access token's `expiresAt` horizon read
+  **6h30m**, far inside any warning window). Every reading sits inside
+  a 14-day window and the line would fire every pass forever — a
+  warning that is always on is a warning nobody reads. The
+  corroboration holds; the decision stood on "no hand to warn" either
+  way.
 - **The cost is per-pass and real** (a design fact, not an estimate):
   warning about the meter means execing `security` on every dispatch
   pass and every cockpit tick, against a store the whole instance
