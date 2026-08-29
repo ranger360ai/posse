@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -130,9 +130,33 @@ release-notes:
 # So `make test` is the suite command, not a convenience wrapper: a bare
 # `go test ./...` still carries the 10m default and is still a coin flip on a
 # loaded box. suitetimeout_qa_test.go pins the flag and the floor.
-test:
-	$(GOBIN) test -timeout 25m ./...
+#
+# THE RUN GOES THROUGH scripts/test-times.sh (ranger-base-7xla), which is the
+# other half of the same bead — the half its author left as a decision rather
+# than a default: "raising the timeout hides the growth. A gate that prints the
+# per-package seconds and warns above a threshold keeps the signal." The pin
+# above holds the FLAG, not the runtime, so internal/rhq could walk from 9
+# minutes to 24 with every gate green and the only notice being the day it
+# trips. The wrapper prints each package's seconds and its share of the budget,
+# names any package over SLOW_PACKAGE_SECONDS (300, a separate number with a
+# separate job — internal/rhq is over it today and is meant to say so), and
+# when the clock DOES expire prints a block that says the clock expired, since
+# a timeout panic and a deadlock in product code print the same goroutine dump.
+# It owns no number: the budget it reports against is read out of THIS line, so
+# `-timeout 25m` stays the single source of truth and stays where the pin reads
+# it. It returns `go test`'s own exit status and never fails on a wall clock.
+# `make verify-test-times` (0.4s) pins the reporting and runs first here.
+test: verify-test-times
+	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
+
+# Prove the reporter still reports: that the budget column is read from the
+# command rather than kept here, that a timeout panic is called a timeout and
+# names its package, that a clean run says nothing (with a witness that it
+# parsed anything at all), and that `go test`'s exit status is the one you get
+# back. 0.4s, no go build, no suite.
+verify-test-times:
+	@scripts/test-times.sh --self-test
 
 vet:
 	$(GOBIN) vet ./...
