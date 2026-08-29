@@ -1803,7 +1803,17 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 			return false, err
 		}
 	}
-	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier)
+	// The same roots planLaunch names, from the same resolver, for the same
+	// reason: a self-sandboxing runtime confines writes to its workspace, so
+	// unnamed the store of record, that store repo's git dirs and this
+	// tree's own are all denied — a revived session is back in the
+	// ranger-base-0fb shape, silent beads and a `bd close` that cannot land
+	// (ranger-base-qdtw). This path is on the unattended one
+	// (dispatch.launchSession), and ADR 0013 §4's reachability row does not
+	// cover it: the row runs at CheckParity time against the LAUNCH line,
+	// and a relaunch renders its own. Two spellings of "writable" is a
+	// crashed CLI coming back degraded with nothing saying so.
+	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier, launchWritableRoots(m.Dir)...)
 	// Same refusal as planLaunch's, on the one other path that renders a
 	// persona line (ranger-base-64qx). It is reachable even though the
 	// create was refused: a PID edited after its session opened is

@@ -276,10 +276,13 @@ func LinkedGitDirs(dir string) []string {
 // and nothing narrower is available at this wall — the flag cannot name a
 // ref (ranger-base-xqwr).
 //
-// One function because two callers must agree: planLaunch renders the line
-// the session runs, and renderedLaunchLine renders the line ADR 0013 §4's
-// reachability row JUDGES. Two spellings of "the same roots" is a row that
-// passes a line nobody launches, or refuses one that would have worked.
+// One function because three callers must agree: planLaunch renders the line
+// the session runs, renderedLaunchLine renders the line ADR 0013 §4's
+// reachability row JUDGES, and RelaunchAgent renders the line a session whose
+// CLI died comes back on. Two spellings of "the same roots" is a row that
+// passes a line nobody launches, or refuses one that would have worked — and
+// the relaunch site is the one the row cannot cover at all, since it runs at
+// CheckParity time against the launch line (ranger-base-qdtw).
 func launchWritableRoots(dir string) []string {
 	home := beadsHome(dir)
 	roots := append([]string{home}, LinkedGitDirs(dir)...)

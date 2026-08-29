@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A codex session's writes are confined to its workspace, so the store of
@@ -113,6 +114,110 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	for _, want := range append(append([]string{target}, storeGits...), gits...) {
 		if !strings.Contains(log, "--add-dir "+shellQuote(want)) {
 			t.Errorf("codex launch does not name %s writable:\n%s", want, log)
+		}
+	}
+}
+
+// resolvedTypedLine is what a typed pane line actually runs: the line
+// itself, or the body of the script a spilled line sources (paneline.go).
+// Reading ONE line matters here — see the relaunch pin below.
+func resolvedTypedLine(t *testing.T, ln string) string {
+	t.Helper()
+	rest, ok := strings.CutPrefix(ln, ". '")
+	if !ok {
+		return ln
+	}
+	path, _, ok := strings.Cut(rest, "'")
+	if !ok {
+		t.Fatalf("a sourced pane line with no script path: %q", ln)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("spilled launch script %s: %v", path, err)
+	}
+	return string(body)
+}
+
+// The OTHER site that renders a persona line. RelaunchAgent re-types the
+// whole command into the surviving shell of a session whose CLI died, and it
+// rendered that line with no writable roots at all — so a codex session
+// revived on the unattended path (dispatch.launchSession) came back in the
+// exact ranger-base-0fb shape: silent beads, a denied `bd close`, and denied
+// commits in its own worktree (ranger-base-qdtw). ADR 0013 §4's reachability
+// row does not catch it: that row runs at CheckParity time against the
+// LAUNCH line, and a relaunch renders its own.
+//
+// The pin reads the RELAUNCH's line alone, not the call log. The launch's
+// line is in that log naming every root, and the spilled script is rewritten
+// per launch — an assertion over either whole would have been green against
+// the bug it is here to catch.
+func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
+	b, fake := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: ranger\ndescription: test\nruntime: codex\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := blRepo(t)
+	work := wtRepo(t)
+	target := filepath.Join(store, beadsDirName)
+	if err := os.MkdirAll(filepath.Join(work, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blRedirect(t, work, target)
+	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
+
+	tree, err := b.App.SessionTreePath(work, "crew")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gits := LinkedGitDirs(tree)
+	if len(gits) != 2 {
+		t.Fatalf("no session worktree was made — the test asserts nothing: LinkedGitDirs(%s) = %v", tree, gits)
+	}
+	if h := beadsHome(tree); h != target {
+		t.Fatalf("the seeded worktree redirect does not reach the store: beadsHome = %q, want %q", h, target)
+	}
+	storeGits := beadsGitDirs(target)
+	if len(storeGits) == 0 {
+		t.Fatalf("no git dirs resolved for the store at %s — the assertion below would be empty", target)
+	}
+
+	// The state RelaunchAgent needs: the launch is old enough to be past the
+	// grace window, and herdr detects no agent in the workspace any more —
+	// a persona whose CLI has gone.
+	m, ok := b.readMeta("crew")
+	if !ok {
+		t.Fatal("no meta for crew")
+	}
+	if m.Dir != tree {
+		t.Fatalf("meta dir is %q, not the session tree %q — the relaunch would resolve roots for the wrong dir", m.Dir, tree)
+	}
+	m.Launched = m.Launched.Add(-time.Hour)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(fake, "agents.json"))
+	if ok, err := b.RelaunchAgent("crew", time.Second); err != nil || !ok {
+		t.Fatalf("relaunch: %v %v", ok, err)
+	}
+
+	lines := paneRunLines(t, fake)
+	if len(lines) != 2 {
+		t.Fatalf("expected the launch and the relaunch, got %d: %v", len(lines), lines)
+	}
+	line := resolvedTypedLine(t, lines[1])
+	// A witness that we are reading a codex sandbox line at all, so a
+	// mis-resolved or empty read fails as itself rather than as this bug.
+	if !strings.Contains(line, "-s workspace-write") {
+		t.Fatalf("the relaunch line is not a codex sandbox line:\n%s", line)
+	}
+	for _, want := range append(append([]string{target}, storeGits...), gits...) {
+		if !strings.Contains(line, "--add-dir "+shellQuote(want)) {
+			t.Errorf("the relaunch line does not name %s writable:\n%s", want, line)
 		}
 	}
 }
