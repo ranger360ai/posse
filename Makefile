@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -315,6 +315,20 @@ verify-bd-pin:
 # to refuse. Read-only; ~23s at the default MAXLEN=4.
 verify-bd-argv-gate:
 	scripts/verify-bd-argv-gate.sh
+
+# Does every PID in a posse home carry the fence ADR 0015 section 3 says it
+# carries (ranger-base-d866)? The rules only travel with a dispatched session
+# because they are IN the PID -- that is what becomes the L1 PATH shim and
+# claude's --disallowedTools, neither of which cares which repo the session is
+# standing in. A .claude/settings.json does care, which is the finding. What
+# nothing was checking is the step in between: eleven PIDs edited by hand and
+# staying edited. Defaults to the repo's own examples/ so it runs anywhere;
+# pass a home (or set RHQ_HOME) to audit a promoted one. Read-only, no bd.
+# `make verify-pid-deny-set HOME_DIR=~/.config/posse`, or --self-test.
+HOME_DIR ?= examples
+verify-pid-deny-set:
+	scripts/verify-pid-deny-set.sh --self-test
+	scripts/verify-pid-deny-set.sh $(HOME_DIR)
 
 # The bd 0.49.1 dep-add landmine (ranger-base-pkqn). bd's cycle check walks
 # the whole dependency graph with UNION ALL — walks, not nodes, depth 100, all
