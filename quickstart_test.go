@@ -648,18 +648,119 @@ func TestQuickstartsMkdirBeforeExampleNewDir(t *testing.T) {
 	}
 }
 
-// ranger-base-m3a: README still describes @latest as an untagged pseudo-version
-// after v0.3.0 exists and is what the public proxy serves.
-func TestReadmeDoesNotClaimNoReleaseTag(t *testing.T) {
-	t.Skip("ranger-base-m3a: README still says the module has no release tag")
+// ranger-base-m3a: README and INSTALL described `@latest` as an untagged
+// pseudo-version after v0.3.0 existed and was what the public proxy served.
+//
+// ranger-base-hi57: that pin shipped skipped — a correct red-pin in 6610a83's
+// clean-room pass, never unskipped when the fix landed in 9cd313d — so its
+// assertion had never run once. Unskipped and widened here, because one banned
+// phrase in one file is green the moment the claim returns in other words, or
+// in INSTALL.md, which 9cd313d had to fix too and the old body never read.
+// Two arms: no surface may tell the untagged story, and every surface that
+// advertises the `@latest` route must say what that route actually installs.
+// The second arm is what catches INSTALL.md's historical text, which made the
+// claim by omission and carries none of the banned phrases.
+func TestQuickstartsDescribeWhatLatestInstalls(t *testing.T) {
+	for _, path := range []string{"README.md", "INSTALL.md", "www/index.html"} {
+		t.Run(path, func(t *testing.T) {
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := describesWhatLatestInstalls(string(contents)); err != nil {
+				t.Errorf("%s: %v", path, err)
+			}
+		})
+	}
+}
 
-	contents, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
+func TestLatestInstallsPinRejectsTheHistoricalGaps(t *testing.T) {
+	// The pre-9cd313d paragraphs, verbatim.
+	historicalReadme := "That binary carries the seed tree embedded, so `posse init` needs no repo " +
+		"beside it; the module carries no release tag\nyet, so `@latest` resolves to a commit " +
+		"pseudo-version and `posse version`\nreports `0.3.0+dev`."
+	// Its fenced command is part of the fixture: the route is advertised one
+	// paragraph above the prose, and the pin is judged over the surface.
+	historicalInstall := "```sh\n$ " + goInstallCmd + "\n```\n\n" +
+		"That build carries the seed tree (`examples/`) embedded, so `posse init`\n" +
+		"works with no repo beside it — but it is not the promotion path a fleet\n" +
+		"should use, because it has no commit to name. Prefer `make install`."
+	current := "`@latest` resolves to the newest\nrelease tag — currently `v0.3.0` — which trails `main`."
+
+	if err := describesWhatLatestInstalls(current); err != nil {
+		t.Fatalf("the shipped wording must pass: %v", err)
 	}
-	if strings.Contains(string(contents), "no release tag yet") {
-		t.Fatal("README.md still claims the module has no release tag; go install @latest installs v0.3.0")
+	if err := describesWhatLatestInstalls("Install with `make install`; it stamps the commit."); err != nil {
+		t.Fatalf("a surface that never names the route has nothing to describe: %v", err)
 	}
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{name: "README as it shipped (ranger-base-m3a)", text: historicalReadme},
+		{name: "INSTALL as it shipped: the claim by omission", text: historicalInstall},
+		// Per banned phrase, not once: a corpus pin that is only ever driven
+		// by one wording says nothing about the wordings it never sees.
+		{name: "no release tag, with the current sentence still present", text: current + " The module has no release tag."},
+		{name: "pseudo-version, with the current sentence still present", text: current + " `@latest` gets a pseudo-version."},
+		// The negative arm binds surfaces that do not advertise the route.
+		{name: "the claim on a page that never names @latest", text: "The module carries no release tag."},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := describesWhatLatestInstalls(tt.text); err == nil {
+				t.Fatal("historical gap passed the pin")
+			}
+		})
+	}
+
+	for _, path := range []string{"README.md", "INSTALL.md"} {
+		t.Run(path+" with the description deleted", func(t *testing.T) {
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Collapse first, as the checker does: README wraps the phrase
+			// across a line, and a raw Replace would delete nothing and
+			// leave a control that measures nothing.
+			flat := strings.Join(strings.Fields(string(contents)), " ")
+			stripped := strings.Replace(flat, latestInstallsTheTag, "", 1)
+			if stripped == flat {
+				t.Fatalf("%s does not carry %q, so this control measures nothing", path, latestInstallsTheTag)
+			}
+			if err := describesWhatLatestInstalls(stripped); err == nil {
+				t.Fatalf("deleting %q from %s must fail the pin", latestInstallsTheTag, path)
+			}
+		})
+	}
+}
+
+// latestInstallsTheTag is what a surface has to say about the `@latest` route.
+// untaggedClaims are the ways the superseded story is told. Both are matched
+// against whitespace-collapsed lowercase text: README wraps "the newest\nrelease
+// tag" across a line, and a raw substring search reads that as absent.
+const latestInstallsTheTag = "newest release tag"
+
+var untaggedClaims = []string{"no release tag", "pseudo-version"}
+
+// describesWhatLatestInstalls judges one surface. The claim ban holds
+// everywhere; the description is required only where the route is advertised,
+// the same skip-if-not-advertised rule the go-install and brew pins use.
+func describesWhatLatestInstalls(text string) error {
+	flat := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	for _, claim := range untaggedClaims {
+		if strings.Contains(flat, claim) {
+			return fmt.Errorf("still tells the untagged story (%q); `@latest` installs the newest release tag", claim)
+		}
+	}
+	if !strings.Contains(flat, "@latest") {
+		return nil
+	}
+	if !strings.Contains(flat, latestInstallsTheTag) {
+		return fmt.Errorf("advertises `@latest` without saying what it installs: no %q", latestInstallsTheTag)
+	}
+	return nil
 }
 
 // ranger-base-4ex: INSTALL.md §2 advertised `brew install ranger360ai/tap/posse`
