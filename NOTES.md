@@ -416,10 +416,18 @@ makes before the fire loop, its dedupe is check-then-act, and unserialized it
 files the same verify bead twice. It takes and drops the lock inside its own
 call — so `posse ready`, which files by the same rule, waits for it as well —
 and Run's two acquisitions are sequential, never nested. A second
-launcher blocks, saying `⏳ launcher lock held by pid <n> — waiting` first
-(the cockpit's writer is `io.Discard`, so there it just keeps saying
-`dispatching <id>…`). `--dry-run` never takes it: a dry pass acts on nothing
-and a read-only command must not queue behind a live one.
+launcher blocks, saying `⏳ launcher lock held by pid <n> — waiting` first.
+The cockpit's writer is `io.Discard` — a line printed straight at a TUI is
+garbage on the frame — so that one line comes back to it through
+`Dispatcher.Progress`, a line callback `LaunchBead` hands the lock in place
+of `Out`, and the cockpit puts it on the status line instead of sitting on
+`dispatching <id>…` for the length of the other launcher's hold
+(rangerhq-ecl2). `Progress` is `LaunchBead`'s alone: `Run` has a terminal
+`Out` by construction. The cockpit's sink never blocks — it drops a line
+rather than hold a launch on a busy event loop — and it does not clear
+`dispatching`, because the launch it describes is still running. `--dry-run`
+never takes the lock at all: a dry pass acts on nothing and a read-only
+command must not queue behind a live one.
 
 Why flock and never a second pidfile: a pidfile records liveness in a file
 whose truth decays and the reader has to infer (rangerhq-ct9/ppy9); an flock

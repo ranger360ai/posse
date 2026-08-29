@@ -343,6 +343,49 @@ func TestLaunchBeadWaitsForTheLock(t *testing.T) {
 	}
 }
 
+// The cockpit's shape (rangerhq-ecl2): its Dispatcher writes to io.Discard,
+// because a line printed straight at a TUI is garbage on the frame — so the
+// one line ADR 0011 §1 promises a blocked launcher has nowhere to land
+// unless Progress takes it. With Progress set the line arrives there,
+// naming the holder, and Out stays clean.
+func TestLaunchBeadReportsTheLockWaitToProgress(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	var out, prog syncBuf
+	d.Out = &out
+	d.Progress = func(line string) { prog.Write([]byte(line + "\n")) }
+	writePersona(t, b.App, "ranger", "[go]")
+	agentPerLaunch(t, fake)
+	repo := t.TempDir()
+	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"go"}}, Dir: repo}
+
+	held := mustHoldLock(t, b.App)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.LaunchBead(is)
+		done <- err
+	}()
+
+	waitForOut(t, &prog, "waiting")
+	if want := "pid " + strconv.Itoa(os.Getpid()); !strings.Contains(prog.String(), want) {
+		t.Errorf("the progress line does not name the holder (%s):\n%s", want, prog.String())
+	}
+	if strings.Contains(out.String(), "waiting") {
+		t.Errorf("the wait line also went to Out, which a cockpit renders as garbage:\n%s", out.String())
+	}
+
+	held.Release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the cockpit launch never resumed after the lock was released")
+	}
+}
+
 // ─── the bead's acceptance criterion ─────────────────────────────────────────
 
 // Two simultaneous passes, two personas, two repos: one holds, the other

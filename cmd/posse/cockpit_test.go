@@ -1492,3 +1492,67 @@ func TestCockpitFooterNamesTheUncountedRuntimes(t *testing.T) {
 		}
 	}
 }
+
+// rangerhq-ecl2: a launch queued behind a running pass says so. The
+// cockpit's dispatcher writes to io.Discard, so the ADR 0011 §1 wait line
+// reaches the operator only through the Progress sink newCockpit wires —
+// without it `d` sits on "dispatching <id>…" for the length of the other
+// launcher's hold with nothing saying why.
+func TestCockpitStatusShowsTheLauncherLockWait(t *testing.T) {
+	c := newCockpit(nil, nil, io.Discard)
+	if c.disp.Progress == nil {
+		t.Fatal("the cockpit's dispatcher has no progress sink: a blocked launch says nothing")
+	}
+	c.dispatching = true
+	c.status = "dispatching a-1…"
+
+	// What lockLaunches writes, from the launch goroutine.
+	c.disp.Progress("⏳ launcher lock held by pid 4711 — waiting (ADR 0011 §1)")
+
+	select {
+	case msg := <-c.progress:
+		c.applyProgress(msg)
+	default:
+		t.Fatal("the wait line never reached the event loop's channel")
+	}
+	if !strings.Contains(c.status, "launcher lock held by pid 4711") {
+		t.Errorf("status line is %q, want the lock wait naming the holder", c.status)
+	}
+	// The launch is still in flight — this line is progress, not its result.
+	if !c.dispatching {
+		t.Error("a progress line cleared c.dispatching, which would let a second `d` in")
+	}
+}
+
+// note runs on the launch goroutine, where blocking on a busy event loop
+// would hold the launch itself. A full channel drops the line instead.
+func TestCockpitProgressNeverBlocksTheLauncher(t *testing.T) {
+	c := newCockpit(nil, nil, io.Discard)
+	for i := 0; i < cap(c.progress)+3; i++ {
+		done := make(chan struct{})
+		go func() { c.note("⏳ waiting"); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("note blocked on write %d of %d — a launch would wait on the event loop", i+1, cap(c.progress)+3)
+		}
+	}
+}
+
+// A channel is only a status line if something drains it, and the drain is
+// one case in runCockpit's select — which no test runs, because it wants a
+// raw-mode terminal. So this pin is on the source: without that case the
+// wait line lands in a buffer nobody reads, which is exactly the bug
+// rangerhq-ecl2 opened on, and both tests above stay green over it. It says
+// the reader exists; the tests above say what it does with the line.
+func TestCockpitEventLoopDrainsProgress(t *testing.T) {
+	src, err := os.ReadFile("cockpit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"case msg := <-c.progress:", "c.applyProgress(msg)"} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("runCockpit's event loop does not %s — nothing drains the progress channel", want)
+		}
+	}
+}

@@ -74,6 +74,17 @@ type Dispatcher struct {
 	// scan Claude transcripts; tests inject a hermetic answer. The bool says
 	// an outcome was observed; an empty message is a healthy first answer.
 	TurnOutcome func(dir, bead string, since time.Time) (string, bool)
+	// Progress reports a launch's in-flight lines to a caller whose Out
+	// cannot carry them: the cockpit builds its Dispatcher with
+	// Out=io.Discard, because its screen is a TUI and a stray line would
+	// land on it as garbage, and the launcher-lock wait ADR 0011 §1
+	// promises the operator is the only thing LaunchBead says before it
+	// returns. Unset (every CLI path) the lines go to Out as they always
+	// have — the operator is watching the terminal that printed them. One
+	// complete line per call, no trailing newline, and called from the
+	// launching goroutine: a sink that blocks holds a launch, so the
+	// cockpit's drops rather than waits.
+	Progress func(line string)
 	// Hints is the settle-event channel Watch listens on (ADR 0016 §1, ADR
 	// 0028 §1). nil = subscribe to the herdr socket this posse resolves.
 	// Tests inject their own, and newTestDispatcher hands back a nil
@@ -257,6 +268,33 @@ func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 		PromptGrace:   30 * time.Second,
 		lastPrompt:    map[string]time.Time{},
 	}
+}
+
+// progressSink is where the lines LaunchBead prints before it returns go:
+// Out, unless a caller has silenced Out and set Progress instead. Only
+// LaunchBead routes through it — Run's fire loop has a terminal Out by
+// construction, and prints its own wait line there.
+func (d *Dispatcher) progressSink() io.Writer {
+	if d.Progress == nil {
+		return d.Out
+	}
+	return lineWriter(d.Progress)
+}
+
+// lineWriter adapts a line callback to the io.Writer the lock takes. It
+// splits on newlines and drops empties, so one Fprintf of one "…\n" line —
+// which is all lockLaunches ever writes — arrives as one call. It does not
+// buffer a partial line: a sink that ever grew a writer splitting mid-line
+// would need one, and would be lying about "one complete line" until it did.
+type lineWriter func(string)
+
+func (w lineWriter) Write(p []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimSuffix(string(p), "\n"), "\n") {
+		if line != "" {
+			w(line)
+		}
+	}
+	return len(p), nil
 }
 
 func (d *Dispatcher) errw() io.Writer {
@@ -3213,9 +3251,9 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// below — crew-held, working/blocked, prompted-recently — reads state a
 	// running pass is mutating. Held for the whole body, so the check and
 	// the launch it authorizes cannot be split by another launcher; the
-	// cockpit's Out is io.Discard, so the waiting line lands nowhere and the
-	// operator sees the status line it already had.
-	lock, err := lockLaunches(d.App, d.Out)
+	// cockpit's Out is io.Discard, so the waiting line goes to Progress
+	// instead and reaches the operator on the status line (rangerhq-ecl2).
+	lock, err := lockLaunches(d.App, d.progressSink())
 	if err != nil {
 		return "", err
 	}

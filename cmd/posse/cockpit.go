@@ -96,6 +96,7 @@ type cockpit struct {
 	status      string      // last action result, shown in the footer
 	dispatching bool        // a launch goroutine is in flight (one at a time)
 	results     chan string // launch goroutine → event loop status line
+	progress    chan string // launch goroutine → event loop, while it is still in flight
 
 	// Running cost (ADR 0003 §4): a background scan of every registered cost
 	// provider's transcripts, refreshed every costEvery, keyed by bead id;
@@ -439,11 +440,28 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 	return ""
 }
 
-func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
+// newCockpit builds the cockpit and the channels its background work
+// reports on. Separate from runCockpit so the wiring is a thing a test can
+// hold: runCockpit's own body is the raw-mode terminal, which no test has.
+func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 	c := &cockpit{app: a, hb: hb, bd: rhq.NewBd(), out: out,
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
-		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
+		progress: make(chan string, 4),
+		costs:    make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
 		govs: make(chan govRead, 1)}
+	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
+	// written straight to it is garbage on the frame. That silences the one
+	// line a blocked launch has to say (ADR 0011 §1: "one line when a second
+	// launcher waits, naming the holder"), so it comes back through Progress
+	// and onto the status line instead: `d` behind a running pass otherwise
+	// sits on "dispatching <id>…" for as long as the pass holds the lock,
+	// with nothing saying why (rangerhq-ecl2).
+	c.disp.Progress = c.note
+	return c
+}
+
+func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
+	c := newCockpit(a, hb, out)
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return c.displayOnly()
@@ -524,6 +542,11 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 			}
 		case rep := <-c.costs:
 			c.applyCost(rep)
+			if c.mode == modeNormal {
+				c.draw()
+			}
+		case msg := <-c.progress:
+			c.applyProgress(msg)
 			if c.mode == modeNormal {
 				c.draw()
 			}
@@ -1067,6 +1090,27 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 func (c *cockpit) dispatchBead(bead rhq.RepoIssue, resume bool) (string, error) {
 	c.disp.Resume = resume
 	return c.disp.LaunchBead(bead)
+}
+
+// note carries one line from the in-flight launcher to the event loop. It
+// runs on the launch goroutine, so it never blocks: a full channel means the
+// event loop is busy and the line is a progress note, not a result — dropping
+// it costs a status line, where waiting would hold the launch itself.
+func (c *cockpit) note(line string) {
+	select {
+	case c.progress <- line:
+	default:
+	}
+}
+
+// applyProgress puts an in-flight launcher's line on the status line. Unlike
+// c.results it does not clear c.dispatching: the launch is still running, and
+// this is the only reason the operator has to believe it.
+func (c *cockpit) applyProgress(line string) {
+	if line == "" {
+		return
+	}
+	c.status = line
 }
 
 // launch runs a launcher off the event loop — session create + agent
