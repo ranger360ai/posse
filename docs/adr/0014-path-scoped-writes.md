@@ -101,11 +101,35 @@ from "seatbelt extras" to **allow-list paths at L2 and L4**. L4:
 - allow-list / bare `Edit`/`Write`: repo `:ro`, then a read-write overlay
   of each `writable:` extra
 
-Overlapping binds (later mount wins) are **ASSUMED** — the Docker probe
-was not run this session. The L4 bead's done-when *is* that probe on
-this host's engine (Docker 29 / VirtioFS). If it fails, that bead files
-`DIVERGED:` and path-scoped rules stay unrealized at `container` rather
-than claiming a wall the engine does not hold.
+Overlapping binds are **MEASURED** (ranger-base-yu5, 2026-08-29, macOS
+26.4.1, Docker Desktop engine 29.0.1 / VirtioFS —
+`docs/adr/0014-path-scoped-writes.probe.sh`, seven probes, each with the
+control arm that has the overlay taken away). A bind of a directory
+lands over a bind of its parent in **both** directions, `:ro` over
+read-write and read-write over `:ro`, and the engine sorts binds by
+destination **depth** — so the deeper mount wins whatever order it was
+given in, and "later mount wins" is the right answer for the wrong
+reason. Two consequences the renderer had to be built around rather than
+assumed into:
+
+- **deny-wins cannot be delivered by order here.** At L2 a `writable:`
+  extra inside a denied subtree loses because SBPL takes the last match
+  and the deny block is below every grant. At L4 that extra is *deeper*
+  than the deny containing it and would win, so `cage.go` **drops** it
+  instead. Same rule, opposite mechanics.
+- **an overlay must be spelled the way the mount it lands on is
+  spelled.** A session dispatched through a symlinked parent (`/tmp/x`
+  on macOS) mounts the repo at the path it was given, and there is no
+  symlink inside the container: an overlay resolved for the host lands
+  at a destination nothing mounts, and the denied subtree is writable at
+  the only path the persona can reach it by. The bind succeeds and
+  `posse cage` prints it, so this one is silent.
+
+A `:ro` overlay whose source does not exist still holds — the engine
+creates the source in the writable parent — which is why only the
+read-write direction is Stat-guarded there: a *created* source in the
+allow direction is a grant of a path nobody wrote, and inside a `:ro`
+parent it is the mountpoint-creation failure rangerhq-6so measured.
 
 Bare `:ro` currently also blocks bd: SQLite cannot open `.beads` on a
 read-only mount, and `.beads/bd.sock` is not a route (VirtioFS
@@ -207,6 +231,7 @@ this ADR exists to prevent.
 | Parametrized `Edit(glob)` currently hits `parity.go`'s default arm | **MEASURED** (the source) |
 | Codex `-s read-only` has no per-path surface; `--add-dir` is refused under it | **MEASURED** (rangerhq-5oi, `runtime.go`) |
 | L0 forwards the glob via `--disallowedTools` / `--deny` | **MEASURED** (`realizeClaude` / `realizeGrok` pass the PID rule through) |
-| Docker overlapping `:ro`/`:rw` binds on VirtioFS do what later-mount-wins says | **ASSUMED** — L4 bead measures before claiming |
-| `.beads` rw overlay on a `:ro` repo lets SQLite open | **ASSUMED** (follows from overlapping binds); the *need* is measured (NOTES, rangerhq-6so) |
+| Docker overlapping `:ro`/`:rw` binds on VirtioFS do what later-mount-wins says | **MEASURED** 2026-08-29 (ranger-base-yu5, engine 29.0.1 / VirtioFS, `0014-path-scoped-writes.probe.sh`) — both directions hold, and the ordering rule is destination DEPTH, not list order |
+| `.beads` rw overlay on a `:ro` repo lets SQLite open | **MEASURED, and the claim was the wrong one.** The overlay is writable on a `:ro` repo (same probe, and `TestLiveInnerGatesHoldInsideTheCage`), but nothing opens SQLite: the inner wrapper is `bd --no-db --no-daemon` and what crosses is a JSONL append the host daemon imports (ADR 0002 amendment, rangerhq-3nxk). Claim/comment/close survive the tier; the database does not cross it |
+| A `:ro` overlay of a source that does not exist still denies | **MEASURED** 2026-08-29 (probe 7) — the engine creates the directory in the writable parent; only the read-write direction is Stat-guarded |
 | Claude PreToolUse does not see `sed -i` | **ASSUMED** from the tool-hook contract (stdin is the tool call); not re-probed; rejected on that contract, not on a live miss |

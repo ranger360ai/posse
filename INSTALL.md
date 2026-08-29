@@ -716,10 +716,21 @@ deny and over-enforces a scoped one, so a path-scoped PID on codex needs
 the container tier. `posse gates` reads the grammar now: at `shims` a
 scoped rule prints `✗ needs cage: seatbelt (or container) — a path-scoped
 write is not a tool-name deny` and the launch refuses; at `seatbelt` and
-`container` it prints the layer. **The renderers are not there yet** —
-between this and the L2/L4 beads the matrix names a wall the profile does
-not yet emit, so keep a parametrized rule off any PID you need to
-dispatch this week.
+`container` it prints the layer, and **both renderers are now behind
+those rows**: at `seatbelt` the profile carries a trailing
+`(deny file-write* (subpath …))` below every grant, and at `container`
+the mount list carries a `:ro` bind of the directory over a read-write
+repo (and a read-write bind of each `writable:` extra over a `:ro` one).
+The overlapping-bind behaviour that rests on is measured rather than
+assumed — re-run it on your own engine with
+`sh docs/adr/0014-path-scoped-writes.probe.sh`, which prints an expect
+line beside every answer.
+
+Two edges worth knowing before you write one. A `writable:` extra
+*inside* a denied subtree grants nothing — deny wins (ADR 0001), at both
+tiers, and `posse agent check` warns. And at `container` a denied subtree
+the cage cannot otherwise write is not mounted at all: that is a stronger
+wall than `:ro`, not a missing one.
 
 ---
 

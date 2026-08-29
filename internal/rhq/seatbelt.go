@@ -331,12 +331,37 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	}
 	add("/private/tmp")
 	add("/tmp")
+	out = append(out, pidWritableExtras(ag, cwd)...)
+	return dedupeStrings(out)
+}
+
+// pidWritableExtras resolves the PID's `writable:` extras for a session in
+// cwd. ADR 0014 §4 promotes the key from "seatbelt extras" to allow-list
+// paths at BOTH tiers, so this is one function and not two: L2 adds these
+// to the profile's writable set and L4 mounts them read-write over a `:ro`
+// repo, and the day the two readers disagree is the day `posse gates`
+// prints a grant one tier holds and the other silently drops. Same shape as
+// ranger-base-4ks made `wholeTreeWriteDeny` for the deny side.
+//
+// `~` expands, a relative extra joins the session dir, and the result goes
+// through the same resolver as every other path in the profile so a
+// symlinked spelling cannot dodge the grant in either direction. An extra
+// with no session dir to join against is dropped rather than guessed at —
+// the same answer `Resolve` gives a relative subtree glob.
+func pidWritableExtras(ag *AgentFile, cwd string) []string {
+	if ag == nil {
+		return nil
+	}
+	var out []string
 	for _, w := range ag.Writable {
 		w = ExpandTilde(w)
-		if !filepath.IsAbs(w) && cwd != "" {
+		if !filepath.IsAbs(w) {
+			if cwd == "" {
+				continue
+			}
 			w = filepath.Join(cwd, w)
 		}
-		add(w)
+		out = append(out, absResolve(w))
 	}
 	return dedupeStrings(out)
 }

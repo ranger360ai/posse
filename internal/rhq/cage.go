@@ -320,9 +320,27 @@ func (a *App) CageHome(persona string) string {
 //
 // What crosses the carve-out is the JSONL, not SQLite: the inner `bd`
 // wrapper (cageinner.go) runs no-db, so this mount carries a file append and
-// the host's daemon imports it. `.git` is the other carve-out ADR 0014 names
-// and it is NOT here — it belongs with that ADR's `writable:` overlays, and
-// L3's `pre-push` needs no write at all.
+// the host's daemon imports it.
+//
+// **`.git` is the second carve-out** (ADR 0014 §4), and it is the same
+// sentence as the first: L2 grants a write-denying PID `cwd/.git` beside
+// `cwd/.beads` — index refresh, git's own locks, never a push, which L3
+// holds — and a tier that took it away would be enforcing more than the
+// gate. In an ordinary repo that is a directory inside the repo mount and
+// an overlay says it. In a worktree `.git` is a FILE and everything behind
+// it lives in the common dir, which is a mount of its own; it goes
+// read-write for the same reason, and what that exposes beyond L2's
+// narrowed grant (`refs/heads` whole, so a caged persona can move a ref)
+// is stated in NOTES rather than hidden. `.git/hooks` back to `:ro` over
+// it is ranger-base-3c3 / h15, named by ADR 0014 §4 as not this bead.
+//
+// **The path-scoped overlays** (ADR 0014 §4) are the last pass, in
+// cagePathScopedOverlays: a `deny: [Edit(docs/adr/**)]` becomes a `:ro`
+// overlay of that directory over a read-write repo, and a `writable:`
+// extra becomes a read-write overlay over a `:ro` one. It runs last
+// because it is the only pass that has to see every OTHER mount: which
+// regions the cage can write is what decides whether a denied subtree
+// needs an overlay at all.
 func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 	ro := deniesFileWrite(ag.Deny)
 	why := "the session's repo"
@@ -334,22 +352,49 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 		{Src: ag.MemoryDir, Dst: ag.MemoryDir, Why: "persona memory ({memory}, ORDERS.md)"},
 		{Src: ag.Path, Dst: ag.Path, RO: true, Why: "the PID the runtime reads as its prompt ({file})"},
 	}
-	// The carve-out, AFTER the repo so the later mount wins. Only when the
-	// repo is `:ro` (on a read-write repo there is nothing to carve out of)
-	// and only when the directory is already there.
-	if beads := filepath.Join(dir, ".beads"); ro {
-		if st, err := os.Stat(beads); err == nil && st.IsDir() {
-			ms = append(ms, CageMount{Src: beads, Dst: beads, Why: "the bead store, READ-WRITE over the :ro repo — the carve-out that keeps claim/comment/close at this tier (ADR 0002 amendment, rangerhq-3nxk)"})
-		}
+	// The two carve-outs, AFTER the repo so the later mount wins. Only when
+	// the repo is `:ro` (on a read-write repo there is nothing to carve out
+	// of) and only where the directory is already there — a worktree's
+	// `.git` is a file and is skipped here, because the thing it points at
+	// is the common-dir mount below.
+	if ro {
+		ms = cageOverlay(ms, filepath.Join(dir, ".beads"), false,
+			"the bead store, READ-WRITE over the :ro repo — the carve-out that keeps claim/comment/close at this tier (ADR 0002 amendment, rangerhq-3nxk)")
+		ms = cageOverlay(ms, filepath.Join(dir, ".git"), false,
+			"the repo's git dir, READ-WRITE over the :ro repo — L2's other carve-out (index refresh and git's own locks; the push is L3's, not the mount's) (ADR 0014 §4)")
+	}
+	// The store of record when a `.beads/redirect` puts it in ANOTHER repo
+	// (ADR 0012 D3-C): `<dir>/.beads` then holds a path and nothing else, so
+	// the carve-out above mounts a directory nothing writes and every
+	// mutation lands outside the cage entirely — the L4 shape of the L2
+	// failure ranger-base-rhw measured. Not conditional on `ro`: cwd's mount
+	// does not reach another repo either way. The target alone, not its
+	// `.git`: the inner wrapper is `--no-db --no-daemon`, appends JSONL and
+	// never commits, so the grant L2 needs for a sync buys nothing here and
+	// would mount a second repo's history read-write.
+	if home := beadsHome(dir); !underDir(dir, home) {
+		ms = cageOverlay(ms, home, false,
+			"the store of record, in another repo (.beads/redirect) — read-write so claim/comment/close reach it (ranger-base-rhw at L2, ADR 0014 §4 at L4)")
 	}
 	// A worktree's `.git` is a FILE pointing at the main repo's common dir,
 	// which is somewhere else on the host — so `.git/hooks/pre-push`, the L3
 	// half of this tier, is not on the repo mount at all unless that dir is
 	// mounted too. Same path in and out, so the pointer file resolves inside
-	// to the thing it names outside; same mode as the repo, so the boundary
-	// says one thing rather than two.
+	// to the thing it names outside.
+	//
+	// READ-WRITE whatever the repo's mode: this is the `.git` carve-out of
+	// ADR 0014 §4 in the shape a worktree has it. A worktree's index, HEAD
+	// and objects are all in there, so a `:ro` common dir is a session that
+	// cannot even `git status` without an error, which is extra rather than
+	// the gate. It is wider than L2's grant, which names `worktrees/<own>`,
+	// `objects`, `logs` and the session's own ref (ranger-base-m2wf): a bind
+	// mount's source must EXIST, and `refs/heads/<branch>.lock` is created
+	// by git at commit time, so the narrowed set is not a mount list. Stated,
+	// not hidden — a caged worktree persona can move any ref in the repo it
+	// was dispatched into, which is the same directory-granularity gap ADR
+	// 0002 accepts for codex/grok `--add-dir` at L2.
 	if common := gitCommonDirOutside(dir); common != "" {
-		ms = append(ms, CageMount{Src: common, Dst: common, RO: ro, Why: "the worktree's git common dir — .git here is a file pointing at it, and L3's hooks live there"})
+		ms = append(ms, CageMount{Src: common, Dst: common, Why: "the worktree's git common dir — .git here is a file pointing at it, L3's hooks live there, and it is the `.git` carve-out for a worktree (ADR 0014 §4)"})
 	}
 	if len(ag.Skills) > 0 {
 		ms = append(ms, CageMount{Src: ag.SkillsStateDir, Dst: ag.SkillsStateDir, RO: true, Why: "bound skills (ADR 0007)"})
@@ -365,7 +410,201 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 		Dst: filepath.Join(CageGatesDir(ag.Name), "refusals.log"),
 		Why: "gates/" + ag.Name + "/refusals.log — the inner L1/L3 append to the host's audit trail",
 	})
-	return append(ms, a.CageSocketMounts(ag)...)
+	ms = append(ms, a.CageSocketMounts(ag)...)
+	return cagePathScopedOverlays(ms, ag, dir)
+}
+
+// cageOverlay places one path at mode ro over whatever already covers it,
+// and is the only way a path joins the mount list twice. Three cases, and
+// the third is the one that would cost a rule its wall if it were got
+// wrong:
+//
+//   - a mount already lands exactly there → flip THAT mount's mode. Two
+//     binds with the same destination is an engine error ("Duplicate mount
+//     point"), so an overlay of a path we already mount is an edit and
+//     never an addition.
+//   - the deepest mount covering it is in the other mode → overlay it, at
+//     the destination THAT mount spells (cageCovering). MEASURED
+//     on this host's engine rather than assumed, which is what ADR 0014 §4
+//     left open and `docs/adr/0014-path-scoped-writes.probe.sh` closes
+//     (2026-08-29, Docker 29.0.1 / VirtioFS): a bind of a pre-existing
+//     directory lands over a bind of its parent in BOTH directions —
+//     read-write over `:ro` and `:ro` over read-write — and the engine
+//     sorts binds by destination depth, so the deeper mount wins whatever
+//     order this list is in.
+//   - nothing covers it → mount it, but only in the ALLOW direction. A path
+//     the cage cannot see is already unwritable, and mounting it `:ro` to
+//     say so would hand the persona read access the boundary had denied it.
+//
+// The Stat guard is on the allow direction only, and the asymmetry is the
+// measurement: a read-write bind of a source that does not exist grants
+// nothing and, inside a `:ro` parent, is the mountpoint-creation failure
+// rangerhq-6so measured on `.beads/bd.sock`. A `:ro` bind of an absent
+// source is the opposite — the engine creates the directory in the writable
+// parent that put it here and the deny holds (measured, same probe), while
+// skipping it would leave `mkdir docs/adr` open under a `✓ L4 :ro overlay`.
+func cageOverlay(ms []CageMount, p string, ro bool, why string) []CageMount {
+	if p == "" {
+		return ms
+	}
+	src := absResolve(p)
+	i, over := cageCovering(ms, src)
+	if i < 0 {
+		// Nothing here at all. The deny direction stops: a path the cage
+		// cannot see is already unwritable, and binding it would hand over
+		// read access the boundary had refused. The allow direction mounts
+		// it — that is a `writable:` extra outside the repo, and the store
+		// of record behind a redirect.
+		if ro {
+			return ms
+		}
+		if !isExistingDir(src) {
+			return ms
+		}
+		return append(ms, CageMount{Src: src, Dst: src, RO: ro, Why: why})
+	}
+	if over.Dst == ms[i].Dst {
+		ms[i].RO, ms[i].Why = ro, why // an edit, never a second bind
+		return ms
+	}
+	if ms[i].RO == ro {
+		return ms // already at this mode: a bind saying so again is noise
+	}
+	if !ro && !isExistingDir(over.Src) {
+		return ms
+	}
+	over.RO, over.Why = ro, why
+	return append(ms, over)
+}
+
+// cageCovering is the mount that decides src's mode inside the cage — the
+// DEEPEST bind containing it, because the engine sorts binds by destination
+// depth — beside the overlay that would land on it. -1 when nothing covers
+// src at all.
+//
+// The overlay's paths are the covering mount's, extended: `Dst` is spelled
+// the way that mount spells it and NOT the way the host resolves it. On
+// macOS a session dispatched into `/tmp/x` mounts at `/tmp/x`, and inside
+// the container there is no symlink to `/private/tmp/x` — an overlay
+// resolved for the host would land at a path nothing mounts, leaving the
+// denied subtree writable under a `✓ L4 :ro overlay`. Same reason `Src`
+// follows the covering mount's source rather than the resolved host path:
+// where the two differ, the mount is the truth about which host directory
+// this destination is.
+//
+// Containment is judged on `Dst` because that is what the container sees,
+// and every mount a path rule can name is same-path in and out.
+func cageCovering(ms []CageMount, src string) (int, CageMount) {
+	best, over, bestLen := -1, CageMount{}, -1
+	for i, m := range ms {
+		root := absResolve(m.Dst)
+		if !underDir(root, src) || len(root) <= bestLen {
+			continue
+		}
+		rel, err := filepath.Rel(root, src)
+		if err != nil {
+			continue
+		}
+		best, bestLen = i, len(root)
+		if rel == "." {
+			over = CageMount{Src: m.Src, Dst: m.Dst}
+		} else {
+			over = CageMount{Src: filepath.Join(m.Src, rel), Dst: filepath.Join(m.Dst, rel)}
+		}
+	}
+	return best, over
+}
+
+// isExistingDir is the guard on every read-write overlay: a bind of a source
+// that is not a directory grants nothing, and inside a `:ro` parent it is
+// the mountpoint-creation failure rangerhq-6so measured.
+func isExistingDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
+}
+
+// cagePathScopedOverlays is ADR 0014 §4 at the mount layer: the L4 half of
+// the layer whose L2 half is `SeatbeltCarveOut`'s trailing deny block, and
+// the row `parity.go` has printed as `L4 :ro overlay (…)` since
+// ranger-base-4ks with nothing behind it.
+//
+//   - deny-list (`deny: [Edit(docs/adr/**)]`): the repo stays read-write and
+//     each denied subtree gets a `:ro` overlay.
+//   - allow-list (`deny: [Edit, Write]` plus `writable: [docs/adr]`): the
+//     repo is `:ro` — deniesFileWrite, above — and each extra gets a
+//     read-write overlay. `writable:` is promoted by ADR 0014 §4 from
+//     "seatbelt extras" to allow-list paths at BOTH tiers; before this it
+//     was read at L2 and silently ignored at L4.
+//
+// Two things it does NOT do, both deliberate:
+//
+// It never mounts a denied subtree the cage could not otherwise write. A
+// path outside every mount is invisible, which is a stronger wall than
+// `:ro`, and adding the bind to look thorough would hand over read access
+// the boundary had refused.
+//
+// It resolves the extras through the same `writable:` reader L2 uses
+// (pidWritableExtras) and the denies through the same `Resolve` the profile
+// uses (pidDeniedSubtrees), because a wall that reads the PID differently
+// from the wall next to it is the classification error ADR 0014 exists to
+// prevent (ranger-base-4ks).
+//
+// **deny-wins (ADR 0001) is enforced by DROPPING the extra, not by
+// out-ordering it.** At L2 an extra inside a denied subtree loses because
+// SBPL takes the last match and the deny block is below every grant. Here
+// the engine sorts by depth, so the extra is DEEPER than the deny that
+// contains it and would win. Same rule, opposite mechanics; `posse agent
+// check` warns about the pair, and this is what makes the warning true.
+func cagePathScopedOverlays(ms []CageMount, ag *AgentFile, dir string) []CageMount {
+	denied := pidDeniedSubtrees(ag, dir)
+	// The allow direction first: an extra can be the region a denied subtree
+	// sits in (`writable: [docs]` beside `Edit(docs/adr/**)`), and the deny
+	// pass below only overlays what something already makes writable.
+	for _, w := range pidWritableExtras(ag, dir) {
+		if pathInAny(denied, w) {
+			continue // deny-wins: the extra grants nothing, so it mounts nothing
+		}
+		ms = cageOverlay(ms, w, false, "writable: "+w+" — read-write over the :ro repo, the allow-list shape (ADR 0014 §4)")
+	}
+	// One overlay per DIRECTORY, named by every rule that reaches it. A PID
+	// spells the union as `Edit(docs/adr/**)` and `Write(docs/adr/**)`, which
+	// resolve to one path; printing only the last of them would leave the
+	// operator checking a mount line against a PID rule it does not carry.
+	for _, p := range dedupeStrings(pidDenyPaths(denied)) {
+		ms = cageOverlay(ms, p, true, "deny: "+strings.Join(pidDenyRulesFor(denied, p), ", ")+
+			" — READ-ONLY overlay, the subtree file-write deny at this tier (ADR 0014 §1/§4)")
+	}
+	return ms
+}
+
+// pidDenyPaths and pidDenyRulesFor split one list two ways: the directories
+// to overlay, in the order the PID wrote them, and the rules that named each.
+func pidDenyPaths(denied []pidDeny) []string {
+	out := make([]string, 0, len(denied))
+	for _, d := range denied {
+		out = append(out, d.Path)
+	}
+	return out
+}
+
+func pidDenyRulesFor(denied []pidDeny, p string) []string {
+	var out []string
+	for _, d := range denied {
+		if d.Path == p {
+			out = append(out, d.Rule)
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// pathInAny reports whether p is inside one of the denied subtrees.
+func pathInAny(denied []pidDeny, p string) bool {
+	for _, d := range denied {
+		if underDir(d.Path, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // cageEnvName is the shape a name must have to be forwarded: an env var

@@ -3207,9 +3207,92 @@ daemon's export and a cage's no-db append (low frequency, git-visible);
 and a **worktree** session's caged bd writes that worktree's own tracked
 `.beads/issues.jsonl` — nearest `.beads` wins — so the write reaches the
 shared store by merge/sync, unlike host worktree bd, which routes to the
-main checkout's daemon. `.git` is the other carve-out ADR 0014 names and it
-is **not** built here: it belongs with that ADR's `writable:` overlays, and
-L3's `pre-push` needs no write at all.
+main checkout's daemon. `.git` is the other carve-out ADR 0014 names, and it is
+**built now** (ranger-base-yu5) — see the section below.
+
+## Path-scoped writes at L4: the overlays, measured (ranger-base-yu5)
+
+ADR 0014 §4 shipped with its central mechanism marked **ASSUMED** — "the
+Docker probe was not run this session" — and named this bead's done-when as
+that probe. It is now `docs/adr/0014-path-scoped-writes.probe.sh`: seven
+probes, each with the control arm that has the overlay taken away, run
+2026-08-29 on macOS 26.4.1 / Docker Desktop engine 29.0.1 (VirtioFS). All
+seven answered their expect line, so nothing DIVERGED and the tier really
+holds the rules the matrix has been printing since ranger-base-4ks.
+
+What the engine actually does, as against what the ADR guessed:
+
+- A bind of a directory lands over a bind of its parent in **both**
+  directions — `:ro` over read-write *and* read-write over `:ro`.
+- The ordering rule is **destination depth, not list order**. The overlay
+  listed *before* the repo it sits on gives the same answers (probe 6). So
+  "later mount wins" was the right answer for the wrong reason, and a
+  renderer that relied on emitting parent-first would have been relying on
+  nothing.
+- A `:ro` overlay whose **source does not exist** still denies: the engine
+  creates the source in the writable parent, and `touch` in it is refused
+  (probe 7). That matters because a rule is about a PATH — `mkdir docs/adr`
+  is exactly what a persona does next — and a Stat-guarded deny would have
+  been a wall that disappears when the directory has not been made yet.
+
+### Two things the renderer had to be built around
+
+**deny-wins cannot be delivered by order here.** At L2 a `writable:` extra
+inside a denied subtree loses because SBPL takes the last match and the
+trailing deny block is below every grant. At L4 that extra is *deeper* than
+the deny containing it, so depth-sorting makes it **win** — the exact
+inversion of ADR 0001. `cage.go` therefore **drops** such an extra rather
+than trying to out-order it. Same rule, opposite mechanics, and it is why
+`posse agent check`'s warning about the pair is now true at both tiers.
+
+**An overlay must be spelled the way the mount it lands on is spelled.**
+This one is silent and was caught by mutating the code under the pins, not
+by reading it. A session dispatched through a symlinked parent (`/tmp/x` on
+macOS, really `/private/tmp/x`) mounts the repo at the path it was *given*;
+inside the container there is no symlink to follow. An overlay resolved for
+the host lands at a destination nothing mounts — the bind succeeds, `posse
+cage` prints it, `posse gates` says `✓ L4 :ro overlay`, and the denied
+subtree is writable at the only path the persona can reach it by. So
+`cageCovering` finds the deepest mount containing the resolved path and
+re-spells the overlay in *that mount's* words, source and destination both.
+
+### The carve-outs on a `:ro` repo
+
+`.beads` was already there (rangerhq-3nxk). `.git` is now beside it, which
+is ADR 0014 §4 answering the same question the `.beads` clause answered: L2
+grants a write-denying PID `cwd/.git` for index refresh and git's own locks,
+and a tier that took it away would be enforcing more than the gate. In an
+ordinary repo that is a directory inside the repo mount and an overlay says
+it. In a **worktree** `.git` is a FILE and the index, HEAD and objects all
+live in the common dir, which is a mount of its own and used to take the
+repo's mode; it is read-write now.
+
+That is **wider than L2**, and stated rather than hidden: L2 narrows the
+common-dir grant to `worktrees/<own>`, `objects`, `logs` and the session's
+own ref (ranger-base-m2wf), and a bind mount cannot express that set — its
+source must EXIST, and `refs/heads/<branch>.lock` is created by git at
+commit time. So a caged worktree persona can move any ref in the repo it
+was dispatched into. It is the same directory-granularity gap ADR 0002
+already accepts for codex/grok `--add-dir` at L2. `.git/hooks` back to
+`:ro` over it is ranger-base-3c3 / h15.
+
+The **redirect target** joins them, unconditionally rather than only on a
+`:ro` repo: when `.beads/redirect` puts the store of record in another repo,
+`<dir>/.beads` holds a path and nothing else, so the carve-out above mounts
+a directory nothing writes and every mutation lands outside the cage — the
+L4 shape of the L2 failure ranger-base-rhw measured. The target alone, not
+its `.git`: the inner wrapper is `--no-db --no-daemon`, appends JSONL and
+never commits, so L2's git grant buys nothing here and would mount a second
+repo's history read-write.
+
+### A trap that is not the engine's
+
+Re-running these binds by hand in **zsh**: `"$R:$R:ro"` is not what it looks
+like. `:r` is a zsh modifier (strip the extension), so the word becomes
+`$R:${R}o` — docker then binds an empty auto-created directory read-WRITE at
+a destination one character off, and the probe reads as "the engine ignored
+`:ro`". Spell it `"${R}:${R}:ro"`. The probe script is `/bin/sh` and is not
+affected; this cost a measurement that briefly looked like a DIVERGED.
 
 ## Cage engine re-evaluation: still Docker (rangerhq-rli)
 
