@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -303,6 +303,18 @@ verify-hook-freshness:
 # (`Bash(bd daemon:*)` is denied fleet-wide); remediation is the operator's.
 verify-bd-pin:
 	scripts/verify-bd-pin.sh
+
+# The bd argv gate's two halves must agree (ranger-base-hthx). The sh wrapper
+# decides, in a shell builtin, whether to start the parser at all, and that
+# fast path's one obligation is to be LOOSER than the parser. It was not: it
+# tested the payload for a literal `bd` substring while the parser resolves
+# the command word with shlex FIRST, so every spelling the shell concatenates
+# into the name -- b\d, b''d, b"d" -- was refused by the parser and never
+# reached it. This walks the whole quoting alphabet instead of a list of
+# spellings someone thought of, and exits 2 rather than 0 if it found nothing
+# to refuse. Read-only; ~23s at the default MAXLEN=4.
+verify-bd-argv-gate:
+	scripts/verify-bd-argv-gate.sh
 
 # The bd 0.49.1 dep-add landmine (ranger-base-pkqn). bd's cycle check walks
 # the whole dependency graph with UNION ALL — walks, not nodes, depth 100, all

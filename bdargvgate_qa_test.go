@@ -367,6 +367,24 @@ func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
 		}
 	}
 
+	// Why the fourth arm (*b\"*) has no row above, pinned rather than
+	// asserted in a comment: a JSON string escapes a double quote, so a
+	// command's `b"` reaches the wrapper as `b\"` and the backslash arm
+	// already covers it. The arm stays as defence for a payload that is not
+	// JSON-escaped. If the harness ever stops escaping, THIS fails, and the
+	// arm becomes load-bearing with a witness — which is the whole point of
+	// pinning the reason a redundancy is a redundancy.
+	payload, err := json.Marshal(map[string]any{"command": `b"d daemon stop`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `b\"`) {
+		t.Errorf("a command's double quote must arrive escaped, got %s", payload)
+	}
+	if strings.Contains(string(payload), `b"d`) {
+		t.Errorf("an unescaped `b\"` in the payload would make the *b\\\"* arm load-bearing, got %s", payload)
+	}
+
 	// The control the whole test rests on: the fast path must still BE a fast
 	// path. These carry no spelling of bd, so both programs stay silent and
 	// the wrapper never starts an interpreter for them.
