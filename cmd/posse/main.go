@@ -1829,9 +1829,9 @@ catalog:
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]
                                  build the cage image from a posse checkout
+                                 (cross-builds the Linux posse and bd it carries)
   posse cage down <persona>      take down that persona's egress networks and proxies
                                  (the launch's own watcher does this when a cage exits)
-                                 (cross-builds the Linux posse and bd it carries)
   posse scorecard [<persona>]    per-persona outcome metrics from bd data
                                  (closed/reopened/held/blocked, age at close,
                                  filed/rejected; each PID metric id computed, or
