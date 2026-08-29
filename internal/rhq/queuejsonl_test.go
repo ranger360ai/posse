@@ -472,3 +472,57 @@ func TestQueueCommitRestampsASlotConfigHasReMarked(t *testing.T) {
 		t.Errorf("the slot still carries the stamp config no longer calls for")
 	}
 }
+
+// The commit is path-limited, and a path-limited commit takes the WORKING
+// TREE version of the paths it names and ignores what is staged — measured
+// on git 2.39.3 for ranger-base-nor: stage v2, write v3 to the worktree,
+// then `git commit -m x -- <path>` commits v3. So the only question that
+// decides whether it has anything to do is worktree-vs-HEAD.
+//
+// `git status --porcelain` is not that question. It also reports an index
+// that differs from HEAD, which is exactly the state bd's own pre-commit
+// hook leaves behind in any repo where the blessed form runs (rangerhq-be7k:
+// the hook's add reaches the temp index the commit is built from and never
+// the real one). In that state the old check said "dirty" and the commit
+// that followed exited 1 with nothing to commit — a close reported as a
+// launcher failure over a projection that was already in git.
+func TestQueueCommitAsksTheQuestionTheCommitWillAsk(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	head := mustGit(t, repo, "rev-parse", "HEAD")
+
+	// The rangerhq-be7k state: the index holds a blob that is not HEAD's,
+	// while the working tree matches HEAD exactly.
+	tracked := filepath.Join(".beads", beadsJSONL)
+	seed := mustGit(t, repo, "show", "HEAD:.beads/"+beadsJSONL) + "\n"
+	write(t, filepath.Join(store, beadsJSONL), `{"id":"q-1","title":"stale index entry"}`+"\n")
+	mustGit(t, repo, "add", "--", tracked)
+	write(t, filepath.Join(store, beadsJSONL), seed)
+	if s := mustGit(t, repo, "status", "--porcelain", "--", tracked); !strings.HasPrefix(s, "MM") {
+		t.Fatalf("the fixture did not build the state under test: status = %q, want MM", s)
+	}
+	if d := mustGit(t, repo, "diff", "HEAD", "--name-only", "--", tracked); d != "" {
+		t.Fatalf("the fixture left the tree differing from HEAD: %q", d)
+	}
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
+	if err != nil {
+		t.Fatalf("a tree that already matches HEAD is not a failure: %v", err)
+	}
+	if c.SHA != "" {
+		t.Errorf("it committed a tree identical to HEAD: %+v", c)
+	}
+	if !strings.Contains(c.Skipped, "matches") {
+		t.Errorf("the skip must say the projection is already in git, got %q", c.Skipped)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != head {
+		t.Errorf("HEAD moved over an empty commit: %s -> %s", head, after)
+	}
+	// The other hand's staging is still theirs: a skip must not tidy an
+	// index entry it did not write (AGENTS.md is explicit that unstaging
+	// without the diff-HEAD check throws away somebody's real work).
+	if staged := mustGit(t, repo, "diff", "--cached", "--name-only"); staged != tracked {
+		t.Errorf("the staged entry did not survive the skip: %q", staged)
+	}
+}

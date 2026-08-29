@@ -141,11 +141,28 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 	// git is run from inside the store directory, so the pathspecs above
 	// need no repo root — the same trick beadloss.go uses to walk a
 	// redirect target's history without working out where its repo starts.
-	dirty, err := git(store, append([]string{"status", "--porcelain", "--"}, c.Paths...)...)
+	//
+	// The comparison is worktree-against-HEAD, because that is the only one
+	// the commit below performs: a path-limited commit takes the WORKING
+	// TREE version of the paths it names and ignores whatever is staged for
+	// them (measured, git 2.39.3, ranger-base-nor — stage v2, write v3 to
+	// the worktree, and `git commit -m x -- <path>` commits v3).
+	//
+	// `git status --porcelain` answers a wider question, and the extra
+	// ground it covers is reachable here: an index entry differing from
+	// HEAD over a tree that matches it. That is the state bd's own
+	// pre-commit hook leaves in any repo where the blessed form runs
+	// (rangerhq-be7k), and it is one `git add` by any hand in the queue
+	// repo away otherwise. Asking the wide question there returned "dirty"
+	// and sent the commit at a tree with nothing in it, which exits 1 — so
+	// a close whose projection was already in git was reported to the
+	// operator as a launcher failure. `git diff HEAD` is empty exactly when
+	// the commit would have nothing to do.
+	changed, err := git(store, append([]string{"diff", "HEAD", "--name-only", "--"}, c.Paths...)...)
 	if err != nil {
 		return c, err
 	}
-	if strings.TrimSpace(dirty) == "" {
+	if strings.TrimSpace(changed) == "" {
 		c.Skipped = "the projection already matches its last commit"
 		return c, nil
 	}

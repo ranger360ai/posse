@@ -3527,7 +3527,7 @@ brew wants.
 
 **Operator runbook (forward), per repo:**
 ```
-bd sync --flush-only && git add .beads/issues.jsonl && git commit -m 'bd: flush before 1.2 migration'
+bd sync --flush-only && git -C <the queue repo> commit -m 'bd: flush before 1.2 migration' -- .beads/issues.jsonl
 rm ~/.local/bin/bd && brew link beads         # 1.2.2 becomes bd
 bd metrics off
 bd init --from-jsonl && bd list | head       # embedded Dolt, seeded from JSONL
@@ -3537,6 +3537,13 @@ bd doctor --fix
 Then re-audit `.claude/settings.json` (allow/deny) against `bd help`.
 Rollback: `brew unlink beads && install -m 0755 <v0.49.1 bd> ~/.local/bin/bd`;
 the SQLite `beads.db` is untouched by 1.2 and still valid.
+The flush line lost a `git add` it never needed (ranger-base-nor): a
+path-limited commit takes the WORKING TREE version of the paths it names and
+ignores what is staged for them, so the add did nothing and the unqualified
+commit it fed is one the shared-index wall refuses. If that line reports `no
+changes added to commit`, the tree already matches HEAD — check with
+`git diff HEAD -- .beads/issues.jsonl`, never `git status`, which also counts
+a stale index entry (`docs/notes.d/ranger-base-nor.md`).
 
 **Still open from the 0.49.1 `bd doctor` (operator, all in the deny block):**
 - pre-push hook: `bd hooks install` (each repo).
