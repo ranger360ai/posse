@@ -857,11 +857,28 @@ func constitutionOnBranch(t *SessionTree) ([]string, string) {
 // constitutionLandRefusal is the sentence the sweep prints and the operator
 // acts on: the paths, the rule, and the commands that finish the job by hand
 // — none of which the launcher will run for them.
+//
+// `posse promote` is named only when a promoted path is actually in the hit.
+// The settings files are in the class in every repo and no promote puts them
+// in force, so prescribing one there would send the operator to run a command
+// that does nothing about what they just read — the kind of near-right
+// instruction that teaches people to skim the refusal.
 func constitutionLandRefusal(t *SessionTree, hit []string) string {
-	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. %s still holds every commit and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`, then `posse promote`",
+	promoted := false
+	for _, h := range hit {
+		if strings.HasPrefix(h, ConstitutionSourceDir+"/") {
+			promoted = true
+			break
+		}
+	}
+	then := ""
+	if promoted {
+		then = ", then `posse promote`"
+	}
+	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. %s still holds every commit and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`%s",
 		strings.Join(hit, ", "), t.Branch,
 		AbbrevHome(t.Repo), t.Base, t.Branch,
-		AbbrevHome(t.Repo), t.Branch)
+		AbbrevHome(t.Repo), t.Branch, then)
 }
 
 // mergeRebaseAttempts bounds the replay loop in MergeSessionWork. It is a

@@ -245,3 +245,37 @@ func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 		t.Errorf("a file at the marker path must not make a repo the constitution: %v", ConstitutionClassIn(file))
 	}
 }
+
+// TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths is a small
+// precision the refusal has to keep. `posse promote` is what puts constitution
+// prose in force; it does nothing whatever about `.claude/settings.json`,
+// which is in the class in every repo. A refusal that prescribed it there
+// would send the operator to run a command that does not touch what they just
+// read — the near-right instruction that teaches people to skim refusals.
+func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
+	t.Run("a promoted path names promote", func(t *testing.T) {
+		_, _, tr := constitutionLandTree(t, true)
+		commitIn(t, tr.Path, "rhq/agents/developer.md", "rewritten\n", "s-1: edit the law")
+		o, err := MergeSessionWork(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(o.Reason, "posse promote") {
+			t.Errorf("a promoted path must be told how it is put in force, got:\n%s", o.Reason)
+		}
+	})
+	t.Run("settings.json does not", func(t *testing.T) {
+		_, _, tr := constitutionLandTree(t, false)
+		commitIn(t, tr.Path, ClaudeProjectConfig, "{}\n", "s-1: unfence myself")
+		o, err := MergeSessionWork(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Merged {
+			t.Fatalf("%s must not land: %+v", ClaudeProjectConfig, o)
+		}
+		if strings.Contains(o.Reason, "posse promote") {
+			t.Errorf("no promote puts a settings file in force; the refusal must not prescribe one:\n%s", o.Reason)
+		}
+	})
+}

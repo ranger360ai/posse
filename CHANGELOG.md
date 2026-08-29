@@ -11,6 +11,38 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+### Security
+
+**A persona session could commit your constitution — the PIDs every future
+session runs under — and nothing refused it.**
+
+*Affected: every build before this one. Two walls added, both on by default.*
+
+The gates already fenced the *command* (`posse promote` is denied in every
+crew PID) and the *form* (an unqualified commit is refused in a shared
+checkout), and under `cage: seatbelt` the constitution area was never
+writable. Under `cage: shims`, which is what most personas run on, nothing
+checked the *path class*: a session could rewrite `rhq/agents/*.md` and commit
+it like any other file, and the next promote would put its own edits in force.
+
+The `prepare-commit-msg` hook now carries a third arm. A commit from a session
+carrying `RHQ_PERSONA` is refused when it touches `.claude/settings.json` or
+`.claude/settings.local.json` in any hooked repo — that file holds the deny
+list fencing the session's own destructive commands — and, in the repo whose
+top level has `rhq/agents`, when it touches `rhq/agents`, `rhq/config.yaml`,
+`rhq/recipes`, `rhq/skills` or `rhq/envs`. Your own shell carries no marker
+and is untouched. The refusal names the paths and tells the session to stage
+what it means somewhere outside the class for you to apply.
+
+Behind it, the launcher will not fast-forward a session branch whose diff
+touches those paths: it reports and leaves the branch alone for you to read
+and land. That half runs in your process, so a session cannot scrub its way
+past it — which the hook's arm, keyed on an environment variable, can be.
+`core.hooksPath` still defeats every hook-tier gate.
+
+Reinstall the hooks in repos you have already hooked (`posse gates
+install-hooks <repo>`); a dispatch into a repo refreshes it automatically.
+
 ### Fixed
 
 **A deny rule naming a subcommand's flag — `Bash(bd sync --full:*)`,
