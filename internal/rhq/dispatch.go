@@ -890,11 +890,22 @@ func (d *Dispatcher) promptedRecently(session string) (time.Duration, bool) {
 	return age, age < d.PromptGrace
 }
 
-// heldSession names the live session working this bead — the holder join,
-// as a LOOKUP in the record dispatch itself wrote (ADR 0011 §3) rather than
-// an inference from a name pattern. It returns "" when nothing live holds
-// the bead; a session with no agent detected is not a holder, it is a
-// session to relaunch in place.
+// heldSession names the live session this bead is being worked in — the
+// holder join, as a LOOKUP in the record dispatch itself wrote (ADR 0011 §3)
+// rather than an inference from a name pattern — together with the status
+// herdr reports for it. It returns "" when no name in the join is live.
+//
+// The name and the status are two answers, and callers need them apart
+// (ranger-base-6bu). A session herdr detects no agent in is still the
+// HOLDER: the persona's CLI exited and left a bare shell, and launchSession
+// relaunches it in place — "re-prompt the holder, or launch it if gone"
+// (ADR 0004 §3), which is what cockpit `d` does and what RunHolder
+// documents. What the empty status disqualifies is the rangerhq-zom
+// stopped-on-purpose skip, and only that: nobody is in the session, so
+// nobody stopped in it. Folding both questions into one name — a holder
+// must have an agent — is what left `--resume` building a Dial F twin
+// beside a live but agentless slot session, the residual half of
+// rangerhq-v330.
 //
 // The record is asked first because it is the only one of the three answers
 // that is a FACT about this run: `bead:` was stamped by the launcher that
@@ -909,16 +920,16 @@ func (d *Dispatcher) promptedRecently(session string) (time.Duration, bool) {
 // runHolder is the record's answer, resolved by the caller — the ADR 0008
 // shield asks the same question one rung earlier and must ask it of the same
 // session, so the lookup happens once per bead and both guards read it.
-func (d *Dispatcher) heldSession(runHolder *HerdrSession, names ...string) string {
-	if runHolder != nil && runHolder.Status != "" {
-		return runHolder.Name
+func (d *Dispatcher) heldSession(runHolder *HerdrSession, names ...string) (holder, status string) {
+	if runHolder != nil {
+		return runHolder.Name, runHolder.Status
 	}
 	for _, name := range names {
-		if s, err := d.HB.Resolve(name); err == nil && s.Status != "" {
-			return name
+		if s, err := d.HB.Resolve(name); err == nil {
+			return name, s.Status
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // OrderBeads puts a ready list in the order an operator would work it,
@@ -2093,11 +2104,11 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// Walked HERE, above the two ownership guards, only so they can be
 		// asked about the session this pass will act on; nothing branches on
 		// it until below.
-		held := ""
+		holder, holderStatus := "", ""
 		if is.Status == "in_progress" && is.Assignee == persona {
-			held = d.heldSession(runHolder, session, slot)
+			holder, holderStatus = d.heldSession(runHolder, session, slot)
 		}
-		guard := namesThrough(crewNames, held)
+		guard := namesThrough(crewNames, holder)
 		if h := d.crewHeld(guard...); h != "" {
 			d.printf("– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
 			continue
@@ -2119,8 +2130,15 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// Only an interrupted run resumes by itself (no session, or its
 		// agent gone → the launch creates/relaunches and the claim-held path
 		// resumes); otherwise the operator asks with --resume (rangerhq-zom).
-		if held != "" && !d.Resume {
-			d.printf("– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, held)
+		//
+		// The STATUS is what this skip turns on, not the holder: a session
+		// herdr sees no agent in did not stop on purpose, it crashed, and
+		// that is the "agent gone" arm above. Asking one name both questions
+		// — so a holder had to have an agent to be a holder at all — is what
+		// left the retarget below blind to a bare slot shell and the pass
+		// creating a Dial F twin beside it (ranger-base-6bu).
+		if holder != "" && holderStatus != "" && !d.Resume {
+			d.printf("– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, holder)
 			continue
 		}
 		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
@@ -2128,8 +2146,18 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// LaunchBead. Re-prompt means THIS session, not a fresh Dial F one
 		// beside it; with no live holder the Dial F name stands and the
 		// launch creates it.
-		if held != "" {
-			session = held
+		//
+		// The retarget asks only whether a holder is LIVE, never whether an
+		// agent is in it — the same walk LaunchBead does, so ADR 0004 §2's
+		// "the same two names" is one answer on both paths. It is not gated
+		// on --resume either: a holder with an agent that has settled was
+		// skipped above unless the operator asked, so what reaches this line
+		// without --resume is a holder whose agent is GONE, and the zom
+		// contract's "the launch creates/relaunches" is a relaunch in the
+		// session that holds the bead — never a second session beside it
+		// (ranger-base-6bu).
+		if holder != "" {
+			session = holder
 		}
 		// PromptGrace, from the run record (ADR 0011 §3). Every guard above
 		// this line reads a store that a launcher which fired seconds ago has
@@ -2149,8 +2177,8 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// that says so.
 		//
 		// Exemptions, each naming a launcher that is NOT abstaining.
-		// `held != ""` is the holder join having found the session and the
-		// operator's --resume having answered for it — a decision made with
+		// `holder != ""` is the holder join having found the session and the
+		// skip above having answered for it — a decision made with
 		// knowledge, not a guard that missed. A row naming somebody else is
 		// answered by the claim, which is the one guard here that reads a
 		// store nobody can be stale about, and it must be allowed to fail.
@@ -2165,7 +2193,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// exemptions need, so a pass over beads nobody just prompted — every
 		// ordinary pass — makes no extra call at all.
 		mine := is.Assignee == "" || is.Assignee == persona
-		if age, recent := d.promptedRecently(session); recent && held == "" && mine {
+		if age, recent := d.promptedRecently(session); recent && holder == "" && mine {
 			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
 				d.printf("– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
 				seats.note(slot)

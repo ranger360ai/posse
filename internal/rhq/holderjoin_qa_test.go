@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSlotHeldBeadIsNotDoublePrompted(t *testing.T) {
@@ -451,28 +452,75 @@ func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
 // filed as ranger-base-6bu: the slot session is alive but its AGENT is gone.
 // LaunchBead picks the holder by Resolve success alone, so the bare slot is
 // the holder and the agent is relaunched in place. fireLoop's walk also
-// requires a status, because it feeds the rangerhq-zom stopped-on-purpose
-// skip — which must not fire on an agentless session — so --resume finds no
-// holder and the Dial F name stands.
+// required a status, because it fed the rangerhq-zom stopped-on-purpose skip
+// — which must not fire on an agentless session — so --resume found no
+// holder and the Dial F name stood, and the pass built a second session
+// beside the live slot.
+//
+// Fixed by splitting the two conditions, which is what the bead was filed
+// to decide: heldSession returns the holder AND its status, the skip turns
+// on the STATUS (a session nobody is in did not stop on purpose), the
+// retarget on the HOLDER. Both legs run because the split changes the
+// NON-resume path too — rangerhq-zom's "agent gone → the launch
+// creates/relaunches" never said which name, and until now the pass created
+// a Dial F session while cockpit `d` relaunched the slot. One answer on both
+// paths is what ADR 0004 §2's "the same two names" already claims; the leg
+// below is what holds the pass to it.
 func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
-	t.Skip("ranger-base-6bu: --resume still twins an agentless slot holder")
-	b, fake := newTestBackend(t)
-	d := newTestDispatcher(t, b)
-	d.Resume = true
-	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
-		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
-		`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
-	slot := SessionFor("ranger", repo)
-	mustCreate(t, b, NewSessionOpts{Name: slot, Dir: repo, Agent: "ranger"})
-	// No agent anywhere: the session is a bare shell.
-	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
-	agentPerLaunch(t, fake)
+	for _, leg := range []struct {
+		name   string
+		resume bool
+	}{
+		{"--resume", true},
+		{"normal pass", false},
+	} {
+		t.Run(leg.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			d.Resume = leg.resume
+			writePersona(t, b.App, "ranger", "[go]")
+			repo := qaRepo(t, b.App,
+				`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+				`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
+			slot := SessionFor("ranger", repo)
+			mustCreate(t, b, NewSessionOpts{Name: slot, Dir: repo, Agent: "ranger"})
+			// No agent anywhere: the session is a bare shell.
+			os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
+			// Old enough for RelaunchAgent to act. Inside RelaunchGrace a
+			// crashed CLI cannot be told from one still starting, so the
+			// relaunch refuses for that reason alone — and the positive half
+			// below would be measuring the grace, not the join.
+			ageLaunch(t, b, slot, d.RelaunchGrace+time.Minute)
+			agentPerLaunch(t, fake)
 
-	n, _ := d.Run("", "", 0)
-	out, log := dispatcherOut(d), calls(t, fake)
-	if dial := SessionForBead("ranger", repo, "a-1"); strings.Contains(log, "workspace create --label "+dial) {
-		t.Errorf("--resume created a Dial F twin beside the agentless slot holder %s (n=%d):\n%s\n%s", slot, n, out, log)
+			n, err := d.Run("", "", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, log := dispatcherOut(d), calls(t, fake)
+			dial := SessionForBead("ranger", repo, "a-1")
+			if strings.Contains(log, "workspace create --label "+dial) {
+				t.Errorf("a Dial F twin was created beside the agentless slot holder %s (n=%d):\n%s\n%s", slot, n, out, log)
+			}
+			if strings.Contains(out, "creating session "+dial) {
+				t.Errorf("the pass announced a Dial F session for a slot-held bead:\n%s", out)
+			}
+			// Not twinning is not enough — every assertion above is also
+			// satisfied by a skip. The pass has to have relaunched the
+			// persona IN the holder and prompted it there.
+			if n != 1 {
+				t.Errorf("want 1 dispatched into the agentless slot holder, got n=%d:\n%s", n, out)
+			}
+			if !strings.Contains(out, "relaunching ranger in "+slot) {
+				t.Errorf("the agent was not relaunched in the holder %s:\n%s", slot, out)
+			}
+			if strings.Count(log, "workspace create") != 1 {
+				t.Errorf("the relaunch must reuse the holder's workspace, not create one:\n%s", log)
+			}
+			if !strings.Contains(log, "agent prompt w1:p1") {
+				t.Errorf("the holder was not prompted:\n%s\n%s", out, log)
+			}
+		})
 	}
 }
 
