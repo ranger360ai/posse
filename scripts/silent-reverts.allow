@@ -4,6 +4,27 @@
 # reason down, not deleting the line.
 #
 # Format: 7-char sha, whitespace, one-line reason.
+#
+# NOT PATTERNS, EVER — asked under ranger-base-ztzd (jian-yang), after three
+# hits in one day whose deleted paths rhymed: PROBE.md twice (a7b80a4,
+# 71fa30f) and scripts/__pycache__/*.pyc once (bd687f4). A path glob here
+# would silence all THREE with two lines instead of three. Rejected. A sha
+# line is a statement about one commit's intent, which the person who made it
+# can actually make; a glob is a standing statement about every future commit
+# that deletes that path, which nobody can. And the shape a glob would excuse
+# unread is the incident's own shape — rangerhq-8rtf was a tree written off a
+# stale index, missing a file that had just landed. `PROBE.md -> DELETED` is
+# what that looks like from here. The gate cannot tell the tidy-up from the
+# accident (script header, third rejected heuristic) and must not learn to, so
+# the excuse has to be per-commit or it is not an excuse, it is a blind spot.
+#
+# Both classes are already closed at the SOURCE, which is the real answer and
+# is why this file needs no new mechanism: probe fixtures now land and STAY
+# (docs/probes/README.md, ranger-base-hvbj), so no cleanup commit exists to
+# flag; and __pycache__/ + *.pyc are gitignored (.gitignore:10-11) with
+# python -B in the verifier, so the bytecode cannot be committed again. A
+# fourth hit of either shape is a regression in one of those two fixes — go
+# fix that, do not widen this file.
 
 # RETIRED — ranger-base-en75. The two lines below were live triage for the SAME
 # shape: a rename that also EDITS the file. The move exception was exact-blob,
