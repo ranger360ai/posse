@@ -134,3 +134,30 @@ func TestAbbrevHome(t *testing.T) {
 		}
 	}
 }
+
+// ranger-base-a3t1: with $HOME unset both helpers used to INVENT a home at
+// the filesystem root — AbbrevHome("/etc/x") returned "~/etc/x" because
+// HasPrefix(p, ""+"/") is true for every absolute path, and
+// ExpandTilde("~/x") returned "/x" because ""+"/"+"x" is "/x". The first
+// only misprints; the second misresolves, so `posse beads check --dir
+// ~/src/posse` under `env -i` would stat /src/posse and report a repo that
+// is there as missing. An unknown home abbreviates and expands to nothing:
+// both return p unchanged, and "~" stays "~" rather than becoming "".
+func TestHomeHelpersInventNoHomeWhenHomeIsUnset(t *testing.T) {
+	t.Setenv("HOME", "")
+	for _, c := range []struct{ in, want string }{
+		{"/etc/x", "/etc/x"},
+		{"/", "/"},
+		{"~", "~"},
+		{"~/src/posse", "~/src/posse"},
+		{"relative/x", "relative/x"},
+		{"", ""},
+	} {
+		if got := AbbrevHome(c.in); got != c.want {
+			t.Errorf("HOME unset: AbbrevHome(%q) = %q, want %q", c.in, got, c.want)
+		}
+		if got := ExpandTilde(c.in); got != c.want {
+			t.Errorf("HOME unset: ExpandTilde(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

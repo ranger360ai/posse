@@ -139,8 +139,20 @@ func ValidName(name string) bool {
 	return name != "" && validNameRe.MatchString(name)
 }
 
+// ExpandTilde and AbbrevHome are the two halves of one convention, and both
+// refuse to invent a home when $HOME is unset (ranger-base-a3t1). Empty home
+// used to make every absolute path a child of it — HasPrefix(p, ""+"/") is
+// true for all of them, so /etc/x PRINTED as ~/etc/x — and made every ~/...
+// RESOLVE to the filesystem root: measured, `env -i posse beads check --dir
+// ~/tmp` censused /tmp and answered "no lost beads" — a clean verdict over a
+// directory nobody named. Unknown home: p unchanged, "~" stays "~".
+// Reachable only where the environment is scrubbed (`env -i posse ...`, a
+// unit file with no HOME); nothing posse itself ships invokes posse that way.
 func ExpandTilde(p string) string {
 	home := os.Getenv("HOME")
+	if home == "" {
+		return p
+	}
 	if p == "~" {
 		return home
 	}
@@ -152,6 +164,9 @@ func ExpandTilde(p string) string {
 
 func AbbrevHome(p string) string {
 	home := os.Getenv("HOME")
+	if home == "" {
+		return p
+	}
 	if p == home {
 		return "~"
 	}
