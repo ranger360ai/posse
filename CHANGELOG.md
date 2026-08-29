@@ -9,6 +9,28 @@ that release's notes on GitHub, above the generated commit list —
 prints exactly what will be prepended. Renaming `## Unreleased` to the version
 being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
+## Unreleased
+
+### Fixed
+
+**`brew install ranger360ai/tap/posse` 404s on any Homebrew older than 6.0.14.**
+
+*Affected: the published v0.4.0 formula. Fixed in the generator; it reaches
+deployers when the tap is re-rendered.*
+
+The v0.4.0 formula states no version of its own, so brew scans one out of the
+download URL — and that scan is a property of the brew on the box. Homebrew
+6.0.14 (2026-07-28) added the parser that reads `0.4.0` out of
+`.../releases/download/v0.4.0/…`; every brew before it reads `64` out of
+`posse_0.4.0_darwin_arm64.tar.gz` instead. Since v0.4.0 ships bottles, and brew
+names a bottle after the formula's version, such a box asks the release for
+`posse-64.<tag>.bottle.tar.gz` and the install exits 1 on a 404.
+
+`scripts/tap-formula.sh` now renders an explicit `version` stanza, so nothing
+is scanned and no version of brew can get it wrong. On the published v0.4.0
+tap the fix is `brew update` — `INSTALL.md` §2 now says so, and says how to
+tell before installing.
+
 ## v0.4.0
 
 ### Security

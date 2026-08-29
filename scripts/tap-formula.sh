@@ -165,15 +165,52 @@ BDI=$(bottle_digest sonoma)
 BLA=$(bottle_digest arm64_linux)
 BLI=$(bottle_digest x86_64_linux)
 
-# NO `version` STANZA, on purpose (ranger-base-hza). brew scans the version out
-# of the url — `.../v0.3.0/posse_0.3.0_darwin_arm64.tar.gz` — and an explicit
-# `version "0.3.0"` beside it is the one thing `brew audit --strict` rejects in
-# this formula: "`version 0.3.0` is redundant with version scanned from URL".
-# Measured on Homebrew 6.0.20 against all four os/arch pairs, both arms: with
-# the stanza, audit fails on all four (which is also the proof that the scan
-# resolves 0.3.0 on all four, not just the one this box runs); without it,
-# audit is clean on all four, `brew info` reads `stable 0.3.0`, and the install
-# and the `test do` block — which asks for `version.to_s` — are unchanged.
+# AN EXPLICIT `version` STANZA, on purpose (ranger-base-63q3) — this REVERSES
+# ranger-base-hza's decision to omit it, and the reason it changed is bottles.
+#
+# Without the stanza brew SCANS the version out of the first url. That scan is
+# a property of the BREW ON THE BOX, not of this formula: Homebrew commit
+# bae7b0408a (2026-07-28, first tagged in 6.0.14) added the parser that reads
+# 0.4.0 out of `.../releases/download/v0.4.0/...`. Every brew from 5.x through
+# 6.0.13 falls through to a later heuristic that reads `64` out of
+# `posse_0.4.0_darwin_arm64.tar.gz` instead.
+#
+# Before bottles that only mis-named the keg and the install still worked,
+# because the source url is a literal string. The bottle block (ranger-base-9vg3)
+# made the scanned string load-bearing: brew builds the bottle filename from
+# the formula's own version, so a box that scanned `64` asks root_url for
+# posse-64.<tag>.bottle.tar.gz and gets a 404. That is how the published v0.4.0
+# failed. ranger-base-w69s measured it end to end on a scratch 6.0.13 against
+# the PUBLISHED tap, same box, same formula, one line changed:
+#
+#   brew 6.0.13, no stanza    -> stable 64     -> install exit 1, curl 404
+#   brew 6.0.13, with stanza  -> stable 0.4.0  -> Pouring posse-0.4.0.arm64_sonoma…
+#   brew 6.0.20, either way   -> stable 0.4.0
+#
+# and the parser half is checkable without a scratch prefix at all: load
+# Homebrew's own version.rb at each tag and call Version.detect on the
+# published url — 6.0.13 answers `64`, 6.0.20 answers `0.4.0`, and the two
+# version/parser.rb files are byte-identical. An explicit `@version` is what
+# makes the whole question moot on the old brews too: `Downloadable#version`
+# in 6.0.13 returns it before it ever consults a url.
+#
+# THE TRADE, kept written down because it is real and it was decided the other
+# way once. On Homebrew 6.0.20 `brew audit --strict` accepts the formula
+# without the stanza and, with it, reports (measured on all four os/arch pairs):
+#   * Stable: `version 0.4.0` is redundant with version scanned from URL
+# Installability on a month-old brew outranks a --strict style finding: the
+# audit finding costs a maintainer one known line of output, the omission costs
+# every deployer who has not run `brew update` an install that exits 1 with a
+# 404 on a url naming a version they never asked for. Ordering the stanza
+# before `license` is what settles audit's second complaint about it
+# ("`version` should be put before `license`"), so only the redundancy line is
+# expected. Renaming the release assets so the OLD heuristic scans them
+# correctly was considered and rejected: it would move four published asset
+# names, the curl lines in INSTALL.md §1 and release-artifacts.sh, and it can
+# only be verified against a brew nobody keeps installed.
+#
+# The `test do` block asks for `version.to_s` and is unchanged — it read the
+# scan before and reads the stanza now.
 render() {
 	cat <<EOF
 $MARKER in $REPO. Do not hand-edit:
@@ -181,6 +218,7 @@ $MARKER in $REPO. Do not hand-edit:
 class Posse < Formula
   desc "Dispatcher binding personas, env sets and recipes to herdr and beads"
   homepage "https://github.com/$REPO"
+  version "$bare"
   license "Apache-2.0"
 
   bottle do

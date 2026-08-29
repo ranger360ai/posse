@@ -213,6 +213,29 @@ update the Command Line Tools (Software Update, or `sudo xcode-select
 --install`) and re-run, or take the checkout path, which does not go through
 brew at all.
 
+If brew answers `Failed to download resource "posse"` and the 404 names a
+version you never asked for — `posse-64.arm64_sonoma.bottle.tar.gz` — **your
+Homebrew is too old to read ours, and `brew update` is the whole fix.** The
+release is fine; nothing is broken on the tap. A formula that does not state
+its own version leaves brew to scan one out of the download URL, and the parser
+that reads a version out of `.../releases/download/vX.Y.Z/…` arrived in
+**Homebrew 6.0.14** (2026-07-28). Every brew before it falls through to an
+older rule that reads `64` out of `posse_0.4.0_darwin_arm64.tar.gz`, and then
+asks the release for a bottle by that name. You can see which side you are on
+without installing anything:
+
+```sh
+$ brew --version                                 # 6.0.14 or newer is fine
+$ brew info ranger360ai/tap/posse | head -1
+```
+
+The second line must name this page's version — `0.4.0`. If it reads
+`stable 64`, that is the scan, and it is the same string the 404 will carry.
+
+Releases cut after 2026-08-29 state the version in the formula, so brew has
+nothing to scan and no version of brew can get it wrong (`ranger-base-63q3`).
+Until you install one of those, `brew update` and re-run.
+
 A successful install now says `Pouring posse-<version>.<tag>.bottle.tar.gz`.
 That line is the difference: it means brew unpacked a prebuilt binary and asked
 your machine for no toolchain at all.

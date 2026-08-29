@@ -16,69 +16,15 @@ import (
 // Findings and what they deliberately do not cover:
 // docs/runbooks/macos-install-routes.md.
 
-// The generator must not emit a `version` stanza. brew scans the version out
-// of the url, and an explicit one beside it is the single thing `brew audit
-// --strict` rejects in this formula — on all four os/arch pairs, measured both
-// ways on Homebrew 6.0.20. The positive witness matters as much as the
-// absence: dropping the stanza is only safe because every url still carries
-// the version for brew to scan, so an assertion of pure absence would pass
-// over a formula that had lost both.
-func TestTapFormulaOmitsTheRedundantVersionStanza(t *testing.T) {
-	dir := t.TempDir()
-	checksums := writeChecksums(t, dir, "0.3.0", "")
-	out, err := exec.Command("sh", "scripts/tap-formula.sh",
-		"--version", "v0.3.0", "--checksums", checksums).Output()
-	if err != nil {
-		t.Fatalf("tap-formula.sh: %v", err)
-	}
-	rendered := string(out)
-
-	if line, ok := versionStanza(rendered); ok {
-		t.Fatalf("the generated formula carries %q; brew audit --strict rejects it as "+
-			"redundant with the version scanned from the URL", line)
-	}
-	// The witness: brew can only scan what the urls carry. `root_url` is the
-	// bottle block's (ranger-base-9vg3) and is deliberately excluded — brew
-	// scans the version from the SOURCE urls, and counting root_url here would
-	// both inflate the count and demand a version segment that stanza has no
-	// reason to carry.
-	urls := 0
-	for _, line := range strings.Split(rendered, "\n") {
-		if strings.Contains(line, "url \"") && !strings.Contains(line, "root_url \"") {
-			urls++
-			if !strings.Contains(line, "/v0.3.0/") || !strings.Contains(line, "_0.3.0_") {
-				t.Fatalf("url has no scannable version, so dropping the stanza loses it: %s", strings.TrimSpace(line))
-			}
-		}
-	}
-	if urls != 4 {
-		t.Fatalf("expected 4 urls (darwin/linux x arm64/amd64), got %d", urls)
-	}
-
-	// The wrong arm. Without this, a predicate that never matches anything
-	// passes over a formula that reintroduced the stanza tomorrow.
-	t.Run("a formula that carries the stanza is caught", func(t *testing.T) {
-		regressed := strings.Replace(rendered,
-			"  license \"Apache-2.0\"", "  version \"0.3.0\"\n  license \"Apache-2.0\"", 1)
-		if regressed == rendered {
-			t.Fatal("could not build the regressed fixture — the license line moved")
-		}
-		if _, ok := versionStanza(regressed); !ok {
-			t.Fatal("the stanza was reintroduced and the check did not see it")
-		}
-	})
-}
-
-// A top-level `version "X"`, which is what brew audits, and not the `version`
-// inside the test block (`version.to_s`) or the word in a comment.
-func versionStanza(formula string) (string, bool) {
-	for _, line := range strings.Split(formula, "\n") {
-		if strings.HasPrefix(line, "  version \"") {
-			return strings.TrimSpace(line), true
-		}
-	}
-	return "", false
-}
+// The generator's `version` stanza used to be pinned ABSENT here, as one of
+// ranger-base-hza's findings: `brew audit --strict` called it redundant with
+// the version scanned from the URL, and on Homebrew 6.0.20 the scan is right.
+// ranger-base-63q3 reversed that — the scan is a property of the brew on the
+// box, and every brew before 6.0.14 scans `64` out of
+// `posse_0.4.0_darwin_arm64.tar.gz`, which the bottle block turns into a 404.
+// The pin now lives, inverted, in tapformula_qa_test.go beside the generator's
+// other formula pins:
+// TestTapFormulaPinsTheVersionSoBrewNeedNotScanIt.
 
 // Each finding that cost a measurement to get is named by one token no other
 // paragraph would carry, and each is checked with its own deletion arm — a
@@ -130,13 +76,22 @@ func TestInstallMdCarriesTheMeasuredMacOSFindings(t *testing.T) {
 			why: "the narrow formula grant never flips tap-info, so a reader who checks it concludes " +
 				"the trust line failed",
 		},
+		{
+			name:  "a 404 on a bottle named for a version nobody asked for is an old brew",
+			token: "posse-64.arm64_sonoma.bottle.tar.gz",
+			why: "ranger-base-63q3: a formula with no `version` stanza leaves brew to scan one out " +
+				"of the url, and every brew before 6.0.14 scans `64` — so the pour asks the release " +
+				"for a bottle by that name and the install exits 1 on a curl 404 that names OUR " +
+				"release, not their brew. The generator now pins the stanza, but a deployer on the " +
+				"tap published before it has nothing on the page telling them `brew update` is the fix",
+		},
 	}
 
 	for _, f := range findings {
 		t.Run(f.name, func(t *testing.T) {
 			if !strings.Contains(page, f.token) {
-				t.Fatalf("INSTALL.md no longer carries %q.\n%s\nMeasured on ranger-base-hza; "+
-					"re-run scripts/macos-install-probe.sh before deciding it stopped being true.", f.token, f.why)
+				t.Fatalf("INSTALL.md no longer carries %q.\n%s\nEach of these cost a measurement; "+
+					"re-run scripts/macos-install-probe.sh before deciding one stopped being true.", f.token, f.why)
 			}
 			// Uniqueness is what makes the check above discriminating: if the
 			// token appeared twice, deleting the paragraph it was written for

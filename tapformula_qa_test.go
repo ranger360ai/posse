@@ -203,3 +203,111 @@ func TestTapFormulaRefusesAChecksumsFileMissingAnArchitecture(t *testing.T) {
 		t.Errorf("a partial %s survived the refusal (stat err: %v)", out, err)
 	}
 }
+
+// ranger-base-63q3. The formula must carry an explicit `version` stanza, and
+// it must carry the tag's version.
+//
+// This reverses ranger-base-hza, which pinned the stanza ABSENT because
+// `brew audit --strict` calls it "redundant with version scanned from URL".
+// The scan is redundant only on a brew that has Homebrew commit bae7b0408a
+// (2026-07-28, first tagged 6.0.14): before it, `Version.detect` has no
+// releases/download UrlParser and falls through to the stem heuristic, which
+// reads `64` out of `posse_0.4.0_darwin_arm64.tar.gz`. Measured against
+// Homebrew's own version.rb at both tags, same URL:
+//
+//	6.0.13 -> 64        6.0.20 -> 0.4.0
+//
+// Before bottles that only mis-named the keg, because a source url is a
+// literal string. The bottle block (ranger-base-9vg3) made the scanned string
+// load-bearing: brew builds `<name>-<version>.<tag>.bottle.tar.gz` from the
+// FORMULA's version, so a box that scanned `64` asks for
+// posse-64.arm64_sonoma.bottle.tar.gz and `brew install` exits 1 on a curl
+// 404 — which is how the published v0.4.0 failed on every brew from 5.x
+// through 6.0.13. An explicit `@version` short-circuits the scan on those
+// brews too (`Downloadable#version` in 6.0.13 returns it before it ever
+// consults the url), which is why the stanza is the fix and not a mitigation.
+func TestTapFormulaPinsTheVersionSoBrewNeedNotScanIt(t *testing.T) {
+	dir := t.TempDir()
+	// Two versions, because a generator that hard-coded one string would
+	// satisfy any single-version assertion — and a stanza naming the wrong
+	// version is worse than none: it names a bottle nobody uploaded.
+	for _, version := range []string{"0.4.0", "9.9.9"} {
+		t.Run(version, func(t *testing.T) {
+			checksums := writeChecksums(t, dir, version, "")
+			out, err := exec.Command("sh", "scripts/tap-formula.sh",
+				"--version", "v"+version, "--checksums", checksums).Output()
+			if err != nil {
+				t.Fatalf("tap-formula.sh: %v", err)
+			}
+			rendered := string(out)
+
+			line, ok := versionStanza(rendered)
+			if !ok {
+				t.Fatalf("the generated formula carries no `version` stanza, so brew scans the "+
+					"version out of the url — and every brew before 6.0.14 scans `64`, then 404s on "+
+					"posse-64.<tag>.bottle.tar.gz:\n%s", rendered)
+			}
+			if want := `version "` + version + `"`; line != want {
+				t.Fatalf("the stanza is %q, want %q — brew builds the bottle filename from it, so a "+
+					"wrong one 404s on every platform at once", line, want)
+			}
+			// audit's second complaint about the stanza, and the only one
+			// that is ours to settle: Homebrew's component order puts
+			// `version` before `license`.
+			if v, l := strings.Index(rendered, "\n  version \""), strings.Index(rendered, "\n  license \""); v > l {
+				t.Errorf("`version` is rendered after `license`; brew audit --strict wants it before")
+			}
+			// The urls must still carry the version too. They are what brew
+			// scans on 6.0.14+, they are the fallback if this stanza is ever
+			// dropped again, and `root_url` names the release the bottles
+			// were actually uploaded to.
+			urls := 0
+			for _, u := range strings.Split(rendered, "\n") {
+				if strings.Contains(u, "url \"") && !strings.Contains(u, "root_url \"") {
+					urls++
+					if !strings.Contains(u, "/v"+version+"/") || !strings.Contains(u, "_"+version+"_") {
+						t.Errorf("url does not carry the version brew would scan: %s", strings.TrimSpace(u))
+					}
+				}
+			}
+			if urls != 4 {
+				t.Fatalf("expected 4 urls (darwin/linux x arm64/amd64), got %d", urls)
+			}
+			if !strings.Contains(rendered, "root_url \"https://github.com/ranger360ai/posse/releases/download/v"+version+"\"") {
+				t.Errorf("root_url does not name the v%s release, so the bottle url the stanza "+
+					"builds would point at the wrong tag:\n%s", version, rendered)
+			}
+
+			// The wrong arms. Without them a predicate that never matches
+			// anything passes over the formula that shipped the defect.
+			t.Run("a formula with the stanza dropped is caught", func(t *testing.T) {
+				regressed := strings.Replace(rendered, "  version \""+version+"\"\n", "", 1)
+				if regressed == rendered {
+					t.Fatal("could not build the regressed fixture")
+				}
+				if _, ok := versionStanza(regressed); ok {
+					t.Fatal("the stanza was dropped and the check did not see it")
+				}
+			})
+			t.Run("a stanza naming another version is caught", func(t *testing.T) {
+				regressed := strings.Replace(rendered,
+					"  version \""+version+"\"", "  version \"64\"", 1)
+				got, ok := versionStanza(regressed)
+				if !ok || got == line {
+					t.Fatalf("the stanza was rewritten to the scanned garbage and the check did not see it (%q)", got)
+				}
+			})
+		})
+	}
+}
+
+// A top-level `version "X"`, which is what brew reads, and not the `version`
+// inside the test block (`version.to_s`) or the word in a comment.
+func versionStanza(formula string) (string, bool) {
+	for _, line := range strings.Split(formula, "\n") {
+		if strings.HasPrefix(line, "  version \"") {
+			return strings.TrimSpace(line), true
+		}
+	}
+	return "", false
+}

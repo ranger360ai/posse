@@ -120,10 +120,11 @@ wrong bd warning), and `brew uninstall` / `brew untrust --formula` /
 - Both macOS binaries execute and report `0.3.0`: `darwin_arm64` natively,
   `darwin_amd64` under Rosetta.
 - `brew audit --strict` found one real problem — `` `version 0.3.0` is
-  redundant with version scanned from URL`` — on all four os/arch pairs. Fixed
-  in `scripts/tap-formula.sh`: the stanza is gone, audit is clean on all four,
-  and `brew info` still reads `stable 0.3.0`. The published tap keeps the old
-  formula until the next release re-renders it.
+  redundant with version scanned from URL`` — on all four os/arch pairs. The
+  stanza was dropped from `scripts/tap-formula.sh` on the strength of that, and
+  **§8 puts it back**: the scan audit calls it redundant with is a property of
+  the brew on the box, and on any brew before 6.0.14 the scan is wrong. Read
+  §8 before acting on this bullet.
 
 ## 4. Gatekeeper
 
@@ -256,18 +257,23 @@ succeeds and the pour check is the single line that fails.
   confirmed by reading the receipt out of the poured keg (`poured_from_bottle:
   true`). That is what lets a bottle be built without `brew bottle`, and
   therefore without a Mac.
-- **The version brew scans is GitHub-shaped.** The formula carries no `version`
-  stanza on purpose (§3), so brew scans it out of the first `url` — and
-  `Version.detect` only recognises the GitHub *release* URL. Point a source url
-  at any other host and `posse_0.3.0_darwin_arm64.tar.gz` resolves to version
-  **`64`**, after which brew asks for `posse-64.<tag>.bottle.tar.gz` and
-  everything 404s. This is why `bottle` mode rewrites only `root_url` and
-  leaves the four source urls alone.
+- **The version brew scans is GitHub-shaped.** The formula carried no `version`
+  stanza (§3), so brew scanned it out of the first `url` — and `Version.detect`
+  only recognises the GitHub *release* URL. Point a source url at any other host
+  and `posse_0.3.0_darwin_arm64.tar.gz` resolves to version **`64`**, after
+  which brew asks for `posse-64.<tag>.bottle.tar.gz` and everything 404s. This
+  is why `bottle` mode rewrites only `root_url` and leaves the four source urls
+  alone. **This paragraph is §8's defect, found here and read as a probe
+  constraint rather than as a deployer's install failing.** It is exactly the
+  same sentence: the difference is that a brew older than 6.0.14 does to the
+  real GitHub url what a rewritten host did to this one.
 
 ### `brew audit --strict`, all four pairs
 
 Clean, `rc=0` on `macos/arm`, `macos/intel`, `linux/arm` and `linux/intel`,
-against the generated formula with its bottle block. Run in the **scratch**
+against the generated formula with its bottle block **as it was rendered
+then**. §8 adds a `version` stanza, which audit reports as redundant on all
+four; that one finding is now expected and is the price of the fix. Run in the **scratch**
 Homebrew, not the live one — audit pulls its own developer gems, and doing that
 on the live brew on 2026-08-29 installed a `json 2.21.2` into `vendor/bundle`
 that is incompatible with portable-ruby's built-in json and broke `brew
@@ -291,3 +297,114 @@ checked per pair, not once.
 - `bottle_qa_test.go` — the CI-side arms: the two generators agree on every
   filename, each bottle carries exactly what `def install` declares, the
   release ships them. Ten mutations were applied and all ten were killed.
+
+## 8. The `version` stanza — §3's audit finding, reversed by §7's bottles
+
+Added by `ranger-base-63q3`, 2026-08-29. `ranger-base-w69s` verified the
+published v0.4.0 from a cold start and found that
+`brew install ranger360ai/tap/posse` **exits 1 on any Homebrew older than
+6.0.14**:
+
+```
+==> Fetching downloads for: posse
+x Bottle posse (64)
+Error: Failed to download resource "posse"
+Download failed: .../releases/download/v0.4.0/posse-64.arm64_sonoma.bottle.tar.gz
+curl: (56) The requested URL returned error: 404
+```
+
+**The mechanism is §7's fourth bullet, seen from the deployer's side.** A
+formula with no `version` stanza leaves brew to scan one out of the url, and
+that scan lives in the brew on the box, not in the formula. Homebrew commit
+`bae7b0408a` "Fix GitHub release version detection" (2026-07-28, first tagged
+**6.0.14**) added a `releases/download/vX.Y.Z/` `UrlParser`. Before it,
+`Version.detect` falls through to the stem heuristic and reads **`64`** out of
+`posse_0.4.0_darwin_arm64.tar.gz`. Measured by loading Homebrew's own
+`version.rb` at each tag out of the local brew checkout and calling
+`Version.detect` on the published URL — no install, no scratch prefix:
+
+| brew | `Version.detect(".../v0.4.0/posse_0.4.0_darwin_arm64.tar.gz")` |
+|---|---|
+| 6.0.13 | `64` |
+| 6.0.20 | `0.4.0` |
+
+The `diff` between the two `Library/Homebrew/version/parser.rb` files is empty;
+the whole difference is four lines added to `version.rb`, the `UrlParser` above.
+Reproduce it against any two tags a local `brew --repo` has:
+
+```sh
+$ B=$(brew --repo); RB=$B/Library/Homebrew/vendor/portable-ruby/current/bin/ruby
+$ S=$(echo $B/Library/Homebrew/vendor/bundle/ruby/*/gems/sorbet-runtime-*/lib)
+$ for t in 6.0.13 6.0.20; do
+    mkdir -p /tmp/hb$t && git -C $B archive $t Library/Homebrew/version.rb \
+      Library/Homebrew/version | tar -x -C /tmp/hb$t
+  done
+# then, with Homebrew's Pathname#extname/#stem copied in (version/parser.rb
+# calls them), require "version" off each -I and print Version.detect(url).
+```
+
+`git -C $(brew --repo) tag --contains bae7b0408a | head -1` answers `6.0.14`.
+
+**Bottles are what made it fatal, so this is a regression and not a standing
+condition.** A source `url` is a literal string, so before §7 the wrong scan
+only mis-named the keg (`posse/64`) and the install still worked. Brew builds a
+bottle filename as `<name>-<version>.<tag>.bottle.tar.gz` from the *formula's*
+version — so once the bottle block landed, the scanned string became the name
+of a file that has to exist on the release. The published v0.3.0 formula does
+carry `version "0.3.0"` — read off the tap by `ranger-base-w69s`; it was
+dropped for v0.4.0 on §3's audit finding, and `ranger-base-9vg3` carried this
+in with it.
+
+**The trade, decided.** With the stanza, `brew audit --strict` on 6.0.20
+reports one finding on all four pairs:
+
+```
+* Stable: `version 0.4.0` is redundant with version scanned from URL
+```
+
+Installability wins. The audit line costs a maintainer one known line of
+expected output; the omission costs every deployer whose brew is more than a
+month old an install that exits 1 with a 404 naming *our* release. Audit's
+second complaint — `` `version` (line 7) should be put before `license`
+(line 6)`` — is ours to settle and is settled: the generator renders the stanza
+between `homepage` and `license`, which is Homebrew's own component order.
+
+Renaming the release assets so the old heuristic scans them correctly was
+considered and rejected: it moves four published asset names, `INSTALL.md` §1's
+`curl` lines and `scripts/release-artifacts.sh`, and it can only ever be
+verified against a brew nobody keeps installed.
+
+**Why an explicit stanza is a fix and not a mitigation on the affected brews.**
+`Downloadable#version` in 6.0.13 returns `@version` before it consults the url
+at all, so a formula that states its version never reaches the scan — on 5.x,
+on 6.0.13 and on 6.0.20 alike.
+
+### What holds it
+
+- `scripts/tap-formula.sh` — renders `version "X.Y.Z"` before `license`, with
+  the trade written down beside it so it is not dropped a third time.
+- `tapformula_qa_test.go` — `TestTapFormulaPinsTheVersionSoBrewNeedNotScanIt`:
+  the stanza is present, it is the tag's version at two different tags, and it
+  precedes `license`. Three mutations applied (stanza dropped, version
+  hard-coded, stanza moved after `license`); all three killed.
+- `INSTALL.md` §2 — the deployer-facing half: a 404 naming
+  `posse-64.arm64_sonoma.bottle.tar.gz` means `brew update`, not a broken
+  release, and `brew info … | head -1` says which side of 6.0.14 you are on
+  before you install. Pinned by `macosinstall_qa_test.go`.
+- `scripts/macos-install-probe.sh brew` — asks `brew info` for the version brew
+  RESOLVES and fails by name before installing (`ranger-base-w69s`), so a box
+  on an older brew reports this defect instead of a bare 404. It reads the
+  *published* tap, so it keeps discriminating until the next release re-renders
+  the formula.
+
+### What this does NOT do
+
+The fix is in the generator. It reaches a deployer only when the operator
+publishes a re-rendered `Formula/posse.rb` to `ranger360ai/homebrew-tap`, or
+when the next release does — `docs/runbooks/release.md` step 3. That push is
+outward-facing and is the operator's: `ranger-base-2t1q` carries it, including
+the one-line edit that corrects the tapped v0.4.0 formula without re-rendering
+it (the published sha256s are not reproducible; release.md step 3 says why).
+Until then the published v0.4.0 formula still 404s on a brew older than 6.0.14,
+and `INSTALL.md` §2's new paragraph is the only thing standing between that
+deployer and a bug report against our release.

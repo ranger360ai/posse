@@ -502,14 +502,16 @@ PY
 	fi
 
 	# THE VERSION BREW RESOLVES, asked before the install (ranger-base-w69s).
-	# The formula carries no `version` stanza on purpose (scripts/tap-formula.sh),
-	# so brew scans one out of the url — and that scan is a property of the brew
-	# on the box, not of the formula. Homebrew <= 6.0.13 reads `64` out of
-	# `posse_X.Y.Z_darwin_arm64.tar.gz`; 6.0.14 added a releases/download parser
-	# and reads X.Y.Z. Because the bottle filename interpolates whatever it
-	# scanned, a box on the older brew asks for posse-64.<tag>.bottle.tar.gz and
-	# `brew install` dies on a 404 that names our release rather than its brew.
-	# Ask first, so such a box says which of the two it is.
+	# A formula with no `version` stanza makes brew SCAN one out of the url, and
+	# that scan is a property of the brew on the box, not of the formula:
+	# Homebrew <= 6.0.13 reads `64` out of `posse_X.Y.Z_darwin_arm64.tar.gz`;
+	# 6.0.14 added a releases/download parser and reads X.Y.Z. Because the bottle
+	# filename interpolates whatever was scanned, a box on the older brew asks
+	# for posse-64.<tag>.bottle.tar.gz and `brew install` dies on a 404 that
+	# names our release rather than its brew. That is ranger-base-63q3, and the
+	# generator now renders `version "X.Y.Z"` so nothing is scanned — but this
+	# check reads the PUBLISHED tap, which carries whatever formula the last
+	# release pushed, so the question is still worth asking before the install.
 	local resolved
 	# `.*stable`, not `: stable`: where a keg is already in the prefix brew
 	# writes `==> <formula>: <installed> -> stable <version>`, and a pattern
@@ -523,7 +525,7 @@ PY
 	elif [ -z "$resolved" ]; then
 		bad "could not read a version out of \`brew info $FORMULA\` — the check below cannot discriminate"
 	else
-		bad "brew resolves this formula's version as '$resolved', not $BARE. It scans the version out of the url, and this brew ($("$brew" --version 2>/dev/null | head -1)) predates the releases/download parser (Homebrew 6.0.14). \`brew install\` will 404 on posse-$resolved.<tag>.bottle.tar.gz. Fix: a \`version \"$BARE\"\` stanza in the rendered formula, or tell the reader to \`brew update\` first."
+		bad "brew resolves this formula's version as '$resolved', not $BARE, so \`brew install\` will 404 on posse-$resolved.<tag>.bottle.tar.gz (ranger-base-63q3). The tapped formula has no \`version \"$BARE\"\` stanza, and this brew ($("$brew" --version 2>/dev/null | head -1)) predates the releases/download parser (Homebrew 6.0.14) so it scanned that string out of the url. Fix: publish a formula rendered by the current scripts/tap-formula.sh, which pins the stanza; a deployer stuck on the published one needs \`brew update\` to 6.0.14+."
 	fi
 
 	"$brew" install "$FORMULA" >"$ROOT/install.log" 2>&1
@@ -682,16 +684,16 @@ probe_bottle() {
 		bad "expected 5 references to the release base URL (root_url + four urls), found $rewrites — the substitution below would be measuring the wrong formula"
 		return
 	fi
-	# ONLY root_url moves. The four source `url`s stay on github, and they must:
-	# this formula carries no `version` stanza on purpose (ranger-base-hza), so
-	# brew SCANS the version out of the first url — and Version.detect only
-	# recognises the GitHub *release* URL shape. Point a source url at a bare
-	# host and `posse_0.3.0_darwin_arm64.tar.gz` resolves to version "64"
-	# (measured, both with and without a /v0.3.0/ path segment), after which brew
-	# asks for `posse-64.<tag>.bottle.tar.gz` and everything 404s. Nothing
-	# downloads those urls on this arm anyway — a poured install never fetches
-	# the source — so leaving them alone costs nothing and keeps the version, the
-	# bottle filename and the pour all being the generator's own answer.
+	# ONLY root_url moves. The four source `url`s stay on github, and they must.
+	# The formula now pins `version` (ranger-base-63q3), so the version no longer
+	# depends on them — but that stanza is exactly what this arm should not be
+	# allowed to stand in for. Point a source url at a bare host and a brew whose
+	# stanza went missing scans `posse_0.3.0_darwin_arm64.tar.gz` down to version
+	# "64" (measured, both with and without a /v0.3.0/ path segment), then asks
+	# for `posse-64.<tag>.bottle.tar.gz` and 404s. Nothing downloads those urls on
+	# this arm anyway — a poured install never fetches the source — so leaving
+	# them alone costs nothing and keeps the version, the bottle filename and the
+	# pour all being the generator's own answer.
 	sed -i '' "s|root_url \"$base\"|root_url \"http://127.0.0.1:$port\"|" "$D/dist/posse.rb"
 	if [ "$(grep -c "root_url \"http://127.0.0.1:$port\"" "$D/dist/posse.rb")" != 1 ]; then
 		kill "$server" 2>/dev/null

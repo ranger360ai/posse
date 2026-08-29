@@ -33,7 +33,10 @@ func TestReaderDocsPromiseThisSourcesVersion(t *testing.T) {
 	// A count, not just an absence: a regex that stopped matching would
 	// otherwise pass this test by measuring nothing, and the failure it is
 	// here to catch is exactly a version claim going unnoticed.
-	const wantSites = 9
+	// Nine at v0.3.0, plus INSTALL.md §2's `brew info` expectation
+	// (ranger-base-63q3): the version brew RESOLVES is a promise of exactly
+	// this kind, and on a brew older than 6.0.14 it is the one that 404s.
+	const wantSites = 10
 
 	sites := 0
 	for _, f := range []string{"INSTALL.md", "README.md"} {
