@@ -250,7 +250,7 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	} else if ValidTier(ag.Tier) && BelowFloor(ag, ag.Tier) {
 		add("tier: %s is below this PID's own tier_floor: %s — every launch that takes the PID default would refuse (ADR 0003 §3)", ag.Tier, ag.TierFloor)
 	}
-	// ADR 0018 §5: mechanical, advisory drift alarm — never enforcement,
+	// ADR 0033 §5: mechanical, advisory drift alarm — never enforcement,
 	// which is §2's refusal keyed on config `coordinator:` alone. A PID
 	// whose allow: grants Bash(git push:*), the coordinator's defining
 	// permission, is either the coordinator or a warning: the persona case
@@ -263,9 +263,9 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	// that state visible.
 	if rule := grantsGitPush(ag.Allow); rule != "" {
 		if coord := a.Coordinator(); coord == "" {
-			warn("allow: %s grants the coordinator's defining permission (ADR 0018 §2) and no coordinator: is configured — the config line ADR 0018 §2's refusal depends on is absent, silently restoring hire-anyone behavior (ADR 0018 §5)", rule)
+			warn("allow: %s grants the coordinator's defining permission (ADR 0033 §2) and no coordinator: is configured — the config line ADR 0033 §2's refusal depends on is absent, silently restoring hire-anyone behavior (ADR 0033 §5)", rule)
 		} else if !isCoordinator(coord, ag.Name) {
-			warn("allow: %s grants the coordinator's defining permission (ADR 0018 §2) but this PID is not the coordinator (coordinator: %s) — config drift or an over-broad grant (ADR 0018 §5)", rule, coord)
+			warn("allow: %s grants the coordinator's defining permission (ADR 0033 §2) but this PID is not the coordinator (coordinator: %s) — config drift or an over-broad grant (ADR 0033 §5)", rule, coord)
 		}
 	}
 	// Skills (ADR 0007 §5): a name that resolves to nothing binds nothing,

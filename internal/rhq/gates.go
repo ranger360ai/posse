@@ -1227,7 +1227,7 @@ func deniesGitPush(deny []string) bool {
 }
 
 // grantsGitPush returns the PID's allow: rule (verbatim) that grants git
-// push, or "" if none — ADR 0018 §2's coordinator's defining permission. It
+// push, or "" if none — ADR 0033 §2's coordinator's defining permission. It
 // reuses deniesGitPush's rule-shape parser: the same Bash(git push...) shape
 // means the same thing whether it appears in allow: or deny:.
 func grantsGitPush(allow []string) string {

@@ -587,7 +587,7 @@ func TestGovG9MatchesTheRefusalsIdentityCompare(t *testing.T) {
 	}
 }
 
-// No coordinator configured is the pre-0018 shop: dispatch refuses nobody,
+// No coordinator configured is the pre-0033 shop: dispatch refuses nobody,
 // so nothing is stuck.
 func TestGovG9NoCoordinatorNoRow(t *testing.T) {
 	b, _ := newTestBackend(t)

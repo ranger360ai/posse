@@ -60,7 +60,7 @@ default_emoji: ⚙️
 # operator: <your bd username>
 #
 # The instance's exception handler — the one persona dispatch never hires
-# (ADR 0018). She is not a lane: a bead assigned to her is unroutable and
+# (ADR 0033). She is not a lane: a bead assigned to her is unroutable and
 # says so, her PID is skipped in label routing, and naming her as
 # `default_persona:` is reported as a config error. No flag overrides it;
 # you reach her in her own crew session, which dispatch already leaves

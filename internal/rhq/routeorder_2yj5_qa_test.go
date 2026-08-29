@@ -141,7 +141,7 @@ func TestQARouteWhyCapsTheRosterWithoutHidingTheCount(t *testing.T) {
 	}
 }
 
-// The coordinator is not a lane (ADR 0018 §2) and so is not in the race —
+// The coordinator is not a lane (ADR 0033 §2) and so is not in the race —
 // not as the winner, and not in the count either: a roster that included
 // her would read as "she was considered".
 func TestQARouteRosterExcludesTheCoordinator(t *testing.T) {

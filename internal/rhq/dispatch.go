@@ -9,7 +9,7 @@ package rhq
 //       it, since `-n` takes the top of this list (rangerhq-1r2)
 //     → route to a persona: bead assignee, else persona `labels:`
 //       frontmatter, else config default_persona — never config
-//       `coordinator:`, who is not a lane (ADR 0018); unroutable beads are
+//       `coordinator:`, who is not a lane (ADR 0033); unroutable beads are
 //       reported and skipped
 //     → find-or-create session <persona>-<repobase> in the bead's repo
 //       (persona command + env sets + BD_ACTOR injected by CreateSession);
@@ -908,7 +908,7 @@ func OrderBeads(beads []RepoIssue, resume bool) {
 }
 
 // isCoordinator reports whether name hires the persona config `coordinator:`
-// names — the question ADR 0018 §2's three refusals actually ask.
+// names — the question ADR 0033 §2's three refusals actually ask.
 //
 // It cannot be a string compare. The names being compared come from opposite
 // sides of a trust boundary: `coordinator:` is the operator's file, the
@@ -967,7 +967,7 @@ func coordinatorKey(name string) string {
 // stopped early would be a silent cap. The reads are small and a pass
 // already shells out per bead.
 //
-// ADR 0018 §2: the coordinator is never returned, by any path. The refusal
+// ADR 0033 §2: the coordinator is never returned, by any path. The refusal
 // is keyed on config `coordinator:` alone — not on what the PID grants, not
 // on whether it loads — because it authorizes; and it lives here, at hire
 // time, because this is where the privilege would be exercised (§3: bd is a
@@ -1024,7 +1024,7 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 	}
 	if def := d.App.CfgGet("default_persona", ""); def != "" {
 		if isCoordinator(coord, def) {
-			return routeLane{deny: fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0018 §2)", def)}
+			return routeLane{deny: fmt.Sprintf("default_persona: %s is the coordinator — config error; a coordinator is not a fallback lane (ADR 0033 §2)", def)}
 		}
 		if name, ok := d.App.CanonAgent(def); ok {
 			return routeLane{seats: []routeMatch{{name: name}}, why: "default_persona"}

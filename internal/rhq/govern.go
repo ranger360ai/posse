@@ -4,8 +4,8 @@ package rhq
 //
 // Design: ADR 0029 §1-2 (docs/adr/0029-governance-surface.md, restating the
 // archive's governance-surface ADR; bead rangerhq-81y0, from archive bead
-// rangerhq-e37c; amended for G9 by the archive's coordinator-is-not-a-lane
-// ADR, cited by title — that one has no restatement here yet). The design's
+// rangerhq-e37c; amended for G9 by the coordinator-is-not-a-lane ADR,
+// restated here as ADR 0033). The design's
 // two load-bearing lines are quoted where they decide something below.
 //
 // **Facts get computed, decisions get beads.** A governance condition is a

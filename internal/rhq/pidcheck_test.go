@@ -192,7 +192,7 @@ func TestMetricKey(t *testing.T) {
 	}
 }
 
-// ADR 0018 §5: the parity lint's drift alarm — advisory only (a warning,
+// ADR 0033 §5: the parity lint's drift alarm — advisory only (a warning,
 // never a finding), and it fires on both arms: a push-granting PID that is
 // not the named coordinator, and a push-granting PID when no coordinator is
 // named at all.
@@ -257,7 +257,7 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(strings.Join(ws, "\n"), want) {
-		t.Errorf("a PID that grants no push must not get the ADR 0018 §5 warning: %v", ws)
+		t.Errorf("a PID that grants no push must not get the ADR 0033 §5 warning: %v", ws)
 	}
 }
 

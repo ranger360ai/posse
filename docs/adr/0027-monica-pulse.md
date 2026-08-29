@@ -8,7 +8,7 @@ d9fa52f) + rangerhq-44w1 (delivery, 18cb114) · amended 2026-08-28
 > **The §3 default, amended 2026-08-28 (ranger-base-q3gp).** §3 named
 > `monica` as `pulse_persona:`'s default and the code compiled that string
 > in. ADR 0012 App.A 5 says shipped code must not name this instance's
-> crew, so the default is now config `coordinator:` (ADR 0018 §1) — the
+> crew, so the default is now config `coordinator:` (ADR 0033 §1) — the
 > persona this ADR meant all along, spelled as the key that already holds
 > it. Behaviour here is unchanged (`coordinator: monica`). For an instance
 > that names neither key the target is `""`: the tick still senses and

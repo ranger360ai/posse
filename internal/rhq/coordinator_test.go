@@ -1,6 +1,6 @@
 package rhq
 
-// ADR 0018 §1–2 — the coordinator is not a lane: dispatch never hires the
+// ADR 0033 §1–2 — the coordinator is not a lane: dispatch never hires the
 // persona that governs it. The g9md sighting (ranger-base-kb7) was a bead
 // assigned to the coordinator minting a per-bead session that carried its
 // whole PID — session direction and `git push` — and pushing unattended.
@@ -33,7 +33,7 @@ func cfg(t *testing.T, a *App, body string) {
 	}
 }
 
-// §1: absent key = no coordinator = pre-0018 behavior, wholesale. The
+// §1: absent key = no coordinator = pre-0033 behavior, wholesale. The
 // engine carries no crew name (rangerhq-gk4k); nothing is refused until the
 // instance names someone.
 func TestCoordinatorAbsentKeepsOldRouting(t *testing.T) {

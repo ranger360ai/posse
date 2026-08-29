@@ -57,7 +57,7 @@ stopped) and LANE (one bead or session is stopped, the rest flows):
 | G6 | Dial E stop / budget ≥ 100% | cost scan vs caps | URGENT for spend, heals at the window |
 | G7 | watch loop dead while autostart armed | the loop's flock (post-migration; pidfile+argv husk check until then) | URGENT — the meta-condition: no other condition gets delivered |
 | G8 | paused (§3) | `state/pause.yaml` | URGENT by intent — reported, never alarmed |
-| G9 | ready bead routed to the coordinator, whom dispatch refuses to hire (the archive's coordinator-is-not-a-lane ADR, not yet restated here) | bd assignee/labels + config `coordinator:` | LANE |
+| G9 | ready bead routed to the coordinator, whom dispatch refuses to hire (ADR 0033, restating the archive's coordinator-is-not-a-lane ADR) | bd assignee/labels + config `coordinator:` | LANE |
 
 Provider errors (529 storms) are not a ninth row: their observable shape
 *is* G1/G2 plus watch-log lines, and a predicate that parses pane text

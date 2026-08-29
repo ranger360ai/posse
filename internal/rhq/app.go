@@ -114,10 +114,10 @@ func (a *App) CfgGet(key, def string) string {
 }
 
 // Coordinator is the persona the instance names as its exception handler
-// (ADR 0018 §1): the one role dispatch never hires, because coordinator
+// (ADR 0033 §1): the one role dispatch never hires, because coordinator
 // authority — session direction and push — must exist only in a session a
 // human opened. One fact, one store: config `coordinator:`, the operator's
-// file. Absent = no coordinator = pre-0018 behavior, so the engine ships
+// file. Absent = no coordinator = pre-0033 behavior, so the engine ships
 // carrying no crew name (the rangerhq-gk4k bug class).
 func (a *App) Coordinator() string { return a.CfgGet("coordinator", "") }
 

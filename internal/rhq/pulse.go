@@ -39,7 +39,7 @@ import (
 
 // pulsePersona is who the pulse watches for absence (condition c) and
 // delivers to. Config `pulse_persona:` when set; otherwise the instance's
-// `coordinator:` (ADR 0018 §1) — the same persona ADR 0027 §3 named, spelled
+// `coordinator:` (ADR 0033 §1) — the same persona ADR 0027 §3 named, spelled
 // as the config key that already holds it rather than as a name compiled in.
 // The engine ships carrying no crew name (App.Coordinator's rangerhq-gk4k
 // rule, ranger-base-q3gp): a fresh deployer whose config names neither gets

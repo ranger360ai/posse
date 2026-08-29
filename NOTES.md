@@ -182,12 +182,12 @@ of the harness core:
    ordered by PID `route_order:` (default 50, ties broken by persona
    name), then config `default_persona:` — also a lane of one. Unroutable
    beads are reported and skipped. Config `coordinator:` is returned by
-   **no** path (ADR 0018): assignee-is-the-coordinator refuses loudly with
+   **no** path (ADR 0033): assignee-is-the-coordinator refuses loudly with
    no fallthrough to label routing, the label loop skips that PID, and a
    `default_persona:` naming her is a loud config error. Both launchers
    share `Route`, so the refusal covers the pass, `--watch` and the
    cockpit's `d`; no flag reaches past it. Unset key = no coordinator =
-   pre-0018 behavior. All three refusals compare *identity*, not the
+   pre-0033 behavior. All three refusals compare *identity*, not the
    string: `LoadAgent` resolves a path, so `Coordinator`, `./coordinator`
    and `coordinator/../coordinator` all reach `coordinator.md` while
    comparing unequal to `coordinator` — a hostile assignee walked past a

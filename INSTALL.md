@@ -592,7 +592,7 @@ before it did not, so you do not need an audit to see it:
 ```
 
 The one name none of the three ever reaches is config `coordinator:` — the
-instance's exception handler (ADR 0018). Dispatch refuses to hire her by any
+instance's exception handler (ADR 0033). Dispatch refuses to hire her by any
 path: assigned to her is unroutable and says so, her PID is skipped in the
 label loop, and naming her as `default_persona:` is reported as the config
 error it is. No flag overrides it. Coordinator authority — session direction

@@ -1,6 +1,6 @@
 package rhq
 
-// ADR 0018 §2 authorizes on identity, but Route compares the raw assignee
+// ADR 0033 §2 authorizes on identity, but Route compares the raw assignee
 // string out of issues.jsonl to config `coordinator:`. LoadAgent resolves a
 // *path* (AgentsDir/<name>.md), so it accepts spellings the equality does
 // not — and the string that walks past the refusal is the one the launcher
