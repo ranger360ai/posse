@@ -525,7 +525,7 @@ A **persona** is three things bound to one name:
 `init` gave you **no personas**. `$RHQ_HOME/agents/` is empty and it is
 yours; what it seeded instead is `$RHQ_HOME/examples/agents/`, nine
 reference PIDs (`architect`, `developer`, `devops`, `product`, `qa`,
-`reviewer`, `security`, `business-manager`, `ranger`) to read and copy
+`reviewer`, `security`, `business-manager`, `ops`) to read and copy
 from. Nothing loads them from there — that is the point. A file in
 `agents/` is a **lane**, and dispatch hands unassigned beads to whichever
 lane matches the label; seeding nine generics used to mean nine lanes

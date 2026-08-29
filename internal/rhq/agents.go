@@ -6,7 +6,7 @@ package rhq
 // every key but `name` is optional:
 //
 //   ---
-//   name: ranger
+//   name: ops
 //   description: terse ops copilot
 //   runtime: claude             # claude | codex | grok | runtimes/<name>.yaml (ADR 0002)
 //   labels: [ops]
@@ -21,7 +21,7 @@ package rhq
 //   trust_project_config: true  # let the runtime read the session dir's own config
 //   overflow: false             # never move this lane to the plan guard's second pool (ADR 0010)
 //   ---
-//   You are Ranger, ...
+//   You are the operations copilot of the crew.
 //
 // `runtime` names the launch profile (runtime.go); the runtime's template
 // renders {file} (shell-quoted path of the .md, so the prompt body itself

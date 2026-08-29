@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ranger360ai/posse"
@@ -207,7 +208,8 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 }
 
 // exampleAgentNames is the set of persona names the seed ships as examples
-// — the only files retireExamplePIDs will ever consider moving.
+// — what init lays on the shelf and counts. What retireExamplePIDs walks is
+// wider by the names posse has retired: retirableExampleNames below.
 func exampleAgentNames(src fs.FS) []string {
 	ents, _ := fs.ReadDir(src, "agents")
 	var out []string
@@ -219,8 +221,40 @@ func exampleAgentNames(src fs.FS) []string {
 	return out
 }
 
+// retirableExampleNames is every persona name posse has ever shipped an
+// example for: the names in this seed, plus the ones only the digest table
+// still knows (exampledigests.go). A rename is why the second half exists —
+// rangerhq-o7y4 renamed agents/ranger.md to agents/ops.md, and a home seeded
+// by any release before it holds agents/ranger.md. Walking the embed alone
+// would leave that generic in agents/ taking beads in label routing forever,
+// which is the ranger-base-8ehw leak arriving by a different door: retiring
+// nothing and saying nothing. The proof a file is posse's is unchanged and
+// still bytes (isShippedExample) — this only decides which names to ask about.
+func retirableExampleNames(src fs.FS) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range exampleAgentNames(src) {
+		seen[n] = true
+		out = append(out, n)
+	}
+	for rel := range shippedExampleDigests {
+		dir, file := path.Split(rel)
+		if dir != "agents/" || !strings.HasSuffix(file, ".md") {
+			continue
+		}
+		if n := strings.TrimSuffix(file, ".md"); !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // retireExamplePIDs moves agents/<name>.md onto the shelf for every persona
-// that IS the shipped example, byte for byte.
+// that IS the shipped example, byte for byte — over every name posse has
+// shipped one under, this seed's and the renamed-away
+// (retirableExampleNames).
 //
 // The upgrade path is the whole problem here: a home seeded by an older
 // binary has the nine generics in agents/, and a build that only stops
@@ -264,7 +298,7 @@ func exampleAgentNames(src fs.FS) []string {
 // shelf-already-matches: once an older version's bytes can be retired, the
 // live file is the only copy of them in the home.
 func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
-	names := exampleAgentNames(src)
+	names := retirableExampleNames(src)
 	if len(names) == 0 {
 		return nil
 	}
@@ -311,9 +345,24 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 		}
 		// The shelf slot must still be the example copyIfMissing wrote
 		// above; if the operator edited the shelf, theirs wins and nothing
-		// moves onto it.
+		// moves onto it. A name this seed no longer ships has no slot to
+		// compare against — copyIfMissing writes nothing for it — so there
+		// the shelf must be free, or hold bytes posse shipped under that
+		// name. Either way the file the operator wrote is never overwritten.
 		shelf := filepath.Join(a.ExampleAgentsDir(), name+".md")
-		if b, err := os.ReadFile(shelf); err != nil || string(b) != string(want) {
+		b, shelfErr := os.ReadFile(shelf)
+		switch {
+		case wantErr == nil:
+			// This seed ships the name, so the slot must be the example
+			// copyIfMissing laid down a few lines up.
+			if shelfErr != nil || string(b) != string(want) {
+				kept = append(kept, name+".md (the shelf copy differs — not overwriting it)")
+				continue
+			}
+		case shelfErr == nil && !isShippedExample(rel, b):
+			// A name this seed no longer ships: nothing wrote that slot on
+			// this run, so it moves only over bytes posse shipped under the
+			// same name — an earlier release's copy of the same example.
 			kept = append(kept, name+".md (the shelf copy differs — not overwriting it)")
 			continue
 		}

@@ -33,7 +33,12 @@ package rhq
 //
 // THE CONTRACT WHEN YOU CHANGE AN EXAMPLE PID: append the new digest, never
 // replace one. An entry that leaves this table is a home posse can no longer
-// recognise its own file in.
+// recognise its own file in. RENAMING one is the same rule read twice: the
+// old path keeps every digest it had — homes hold that file under that name —
+// and the new path starts its own list. That is why retireExamplePIDs walks
+// this table's keys and not the embed alone: a name posse has stopped
+// shipping is still a name posse laid down, and dropping it from the walk
+// would leave the generic routing beads on every home that has it.
 
 import (
 	"crypto/sha256"
@@ -73,6 +78,9 @@ var shippedExampleDigests = map[string][]string{
 		"aded31fd932c75be7b5ded9652e52906e55db4b067afc06ff48e3a6f3c6d0ca3", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"5eefb4da132b64b31d2bdd5626e80a5b15945ac324be6c0b65bdeec5debac57d", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 	},
+	"agents/ops.md": {
+		"7f0b4779b63fac5b004f2855b72d6f58c65e7b4819765b8c5ed5a4a1874d5a47", // rangerhq-o7y4 2026-08-29 ranger.md renamed to a role (ADR 0012 D2)
+	},
 	"agents/product.md": {
 		"c9ce6781c6f3b0d3049ff424815993983fb04419272a17ec6ca8328877f426d6", // 5668b76
 		"519f25ba83ee16e2b36a58d3d73683361b6fcf2e70b5c57641d3ef921b9e2597", // 95c4b70
@@ -85,6 +93,11 @@ var shippedExampleDigests = map[string][]string{
 		"7e4c8956bb7f7604820fe0df82d3aa052c0e36a1da2a5ea18519725eff939a8c", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"b79572a439fd2bf84df9ac64db045be51d5dd5c3cda879ace11d3575fe03bd1c", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 	},
+	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
+	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay
+	// because homes seeded by every release above hold this file, and a name
+	// posse has shipped is a name posse must still be able to recognise and
+	// retire (retireExamplePIDs reads this table's keys, not the embed alone).
 	"agents/ranger.md": {
 		"a2d154e05cce58b1555ad6ade9d8b828b595d4ee958c5e9c3a0228221fc72b1d", // 5668b76
 		"f407345cd3142cdd9177afe209848616baf82fa0171fb53cb8fa7d4bef9f86df", // 95c4b70
