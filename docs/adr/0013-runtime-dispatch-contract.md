@@ -297,6 +297,33 @@ future narrowing of the writable set reviews as strictly safer, so
 the check, not the review, is what keeps the record stage loud at
 the next launch instead of quiet until the daemon dies.
 
+**Third answer (added 2026-08-29, ranger-base-heur).** The two answers
+above stand, but the row has a third. The probe *is* a `sandbox-exec`,
+and the kernel refuses a nested `sandbox_apply` — so a posse command
+rendering this row from inside a caged persona session cannot run the
+probe at all, for a reason that says nothing about the profile
+(MEASURED, heur: any outer profile carrying a deny refuses every nested
+apply, `sandbox_apply: Operation not permitted`, exit 71). That refusal
+is the third answer: not granted, not denied — **not applied**. It
+lands in `Realized` as an unmeasured note rather than through
+`unrealized()`, because a launch must not be degraded by a check that
+did not run; before the fix the kernel's words printed as a wall
+verdict about the store of record, and every reach row rendered from
+inside a cage degraded the launch on a measurement that never happened.
+
+Cage *availability* stays a **host** question on purpose (developer's
+call, recorded rather than assumed): `SeatbeltAvailable()` asks about
+the session posse is about to launch, whose `sandbox-exec` is typed
+into a herdr pane outside this process's sandbox — not whether this
+process can apply a profile ("is the binary there" and "can I apply
+one" are different questions with different answers in the same caged
+session: `sandbox-exec` stays on PATH inside the cage, measured in
+heur). So `AvailableCages` keeps seatbelt even when posse itself runs
+caged. Dropping it there would fall this row through to the default
+arm, which claims "cage <x> has no file wall — every path this session
+can write, it can write" — a stronger claim than "unmeasured," and
+false.
+
 **Reap guard.** A session whose bead is still `in_progress` and whose
 cwd is dirty is **not killed**. The 353-line near-miss is a shared
 checkout plus a reap, not a missing `Done:` line. L3's pathspec rule
@@ -662,6 +689,13 @@ row).
   grades denies. And a trailing `(deny file-write*)` naming the beads
   target re-denies it under last-match-wins — the recurrence path §4
   Reachability exists to catch.
+
+- The nested-apply half, 2026-08-29 (ranger-base-heur, darwin 25.4.0):
+  any outer seatbelt profile carrying a deny refuses every nested
+  `sandbox_apply` (exit 71), while `sandbox-exec` stays on PATH inside
+  the cage — the reach row's third answer (§4, "not applied") and the
+  on-purpose host scope of `AvailableCages` both come from that
+  measurement. Background: docs/notes.d/ranger-base-heur.md.
 
 - The turn-outcome parity fixture, 2026-08-28 (ranger-base-unzn →
   ranger-base-02zr): the same stubbed allotment refusal driven through
