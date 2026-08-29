@@ -119,7 +119,9 @@ func qcRun(t *testing.T, constitution, queue, worktrees string, redirects []stri
 
 // qcRunEnv is qcRun with entries appended to the script's environment — the
 // seam the abort pins drive: a `git` shim on PATH, or a GIT_TEMPLATE_DIR
-// whose pre-commit hook refuses.
+// whose pre-commit hook refuses. The base is qcEnv, never this box's raw
+// environment: the script commits, and whose identity it commits under is not
+// something a test may borrow from the machine it happens to run on.
 func qcRunEnv(t *testing.T, env []string, constitution, queue, worktrees string, redirects []string, extra ...string) (string, error) {
 	t.Helper()
 	args := []string{qcScript(t),
@@ -136,11 +138,66 @@ func qcRunEnv(t *testing.T, env []string, constitution, queue, worktrees string,
 	}
 	args = append(args, extra...)
 	cmd := exec.Command("sh", args...)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	// Appended last on purpose: os/exec uses the LAST value for a duplicate
+	// key, so a caller may replace anything qcEnv supplies — which is how the
+	// identity's wrong arm is driven.
+	cmd.Env = append(qcEnv(t, qcFixtureEmail), env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// qcFixtureEmail is the identity every script run below commits under. It is
+// the FIXTURE's, and that is the whole point — see qcEnv.
+const qcFixtureEmail = "cutover-fixture@example.invalid"
+
+// qcIdentityEnv renders a git configuration carrying email as the only
+// identity on offer, and returns the environment entries that make it the
+// whole of git's configuration — the box's own global and system files are
+// cut out along with it. An empty email renders a config with no identity at
+// all: that is the wrong arm, which
+// TestQueueCutoverCommitsUnderTheFixturesOwnIdentity drives.
+//
+// `useConfigOnly` is the load-bearing line. Without it git falls back to
+// guessing an identity from the hostname, which SUCCEEDS wherever the
+// hostname has a domain part and fails where it does not —
+//
+//	fatal: unable to auto-detect email address (got "root@d9b2c1bf2bfd.(none)")
+//
+// The queue repo is a CLONE and a clone carries no local config, so the
+// commit the script makes in it at stage "commit" had nothing else to go on:
+// five of the pins in this file were green on macos-latest and red on
+// ubuntu-latest on ci.yml's very first run (ranger-base-rstk). Supplying the
+// identity is only half the fix. With the guessing switched OFF too, a
+// fixture that ever loses its identity fails on EVERY box rather than on the
+// domainless ones only, which is what makes these pins measure anything on a
+// dev box.
+func qcIdentityEnv(t *testing.T, email string) []string {
+	t.Helper()
+	cfg := filepath.Join(t.TempDir(), "gitconfig")
+	body := "[user]\n\tuseConfigOnly = true\n"
+	if email != "" {
+		body += "\tname = cutover fixture\n\temail = " + email + "\n"
+	}
+	write(t, cfg, body)
+	return []string{"GIT_CONFIG_GLOBAL=" + cfg, "GIT_CONFIG_SYSTEM=/dev/null"}
+}
+
+// qcEnv is this box's environment with every OTHER route to a git identity
+// cut out of it, plus the fixture's own. GIT_AUTHOR_*/GIT_COMMITTER_* outrank
+// the config and EMAIL backstops it, so an operator who exports one of them
+// would be testing their identity rather than the fixture's — and the wrong
+// arm below would pass while proving nothing.
+func qcEnv(t *testing.T, email string) []string {
+	t.Helper()
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "EMAIL" || strings.HasPrefix(k, "GIT_AUTHOR_") || strings.HasPrefix(k, "GIT_COMMITTER_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, qcIdentityEnv(t, email)...)
 }
 
 // qcDrift makes the live store differ from the constitution's last commit,
@@ -824,4 +881,49 @@ func TestQueueCutoverAbortAtTheCommitLeavesTheFleetResolving(t *testing.T) {
 			t.Errorf("the abort never says %q:\n%s", want, out)
 		}
 	}
+}
+
+// ─── ranger-base-rstk: whose identity these fixtures commit under ───────────
+
+// The commit the script makes lands in a repo `git clone` left with no local
+// identity, so until qcEnv every pin in this file was at the mercy of the
+// hostname of the box running it. Both arms, in one test, because either one
+// alone is green for the wrong reason: the run must commit under the
+// FIXTURE's identity, and with that identity taken away it must not be able
+// to commit at all — no hostname on any box may rescue it.
+func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
+	// A store with drift is what makes the script reach its commit at all.
+	drift := func(t *testing.T) (constitution, queue, project string) {
+		t.Helper()
+		constitution, _ = qcConstitution(t)
+		qcDrift(t, constitution)
+		queue = filepath.Join(t.TempDir(), "queue")
+		project = qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+		return constitution, queue, project
+	}
+
+	t.Run("the drift commit carries the fixture's identity", func(t *testing.T) {
+		constitution, queue, project := drift(t)
+		out, err := qcRun(t, constitution, queue, t.TempDir(), []string{project})
+		if err != nil {
+			t.Fatalf("queue-cutover.sh: %v\n%s", err, out)
+		}
+		if got := strings.TrimSpace(mustGit(t, queue, "log", "-1", "--format=%ce")); got != qcFixtureEmail {
+			t.Errorf("the drift commit was made by %q, want the fixture's %q — the run is taking its identity from the box", got, qcFixtureEmail)
+		}
+	})
+
+	t.Run("the wrong arm: with no fixture identity nothing can be committed", func(t *testing.T) {
+		constitution, queue, project := drift(t)
+		out, err := qcRunEnv(t, qcIdentityEnv(t, ""), constitution, queue, t.TempDir(), []string{project})
+		if err == nil {
+			t.Fatalf("the script committed with no identity configured, so git guessed one here and the arm above proves nothing on this box:\n%s", out)
+		}
+		if !strings.Contains(out, "auto-detection is disabled") {
+			t.Errorf("the run failed for something other than the missing identity:\n%s", out)
+		}
+		if !strings.Contains(out, `stage "commit"`) {
+			t.Errorf("the identity is missed somewhere other than the commit:\n%s", out)
+		}
+	})
 }

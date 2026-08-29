@@ -166,12 +166,13 @@ precisely what a `go test` row cannot reach.
 
 ---
 
-## 4. Before any of this: the gate is red
+## 4. Before any of this: the gate was red — fixed in ranger-base-rstk
 
-`ci.yml`'s first run on main (33218587437, 2026-08-28) is **red on
+`ci.yml`'s first run on main (33218587437, 2026-08-28) was **red on
 `ubuntu-latest`, green on `macos-latest`** — the platform split working
 exactly as designed, on its first push. Two environment dependencies, both
-measured, both filed:
+measured, both filed, **both fixed in the fixtures under ranger-base-rstk**
+(`docs/notes.d/ranger-base-rstk.md`). What they were:
 
 1. **Five `TestQueue*` tests assume an ambient git identity.** They commit in
    fixture repos without setting `user.email`, which succeeds wherever git can
@@ -193,7 +194,15 @@ non-root.
 
 **Do not add platform rows to a red gate.** Whichever route is picked, the two
 filed defects land first, or every new row inherits a failure that has nothing
-to do with the platform it is supposed to be testing.
+to do with the platform it is supposed to be testing. That precondition is
+**met**: both are fixed, `make test-linux` is green at the fix, and each
+mechanism is now pinned by an arm that fails on darwin too — the identity one
+through `user.useConfigOnly=true`, which switches git's hostname guessing off
+so a missing identity reds every box; the working-directory one through a
+scratch cwd that must be left empty, so a prescription whose `cd` does not land
+is caught where the checkout is writable as well as where it is read-only.
+Neither pin can go quiet on the box a persona develops on, which is how the
+originals survived.
 
 ---
 

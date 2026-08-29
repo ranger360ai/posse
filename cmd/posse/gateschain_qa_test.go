@@ -41,13 +41,30 @@ func qaPrescription(t *testing.T, out, slot, bin string) string {
 }
 
 // qaForeignBoth is the state `bd hooks install` leaves and INSTALL.md §9
-// walks the operator out of: a foreign shim in each slot posse wants.
-func qaForeignBoth(t *testing.T) string {
+// walks the operator out of: a foreign shim in each slot posse wants. It
+// returns the HOME the whole exercise runs under as well as the repo.
+//
+// THE REPO LIVES UNDER THAT HOME, and that is load-bearing (ranger-base-rstk).
+// Every path in a printed prescription is AbbrevHome'd (gates.go), so a repo
+// under $HOME is prescribed as `cd ~/…` — the form the operator is actually
+// handed for their own checkout. On darwin t.TempDir() is under /var/folders
+// and $HOME is not, so nothing was ever abbreviated here and the block was a
+// plain absolute path that ran from anywhere. On ubuntu-latest, where HOME=/tmp
+// holds the temp dirs, the same block came out as `~/…` and this suite pasted
+// it into a shell holding a DIFFERENT HOME: the `cd` resolved to a doubled path
+// that does not exist, sh carried on regardless, and the hook files landed in
+// whatever directory the test binary was standing in. Placing the repo under
+// the home makes the abbreviated form the one every platform exercises.
+func qaForeignBoth(t *testing.T) (home, repo string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	home = t.TempDir()
+	repo = filepath.Join(home, "checkout")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -57,7 +74,25 @@ func qaForeignBoth(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	return repo
+	return home, repo
+}
+
+// qaInstallHooks runs the command under test with the HOME its prescriptions
+// will be pasted under. The printing process and the pasting shell must agree
+// on what `~` means or the block is not runnable as printed, which is the
+// whole claim these pins make.
+func qaInstallHooks(t *testing.T, bin, home string, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(bin, append([]string{"gates", "install-hooks"}, args...)...)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("gates install-hooks: %v %s", err, out)
+	}
+	return string(out), code
 }
 
 // gitOutsideGates resolves the REAL git binary, ignoring any posse L0 shim on
@@ -80,18 +115,42 @@ func gitOutsideGates(t *testing.T) string {
 }
 
 // qaSh runs a prescription block the way an operator pastes it: one /bin/sh,
-// no shell state carried in from this suite's own pane.
-func qaSh(t *testing.T, script string) (string, int) {
+// no shell state carried in from this suite's own pane, and the same HOME the
+// block was printed under so its `~` names the directory it meant.
+//
+// It runs in a scratch directory of our own, and that directory must be EMPTY
+// afterwards. The block's first line is a `cd` into the hooks dir and every
+// line after it is relative to that, so a `cd` that fails does not stop
+// anything: sh carries on and writes the hook files wherever it is standing.
+// Until ranger-base-rstk that was this package's own source directory — which
+// a writable checkout absorbs in silence, and `make test-linux`, whose whole
+// guarantee is that /repo is mounted read-only, reports as
+// "cannot create pre-push: Read-only file system". The emptiness check is the
+// arm that fails on every platform rather than only on the read-only one.
+func qaSh(t *testing.T, home, script string) (string, int) {
 	t.Helper()
+	scratch := t.TempDir()
 	cmd := exec.Command("/bin/sh", "-s")
+	cmd.Dir = scratch
 	cmd.Stdin = strings.NewReader(script)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
 		code = ee.ExitCode()
 	} else if err != nil {
 		t.Fatalf("sh: %v", err)
+	}
+	left, rerr := os.ReadDir(scratch)
+	if rerr != nil {
+		t.Fatalf("read the scratch dir the prescription ran in: %v", rerr)
+	}
+	if len(left) > 0 {
+		names := make([]string, 0, len(left))
+		for _, e := range left {
+			names = append(names, e.Name())
+		}
+		t.Errorf("the prescription wrote %v into the directory it was pasted from — its `cd` did not land:\n%s", names, out)
 	}
 	return string(out), code
 }
@@ -104,19 +163,19 @@ func qaSh(t *testing.T, script string) (string, int) {
 // nothing: exit 127, and every commit in the repo fails with it.
 func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 	bin := buildRhq(t)
-	repo := qaForeignBoth(t)
+	home, repo := qaForeignBoth(t)
 
 	// The refusal for the first slot, and the block it prints.
-	first, _ := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
-	pre := qaPrescription(t, string(first), "pre-push", bin)
-	preOut, code := qaSh(t, pre)
+	first, _ := qaInstallHooks(t, bin, home, repo)
+	pre := qaPrescription(t, first, "pre-push", bin)
+	preOut, code := qaSh(t, home, pre)
 	if code != 0 {
 		t.Errorf("the pre-push prescription must run as printed: code=%d\n%s", code, preOut)
 	}
 	// Step 3 of that block is itself an install-hooks run; it prints the
 	// second slot's prescription, which the operator follows next.
 	commit := qaPrescription(t, preOut, "prepare-commit-msg", bin)
-	commitOut, code := qaSh(t, commit)
+	commitOut, code := qaSh(t, home, commit)
 	if code != 0 {
 		t.Errorf("the prepare-commit-msg prescription must run as printed: code=%d\n%s", code, commitOut)
 	}
@@ -131,18 +190,18 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 // would pin one half of the claim.
 func TestQAInstallRefusalPrescriptionsRunInEitherOrder(t *testing.T) {
 	bin := buildRhq(t)
-	repo := qaForeignBoth(t)
+	home, repo := qaForeignBoth(t)
 
 	// One call, both refusals, both prescriptions — the commit slot's first.
-	first, _ := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
-	commitOut, code := qaSh(t, qaPrescription(t, string(first), "prepare-commit-msg", bin))
+	first, _ := qaInstallHooks(t, bin, home, repo)
+	commitOut, code := qaSh(t, home, qaPrescription(t, first, "prepare-commit-msg", bin))
 	if code != 0 {
 		t.Errorf("the prepare-commit-msg prescription must run as printed FIRST: code=%d\n%s", code, commitOut)
 	}
 	// Its own step 3 reprints the pre-push block, now against a repo whose
 	// commit slot already holds our dispatcher: taking the second slot must
 	// not disturb the first.
-	preOut, code := qaSh(t, qaPrescription(t, commitOut, "pre-push", bin))
+	preOut, code := qaSh(t, home, qaPrescription(t, commitOut, "pre-push", bin))
 	if code != 0 {
 		t.Errorf("the pre-push prescription must run as printed SECOND: code=%d\n%s", code, preOut)
 	}
@@ -210,22 +269,16 @@ func qaAssertBothSlotsChained(t *testing.T, repo string) {
 // when something was left uninstalled.
 func TestQAInstallHooksAttemptsBothSlotsInOneCall(t *testing.T) {
 	bin := buildRhq(t)
-	repo := qaForeignBoth(t)
+	home, repo := qaForeignBoth(t)
 
-	out, err := exec.Command(bin, "gates", "install-hooks", repo).CombinedOutput()
-	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
-		code = ee.ExitCode()
-	} else if err != nil {
-		t.Fatalf("gates install-hooks: %v %s", err, out)
-	}
+	out, code := qaInstallHooks(t, bin, home, repo)
 	if code == 0 {
 		t.Errorf("a call that installed neither slot must exit non-zero: %s", out)
 	}
-	if !strings.Contains(string(out), "not installed: pre-push") {
+	if !strings.Contains(out, "not installed: pre-push") {
 		t.Errorf("pre-push refusal must be reported: %s", out)
 	}
-	if !strings.Contains(string(out), "not installed: prepare-commit-msg") {
+	if !strings.Contains(out, "not installed: prepare-commit-msg") {
 		t.Errorf("prepare-commit-msg must be ATTEMPTED and reported even though pre-push failed first: %s", out)
 	}
 }
@@ -235,12 +288,12 @@ func TestQAInstallHooksAttemptsBothSlotsInOneCall(t *testing.T) {
 // shows dispatch leaves silently uncovered — in one call, both slots.
 func TestQAInstallHooksChainFlagTakesOverBdsShim(t *testing.T) {
 	bin := buildRhq(t)
-	repo := qaForeignBoth(t)
+	home, repo := qaForeignBoth(t)
 	hooks := filepath.Join(repo, ".git", "hooks")
 
-	out, err := exec.Command(bin, "gates", "install-hooks", repo, "--chain").CombinedOutput()
-	if err != nil {
-		t.Fatalf("gates install-hooks --chain: %v %s", err, out)
+	out, code := qaInstallHooks(t, bin, home, repo, "--chain")
+	if code != 0 {
+		t.Fatalf("gates install-hooks --chain: code=%d %s", code, out)
 	}
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		if _, err := os.Stat(filepath.Join(hooks, "bd-"+slot)); err != nil {
