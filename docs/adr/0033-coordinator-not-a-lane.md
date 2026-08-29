@@ -34,8 +34,9 @@ label-routable, and `default_persona:` would accept her name.
 The record already decides the role question. ADR 0029 §4: monica is
 the exception handler, not the scheduler — a human-adjacent role that
 judges, with work delivered by the pulse (ADR 0027), never by the queue.
-ADR 0027's push condition rests on a singleton premise stated verbatim
-— "monica is the only persona with push" — and a per-bead clone is a
+ADR 0027's push condition rests on a singleton premise the archive
+original stated verbatim — "monica is the only persona with push" —
+(0027's restatement respells the names as roles) and a per-bead clone is a
 second monica: two holders of session direction and push acting
 concurrently is the multi-writer shape ADR 0011 exists to remove
 (single writer; Thompson 2011, Helland CIDR 2007). And the pulse never
