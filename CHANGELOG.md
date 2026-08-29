@@ -9,7 +9,7 @@ that release's notes on GitHub, above the generated commit list —
 prints exactly what will be prepended. Renaming `## Unreleased` to the version
 being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
-## Unreleased
+## v0.4.0
 
 ### Security
 
