@@ -60,8 +60,13 @@ func need(args []string, n int, usage string) []string {
 // prompt --timeout and wait --timeout are the same parser written twice
 // more (ranger-base-sknr), and the same 0: Herdr.AgentPrompt/AgentWait
 // only pass --timeout on when timeoutMS > 0, so `--timeout soon` and
-// `--timeout -1` both asked herdr to wait unbounded. All four flags die
-// on bad input now, and 0 stays the deliberate escape hatch.
+// `--timeout -1` both asked herdr to wait unbounded.
+//
+// peek's positional <lines> is the fifth (ranger-base-oz39) and the one
+// whose harm runs the other way: PaneRead tails only when lines > 0, so a
+// dropped error there read the whole pane instead of the bounded tail
+// asked for. All five die on bad input now, and 0 stays the deliberate
+// escape hatch.
 func validCount(s string) bool {
 	n, err := strconv.Atoi(s)
 	return err == nil && n >= 0
@@ -344,16 +349,26 @@ func main() {
 
 	case "peek":
 		args = need(args, 1, "posse peek <name> [<lines>]")
+		// ranger-base-oz39: the third site of ytkl/sknr's dropped Atoi,
+		// with the harm inverted. 0 lines means the WHOLE pane (PaneRead
+		// tails only when lines > 0), so `posse peek sess 40x` did not
+		// under-read — it read everything, silently, where the operator
+		// asked for a bounded tail. 0 stays the deliberate escape hatch,
+		// as it is for -n and --timeout. Before Resolve, so the argument
+		// is named whether or not the session exists.
+		lines := 0
+		if len(args) > 1 {
+			if !validCount(args[1]) {
+				die(rhq.Die("peek <lines> needs a count (0 = whole pane)"))
+			}
+			lines, _ = strconv.Atoi(args[1])
+		}
 		s, err := hb.Resolve(args[0])
 		if err != nil {
 			die(err)
 		}
 		if s.PaneID == "" {
 			die(rhq.Die("session %s has no recorded pane (created outside posse)", args[0]))
-		}
-		lines := 0
-		if len(args) > 1 {
-			lines, _ = strconv.Atoi(args[1])
 		}
 		text, err := hb.H.PaneRead(s.PaneID, lines)
 		if err != nil {

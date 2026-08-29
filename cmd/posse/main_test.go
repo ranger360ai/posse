@@ -436,6 +436,64 @@ func TestPromptWaitTimeoutRefusesBadCount(t *testing.T) {
 	}
 }
 
+// ranger-base-oz39: peek's positional <lines> is the third site of the same
+// dropped Atoi, and the only one where the bad parse reads MORE than was
+// asked for — PaneRead tails only when lines > 0, so `posse peek sess 40x`
+// returned the whole pane where the operator asked for 40 rows, silently.
+//
+// Same rig as TestPromptWaitTimeoutRefusesBadCount: RHQ_HERDR_BIN points at
+// a file that is not there, so an accepted count dies naming it (Resolve
+// lists workspaces through herdr). That is the positive control — a
+// validCount that refused everything would never reach herdr, and the
+// accepted rows would fail. The refusal rows also assert the fix runs
+// BEFORE Resolve: they never mention herdr.
+func TestPeekLinesRefusesBadCount(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	env := append(os.Environ(),
+		"RHQ_HOME="+home,
+		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
+		"PATH=",
+	)
+
+	for _, c := range []struct {
+		args     []string
+		want     string
+		accepted bool // the count is good: it must reach herdr, not die here
+	}{
+		{args: []string{"peek", "sess", "40x"}, want: "<lines> needs"},
+		{args: []string{"peek", "sess", "forty"}, want: "<lines> needs"},
+		{args: []string{"peek", "sess", "-1"}, want: "<lines> needs"},
+		{args: []string{"peek", "sess", ""}, want: "<lines> needs"},
+		{args: []string{"peek", "sess", "40.0"}, want: "<lines> needs"},
+		// Accepted counts reach Resolve instead of dying here — including
+		// 0, which stays the deliberate "whole pane" escape hatch, and the
+		// no-argument form that means the same thing.
+		{args: []string{"peek", "sess", "40"}, want: "herdr-must-not-run", accepted: true},
+		{args: []string{"peek", "sess", "0"}, want: "herdr-must-not-run", accepted: true},
+		{args: []string{"peek", "sess"}, want: "herdr-must-not-run", accepted: true},
+	} {
+		cmd := exec.Command(bin, c.args...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("posse %s: %v", strings.Join(c.args, " "), err)
+		}
+		got := string(out)
+		if code != 1 || !strings.Contains(got, c.want) {
+			t.Errorf("posse %s: exit %d, output %q; want exit 1 containing %q",
+				strings.Join(c.args, " "), code, out, c.want)
+		}
+		if !c.accepted && strings.Contains(got, "herdr-must-not-run") {
+			t.Errorf("posse %s reached herdr — the bad count was accepted:\n%s",
+				strings.Join(c.args, " "), got)
+		}
+	}
+}
+
 // ranger-base-vlrp: the seed config ships two `beads:` example paths a fresh
 // machine does not have, and `posse beads check` used to print its all-clear
 // over them. The census walk is deliberately quiet where a repo has no
