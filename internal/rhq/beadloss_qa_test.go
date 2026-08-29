@@ -518,11 +518,13 @@ func TestBeadsHomeDoesNotExpandTildeInRedirect(t *testing.T) {
 
 // bd 0.49.1 refuses a second hop ("redirect chains not allowed, ignoring
 // redirect in <first-hop>/.beads") and reads the first target as a normal
-// .beads dir. beadsHome follows up to 8 hops, so the census walks a store
-// bd is not using and ListAll against real bd errors. D3-C is one hop and
-// is not this. Un-skip when ranger-base-7kw closes.
+// .beads dir — measured against the real binary in ranger-base-7kw: with a
+// jsonl in mid, `bd list` from work answers mid's bead and creates
+// mid/beads.db; with none, it errors "no beads database found" and store is
+// untouched either way. beadsHome used to follow up to 8 hops, so the census
+// walked a store bd is not using and ListAll against real bd errored. D3-C
+// is one hop and is not this.
 func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
-	t.Skip("ranger-base-7kw: beadsHome follows redirect chains bd 0.49.1 ignores")
 	store := qblRepo(t)
 	mid := qblRepo(t)
 	work := qblRepo(t)

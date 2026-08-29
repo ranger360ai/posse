@@ -277,7 +277,7 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		//
 		// realizeCodex names the same directory for the runtimes that cage
 		// themselves (runtime.go, ranger-base-0fb); this is that grant at
-		// L2, same resolver, same chained-redirect bound.
+		// L2, same resolver, same one-hop bound (ranger-base-7kw).
 		if home := beadsHome(cwd); !underDir(cwd, home) {
 			add(home)
 			for _, g := range beadsGitDirs(home) {
@@ -587,9 +587,9 @@ func underDir(dir, p string) bool {
 // index.lock in the per-worktree git dir, hooks and refs live in the
 // common one, and outside a worktree those are one path. `git rev-parse`
 // is the only thing that can tell them apart — a worktree's .git is a
-// file, and beadsHome follows a redirect into one (bd worktree create
-// writes the chained form). <repo>/.git leads regardless, so a target git
-// cannot answer for still gets the grant it needs.
+// file, and beadsHome follows a redirect into one. <repo>/.git leads
+// regardless, so a target git cannot answer for still gets the grant it
+// needs.
 func beadsGitDirs(home string) []string {
 	root := filepath.Dir(home)
 	out := []string{filepath.Join(root, ".git")}

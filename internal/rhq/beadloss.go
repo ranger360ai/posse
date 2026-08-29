@@ -305,9 +305,10 @@ func gitBead(home string, args ...string) ([]byte, error) {
 }
 
 // beadsHome is the .beads directory bd actually reads for dir, following
-// .beads/redirect when one is there. Everything the census touches — the git
-// history of the JSONL, the deletion ledger — hangs off this one answer, so
-// reader, writer and git can never disagree about which repo they are in.
+// .beads/redirect ONE hop when one is there. Everything the census touches —
+// the git history of the JSONL, the deletion ledger — hangs off this one
+// answer, so reader, writer and git can never disagree about which repo they
+// are in. Which is why the hop count is bd's and not ours.
 //
 // Under ADR 0012 D3-C the single `beads:` entry is a working copy whose
 // .beads/ holds a redirect and nothing else: the database, its committed
@@ -321,34 +322,39 @@ func gitBead(home string, args ...string) ([]byte, error) {
 // `bd worktree create` writes. A redirect naming something that is not a
 // directory falls back to the local .beads: bd warns and reads locally in
 // that case, and the census must census what bd is actually reading.
+//
+// A target that itself holds a redirect ends the walk, because that is where
+// bd ends it. Measured on bd 0.49.1 (ranger-base-7kw), work → mid → store:
+// bd prints "redirect chains not allowed, ignoring redirect in <mid>/.beads"
+// and then treats mid as an ordinary beads dir — it reads mid's issues.jsonl
+// and creates mid/beads.db, and store is never touched. Following to store
+// would census a repo bd is not using, which is rangerhq-fuom's blindness by
+// another route; and where mid holds no database bd errors outright, so the
+// census of store was computed and then thrown away on the ListAll error.
+// One hop also means a redirect cycle cannot loop here at all.
 func beadsHome(dir string) string {
 	if dir == "" {
 		dir = "."
 	}
 	home := filepath.Join(dir, beadsDirName)
-	// A worktree of a redirected repo chains one redirect onto another, and
-	// a cycle must not hang a dispatch pass: follow a bounded number of hops.
-	for hop := 0; hop < 8; hop++ {
-		b, err := os.ReadFile(filepath.Join(home, beadsRedirect))
-		if err != nil {
-			return home
-		}
-		// firstLine (cagelauncher.go): bd writes one path and nothing else.
-		target := strings.TrimSpace(firstLine(string(b)))
-		if target == "" {
-			return home
-		}
-		if !filepath.IsAbs(target) {
-			// bd writes the relative form against the repo root, not
-			// against .beads/ — one ".." off and bd falls back too.
-			target = filepath.Join(filepath.Dir(home), target)
-		}
-		if st, err := os.Stat(target); err != nil || !st.IsDir() {
-			return home
-		}
-		home = target
+	b, err := os.ReadFile(filepath.Join(home, beadsRedirect))
+	if err != nil {
+		return home
 	}
-	return home
+	// firstLine (cagelauncher.go): bd writes one path and nothing else.
+	target := strings.TrimSpace(firstLine(string(b)))
+	if target == "" {
+		return home
+	}
+	if !filepath.IsAbs(target) {
+		// bd writes the relative form against the repo root, not against
+		// .beads/ — one ".." off and bd falls back too.
+		target = filepath.Join(filepath.Dir(home), target)
+	}
+	if st, err := os.Stat(target); err != nil || !st.IsDir() {
+		return home
+	}
+	return target
 }
 
 // ReadDeletionLedger returns the accounted-for deletions, ALL of them, keyed
