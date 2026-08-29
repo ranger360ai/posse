@@ -283,8 +283,14 @@ pretending a container is a distro.
   are plausible newcomer routes on three of the four, and no clean room
   exercises them — taking the packaged toolchain would vary the toolchain and
   the distro at once. Named and uncovered.
-- **macOS install routes.** Still open as ranger-base-hza, exactly as §3D said
-  it would be. This work does not close it.
+- **macOS install routes.** Was still open as ranger-base-hza, exactly as §3D
+  said it would be; this work did not close it, and **ranger-base-hza did, on
+  2026-08-29**. Not by a macOS guest — by running the routes on a Mac with a
+  scratch Homebrew prefix and an isolated `HOME`/`ZDOTDIR`, which reaches a
+  real `brew tap`/`trust`/`install` and the real zsh startup sequence without
+  touching the box. The instrument is `scripts/macos-install-probe.sh`
+  (`make macos-install-probe`), and what it found — plus what it still does
+  not cover — is `docs/runbooks/macos-install-routes.md`.
 
 `ranger-base-rmgz` — the `cmp` defect — is unaffected by this pick and stays
 open on its own merits: it is real on RHEL-family boxes whether or not
