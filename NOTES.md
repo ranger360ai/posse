@@ -1098,28 +1098,169 @@ nesting.
 ## Env sets and secrets
 
 Env sets are `envs/<name>.env`, plain `KEY=VALUE` lines (leading `export `
-tolerated, `#` comments skipped). Rules:
+tolerated, `#` comments skipped). They are one of **two reader classes**, and
+the split between them is the trust model rather than a mechanism (instance
+ADR 0019 D1, accepted 2026-08-28 — that page names *this* instance's
+credential topology and so stays in the private tree, ADR 0012 D6; the public
+half is `docs/adr/0019-credential-architecture.md`, the seam, and it is the
+later page where the two overlap).
 
-- `posse init` sets `envs/` to mode 700 and the files to 600, and every
-  launch re-asserts it (`TightenEnvPerms`: a drifted 644 file is chmod'ed
+- **Session credential** — `envs/<set>.env`. Injected into exactly the
+  sessions whose PID `envs:` names, plus whatever a recipe or `--env-file`
+  adds explicitly. The persona **and every tool it runs** may hold it.
+- **Harness credential** — `secrets/<name>.env`. Read by posse's own
+  processes, injected into no session, listed by no command, and nameable by
+  no PID key (`internal/rhq/secrets.go`, rangerhq-5s5d).
+
+The one-hand rule, one sentence because it has to survive being quoted:
+**everything under `envs/` may reach a session; nothing under `secrets/` ever
+does.**
+
+That is an **injection** claim, not a confidentiality one, and pretending
+otherwise is how a wall gets trusted that isn't there: 700/600 is
+same-user-void — below the container tier every session runs as this uid and
+can `cat` a 600 file it was never handed. What the split buys is scoped mint
+and individual revocation, i.e. blast radius: a leaked session token burns one
+token, not the account. The wall for *secrecy* is the container tier, never
+the file mode and never the directory name.
+
+`secrets/` is seeded **empty**, and empty is the shipped state: `posse init`
+chmods it 700 and puts nothing in it (a seed tree that grew a credential file
+would ship one inside the binary). In particular there is no `plan-guard.env`
+— the plan guard is not a consumer, because P1 measured HTTP 403 for every
+credential the operator *can* mint against the usage endpoint. The directory
+is the class split made real, waiting for the first harness credential that
+isn't the meter token (a second provider's meter, a webhook).
+
+### The three paths, and who reads each
+
+1. **The macOS keychain** — item `Claude Code-credentials`, read by execing
+   `/usr/bin/security` **absolutely** (a PATH lookup here resolved to the
+   calling persona's own `Bash(security:*)` shim and refused posse's own
+   monitoring read — ranger-base-ypf5). It is the store of record for the
+   meter credential on this host in the sense that matters: Claude Code's own
+   interactive login/refresh loop writes it, so posse is the **second reader**
+   of somebody else's rotating token and never a writer of it. The plan guard
+   and `modelavail.go` both reach it the one way anything reaches a credential
+   here — `ReadCredential(runtime, CredMeter)` in `internal/rhq/credential.go`.
+   Its ACL is **per binary**: every `make install` can silently drop this
+   binary's read. MEASURED three times on 2026-08-24, once while the
+   operator's own interactive shell read the same item fine.
+2. **`envs/*.env`** — session credentials, the class above. `CLAUDE_CODE_OAUTH_TOKEN`
+   in an env set is a *session* credential, and belongs in exactly one of them
+   (D7, below).
+3. **The runtime's own stores** — `~/.claude/.credentials.json`,
+   `~/.codex/auth.json`, `~/.grok/auth.json`. What an interactive `/login`
+   actually updates, and **neither class**: not brought under `envs/`, not
+   brought under `secrets/` — an accepted risk that is named rather than
+   fixed. On this macOS box the plan guard does not read them at all; the
+   keychain is the meter store here, and making a file that kiz already
+   measured as a stale leftover into the adapter would invert the store of
+   record. Off darwin, where there is no keychain, `~/.claude/.credentials.json`
+   **is** the meter store, fed through the same envelope parser so the shape
+   diagnosis is written once and cannot fork (the seam picks by `runtime.GOOS`
+   at run time, never a build tag). ranger-base-zzc (the file keeps coming
+   back) and ranger-base-9fl (narrow `SeatbeltWritable` to the launching
+   runtime) are the posture work on this path; the standing check is `make
+   verify-credential-paths`, whose matcher is a **glob** because on 2026-08-23
+   the file was renamed rather than removed and the check as worded passed
+   sitting beside a live credential.
+
+An operator who logs in has fixed (3) and believes he has fixed everything.
+On 2026-08-24 all three failed in one day. Which one broke is a named class
+now — `unreadable` / `401 stale` / `403 wrong kind` / `429` — carried in the
+cockpit header and the dispatch skip line rather than left as archaeology in
+`state/plan-usage.log` (rangerhq-pwpx). `docs/runbooks/credential-rotation.md`
+is the operator's page for all four rotation moves; its front door is `posse
+refresh` with no arguments.
+
+### The contract
+
+- **Writer: the operator**, by `$EDITOR` or the TUI. posse never mints,
+  refreshes or copies a rotating credential. The one credential *write* in the
+  binary is `posse refresh`, and it is the operator's hand by construction: it
+  refuses under `RHQ_PERSONA` and refuses without a terminal — the
+  no-argument report included, because the deny line that spells the same gate
+  does not know about arguments. A persona reading this files the ask; it does
+  not work around those two refusals.
+- **Readers: the named sessions — the persona and every tool it runs.** Treat
+  every value in a set as something the persona may quote, log, or commit; the
+  harness cannot tell "secret for the tool" from "secret the agent may read".
+  So nothing goes in an env set that the session itself shouldn't hold, and
+  persona sessions never receive config `default_env` implicitly: a persona
+  gets exactly the sets its PID names in `envs:` plus whatever a recipe or
+  `--env-file` adds explicitly (rangerhq-f2b). `default_env` applies to plain
+  sessions only.
+- **Names only, never values.** `posse envs` prints set names and KEY names;
+  titles and listings show env-set names. Values go only into the workspace's
+  environment (`--env` at creation) and are never echoed into a shell. A set
+  name is a file stem, never a path — `envs: [../secrets/plan-guard]` is
+  refused rather than resolved (`storeName`), which is where the two
+  directories stay two.
+- **Modes are re-asserted, not assumed.** `posse init` sets both dirs to 700
+  and their files to 600, and every launch re-asserts **both** stores
+  (`TightenEnvPerms` / `TightenSecretPerms`: a drifted 644 file is chmod'ed
   back and named on stderr — names only).
-- Values go **only** into the workspace's environment (`--env` at creation);
-  never echoed into a shell, never in titles or listings — those show
-  env-set *names* only.
-- **An env set is readable by the agent in that session** — and by every
-  tool it runs. Treat every value in it as something the persona may
-  quote, log, or commit; the harness cannot tell "secret for the tool"
-  from "secret the agent may read". So persona sessions never receive
-  config `default_env` implicitly: a persona gets exactly the sets its PID
-  names in `envs:` plus whatever a recipe/`--env-file` adds explicitly
-  (rangerhq-f2b). `default_env` applies to plain sessions only.
-- Known exposure, accepted for a local single-user tool: `--env KEY=VALUE`
-  is argv to herdr for milliseconds (visible in `ps` on a multi-user box).
-  herdr does not persist the values (audited: none in its session.json or
-  logs).
+- **Integrity is honest, not absolute.** The seatbelt grants `envs/` and
+  `secrets/` to **no** session's writable set (`HomeConstitutionPaths`, ADR
+  0015 §7 plus 0019 D1: a store a session may not be handed is not a store a
+  session may edit). But that is a *tier* property — below L2 a persona with a
+  Write tool edits `RHQ_HOME` files, and an L1 deny on the path is a tripwire,
+  not a wall. The wall for env-set integrity is the seatbelt and container
+  tiers.
+- **Scoped by mint.** A token in an env set is minted for that set's purpose
+  and revocable on its own without touching any other credential. That, not
+  the file mode, is what makes the class split worth having.
+- Known exposure, accepted for a local single-user tool: `--env KEY=VALUE` is
+  argv to herdr for milliseconds (visible in `ps` on a multi-user box). herdr
+  does not persist the values (audited: none in its session.json or logs).
 - If a secret shouldn't sit in a plaintext file at all, put
   `op run --env-file=… -- <cmd>` (1Password) or similar in the recipe's
   `command:` and let the secret manager inject at process start.
+
+### `make install` is the credential wall, and it is not temporary (ADR 0019 D3)
+
+Personas write `internal/rhq/`. **Any code path that reads `secrets/`,
+`envs/`, or the keychain ships only through the operator's `make install`
+review.** That promotion gate is the only wall between persona-authored code
+and a credential store, and it is load-bearing for credential access
+**indefinitely** — not a note until something better lands. Original D2 (mint
+into `secrets/plan-guard.env`, delete the keychain read) would have retired
+the per-binary ACL along with the keychain; P1's 403 closed that off-ramp, so
+the ACL is now the long-term shape of isolation from persona-authored code.
+
+The policy that follows, restated from the ranger-base-2zt refusal: **no
+standing approvals on persona-writable files that touch a credential store.**
+No persona improves credential handling ad hoc — changes here arrive as beads
+on an accepted ADR, and they reach the fleet when the operator installs a
+binary, not when a session writes a file.
+
+What keeps that sentence true rather than merely written is
+`credentialgate_qa_test.go`: the keychain read is exec'd from exactly one file
+of the binary, and **no shipped script** (`scripts/`, `plugin/`, `etc/`, the
+Makefile) execs it or reads a store's contents. A script would be a credential
+path with no promotion gate in front of it — the fleet edits scripts, and
+running one takes no install.
+
+### `CLAUDE_CODE_OAUTH_TOKEN` belongs in `container.env`, not `default.env` (ADR 0019 D7)
+
+Uncaged claude's store of record for session auth is the runtime's own — path
+3, and the keychain Claude Code itself owns. The env var is a **derived copy
+that silently wins and silently rots**: Claude Code warns on `/login` that a
+set `CLAUDE_CODE_OAUTH_TOKEN` makes new sessions keep using the old token, and
+every crew PID names `envs: [default]`, so a fresh operator login does not
+reach the fleet. That is the shape that 401'd the fleet on 2026-08-22 and
+again on 2026-08-24.
+
+The cage is the exception and keeps the variable in `envs/container.env`:
+inside a container there is no keychain, and the mounted claude file is a
+stale leftover (rangerhq-kiz). A session that needs a token the runtime store
+doesn't have names its **own** dedicated env set in its PID — never `default`.
+
+Editing either file is the operator's hand (ranger-base-0vd standing order):
+personas do not edit credential files, and D7's verification — `grep
+CLAUDE_CODE_OAUTH_TOKEN` empty in `default.env`, still present in
+`container.env` — is operator-run.
 
 ## Personas
 
