@@ -913,7 +913,7 @@ day the fleet believed the wall held on grok and it did not.
 
 So until you measure it, a `Bash(...)` deny on your profile is *assumed, not
 measured*: it lands in the launch's **Degraded** list, `--allow-degraded`
-waives it, and tier `fast` never does (ADR 0017 §1). One live turn fixes
+waives it, and tier `fast` never does (ADR 0032 §1). One live turn fixes
 that:
 
 ```sh

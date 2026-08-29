@@ -1,6 +1,6 @@
 package rhq
 
-// `posse runtime probe <name>` — the live wall probe (ADR 0017
+// `posse runtime probe <name>` — the live wall probe (ADR 0032
 // engine-onboarding §1 rules 1–2, bead rangerhq-66e2).
 //
 // The problem it exists for: parity.go counts a `Bash(...)` deny REALIZED on
@@ -68,7 +68,7 @@ const (
 	ProbeShapeScript = "posse-probe-script"
 )
 
-// ProbeObservable is one line of the contract in ADR 0017 §1 rule 2. Detail
+// ProbeObservable is one line of the contract in ADR 0032 §1 rule 2. Detail
 // is what was actually seen — a probe record whose failures do not say what
 // they saw is a red light with no next step.
 type ProbeObservable struct {
@@ -324,7 +324,7 @@ func readCLIVersion(exe string) string {
 
 // probeReading is everything the live run collected, as data. Every
 // judgement about whether the probe passed is made from this struct and
-// nothing else, so the contract in ADR 0017 §1 rule 2 can be tested without
+// nothing else, so the contract in ADR 0032 §1 rule 2 can be tested without
 // a CLI, a pane, or a herdr.
 type probeReading struct {
 	Canary string
@@ -356,7 +356,7 @@ type probeReading struct {
 	Detection AgentDetection
 }
 
-// evalProbe turns a reading into the four observables of ADR 0017 §1 rule 2.
+// evalProbe turns a reading into the four observables of ADR 0032 §1 rule 2.
 // Pure, and deliberately so — it is where the contract lives.
 func evalProbe(r probeReading) []ProbeObservable {
 	obs := make([]ProbeObservable, 0, ProbeObservableCount)
@@ -769,7 +769,7 @@ deny: [%s]
 ---
 You are a measurement, not a persona. This session exists to prove that a
 `+"`Bash(...)`"+` deny in a persona document actually reaches this CLI's child
-processes — the claim ADR 0017 §1 calls "assumed, not measured" on a runtime
+processes — the claim ADR 0032 §1 calls "assumed, not measured" on a runtime
 nobody has probed.
 
 Run exactly what the prompt asks, in order, and nothing else. Several of the

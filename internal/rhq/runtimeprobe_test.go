@@ -1,6 +1,6 @@
 package rhq
 
-// The ADR 0017 §1 probe contract, pinned where it can be pinned without a
+// The ADR 0032 §1 probe contract, pinned where it can be pinned without a
 // CLI: the four observables (evalProbe), the record, and the state machine
 // that decides whether a recorded probe still describes the installed
 // binary. The live half — a real pane on a real runtime — is
@@ -258,7 +258,7 @@ func TestProbeRecordRoundTrips(t *testing.T) {
 	}
 }
 
-// The drift machine of ADR 0017 §1 rule 1: a record is CURRENT only while it
+// The drift machine of ADR 0032 §1 rule 1: a record is CURRENT only while it
 // describes the binary that is installed now. Every arm is driven through
 // the injected reader seam, never through the real PATH — the seam is the
 // READER, not the permission to read (ranger-base-02zr).

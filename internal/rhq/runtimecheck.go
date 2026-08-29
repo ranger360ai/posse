@@ -166,7 +166,7 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 	// it is a gap. The state an onboarder has to be able to see is the one
 	// that costs them the evening: their Bash(...) denies are counted by
 	// nothing until a live probe says otherwise, and the record is what says
-	// which binary was measured (ADR 0017 §1).
+	// which binary was measured (ADR 0032 §1).
 	if rt.Builtin {
 		wrapGrid(w, "probe", "not applicable — "+rt.Name+" is a built-in and its shell argv table was probed in ADR 0009 (rangerhq-e43). `posse runtime probe` measures a runtime you DECLARE")
 	} else {

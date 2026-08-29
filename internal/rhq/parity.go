@@ -133,7 +133,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// with no shims and no gate shell: unrealized, refused, exactly like any
 	// other gate the launch cannot hold.
 	inner := container && ContainerInnerGates && a.CageInnerGates()
-	// ADR 0017 §1 rule 1 — assumed-until-probed. Read at most once, and only
+	// ADR 0032 §1 rule 1 — assumed-until-probed. Read at most once, and only
 	// if a shell-verb deny gets that far: it is a fact about the RUNTIME,
 	// not about a rule, so a PID with nine Bash denies must not read the
 	// record nine times, and a PID with none must not read it at all.
@@ -167,7 +167,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 				p.unrealized(rule, "L1 shim cannot hold on "+rt.Name+" (gate_shell: false): a runtime that re-execs a login shell lets path_helper demote the gates dir below /usr/bin; L3 counts only after CheckParityIn behavior-probes the hook")
 				continue
 			}
-			// ADR 0017 §1 rule 1. On a template-only runtime the L1 claim
+			// ADR 0032 §1 rule 1. On a template-only runtime the L1 claim
 			// below rests on three behaviours nobody measured for this CLI
 			// (runtimeprobe.go names them); the silent one is a runtime that
 			// re-execs a login shell it did not take from $SHELL, which is
@@ -431,11 +431,11 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	// reasons now and they send the reader to different places: a runtime
 	// that declared `gate_shell: false` (nothing to fix — that is the exit
 	// hatch), and a template-only runtime whose shim claim is assumed until
-	// somebody probes it (ADR 0017 §1). Printing the first sentence for the
+	// somebody probes it (ADR 0032 §1). Printing the first sentence for the
 	// second case would name a key the yaml does not set.
 	noL1 := "L1 shim cannot hold on " + rt.Name + " (gate_shell: false)"
 	if !rt.NoGateShell && a.assumedUntilProbed(rt) != "" {
-		noL1 = "L1 on " + rt.Name + " is assumed, not measured — `posse runtime probe " + rt.Name + "` (ADR 0017 §1)"
+		noL1 = "L1 on " + rt.Name + " is assumed, not measured — `posse runtime probe " + rt.Name + "` (ADR 0032 §1)"
 	}
 	for _, rule := range ag.Deny {
 		switch {
@@ -540,7 +540,7 @@ func (a *App) wholeTreeWriteWall(p *Parity, gate, tool string, rt *Runtime, inne
 	}
 }
 
-// assumedUntilProbed is the ADR 0017 §1 rule 1 reason a `Bash(...)` deny
+// assumedUntilProbed is the ADR 0032 §1 rule 1 reason a `Bash(...)` deny
 // does not count on this runtime yet, or "" when it does. Built-ins are
 // exempt by measurement, not by privilege: their argv table was probed in
 // ADR 0009 (rangerhq-e43), and a built-in has no runtimes/<name>.yaml for a

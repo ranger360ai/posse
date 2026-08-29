@@ -1290,7 +1290,7 @@ func main() {
 		fmt.Fprintln(out, "`posse runtime check <name>` — the dispatch-contract grid for one profile")
 		// The catalog is also where an onboarder learns the wall claim is
 		// conditional: a template profile's Bash(...) denies do not count
-		// until a live probe says they do (ADR 0017 §1).
+		// until a live probe says they do (ADR 0032 §1).
 		fmt.Fprintln(out, "`posse runtime probe <name>` — the live wall probe a template-only profile needs before its Bash(...) denies count")
 
 	case "skills":
@@ -1535,7 +1535,7 @@ func parseNewFlags(args []string) rhq.NewSessionOpts {
 	return o
 }
 
-// runtimeProbe is `posse runtime probe <name>` — ADR 0017 §1 rule 2. It runs
+// runtimeProbe is `posse runtime probe <name>` — ADR 0032 §1 rule 2. It runs
 // ONE live turn on the runtime being onboarded and writes
 // state/runtimes/<name>/probe.json, then prints the four observables.
 //
@@ -1596,7 +1596,7 @@ func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
 }
 
 // versionOrUnknown keeps an unreadable version visible as UNKNOWN rather
-// than as an empty string that reads like agreement (ADR 0017's rule that
+// than as an empty string that reads like agreement (ADR 0032's rule that
 // undeclared is loud).
 func versionOrUnknown(v string) string {
 	if v == "" {
@@ -1801,7 +1801,7 @@ catalog:
                                  then the ADR 0012 D4 preflight (exit 1 on a blocking gap):
                                  launch/promptable/work/record/settle/account, who declared each,
                                  and what a missing stage costs. Undeclared reads loud, not silent.
-  posse runtime probe <name>     the ADR 0017 live wall probe for a template-only profile:
+  posse runtime probe <name>     the ADR 0032 live wall probe for a template-only profile:
              [--timeout 4m]      one turn on the CLI with a scratch PID carrying a canary deny,
              [--keep]            read for four observables (shim precedence, refusal through
                                  direct/sh -c/script, unattended turn, herdr detection) and

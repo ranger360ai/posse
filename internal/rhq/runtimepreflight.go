@@ -157,7 +157,7 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 		add("env_required", name+" is declared env_required: and is not set in this environment — a launch here refuses rather than opening a pane that cannot authenticate", true)
 	}
 
-	// probe — ADR 0017 §1: the live wall measurement, and the drift check
+	// probe — ADR 0032 §1: the live wall measurement, and the drift check
 	// on it. Non-blocking by construction: an unprobed template runtime
 	// still takes work, it just takes it with its `Bash(...)` denies in the
 	// Degraded column (parity.go), which is a named degrade and not a

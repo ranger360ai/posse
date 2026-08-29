@@ -1,6 +1,6 @@
 ## The runtime probe: a template profile's `Bash(...)` denies are assumed until measured (rangerhq-66e2)
 
-ADR 0017 engine-onboarding §1, rules 1–2. Until this landed, `parity.go`
+ADR 0032 engine-onboarding §1, rules 1–2. Until this landed, `parity.go`
 counted a `Bash(...)` deny **realized** on any runtime that did not declare
 `gate_shell: false` — including a CLI the harness had never seen. That claim
 rests on three behaviours nobody had measured for such a CLI:
@@ -90,10 +90,23 @@ The `_FAKE` arm wraps the same CLI in a shim that hardcodes `/bin/zsh -l`,
 which is the only way to build observable 1's wrong arm: it needs a real
 login shell on a real box.
 
-**Not in this change.** The ADR that specifies this — engine onboarding,
-accepted 2026-08-22 — is not in this repo: it was written before the rename
-and did not cross it, and the `0017` slot here holds the unrelated
-runtime-equivalence ADR. Everything above was implemented from that text;
-re-landing it under a free number, and repointing the `ADR 0017 §1` citations
-in the code, the tests and INSTALL.md §8 at it, is filed on the architecture
-lane.
+**Two deviations from §1 rule 2's literal text**, both deliberate and both
+in the ADR's own direction:
+
+- Shape 3 is "through a script/Makefile" in the ADR; the probe renders an
+  executable `probe.sh` and runs it directly. A script that `exec`s the
+  canary is the same subprocess shape and needs no `make` on the box.
+- Observable 4 is "saw a real idle (`visible_idle`), not a fallback guess".
+  The code asks `AgentDetection.Seen()` — a matched rule **or** visible
+  chrome — because a matched rule is *stronger* evidence than chrome and a
+  literal `visible_idle` requirement would fail a runtime whose idle herdr
+  recognizes by rule. The property the ADR names is "not the fallback", and
+  `Seen()` is this repo's own predicate for it. The record says which of the
+  two answered.
+
+**Provenance.** The specifying ADR was written before the rename and did not
+cross it; it re-landed as `docs/adr/0032-engine-onboarding.md`
+(ranger-base-gtxw, filed from this bead). The code, the tests and INSTALL.md
+§8 cite **0032** — this repo's own `0017` is the unrelated
+runtime-equivalence ADR, and every "ADR 0017 §1" written during this bead's
+first commit was swept to 0032 in its third.

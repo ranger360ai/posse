@@ -1,6 +1,6 @@
 package rhq
 
-// The live half of `posse runtime probe` — the ADR 0017 verification
+// The live half of `posse runtime probe` — the ADR 0032 verification
 // checklist, items 1 and 2, run against real CLIs in real panes. It costs one model
 // turn per runtime, so it is opt-in:
 //
@@ -78,7 +78,7 @@ func TestLiveRuntimeProbe(t *testing.T) {
 	}
 	// LoadRuntime returns a BUILT-IN before it stats the yaml, so the
 	// profile has to be loaded under a name no built-in owns — which is
-	// also how an operator onboards a re-pointed CLI (ADR 0017 §3 branch b).
+	// also how an operator onboards a re-pointed CLI (ADR 0032 §3 branch b).
 	tmpl := name + "-tmpl"
 	if err := os.Rename(filepath.Join(a.RuntimesDir(), name+".yaml"), filepath.Join(a.RuntimesDir(), tmpl+".yaml")); err != nil {
 		t.Fatal(err)

@@ -1,6 +1,6 @@
 package rhq
 
-// ADR 0017 §1 rule 1, assumed-until-probed: the parity wiring, which is the
+// ADR 0032 §1 rule 1, assumed-until-probed: the parity wiring, which is the
 // half that changes what a launch does. The probe command is the unlock;
 // this is the lock, and the two ship together on purpose — refusing without
 // offering the unlock is the alternative the ADR rejected.
@@ -205,7 +205,7 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 // The preflight reports the probe as a NON-BLOCKING gap: an unprobed
 // template runtime still takes work, it just takes it degraded. Blocking it
 // would make `runtime check` exit 1 for every freshly authored profile,
-// which turns ADR 0017's goal into a requirement by accident of exit status.
+// which turns ADR 0032's goal into a requirement by accident of exit status.
 func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
 	a, bob := probeParityApp(t)
 	h := Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}
