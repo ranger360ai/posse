@@ -2,7 +2,7 @@
 
 *Status: accepted 2026-08-18 · amended 2026-08-19 (§2 holder join),
 2026-08-23 (§1 display cells, rangerhq-swh), 2026-08-26 (§4 short-terminal
-chrome) · owner: architect*
+chrome), 2026-08-29 (§1 holder clip, rangerhq-zag6) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -37,7 +37,7 @@ row is composed from columns of two kinds:
 
 | kind | rule |
 |---|---|
-| fixed | mark, emoji, id, priority, status, holder — printed at their natural width, never truncated |
+| fixed | mark, emoji, id, priority, status, holder — printed at their natural width, never truncated *(amended 2026-08-29, rangerhq-zag6: the holder column is clipped to its 12-cell pad — a longer name shifted the flex column for that row alone and the section stopped reading as a table; every other fixed column still prints whole)* |
 | flex | exactly one per row (title / session name+persona) — gets `w − fixed − gaps`, truncated with `…` on display cells *(amended 2026-08-23; see below)* |
 | droppable | trailing dim context (repo dir, `(focused)`, `@runtime`) — dropped whole when `w < 100`; holder column dropped when `w < 70` |
 

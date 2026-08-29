@@ -1190,6 +1190,7 @@ type col struct {
 	kind colKind
 	text string // plain text — ANSI lives in ansi so widths stay countable
 	pad  int    // minimum rune width (fixed columns)
+	clip bool   // ...and the maximum too: truncate rather than push the row right
 	ansi string // colour prefix; reset is appended after the padded text
 	drop int    // drop below this terminal width (0 = never, or dropAt for colDrop)
 }
@@ -1383,6 +1384,22 @@ func paint(s, ansi string) string {
 	return ansi + s + aRst
 }
 
+// colCells is the width a fixed column claims: its text, floored at pad —
+// and, for a clipped column, capped there too. Without the cap pad is only a
+// minimum, so one over-long value (a 16-cell holder in a 12-cell column)
+// shifts the flex column right for that row alone and the section stops
+// reading as a table (rangerhq-zag6).
+func colCells(cl col) int {
+	n := dispWidth(cl.text)
+	if cl.clip && cl.pad > 0 && n > cl.pad {
+		return cl.pad
+	}
+	if cl.pad > n {
+		return cl.pad
+	}
+	return n
+}
+
 // layout draws one row's columns into w columns: droppables go first (they
 // are dropped whole, never squeezed), the fixed columns take their natural
 // width, and the single flex column gets whatever is left.
@@ -1407,11 +1424,7 @@ func layout(cols []col, w int) string {
 			flexAt = i
 			continue
 		}
-		n := dispWidth(cl.text)
-		if cl.pad > n {
-			n = cl.pad
-		}
-		fixed += n
+		fixed += colCells(cl)
 	}
 	flexW := w - fixed - (len(keep) - 1)
 
@@ -1425,18 +1438,16 @@ func layout(cols []col, w int) string {
 			b.WriteString(" ")
 			used++
 		}
-		want := dispWidth(cl.text)
-		if cl.pad > want {
-			want = cl.pad
-		}
+		want := colCells(cl)
 		if i == flexAt {
 			want = flexW
 		}
 		if want < 0 {
 			want = 0
 		}
-		// A fixed column is never truncated by the layout — only by the
-		// terminal edge, which nothing can help.
+		// A fixed column is never truncated by the layout unless it asked
+		// to be (clip) — otherwise only by the terminal edge, which nothing
+		// can help.
 		if want > w-used {
 			want = w - used
 		}
@@ -1532,7 +1543,7 @@ func issueCols(is rhq.RepoIssue) []col {
 	return []col{
 		{text: is.ID, pad: 14},
 		{text: fmt.Sprintf("p%d", is.Priority)},
-		{text: who, pad: 12, ansi: aDim, drop: dropHolderAt},
+		{text: who, pad: 12, clip: true, ansi: aDim, drop: dropHolderAt},
 		{kind: colFlex, text: is.Title},
 		{kind: colDrop, text: rhq.AbbrevHome(is.Dir), ansi: aDim},
 	}
@@ -1589,7 +1600,7 @@ func (c *cockpit) inprogCols(is rhq.RepoIssue) []col {
 	return []col{
 		{text: is.ID, pad: 14},
 		{text: fmt.Sprintf("p%d", is.Priority)},
-		{text: who, pad: 12, ansi: aDim, drop: dropHolderAt},
+		{text: who, pad: 12, clip: true, ansi: aDim, drop: dropHolderAt},
 		{text: state, pad: 10, ansi: holderAnsi(state)},
 		{text: shortAge(c.clock(), is.Updated), pad: 3, ansi: aDim},
 		{kind: colFlex, text: is.Title},

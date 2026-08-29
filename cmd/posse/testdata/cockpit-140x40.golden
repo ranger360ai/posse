@@ -9,7 +9,7 @@ SESSIONS (4)
 IN PROGRESS (4)
   rangerhq-h3n   p2 devops       blocked    1d  herdr: codex detection override — the dialog reads as idle                /Users/x/src/posse
   rangerhq-9q2   p2 qa           no session 12m verify: dispatch honours budget_day                                       /Users/x/src/posse
-  rangerhq-a1a   p2 business-manager idle       3h  onboarding: PID doc pass                                              /Users/x/src/posse
+  rangerhq-a1a   p2 business-ma… idle       3h  onboarding: PID doc pass                                                  /Users/x/src/posse
   rangerhq-fei   p2 developer    working    4m  cockpit v2 (a): row model and render(w,h), width-aware columns            /Users/x/src/posse
 
 READY WORK (10)

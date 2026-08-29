@@ -484,6 +484,51 @@ func TestCockpitColumnKinds(t *testing.T) {
 	}
 }
 
+// rangerhq-zag6: the holder column's 12-cell pad was a minimum only, so a
+// longer name (the shipped example crew's `business-manager`, 16 cells)
+// pushed the title and dir right for that row alone and the section stopped
+// reading as a table. It clips now — in both sections that draw a holder.
+func TestCockpitHolderColumnClips(t *testing.T) {
+	const w = 140
+	c := fixture()
+	issue := func(who string) rhq.RepoIssue {
+		return rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "rangerhq-fei", Priority: 2,
+			Assignee: who, Title: "cockpit v2 (a): row model and render(w,h)"},
+			Dir: repoDir}
+	}
+	for _, tc := range []struct {
+		name string
+		cols func(rhq.RepoIssue) []col
+	}{
+		{"ready", issueCols},
+		{"inprog", c.inprogCols},
+	} {
+		short := stripANSI(layout(tc.cols(issue("qa")), w))
+		long := stripANSI(layout(tc.cols(issue("business-manager")), w))
+		if !strings.Contains(long, "business-ma…") {
+			t.Errorf("%s: a 16-cell holder must clip to its 12-cell pad: %q", tc.name, long)
+		}
+		if strings.Contains(long, "business-manager") {
+			t.Errorf("%s: the holder printed whole and shifted the row: %q", tc.name, long)
+		}
+		// Cells, not bytes: the … that marks the clip is three bytes wide.
+		at := func(s string) int {
+			i := strings.Index(s, "cockpit v2")
+			if i < 0 {
+				return -1
+			}
+			return dispWidth(s[:i])
+		}
+		if a, b := at(short), at(long); a != b || a < 0 {
+			t.Errorf("%s: the title must start in the same column for every row: %d vs %d\n%q\n%q",
+				tc.name, a, b, short, long)
+		}
+		if n := dispWidth(long); n != dispWidth(short) {
+			t.Errorf("%s: rows must be the same width: %d vs %d", tc.name, n, dispWidth(short))
+		}
+	}
+}
+
 func TestTruncCells(t *testing.T) {
 	for _, c := range []struct {
 		in   string
