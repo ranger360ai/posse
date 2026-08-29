@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -273,6 +273,23 @@ verify-grok-pin:
 # Runbook: docs/runbooks/credential-rotation.md.
 verify-credential-paths:
 	scripts/verify-credential-paths.sh
+
+# The L3 hook staleness control (ranger-base-8zki). Hook bodies are compiled
+# into the binary, so every hook on the box is a COPY; only `gates
+# install-hooks` and a session create re-render one, and sessions land in
+# worktrees whose COMMON hooks dir is the posse checkout's. Any OTHER hooked
+# repo — an instance's private beads repos, which never hold a session — is
+# re-rendered by nothing at all, and one such pair ran a hook three days behind
+# the binary: still refusing, but prescribing the bare two-dot `git diff`, which
+# is blind to another persona's staged edit and is precisely what
+# ranger-base-erba landed b291784 to remove. Per configured repo: identity
+# against a fresh render from the binary on PATH (with the visibility stamp
+# normalized on both sides), the stamp against config beads_visibility:, and
+# both behavior arms — unqualified refused, path-limited allowed. Read-only;
+# a finding prints the install-hooks line for the operator to type.
+# Exit 1 = drift. Exit 2 = no configured repo present, i.e. nothing measured.
+verify-hook-freshness:
+	scripts/verify-hook-freshness.sh
 
 # The bd version pin (rangerhq-f49). bd 0.49.1 auto-spawns a per-repo daemon on
 # any call and that daemon outlives the binary it was exec'd from: `brew upgrade
