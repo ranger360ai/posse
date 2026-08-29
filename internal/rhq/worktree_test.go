@@ -691,6 +691,133 @@ func TestRemoveSessionTreeRefusesWhileWorkWouldBeLost(t *testing.T) {
 	}
 }
 
+// ranger-base-as19: RemoveSessionTree asked its own question by sha, and by
+// sha a cherry-picked commit is ahead of the base forever. So the tree of a
+// branch MergeSessionWork had just reported Merged — naming the pairing —
+// was refused retirement every pass, and the operator's only escape was the
+// same override that stands down a real strand's refusal.
+//
+// Four arms, and the split between them IS the fix: patch-id equivalence
+// measures content, so the branch is the last copy of nothing and retires;
+// git's `-x` trailer records a human's decision about a resolution that may
+// have dropped a hunk, so the branch is kept and told apart from a strand in
+// words. The last two arms are the controls — without them "it retires" is
+// satisfied by a guard that was simply deleted.
+func TestRemoveSessionTreeRetiresOnlyWhatIsMeasuredOnTheBase(t *testing.T) {
+	cases := []struct {
+		name string
+		land func(t *testing.T, repo, sha string)
+		// "" means the tree and its branch must be gone; anything else is
+		// the refusal the operator must be able to read.
+		kept string
+	}{{
+		name: "a clean -x pick is patch-id equivalent and retires",
+		land: func(t *testing.T, repo, sha string) { mustGit(t, repo, "cherry-pick", "-x", sha) },
+	}, {
+		// The trailer is not what licenses this one: there is none.
+		name: "a pick with no trailer retires on patch-id alone",
+		land: func(t *testing.T, repo, sha string) { mustGit(t, repo, "cherry-pick", sha) },
+	}, {
+		name: "a hand-resolved pick is kept, and says why",
+		land: func(t *testing.T, repo, sha string) {
+			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+				"s-1: the fix\n\n(cherry picked from commit "+sha+")")
+		},
+		kept: "-x trailer",
+	}, {
+		name: "real unlanded work is kept in the unchanged words",
+		land: func(t *testing.T, repo, sha string) {
+			commitIn(t, repo, "adr.md", "status: rejected\n", "main: the operator's own line")
+		},
+		kept: "commit(s) not on main — not removed",
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			// The base has to move first or the pick rebuilds the identical
+			// commit object and the base reaches it by sha, which is the
+			// case that was never broken (ranger-base-g2xf).
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			c.land(t, repo, sha)
+			// Ahead by sha in every arm: that is the guard's own question,
+			// and without this the retiring arms could be passing because
+			// the guard was never reached.
+			if n := mustGit(t, repo, "rev-list", "--count", "main.."+tr.Branch); n != "1" {
+				t.Fatalf("rev-list --count main..%s = %s; the fixture must be ahead by sha", tr.Branch, n)
+			}
+
+			err = RemoveSessionTree(tr, false)
+			if c.kept != "" {
+				if err == nil {
+					t.Fatal("the tree was retired on evidence that cannot prove the work is not lost")
+				}
+				if !strings.Contains(err.Error(), c.kept) {
+					t.Errorf("the refusal must say which evidence it has, got: %v", err)
+				}
+				if _, serr := os.Stat(tr.Path); serr != nil {
+					t.Errorf("the refused tree was removed anyway: %v", serr)
+				}
+				if !branchExists(repo, tr.Branch) {
+					t.Error("the refused branch was deleted anyway")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("a branch whose every patch is already on the base was not retired: %v", err)
+			}
+			if _, serr := os.Stat(tr.Path); serr == nil {
+				t.Error("the worktree directory survived its removal")
+			}
+			if branchExists(repo, tr.Branch) {
+				t.Error("the session branch survived its removal")
+			}
+			if list := mustGit(t, repo, "worktree", "list"); strings.Contains(list, tr.Path) {
+				t.Errorf("git still lists the removed worktree:\n%s", list)
+			}
+		})
+	}
+}
+
+// The kill's whole path, not the guard alone: `posse kill` reported Merged
+// and then kept the tree anyway, which is the bug as the operator met it.
+func TestKillRetiresACherryPickedTree(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+	sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+	mustGit(t, repo, "cherry-pick", "-x", sha)
+
+	o, err := MergeSessionWork(tr)
+	if err != nil || !o.Merged || len(o.Equivalent) == 0 {
+		t.Fatalf("outcome = %+v, %v; want the pick reported as already landed", o, err)
+	}
+	l := &KillLanding{Tree: tr, Merge: o}
+	if err := RemoveSessionTree(tr, false); err != nil {
+		l.Kept = err.Error()
+	}
+	if l.Kept != "" {
+		t.Fatalf("the kill kept a tree it had just reported landed: %s", l.Kept)
+	}
+	if line := l.Line(); !strings.Contains(line, "removed") || strings.Contains(line, "KEPT") {
+		t.Errorf("the kill's line = %q, want the retirement", line)
+	}
+}
+
 // ─── the listing ─────────────────────────────────────────────────────────────
 
 func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {

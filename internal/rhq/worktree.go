@@ -722,7 +722,7 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	// sits.
 	if head, ok := workHead(t); ok {
 		if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
-			o.Equivalent, o.Merged, o.Reason = eq, true, ""
+			o.Equivalent, o.Merged, o.Reason = equivNotes(eq), true, ""
 			return o, nil
 		}
 	}
@@ -839,11 +839,14 @@ func workHead(t *SessionTree) (string, bool) {
 //     resolution amends the patch, so the patch-ids differ, `git cherry`
 //     says `+`, and the replay conflicts on the same hunk every time.
 //
-// The trailer is a record of somebody's decision rather than a measurement
-// of content, so it is read as "the base holds this work" and never as
-// licence to throw the branch away: RemoveSessionTree still asks its own
-// question by sha, and still refuses.
-func equivalentOnBase(repo, base, tip string) []string {
+// The two are not the same evidence, and every caller that would DESTROY
+// something has to tell them apart, which is why each pairing carries how it
+// was answered (ranger-base-as19). Patch-id equivalence is a measurement of
+// content: the base holds this patch, so the branch is the last copy of
+// nothing. The trailer is a record of somebody's decision — it cannot say
+// whether the resolution kept every hunk — so it is read as "the base holds
+// this work" and never as licence to throw the branch away.
+func equivalentOnBase(repo, base, tip string) []equiv {
 	out, err := git(repo, "rev-list", base+".."+tip)
 	if err != nil || out == "" {
 		return nil
@@ -856,10 +859,10 @@ func equivalentOnBase(repo, base, tip string) []string {
 			}
 		}
 	}
-	var eq []string
+	var eq []equiv
 	for _, sha := range strings.Fields(out) {
 		if upstream[sha] {
-			eq = append(eq, abbrevSHA(sha)+" as an equivalent patch on "+base)
+			eq = append(eq, equiv{note: abbrevSHA(sha) + " as an equivalent patch on " + base, byPatch: true})
 			continue
 		}
 		// Bounded to the commits base has and tip does not: a pick of this
@@ -870,9 +873,40 @@ func equivalentOnBase(repo, base, tip string) []string {
 		if err != nil || pick == "" {
 			return nil
 		}
-		eq = append(eq, abbrevSHA(sha)+" as "+abbrevSHA(pick))
+		eq = append(eq, equiv{note: abbrevSHA(sha) + " as " + abbrevSHA(pick)})
 	}
 	return eq
+}
+
+// equiv is one commit's account of itself on the base: the sentence a human
+// can check by hand, and which of the two kinds of evidence answered it.
+type equiv struct {
+	note    string
+	byPatch bool // measured by patch-id; false means git's -x trailer said so
+}
+
+// equivNotes is the pairing as a reader sees it — the evidence is a fact
+// about what may be DELETED, not about what to print.
+func equivNotes(eqs []equiv) []string {
+	var out []string
+	for _, e := range eqs {
+		out = append(out, e.note)
+	}
+	return out
+}
+
+// measuredOnBase is the destructive half's question, and it is stricter than
+// the reporting half's: is EVERY commit's account a measurement of content
+// rather than somebody's assertion? Only then is the branch provably the
+// last copy of nothing, and only then may it be deleted without a human
+// (ranger-base-as19). Empty is false: nothing accounted for is not proof.
+func measuredOnBase(eqs []equiv) bool {
+	for _, e := range eqs {
+		if !e.byPatch {
+			return false
+		}
+	}
+	return len(eqs) > 0
 }
 
 // reaches is the fast-forward precondition, asked of git rather than assumed
@@ -941,10 +975,31 @@ func dirtyPaths(path string) []string {
 }
 
 // RemoveSessionTree retires a session's worktree and its branch. It refuses
-// while anything would be lost — uncommitted changes, or commits the repo's
-// branch does not have — because a session worktree is the only copy of what
-// is in it. force is the operator's override and says so in the caller.
+// while anything would be lost — uncommitted changes, or commits whose work
+// the repo's branch does not have — because a session worktree is the only
+// copy of what is in it. force is the operator's override and says so in the
+// caller.
+//
+// "Does not have" is asked by patch, not by sha (ranger-base-as19). It used
+// to be `rev-list --count base..branch != 0` and nothing else, which counts
+// a commit cherry-picked onto the base as unlanded forever: the pick keeps
+// its own sha here. So a branch MergeSessionWork had just reported Merged —
+// with the pairing named — was refused retirement every pass, and the only
+// escape left was the same override that stands down a real strand's
+// refusal, one layer down.
+//
+// It honours only the half of that equivalence that MEASURES content. A
+// patch-id match says the base holds this patch and the branch is the last
+// copy of nothing, which is what licenses `branch -D` (the sha guard is not
+// the only by-sha check in this path: `branch -d` refuses an unmerged branch
+// too). git's `-x` trailer says only that a human decided this landed as
+// that, and a hand resolution can drop a hunk while writing it — so on that
+// evidence the tree is still kept, and the refusal now says which of the two
+// this is instead of counting shas at the operator.
 func RemoveSessionTree(t *SessionTree, force bool) error {
+	// The branch is provably redundant: its every commit's work is on the
+	// base under another sha, measured. Nothing here is the last copy.
+	redundant := false
 	if !force {
 		if d := dirtyPaths(t.Path); len(d) > 0 {
 			return Die("%s has uncommitted changes (%s) — not removed", AbbrevHome(t.Path), strings.Join(d, " "))
@@ -961,7 +1016,16 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 				return err
 			}
 			if n != "0" {
-				return Die("%s has %s commit(s) not on %s — not removed", t.Branch, n, t.Base)
+				eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
+				switch {
+				case measuredOnBase(eq):
+					redundant = true
+				case len(eq) > 0:
+					return Die("%s is ahead of %s by %s commit(s) whose only record of landing is git's own -x trailer (%s) — a trailer is somebody's decision, not a measurement of what the resolution kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
+						t.Branch, t.Base, n, strings.Join(equivNotes(eq), ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
+				default:
+					return Die("%s has %s commit(s) not on %s — not removed", t.Branch, n, t.Base)
+				}
 			}
 		}
 	}
@@ -977,7 +1041,10 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 	_, _ = git(t.Repo, "worktree", "prune")
 	if branchExists(t.Repo, t.Branch) {
 		del := "-d"
-		if force {
+		// `branch -d` asks reachability, which is the same by-sha question
+		// the guard above just answered by patch — so the measured case
+		// needs -D or the refusal simply moves down here.
+		if force || redundant {
 			del = "-D"
 		}
 		if _, err := git(t.Repo, "branch", del, t.Branch); err != nil {
