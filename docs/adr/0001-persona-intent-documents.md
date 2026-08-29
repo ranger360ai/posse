@@ -131,6 +131,20 @@ Where a guardrail can be expressed as a tool rule, it appears **twice**:
 prose in the body and a rule in `deny:`. The prose explains; the rule
 enforces.
 
+**A deny rule naming a FLAG walls one spelling, not one effect** (amended
+2026-08-29, ranger-base-zs6b). `Bash(git push --force:*)` reads like a
+force-push wall and is not one: `git push -f` (a separately registered
+short name, not an abbreviation of `--force`), `--force-with-lease` and
+`git push origin +main` all force-push and none of them carries the token
+the rule names — **MEASURED**, git-push(1), git 2.50.1. The last has no
+option to spell at all, so no amount of widening the matcher reaches it.
+Where the *effect* is what must not happen, deny the verb:
+`Bash(git push:*)`, which every PID in `examples/agents` carries and
+posse's own tests require of them. Keep the flag rule for the sentence it
+puts in the refusal, never as the wall. This generalizes:
+before writing a flag rule, ask which other spellings of the same effect
+the tool accepts, and if the answer is more than one, deny the verb.
+
 **Metric catalog is derived, not declared.** The catalog is the union of
 every loaded PID's `metrics:` plus config `metric_ids:` — a persona
 declaring how it is judged is the source of truth, and the linter flags

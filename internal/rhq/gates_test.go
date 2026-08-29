@@ -478,6 +478,91 @@ func TestShimMatchesAVerbFlagWhereverItSits(t *testing.T) {
 	}
 }
 
+// `Bash(git push --force:*)` is a wall around ONE SPELLING. Three others
+// force-push and none of them carries the token `--force` (**MEASURED**,
+// git-push(1) as the install ships it, git 2.50.1 / Apple Git-155 — read
+// rather than run, because every PID carrying this rule denies the verb):
+//
+//   - `-f, --force` declares `-f` as a SEPARATE short name. It is not a
+//     prefix of `--force`, so 0zln's ambiguity result — every proper prefix
+//     is refused by git itself — says nothing at all about it.
+//   - `--force-with-lease` disables the same ancestry check by another name
+//     (`--force-if-includes` beside it is ancillary — a SAFETY option, not a
+//     third force-push, which is why the row below pairs the two).
+//   - a leading `+` on the refspec: "All of the rules described above about
+//     what's not allowed as an update can be overridden by adding an the
+//     optional leading + to a refspec (or using --force command line
+//     option)." It is an OPERAND, not an option, and that is what decides
+//     this bead.
+//
+// ranger-base-zs6b chose (b): L1 stays at the rule, and the rule that means
+// "no force-push" is `Bash(git push:*)` — which every PID in examples/agents
+// carrying the flag rule already carries beside it. (a), an alias set per
+// denied option in renderFlagIn, was rejected because it cannot close this
+// hole: a wall that decides how an OPTION is spelled has nothing to match in
+// `+main`. It would buy two spellings of three and then read like a force
+// wall, which is worse than a documented residual.
+//
+// So the residual rows below PASS, deliberately, and the same argv refuses
+// under the verb rule. Both halves are pinned: the first says the hole is
+// real, the second says the prescribed remedy closes it. L3 is unaffected —
+// PrePushHook matches the RULE, not the argv, so a session carrying either
+// rule loses every push (TestPrePushHook), which is what bounds this to P2.
+func TestForceFlagRuleLeavesThreeSpellingsThatTheVerbRuleCloses(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	realBin := t.TempDir()
+	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	shimFor := func(persona, deny string) string {
+		_, binDir, _, err := a.RenderGates(persona, []string{deny})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return filepath.Join(binDir, "git")
+	}
+	run := func(shim string, args ...string) (string, string, int) {
+		cmd := exec.Command(shim, args...)
+		var out, errb strings.Builder
+		cmd.Stdout, cmd.Stderr = &out, &errb
+		err := cmd.Run()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		return out.String(), errb.String(), code
+	}
+	flagRule := shimFor("developer", "Bash(git push --force:*)")
+	verbRule := shimFor("architect", "Bash(git push:*)")
+	for _, args := range [][]string{
+		{"push", "-f", "origin", "main"},
+		{"push", "-qf", "origin", "main"}, // and inside a cluster
+		{"push", "--force-with-lease", "origin", "main"},
+		// its documented pairing; `--force-if-includes` ALONE is ancillary
+		// and forces nothing, so it is not a spelling on its own
+		{"push", "--force-with-lease", "--force-if-includes", "origin", "main"},
+		{"push", "origin", "+main"}, // no option to spell at all
+	} {
+		line := strings.Join(args, " ")
+		if out, errs, code := run(flagRule, args...); code != 0 || strings.TrimSpace(out) != "real git "+line {
+			t.Errorf("residual moved: git %s is no longer past the flag rule — code=%d out=%q err=%q (if (a) landed, read the `+main` row before calling this closed)", line, code, out, errs)
+		}
+		out, errs, code := run(verbRule, args...)
+		if code != 1 || !strings.Contains(errs, "refused by posse gate: git "+line+" (deny: Bash(git push:*))") || out != "" {
+			t.Errorf("the prescribed remedy must refuse git %s: code=%d out=%q err=%q", line, code, out, errs)
+		}
+	}
+	// The wrong arm. Without it every "passes" row above would read exactly
+	// the same against a shim that was never rendered, or one that refuses
+	// nothing: this is what says the flag rule is live in that same binDir.
+	if out, errs, code := run(flagRule, "push", "--force", "origin", "main"); code != 1 || !strings.Contains(errs, "(deny: Bash(git push --force:*))") || out != "" {
+		t.Errorf("the flag rule must still refuse the one spelling it names: code=%d out=%q err=%q", code, out, errs)
+	}
+}
+
 // claudeDenyMatch models claude's Bash rule matcher (2.1.234) so the table
 // below can assert what the emitted rules DO, not just how they read. Three
 // forms, in the CLI's own order: `<c>:*` is a literal prefix of the command

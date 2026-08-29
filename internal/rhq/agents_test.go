@@ -300,6 +300,14 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 		if !ValidTier(ag.Tier) {
 			t.Errorf("%s: tier: %q (ADR 0003 Dial A: every example names one)", name, ag.Tier)
 		}
+		// The VERB deny, specifically, and this assertion is why (b) is
+		// true rather than merely intended. `Bash(git push --force:*)`
+		// beside it names ONE SPELLING: `git push -f`, `--force-with-lease`
+		// and `git push origin +main` all force-push past it, and the last
+		// carries no option to spell, so no matcher reaches it
+		// (ranger-base-zs6b; ADR 0001, "a deny rule naming a FLAG walls one
+		// spelling, not one effect"). The flag rule is a label on the
+		// refusal; this is the wall.
 		pushDenied := false
 		for _, r := range ag.Deny {
 			if r == "Bash(git push:*)" {
@@ -307,7 +315,7 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 			}
 		}
 		if !pushDenied {
-			t.Errorf("%s: deny must include Bash(git push:*)", name)
+			t.Errorf("%s: deny must include Bash(git push:*) — the verb, not just Bash(git push --force:*), which walls one spelling of force-push out of three", name)
 		}
 		if r := ag.RenderCommand(); !strings.Contains(r, "--disallowedTools") || !strings.Contains(r, "'Bash(git push:*)'") || strings.Contains(r, "{deny}") {
 			t.Errorf("%s: render: %s", name, r)

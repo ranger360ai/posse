@@ -67,6 +67,15 @@ Rules naming a *short* flag (`-f`) are unchanged and still matched by position;
 `posse gates` reports them best-effort rather than claiming them, because a
 short flag can hide inside a cluster.
 
+Read this as a fix to *where the flag may sit*, not as a wall around what the
+flag does. A flag rule still walls one spelling: `git push -f`,
+`--force-with-lease` and `git push origin +main` all force-push and none of
+them carries the token `Bash(git push --force:*)` names — and the last carries
+no option to spell, so widening the matcher cannot reach it. Deny the verb
+(`Bash(git push:*)`) wherever the effect is what must not happen; every PID in
+`examples/agents` does, and posse's own tests now require it. ADR 0001 says so
+in one paragraph.
+
 **`brew install ranger360ai/tap/posse` 404s on any Homebrew older than 6.0.14.**
 
 *Affected: the published v0.4.0 formula. Fixed in the generator; it reaches
