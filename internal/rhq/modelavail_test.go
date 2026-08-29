@@ -282,10 +282,32 @@ func TestPreflightOffSwitch(t *testing.T) {
 func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	// grok maps no model for any tier: {model} renders empty and the CLI
-	// picks its own, so there is nothing for a catalog to disagree with.
-	if pf := a.TierPreflight("security", "grok", TierStrong, nil); pf.Fell() {
-		t.Errorf("grok has no per-tier model to check, got %q", pf.Line)
+	// The fixture declares api.anthropic.com and NO model_<tier>:, so
+	// `p.Wanted == ""` is the only thing standing between it and the
+	// catalog — the arm this test is about. It used to be grok, which stops
+	// short one line later on `!anthropicAPI` and since rangerhq-jp6 maps
+	// every tier; keeping grok here would have left the empty-map arm
+	// covered by nothing while the test stayed green off the other branch.
+	os.MkdirAll(a.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\negress: [api.anthropic.com]\n"), 0o644)
+	rt, err := a.LoadRuntime("blankcli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !anthropicAPI(rt) || rt.Model(TierStrong) != "" {
+		t.Fatalf("fixture must be on the catalog and map nothing: egress %v model %q", rt.Egress, rt.Model(TierStrong))
+	}
+	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); pf.Fell() {
+		t.Errorf("a runtime with no per-tier model has nothing to check, got %q", pf.Line)
+	}
+	// The control: give the SAME fixture a model id the catalog does not
+	// hold and the preflight must fall. Without this the assertion above is
+	// satisfied by a preflight that checks nothing at all.
+	os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\negress: [api.anthropic.com]\nmodel_strong: claude-fable-5\n"), 0o644)
+	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); !pf.Fell() {
+		t.Errorf("control: a mapped id absent from the catalog must fall, got %q", pf.Line)
 	}
 }
 
@@ -580,10 +602,24 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 	t.Run("no mapping", func(t *testing.T) {
 		a := preflightApp(t)
 		seedCatalog(t, a, time.Minute, "claude-opus-5")
-		// grok, not codex: codex maps gpt-5.6-* since ranger-base-arm, so
-		// the runtime with nothing to preflight is now the one nobody has
-		// measured a model id for.
-		if got := a.PreflightReport("security", "grok", TierStrong, nil); !strings.Contains(got, "maps no model") {
+		// No built-in maps nothing any more — codex since ranger-base-arm,
+		// grok since rangerhq-jp6 — so the runtime with nothing to
+		// preflight is a declared one that sets no model_<tier>:.
+		os.MkdirAll(a.RuntimesDir(), 0o755)
+		os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
+			[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
+		if got := a.PreflightReport("security", "blankcli", TierStrong, nil); !strings.Contains(got, "maps no model") {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("mapped but off the catalog", func(t *testing.T) {
+		a := preflightApp(t)
+		seedCatalog(t, a, time.Minute, "claude-opus-5")
+		// grok maps ids the Anthropic catalog will never hold, so the
+		// report names the id AND says why it was not checked — the branch
+		// codex has held alone until now.
+		got := a.PreflightReport("security", "grok", TierStrong, nil)
+		if !strings.Contains(got, "grok-4.6") || !strings.Contains(got, "no model catalog posse can read") {
 			t.Errorf("got %q", got)
 		}
 	})

@@ -2223,8 +2223,9 @@ what removes that capability. Chain foreign slots per INSTALL.md §9.
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
 `claude-fable-5` / `claude-opus-5` / `claude-sonnet-5`; codex
-`gpt-5.6-sol` / `gpt-5.6-sol` / `gpt-5.6-luna`; grok unmapped (runtime
-default; `fast` falls back to `standard` when only that is mapped). Codex
+`gpt-5.6-sol` / `gpt-5.6-sol` / `gpt-5.6-luna`; grok `grok-4.6` /
+`grok-4.6` / `grok-4.5` (`fast` falls back to `standard` when only that is
+mapped). Codex
 maps `strong` and `standard` to the same id on purpose: sol is what a
 codex session here defaults to and codex offers nothing above it, so
 naming it makes the launch a fact rather than a CLI default that can move
@@ -2232,10 +2233,41 @@ between releases, while `fast` = luna is the **cost** lever only —
 MEASURED 2026-08-25, switching to luna did not lift an account-level usage
 wall, because the wall is on the account and not on the model
 (ranger-base-arm). Until that map existed `tier:` was inert on codex: no
-`Models` at all, `{model}` empty, no warning. A runtime that maps nothing
+`Models` at all, `{model}` empty, no warning. **grok had the same defect
+until rangerhq-jp6** — its template already carried `{model}` and
+`ModelFlag: -m %s`, so only the map was missing — and it is filled the
+same shape and for the same reason: grok-4.6 is what a grok session here
+defaults to (`grok models`, 1.0.5, 2026-08-29: "Default model: grok-4.6")
+and grok offers nothing above it, so `strong` and `standard` both name it.
+`fast` = grok-4.5 is a **capability** step-down and, unlike codex's, NOT a
+measured cost one: xAI publishes no per-model rate against the weekly pool
+(the reason grokpool.go estimates the meter at all), and grok-4.5 has
+never run on this box — 181 of 181 priced turns across 174 transcripts in
+`~/.grok/sessions` carry `"modelId":"grok-4.6"` — so "4.5 is cheaper" is
+not a small number, it is **no number**, and nothing may read a saving
+into that row. `fast` is named explicitly rather than left to the
+fallback for the reason the fallback would defeat: a `fast` rendering the
+same id as `standard` leaves dispatch's budget step-down buying nothing.
+`--reasoning-effort` (alias `--effort`) is arguably the bigger spend dial
+on grok and is deliberately NOT in the map — **ruled out**, not deferred
+(ranger-base-tg7c, ADR 0003 §1 amendment 2026-08-29): nothing here can
+price an effort step against the weekly pool, and the two models do not
+offer the same efforts — grok-4.6 has xhigh/high/medium/low, grok-4.5 only
+high/medium/low, both defaulting to `high` (measured). So a per-tier
+effort is not one key but a tier→model × model→efforts validity matrix
+plus a second placeholder, and an unrendered placeholder is a literal
+argv. A PID or declared runtime that wants one appends
+`--reasoning-effort` to its own `command:` today. The same ruling ratified
+the SHAPE of the column over the map rangerhq-jp6 originally asked for
+(`standard` = grok-4.5).
+A runtime that maps nothing
 now says so where it is read — `posse runtimes` prints `tiers: UNMAPPED —
 ignores tier:` and `posse runtime check <name>` names the tiers that
-render nothing, both off one rendering (`Runtime.TierMap`). A
+render nothing, both off one rendering (`Runtime.TierMap`). No built-in
+reads `UNMAPPED` any more, so that rendering is now about a declared
+`runtimes/<name>.yaml` with no `model_<tier>:`, a partial map, or a
+runtime name posse has never heard of — and its pins are fixtured on a
+declared runtime for exactly that reason. A
 `runtimes/*.yaml` still cannot override a **built-in**: `LoadRuntime`
 returns the built-in as soon as the name matches, before it stats
 `RHQ_HOME/runtimes/<name>.yaml`, so `model_<tier>:` / `model_flag:` reach
@@ -2428,9 +2460,14 @@ honest gaps — per pass is not attributable until dispatch records a pass id
 beads with the same tier and persona can have come out of two different pools,
 and only one of them has a dollar figure. **Tier is `?` on codex and grok**, and
 that is not an oversight: tier is re-derived from the model id that did the
-work, `codexModels` names the same id (`gpt-5.6-sol`) for both strong and
-standard, and no grok model id is mapped at all — so the id does not identify
-a tier there and the report says `?` rather than picking one. The cockpit shows
+work by `TierForModel`, which knows claude's ids only, and both other
+runtimes name one id on two tiers anyway (`gpt-5.6-sol` for codex strong
+and standard, `grok-4.6` for grok's since rangerhq-jp6) — so the id does
+not identify a tier there and the report says `?` rather than picking one.
+`grok-4.5` is the one id on either that WOULD identify a tier (`fast`);
+teaching `TierForModel` about it is filed as ranger-base-3st5, not done
+here — and the rule when it is done is that only an id ONE tier names may
+resolve, or the fix reintroduces the guess the `?` exists to avoid. The cockpit shows
 each per-bead session's running cost and the day total in the footer (rescanned
 every 30s off the event loop).
 

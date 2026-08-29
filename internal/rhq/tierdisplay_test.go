@@ -11,31 +11,47 @@ import (
 // for it does not wear it. The three names do not change and neither does
 // resolution — only what the operator READS.
 //
-// The discriminating pair is grok vs codex at the same tier: both are
-// non-default runtimes, so "not claude" cannot explain the difference. Only
-// the model map can.
+// The discriminating pair is a DECLARED runtime with no model keys vs
+// codex at the same tier: both are non-default runtimes, so "not claude"
+// cannot explain the difference. Only the model map can.
+//
+// It used to be grok vs codex, because grok was the one built-in that
+// mapped nothing. rangerhq-jp6 gave grok a map, so every built-in maps
+// every tier and the fixture for "maps nothing" has to be declared. That
+// is the better fixture anyway: the rule is about the MAP, and pinning it
+// to whichever built-in happened to be blank that week is how a rule stops
+// being tested the day somebody fills that map in.
 func TestDisplayTierIsDefaultOnlyWhereTheRuntimeMapsNothing(t *testing.T) {
 	b, _ := newTestBackend(t)
 	a := b.App
+	os.MkdirAll(a.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
 	for _, c := range []struct{ runtime, tier, want string }{
-		// grok maps nothing: every tier reads default.
-		{"grok", TierStrong, TierUnmapped},
-		{"grok", TierStandard, TierUnmapped},
-		{"grok", TierFast, TierUnmapped},
-		// codex maps all three (fast → luna), claude maps all three.
+		// blankcli declares a command and no model_<tier>: at all: every
+		// tier reads default.
+		{"blankcli", TierStrong, TierUnmapped},
+		{"blankcli", TierStandard, TierUnmapped},
+		{"blankcli", TierFast, TierUnmapped},
+		// All three built-ins map all three tiers (grok since rangerhq-jp6:
+		// strong/standard = grok-4.6, fast = grok-4.5), so each wears its
+		// own name.
 		{"codex", TierStrong, TierStrong},
 		{"codex", TierFast, TierFast},
 		{"claude", TierStrong, TierStrong},
 		{"claude", TierStandard, TierStandard},
 		{"claude", TierFast, TierFast},
+		{"grok", TierStrong, TierStrong},
+		{"grok", TierStandard, TierStandard},
+		{"grok", TierFast, TierFast},
 		// A runtime nobody has heard of promises nothing.
 		{"nosuchcli", TierStrong, TierUnmapped},
 		// Not one of the three names: corruption in a session meta, shown as
 		// it is rather than laundered into `default`.
-		{"grok", "premium", "premium"},
+		{"blankcli", "premium", "premium"},
 		{"claude", "premium", "premium"},
 		// Nothing in, nothing out.
-		{"grok", "", ""},
+		{"blankcli", "", ""},
 	} {
 		if got := a.DisplayTier(c.runtime, c.tier); got != c.want {
 			t.Errorf("DisplayTier(%q, %q) = %q, want %q", c.runtime, c.tier, got, c.want)
@@ -45,7 +61,6 @@ func TestDisplayTierIsDefaultOnlyWhereTheRuntimeMapsNothing(t *testing.T) {
 	// A DECLARED runtime is answered by its own model_<tier>:, not by a
 	// built-in list — including the fast → standard fallback Model() applies,
 	// which is a mapping and so is worn.
-	os.MkdirAll(a.RuntimesDir(), 0o755)
 	os.WriteFile(filepath.Join(a.RuntimesDir(), "mycli.yaml"),
 		[]byte("command: mycli {model} --sys {file}\nmodel_standard: mid\n"), 0o644)
 	for _, c := range []struct{ tier, want string }{
@@ -64,15 +79,20 @@ func TestDisplayTierIsDefaultOnlyWhereTheRuntimeMapsNothing(t *testing.T) {
 // tier surfaces as a tag instead of vanishing.
 func TestRuntimeTierTagShowsTheDisplayTier(t *testing.T) {
 	b, _ := newTestBackend(t)
+	os.MkdirAll(b.App.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
 	for _, c := range []struct{ runtime, tier, want string }{
 		{"claude", TierStrong, ""},
 		{"claude", "", ""},
 		{"", "", ""},
 		{"claude", TierFast, "@claude/fast"},
 		{"codex", "", "@codex/strong"},
-		{"grok", TierStandard, "@grok/default"},
-		{"grok", TierStrong, "@grok/default"},
-		{"grok", "", "@grok/default"},
+		{"grok", TierStandard, "@grok/standard"},
+		{"grok", TierFast, "@grok/fast"},
+		{"blankcli", TierStandard, "@blankcli/default"},
+		{"blankcli", TierStrong, "@blankcli/default"},
+		{"blankcli", "", "@blankcli/default"},
 	} {
 		if got := b.App.RuntimeTierTag(c.runtime, c.tier); got != c.want {
 			t.Errorf("RuntimeTierTag(%q, %q) = %q, want %q", c.runtime, c.tier, got, c.want)
@@ -80,16 +100,19 @@ func TestRuntimeTierTagShowsTheDisplayTier(t *testing.T) {
 	}
 }
 
-// `posse list` end to end: a grok session dispatched at standard lists as
-// grok/default while a claude session at fast still lists as claude/fast.
-// Both panes in one listing, so the rendering — not the fixture — is what
-// separates them.
+// `posse list` end to end: a session on an unmapped runtime dispatched at
+// standard lists as <runtime>/default while a claude session at fast still
+// lists as claude/fast. Both panes in one listing, so the rendering — not
+// the fixture — is what separates them.
 func TestListShowsDefaultForAnUnmappedRuntime(t *testing.T) {
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\ndescription: d\n---\nYou are dev, the developer of the crew.\n"), 0o644)
-	mustCreate(t, b, NewSessionOpts{Name: "g1", Agent: "dev", Runtime: "grok", Tier: TierStandard})
+	os.MkdirAll(b.App.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
+	mustCreate(t, b, NewSessionOpts{Name: "g1", Agent: "dev", Runtime: "blankcli", Tier: TierStandard})
 	mustCreate(t, b, NewSessionOpts{Name: "c1", Agent: "dev", Runtime: "claude", Tier: TierFast})
 
 	var list strings.Builder
@@ -97,8 +120,8 @@ func TestListShowsDefaultForAnUnmappedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := list.String()
-	if !strings.Contains(got, "@grok/default") || strings.Contains(got, "@grok/standard") {
-		t.Errorf("a grok standard session must list as grok/default:\n%s", got)
+	if !strings.Contains(got, "@blankcli/default") || strings.Contains(got, "@blankcli/standard") {
+		t.Errorf("a standard session on an unmapped runtime must list as blankcli/default:\n%s", got)
 	}
 	if !strings.Contains(got, "@claude/fast") {
 		t.Errorf("a mapped tier still wears its own name:\n%s", got)
@@ -114,12 +137,15 @@ func TestWorkPromptHeaderShowsTheDisplayTier(t *testing.T) {
 	exe, _ := os.Executable()
 	bd := Bd{Bin: exe}
 
-	ctx := b.App.promptContext(bd, is, "grok", TierStandard, "", nil)
+	os.MkdirAll(b.App.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
+	ctx := b.App.promptContext(bd, is, "blankcli", TierStandard, "", nil)
 	if ctx.TierShown != TierUnmapped {
-		t.Errorf("grok standard → TierShown = %q, want %q", ctx.TierShown, TierUnmapped)
+		t.Errorf("blankcli standard → TierShown = %q, want %q", ctx.TierShown, TierUnmapped)
 	}
-	if p := workPrompt(is, ctx); !strings.Contains(p, "runtime/tier: grok/default") {
-		t.Errorf("header must read grok/default:\n%s", p)
+	if p := workPrompt(is, ctx); !strings.Contains(p, "runtime/tier: blankcli/default") {
+		t.Errorf("header must read blankcli/default:\n%s", p)
 	}
 	ctx = b.App.promptContext(bd, is, "claude", TierStrong, "", nil)
 	if p := workPrompt(is, ctx); !strings.Contains(p, "runtime/tier: claude/strong") {
@@ -146,18 +172,27 @@ func TestCheckAgentWarnsAStrongPidOnAnUnmappedRuntime(t *testing.T) {
 		return strings.Join(f, "\n"), strings.Join(w, "\n")
 	}
 
-	f, w := check("runtime: grok\ntier: strong\n")
-	if !strings.Contains(w, "tier: strong on runtime: grok is intent, not a guarantee") ||
-		!strings.Contains(w, "grok/default") {
-		t.Errorf("a strong PID on grok must warn: %q", w)
+	// blankcli declares a command and no model_<tier>: — the shape the
+	// warning is about. It used to be grok; rangerhq-jp6 gave grok a map,
+	// so the fixture is declared rather than built-in now.
+	os.MkdirAll(a.RuntimesDir(), 0o755)
+	os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
+		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
+
+	f, w := check("runtime: blankcli\ntier: strong\n")
+	if !strings.Contains(w, "tier: strong on runtime: blankcli is intent, not a guarantee") ||
+		!strings.Contains(w, "blankcli/default") {
+		t.Errorf("a strong PID on an unmapped runtime must warn: %q", w)
 	}
-	if strings.Contains(f, "tier: strong on runtime: grok") {
+	if strings.Contains(f, "tier: strong on runtime: blankcli") {
 		t.Errorf("it is a warning, not a finding: %q", f)
 	}
 	// The mapped cases stay silent — otherwise the warning says nothing.
 	for _, front := range []string{
 		"runtime: claude\ntier: strong\n",
 		"runtime: codex\ntier: fast\n",
+		"runtime: grok\ntier: strong\n",
+		"runtime: grok\ntier: fast\n",
 		// No runtime: declared — the tier is then a fact about config
 		// default_runtime, and `posse runtime check` is where that is read.
 		"tier: strong\n",
@@ -168,7 +203,7 @@ func TestCheckAgentWarnsAStrongPidOnAnUnmappedRuntime(t *testing.T) {
 	}
 	// An invalid tier is still the finding it was; the §6 warning does not
 	// displace it.
-	if f, w := check("runtime: grok\ntier: premium\n"); !strings.Contains(f, `tier: "premium" is not strong`) ||
+	if f, w := check("runtime: blankcli\ntier: premium\n"); !strings.Contains(f, `tier: "premium" is not strong`) ||
 		strings.Contains(w, "is intent, not a guarantee") {
 		t.Errorf("invalid tier: findings %q warnings %q", f, w)
 	}

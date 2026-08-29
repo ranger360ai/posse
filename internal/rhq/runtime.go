@@ -743,11 +743,79 @@ var codexModels = map[string]string{
 	TierFast:     "gpt-5.6-luna",
 }
 
-// grok stays unmapped: no grok model id has been measured on this box, and
-// an id nobody has seen a session run is a guess. Every tier there leaves
-// the runtime to its default, {model} renders empty, and `runtime check`
-// says UNMAPPED in the tier line so the next reader does not have to open
-// this file to find that out (ranger-base-arm).
+// Grok model ids per tier. Same defect as codex before ranger-base-arm and
+// the same fix: the grok built-in already carried ModelFlag "-m %s" and
+// {model} in its template, but no Models map — so `tier:` was INERT on
+// grok, {model} rendered empty, and the CLI picked its own model with no
+// warning anywhere (rangerhq-jp6).
+//
+// The two ids are what this box serves TODAY, read from the CLI rather
+// than from a doc (2026-08-29, grok 1.0.5, `grok models` and
+// ~/.grok/models_cache.json fetched the same morning — both agree):
+//
+//   - grok-4.6 — "Default model: grok-4.6", starred `(default)` in the
+//     listing; 500K context.
+//   - grok-4.5 — the previous frontier model, still served; 500K context.
+//
+// Both come from cli-chat-proxy.grok.com under the subscription session,
+// not an API key, and both advertise supports_reasoning_effort — but NOT
+// the same efforts: grok-4.6 offers xhigh/high/medium/low and grok-4.5
+// only high/medium/low, both defaulting to high (measured 2026-08-29,
+// models_cache.json). Take the ids from the CLI when you touch this map
+// again: it self-updates, and it moved 1.0.0 → 1.0.5 in the middle of one
+// verification (rangerhq-vjl).
+//
+// So: strong and standard both name grok-4.6, fast names grok-4.5. This is
+// the codex shape and it is DELIBERATE — rangerhq-jp6 asked for
+// standard=grok-4.5, and the reason it is not:
+//
+//   - Nothing on this box prices a grok model against the WEEKLY POOL.
+//     xAI publishes no usage endpoint (grokpool.go's whole header), the
+//     pool is a compute allowance with no published per-model rate, and
+//     grok-4.5 has never run here at all — 181 of 181 priced turns across
+//     174 transcripts in ~/.grok/sessions carry "modelId":"grok-4.6"
+//     (measured 2026-08-29). So "4.5 is cheaper" is not a small number, it
+//     is NO number, and a map cannot be justified by it in either
+//     direction. What is left is capability, and 4.6 is the frontier one.
+//   - standard=grok-4.5 would also make the map's only real lever inert.
+//     fast falls back to standard when unmapped, so that map renders the
+//     SAME id for both, and dispatch's budget step-down (standard → fast)
+//     would silently buy nothing. Naming 4.5 on `fast` is the one place
+//     the step-down changes anything.
+//   - It also keeps the launch a FACT rather than a CLI default that can
+//     move between releases — the argument codexModels makes above, and
+//     the same one ClaudeFleetFlags makes for --permission-mode. What a
+//     grok session runs here today IS grok-4.6; a map that quietly moved
+//     ordinary `standard` work onto the older model would be a behaviour
+//     change nobody asked for.
+//
+// Read `fast` here as a CAPABILITY step-down, never a measured cost one.
+// codex may say fast=luna is "the cost lever" because somebody measured
+// luna's price; nobody has measured grok-4.5's, so nothing here claims a
+// saving and NOTES.md says so in the same words.
+//
+// Reasoning effort is NOT in this map, and that is now RULED rather than
+// deferred (ranger-base-tg7c, ADR 0003 §1 amendment 2026-08-29): nothing
+// on this box can price an effort step against the weekly pool, the two
+// models do not even offer the same efforts (above), and {model} renders
+// one argv token via ModelFlag — so a per-tier effort is not one key but
+// a tier→model × model→efforts validity matrix plus a second placeholder.
+// Both models default to `high`, so leaving it unset runs each at its own
+// default, and a PID or declared runtime that wants a different one can
+// append --reasoning-effort to its own command: today. The revival
+// condition is a MEASURED pool cost per effort step; until then, do not
+// smuggle one in through this map's values — `"grok-4.6
+// --reasoning-effort low"` is not a model id and would make every reader
+// of this map wrong.
+//
+// The SHAPE above is ruled too, in the same amendment: strong = standard =
+// grok-4.6 with fast = grok-4.5 stands over the map rangerhq-jp6
+// originally asked for.
+var grokModels = map[string]string{
+	TierStrong:   "grok-4.6",
+	TierStandard: "grok-4.6",
+	TierFast:     "grok-4.5",
+}
 
 // ClaudeFleetFlags is what a claude persona session needs to run
 // unattended — the mode the OPERATOR DIRECTIVE of 2026-08-22 requires of
@@ -980,7 +1048,7 @@ var builtinRuntimes = []Runtime{
 		Prompt: PromptArgv, Record: RecordUntrusted,
 		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
 		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
-	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
+	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the
@@ -1302,12 +1370,20 @@ func EnsureUnattendedLine(cmd string) string {
 //
 // The three tier names are INTENT — judged / building / mechanical (ADR
 // 0003 §1) — and ADR 0013 §6 amends only their display: a runtime with no
-// model id behind the name does not get to wear it. `grok/strong` read as a
-// quality guarantee on a runtime where {model} renders empty and the CLI
-// picks whatever it likes; `grok/default` says exactly that much and no
+// model id behind the name does not get to wear it. `mycli/strong` read as
+// a quality guarantee on a runtime where {model} renders empty and the CLI
+// picks whatever it likes; `mycli/default` says exactly that much and no
 // more. Nothing about resolution moves: dispatch still resolves the tier it
 // resolved before, overflow still never trades `strong` (ADR 0010 §2b), and
 // an explicit --runtime the operator typed still launches.
+//
+// All THREE built-ins map every tier since rangerhq-jp6 gave grok its map,
+// so the rule now bites only on a declared runtime that sets no
+// `model_<tier>:` (or one whose map is partial), and on a runtime name
+// posse has never heard of. That is a narrower blast radius, not a dead
+// rule — and it is why the pins for it are written against a declared
+// fixture rather than against whichever built-in happened to be unmapped
+// that week.
 const TierUnmapped = "default"
 
 // RuntimeMapsTier reports whether <runtime> renders a model id for <tier>

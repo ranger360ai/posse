@@ -5,7 +5,8 @@
 · amended 2026-08-25 (§1/§3: the mapping can miss; rangerhq-oay shipped
 the mechanism, ranger-base-lzx writes it down) · amended 2026-08-28
 (§2: the mark survives a relaunch — ranger-base-twaq) · amended
-2026-08-29 (§1: the grok column ruling — ranger-base-tg7c)*
+2026-08-29 (§1: the grok column — rangerhq-jp6, ruled in
+ranger-base-tg7c)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -36,11 +37,11 @@ flag; each CLI uses its own default. Nothing reads a budget.
 **1. Tier is a name, not a model id.** Three tiers, mapped per runtime
 in the built-in table (a `runtimes/<name>.yaml` may set `model_<tier>:`):
 
-| tier | claude | codex | other runtimes | meant for |
-|---|---|---|---|---|
-| `strong` | fable-5 | gpt-5.6-sol | runtime default | design, audit, spec, anything judged |
-| `standard` | opus-5 | gpt-5.6-sol | runtime default | building, testing, ops chores |
-| `fast` | sonnet-5 | gpt-5.6-luna | (unset → standard) | mechanical: scaffolds, doc moves, bd hygiene, groom |
+| tier | claude | codex | grok | other runtimes | meant for |
+|---|---|---|---|---|---|
+| `strong` | fable-5 | gpt-5.6-sol | grok-4.6 | runtime default | design, audit, spec, anything judged |
+| `standard` | opus-5 | gpt-5.6-sol | grok-4.6 | runtime default | building, testing, ops chores |
+| `fast` | sonnet-5 | gpt-5.6-luna | grok-4.5 | (unset → standard) | mechanical: scaffolds, doc moves, bd hygiene, groom |
 
 *(Amended 2026-08-26, ranger-base-arm.)* The codex column is filled; grok
 is still runtime default. codex carried NO map at all until then, so
@@ -110,6 +111,19 @@ above; (c) smuggling effort through the model value (`"grok-4.6
 --reasoning-effort low"` as the map's string) — `{model}` renders one
 argv token via `ModelFlag`, and a map whose values are secretly command
 lines makes every reader of the map wrong.
+
+*(Shipped 2026-08-29, rangerhq-jp6 — the column the ruling above governs.)*
+Ids read from the CLI on the day rather than from a doc: grok 1.0.5,
+`grok models` ("Default model: grok-4.6"; grok-4.5 also served) and
+`~/.grok/models_cache.json` fetched the same morning, both agreeing. Both
+models carry a 500K context window and are served from
+cli-chat-proxy.grok.com under the subscription session, not an API key.
+Take the ids from the CLI again next time this map is touched — it
+self-updates, and it moved 1.0.0 → 1.0.5 mid-verification once
+(rangerhq-vjl). Display consequence: every built-in now maps every tier,
+so no built-in reads `UNMAPPED` and ADR 0013 §6 bites on declared runtimes
+only.
+
 
 Rendering: built-in templates gain **`{model}`** → `--model <id>` /
 `-c model=<id>` / `-m <id>`, empty when the tier has no mapping. PIDs

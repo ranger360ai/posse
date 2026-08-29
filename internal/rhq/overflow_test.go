@@ -140,11 +140,12 @@ func TestOverflowLaunchesEligibleBead(t *testing.T) {
 	if !ok || m.Runtime != "grok" {
 		t.Errorf("session meta runtime = %+v, want grok", m)
 	}
-	// The prompt header the persona reads names the runtime it is on — and
-	// the tier it reads is the DISPLAY tier: the bead still dispatched at
-	// `standard`, but grok maps no model id for it, so the header says
-	// `grok/default` rather than a mapping nobody honours (ADR 0013 §6).
-	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/default") {
+	// The prompt header the persona reads names the runtime it is on, and
+	// the tier it reads is the DISPLAY tier (ADR 0013 §6). grok maps
+	// `standard` since rangerhq-jp6, so it wears its own name here; a
+	// runtime that mapped nothing would read `<runtime>/default` instead,
+	// which is what tierdisplay_test.go pins.
+	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/standard") {
 		t.Errorf("the work prompt must name the overflow runtime:\n%s", got)
 	}
 	l := f.ledger(t)
@@ -295,7 +296,7 @@ func TestOverflowUngatedRuntimeLaunches(t *testing.T) {
 	if l := f.ledger(t); l != nil {
 		t.Errorf("an ungated launch owes the ledger nothing: %v", l)
 	}
-	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/default") {
+	if got := delivered(t, f.b.App, f.fake); !strings.Contains(got, "runtime/tier: grok/standard") {
 		t.Errorf("the launch must still be grok's:\n%s", got)
 	}
 }

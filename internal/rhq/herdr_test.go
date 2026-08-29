@@ -2056,7 +2056,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if err := b.LaunchRecipe(&out, "hg"); err != nil {
 		t.Fatal(err)
 	}
-	if got := calls(t, fake); !strings.Contains(got, `GATES grok `+GrokFleetFlags+` --rules="$(cat '`) {
+	if got := calls(t, fake); !strings.Contains(got, `GATES grok -m 'grok-4.6' `+GrokFleetFlags+` --rules="$(cat '`) {
 		t.Errorf("recipe runtime: not applied:\n%s", got)
 	}
 }

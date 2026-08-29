@@ -48,7 +48,7 @@ Measured 2026-08-24, on beads:
 | 3 | `Done:` is acted on | 3/3 codex sessions did the work and skipped the bead; one left a dirty shared checkout (ranger-base-0fb). Claude and grok complied the same evening |
 | 4 | spend is visible | `posse cost` reports codex/grok **uncounted** (ADR 0003 §4 already requires this honesty; it does not put a brake on the channel) |
 | 5 | the plan guard gates the meter being spent | it gates the *pass* on one provider's windows, including when blind, so an off-meter drain was parked by an unreadable on-meter credential (ranger-base-ri4) |
-| 6 | `tier: strong` means a strong model | `{model}` renders empty on grok/codex; the catalog preflight is Anthropic-only and cannot see allotment exhaustion (ranger-base-1cc) |
+| 6 | `tier: strong` means a strong model | `{model}` rendered empty on grok/codex (both mapped since — codex ranger-base-arm, grok rangerhq-jp6; a declared runtime with no `model_<tier>:` still renders empty); the catalog preflight is Anthropic-only and cannot see allotment exhaustion (ranger-base-1cc) |
 | 7 | the PID is the instruction | grok and codex natively load `AGENTS.md` (and kin). That file already collided with a PID deny (rangerhq-cmfj). Whether that is the bookkeeping defect is untested |
 
 ADR 0012 D4.1 currently says a runtime "starts idle awaiting a typed
@@ -486,13 +486,21 @@ Amends ADR 0003 §1 display, not the three names. `strong` / `standard` /
 map a tier **does not wear it**:
 
 - `{model}` empty stays the render;
-- `posse list` / cockpit / prompt header show `grok/default`, never
-  `grok/strong`;
+- `posse list` / cockpit / prompt header show `<runtime>/default`, never
+  `<runtime>/strong`;
 - PID `tier: strong` on an unmapped runtime is a `posse agent check` /
   `runtime check` warning, not a quality guarantee;
 - dispatch's own overflow still never moves `strong` (ADR 0010 §2b);
 - an explicit `--runtime` the operator typed is their decision and
   launches.
+
+*(2026-08-29, rangerhq-jp6.)* All three built-ins map every tier now, so
+this rule bites on a declared `runtimes/<name>.yaml` that sets no
+`model_<tier>:`, on a partial map, and on a runtime name posse has never
+heard of. Narrower, not dead — and the pins for it are fixtured on a
+declared runtime rather than on whichever built-in happened to be blank,
+which is how a rule about the map stops being tested the day somebody
+fills that map in.
 
 Availability preflight is per cost/plan adapter — as shipped, the
 predicate is the runtime's `egress:` naming the catalog host

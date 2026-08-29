@@ -299,11 +299,15 @@ func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
 // Three readings are pinned here, because they are three different facts
 // to an operator choosing a tier:
 //
-//   - fully mapped (claude, and codex since this bead): the ids, and the
-//     flag they render with, so nobody diffs two runtimes to learn which
-//     one honours the key;
-//   - fully unmapped (grok): UNMAPPED, "ignores tier: entirely", and the
-//     yaml key that would change it;
+//   - fully mapped (claude, and codex since this bead; grok since
+//     rangerhq-jp6): the ids, and the flag they render with, so nobody
+//     diffs two runtimes to learn which one honours the key;
+//   - fully unmapped: UNMAPPED, "ignores tier: entirely", and the yaml key
+//     that would change it — plus the BUILT-IN variant of that remedy,
+//     which says runtime.go instead. No built-in is unmapped any more, so
+//     that arm is driven by a Runtime value rather than by whichever
+//     built-in happened to carry no map that week: it is tierLine and
+//     tierFix under test, and the fixture only has to reach them.
 //   - PARTIAL: the mapped tiers AND the unmapped ones. A partial map shown
 //     as a list of what is mapped reads as complete, which is the silence.
 func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
@@ -339,19 +343,40 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 		t.Errorf("codex maps every tier; nothing may read UNMAPPED:\n%s", out)
 	}
 
-	// grok: unmapped, and loud about it — including WHERE the mapping would
-	// have to go. For a built-in that is runtime.go and NOT a yaml: naming
-	// runtimes/grok.yaml here would send an operator to a file LoadRuntime
-	// never stats for a built-in, which is a remedy that silently does
-	// nothing — the exact shape of bug this line exists to prevent.
+	// grok: mapped since rangerhq-jp6, so the grid prints the ids and the
+	// -m flag they render with, and must NOT still say UNMAPPED.
 	out = grid("grok")
-	for _, want := range []string{"UNMAPPED", "ignores tier: entirely", "grok/default", "BUILT-IN", "runtime.go"} {
+	for _, want := range []string{"strong=grok-4.6", "standard=grok-4.6", "fast=grok-4.5", "-m %s"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("grok tier line must carry %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "UNMAPPED") || strings.Contains(out, "grok/default") {
+		t.Errorf("grok maps every tier; nothing may read UNMAPPED:\n%s", out)
+	}
+
+	// Fully unmapped, and loud about it — including WHERE the mapping would
+	// have to go. For a BUILT-IN that is runtime.go and NOT a yaml: naming
+	// runtimes/<name>.yaml here would send an operator to a file
+	// LoadRuntime never stats for a built-in, which is a remedy that
+	// silently does nothing — the exact shape of bug this line exists to
+	// prevent. Driven off a Runtime value because no built-in is unmapped
+	// today; the two flags it sets (Builtin, no Models) are exactly the two
+	// tierLine and tierFix branch on.
+	out = a.tierLine(&Runtime{Name: "blankcli", Builtin: true, ModelFlag: "-m %s"})
+	for _, want := range []string{"UNMAPPED", "ignores tier: entirely", "blankcli/default", "BUILT-IN", "runtime.go"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("an unmapped built-in tier line must carry %q:\n%s", want, out)
+		}
+	}
 	if strings.Contains(out, "Declare model_<tier>:") {
 		t.Errorf("a yaml cannot override a built-in; the grid may not prescribe one:\n%s", out)
+	}
+	// The non-built-in half of the same remedy, so the branch is pinned
+	// both ways: a DECLARED runtime with no map is sent to its yaml.
+	out = a.tierLine(&Runtime{Name: "blankyaml", ModelFlag: "-m %s"})
+	if !strings.Contains(out, "Declare model_<tier>:") || strings.Contains(out, "BUILT-IN") {
+		t.Errorf("an unmapped declared runtime must be sent to its yaml:\n%s", out)
 	}
 
 	// Partial: only model_standard: declared. fast falls back to standard,

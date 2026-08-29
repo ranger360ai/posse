@@ -361,7 +361,7 @@ func TestRuntimeRealizers(t *testing.T) {
 	grok := render("grok")
 	// --rules= (not --rules ): a PID starts with "---", which grok's arg
 	// parser reads as a flag in the separated form and dies on (rangerhq-vjl).
-	if !strings.HasPrefix(grok, "grok "+GrokFleetFlags+` --rules="$(cat '`) ||
+	if !strings.HasPrefix(grok, "grok -m 'grok-4.6' "+GrokFleetFlags+` --rules="$(cat '`) ||
 		!strings.Contains(grok, "--allow 'Bash(bd:*)' --deny 'Edit' --deny 'Write' --deny 'Bash(git push:*)'") {
 		t.Errorf("grok: %s", grok)
 	}
@@ -500,12 +500,29 @@ func TestTiers(t *testing.T) {
 	if codex.Model(TierStrong) != "gpt-5.6-sol" || codex.Model(TierStandard) != "gpt-5.6-sol" || codex.Model(TierFast) != "gpt-5.6-luna" {
 		t.Errorf("codex tier map: %v", codex.Models)
 	}
-	// grok stays unmapped: no grok model id has been measured on this box.
-	if grok.Model(TierStandard) != "" || grok.Model(TierStrong) != "" || grok.Model(TierFast) != "" {
-		t.Errorf("grok has no tier mapping — runtime default: %v", grok.Models)
+	// grok maps all three since rangerhq-jp6, in the codex shape and for
+	// the codex reason: grok-4.6 is what a session here defaults to and
+	// grok offers nothing above it, so strong and standard both name it;
+	// grok-4.5 is the previous frontier model and the only step-down that
+	// exists, so fast names it EXPLICITLY rather than falling back to
+	// standard — a fast that renders the same id as standard would make
+	// dispatch's budget step-down inert. `tier:` was inert on grok until
+	// this map existed, exactly as it was on codex before ranger-base-arm.
+	if grok.Model(TierStrong) != "grok-4.6" || grok.Model(TierStandard) != "grok-4.6" || grok.Model(TierFast) != "grok-4.5" {
+		t.Errorf("grok tier map: %v", grok.Models)
 	}
-	if claude.ModelText(TierFast) != "--model 'claude-sonnet-5'" || codex.ModelText(TierFast) != "-c model='gpt-5.6-luna'" || grok.ModelText(TierFast) != "" {
-		t.Errorf("ModelText: %q %q %q", claude.ModelText(TierFast), codex.ModelText(TierFast), grok.ModelText(TierFast))
+	// fast really is its own id here, not the standard fallback: mutate the
+	// map by deleting fast and the two must stop agreeing.
+	if grok.Model(TierFast) == grok.Model(TierStandard) {
+		t.Errorf("fast must be a step-down on grok, not a fallback to standard: %v", grok.Models)
+	}
+	// An UNMAPPED runtime renders nothing at all. No built-in is unmapped
+	// any more, so the arm is held by a declared-shaped fixture rather than
+	// by whichever built-in happened to carry no map that week.
+	none := &Runtime{ModelFlag: "-m %s"}
+	if claude.ModelText(TierFast) != "--model 'claude-sonnet-5'" || codex.ModelText(TierFast) != "-c model='gpt-5.6-luna'" ||
+		grok.ModelText(TierFast) != "-m 'grok-4.5'" || none.ModelText(TierFast) != "" {
+		t.Errorf("ModelText: %q %q %q %q", claude.ModelText(TierFast), codex.ModelText(TierFast), grok.ModelText(TierFast), none.ModelText(TierFast))
 	}
 	// TierMap is the one rendering both `posse runtimes` and the runtime
 	// check grid read: mapped tiers in Tiers order, and the tiers that
@@ -513,8 +530,13 @@ func TestTiers(t *testing.T) {
 	if m, u := claude.TierMap(); strings.Join(m, " ") != "strong=claude-fable-5 standard=claude-opus-5 fast=claude-sonnet-5" || len(u) != 0 {
 		t.Errorf("TierMap claude: %v %v", m, u)
 	}
-	if m, u := grok.TierMap(); len(m) != 0 || strings.Join(u, ",") != "strong,standard,fast" {
+	if m, u := grok.TierMap(); strings.Join(m, " ") != "strong=grok-4.6 standard=grok-4.6 fast=grok-4.5" || len(u) != 0 {
 		t.Errorf("TierMap grok: %v %v", m, u)
+	}
+	// Fully unmapped is still a shape TierMap must render: every tier in
+	// the unmapped list, nothing in the mapped one.
+	if m, u := none.TierMap(); len(m) != 0 || strings.Join(u, ",") != "strong,standard,fast" {
+		t.Errorf("TierMap unmapped: %v %v", m, u)
 	}
 	// Partial: only strong declared, so fast has no standard to fall back
 	// to and is reported unmapped alongside standard.
@@ -547,7 +569,9 @@ func TestTiers(t *testing.T) {
 		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{codex, TierFast, "codex -c model='gpt-5.6-luna' -s workspace-write --add-dir '"},
 		{codex, TierStrong, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"},
-		{grok, TierStrong, "grok " + GrokFleetFlags + ` --rules="$(cat '`},
+		{grok, TierStrong, "grok -m 'grok-4.6' " + GrokFleetFlags + ` --rules="$(cat '`},
+		{grok, TierStandard, "grok -m 'grok-4.6' " + GrokFleetFlags + ` --rules="$(cat '`},
+		{grok, TierFast, "grok -m 'grok-4.5' " + GrokFleetFlags + ` --rules="$(cat '`},
 	} {
 		if got := ag.RenderCommandFor(c.rt, "claude", c.tier); !strings.HasPrefix(got, c.want) || strings.Contains(got, "{model}") {
 			t.Errorf("%s/%s: %s", c.rt.Name, c.tier, got)
