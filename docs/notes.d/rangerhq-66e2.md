@@ -79,7 +79,7 @@ ADR keys currency on the binary, not on a number nobody measured.
 **Verification.** `runtimeprobe_test.go` pins the four observables with both
 arms and the drift machine through an injected reader seam;
 `runtimeprobe_qa_test.go` drives production `CheckParity` / `RuntimeCheck` /
-`RuntimeGaps`. The live half is opt-in and is laurie's checklist:
+`RuntimeGaps`. The live half is opt-in and is the ADR's own checklist:
 
 ```
 RHQ_LIVE_PROBE=codex go test ./internal/rhq -run TestLiveRuntimeProbe -v
@@ -90,8 +90,10 @@ The `_FAKE` arm wraps the same CLI in a shim that hardcodes `/bin/zsh -l`,
 which is the only way to build observable 1's wrong arm: it needs a real
 login shell on a real box.
 
-**Not in this change.** The ADR that specifies it, `docs/adr/
-0017-engine-onboarding.md`, is not in this repo — it was written in
-`~/src/rangerhq` (commit 308dc07) and did not survive the rename, and posse's
-own `docs/adr/0017-*` is the unrelated runtime-equivalence ADR. Re-landing it
-under a free number is architecture's (filed for richard).
+**Not in this change.** The ADR that specifies this — engine onboarding,
+accepted 2026-08-22 — is not in this repo: it was written before the rename
+and did not cross it, and the `0017` slot here holds the unrelated
+runtime-equivalence ADR. Everything above was implemented from that text;
+re-landing it under a free number, and repointing the `ADR 0017 §1` citations
+in the code, the tests and INSTALL.md §8 at it, is filed on the architecture
+lane.

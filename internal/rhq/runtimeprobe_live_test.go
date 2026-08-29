@@ -1,7 +1,7 @@
 package rhq
 
-// The live half of `posse runtime probe` — laurie's ADR 0017 checklist,
-// items 1 and 2, run against real CLIs in real panes. It costs one model
+// The live half of `posse runtime probe` — the ADR 0017 verification
+// checklist, items 1 and 2, run against real CLIs in real panes. It costs one model
 // turn per runtime, so it is opt-in:
 //
 //	RHQ_LIVE_PROBE=codex go test ./internal/rhq -run TestLiveRuntimeProbe -v
