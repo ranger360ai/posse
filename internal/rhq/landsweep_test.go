@@ -111,6 +111,13 @@ func TestSweepWillNotGuessWhichBeadATreeHolds(t *testing.T) {
 	if !strings.Contains(out, tr.Branch) || !strings.Contains(out, "no record says which bead") {
 		t.Errorf("an unlanded tree with no record must be named on the pass:\n%s", out)
 	}
+	// And it must name a command that actually lands it. `posse worktrees
+	// --land` alone stopped being one when --land learned to read the same
+	// record this sweep does (ranger-base-atxe) — a prescription the sweep's
+	// own refusal makes untrue is worse than none.
+	if !strings.Contains(out, "--land --force") {
+		t.Errorf("the pass prescribes a command that would refuse this very tree:\n%s", out)
+	}
 }
 
 // The record is on the BRANCH and not only in the session meta, and this is

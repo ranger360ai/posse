@@ -4541,6 +4541,17 @@ cannot tell a dead session's tree from one a persona is working in this
 second, and removing the second is the exact damage this feature exists to
 prevent.
 
+It also **reads the branch record before it merges**. A tree holding commits
+its base does not have, whose branch names no bead
+(`branch.<branch>.posseBead`), is reported and skipped; `--land --force`
+lands it anyway. From git alone that tree is indistinguishable from one whose
+work already landed under another bead id — measured in the field, one commit
+byte-identical to something on main that no patch-id and no `-x` trailer
+connects to it — and merging it blind replays stale work onto the operator's
+branch. `posse worktrees` names the bead beside the count for the same
+reason, so the judgement is available before the command is typed:
+`docs/notes.d/ranger-base-atxe.md`.
+
 Crew sessions (`posse new`, recipes) keep the operator's checkout: a session
 the operator opened to talk to is theirs (ADR 0008). A dir that is not a git
 repo, or a repo on a detached HEAD with no session branch yet, warns and falls

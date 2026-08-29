@@ -124,7 +124,7 @@ func main() {
 		// kill that could not land its work keeps the tree, and a session
 		// meta that was pruned takes the only posse-side record of it with
 		// it. git still knows, so this asks git.
-		dir, land := "", false
+		dir, land, force := "", false, false
 		rest := args
 		for len(rest) > 0 {
 			switch {
@@ -132,8 +132,10 @@ func main() {
 				dir, rest = rest[1], rest[2:]
 			case rest[0] == "--land":
 				land, rest = true, rest[1:]
+			case rest[0] == "--force":
+				force, rest = true, rest[1:]
 			default:
-				die(rhq.Die("posse worktrees [--dir <repo>] [--land]"))
+				die(rhq.Die("posse worktrees [--dir <repo>] [--land [--force]]"))
 			}
 		}
 		dirs := a.BeadsDirs()
@@ -142,7 +144,7 @@ func main() {
 		}
 		fn := rhq.ListSessionTrees
 		if land {
-			fn = func(w io.Writer, dirs []string) error { return rhq.LandSessionTrees(w, a, dirs) }
+			fn = func(w io.Writer, dirs []string) error { return rhq.LandSessionTrees(w, a, dirs, force) }
 		}
 		if err := fn(out, dirs); err != nil {
 			die(err)
@@ -1642,11 +1644,16 @@ sessions (herdr workspaces):
       --foreign                close a workspace this home holds no session meta for
                                (another instance's session, or one made in herdr by
                                hand) — refused without it, naming the workspace id
-  posse worktrees [--dir <repo>] [--land]
-                                 session worktrees and what has not landed yet;
+  posse worktrees [--dir <repo>] [--land [--force]]
+                                 session worktrees, which bead each one's unlanded
+                                 work belongs to, and what has not landed yet;
                                  --land merges every branch that will land (it
                                  never removes a tree — it cannot tell a dead
                                  session's from a live one's)
+      --force                  land a tree holding work no bead record accounts
+                               for — refused without it, because from git alone
+                               that is indistinguishable from work already
+                               landed under another bead id
   posse crew <name> [--off]      mark a session as yours (👤) so dispatch leaves it
                                  alone, or --off to give it back to the fleet
                                  (ADR 0008; posse new and recipes are crew already,

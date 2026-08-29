@@ -86,7 +86,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 			id = d.beadFromMeta(t)
 		}
 		if id == "" {
-			d.printf("◑ %s holds work that is not on %s and no record says which bead — `posse worktrees --land` decides it\n",
+			d.printf("◑ %s holds work that is not on %s and no record says which bead — `posse worktrees` shows it and `--land --force` decides it\n",
 				t.Branch, orDetached(t.Base))
 			continue
 		}

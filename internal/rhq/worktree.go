@@ -1138,7 +1138,26 @@ func ListSessionTrees(w io.Writer, dirs []string) error {
 // The whole sweep runs under one launcher lock (ADR 0011 §1), taken blocking
 // — this is a command a person ran and waiting is the honest thing for it to
 // do.
-func LandSessionTrees(w io.Writer, a *App, dirs []string) error {
+//
+// It READS THE BEAD RECORD FIRST, and a tree holding work that no record
+// accounts for is reported and not landed unless force says otherwise
+// (ranger-base-atxe). It used to merge every tree unconditionally, which is
+// the one thing in this file that could put stale work back on the operator's
+// branch: measured in the field on a session tree whose single commit
+// 6217c9f is byte-identical to 2418bde already on main — re-landed by
+// hand under another bead id, so no patch-id and no `-x` trailer connects the
+// two and equivalentOnBase cannot see it. A blind pass would have replayed
+// 778 stale lines onto main or conflicted trying, and the listing paired with
+// it said only "1 commit(s) not on main" — true, and no help at all in
+// telling that tree from a real strand.
+//
+// The record is branch.<branch>.posseBead (beadKey), the same one
+// landClosedTrees refuses to guess past. Empty is not "nothing to answer
+// for": a crew session's tree has no bead by design, and so does every tree
+// cut before the stamp landed. Both are legitimate and both still get the
+// refusal, because from git alone they are indistinguishable from the vojc
+// shape — force is the operator saying which one it is.
+func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 	trees, err := SessionTreesIn(dirs)
 	if err != nil {
 		return err
@@ -1153,6 +1172,10 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string) error {
 	}
 	defer lock.Release()
 	for _, t := range trees {
+		if why := unaccountedFor(t, force); why != "" {
+			fmt.Fprintf(w, "◑ %s\n", why)
+			continue
+		}
 		o, err := MergeSessionWork(t)
 		switch {
 		case err != nil:
@@ -1173,14 +1196,46 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string) error {
 	return nil
 }
 
+// unaccountedFor is `--land`'s gate: the sentence to print INSTEAD of
+// landing, or "" when this tree may be landed. Asked of the branch record
+// (beadKey), never of the branch name — SessionForBead joins persona, repo
+// and bead with '-' and all three contain it, so parsing it back out is a
+// guess, and landsweep.go refuses to make it for the same reason.
+//
+// Only a tree with something to land is gated. Nothing ahead of the base is
+// nothing to get wrong, and a base that cannot be read at all (detached HEAD,
+// unreadable count) lands nothing either — MergeSessionWork says why in
+// words, which is more use than this refusal would be.
+func unaccountedFor(t *SessionTree, force bool) string {
+	if force || t.Bead != "" {
+		return ""
+	}
+	n, ok := unlandedCount(t)
+	if !ok || n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s holds %d commit(s) not on %s and no record says which bead — NOT landed; look at it (`git log %s..%s`) and `posse worktrees --land --force` when you want it",
+		t.Branch, n, t.Base, t.Base, t.Branch)
+}
+
 // treeState is the one phrase that says whether anything would be lost by
 // removing this tree — the only question the listing exists to answer.
+//
+// It names the bead alongside the count because the count alone was the
+// operator's whole basis for running `--land`, and "1 commit(s) not on main"
+// is true of a strand and of an already-re-landed duplicate alike
+// (ranger-base-atxe). Which bead the work belongs to is the difference, and
+// it is one git config read away.
 func treeState(t *SessionTree) string {
 	var parts []string
 	if t.Base == "" {
 		parts = append(parts, "repo HEAD is detached — cannot say what is unmerged")
 	} else if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch); err == nil && n != "0" {
-		parts = append(parts, n+" commit(s) not on "+t.Base)
+		who := "no record says which bead"
+		if t.Bead != "" {
+			who = "for " + t.Bead
+		}
+		parts = append(parts, n+" commit(s) not on "+t.Base+", "+who)
 	}
 	if d := dirtyPaths(t.Path); len(d) > 0 {
 		parts = append(parts, fmt.Sprintf("%d uncommitted path(s)", len(d)))

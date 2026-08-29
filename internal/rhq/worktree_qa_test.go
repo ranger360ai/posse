@@ -792,6 +792,13 @@ func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
 	}
 	m, _ := b.readMeta("s1")
 	commitIn(t, m.Dir, "fix.txt", "the work\n", "s1: the fix")
+	// What a dispatched launch stamps (herdrback.go), spelled here because
+	// CreateSession with a Bead also drags in the ADR 0015 promotion
+	// refusal, which this test is not about. Without it the catch-up below
+	// reports an unaccounted tree instead of landing it (ranger-base-atxe).
+	if err := recordBead(m.Repo, m.Branch, "a-1"); err != nil {
+		t.Fatal(err)
+	}
 
 	held, err := lockLaunches(b.App, io.Discard)
 	if err != nil {
@@ -825,7 +832,7 @@ func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
 	}
 	// And the catch-up finishes it.
 	var out strings.Builder
-	if err := LandSessionTrees(&out, b.App, []string{repo}); err != nil {
+	if err := LandSessionTrees(&out, b.App, []string{repo}, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err != nil {
@@ -853,6 +860,9 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 		t.Fatalf("the session got no tree: %+v", before)
 	}
 	commitIn(t, before.Dir, "fix.txt", "the persona's work\n", "s-detached: the fix")
+	if err := recordBead(before.Repo, before.Branch, "a-1"); err != nil {
+		t.Fatal(err) // see the note in TestKillDefersTheLandingWhileALauncherRuns
+	}
 	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
 
 	var out strings.Builder
@@ -917,7 +927,7 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 	// And the operator coming back off the bisect finishes it.
 	mustGit(t, repo, "checkout", "-q", "main")
 	var land strings.Builder
-	if err := LandSessionTrees(&land, b.App, []string{repo}); err != nil {
+	if err := LandSessionTrees(&land, b.App, []string{repo}, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); err != nil {

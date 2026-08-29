@@ -865,9 +865,15 @@ func TestLandSessionTreesFinishesWhatAKillDeferred(t *testing.T) {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	// The stamp a dispatched launch writes (worktree.go recordBead): --land
+	// reads it and reports rather than lands a tree no record accounts for
+	// (ranger-base-atxe), which is its own pin below.
+	if err := recordBead(tr.Repo, tr.Branch, "a-1"); err != nil {
+		t.Fatal(err)
+	}
 
 	var out strings.Builder
-	if err := LandSessionTrees(&out, a, []string{repo}); err != nil {
+	if err := LandSessionTrees(&out, a, []string{repo}, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "1 commit(s) onto main") {
@@ -881,6 +887,108 @@ func TestLandSessionTreesFinishesWhatAKillDeferred(t *testing.T) {
 	}
 	if !branchExists(repo, tr.Branch) {
 		t.Error("--land deleted the branch of a tree it left standing")
+	}
+}
+
+// `--land` reads the bead record before it merges anything (ranger-base-atxe).
+// The shape it exists for was measured in the field: a session tree held
+// one commit main did not have BY SHA whose content is
+// byte-identical to a commit already on main — re-landed
+// by hand under another bead id, so no patch-id and no `-x` trailer connects
+// them and equivalentOnBase is blind to it. The only thing that told the two
+// apart was that nothing recorded which bead the tree was working, and the
+// listing said "1 commit(s) not on main" either way.
+//
+// Three arms, because the refusal is only worth anything if it is narrow: a
+// tree with a bead lands untouched, a tree without one is reported and NOT
+// merged, and --force lands the second one anyway.
+func TestLandWillNotTakeWorkNoBeadRecordAccountsFor(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+
+	recorded, err := a.EnsureSessionTree(repo, "s-recorded", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, recorded.Path, "recorded.txt", "accounted for\n", "s-recorded: the fix")
+	if err := recordBead(recorded.Repo, recorded.Branch, "a-1"); err != nil {
+		t.Fatal(err)
+	}
+	orphan, err := a.EnsureSessionTree(repo, "s-orphan", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, orphan.Path, "orphan.txt", "nobody can say\n", "s-orphan: the fix")
+
+	var out strings.Builder
+	if err := LandSessionTrees(&out, a, []string{repo}, false); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	// The control: the gate is narrow, and a recorded tree still lands in
+	// the same words it always did. Without this arm a `return "refused"`
+	// for every tree passes everything below.
+	if _, err := os.Stat(filepath.Join(repo, "recorded.txt")); err != nil {
+		t.Errorf("--land refused a tree whose branch names its bead:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "orphan.txt")); err == nil {
+		t.Errorf("--land merged work no record accounts for:\n%s", got)
+	}
+	for _, want := range []string{orphan.Branch, "no record says which bead", "--force"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, got)
+		}
+	}
+	// Reported, not destroyed: the branch and the tree still hold it.
+	if !branchExists(repo, orphan.Branch) {
+		t.Error("the refused tree's branch was deleted")
+	}
+	if _, err := os.Stat(filepath.Join(orphan.Path, "orphan.txt")); err != nil {
+		t.Errorf("the refused tree lost its work: %v", err)
+	}
+
+	out.Reset()
+	if err := LandSessionTrees(&out, a, []string{repo}, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "orphan.txt")); err != nil {
+		t.Errorf("--force did not land the unaccounted tree:\n%s", out.String())
+	}
+}
+
+// The half an operator reads BEFORE they type --land. "1 commit(s) not on
+// main" was the whole basis for that decision and it is true of a strand and
+// of an already-landed duplicate alike; which bead the work belongs to is the
+// difference, and both answers have to be printable (ranger-base-atxe).
+func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+
+	var out strings.Builder
+	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "1 commit(s) not on main, no record says which bead") {
+		t.Errorf("the listing hides that nothing accounts for this tree's work:\n%s", out.String())
+	}
+
+	if err := recordBead(tr.Repo, tr.Branch, "a-1"); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "1 commit(s) not on main, for a-1") {
+		t.Errorf("the listing does not name the bead the work belongs to:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "no record says which bead") {
+		t.Errorf("a stamped branch still reads as unrecorded:\n%s", out.String())
 	}
 }
 
