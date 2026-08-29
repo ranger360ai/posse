@@ -1267,6 +1267,21 @@ before you hook them (NOTES.md, *Privacy model*), or the first `bd sync`
 carrying a cost figure is a refusal. `posse gates install-hooks` prints
 which way it stamped each repo.
 
+And a third wall in the same slot: the **constitution-path guard**. A
+commit made from a persona session — one carrying `RHQ_PERSONA`, which your
+own shell does not — is refused when it touches `.claude/settings.json` or
+`.claude/settings.local.json` in ANY hooked repo, and, in your constitution
+repo (the one whose top level has `rhq/agents`), when it touches `rhq/agents`,
+`rhq/config.yaml`, `rhq/recipes`, `rhq/skills` or `rhq/envs`. ADR 0015 §2/§3
+is the rule: personas *draft* the constitution and you put it in force with
+`posse promote`, and the settings file is where the deny list fencing a
+persona's own destructive verbs lives (ranger-base-az93) — a session that can
+commit it un-fences itself. Your own commits to those paths are untouched.
+The refusal names the paths and tells the persona to stage its intended diff
+somewhere outside the class for you to apply. It is the shim tier, so `env -i`
+scrubs the marker; the launcher will not land a session branch touching those
+paths either, and that half runs in your process, not the session's.
+
 If this instance holds someone else's data — a work laptop, a client
 engagement — read NOTES.md, *"When an instance holds someone else's data"*
 first: every one of its repos is marked `private`, and config

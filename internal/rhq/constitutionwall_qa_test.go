@@ -361,3 +361,34 @@ func TestQAConstitutionWallRefusesInALinkedWorktree(t *testing.T) {
 	assertConstitutionRefusal(t, out, err, rel, gatesDirOf(persona))
 	_ = repo
 }
+
+// TestQAConstitutionWallInstallDocNamesTheWholeClass is the operator-facing
+// half. INSTALL.md spells the class out for a person who has just hit the
+// refusal, and a spelled-out list is a list that drifts — the widening that
+// promote.go gets for free does not reach a paragraph. So the paragraph is
+// read back and measured against the same spec the walls are.
+func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(body), "constitution-path guard")
+	if start < 0 {
+		t.Fatal("INSTALL.md no longer describes the constitution-path guard at all")
+	}
+	end := strings.Index(string(body)[start:], "\n\nIf this instance holds")
+	if end < 0 {
+		t.Fatal("the constitution-path guard paragraph has no end — the pin is reading the wrong span")
+	}
+	para := string(body)[start : start+end]
+	for _, m := range constitutionClassSpec {
+		if !strings.Contains(para, "`"+m+"`") {
+			t.Errorf("INSTALL.md's constitution-path paragraph does not name %q — the wall widened and the doc did not", m)
+		}
+	}
+	for _, want := range []string{"ADR 0015 §2/§3", "posse promote", "ranger-base-az93", "RHQ_PERSONA", ConstitutionRepoMarker} {
+		if !strings.Contains(para, want) {
+			t.Errorf("INSTALL.md's constitution-path paragraph must carry %q", want)
+		}
+	}
+}
