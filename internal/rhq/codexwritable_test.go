@@ -48,6 +48,152 @@ func TestClaudeAndGrokIgnoreWritable(t *testing.T) {
 
 func containsAddDir(s string) bool { return strings.Contains(s, "--add-dir") }
 
+// codex refuses a writable root that has a symlink COMPONENT, and it refuses
+// it when a command runs rather than when the session starts — so a posse box
+// whose ~/.config/posse/personas is a symlink into the constitution tree
+// launched codex sessions that came up, read their prompt, and could then run
+// nothing at all, silently (ranger-base-c02a, measured live on codex-cli
+// 0.150.1). The root must come out resolved.
+//
+// The fixture builds its own symlink rather than leaning on t.TempDir()'s:
+// /var -> /private/var makes this discriminate on macOS for free, and on
+// Linux the wrong arm would render the literal path and the pin would be
+// green over the bug.
+func TestCodexResolvesASymlinkedWritableRoot(t *testing.T) {
+	real := t.TempDir()
+	developer := filepath.Join(real, "personas", "developer")
+	if err := os.MkdirAll(developer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "personas")
+	if err := os.Symlink(filepath.Join(real, "personas"), link); err != nil {
+		t.Fatal(err)
+	}
+	symlinked := filepath.Join(link, "developer")
+	// The fixture really is the shape the bug needs: a path that exists and
+	// whose PARENT is the symlink. Without this the arms below could both
+	// pass over a fixture codex would have accepted anyway.
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: %s must be a symlink: %v", link, err)
+	}
+	if _, err := os.Stat(symlinked); err != nil {
+		t.Fatalf("fixture: %s must exist through the link: %v", symlinked, err)
+	}
+
+	// The want is developer's own real path: on macOS t.TempDir() is itself
+	// behind /var -> /private/var, so `developer` as spelled is not yet what
+	// codex will accept.
+	want, err := filepath.EvalSymlinks(developer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := realizeCodex(nil, nil, symlinked)
+	if !strings.Contains(r.Deny, "--add-dir "+shellQuote(want)) {
+		t.Errorf("the memory root must render resolved (%s), got: %s", want, r.Deny)
+	}
+	if strings.Contains(r.Deny, link) {
+		t.Errorf("a root with a symlink component kills every command in the session; %s is still on the line: %s", link, r.Deny)
+	}
+
+	// Same for a root that arrives through `writable`, not just the memory
+	// dir: the store of record and the git dirs are real paths on the box
+	// this was measured on, which is the only reason they did not break too.
+	w := realizeCodex(nil, nil, "", symlinked)
+	if !strings.Contains(w.Deny, "--add-dir "+shellQuote(want)) || strings.Contains(w.Deny, link) {
+		t.Errorf("a writable: root must resolve the same way, got: %s", w.Deny)
+	}
+
+	// And the resolved pair is ONE root, not two.
+	if n := strings.Count(realizeCodex(nil, nil, symlinked, developer).Deny, "--add-dir"); n != 1 {
+		t.Errorf("the link and its target are the same root; got %d --add-dir flags: %s", n, realizeCodex(nil, nil, symlinked, developer).Deny)
+	}
+}
+
+// The wrong arm of the resolution: a root that does NOT EXIST YET still
+// renders. Dropping it would be the silent cage of ranger-base-0fb — a codex
+// session whose store of record is simply not writable and which reports
+// nothing about it — and a root is routinely named before the launch
+// materializes it (the memory dir, a store's git dirs). Two shapes:
+//
+//	a symlinked parent that exists  → the parent resolves, the tail rides along
+//	nothing on the path exists      → the path renders as itself
+func TestCodexRendersAWritableRootThatDoesNotExistYet(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "personas")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	unborn := filepath.Join(link, "developer") // the memory dir before EnsureMemoryDir
+	if _, err := os.Stat(unborn); err == nil {
+		t.Fatalf("fixture: %s must not exist yet", unborn)
+	}
+	want, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = filepath.Join(want, "developer")
+	if got := realizeCodex(nil, nil, unborn).Deny; !strings.Contains(got, "--add-dir "+shellQuote(want)) {
+		t.Errorf("a root under a symlinked parent that does not exist yet must resolve to %s, got: %s", want, got)
+	}
+
+	// Nothing on this path exists, so there is nothing to resolve and the
+	// root rides as typed — never dropped.
+	gone := "/no-such-root-ranger-base-c02a/.beads"
+	if _, err := os.Stat(gone); err == nil {
+		t.Fatalf("fixture: %s must not exist", gone)
+	}
+	if got := realizeCodex(nil, nil, "", gone).Deny; !strings.Contains(got, "--add-dir "+shellQuote(gone)) {
+		t.Errorf("an unresolvable root renders as itself, never dropped: %s missing from %s", gone, got)
+	}
+}
+
+// The line, not the function (ranger-base-0fb's lesson): the box that was
+// broken had its personas dir — the parent of every persona's memory dir —
+// replaced by a symlink, so pin the launch line rendered over exactly that
+// shape.
+func TestCodexLaunchLineResolvesASymlinkedPersonasDir(t *testing.T) {
+	b, fake := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: ranger\ndescription: test\nruntime: codex\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ~/.config/posse/personas -> ~/src/ranger-base/rhq/personas, the shape
+	// the constitution tree made on 2026-08-28.
+	constitution := filepath.Join(t.TempDir(), "rhq", "personas")
+	if err := os.MkdirAll(constitution, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(constitution, b.App.PersonasDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	work := wtRepo(t)
+	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
+
+	body, _ := os.ReadFile(b.App.LaunchScript("crew"))
+	log := calls(t, fake) + "\n" + string(body)
+	if !strings.Contains(log, "-s workspace-write") {
+		t.Fatalf("not a codex sandbox line, so the assertions below mean nothing:\n%s", log)
+	}
+	mem := filepath.Join(constitution, "ranger")
+	if _, err := os.Stat(mem); err != nil {
+		t.Fatalf("the launch did not materialize the memory dir through the link: %v", err)
+	}
+	real, err := filepath.EvalSymlinks(mem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log, "--add-dir "+shellQuote(real)) {
+		t.Errorf("the launch line must name the RESOLVED memory dir %s:\n%s", real, log)
+	}
+	if strings.Contains(log, "--add-dir "+shellQuote(filepath.Join(b.App.PersonasDir(), "ranger"))) {
+		t.Errorf("the line still carries the symlinked memory dir — every command in that session dies:\n%s", log)
+	}
+}
+
 // The four tests above pin realizeCodex in ISOLATION, which is not where the
 // bug was. The bug was one argument at the launch site: drop beadsHome(dir)
 // from planLaunch's RenderCommandFor call and every test above stays green
@@ -111,8 +257,15 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	// The store of record, the git dirs that repo's `bd sync` commit locks,
 	// and the git dirs that hold this tree's index and the repo's objects:
 	// all outside the workspace, all denied unless named.
+	// Through codexWritableRoot, because that is what the line carries since
+	// ranger-base-c02a: on macOS every one of these fixtures sits under
+	// t.TempDir(), i.e. behind the /var -> /private/var symlink, and codex
+	// refuses a root with a symlink component at command-run time. The
+	// resolution itself is pinned by TestCodexResolvesASymlinkedWritableRoot
+	// and the launch-line pin below it — on a box where t.TempDir() has no
+	// symlink component this wrapper is the identity.
 	for _, want := range append(append([]string{target}, storeGits...), gits...) {
-		if !strings.Contains(log, "--add-dir "+shellQuote(want)) {
+		if !strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(want))) {
 			t.Errorf("codex launch does not name %s writable:\n%s", want, log)
 		}
 	}
@@ -216,7 +369,7 @@ func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
 		t.Fatalf("the relaunch line is not a codex sandbox line:\n%s", line)
 	}
 	for _, want := range append(append([]string{target}, storeGits...), gits...) {
-		if !strings.Contains(line, "--add-dir "+shellQuote(want)) {
+		if !strings.Contains(line, "--add-dir "+shellQuote(codexWritableRoot(want))) {
 			t.Errorf("the relaunch line does not name %s writable:\n%s", want, line)
 		}
 	}

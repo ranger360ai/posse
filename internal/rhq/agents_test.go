@@ -396,8 +396,11 @@ func TestRuntimeRealizers(t *testing.T) {
 	ag2 := loadTestAgent(t, "---\nname: p\ndeny: [Bash(git push:*)]\n---\nYou are p.\n")
 	rt, _ := a.LoadRuntime("codex")
 	// workspace-write is the one mode where --add-dir is legal, so the memory
-	// dir rides with the mode instead of with the template.
-	if c := ag2.RenderCommandFor(rt, "claude", TierStrong); !strings.HasPrefix(c, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"+ag2.MemoryDir+"' -a never") {
+	// dir rides with the mode instead of with the template — resolved, since
+	// codex refuses a root with a symlink component and kills every command
+	// in the session over it (ranger-base-c02a; here it is t.TempDir()'s own
+	// /var -> /private/var).
+	if c := ag2.RenderCommandFor(rt, "claude", TierStrong); !strings.HasPrefix(c, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"+codexWritableRoot(ag2.MemoryDir)+"' -a never") {
 		t.Errorf("codex workspace-write: %s", c)
 	}
 	r := realizeCodex(nil, []string{"Edit", "Write"}, "/mem")

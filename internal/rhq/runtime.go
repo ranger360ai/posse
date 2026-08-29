@@ -625,6 +625,7 @@ func realizeCodex(allow, deny []string, memory string, writable ...string) Reali
 	d := "-s workspace-write"
 	seen := map[string]bool{}
 	for _, w := range append([]string{memory}, writable...) {
+		w = codexWritableRoot(w)
 		if w == "" || seen[w] {
 			continue
 		}
@@ -632,6 +633,45 @@ func realizeCodex(allow, deny []string, memory string, writable ...string) Reali
 		d += " --add-dir " + shellQuote(w)
 	}
 	return Realized{Deny: d}
+}
+
+// codexWritableRoot resolves one writable root to its real path, because
+// codex refuses a root with a symlink component — and refuses it at
+// COMMAND-RUN time, not at launch. That is the whole failure mode
+// (ranger-base-c02a, measured live on codex-cli 0.150.1): the session comes
+// up, herdr calls it working and then idle, and every tool call in it dies
+// with
+//
+//	Error: writable root /Users/.../.config/posse/personas/developer contains
+//	symlink component /Users/.../.config/posse/personas; symlinked writable
+//	roots are not supported
+//
+// so the persona reads its prompt and can then run nothing at all — no bd,
+// no file, no commit. On this box ~/.config/posse/personas is a symlink into
+// the constitution tree, which made EVERY dispatched codex session dead on
+// arrival and silently so, since dispatch has no turn-outcome reader for
+// codex to tell "did nothing" from "did the work" (cost.go).
+//
+// Resolving costs the session nothing: with the REAL path granted, a write
+// through the symlinked spelling still lands (measured with `codex sandbox`,
+// same bead), so RHQ_PERSONA_DIR and {memory} can go on naming the path the
+// operator typed. Every root is resolved, not just the persona dir — the
+// others (the store of record, the git dirs) are real paths on this box
+// today, which is why only codex's memory dir broke, and the next symlinked
+// constitution path would kill the lane the same silent way.
+//
+// resolveExisting is the primitive because a root need not exist yet — the
+// store's git dirs and the memory dir are named before the launch
+// materializes them, and the seatbelt already resolves the longest existing
+// prefix for the same reason (seatbelt.go). A root that resolves to nothing
+// at all renders as itself rather than dropping: a dropped root is the
+// silent cage of ranger-base-0fb, and a bad path is codex's to report out
+// loud, not ours to hide.
+func codexWritableRoot(p string) string {
+	if p == "" {
+		return ""
+	}
+	return resolveExisting(p)
 }
 
 // claude: --plugin-dir points a session at one rendered plugin dir, whose

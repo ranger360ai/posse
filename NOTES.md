@@ -1874,7 +1874,12 @@ Everything in codex's template above is a fix, not decoration:
   not allow additional writable roots"), so `realizeCodex` emits it only
   alongside `-s workspace-write` — where it is what makes the persona's
   memory dir writable (`touch $RHQ_PERSONA_DIR/x` → WRITABLE, verified).
-  Read-only needs none: codex reads the whole disk regardless.
+  Read-only needs none: codex reads the whole disk regardless. **Every root
+  is rendered resolved** (`codexWritableRoot`): codex refuses a writable root
+  with a symlink *component*, and refuses it when a command runs rather than
+  at launch, so a symlinked `personas/` dir made every dispatched codex
+  session come up and then fail every tool call, silently — measured on
+  codex-cli 0.150.1, `docs/notes.d/ranger-base-c02a.md`.
 - **`allow_login_shell=false` is a wall flag, not a nicety.** Codex
   otherwise runs each shell command through a login shell that re-sources
   the operator's rc files, and that re-prepends the login PATH *ahead* of

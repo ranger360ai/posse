@@ -434,7 +434,11 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 	// that measures nothing fails rather than passes (ranger-base-fm4p).
 	gitDir := filepath.Join(f.store, ".git")
 	line := f.a.renderedLaunchLine(open, codex, TierStrong, f.work)
-	pre := strings.ReplaceAll(line, " --add-dir "+shellQuote(gitDir), "")
+	// The line names the RESOLVED root since ranger-base-c02a (codex refuses
+	// a root with a symlink component, and t.TempDir() is behind /var ->
+	// /private/var here); the row below still judges the literal target,
+	// because underDir resolves both sides.
+	pre := strings.ReplaceAll(line, " --add-dir "+shellQuote(codexWritableRoot(gitDir)), "")
 	if pre == line {
 		t.Fatalf("the rendered line never named %s, so the control below measures nothing:\n%s", gitDir, line)
 	}
