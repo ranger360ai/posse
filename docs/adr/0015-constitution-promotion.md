@@ -12,7 +12,10 @@ the commit read, not the clean gate, keeps bytes == SHA
 ranger-base-70ry) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · amended
 2026-08-29: §3's fence widens to bd's destructive/egress verbs
-(ranger-base-u9ud, from ranger-base-3bqn) · informs 0002
+(ranger-base-u9ud, from ranger-base-3bqn) · amended 2026-08-29: §3's
+actor split gains a third and fourth spelling, at the commit and at the
+land (ranger-base-ak3e, from ranger-base-7pq0; recorded by
+ranger-base-ubtc) · informs 0002
 §3, 0012 D3-C, 0014 §3, 0025*
 
 > The operator asked for the constitution to be clearly separated from
@@ -244,6 +247,53 @@ the same way twice:
   in-process, defeated by an emptied environment, an alias, or a
   script that calls bd — never a cage. The wall against a session that
   means it is the L2/L4 boundary, unchanged by this amendment.
+- **The fence gains a third and fourth spelling — at the commit and at
+  the land** *(amended 2026-08-29, ranger-base-ak3e, from
+  ranger-base-7pq0; recorded by ranger-base-ubtc)*. The two spellings
+  above fence the `promote` COMMAND, and both are politeness.
+  ranger-base-7pq0 measured what that leaves open: 9dfbbd4 committed
+  all eleven `rhq/agents/*.md` crew PIDs from an uncaged persona
+  session and nothing refused — under shims there was no path-class
+  check anywhere, so §2/§3's "drafting is open to personas, promotion
+  is the operator's" held at the taking-effect path and not at the
+  commit a promote then reads. Two more spellings now sit on the
+  commit's own path:
+
+  *Third — the commit wall's constitution-path arm* (ADR 0002 §3, the
+  `prepare-commit-msg` slot; mechanism record in
+  `constitutionGuardBody`, `internal/rhq/gates.go`). When
+  `RHQ_PERSONA` is set — the same marker promote's own refusal reads —
+  a commit whose to-be-committed set touches `rhq/<p>` for each §1
+  promoted-set entry plus `rhq/envs` (in the constitution repo), or
+  `.claude/settings.json` / `.claude/settings.local.json` (in every
+  hooked repo — not this ADR's promoted set, but the same class by
+  blast radius: az93's deny list lives there, and a persona that can
+  commit it un-fences itself), is refused with the paths named and the
+  way through prescribed. The class is rendered FROM `PromotedPaths`
+  at hook-render time, so widening §1's list widens this wall in the
+  same edit. Cooperative class (ADR 0025): `env -i` scrubs the marker
+  and the arm stands down, the same residual promote's own env check
+  carries — it is a wall against the ordinary path, not a cage.
+
+  *Fourth — the launcher's land-path belt*
+  (`MergeSessionWork`, `internal/rhq/worktree.go`). The launcher
+  refuses to fast-forward a session branch whose merge-base..HEAD
+  diff touches the same class (one class, two readers:
+  `ConstitutionClassIn`, so belt and wall cannot drift apart). It runs
+  operator-side, under the launcher lock, about a branch already
+  written — a session cannot scrub an environment it is not in — and
+  it repairs nothing: the branch keeps every commit and the refusal
+  names the diff and the by-hand landing. Coverage is what crosses a
+  land: dispatched worktrees, not shared-checkout commits.
+
+  What this sharpens in §2, said plainly: drafting stays open — the
+  working tree stays writable, the refusal resets nothing — but
+  *committing the class paths* is now the operator's act too, one step
+  earlier than promotion. A persona's constitution draft goes under a
+  path outside the class (the az93 route the refusal prints), and the
+  operator applies it and promotes. The manifest remains the detector
+  at every tier; these spellings move the first refusal from
+  taking-effect to the commit.
 
 **4. The queue gets its own tree.** A new repo (proposed
 `~/src/ranger-queue`; name is the operator's to veto at ratification)
@@ -538,3 +588,5 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | `update-index --skip-worktree` (and `--assume-unchanged`) defeats the §3 clean gate: status reports the promoted path clean while its working-tree bytes differ from the blob | **MEASURED** 2026-08-27 (ranger-base-znma repro) |
 | promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/rhq/promote.go`, znma fix; runbook `docs/runbooks/home-cutover.md` agrees) |
 | the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
+| pre-ak3e, a persona session could commit the entire promoted set with nothing refusing (9dfbbd4: all eleven crew PIDs) | **MEASURED** 2026-08-29 (ranger-base-7pq0, verified at HEAD) |
+| the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/rhq/constitutionwall_qa_test.go`, `internal/rhq/constitutionland_qa_test.go`) |

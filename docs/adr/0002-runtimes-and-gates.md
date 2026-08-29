@@ -10,7 +10,11 @@ amended 2026-08-27 (ADR 0025: enforcement class on every realized gate;
 gets a single writer at the container tier) · amended 2026-08-27 (escape C,
 bead ranger-base-3csb: §3's closing sentence corrected — L3 is a cooperative
 backstop, not the boundary for the `/usr/bin/git` hole; `-c core.hooksPath`
-redirects past it with zero writes, measured)*
+redirects past it with zero writes, measured) · amended 2026-08-29
+(ranger-base-ubtc, recording ranger-base-ak3e: the commit slot gains a third
+arm — the constitution-path guard, keyed on `RHQ_PERSONA` on purpose — so §3
+L3's env-independence claim is re-scoped to the shared-index arm; the
+launcher's land path belts the same class, recorded as a note, not a tier)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -117,7 +121,7 @@ from the PID (source of truth; nothing hand-edited there survives):
 |---|---|---|---|
 | L0 politeness | any | runtime-native flags (§1) | whatever the runtime says it does — never counted as the wall |
 | L1 shims | `shims` (always on) | `gates/<p>/bin/<cmd>` for every `Bash(<cmd> <prefix>:*)`/`Bash(<cmd>)` deny; refuses when argv matches, else `exec`s the real binary resolved at render time; logs refusals to `gates/<p>/refusals.log`; PATH is prepended **on the typed command line** (`PATH=<bin>:$PATH <cmd>`), not in the workspace env, because macOS `path_helper` reorders PATH when the pane shell starts | any deny that is a shell verb, on any runtime |
-| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` refusing a commit that does not name a pathspec, from any shell in the hooked non-worktree checkout — not keyed on `RHQ_PERSONA` since the operator ruling on rangerhq-lt2w (2026-08-28; keyed until then, the way pre-push keys on `RHQ_TOOLS_DENY`): the working tree and its index are shared by every persona and the operator alike, an unqualified commit takes whatever anyone else has staged, and it also restages a stale shared index wholesale, so the exempt operator shell was the one form left that could silently revert a landed fix (rangerhq-8rtf's second half, closed outright by retiring the exemption — the private-index residual still makes a stale index, and nothing in a hooked checkout springs one) (both installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; after reconciliation, session create certifies each slot by identity — the file at git's own dispatch path (`git rev-parse --git-path hooks`) is byte-for-byte posse's current render, or the prescribed chain to it — paired with behavior of posse's OWN render, exec'd fresh from a private temp file and required to exit 1; the file at the dispatch path is never exec'd (ADR 0023: a marker was never trusted to decide, and now neither is raw exec'd behavior of bytes posse did not just write — identity is not a marker, it is the whole file); the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, and an unqualified `git commit`, via absolute path or any subprocess — `core.hooksPath` defeats both arms; `--no-verify` and `env -i` defeat the push arm only (`--no-verify` skips `pre-push`, not this slot; the commit arm reads no env to decide since rangerhq-lt2w — before the ruling `env -i` stripped `RHQ_PERSONA` and defeated it, measured 2026-08-27, and the no-persona refusal is pinned in lt2w's tests): cooperative class (ADR 0025) |
+| L3 hooks | `shims` (always on) | `.git/hooks/pre-push` refusing when `RHQ_TOOLS_DENY` matches `git push`, and `.git/hooks/prepare-commit-msg` carrying two arms: the **shared-index arm** refuses a commit that does not name a pathspec, from any shell in the hooked non-worktree checkout — not keyed on `RHQ_PERSONA` since the operator ruling on rangerhq-lt2w (2026-08-28; keyed until then, the way pre-push keys on `RHQ_TOOLS_DENY`): the working tree and its index are shared by every persona and the operator alike, an unqualified commit takes whatever anyone else has staged, and it also restages a stale shared index wholesale, so the exempt operator shell was the one form left that could silently revert a landed fix (rangerhq-8rtf's second half, closed outright by retiring the exemption — the private-index residual still makes a stale index, and nothing in a hooked checkout springs one); the **constitution-path arm** (ranger-base-ak3e, 2026-08-29, fixing ranger-base-7pq0's measured gap: a persona session committed all eleven crew PIDs and nothing refused) refuses, when `RHQ_PERSONA` is set, a commit whose to-be-committed set — `git diff --cached --name-only -z` under the hook's inherited `GIT_INDEX_FILE`, so a path-limited commit's own next-index, against the empty tree when there is no HEAD — touches the constitution class: in the constitution repo (top level carries `rhq/agents`), `rhq/<p>` per ADR 0015 promoted-set entry plus `rhq/envs`, rendered FROM `PromotedPaths` at hook-render time so widening the promoted set widens this wall in the same edit; in EVERY hooked repo, `.claude/settings.json` and `.claude/settings.local.json` (ranger-base-az93: that file carries the session's own deny list, and a persona that can commit it un-fences itself). This arm is keyed on `RHQ_PERSONA` **on purpose**, unlike its sibling: the shared-index arm is about the TREE and sweeps the operator too, while ADR 0015 §2/§3 splits drafting from ratification by ACTOR, the operator is the ratifying actor, and the env is a shared per-repo hook's only per-actor carrier — the same marker `posse promote`'s own refusal reads, no new spelling of "is this a persona". It sits ABOVE the shared-index arm because that arm stands down in a linked worktree and mid-merge, and a dispatched worktree is exactly where a persona's constitution commit comes from; the refusal names the staged class paths, prescribes the stage-outside-the-class route (az93's), and resets nothing (both hook files installed by `posse gates install-hooks` and at session create, marker-commented, never overwrite a foreign hook; after reconciliation, session create certifies each slot by identity — the file at git's own dispatch path (`git rev-parse --git-path hooks`) is byte-for-byte posse's current render, or the prescribed chain to it — paired with behavior of posse's OWN render, exec'd fresh from a private temp file and required to exit 1; the file at the dispatch path is never exec'd (ADR 0023: a marker was never trusted to decide, and now neither is raw exec'd behavior of bytes posse did not just write — identity is not a marker, it is the whole file); the commit guard takes `prepare-commit-msg` because `pre-commit` is bd's and because `--no-verify` skips `pre-commit` but not this slot) | `git push`, an unqualified `git commit`, and a persona commit touching the constitution class, via absolute path or any subprocess — `core.hooksPath` defeats all three arms; `--no-verify` skips `pre-push` only, never this slot; `env -i` defeats the push arm **and the constitution arm** (each reads env by design: `RHQ_TOOLS_DENY` and `RHQ_PERSONA` are per-actor facts, and the env is a shared per-repo hook's only per-actor carrier) but not the shared-index arm, which reads no env to decide since rangerhq-lt2w (before that ruling `env -i` stripped `RHQ_PERSONA` and defeated it too, measured 2026-08-27; the no-persona refusal is pinned in lt2w's tests): cooperative class (ADR 0025), all three arms. Behind the constitution arm, outside the session's reach: the land-path belt — the launcher refuses to fast-forward a session branch whose merge-base..HEAD touches the same class (2026-08-29 amendment below) |
 | L2 seatbelt | `seatbelt` | `sandbox-exec -f gates/<p>/seatbelt.sb` wrapping the rendered command: deny `file-write*` except cwd, `{memory}`, the runtime's state dir (`~/.claude`,`~/.codex`,`~/.grok`), `$TMPDIR`; PID may add `writable:` paths; parametrized `Edit(<glob>)` is a trailing `subpath` deny after that allow (ADR 0014; last match wins) | `Edit`/`Write`-class denies on any runtime — bare and subtree-glob; the only runtime-proof file gate |
 | L4 container | `container` | runtime runs inside a container (engine = a command template, `RHQ_HOME/cages/<engine>.yaml`, Docker default) with the repo and `{memory}` mounted and **nothing else of the host**; typed in the pane through an argv0 launcher `state/cages/<p>/bin/<runtime>` so herdr still sees `claude`/`codex`/`grok`; joined to a `--internal` network whose only other member is a CONNECT proxy holding `egress:`; L1 and L3 **re-rendered inside** (below); herdr socket **not mounted unless the PID says `sockets: [herdr]`**; path-scoped writes are `:ro` overlays, and a `:ro` repo always gets `.beads`/`.git` (and `writable:`) as read-write overlays (ADR 0014 §4) | `egress:` (hosts the persona may reach); the mount boundary (`Edit`/`Write` denies by mounting the repo `:ro`, scoped globs by overlay) — the successor of L2, which cannot wrap a container; hostile-input work, untrusted runtimes |
 
@@ -781,3 +785,86 @@ directory seed unlocks nothing there.
 - **Suppress project settings from the launch line instead.** Measured
   above: `--settings` adds a source, it does not replace one. There is
   nothing to type.
+
+## Amendment 2026-08-29 — the commit slot's third arm reads `RHQ_PERSONA` on purpose, and the launcher belts it at the land
+
+*Recorded by ranger-base-ubtc; built and pinned in ranger-base-ak3e, fixing
+ranger-base-7pq0. This amendment records a landed design; the canonical
+mechanism record is `constitutionGuardBody`'s doc comment
+(`internal/rhq/gates.go`) and the class vocabulary in
+`internal/rhq/promote.go`.*
+
+### Context
+
+Measured 2026-08-29 (ranger-base-7pq0, verified at HEAD): commit 9dfbbd4 in
+the constitution repo edited all eleven `rhq/agents/*.md` crew PIDs from an
+uncaged persona session and nothing refused it. Every wall that existed
+checked something else — the PID deny list fences COMMANDS
+(`Bash(posse promote:*)`), the shared-index arm checks the commit's FORM
+(qualified pathspec), the land path checked bead and branch state, and the
+only path-CLASS check in the tree was seatbelt's `ConstitutionGrants`, which
+is EPERM under `cage: seatbelt` and prose for the seven of eight personas
+running at shims. ADR 0015 §2's "drafting is open to personas, promotion is
+the operator's" held for the taking-effect path and not for the commit a
+promote then reads.
+
+### What ak3e built (recorded, not changed)
+
+1. **The constitution-path arm**, third arm of the `prepare-commit-msg`
+   slot — §3's L3 row now carries it in full. One deliberate reversal of the
+   lt2w posture is the point worth a section: lt2w removed `RHQ_PERSONA`
+   from the shared-index arm because that arm is about the *tree* and the
+   operator's own unqualified commit was the last form that could spring a
+   stale index. This arm is about the *actor* — ADR 0015 §2/§3 splits
+   drafting from ratification by actor and the operator IS the ratifying
+   actor — so it keys on the marker deliberately, and the row's old blanket
+   claim "the commit arm reads no env" is re-scoped to the shared-index arm
+   alone. `env -i` therefore defeats this arm the way it defeats `pre-push`:
+   the known cooperative-class residual (ADR 0025), stated, not discovered.
+2. **The land-path belt.** `MergeSessionWork` (`internal/rhq/worktree.go`)
+   refuses to fast-forward a session branch whose merge-base..HEAD diff
+   touches the same class. It runs in the launcher process, operator-side,
+   under the launcher lock, about a branch that is already written — a
+   session cannot scrub an environment it is not in. Reported, never
+   repaired: the branch keeps every commit, the sweep prints the refusal
+   naming the diff to read and the two commands that land it by hand, and a
+   diff git cannot read is an obstacle, never a wave-through. Work the base
+   already holds under other SHAs still reports as landed.
+3. **One class, two readers.** `ConstitutionClassIn` / `InConstitutionClass`
+   / `ConstitutionTouched` (`promote.go`) are the Go spelling of what the
+   hook renders into sh, and the repo list is built from `PromotedPaths`, so
+   the belt cannot drift into covering a different set than the wall and a
+   path added to the promoted set widens both in the same edit.
+
+### The belt is a note on L3, not a tier row (the call this amendment makes)
+
+§3's table enumerates layers rendered at launch into the session's reach and
+counted by §4's parity machine per PID gate. The belt is neither: it
+realizes no PID gate, is rendered nowhere a session runs, and parity must
+not count it. In ADR 0025's vocabulary it has the property that *defines*
+`enforced` — held outside the gated process, surviving an adversarial one —
+but it is a policy check in the launcher, not a kernel or route boundary,
+and its coverage is only what crosses a land: a commit in a SHARED checkout
+(a crew session, or dispatch onto a detached HEAD) never crosses the land
+path, so there the cooperative arm and ADR 0015 §3's promote manifest are
+all there is. Claiming a tier would overclaim exactly the way "realized"
+used to. The precedent is ADR 0025 §3's push-effect note: an enforced
+backstop stated on the class line, never a computed claim.
+
+### Consequences
+
+- Detection is unchanged and remains ADR 0015 §3's launch-verify manifest,
+  at every tier, whoever changed the promoted copy and however.
+- Pins, all landed with ak3e: the wall in
+  `internal/rhq/constitutionwall_qa_test.go` (refuses every class member
+  persona-marked, passes the identical commit unmarked and a persona commit
+  off the class, refuses on the root commit, on a deletion, and in a linked
+  worktree, sits above the shared-index arm;
+  `TestQAConstitutionWallRenderNamesEveryPromotedPath` fails the render if
+  `PromotedPaths` widens without the wall; …`InstallDocNamesTheWholeClass`
+  pins INSTALL.md against the class). The belt in
+  `internal/rhq/constitutionland_qa_test.go`, mutation-checked per class
+  member, including that the refusal prescribes `posse promote` only where
+  a promote applies.
+- ADR 0015 §3 carries the matching amendment: the fence is now spelled four
+  times, and which spellings are walls is stated there per spelling.
