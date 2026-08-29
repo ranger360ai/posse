@@ -356,7 +356,7 @@ $RHQ_HOME/
   examples/agents/ ← the nine reference PIDs, to read and copy from —
                     seeded here because a PID in agents/ is a live lane
   recipes/        ← three example recipes
-  envs/           ← two example env sets   (dir 0700, files 0600)
+  envs/           ← two example env sets (0700/0600); never commit it
   skills/         ← empty; the skills registry
   state/          ← empty; machine-local, never commit it
   promoted.json   ← the manifest: sha256 per promoted file, marked `seeded`
@@ -372,13 +372,30 @@ Not created, and you make them yourself when you need them:
 missing; it will not undo your edits.
 
 If your instance home is inside a git repo, commit everything except
-`state/`:
+`state/` and `envs/`:
 
 ```sh
 $ cd ~/src/<your-instance-repo>
-$ echo 'rhq/state/' >> .gitignore
+$ cat >> .gitignore <<'EOF'
+# Secrets never enter git, even in a private repo — env-set values live
+# only as 600 files on this machine (or come from a secret manager).
+posse/envs/
+
+# Runtime state: herdr session meta, slot registries — machine-local.
+posse/state/
+EOF
 $ git add -A && git commit -m 'posse: seed instance from posse examples'
 ```
+
+Those two paths are relative to the repo root, so they name the directory
+`RHQ_HOME` points at — `posse/` above. Name yours whatever you named it.
+
+Nothing is lost by leaving `envs/` untracked. A fresh clone of the instance
+repo has no `envs/`; `posse init` re-seeds the two examples with their modes,
+and because init never overwrites and only fills in what is missing, running
+it on a clone costs nothing. The values themselves were never git's to hold:
+the 0700/0600 modes do not survive a commit, so the gitignore is the actual
+boundary.
 
 **Or keep the two apart, which is what ADR 0015 recommends once the
 instance has personas editing their own prose.** Draft the constitution —
@@ -477,6 +494,10 @@ values. That masking is the point; check it holds for anything you add.
 Rules:
 
 - `envs/` is `0700` and its files `0600`. Keep it that way.
+- **`envs/` is never committed**, not even to a private instance repo (§4
+  gitignores it). The 0700/0600 modes do not survive a commit, so the gitignore
+  is the boundary; a clone gets its values back from `posse init`'s examples
+  or from your secret manager, never from history.
 - Plain `KEY=VALUE` lines, passed verbatim. No shell expansion, no quotes
   stripped.
 - **Secrets live here or in a secret manager — never in `config.yaml`,
