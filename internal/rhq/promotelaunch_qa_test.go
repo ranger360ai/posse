@@ -306,7 +306,19 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	// Item 3: one byte at the HOME — dispatch refuses, interactive warns,
 	// re-promote clears, and the whole check costs what the ADR assumed.
 	b, _ := newTestBackend(t)
-	b.App = a
+	// The App the launches run on is the runbook's own, built from RHQ_HOME
+	// above — rehearsing the real home is the point of this test. But
+	// swapping it in throws away the defaults newTestBackend installed, and
+	// both of those fall back to the operator's live box (app.go): until
+	// ranger-base-w4fb the two launch arms below read the machine's real
+	// 1-minute loadavg, so the whole rehearsal went red whenever the box
+	// was busy — which is exactly when someone runs the full suite, the
+	// suite being its own load source. hermetic re-arms them; the check is
+	// here so that dropping it fails on any box, not only a loaded one.
+	b.App = hermetic(a)
+	if b.App.Load1 == nil || b.App.ModelLister == nil {
+		t.Fatal("the swapped-in App is not hermetic: these launches would read the operator's live box")
+	}
 	var warn bytes.Buffer
 	b.Warn = &warn
 	pid := filepath.Join(a.AgentsDir, "devops.md")

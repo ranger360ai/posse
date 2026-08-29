@@ -102,6 +102,35 @@ func TestSysLoad1ReadsThisBox(t *testing.T) {
 	}
 }
 
+// A launch inside a test must not consult the box the suite is running on.
+// newTestBackend stubs App.Load1 for that (hermetic, herdr_test.go); an App
+// that loses the stub reads SysLoad1 instead, and then every launch arm in
+// that test is refused whenever the machine is busy. That is how
+// TestQAHomeCutoverRehearsal came to fail under exactly the thing everyone
+// does — a full `go test ./...`, which is itself a load source, more so
+// with several personas verifying at once (ranger-base-w4fb).
+//
+// The assertion is the guard's own effect rather than a nil check, so it
+// holds however the reading is lost. The ceiling is set below any load a
+// box that is running this test can show: the stub's 0 clears it, a live
+// reading does not.
+func TestTestBackendLaunchesDoNotReadThisBox(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := os.WriteFile(b.App.ConfigPath, []byte("load_guard: 0.01\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The control, taken from the box directly — the one reading the
+	// mutation this pins cannot reach. Unless the live number really is
+	// over the ceiling, a green below is a green that measured nothing.
+	live, err := SysLoad1()
+	if err != nil || live <= 0.01 {
+		t.Skipf("this box reads %g (%v), not over the test's ceiling: nothing was measured", live, err)
+	}
+	if why := b.App.LoadHigh(io.Discard); why != "" {
+		t.Errorf("a test App read the machine the suite is running on: %s", why)
+	}
+}
+
 // The pass half of the ask: one witness line, nothing launched, no error —
 // --watch keeps its cadence and the next pass reads fresh.
 func TestDispatchSkipsThePassOverTheLoadGuard(t *testing.T) {

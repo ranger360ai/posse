@@ -1181,22 +1181,35 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := NewAppAt(home)
-	// Hermetic by construction, like RHQ_FAKE_HERDR above: an unconfigured
-	// lister reads no keychain and reaches no network, and the availability
-	// preflight takes that as UNKNOWN and launches the tier exactly as asked
-	// (modelavail.go). Tests that want the preflight to DO something seed
-	// the snapshot or set this field.
-	a.ModelLister = &ModelLister{}
-	// Same reason, one guard further on: the load guard (loadguard.go)
-	// reads the 1-minute load average of whatever box the suite is running
-	// on, and a suite that goes red because something ELSE saturated the
-	// machine is red per-day, not per-commit. Quiet by construction; the
-	// tests that want the guard to fire set this field.
-	a.Load1 = func() (float64, error) { return 0, nil }
-	b := &HerdrBackend{App: a, H: Herdr{Bin: exe}}
+	b := &HerdrBackend{App: hermetic(NewAppAt(home)), H: Herdr{Bin: exe}}
 	captureWarn(t, b)
 	return b, fake
+}
+
+// hermetic gives an App the two fake-by-construction defaults every launch
+// path in a test needs, like RHQ_FAKE_HERDR above. Both fields are nil on a
+// real App and nil means the operator's own box (app.go), so a test that
+// leaves them there measures the machine the suite happens to be running on
+// and is red per-day, not per-commit.
+//
+//   - ModelLister: an unconfigured lister reads no keychain and reaches no
+//     network, and the availability preflight takes that as UNKNOWN and
+//     launches the tier exactly as asked (modelavail.go). Tests that want
+//     the preflight to DO something seed the snapshot or set this field.
+//   - Load1: the load guard (loadguard.go) otherwise reads this box's
+//     1-minute load average, and refuses every launch in the test when it
+//     is over `load_guard:`. Quiet by construction; the tests that want the
+//     guard to fire set this field.
+//
+// It is a named function rather than four lines inside newTestBackend
+// because a test that builds its OWN App and swaps it behind the backend
+// silently drops every default installed here — which is what left the
+// promote/launch rehearsal reading the live loadavg (ranger-base-w4fb).
+// Adopt an App with this, and adding the next default covers both sites.
+func hermetic(a *App) *App {
+	a.ModelLister = &ModelLister{}
+	a.Load1 = func() (float64, error) { return 0, nil }
+	return a
 }
 
 // captureWarn points a test backend's warning stream at a per-test buffer.
