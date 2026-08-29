@@ -371,9 +371,12 @@ of the harness core:
    (rangerhq-khc: a 40-minute bead was handed back on one blank poll while
    its session worked on for another 40). **A `--wait` timeout never
    unclaims.** Every other prompt error (`agent_prompt_stalled`,
-   `agent_not_ready`) still does: those mean the prompt never took.
-   Unclaiming live work re-dispatched it into a second fresh session and
-   lost the assignee for `posse cost`/`scorecard`.
+   `agent_not_ready`, `agent_blocked`) still does: those mean the prompt
+   never took. Unclaiming live work re-dispatched it into a second fresh
+   session and lost the assignee for `posse cost`/`scorecard`. herdr 0.8.2
+   added the third code: `agent prompt` refuses an agent already sitting at
+   an approval or question dialog and sends neither text nor Enter, where
+   0.8.0 typed into it and the text was swallowed (rangerhq-ejf).
 
 **The `await` in that sequence is the readiness gate**, and it waits for a
 state herdr can *see* (`awaitSettled`, `internal/rhq/dispatch.go`). herdr
@@ -4422,8 +4425,9 @@ Windows, desktop UI, and copy-mode):
   dialog. That is the `agent_prompt_stalled` failure closed off upstream.
   `Herdr.Run` surfaces it as a typed `HerdrAPIError`, and dispatch's
   "anything that is not `timeout` means the prompt never landed" rule already
-  handles it correctly (claim released, bead unclaimed) — but the code is not
-  in any comment or QA fixture yet (rangerhq-ejf).
+  handles it correctly (claim released, bead unclaimed). Recorded in
+  `HerdrAPIError`'s and `unclaimAfterPromptFailure`'s doc comments and pinned
+  by `TestDispatchPromptAgentBlockedUnclaims` (rangerhq-ejf).
 - **`agent start` now waits for pane shells and first-run prompts** instead of
   reporting premature readiness. posse does not use `agent start` (it types into
   the pane and waits with `agent wait --until idle,done`), so this is upstream

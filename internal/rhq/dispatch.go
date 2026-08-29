@@ -21,13 +21,13 @@ package rhq
 //     → prompt "work <id>" --wait in a goroutine and move on to the next
 //       bead: a pass fires every routable bead first, then gathers the
 //       settles in launch order — one long bead no longer stalls the pass
-//       (rangerhq-tqr). A prompt that fails (stalled, agent_not_ready)
-//       unclaims the bead; a --wait timeout never does — it asks herdr what
-//       the agent is doing, keeps the claim and waits again while it is
-//       still working (rangerhq-1z0), and keeps it too when herdr cannot
-//       say: a wait running out is not evidence the prompt failed to land,
-//       and one blink of detection must not free a bead somebody is
-//       working (rangerhq-khc)
+//       (rangerhq-tqr). A prompt that fails (stalled, agent_not_ready,
+//       agent_blocked) unclaims the bead; a --wait timeout never does — it
+//       asks herdr what the agent is doing, keeps the claim and waits
+//       again while it is still working (rangerhq-1z0), and keeps it too
+//       when herdr cannot say: a wait running out is not evidence the
+//       prompt failed to land, and one blink of detection must not free a
+//       bead somebody is working (rangerhq-khc)
 //     → closed by the persona → ✓ · blocked → flagged for a human
 //       (herdr's sidebar already shows it) · settled-but-open → review
 //     → end of pass: the auto-reap sweep (autoreap.go, rangerhq-us8) kills
@@ -3109,7 +3109,9 @@ type sessionFailure struct{ error }
 func (e sessionFailure) Unwrap() error { return e.error }
 
 // unclaimAfterPromptFailure hands the bead back when the claim was made but
-// the prompt never reached the agent (stalled, agent_not_ready — never a
+// the prompt never reached the agent (stalled, agent_not_ready, and since
+// herdr 0.8.2 agent_blocked — an agent already at an approval or question
+// dialog, refused with no text and no Enter sent, rangerhq-ejf — never a
 // --wait timeout, which says nothing about whether the prompt landed).
 // The claim happens before the prompt so a race loses cleanly;
 // the price is this cleanup — without it every failed prompt strands a bead

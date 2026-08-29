@@ -1655,6 +1655,48 @@ func TestDispatchPromptServerGoneUnclaims(t *testing.T) {
 	}
 }
 
+// rangerhq-ejf: herdr 0.8.2's `agent prompt` refuses an agent already
+// waiting at an approval or question dialog with agent_blocked, sending
+// neither text nor Enter. 0.8.0 typed into the dialog and the text was
+// swallowed — the agent_prompt_stalled failure (rangerhq-1z0, rangerhq-81d).
+// So the code arrives as an ordinary non-timeout code and takes
+// unclaimAfterPromptFailure, which is exactly the right verdict: herdr sent
+// nothing, so the prompt provably never landed and the claim must not
+// strand.
+//
+// A session herdr already reports `blocked` never reaches the prompt at all
+// (awaitAgent fails the launch by name), so the window this code covers is
+// the one between awaitSettled's read and the prompt call — which is why a
+// fixture idle at settle time and blocked at prompt time is the honest
+// shape.
+func TestDispatchPromptAgentBlockedUnclaims(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"x","status":"closed"}]`)
+	idleClaude(t, fake)
+	os.WriteFile(filepath.Join(fake, "prompt-error"),
+		[]byte("agent_blocked|agent is at an approval dialog; no text was sent"), 0o644)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatalf("a blocked agent must not abort the pass: %v", err)
+	}
+	out := dispatcherOut(d)
+	if n != 0 || !strings.Contains(out, "unclaimed") {
+		t.Errorf("agent_blocked is not a timeout — it unclaims, got n=%d:\n%s", n, out)
+	}
+	// The operator's line is the only place the code survives into
+	// state/dispatch-watch.log, and agent_blocked is the one prompt error
+	// with a fix the operator performs by hand (answer the dialog).
+	if !strings.Contains(out, "agent_blocked") {
+		t.Errorf("the \u2717 line must name the code:\n%s", out)
+	}
+	if !strings.Contains(bdCalls(t, fake), "--actor ranger update a-1 --status open --assignee  --json") {
+		t.Errorf("81d: herdr sent no text, so a-1 must be handed back:\n%s", bdCalls(t, fake))
+	}
+}
+
 // ranger-base-xotg: the pass's queue is ONE queue. Two beads sources
 // (config `beads:` lists more than one repo, and each gets its own `bd
 // ready` call) used to be concatenated, so priority held inside a source

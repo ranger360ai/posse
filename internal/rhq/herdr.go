@@ -133,8 +133,15 @@ type herdrError struct {
 // HerdrAPIError is a herdr API envelope error. The code is the part callers
 // can branch on — a --wait that ran out of patience ("timeout") says nothing
 // about whether the prompt landed, while agent_prompt_stalled /
-// agent_not_ready say it did not (rangerhq-1z0). Matching on the message
-// text would be a guess; the code is herdr's contract.
+// agent_not_ready / agent_blocked say it did not (rangerhq-1z0). Matching on
+// the message text would be a guess; the code is herdr's contract.
+//
+// agent_blocked is herdr 0.8.2's addition: `agent prompt` now refuses an
+// agent already waiting at an approval or question dialog and sends neither
+// text nor Enter, where 0.8.0 typed into the dialog and the text was
+// swallowed. It is the agent_prompt_stalled failure closed off upstream —
+// same verdict for a caller, now stated by herdr rather than inferred
+// (rangerhq-ejf).
 type HerdrAPIError struct {
 	Code    string
 	Message string
