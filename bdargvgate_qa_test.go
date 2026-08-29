@@ -112,7 +112,7 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"bd --no-daemon daemon --help":              "daemon",
 		"bd --json --no-daemon daemon stop":         "daemon",
 		"bd --db /tmp/x daemon stop":                "daemon",
-		"bd --actor someone daemon stop":           "daemon",
+		"bd --actor someone daemon stop":            "daemon",
 		"bd --lock-timeout 5s daemon stop":          "daemon",
 		"cd /tmp && bd --no-daemon daemons killall": "daemons",
 		"/Users/x/.local/bin/bd daemon stop":        "daemon",
@@ -212,6 +212,16 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 	if r := runGateRaw(t, nil, "this is not json at all"); r.code != 0 {
 		t.Errorf("unreadable payload with no bd in it must be left alone, got code=%d %q", r.code, r.stderr)
 	}
+	// The wrapper answers a payload with no `bd` in it from a shell builtin,
+	// without starting an interpreter — that fast path is what keeps this
+	// hook off the fleet's critical path. It must not be reachable by a
+	// spelling the PARSER would have refused: a JSON-escaped `bd` decodes
+	// after the substring test, so the escape keeps the call on the slow
+	// path (delete the `*'\u'*` arm and this is waved through).
+	if r := runGateRaw(t, nil, `{"tool_name":"Bash","tool_input":{"command":"\u0062d daemon stop"}}`); denied(t, r) == "" {
+		t.Errorf("a JSON-escaped bd must still reach the parser, got code=%d out=%q", r.code, r.stdout)
+	}
+
 	// And a call for another tool is never this gate's business, even when
 	// its arguments happen to spell bd.
 	if r := runGateRaw(t, nil, `{"tool_name":"Read","tool_input":{"file_path":"/x/bd/y"}}`); r.code != 0 || r.stdout != "" {

@@ -70,7 +70,6 @@ ALLOWED = {
 SUBDENY = {
     "dep": {"subs": {"relate"}, "opts": set()},
     "sync": {"subs": set(), "opts": {"--full"}},
-    "config": {"subs": set(), "opts": set()},  # verb not allowed at all
 }
 
 # Verbs whose refusal has a standing reason worth printing.

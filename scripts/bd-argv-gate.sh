@@ -25,10 +25,25 @@ python=${BD_ARGV_GATE_PYTHON:-python3}
 
 input=$(cat)
 
+# Fast path: this hook runs on EVERY Bash call, and starting an interpreter
+# for `go test` is a tax on the whole fleet. A payload with no `bd` in it at
+# all cannot produce any refusal below — every one of them requires bd to be
+# named — so it is answered here by a shell builtin, ~0 ms instead of ~30 ms.
+# `\u` keeps a JSON-escaped spelling on the slow path rather than trusting
+# that the harness never emits one. The test is a SUBSTRING, deliberately
+# looser than the parser's word match.
+case $input in
+  *bd*|*'\u'*) ;;
+  *) exit 0 ;;
+esac
+
 err=$(mktemp "${TMPDIR:-/tmp}/bd-argv-gate.XXXXXX") || err=/dev/null
 [ "$err" = /dev/null ] || trap 'rm -f "$err"' EXIT HUP INT TERM
 
-out=$(printf '%s' "$input" | "$python" "$py" 2>"$err")
+# -S -E: no site dir, and PYTHON* env ignored — a PYTHONPATH pointing at a
+# fake `shlex.py` would otherwise be a way to neuter the parser. Also the
+# difference between 30 ms and 13 ms per call (measured, python 3.14).
+out=$(printf '%s' "$input" | "$python" -S -E "$py" 2>"$err")
 rc=$?
 if [ "$rc" -eq 0 ]; then
   [ -n "$out" ] && printf '%s\n' "$out"
