@@ -109,6 +109,19 @@ OPAQUE = ("$(", "`", "${", "eval ", "eval\t", "<(", ">(")
 
 SEPARATORS = ("&&", "||", ";;", ";", "|", "&", "\n")
 
+# A redirection as shlex hands it over: optional fd digits, the operator, and
+# the target either glued on (`2>&1`, `>/tmp/o`) or standing as the next token
+# (`> /tmp/o`). Punctuation, never the thing being run — before ranger-base-4txk
+# neither resolver skipped it, so `bd --help > /tmp/o` resolved to the verb `>`
+# and was refused, while `> /tmp/o bd daemon stop` resolved to the command word
+# `>` and was WAVED THROUGH (both MEASURED against the shipped gate).
+REDIRECT = re.compile(r"^\d*(?:>>|>\||>&|>|<<<|<<|<&|<>|<)")
+
+# What a command substitution collapses to for the tokenizer. shlex has no
+# idea `$(a | b)` is one word, so its contents used to tokenize into command
+# words of their own.
+SUBST_WORD = "$__subst__"
+
 # bd as a WORD in a line this parser reads only as text. Same expression the
 # sh wrapper uses for its own fail-closed fallback; keep them spelled alike.
 BD_WORD = re.compile(r"(^|[^A-Za-z0-9_.\-])bd([^A-Za-z0-9_\-]|$)")
@@ -116,13 +129,33 @@ BD_WORD = re.compile(r"(^|[^A-Za-z0-9_.\-])bd([^A-Za-z0-9_\-]|$)")
 GATE = "bd-argv-gate"
 
 
+def in_redirect(cur, command, i):
+    """True when the `&`/`|` at command[i] is redirection, not a separator.
+
+    `2>&1` is one redirection; splitting it left the fragment `bd 2>` behind,
+    whose resolved verb was `2>` (ranger-base-4txk). `&>file` and `>|file` are
+    the same mistake spelled differently.
+    """
+    if cur and cur[-1] in "<>":
+        return True                     # 2>&1, >&2, >|f, <&3
+    return command.startswith("&>", i)  # &>f, &>>f
+
+
 def segments(command):
     """Split a command line into pipeline/list segments, quotes respected.
 
     Returns (segment, opaque) pairs: `opaque` marks a segment this parser
     read only approximately (an unterminated quote, a substitution).
+
+    A command substitution is NOT split: its contents are one word to the
+    shell, and tearing them apart at their pipes invented fragments whose
+    command word was whatever followed — `$PATH` in the fleet's standard
+    PATH-stripping preamble, which the `$`-variable arm then refused on any
+    line that also named bd (ranger-base-4txk). `(subshell)` groups are
+    deliberately still split: they are real segments, and tokens() strips
+    their parens.
     """
-    out, cur, quote, i = [], [], None, 0
+    out, cur, quote, depth, tick, i = [], [], None, 0, False, 0
     while i < len(command):
         ch = command[i]
         if quote:
@@ -145,7 +178,28 @@ def segments(command):
             cur.append(command[i])
             i += 1
             continue
+        if command.startswith(("$(", "<(", ">("), i):
+            depth += 1
+            cur.append(command[i:i + 2])
+            i += 2
+            continue
+        if depth:
+            depth += {"(": 1, ")": -1}.get(ch, 0)
+            cur.append(ch)
+            i += 1
+            continue
+        if ch == "`":
+            tick = not tick
+            cur.append(ch)
+            i += 1
+            continue
+        if tick:
+            cur.append(ch)
+            i += 1
+            continue
         hit = next((s for s in SEPARATORS if command.startswith(s, i)), None)
+        if hit in ("&", "&&", "|", "||") and in_redirect(cur, command, i):
+            hit = None
         if hit:
             out.append("".join(cur))
             cur = []
@@ -157,9 +211,68 @@ def segments(command):
     return [(s, quote is not None) for s in out if s.strip()]
 
 
+def mask_subst(text):
+    """Collapse each UNQUOTED command substitution to one opaque word.
+
+    shlex tokenizes on whitespace and knows nothing of `$( )`, so
+    `NEWPATH=$(echo "$PATH" | tr ':' '\\n')` came apart into `NEWPATH=$(echo`,
+    `$PATH`, `|`, … and the resolver read `$PATH` as a command word
+    (ranger-base-4txk). A QUOTED substitution needs no masking — shlex already
+    keeps it in one token — and the contents are unreadable to this parser
+    either way: OPAQUE refuses any segment carrying one that mentions bd, so
+    what is masked here is only ever a segment bd is not in.
+
+    The placeholder keeps its `$`, so a substitution standing where a command
+    word goes is still an indirection this gate will not vouch for.
+    """
+    out, quote, depth, i = [], None, 0, 0
+    while i < len(text):
+        ch = text[i]
+        keep = depth == 0
+        if quote:
+            if keep:
+                out.append(ch)
+            if ch == quote:
+                quote = None
+            elif ch == "\\" and quote == '"' and i + 1 < len(text):
+                i += 1
+                if keep:
+                    out.append(text[i])
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            if keep:
+                out.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < len(text):
+            if keep:
+                out.append(text[i:i + 2])
+            i += 2
+            continue
+        if depth == 0 and text.startswith(("$(", "<(", ">("), i):
+            depth = 1
+            out.append(SUBST_WORD)
+            i += 2
+            continue
+        if depth:
+            depth += {"(": 1, ")": -1}.get(ch, 0)
+            i += 1
+            continue
+        if ch == "`":                   # the older spelling of the same thing
+            end = text.find("`", i + 1)
+            out.append(SUBST_WORD)
+            i = len(text) if end < 0 else end + 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def tokens(segment):
     """Tokenize one segment. Returns None when it cannot be read."""
-    stripped = segment.strip().lstrip("({ \t").rstrip(")} \t")
+    stripped = mask_subst(segment).strip().lstrip("({ \t").rstrip(")} \t")
     try:
         return shlex.split(stripped)
     except ValueError:
@@ -171,8 +284,20 @@ def is_bd(word):
     return os.path.basename(word) == "bd"
 
 
+def skip_redirect(toks, i):
+    """Index past the redirection at toks[i], or None when it is not one."""
+    m = REDIRECT.match(toks[i])
+    if not m:
+        return None
+    # A bare operator takes the NEXT token as its target (`> /tmp/o`); a glued
+    # one carries its own (`>/tmp/o`, `2>&1`). Consuming the target matters for
+    # the fence, not just for tidiness: without it `bd > /tmp/o daemon stop`
+    # resolves to the verb `/tmp/o`, which is not `daemon`.
+    return i + (1 if m.end() < len(toks[i]) else 2)
+
+
 def command_word(toks):
-    """Resolve the command word, skipping assignments and wrappers.
+    """Resolve the command word, skipping redirections, assignments, wrappers.
 
     Returns (word, rest) or (None, None) when the segment has no command
     word this parser will vouch for.
@@ -180,6 +305,10 @@ def command_word(toks):
     i = 0
     while i < len(toks):
         t = toks[i]
+        nxt = skip_redirect(toks, i)
+        if nxt is not None:
+            i = nxt                     # `> /tmp/o bd daemon stop`
+            continue
         if "=" in t and not t.startswith("-") and t.split("=", 1)[0].isidentifier():
             i += 1                      # FOO=bar bd …
             continue
@@ -197,13 +326,17 @@ def command_word(toks):
 
 
 def resolve_verb(args):
-    """Skip bd's global options; return (verb, rest) or (None, [])."""
+    """Skip bd's global options and redirections; (verb, rest) or (None, [])."""
     i = 0
     while i < len(args):
         a = args[i]
         if a == "--":
             i += 1
             break
+        nxt = skip_redirect(args, i)
+        if nxt is not None:
+            i = nxt                     # `bd --help > /tmp/o` is still usage
+            continue
         if a in BD_VALUE_OPTS:
             if i + 1 >= len(args):
                 return None, []         # dangling; bd's own usage error

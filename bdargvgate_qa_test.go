@@ -134,6 +134,23 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"BD=bd; $BD daemon stop":                    "$BD",
 		"bd --no-daemon 'daemon' stop":              "daemon",
 
+		// A REDIRECTION IS PUNCTUATION, AND IT MUST NOT HIDE A VERB
+		// (ranger-base-4txk). The fix that stopped reading `>` as the verb had
+		// to consume the redirect's TARGET too, and had to reach the command
+		// word as well as the verb — `> /tmp/o bd daemon stop` resolved its
+		// command word to `>` and RAN through the shipped fence (MEASURED).
+		// Each row is refused for the verb bd would really have run: skip one
+		// token too many and the reason names `/tmp/o` or `reset` instead, so
+		// these fail on an over-eager skip as loudly as on no skip at all.
+		"bd > /tmp/o daemon stop":           "daemon",
+		"bd >/tmp/o admin reset":            "admin",
+		"bd --json 2>/dev/null daemon stop": "daemon",
+		"> /tmp/o bd daemon stop":           "daemon",
+		"bd 2>&1 daemon stop":               "daemon",
+		// …and the substitution that is no longer split must not swallow the
+		// rest of the line with it.
+		`X=$(echo hi | wc -l); bd daemon stop`: "daemon",
+
 		// The SHELL's own spellings of bd, in the same table as the literal
 		// one (ranger-base-hthx). The parser resolves the command word with
 		// shlex before it asks whether the basename is bd, so each of these
@@ -213,6 +230,41 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		`b\'d daemon stop`,          // literal b'd
 		`sed 's/a/b/' f`,
 		`echo "b"`,
+
+		// ORDINARY LINES THE GATE USED TO REFUSE (ranger-base-4txk, inverted
+		// from TestQABdArgvGateRefusesOrdinaryLines, which measured exactly
+		// these). resolve_verb returned the first token that did not start
+		// with `-`, and shlex hands it `>` and `2>` as ordinary tokens, so a
+		// bd call whose only non-flag word was a redirect resolved to the
+		// redirect. Each is paired with the control it differed from by one
+		// token — the control passed all along, which is what made the pair
+		// evidence about the parser rather than about the weather.
+		"bd --help > /tmp/o", "bd list > /tmp/o",
+		"bd --version 2>&1", "bd version 2>&1",
+		"bd list >/tmp/o 2>&1",
+		"bd show x 2>/dev/null | head -3",
+		"bd --json --no-daemon ready >> /tmp/o",
+
+		// And the other mechanism: segments() split on `|` without tracking
+		// `$(`, so a substitution containing a pipe became a fragment whose
+		// command word was `$PATH`, which verdict()'s LINE-scoped `$`-variable
+		// arm then refused for any line that also named bd. The second row is
+		// the fleet's standard PATH-stripping preamble, refused verbatim in
+		// the session that found this. Its one-word control (`bd` -> `xx`)
+		// passed, so the word bd elsewhere on the line was the whole
+		// difference. The guard itself is untouched: `BD=bd; $BD daemon stop`
+		// stays in the refused table above.
+		`P=$(echo "$PATH" | tr ':' '\n'); grep -n bd f`,
+		`NEWPATH=$(echo "$PATH" | tr ':' '\n' | grep -v gates | paste -sd: -); PATH="$NEWPATH" go test ./internal/rhq/ ; grep -n '"bd": {' gates.go`,
+		"echo $(date | wc -l) && grep -rn bd internal/",
+		// These two are what hold segments()' `$(`-depth and backtick arms
+		// specifically: the fragment a split leaves behind starts with a
+		// $-variable, which masking the substitution afterwards cannot repair
+		// because the split already happened. Delete either arm and only these
+		// go red (MUTATION-CHECKED, one revert per arm — every arm of this fix
+		// has a row here that notices it).
+		"SEEN=$(git log | $PAGER -n 1); grep -n bd f",
+		"X=`git log | $PAGER -n 1`; grep -n bd f",
 	}
 	for _, command := range allowed {
 		if reason := denied(t, runGate(t, nil, command)); reason != "" {
@@ -424,35 +476,4 @@ func parserGate(t *testing.T, command string) gateResult {
 		code = ee.ExitCode()
 	}
 	return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
-}
-
-// LIVE DEFECT ranger-base-4txk, the other direction: the gate refuses ordinary
-// lines. resolve_verb returns the first token that does not start with "-",
-// and shlex hands it ">" and "2>" as ordinary tokens, so a bd call whose only
-// non-flag word is a redirect resolves to the redirect. And segments() splits
-// on "|" without tracking "$(", so a substitution containing a pipe becomes a
-// fragment whose command word is a $-variable — refused whenever bd appears
-// ANYWHERE on the line, because that guard is line-scoped. Each row carries
-// the control it differs from by one thing, so this measures the mechanism
-// rather than the weather.
-//
-// TO INVERT when ranger-base-4txk lands: move the refusedToday rows into
-// TestQABdArgvGateResolvesTheVerb's allowed list and delete this test.
-func TestQABdArgvGateRefusesOrdinaryLines(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("no python3")
-	}
-	for _, c := range []struct{ refusedToday, control string }{
-		{`bd --help > /tmp/o`, `bd list > /tmp/o`},
-		{`bd --version 2>&1`, `bd version 2>&1`},
-		{`P=$(echo "$PATH" | tr ':' '\n'); grep -n bd f`, `P=$(echo "$PATH" | tr ':' '\n'); grep -n xx f`},
-	} {
-		if denied(t, runGate(t, nil, c.control)) != "" {
-			t.Errorf("control %q must pass — the pair is only discriminating while it does", c.control)
-		}
-		if denied(t, runGate(t, nil, c.refusedToday)) == "" {
-			t.Errorf("ranger-base-4txk looks FIXED for %q — invert this test: move these rows into "+
-				"TestQABdArgvGateResolvesTheVerb's allowed list and delete it", c.refusedToday)
-		}
-	}
 }
