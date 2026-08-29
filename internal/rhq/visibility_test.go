@@ -75,7 +75,7 @@ func TestScanOps(t *testing.T) {
 		{"the plan-usage adapter reads the token from the macOS keychain", ""},
 		{"env sets, personas and skills are config under ~/.config/rhq/", ""},
 	} {
-		hits := ScanOps(c.text)
+		hits := ScanOps(c.text, OpsPatternSet{})
 		var got []string
 		for _, h := range hits {
 			got = append(got, h.Class)
@@ -286,7 +286,7 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 // see which way it was stamped.
 func TestCommitGuardHookCarriesBothWalls(t *testing.T) {
 	for _, vis := range []string{VisibilityPublic, VisibilityPrivate} {
-		h := CommitGuardHook(vis)
+		h := CommitGuardHook(vis, OpsPatternSet{})
 		if !strings.Contains(h, "posse_beads_visibility='"+vis+"'") {
 			t.Errorf("%s: the hook must record the stamp it was written with", vis)
 		}
@@ -361,7 +361,7 @@ func TestPlanBrandsAreNotShippedVerbatim(t *testing.T) {
 	// And the assembling must not have cost the guard a branch. This is the
 	// one brand no prose fixture can spell out, so it is exercised here from
 	// the same kind of fragments; the other three are prose in TestScanOps.
-	if s := "on " + "Claude" + " Max" + " the fleet is inside the plan"; !contains(classesOf(ScanOps(s)), "plan") {
+	if s := "on " + "Claude" + " Max" + " the fleet is inside the plan"; !contains(classesOf(ScanOps(s, OpsPatternSet{})), "plan") {
 		t.Errorf("assembling the fragments lost a branch: %q no longer matches", s)
 	}
 }
@@ -408,5 +408,219 @@ func TestGuardFilesCarryNoCrewNames(t *testing.T) {
 					f, i+1, hit, strings.TrimSpace(line))
 			}
 		}
+	}
+}
+
+// ─── an instance's own vocabulary (ranger-base-4rbs) ─────────────────────────
+
+// What config adds, what it is refused for, and the one thing a refusal may
+// never do: echo the pattern. An instance's pattern IS its confidential
+// vocabulary — a client name, a codename — so the reason line carries the
+// class and nothing else, in a message that goes to a terminal and into a
+// generated hook file.
+func TestOpsPatternSetFromConfig(t *testing.T) {
+	home := t.TempDir()
+	cfg := filepath.Join(home, "config.yaml")
+	const secret = "Zephyrine"
+	os.WriteFile(cfg, []byte(strings.Join([]string{
+		OpsPatternsConfigKey + ":",
+		"  client-acme: " + secret + "[[:space:]]*(Corp|Holdings)",
+		"  quoted: \"(" + secret + "|Northwind)\"",
+		"  bad-escape: " + secret + `\d+`,
+		"  bad-quote: " + secret + "'s",
+		"  bad-regexp: " + secret + "(",
+		"  empty:",
+		"  bad name!: " + secret,
+		"  cost: " + secret,
+		"",
+		"beads_visibility:",
+		"  " + home + ": public",
+	}, "\n")), 0o644)
+	a := &App{ConfigPath: cfg}
+	set := a.OpsPatternSet()
+
+	var got []string
+	for _, p := range set.Extra {
+		got = append(got, p.Class)
+		if p.Why == "" {
+			t.Errorf("%s: an instance pattern still owes the refusal a reason", p.Class)
+		}
+	}
+	if want := []string{"client-acme", "quoted"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("accepted %v, want %v", got, want)
+	}
+	// The wrapping pair of double quotes is flat-YAML's, not the pattern's.
+	if set.Extra[1].ERE != "("+secret+"|Northwind)" {
+		t.Errorf("quoted value: got %q", set.Extra[1].ERE)
+	}
+	// Every rejection is NAMED — a pattern the operator believes in and that
+	// is not there is worse than no pattern.
+	for _, want := range []string{"bad-escape", "bad-quote", "bad-regexp", "empty: empty pattern", "bad name!", "cost"} {
+		if !containsSubstr(set.Rejected, want) {
+			t.Errorf("refused entry %q is not named in %v", want, set.Rejected)
+		}
+	}
+	if len(set.Rejected) != 6 {
+		t.Errorf("want 6 refusals, got %d: %v", len(set.Rejected), set.Rejected)
+	}
+	for _, r := range set.Rejected {
+		if strings.Contains(r, secret) {
+			t.Errorf("a refusal echoed the pattern — that IS the confidential vocabulary: %q", r)
+		}
+	}
+	// The shipped list stays first and stays whole: the set is an addition,
+	// never a replacement, and the zero value is the shipped list alone.
+	all := set.All()
+	if len(all) != len(OpsPatterns)+2 {
+		t.Fatalf("All(): got %d, want shipped+2", len(all))
+	}
+	for i, p := range OpsPatterns {
+		if all[i].Class != p.Class {
+			t.Errorf("All()[%d] = %s, want the shipped %s first", i, all[i].Class, p.Class)
+		}
+	}
+	if n := len(OpsPatternSet{}.All()); n != len(OpsPatterns) {
+		t.Errorf("the zero set must be the shipped list alone, got %d", n)
+	}
+	// Both readers see it: the in-session warn is the Go one.
+	if !contains(classesOf(ScanOps(secret+" Holdings signed", set)), "client-acme") {
+		t.Error("an accepted instance pattern must match in Go")
+	}
+	if contains(classesOf(ScanOps(secret+" Holdings signed", OpsPatternSet{})), "client-acme") {
+		t.Error("the shipped list alone must not carry an instance's class")
+	}
+	var w bytes.Buffer
+	if !a.WarnOpsContent(&w, home, "a bead", secret+" Holdings signed") || !strings.Contains(w.String(), "client-acme") {
+		t.Errorf("WarnOpsContent must read config patterns too: %q", w.String())
+	}
+}
+
+func containsSubstr(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// ranger-base-4rbs's acceptance, driven by real git: a pattern from config
+// refuses a matching added jsonl line in a public-marked repo, the same line
+// goes through where the pattern is not configured (the control), a private
+// repo is untouched, and a REFUSED config entry neither guards nor hides —
+// it is named in the hook file and its vocabulary is not.
+func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	gates := t.TempDir()
+	pub, priv, plain := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "plain")
+	const secret = "Zephyrine"
+
+	cfg := filepath.Join(home, "config.yaml")
+	os.WriteFile(cfg, []byte(strings.Join([]string{
+		"beads_visibility:",
+		"  " + pub + ": public",
+		"  " + priv + ": private",
+		OpsPatternsConfigKey + ":",
+		"  client-acme: " + secret + "[[:space:]]*(Corp|Holdings)",
+		"  bad-escape: Northwind" + `\d+`,
+	}, "\n")), 0o644)
+	// The control is a SEPARATE config with no patterns key at all: the same
+	// repo, the same line, the shipped list alone.
+	plainCfg := filepath.Join(home, "plain.yaml")
+	os.WriteFile(plainCfg, []byte("beads_visibility:\n  "+plain+": public\n"), 0o644)
+
+	a := &App{ConfigPath: cfg}
+	plainApp := &App{ConfigPath: plainCfg}
+
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(repo string, env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	persona := []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + gates}
+	line := `{"id":"x-1","title":"onboarding","description":"the ` + secret + ` Holdings engagement starts monday; Northwind 4 too"}`
+	stage := func(repo string) {
+		os.WriteFile(filepath.Join(repo, ".beads", "issues.jsonl"), []byte(line+"\n"), 0o644)
+		git(repo, nil, "add", ".beads/issues.jsonl")
+	}
+	for _, r := range []struct {
+		dir string
+		app *App
+	}{{pub, a}, {priv, a}, {plain, plainApp}} {
+		os.MkdirAll(filepath.Join(r.dir, ".beads"), 0o755)
+		if out, err := git(r.dir, nil, "init", "-q", "-b", "main"); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if _, _, _, err := r.app.InstallCommitGuardHook(r.dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Public + configured pattern: refused, naming the instance's class and
+	// the text it tripped on.
+	stage(pub)
+	out, err := git(pub, persona, "commit", "-m", "bd sync", "--", ".beads/issues.jsonl")
+	if err == nil {
+		t.Fatalf("an instance pattern must refuse in a public repo:\n%s", out)
+	}
+	for _, want := range []string{"ops-class content in a public repo's beads db", "client-acme:", secret + " Holdings"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("refusal must carry %q:\n%s", want, out)
+		}
+	}
+	// The REFUSED config entry guards nothing — that is what being refused
+	// means, and the test that says so is this line going through in the
+	// same commit that the accepted one stops.
+	if strings.Contains(out, "bad-escape:") && !strings.Contains(out, "REFUSED") {
+		t.Errorf("a refused pattern must not be in force:\n%s", out)
+	}
+
+	// THE CONTROL: same line, same public marking, no pattern in config.
+	stage(plain)
+	if out, err := git(plain, persona, "commit", "-m", "bd sync", "--", ".beads/issues.jsonl"); err != nil {
+		t.Fatalf("without the config pattern this line is clean — the refusal above measured the pattern, not the line: %v\n%s", err, out)
+	}
+
+	// Private: an instance pattern is still only a public repo's business.
+	stage(priv)
+	if out, err := git(priv, persona, "commit", "-m", "bd sync", "--", ".beads/issues.jsonl"); err != nil {
+		t.Errorf("private repo must take the same content: %v\n%s", err, out)
+	}
+
+	// The hook FILE is the record: what is in force, and what was asked for
+	// and refused — by class, never by value.
+	hooks, err := hooksDir(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(hooks, "prepare-commit-msg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := string(b)
+	if !strings.Contains(hook, "posse_check 'client-acme'") {
+		t.Error("the accepted pattern is not stamped into the hook")
+	}
+	if !strings.Contains(hook, "REFUSED at stamp time") || !strings.Contains(hook, "bad-escape:") {
+		t.Errorf("the hook must record what it was asked for and did not stamp:\n%s", hook)
+	}
+	if strings.Contains(hook, "Northwind") {
+		t.Error("the hook recorded a REFUSED entry's value — the class is the record, the value is the secret")
+	}
+	if strings.Count(hook, "posse_check ") != len(OpsPatterns)+1 {
+		t.Errorf("want shipped+1 checks stamped, got %d", strings.Count(hook, "posse_check "))
+	}
+
+	// And the launch-time identity probe must agree with the install, or an
+	// instance that adds a pattern reads as "ours but stale" forever
+	// (ADR 0023 identity is byte-for-byte).
+	if p := a.probeL3Hooks(pub, false); !p.CommitGuard {
+		t.Errorf("L3 must vouch for the hook it just stamped: %s", p.CommitGuardDegraded)
 	}
 }

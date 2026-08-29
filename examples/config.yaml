@@ -225,6 +225,27 @@ default_emoji: ⚙️
 #   ~/code/projA: public
 #   ~/code/projB: private
 
+# An instance can teach that lint its OWN confidential vocabulary — a
+# client's name, a project codename — without patching the harness. The key
+# is the class the refusal names; the value is an ERE in the dialect both
+# readers share (POSIX ERE and Go: no single quote, no \d/\s/\b/\t/\w — use
+# a [[:class:]]). Flat-YAML applies to the value: one line, a trailing ` #`
+# starts a comment, a wrapping pair of double quotes is stripped.
+#
+# The patterns are appended to the shipped list when the hook is stamped —
+# by `posse gates install-hooks` and by every persona launch into the repo.
+# An entry that breaks the dialect is REFUSED at stamp time and named, by
+# class, in the hook file and in install-hooks output; it is never dropped
+# silently. Reasons never echo the value, so keep the class name something
+# you are willing to read in a terminal.
+#
+# Still a lint, not a boundary: a confidential name nobody thought to add is
+# exactly the case a pattern list cannot see. See NOTES.md, "Privacy model",
+# "When an instance holds someone else's data".
+# beads_visibility_patterns:
+#   client-acme: Acme[[:space:]]*(Corp|Holdings)
+#   codename: (BLUEBIRD|REDSHIFT)
+
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
 # The one handoff the harness files itself: a closed bead with one of these
 # labels and no `qa` dependent earns `verify: <title>` -l qa, assigned below,

@@ -2123,7 +2123,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	write("posse-pre-push", PrePushHook)
 	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
 	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic))
+	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
 	if got := a.probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
 		t.Errorf("byte-exact chain must count by identity: %+v", got)
 	}
@@ -2153,7 +2153,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	// wantPrePush=false is vacuous for the push arm regardless of what sits
 	// there; the commit-guard arm still requires identity.
 	os.Remove(filepath.Join(hooks, "pre-push"))
-	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic))
+	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
 	if got := a.probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
 		t.Errorf("commit-only probe: %+v", got)
 	}

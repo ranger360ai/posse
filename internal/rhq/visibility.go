@@ -22,10 +22,12 @@ package rhq
 // are rendered into single-quoted shell words).
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 )
 
@@ -152,22 +154,26 @@ var OpsPatterns = []OpsPattern{
 }
 
 func init() {
+	// The shipped list is held to the same dialect an instance's own
+	// patterns are (validateOpsERE) — one validator, so a rule that is
+	// enforced against config cannot quietly stop applying here. Panic at
+	// init, not at commit time.
 	for i := range OpsPatterns {
-		// A single quote would break out of the shell word the hook renders
-		// these into, and there is no escaping it inside one — so the list
-		// may not carry one. Panic at init, not at commit time.
-		if strings.Contains(OpsPatterns[i].ERE, "'") {
-			panic("rhq: OpsPatterns ERE may not contain a single quote: " + OpsPatterns[i].Class)
+		if err := validateOpsERE(OpsPatterns[i].ERE); err != nil {
+			panic("rhq: OpsPatterns " + OpsPatterns[i].Class + ": " + err.Error())
 		}
 		OpsPatterns[i].re = regexp.MustCompile(OpsPatterns[i].ERE)
 	}
 }
 
-// ScanOps returns the classes of instance-ops content s carries. Empty is
-// the common case and the cheap one.
-func ScanOps(s string) []OpsPattern {
+// ScanOps returns the classes of instance-ops content s carries, over the
+// shipped list plus whatever set adds (the zero OpsPatternSet is the
+// shipped list alone — a caller that knows nothing about an instance still
+// gets the guard, never an empty one). Empty is the common case and the
+// cheap one.
+func ScanOps(s string, set OpsPatternSet) []OpsPattern {
 	var hits []OpsPattern
-	for _, p := range OpsPatterns {
+	for _, p := range set.All() {
 		if p.Match(s) {
 			hits = append(hits, p)
 		}
@@ -230,7 +236,7 @@ func (a *App) WarnOpsContent(w io.Writer, dir, what, text string) bool {
 	if vis != VisibilityPublic {
 		return false
 	}
-	hits := ScanOps(text)
+	hits := ScanOps(text, a.OpsPatternSet())
 	if len(hits) == 0 {
 		return false
 	}
@@ -241,4 +247,152 @@ func (a *App) WarnOpsContent(w io.Writer, dir, what, text string) bool {
 	fmt.Fprintf(w, "visibility: %s carries ops-class content (%s) and %s is public — %s\n",
 		what, strings.Join(classes, ", "), AbbrevHome(dir), "the commit hook will refuse it; re-file it in the private db (NOTES.md, Privacy model)")
 	return true
+}
+
+// ─── an instance's own vocabulary ────────────────────────────────────────────
+
+// OpsPatternsConfigKey is the config map through which ONE instance teaches
+// this lint its own confidential vocabulary — a client's name, a project
+// codename — without patching the harness. The shipped list is what any
+// deployer of this software needs; a name that is confidential HERE is not
+// the public repo's to carry, and config is how it stays out of it.
+//
+//	beads_visibility_patterns:
+//	  client-acme: Acme[[:space:]]*(Corp|Holdings)
+//	  codename: (BLUEBIRD|REDSHIFT)
+//
+// The key is the class the refusal names; the value is an ERE in the same
+// two-reader dialect as the shipped list. Flat-YAML's limits apply to the
+// value: one line, a trailing " #" starts a comment, and a wrapping pair of
+// double quotes is stripped.
+//
+// AND IT IS STILL A LINT, NOT A BOUNDARY — same class as the allowlist. An
+// instance pattern is friction that turns one mis-routed bead into a
+// refusal at commit time. What keeps a data owner's content out of a public
+// repo is the routing rule plus repo visibility; a confidential name nobody
+// thought to add is exactly the case a pattern list cannot see.
+const OpsPatternsConfigKey = "beads_visibility_patterns"
+
+// opsPatternConfigWhy is the reason line an instance pattern's refusal
+// carries. It says where the pattern came from and nothing about what it
+// is for — the harness does not know, and guessing in a refusal is worse
+// than saying so.
+const opsPatternConfigWhy = "an instance-defined class (config " + OpsPatternsConfigKey + ":)"
+
+// opsClassRE is what a class name may be. It is rendered into a shell word
+// and into a hook comment, and it is what a human reads in the refusal, so
+// it stays boring on purpose.
+var opsClassRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// opsEREBanned are the escapes Go and GNU grep share and POSIX ERE does
+// not — the list TestOpsPatternsArePortable has always held the shipped
+// patterns to, now the one place both readers of it look.
+var opsEREBanned = []string{`\t`, `\s`, `\d`, `\b`, `\w`}
+
+// validateOpsERE holds one ERE to the intersection dialect: no single
+// quote (it is rendered into a single-quoted sh word), none of the GNU/Go
+// escapes POSIX brackets replace, and it has to compile.
+//
+// The errors NEVER quote the expression. An instance's pattern IS the
+// confidential vocabulary — that is the whole point of the key — and this
+// message is printed to a terminal and stamped into a hook file. Go's own
+// regexp error carries the expression, so it is reduced to its Code.
+func validateOpsERE(ere string) error {
+	if strings.TrimSpace(ere) == "" {
+		return fmt.Errorf("empty pattern")
+	}
+	if strings.Contains(ere, "'") {
+		return fmt.Errorf("a single quote cannot be escaped inside a single-quoted sh word")
+	}
+	for _, bad := range opsEREBanned {
+		if strings.Contains(ere, bad) {
+			return fmt.Errorf("%s is a GNU/Go escape POSIX ERE does not share — use a [[:class:]]", bad)
+		}
+	}
+	if _, err := regexp.Compile(ere); err != nil {
+		var serr *syntax.Error
+		if errors.As(err, &serr) {
+			return fmt.Errorf("not a usable regexp: %s", serr.Code)
+		}
+		return fmt.Errorf("not a usable regexp")
+	}
+	return nil
+}
+
+// NewOpsPattern builds one instance-defined pattern, or says why it cannot
+// — by class name only, never by echoing the value.
+func NewOpsPattern(class, ere string) (OpsPattern, error) {
+	class = strings.TrimSpace(class)
+	if !opsClassRE.MatchString(class) {
+		return OpsPattern{}, fmt.Errorf("a class name is [A-Za-z0-9][A-Za-z0-9_.-]* — it is rendered into the hook and read in the refusal")
+	}
+	if err := validateOpsERE(ere); err != nil {
+		return OpsPattern{}, err
+	}
+	return OpsPattern{Class: class, ERE: ere, Why: opsPatternConfigWhy, re: regexp.MustCompile(ere)}, nil
+}
+
+// OpsPatternSet is one instance's additions to the shipped list, plus the
+// config entries that were refused. The rejects are CARRIED, not dropped:
+// a pattern the operator believes in and that is not there is worse than
+// no pattern, so every reader of the set can say so — the hook file
+// records them in a comment, `posse gates install-hooks` prints them.
+//
+// The zero value is the shipped list alone, which is what makes it safe to
+// pass from a caller that has no config to read.
+type OpsPatternSet struct {
+	Extra    []OpsPattern
+	Rejected []string // "class: reason", in config order
+}
+
+// All is the effective list, shipped first: the order the hook renders its
+// checks in and the order a refusal names classes in.
+func (s OpsPatternSet) All() []OpsPattern {
+	out := make([]OpsPattern, 0, len(OpsPatterns)+len(s.Extra))
+	out = append(out, OpsPatterns...)
+	return append(out, s.Extra...)
+}
+
+// OpsPatternSet reads config beads_visibility_patterns:. A class that is
+// already shipped is refused rather than shadowing or duplicating it — the
+// refusal names the class, so it has to be one thing.
+func (a *App) OpsPatternSet() OpsPatternSet {
+	var set OpsPatternSet
+	seen := map[string]bool{}
+	for _, p := range OpsPatterns {
+		seen[p.Class] = true
+	}
+	for _, kv := range YamlMapPairs(a.ConfigPath, OpsPatternsConfigKey) {
+		p, err := NewOpsPattern(kv[0], kv[1])
+		if err == nil && seen[p.Class] {
+			err = fmt.Errorf("that class is already taken — the refusal names the class, so it has to be one")
+		}
+		if err != nil {
+			set.Rejected = append(set.Rejected, opsClassLabel(kv[0])+": "+err.Error())
+			continue
+		}
+		seen[p.Class] = true
+		set.Extra = append(set.Extra, p)
+	}
+	return set
+}
+
+// opsClassLabel is how a REFUSED entry's class is displayed: a bad class
+// name is still the thing the operator has to find in their config, so it
+// is shown — reduced to printable ASCII and short, because it lands in a
+// generated shell comment and it is not trusted to be a name. It is never
+// empty: YamlMapPairs splits at a colon it found past index 0, so the key
+// it hands back always has a non-space first character.
+func opsClassLabel(class string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(class) {
+		if r < 0x20 || r > 0x7e {
+			r = '?'
+		}
+		b.WriteRune(r)
+		if b.Len() >= 40 {
+			break
+		}
+	}
+	return b.String()
 }

@@ -1036,6 +1036,22 @@ func main() {
 				if vis == rhq.VisibilityPublic {
 					fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", rhq.AbbrevHome(dir))
 				}
+				// What THIS instance added to the pattern list, and what it
+				// asked for and did not get. A refused pattern is said out
+				// loud here and in the hook file: an operator who believes a
+				// client name is guarded and finds out at disclosure time is
+				// worse off than one who never added it (ranger-base-4rbs).
+				set := a.OpsPatternSet()
+				if n := len(set.Extra); n > 0 {
+					var classes []string
+					for _, p := range set.Extra {
+						classes = append(classes, p.Class)
+					}
+					fmt.Fprintf(out, "  instance patterns stamped in (config %s:): %s\n", rhq.OpsPatternsConfigKey, strings.Join(classes, ", "))
+				}
+				for _, r := range set.Rejected {
+					fmt.Fprintf(out, "  instance pattern REFUSED, not in force: %s\n", r)
+				}
 			}
 			if failed {
 				os.Exit(1)

@@ -1658,10 +1658,22 @@ const commitGuardHead = `#!/bin/sh
 //
 // The block always renders, gated on the stamp, so the hook FILE is the
 // record of what it was stamped with — a human reads it and knows.
-func visibilityGuardBody(visibility string) string {
+func visibilityGuardBody(visibility string, set OpsPatternSet) string {
 	var checks strings.Builder
-	for _, p := range OpsPatterns {
+	for _, p := range set.All() {
 		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
+	}
+	// A config pattern this instance asked for and did not get is recorded
+	// HERE, in the file, for the same reason the stamp is: a human reading
+	// the hook has to be able to tell what it is checking from what someone
+	// meant it to check. Class names only — an instance's pattern IS its
+	// confidential vocabulary, and this file is generated, read and pasted.
+	var rejects strings.Builder
+	if len(set.Rejected) > 0 {
+		fmt.Fprintf(&rejects, "# instance patterns REFUSED at stamp time (config %s:), not in force below:\n", OpsPatternsConfigKey)
+		for _, r := range set.Rejected {
+			fmt.Fprintf(&rejects, "#   %s\n", r)
+		}
 	}
 	return `
 # ─── the beads visibility guard (rangerhq-hrz) ────────────────────────────
@@ -1676,7 +1688,7 @@ func visibilityGuardBody(visibility string) string {
 # below documents: pre-commit is bd's own flush hook, reinstalled silently
 # by bd, and a wall a third-party tool replaces on its next install is not
 # a wall. This one also survives --no-verify.
-posse_beads_visibility=` + shQuote(visibility) + `
+` + rejects.String() + `posse_beads_visibility=` + shQuote(visibility) + `
 if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # Compare against HEAD, or against the empty tree in a repo with no
   # commit yet — a first commit is exactly when a db arrives whole.
@@ -1736,8 +1748,8 @@ fi
 // one since rangerhq-lt2w, because a stale shared index reverts whoever
 // springs it, and the operator's unqualified `bd sync:` commits are the
 // form that sprang it.
-func CommitGuardHook(visibility string) string {
-	return commitGuardHead + visibilityGuardBody(visibility) + sharedIndexBody
+func CommitGuardHook(visibility string, set OpsPatternSet) string {
+	return commitGuardHead + visibilityGuardBody(visibility, set) + sharedIndexBody
 }
 
 // InstallCommitGuardHook writes the guard into the repo at dir (its common
@@ -1747,7 +1759,7 @@ func CommitGuardHook(visibility string) string {
 // stamped, so the caller can say which wall the operator just got.
 func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(dir)
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility), false)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), false)
 	return path, visibility, source, err
 }
 
@@ -1755,7 +1767,7 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 // occupied by bd's own shim is chained rather than refused (rangerhq-mgdk).
 func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(dir)
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility), true)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), true)
 	return path, visibility, source, err
 }
 
@@ -1974,7 +1986,10 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
 
 	visibility, _ := a.BeadsVisibility(dir)
-	commitRender := CommitGuardHook(visibility)
+	// The SAME set the install stamps with, or an instance that adds a
+	// pattern reads as "ours but stale" on every launch (the identity half
+	// of ADR 0023 is byte-for-byte).
+	commitRender := CommitGuardHook(visibility, a.OpsPatternSet())
 
 	var prePushIdentity, prePushStale bool
 	var prePushPath string

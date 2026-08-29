@@ -3423,6 +3423,67 @@ software's own documented mechanism and were dropped. Residual, stated: a
 vendor's public list price (`$3/MTok`) trips the cost class and a
 single-digit amount (`$0`) does not.
 
+**When an instance holds someone else's data** — a work laptop, a client
+engagement — the bead-class rule above generalizes, and the generalization
+is an obligation rather than a preference: **the data OWNER picks the
+boundary**, and the only content that crosses between an operator's
+boundaries (personal, employer, public) is what is already public in the
+one it came from.
+
+Assume such an instance's ENTIRE beads db is confidential to the data
+owner. Titles and comments are the working medium — a bead that names no
+secret still says what the owner is building and when — so per-bead
+classification is theater there. Concretely:
+
+- every repo of that instance is marked `private` in
+  `beads_visibility:`, and unmarked-is-public does the rest: a repo
+  someone forgets to mark comes back a refusal, not a leak;
+- its db, config, env sets and crew memory never touch another
+  boundary's infrastructure and never ride dotfile sync — one instance,
+  one boundary, no shared `~/.config` between them;
+- upstreaming generalized smarts to the public harness follows
+  CONTRIBUTING's flow-in rule PLUS whatever contribution approval the
+  data owner's policy requires. The harness rule is necessary, not
+  sufficient;
+- security findings about the data owner's systems never enter a public
+  queue, regardless of severity or how design-level they look. Their
+  disclosure is the owner's call, not this repo's disclosure rule;
+- where the owner has a system of record — a tracker, a ticket queue —
+  it stays the system of record: beads cite its ids rather than quote
+  restricted content.
+
+**Instance-defined patterns.** The shipped `OpsPatterns` list is what any
+deployer needs; a name that is confidential HERE — a client, a project
+codename — is not the public repo's to carry. Config `beads_visibility_patterns:`
+appends to the list at stamp time, so an instance teaches the lint its own
+vocabulary without patching the harness:
+
+```yaml
+beads_visibility_patterns:
+  client-acme: Acme[[:space:]]*(Corp|Holdings)
+  codename: (BLUEBIRD|REDSHIFT)
+```
+
+The key is the class the refusal names, the value an ERE in the same
+two-reader dialect as the shipped list — POSIX ERE ∩ Go, no single quote,
+no `\d`/`\s`/`\b`/`\t`/`\w` — and flat-YAML's limits apply to the value: one
+line, a trailing ` #` starts a comment, a wrapping pair of double quotes is
+stripped. An entry that breaks any of those is **refused at stamp time and
+named**, in the hook file itself and in `posse gates install-hooks` output,
+rather than dropped silently — a pattern the operator believes in and that
+is not there is worse than no pattern. Rejection reasons never echo the
+value, only the class name, so keep the class name something you are willing
+to read in a terminal. The patterns live in the operator's config and get
+stamped into `.git/hooks/`, both untracked: the vocabulary never enters the
+public repo, which is the point of the key.
+
+**And it is still a lint, not a boundary** — same class as the allowlist,
+and the honesty is load-bearing here. An instance pattern is friction that
+turns one mis-routed bead into a refusal at commit time. What keeps a data
+owner's content out of a public repo is the routing rule plus repo
+visibility; a confidential name nobody thought to add is exactly the case a
+pattern list cannot see.
+
 ## beads (bd) substrate: pinned at 0.49.1, 0.51+ is a migration (rangerhq-f49)
 
 The fleet runs `bd` **0.49.1** on purpose. beads removed the SQLite backend
