@@ -969,15 +969,30 @@ const GrokFleetFlags = `--permission-mode auto`
 // patch. A runtime
 // that fails that probe stays record: untrusted.
 //
-// Sources, so nobody re-derives them:
-//   - claude 2.1.243, from the binary: "Claude Code hardcodes CLAUDE.md /
-//     AGENTS.md discovery" (it says so while explaining why codex's
-//     project_doc_fallback_filenames has no equivalent).
-//   - codex-cli 0.147.0: AGENTS.md and AGENTS.override.md, project and
+// Sources, so nobody re-derives them. Every line here is what the
+// INSTALLED binary was measured to load, not what its docs or its own
+// strings say it loads — the two came apart on claude (ranger-base-x7m1):
+//   - claude 2.1.251, MEASURED: a tool-less `claude -p` turn in a fresh
+//     repo carrying one token per candidate file returns CLAUDE.md,
+//     CLAUDE.local.md, .claude/CLAUDE.md and .claude/rules/*.md. It does
+//     NOT return AGENTS.md, which this list declared until x7m1, and with
+//     AGENTS.md alone in the directory the same turn answers
+//     NO-PROJECT-INSTRUCTIONS. The binary does still carry the string
+//     "Claude Code hardcodes CLAUDE.md / AGENTS.md discovery" (in the codex
+//     importer's unmappable reasons) — that string was the old source here,
+//     and a string is not a measurement.
+//   - codex-cli 0.150.1: AGENTS.md and AGENTS.override.md, project and
 //     ~/.codex/; the set is widened by config project_doc_fallback_filenames.
+//     AGENTS.override.md REPLACES the AGENTS.md beside it rather than adding
+//     to it (ADR 0013 rules-precedence probe §4, re-measured x7m1); the line
+//     comma-joins them anyway, and the replace is pinned in
+//     TestQALiveNativeRulesDiscovery/codex-override rather than spelled in
+//     the grid.
 //   - grok 1.0.5, docs/user-guide/12-project-rules.md, in its own order,
 //     every match in a directory loaded (not first-wins), plus *.md under
-//     the rules dirs at each level from repo root to cwd.
+//     the rules dirs at each level from repo root to cwd. .claude/CLAUDE.md
+//     is MEASURED and undocumented: `grok inspect` names it (x7m1), and it
+//     is not the .claude/rules/*.md entry beside it.
 //
 // GrokPIDVoid is grok's PIDVoid set: the flag that replaces the system
 // prompt, and the compat alias its own --help names for it. Both spellings
@@ -987,10 +1002,10 @@ const GrokFleetFlags = `--permission-mode auto`
 var GrokPIDVoid = []string{"--system-prompt-override", "--system-prompt"}
 
 var (
-	claudeNativeRules = []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude/rules/*.md"}
+	claudeNativeRules = []string{"CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/rules/*.md"}
 	codexNativeRules  = []string{"AGENTS.md", "AGENTS.override.md", "~/.codex/AGENTS.md"}
 	grokNativeRules   = []string{"Agents.md", "Claude.md", "CLAUDE.md", "CLAUDE.local.md", "AGENT.md", "AGENTS.md",
-		".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
+		".claude/CLAUDE.md", ".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
 )
 
 // PROMPT DELIVERY, AS THE PROBE MEASURED IT (ADR 0013 §2, ranger-base-cl7,

@@ -48,6 +48,7 @@ package rhq
 //     qmFoldCase.
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -293,6 +294,12 @@ func TestQARenderedTreeIsUniversalAgentSkills(t *testing.T) {
 // file in front of the model that the grid does not name, which is the
 // direction ADR 0013 §4 cares about.
 //
+// The pin is the CONSUMER — the rendered `runtime check` rulebooks line,
+// read back out of RuntimeCheck's own output — not the slice behind it. A
+// slice assertion is green over a display that drops, truncates or
+// re-labels the row, and the display IS the whole point of the field: it is
+// the only thing that reads it. ranger-base-x7m1.
+//
 // qmRulebookTruth is what the CLIs were MEASURED to load on 2026-08-29,
 // project scope, on a case-insensitive APFS volume. It is a fixture of
 // fact: when a CLI updates, run TestQALiveNativeRulesDiscovery and change
@@ -309,27 +316,19 @@ var qmRulebookTruth = map[string][]string{
 // deliberate second table so this test does two jobs at once: it holds the
 // open defects to a named owner, and it goes red the day a NEW one
 // appears. When a bead lands, its entry is deleted and the test says so.
-var qmKnownMismatch = map[string][]string{
-	// claude 2.1.251 does not read AGENTS.md at all, and does read
-	// .claude/CLAUDE.md, which the declaration never names. Both measured
-	// 2026-08-29 — see the bug bead filed from ranger-base-qm6e.
-	"claude": {"over:agents.md", "under:.claude/claude.md"},
-	// grok 1.0.5 loads .claude/CLAUDE.md as a project instruction (it
-	// already declares .claude/rules/*.md, so the omission is the file,
-	// not the directory).
-	"grok": {"under:.claude/claude.md"},
-}
+// EMPTY since ranger-base-x7m1 landed: claude no longer declares AGENTS.md
+// (2.1.251 reads none of it) and both claude and grok now declare
+// .claude/CLAUDE.md (both load it). All three built-ins agree with the
+// measurement, so every entry here was deleted, which is how this table
+// says a fix landed.
+var qmKnownMismatch = map[string][]string{}
 
 func TestQANativeRulesDeclarationMatchesMeasurement(t *testing.T) {
-	a := &App{Home: t.TempDir()}
+	a := checkApp(t)
 	for _, name := range []string{"claude", "codex", "grok"} {
 		t.Run(name, func(t *testing.T) {
-			rt, err := a.LoadRuntime(name)
-			if err != nil {
-				t.Fatal(err)
-			}
 			declared := map[string]bool{}
-			for _, f := range rt.NativeRules {
+			for _, f := range qmRenderedRulebooks(t, a, name) {
 				declared[qmFoldCase(f)] = true
 			}
 			loaded := map[string]bool{}
@@ -356,9 +355,44 @@ func TestQANativeRulesDeclarationMatchesMeasurement(t *testing.T) {
 				}
 				return
 			}
-			t.Errorf("%s: NativeRules vs measurement changed.\n  now:   %v\n  known: %v\nEither the CLI moved (re-measure with RHQ_PARITY_LIVE=1 and update qmRulebookTruth) or a declaration was edited (update qmKnownMismatch, or delete its entry if the bead landed).", name, found, known)
+			t.Errorf("%s: the rendered rulebooks line vs measurement changed.\n  now:   %v\n  known: %v\nEither the CLI moved (re-measure with RHQ_PARITY_LIVE=1 and update qmRulebookTruth) or a declaration was edited (update qmKnownMismatch, or delete its entry if the bead landed).", name, found, known)
 		})
 	}
+}
+
+// qmRenderedRulebooks is the rulebooks row as an operator reads it: the
+// output of production RuntimeCheck, sliced between the "rulebooks" lead
+// and the fixed note that follows it, un-wrapped and split on the comma the
+// renderer joins with. Anchoring on the note is what makes the slice exact
+// — the row's continuation lines and the note's own lines indent
+// identically, so a prefix rule cannot tell them apart.
+func qmRenderedRulebooks(t *testing.T, a *App, name string) []string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir()) // preflight reads a home; never the operator's
+	rt, err := a.LoadRuntime(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+	_, after, ok := strings.Cut(b.String(), "\n  rulebooks   ")
+	if !ok {
+		t.Fatalf("%s: `runtime check` printed no rulebooks row at all — the field's only consumer is gone", name)
+	}
+	row, _, ok := strings.Cut(after, "posse loads none of these")
+	if !ok {
+		t.Fatalf("%s: the rulebooks row lost the note that ends it; re-anchor this pin", name)
+	}
+	var files []string
+	for _, f := range strings.Split(strings.Join(strings.Fields(row), " "), ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("%s: rulebooks row is empty", name)
+	}
+	return files
 }
 
 // qmFoldCase collapses the spellings that are the same file on a
