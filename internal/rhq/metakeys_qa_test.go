@@ -10,7 +10,8 @@ import (
 
 // ranger-base-1go: the herdr-upgrade runbook's post-flight meta check.
 //
-// NOTES.md, "The install->handoff window is a LIVE dispatch window", tells the
+// The herdr-upgrade runbook (instance tree, docs/runbooks/herdr-upgrade.md;
+// public until ranger-base-vbcs moved it out of NOTES.md per ADR 0024) tells the
 // operator to compare `^workspace:` + `^socket:` across the handoff and says
 // plainly that `gen:` is EXPECTED to be rewritten on every meta by the first
 // post-handoff listing, so a byte-for-byte `diff -r` of the meta directory is
@@ -24,7 +25,7 @@ import (
 //   - `gen:` must actually move, or the runbook is telling them to ignore a
 //     real signal.
 //
-// If either assertion flips, the post-flight in NOTES.md needs re-deriving.
+// If either assertion flips, that runbook's post-flight needs re-deriving.
 
 // qaMetaKeys is the runbook's comparand, computed the way the runbook computes
 // it: the identity lines of every meta, sorted. `pane:` is included here and
@@ -119,7 +120,7 @@ func TestGenMovesAcrossAHandoffAndTheComparandDoesNot(t *testing.T) {
 	}
 	if got := qaMetaKeys(t, dir, "workspace", "socket"); got != before {
 		t.Errorf("the runbook's post-flight comparand moved across a handoff.\n"+
-			"NOTES.md tells the operator a difference here means ids moved and to run\n"+
+			"The runbook tells the operator a difference here means ids moved and to run\n"+
 			"the repair. Re-derive that check.\nbefore:\n%s\nafter:\n%s", before, got)
 	}
 }
@@ -155,7 +156,7 @@ func TestByteForByteMetaDiffFalselyFailsOnAGenOnlyRewrite(t *testing.T) {
 	if string(after) == string(raw) {
 		t.Fatalf("the meta file is byte-identical after a generation change, so\n" +
 			"`diff -r` would NOT falsely fail and the runbook's reason for dropping\n" +
-			"it no longer holds. Re-read the post-flight section of NOTES.md.")
+			"it no longer holds. Re-read the runbook's post-flight.")
 	}
 }
 
@@ -186,7 +187,7 @@ func TestMetaPaneIsAsStableAsTheComparand(t *testing.T) {
 		if wsWant == "" || !strings.HasPrefix(pane, wsWant+":") {
 			t.Errorf("%s: pane %q does not name workspace %q — a listing moved pane:\n"+
 				"independently of workspace:, which the runbook's post-flight comparand\n"+
-				"(workspace: + socket:) cannot see. Revisit NOTES.md.", file, pane, wsWant)
+				"(workspace: + socket:) cannot see. Revisit the runbook.", file, pane, wsWant)
 		}
 	}
 }
