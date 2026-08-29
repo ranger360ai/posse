@@ -62,7 +62,47 @@ var PromotedPaths = []string{"agents", "config.yaml", "recipes", "skills"}
 // NotPromoted names what lives at the home and is never promoted — the
 // list exists so the exclusion is greppable and testable, not so anything
 // reads it in the copy path (the copy path only ever walks PromotedPaths).
-var NotPromoted = []string{"envs", "state", "personas"}
+var NotPromoted = []string{ConstitutionEnvsDir, "state", "personas"}
+
+// ConstitutionEnvsDir is `envs/` as both the home and the constitution repo
+// spell it. It is NOT promoted (§7: secret values, gitignored, no commit to
+// promote them from) and it is still constitution — HomeConstitutionPaths
+// keeps it out of every seatbelt grant for that reason, and
+// ConstitutionRepoPaths keeps it out of a persona's commits for the same
+// one. Named rather than repeated so the two lists cannot drift.
+const ConstitutionEnvsDir = "envs"
+
+// ConstitutionSourceDir is where the constitution's promoted set lives
+// inside the constitution REPO — `<repo>/rhq/agents`, `<repo>/rhq/skills`
+// and so on, the layout `posse promote` reads from and the one the commit
+// wall's path class is spelled with (ranger-base-ak3e).
+const ConstitutionSourceDir = "rhq"
+
+// ConstitutionRepoPaths is the constitution class as a REPO spells it,
+// slash-separated and relative to the repo top: every PromotedPaths entry
+// under ConstitutionSourceDir, plus `envs/`. Read by the commit wall's
+// constitution arm at hook-render time so that adding a path to
+// PromotedPaths widens the wall in the same edit (ranger-base-ak3e) — the
+// mirror of HomeConstitutionPaths, which does the same for the home.
+//
+// `envs/` is in it even though promote never writes it: a persona commit
+// that adds `rhq/envs/foo.env` to the constitution repo is a secret in a
+// git history whether or not any promote would copy it.
+func ConstitutionRepoPaths() []string {
+	out := make([]string, 0, len(PromotedPaths)+1)
+	for _, p := range PromotedPaths {
+		out = append(out, path.Join(ConstitutionSourceDir, p))
+	}
+	return append(out, path.Join(ConstitutionSourceDir, ConstitutionEnvsDir))
+}
+
+// ConstitutionRepoMarker is how a hook decides, at commit time, that the
+// repo it is in IS the constitution repo: its top level has this directory.
+// `rhq/agents` and not the whole promoted set, because it is the one member
+// no constitution can be missing — a PID dir IS what makes a tree the
+// fleet's law — and asking for a tree rather than a file keeps a stray
+// `rhq/config.yaml` in some unrelated repo from widening the wall there.
+const ConstitutionRepoMarker = ConstitutionSourceDir + "/agents"
 
 // PromoteManifestFile is the manifest's name at the home, BESIDE the
 // promoted copy: not under state/, which stays session-writable, and so

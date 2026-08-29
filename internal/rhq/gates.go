@@ -1667,8 +1667,9 @@ func grantsGitPush(allow []string) string {
 // ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────
 
 // sharedIndexMarker identifies our prepare-commit-msg hook. The slot now
-// carries two walls — the beads visibility guard and the shared-index guard
-// — and the marker still says `shared-index` ON PURPOSE: ownership is a
+// carries three walls — the beads visibility guard, the constitution-path
+// guard and the shared-index guard — and the marker still says
+// `shared-index` ON PURPOSE: ownership is a
 // question about a file an EARLIER binary wrote, and a repo hooked before
 // this bead carries this exact string. Renaming the value would convert
 // every already-hooked repo into a repo we refuse to touch, which is the
@@ -1986,10 +1987,11 @@ exit 1
 // commitGuardHead is the hook's shebang and its marker line — the two lines
 // that decide ownership, kept away from either wall's body.
 const commitGuardHead = `#!/bin/sh
-` + sharedIndexMarker + ` — installed by posse gates install-hooks. Two walls in
-# one slot: the beads visibility guard (rangerhq-hrz) and the shared-index
-# commit guard (rangerhq-lmq9). Foreign hooks are never overwritten; remove
-# this file to uninstall. ADR 0002 §3.
+` + sharedIndexMarker + ` — installed by posse gates install-hooks. Three walls
+# in one slot: the beads visibility guard (rangerhq-hrz), the constitution-path
+# guard (ranger-base-ak3e) and the shared-index commit guard (rangerhq-lmq9).
+# Foreign hooks are never overwritten; remove this file to uninstall.
+# ADR 0002 §3.
 `
 
 // visibilityGuardBody renders the first wall against a repo whose beads db
@@ -2095,15 +2097,197 @@ fi
 `
 }
 
+// ─── L3: the constitution-path arm of the commit guard ───────────────────────
+
+// constitutionGuardBody renders the commit wall's THIRD arm (ranger-base-ak3e,
+// fixing ranger-base-7pq0): a persona-marked commit whose to-be-committed set
+// touches the constitution class is refused.
+//
+// THE HOLE IT CLOSES, measured live. 9dfbbd4 in the constitution repo edited
+// all eleven `rhq/agents/*.md` crew PIDs from an uncaged persona session and
+// nothing refused it. Every wall that exists checks something else: the PID
+// deny list fences COMMANDS (`Bash(posse promote:*)`), the shared-index arm
+// below checks the commit's FORM, the land path checks bead and branch state,
+// and the only path-CLASS check in the tree is `ConstitutionGrants`, which is
+// seatbelt's and so is EPERM under `cage: seatbelt` and prose everywhere else.
+// Seven of eight personas run at shims (ADR 0002 §3). Under shims there was no
+// path-class check anywhere, which is ADR 0015 §2's "drafting is open to
+// personas, promotion is the operator's" holding for the taking-effect path
+// and not for the commit a promote then reads.
+//
+// WHY THIS SLOT. Same reasons the shared-index arm names: prepare-commit-msg
+// is posse-owned (pre-commit belongs to beads, which reinstalls it silently —
+// ADR 0002 §3), it is already installed in the constitution repo, it is
+// refreshed at every launch, and it survives `git commit --no-verify`, which
+// pre-commit does not.
+//
+// WHY IT KEYS ON RHQ_PERSONA and the shared-index arm does not. That arm is
+// about the TREE — a shared index sweeps whoever types into it, the operator
+// included (rangerhq-lt2w). This one is about WHO: ADR 0015 §2/§3 splits
+// drafting from ratification by actor, and the operator IS the ratifying
+// actor. The marker is the same one `posse promote` already refuses on
+// (EnvPersona, herdrback.go) and the same one MarkCrewOnOperatorPrompt reads
+// to tell an operator shell from a persona's, so no third spelling of "is
+// this a persona" is being coined here.
+//
+// THE TO-BE-COMMITTED SET is `git diff --cached --name-only` under the hook's
+// INHERITED GIT_INDEX_FILE, which is what makes it right for both forms this
+// wall leaves standing: a path-limited commit's temporary next-index IS the
+// index git hands the hook, so what that diff reports is what the commit will
+// take — not what the shared index happens to hold. `-z`, so a path with a
+// quote or a space in it is not read through git's own path quoting, and the
+// base is the empty tree in a repo with no commit yet (a first commit is
+// exactly when a constitution arrives whole). `diff.relative` is pinned off:
+// git runs hooks from the top level, but that config exists and a
+// repo-relative class has to be compared against repo-relative paths.
+//
+// THE CLASS is two lists, because the two have different reasons:
+//
+//	(a) in the CONSTITUTION repo only — a repo whose top level has
+//	    ConstitutionRepoMarker — every ConstitutionRepoPaths entry:
+//	    `rhq/<p>` for each PromotedPaths entry, plus `rhq/envs`. This is the
+//	    prose that becomes law at the next `posse promote`, and it is
+//	    rendered FROM PromotedPaths at hook-render time so a path added to
+//	    the promoted set widens this wall in the same edit rather than in a
+//	    later bead.
+//	(b) in EVERY hooked repo — `.claude/settings.json` and its `.local`
+//	    sibling. ranger-base-az93 is why: the deny list that fences a
+//	    persona's destructive verbs lives in that file, so a persona that can
+//	    commit it un-fences itself, in any repo it is dispatched into. It is
+//	    not "the constitution" by ADR 0015's list; it is the same class of
+//	    thing by blast radius, which is what a wall is allowed to care about.
+//
+// A class member matches a staged path exactly or as a directory prefix, so
+// one rule covers `rhq/config.yaml` (a file) and `rhq/agents` (a tree).
+//
+// WHAT IT DOES NOT DO: it does not reset, unstage or otherwise touch the
+// tree. The shared-index arm below already says why in its own words — a hook
+// that cleaned up behind a persona would be the destructive act the wall
+// exists to prevent — and here the staged diff is the very thing the
+// prescribed route asks the persona to keep hold of.
+//
+// THE RESIDUAL, stated rather than discovered. This is L3, the shim tier:
+// `env -i` scrubs RHQ_PERSONA and the arm stands down, which is the exact
+// residual PrePushHook already documents for its own marker. Two things sit
+// behind it and neither is claimed to be this: under `cage: seatbelt` the
+// constitution area is not writable at all (ConstitutionGrants, measured
+// empty), and the promote manifest is the DETECTOR at every tier — a
+// constitution that changed without a promotion is caught at the next launch
+// verify, whoever changed it and however. A pre-push arm would add nothing:
+// personas cannot push (PrePushHook, and every crew PID denies the verb) and
+// a push is operator-lane. A nested `.claude/settings.json` —
+// `sub/.claude/…` rather than the repo root's — is outside the class as
+// written, and outside what any runtime reads for a session dispatched at a
+// repo root.
+func constitutionGuardBody() string {
+	// One member per line, and a leading newline so EVERY member is a whole
+	// line of the rendered hook whichever block it lands in — that is what
+	// TestQAConstitutionWallRenderNamesEveryPromotedPath reads, and a member
+	// welded onto the end of a shell assignment would slip past it. Blank
+	// lines cost nothing: IFS is a newline, which is IFS whitespace, so the
+	// splitting below collapses runs of them.
+	class := func(paths []string) string {
+		var b strings.Builder
+		for _, p := range paths {
+			b.WriteString("\n")
+			b.WriteString(p)
+		}
+		b.WriteString("\n")
+		return b.String()
+	}
+	return `
+# ─── the constitution-path guard (ranger-base-ak3e) ───────────────────────
+# ADR 0015 §2/§3: personas DRAFT the constitution, the operator puts it in
+# force. Every other wall in this system checks a command, a commit's form or
+# a bead's state; this one checks the PATH CLASS, which is what 9dfbbd4 walked
+# through (ranger-base-7pq0). It runs ABOVE the shared-index arm on purpose:
+# that arm stands down in a linked worktree and mid-merge, and a dispatched
+# worktree is exactly where a persona's constitution commit comes from.
+if [ -n "${` + EnvPersona + `:-}" ]; then
+  # Every hooked repo: the file that carries this session's own deny list
+  # (ranger-base-az93). Then, in the constitution repo only, the promoted set.
+  posse_cls='` + class([]string{ClaudeProjectConfig, ClaudeProjectConfigLocal}) + `'
+  posse_cls_top=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$posse_cls_top" ] && [ -d "$posse_cls_top/` + ConstitutionRepoMarker + `" ]; then
+    posse_cls="${posse_cls}` + class(ConstitutionRepoPaths()) + `"
+  fi
+  # The index the COMMIT will use, which is the one git handed this hook —
+  # a path-limited commit's own next-index included. Empty tree when there is
+  # no HEAD yet.
+  posse_cls_base=$(git hash-object -t tree /dev/null 2>/dev/null)
+  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_cls_base=HEAD; fi
+  posse_cls_staged=$(git -c diff.relative=false diff --cached --name-only -z "$posse_cls_base" 2>/dev/null | tr '\0' '\n')
+  posse_cls_hit=''
+  if [ -n "$posse_cls_staged" ]; then
+    # -f: both loops split an unquoted expansion, and a staged path with a
+    # glob character in it has to stay a path rather than become a pattern.
+    # IFS is a newline only, so a path with spaces in it stays one word.
+    set -f
+    posse_cls_ifs=$IFS
+    IFS='
+'
+    for posse_cls_p in $posse_cls_staged; do
+      for posse_cls_m in $posse_cls; do
+        case "$posse_cls_p" in
+          "$posse_cls_m"|"$posse_cls_m"/*)
+            posse_cls_hit="$posse_cls_hit    $posse_cls_p    (class: $posse_cls_m)
+" ;;
+        esac
+      done
+    done
+    IFS=$posse_cls_ifs
+    set +f
+  fi
+  if [ -n "$posse_cls_hit" ]; then
+    {
+      echo "refused by posse gate: a persona commit touching the constitution — prepare-commit-msg hook, session ${` + EnvPersona + `}"
+      echo "ADR 0015 §2/§3: a persona DRAFTS the constitution; the operator puts it"
+      echo "in force (posse promote). These paths are the law this session runs"
+      echo "under — the PIDs, config, recipes and skills a promote copies into the"
+      echo "home, the env files beside them, and the settings file carrying this"
+      echo "session's own deny list (ranger-base-az93: a persona that can commit"
+      echo "that file un-fences itself)."
+      echo "staged now, and in the class:"
+      printf '%s' "$posse_cls_hit"
+      echo "the way through — stage the intended diff, the operator applies it:"
+      echo "  write what you MEAN under a path OUTSIDE the class (az93's went to"
+      echo "  docs/rca/az93-settings.json), commit that path, and say on the bead"
+      echo "  which class path it replaces and why. The operator reviews it, puts"
+      echo "  it in place, and — for the constitution — runs posse promote, which"
+      echo "  is the step that makes prose law (ADR 0015 §3)."
+      echo "Nothing here has been reset, unstaged or cleaned up: this hook does not"
+      echo "touch your tree, and what you staged is still exactly where you put it."
+    } >&2
+    if [ -n "$RHQ_GATES_DIR" ]; then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) constitution path in a persona commit [prepare-commit-msg hook] (${` + EnvPersona + `})" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+    fi
+    exit 1
+  fi
+fi
+`
+}
+
 // CommitGuardHook is the whole prepare-commit-msg hook for a repo whose
-// beads db carries the given visibility: the visibility guard first (a
-// mis-routed bead is a public artifact whoever typed it), then the
-// shared-index guard. Both apply to the operator's own commits — the second
-// one since rangerhq-lt2w, because a stale shared index reverts whoever
-// springs it, and the operator's unqualified `bd sync:` commits are the
-// form that sprang it.
+// beads db carries the given visibility. Three arms, in this order and for
+// this reason:
+//
+//	visibility     a mis-routed bead is a public artifact whoever typed it
+//	constitution   a persona commit that would rewrite the law it runs under
+//	shared index   a commit form that takes another persona's staged work
+//
+// The first and last apply to the operator's own commits too — the last one
+// since rangerhq-lt2w, because a stale shared index reverts whoever springs
+// it, and the operator's unqualified `bd sync:` commits are the form that
+// sprang it. The middle one is the one arm keyed on RHQ_PERSONA, because
+// ADR 0015 §2/§3 splits drafting from ratification BY ACTOR and the
+// operator is the ratifying actor.
+//
+// Order is load-bearing at one join: the constitution arm must sit ABOVE
+// the shared-index arm, which exits 0 in a linked worktree and mid-merge —
+// and a dispatched worktree is where a persona's commits come from.
 func CommitGuardHook(visibility string, set OpsPatternSet) string {
-	return commitGuardHead + visibilityGuardBody(visibility, set) + sharedIndexBody
+	return commitGuardHead + visibilityGuardBody(visibility, set) +
+		constitutionGuardBody() + sharedIndexBody
 }
 
 // hookRepo answers WHICH REPO the hook file belongs to — the question
@@ -2169,8 +2353,9 @@ func CommitGuardHookInstalled(dir string) bool {
 // l3HookProbe is launch-time evidence about the two hook slots. Repo is false
 // for a non-git session directory, where L3 is not applicable. PrePush is true
 // without running that arm when the PID does not deny git push; the
-// prepare-commit-msg arm always runs because its shared-index and visibility
-// guards protect every persona session, independent of PID rule text.
+// prepare-commit-msg arm always runs because its visibility, constitution and
+// shared-index guards protect every persona session, independent of PID rule
+// text.
 //
 // ADR 0023: a slot counts only when IDENTITY and BEHAVIOR both hold — the
 // file at the dispatch path (`git rev-parse --git-path hooks`) is
@@ -2400,7 +2585,7 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 		r.PrePushDegraded = l3DegradeLine(hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLine(hooks, "prepare-commit-msg", commitPath, "the shared-index and beads visibility guards are not realized", commitIdentity, commitStale)
+		r.CommitGuardDegraded = l3DegradeLine(hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path and shared-index guards are not realized", commitIdentity, commitStale)
 	}
 	return r
 }
