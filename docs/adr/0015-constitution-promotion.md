@@ -13,6 +13,9 @@ ranger-base-70ry) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · amended
 2026-08-29: §3's fence widens to bd's destructive/egress verbs
 (ranger-base-u9ud, from ranger-base-3bqn) · amended 2026-08-29: §3's
+hook denies narrow to install/uninstall — the whole verbs refused
+beads' own git hooks and no PID carrying them could commit
+(ranger-base-c7ek) · amended 2026-08-29: §3's
 actor split gains a third and fourth spelling, at the commit and at the
 land (ranger-base-ak3e, from ranger-base-7pq0; recorded by
 ranger-base-ubtc) · informs 0002
@@ -210,8 +213,10 @@ the same way twice:
   ranger-base-az93/3bqn):
 
   `Bash(bd daemon:*)` · `Bash(bd daemons:*)` · `Bash(bd admin:*)` ·
-  `Bash(bd delete:*)` · `Bash(bd doctor:*)` · `Bash(bd hook:*)` ·
-  `Bash(bd hooks:*)` · `Bash(bd import:*)` · `Bash(bd init:*)` ·
+  `Bash(bd delete:*)` · `Bash(bd doctor:*)` ·
+  `Bash(bd hook install:*)` · `Bash(bd hook uninstall:*)` ·
+  `Bash(bd hooks install:*)` · `Bash(bd hooks uninstall:*)` ·
+  `Bash(bd import:*)` · `Bash(bd init:*)` ·
   `Bash(bd migrate:*)` · `Bash(bd rename:*)` ·
   `Bash(bd rename-prefix:*)` · `Bash(bd repair:*)` ·
   `Bash(bd repo:*)` · `Bash(bd federation:*)` ·
@@ -220,7 +225,8 @@ the same way twice:
   `Bash(bd sync --full:*)` · `Bash(bd jira:*)` · `Bash(bd linear:*)` ·
   `Bash(bd setup:*)`
 
-  Shape: daemon lifecycle, delete, doctor, hook(s), import, init,
+  Shape: daemon lifecycle, delete, doctor, hook(s) install/uninstall,
+  import, init,
   migrate, rename(-prefix), repair, repo, federation, config
   set/unset, and relate rewrite or remove store state; `sync --full`
   is the one `sync` spelling that commits and pushes rather than
@@ -235,9 +241,55 @@ the same way twice:
   additive to each PID's existing `Bash(bd:*)` allow — deny wins (ADR
   0001) — not a replacement for it.
 
+  **The two hook rules name a subverb, and must** *(amended
+  2026-08-29, ranger-base-c7ek)*. They shipped as the whole verbs
+  `Bash(bd hook:*)` and `Bash(bd hooks:*)` and had to be narrowed
+  within the day. An L1 shim sits on `PATH`, so it is matched by every
+  `execve` of `bd` — not only the ones a persona types. beads' own
+  installed git hooks exec `bd hook pre-commit`, `bd hook
+  post-checkout`, `bd hook post-merge`, `bd hooks run pre-push` and
+  `bd hooks run prepare-commit-msg`. The whole-verb rules therefore
+  refused beads' hooks, the hooks exited non-zero, and git aborted:
+  **eleven PIDs could neither commit nor check out** in any repo where
+  bd had installed hooks, which is every posse worktree, since
+  worktrees share the main checkout's hooks dir. Measured from inside
+  the failure across three personas (ranger-base-c7ek/y5g7/i312); it
+  also took `git worktree add`, and with it
+  `scripts/release-artifacts.sh`, down. `--no-verify` is not a
+  workaround — git runs `prepare-commit-msg` regardless, which is the
+  property the constitution wall in that slot relies on, so the flag
+  only moves the refusal from the singular rule to the plural one.
+
+  The hazard the whole verb was reaching for is install/uninstall,
+  which the four rules above still deny; the run-time slots are a
+  closed set git itself defines. Narrowing costs nothing a persona
+  could otherwise reach, because the layer that sees what a persona
+  *types* is a different one: `.claude/settings.json` and
+  `scripts/bd-argv-gate.py` both match a Bash tool call by its command
+  **text**, they keep the whole-verb spelling, and the argv gate is an
+  allow-list — so it walls every spelling of the typed verb, including
+  ones an enumerated L1 list cannot name. L2 covers typing; L1 must
+  stay narrow precisely because it also sees what git spawns.
+
+  This is pinned twice, and neither pin is optional. Content:
+  `scripts/verify-pid-deny-set.sh` carries the whole-verb spellings in
+  a `FORBIDDEN` list, because a PID that keeps them *alongside* the
+  narrow four satisfies every presence check and still cannot commit.
+  Behavior: `bdhookcommit_qa_test.go` renders each shipped PID's real
+  deny set, puts the gates dir **first** on `PATH` in a scratch repo
+  carrying beads' hook shims, and requires a path-limited commit and a
+  branch checkout to land. That PATH ordering is the whole point —
+  every renderer test in `internal/rhq` drops the gates dir from the
+  child's `PATH`, which is why none of them could see this.
+
   **Known residual, stated rather than assumed away.** The L1 shim
   renders on `PATH`; it never sees `bd` reached by an absolute path
   (`/Users/.../bd daemon stop`). That half is not this ADR's to close.
+  Second residual, accepted with the narrowing above: a persona can now
+  *type* `bd hook post-merge`, which imports JSONL over the db, on any
+  box where the argv gate is not installed. That is a mutation beads'
+  own hooks perform on every pull, and it is the price of the fleet
+  being able to commit at all.
   `scripts/bd-argv-gate.{sh,py}` — a PreToolUse hook the operator may
   install, not one posse renders (ADR 0014 §5 unamended) — is the
   answer for that spelling on claude, and its allow-list posture also

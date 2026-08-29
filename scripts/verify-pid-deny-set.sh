@@ -33,16 +33,46 @@ set -uo pipefail
 # ADR 0015 section 3, in the ADR's own order. The bd list is the one staged and
 # measured on ranger-base-az93 / ranger-base-3bqn; `posse promote` is the older
 # "Fence, spelled twice" bullet whose authority the bd amendment reuses.
+#
+# The four hook rules name a SUBVERB. That is not tidiness, it is the
+# ranger-base-c7ek amendment, and the whole-verb spellings they replace are in
+# FORBIDDEN below because carrying one is a defect, not a stricter fence.
 REQUIRED=(
   'Bash(posse promote:*)'
   'Bash(bd daemon:*)' 'Bash(bd daemons:*)' 'Bash(bd admin:*)'
-  'Bash(bd delete:*)' 'Bash(bd doctor:*)' 'Bash(bd hook:*)'
-  'Bash(bd hooks:*)' 'Bash(bd import:*)' 'Bash(bd init:*)'
+  'Bash(bd delete:*)' 'Bash(bd doctor:*)'
+  'Bash(bd hook install:*)' 'Bash(bd hook uninstall:*)'
+  'Bash(bd hooks install:*)' 'Bash(bd hooks uninstall:*)'
+  'Bash(bd import:*)' 'Bash(bd init:*)'
   'Bash(bd migrate:*)' 'Bash(bd rename:*)' 'Bash(bd rename-prefix:*)'
   'Bash(bd repair:*)' 'Bash(bd repo:*)' 'Bash(bd federation:*)'
   'Bash(bd config set:*)' 'Bash(bd config unset:*)'
   'Bash(bd dep relate:*)' 'Bash(bd relate:*)' 'Bash(bd sync --full:*)'
   'Bash(bd jira:*)' 'Bash(bd linear:*)' 'Bash(bd setup:*)'
+)
+
+# Rules a PID must NOT carry. Presence is a finding of the same weight as an
+# absence above, and this is the only list in the fence where that is true.
+#
+# WHY. The L1 shim a deny renders sits on PATH and is therefore matched by
+# EVERY execve of `bd`, not only the ones a persona types. `bd hook pre-commit`,
+# `bd hook post-checkout`, `bd hook post-merge`, `bd hooks run pre-push` and
+# `bd hooks run prepare-commit-msg` are what beads' OWN installed git hooks
+# exec. A whole-verb deny on hook/hooks therefore refuses beads' hooks, the
+# hooks exit non-zero, and git aborts: a persona carrying it cannot commit and
+# cannot check out AT ALL in any repo where bd installed hooks. Measured
+# 2026-08-29 across three personas (ranger-base-c7ek), which is how it was
+# found - it blocked the verifier's own commit.
+#
+# The hazard the whole-verb rule was reaching for is install/uninstall, which
+# REQUIRED still denies. Nothing is given up by narrowing: typed `bd hook ...`
+# is refused one layer up by scripts/bd-argv-gate.py, which is an ALLOW-list
+# and so walls every spelling of the verb - including ones this list cannot
+# enumerate. L2 covers what a persona types; L1 must stay narrow precisely
+# because it also sees what git spawns.
+FORBIDDEN=(
+  'Bash(bd hook:*)'
+  'Bash(bd hooks:*)'
 )
 
 # deny_rules <pid> - one rule per line, from either spelling of the list. Both
@@ -88,7 +118,7 @@ verbose=0
 ELIDE_OVER=4
 
 check_home() {
-  local home=$1 agents pid name rule have rules found
+  local home=$1 agents pid name rule have rules found flagged
   local pids=0 bad=0 checked=0
   agents="$home/agents"
   if [ ! -d "$agents" ]; then
@@ -104,6 +134,7 @@ check_home() {
     pids=$((pids + 1))
     name=$(basename "$pid" .md)
     rules=$(deny_rules "$pid")
+    flagged=0
     local -a missing=()
     for rule in "${REQUIRED[@]}"; do
       checked=$((checked + 1))
@@ -114,7 +145,7 @@ check_home() {
       [ "$found" = 1 ] || missing+=("$rule")
     done
     if [ ${#missing[@]} -gt 0 ]; then
-      bad=$((bad + 1))
+      flagged=1
       echo "MISSING  $name (${#missing[@]} of ${#REQUIRED[@]}):"
       # A whole crew missing a whole list is the expected FIRST reading of this
       # script, and 250 lines of it buries the summary. Elide by default.
@@ -125,6 +156,24 @@ check_home() {
         echo "           ... and $((${#missing[@]} - ELIDE_OVER)) more (--verbose for all)"
       fi
     fi
+    # The other direction. A PID carrying a FORBIDDEN rule is broken even when
+    # it carries every REQUIRED one - the two lists are not alternatives, and
+    # the set that holds BOTH spellings is the shape a presence-only check
+    # calls clean while its persona cannot commit (ranger-base-c7ek). Never
+    # elided: the list is short and each entry is a live outage.
+    local -a carries=()
+    for rule in "${FORBIDDEN[@]}"; do
+      checked=$((checked + 1))
+      while IFS= read -r have; do
+        if [ "$have" = "$rule" ]; then carries+=("$rule"); break; fi
+      done <<<"$rules"
+    done
+    if [ ${#carries[@]} -gt 0 ]; then
+      flagged=1
+      echo "CARRIES  $name (${#carries[@]} rule(s) that wall beads' own git hooks):"
+      printf '           %s\n' "${carries[@]}"
+    fi
+    bad=$((bad + flagged))
   done
   if [ "$pids" -eq 0 ]; then
     echo "nothing measured: no PIDs in $agents" >&2
@@ -132,22 +181,23 @@ check_home() {
   fi
   # The positive witness. An assertion of pure absence is satisfied by
   # measuring nothing (ranger-base-fm4p), so say what was actually read.
-  echo "scanned $pids PIDs in $agents against ${#REQUIRED[@]} required rules ($checked comparisons)"
+  echo "scanned $pids PIDs in $agents against ${#REQUIRED[@]} required and ${#FORBIDDEN[@]} forbidden rules ($checked comparisons)"
   if [ "$bad" -ne 0 ]; then
-    echo "$bad PID(s) do not carry the ADR 0015 section 3 fence"
+    echo "$bad PID(s) do not carry the ADR 0015 section 3 fence as written"
     return 1
   fi
-  echo "every PID carries the ADR 0015 section 3 fence"
+  echo "every PID carries the ADR 0015 section 3 fence and none walls beads' hooks"
   return 0
 }
 
 # Every arm below has a wrong answer that fails: two complete PIDs that must
-# come back clean (one per list spelling), one PID that must be flagged, and
-# two homes with nothing in them that must exit 2 rather than 0.
+# come back clean (one per list spelling), two PIDs that must be flagged - one
+# for an absence and one for a presence - and two homes with nothing in them
+# that must exit 2 rather than 0.
 self_test() {
   local d rc=0 out r full_block full_flow
   d=$(mktemp -d) || return 2
-  mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/empty/agents"
+  mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/broad/agents" "$d/empty/agents"
 
   full_block=$(printf -- '  - %s\n' "${REQUIRED[@]}")
   full_flow=$(printf '%s, ' "${REQUIRED[@]}")
@@ -188,6 +238,20 @@ self_test() {
     echo '  - Bash(bd daemon:*)'
   } > "$d/gap/agents/a.md"
 
+  # The presence arm. This PID carries EVERY required rule, so the missing-rule
+  # half is silent, and it also carries the whole-verb hook denies - the exact
+  # shape that shipped to eleven PIDs and left none of them able to commit. An
+  # audit that only asks "is the rule there?" calls this file clean.
+  {
+    echo '---'
+    echo 'name: keeps-broad-too'
+    echo 'deny:'
+    printf -- '  - %s\n' "${REQUIRED[@]}"
+    printf -- '  - %s\n' "${FORBIDDEN[@]}"
+    echo '---'
+    echo body
+  } > "$d/broad/agents/a.md"
+
   out=$(check_home "$d/block"); r=$?
   if [ $r -eq 0 ] && [[ $out == *"scanned 1 PIDs"* ]]; then
     echo "self-test PASS: a complete block-sequence PID is clean, and 1 PID was read"
@@ -207,6 +271,13 @@ self_test() {
     echo "self-test PASS: a PID carrying only daemons is flagged for daemon"
   else
     echo "self-test FAIL: the daemon/daemons gap was not caught (rc=$r): $out"; rc=1
+  fi
+
+  out=$(check_home "$d/broad"); r=$?
+  if [ $r -eq 1 ] && [[ $out == *'CARRIES'* ]] && [[ $out == *'Bash(bd hook:*)'* ]]; then
+    echo "self-test PASS: a PID carrying every required rule AND the broad hook denies is flagged"
+  else
+    echo "self-test FAIL: the whole-verb hook deny was not caught (rc=$r): $out"; rc=1
   fi
 
   out=$(check_home "$d/empty" 2>&1); r=$?
