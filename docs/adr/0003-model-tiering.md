@@ -106,11 +106,11 @@ with per-model validity enforced in `runtime check` — and not before.
 
 Alternatives rejected: (a) standard=grok-4.5 — rests on an unpriced
 saving and demotes the everyday lane, above; (b) a per-tier effort key
-now — the clever one; four positions of a dial nobody can read, priced
-above; (c) smuggling effort through the model value (`"grok-4.6
---reasoning-effort low"` as the map's string) — `{model}` renders one
-argv token via `ModelFlag`, and a map whose values are secretly command
-lines makes every reader of the map wrong.
+now — the clever one; three or four positions (per model) of a dial
+nobody can read, priced above; (c) smuggling effort through the model
+value (`"grok-4.6 --reasoning-effort low"` as the map's string) —
+`{model}` renders one argv token via `ModelFlag`, and a map whose values
+are secretly command lines makes every reader of the map wrong.
 
 *(Shipped 2026-08-29, rangerhq-jp6 — the column the ruling above governs.)*
 Ids read from the CLI on the day rather than from a doc: grok 1.0.5,
