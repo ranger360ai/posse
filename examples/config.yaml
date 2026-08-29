@@ -88,8 +88,8 @@ default_emoji: ⚙️
 # Syntax is a session name's (letters, digits, - and _), and a malformed tag
 # refuses the launch rather than quietly labelling like an untagged home.
 #
-# Coexistence is the rest of this file too: disjoint `beads:` and `dirs:`
-# (one repo is served by exactly one home), and a distinct
+# Coexistence is the rest of this file too: a disjoint `beads:` (one repo is
+# served by exactly one home), and a distinct
 # `autostart_session:` — the herdr startup hook arms one home per server.
 # instance: <short tag>
 
@@ -224,13 +224,6 @@ default_emoji: ⚙️
 # beads_visibility:
 #   ~/code/projA: public
 #   ~/code/projB: private
-
-# Workspace roots — the TUI's directory picker offers each root plus its
-# immediate subdirectories (real, existing directories only).
-dirs:
-  - ~/code
-  - ~/src
-  - ~/notes
 
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
 # The one handoff the harness files itself: a closed bead with one of these

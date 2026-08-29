@@ -483,10 +483,6 @@ For a working instance you need these. Everything else has a defensible
 default:
 
 ```yaml
-# Where the TUI's directory picker looks (roots + their immediate subdirs).
-dirs:
-  - ~/src
-
 # The queue. `posse ready`, the cockpit and dispatch aggregate these repos'
 # bd databases. A missing or unreadable repo is named as a failed scan.
 beads:
@@ -1603,10 +1599,9 @@ the bd repos its `beads:` lists.
 Two invariants you must respect — the harness does not enforce them:
 
 1. **A repo is served by exactly one instance.** The `beads:` sets of two
-   instances are disjoint, and so are their `dirs:` work repos. Two
-   instances dispatching one repo double-files verify beads, makes crew
-   marks invisible across the boundary, and hard-refuses the second
-   skills binder.
+   instances are disjoint. Two instances dispatching one repo double-files
+   verify beads, makes crew marks invisible across the boundary, and
+   hard-refuses the second skills binder.
 2. **Every herdr workspace has exactly one owning instance**, and the
    ownership record is that instance's `state/herdr/<name>.yaml` meta file
    — never a label pattern.
@@ -1616,7 +1611,6 @@ What to set in the second instance's `config.yaml`:
 ```yaml
 instance: <short-name>       # tags this home's herdr labels: <instance>/<session>
 beads:   [ ... ]             # disjoint from the other instance's
-dirs:    [ ... ]             # disjoint
 autostart_session: <name>    # distinct, if it ever arms
 ```
 

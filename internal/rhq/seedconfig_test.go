@@ -3,7 +3,7 @@ package rhq
 // The seed config (examples/config.yaml) is what `posse init` copies verbatim
 // into every fresh instance, so it is the de facto instance spec — and the
 // highest-leverage place for one of this instance's facts to escape into
-// everyone else's (ADR 0012 Appendix A 4). Two properties are worth a test
+// everyone else's (ADR 0012 Appendix A 4). Three properties are worth a test
 // rather than a reviewer's eye:
 //
 //  1. It ARMS NOTHING. Every key that changes dispatch's behaviour ships
@@ -12,8 +12,12 @@ package rhq
 //     one key by accident while editing this file is the regression.
 //  2. It names no machine. An absolute home path in the seed is an instance
 //     fact that would follow the file onto every other laptop.
+//  3. Every key it DOES ship armed is read by something. An armed key no
+//     code looks up is documentation of a feature that is not there
+//     (ranger-base-aox).
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,8 +37,8 @@ func seedConfigPath(t *testing.T) string {
 }
 
 // The keys the seed is allowed to set live, and nothing else: session
-// cosmetics and the picker's roots. Everything with teeth — routing,
-// tiering, ceilings, the arm switch — is documented in comments and unset.
+// cosmetics. Everything with teeth — routing, tiering, ceilings, the arm
+// switch — is documented in comments and unset.
 func TestSeedConfigArmsNothing(t *testing.T) {
 	cfg := seedConfigPath(t)
 
@@ -85,14 +89,11 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 	}
 }
 
-// The picker roots and the emoji map are the seed's live content; they must
-// still work, and still name nobody's machine.
+// The emoji map is the seed's live content; it must still work, and still
+// name nobody's machine.
 func TestSeedConfigNamesNoMachine(t *testing.T) {
 	cfg := seedConfigPath(t)
 
-	if len(YamlList(cfg, "dirs")) == 0 {
-		t.Error("seed config has no dirs: roots — the TUI picker would offer nothing")
-	}
 	if len(YamlMapPairs(cfg, "emoji")) == 0 {
 		t.Error("seed config has no emoji: map")
 	}
@@ -108,6 +109,16 @@ func TestSeedConfigNamesNoMachine(t *testing.T) {
 	}
 }
 
+// The keys a fresh instance is allowed to ship SET. Shared by the two tests
+// below: one says nothing outside this set is declared, the other says
+// everything in it is read by the harness.
+var seedLiveKeys = map[string]bool{
+	"default_dir":   true, // session cosmetics — no dispatch behaviour
+	"default_env":   true,
+	"default_emoji": true,
+	"emoji":         true, // session name → glyph
+}
+
 // The two lists above are hand-maintained, which is the failure mode they
 // were meant to prevent: a key added to the seed by a later bead is armable
 // and silently uncovered. `plan_usage_ttl:` and `beads_visibility:` both
@@ -118,14 +129,6 @@ func TestSeedConfigNamesNoMachine(t *testing.T) {
 // commented out, or say here, on purpose, that a fresh instance sets it.
 func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
 	cfg := seedConfigPath(t)
-
-	live := map[string]bool{
-		"default_dir":   true, // session cosmetics — no dispatch behaviour
-		"default_env":   true,
-		"default_emoji": true,
-		"dirs":          true, // the picker's roots
-		"emoji":         true, // session name → glyph
-	}
 
 	b, err := os.ReadFile(cfg)
 	if err != nil {
@@ -143,9 +146,74 @@ func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
 		if strings.ContainsAny(key, " \t") {
 			continue
 		}
-		if !live[key] {
+		if !seedLiveKeys[key] {
 			t.Errorf("seed config declares %s: — a fresh instance must ship it commented out, "+
-				"or add it to `live` here and say why arming it by default is right", key)
+				"or add it to `seedLiveKeys` and say why arming it by default is right", key)
+		}
+	}
+}
+
+// The other half of the allowlist, and the one `dirs:` failed for two years
+// (ranger-base-aox). Being on `seedLiveKeys` says a fresh instance ships this
+// key ARMED; that is only defensible if something then reads it. `dirs:` was
+// seeded with three roots and a comment describing a TUI directory picker
+// this branch does not have — the picker belongs to the tmux-era launcher —
+// so every fresh instance was armed with a key no code has ever looked up,
+// and both tests above blessed it. It is deleted; this pin is what keeps the
+// next one from arriving the same way.
+//
+// The check is the bead's own repro promoted to an assertion: the harness
+// reads config through YamlGet/YamlList/YamlMapPairs/CfgGet, all keyed by a
+// string literal, so a live key with no `"key"` literal in any non-test Go
+// file is read by nothing. A matching literal is necessary, not sufficient —
+// this cannot tell a config read from a same-named recipe field — but the
+// failure it catches is total absence, which is the failure that happened.
+// Test files are excluded on purpose: a key whose only reader is the test
+// asserting it has one would satisfy a scan that included them.
+func TestSeedConfigLiveKeysAreRead(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var src strings.Builder
+	scanned := 0
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "vendor" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		src.Write(b)
+		scanned++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Positive witness: an empty or mis-rooted walk would pass every
+	// assertion below by measuring nothing.
+	if scanned < 20 {
+		t.Fatalf("scanned %d non-test .go files under %s — the walk found no tree, so the check below measures nothing", scanned, root)
+	}
+	t.Logf("scanned %d non-test .go files under %s", scanned, root)
+
+	all := src.String()
+	for key := range seedLiveKeys {
+		if !strings.Contains(all, `"`+key+`"`) {
+			t.Errorf("seed config ships %s: armed, but no non-test Go file names %q — "+
+				"a key nothing reads must not be in the seed (delete it, or delete it from seedLiveKeys)", key, key)
 		}
 	}
 }
