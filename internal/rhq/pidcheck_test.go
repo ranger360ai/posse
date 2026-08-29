@@ -273,3 +273,78 @@ func TestBalancedParens(t *testing.T) {
 		}
 	}
 }
+
+// The checker must stay in step with the fleet it ships with (rangerhq-h44:
+// `agent check` reported `missing section ## Role` against PIDs that say
+// `## Who you are`, and `metrics: unknown id` for a persona's own ids —
+// both since ruled on by the ADR 0001 amendment, neither pinned as a fact
+// about the *shelf*). So: every examples/agents PID, in one home posse init
+// has seeded, lints clean. A one-file pin (TestCheckAgent, architect.md
+// alone) cannot see a finding computed across personas — the derived
+// catalog's near-duplicate check is one — and a headings-only pin
+// (TestExampleAgentsArePIDs) cannot see anything the linter checks that is
+// not a heading.
+func TestShelfPIDsLintCleanAsASet(t *testing.T) {
+	shelf, _ := filepath.Glob(filepath.Join("..", "..", "examples", "agents", "*.md"))
+	if len(shelf) < 9 {
+		t.Skipf("reference PIDs not present (%d found)", len(shelf))
+	}
+	home := t.TempDir()
+	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range shelf {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(a.AgentsDir, filepath.Base(p)), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The shelf declares skills: [distributed-systems]; `posse init` seeds
+	// examples/skills into the home, so "clean" is judged in a seeded home.
+	seeded, _ := filepath.Glob(filepath.Join("..", "..", "examples", "skills", "*"))
+	for _, p := range seeded {
+		mkSkill(t, a.SkillsDir(), filepath.Base(p))
+	}
+
+	// Positive witness: a green loop over an empty set proves nothing.
+	names := a.ListAgents()
+	if len(names) != len(shelf) {
+		t.Fatalf("seeded %d shelf PIDs, ListAgents sees %d: %v", len(shelf), len(names), names)
+	}
+	for _, n := range names {
+		fs, _, err := a.CheckAgent(n)
+		if err != nil {
+			t.Errorf("%s: %v", n, err)
+			continue
+		}
+		if len(fs) != 0 {
+			t.Errorf("%s: shelf PID has findings: %v", n, fs)
+		}
+	}
+
+	// Control: put one shelf PID back on the ADR's first-draft heading and
+	// the lint must name it. Without this the loop above is green whether
+	// CheckAgent looked at the bodies or not.
+	raw, err := os.ReadFile(filepath.Join(a.AgentsDir, "developer.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := strings.Replace(string(raw), "\n## Who you are\n", "\n## Role\n", 1)
+	if drifted == string(raw) {
+		t.Fatal("control did not plant: developer.md has no ## Who you are heading")
+	}
+	if err := os.WriteFile(filepath.Join(a.AgentsDir, "developer.md"), []byte(drifted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs, _, err := a.CheckAgent("developer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(fs, "\n"), "missing section ## Who you are") {
+		t.Errorf("control: a drifted identity heading must be a finding, got %v", fs)
+	}
+}
