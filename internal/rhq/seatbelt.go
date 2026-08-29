@@ -85,15 +85,15 @@ const sandboxApplyProbeProfile = `(version 1)
 var sandboxApplyRefusal = liveSandboxApplyRefusal
 
 var (
-	sbApplyOnce sync.Once
-	sbApplyWhy  string
+	sandboxApplyOnce sync.Once
+	sandboxApplyWhy  string
 )
 
 // liveSandboxApplyRefusal asks the kernel, once per process: the answer can
 // only change by this process gaining a sandbox, which posse never does to
 // itself, and the reach probe would otherwise pay for a fork per target.
 func liveSandboxApplyRefusal() string {
-	sbApplyOnce.Do(func() {
+	sandboxApplyOnce.Do(func() {
 		if !SeatbeltAvailable() {
 			return
 		}
@@ -106,10 +106,10 @@ func liveSandboxApplyRefusal() string {
 		// problem with this host, and the check that meets it should report
 		// it as itself rather than disappear into an abstention.
 		if s := strings.TrimSpace(string(out)); isSandboxApplyRefusal(s) {
-			sbApplyWhy = s
+			sandboxApplyWhy = s
 		}
 	})
-	return sbApplyWhy
+	return sandboxApplyWhy
 }
 
 // isSandboxApplyRefusal separates the kernel refusing the APPLY from the
