@@ -1633,6 +1633,14 @@ would set a real meter's. See `examples/config.yaml`.
 Restart the herdr server (or run `plugin/autostart.sh` by hand) to arm.
 Log: `$RHQ_HOME/state/dispatch-watch.log`.
 
+A by-hand run never kills anything. If a workspace already wears the session
+name with no loop in it — a husk herdr restored without its command, wearing
+your crew mark 👤 because `posse new` stamps it, so no sweep will clear it —
+the hook says exactly that and exits nonzero rather than reporting a loop it
+just measured as absent. `posse kill dispatch`, then run the hook again; a
+herdr server start (`--startup`) replaces a husk by itself. `posse status`
+reports the same fact from the other side, as G7 `loop-dead`.
+
 ---
 
 ## 13. Two instances on one machine

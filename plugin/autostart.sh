@@ -50,8 +50,10 @@
 # `posse dispatch --watch-status` reports it, so a husk's lock is free and a
 # carry-over's is held — kernel-owned, with no stale state to reason about
 # (rangerhq-ct9, rangerhq-gir5). Kill-and-replace only when no live loop
-# answers. Run by hand without the flag it is conservative and leaves a live
-# session alone either way.
+# answers. Run by hand without the flag it is conservative and kills nothing:
+# a workspace already wearing the name is left alone whether or not a loop is
+# in it — but when no loop is, the by-hand run says so and exits nonzero,
+# because it armed nothing (ranger-base-oej).
 #
 # The plan-utilization guard (plan_guard_5h / plan_guard_7d) is what keeps an
 # unattended loop off the operator's plan window; dispatch runs it at the top
@@ -323,12 +325,38 @@ start; rc=$?
 if [ "$rc" = 3 ]; then
 	if $startup; then
 		say "$session restored by herdr without its loop — replacing"
-		"$RHQ" kill "$session" >/dev/null 2>&1 || true
+		# What the kill SAID is kept, because it is the only thing that can
+		# explain the failure below. A kill can refuse — the ADR 0013 §4 reap
+		# guard, the foreign-workspace refusal — and a refusal swallowed into
+		# /dev/null leaves "still present after kill" naming no lever
+		# (ranger-base-oej). Newlines are squashed: this is quoted on one line.
+		if ! killsaid=$("$RHQ" kill "$session" 2>&1 | tr '\n' ' '); then
+			say "posse kill $session refused: ${killsaid:-nothing}" >&2
+		fi
 		start; rc=$?
-		[ "$rc" = 3 ] && { say "$session still present after kill — not started" >&2; rc=1; }
+		[ "$rc" = 3 ] && { say "$session still present after kill — not started${killsaid:+ (kill said: $killsaid)}" >&2; rc=1; }
 	else
-		say "$session already running — left alone"
-		rc=0
+		# NOT "already running". The lock was asked two blocks up and answered
+		# NONE, so whatever wears this name, it is not a dispatch loop — and
+		# reporting a live loop off a name refusal contradicts the hook's own
+		# measurement. That is the bug: during F8 an operator read
+		# "dispatch already running — left alone" twice with no loop and no
+		# pidfile, off a workspace herdr had restored without its command, and
+		# the line named neither the husk nor the lever (ranger-base-oej).
+		#
+		# The crew mark is why nothing clears it on its own: this session is
+		# created by `posse new`, which stamps `crew: true` (ADR 0008), so it
+		# shows as the operator's 👤 in `posse list` and every sweep steps over
+		# it. `posse kill` is the lever, and it is the operator's to pull — a
+		# by-hand run still never kills, because the name may be worn by a
+		# workspace they are sitting in.
+		#
+		# Nonzero, unlike the old rc=0: this run armed nothing, the same
+		# failure the broken-arm and missing-binary stand-downs above exit 1
+		# on. An arm that did not arm must not report success.
+		say "$session exists but no dispatch loop holds the lock — left alone, nothing armed" >&2
+		say "a herdr workspace outlives its command; this one wears the operator's crew mark 👤 (posse new stamps it), so no sweep clears it — run 'posse kill $session' and re-run this hook, or restart the herdr server, whose --startup run replaces a husk itself" >&2
+		rc=1
 	fi
 fi
 exit "$rc"

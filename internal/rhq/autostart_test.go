@@ -36,6 +36,7 @@ type hookWorld struct {
 	herdrSession string // HERDR_SESSION; empty is the default herdr server
 	deaf         string // touched to make the fake posse fail --watch-status
 	noisy        string // touched to make it print an unrelated stderr notice first
+	killRefused  string // touched to make `kill` refuse the way the reap guard does
 }
 
 func newHookWorld(t *testing.T, config string) *hookWorld {
@@ -46,6 +47,8 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 		exists: filepath.Join(home, "session-exists"),
 		deaf:   filepath.Join(home, "probe-deaf"),
 		noisy:  filepath.Join(home, "probe-noisy"),
+
+		killRefused: filepath.Join(home, "kill-refused"),
 	}
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
@@ -69,7 +72,10 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 		"case \"$1\" in\n" +
 		"new)  if [ -e " + shq(w.exists) + " ]; then echo 'workspace already exists'; exit 1; fi\n" +
 		"      : > " + shq(w.exists) + "; echo created; exit 0 ;;\n" +
-		"kill) rm -f " + shq(w.exists) + "; exit 0 ;;\n" +
+		"kill) if [ -e " + shq(w.killRefused) + " ]; then\n" +
+		"        printf 'NOT killed: dispatch still holds rb-1 (in_progress)\\nand ~/src/posse has uncommitted work\\n' >&2; exit 1\n" +
+		"      fi\n" +
+		"      rm -f " + shq(w.exists) + "; exit 0 ;;\n" +
 		"esac\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(home, "posse"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
@@ -133,6 +139,16 @@ func probedOnly(calls string) bool {
 func (w *hookWorld) sessionExists(t *testing.T) {
 	t.Helper()
 	if err := os.WriteFile(w.exists, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// killRefuses is a `posse kill` that says no — the ADR 0013 §4 reap guard, or
+// the foreign-workspace refusal. The hook cannot overrule it; what it must not
+// do is swallow the reason (ranger-base-oej).
+func (w *hookWorld) killRefuses(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(w.killRefused, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -463,17 +479,94 @@ func TestAutostartReplacesAHuskPastAnUnrelatedStderrNotice(t *testing.T) {
 	}
 }
 
-// By hand, with no --startup, nothing is ever killed.
+// By hand, with no --startup, nothing is ever killed: the name may be worn by
+// a workspace the operator is sitting in.
 func TestAutostartByHandNeverKills(t *testing.T) {
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 
 	r := w.run(t)
-	if r.code != 0 || strings.Contains(r.calls, "kill") {
-		t.Errorf("exit %d, calls:\n%s", r.code, r.calls)
+	if strings.Contains(r.calls, "kill") {
+		t.Errorf("a by-hand run killed something:\n%s", r.calls)
 	}
-	if !strings.Contains(r.out, "already running — left alone") {
+}
+
+// The defect (ranger-base-oej): with the name taken and NO loop behind it, the
+// by-hand run reported "dispatch already running — left alone" and exited 0.
+// The lock had already been asked and answered none two blocks earlier, so the
+// line contradicted the hook's own measurement — during F8 the operator read it
+// twice off a husk, with no loop and no pidfile, and it named neither the husk
+// nor the lever. A report that armed nothing must not say a loop is running,
+// must name `posse kill`, and must not exit 0.
+func TestAutostartByHandNameTakenWithNoLoopIsNotAlreadyRunning(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.sessionExists(t) // a husk: the workspace came back, the command did not
+
+	r := w.run(t)
+	if strings.Contains(r.out, "already running") {
+		t.Errorf("no loop holds the lock, so nothing is already running:\n%s", r.out)
+	}
+	if r.code == 0 {
+		t.Errorf("exit 0 reports an arm that did not happen:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "no dispatch loop holds the lock") {
+		t.Errorf("want the measured reason:\n%s", r.out)
+	}
+	// The lever, and why nothing else will pull it: the workspace is created
+	// by `posse new`, which stamps crew: true, so every sweep steps over it.
+	if !strings.Contains(r.out, "posse kill dispatch") {
+		t.Errorf("want the lever named:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, CrewTag) {
+		t.Errorf("want the crew mark named as why the husk survives:\n%s", r.out)
+	}
+	if strings.Contains(r.calls, "kill") {
+		t.Errorf("naming the lever is not pulling it:\n%s", r.calls)
+	}
+}
+
+// The positive control for the case above: by hand, over a loop that really is
+// running, "already running — left alone" is the truth and exit 0 is right.
+func TestAutostartByHandOverALiveLoopStillReportsSuccess(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.sessionExists(t)
+	w.loopRunning(t)
+
+	r := w.run(t)
+	if r.code != 0 {
+		t.Errorf("exit %d, want 0 over a live loop:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.out, "loop already running") || !strings.Contains(r.out, "left alone") {
 		t.Errorf("want the conservative report:\n%s", r.out)
+	}
+	if !probedOnly(r.calls) {
+		t.Errorf("a live loop must be left alone:\n%s", r.calls)
+	}
+}
+
+// The startup twin of the same complaint: a kill CAN refuse — the reap guard,
+// the foreign-workspace refusal — and the hook used to send that reason to
+// /dev/null, leaving "still present after kill — not started" naming no lever.
+func TestAutostartHuskReplacementQuotesARefusingKill(t *testing.T) {
+	w := newHookWorld(t, armed)
+	w.sessionExists(t)
+	w.killRefuses(t)
+
+	r := w.run(t, "--startup")
+	if r.code == 0 {
+		t.Errorf("exit 0 with nothing armed:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "still present after kill") {
+		t.Errorf("want the failure said:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "NOT killed: dispatch still holds rb-1") {
+		t.Errorf("want the kill's own reason quoted:\n%s", r.out)
+	}
+	// One line: the refusal is multi-line and the hook squashes it.
+	for _, line := range strings.Split(r.out, "\n") {
+		if strings.Contains(line, "still present after kill") && !strings.Contains(line, "uncommitted work") {
+			t.Errorf("the quoted reason was cut off at the newline:\n%s", r.out)
+		}
 	}
 }
 
