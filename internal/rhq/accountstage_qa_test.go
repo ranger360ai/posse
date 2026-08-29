@@ -172,7 +172,22 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 			if n != 1 {
 				t.Fatalf("the bead must launch either way, got n=%d:\n%s", n, out)
 			}
-			got := strings.Contains(out, "account-degraded "+c.runtime)
+			// Positive witness: the launch really went to the runtime under
+			// test. The pass does not print the runtime on the launch line,
+			// so read it back off the PID dispatch resolved — without this a
+			// silent rewrite failure leaves the grok arm measuring codex and
+			// passing for the wrong reason (nothing degraded either way).
+			ag, err := f.b.App.LoadAgent("ranger")
+			if err != nil || ag.Runtime != c.runtime {
+				t.Fatalf("the persona dispatch ran is on %q, want %q (%v)", ag.Runtime, c.runtime, err)
+			}
+			// Not "account-degraded <runtime>" but any degrade at all: a
+			// launch that silently landed on some OTHER degraded runtime
+			// must not read as this one's silence.
+			got := strings.Contains(out, "account-degraded")
+			if got && !strings.Contains(out, "account-degraded "+c.runtime) {
+				t.Errorf("some other runtime was degraded, not %s:\n%s", c.runtime, out)
+			}
 			if got != c.degraded {
 				t.Errorf("account-degraded line = %v, want %v:\n%s", got, c.degraded, out)
 			}
