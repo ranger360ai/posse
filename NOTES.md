@@ -5176,6 +5176,27 @@ flag on, keeps its value above the measurement, and sweeps for new entry
 points that route around the target. Numbers and the distribution:
 `docs/notes.d/ranger-base-2ggb.md`.
 
+**The clock is not the only thing this box runs out of** (ranger-base-krra).
+On 2026-08-29 `make test` came back exit 2 with ~80 reds in `internal/rhq`,
+every one of them `TempDir: mkdir …: no space left on device`, with 231Mi
+free, a 41G go build cache and 670 leaked `Test*` dirs going back two days.
+`t.TempDir()` calls `t.Fatal` on ENOSPC, so ONE full filesystem is reported
+ONCE PER TEST that wanted a temp dir: through the house filter it is a list of
+unrelated test names — worktree, watch, dispatch, merge — and reads exactly
+like a broken change. `scripts/test-times.sh` now says it in words at both
+moments a reader is present: a `DISK: <n> MB free on <fs>` line BEFORE the
+packages run (a warning, never a failure, below a measured floor), and a block
+AFTER any run whose log carries ENOSPC, naming the cause and the three places
+the space went. A second block covers the same hour's other face — `package
+iter is not in std` with a working toolchain, which is what a build cache
+emptied under a running build looks like. It deletes nothing: `go clean
+-cache` slows every concurrent session and deleting from `$TMPDIR` can take a
+live test's TempDir away, so what to clear on a shared box stays the
+operator's call. `suitedisk_qa_test.go` pins that `make test` still runs
+THROUGH the wrapper — without that the explainers are dead code — and runs the
+script's own `--self-test` inside the suite. Numbers:
+`docs/notes.d/ranger-base-krra.md`.
+
 `go test ./...` (also `make test`) is hermetic: the test binary re-execs as
 a fake `herdr` when `RHQ_FAKE_HERDR=1` (state under `RHQ_FAKE_DIR`), so no
 real herdr server is involved. `RHQ_HERDR_BIN` / `RHQ_BD_BIN` point the

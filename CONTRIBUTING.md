@@ -11,6 +11,12 @@ adds `-timeout 25m`, and it is load-bearing: `internal/rhq` is a long serial
 package that has been measured at and past `go test`'s default 10m per-package
 ceiling, so on a busy machine the bare command times out and reports a panic
 that names no test — a red belonging to the box, wearing your diff's clothes.
+The target also runs the suite through `scripts/test-times.sh`, which prints
+each package's seconds and, before any of them start, how much disk the run
+has. Take that `DISK:` line seriously: out of space, `go test` reports ENOSPC
+as an ordinary test failure once per test that wanted a temp dir, and ~80
+unrelated-looking reds naming worktree, watch and dispatch are the box, not
+your change (ranger-base-krra).
 
 If you develop on macOS, run `make test-linux` too. It runs the same
 `go vet ./... && make test` inside a throwaway Linux container (docker

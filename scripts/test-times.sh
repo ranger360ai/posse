@@ -50,9 +50,44 @@
 # IT NEVER FAILS ON A WALL CLOCK. `go test`'s exit status is the one you get
 # back, unchanged. A gate that goes red on elapsed time is the class tvmh and
 # fsil were: a deterministic-looking red that is really the box's mood.
+#
+# AND THE OTHER ENVIRONMENTAL RED: THE DISK (ranger-base-krra). The clock is
+# not the only thing this box runs out of. MEASURED 2026-08-29 on the machine
+# that runs every session's suite: `make test` came back exit 2 with ~80 reds
+# in internal/rhq, every one of them
+#
+#     --- FAIL: TestWatchPidRoundTrip (0.00s)
+#         testing.go:1426: TempDir: mkdir /var/folders/.../TestWatchPid...:
+#             no space left on device
+#
+# with 231Mi free, a 41G go build cache and 670 leaked Test* dirs going back
+# two days. `t.TempDir()` calls `t.Fatal` on ENOSPC, so ONE full filesystem is
+# reported ONCE PER TEST that wanted a temp dir: through the house filter
+# (`grep -E '^(---|ok|FAIL)'`) it is a list of unrelated test names — worktree,
+# watch, dispatch, merge — and reads exactly like a broken change. The word
+# `disk` appears nowhere a reader looks first.
+#
+# So this script does for the disk what it already does for the clock, in the
+# same two places and on the same terms:
+#
+#   BEFORE the packages run, one line saying how much room they have, because
+#   the cheapest time to learn the box is full is before the ten minutes; and
+#   AFTER a run whose log carries ENOSPC, a block that names the cause, so the
+#   reader who is already staring at eighty red test names is told which of
+#   them belong to the box.
+#
+# It does not delete anything and it does not go red on free space. What to
+# clear on a shared box is the operator's call — `go clean -cache` slows every
+# concurrent session and deleting from /var/folders can take a live test's
+# TempDir out from under it — and a floor is a guess about a box, which is the
+# same class of red DISK and CLOCK are here to explain rather than to throw.
 set -uo pipefail
 
 SLOW=${SLOW_PACKAGE_SECONDS:-300}
+
+# The floor below which the DISK line becomes a warning. MEASURED, not picked:
+# see the block above `disk_preflight`.
+DISK_FLOOR_MB=${DISK_FLOOR_MB:-5120}
 
 warn() { printf 'test-times: %s\n' "$*" >&2; }
 
@@ -80,6 +115,98 @@ budget_of() {
     esac
   done
   return 1
+}
+
+# ------------------------------------------------------------------- the disk
+#
+# THE FLOOR IS MEASURED, and the measurement is one run, so read it as a floor
+# and not as a budget. A full green `go test -timeout 25m ./...` on this box
+# (darwin 25.4.0, go1.26, 2026-08-29, `df -kP` sampled across the whole 830s
+# run) took the filesystem behind TMPDIR from 35489 MB free to a low of
+# 34586 MB: 903 MB CONSUMED BY ONE RUN, of which the build cache was +686 MB
+# (5116 -> 5802 MB) and t.TempDir churn +77 MB. The box is shared and other
+# sessions write the same volume, so 903 MB is an upper reading of one run,
+# not a clean-room one.
+#
+# 5120 MB is that peak times ~5.7, and the multiplier is the two things one
+# run does not measure: this box routinely has two or three sessions' suites
+# running at once on the same volume, and a build cache that has just been
+# cleared has to regrow this repo's working set (5.8 GB, measured above) —
+# which is exactly the state a disk-pressure cleanup leaves behind, so the run
+# after the cleanup is the one most likely to be short. Below 5120 MB, one run
+# probably still fits and the ones around it may not.
+#
+# It is a WARNING and never a failure. A floor is a claim about a box, and this
+# script's whole charter is that a red belonging to the box is the bug it
+# exists to prevent, not one to introduce.
+
+# avail_mb <path> — free megabytes on the filesystem holding <path>, or empty
+# when df cannot say. `df -kP` and not `df -k`: the POSIX table is one line per
+# filesystem (a long device name wraps onto its own line without it) with Avail
+# in field 4 and the mount point last, on both darwin and linux, which the
+# default tables are not.
+avail_mb() {
+  df -kP "$1" 2>/dev/null | awk 'NR==2 && NF>=4 && $4 ~ /^[0-9]+$/ { printf "%d\n", $4 / 1024 }'
+}
+
+# mount_of <path> — the mount point df attributes <path> to.
+mount_of() {
+  df -kP "$1" 2>/dev/null | awk 'NR==2 && NF>=2 { print $NF }'
+}
+
+# disk_line <path> <what lives there> — one DISK line. Returns 1 under the
+# floor, so the caller can warn once for however many filesystems there were.
+disk_line() {
+  local path=$1 label=$2 mb mnt
+  mb=$(avail_mb "$path")
+  mnt=$(mount_of "$path")
+  if [ -z "$mb" ]; then
+    printf 'test-times: DISK: free space unreadable for %s (%s)\n' "$path" "$label"
+    return 0
+  fi
+  printf 'test-times: DISK: %s MB free on %s — %s\n' "$mb" "${mnt:-?}" "$label"
+  [ "$mb" -ge "$DISK_FLOOR_MB" ]
+}
+
+# disk_preflight <go-binary> — said BEFORE the packages run, because the
+# cheapest moment to learn the box is full is not ten minutes into the suite.
+#
+# Two directories decide whether a `go test` run fits: TMPDIR, where every
+# t.TempDir() lands, and GOCACHE, which grows for the whole run. On this box
+# they are the same APFS volume and this prints one line; they are not required
+# to be, so it asks df rather than assuming. GOCACHE comes from the go binary
+# the run will actually use — `$(GOBIN)`, not necessarily the `go` on PATH —
+# and is skipped unless the answer names a directory that exists, which is also
+# what makes this safe to run under a stub in --self-test.
+disk_preflight() {
+  local gobin=$1 tmp cache tmnt cmnt low=0
+
+  tmp=${TMPDIR:-/tmp}
+  cache=$("$gobin" env GOCACHE 2>/dev/null)
+  [ -n "$cache" ] && [ -d "$cache" ] || cache=""
+
+  tmnt=$(mount_of "$tmp")
+  cmnt=""
+  [ -n "$cache" ] && cmnt=$(mount_of "$cache")
+
+  if [ -n "$cache" ] && [ "$cmnt" = "$tmnt" ]; then
+    disk_line "$tmp" 't.TempDir and the go build cache' || low=1
+  else
+    disk_line "$tmp" 't.TempDir' || low=1
+    if [ -n "$cache" ]; then
+      disk_line "$cache" 'the go build cache' || low=1
+    fi
+  fi
+
+  [ "$low" = 0 ] && return 0
+  warn "DISK BELOW THE ${DISK_FLOOR_MB} MB FLOOR — a red from this run may belong to the"
+  warn "  box rather than to the diff. Every t.TempDir() allocates there, and go reports"
+  warn "  ENOSPC as an ordinary test failure once per test that wanted one: ~80"
+  warn "  unrelated-looking reds naming worktree, watch and dispatch (ranger-base-krra)."
+  warn "  Running anyway. What to clear on a shared box is the operator's call, not this"
+  warn "  script's: \`go clean -cache\` slows every concurrent session and deleting from"
+  warn "  \$TMPDIR can take a live test's TempDir out from under it."
+  return 0
 }
 
 # report <logfile> <budget-seconds> <budget-was-explicit 0|1>
@@ -177,6 +304,70 @@ explain_timeout() {
   } >&2
 }
 
+# explain_disk <logfile> — the block ranger-base-krra exists for. ENOSPC does
+# not name the disk anywhere the reader looks first; it names eighty tests.
+explain_disk() {
+  local log=$1 hits reds
+  grep -q 'no space left on device' "$log" || return 0
+  hits=$(grep -c 'no space left on device' "$log")
+  reds=$(grep -c '^--- FAIL' "$log")
+  {
+    echo
+    echo '=============================================================='
+    echo "test-times: THE DISK RAN OUT — ${hits} failure(s) said \"no space left on device\""
+    [ "$reds" -gt 0 ] && echo "            (this run reported ${reds} failing test(s) in total)"
+    echo
+    echo '  Those reds belong to the box, not to the diff. t.TempDir()'
+    echo '  calls t.Fatal on ENOSPC — and a test that merely WRITES into'
+    echo '  one fails the same way — so ONE full filesystem is reported'
+    echo '  ONCE PER TEST that wanted a temp dir. Through the house'
+    echo "  filter it is a list of unrelated names (worktree, watch,"
+    echo '  dispatch, merge) and reads exactly like a broken change.'
+    echo '  Believe none of them until the suite has room and has re-run.'
+    echo
+    echo '  Where it goes, measured on this box (ranger-base-krra):'
+    echo
+    echo '      df -h "${TMPDIR:-/tmp}"'
+    echo '      du -sh "$(go env GOCACHE)"          # reached 41G unattended'
+    echo '      ls -d "${TMPDIR:-/tmp}"/Test* | wc -l   # 670 leaked TempDirs'
+    echo
+    echo '  Clearing either is the operator call this script will not make'
+    echo '  for them: `go clean -cache` slows every concurrent session, and'
+    echo '  deleting from $TMPDIR can take a live test'"'"'s TempDir away.'
+    echo '=============================================================='
+  } >&2
+}
+
+# explain_std_break <logfile> — the same bad hour wearing a different face. A
+# std package reported missing FROM std is not a broken toolchain; MEASURED
+# 2026-08-29 it appeared minutes after the build cache was emptied underneath a
+# running build, and went away on its own — `go build ./...` was clean
+# afterwards with no toolchain change. Worth naming because "package iter is
+# not in std" sends a reader to reinstall go.
+explain_std_break() {
+  local log=$1 line
+  line=$(grep -m1 -E 'package [a-z0-9_/]+ is not in std' "$log") || return 0
+  {
+    echo
+    echo '=============================================================='
+    echo 'test-times: A STD PACKAGE WAS REPORTED MISSING FROM std'
+    echo
+    echo "      ${line# }"
+    echo
+    echo '  Your go install is almost certainly fine. MEASURED on this box'
+    echo '  (ranger-base-krra, 2026-08-29): this shape appeared in the'
+    echo '  minutes after the build cache was emptied under a running'
+    echo '  build, and went away by itself — `go build ./...` was clean'
+    echo '  afterwards, same toolchain. It arrives as `[setup failed]`,'
+    echo '  which is a BUILD error and so names no test at all.'
+    echo
+    echo '  Re-run the suite once before touching the toolchain:'
+    echo
+    echo '      go build ./... && make test'
+    echo '=============================================================='
+  } >&2
+}
+
 self_test() {
   # tmp is deliberately NOT local: the EXIT trap that cleans it up runs in
   # global scope, where a function-local name is unset and `set -u` aborts.
@@ -202,6 +393,13 @@ STUB
   # -run that matched nothing, a cached package, a package with no test files,
   # and a coverage suffix in its own tab field.
   printf 'ok  \tgithub.com/ranger360ai/posse\t0.4s [no tests to run]\nok  \tgithub.com/ranger360ai/posse/cmd/posse\t(cached)\n?   \tgithub.com/ranger360ai/posse/x\t[no test files]\nok  \tgithub.com/ranger360ai/posse/internal/rhq\t640.0s\tcoverage: 12.0%% of statements\n' > "$tmp/shapes.log"
+
+  # The disk's two faces (ranger-base-krra). The ENOSPC fixture is the shape
+  # measured on 2026-08-29 verbatim: the disk is named only inside a t.Fatal
+  # message, and the test names on the --- FAIL lines have nothing to do with
+  # storage. The std-break fixture is the same hour's build failure.
+  printf -- '--- FAIL: TestWatchPidRoundTrip (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestWatchPidRoundTrip2288449404: no space left on device\n--- FAIL: TestDispatchMergeBack (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestDispatchMergeBack118: no space left on device\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq\t12.3s\nFAIL\n' > "$tmp/enospc.log"
+  printf -- '/opt/homebrew/Cellar/go/1.26.5/libexec/src/bytes/iter.go:8:2: package iter is not in std\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq [setup failed]\nFAIL\n' > "$tmp/stdbreak.log"
 
   local out rc
   run_arm() { # <fixture> <rc> [extra args to the fake command]
@@ -317,6 +515,88 @@ STUB
     bad "argv was rewritten: $(tr '\n' ' ' < "$tmp/argv")"
   fi
 
+
+  # I: the DISK line is printed BEFORE the packages, on every run, and carries
+  # a number df actually produced rather than a placeholder.
+  run_arm clean.log 0 -timeout 25m
+  if printf '%s' "$out" | grep -qE 'DISK: [0-9]+ MB free on .+ — t\.TempDir'; then
+    ok 'disk: the preflight line names free MB, the filesystem and what fills it'
+  else
+    bad "disk: no DISK line — $(printf '%s' "$out" | grep -i disk | head -1)"
+  fi
+
+  # …and it is df's reading, not a constant. Cross-checked on the MOUNT POINT
+  # rather than on the megabytes: the filesystem behind $TMPDIR does not move
+  # under a running suite, while its free bytes do — a tolerance on the number
+  # would be exactly the box-mood red this script exists to avoid. That the
+  # number is a number and that it is compared to the floor are arms I and J.
+  want_mnt=$(df -kP "${TMPDIR:-/tmp}" 2>/dev/null | awk 'NR==2 && NF>=2 { print $NF }')
+  got_mnt=$(printf '%s' "$out" | sed -n 's/.*DISK: [0-9]* MB free on \(.*\) — .*/\1/p' | head -1)
+  if [ -n "$want_mnt" ] && [ "$got_mnt" = "$want_mnt" ]; then
+    ok "disk: the line names the filesystem df attributes \$TMPDIR to ($want_mnt)"
+  else
+    bad "disk: the line names '$got_mnt'; df says \$TMPDIR is on '$want_mnt'"
+  fi
+
+  # J: the floor. BOTH arms, because "no warning" is also what a floor that is
+  # never consulted looks like: the same fixture, the same box, the same free
+  # space, and only the floor moved.
+  DISK_FLOOR_MB=1 run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'DISK BELOW THE'*) bad 'disk floor: warned with the floor at 1 MB' ;;
+    *) ok 'disk floor: silent above the floor' ;;
+  esac
+  DISK_FLOOR_MB=999999999 run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'DISK BELOW THE 999999999 MB FLOOR'*) ok 'disk floor: warns below the floor, and quotes the floor it used' ;;
+    *) bad 'disk floor: no warning with the floor above any real disk — the floor is not consulted' ;;
+  esac
+  case $out in
+    *'Running anyway'*) ok 'disk floor: says it is running anyway' ;;
+    *) bad 'disk floor: does not say the run continues' ;;
+  esac
+
+  # K: the ENOSPC block, which is the whole bead. It must fire, count the
+  # ENOSPC lines rather than the tests, and leave the exit status alone.
+  run_arm enospc.log 1 -timeout 25m
+  case $out in
+    *'THE DISK RAN OUT'*'2 failure(s) said "no space left on device"'*) ok 'enospc: block printed and ENOSPC failures counted' ;;
+    *) bad 'enospc: no block naming the count' ;;
+  esac
+  case $out in
+    *'2 failing test(s) in total'*) ok 'enospc: the run total is reported beside the ENOSPC count' ;;
+    *) bad 'enospc: no total-reds line' ;;
+  esac
+  case $out in
+    *"operator call this script will not make"*) ok 'enospc: names the cleanup as the operator call, not the script'"'"'s' ;;
+    *) bad 'enospc: does not say who clears the disk' ;;
+  esac
+  [ "$rc" = 1 ] && ok 'enospc: exit status 1 preserved' || bad "enospc: exit $rc, wanted 1"
+
+  # L: the negative control for both new blocks, over a log with neither
+  # string in it. A block that fires on a clean run is worse than none.
+  run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'THE DISK RAN OUT'*) bad 'clean log: ENOSPC block printed with no ENOSPC in the log' ;;
+    *) ok 'clean log: no ENOSPC block' ;;
+  esac
+  case $out in
+    *'REPORTED MISSING FROM std'*) bad 'clean log: std-break block printed on a clean log' ;;
+    *) ok 'clean log: no std-break block' ;;
+  esac
+
+  # M: the build failure that reads as a broken toolchain. It must quote the
+  # offending line, so the reader can see it is the same one they just read.
+  run_arm stdbreak.log 1 -timeout 25m
+  case $out in
+    *'A STD PACKAGE WAS REPORTED MISSING FROM std'*'package iter is not in std'*) ok 'std break: block printed and the compiler line quoted' ;;
+    *) bad 'std break: no block quoting the offending line' ;;
+  esac
+  case $out in
+    *'before touching the toolchain'*) ok 'std break: sends the reader to re-run, not to reinstall go' ;;
+    *) bad 'std break: no re-run advice' ;;
+  esac
+
   if [ "$fail" = 0 ]; then echo 'test-times --self-test: ok'; else echo 'test-times --self-test: FAILED' >&2; fi
   return "$fail"
 }
@@ -331,10 +611,14 @@ budget=$(budget_of "$@") && explicit=1 || { budget=600; explicit=0; }
 log=$(mktemp "${TMPDIR:-/tmp}/posse-test-times.XXXXXX") || { warn 'could not create a log file'; exit 1; }
 trap 'rm -f "$log"' EXIT
 
+disk_preflight "$1"
+
 "$@" | tee "$log"
 status=${PIPESTATUS[0]}
 
 report "$log" "$budget" "$explicit"
 explain_timeout "$log"
+explain_disk "$log"
+explain_std_break "$log"
 
 exit "$status"
