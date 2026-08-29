@@ -1731,6 +1731,92 @@ exit 1
 	}
 }
 
+// rangerhq-qm6c: the visibility stamp is written at install time, so what
+// keeps it honest is that every installer rewrites it — and in a repo chained
+// per INSTALL.md §9 the slot is foreign by construction, which is the shape
+// where "nothing rewrites it" is easiest to reintroduce. The sibling test
+// above pins that the chained member is refreshed at all; this one pins WHICH
+// STAMP it is refreshed with, in both directions: a repo re-marked private
+// stops carrying the guard, and one re-marked public starts. Byte identity
+// against the render is the assertion, so a refresh that keeps the old stamp
+// fails here even though the body is current.
+//
+// It goes through InstallCommitGuardHook because that is the one function
+// both installers call — `posse gates install-hooks` (cmd/posse/main.go) and
+// every persona launch (herdrback.go) — so a mark the operator changes is
+// live on the next of either. The returned visibility and source are pinned
+// too: they are what install-hooks prints, and a stamp the operator cannot
+// read back is not evidence.
+func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := wtRepo(t)
+	a := wtApp(t)
+	hooks := filepath.Join(repo, ".git", "hooks")
+	slot := filepath.Join(hooks, "prepare-commit-msg")
+	ours := filepath.Join(hooks, "posse-prepare-commit-msg")
+	theirs := filepath.Join(hooks, "bd-prepare-commit-msg")
+
+	// The repo as INSTALL.md §9 leaves it: bd's hook moved aside, ours
+	// behind the prescribed dispatcher, and the slot itself foreign to us.
+	write(t, a.ConfigPath, "beads_visibility:\n  "+repo+": public\n")
+	if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+		t.Fatal(err)
+	}
+	neighbour := "#!/bin/sh\n# bd-shim v1\nexit 0\n"
+	dispatcher := chainHookDispatcherWith("prepare-commit-msg", "bd-prepare-commit-msg")
+	if err := os.Rename(slot, ours); err != nil {
+		t.Fatal(err)
+	}
+	write(t, theirs, neighbour)
+	write(t, slot, dispatcher)
+	if hookInstalled(repo, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker) != true ||
+		ownsHook(dispatcher, sharedIndexMarker, legacySharedIndexMarker) {
+		t.Fatal("fixture: want our hook behind a dispatcher that is itself foreign")
+	}
+
+	for _, c := range []struct{ mark, want string }{
+		{VisibilityPrivate, VisibilityPrivate}, // the mark the operator adds
+		{VisibilityPublic, VisibilityPublic},   // and takes away again
+	} {
+		before, _ := os.ReadFile(ours)
+		write(t, a.ConfigPath, "beads_visibility:\n  "+repo+": "+c.mark+"\n")
+		if string(before) == CommitGuardHook(c.want, a.OpsPatternSet()) {
+			t.Fatalf("%s: fixture carries the wanted stamp already — nothing to restamp", c.mark)
+		}
+		path, vis, src, err := a.InstallCommitGuardHook(repo)
+		if err != nil {
+			t.Fatalf("%s: %v", c.mark, err)
+		}
+		if resolveExisting(path) != resolveExisting(ours) || vis != c.want || src != "config beads_visibility:" {
+			t.Errorf("%s: install reported (%q, %q, %q), want the chained member stamped %q from config",
+				c.mark, path, vis, src, c.want)
+		}
+		if body, _ := os.ReadFile(ours); string(body) != CommitGuardHook(c.want, a.OpsPatternSet()) {
+			t.Errorf("%s: the chained hook does not carry the mark config now says:\n%s",
+				c.mark, firstStampLine(string(body)))
+		}
+		if body, _ := os.ReadFile(slot); string(body) != dispatcher {
+			t.Errorf("%s: the restamp overwrote the foreign dispatcher", c.mark)
+		}
+		if body, _ := os.ReadFile(theirs); string(body) != neighbour {
+			t.Errorf("%s: the restamp overwrote the neighbouring hook", c.mark)
+		}
+	}
+}
+
+// firstStampLine is the one line of a rendered hook that says which way it
+// was stamped — the whole hook in an error message buries it.
+func firstStampLine(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "posse_beads_visibility=") {
+			return line
+		}
+	}
+	return "(no stamp line)"
+}
+
 // ranger-base-r5ba: the dispatcher is recognized by shape so the neighbour's
 // name may be anything the operator called it — but only the name varies. A
 // file that does not run `posse-<slot>` first and check its status is not the

@@ -1655,6 +1655,14 @@ const commitGuardHead = `#!/bin/sh
 // AND by every persona launch into the repo (herdrback.go), so a mark the
 // operator changes is live on the next dispatch; a repo nobody launches
 // into keeps the mark it was hooked with, and the hook says which one it is.
+// That holds for a repo chained per INSTALL.md §9 too, where the slot is a
+// foreign dispatcher and our hook lives behind it as posse-<slot>: both
+// installers go through installHook, which refreshes that marker-owned
+// member in place (ranger-base-i5f4, ranger-base-r5ba), stamp included —
+// pinned in TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges
+// (rangerhq-qm6c). What it does NOT yet hold for is a call from a linked
+// worktree: the hook lands in the shared repo but the mark is looked up
+// under the worktree's own path, which no config key names (ranger-base-up22).
 //
 // The block always renders, gated on the stamp, so the hook FILE is the
 // record of what it was stamped with — a human reads it and knows.
