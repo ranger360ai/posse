@@ -1,10 +1,10 @@
 # The clean room — testing the public install story on a machine that has never seen posse
 
 `ranger-base-5zh`. Built for `ranger-base-33k` (the install QA) and for
-verifying any fix to `ranger-base-253`.
+verifying any fix to `ranger-base-253`. Four distros since `ranger-base-5cj4`.
 
-A throwaway Debian 13 container with a **default PATH**, a newcomer's Go
-toolchain, and nothing whatsoever from this project or from the dev box.
+A throwaway container with a **default PATH**, a newcomer's Go toolchain, and
+nothing whatsoever from this project or from the dev box.
 
 **Its value is in what it does not contain.** The dev box has herdr, bd, a
 seeded `RHQ_HOME`, a warm module cache and a PATH curated over weeks — every
@@ -19,26 +19,88 @@ passes while the bug is still there.
 > This is also why the image does not use the official `golang` base images:
 > they ship `ENV PATH=/go/bin:...` and would defeat it for you.
 
+## Four distros — and why they are here rather than in `ci.yml`
+
+The operator's platform ask, 2026-08-26, was *"not ubuntu, we want macos,
+omarchy and rhel/fedora."* The route picked to cover the two Linux families
+(`ranger-base-5cj4`) was **this instrument**, not matrix rows in
+`.github/workflows/ci.yml`. The reason is measured and it is the whole design:
+
+- **`go test ./...` cannot tell one linux distro from another.** The failure
+  set of `make test` is byte-identical on Debian and Fedora. There is no cgo,
+  release artifacts build `CGO_ENABLED=0`, and the only OS-conditional source
+  is GOOS-level. A distro matrix row cannot make the test binary say anything
+  it does not already say on `ubuntu-latest`.
+- **The userland can.** The hooks posse generates are *shell*, and the install
+  story is *commands*. That is where distro variance lives, and it is exactly
+  what the clean room already looks at. `ranger-base-rmgz` — the
+  `prepare-commit-msg` hook losing its revert-recovery paragraph on a box with
+  no `cmp` — was found this way and could not have been found the other way.
+
+Full costing, with every reproduction command: `docs/runbooks/ci-platform-coverage.md`.
+
+| `CLEANROOM_DISTRO=` | base image | notes |
+|---|---|---|
+| `debian` *(default)* | `debian:trixie-slim` | Every clean-room pass before `ranger-base-5cj4` ran in this one. |
+| `fedora` | `fedora:44` | Fedora userland. |
+| `rhel` | `almalinux:10` | The RHEL family. **This is the one that finds `cmp`.** |
+| `arch` | `archlinux:latest` | Arch base. **amd64 only** — see below. |
+
+Each distro has its own image tag (`posse-cleanroom-<distro>:1`) and its own
+container name, so all four can sit side by side without clobbering each other.
+
+> ### `arch` is not omarchy. Never write it up as though it were.
+> omarchy is Arch **plus** a curated desktop and a dotfiles layer.
+> `archlinux:latest` is Arch without it. This image covers the Arch base
+> userland — pacman's packages, the filesystem layout, the default PATH — and
+> covers none of omarchy's own layer, no desktop, no kernel. A row labelled
+> "omarchy" would *read* as coverage and would not be one.
+
+> ### `arch` has no arm64 image and runs under emulation here.
+> Official Arch is x86_64-only; `docker manifest inspect archlinux:latest`
+> lists amd64 and nothing else. `cleanroom.sh` therefore pins that distro to
+> `linux/amd64` whatever the host is, so on an Apple Silicon box it is
+> qemu-emulated and slow. That is a permanent tax on this distro. Under
+> emulation `pacman` 7.1.0 also dies with `error restricting syscalls via
+> seccomp: 22` — `--security-opt seccomp=unconfined` does **not** fix it and
+> `pacman --disable-sandbox` does, which is why `Dockerfile.arch` passes it.
+
 ## Drive it
 
-From the repo root. `make` targets exist for the common three; the script has
+From the repo root. `make` targets exist for the common ones; the script has
 the rest.
+
+**Every command below drives `debian` unless you say otherwise.** Prefix with
+`CLEANROOM_DISTRO=<fedora|rhel|arch>` to drive another — it works on the `make`
+targets too, since make passes the environment through to the recipe.
 
 | what | command |
 |---|---|
-| build the image (once) | `scripts/cleanroom.sh build` |
+| list the distros | `make cleanroom-distros` |
+| build the image (once, per distro) | `scripts/cleanroom.sh build` |
 | start it | `make cleanroom` |
 | **check it is still honest** | `make cleanroom-verify` |
+| **…on every distro** | `make cleanroom-verify-all` |
+| what the hooks need vs what this distro has | `make cleanroom-hook-deps` |
 | get a shell in it | `make cleanroom-shell` |
 | **reset to pristine** | `make cleanroom-reset` |
 | run one command in it | `scripts/cleanroom.sh run 'go version'` |
 | copy a file in | `scripts/cleanroom.sh cp-in ./notes.md` |
 | copy a file out | `scripts/cleanroom.sh cp-out transcript.txt ./transcript.txt` |
-| is it up? | `scripts/cleanroom.sh status` |
+| is it up, and what is it? | `scripts/cleanroom.sh status` |
 | remove the container | `scripts/cleanroom.sh destroy` |
 
-`build` is needed once; `start` and `reset` recreate the container from the
-image and take about a second. Requires Docker Desktop to be running.
+`build` is needed once per distro; `start` and `reset` recreate the container
+from the image and take about a second. Requires Docker Desktop to be running.
+
+```sh
+CLEANROOM_DISTRO=rhel make cleanroom-verify     # one distro
+make cleanroom-verify-all                       # all four, keeps going after a red one
+```
+
+`cleanroom-verify-all` does not stop at the first failure — it walks all four
+and names the bad ones at the end. Stopping early would leave the rest
+unmeasured and the run would still read as a verdict.
 
 ### Start
 ```sh
@@ -70,6 +132,27 @@ deliberate, a shared home would leak the dev box straight into the clean room.
 Get the transcript out this way rather than by scrolling: the bead asks for
 verbatim commands, exit statuses and output.
 
+### `hook-deps` — what the generated hooks need, per distro
+
+```sh
+CLEANROOM_DISTRO=rhel make cleanroom-hook-deps
+```
+
+The probe that pays for the whole multi-distro route. The hooks posse renders
+(`internal/rhq/gates.go`) are **shell**, and shell is where distro variance is
+visible at all. It reports each of the external commands those hooks call
+against this distro's userland, and exits non-zero on any `MISSING`.
+
+**A `MISSING` line is a FINDING. Do not install the package to make it go
+away** — that would hide exactly what the image exists to surface. File it;
+`ranger-base-rmgz` is the shape.
+
+The command list is a **contract that can drift**. It was enumerated from the
+rendered hooks on 2026-08-28. If `gates.go` learns to call a new external
+command, the `HOOK_DEPS` default in `scripts/cleanroom.sh` must learn it too,
+or the probe goes quiet about it. Override for a one-off with
+`HOOK_DEPS='a b c'`.
+
 ## Rules for a test pass
 
 - **Always enter through a login shell.** `make cleanroom-shell` and
@@ -87,10 +170,11 @@ verbatim commands, exit statuses and output.
 
 | guarantee | how it is met |
 |---|---|
-| Fresh OS, no snapshot of the dev box | `debian:trixie-slim` pulled from Docker Hub, built from `etc/cleanroom/Dockerfile`. Nothing is copied from this machine. |
+| Fresh OS, no snapshot of the dev box | The distro's official base image pulled from Docker Hub, built from `etc/cleanroom/Dockerfile.<distro>`. Nothing is copied from this machine. |
+| **It is the distro it claims to be** | `verify` reads `/etc/os-release` inside the container and asserts `ID` matches the selected distro. Without this a stale image, or a hand-set `CLEANROOM_IMAGE`, passes every other check while measuring a distro nobody asked for. |
 | No shared home directory | No bind mounts at all. `/home/tester` is created empty by `useradd`. |
-| **DEFAULT PATH** | `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/usr/local/go/bin` — Debian's default plus the single line `https://go.dev/doc/install` tells a newcomer to add. `~/go/bin` is absent; verify asserts no GOPATH-style bin dir is on PATH and that `go install`'s target dir specifically is not. |
-| Go installed the newcomer way | **go1.27.0**, the official `go1.27.0.linux-arm64.tar.gz` from `https://go.dev/dl/`, sha256-verified in the Dockerfile, unpacked to `/usr/local/go` — `go.dev/doc/install` verbatim. |
+| **DEFAULT PATH** | The distro's own default plus the single line `https://go.dev/doc/install` tells a newcomer to add — on Debian that is `/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/usr/local/go/bin`. `~/go/bin` is absent; verify asserts no GOPATH-style bin dir is on PATH and that `go install`'s target dir specifically is not. The addition goes in `/etc/profile.d/go.sh`, never an `ENV PATH=`, so it reaches login shells the ordinary way and does not leak into a non-login `docker exec`. |
+| Go installed the newcomer way | **go1.27.0**, the official `go1.27.0.linux-<arch>.tar.gz` from `https://go.dev/dl/`, sha256-verified in the Dockerfile, unpacked to `/usr/local/go` — `go.dev/doc/install` verbatim. Both linux checksums are carried in every Dockerfile and selected by BuildKit's `TARGETARCH`, so one file serves amd64 and arm64. **Identical on all four distros on purpose:** see the packaged-Go gap below. |
 | Nothing from this project | No herdr, no bd, no posse, no rhq, no `RHQ_HOME`, no `~/.config/rhq`, no checkout, no warmed module cache. Each asserted individually. |
 | Real public egress | `GOPROXY` left at its `https://proxy.golang.org` default; `GOBIN`/`GOPATH`/`GOFLAGS`/`GOPRIVATE` unset. Verify reaches `proxy.golang.org` and `github.com` over HTTP without writing to the module cache, so the fetch under test stays real and is not a local replay. |
 | Resettable to pristine in one step | `make cleanroom-reset` — container destroyed and recreated from the image. |
@@ -99,12 +183,26 @@ verbatim commands, exit statuses and output.
 ### What is preinstalled, and why you need to know
 
 `ca-certificates`, `curl`, `git`, `less`, `make` — a generic newcomer's baseline,
-nothing project-specific. This is listed because **an undocumented prerequisite
-is a finding**, and you cannot judge that fairly without knowing what the image
-handed you for free. `git` and `make` in particular are named nowhere in the
-landing page's quickstart; the image supplies them so the repo instructions can
-be *attempted* at all. If a step needs something not on this list — a compiler,
-a package — that is a real finding, so record it rather than installing it.
+nothing project-specific, **the same five on all four distros**. This is listed
+because **an undocumented prerequisite is a finding**, and you cannot judge that
+fairly without knowing what the image handed you for free. `git` and `make` in
+particular are named nowhere in the landing page's quickstart; the image
+supplies them so the repo instructions can be *attempted* at all. If a step
+needs something not on this list — a compiler, a package — that is a real
+finding, so record it rather than installing it.
+
+One exception, and it is a cost of the harness rather than of posse:
+`Dockerfile.fedora` and `Dockerfile.rhel` also install **`util-linux`, for
+`su`**. Those base images ship no `su` at all, and `scripts/cleanroom.sh` enters
+every container through `su - tester` so the test runs in a real login shell
+with a real user's PATH. Count it as instrument, not as a posse prerequisite.
+
+**Nothing is ever installed to make a posse failure go away.** `diffutils` in
+particular is installed in none of the four: `ranger-base-rmgz` is exactly the
+defect a userland without `cmp` produces, and adding it here would hide the
+class of finding these images exist to surface. Whatever each distro happens to
+have is that distro's business — `make cleanroom-hook-deps` reports the truth
+rather than assuming it.
 
 ## Fidelity given up — read before writing a verdict
 
@@ -128,13 +226,25 @@ What that costs:
    matter for anything kernel- or driver-level.
 3. **No init system.** Minimal rootfs, no systemd. If the install story ever
    grows a service to start, that path is not exercised here.
-4. **arm64 only.** No amd64 coverage. The Dockerfile carries the amd64 checksum
-   in a comment-adjacent `ARG` pair — flip `GO_ARCH`/`GO_SHA256` if that is ever
-   needed (amd64 sha256:
-   `675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685`).
+4. **One architecture per run, and `arch` cannot have this one.** Every image
+   builds for the host architecture by default; `CLEANROOM_PLATFORM=linux/amd64`
+   asks for the other, and both Go checksums are carried so it just works. The
+   exception is `arch`, which is pinned to `linux/amd64` because official Arch
+   publishes no arm64 image at all — on this box that means qemu, which is slow
+   and which is a difference from a real Arch machine in its own right.
 5. **Docker NAT networking with the host's DNS.** Egress to the public proxy is
    genuine, but a stranger behind a corporate proxy or a captive portal is not
    simulated.
+6. **The distro's own packaged Go is never exercised.** All four images take
+   the `go.dev/dl` tarball, because this instrument exists to isolate the
+   *distro* and taking each distro's package would vary the toolchain at the
+   same time. But `dnf install golang` and `pacman -S go` are plausible
+   newcomer routes on Fedora, RHEL and Arch — each ships a Go new enough to
+   build this repo — and **no clean room covers them.** Named, uncovered, and
+   cheap to add later as a variant if it is ever worth it.
+7. **`arch` is the Arch base, not omarchy**, and no container route reaches
+   omarchy's curated desktop and dotfiles layer. Repeated here because it is
+   the easiest sentence in a verdict to get wrong.
 
 ## Proof it reproduces the bug
 

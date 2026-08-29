@@ -1,0 +1,100 @@
+# syntax=docker/dockerfile:1
+#
+# Clean-room image for testing the PUBLIC install story — the RHEL-FAMILY
+# member of the set (ranger-base-5cj4; the instrument itself is
+# ranger-base-5zh). Siblings: Dockerfile.{debian,fedora,arch}. Select with
+# CLEANROOM_DISTRO=rhel.
+#
+# READ Dockerfile.debian FIRST. It carries the full rationale for every rule
+# below; this file states only what is different about the RHEL family. The
+# rules are not negotiable per-distro:
+#
+#   *** DO NOT PUT ~/go/bin (or $GOPATH/bin, or $GOBIN) ON PATH. ***
+#   *** No golang base image. No herdr, bd, RHQ_HOME, ~/.config/rhq, no ***
+#   *** warmed module cache, nothing from the dev box. ***
+#
+# ============================================================================
+# THIS IS THE IMAGE THAT EARNED THE ROUTE.
+# ============================================================================
+# ranger-base-rmgz was found here, on the first run: `internal/rhq/gates.go`
+# renders a prepare-commit-msg hook that calls `cmp`, `cmp` ships in diffutils,
+# and a minimal RHEL/AlmaLinux box does not have diffutils installed. Absent,
+# the test is simply false, the wall still refuses — and the paragraph telling
+# a user mid-`git revert` that git already staged the change, and naming both
+# ways out, silently disappears.
+#
+# That defect is invisible to `go test ./...` on any distro (the Go failure set
+# is byte-identical on Debian and Fedora — measured) and invisible to Debian,
+# Ubuntu and Fedora's userlands, which all ship `cmp`. It is visible here. That
+# is the entire argument for covering rhel/fedora with a clean-room image
+# instead of a ci.yml matrix row. See docs/runbooks/ci-platform-coverage.md.
+#
+# ALMALINUX, NOT RHEL PROPER: AlmaLinux 10 is a binary-compatible RHEL 10
+# rebuild and needs no subscription. Rocky would serve equally; RHEL itself
+# would need an entitlement this box does not have.
+
+FROM almalinux:10
+
+# Generic newcomer baseline — the same five as Debian — plus one instrument
+# prerequisite:
+#
+#   util-linux — for `su`. scripts/cleanroom.sh enters every container through
+#     `su - tester` so the test runs in a real LOGIN shell with a real user's
+#     PATH. This is a cost of the harness, not something a posse user needs;
+#     it is listed here and in the README so a verdict can tell the two apart.
+#
+# --allowerasing: the base ships curl-minimal, and the full `curl` replaces it.
+# --setopt=install_weak_deps=False is this family's --no-install-recommends.
+#
+# *** DO NOT ADD diffutils HERE. *** `cmp` being absent IS the finding
+# (ranger-base-rmgz). Installing it would make this image agree with Debian
+# and stop being worth building. `scripts/cleanroom.sh hook-deps` reports what
+# is actually present, and a MISSING line there is a bead, not a setup step.
+RUN dnf -y install --allowerasing --setopt=install_weak_deps=False \
+      ca-certificates \
+      curl \
+      git \
+      less \
+      make \
+      util-linux \
+ && dnf clean all
+
+# Go toolchain: the official go.dev/dl archive, checksum-verified, unpacked to
+# /usr/local/go — https://go.dev/doc/install verbatim, and IDENTICAL to every
+# other clean-room distro on purpose. AlmaLinux packages `golang
+# 1.26.7-1.el10_2`, new enough to build this repo, and `dnf install golang` is
+# a plausible newcomer route; taking it would vary the toolchain and the distro
+# at once, and this instrument exists to isolate the distro. The packaged-Go
+# route is a NAMED, UNCOVERED gap — see etc/cleanroom/README.md.
+#
+# Checksums verified against https://go.dev/dl/?mode=json on 2026-08-28.
+ARG TARGETARCH
+ARG GO_VERSION=1.27.0
+ARG GO_SHA256_amd64=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+ARG GO_SHA256_arm64=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) go_sha=$GO_SHA256_amd64 ;; \
+      arm64) go_sha=$GO_SHA256_arm64 ;; \
+      *) echo "cleanroom: no Go checksum carried for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    tgz="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    curl -fsSLO "https://go.dev/dl/$tgz"; \
+    echo "${go_sha}  $tgz" | sha256sum -c -; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf "$tgz"; \
+    rm "$tgz"
+
+# The ONLY addition to the default PATH is /usr/local/go/bin, placed in
+# /etc/profile.d so it reaches login shells the way a newcomer's own edit
+# would. No `ENV PATH=` — that would leak into non-login `docker exec` shells
+# and give a PATH no real user has.
+RUN printf '%s\n' 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh \
+ && chmod 0644 /etc/profile.d/go.sh
+
+# An ordinary unprivileged user with an ordinary home directory. Nothing is
+# seeded into it — no dotfile edits, no RHQ_HOME, no ~/.config/rhq, no ~/go.
+RUN useradd --create-home --shell /bin/bash --uid 1000 tester
+
+# No GOPATH, GOBIN, GOPROXY, GOFLAGS, GOPRIVATE or GONOSUMDB are set anywhere.
+CMD ["sleep", "infinity"]

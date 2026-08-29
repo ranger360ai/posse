@@ -1,0 +1,89 @@
+# syntax=docker/dockerfile:1
+#
+# Clean-room image for testing the PUBLIC install story — the FEDORA member of
+# the set (ranger-base-5cj4; the instrument itself is ranger-base-5zh).
+# Siblings: Dockerfile.{debian,rhel,arch}. Select with CLEANROOM_DISTRO=fedora.
+#
+# READ Dockerfile.debian FIRST. It carries the full rationale for every rule
+# below; this file states only what is different about Fedora. The rules are
+# not negotiable per-distro:
+#
+#   *** DO NOT PUT ~/go/bin (or $GOPATH/bin, or $GOBIN) ON PATH. ***
+#   *** No golang base image. No herdr, bd, RHQ_HOME, ~/.config/rhq, no ***
+#   *** warmed module cache, nothing from the dev box. ***
+#
+# WHY FEDORA IS HERE. `go test ./...` cannot tell one linux distro from
+# another — measured, and the failure set on Debian and Fedora is byte-
+# identical (docs/runbooks/ci-platform-coverage.md §1). What DOES vary is the
+# userland the generated hooks and the install commands run in. That is what
+# this image looks at, and it is why the answer to "cover rhel/fedora" was a
+# clean-room image and not a ci.yml matrix row.
+
+FROM fedora:44
+
+# Generic newcomer baseline — the same five as Debian — plus one instrument
+# prerequisite that Debian did not need:
+#
+#   util-linux — for `su`. fedora:44's base image has NO `su` at all (measured
+#     2026-08-28), and scripts/cleanroom.sh enters every container through
+#     `su - tester` so the test runs in a real LOGIN shell with a real user's
+#     PATH. This is a cost of the harness, not something a posse user needs;
+#     it is listed here and in the README so a verdict can tell the two apart.
+#
+# --allowerasing: fedora:44 ships curl-minimal, and the full `curl` replaces
+# it. --setopt=install_weak_deps=False is Fedora's --no-install-recommends.
+#
+# NOT INSTALLED, DELIBERATELY: diffutils. fedora:44's base image has no `cmp`
+# either, and ranger-base-rmgz is precisely the defect a userland without `cmp`
+# produces. Adding it here would hide the class of finding this image exists to
+# surface. Whatever `cmp` ends up present is a transitive dependency of the
+# five packages above, and `scripts/cleanroom.sh hook-deps` reports the truth
+# rather than assuming it.
+RUN dnf -y install --allowerasing --setopt=install_weak_deps=False \
+      ca-certificates \
+      curl \
+      git \
+      less \
+      make \
+      util-linux \
+ && dnf clean all
+
+# Go toolchain: the official go.dev/dl archive, checksum-verified, unpacked to
+# /usr/local/go — https://go.dev/doc/install verbatim, and IDENTICAL to every
+# other clean-room distro on purpose. Fedora packages `golang 1.26.7-1.fc44`,
+# new enough to build this repo, and `dnf install golang` is a plausible
+# newcomer route; taking it would vary the toolchain and the distro at once,
+# and this instrument exists to isolate the distro. The packaged-Go route is a
+# NAMED, UNCOVERED gap — see etc/cleanroom/README.md.
+#
+# Checksums verified against https://go.dev/dl/?mode=json on 2026-08-28.
+ARG TARGETARCH
+ARG GO_VERSION=1.27.0
+ARG GO_SHA256_amd64=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+ARG GO_SHA256_arm64=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) go_sha=$GO_SHA256_amd64 ;; \
+      arm64) go_sha=$GO_SHA256_arm64 ;; \
+      *) echo "cleanroom: no Go checksum carried for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    tgz="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    curl -fsSLO "https://go.dev/dl/$tgz"; \
+    echo "${go_sha}  $tgz" | sha256sum -c -; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf "$tgz"; \
+    rm "$tgz"
+
+# The ONLY addition to Fedora's default PATH is /usr/local/go/bin, placed in
+# /etc/profile.d so it reaches login shells the way a newcomer's own edit
+# would. No `ENV PATH=` — that would leak into non-login `docker exec` shells
+# and give a PATH no real user has.
+RUN printf '%s\n' 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh \
+ && chmod 0644 /etc/profile.d/go.sh
+
+# An ordinary unprivileged user with an ordinary home directory. Nothing is
+# seeded into it — no dotfile edits, no RHQ_HOME, no ~/.config/rhq, no ~/go.
+RUN useradd --create-home --shell /bin/bash --uid 1000 tester
+
+# No GOPATH, GOBIN, GOPROXY, GOFLAGS, GOPRIVATE or GONOSUMDB are set anywhere.
+CMD ["sleep", "infinity"]

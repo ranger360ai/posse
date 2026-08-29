@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-shell cleanroom-reset
+.PHONY: build release install deploy test test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-bd-pin verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -268,12 +268,23 @@ audit-silent-reverts:
 # ---------------------------------------------------------------------------
 # clean-room test environment (ranger-base-5zh)
 #
-# A throwaway Debian container with a DEFAULT PATH and nothing from this
-# project — the machine on which the PUBLIC install story gets tested. Its
-# value is in what it does NOT contain: ~/go/bin is deliberately NOT on PATH
-# in there, because that omission is the P1 under test (ranger-base-253).
+# A throwaway container with a DEFAULT PATH and nothing from this project —
+# the machine on which the PUBLIC install story gets tested. Its value is in
+# what it does NOT contain: ~/go/bin is deliberately NOT on PATH in there,
+# because that omission is the P1 under test (ranger-base-253).
 # `make cleanroom-verify` asserts that and every other guarantee; run it
 # before a test pass. Full runbook: etc/cleanroom/README.md.
+#
+# FOUR DISTROS (ranger-base-5cj4) — debian (default), fedora, rhel, arch.
+# This is the route the operator picked to cover the 2026-08-26 platform ask
+# ("macos, omarchy and rhel/fedora") instead of ci.yml matrix rows, because
+# `go test ./...` cannot tell one linux distro from another and the userland
+# the install commands and generated hooks run in can. Select one per command:
+#
+#	CLEANROOM_DISTRO=rhel make cleanroom-verify
+#
+# `make cleanroom-verify-all` walks all four. Expect it to be slow: arch is
+# amd64-only and runs under qemu on this box.
 # ---------------------------------------------------------------------------
 cleanroom:
 	scripts/cleanroom.sh start
@@ -286,6 +297,30 @@ cleanroom-shell:
 
 cleanroom-reset:
 	scripts/cleanroom.sh reset
+
+cleanroom-distros:
+	scripts/cleanroom.sh distros
+
+# What the generated hooks call, against this distro's userland. A MISSING
+# line is a FINDING (ranger-base-rmgz was one), never a cue to install it.
+cleanroom-hook-deps:
+	scripts/cleanroom.sh hook-deps
+
+# Every distro, built if needed, verified, and its hook dependencies reported.
+# Keeps going after a red one and fails at the end naming which — a partial
+# walk that stopped at the first failure would leave the rest unmeasured and
+# look like a pass.
+cleanroom-verify-all:
+	@rc=0; bad=""; \
+	for d in debian fedora rhel arch; do \
+	  echo "=== cleanroom: $$d ==="; \
+	  if CLEANROOM_DISTRO=$$d scripts/cleanroom.sh verify && \
+	     CLEANROOM_DISTRO=$$d scripts/cleanroom.sh hook-deps; then :; \
+	  else rc=1; bad="$$bad $$d"; fi; \
+	  echo; \
+	done; \
+	if [ $$rc -ne 0 ]; then echo "cleanroom: FAILED on:$$bad" >&2; fi; \
+	exit $$rc
 
 # ---------------------------------------------------------------------------
 # runtime contract walk (ranger-base-nlya)

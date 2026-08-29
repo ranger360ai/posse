@@ -1,0 +1,94 @@
+# syntax=docker/dockerfile:1
+#
+# Clean-room image for testing the PUBLIC install story — the ARCH member of
+# the set (ranger-base-5cj4; the instrument itself is ranger-base-5zh).
+# Siblings: Dockerfile.{debian,fedora,rhel}. Select with CLEANROOM_DISTRO=arch.
+#
+# READ Dockerfile.debian FIRST. It carries the full rationale for every rule
+# below; this file states only what is different about Arch. The rules are not
+# negotiable per-distro:
+#
+#   *** DO NOT PUT ~/go/bin (or $GOPATH/bin, or $GOBIN) ON PATH. ***
+#   *** No golang base image. No herdr, bd, RHQ_HOME, ~/.config/rhq, no ***
+#   *** warmed module cache, nothing from the dev box. ***
+#
+# ============================================================================
+# THIS IS ARCH. IT IS NOT OMARCHY. Say so in any verdict.
+# ============================================================================
+# The 2026-08-26 ask named "omarchy". omarchy is Arch PLUS a curated desktop
+# and a dotfiles layer; `archlinux:latest` is Arch WITHOUT it. This image
+# covers the Arch base userland — pacman's packages, its filesystem layout,
+# its default PATH — and covers none of omarchy's own layer, no desktop, and
+# no kernel. A container labelled "omarchy" would read as coverage and would
+# not be one, so this one is labelled arch and says why.
+#
+# NO ARM64. Official Arch is x86_64-only — `docker manifest inspect
+# archlinux:latest` lists amd64 and nothing else (measured 2026-08-28); ARM is
+# a separate project with separate images. On an Apple Silicon dev box this
+# image therefore runs under qemu emulation, which is slow and which is why
+# scripts/cleanroom.sh pins this distro to linux/amd64 rather than the host's
+# architecture. That is a permanent tax on this row, not a one-off.
+
+FROM archlinux:latest
+
+# Generic newcomer baseline — the same five as Debian.
+#
+# --disable-sandbox is REQUIRED, not defensive. Under qemu emulation pacman
+# 7.1.0 dies with `error restricting syscalls via seccomp: 22`; measured
+# 2026-08-28, and `--security-opt seccomp=unconfined` on the docker side does
+# NOT fix it. The flag is accepted natively too, so one line serves both.
+#
+# NOT INSTALLED, DELIBERATELY: nothing is added to make a posse failure go
+# away. diffutils in particular is never installed anywhere in this set —
+# ranger-base-rmgz is exactly the defect a userland without `cmp` produces.
+# Arch's base group happens to ship it; that is Arch's choice, not ours, and
+# `scripts/cleanroom.sh hook-deps` reports what is actually there.
+RUN pacman -Syu --noconfirm --needed --disable-sandbox \
+      ca-certificates \
+      curl \
+      git \
+      less \
+      make \
+ && rm -rf /var/cache/pacman/pkg/*
+
+# Go toolchain: the official go.dev/dl archive, checksum-verified, unpacked to
+# /usr/local/go — https://go.dev/doc/install verbatim, and IDENTICAL to every
+# other clean-room distro on purpose. Arch packages `go 2:1.27.0`, new enough
+# to build this repo, and `pacman -S go` is a plausible newcomer route; taking
+# it would vary the toolchain and the distro at once, and this instrument
+# exists to isolate the distro. The packaged-Go route is a NAMED, UNCOVERED
+# gap — see etc/cleanroom/README.md.
+#
+# Both linux checksums are carried for symmetry with the other three files
+# even though this image only ever builds amd64. Verified against
+# https://go.dev/dl/?mode=json on 2026-08-28.
+ARG TARGETARCH
+ARG GO_VERSION=1.27.0
+ARG GO_SHA256_amd64=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+ARG GO_SHA256_arm64=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) go_sha=$GO_SHA256_amd64 ;; \
+      arm64) go_sha=$GO_SHA256_arm64 ;; \
+      *) echo "cleanroom: no Go checksum carried for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    tgz="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    curl -fsSLO "https://go.dev/dl/$tgz"; \
+    echo "${go_sha}  $tgz" | sha256sum -c -; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf "$tgz"; \
+    rm "$tgz"
+
+# The ONLY addition to Arch's default PATH is /usr/local/go/bin, placed in
+# /etc/profile.d so it reaches login shells the way a newcomer's own edit
+# would. No `ENV PATH=` — that would leak into non-login `docker exec` shells
+# and give a PATH no real user has.
+RUN printf '%s\n' 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh \
+ && chmod 0644 /etc/profile.d/go.sh
+
+# An ordinary unprivileged user with an ordinary home directory. Nothing is
+# seeded into it — no dotfile edits, no RHQ_HOME, no ~/.config/rhq, no ~/go.
+RUN useradd --create-home --shell /bin/bash --uid 1000 tester
+
+# No GOPATH, GOBIN, GOPROXY, GOFLAGS, GOPRIVATE or GONOSUMDB are set anywhere.
+CMD ["sleep", "infinity"]

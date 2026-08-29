@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 #
 # Clean-room image for testing the PUBLIC install story — ranger-base-5zh.
+# The DEBIAN member of the set; the others are Dockerfile.{fedora,rhel,arch}
+# (ranger-base-5cj4). Pick one with CLEANROOM_DISTRO=; debian is the default
+# and is the image every earlier clean-room pass was run in.
 #
 # THIS IMAGE IS A TEST INSTRUMENT. Its value is in what it does NOT contain.
 # Read ranger-base-253 before changing anything here. The P1 under test is that
@@ -30,6 +33,12 @@ FROM debian:trixie-slim
 #   make — the README short form is `make build`
 #   curl, ca-certificates — fetching the Go toolchain, and TLS to the proxy
 #   less — reading files during a test run
+#
+# NOTHING IS INSTALLED TO MAKE A POSSE FAILURE GO AWAY. In particular
+# diffutils (`cmp`) is never added anywhere in this set: ranger-base-rmgz is a
+# real defect on a userland that lacks it, and installing it here would hide
+# exactly the class of finding these images exist to surface. Debian happens to
+# ship `cmp` in its base; that is Debian's choice, not ours.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -39,17 +48,36 @@ RUN apt-get update \
       make \
  && rm -rf /var/lib/apt/lists/*
 
-# Go toolchain, obtained exactly the way a newcomer does: the official
-# linux-arm64 archive from go.dev/dl, checksum-verified, unpacked to
-# /usr/local/go. This is https://go.dev/doc/install verbatim.
+# Go toolchain, obtained exactly the way a newcomer does: the official archive
+# from go.dev/dl, checksum-verified, unpacked to /usr/local/go. This is
+# https://go.dev/doc/install verbatim.
+#
+# THE TOOLCHAIN IS HELD CONSTANT ACROSS EVERY CLEAN-ROOM DISTRO ON PURPOSE
+# (ranger-base-5cj4). Fedora, RHEL and Arch each package a Go new enough to
+# build this repo, and a newcomer there might well `dnf install golang`. Taking
+# the packaged one would vary two things at once — the distro AND the toolchain
+# — and this instrument exists to isolate the distro. The packaged-Go route is
+# a NAMED, UNCOVERED gap; see etc/cleanroom/README.md.
+#
+# Both linux checksums are carried so one file serves whichever architecture
+# the image is built for. TARGETARCH is supplied by BuildKit. Verified against
+# https://go.dev/dl/?mode=json on 2026-08-28.
+ARG TARGETARCH
 ARG GO_VERSION=1.27.0
-ARG GO_ARCH=arm64
-ARG GO_SHA256=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
-RUN curl -fsSLO "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
- && echo "${GO_SHA256}  go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" | sha256sum -c - \
- && rm -rf /usr/local/go \
- && tar -C /usr/local -xzf "go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
- && rm "go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+ARG GO_SHA256_amd64=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685
+ARG GO_SHA256_arm64=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) go_sha=$GO_SHA256_amd64 ;; \
+      arm64) go_sha=$GO_SHA256_arm64 ;; \
+      *) echo "cleanroom: no Go checksum carried for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    tgz="go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    curl -fsSLO "https://go.dev/dl/$tgz"; \
+    echo "${go_sha}  $tgz" | sha256sum -c -; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf "$tgz"; \
+    rm "$tgz"
 
 # PATH. Read this block before editing it.
 #
