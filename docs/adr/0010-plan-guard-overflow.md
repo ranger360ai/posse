@@ -1,7 +1,9 @@
 # ADR 0010 — Plan-guard overflow: a second pool when the metered window is hot
 
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
-(ADR 0013: the skip is per-bead, including when blind)*
+(ADR 0013: the skip is per-bead, including when blind) · amended
+2026-08-29 (ranger-base-qs0z: a local meter arrived — §3 arming, §4 loop
+closer, §6 local-meter shape)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -93,11 +95,58 @@ overflow <runtime> 20/20 in 7d — skipped`). Starting value: single
 digits for a calibration week — read the pool provider's own usage
 display before and after, and raise only on that evidence.
 
+*(Amended 2026-08-29, ranger-base-qs0z.)* The premise half-expired: xAI
+still publishes no endpoint, but grok writes its own per-turn cost to
+disk, and rangerhq-myso turned that into a **local pool meter**
+(`grokpool.go`): `grok_guard_week:` (percent) / `grok_pool_reset:` /
+`grok_pool_usd_per_point:`, all three required together, utilisation% =
+USD since the last weekly reset ÷ USD per point — an estimate and a
+floor, per-bead beside the account stage. Three rules follow:
+
+- **The requirement becomes "at least one armed brake on the target
+  pool."** Overflow arms when `plan_guard_overflow_cap:` is set (as
+  before) **or** when the target's own pool meter is fully armed (today
+  only grok has one; the check keys on the meter's arming, not a
+  reading). Both set = both apply. Neither = overflow off, one stderr
+  line naming both ways to arm it. Why the meter alone suffices for
+  overflow specifically: every overflow launch spends the pool from this
+  box, so the meter sees **all** of the drain overflow itself causes —
+  the floor's blind spot (the operator's phone/web share) is other
+  people's spend, priced into the threshold. The residual risk is factor
+  drift (a reprice staling the estimate with nothing failing);
+  mitigations are the factor logged on every reading, and the cap
+  remaining available as a belt.
+- **Two brakes on one pool both fire; deferral is a config edit, not a
+  mechanism.** The shipped ordering is ratified: where a reading exists
+  it is named first — the bead cap is the stand-in for the *absence* of
+  one — and the cap still fires second. No auto-defer and no both-set
+  warning: an operator who set both meant both, and the brakes fail
+  differently (a bead count needs no calibration; a percentage needs the
+  factor).
+- **The bead cap's lifetime is the account-degraded column's** (ADR
+  0013 §5). `uncounted_cap_grok:` applies because no `cost_adapter:`
+  reads grok. The day one does (ranger-base-0lg6), the cap goes dead by
+  §5's existing law — `uncountedFor` returns nil for a counted runtime
+  before it ever reads the key — and it must go dead **loudly**: a set
+  `uncounted_cap_<runtime>:` on a counted runtime is named once per pass
+  as not applying, pointing at the brake that does. A silently dead key
+  is the cap-that-stopped-capping failure `uncounted.go` is written
+  against.
+
 **4. Pool exhausted underneath us: skip, as today — plus the cap.** There
 is no reading to take; a launch that the runtime rate-limits shows up as
 the existing "held by persona, idle" line. That is the price of
 open-loop, stated: a provider-side usage endpoint, if one appears, is
 the loop closer.
+
+*(Amended 2026-08-29.)* The loop closed — from the consumer side. No
+endpoint appeared; the pool's own client writes its cost to disk and
+rangerhq-myso reads it. "There is no reading to take" is no longer true
+of grok: exhaustion-underneath-us now shows as an estimate over the
+threshold and skips *before* the launch, not as an idle pane after it.
+The open-loop price is repealed only where a meter exists, and only to
+that meter's precision — the reading is an estimate and a floor, never
+the vendor's number.
 
 **5. A blind guard skips; it never overflows.** *(Amendment,
 2026-08-20.)* The guard has a second way to stop a pass: `--watch` plus
@@ -132,6 +181,23 @@ and `--watch` backs off on that. `plan_guard_blind_max: 0` is not the
 way to keep off-meter work alive. Overflow remains a judgement on a
 reading; "blind never overflows" stands.
 
+**6. A local meter is armed or off; it is never blind.** *(Added
+2026-08-29, ranger-base-qs0z — the shape rangerhq-myso set, written down
+so the next local meter does not inherit ADR 0018's clock by default.)*
+The blind state and its clock (`plan_guard_blind_max:`, ADR 0018) exist
+because a **remote** meter's no-reading may be transient — a credential,
+an endpoint — so waiting is a strategy. A meter over local files has no
+transient outage to wait out: its inputs are config keys and a
+directory. It has exactly two states: **armed** (every input present and
+parsing) or **off, loud** — one stderr line per pass naming the missing
+input. Never parked: parking on a condition no retry can change is a
+brake with no release. Two corollaries. An off meter is not a reading
+and satisfies nothing — it gates no bead and does not arm overflow under
+§3. And an armed meter whose store is unreadable still fails toward
+naming, never toward $0: unread transcripts are counted as unread on the
+line, and the floor only ever under-reports, stated. ADR 0018 keeps the
+remote shape; its scope note points here.
+
 ## Consequences
 
 - `dispatch.go`: runtime becomes per-launch (`fire`/`launchSession`/
@@ -148,6 +214,24 @@ reading; "blind never overflows" stands.
   it is off — a cap in beads is a brake, not a bill guard.
 - Metric: overflow launches / closes / reopens by runtime — the same
   judge as Dial E, on the ledger.
+- *(2026-08-29)* `overflow.go` arming learns the either-brake rule (§3);
+  `uncounted.go` learns the dead-key line (§3, live before 0lg6 lands —
+  the condition is `Counted()` plus a set key, testable on a fixture
+  runtime). Both cut as beads off ranger-base-qs0z. `overflow.log` is
+  still written on every overflow launch, cap or no cap: it feeds the
+  metric, and the cap if one is later set.
+- *(2026-08-29)* Tripwire: the arming check keys on the grok meter by
+  name, deliberately not a registry. When a **second** local pool meter
+  appears, the rejected per-pool budget model's "file it when a second
+  meter exists" comes due for real.
+- *(2026-08-29)* Claims: MEASURED — grok per-turn cost on disk and the
+  decoder's 2× trap (ranger-base-k7nb, 171/171 records); the shipped
+  guard and its mutation-checked pins (d9ed77c); `uncountedFor` nils out
+  on `Counted()` before reading the cap key (uncounted.go:112);
+  overflow-spend-is-on-box is by construction (dispatch launches
+  locally). ASSUMED — the conversion factor holds between calibrations
+  (mitigated: logged every reading); the operator's off-box grok share
+  is small enough to price into the threshold (the operator sizes it).
 
 ## Alternatives rejected
 
@@ -172,3 +256,19 @@ reading; "blind never overflows" stands.
 - **Two overflow targets** (one per lane class). Static `runtime: <x>`
   on the PIDs that need the second target *is* that half; overflow then
   has one target, sized before it gets a cap.
+
+*(2026-08-29, with the meter in hand:)*
+
+- **The cap auto-defers when the meter is armed.** Silently disarming a
+  brake the operator set, on the strength of an estimate with two silent
+  under-report modes (factor drift, the floor). Deferring is one config
+  edit, made by the person who owns the numbers.
+- **The cap stays required alongside the meter forever.** Makes §4's
+  loop-closer promise empty, and forces the operator to keep inventing a
+  bead number the meter obsoletes — "single digits for a calibration
+  week" was a crutch for not knowing, and now we know.
+- **A warning when both brakes are set.** Both-set is a valid
+  belt-and-braces posture, not a smell; warning on it nags the cautious.
+- **Generalise now to a pool-meter registry.** The per-pool budget
+  model again, still rejected for the same reason at smaller scale: one
+  meter exists, and a registry of one is a name with no second member.

@@ -1,7 +1,10 @@
 # ADR 0018 — Blind meter, armed ledger: the last brake parks, a backed brake degrades
 
 *Status: accepted 2026-08-26 · owner: architect · amends ADR 0013 §3
-(blind row) and ADR 0003 §4 (Dial E gains a duty) · ranger-base-kld4*
+(blind row) and ADR 0003 §4 (Dial E gains a duty) · ranger-base-kld4 ·
+scope note 2026-08-29 (ranger-base-qs0z): this ADR's blind state and
+clock belong to REMOTE meters, whose no-reading may be transient; a
+meter over local files is armed or off-loud, never blind — ADR 0010 §6*
 
 ## Context
 
