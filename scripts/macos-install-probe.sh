@@ -319,6 +319,23 @@ probe_tap() {
 		[ -n "$sha" ] || { bad "the published formula carries no sha256 for $plat"; return; }
 		printf '%s  posse_%s_%s.tar.gz\n' "$sha" "$BARE" "$plat" >> "$sums"
 	done
+	# The four BOTTLE digests too (ranger-base-w69s). Since ranger-base-9vg3 the
+	# generator refuses a checksums file missing one, so a four-line manifest
+	# makes it exit 1 and this whole arm degraded to `skip` — silently, on every
+	# bottled release, while the summary still printed "every probe agreed".
+	# The anti-hand-edit check is the strongest thing `tap` mode does; it has to
+	# be reconstructible or it is not being run.
+	local btag
+	for btag in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+		local bsha
+		# `sonoma:` is a suffix of `arm64_sonoma:`, so the tag is anchored on the
+		# character before it. Unanchored, the sonoma lookup takes whichever of
+		# the two lines comes first and the two digests silently swap.
+		bsha=$(awk -v t="$btag" '
+			$0 ~ ("(^|[ ,])" t ":") { if (match($0, /[a-f0-9]{64}/)) { print substr($0, RSTART, RLENGTH); exit } }' "$published")
+		[ -n "$bsha" ] || { bad "the published formula carries no bottle sha256 for $btag — brew has no prebuilt keg for that platform and will build from source there"; return; }
+		printf '%s  posse-%s.%s.bottle.tar.gz\n' "$bsha" "$BARE" "$btag" >> "$sums"
+	done
 	# Render with the generator AS IT WAS AT THE RELEASE TAG, not as it is at
 	# HEAD. The published formula was rendered when the release was cut, so
 	# comparing it to HEAD's generator reports every later generator change as
@@ -357,6 +374,27 @@ probe_tap() {
 		got=$(shasum -a 256 "$tgz" | awk '{print $1}')
 		if [ "$want" = "$got" ]; then ok "$plat: sha256 matches the published asset"
 		else bad "$plat: sha256 mismatch — formula $want, asset $got"; fi
+	done
+
+	# The four bottles, against the bytes GitHub serves (ranger-base-w69s). The
+	# byte-identity arm above cannot see a doctored digest: it reconstructs the
+	# manifest FROM the formula under test, so a hand-edited sha256 renders back
+	# into itself and the diff stays silent — measured. Only this loop, which
+	# fetches the asset the digest claims to describe, can. It is the bottles'
+	# half of the check the four tarballs already got, and it is the one that
+	# matters for a pour: brew verifies the bottle it downloads against the
+	# formula, so one wrong bottle digest breaks `brew install` on exactly one
+	# platform — the one whoever cut the release does not run.
+	for btag in arm64_sonoma sonoma arm64_linux x86_64_linux; do
+		local bwant bgot bfile=posse-$BARE.$btag.bottle.tar.gz
+		bwant=$(awk -v p="$bfile" '$2 == p { print $1 }' "$sums")
+		if ! curl -fsSL -o "$ROOT/$bfile" "https://github.com/$REPO/releases/download/$VERSION/$bfile"; then
+			bad "$btag: the bottle the formula names is not downloadable from the release — brew would build from source on that platform"
+			continue
+		fi
+		bgot=$(shasum -a 256 "$ROOT/$bfile" | awk '{print $1}')
+		if [ "$bwant" = "$bgot" ]; then ok "$btag: the bottle's sha256 matches the published asset"
+		else bad "$btag: bottle sha256 mismatch — formula $bwant, asset $bgot"; fi
 	done
 
 	# Both macOS architectures, executed. amd64 needs Rosetta; where it is
@@ -461,6 +499,31 @@ PY
 		ok "tap-info reads Untrusted before AND after the formula grant — it reports tap trust, not formula trust"
 	else
 		note "tap-info: before=$before after=$after (INSTALL.md §2 describes 'Untrusted' both times)"
+	fi
+
+	# THE VERSION BREW RESOLVES, asked before the install (ranger-base-w69s).
+	# The formula carries no `version` stanza on purpose (scripts/tap-formula.sh),
+	# so brew scans one out of the url — and that scan is a property of the brew
+	# on the box, not of the formula. Homebrew <= 6.0.13 reads `64` out of
+	# `posse_X.Y.Z_darwin_arm64.tar.gz`; 6.0.14 added a releases/download parser
+	# and reads X.Y.Z. Because the bottle filename interpolates whatever it
+	# scanned, a box on the older brew asks for posse-64.<tag>.bottle.tar.gz and
+	# `brew install` dies on a 404 that names our release rather than its brew.
+	# Ask first, so such a box says which of the two it is.
+	local resolved
+	# `.*stable`, not `: stable`: where a keg is already in the prefix brew
+	# writes `==> <formula>: <installed> -> stable <version>`, and a pattern
+	# anchored on the colon reads nothing there — which lands a real mismatch in
+	# the "could not read" arm and reports the wrong defect. Measured on 6.0.13
+	# with posse already installed.
+	resolved=$("$brew" info --formula "$FORMULA" 2>/dev/null |
+		sed -n "s|^==> $FORMULA:.*stable \([^ ]*\).*|\1|p" | head -1)
+	if [ "$resolved" = "$BARE" ]; then
+		ok "brew resolves this formula's version as $BARE — the bottle url it builds will name a published asset"
+	elif [ -z "$resolved" ]; then
+		bad "could not read a version out of \`brew info $FORMULA\` — the check below cannot discriminate"
+	else
+		bad "brew resolves this formula's version as '$resolved', not $BARE. It scans the version out of the url, and this brew ($("$brew" --version 2>/dev/null | head -1)) predates the releases/download parser (Homebrew 6.0.14). \`brew install\` will 404 on posse-$resolved.<tag>.bottle.tar.gz. Fix: a \`version \"$BARE\"\` stanza in the rendered formula, or tell the reader to \`brew update\` first."
 	fi
 
 	"$brew" install "$FORMULA" >"$ROOT/install.log" 2>&1
