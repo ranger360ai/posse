@@ -215,6 +215,7 @@ type wgProbe struct {
 // back and reported instead of guessed at.
 func wgRun(t *testing.T, profile, sh string) (bool, string) {
 	t.Helper()
+	sbSkipUnlessSandboxable(t)
 	out, err := exec.Command("sandbox-exec", "-f", profile, "/bin/sh", "-c", sh).CombinedOutput()
 	return err == nil, strings.TrimSpace(string(out))
 }
@@ -246,9 +247,7 @@ func wgExists(t *testing.T, p string) bool {
 }
 
 func TestQAWorktreeGrantRefusesSharedGitStateUnderSandboxExec(t *testing.T) {
-	if !SeatbeltAvailable() {
-		t.Skip("no sandbox-exec on this host")
-	}
+	sbSkipUnlessSandboxable(t)
 	probes := []wgProbe{
 		// The bead's first capability: a ref move is not a push. L1 shims
 		// `git push`, L3 fires on pre-push, and neither is reached here.
@@ -354,9 +353,7 @@ func TestQAWorktreeGrantRefusesSharedGitStateUnderSandboxExec(t *testing.T) {
 // the profile was rendered; an exit code alone would be satisfied by a git
 // that did nothing.
 func TestQAWorktreeCommitStaysGreenUnderTheNarrowedProfile(t *testing.T) {
-	if !SeatbeltAvailable() {
-		t.Skip("no sandbox-exec on this host")
-	}
+	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
 	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
 	if err != nil {

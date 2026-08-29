@@ -282,6 +282,9 @@ type sbProbe struct {
 
 func sbRun(t *testing.T, profile, sh string) bool {
 	t.Helper()
+	// Backstop: a probe added later that forgets the top-level gate skips
+	// here rather than reporting a refusal the kernel never gave it.
+	sbSkipUnlessSandboxable(t)
 	cmd := exec.Command("sandbox-exec", "-f", profile, "/bin/sh", "-c", sh)
 	out, err := cmd.CombinedOutput()
 	if err != nil && cmd.ProcessState != nil && cmd.ProcessState.ExitCode() > 1 {
@@ -319,9 +322,7 @@ func sbTry(t *testing.T, p sbProbe, withCarve bool) bool {
 // slots, the two escapes a subpath deny does not close by itself, and the
 // record stage developer's constraint protects.
 func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
-	if !SeatbeltAvailable() {
-		t.Skip("no sandbox-exec on this host")
-	}
+	sbSkipUnlessSandboxable(t)
 	home := func(f sbFixture, parts ...string) string {
 		return filepath.Join(append([]string{f.a.Home}, parts...)...)
 	}

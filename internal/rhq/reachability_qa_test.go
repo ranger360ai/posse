@@ -105,9 +105,11 @@ func rchEdit(t *testing.T, profile string, edit func(string) string) string {
 
 func rchSkip(t *testing.T) {
 	t.Helper()
-	if !SeatbeltAvailable() {
-		t.Skip("no sandbox-exec on this host")
-	}
+	// Not "is sandbox-exec here" — "may this session apply one". Inside a
+	// caged persona session it is here and refused, seatbeltReachRow then
+	// calls every target unreachable, and the control below asserts exactly
+	// that and goes green having measured nothing (ranger-base-xjw9).
+	sbSkipUnlessSandboxable(t)
 }
 
 // 1. The artifact as it launches. The live shape, rendered by the same call
