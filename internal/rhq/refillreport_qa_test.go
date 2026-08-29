@@ -4,8 +4,9 @@ package rhq
 // observable 1 a window belongs to.
 //
 // MEASURED 2026-08-28 ~09:15 on the first live refill: the seat-scoped fire
-// path printed a per-bead wall plus `– 131 ready bead(s) outside gwart's
-// lane — skipped by --persona`, at every settle, attributed to nothing. The
+// path printed a per-bead wall plus `– 131 ready bead(s) outside <the
+// filtered persona>'s lane — skipped by --persona`, at every settle,
+// attributed to nothing. The
 // operator read it as a rogue persona-filtered loop and went to an alarm
 // footing. And every idle-to-next line still said "no refill has shipped,
 // this is the control arm" — a hardcoded string, unmoved by the refill going

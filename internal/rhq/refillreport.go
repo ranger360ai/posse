@@ -3,12 +3,12 @@ package rhq
 // The refill's own report — ADR 0028 §1's fire path, said so an operator can
 // tell it from a pass (ranger-base-59jd).
 //
-// MEASURED 2026-08-28 ~09:15, on the first live refill, under a
-// `--persona gwart` watch: every settle re-runs the WHOLE fire path now
-// (§1 as amended — the settle is the level-triggered tick), and the fire
-// path enumerates per bead. What reached the log was a wall of
+// MEASURED 2026-08-28 ~09:15, on the first live refill, under a watch
+// narrowed to one developer with `--persona`: every settle re-runs the WHOLE
+// fire path now (§1 as amended — the settle is the level-triggered tick), and
+// the fire path enumerates per bead. What reached the log was a wall of
 // `– <bead> … lane busy` lines followed by `– 131 ready bead(s) outside
-// gwart's lane — skipped by --persona`, repeated at every settle and
+// <that persona>'s lane — skipped by --persona`, repeated at every settle and
 // attributed to nothing. The operator read it as a rogue persona-filtered
 // loop holding the watch and went to an alarm footing. Every line was true;
 // none of them said who was speaking, and under a rolling Run they are the
