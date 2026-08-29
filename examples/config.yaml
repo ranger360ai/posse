@@ -443,6 +443,42 @@ dirs:
 # uncounted_cap_grok: 20     # beads to grok per rolling 7 days
 # uncounted_cap_codex: 20
 
+# ─── the grok weekly pool guard ──────────────────────────────────────────────
+# A SECOND meter, for the one pool whose exhaustion hurts longest. The
+# SuperGrok week has no intra-week reset: spent, it is days of nothing, and it
+# takes your own Grok — Chat, Voice, Imagine, same bucket — down with the
+# fleet. xAI publishes no usage endpoint, but grok writes its own cost per
+# turn to disk, so utilisation is computable locally with no network call, no
+# credential and no keychain:
+#
+#     utilisation% = (USD since the last weekly reset) / (USD per point)
+#
+# THIS READING IS AN ESTIMATE, NOT THE VENDOR'S NUMBER, and posse says so on
+# every line it prints. It is also a FLOOR: it sees grok sessions written on
+# THIS box — dispatch's and your own CLI — and cannot see the same pool spent
+# from a phone or the web. Size the threshold knowing it under-reports.
+#
+# All three keys are required together. Unset — the default — is today's
+# behaviour exactly: nothing is scanned and nothing is said. Armed with a
+# reset or a factor missing, the guard is OFF with one stderr line per pass;
+# it is never "blind" and never parks a bead, because a local file read has no
+# transient outage to wait out and no reading would ever arrive to lift it.
+#
+# Over the threshold, a bead bound for grok gets one line instead of a launch
+# — per BEAD, on the runtime the launch is actually going to, so a drained
+# grok pool never parks a claude lane and a bead `plan_guard_overflow:` moved
+# onto grok is judged by grok's pool. At the threshold exactly it still runs.
+#
+# grok_pool_usd_per_point: is YOUR calibration and posse ships no value for
+# it: derive it by reading xAI's own Settings -> Usage display across a
+# bracket of known spend. It is empirical and it drifts the day xAI reprices,
+# which is why it is config rather than a constant and why every pass logs the
+# value it used. The three numbers below are ARBITRARY SHAPES chosen to be
+# obviously not anyone's: read your own reset off the vendor's display.
+# grok_guard_week: 85              # skip grok beads above 85% of the week
+# grok_pool_reset: wed 14:30       # <weekday> <HH:MM>, your local time
+# grok_pool_usd_per_point: 0.50    # dollars per percentage point of pool
+
 # ─── load guard ──────────────────────────────────────────────────────────────
 # The 1-minute load average above which this instance launches NOTHING: a
 # dispatch pass over it is skipped whole with one witness line, and `posse

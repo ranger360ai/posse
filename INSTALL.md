@@ -1477,6 +1477,17 @@ are what keep an unattended loop off your plan's rate windows; under
 default) with no successful reading, so passes park rather than run blind.
 Arming without the guard is arming a token loop nobody is watching.
 
+**If you dispatch onto grok, arm `grok_guard_week:` too.** The Claude 5h
+window heals in five hours; the SuperGrok week has no intra-week reset, so
+exhausting it is days of nothing and it takes your own Grok — Chat, Voice,
+Imagine, same bucket — down with the fleet. That guard needs no credential
+and no network: it reads grok's own per-turn cost off disk and divides by
+`grok_pool_usd_per_point:`, your own calibration against xAI's Settings ->
+Usage display, counted from `grok_pool_reset:`. All three keys or none. The
+number it produces is an **estimate and a floor** — it cannot see the same
+pool spent from your phone or the web — so set the threshold below where you
+would set a real meter's. See `examples/config.yaml`.
+
 Restart the herdr server (or run `plugin/autostart.sh` by hand) to arm.
 Log: `$RHQ_HOME/state/dispatch-watch.log`.
 

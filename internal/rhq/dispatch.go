@@ -225,6 +225,12 @@ type Dispatcher struct {
 	// ledger scan at once per pass rather than once per bead.
 	uncounted map[string]*uncountedPool
 
+	// The grok pool guard's one reading for this pass (grokpool.go), taken
+	// lazily on the first bead that resolves onto that runtime and nil until
+	// then. One pass's, reset by Run like every other reading here: a
+	// --watch loop must not brake on a week's spend it measured an hour ago.
+	grokPool *grokPoolState
+
 	// ADR 0028 §5 observable 1: the idle-to-next window measured for every
 	// seat this pass refilled (seatidle.go). One pass's, reset by Run like
 	// every other reading here. Nothing reads it back to make a decision —
@@ -1602,6 +1608,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// this pass's too — a --watch loop must not report last pass's launches
 	// or brake on a ledger count it took an hour ago.
 	d.uncounted = map[string]*uncountedPool{}
+	// rangerhq-myso: so is the grok pool reading — and it is taken lazily,
+	// so a pass with no grok bead in it scans no transcripts at all.
+	d.grokPool = nil
 	// ADR 0013 §2: which panes this pass gave up on is this pass's memory.
 	d.stranded = nil
 	// ADR 0028 §5 observable 1: so is what this pass measured (seatidle.go).
@@ -2180,6 +2189,15 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// has no meter to judge against, so the count of beads posse itself
 		// sent there stands in for one; with no cap set this never skips
 		// anything and the pass's account line is the whole obligation.
+		//
+		// The pool meter comes first (rangerhq-myso): where a runtime has a
+		// reading, the reading is what the operator wants named, and the
+		// bead cap below is the stand-in for the ABSENCE of one. Both skip;
+		// only one of them says how much of the pool is left.
+		if skip := d.grokPoolSkip(launchRT); skip != "" {
+			d.printf("– %-14s %s\n", is.ID, skip)
+			continue
+		}
 		if skip := d.uncountedSkip(launchRT); skip != "" {
 			d.printf("– %-14s %s\n", is.ID, skip)
 			continue
