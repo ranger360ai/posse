@@ -149,12 +149,53 @@ type HerdrMeta struct {
 	Prompted time.Time
 }
 
-// SocketID names the herdr server a session belongs to: $HERDR_SOCKET_PATH,
-// or "" for herdr's default socket. It is recorded in the meta so a pass
-// talking to a *different* herdr — a named session, a scratch server, a
-// socket exported for one command — can tell "this workspace died" apart
-// from "I am asking the wrong server" (rangerhq-snd).
-func SocketID() string { return os.Getenv("HERDR_SOCKET_PATH") }
+// SocketID names the herdr server a session belongs to: the resolved path of
+// its api socket. It is recorded in the meta so a pass talking to a
+// *different* herdr — a named session, a scratch server, a socket exported
+// for one command — can tell "this workspace died" apart from "I am asking
+// the wrong server" (rangerhq-snd).
+//
+// It RESOLVES rather than reads, and that is rangerhq-y4z. This was
+// os.Getenv("HERDR_SOCKET_PATH"), with "" documented as "herdr's default
+// socket" — but herdr injects the concrete path into every pane it opens, so
+// a session created inside one recorded /Users/x/.config/herdr/herdr.sock
+// while `posse` from a plain terminal read "". Those name the same server and
+// the guard compared them as two, which cost the default-socket board both
+// halves of the meta rule at once: a genuinely dead workspace was never
+// pruned (its meta immortal, a refusal printed on every listing), and
+// backfillServer could never stamp one, because it will not stamp a socket
+// this pass cannot name. Resolving the empty value to the path herdr would
+// have used makes the two comparable, and the sockets a meta records
+// comparable with each other.
+//
+// The two layouts herdr resolves to are ones this shop has measured rather
+// than guessed: ~/.config/herdr/herdr.sock for the default server, and
+// ~/.config/herdr/sessions/<name>/herdr.sock for a named session
+// (rangerhq-6bg7's scratch server ran on one). A HERDR_SESSION with no socket
+// path is therefore resolved, not defaulted — pointing at the default
+// server's socket there would name a server posse is not talking to.
+//
+// "" now means only that the socket cannot be named at all (no $HOME), and
+// the asymmetry is deliberate: an unnameable socket costs the comparison —
+// nothing is proven ours, so nothing is deleted and no name is opened —
+// while a wrongly named one would forge it. A meta recording "" is the same
+// unknown one field older: written before `socket:` existed (cannotAnswerFor).
+func SocketID() string {
+	if p := os.Getenv("HERDR_SOCKET_PATH"); p != "" {
+		// Clean and expand, because the comparison is on the string: the
+		// same socket spelled ~/... in one pass and /Users/... in the next
+		// is one server, and reading it as two is this bead's whole defect.
+		return filepath.Clean(ExpandTilde(p))
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	if s := os.Getenv("HERDR_SESSION"); s != "" {
+		return filepath.Join(home, ".config", "herdr", "sessions", s, "herdr.sock")
+	}
+	return filepath.Join(home, ".config", "herdr", "herdr.sock")
+}
 
 // ServerGen names the herdr server *generation* posse is talking to: the
 // device, inode and bind time of its api socket file. herdr recreates that
@@ -205,7 +246,12 @@ func SocketID() string { return os.Getenv("HERDR_SOCKET_PATH") }
 // "" means the generation is unknown — the socket cannot be named, or is not
 // there — and unknown is never read as a match (notOurWorkspace).
 func ServerGen() string {
-	p := herdrSocketPath()
+	// The path to stat and the name of the server are one thing since
+	// rangerhq-y4z: this used to be a private resolver beside a SocketID()
+	// that only read the environment, and the two disagreeing on the default
+	// socket was the defect. One resolution, so the fence and the comparison
+	// can never again be about different servers.
+	p := SocketID()
 	if p == "" {
 		return ""
 	}
@@ -228,36 +274,6 @@ func ServerGen() string {
 // a filesystem that hid it (ranger-base-fjj).
 func genToken(file string, bound time.Time) string {
 	return fmt.Sprintf("%s:%d", file, bound.UnixNano())
-}
-
-// herdrSocketPath names the api socket file posse's herdr calls go to, or ""
-// when it cannot be named for certain. The asymmetry is deliberate: an
-// unnameable socket costs the generation fence (unknown, so nothing is
-// trusted), while a wrongly named one would forge it.
-//
-// HERDR_SOCKET_PATH is exact. Without it herdr resolves the socket itself,
-// and the two layouts it uses are ones this shop has measured rather than
-// guessed: ~/.config/herdr/herdr.sock for the default server, and
-// ~/.config/herdr/sessions/<name>/herdr.sock for a named session
-// (rangerhq-6bg7's scratch server ran on one). A HERDR_SESSION with no
-// socket path is therefore resolved, not defaulted — pointing at the default
-// server's socket there would fence against a server posse is not talking to.
-//
-// This is NOT rangerhq-y4z: the socket *comparison* in cannotAnswerFor still
-// reads SocketID() exactly as it did, and "" still compares unequal to the
-// default path there. This resolves a path to stat, nothing else.
-func herdrSocketPath() string {
-	if p := SocketID(); p != "" {
-		return ExpandTilde(p)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	if s := os.Getenv("HERDR_SESSION"); s != "" {
-		return filepath.Join(home, ".config", "herdr", "sessions", s, "herdr.sock")
-	}
-	return filepath.Join(home, ".config", "herdr", "herdr.sock")
 }
 
 func (b *HerdrBackend) metaDir() string { return filepath.Join(b.App.StateDir, "herdr") }
@@ -681,12 +697,12 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 			}
 		}
 		if !live {
-			// m.Socket == "" and an empty listing are the prune's own arms,
-			// and only the prune's: refusing to DELETE costs a kept file, so
-			// they are worth paying for the pre-field metas and the wrong-
-			// server board they cover. The write cannot pay either — see
-			// mustNotOrphan (rangerhq-jeu2, rangerhq-7dn4).
-			if m.Socket == "" || emptyBoard(sock, len(wss)) != "" || cannotAnswerFor(m, sock) != "" {
+			// An empty listing is the prune's own arm, and only the prune's:
+			// refusing to DELETE costs a kept file, so it is worth paying for
+			// the board it covers. The write cannot pay it — see mustNotOrphan
+			// (rangerhq-7dn4). The unstamped and wrong-server arms are
+			// cannotAnswerFor's, and both halves ask them (rangerhq-y4z).
+			if emptyBoard(sock, len(wss)) != "" || cannotAnswerFor(m, sock) != "" {
 				kept++
 				continue
 			}
@@ -778,12 +794,26 @@ const PruneGrace = 5 * time.Minute
 // nothing is already safe. On the write side doing nothing means refusing
 // the create, because proceeding is what destroys the record.
 //
-// The prune keeps two classes this does not name, and both are applied at
-// its call site rather than here, because on the write side neither is true
-// (see mustNotOrphan): a meta with no socket recorded at all, and an EMPTY
-// workspace listing. Refusing to delete costs a kept file, which the next
-// listing takes back; refusing to write costs the name.
+// The prune keeps ONE class this does not name, applied at its call site
+// because on the write side it is not true (see emptyBoard, mustNotOrphan):
+// an EMPTY workspace listing. Refusing to delete costs a kept file, which the
+// next listing takes back; refusing to write costs the name.
+//
+// A meta recording no socket at all used to be the second such class — the
+// prune refused it, the create asked about it anyway — and closing
+// rangerhq-y4z is what let the two converge. While SocketID() read the
+// environment, a `posse` from a plain terminal wrote AND read unstamped
+// metas, so refusing here would have made every name on the default board
+// unusable the moment its session died. Now every create stamps a resolved
+// path, so socket: "" says only what it always meant: written before the
+// field existed, by a binary that named no server. Nothing on disk says this
+// server ever held that workspace, and absence of evidence that it lived here
+// is not evidence that it died — nor that it is free (rangerhq-8fq,
+// rangerhq-jeu2). One predicate, both halves, no arm left to drift.
 func cannotAnswerFor(m *HerdrMeta, sock string) string {
+	if m.Socket == "" {
+		return "it records no socket, and nothing on disk says this server ever held it"
+	}
 	if m.Socket != sock {
 		return fmt.Sprintf("the meta was written against %s and this pass is talking to %s", socketLabel(m.Socket), socketLabel(sock))
 	}
@@ -1002,9 +1032,6 @@ func (b *HerdrBackend) reclaim(name, sock, gen string) string {
 	if m.Workspace == "" {
 		return "it now names no workspace: a relaunch left its recipe here while this pass was proving the old workspace dead"
 	}
-	if m.Socket == "" {
-		return "it now records no socket, and nothing on disk says this server ever held it"
-	}
 	if why := cannotAnswerFor(m, sock); why != "" {
 		return why
 	}
@@ -1025,11 +1052,14 @@ func (b *HerdrBackend) reclaim(name, sock, gen string) string {
 // written before it exists carries none, and a restart or handoff makes even
 // a stamped one stale.
 //
-// Only a pass that knows a concrete socket can stamp one: SocketID() == ""
-// means herdr's default server, which on disk cannot be told apart from
-// "nothing recorded" — that identity is rangerhq-y4z's to fix, and until it
-// does, a meta whose session was created outside a herdr pane stays
-// unstamped, and so unprunable.
+// Only a pass that knows a concrete socket can stamp one, and since
+// rangerhq-y4z that is every pass with a $HOME: SocketID() resolves the
+// default server to its own path rather than to "", so a session created
+// outside a herdr pane is stamped like any other and the backfill works on
+// the default board — where before it could never fire, leaving those metas
+// unstamped and so unprunable forever. SocketID() == "" now means the socket
+// cannot be named at all, and a pass that cannot name its server must not
+// claim a meta for it.
 //
 // The generation is stamped only on POSITIVE identity — the workspace this
 // server holds under that id wears the meta's own name as its label. The
@@ -1053,9 +1083,14 @@ func (b *HerdrBackend) backfillServer(m *HerdrMeta, ws HerdrWorkspace, sock, gen
 	_ = b.writeMeta(m)
 }
 
+// socketLabel names a socket in a refusal. "" is no longer "the default
+// socket" — since rangerhq-y4z that server has a path like any other — so it
+// is the one case left where nothing can be named: a pass with no $HOME, or
+// (through cannotAnswerFor's mismatch arm, which "" never reaches) a meta
+// from before the field.
 func socketLabel(sock string) string {
 	if sock == "" {
-		return "default socket"
+		return "a socket posse cannot name"
 	}
 	return sock
 }
@@ -1153,24 +1188,23 @@ func (b *HerdrBackend) mustNotOrphan(name string) error {
 	// no workspace, has already returned above, so the ordinary create still
 	// pays nothing beyond the per-id query below.
 	//
-	// TWO arms of the prune's are deliberately not taken here, for the same
-	// reason twice: a refusal costs the two halves different things, and only
-	// this half can lose a name.
+	// ONE arm of the prune's is deliberately not taken here, because a
+	// refusal costs the two halves different things and only this half can
+	// lose a name. It used to be two.
 	//
-	// An unstamped meta is refused there and asked about here, when this pass
-	// is unstamped too. It is not the copy-paste gap it looks like. Every
-	// create stamps Socket: SocketID(), so socket: "" says the meta was
-	// written by a pass that was itself on the default server — the server
-	// being asked. That is evidence the two name the SAME server, not absence
-	// of evidence, and reading it as two servers is rangerhq-y4z's misfire.
-	// On the prune side that misfire costs a kept file. Here it would cost
-	// every name: `posse` from a plain terminal has HERDR_SOCKET_PATH unset,
-	// so it writes and reads unstamped metas, and a dead session's name could
-	// never be reused without deleting its meta by hand. A meta unstamped
-	// against a NAMED socket still refuses — that is the mismatch arm. What
-	// stays open is the pre-field legacy meta on a multi-server board;
-	// rangerhq-y4z closes it by making "" and the default path one server, at
-	// which point this arm can be taken verbatim.
+	// The unstamped meta was the other, and rangerhq-y4z closed it. While
+	// SocketID() read $HERDR_SOCKET_PATH raw, `posse` from a plain terminal
+	// wrote AND read metas recording "", so refusing one here would have cost
+	// every name on the default board: a dead session's name could never be
+	// reused without deleting its meta by hand, which is the operator's own
+	// ordinary path. That was the whole reason the arm was skipped, and it
+	// was skipped at the price of the one board where the create still could
+	// not tell "same server" from "no idea" — a pre-field legacy meta whose
+	// workspace is alive on a NON-default herdr, asked from the default one.
+	// SocketID() now resolves, every create stamps a concrete path, and
+	// socket: "" means only "written before the field existed". So the arm is
+	// taken, inside cannotAnswerFor where both halves ask it, and the two
+	// halves are one predicate again.
 	//
 	// An EMPTY listing is the same trade one bead later (rangerhq-7dn4), and
 	// it bites harder. It only ever changes the answer when the sockets

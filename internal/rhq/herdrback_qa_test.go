@@ -67,18 +67,26 @@ func TestSocketlessMetasSurviveAScratchServer(t *testing.T) {
 // rangerhq-y4z: herdr injects HERDR_SOCKET_PATH into panes, so a session
 // created in one records the concrete default-socket path; `posse` run from a
 // plain terminal has it unset. Both name the same server, and the guard
-// compares them as two — so a genuinely dead workspace is never pruned and
-// every listing carries a refusal that is not true. Fails safe, unlike its
+// compared them as two — so a genuinely dead workspace was never pruned and
+// every listing carried a refusal that is not true. Fails safe, unlike its
 // sibling, but it is the same identity bug from the other side.
+//
+// The fix is in SocketID(): it resolves rather than reads, so the pass from
+// the plain terminal names the same path the pane was handed. The fixture
+// spells the pane's injected value as SocketID() itself for exactly that
+// reason — a hardcoded /Users/x/... would be measuring a string, not the
+// agreement between what herdr injects and what posse resolves.
 func TestDefaultSocketIsOneServerNotTwo(t *testing.T) {
-	t.Skip("rangerhq-y4z: SocketID() reads '' and the default socket path as different servers")
-
-	const dflt = "/Users/x/.config/herdr/herdr.sock" // what herdr injects for its default server
+	t.Setenv("HERDR_SOCKET_PATH", "")
+	b, fake := newTestBackend(t) // gives this test its own $HOME to resolve against
+	dflt := SocketID()           // what herdr injects into a pane on its default server
+	if dflt == "" {
+		t.Fatal("setup: the default socket must resolve to a path")
+	}
 
 	// Written from inside a pane: herdr set HERDR_SOCKET_PATH, so the meta
 	// records the concrete path.
 	t.Setenv("HERDR_SOCKET_PATH", dflt)
-	b, fake := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
 	qaStaleMeta(t, b, "ours", "w404", dflt)
@@ -95,6 +103,21 @@ func TestDefaultSocketIsOneServerNotTwo(t *testing.T) {
 	}
 	if strings.Contains(warn.String(), "kept, not listed") {
 		t.Errorf("refusal reported for this server's own dead workspace: %q", warn.String())
+	}
+
+	// The control: a meta from a genuinely different server on the same
+	// board is still kept and still reported. Canonicalizing "" must make
+	// one server one, not make every server the same one.
+	warn.Reset()
+	qaStaleMeta(t, b, "theirs", "w405", "/tmp/y4z/other.sock")
+	if _, err := b.Sessions(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.readMeta("theirs"); !ok {
+		t.Error("a meta written against another herdr was pruned by this one")
+	}
+	if !strings.Contains(warn.String(), "kept, not listed") {
+		t.Errorf("refusal not reported for another server's meta: %q", warn.String())
 	}
 }
 

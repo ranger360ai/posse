@@ -128,7 +128,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			if d.HB != nil {
 				panes = d.HB.AgentPanes
 			}
-			return HerdrSettleHints(ctx, herdrSocketPath(), panes, refresh, report)
+			return HerdrSettleHints(ctx, SocketID(), panes, refresh, report)
 		}
 	}
 	hints := subscribe(ctx, func(line string) { fmt.Fprintf(d.Out, "   %s\n", line) })

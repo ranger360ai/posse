@@ -2191,18 +2191,62 @@ func TestHerdrSessionsNeverPruneAgainstTheWrongServer(t *testing.T) {
 		}
 	})
 
-	// A pass that does not know a concrete socket cannot stamp one: "" is
-	// herdr's default server, indistinguishable on disk from "unrecorded"
-	// (rangerhq-y4z). It must leave the meta alone rather than claim it.
-	t.Run("no backfill without a socket", func(t *testing.T) {
+	// The default server is a server, and rangerhq-y4z is what made it one:
+	// $HERDR_SOCKET_PATH unset resolves to the path herdr itself would use,
+	// so a pass outside a pane stamps and backfills like any other. Before
+	// that it stamped nothing, and a session created outside a pane left a
+	// meta no listing could ever prune.
+	t.Run("the default socket is stamped and backfilled like any other", func(t *testing.T) {
 		t.Setenv("HERDR_SOCKET_PATH", "")
 		b, _ := newTestBackend(t)
+		dflt := SocketID()
+		if dflt == "" {
+			t.Fatal("setup: the default socket must resolve to a path (rangerhq-y4z)")
+		}
 		mustCreate(t, b, NewSessionOpts{Name: "plain"})
+		if m, ok := b.readMeta("plain"); !ok || m.Socket != dflt {
+			t.Fatalf("a create outside a pane must stamp the resolved default socket %s: %+v", dflt, m)
+		}
+
+		// And the backfill reaches a meta that predates the field.
+		m, _ := b.readMeta("plain")
+		m.Socket = ""
+		if err := b.writeMeta(m); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Sessions(); err != nil {
+			t.Fatal(err)
+		}
+		if m, ok := b.readMeta("plain"); !ok || m.Socket != dflt {
+			t.Errorf("a live workspace's pre-field meta was not backfilled on the default socket: %+v", m)
+		}
+	})
+
+	// A pass that cannot name its socket at all still stamps nothing: it has
+	// no server to claim the meta for, and a forged stamp is worse than an
+	// absent one. This is the case "" means since rangerhq-y4z.
+	t.Run("no backfill when the socket cannot be named", func(t *testing.T) {
+		t.Setenv("HERDR_SOCKET_PATH", "")
+		b, _ := newTestBackend(t)
+		dir := t.TempDir()
+		mustCreate(t, b, NewSessionOpts{Name: "plain", Dir: dir})
+		m, _ := b.readMeta("plain")
+		m.Socket = ""
+		if err := b.writeMeta(m); err != nil {
+			t.Fatal(err)
+		}
+
+		t.Setenv("HOME", "") // os.UserHomeDir errors: nothing to resolve against
+		if got := SocketID(); got != "" {
+			// Asserted, not skipped: a skip here would go quiet under the
+			// very mutation this arm exists to catch (ranger-base-f0y3).
+			t.Fatalf("setup: with no $HOME there is nothing to resolve against, got %q", got)
+		}
 		if _, err := b.Sessions(); err != nil {
 			t.Fatal(err)
 		}
 		if m, ok := b.readMeta("plain"); !ok || m.Socket != "" {
-			t.Errorf("a pass on the default socket must not stamp one: %+v", m)
+			t.Errorf("a pass that cannot name its own socket must not stamp one: %+v", m)
 		}
 	})
 
@@ -2412,19 +2456,25 @@ func TestCreateMustAskTheServerThatWouldKnow(t *testing.T) {
 		}
 	})
 
-	// And the arm not taken, which is the whole reason it is not taken:
-	// `posse` from a plain terminal has HERDR_SOCKET_PATH unset, so it writes
-	// and reads unstamped metas against the default server. That is one
-	// server talking about itself, its not_found IS evidence, and a dead
-	// session's name stays reusable. Taking the prune's arm here would make
-	// every name on that path unusable forever (rangerhq-y4z).
+	// And the board that must NOT refuse, which is the operator's ordinary
+	// path: `posse` from a plain terminal. It has $HERDR_SOCKET_PATH unset,
+	// and since rangerhq-y4z that resolves to herdr's default socket rather
+	// than to "" — so it writes and reads metas naming that server, which is
+	// one server talking about itself. Its not_found IS evidence, and a dead
+	// session's name stays reusable.
+	//
+	// Before y4z this row said the same thing for a different reason: the
+	// metas were unstamped on both sides and mustNotOrphan skipped the
+	// unstamped arm to keep exactly this working. The arm is taken now; what
+	// keeps the name reusable is that there is nothing unstamped left to
+	// take it on.
 	t.Run("the default socket keeps a dead name reusable", func(t *testing.T) {
 		t.Setenv("HERDR_SOCKET_PATH", "")
 		b, fake := newTestBackend(t)
 		mustCreate(t, b, NewSessionOpts{Name: "mine"})
 		mustCreate(t, b, NewSessionOpts{Name: "alpha", Cmd: "claude"})
-		if m, _ := b.readMeta("alpha"); m.Socket != "" {
-			t.Fatalf("setup: expected an unstamped meta outside a pane, got socket %q", m.Socket)
+		if m, _ := b.readMeta("alpha"); m.Socket != SocketID() || m.Socket == "" {
+			t.Fatalf("setup: a create outside a pane must stamp the resolved default socket %q, got %q", SocketID(), m.Socket)
 		}
 		saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "mine"}}) // alpha's workspace closed
 
@@ -2433,6 +2483,35 @@ func TestCreateMustAskTheServerThatWouldKnow(t *testing.T) {
 		}
 		if log := calls(t, fake); !strings.Contains(log, "workspace get ") {
 			t.Errorf("the name was reused without asking herdr about its workspace:\n%s", log)
+		}
+	})
+
+	// The arm that IS taken now, and could not be before: a meta recording
+	// no socket at all. It is a pre-field legacy meta — no live binary
+	// writes one — so it names no server, and this server's silence about
+	// its workspace says nothing. The prune keeps the file; the write must
+	// refuse rather than overwrite the only record of a session that may be
+	// alive on a herdr nobody here can name (rangerhq-y4z, closing the board
+	// rangerhq-jeu2 left open).
+	t.Run("a pre-field meta refuses on the default socket too", func(t *testing.T) {
+		t.Setenv("HERDR_SOCKET_PATH", "")
+		b, fake := newTestBackend(t)
+		mustCreate(t, b, NewSessionOpts{Name: "mine"})
+		mustCreate(t, b, NewSessionOpts{Name: "legacy", Cmd: "claude"})
+		m, _ := b.readMeta("legacy")
+		ws := m.Workspace
+		m.Socket = "" // a meta from before socket: existed
+		if err := b.writeMeta(m); err != nil {
+			t.Fatal(err)
+		}
+		saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "mine"}}) // absent from this server
+
+		err := b.CreateSession(NewSessionOpts{Name: "legacy", Cmd: "claude", Dir: t.TempDir()})
+		if err == nil {
+			t.Fatal("overwrote a meta naming no server at all (rangerhq-y4z)")
+		}
+		if now, ok := b.readMeta("legacy"); !ok || now.Workspace != ws {
+			t.Fatalf("the meta was overwritten behind the refusal: %+v", now)
 		}
 	})
 

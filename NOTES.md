@@ -1023,10 +1023,28 @@ leave the session out of the listing, and say so on stderr. A meta with no
 socket would then be kept forever, so the server that finds its workspace
 *live* backfills `socket:` on the way past — holding the workspace is the
 proof the file never carried, and no session has to be recreated to get
-under the guard. A pass whose `$HERDR_SOCKET_PATH` is unset stamps nothing:
-"" is the default server, which on disk reads the same as unrecorded
-(rangerhq-y4z). This is not hypothetical — a `--watch` pane inherits the
-*herdr server's* environment, not that of the command that created it, so a
+under the guard.
+
+`SocketID()` **resolves** the socket, it does not read `$HERDR_SOCKET_PATH`
+(rangerhq-y4z). herdr injects the concrete path into every pane it opens, so
+a session created inside one recorded `~/.config/herdr/herdr.sock` while
+`posse` from a plain terminal read `""` — the same server, compared as two,
+which cost the default board both halves of the rule at once: a genuinely
+dead workspace was never pruned, every listing printed a refusal that was not
+true, and the backfill could never stamp anything, because it will not stamp
+a socket the pass cannot name. Unset now resolves to the path herdr itself
+would use (`~/.config/herdr/herdr.sock`, or
+`~/.config/herdr/sessions/<name>/herdr.sock` under `HERDR_SESSION`), which is
+the same resolution `gen:` already stated for the socket it stats. So
+`socket: ""` means one thing only: **written before the field existed**, by a
+binary that named no server. That is what let the third arm move into
+`cannotAnswerFor` where both halves ask it — the create refuses a pre-field
+meta now instead of asking whatever herdr it happens to be pointed at
+(rangerhq-jeu2's open board). The one arm still the prune's alone is the
+empty listing (rangerhq-7dn4).
+
+None of this is hypothetical — a `--watch` pane inherits the *herdr
+server's* environment, not that of the command that created it, so a
 scratch server started without `RHQ_HOME` ran a pass against the fleet's
 real state and deleted eleven live sessions' metas in one read (rangerhq-snd
 incident). Anything testing against a scratch herdr sets a scratch `RHQ_HOME`

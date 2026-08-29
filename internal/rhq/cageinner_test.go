@@ -219,7 +219,7 @@ func TestSocketsAreOffUnlessThePIDNamesThem(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := t.TempDir()
 	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "herdr.sock"))
-	sock := herdrSocketPath()
+	sock := SocketID()
 
 	plain := cageAgent(t, a, "cage: container\n")
 	for _, m := range a.CageMounts(plain, e, dir) {

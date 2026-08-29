@@ -74,7 +74,7 @@ func liveSocket(t *testing.T) string {
 	if os.Getenv("RHQ_LIVE_HERDR_EVENTS") == "" {
 		t.Skip("set RHQ_LIVE_HERDR_EVENTS=1 (and HERDR_SOCKET_PATH for a scratch server) — see the file comment")
 	}
-	sock := herdrSocketPath()
+	sock := SocketID()
 	if _, err := os.Stat(sock); err != nil {
 		t.Skipf("no herdr socket at %s: %v", sock, err)
 	}

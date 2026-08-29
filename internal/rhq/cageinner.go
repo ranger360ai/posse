@@ -551,7 +551,7 @@ func (a *App) CageSocketMounts(ag *AgentFile) []CageMount {
 		if s != CageSocketHerdr {
 			continue
 		}
-		if p := herdrSocketPath(); p != "" {
+		if p := SocketID(); p != "" {
 			ms = append(ms, CageMount{Src: p, Dst: p, Why: "sockets: herdr — the fleet-wide capability this PID asked for (ADR 0002 §3)"})
 		}
 	}
@@ -567,7 +567,7 @@ func (a *App) CageSocketMounts(ag *AgentFile) []CageMount {
 func CageSocketVars(ag *AgentFile) []EnvVar {
 	for _, s := range ag.Sockets {
 		if s == CageSocketHerdr {
-			if p := herdrSocketPath(); p != "" {
+			if p := SocketID(); p != "" {
 				return []EnvVar{{"HERDR_SOCKET_PATH", p}}
 			}
 		}

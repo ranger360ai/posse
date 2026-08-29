@@ -27,25 +27,33 @@ import (
 // board where the delete keeps the file and the create destroys it is jeu2
 // by definition, whatever the socket values that produced it.
 //
-// The disagreements that remain are deliberate, and they are one rule, not a
-// list: the write proceeds wherever the meta names THIS very socket. Both of
-// the prune's extra arms — an unstamped meta, and an empty listing — fire
-// only on boards where the socket comparison has nothing to object to, and
-// on those boards this server is the one that would know. The prune pays a
-// kept file for them because a kept file is taken back by the next listing;
-// the write cannot pay, because there the same refusal costs the NAME, and
-// `posse relaunch` with it (rangerhq-jeu2's close for the unstamped arm,
-// rangerhq-7dn4 for the empty one).
+// ONE disagreement remains, and it is one rule, not a list: the write
+// proceeds wherever the meta names THIS very socket. The prune's extra arm —
+// an empty listing — fires only on boards where the socket comparison has
+// nothing to object to, and on those boards this server is the one that would
+// know. The prune pays a kept file for it because a kept file is taken back
+// by the next listing; the write cannot pay, because there the same refusal
+// costs the NAME, and `posse relaunch` with it (rangerhq-7dn4).
 //
-// So mayDiffer is derived, not listed: it is exactly "the sockets match".
-// Stating it that way is what makes a THIRD disagreement red — a board where
-// the sockets differ and the write still proceeds is jeu2 itself, and no
-// widening of the exception can hide in a table row (rangerhq-y4z owns making
-// "" and the default path one server, which retires the unstamped half).
+// It used to be two. The unstamped meta was the other, and rangerhq-y4z
+// retired it by making SocketID() resolve: a pass on herdr's default server
+// now names that server's own path, so it stamps every meta it writes, and
+// socket: "" no longer says "the default server" — it says "written before
+// the field existed", which names no server at all. Both halves refuse that
+// now, through cannotAnswerFor.
+//
+// So mayDiffer is derived, not listed: it is exactly "the meta names a server
+// and it is this one". Stating it that way is what makes a THIRD disagreement
+// red — a board where the sockets differ and the write still proceeds is jeu2
+// itself, and no widening of the exception can hide in a table row.
 func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 	const (
 		sockA = "/tmp/jeu2/A.sock"
 		sockB = "/tmp/jeu2/B.sock"
+		// The socket THIS pass resolves to, whatever that is — the only way
+		// to spell "the default server" in the table now that it has a path
+		// rather than an empty string. Substituted inside the subtest.
+		self = "@this-pass"
 	)
 	cases := []struct {
 		name     string
@@ -53,19 +61,36 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 		passSock string
 		empty    bool
 	}{
-		{name: "unstamped meta, unstamped pass"},
-		{name: "unstamped meta, unstamped pass, empty board", empty: true},
-		{name: "unstamped meta, named pass", passSock: sockA},
-		{name: "unstamped meta, named pass, empty board", passSock: sockA, empty: true},
+		// A meta recording no socket is a pre-field legacy meta: written by
+		// a binary from before the field, naming no server. Nothing on disk
+		// says this server ever held it, on any board (rangerhq-y4z).
+		{name: "pre-field meta, default-socket pass"},
+		{name: "pre-field meta, default-socket pass, empty board", empty: true},
+		{name: "pre-field meta, named pass", passSock: sockA},
+		{name: "pre-field meta, named pass, empty board", passSock: sockA, empty: true},
 		{name: "two named servers", metaSock: sockA, passSock: sockB},
 		{name: "the meta's own server", metaSock: sockA, passSock: sockA},
 		{name: "the meta's own server, empty board", metaSock: sockA, passSock: sockA, empty: true},
-		{name: "named meta, unstamped pass", metaSock: sockA},
+		{name: "named meta, default-socket pass", metaSock: sockA},
+		// rangerhq-y4z's own board, which the grid could not even spell
+		// before: herdr injects the concrete default-socket path into every
+		// pane, so a session created inside one records it; the pass reading
+		// it back from a plain terminal has $HERDR_SOCKET_PATH unset. One
+		// server, and both halves must see one.
+		{name: "the default server, from a pane and from a terminal", metaSock: self},
+		{name: "the default server, from a pane and from a terminal, empty board", metaSock: self, empty: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv("HERDR_SOCKET_PATH", c.passSock)
 			b, fake := newTestBackend(t)
+			metaSock := c.metaSock
+			if metaSock == self {
+				metaSock = SocketID() // what a pane on this server would have stamped
+				if metaSock == "" {
+					t.Fatal("setup: this pass cannot name its own socket")
+				}
+			}
 			// A bystander keeps the listing non-empty for the boards that
 			// are not about emptiness, and is the workspace the empty ones
 			// take away.
@@ -75,7 +100,7 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 			if !ok {
 				t.Fatal("no meta for victim")
 			}
-			vm.Socket = c.metaSock // the server the record says wrote it
+			vm.Socket = metaSock // the server the record says wrote it
 			if err := b.writeMeta(vm); err != nil {
 				t.Fatal(err)
 			}
@@ -104,9 +129,9 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 			err := b.CreateSession(NewSessionOpts{Name: "victim", Cmd: "claude", Dir: t.TempDir()})
 
 			// The one rule, derived from the board rather than listed
-			// beside it: the write's exception is a meta that names this
-			// very socket.
-			mayDiffer := c.metaSock == c.passSock
+			// beside it: the write's exception is a meta that names a
+			// server, and that server is this one.
+			mayDiffer := metaSock != "" && metaSock == SocketID()
 
 			switch {
 			case !guarded:
@@ -114,9 +139,9 @@ func TestPruneAndCreateAgreeOnEveryBoard(t *testing.T) {
 			case mayDiffer:
 				if err != nil {
 					t.Fatalf("the write took an arm it must not: a meta naming this very socket is one "+
-						"server talking about itself, and refusing it costs the name — every name on the "+
-						"operator's own path for the unstamped arm, and `posse relaunch` fleet-wide after a "+
-						"herdr restart for the empty-board one (rangerhq-jeu2's close, rangerhq-7dn4): %v", err)
+						"server talking about itself, and refusing it costs the name — `posse relaunch` "+
+						"fleet-wide after a herdr restart, since one empties the listing for every meta at "+
+						"once (rangerhq-7dn4): %v", err)
 				}
 			case err == nil:
 				now, _ := b.readMeta("victim")
