@@ -20,12 +20,21 @@
 # `.git/index` holding the PRE-fix blobs for every path it committed. The next
 # commit taken from that shared index therefore commits them back. That is what
 # a `bd sync` is. Both personas involved read it as leftover work, not a revert.
-# The blessed form `git commit -F - -- <paths>` does NOT have this property
-# (measured: it refreshes the shared index for the named paths), and the
-# prepare-commit-msg wall refuses the private form for personas — but the wall
-# keys on RHQ_PERSONA, so it is silent for the operator's own commits, and
-# nothing stops the class from arriving by another route. Hence: detect, don't
-# assume.
+# The blessed form `git commit -F - -- <paths>` refreshes the shared index for
+# the paths it NAMES — and that is the whole of its immunity, not the blanket
+# clearance this comment used to claim (rangerhq-be7k). A pre-commit hook that
+# stages a path the pathspec does NOT name — bd's flush of .beads/issues.jsonl,
+# in every repo that carries bd's hook — hits the same stale-index shape: git's
+# partial commit writes the real index (refreshed for the pathspec only) BEFORE
+# it calls the hook, and hands the hook a separate `next-index-<pid>.lock` to
+# add into. So the flush reaches the commit and never reaches the real index,
+# which is left holding the pre-flush blob. Measured 2026-08-29, git 2.39.3;
+# pinned in internal/rhq/staleindex_qa_test.go. The prepare-commit-msg wall
+# refuses the private form and both carriers that spring a stale entry (the
+# unqualified form and `-i`) for every shell in the checkout since
+# rangerhq-lt2w — but it cannot refuse the producer, because the producer is
+# the form it prescribes, and nothing stops the class from arriving by another
+# route. Hence: detect, don't assume.
 #
 # THE MECHANISM HAS TWO HALVES, and this script covers both (rangerhq-ypn1).
 # When the landed change MODIFIES a file, the stale shared index holds the older

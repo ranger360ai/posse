@@ -1392,7 +1392,16 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // second half. An unqualified commit does not only SWEEP, it also REVERTS —
 // it restages every path from a shared index that a private-index commit
 // left holding pre-fix blobs, which is how ef8d35f was undone for 3h52m by
-// dcca7b5, a hand-typed `bd sync:` commit (rangerhq-8rtf). `bd sync` itself
+// dcca7b5, a hand-typed `bd sync:` commit (rangerhq-8rtf). A private index is
+// not the only producer of that stale entry: so is the form THIS WALL
+// PRESCRIBES, whenever the pre-commit hook stages a path the pathspec does not
+// name (rangerhq-be7k — bd's flush, measured, internal/rhq/staleindex_qa_test.go).
+// git refreshes the real index for the pathspec only, and writes it before it
+// calls the hook. That producer is not refusable here — the wall's slot runs
+// before the commit, and the form is the one we want — so the wall's job
+// against it is unchanged and is the whole of it: refuse the two carriers that
+// spring the stale entry, which are the unqualified form and `-i`. Neither
+// `-a` nor any pathspec commit carries it (measured, same pin). `bd sync` itself
 // does not commit ("Does NOT stage or commit - that's the user's job",
 // bd 0.49.1), so the reverting half was never bd's to fix: it is the
 // unqualified form, and the operator's `bd sync:` commits are exactly that

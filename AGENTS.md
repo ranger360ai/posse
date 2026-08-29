@@ -30,6 +30,15 @@ bd sync               # Sync with git
   own answers `did not match any file(s) known to git`. Scope that add with
   `--`; never `git add -A` or `git add .`, which stage every persona's file
   into the shared index.
+- **`MM .beads/issues.jsonl` after a clean commit is not work** (rangerhq-be7k).
+  bd's `pre-commit` hook flushes the beads db and stages it, but a path-limited
+  commit only refreshes the index for the paths you NAMED — so the commit takes
+  the flushed file and the index is left holding the version before it.
+  `git status` then reads `MM` over a tree that already matches HEAD.
+  Check with `git diff HEAD -- <paths>`, which compares the tree to the COMMIT:
+  empty means there is nothing there, and `git restore --staged -- <paths>`
+  clears it. Never unstage without that check first — if the diff is not empty,
+  the entry is someone's real work.
 - **In the shared checkout a revert is two steps**: `git revert --no-commit
   <sha>`, then `git commit -F - -- <the paths it touched>`. A plain
   `git revert` names no paths, so the same gate refuses it — after git has
