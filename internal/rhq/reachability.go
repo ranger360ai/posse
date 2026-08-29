@@ -18,6 +18,15 @@ package rhq
 // miss is an ordinary unrealized row: --allow-degraded waives it exactly as
 // it waives every other gate, and `posse gates` prints it.
 //
+// The row has three answers, not two (ranger-base-heur). A probe that runs
+// and is refused is a finding; a probe that runs and is granted is a pass;
+// and a probe that could not be applied AT ALL measured nothing and must
+// say so. The third arm is not hypothetical: a posse command run inside a
+// caged persona session cannot apply a nested profile, so every probe here
+// fails with the kernel's `sandbox_apply: Operation not permitted` — which
+// carries the same three words as a denied write, was read as one, and
+// degraded the launch on a measurement that never happened.
+//
 // The judgement is against the RENDERED ARTIFACT, never against the list
 // that fed it. For the seatbelt that is not a preference: SBPL is
 // last-match-wins (measured, ranger-base-h15/oyta), so a trailing deny
@@ -95,12 +104,25 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			// claim: CheckParity's availability row owns that host.
 			return
 		}
+		// Asked before the profile is rendered, not after: in the session
+		// where this is true the render can fail for the same reason (the
+		// .sb is a write), and a second finding drawn from the same
+		// unmeasured fact is no better than the first.
+		if why := sandboxApplyRefusal(); why != "" {
+			p.Realized[RecordReachGate] = recordReachUnmeasured(why)
+			return
+		}
 		prof, err := a.RenderSeatbelt(ag, dir, rt.StateDirs...)
 		if err != nil {
 			p.unrealized(RecordReachGate, "the seatbelt profile this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
 			return
 		}
-		if why := seatbeltReachRow(prof, targets); why != "" {
+		why, unmeasured := seatbeltReachRow(prof, targets)
+		if unmeasured != "" {
+			p.Realized[RecordReachGate] = recordReachUnmeasured(unmeasured)
+			return
+		}
+		if why != "" {
 			p.unrealized(RecordReachGate, why)
 			return
 		}
@@ -108,6 +130,19 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 	default:
 		p.Realized[RecordReachGate] = "cage " + p.Cage + " has no file wall — every path this session can write, it can write"
 	}
+}
+
+// recordReachUnmeasured is the row for the third answer. It goes in
+// Realized and not through unrealized() for the reason the whole bead
+// exists: Unrealized feeds Degraded, and a launch must not be degraded by a
+// check that did not run. It is not a pass either, and does not read like
+// one — a check that measured nothing and a check that measured a pass must
+// not print the same line (ranger-base-fm4p).
+func recordReachUnmeasured(why string) string {
+	return "NOT MEASURED — this posse process may not apply a seatbelt profile (" + why +
+		") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
+		"The launch this row judges is unaffected: its sandbox-exec is typed into a herdr pane, outside this process's sandbox. " +
+		"Re-run `posse gates` outside the cage for a verdict (ADR 0013 §4, ranger-base-heur)"
 }
 
 // recordTargets is what the record stage writes: the .beads bd actually
@@ -136,21 +171,38 @@ func isDirPath(p string) bool {
 
 // seatbeltReachRow judges a rendered SBPL profile by running the write the
 // record stage needs: create a probe file inside each target and remove it,
-// in one `sandbox-exec -f <profile>`. Returns "" when every target answered,
-// else the row's reason naming the first target the kernel refused.
+// in one `sandbox-exec -f <profile>`. It answers three ways:
+//
+//	"",  ""          every target answered — the profile grants the store
+//	why, ""          a target was refused — the finding, naming the first
+//	"",  unmeasured  the kernel refused the APPLY: nothing was measured
+//
+// The third is checked before the loop and again per probe, because it is
+// a fact about this process and not about a target: the apply is refused
+// for every profile, so the first probe's failure would otherwise be read
+// as a denial of the first target (ranger-base-heur).
 //
 // Behavior and not inspection, because inspection cannot answer the
 // question: the profile's allow block may name the target and a trailing
 // deny below it may take it straight back (SBPL is last-match-wins), and
 // the deny is exactly the shape a future narrowing arrives in.
-func seatbeltReachRow(profile string, targets []string) string {
-	for _, t := range targets {
-		if out, err := seatbeltReachProbe(profile, t); err != nil {
-			return fmt.Sprintf("%s is not writable under the profile this launch runs (%s): %s — a caged session cannot `bd sync`, `bd export` or commit the JSONL there, so it claims, comments and closes nothing however good the runtime's record: grade is (ADR 0013 §4 reachability, ranger-base-hxhb; measured in ranger-base-rhw/oyta). SBPL is last-match-wins: a trailing deny naming this target beats every grant above it",
-				AbbrevHome(t), AbbrevHome(profile), reachProbeReason(out, err))
-		}
+func seatbeltReachRow(profile string, targets []string) (why, unmeasured string) {
+	if r := sandboxApplyRefusal(); r != "" {
+		return "", r
 	}
-	return ""
+	for _, t := range targets {
+		out, err := seatbeltReachProbe(profile, t)
+		if err == nil {
+			continue
+		}
+		reason := reachProbeReason(out, err)
+		if isSandboxApplyRefusal(reason) {
+			return "", reason
+		}
+		return fmt.Sprintf("%s is not writable under the profile this launch runs (%s): %s — a caged session cannot `bd sync`, `bd export` or commit the JSONL there, so it claims, comments and closes nothing however good the runtime's record: grade is (ADR 0013 §4 reachability, ranger-base-hxhb; measured in ranger-base-rhw/oyta). SBPL is last-match-wins: a trailing deny naming this target beats every grant above it",
+			AbbrevHome(t), AbbrevHome(profile), reason), ""
+	}
+	return "", ""
 }
 
 func seatbeltReachProbe(profile, target string) (string, error) {

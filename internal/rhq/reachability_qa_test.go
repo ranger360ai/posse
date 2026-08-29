@@ -19,6 +19,7 @@ package rhq
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,10 +106,11 @@ func rchEdit(t *testing.T, profile string, edit func(string) string) string {
 
 func rchSkip(t *testing.T) {
 	t.Helper()
-	// Not "is sandbox-exec here" — "may this session apply one". Inside a
+	// Not "is sandbox-exec here" — "may this process apply one". Inside a
 	// caged persona session it is here and refused, seatbeltReachRow then
-	// calls every target unreachable, and the control below asserts exactly
-	// that and goes green having measured nothing (ranger-base-xjw9).
+	// has nothing to measure, and the control below asserts exactly the
+	// refusal a blanket one produces (ranger-base-xjw9). The guard and the
+	// code under test now ask the same reader (ranger-base-heur).
 	sbSkipUnlessSandboxable(t)
 }
 
@@ -117,7 +119,11 @@ func rchSkip(t *testing.T) {
 func TestQARecordReachPassesOnTheProfileAsItLaunches(t *testing.T) {
 	rchSkip(t)
 	f := rchNew(t)
-	if why := seatbeltReachRow(f.profile(t), f.targets(t)); why != "" {
+	why, unmeasured := seatbeltReachRow(f.profile(t), f.targets(t))
+	if unmeasured != "" {
+		t.Fatalf("rchSkip said this process may apply a profile and the probe disagreed: %s", unmeasured)
+	}
+	if why != "" {
 		t.Fatalf("the live profile must reach the store of record: %s", why)
 	}
 }
@@ -155,7 +161,10 @@ func TestQARecordReachFailsOnTheOytaControl(t *testing.T) {
 	if dropped != 2 {
 		t.Fatalf("control must delete exactly the two store-of-record grants, dropped %d", dropped)
 	}
-	why := seatbeltReachRow(control, f.targets(t))
+	why, unmeasured := seatbeltReachRow(control, f.targets(t))
+	if unmeasured != "" {
+		t.Fatalf("nothing was measured, so this control asserts nothing: %s", unmeasured)
+	}
 	if why == "" {
 		t.Fatal("the pre-fix profile denies the store of record; the check must say so")
 	}
@@ -185,7 +194,10 @@ func TestQARecordReachFailsOnATrailingDenyNamingTheStore(t *testing.T) {
 	if !strings.Contains(string(b), "(allow file-write*") || !strings.Contains(string(b), "  (subpath "+sbQuote(target)+")\n") {
 		t.Fatalf("premise gone: the allow block must still name %s, or this pins the wrong thing", target)
 	}
-	why := seatbeltReachRow(narrowed, f.targets(t))
+	why, unmeasured := seatbeltReachRow(narrowed, f.targets(t))
+	if unmeasured != "" {
+		t.Fatalf("nothing was measured, so this pin asserts nothing: %s", unmeasured)
+	}
 	if why == "" {
 		t.Fatal("a trailing deny naming the store of record re-denies it; the check must fail")
 	}
@@ -194,8 +206,8 @@ func TestQARecordReachFailsOnATrailingDenyNamingTheStore(t *testing.T) {
 	}
 	// The git dir the deny did NOT name stays reachable — the row is about
 	// a target, not about the profile in general.
-	if got := seatbeltReachRow(narrowed, []string{filepath.Join(f.store, ".git")}); got != "" {
-		t.Errorf("only the denied target may fail: %s", got)
+	if got, un := seatbeltReachRow(narrowed, []string{filepath.Join(f.store, ".git")}); got != "" || un != "" {
+		t.Errorf("only the denied target may fail: %s%s", got, un)
 	}
 }
 
@@ -240,6 +252,124 @@ func TestQARecordReachRidesTheParityPath(t *testing.T) {
 	}
 	if !strings.Contains(row, AbbrevHome(inner)) {
 		t.Errorf("the row must name the unreachable target: %s", row)
+	}
+}
+
+// ranger-base-heur — the third answer. Inside a caged persona session the
+// kernel refuses the nested sandbox_apply, so every probe above measures
+// nothing; the row reported that as a store of record the profile denies —
+// a finding about the grant drawn from a measurement that never happened —
+// and, being a finding, it DEGRADED the launch. Both halves are pinned:
+// what the row says, and that the launch survives it.
+//
+// The seam is the READER (sandboxApplyRefusal) and not the kernel's
+// permission to read, so both arms run on a host that will apply a profile
+// and inside a session that will not.
+func rchFakeApplyRefusal(t *testing.T, why string) {
+	t.Helper()
+	old := sandboxApplyRefusal
+	sandboxApplyRefusal = func() string { return why }
+	t.Cleanup(func() { sandboxApplyRefusal = old })
+}
+
+const rchKernelRefusal = "sandbox-exec: sandbox_apply: Operation not permitted"
+
+func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
+	f := rchNew(t)
+	rchFakeApplyRefusal(t, rchKernelRefusal)
+
+	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)
+	got := p.Realized[RecordReachGate]
+	if !strings.Contains(got, "NOT MEASURED") || !strings.Contains(got, rchKernelRefusal) {
+		t.Fatalf("the row must say nothing was measured, in the kernel's own words: %q", got)
+	}
+	// Neither of the two things it is not. The first is the bug: a verdict
+	// about the grant. The second would be worse: a pass it did not earn.
+	if strings.Contains(got, "not writable under the profile") {
+		t.Errorf("an unapplied probe is not a denied target: %q", got)
+	}
+	if strings.Contains(got, "probed at launch") {
+		t.Errorf("nothing was probed: %q", got)
+	}
+	// The half the bead is actually about.
+	if row := reachRow(p); row != "" {
+		t.Fatalf("a check that did not run must not degrade the launch: %s", row)
+	}
+	for _, u := range p.Unrealized {
+		if strings.HasPrefix(u, RecordReachGate+" — ") {
+			t.Fatalf("unrealized carries the row: %s", u)
+		}
+	}
+	// And the row itself is the same string the function returns, so the
+	// abstention cannot be a denial wearing different prose one layer down.
+	if why, un := seatbeltReachRow(f.profile(t), f.targets(t)); why != "" || un != rchKernelRefusal {
+		t.Errorf("seatbeltReachRow: why=%q unmeasured=%q", why, un)
+	}
+}
+
+// The wrong arm, and it runs in both worlds: a probe failure that is NOT an
+// apply refusal is still a finding. `sandbox-exec -f <missing profile>`
+// fails before it ever applies anything —
+//
+//	sandbox-exec: /nope/does-not-exist.sb: No such file or directory   (exit 65)
+//
+// MEASURED inside the cage (2026-08-29, darwin 25.4.0), which is why this
+// arm discriminates where a nested apply cannot be run at all. Widen
+// isSandboxApplyRefusal to "Operation not permitted", or abstain on any
+// probe error, and this goes red.
+func TestQARecordReachStillReportsAFailureThatIsNotAnApplyRefusal(t *testing.T) {
+	f := rchNew(t)
+	rchFakeApplyRefusal(t, "")
+
+	missing := filepath.Join(t.TempDir(), "not-rendered.sb")
+	why, un := seatbeltReachRow(missing, f.targets(t))
+	if un != "" {
+		t.Fatalf("a profile that is not there was never applied and never refused: %q", un)
+	}
+	if why == "" {
+		t.Fatal("a probe that failed for its own reasons is a finding, not an abstention")
+	}
+	if !strings.Contains(why, AbbrevHome(f.targets(t)[0])) {
+		t.Errorf("the row must name the target it could not write: %s", why)
+	}
+}
+
+// The classifier, over strings the kernel and the shell really produced on
+// this box. Both carry "Operation not permitted"; only one of them means
+// nothing was measured, and reading the second as the first is the whole
+// bug — so the discriminating word is pinned rather than the phrase.
+func TestQAAnApplyRefusalIsNotAWriteRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		what string
+		out  string
+		want bool
+	}{
+		{"the kernel refusing a nested apply", rchKernelRefusal, true},
+		{"the sandboxed shell refused a write", "/bin/sh: /store/.beads/.posse-reach-probe.1: Operation not permitted", false},
+		{"a profile that is not there", "sandbox-exec: /nope/does-not-exist.sb: No such file or directory", false},
+		{"nothing at all", "", false},
+	} {
+		if got := isSandboxApplyRefusal(tc.out); got != tc.want {
+			t.Errorf("%s: isSandboxApplyRefusal(%q) = %v, want %v", tc.what, tc.out, got, tc.want)
+		}
+	}
+}
+
+// The production reader must answer for the profiles the reach probe is
+// about to apply, not for some easier one — and it must be what the code
+// under test calls by default. Uncaged both apply; inside a caged session
+// both are refused; a reader that went back to asking PATH (which is what
+// SeatbeltAvailable asks, and what this bug was) says "" in that session
+// while the rendered profile is refused, and this goes red.
+func TestQAApplyRefusalAgreesWithTheProfileTheProbeWouldApply(t *testing.T) {
+	if !SeatbeltAvailable() {
+		t.Skip("no sandbox-exec on this host")
+	}
+	f := rchNew(t)
+	err := exec.Command("sandbox-exec", "-f", f.profile(t), "/usr/bin/true").Run()
+	if (err == nil) != (sandboxApplyRefusal() == "") {
+		t.Fatalf("the probe says applicable=%v; the profile this launch renders says %v",
+			sandboxApplyRefusal() == "", err == nil)
 	}
 }
 

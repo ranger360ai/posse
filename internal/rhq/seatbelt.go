@@ -23,9 +23,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
-// SeatbeltAvailable reports whether this host can run the seatbelt tier.
+// SeatbeltAvailable reports whether this HOST can run the seatbelt tier.
+// Deliberately a host question and not a process one: what it gates is a
+// session posse is about to launch, and that session's `sandbox-exec` is
+// typed into a herdr pane (startPlanned's PaneRun), so it runs in herdr's
+// process tree and not in this one's sandbox. A posse command run inside a
+// caged persona session may not apply a profile itself and can still launch
+// a caged session — those are two different questions, and the second one
+// is sandboxApplyRefusal below (ranger-base-heur).
 func SeatbeltAvailable() bool {
 	if runtime.GOOS != "darwin" {
 		return false
@@ -38,6 +46,80 @@ func init() {
 	if SeatbeltAvailable() {
 		AvailableCages[CageSeatbelt] = true
 	}
+}
+
+// sandboxApplyProbeProfile is what the probe below applies: everything
+// allowed and one deny on a path that is not there, so the child it wraps
+// is constrained in no way that matters and the only thing measured is
+// whether the kernel accepted the apply at all.
+//
+// The deny is not decoration. MEASURED over all four corners on darwin
+// 25.4.0 (ranger-base-xjw9, TestQASandboxApplyProbeGrid): a deny in EITHER
+// profile refuses the nested apply, so under a lenient allow-default
+// wrapper a lenient probe reports "sandboxable" while every profile
+// SeatbeltProfile actually emits — it carries `(deny file-write*)`
+// unconditionally — is refused. A probe has to be shaped like the thing it
+// predicts.
+const sandboxApplyProbeProfile = `(version 1)
+(allow default)
+(deny file-write* (subpath "/nonexistent-rhq-sandbox-apply-probe"))
+`
+
+// sandboxApplyRefusal is "" when THIS PROCESS may apply a seatbelt profile,
+// and the kernel's own words when it may not:
+//
+//	$ sandbox-exec -p '(version 1)(allow default)' /usr/bin/true
+//	sandbox-exec: sandbox_apply: Operation not permitted
+//
+// A posse command run inside a caged persona session is in exactly that
+// position — sandbox-exec is still on PATH there (measured, ranger-base-xjw9)
+// and the kernel refuses the nested apply outright. Every check posse
+// performs BY applying a profile has to ask this before it believes its own
+// result: the reachability probe (reachability.go) reported the refusal as
+// a store of record the profile denies, which is a finding about the grant
+// drawn from a measurement that never happened, and it degraded the launch
+// (ranger-base-heur).
+//
+// A variable so a test can drive both answers on a kernel that only gives
+// one; liveSandboxApplyRefusal is what production runs.
+var sandboxApplyRefusal = liveSandboxApplyRefusal
+
+var (
+	sbApplyOnce sync.Once
+	sbApplyWhy  string
+)
+
+// liveSandboxApplyRefusal asks the kernel, once per process: the answer can
+// only change by this process gaining a sandbox, which posse never does to
+// itself, and the reach probe would otherwise pay for a fork per target.
+func liveSandboxApplyRefusal() string {
+	sbApplyOnce.Do(func() {
+		if !SeatbeltAvailable() {
+			return
+		}
+		out, err := exec.Command("sandbox-exec", "-p", sandboxApplyProbeProfile, "/usr/bin/true").CombinedOutput()
+		if err == nil {
+			return
+		}
+		// Only an apply refusal is ours to abstain on. Anything else — no
+		// /usr/bin/true, a profile this OS version rejects — is a real
+		// problem with this host, and the check that meets it should report
+		// it as itself rather than disappear into an abstention.
+		if s := strings.TrimSpace(string(out)); isSandboxApplyRefusal(s) {
+			sbApplyWhy = s
+		}
+	})
+	return sbApplyWhy
+}
+
+// isSandboxApplyRefusal separates the kernel refusing the APPLY from the
+// sandboxed child being refused a WRITE. The first is sandbox-exec's own
+// `sandbox_apply: Operation not permitted` and means nothing was measured;
+// the second is the shell's `Operation not permitted` on a path, and is the
+// finding the reachability row exists to make. Both carry the same three
+// words, which is how one was read as the other.
+func isSandboxApplyRefusal(s string) bool {
+	return strings.Contains(s, "sandbox_apply")
 }
 
 // sbQuote quotes a path for SBPL (double-quoted string, backslash-escaped).

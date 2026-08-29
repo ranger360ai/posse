@@ -40,41 +40,23 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 )
 
-// sbApplyProbeProfile grants everything and denies one path that is not
-// there, so applying it constrains the child in no way that matters — the
-// only thing measured is whether the kernel accepted a deny at all.
-const sbApplyProbeProfile = `(version 1)
-(allow default)
-(deny file-write* (subpath "/nonexistent-rhq-sandbox-apply-probe"))
-`
-
-var (
-	sbApplyOnce    sync.Once
-	sbApplyRefused string
-)
+// sbApplyProbeProfile is the production probe's profile, and the two are
+// the same object on purpose: ranger-base-heur moved this question into
+// production (seatbelt.go), because the reachability row asked the PATH
+// question instead and reported a refused apply as a store of record the
+// profile denies. A guard that measured applicability its own way could
+// skip a suite the code under test would still be wrong in.
+const sbApplyProbeProfile = sandboxApplyProbeProfile
 
 // sbSandboxApplyRefusal is "" when this process may apply a seatbelt profile
-// and the kernel's own words when it may not. Measured once per test binary:
-// the carve-out table alone would otherwise pay for it 23 times.
+// and the kernel's own words when it may not. Production's reader, cached
+// there once per binary: the carve-out table alone would otherwise pay for
+// it 23 times.
 func sbSandboxApplyRefusal() string {
-	sbApplyOnce.Do(func() {
-		out, err := exec.Command("sandbox-exec", "-p", sbApplyProbeProfile, "/usr/bin/true").CombinedOutput()
-		if err == nil {
-			return
-		}
-		// Only an apply refusal is ours to skip on. Anything else — a
-		// missing /usr/bin/true, a profile this OS version rejects — is a
-		// real problem with this host, and the probe that meets it should
-		// report it as itself rather than disappear into a skip.
-		if s := strings.TrimSpace(string(out)); strings.Contains(s, "sandbox_apply") {
-			sbApplyRefused = s
-		}
-	})
-	return sbApplyRefused
+	return sandboxApplyRefusal()
 }
 
 // sbSkipUnlessSandboxable gates every test whose measurement IS a
