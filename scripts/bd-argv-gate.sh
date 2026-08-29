@@ -26,14 +26,36 @@ python=${BD_ARGV_GATE_PYTHON:-python3}
 input=$(cat)
 
 # Fast path: this hook runs on EVERY Bash call, and starting an interpreter
-# for `go test` is a tax on the whole fleet. A payload with no `bd` in it at
-# all cannot produce any refusal below — every one of them requires bd to be
-# named — so it is answered here by a shell builtin, ~0 ms instead of ~30 ms.
-# `\u` keeps a JSON-escaped spelling on the slow path rather than trusting
-# that the harness never emits one. The test is a SUBSTRING, deliberately
-# looser than the parser's word match.
+# for `go test` is a tax on the whole fleet. A payload that cannot SPELL bd
+# cannot produce any refusal below, so it is answered here by a shell builtin,
+# ~0 ms instead of ~30 ms.
+#
+# "Spell" is the load-bearing word, and the first cut of this file got it
+# wrong: it tested for a literal `bd` substring, but the parser resolves the
+# command word with shlex FIRST and only then asks `basename(word) == "bd"`.
+# So every spelling the shell concatenates into bd — `b\d`, `b''d`, `b"d"`,
+# `'b'd` — was refused by the parser and never reached it, because the payload
+# carries no literal `bd` (MEASURED, ranger-base-hthx: `b\d ship --help` ran
+# through the shipped fence one character away from a refusal).
+#
+# The arms below are the ways `bd` can be spelled in a payload:
+#   *bd*    the literal.
+#   *'\u'*  a JSON escape, which decodes after this test (`bd`).
+#   *b\\*   *b\'*  *b\"*   a `b` adjacent to one of the shell's three quoting
+#           characters — the NECESSARY condition for a concatenation, since
+#           the character after the `b` of bd is either the `d` itself or the
+#           quoting that hides it. (In a JSON payload a command's `"` arrives
+#           as `\"`, so the b\\ arm already covers it; the b\" arm is there for
+#           a payload that is not JSON-escaped, and has no witness under one.)
+#
+# Soundness is not an argument, it is measured: over every command word of
+# length <= 6 spelled out of {b, d, \, ', "}, 55986 of them, the parser
+# refuses 429 and this test sends all 429 to the parser (the old test waved
+# 179 through). The cost is 32 extra parser starts in 12777 real command
+# lines harvested from this repo — 0.25%. Still a SUBSTRING test, still
+# deliberately looser than the parser's word match.
 case $input in
-  *bd*|*'\u'*) ;;
+  *bd*|*'\u'*|*b\\*|*b\'*|*b\"*) ;;
   *) exit 0 ;;
 esac
 
@@ -54,8 +76,14 @@ if [ "$rc" -eq 2 ] && grep -q '^bd-argv-gate:' "$err" 2>/dev/null; then
   exit 2
 fi
 
-# The parser did not run at all. Refuse anything that mentions bd as a word.
-if printf '%s' "$input" | grep -Eq '(^|[^A-Za-z0-9_.-])bd([^A-Za-z0-9_-]|$)'; then
+# The parser did not run at all. Refuse anything that mentions bd as a word —
+# in the payload as it arrived, AND in the payload with the shell's quoting
+# characters removed, so `b\d daemon stop` is refused here too (ranger-base-hthx).
+# Both, not just the stripped one: deleting backslashes also eats the JSON
+# escapes, and `a\nbd` would collapse to the single word `anbd`.
+bd_word='(^|[^A-Za-z0-9_.-])bd([^A-Za-z0-9_-]|$)'
+if printf '%s' "$input" | grep -Eq "$bd_word" ||
+   printf '%s' "$input" | tr -d '\\'\''"' | grep -Eq "$bd_word"; then
   echo "bd-argv-gate: parser unavailable (${python} ${py}, exit ${rc}); refusing this bd call (fail closed)" >&2
   exit 2
 fi

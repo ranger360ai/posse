@@ -49,6 +49,33 @@ func runGate(t *testing.T, env []string, command string) gateResult {
 	return runGateRaw(t, env, string(payload))
 }
 
+// runParser drives the parser DIRECTLY, with the sh wrapper out of the way.
+// The wrapper's whole contract is that it is looser than this, so the two have
+// to be run separately to be compared (ranger-base-hthx).
+func runParser(t *testing.T, command string) gateResult {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"session_id": "qa",
+		"tool_name":  "Bash",
+		"tool_input": map[string]any{"command": command},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("python3", "-S", "-E", "scripts/bd-argv-gate.py")
+	cmd.Stdin = strings.NewReader(string(payload))
+	var out, errb strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err = cmd.Run()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running the parser: %v", err)
+	}
+	return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
+}
+
 func runGateRaw(t *testing.T, env []string, payload string) gateResult {
 	t.Helper()
 	cmd := exec.Command("sh", "scripts/bd-argv-gate.sh")
@@ -133,6 +160,36 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"$(command -v bd) daemon stop":              "$(",
 		"BD=bd; $BD daemon stop":                    "$BD",
 		"bd --no-daemon 'daemon' stop":              "daemon",
+
+		// The SHELL's own spellings of bd, in the same table as the literal
+		// one (ranger-base-hthx). The parser resolves the command word with
+		// shlex before it asks whether the basename is bd, so each of these
+		// is a bd call carrying no literal `bd` substring — which is exactly
+		// what the wrapper's fast path used to answer on. `b\d ship --help`
+		// RAN through the shipped fence, one character from a refusal.
+		`b\d admin reset`:                  "admin",
+		`b\d daemon stop`:                  "daemon",
+		`b\d ship --help`:                  "ship",
+		`b\d mail --help`:                  "mail",
+		`b\d duplicates --help`:            "duplicates",
+		`b\d rename-prefix old new`:        "rename-prefix",
+		`b\d jira sync --push`:             "jira",
+		`b\d --no-daemon daemon --help`:    "daemon",
+		`b\d dep relate a b`:               "dep relate",
+		`b\d sync --full`:                  "sync --full",
+		`/usr/local/bin/b\d admin reset`:   "admin",
+		`env b\d --db /tmp/x admin reset`:  "admin",
+		`PATH=/x b\d delete ranger-base-1`: "delete",
+		`cd /tmp && b\d daemon stop`:       "daemon",
+		`echo hi | b\d import`:             "import",
+		"b''d daemon stop":                 "daemon",
+		"'b''d' daemon stop":               "daemon",
+		"'b'd daemon stop":                 "daemon",
+		"b'd' daemon stop":                 "daemon",
+		`b""d daemon stop`:                 "daemon",
+		`"b""d" daemon stop`:               "daemon",
+		`"b"d daemon stop`:                 "daemon",
+		`b"d" daemon stop`:                 "daemon",
 	}
 	for command, want := range refused {
 		reason := denied(t, runGate(t, nil, command))
@@ -165,6 +222,16 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		"echo 'bd daemon stop'",
 		"cd /tmp/bd && ls",
 		"$PYTHON script.py", // a variable command word, no bd in the line
+
+		// The other side of the shell spellings: widening the fast path must
+		// not widen the REFUSAL. These reach the parser now and must come
+		// back silent (ranger-base-hthx).
+		`b\d show ranger-base-3bqn`, // an escaped spelling of an ALLOWED verb
+		`b" "d daemon stop`,         // runs `b d`; the quotes do not concatenate
+		`b\\d daemon stop`,          // literal b\d, which is not bd either
+		`b\'d daemon stop`,          // literal b'd
+		`sed 's/a/b/' f`,
+		`echo "b"`,
 	}
 	for _, command := range allowed {
 		if reason := denied(t, runGate(t, nil, command)); reason != "" {
@@ -226,6 +293,90 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 	// its arguments happen to spell bd.
 	if r := runGateRaw(t, nil, `{"tool_name":"Read","tool_input":{"file_path":"/x/bd/y"}}`); r.code != 0 || r.stdout != "" {
 		t.Errorf("a non-Bash tool call must pass untouched, got code=%d out=%q", r.code, r.stdout)
+	}
+
+	// With the parser unavailable, an escaped spelling must fail closed the
+	// same way the literal one does — the fallback grep had the same blind
+	// spot as the fast path (ranger-base-hthx).
+	for _, env := range [][]string{
+		{"BD_ARGV_GATE_PY=" + missing},
+		{"BD_ARGV_GATE_PYTHON=" + filepath.Join(t.TempDir(), "no-python3")},
+	} {
+		for _, spelling := range []string{
+			`b\d daemon stop`, "b''d daemon stop", `b"d" daemon stop`,
+			`cd /tmp && b\d admin reset`,
+		} {
+			if r := runGate(t, env, spelling); r.code != 2 || !strings.Contains(r.stderr, "fail closed") {
+				t.Errorf("%v: %q must be refused when the parser is unavailable: code=%d err=%q",
+					env, spelling, r.code, r.stderr)
+			}
+		}
+	}
+}
+
+// TestQABdArgvGateFastPathIsLooserThanTheParser pins the wrapper's ONE
+// obligation to the parser: the fast path may answer without starting an
+// interpreter only for payloads the parser would have had nothing to say
+// about. Anything it refuses must reach it.
+//
+// The bug this pins (ranger-base-hthx): the fast path tested for a literal
+// `bd` substring, on the stated premise that "a payload with no `bd` in it at
+// all cannot produce any refusal below". False — the parser resolves the
+// command word with shlex FIRST, then asks whether its basename is bd, so
+// every spelling the shell concatenates into bd was refused by the parser and
+// never reached it. MEASURED live against the installed copy: `bd ship --help`
+// was refused and `b\d ship --help` ran, printing bd's help, exit 0.
+//
+// This asserts AGREEMENT between the two programs rather than "was refused":
+// a table of expected refusals can go green because the wrapper got stricter
+// in some unrelated way, while agreement can only go green if the fast path
+// actually deferred. Each row also carries a positive witness — the parser
+// must genuinely refuse it — so a fixture that stopped discriminating fails
+// instead of passing quietly.
+func TestQABdArgvGateFastPathIsLooserThanTheParser(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	// Each row names the fast-path arm that keeps it off the builtin answer.
+	// Delete that arm from scripts/bd-argv-gate.sh and its rows must fail:
+	// three of the four arms have a witness here, and the fourth is documented
+	// in the script as unreachable under JSON escaping (a command's `"`
+	// arrives as `\"`, so the backslash arm already covers it).
+	for _, row := range []struct{ arm, command string }{
+		{`*bd*`, "bd daemon stop"},
+		{`*bd*`, "bd admin reset"},
+		{`*b\\*`, `b\d daemon stop`},
+		{`*b\\*`, `b\d ship --help`},
+		{`*b\\*`, `/usr/local/bin/b\d admin reset`},
+		{`*b\\*`, `cd /tmp && b\d daemon stop`},
+		{`*b\\*`, `b"d" daemon stop`},   // a command `"` is `\"` in the payload
+		{`*b\\*`, `"b""d" daemon stop`}, // ditto
+		{`*b\'*`, "b''d daemon stop"},
+		{`*b\'*`, "'b'd daemon stop"},
+		{`*b\'*`, "b'd' daemon stop"},
+	} {
+		wrapper := denied(t, runGate(t, nil, row.command))
+		parser := denied(t, runParser(t, row.command))
+		if parser == "" {
+			t.Errorf("fixture measures nothing: the parser does not refuse %q, so the wrapper deferring to it proves nothing", row.command)
+			continue
+		}
+		if wrapper != parser {
+			t.Errorf("fast path (arm %s) answered %q itself: wrapper said %q, parser said %q",
+				row.arm, row.command, wrapper, parser)
+		}
+	}
+
+	// The control the whole test rests on: the fast path must still BE a fast
+	// path. These carry no spelling of bd, so both programs stay silent and
+	// the wrapper never starts an interpreter for them.
+	for _, command := range []string{
+		"go test ./...", "git status", "brew upgrade", "make verify-bd-pin",
+		"grep -rn 'lib' .", `sed 's/a/b/' f`, "cd /tmp && ls",
+	} {
+		if wrapper, parser := denied(t, runGate(t, nil, command)), denied(t, runParser(t, command)); wrapper != "" || parser != "" {
+			t.Errorf("must be left alone: %s -> wrapper %q, parser %q", command, wrapper, parser)
+		}
 	}
 }
 
