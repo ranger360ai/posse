@@ -97,7 +97,7 @@ type Dispatcher struct {
 	// this per launch — runtimeWait resolves which one a given launch
 	// actually gets. One Dispatcher fires every runtime a pass touches, so
 	// this field alone was never the right place for a per-runtime number
-	// (ranger-base-p84, richard's design note on ranger-base-il14): a pass
+	// (ranger-base-p84, the design note on ranger-base-il14): a pass
 	// mixing claude and a 90s runtime needs 90s for one launch and the
 	// default for the other, not one value for both.
 	StartupWait time.Duration
@@ -3315,7 +3315,7 @@ func (d *Dispatcher) awaitTarget(session string, deadline time.Time, wait time.D
 // A grok pane that has not had a turn emits no OSC title, no OSC progress
 // and no composer footer, so it matches no rule and herdr answers with its
 // idle GUESS; the same pane after one turn matches three rules at once
-// (monica's `agent explain`, ranger-base-3j8). Detectability is a property
+// (`agent explain`, ranger-base-3j8). Detectability is a property
 // of having been prompted — so waiting longer for a typed prompt's composer
 // produces nothing, and argv produces the turn that produces the screen.
 //

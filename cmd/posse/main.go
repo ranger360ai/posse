@@ -1251,7 +1251,7 @@ func main() {
 		// The grid always prints; the exit status is the preflight's
 		// (ADR 0012 D4). A `check` that reported an uninstalled CLI and then
 		// exited 0 would be the class of green-while-broken this command was
-		// filed to end (rangerhq-tr8k, monica's note on it).
+		// filed to end (rangerhq-tr8k and the note on it).
 		if !a.RuntimeCheck(rt, rhq.NewHerdr(), out) {
 			os.Exit(1)
 		}

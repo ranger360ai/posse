@@ -1,6 +1,6 @@
 # The clean room — testing the public install story on a machine that has never seen posse
 
-`ranger-base-5zh`. Built for `ranger-base-33k` (laurie's install QA) and for
+`ranger-base-5zh`. Built for `ranger-base-33k` (the install QA) and for
 verifying any fix to `ranger-base-253`.
 
 A throwaway Debian 13 container with a **default PATH**, a newcomer's Go
@@ -94,7 +94,7 @@ verbatim commands, exit statuses and output.
 | Nothing from this project | No herdr, no bd, no posse, no rhq, no `RHQ_HOME`, no `~/.config/rhq`, no checkout, no warmed module cache. Each asserted individually. |
 | Real public egress | `GOPROXY` left at its `https://proxy.golang.org` default; `GOBIN`/`GOPATH`/`GOFLAGS`/`GOPRIVATE` unset. Verify reaches `proxy.golang.org` and `github.com` over HTTP without writing to the module cache, so the fetch under test stays real and is not a local replay. |
 | Resettable to pristine in one step | `make cleanroom-reset` — container destroyed and recreated from the image. |
-| Drivable without gilfoyle at the keyboard | `cleanroom.sh shell` / `run` / `cp-in` / `cp-out`. |
+| Drivable without a human at the keyboard | `cleanroom.sh shell` / `run` / `cp-in` / `cp-out`. |
 
 ### What is preinstalled, and why you need to know
 

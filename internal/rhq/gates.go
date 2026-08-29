@@ -1347,7 +1347,7 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // pathspec and sweeps without one, so it is refused.
 //
 // A CLEAN `git revert` IS REFUSED, and that is the verdict rather than an
-// oversight (rangerhq-lrnp, laurie). Measured on git 2.39.3: it writes no
+// oversight (rangerhq-lrnp). Measured on git 2.39.3: it writes no
 // REVERT_HEAD, no sequencer and no GIT_REFLOG_ACTION before the hook runs —
 // $2 is "message" and GIT_INDEX_FILE is .git/index, i.e. at this slot it is
 // indistinguishable from `git commit -m`. The two signals that DO exist are

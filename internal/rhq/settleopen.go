@@ -16,7 +16,7 @@ package rhq
 // So: on the second settle-open, dispatch stops nudging and files ONE
 // `-l question` bead for the operator, then blocks the stuck bead on it.
 // `bd ready` is what dispatch selects from, so the block is the stop —
-// gilfoyle measured that a dep'd bead drops out of the queue while the
+// MEASURED: a dep'd bead drops out of the queue while the
 // in_progress ones stay in it. Infinite retry becomes exactly one route to
 // a human and one bead that is not dispatched again.
 //
@@ -41,7 +41,7 @@ package rhq
 // more pass. Both are the safe direction: this mechanism must never file an
 // escalation the shop did not earn.
 //
-// IDEMPOTENCE is the part gilfoyle flagged as the one that would bite, and
+// IDEMPOTENCE is the part flagged on review as the one that would bite, and
 // it is NOT keyed on the comment. bd 0.49.1's create is not atomic
 // (ranger-base-muoo, verifyafter.go's long note): the issue commits and the
 // client then times out, so a second write keyed on the returned id never

@@ -252,7 +252,7 @@ func claudeSeedProject(state map[string]any, dir string) {
 // launch then opens on the dialog this file exists to answer — rangerhq-w4uf
 // again, one launcher over. The atomic rename is no defence: it makes the
 // file whole, not the merge correct. Measured 20/20 lost at N=2 before the
-// lock (laurie, verifying ranger-base-s83).
+// lock (verifying ranger-base-s83).
 //
 // The window is not narrowable, so it is closed: the lock is held across
 // read, check and write, which is the standard answer for a check-then-act

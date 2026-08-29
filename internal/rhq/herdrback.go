@@ -755,7 +755,7 @@ func cannotAnswerFor(m *HerdrMeta, sock string) string {
 }
 
 // emptyBoard is the prune's second own arm: this herdr listed no workspaces
-// at all. It is the belt gilfoyle added with the socket field itself after a
+// at all. It is the belt added with the socket field itself after a
 // pass on a scratch server deleted eleven live sessions' metas in one read
 // (rangerhq-snd) — an empty listing looks exactly like "everything died".
 //

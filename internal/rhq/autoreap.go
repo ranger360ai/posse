@@ -13,7 +13,7 @@ package rhq
 // reap"), so without this an instance accumulates one dead pane per closed
 // bead forever.
 //
-// MEASURED (monica, rangerhq-us8 comments): ~50 sessions reaped by hand over
+// MEASURED (rangerhq-us8 comments): ~50 sessions reaped by hand over
 // two days, all of them this exact predicate — bead closed, agent idle. Every
 // one that had a bead pointer reported no commits of its own: the leak is
 // session accumulation, not stranded work.

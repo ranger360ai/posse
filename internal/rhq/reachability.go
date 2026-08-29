@@ -5,7 +5,7 @@ package rhq
 // `record:` grades the RUNTIME's willingness to write the store of record,
 // and the CAGE decides its reachability. A session whose sandbox cannot open
 // the bead store cannot do the record stage under any runtime grade —
-// hoover's `record: trusted` claude had `bd sync`, `bd export` and the
+// the security persona's `record: trusted` claude had `bd sync`, `bd export` and the
 // path-limited commit all denied at the db file and at .git/index.lock, and
 // nothing observed it: parity grades DENIES, so a cage that denies too much
 // prints "all gates realized"; settle looks normal; and the bead — the store

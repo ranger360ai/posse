@@ -25,7 +25,7 @@ package rhq
 // launcher merges. Personas keep their `Bash(git push:*)` deny and never
 // touch main; posse fast-forwards the session branch onto the repo's own
 // branch under the launcher lock it already holds (ADR 0011 §1), so "closed
-// means it is on main" stays true for laurie's verify pass (ADR 0006 §3).
+// means it is on main" stays true for the QA verify pass (ADR 0006 §3).
 //
 // WHAT WAS MEASURED, so the next reader does not have to (bd 0.49.1, git
 // 2.39.3, in a throwaway repo with a tracked `.beads/issues.jsonl`):

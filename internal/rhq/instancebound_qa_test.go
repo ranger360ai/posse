@@ -9,6 +9,20 @@ package rhq
 // Live since ranger-base-h6fx: skipped from cd365fa to that bead, which is
 // exactly how the corpus refilled with crew names (223 hits over five days,
 // 339 by the sweep). A skipped invariant is documentation, not a pin.
+//
+// WIDENED to the whole tree by ranger-base-he9y, after ADR 0012 App.A 5 was
+// amended (ranger-base-cqbq, 272bb35) to say so in as many words: App.A 5
+// "reaches every line cmd/, internal/, and etc/ ship — comments included,
+// not string literals alone ... The edge is the tree, not the syntax."
+// Until then this walk read *_test.go and testdata/ only, so 16 comment
+// lines under the same roots named the crew where no pin could see them.
+// docs/ and the root narrative files stay outside: there the crew are
+// historical actors and D6's no-mass-sweep governs them, as it governs ids.
+//
+// An archive id survives a sweep either way — "measured (rangerhq-lrnp)" is
+// the shape the amendment names: D6 grandfathers *ids* (nothing promises to
+// resolve one), D2 depersonalizes *names* (any deployer could have written
+// the line).
 
 import (
 	"bytes"
@@ -58,10 +72,21 @@ func qibCrewPattern() *regexp.Regexp {
 	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(names, "|") + `)\b`)
 }
 
-func TestFixturesNameRolesNotThisCrew(t *testing.T) {
+// TestShippedTreeNamesRolesNotThisCrew reads EVERY line of EVERY file under
+// the three shipped trees — production Go, test Go, testdata, and the toml,
+// md and Dockerfiles that ship beside them. There is no per-file rule to get
+// wrong because the amendment left none: a file is in scope if it is in the
+// tree.
+//
+// The repo root is not walked here. Its non-test .go is
+// TestShippedStringsNameRolesNotThisCrew's fourth root below; its *_test.go
+// is a real gap, filed as ranger-base-4say rather than absorbed; and its
+// .md is the root narrative the amendment excludes on purpose.
+func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
 	var hits []string
+	scanned := 0
 	for _, rel := range []string{"cmd", "internal", "etc"} {
 		err := filepath.WalkDir(filepath.Join(root, rel), func(path string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -70,24 +95,14 @@ func TestFixturesNameRolesNotThisCrew(t *testing.T) {
 			if d.IsDir() {
 				return nil
 			}
-			base := d.Name()
-			if base == "instancebound_qa_test.go" {
-				return nil
-			}
-			inTestdata := false
-			for _, p := range strings.Split(path, string(os.PathSeparator)) {
-				if p == "testdata" {
-					inTestdata = true
-					break
-				}
-			}
-			if !inTestdata && !strings.HasSuffix(base, "_test.go") {
+			if d.Name() == "instancebound_qa_test.go" {
 				return nil
 			}
 			body, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
+			scanned++
 			relPath, _ := filepath.Rel(root, path)
 			for i, line := range bytes.Split(body, []byte("\n")) {
 				if loc := re.FindIndex(line); loc != nil {
@@ -100,40 +115,47 @@ func TestFixturesNameRolesNotThisCrew(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A pin that measures pure absence is satisfied by measuring nothing
+	// (the fm4p lesson, and the guard q3gp put on the pin below): say how
+	// many files were actually read. The floor is well under the ~280 the
+	// trees hold, so it fails on a broken walk and not on ordinary growth.
+	if scanned < 200 {
+		t.Fatalf("only %d files read under cmd/ internal/ etc/ — the walk found nothing to pin", scanned)
+	}
+	t.Logf("read %d files under cmd/ internal/ etc/", scanned)
 	if len(hits) > 0 {
-		t.Errorf("ADR 0012 App.A 5: fixture names the originating instance (%d hits):\n  %s",
+		t.Errorf("ADR 0012 App.A 5: the shipped tree names the originating instance (%d hits):\n  %s",
 			len(hits), strings.Join(hits, "\n  "))
 	}
 }
 
-// ─── the shipped half of the same invariant (ranger-base-q3gp) ───────────────
+// ─── the string-literal pin (ranger-base-q3gp) ───────────────────────────────
 //
-// TestFixturesNameRolesNotThisCrew above reads test files and testdata only,
-// so non-test .go was outside it by construction. Two shipped strings were
-// living in that blind spot at 116288e: `DefaultPulsePersona = "monica"` (the
-// default a deployer's pulse prompts) and a `measured by laurie` line inside
-// the gate-shell template, which is written into every persona's rendered
-// hook file rather than merely read here.
+// q3gp landed this to reach non-test .go, which the walk above could not see
+// at the time, and drew the line at STRING LITERALS on the reasoning that a
+// comment naming who measured a thing is inert provenance. **The amendment
+// overruled that line** (ranger-base-cqbq): the edge is the tree, so the walk
+// above now reads every line of every file under the same three roots, and
+// every literal it finds there is a line that walk already read.
 //
-// WHERE THE LINE IS, decided once so the next sweeper does not re-litigate
-// it: this pin reads STRING LITERALS and not comments. A string is what a
-// deployer's install and output are made of — a default they inherit, a file
-// posse renders into their home. A comment naming who measured a thing is an
-// inert provenance marker, the same class ADR 0012 D6 keeps deliberately for
-// private-tracker ids ("no mass sweep") and the same class the crew's names
-// occupy throughout docs/ and NOTES.md. Sweeping 15 attributions out of
-// internal/rhq would cost the only record of who measured what and buy a
-// fresh deployer nothing they can run into.
+// This pin is kept anyway, because it is not the subset that makes it. Two
+// things it sees that a raw-line walk cannot:
 //
-// The two roots differ in the same way: over test files every line counts
-// (rangerhq-24yt rewrote prose there, and h6fx kept that), over shipped code
-// only what ships does.
+//  1. **The repo root.** Its fourth root (below) reads root non-test .go —
+//     embed.go and its neighbours — which is outside the three trees.
+//  2. **A name split by an escape.** It unquotes before matching, so
+//     "base\nMONICA" is two lines to the regexp and the name is at a line
+//     start. In the raw source `n` and `M` are adjacent word characters and
+//     \b never fires between them, so the line walk above reads straight
+//     past it — the h6fx trap, and the reason deleting this test as
+//     redundant would quietly reopen it.
 //
-// What it cannot see, stated rather than implied: a name assembled from
-// fragments ("mon"+"ica") is two literals to the parser and passes. That is
-// the trick qibCrewPattern itself uses, and it is deliberate — a regression
-// that reintroduces a crew name spells it whole; a concatenation is somebody
-// working around the pin, which is a different problem from an accident.
+// What NEITHER sees, stated rather than implied: a name assembled from
+// fragments ("mon"+"ica") is two literals to the parser and two word-parts to
+// the regexp. That is the trick qibCrewPattern itself uses, and it is
+// deliberate — a regression that reintroduces a crew name spells it whole; a
+// concatenation is somebody working around the pin, which is a different
+// problem from an accident.
 func qibShippedStrings(t *testing.T, path string) []struct {
 	Line int
 	Text string
@@ -182,8 +204,8 @@ func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
 	// The repo root is walked NON-recursively as a fourth root: its own .go
 	// files ship too (embed.go), and every subdirectory that holds shipped
 	// Go is already named above. The test files sitting there are outside
-	// TestFixturesNameRolesNotThisCrew's three roots — that gap is the test
-	// corpus's and is filed as its own bead, not swept here.
+	// TestShippedTreeNamesRolesNotThisCrew's three roots — that gap is the
+	// test corpus's, filed as ranger-base-4say and not swept here.
 	for _, rel := range []string{"cmd", "internal", "etc", "."} {
 		err := filepath.WalkDir(filepath.Join(root, rel), func(path string, d os.DirEntry, err error) error {
 			if err != nil {

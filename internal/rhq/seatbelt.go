@@ -260,7 +260,7 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 }
 
 // sessionGitGrants is LinkedGitDirs narrowed to what a worktree session
-// actually writes (ranger-base-m2wf, from hoover's posture check on
+// actually writes (ranger-base-m2wf, from the posture check on
 // ranger-base-sipu). LinkedGitDirs names two directories, and the second is
 // the COMMON git dir — the operator's main checkout's `.git`, shared with
 // every other session on that repo. Granted whole, as it was, a persona
@@ -283,8 +283,8 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 // Everything else there — `config`, `packed-refs`, `hooks/`, other refs,
 // other sessions' `worktrees/<name>` dirs — stays under the default deny.
 //
-// The ref is granted as that pair of subpaths rather than as hoover's
-// prescribed `(regex #"^<common>/refs/heads/<branch>")`: the pair is
+// The ref is granted as that pair of subpaths rather than as the posture
+// check's prescribed `(regex #"^<common>/refs/heads/<branch>")`: the pair is
 // strictly narrower (the regex is a prefix match, so it would also cover a
 // sibling branch whose name extends this one) and it needs no second shape
 // in the writable set, which is a []string every caller of SeatbeltWritable
@@ -319,7 +319,8 @@ func sessionGitGrants(cwd string) []string {
 // That enumeration is the constraint, not a style: the store of record
 // lives in the same tree as the constitution, and the writable set follows
 // `.beads/redirect` into it so a caged persona can claim, comment and close
-// (ranger-base-rhw). MEASURED on hoover's live profile (dinesh, 2026-08-26):
+// (ranger-base-rhw). MEASURED on the security persona's live profile
+// (2026-08-26):
 // add the instance repo's `.beads` to this list and `touch` in it is refused
 // — the deny beats the redirect grant exactly as it beats cwd — and the
 // record stage dies with no observable, because parity grades denies and a

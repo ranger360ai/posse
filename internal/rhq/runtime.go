@@ -885,7 +885,7 @@ var (
 // fallback is what a measured wait would be *for*, and there is no typed
 // fallback to measure. On grok there could not be one — a pane that has not
 // had a turn matches no rule at all, so waiting longer produces no screen
-// (monica's `agent explain`, ranger-base-3j8/cl7). Only a turn does, and
+// (`agent explain`, ranger-base-3j8/cl7). Only a turn does, and
 // argv is what starts one.
 //
 // claude stays typed: it works, and re-testing a live path for symmetry is
@@ -1136,7 +1136,7 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	// interstitial_<slug>: the first-run screens a fresh pane of this CLI
 	// opens on, and the operator-owned key that silences each. Declared, not
 	// pressed: rangerhq-6723 retired the launcher's one keystroke table and
-	// hoover's rangerhq-4mzt ruling is that no drawn dialog is the
+	// the rangerhq-4mzt ruling is that no drawn dialog is the
 	// launcher's to answer, so what a third party can declare here is the
 	// DISMISSAL — the file and the key — and never a key to send.
 	if v, err := declaredInterstitials(p); err != nil {
