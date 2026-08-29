@@ -888,7 +888,7 @@ loud**: typed delivery on the default 45s wait, `record: untrusted`,
 change it. That is the intended reading, not a failure — unknown starts
 noisy, never silent and never forbidden.
 
-Two rows are worth acting on before you dispatch anything:
+Three rows are worth acting on before you dispatch anything:
 
 - **launch** says whether herdr recognizes your CLI's argv0. If it does
   not, herdr cannot see `working` or any settled state on it, so the wait
@@ -896,6 +896,66 @@ Two rows are worth acting on before you dispatch anything:
 - **promptable** lists this runtime's **instance interstitials** — the
   first-run dialogs that make a fresh pane un-promptable, and the config
   key *you* set to silence each. See §10 below.
+- **probe** says `ASSUMED` on a profile nobody has measured. That is the
+  next step, and it is the only one that changes what a launch *does*.
+
+### Probe the wall — a template profile's `Bash(...)` denies do not count yet
+
+posse renders an L1 shim and a gate shell for every runtime, but whether
+they actually reach your CLI's child processes rests on three behaviours
+nobody has measured for a CLI the harness has never seen: that child
+commands inherit the typed line's `PATH`; that a CLI which re-execs a
+*login* shell takes it from `$SHELL` (one that hardcodes `/bin/zsh -l` lets
+macOS `path_helper` push `/usr/bin` in front of the gates dir, and the shim
+never runs); and that its shell argv shapes are ones the gate wrapper
+parses. The third fails loudly. **The second fails silently** — that is the
+day the fleet believed the wall held on grok and it did not.
+
+So until you measure it, a `Bash(...)` deny on your profile is *assumed, not
+measured*: it lands in the launch's **Degraded** list, `--allow-degraded`
+waives it, and tier `fast` never does (ADR 0017 §1). One live turn fixes
+that:
+
+```sh
+$ posse runtime probe <profile>
+```
+**Verify:** four observables, all `✓`, and the last two lines naming the
+record and `PASS`:
+
+1. `shim-precedence` — `command -v` inside the session resolves a canary
+   into `gates/<persona>/bin`, not into `/usr/bin`.
+2. `refusal-logged` — the canary deny refuses and lands in `refusals.log`
+   through all three subprocess shapes: direct, `sh -c '...'`, and an
+   executable script.
+3. `unattended-turn` — the turn ran and settled with nobody approving
+   anything. This is also the only check on the unattended flag you
+   hand-wrote into `command:`; posse cannot append one for a CLI whose
+   dialect it does not know.
+4. `herdr-detection` — herdr named the pane your CLI's exe and settled it
+   from a matched rule or visible chrome, not from its idle *fallback*.
+
+The probe opens its own pane, runs one turn as a scratch PID carrying a
+canary deny, and closes it. It writes **no** session, so nothing appears in
+`posse list` and dispatch never sees it. `--keep` leaves the pane open when
+you need to look; `--timeout 6m` buys a slow CLI more room. The result lands
+in `$RHQ_HOME/state/runtimes/<profile>/probe.json` — the CLI path, its
+version string, the date, and every observable.
+
+A failure is a result, not a crash: the record is written either way, the
+command exits 1, and the pane's last 40 lines are printed so you can see
+what your CLI actually did. Re-read it any time with `posse runtime check
+<profile>`.
+
+**Re-probe after you upgrade the CLI.** The record names the version it
+measured; `posse runtime check` compares it against what is installed now
+and puts the claim back to `ASSUMED` on drift. If your CLI prints no version
+at all, the record says so and the drift check is *not running* — put a
+re-probe on your own upgrade checklist.
+
+One thing no probe can see, so answer it yourself: **what does this CLI read
+from the session directory unconditionally?** If the answer is a path,
+declare it as `project_config:` — otherwise the launch's trust check
+silently skips a repo→box channel that runs before any model turn.
 
 Point at least one persona at it — set `runtime: <profile>` in its PID:
 

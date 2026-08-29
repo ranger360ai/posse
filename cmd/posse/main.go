@@ -1241,12 +1241,16 @@ func main() {
 		// The ADR 0013 dispatch-contract grid for ONE runtime — six stages,
 		// who declared each, and what a missing one costs. `posse runtimes`
 		// (plural) stays the catalog; this is the onboarding surface.
-		if len(args) < 2 || args[0] != "check" {
-			die(rhq.Die("usage: posse runtime check <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
+		if len(args) < 2 || (args[0] != "check" && args[0] != "probe") {
+			die(rhq.Die("usage: posse runtime check|probe <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
 		}
 		rt, err := a.LoadRuntime(args[1])
 		if err != nil {
 			die(err)
+		}
+		if args[0] == "probe" {
+			runtimeProbe(a, rt, args[2:], out)
+			break
 		}
 		// The grid always prints; the exit status is the preflight's
 		// (ADR 0012 D4). A `check` that reported an uninstalled CLI and then
@@ -1284,6 +1288,10 @@ func main() {
 		// The catalog says what exists; the contract grid says whether a
 		// profile can take work (ADR 0013 §1). Nothing else points at it.
 		fmt.Fprintln(out, "`posse runtime check <name>` — the dispatch-contract grid for one profile")
+		// The catalog is also where an onboarder learns the wall claim is
+		// conditional: a template profile's Bash(...) denies do not count
+		// until a live probe says they do (ADR 0017 §1).
+		fmt.Fprintln(out, "`posse runtime probe <name>` — the live wall probe a template-only profile needs before its Bash(...) denies count")
 
 	case "skills":
 		// ADR 0007 §1: the directory is the registry — this is `ls` with the
@@ -1527,6 +1535,76 @@ func parseNewFlags(args []string) rhq.NewSessionOpts {
 	return o
 }
 
+// runtimeProbe is `posse runtime probe <name>` — ADR 0017 §1 rule 2. It runs
+// ONE live turn on the runtime being onboarded and writes
+// state/runtimes/<name>/probe.json, then prints the four observables.
+//
+// Exit status is the probe's verdict, because the whole point is that this is
+// usable as an onboarding gate: a probe that failed and exited 0 is the
+// green-while-broken shape `runtime check` was filed to end.
+func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
+	o := rhq.ProbeOpts{Out: out}
+	for len(args) > 0 {
+		switch args[0] {
+		case "--keep":
+			o.Keep = true
+			args = args[1:]
+		case "--timeout":
+			if len(args) < 2 {
+				die(rhq.Die("flag --timeout needs a value (e.g. 4m)"))
+			}
+			d, err := time.ParseDuration(args[1])
+			if err != nil || d <= 0 {
+				die(rhq.Die("--timeout must be a positive duration (e.g. 90s, 4m)"))
+			}
+			o.Timeout = d
+			args = args[2:]
+		default:
+			die(rhq.Die("unknown flag: %s (usage: posse runtime probe <name> [--timeout 4m] [--keep])", args[0]))
+		}
+	}
+	if rt.Builtin {
+		// Not a refusal: redeclaring a built-in CLI as a template profile is
+		// the M1 acceptance flow, and probing THAT profile is the point. What
+		// is refused is the misreading — a built-in's Bash claim rests on ADR
+		// 0009's argv table, so a record here unlocks nothing in parity.
+		fmt.Fprintf(out, "note: %s is a BUILT-IN — its shell argv shapes were probed in ADR 0009 (rangerhq-e43)\n", rt.Name)
+		fmt.Fprintln(out, "      and parity does not consult a probe record for it. Probing anyway: the record is")
+		fmt.Fprintln(out, "      evidence, and this is how the same CLI redeclared as a template profile is checked.")
+		fmt.Fprintln(out)
+	}
+	rec, err := a.RuntimeProbe(rt, rhq.NewHerdr(), o)
+	if err != nil {
+		die(err)
+	}
+	fmt.Fprintln(out)
+	for _, ob := range rec.Observables {
+		mark := "✗"
+		if ob.OK {
+			mark = "✓"
+		}
+		fmt.Fprintf(out, "  %s %d %-16s %s\n", mark, ob.N, ob.Name, ob.Detail)
+	}
+	fmt.Fprintf(out, "\n  record %s (%s %s)\n", rhq.AbbrevHome(a.ProbeRecordPath(rt.Name)), rt.Exe(), versionOrUnknown(rec.Version))
+	if rec.Passed() {
+		fmt.Fprintf(out, "  PASS — Bash(...) denies on %s are measured, not assumed. Re-probe after upgrading %s.\n", rt.Name, rt.Exe())
+		return
+	}
+	fmt.Fprintf(out, "  FAIL — Bash(...) denies on %s stay ASSUMED: a launch degrades on each one\n", rt.Name)
+	fmt.Fprintf(out, "  (--allow-degraded waives it; tier fast never does). `posse runtime check %s` repeats this.\n", rt.Name)
+	os.Exit(1)
+}
+
+// versionOrUnknown keeps an unreadable version visible as UNKNOWN rather
+// than as an empty string that reads like agreement (ADR 0017's rule that
+// undeclared is loud).
+func versionOrUnknown(v string) string {
+	if v == "" {
+		return "version unknown"
+	}
+	return v
+}
+
 func help() {
 	fmt.Print(`posse — the Ranger work-system harness (herdr-native)
 
@@ -1723,6 +1801,13 @@ catalog:
                                  then the ADR 0012 D4 preflight (exit 1 on a blocking gap):
                                  launch/promptable/work/record/settle/account, who declared each,
                                  and what a missing stage costs. Undeclared reads loud, not silent.
+  posse runtime probe <name>     the ADR 0017 live wall probe for a template-only profile:
+             [--timeout 4m]      one turn on the CLI with a scratch PID carrying a canary deny,
+             [--keep]            read for four observables (shim precedence, refusal through
+                                 direct/sh -c/script, unattended turn, herdr detection) and
+                                 recorded in state/runtimes/<name>/probe.json. Until it passes,
+                                 Bash(...) denies on that runtime are "assumed, not measured" and
+                                 degrade the launch. Exit 1 when it fails. --keep leaves the pane.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
   posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
                                  writable set with ADR 0015 §2's constitution check

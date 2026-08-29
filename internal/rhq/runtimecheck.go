@@ -162,6 +162,25 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 		wrapGrid(w, "env_req", "none declared — this runtime is taken to authenticate from its own state dir. The Bedrock shape (AWS_* in the session env) is declared here, not remembered")
 	}
 
+	// probe — a DECLARATION line like the two above, printed whether or not
+	// it is a gap. The state an onboarder has to be able to see is the one
+	// that costs them the evening: their Bash(...) denies are counted by
+	// nothing until a live probe says otherwise, and the record is what says
+	// which binary was measured (ADR 0017 §1).
+	if rt.Builtin {
+		wrapGrid(w, "probe", "not applicable — "+rt.Name+" is a built-in and its shell argv table was probed in ADR 0009 (rangerhq-e43). `posse runtime probe` measures a runtime you DECLARE")
+	} else {
+		st := a.ProbeState(rt)
+		lead := "ASSUMED — Bash(...) denies here are not measured: they land in the launch's Degraded list. "
+		if st.Current {
+			lead = "MEASURED — Bash(...) denies here are realized by L1 + the gate shell, on evidence. "
+		}
+		wrapGrid(w, "probe", lead+st.Why)
+		if st.Record != nil {
+			wrapGrid(w, "", "record: "+AbbrevHome(a.ProbeRecordPath(rt.Name))+" — 4 observables (shim precedence, refusal through direct/sh -c/script, unattended turn, herdr detection)")
+		}
+	}
+
 	gaps := a.RuntimeGaps(rt, h)
 	if len(gaps) == 0 {
 		fmt.Fprintln(w)

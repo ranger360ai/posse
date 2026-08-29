@@ -133,6 +133,17 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// with no shims and no gate shell: unrealized, refused, exactly like any
 	// other gate the launch cannot hold.
 	inner := container && ContainerInnerGates && a.CageInnerGates()
+	// ADR 0017 §1 rule 1 — assumed-until-probed. Read at most once, and only
+	// if a shell-verb deny gets that far: it is a fact about the RUNTIME,
+	// not about a rule, so a PID with nine Bash denies must not read the
+	// record nine times, and a PID with none must not read it at all.
+	assumed, assumedRead := "", false
+	assumedWhy := func() string {
+		if !assumedRead {
+			assumed, assumedRead = a.assumedUntilProbed(rt), true
+		}
+		return assumed
+	}
 	for _, rule := range ag.Deny {
 		switch {
 		case strings.HasPrefix(rule, "Bash("):
@@ -154,6 +165,18 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			// directory-aware check executes a concrete repo's hooks.
 			if rt.NoGateShell {
 				p.unrealized(rule, "L1 shim cannot hold on "+rt.Name+" (gate_shell: false): a runtime that re-execs a login shell lets path_helper demote the gates dir below /usr/bin; L3 counts only after CheckParityIn behavior-probes the hook")
+				continue
+			}
+			// ADR 0017 §1 rule 1. On a template-only runtime the L1 claim
+			// below rests on three behaviours nobody measured for this CLI
+			// (runtimeprobe.go names them); the silent one is a runtime that
+			// re-execs a login shell it did not take from $SHELL, which is
+			// the pre-ADR-0009 grok day. Degraded, not a flat refusal: the
+			// waiver is on offer and the probe is the way out, and treating
+			// every novel engine as permanently unrealized is what trains an
+			// operator to type --allow-degraded out of habit.
+			if why := assumedWhy(); why != "" {
+				p.unrealized(rule, why)
 				continue
 			}
 			cmd := shimCommand(rule)
@@ -403,14 +426,23 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	if !probe.Repo {
 		return
 	}
+	// Why L1 is not carrying these two gates on its own, for the line a
+	// git-hook realization prints when it is the ONLY layer. There are two
+	// reasons now and they send the reader to different places: a runtime
+	// that declared `gate_shell: false` (nothing to fix — that is the exit
+	// hatch), and a template-only runtime whose shim claim is assumed until
+	// somebody probes it (ADR 0017 §1). Printing the first sentence for the
+	// second case would name a key the yaml does not set.
+	noL1 := "L1 shim cannot hold on " + rt.Name + " (gate_shell: false)"
+	if !rt.NoGateShell && a.assumedUntilProbed(rt) != "" {
+		noL1 = "L1 on " + rt.Name + " is assumed, not measured — `posse runtime probe " + rt.Name + "` (ADR 0017 §1)"
+	}
 	for _, rule := range ag.Deny {
 		switch {
 		case deniesGitPush([]string{rule}):
-			applyHookResult(p, rule, "L3 pre-push hook (render probed, dispatch verified)", probe.PrePush,
-				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
+			applyHookResult(p, rule, "L3 pre-push hook (render probed, dispatch verified)", probe.PrePush, noL1)
 		case deniesUnqualifiedCommit([]string{rule}):
-			applyHookResult(p, rule, "L3 prepare-commit-msg hook (render probed, dispatch verified)", probe.CommitGuard,
-				"L1 shim cannot hold on "+rt.Name+" (gate_shell: false)")
+			applyHookResult(p, rule, "L3 prepare-commit-msg hook (render probed, dispatch verified)", probe.CommitGuard, noL1)
 		}
 	}
 	if wantPrePush && !probe.PrePush {
@@ -506,6 +538,28 @@ func (a *App) wholeTreeWriteWall(p *Parity, gate, tool string, rt *Runtime, inne
 	default:
 		p.unrealized(gate, "needs cage: seatbelt (or codex -s read-only) — native flags are politeness")
 	}
+}
+
+// assumedUntilProbed is the ADR 0017 §1 rule 1 reason a `Bash(...)` deny
+// does not count on this runtime yet, or "" when it does. Built-ins are
+// exempt by measurement, not by privilege: their argv table was probed in
+// ADR 0009 (rangerhq-e43), and a built-in has no runtimes/<name>.yaml for a
+// third party to author.
+//
+// A probe record that FAILED reads the same way here as no record at all —
+// both leave the claim unmeasured — but the sentences differ, because "we
+// looked and it does not hold" and "nobody looked" want different next
+// moves from the operator (ProbeState writes both).
+func (a *App) assumedUntilProbed(rt *Runtime) string {
+	if rt == nil || rt.Builtin {
+		return ""
+	}
+	st := a.ProbeState(rt)
+	if st.Current {
+		return ""
+	}
+	return "assumed, not measured — run `posse runtime probe " + rt.Name + "`. " + rt.Name +
+		" is template-only, so L1 rests on three behaviours nobody has measured for it: that child commands inherit the typed PATH, that a re-exec'd login shell comes from $SHELL (a CLI hardcoding /bin/zsh -l lets path_helper demote the gates dir and the shim never runs), and that its shell argv shapes are ones the gate wrapper parses. " + st.Why
 }
 
 func (p *Parity) unrealized(gate, why string) {

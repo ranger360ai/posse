@@ -157,6 +157,27 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 		add("env_required", name+" is declared env_required: and is not set in this environment — a launch here refuses rather than opening a pane that cannot authenticate", true)
 	}
 
+	// probe — ADR 0017 §1: the live wall measurement, and the drift check
+	// on it. Non-blocking by construction: an unprobed template runtime
+	// still takes work, it just takes it with its `Bash(...)` denies in the
+	// Degraded column (parity.go), which is a named degrade and not a
+	// refusal. Built-ins are skipped — their argv table was probed in ADR
+	// 0009 and no yaml is read for them.
+	//
+	// Reported even when nothing on this box denies a shell verb: `runtime
+	// check` is asked about a PROFILE, and which PIDs will run on it is not
+	// a question it can see the answer to.
+	if !rt.Builtin {
+		if st := a.ProbeState(rt); !st.Current {
+			gap := "the Bash(...) denies of any PID launched on " + rt.Name +
+				" are ASSUMED, not measured, so they land in the launch's Degraded list (--allow-degraded waives; tier fast never does) — " + st.Why
+			if st.Drift {
+				gap = "the recorded probe no longer describes the installed CLI, so the Bash(...) claim is back to assumed — " + st.Why
+			}
+			add("probe", gap, false)
+		}
+	}
+
 	// interstitials — a declared first-run screen whose probe says the
 	// operator has not silenced it yet. Non-blocking: the launcher does not
 	// refuse on one today (ADR 0013 §2 says it should — ranger-base-a9y9 is
