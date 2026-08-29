@@ -78,7 +78,7 @@ func (f sbFixture) writable(t *testing.T) []string {
 
 func (f sbFixture) carve(t *testing.T) SeatbeltCarveOut {
 	t.Helper()
-	return f.a.SeatbeltCarveOut(f.repo, f.gates, f.writable(t))
+	return f.a.SeatbeltCarveOut(f.ag, f.repo, f.gates, f.writable(t))
 }
 
 func sbGitInit(t *testing.T, dir string) {
@@ -210,7 +210,7 @@ func TestQACarveOutIsSmallForAnOrdinaryProject(t *testing.T) {
 	work := sbMkdir(t, filepath.Join(filepath.Dir(f.repo), "project"))
 	sbGitInit(t, work)
 	w := f.a.SeatbeltWritable(f.ag, work, f.gates)
-	c := f.a.SeatbeltCarveOut(work, f.gates, w)
+	c := f.a.SeatbeltCarveOut(f.ag, work, f.gates, w)
 	if bad := f.a.ConstitutionGrants(w); len(bad) > 0 {
 		t.Fatalf("premise gone: an ordinary project reaches the constitution %v", bad)
 	}

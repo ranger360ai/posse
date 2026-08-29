@@ -415,11 +415,13 @@ func sessionGitGrants(cwd string) []string {
 //     off HomeConstitutionPaths so this list and the detector below cannot
 //     drift apart. `personas/` is not in it: §5's exception is memory, and
 //     memory is not law.
+//
 //  2. `state/gates` — every persona's L1 shims, rendered seatbelt profiles
 //     and refusals logs. Rendered fresh at launch, so persistence was
 //     already bounded; what was not bounded is WITHIN the session, where
 //     rewriting a shim defeats L1 (the Bash(security:*) keychain tripwire
 //     of ranger-base-khu, say) and erases the record that it did.
+//
 //  3. The L3 hook slots, asked of git rather than derived: `core.hooksPath`
 //     moves them, and a worktree's live in the common git dir the profile
 //     grants for commits (ranger-base-flz7 / rangerhq-b38m). Both repos a
@@ -428,9 +430,29 @@ func sessionGitGrants(cwd string) []string {
 //     its prepare-commit-msg slot is what stamps the beads visibility
 //     guard.
 //
+//  4. ADR 0014 §3 — the PID's OWN path-scoped denies. `deny:
+//     [Edit(docs/adr/**)]` is a subtree file-write deny (ADR 0014 §1), and
+//     this block is the only place L2 can say it: the rule names a
+//     directory INSIDE cwd, and cwd is granted whole to any PID that does
+//     not deny Edit/Write bare, so nothing in the allow block can express
+//     it. `parity.go` has claimed "L2 trailing deny (subpath …)" since
+//     ranger-base-4ks; until this list existed, that claim was a row about
+//     a profile line nobody rendered.
+//
+//     Only Subtree rules join it. A bare spelling (`Edit(**)`) is the
+//     whole-tree rule and is realized by SeatbeltWritable omitting cwd, not
+//     by a subpath; a file filter (`Edit(**/*.md)`) is unrealized at every
+//     tier, and emitting a directory deny for it would be the wall claiming
+//     a rule it does not hold. Both fall out of Resolve returning "".
+//
+//     `writable:` extras overlapping one of these lose, and lose HERE
+//     rather than by arithmetic on the allow block: the deny is below the
+//     grant, so last-match-wins is what makes deny-wins (ADR 0001) true at
+//     this tier. `posse agent check` warns; the profile just refuses.
+//
 // writable is the allow block this block will follow: the seal needs to
 // know which ancestors a grant made renamable.
-func (a *App) SeatbeltCarveOut(cwd, gatesDir string, writable []string) SeatbeltCarveOut {
+func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []string) SeatbeltCarveOut {
 	var c SeatbeltCarveOut
 	add := func(dst *[]string, p string) {
 		if p != "" {
@@ -447,6 +469,9 @@ func (a *App) SeatbeltCarveOut(cwd, gatesDir string, writable []string) Seatbelt
 	}
 	for _, h := range sessionHooksDirs(cwd) {
 		add(&c.Deny, h)
+	}
+	for _, d := range pidDeniedSubtrees(ag, cwd) {
+		add(&c.Deny, d.Path)
 	}
 	c.Deny = dedupeStrings(c.Deny)
 	// The session's own audit trail, by literal so no new file joins it.
@@ -479,6 +504,43 @@ func sessionHooksDirs(cwd string) []string {
 		}
 	}
 	return dedupeStrings(out)
+}
+
+// pidDeniedSubtrees resolves the PID's path-scoped write denies for a
+// session in cwd — ADR 0014 §3's list, in the order the PID wrote them.
+//
+// Resolve does the deciding and this does not second-guess it: `~` expands,
+// a relative glob joins the session dir, the result goes through the same
+// resolver as every other path in the profile (so a symlinked spelling
+// cannot dodge the wall in either direction), and everything that is not a
+// subtree — the bare spellings, the file filters — comes back "" and is
+// dropped. What is left is exactly the set parity.go's `L2 trailing deny
+// (subpath …)` row names.
+//
+// Nothing here asks whether the path is inside a grant. A deny outside one
+// is already covered by the profile's default deny and costs a line; a deny
+// INSIDE one is the whole point. The one thing the caller must not do is
+// put these anywhere but the trailing block: deny-before-allow leaks
+// (MEASURED, ADR 0014 §3).
+func pidDeniedSubtrees(ag *AgentFile, cwd string) []pidDeny {
+	if ag == nil {
+		return nil
+	}
+	var out []pidDeny
+	for _, d := range pathScopedWrites(ag.Deny) {
+		if p := d.Resolve(cwd); p != "" {
+			out = append(out, pidDeny{Rule: d.Rule, Path: p})
+		}
+	}
+	return out
+}
+
+// pidDeny is one such rule beside the directory it resolved to. The pair
+// travels together because `posse gates` prints both: a resolved path with
+// no rule beside it is a line an operator cannot check against the PID.
+type pidDeny struct {
+	Rule string // the rule as the PID wrote it, e.g. "Edit(docs/adr/**)"
+	Path string // the resolved directory the profile denies
 }
 
 // renameSeal names the directories that must be denied as LITERALS so a
@@ -619,7 +681,7 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(cwd, gatesDir, writable))
+	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable))
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -641,14 +703,34 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	gatesDir := a.GatesDir(ag.Name)
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	carve := a.SeatbeltCarveOut(cwd, gatesDir, writable)
+	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
 	}
 	// The carve-out under the set it takes back from, for the same reader:
 	// a deny that only a profile knows about is a deny nobody checks.
+	//
+	// A path the PID's own rule put there is named by that rule. The two
+	// lists render into one block on purpose (ADR 0014 §3), but they answer
+	// different questions for an operator: posse's entries are a wall the
+	// PID cannot spell, and this one is the PID's own line, printed back at
+	// the tier that realizes it. Reading `Edit(docs/adr/**)` off `posse
+	// gates` beside the directory it resolved to is how a relative glob
+	// that joined the wrong session dir gets caught before a launch.
+	// Every rule that resolved to the path, not the last one: ADR 0014 §1's
+	// union is normally written as all three tool names over one directory,
+	// and printing one of them would tell an operator that deleting it
+	// re-opens the tree.
+	byRule := map[string][]string{}
+	for _, d := range pidDeniedSubtrees(ag, cwd) {
+		byRule[d.Path] = append(byRule[d.Path], d.Rule)
+	}
 	for _, p := range carve.Deny {
+		if r := byRule[p]; len(r) > 0 {
+			fmt.Fprintf(out, "    x %s (trailing deny — the PID's %s; ADR 0014 §3)\n", AbbrevHome(p), strings.Join(r, ", "))
+			continue
+		}
 		fmt.Fprintf(out, "    x %s (trailing deny — beats every grant above; ranger-base-h15)\n", AbbrevHome(p))
 	}
 	for _, p := range carve.Seal {
