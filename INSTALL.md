@@ -1217,6 +1217,13 @@ before you hook them (NOTES.md, *Privacy model*), or the first `bd sync`
 carrying a cost figure is a refusal. `posse gates install-hooks` prints
 which way it stamped each repo.
 
+If this instance holds someone else's data — a work laptop, a client
+engagement — read NOTES.md, *"When an instance holds someone else's data"*
+first: every one of its repos is marked `private`, and config
+`beads_visibility_patterns:` (class → ERE) adds that instance's own
+confidential vocabulary to the lint without it ever entering this repo.
+`install-hooks` prints what it stamped in and, by class, what it refused.
+
 Both gates want a slot `bd hooks install` has already taken. Run:
 
 ```sh
