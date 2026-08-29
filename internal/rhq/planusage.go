@@ -205,6 +205,67 @@ func (e *RateLimit) Error() string {
 	return fmt.Sprintf("usage endpoint returned %s", e.Status)
 }
 
+// AuthFailure is the endpoint saying "not you": 401, or 403. It is a
+// distinct type for the reason RateLimit is one — a caller that cannot tell
+// this apart from an outage reports a CREDENTIAL condition as weather, and
+// weather is the one diagnosis that tells an operator to wait.
+//
+// The line it replaced buried the whole condition inside blind-time
+// accounting: `plan guard: blind 40m (usage endpoint returned 401
+// Unauthorized) — pass skipped` (2026-08-22, bead rangerhq-ytyj). Every
+// word of it was true and none of it said what to do.
+//
+// The two statuses are one CLASS and two sentences, and the difference is
+// the operator's next move (ADR 0019 D2 as amended, bead rangerhq-pwpx):
+//
+//   - 401 — the OAuth token is stale. An interactive refresh clears it, and
+//     `claude` refreshing on its own next launch clears it too, which is
+//     why this is not a permanent condition and why the blind budget's
+//     quiet tolerance still applies to it unchanged.
+//   - 403 — the credential is not entitled to plan windows at all (a setup
+//     token never is). Measured, not guessed. Its sentence must never
+//     contain "refresh": refreshing a credential that was never entitled
+//     produces the same 403 forever.
+//
+// What this type must NOT do is fork policy. Park-vs-degrade reads no
+// diagnosis string (ADR 0018 §2): blind is blind, and a class exists for
+// the diagnostic, the cooldown, and — since ytyj — the governance key that
+// gets a human told. Nothing here gates a pass.
+type AuthFailure struct {
+	// Status is the response status line ("401 Unauthorized"), quoted into
+	// the diagnostic; Code is what anything branching must read. A status
+	// line is display text and must never be parsed back into a decision.
+	Status string
+	Code   int
+}
+
+func (e *AuthFailure) Error() string {
+	if e.Code == http.StatusForbidden {
+		return fmt.Sprintf("usage endpoint returned %s: this credential is not entitled to plan windows — not a freshness problem", e.Status)
+	}
+	return fmt.Sprintf("usage endpoint returned %s: credential stale — waiting for an interactive refresh", e.Status)
+}
+
+// Stale reports whether an interactive refresh is the move — 401 and only
+// 401. It is the one question anything outside this file may ask of the
+// class, and it is asked by NAME rather than by reading the sentence above.
+func (e *AuthFailure) Stale() bool { return e.Code == http.StatusUnauthorized }
+
+// AuthFailureReason is NoSourceReason's sibling for this class: the
+// *AuthFailure inside err, or nil. Callers get to ask "is this a credential
+// condition?" without importing errors and without matching on text — the
+// rule this whole type exists to keep.
+func AuthFailureReason(err error) *AuthFailure {
+	if err == nil {
+		return nil
+	}
+	var af *AuthFailure
+	if errors.As(err, &af) {
+		return af
+	}
+	return nil
+}
+
 // retryAfter parses the header's two forms (RFC 9110 §10.2.3): delta
 // seconds, or an HTTP date. Anything else — including a date already past
 // — is "the endpoint did not say".

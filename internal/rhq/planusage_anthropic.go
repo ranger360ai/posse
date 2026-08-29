@@ -230,6 +230,14 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 		return nil, &RateLimit{Status: resp.Status, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), r.now())}
 	}
+	// The auth statuses are their own class (planusage.go's AuthFailure,
+	// bead rangerhq-ytyj): availability failures are weather and heal by
+	// themselves, and these two do not. The status line is all this file
+	// contributes — the sentences are the harness's, because "what does an
+	// operator do about it" is not provider knowledge.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, &AuthFailure{Status: resp.Status, Code: resp.StatusCode}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, Die("usage endpoint returned %s", resp.Status)
 	}

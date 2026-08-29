@@ -599,6 +599,13 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 // a dead socket are one state here — no reading. The classes are for the
 // diagnostic and the cooldown, never for park-vs-degrade, because policy
 // that reads diagnosis strings rots when the diagnosis improves.
+//
+// That still holds with the credential class named (planusage.go's
+// AuthFailure, bead rangerhq-ytyj). A 401 now says what it is inside the
+// line below — the error prints itself, so this function needed no branch —
+// and raises its own governance key so the coordinator is told in minutes
+// (govern.go guardBlindRow). Timing, park and degrade are byte-for-byte the
+// blind window e1n pinned; what changed is what the line and the pulse SAY.
 func (d *Dispatcher) blindFork(blind time.Duration, err error) {
 	park := func(why string) {
 		d.planBlind = fmt.Sprintf("plan guard: blind %s (%v)%s", BlindFor(blind), err, why)

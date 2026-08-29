@@ -339,8 +339,8 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	if planErr != nil && NoSourceReason(planErr) == nil {
 		blindFor, past := in.blindPast(now)
 		if past {
-			add("G5", GovUrgent, "guard-blind",
-				fmt.Sprintf("plan guard blind %s (%v) — monitoring itself is broken", BlindFor(blindFor), planErr))
+			key, detail := guardBlindRow(blindFor, planErr)
+			add("G5", GovUrgent, key, detail)
 		}
 	}
 
@@ -653,6 +653,31 @@ func (in GovInputs) planReading(now time.Time) (PlanUsage, error) {
 	}
 	u, _, err := c.Read(planGuardMaxAge(in.App.PlanUsageTTL(io.Discard), in.App.PlanGuardBlindMax(io.Discard)))
 	return u, err
+}
+
+// guardBlindRow is G5's key and line for one blind read. The ROW is the
+// same row either way — "guard blind past plan_guard_blind_max", ADR 0029's
+// table is closed at nine and this invents nothing — but a credential
+// failure is a different INSTANCE of it, and the key is the identity a
+// machine reader sees: it is what the pulse fingerprints, and the pulse's
+// prompt carries keys and not details (pulse.go pulsePromptText). A
+// coordinator handed `guard-blind` goes looking for an outage; the same
+// coordinator handed `guard-credential:401` runs one command.
+//
+// That is the whole of the fork (bead rangerhq-ytyj). It changes no
+// threshold, no clock and no verdict: the row still appears only past
+// `plan_guard_blind_max:`, because a 401 IS cleared by `claude` refreshing
+// its own token on the next launch, so the quiet tolerance a blind stretch
+// gets is earned here too. Policy still reads no diagnosis string at all
+// (ADR 0018 §2) — this is the diagnostic, delivered.
+func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
+	if af := AuthFailureReason(err); af != nil {
+		return fmt.Sprintf("guard-credential:%d", af.Code),
+			fmt.Sprintf("plan guard blind %s — %v: a credential condition, not weather, and no retry clears it",
+				BlindFor(blindFor), af)
+	}
+	return "guard-blind",
+		fmt.Sprintf("plan guard blind %s (%v) — monitoring itself is broken", BlindFor(blindFor), err)
 }
 
 // blindPast is how long the instance has been without a reading, and whether
