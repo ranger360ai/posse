@@ -3748,6 +3748,8 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 			is.ID, len(o.Dirty), AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
 	}
 	switch {
+	case len(o.Equivalent) > 0:
+		d.printf("≡ %-14s %s\n", is.ID, o.EquivalentNote())
 	case o.Merged && o.Commits == 0:
 		d.printf("◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
 	case o.Merged:

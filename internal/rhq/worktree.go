@@ -629,6 +629,25 @@ type MergeOutcome struct {
 	Rebased bool     // base had moved, so the branch was replayed onto it
 	Dirty   []string // uncommitted paths left in the worktree (never merged)
 	Reason  string   // why not merged ("" when Merged)
+
+	// Equivalent pairs each commit ahead of the base with the commit on the
+	// base that already holds its work under another sha. Non-empty only
+	// when EVERY commit ahead is accounted for — that is the whole point of
+	// it, and the difference between "already landed, retire freely" and
+	// "this tree is the only copy".
+	Equivalent []string
+}
+
+// EquivalentNote is the sentence that tells an already-landed branch apart
+// from a stranded one. Before it, both printed the same words (the strand's)
+// and only a hand measurement could say which was which — ranger-base-g2xf.
+// "" when there is nothing to tell apart.
+func (o MergeOutcome) EquivalentNote() string {
+	if len(o.Equivalent) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d commit(s) on %s are already on %s under other sha(s) (%s) — nothing here is unlanded",
+		len(o.Equivalent), o.Branch, o.Base, strings.Join(o.Equivalent, ", "))
 }
 
 // MergeSessionWork is the launcher's half of ADR-0011-§1-serialized option A
@@ -689,6 +708,23 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
 		return landed(o, t), nil
+	}
+	// Ahead by sha is not ahead by work. A commit cherry-picked onto the
+	// base keeps its own sha here, so `rev-list --count` still calls the
+	// branch ahead; and when the pick was resolved BY HAND the two patches
+	// are not identical, so the rebase below cannot drop it by patch-id
+	// either. What came out was a strand report word-for-word identical to
+	// a real one, over work that was already on the base, re-printed every
+	// pass forever (ranger-base-g2xf). Asked before the rebase so it also
+	// answers the arms the rebase never reaches — a dirty tree, a checkout
+	// that moved — and asked of the tree's HEAD rather than the branch for
+	// the same reason landed() is: the branch is not always where the work
+	// sits.
+	if head, ok := workHead(t); ok {
+		if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
+			o.Equivalent, o.Merged, o.Reason = eq, true, ""
+			return o, nil
+		}
 	}
 	// Not a fast-forward: the repo's branch moved while the session worked.
 	// Replay the session's commits onto it — in the SESSION's tree, so the
@@ -785,6 +821,58 @@ func workHead(t *SessionTree) (string, bool) {
 		return sha, true
 	}
 	return "", false
+}
+
+// equivalentOnBase answers whether base ALREADY HOLDS the work of every
+// commit tip is ahead of it by, under other shas, and names the pairing when
+// it does. nil is the honest default and means "no": one commit it cannot
+// account for and the branch is ahead by real work, which is a strand.
+//
+// Two ways a commit's work reaches the base under another sha, and the bug
+// that needs both (ranger-base-g2xf):
+//
+//   - patch-id equivalence, which is what `git cherry` measures and what a
+//     non-interactive rebase drops on its own. One call for the whole
+//     branch, and the case that never reaches a human.
+//   - git's own `-x` trailer, `(cherry picked from commit <sha>)`. That is
+//     the ONLY evidence left when the pick was resolved by hand: the
+//     resolution amends the patch, so the patch-ids differ, `git cherry`
+//     says `+`, and the replay conflicts on the same hunk every time.
+//
+// The trailer is a record of somebody's decision rather than a measurement
+// of content, so it is read as "the base holds this work" and never as
+// licence to throw the branch away: RemoveSessionTree still asks its own
+// question by sha, and still refuses.
+func equivalentOnBase(repo, base, tip string) []string {
+	out, err := git(repo, "rev-list", base+".."+tip)
+	if err != nil || out == "" {
+		return nil
+	}
+	upstream := map[string]bool{}
+	if c, err := git(repo, "cherry", base, tip); err == nil {
+		for _, ln := range strings.Split(c, "\n") {
+			if strings.HasPrefix(ln, "- ") {
+				upstream[strings.TrimSpace(ln[2:])] = true
+			}
+		}
+	}
+	var eq []string
+	for _, sha := range strings.Fields(out) {
+		if upstream[sha] {
+			eq = append(eq, abbrevSHA(sha)+" as an equivalent patch on "+base)
+			continue
+		}
+		// Bounded to the commits base has and tip does not: a pick of this
+		// commit can only be in there, and the bound keeps a miss from
+		// walking the whole history.
+		pick, err := git(repo, "log", "--format=%H", "-1", "--fixed-strings",
+			"--grep=cherry picked from commit "+sha, base, "--not", tip)
+		if err != nil || pick == "" {
+			return nil
+		}
+		eq = append(eq, abbrevSHA(sha)+" as "+abbrevSHA(pick))
+	}
+	return eq
 }
 
 // reaches is the fast-forward precondition, asked of git rather than assumed
@@ -1002,6 +1090,8 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string) error {
 		switch {
 		case err != nil:
 			fmt.Fprintf(w, "⚠ %s not landed: %v\n", t.Branch, err)
+		case len(o.Equivalent) > 0:
+			fmt.Fprintf(w, "≡ %s\n", o.EquivalentNote())
 		case o.Merged && o.Commits == 0:
 			fmt.Fprintf(w, "· %s had nothing to land\n", t.Branch)
 		case o.Merged:

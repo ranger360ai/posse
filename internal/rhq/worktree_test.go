@@ -775,3 +775,193 @@ func TestTryLockLaunchesDoesNotWait(t *testing.T) {
 	}
 	got.Release()
 }
+
+// ranger-base-g2xf: ahead by SHA is not ahead by work. A commit that was
+// cherry-picked onto the base keeps its own sha on the branch, so the branch
+// counts as ahead; and when the landing was resolved BY HAND the patches are
+// no longer identical, so the replay cannot drop it by patch-id either and
+// conflicts on the same hunk every pass. What the operator got was a strand
+// report word-for-word identical to a real one — over work already on main.
+//
+// Three arms, because the difference between them is the whole feature: a
+// hand-resolved pick (the reported bug, recognisable only by git's own `-x`
+// trailer), a clean pick (patch-id equivalent, what `git cherry` sees), and
+// the control — real unlanded work, which must still report a strand in the
+// unchanged words. Without the control an "is not a strand" assertion is
+// satisfied by a rig that could never have produced one.
+func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
+	cases := []struct {
+		name string
+		// land replays the session's commit onto the repo's branch the way
+		// this arm's history did it, and returns "" for the arm that never
+		// landed at all.
+		land       func(t *testing.T, repo, sha string) string
+		equivalent bool
+	}{{
+		name: "a hand-resolved cherry-pick is not a strand",
+		land: func(t *testing.T, repo, sha string) string {
+			// The resolution keeps main's own newer wording, so the patch
+			// differs from the session's and `git cherry` says `+`. The
+			// trailer is the only thing left that knows.
+			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+				"s-1: the fix\n\n(cherry picked from commit "+sha+")")
+			return mustGit(t, repo, "rev-parse", "HEAD")
+		},
+		equivalent: true,
+	}, {
+		name: "a clean cherry-pick is not a strand either",
+		land: func(t *testing.T, repo, sha string) string {
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+			return mustGit(t, repo, "rev-parse", "HEAD")
+		},
+		equivalent: true,
+	}, {
+		// The other half of equivalentOnBase, alone: no trailer at all, so
+		// only patch-id can see it. Without this arm the `git cherry` half
+		// could be deleted whole and every pin above stays green — `-x`
+		// writes the trailer the other arms are recognised by.
+		name: "a pick with no -x trailer is seen by patch-id alone",
+		land: func(t *testing.T, repo, sha string) string {
+			mustGit(t, repo, "cherry-pick", sha)
+			return mustGit(t, repo, "rev-parse", "HEAD")
+		},
+		equivalent: true,
+	}, {
+		name: "real unlanded work still is",
+		land: func(t *testing.T, repo, sha string) string {
+			// The same conflicting shape and NO record that the session's
+			// commit is what landed — because it is not.
+			commitIn(t, repo, "adr.md", "status: rejected\n", "main: the operator's own line")
+			return ""
+		},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			// The base moves first, in every arm: that is the premise of
+			// the whole bug, and without it a cherry-pick onto an unmoved
+			// base rebuilds the IDENTICAL commit object (same tree, parent,
+			// message and identity — measured), which the base then reaches
+			// by sha and no arm here measures anything.
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			pick := c.land(t, repo, sha)
+			before := mustGit(t, repo, "rev-parse", tr.Branch)
+
+			o, err := MergeSessionWork(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !c.equivalent {
+				if o.Merged || len(o.Equivalent) > 0 {
+					t.Fatalf("real unlanded work was not reported as a strand: %+v", o)
+				}
+				// Unchanged words, so a genuine strand still reads the way
+				// every runbook says it does.
+				if !strings.Contains(o.Reason, "conflicts — the branch is untouched and still holds the work") {
+					t.Errorf("the strand's reason changed: %q", o.Reason)
+				}
+				return
+			}
+			if !o.Merged || o.Reason != "" {
+				t.Fatalf("a branch whose work is already on the base reported a strand: %+v", o)
+			}
+			if len(o.Equivalent) != 1 {
+				t.Fatalf("Equivalent = %v, want the one commit paired with what holds it", o.Equivalent)
+			}
+			// The pairing has to be checkable by hand: it names both shas.
+			if !strings.Contains(o.Equivalent[0], abbrevSHA(sha)) {
+				t.Errorf("Equivalent %q does not name the session's commit %s", o.Equivalent[0], abbrevSHA(sha))
+			}
+			note := o.EquivalentNote()
+			for _, want := range []string{"1 commit(s)", tr.Branch, tr.Base, "nothing here is unlanded"} {
+				if !strings.Contains(note, want) {
+					t.Errorf("EquivalentNote() = %q, missing %q", note, want)
+				}
+			}
+			// Nothing was touched to reach that answer: this is a read.
+			if after := mustGit(t, repo, "rev-parse", tr.Branch); after != before {
+				t.Errorf("the branch moved: %s → %s", before, after)
+			}
+			if head := mustGit(t, repo, "rev-parse", "HEAD"); head != pick {
+				t.Errorf("the repo's checkout moved: %s → %s", pick, head)
+			}
+			if st := mustGit(t, tr.Path, "status", "--porcelain"); st != "" {
+				t.Errorf("the session tree was left dirty:\n%s", st)
+			}
+		})
+	}
+}
+
+// The fixture the arm above rests on has to be the reported shape and not an
+// easier one: WITHOUT the trailer the replay really does conflict, so the
+// hand-resolved arm is passing on the new evidence rather than on a rebase
+// that would have succeeded anyway.
+func TestHandResolvedPickReallyDoesConflictOnReplay(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+	sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+		"s-1: the fix\n\n(cherry picked from commit "+sha+")")
+
+	if out, err := git(repo, "cherry", "main", tr.Branch); err != nil || !strings.HasPrefix(out, "+ ") {
+		t.Fatalf("git cherry = %q, %v; the fixture must NOT be patch-id equivalent", out, err)
+	}
+	if _, err := git(tr.Path, "rebase", "main"); err == nil {
+		t.Error("the fixture rebased cleanly — it is not the hand-resolved shape the bug is about")
+	}
+	_, _ = git(tr.Path, "rebase", "--abort")
+}
+
+// "Landed" is all-or-nothing, and nothing below the whole branch will do.
+// One commit picked onto the base and one that never left the tree is a
+// STRAND — the tree is still the only copy of the second — and a predicate
+// that returns what it accounted for instead of refusing would call the
+// branch landed on the strength of the first. (Mutation: turning
+// equivalentOnBase's `return nil` into `continue` is invisible to every
+// single-commit arm; this is the one that sees it.)
+func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+	picked := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	commitIn(t, tr.Path, "later.txt", "the part nobody landed\n", "s-1: the follow-up")
+
+	commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+	commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+		"s-1: the fix\n\n(cherry picked from commit "+picked+")")
+
+	o, err := MergeSessionWork(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged || len(o.Equivalent) > 0 {
+		t.Fatalf("a branch still holding one unlanded commit was called landed: %+v", o)
+	}
+	if !strings.Contains(o.Reason, "still holds the work") {
+		t.Errorf("outcome = %+v, want the unchanged strand reason", o)
+	}
+	// And the part that IS unlanded is still in the tree afterwards.
+	if _, err := os.Stat(filepath.Join(tr.Path, "later.txt")); err != nil {
+		t.Errorf("the unlanded commit's file is gone from the session tree: %v", err)
+	}
+}

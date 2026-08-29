@@ -2280,6 +2280,12 @@ func (l *KillLanding) Line() string {
 	}
 	t := l.Tree
 	switch {
+	case l.Kept != "" && len(l.Merge.Equivalent) > 0:
+		// The merge found nothing to land and RemoveSessionTree still
+		// refused: its guard is by sha, and by sha the branch IS ahead.
+		// Both facts, in that order, so the refusal reads as the belt it is
+		// rather than as lost work (ranger-base-g2xf).
+		return fmt.Sprintf("%s KEPT: %s; %s", AbbrevHome(t.Path), l.Merge.EquivalentNote(), l.Kept)
 	case l.Kept != "":
 		return fmt.Sprintf("%s KEPT: %s", AbbrevHome(t.Path), l.Kept)
 	case l.Merge.Commits == 0:

@@ -120,6 +120,10 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		switch {
 		case err != nil:
 			d.printf("⚠ %-14s %s not landed onto %s: %v — the branch still holds the work\n", id, t.Branch, orDetached(t.Base), err)
+		case len(o.Equivalent) > 0:
+			// Not a strand and not a landing this pass did: the base was
+			// already holding the work under other shas (ranger-base-g2xf).
+			d.printf("≡ %-14s %s\n", id, o.EquivalentNote())
 		case o.Merged && o.Commits > 0:
 			how := "fast-forwarded"
 			if o.Rebased {
