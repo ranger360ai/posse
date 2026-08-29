@@ -1,6 +1,8 @@
 # ADR 0004 — Cockpit v2: width-aware rows, an IN PROGRESS section, scrolling
 
-*Status: accepted 2026-08-18 · amended 2026-08-19 (§2 holder join) · owner: architect*
+*Status: accepted 2026-08-18 · amended 2026-08-19 (§2 holder join),
+2026-08-23 (§1 display cells, rangerhq-swh), 2026-08-26 (§4 short-terminal
+chrome) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -36,12 +38,22 @@ row is composed from columns of two kinds:
 | kind | rule |
 |---|---|
 | fixed | mark, emoji, id, priority, status, holder — printed at their natural width, never truncated |
-| flex | exactly one per row (title / session name+persona) — gets `w − fixed − gaps`, truncated with `…` on rune count |
+| flex | exactly one per row (title / session name+persona) — gets `w − fixed − gaps`, truncated with `…` on display cells *(amended 2026-08-23; see below)* |
 | droppable | trailing dim context (repo dir, `(focused)`, `@runtime`) — dropped whole when `w < 100`; holder column dropped when `w < 70` |
 
-Rune count, not display width: the flex column is last and emoji live in
-fixed columns at the left, so a wide glyph misaligns nothing the eye
-reads. No width library — that is the deliberate cost of "no new dep".
+Display cells, not rune count. *(Amended 2026-08-23, rangerhq-swh: as
+accepted this rule said rune count, on the reading that the flex column is
+last and emoji live in fixed columns at the left, so a wide glyph
+misaligns nothing the eye reads. But 🎭persona and 👤 ride inside the
+*flex* column, so counting a wide glyph as one cell under-truncates the
+row and a 60-column popup wraps — the very thing v2 exists to stop.
+Truncation and padding measure display cells — `dispWidth`/`truncCells`/
+`padCells` in `cmd/posse/cockpit.go` over an in-tree `wideRanges` table:
+every code point terminals draw two cells wide, East_Asian_Width
+Wide/Fullwidth ∪ Emoji_Modifier_Base, unknown code points defaulting to
+one cell, verified against the terminal's own cursor advance. Still no
+width library; the widths section comment in `cockpit.go` carries the
+full rationale, including why the unknown-narrow default is right.)*
 
 **2. Three sections, one cursor.** SESSIONS · IN PROGRESS · READY WORK,
 each heading with its count. `tab` cycles sections in that order; `j/k`
@@ -126,7 +138,10 @@ the sessions row once it exists, which this layout already accommodates.
 - **Sticky headings.** Cost rows and edge cases; the count in the heading
   and `↑ n more` tell the operator where they are.
 - **`go-runewidth` for exact alignment.** Right answer in general; wrong
-  trade here (one dep for a column that is last anyway).
+  trade here — one dep for what the 2026-08-23 amendment showed is a
+  static table of a few dozen ranges in-tree. (As accepted the rationale
+  was "the column is last anyway"; that reading fell with the amendment,
+  the rejection stands on the table's size.)
 - **Show in_progress inside READY WORK with a marker.** Mixes "waiting" with
   "being done"; the sort keys differ (priority vs stalled-first) and so
   do the actions.
