@@ -182,8 +182,14 @@ func TestGrokIsARegisteredProvider(t *testing.T) {
 	if _, ok := CostProviderFor("grok"); !ok {
 		t.Fatal("grok must have an adapter")
 	}
-	if _, ok := CostProviderFor("codex"); ok {
-		t.Fatal("codex has no adapter yet (rangerhq-0va) — it must stay uncounted")
+	if _, ok := CostProviderFor("codex"); !ok {
+		t.Fatal("codex must have an adapter (rangerhq-0va)")
+	}
+	// The other half of the comma-ok, and the half that has to keep working
+	// as adapters are added: a runtime nobody wrote one for is NOT found, so
+	// its sessions stay uncounted rather than landing in a total as $0.
+	if _, ok := CostProviderFor("gemini"); ok {
+		t.Fatal("a runtime with no adapter must not resolve to one")
 	}
 	if _, ok := CostProviderFor("claude"); !ok {
 		t.Fatal("claude must have an adapter")

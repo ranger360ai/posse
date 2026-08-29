@@ -17,8 +17,11 @@ package rhq
 // the provider seam in costseam.go: price table + transcript locator + record
 // decoder is the whole provider surface, and everything below []*Segment in
 // this file is arithmetic that never learns a provider's name (ADR 0012 D4).
-// A runtime with no adapter — codex today — is reported as uncounted, never
-// as $0. grok has an adapter (cost_grok.go).
+// A runtime with no adapter is reported as uncounted, never as $0. Three
+// ship: claude (cost_claude.go), grok (cost_grok.go) and codex
+// (cost_codex.go). The last two run on subscription seats and have no rate
+// card — grok reports its own dollars per turn, codex reports none at all and
+// its beads print turns and tokens with a BLANK in the $ column (Segment.Priced).
 
 import (
 	"bufio"
@@ -132,7 +135,12 @@ func (u Usage) Cost() float64 {
 // Segment is the work on one bead (or an interactive stretch) in one
 // transcript.
 type Segment struct {
-	Bead    string // bead id, or "interactive"
+	Bead string // bead id, or "interactive"
+	// Runtime is the adapter that counted this segment, filled by the scan
+	// from CostProvider.Runtime() so no decoder can forget it. It is what
+	// makes a mixed day readable: two beads with the same tier and persona
+	// can have been paid for out of two different pools.
+	Runtime string
 	File    string
 	Start   time.Time
 	End     time.Time
@@ -165,6 +173,20 @@ type Segment struct {
 	// — the report says so rather than letting the gap read as $0.
 	Unpriced int
 }
+
+// Priced reports whether this segment's dollars are a measurement at all.
+//
+// False means the two ways of learning what it cost both came up empty: every
+// token-bearing message on it was on a model with no rate, and the provider
+// named no money either. That is a codex segment — a subscription seat
+// reports no cost and no list rate applies to one — and the report prints a
+// BLANK there rather than 0.00, because a zero in a money column reads as
+// "this bead was free" and it was not. Same rule as uncounted-never-$0 (ADR
+// 0012 D4, ADR 0018 §3), pointed at one segment's dollars.
+//
+// A segment that IS partly priced stays priced: its number is a floor, which
+// the report's unpriced line already says, and a floor is still a number.
+func (s *Segment) Priced() bool { return s.Unpriced == 0 || s.CostUSD > 0 }
 
 // NotePricedTurn adds one turn's cost that the provider already priced.
 func (s *Segment) NotePricedTurn(usd float64) {
@@ -443,7 +465,12 @@ type CostReport struct {
 	Interactive Usage
 	InterCost   float64
 	InterTurns  int
-	Uncounted   int // persona sessions on runtimes with no cost adapter
+	// InterBlank counts interactive turns whose dollars were never measured
+	// — the same gap the per-bead table prints as a blank, which here would
+	// otherwise hide inside a mixed turn count and quietly deflate the
+	// interactive-to-fleet ratio the line exists to show.
+	InterBlank int
+	Uncounted  int // persona sessions on runtimes with no cost adapter
 	// UncountedRuntimes names those runtimes, sorted and deduped, so the
 	// report can say which spend is missing instead of naming a fixed pair.
 	UncountedRuntimes []string
@@ -516,6 +543,7 @@ func (r *CostReport) scanProvider(p CostProvider, project string, since time.Tim
 			continue
 		}
 		for _, s := range segs {
+			s.Runtime = p.Runtime()
 			if s.Bead == "interactive" {
 				u, c := s.Sum(), s.CostUSD
 				r.Interactive.In += u.In
@@ -524,6 +552,9 @@ func (r *CostReport) scanProvider(p CostProvider, project string, since time.Tim
 				r.Interactive.Out += u.Out
 				r.InterCost += c
 				r.InterTurns += s.Turns()
+				if !s.Priced() {
+					r.InterBlank += s.Turns()
+				}
 				continue
 			}
 			r.Beads = append(r.Beads, s)
@@ -601,6 +632,29 @@ func (r *CostReport) CountUnpriced() int {
 	return n
 }
 
+// BlankBeads names the beads whose dollars were never measured — every
+// segment of theirs unpriced (Segment.Priced false). ByBead reports 0.00 for
+// exactly these, and a caller that renders that 0 as money says a codex bead
+// was free. It is a separate lookup rather than a flag on the ByBead value
+// because a bead worked on BOTH a priced and an unpriced runtime — the same
+// id appearing on claude and on codex, which the live ledger does contain —
+// has a real number that is a floor, and belongs in neither category's
+// simple reading.
+func (r *CostReport) BlankBeads() map[string]bool {
+	measured, blank := map[string]bool{}, map[string]bool{}
+	for _, s := range r.Beads {
+		if s.Priced() {
+			measured[s.Bead] = true
+			continue
+		}
+		blank[s.Bead] = true
+	}
+	for id := range measured {
+		delete(blank, id)
+	}
+	return blank
+}
+
 // ByBead returns cost per bead id (summed over its segments).
 func (r *CostReport) ByBead() map[string]float64 {
 	out := map[string]float64{}
@@ -640,10 +694,22 @@ func (r *CostReport) PassTotal(passStart time.Time) float64 {
 	return total
 }
 
+// costBlank is what the api$ column prints when a segment's dollars were
+// never measured — width-matched to the "%7.2f" a priced row prints, so the
+// column stays a column. It is a marker and not an empty string on purpose: a
+// truly blank cell is indistinguishable from a rendering bug, and the legend
+// has something to name.
+const costBlank = "      —"
+
 type costGroup struct {
-	Key   string
-	N     int
-	Cost  float64
+	Key  string
+	N    int
+	Cost float64
+	// Blank counts the segments in this group whose dollars are unknown
+	// (Segment.Priced false). Cost is the sum of the rest, so Blank == N
+	// means the group has no money in it at all — which prints as a blank,
+	// not as $0.00 — and 0 < Blank < N means Cost is a floor.
+	Blank int
 	costs []float64
 }
 
@@ -657,6 +723,10 @@ func groupBy(segs []*Segment, key func(*Segment) string) []costGroup {
 			m[k] = g
 		}
 		g.N++
+		if !s.Priced() {
+			g.Blank++
+			continue
+		}
 		g.Cost += s.CostUSD
 		g.costs = append(g.costs, s.CostUSD)
 	}
@@ -677,19 +747,39 @@ func median(v []float64) float64 {
 	return c[len(c)/2]
 }
 
-// Print renders the report: per bead, then by tier / persona / day, then
-// interactive and the uncounted note.
+// Print renders the report: per bead, then by runtime / tier / persona / day,
+// then interactive and the uncounted note.
+//
+// Two kinds of row share the money column and must never be confused. A
+// PRICED segment prints a figure; an unpriced one prints costBlank and is
+// kept out of every statistic — it is not averaged in as a zero, not summed,
+// and not counted in a median. A number computed over blanks would be a
+// number about a pool that has no dollars, presented beside one that does.
 func (r *CostReport) Print(w io.Writer) {
-	fmt.Fprintf(w, "%-16s %-16s %-8s %-8s %5s %8s %9s %10s %7s\n", "bead", "start", "persona", "tier", "turns", "out", "cache_w", "cache_r", "api$")
+	fmt.Fprintf(w, "%-16s %-16s %-8s %-8s %-8s %5s %8s %9s %10s %7s\n", "bead", "start", "persona", "runtime", "tier", "turns", "out", "cache_w", "cache_r", "api$")
 	var all []float64
+	blankRuntimes := map[string]bool{}
 	for _, s := range r.Beads {
-		u, c := s.Sum(), s.CostUSD
-		all = append(all, c)
-		p := s.Persona
+		u := s.Sum()
+		p, rt := s.Persona, s.Runtime
 		if p == "" {
 			p = "?"
 		}
-		fmt.Fprintf(w, "%-16s %-16s %-8s %-8s %5d %8d %9d %10d %7.2f\n", s.Bead, s.Start.Local().Format("2006-01-02 15:04"), p, TierForModel(s.Model), s.Turns(), u.Out, u.CacheW, u.CacheR, c)
+		if rt == "" {
+			rt = "?"
+		}
+		// The $ column: a number when this segment's dollars were measured,
+		// the blank marker when they were not. Only measured dollars join
+		// the summary line below — averaging a blank as zero would drag
+		// every statistic under it toward a number nobody counted.
+		money := costBlank
+		if s.Priced() {
+			money = fmt.Sprintf("%7.2f", s.CostUSD)
+			all = append(all, s.CostUSD)
+		} else {
+			blankRuntimes[rt] = true
+		}
+		fmt.Fprintf(w, "%-16s %-16s %-8s %-8s %-8s %5d %8d %9d %10d %7s\n", s.Bead, s.Start.Local().Format("2006-01-02 15:04"), p, rt, TierForModel(s.Model), s.Turns(), u.Out, u.CacheW, u.CacheR, money)
 	}
 	if len(all) > 0 {
 		sum := 0.0
@@ -707,9 +797,27 @@ func (r *CostReport) Print(w io.Writer) {
 		}
 		fmt.Fprintf(w, "\nby %s:\n", title)
 		for _, g := range gs {
-			fmt.Fprintf(w, "  %-14s %3d bead(s)  sum $%7.2f  median $%.2f  per-bead $%.2f\n", g.Key, g.N, g.Cost, median(g.costs), g.Cost/float64(g.N))
+			if g.Blank == g.N { // nothing in this group had a price at all
+				fmt.Fprintf(w, "  %-14s %3d bead(s)  sum %8s  (no bead here has a rate — turns and tokens above are the measurement)\n", g.Key, g.N, costBlank)
+				continue
+			}
+			priced := g.N - g.Blank
+			floor := ""
+			if g.Blank > 0 {
+				floor = fmt.Sprintf("  (%d of %d unpriced — sum is a floor, median and per-bead are over the %d priced)", g.Blank, g.N, priced)
+			}
+			fmt.Fprintf(w, "  %-14s %3d bead(s)  sum $%7.2f  median $%.2f  per-bead $%.2f%s\n", g.Key, g.N, g.Cost, median(g.costs), g.Cost/float64(priced), floor)
 		}
 	}
+	// Runtime first of the groupings: on a mixed day it is the one that says
+	// which numbers are dollars and which are blanks, and the tier and
+	// persona rows below read differently once you know.
+	section("runtime (the pool the work was paid out of)", groupBy(r.Beads, func(s *Segment) string {
+		if s.Runtime == "" {
+			return "?"
+		}
+		return s.Runtime
+	}))
 	section("tier (from the model that did the work)", groupBy(r.Beads, func(s *Segment) string { return TierForModel(s.Model) }))
 	section("persona (bead assignee)", groupBy(r.Beads, func(s *Segment) string {
 		if s.Persona == "" {
@@ -730,7 +838,20 @@ func (r *CostReport) Print(w io.Writer) {
 	if n := r.CountUnpriced(); n > 0 {
 		fmt.Fprintf(w, "\nunpriced: %d message(s) on models with no rate — their spend is unknown, not zero, so every $ above is a floor\n", n)
 	}
-	fmt.Fprintf(w, "\ninteractive: %d turns, api-equiv $%.2f (not gated — shown so the ratio is visible)\n", r.InterTurns, r.InterCost)
+	if len(blankRuntimes) > 0 {
+		which := make([]string, 0, len(blankRuntimes))
+		for rt := range blankRuntimes {
+			which = append(which, rt)
+		}
+		sort.Strings(which)
+		fmt.Fprintf(w, "legend: %q in api$ means the runtime reported no cost and no rate card here applies (%s) — the turns and tokens on those rows ARE the measurement, and a blank beats a number this report would have invented\n",
+			strings.TrimSpace(costBlank), strings.Join(which, "/"))
+	}
+	blank := ""
+	if r.InterBlank > 0 {
+		blank = fmt.Sprintf(", %d of them unpriced so the $ is a floor", r.InterBlank)
+	}
+	fmt.Fprintf(w, "\ninteractive: %d turns%s, api-equiv $%.2f (not gated — shown so the ratio is visible)\n", r.InterTurns, blank, r.InterCost)
 	if r.Uncounted > 0 {
 		which := strings.Join(r.UncountedRuntimes, "/")
 		if which == "" {

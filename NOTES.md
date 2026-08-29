@@ -2218,23 +2218,86 @@ such: `blocked-honestly` is a dispatch-side outcome, and
 neither is computed yet.
 
 `posse cost [--since <date>] [--project <substr>] | --plan` is ADR 0003 §4's
-accounting: the analyst's `bead-cost.py` method in Go. Claude Code transcripts
-(`~/.claude/projects/*/*.jsonl`) are segmented by the dispatcher's "Work
-beads issue <id>" prompts; assistant records are deduped by message id
-(streamed chunks repeat it — max per usage field) and priced at list
-rates per MTok for the model each record names (fable 10/50, opus 5/25,
-sonnet 3/15, haiku 1/5; cache write 1.25× input for 5m TTL and 2× for 1h
-when the breakdown is present, else 1.25× flat as the script did; cache
-read 0.1×; unknown ids fall back by family, then to fable — the expensive
-assumption). Output: per bead (start, persona from the bead's assignee,
-tier from the model that did the work, turns, tokens, api$), then by
-tier / persona / day with median and per-bead, the interactive total
-(never gated, shown for the ratio), and honest gaps: codex/grok sessions
-leave no transcript here and are reported as *uncounted*, never $0; per
-pass is not attributable until dispatch records a pass id
-(rangerhq-25p). The cockpit shows each per-bead session's running cost
-and the day total in the footer (rescanned every 30s off the event
-loop). The metric `cost-per-closed-bead` has a scorecard answerer for
+accounting: the analyst's `bead-cost.py` method in Go. Every runtime with a
+**cost adapter** (ADR 0012 D4, `internal/rhq/costseam.go`) is segmented by the
+dispatcher's "Work beads issue <id>" prompts; three ship, and a runtime with
+no adapter is reported as *uncounted*, never $0.
+
+- **claude** — `~/.claude/projects/*/*.jsonl`. Assistant records are deduped
+  by message id (streamed chunks repeat it — max per usage field) and priced
+  at list rates per MTok for the model each record names (fable 10/50, opus
+  5/25, sonnet 3/15, haiku 1/5; cache write 1.25× input for 5m TTL and 2× for
+  1h when the breakdown is present, else 1.25× flat as the script did; cache
+  read 0.1×). An id matching no family is **unpriced, not guessed**: the
+  report says the total is a floor rather than putting an invented number in
+  the same column as real money.
+- **grok** — `~/.grok/sessions/<url-encoded cwd>/<uuid>/updates.jsonl`. grok
+  reports its own dollars (`costUsdTicks`, nano-dollars) per turn, so there is
+  no rate card to keep current; the `modelUsage` breakdown restates the same
+  spend and is deliberately not read (reading both is exactly 2×).
+- **codex** — `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, decoded from the
+  `token_count` events' **cumulative** `total_token_usage` by charging each
+  segment the delta since the previous snapshot. Not by summing
+  `last_token_usage`: codex re-emits a token_count with an identical snapshot
+  a fraction of a second later, so summing the per-turn field reports ~2× —
+  measured 2026-08-28 over the whole local history, 100 of 163 rollouts carry
+  such duplicates and 15 of those were written by 0.147.0, the version running
+  here, so it is not a version to wait out. Not by maxing the snapshot either:
+  that is dedupe-proof but cannot attribute, so a session working two beads
+  would charge the second one the first one's spend. Delta-from-cumulative is
+  both; verified on all 159 local rollouts that carry token counts, the deltas
+  sum to the file's final `total_token_usage` on 159 of 159 with no snapshot
+  ever going backwards. Two field facts the shape depends on: `input_tokens`
+  INCLUDES `cached_input_tokens`, and `reasoning_output_tokens` is a SUBSET of
+  `output_tokens`.
+
+**What is priced and what is not.** claude beads carry API-equivalent dollars.
+grok beads carry the provider's own dollars. **codex beads carry no dollars at
+all** and print a `—` in the `api$` column with a legend saying why: codex runs
+on the operator's ChatGPT subscription, which reports no per-turn cost, and no
+list rate applies to a plan seat. Their turns and tokens ARE the measurement.
+A blank is deliberate — an invented figure at another provider's rates would
+land in the same total as real money with nothing marking which dollars were
+guessed, and would then move a budget window (ADR 0003 Dial E) on a number
+nobody measured. Unpriced rows are excluded from the summary statistics and
+from every group sum, and each group says so — a mixed group appends
+`(3 of 12 unpriced — sum is a floor, median and per-bead are over the 9 priced)`,
+and a group where `no bead here has a rate` prints a bare `—` for its sum.
+
+Output: per bead (start, persona from the bead's assignee, **runtime**, tier
+from the model that did the work, turns, tokens, api$), then by runtime /
+tier / persona / day with median and per-bead, the interactive total (never
+gated, shown for the ratio, and it names its own unpriced turns), and the
+honest gaps — per pass is not attributable until dispatch records a pass id
+(rangerhq-25p). The runtime column is what makes a mixed day readable: two
+beads with the same tier and persona can have come out of two different pools,
+and only one of them has a dollar figure. **Tier is `?` on codex and grok**, and
+that is not an oversight: tier is re-derived from the model id that did the
+work, `codexModels` names the same id (`gpt-5.6-sol`) for both strong and
+standard, and no grok model id is mapped at all — so the id does not identify
+a tier there and the report says `?` rather than picking one. The cockpit shows
+each per-bead session's running cost and the day total in the footer (rescanned
+every 30s off the event loop).
+
+**codex has a plan meter, and it is a hint, not a guard.** Every codex
+`token_count` event also carries `payload.rate_limits`: `limit_id`,
+`plan_type`, `primary`/`secondary` each `{used_percent, window_minutes,
+resets_at}`, and `credits {has_credits, unlimited, balance}` plus
+`spend_control_reached` — the same reading `planusage.go` gets from Claude's
+endpoint, on disk, no network and no keychain. rangerhq-0va item 4 asked for
+it in the cockpit header beside Claude's; **ADR 0034** decided the shape, and
+it is not a second guard: the plan-window seam stays singular and codex enters
+as a typed `PlanHint` that can refuse an overflow but never park a pass,
+because the reading is a snapshot outside its store of record whose staleness
+is unbounded in the dangerous direction — the pool is account-wide, the
+rollouts are box-local, so codex on another device drains it without this
+file moving. Windows are named by duration (`codex_5h`, `codex_7d`), never by
+slot: primary was the 5h window Jan–Jun 2026 and the weekly one in Aug, so a
+slot-named threshold changes meaning under you — and `plan_type` moves too
+(team → plus). Implementation is ranger-base-xb5f (the reader), -ormb
+(display, always with the reading's age) and -3o10 (the overflow advisory).
+
+The metric `cost-per-closed-bead` has a scorecard answerer for
 h2c — `posse cost` by bead id against closes — so a PID that declares it
 reads as `computed`. `--plan` skips all of the above and prints only the
 plan's own rate windows (the plan-guard section has the reading); it takes

@@ -111,7 +111,11 @@ type cockpit struct {
 	// a runtime an adapter: the label follows the registry.
 	costUncounted         int
 	costUncountedRuntimes []string
-	costDayCap            float64 // config budget_day: (ADR 0003 Dial E); 0 = no cap
+	// costBlankBeads names the beads whose runtime IS counted but whose
+	// dollars are not a number at all (ADR 0012 D4) — a codex bead, where
+	// ByBead's 0.00 means "no rate card applies", never "it was free".
+	costBlankBeads map[string]bool
+	costDayCap     float64 // config budget_day: (ADR 0003 Dial E); 0 = no cap
 	// costUnread is how many transcripts the last scan could NOT read
 	// (ADR 0018 §3) — a COUNT and not the error, for the same reason
 	// govRead.failed is: the footer is one line and the cockpit owns the
@@ -229,6 +233,7 @@ func (c *cockpit) applyCost(rep *rhq.CostReport) {
 	c.costToday = rep.DayTotal(time.Now())
 	c.costUncounted = rep.Uncounted
 	c.costUncountedRuntimes = rep.UncountedRuntimes
+	c.costBlankBeads = rep.BlankBeads()
 	c.costDayCap = rep.DayCap
 	c.costUnread = rep.Unread
 	c.costAt = time.Now()
@@ -396,6 +401,15 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 		return ""
 	}
 	bead := strings.TrimPrefix(s.Name, prefix)
+	// Counted runtime, unmeasurable dollars: codex reports no cost and no
+	// rate card applies to a plan seat, so its bead sits in costByBead at
+	// 0.00. Printing that would say the bead was free — the same lie
+	// $uncounted exists to avoid, one step further in (`posse cost` prints a
+	// blank in the same place). Checked before the lookup, which cannot tell
+	// this 0 from a real one.
+	if c.costBlankBeads[bead] {
+		return "$unpriced"
+	}
 	if cost, ok := c.costByBead[bead]; ok {
 		return fmt.Sprintf("$%.2f", cost)
 	}

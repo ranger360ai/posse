@@ -243,16 +243,18 @@ func fixture() *cockpit {
 		sessions: []rhq.HerdrSession{
 			{Name: rhq.SessionForBead("devops", repoDir, "rangerhq-h3n"), Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: repoDir},
 			{Name: rhq.SessionForBead("developer", repoDir, "rangerhq-fei"), Emoji: "🐿️", Agent: "developer", Status: "working", Dir: repoDir, Focused: true},
-			{Name: rhq.SessionFor("business-manager", repoDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: repoDir, Runtime: "codex", Tier: "premium"},
+			{Name: rhq.SessionFor("business-manager", repoDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: repoDir, Runtime: "gemini", Tier: "premium"},
 			{Name: "notes", Emoji: "📓", Status: "", Crew: true},
 		},
 		costByBead:    map[string]float64{"rangerhq-fei": 1.25},
 		costToday:     4.5,
 		costDayCap:    20,
 		costUncounted: 1,
-		// The fixture's one uncounted session is the codex one above; the
-		// footer names it from here, never from a hardcoded runtime pair.
-		costUncountedRuntimes: []string{"codex"},
+		// The fixture's one uncounted session is the gemini one above — a
+		// runtime with no cost adapter, which is what "uncounted" means
+		// (ADR 0012 D4). It was codex until codex gained one (rangerhq-0va);
+		// the footer names it from here, never from a hardcoded runtime pair.
+		costUncountedRuntimes: []string{"gemini"},
 		costAt:                at,
 		status:                "dispatched rangerhq-fei → developer-rangerhq-fei",
 	}
@@ -1433,25 +1435,60 @@ func TestCockpitApplyCostCarriesTheScansReadFailures(t *testing.T) {
 	}
 }
 
+// A counted runtime whose dollars are not a number is the third state, and
+// the cockpit had only two: `$uncounted` (no adapter) and a figure. codex has
+// an adapter and no rate card — a plan seat reports no cost — so its beads
+// land in ByBead at 0.00, and rendering that as money says the bead was free.
+//
+// Both arms, because a lookup cannot tell this 0 from a real one: the codex
+// bead reads $unpriced, and a claude bead that genuinely cost $0.00 still
+// prints its zero.
+func TestCockpitSessionCostIsBlankForACountedRuntimeWithNoRate(t *testing.T) {
+	cx := &rhq.Segment{Bead: "c-1", Runtime: "codex", Model: "gpt-5.6-sol", Start: time.Now(),
+		Msgs: map[string]*rhq.Usage{"turn-0": {Model: "gpt-5.6-sol", In: 1000, Out: 200}}}
+	free := &rhq.Segment{Bead: "a-1", Runtime: "claude", Model: "claude-opus-5", Start: time.Now(),
+		Msgs: map[string]*rhq.Usage{"m1": {Model: "claude-opus-5"}}}
+	cx.Total()
+	free.Total()
+	c := &cockpit{}
+	c.applyCost(&rhq.CostReport{Beads: []*rhq.Segment{cx, free}})
+	if !c.costBlankBeads["c-1"] || c.costBlankBeads["a-1"] {
+		t.Fatalf("applyCost did not carry the blank beads: %v", c.costBlankBeads)
+	}
+	cost := func(agent, bead string) string {
+		return c.sessionCost(rhq.HerdrSession{
+			Name: rhq.SessionForBead(agent, repoDir, bead), Agent: agent, Dir: repoDir, Runtime: "codex"})
+	}
+	if got := cost("dev", "c-1"); got != "$unpriced" {
+		t.Errorf("codex bead cost %q, want $unpriced — 0.00 would say it was free", got)
+	}
+	if got := cost("qa", "a-1"); got != "$0.00" {
+		t.Errorf("a bead that really cost nothing keeps its zero: %q", got)
+	}
+}
+
 // The same wiring one field over, and the reason it is its own test: the
 // uncounted label used to be the literal string "codex/grok", written when
-// neither had an adapter. grok has one now (ADR 0012 D4), so that label names
-// a runtime whose spend IS in the number beside it — a live grok session and
-// a live codex session would print "1 codex/grok session(s) uncounted" and
-// send an operator looking for the wrong gap. The names come from the report,
-// which builds them from the registry, so the footer follows the adapters.
+// neither had an adapter. Both have one now (ADR 0012 D4), so that label
+// named runtimes whose spend IS in the number beside it and sent an operator
+// looking for the wrong gap. The names come from the report, which builds
+// them from the registry, so the footer follows the adapters — which is why
+// the negative arm here asks the registry rather than spelling a name that
+// will be wrong again on the next adapter.
 func TestCockpitFooterNamesTheUncountedRuntimes(t *testing.T) {
-	rep := &rhq.CostReport{Uncounted: 1, UncountedRuntimes: []string{"codex"}}
+	rep := &rhq.CostReport{Uncounted: 1, UncountedRuntimes: []string{"gemini"}}
 	c := &cockpit{}
 	c.applyCost(rep)
-	if len(c.costUncountedRuntimes) != 1 || c.costUncountedRuntimes[0] != "codex" {
+	if len(c.costUncountedRuntimes) != 1 || c.costUncountedRuntimes[0] != "gemini" {
 		t.Fatalf("applyCost dropped the runtime names: %v", c.costUncountedRuntimes)
 	}
 	line := c.footerLines(200)[1]
-	if !strings.Contains(line, "1 codex session(s) uncounted") {
+	if !strings.Contains(line, "1 gemini session(s) uncounted") {
 		t.Errorf("the footer must name the runtime the scan could not count: %q", line)
 	}
-	if strings.Contains(line, "grok") {
-		t.Errorf("grok has an adapter; naming it as uncounted is the defect: %q", line)
+	for _, counted := range rhq.CountedRuntimes() {
+		if strings.Contains(line, counted) {
+			t.Errorf("%s has an adapter; naming it as uncounted is the defect: %q", counted, line)
+		}
 	}
 }
