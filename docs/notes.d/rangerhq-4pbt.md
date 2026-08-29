@@ -59,11 +59,13 @@ buys nothing under the wall is not the form to teach, so the prescription is
 the plain scoped add.
 
 **The residual, stated rather than closed.** Between the `git add` and the
-commit your entry is in the shared index, open to another persona's
-unqualified commit — rangerhq-nyqj exactly. It is narrow only because the wall
-refuses that form for personas and the operator is exempt; keep the two
-commands adjacent and name the new paths in the commit. rangerhq-09o2's
-per-session worktrees remove the shared index and the whole question.
+commit your entry is in the shared index, open to someone else's unqualified
+commit — rangerhq-nyqj exactly. It is narrow because the wall refuses that
+form, and since rangerhq-lt2w dropped the operator carve-out it refuses it for
+every shell in the checkout; what is left open is the `.` pathspec the refusal
+already names. Keep the two commands adjacent and name the new paths in the
+commit. rangerhq-09o2's per-session worktrees remove the shared index and the
+whole question.
 
 **Where it is said now.** Both layers name the route, because they fail in
 different trees: L3 (`sharedIndexBody`) carries the full form with the

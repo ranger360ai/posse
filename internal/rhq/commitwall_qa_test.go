@@ -51,6 +51,30 @@ func commitWallRepo(t *testing.T) (repo string, git func(env []string, args ...s
 	return repo, git, []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gates}
 }
 
+// unwalledRepo is commitWallRepo without the hook: a scratch repo where the
+// sweeping forms actually RUN, so what a cell below measures is git's answer
+// and not the wall's. It has to be its own repo since rangerhq-lt2w dropped
+// the operator carve-out — there is no env that gets a sweep past the wall
+// in a repo that carries it, which is the point of that bead.
+func unwalledRepo(t *testing.T) (string, func(env []string, args ...string) (string, error)) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	return repo, func(env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+}
+
 // TestQACommitWallRefusalNamesTheInFlightEdit is rangerhq-lvu9's DONE WHEN,
 // taken from the wall rather than from the source string: the refusal a
 // persona actually sees must say that a named path commits the file as it
@@ -341,9 +365,11 @@ func TestQAL1CommitRefusalNamesTheNewFileRoute(t *testing.T) {
 // the pathspec match and looks like it closes the residual.
 //
 // The whole 3×4 matrix, measured against the real sweeping forms with
-// another persona's entry staged throughout (run as the operator, who is
-// exempt, so the sweep actually executes and the cell is git's answer and
-// not the wall's). `-N` differs from the plain add on exactly the forms the
+// another persona's entry staged throughout, in a repo carrying no hook —
+// since rangerhq-lt2w dropped the operator carve-out there is no env that
+// gets a sweep past the wall, and what each cell has to say is git's answer
+// and not the wall's. The wall column of the table in
+// docs/notes.d/rangerhq-4pbt.md is the sibling pins' subject, not this one's. `-N` differs from the plain add on exactly the forms the
 // wall already refuses, and matches it on `commit -- .` — the one hole the
 // refusal names and only rangerhq-09o2 closes. It also converts a file that
 // `-a` and `.` would skip outright into one they take. A less-known flag
@@ -369,7 +395,7 @@ func TestQANewFileStagingFormsAgainstEverySweeper(t *testing.T) {
 	for stage, want := range want {
 		for sweep, wantTaken := range want {
 			t.Run(stage+"/"+sweep, func(t *testing.T) {
-				repo, git, _ := commitWallRepo(t)
+				repo, git := unwalledRepo(t)
 				write := func(n, b string) {
 					if err := os.WriteFile(filepath.Join(repo, n), []byte(b), 0o644); err != nil {
 						t.Fatal(err)
@@ -391,7 +417,7 @@ func TestQANewFileStagingFormsAgainstEverySweeper(t *testing.T) {
 					t.Fatalf("stage theirs: %v %s", err, out)
 				}
 				if out, err := git(nil, sweeps[sweep]...); err != nil {
-					t.Fatalf("the sweep must run (the operator is exempt): %v %s", err, out)
+					t.Fatalf("the sweep must run — this repo carries no wall: %v %s", err, out)
 				}
 				// The witness: every sweeper here does take SOMETHING, so a
 				// "not taken" cell is a fact about the new file and not a
