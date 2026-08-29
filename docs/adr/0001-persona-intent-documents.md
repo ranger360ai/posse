@@ -1,6 +1,8 @@
 # ADR 0001 — Persona Intent Documents (PIDs)
 
-*Status: accepted 2026-08-15 · amended 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-15 · amended 2026-08-18 · amended 2026-08-29
+(Consequences: the scaffold's `deny:` seeds the commit wall —
+ranger-base-w1ny) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -203,7 +205,19 @@ sets, `--add-dir {memory}`, and the bead itself.
   memory dir.
 - **`posse agent new`** scaffolds the PID shape (frontmatter keys present
   and empty, headings present with one-line hints), so a new persona
-  starts as a PID rather than a job title.
+  starts as a PID rather than a job title. One deliberate exception
+  (amended 2026-08-29, ranger-base-w1ny): `deny:` ships one real rule,
+  `Bash(git commit unless --)` — the L1 half of the commit wall
+  (ranger-base-09b7). The rationale: L3 is a repo hook that exists only
+  where something installed it, while a typed-line deny reaches every
+  repo and runtime; deny-wins means a seeded rule can never grant
+  anything; and the rule leaves open exactly the path-limited form
+  (`git commit … -- <paths>`) that the single-writer convention
+  requires (ADR 0022). "Shape but no policy" was measured as the gap,
+  not the purity: a persona created from the all-empty scaffold carried
+  no commit wall at all in a repo with no hook. This is the only rule
+  the scaffold seeds — anything narrower than a crew-wide invariant
+  still belongs to the authored PID, not the scaffold.
 - **Guardrails become partly enforceable** at zero policy-engine cost:
   the CLI already does deny-wins. What cannot be a tool rule (e.g. "no
   publishing under the operator's name" — the model can still draft)
