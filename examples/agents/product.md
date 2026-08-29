@@ -13,6 +13,7 @@ allow:
   - Bash(git log:*)
 deny:
   - Bash(git push:*)
+  - Bash(git commit unless --)
   - Bash(posse promote:*)
   - Bash(posse refresh:*)
   - Bash(bd daemon:*)

@@ -205,14 +205,30 @@ func TestScaffoldAgentIsPID(t *testing.T) {
 		t.Errorf("description hint mangled: %q", ag.Description)
 	}
 	// Commented hints must not leak into the lists.
-	for field, got := range map[string][]string{"labels": ag.Labels, "intents": ag.Intents, "allow": ag.Allow, "deny": ag.Deny, "metrics": ag.Metrics} {
+	for field, got := range map[string][]string{"labels": ag.Labels, "intents": ag.Intents, "allow": ag.Allow, "metrics": ag.Metrics} {
 		if len(got) != 0 {
 			t.Errorf("%s: want empty, got %v", field, got)
 		}
 	}
-	// A hint-free {allow}/{deny} render is a plain launch.
-	if r := ag.RenderCommand(); strings.Contains(r, "{allow}") || strings.Contains(r, "{deny}") || strings.Contains(r, "--allowedTools") || strings.Contains(r, "--disallowedTools") {
-		t.Errorf("render leaked placeholders or empty flags: %s", r)
+	// deny: is the one list the scaffold does not leave empty. A scaffolded
+	// PID got no deny at all until ranger-base-09b7, so `posse agent new`
+	// handed out personas with no L1 commit wall — the half that lands on
+	// the typed line and reaches repos where no L3 hook is installed.
+	if len(ag.Deny) != 1 || ag.Deny[0] != "Bash(git commit unless --)" {
+		t.Errorf("deny: want exactly [Bash(git commit unless --)], got %v", ag.Deny)
+	}
+	if !deniesUnqualifiedCommit(ag.Deny) {
+		t.Error("the scaffold's commit rule is not one L1 realizes as a negative match")
+	}
+	// The render: no placeholders, no empty --allowedTools (allow IS empty),
+	// and the deny arrives as the two exact L0 spellings the negative rule
+	// widens into for a dialect with no negation.
+	r := ag.RenderCommand()
+	if strings.Contains(r, "{allow}") || strings.Contains(r, "{deny}") || strings.Contains(r, "--allowedTools") {
+		t.Errorf("render leaked placeholders or an empty flag: %s", r)
+	}
+	if !strings.Contains(r, "--disallowedTools 'Bash(git commit)' 'Bash(git -* commit)'") {
+		t.Errorf("render does not carry the scaffold's deny: %s", r)
 	}
 
 	// Body: identity line first, then the headings in contract order.
@@ -322,10 +338,21 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 			t.Errorf("%s: ## Memory lacks the ORDERS.md instruction", name)
 		}
 	}
-	// business-manager is advisory by construction.
+	// business-manager is advisory by construction — Edit and Write are what
+	// make it structural. Its commit deny used to be a blanket
+	// `Bash(git commit:*)`, which also closed the ONE form the commit wall
+	// is built to leave open; ranger-base-09b7 reconciled it with the rest
+	// of the seed, so the assertion is Edit/Write plus the wall's own rule.
 	bm, _ := a.LoadAgent("business-manager")
-	if bm != nil && !strings.Contains(strings.Join(bm.Deny, "|"), "Edit|Write|Bash(git commit:*)") {
-		t.Errorf("business-manager deny must cover Edit/Write/git commit: %v", bm.Deny)
+	if bm != nil {
+		if !strings.Contains(strings.Join(bm.Deny, "|"), "Edit|Write") {
+			t.Errorf("business-manager deny must cover Edit/Write: %v", bm.Deny)
+		}
+		for _, d := range bm.Deny {
+			if strings.HasPrefix(d, "Bash(git commit") && d != "Bash(git commit unless --)" {
+				t.Errorf("business-manager: %q closes the path-limited form the wall leaves open", d)
+			}
+		}
 	}
 }
 

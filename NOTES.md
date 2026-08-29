@@ -2514,9 +2514,12 @@ plan's own rate windows (the plan-guard section has the reading); it takes
 no other flags, because there is nothing for a date or a project to select.
 
 `posse agent new <name>` scaffolds the PID shape — every frontmatter key
-present (lists empty, commented hints), every body heading in contract
-order with a one-line hint, the four hard risk lines verbatim
-(`HardRiskLines`) — and opens it in $EDITOR; `posse agent edit <name>`
+present (lists empty and commented, with one exception: `deny:` ships
+`Bash(git commit unless --)` as a real entry, because a scaffolded persona
+with no deny at all got the commit wall's L3 half and none of its L1 half,
+ranger-base-09b7), every body heading in contract order with a one-line
+hint, the four hard risk lines verbatim (`HardRiskLines`) — and opens it in
+$EDITOR; `posse agent edit <name>`
 reopens it. The scaffold parses with `LoadAgent` untouched. `posse agent
 check <name>|--all` lints PIDs against the contract (identity line,
 sections present and ordered, Intents table header, hard risk lines

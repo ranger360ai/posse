@@ -24,6 +24,7 @@ allow:
 deny:
   - Bash(git push:*)
   - Bash(git push --force:*)
+  - Bash(git commit unless --)
   - Bash(posse promote:*)
   - Bash(posse refresh:*)
   - Bash(bd daemon:*)

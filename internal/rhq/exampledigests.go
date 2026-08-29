@@ -59,6 +59,7 @@ var shippedExampleDigests = map[string][]string{
 		"7dd0f1ae0c6c1b0997360f113ac063d866c97cd26f6a99bea54142a1a573901a", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"dd66d0842310140ad27835b837ab4dd20bee835be6093ec72843da04bef99d0e", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"b4144f893833d1fb2553308b6238f3472f2ef0278252f0692a78bcf3fbfd5e39", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"b0f690a30d5c5b781899e9f27c79aa6832ad83b3afe308ce6f6bd42f00f0aa95", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -66,6 +67,7 @@ var shippedExampleDigests = map[string][]string{
 		"4fa50a3f24ec66618508279865f5feb4c33a823a7b986c63ee3e66d9d01c6c03", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"fca1f76ba81ba44a2b67ceb9226315d2b276fb6ddfbaf0334de6e6834e6ec79d", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"437dece74de81e14a80236ada4becbe347a64803fc1cb7ba7e4fd74f0e6c7bc3", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"6322ec2e8598e3c7299d10f52eb9189cf1808e462333a0806ff94a00e7f4efbe", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/developer.md": {
 		"17e0db0cf3780cb6ba6e0ecd0b13d300f1b45d05b470be6df4d43575b43348de", // 5668b76
@@ -74,6 +76,7 @@ var shippedExampleDigests = map[string][]string{
 		"6d80fcc8fdb81545bc90c57a65bb0c129373617193d89aa2a477be057372afbf", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"f25b7c0d58c339fb325066e77dbda50ed2cf3f05db749d2653be3b2d06b1abcb", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"bf7025530a59a0fbc99f461374c3f70efb014cd47766a09d7a22d6daefc409b8", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"7ccf32359553066004eeeae23167d1318551e74b56353130f4b22d03f21ca328", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76
@@ -81,10 +84,12 @@ var shippedExampleDigests = map[string][]string{
 		"aded31fd932c75be7b5ded9652e52906e55db4b067afc06ff48e3a6f3c6d0ca3", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"5eefb4da132b64b31d2bdd5626e80a5b15945ac324be6c0b65bdeec5debac57d", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"1316afeeec3a9bea5bf4363e5e9bc2c63664e98b9cff83111c3156dd9be51b2a", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"f9cafe8aa22275a06f29b134836c5dd96d40190bf9366a5ab57d8d5035abf6e4", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/ops.md": {
 		"7f0b4779b63fac5b004f2855b72d6f58c65e7b4819765b8c5ed5a4a1874d5a47", // rangerhq-o7y4 2026-08-29 ranger.md renamed to a role (ADR 0012 D2)
 		"b49a2f7767bdc3689b7ea29d1daf181f0b63015cd8a220b31de34e9d15f59b54", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"da9eb21e3ff59ce41b5ea38b56ef8dfe192be82fc0515e539ffd2da9f50311ec", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/product.md": {
 		"c9ce6781c6f3b0d3049ff424815993983fb04419272a17ec6ca8328877f426d6", // 5668b76
@@ -92,6 +97,7 @@ var shippedExampleDigests = map[string][]string{
 		"c0226cc675ff6a4c1f1ba779462ebb2774a0467f0709897fe3394f285bbbd1c3", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"7efc9ea64577d54ce84ace41bdcee17be01c8194a9d352152c9ea8d7ed7ea6f0", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"1a26001e224731f960b771e445cccee463de4c747b2c197dfa9b3e9ae7fe0fc8", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"4989ecdf6c358017c3e8030bb239808f2a4f7ec64fba457decfb05d652f7d779", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/qa.md": {
 		"65eeb0b68cda30bb9ed944c9789c4bd26d5e75f3b69a7d85f5c8eab7e4da832a", // 5668b76
@@ -99,6 +105,7 @@ var shippedExampleDigests = map[string][]string{
 		"7e4c8956bb7f7604820fe0df82d3aa052c0e36a1da2a5ea18519725eff939a8c", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"b79572a439fd2bf84df9ac64db045be51d5dd5c3cda879ace11d3575fe03bd1c", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"d22b750b79561763a14a25def379eecb22236abbfff41b99b1ff3fdd5bfe850f", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"fa648aec120575968b94821fb944ab6478bdcdb423f1bd60702e2f42bc58defb", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay
@@ -117,6 +124,7 @@ var shippedExampleDigests = map[string][]string{
 		"b6d9412b85e4d21be46ce21b04fe51cc30112254286ee3d4dac5f432e4daf7f5", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"540527dfe8d62db37c3cbbafd45652f581680c7eee4af195b0ccfe0e384e5739", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"599440774dff9fb8985ad50aefa44fd0e704ab7a2da24bfbf16a9be7a2a5cbcd", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"eb12135f07bf29736afddb1524b449388c17763a73a5a639965e327366f28abd", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 	"agents/security.md": {
 		"d3d07f404ab3099e93525374c8ae94dbfb12f21ef20434d3777a295c050ad8be", // 5668b76
@@ -124,6 +132,7 @@ var shippedExampleDigests = map[string][]string{
 		"bd6f2a52dd3054b4b7158957228caf0af7e34dc85fa0ecfb6fad18b47a198406", // rangerhq-dh5g 2026-08-27 crew brand out of the identity line
 		"1cc09ad6db1c0387cc66482904ff05711cab8822076b087411b0fa4de4143b6a", // ranger-base-kryn 2026-08-28 deny Bash(posse refresh:*) (ADR 0019 D4)
 		"2c65a30a82195d52150cf96c6d361bd850ebcdd2d99552c6b5640f3c4620b84e", // ranger-base-u9ud 2026-08-29 deny bd's destructive/egress verbs (ADR 0015 §3)
+		"f2b37fc94f4e06244287c591369c76a3e1a484e549c68610642938bc5382fdad", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 	},
 }
 

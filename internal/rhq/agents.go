@@ -444,7 +444,13 @@ allow:
   # permission rules added to the repo floor, e.g.
   # - Bash(bd:*)
 deny:
-  # permission rules removed regardless of any allowlist, e.g.
+  # The commit wall's L1 half (ADR 0002's layer table, rangerhq-lmq9):
+  # refuses ` + "`git commit`" + ` unless argv carries ` + "`--`" + ` with a pathspec, so a
+  # persona sharing a checkout commits only files it names. Every shipped
+  # PID carries it, and it is the half that lands on the typed line, before
+  # git runs, in repos where no L3 hook is installed.
+  - Bash(git commit unless --)
+  # more permission rules removed regardless of any allowlist, e.g.
   # - Bash(git push:*)
 metrics:
   # metric-catalog ids (1–2), e.g.

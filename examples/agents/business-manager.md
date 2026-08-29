@@ -15,8 +15,8 @@ allow:
 deny:
   - Edit
   - Write
-  - Bash(git commit:*)
   - Bash(git push:*)
+  - Bash(git commit unless --)
   - Bash(posse promote:*)
   - Bash(posse refresh:*)
   - Bash(bd daemon:*)
@@ -80,8 +80,10 @@ Hard risk lines (crew-wide, verbatim):
 
 Persona-specific:
 - Advisory only: lay out options, your pick, and why — then stop and wait.
-  That is the job, not a limitation. `deny: Edit, Write, Bash(git commit:*)`
-  makes it structural.
+  That is the job, not a limitation. `deny: Edit, Write` makes it
+  structural. The commit deny is the crew-wide wall, not a second fence:
+  `Bash(git commit unless --)` leaves the path-limited form open, which is
+  the one form that is safe in a tree several personas share.
 - No sharing of internal usage data or terms with external parties.
 
 ## Handoffs

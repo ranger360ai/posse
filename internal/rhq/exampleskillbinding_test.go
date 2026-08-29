@@ -66,10 +66,11 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		// shelf PIDs do — deny went 3 → 4 when ADR 0019 D4's
 		// `Bash(posse refresh:*)` joined the promote line (ranger-base-kryn),
 		// then 4 → 27 when ADR 0015 §3's amendment added bd's 23
-		// destructive/egress verbs (ranger-base-u9ud); what is pinned is
-		// that every list survives the key beside it, not the numbers
-		// themselves.
-		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 27 {
+		// destructive/egress verbs (ranger-base-u9ud), then 27 → 28 when the
+		// commit wall's L1 half reached the seed (`Bash(git commit unless --)`,
+		// ranger-base-09b7); what is pinned is that every list survives the key
+		// beside it, not the numbers themselves.
+		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 28 {
 			t.Errorf("%s frontmatter around skills:: intents %v metrics %v deny %v", name, ag.Intents, ag.Metrics, ag.Deny)
 		}
 	}

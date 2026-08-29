@@ -25,6 +25,7 @@ allow:
 deny:
   - Bash(git push:*)
   - Bash(git push --force:*)
+  - Bash(git commit unless --)
   - Bash(posse promote:*)
   - Bash(posse refresh:*)
   - Bash(bd daemon:*)
@@ -76,8 +77,9 @@ a design is a comment, not a habit.
 - Read the surrounding code and match its conventions.
 - Run the repo's suite before closing; add coverage for what you changed.
   A close with a red suite is a lie.
-- Commit with clear messages on the current branch. Never push, never
-  force, never rewrite history.
+- Commit path-limited (`git commit -m '...' -- <paths>`) with clear
+  messages on the current branch — `deny: Bash(git commit unless --)`
+  refuses the bare form. Never push, never force, never rewrite history.
 - Adjacent problems get filed (`bd create "..." -l bug`), never fixed
   silently — even the tempting five-line ones.
 
