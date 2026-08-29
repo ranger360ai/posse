@@ -1817,6 +1817,104 @@ func firstStampLine(body string) string {
 	return "(no stamp line)"
 }
 
+// ranger-base-up22: the stamp is resolved from the directory the caller
+// hands in, and at launch that directory is the SESSION WORKTREE — every
+// path-scoped thing names the tree the persona works in (rangerhq-09o2).
+// The hook is the one thing that is not scoped to that tree: installHook
+// writes the COMMON hooks dir, so a worktree dispatch rewrites the shared
+// repo's prepare-commit-msg. `beads_visibility:` keys name repos, so a
+// session tree can only ever fall through to unmarked→public, and every
+// Worktree:true dispatch into a repo marked private restamped that repo's
+// shared hook public.
+//
+// Three call sites ask the question and all three must answer alike: the two
+// installers, and probeL3Hooks — L3 identity is byte-for-byte, so a probe
+// resolving the mark differently from the install two lines above it in
+// herdrback would read every worktree launch in a marked repo as stale. The
+// wrong arms are pinned in the same table: an UNMARKED repo's worktree must
+// still come back public (fail closed, the whole point of the default), and
+// the main checkout's own answer must not move.
+func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	for _, c := range []struct {
+		name, mark, want string
+	}{
+		{"a repo the operator marked private", VisibilityPrivate, VisibilityPrivate},
+		{"a repo the operator marked public", VisibilityPublic, VisibilityPublic},
+		// The wrong arm: nothing about the fix may turn the fail-closed
+		// default into "some repo nearby said private".
+		{"an unmarked repo", "", VisibilityPublic},
+	} {
+		for _, install := range []struct {
+			name string
+			fn   func(*App, string) (string, string, string, error)
+		}{
+			{"plain", (*App).InstallCommitGuardHook},
+			{"chained", (*App).InstallCommitGuardHookChained},
+		} {
+			t.Run(c.name+"/"+install.name, func(t *testing.T) {
+				a := wtApp(t)
+				repo := wtRepo(t)
+				wt := filepath.Join(t.TempDir(), "session")
+				mustGit(t, repo, "worktree", "add", "-q", "-b", "posse/session", wt)
+				if c.mark != "" {
+					write(t, a.ConfigPath, "beads_visibility:\n  "+repo+": "+c.mark+"\n")
+				}
+
+				// Premise: the hook the worktree install writes IS the shared
+				// repo's file, which is why the shared repo's mark is the one
+				// that belongs on it.
+				shared := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
+				// And it starts stamped the other way, so a restamp that
+				// changes nothing cannot pass.
+				other := VisibilityPublic
+				if c.want == VisibilityPublic {
+					other = VisibilityPrivate
+				}
+				write(t, shared, CommitGuardHook(other, a.OpsPatternSet()))
+				if err := os.Chmod(shared, 0o755); err != nil {
+					t.Fatal(err)
+				}
+
+				path, vis, src, err := install.fn(a, wt)
+				if err != nil {
+					t.Fatalf("install from the worktree: %v", err)
+				}
+				if resolveExisting(path) != resolveExisting(shared) {
+					t.Fatalf("premise: install from %s wrote %q, want the shared repo's hook %q", wt, path, shared)
+				}
+				if vis != c.want {
+					t.Errorf("reported visibility = %q, want %q (source %q)", vis, c.want, src)
+				}
+				wantSrc := "config beads_visibility:"
+				if c.mark == "" {
+					wantSrc = "unmarked in config beads_visibility: — unmarked is public (fail closed)"
+				}
+				if src != wantSrc {
+					t.Errorf("reported source = %q, want %q", src, wantSrc)
+				}
+				if body, _ := os.ReadFile(shared); string(body) != CommitGuardHook(c.want, a.OpsPatternSet()) {
+					t.Errorf("the shared repo's hook does not carry the mark config gives %s:\n  %s",
+						AbbrevHome(repo), firstStampLine(string(body)))
+				}
+
+				// The install two lines above this probe in herdrback ran
+				// with the same dir, so the probe must agree with it about
+				// which mark the file should carry.
+				if probe := a.probeL3Hooks(wt, false); !probe.CommitGuard {
+					t.Errorf("L3 from the worktree: CommitGuard=false after installing from it — %s", probe.CommitGuardDegraded)
+				}
+				// And the main checkout's own answer did not move.
+				if _, mvis, _, err := install.fn(a, repo); err != nil || mvis != c.want {
+					t.Errorf("install from the main checkout: (%q, %v), want %q", mvis, err, c.want)
+				}
+			})
+		}
+	}
+}
+
 // ranger-base-r5ba: the dispatcher is recognized by shape so the neighbour's
 // name may be anything the operator called it — but only the name varies. A
 // file that does not run `posse-<slot>` first and check its status is not the

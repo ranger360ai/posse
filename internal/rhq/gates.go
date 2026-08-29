@@ -1760,13 +1760,48 @@ func CommitGuardHook(visibility string, set OpsPatternSet) string {
 	return commitGuardHead + visibilityGuardBody(visibility, set) + sharedIndexBody
 }
 
+// hookRepo answers WHICH REPO the hook file belongs to — the question
+// installHook already asks git (hooksDir: a linked worktree resolves to the
+// COMMON hooks dir), asked of the visibility mark too. `beads_visibility:`
+// keys name repos the operator declared, never "any tree that shares its
+// objects", so a session worktree path can only ever fall through to
+// unmarked→public. Since every path-scoped thing at launch names the tree
+// the persona works in (rangerhq-09o2), the one thing that is NOT scoped to
+// that tree — the shared hook — was being stamped from it, and every
+// Worktree:true dispatch into a private repo restamped its shared hook
+// public (ranger-base-up22).
+//
+// A main checkout, a non-repository and anything git cannot answer for come
+// back unchanged; a linked worktree comes back as its main checkout, and a
+// worktree of a BARE repo as the bare repo itself, which is the directory a
+// config key would have to name there (there is no checkout above it).
+func hookRepo(dir string) string {
+	if LinkedGitDirs(dir) == nil {
+		return dir
+	}
+	common, err := git(dir, "rev-parse", "--git-common-dir")
+	if err != nil || common == "" {
+		return dir
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common)
+	}
+	common = filepath.Clean(common)
+	if filepath.Base(common) == ".git" {
+		return filepath.Dir(common)
+	}
+	return common
+}
+
 // InstallCommitGuardHook writes the guard into the repo at dir (its common
 // git dir, so worktrees share it), stamped with what config says about that
-// repo's beads db. Refuses to overwrite a foreign prepare-commit-msg;
-// replaces ours in place. Returns the hook path and the visibility it
-// stamped, so the caller can say which wall the operator just got.
+// repo's beads db — hookRepo, because the file lands in the shared repo and
+// the mark is the shared repo's, not the calling tree's. Refuses to
+// overwrite a foreign prepare-commit-msg; replaces ours in place. Returns
+// the hook path and the visibility it stamped, so the caller can say which
+// wall the operator just got.
 func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
-	visibility, source = a.BeadsVisibility(dir)
+	visibility, source = a.BeadsVisibility(hookRepo(dir))
 	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), false)
 	return path, visibility, source, err
 }
@@ -1774,7 +1809,7 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 // InstallCommitGuardHookChained is InstallCommitGuardHook, but a slot
 // occupied by bd's own shim is chained rather than refused (rangerhq-mgdk).
 func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, source string, err error) {
-	visibility, source = a.BeadsVisibility(dir)
+	visibility, source = a.BeadsVisibility(hookRepo(dir))
 	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), true)
 	return path, visibility, source, err
 }
@@ -1993,7 +2028,11 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	}
 	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
 
-	visibility, _ := a.BeadsVisibility(dir)
+	// hookRepo for the same reason the installers use it, doubled: identity
+	// is byte-for-byte, so a probe that resolves the mark differently from
+	// the install two lines above it in herdrback reads every worktree
+	// launch in a marked repo as "ours but stale" (ranger-base-up22).
+	visibility, _ := a.BeadsVisibility(hookRepo(dir))
 	// The SAME set the install stamps with, or an instance that adds a
 	// pattern reads as "ours but stale" on every launch (the identity half
 	// of ADR 0023 is byte-for-byte).
