@@ -138,7 +138,14 @@ var globalValueOpts = map[string][]string{
 // it is refused. The safe form is one space away.
 type spoiler struct {
 	Opts []string // `-x` (single letter, matches in a cluster) or `--long`
-	Why  string   // completes "…, and without <opts> — <why>"
+	// LongMin is the shortest abbreviation git resolves to a long option in
+	// Opts, keyed by that option. git's parse-options accepts any
+	// UNAMBIGUOUS PREFIX, so `--inc` IS `--include` and an arm spelling the
+	// option in full misses every abbreviation on the way to it
+	// (ranger-base-l1at). Every long option in Opts needs an entry; without
+	// one only the literal is refused and the abbreviations walk past.
+	LongMin map[string]string
+	Why     string // completes "…, and without <opts> — <why>"
 }
 
 // qualifierSpoilers is keyed by command and subcommand, the way the rule is
@@ -146,7 +153,11 @@ type spoiler struct {
 var qualifierSpoilers = map[string]spoiler{
 	"git commit": {
 		Opts: []string{"-i", "--include"},
-		Why:  "it commits the shared index ON TOP of the named paths (rangerhq-ojnw)",
+		// Measured, git 2.50.1: `--inc` resolves to `--include`; `--in` and
+		// `--i` are ambiguous with `--interactive` and git rejects them
+		// itself, so the wall does not have to.
+		LongMin: map[string]string{"--include": "--inc"},
+		Why:     "it commits the shared index ON TOP of the named paths (rangerhq-ojnw)",
 	},
 }
 
@@ -212,6 +223,22 @@ func spoiledFunc(cmd string, r shimRule) string {
 	return name
 }
 
+// longArms are the case patterns that catch one long spoiler: every
+// abbreviation git resolves to it, shortest first, ending with the option
+// spelled out. min is the shortest prefix git accepts (spoiler.LongMin);
+// with none, or one that is not a prefix, only the literal is caught — the
+// arm is never guessed wider than a measurement.
+func longArms(long, min string) []string {
+	if min == "" || min == long || !strings.HasPrefix(long, min) {
+		return []string{long}
+	}
+	var out []string
+	for n := len(min); n <= len(long); n++ {
+		out = append(out, long[:n])
+	}
+	return out
+}
+
 // renderSpoiled writes the sh helper: does argv, up to the first `--`,
 // carry one of the spoiling options? The case arms are baked in rather than
 // passed in a variable, because a glob pattern reaching `case` through an
@@ -230,7 +257,7 @@ func renderSpoiled(name string, sp spoiler) string {
 	fmt.Fprintf(&b, "%s() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n", name)
 	b.WriteString("      --) return 1 ;;\n") // past here every word is a path
 	for _, l := range longs {
-		fmt.Fprintf(&b, "      %s) return 0 ;;\n", l)
+		fmt.Fprintf(&b, "      %s) return 0 ;;\n", strings.Join(longArms(l, sp.LongMin[l]), "|"))
 	}
 	if len(shorts) > 0 {
 		// Long options are done above: without this arm `--signoff` would

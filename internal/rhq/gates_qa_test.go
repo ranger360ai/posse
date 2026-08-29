@@ -216,7 +216,7 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 // Half one is the premise and it is NOT skipped: if git ever stops accepting
 // the abbreviation, or stops sweeping with it, the guard arm below is
 // pinning a ghost and this half says so first (the TestQA2f5rIncidentFourForms
-// shape). Half two is the wall, skipped until l1at lands.
+// shape). Half two is the wall, unskipped by l1at's fix.
 func TestQACommitWallL1IncludeAbbreviations(t *testing.T) {
 	// The shortest prefix git itself resolves. `--in` and `--i` are
 	// ambiguous for `git commit` and git rejects them (measured, 2.50.1),
@@ -240,44 +240,50 @@ func TestQACommitWallL1IncludeAbbreviations(t *testing.T) {
 		}
 	}
 
-	// Half two: the wall must refuse every spelling git accepts.
-	t.Skip("ranger-base-l1at: the spoiler table matches `--include` literally; unskip with the fix")
+	// `abbrevs` is a measurement, so it is checked against the parser before
+	// the wall is judged against it: a git whose ambiguity boundary moved
+	// must not quietly shrink this pin. Asked before the shim is rendered —
+	// rendering puts a stub git on PATH, and a stub answers nothing about
+	// what the real parser resolves.
+	resolved := map[string]bool{}
+	for _, p := range qaGitResolves(t, "--include") {
+		resolved[p] = true
+	}
+	if len(resolved) != len(abbrevs)+1 { // the abbreviations, plus the option itself
+		t.Errorf("git resolves %d prefixes of --include, this pin lists %d: %v", len(resolved), len(abbrevs)+1, resolved)
+	}
+	for _, opt := range abbrevs {
+		if !resolved[opt] {
+			t.Errorf("premise: git no longer resolves %s to --include", opt)
+		}
+	}
 
+	// Half two: the wall must refuse every spelling git accepts.
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
-	home := t.TempDir()
-	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
-	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
-	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, opt := range abbrevs {
+	run := qaRenderCommitShim(t)
+	for _, opt := range append(append([]string{}, abbrevs...), "--include") {
 		argv := []string{"commit", "-m", "x", opt, "--", "a.go"}
-		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
-		out, err := cmd.CombinedOutput()
-		code := 0
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-		if code != 1 || !strings.Contains(string(out), "refused by posse gate") {
+		if out, code := run(argv...); code != 1 || !strings.Contains(out, "refused by posse gate") {
 			t.Errorf("git %s must be refused at L1: %d %s", strings.Join(argv, " "), code, out)
 		}
 	}
 	// The way through must not narrow: these are not prefixes of --include.
+	// The last two are the over-match this fix could have caused — an
+	// abbreviation of a long option that is NOT a spoiler is still a way
+	// through, as its full spelling is (`--am` is `--amend`, `--sign` is
+	// `--signoff`; measured, git 2.50.1).
 	for _, argv := range [][]string{
 		{"commit", "-m", "x", "--", "a.go"},
 		{"commit", "--signoff", "-m", "x", "--", "a.go"},
 		{"commit", "--fixup=HEAD", "--", "a.go"},
 		{"commit", "-m", "x", "--", "--inc"},
+		{"commit", "--am", "--no-edit", "--", "a.go"},
+		{"commit", "--sign", "-m", "x", "--", "a.go"},
 	} {
-		cmd := exec.Command(filepath.Join(binDir, "git"), argv...)
-		out, err := cmd.CombinedOutput()
-		if err != nil || !strings.HasPrefix(string(out), "real git ") {
-			t.Errorf("git %s must pass: %v %s", strings.Join(argv, " "), err, out)
+		if out, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {
+			t.Errorf("git %s must pass: %d %s", strings.Join(argv, " "), code, out)
 		}
 	}
 }
@@ -407,5 +413,136 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 	body, _ := git(nil, "show", "HEAD:a.txt")
 	if !strings.Contains(body, "developer line") || !strings.Contains(body, "QA HALF-WRITTEN") {
 		t.Fatalf("residual: named path commits the file on disk; got %q", body)
+	}
+}
+
+// The table's LongMin is a MEASUREMENT, and a measurement rots. Every long
+// spoiler must carry one, and it must be git's own boundary: git resolves
+// it, and one character shorter git refuses to resolve. A stale number is
+// a hole (too long) or noise (too short), and both fail here.
+func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
+	for key, sp := range qualifierSpoilers {
+		if !strings.HasPrefix(key, "git ") {
+			continue // another command's parser, another set of rules
+		}
+		for _, o := range sp.Opts {
+			if !strings.HasPrefix(o, "--") {
+				continue
+			}
+			min, ok := sp.LongMin[o]
+			if !ok {
+				t.Errorf("%q spoiler %s has no LongMin: its abbreviations walk past the wall (ranger-base-l1at)", key, o)
+				continue
+			}
+			got := qaGitResolves(t, o)
+			if len(got) == 0 || got[0] != min {
+				t.Errorf("%q spoiler %s: LongMin is %s but git's shortest is %v", key, o, min, got)
+			}
+		}
+	}
+}
+
+// qaGitResolves asks the real git which prefixes of a `git commit` long
+// option it resolves to that option, shortest first, the full spelling
+// last. A prefix git will not resolve answers "ambiguous option" or
+// "unknown option" and exits 129 before it can commit anything; a resolved
+// one reaches "nothing to commit" in a clean repo, so nothing here writes.
+func qaGitResolves(t *testing.T, long string) []string {
+	t.Helper()
+	_, git, _ := qaCommitRepo(t)
+	var out []string
+	for n := 3; n <= len(long); n++ {
+		p := long[:n]
+		o, _ := git(nil, "commit", "-m", "x", p, "--", "a.txt")
+		if strings.Contains(o, "ambiguous option") || strings.Contains(o, "unknown option") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// qaRenderCommitShim renders the L1 git shim for `Bash(git commit unless --)`
+// over a stub git that echoes its argv, and returns a runner for it.
+func qaRenderCommitShim(t *testing.T) func(argv ...string) (string, int) {
+	t.Helper()
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	realBin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(argv ...string) (string, int) {
+		out, err := exec.Command(filepath.Join(binDir, "git"), argv...).CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		return string(out), code
+	}
+}
+
+// The bead's own repro, end to end, with the rendered shim in front of the
+// REAL git and no L3 hook in the repo — the case L1 exists for. The stub
+// runner above pins the decision; this pins what the decision is worth: the
+// other persona's staged entry is still staged afterwards, and HEAD has not
+// moved. Half one is the premise, unguarded, so the pin dies loudly if git
+// ever stops sweeping instead of quietly guarding a ghost.
+func TestQACommitWallL1AbbreviationDoesNotSweepRealIndex(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	// Half one: unguarded, `--inc` really does take the other persona's file.
+	_, git, write := qaCommitRepo(t)
+	write("a.txt", "theirs")
+	git(nil, "add", "a.txt")
+	write("b.txt", "mine")
+	if out, err := git(nil, "commit", "-m", "x", "--inc", "--", "b.txt"); err != nil {
+		t.Fatalf("premise: unguarded `--inc` commit must land: %v %s", err, out)
+	}
+	if out, _ := git(nil, "show", "--name-only", "--format=", "HEAD"); !strings.Contains(out, "a.txt") {
+		t.Fatalf("premise: `git commit -m x --inc -- b.txt` must sweep a.txt, got %q", out)
+	}
+
+	// Half two: the same argv through the shim, over the real git.
+	repo, git2, write2 := qaCommitRepo(t)
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write2("a.txt", "theirs")
+	git2(nil, "add", "a.txt")
+	write2("b.txt", "mine")
+	head, _ := git2(nil, "rev-parse", "HEAD")
+	shim := func(args ...string) (string, error) {
+		cmd := exec.Command(filepath.Join(binDir, "git"), append([]string{"-C", repo}, args...)...)
+		cmd.Env = []string{"PATH=" + PathOutsideGates(binDir), "HOME=" + repo,
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	out, err := shim("commit", "-m", "x", "--inc", "--", "b.txt")
+	if err == nil || !strings.Contains(out, "refused by posse gate") {
+		t.Fatalf("`git commit -m x --inc -- b.txt` must be refused at L1: %v %s", err, out)
+	}
+	if now, _ := git2(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(now) != "a.txt" {
+		t.Errorf("the other persona's staged entry must survive the refusal, got %q", now)
+	}
+	if now, _ := git2(nil, "rev-parse", "HEAD"); now != head {
+		t.Errorf("refused commit moved HEAD: %q -> %q", head, now)
+	}
+	// And the way through, over the real git, still lands exactly one path.
+	if out, err := shim("commit", "-m", "safe", "--", "b.txt"); err != nil {
+		t.Fatalf("path-limited commit must still pass: %v %s", err, out)
+	}
+	if now, _ := git2(nil, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(now) != "b.txt" {
+		t.Errorf("safe form must commit only b.txt, got %q", now)
 	}
 }

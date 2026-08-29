@@ -46,6 +46,10 @@ Three details the sh has to get right, each of which was a way to be wrong:
   reaching `case` through an unquoted expansion is a *pathname* expansion
   first, and `-[!-]*i*` would happily match a file in the caller's cwd.
 
+The long-option arm was still one spelling too narrow: git accepts
+unambiguous *prefixes*, so `--inc` walked past it into the `--*) ;;` arm
+until ranger-base-l1at — see `docs/notes.d/ranger-base-l1at.md`.
+
 **One false positive accepted, on the bead's own terms.** `git commit -mi --
 b.txt` (message `i`) is now refused, as is any value that happens to be
 spelled `-…i…`. The bead states the trade and it is the right one: a false
