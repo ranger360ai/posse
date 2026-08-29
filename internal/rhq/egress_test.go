@@ -9,10 +9,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -347,17 +349,7 @@ func TestEgressProxyRefusesUnknownHostsAndLogsThemLikeL1(t *testing.T) {
 		}
 	}()
 
-	port := freePort(t)
-	proxy := exec.Command(node, script, hostsFile, fmt.Sprint(port), log)
-	out, _ := proxy.StdoutPipe()
-	proxy.Stderr = os.Stderr
-	if err := proxy.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer proxy.Process.Kill()
-	go func() { bufio.NewReader(out).ReadString('\n') }()
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	waitDial(t, addr)
+	addr := startEgressProxy(t, node, script, hostsFile, log)
 
 	// 1. A host nobody allowed: the proxy's 403, and the denial in the log.
 	if got := connect(t, addr, "blocked.example.com:443", ""); !strings.Contains(got, "403") {
@@ -398,19 +390,76 @@ func TestEgressProxyRefusesUnknownHostsAndLogsThemLikeL1(t *testing.T) {
 	}
 }
 
-func freePort(t *testing.T) int {
+// egressWait is the one budget every wait around the real proxy uses. It is
+// headroom for the scheduler, not for the code: 200 timed starts of this
+// proxy under a concurrent `go test ./...` at load 12-15 came up in p50 74ms,
+// p99 135ms, max 157ms. It has to be headroom, because the load this box
+// really carries is worse than that — `go test ./...` runs three package
+// binaries at once beside a dozen live worktree sessions running their own
+// suites, and there this test went red about one full run in four at 5.38s,
+// a 5s budget expiring, while alone it took 0.09s (ranger-base-7qwm,
+// ranger-base-5fw5). 30s is ~190x the measured worst case, and the only
+// thing left that trips it is a proxy that never came up at all. Nothing
+// here is a latency assertion.
+const egressWait = 30 * time.Second
+
+// startEgressProxy runs the rendered proxy and returns the address to drive
+// it on. The port is the kernel's, handed to node itself and read back from
+// the proxy's own up-line — never one this process took, closed and passed
+// on. That window is open for the whole of node's start, and losing it does
+// not look like a race: measured on this box (ranger-base-7qwm), a squatter
+// on 127.0.0.1:P leaves the proxy binding 0.0.0.0:P and reporting "up"
+// while every dial to 127.0.0.1:P reaches the squatter, because the more
+// specific bind wins. The test would then be asserting about somebody
+// else's socket.
+func startEgressProxy(t *testing.T, node, script, hosts, log string) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	proxy := exec.Command(node, script, hosts, "0", log)
+	out, err := proxy.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	proxy.Stderr = os.Stderr
+	if err := proxy.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { proxy.Process.Kill(); proxy.Wait() })
+
+	// The first line is the up-line, or the listen error the script exits
+	// on; either way the read ends, so a proxy that never came up is named
+	// rather than waited out. The rest of stdout is drained: the pipe is
+	// 64KB and a full one blocks every log() the proxy makes.
+	first := make(chan string, 1)
+	go func() {
+		r := bufio.NewReader(out)
+		l, _ := r.ReadString('\n')
+		first <- l
+		io.Copy(io.Discard, r)
+	}()
+	var line string
+	select {
+	case line = <-first:
+	case <-time.After(egressWait):
+		t.Fatalf("the proxy said nothing in %s", egressWait)
+	}
+	_, rest, ok := strings.Cut(line, " egress proxy up on :")
+	if !ok {
+		t.Fatalf("the proxy never came up; it said %q", strings.TrimSpace(line))
+	}
+	digits, _, _ := strings.Cut(rest, " ")
+	port, err := strconv.Atoi(digits)
+	if err != nil || port == 0 {
+		t.Fatalf("the proxy must report the port it is actually on: %q", strings.TrimSpace(line))
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	waitDial(t, addr)
+	return addr
 }
 
 func waitDial(t *testing.T, addr string) {
 	t.Helper()
-	for i := 0; i < 200; i++ {
+	deadline := time.Now().Add(egressWait)
+	for time.Now().Before(deadline) {
 		if c, err := net.Dial("tcp", addr); err == nil {
 			c.Close()
 			return
@@ -429,7 +478,7 @@ func connect(t *testing.T, addr, authority, body string) string {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(10 * time.Second))
+	c.SetDeadline(time.Now().Add(egressWait))
 	fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", authority, authority)
 	var sb strings.Builder
 	b := make([]byte, 512)
@@ -445,7 +494,8 @@ func connect(t *testing.T, addr, authority, body string) string {
 
 func waitForLog(t *testing.T, log, want string) string {
 	t.Helper()
-	for i := 0; i < 200; i++ {
+	deadline := time.Now().Add(egressWait)
+	for time.Now().Before(deadline) {
 		b, _ := os.ReadFile(log)
 		for _, l := range strings.Split(string(b), "\n") {
 			if strings.Contains(l, want) {

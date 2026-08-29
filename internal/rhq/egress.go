@@ -414,5 +414,9 @@ const server = net.createServer(client => {
 });
 
 server.on('error', e => { log(stamp() + ' egress proxy failed: ' + e.message); process.exit(1); });
-server.listen(port, '0.0.0.0', () => log(stamp() + ' egress proxy up on :' + port + ' (allow: ' + listText + ')'));
+// The port the kernel gave us, not the one asked for: a launch passes the
+// fixed EgressPort and reads the same line back, and a caller that passes 0
+// (the tests) learns where the proxy is from the proxy rather than from a
+// port it held open and let go of.
+server.listen(port, '0.0.0.0', () => log(stamp() + ' egress proxy up on :' + server.address().port + ' (allow: ' + listText + ')'));
 `

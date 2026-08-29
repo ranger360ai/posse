@@ -57,14 +57,7 @@ func TestQAEgressProxyDeniesRawIPAndSubdomainsOfExactHosts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := freePort(t)
-	proxy := exec.Command(node, script, hostsFile, fmt.Sprint(port), log)
-	if err := proxy.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer proxy.Process.Kill()
-	waitDial(t, fmt.Sprintf("127.0.0.1:%d", port))
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr := startEgressProxy(t, node, script, hostsFile, log)
 
 	if got := connect(t, addr, "1.1.1.1:443", ""); !strings.Contains(got, "403") {
 		t.Errorf("CONNECT to a raw IP not in egress: must 403, got %q", got)
