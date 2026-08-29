@@ -939,7 +939,7 @@ func fakeHerdr(args []string) int {
 		}
 		return fakeOK(fmt.Sprintf(`{"type":"agent_wait","agent":{"agent_status":%q}}`, fakeWaitStatus()))
 	case "agent explain": // a BARE object, like the real `explain --json`
-		if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-error")); err == nil {
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-error")); err == nil && fakeExplainErrorArmed() {
 			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
 			if !ok {
 				msg = "fake herdr: cannot explain"
@@ -965,6 +965,35 @@ func fakeHerdr(args []string) int {
 	return fakeErr("bad_request", "fake herdr: unhandled "+strings.Join(args, " "))
 }
 
+// fakeExplainErrorArmed reports whether the explain-error lever is live on
+// THIS call. explain-error-after holds a countdown of explains to answer
+// normally first, and the error arms on the one after that — the shape of a
+// herdr that went away mid-window (rangerhq-lhy2), where the early polls got
+// real answers and a late one did not.
+//
+// It counts CALLS because the only other way to place an error late in the
+// window is a wall clock, and a wall-clock timer races the launch's own
+// setup: the first `agent explain` of a fake-herdr launch lands ~305ms after
+// the test body starts on an idle box (measured 2026-08-29, 10 runs, spread
+// 293-340ms) and later than that on a loaded one, so "arm it at 700ms,
+// after some guesses" silently becomes "arm it before the first guess" and
+// the test measures the opposite window — ranger-base-4pjw, ~1 red in 3 on
+// the operator's box. Each fake call is its own process, so the count lives
+// in the file, the way explain-fallback's does.
+func fakeExplainErrorArmed() bool {
+	p := filepath.Join(fakeDir(), "explain-error-after")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return true
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || n <= 0 {
+		return true
+	}
+	os.WriteFile(p, []byte(strconv.Itoa(n-1)), 0o644)
+	return false
+}
+
 // fakeExplain answers `agent explain --json` in one of the two shapes a real
 // herdr emits (rangerhq-3hb5), because the readiness gate is built on the
 // difference. By default the state is SEEN — a named rule, the visible_*
@@ -986,6 +1015,10 @@ func fakeHerdr(args []string) int {
 //	                  means the key is absent, which is what an older herdr
 //	                  emits and what WhatHerdrSaw must survive.
 //	explain-error     `explain` fails outright (see the fake's error lever)
+//	explain-error-after
+//	                  a countdown: that many explains are answered before
+//	                  explain-error arms, for a herdr that goes away partway
+//	                  through the window
 func fakeExplain() string {
 	state := fakeWaitStatus()
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-state")); err == nil {

@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -109,20 +110,29 @@ func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
 	d.Poll = 100 * time.Millisecond
 	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644) // guess forever
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)  // the real 0.8.0 shape
-
-	done := make(chan struct{})
-	go func() {
-		time.Sleep(700 * time.Millisecond)
-		os.WriteFile(filepath.Join(fake, "explain-error"), []byte("internal|no detection for w1:p1"), 0o644)
-		close(done)
-	}()
-	defer func() { <-done }()
+	// The late failure: the first `guesses` explains answer with the guess,
+	// every one after that errors, so the LAST explain of the window is the
+	// failed one. Armed by call count rather than by a timer — a timer here
+	// raced the launch's own setup and made this test red about 1 run in 3
+	// (ranger-base-4pjw); see fakeExplainErrorArmed.
+	const guesses = 2
+	os.WriteFile(filepath.Join(fake, "explain-error-after"), []byte(strconv.Itoa(guesses)), 0o644)
+	os.WriteFile(filepath.Join(fake, "explain-error"), []byte("internal|no detection for w1:p1"), 0o644)
 
 	n, err := d.Run("", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(calls(t, fake), "agent prompt") {
+	log := calls(t, fake)
+	// The fixture's own witness. Both halves have to have happened — a
+	// window that never got past the guesses would pass this test for the
+	// wrong reason, since it asserts an absence.
+	if explains := strings.Count(log, "agent explain"); explains <= guesses {
+		t.Fatalf("fixture unmet: %d explains in the window, so the late error was never served "+
+			"(needs more than %d) — the box is too slow for a %s window at %s polls:\n%s",
+			explains, guesses, d.StartupWait, d.Poll, dispatcherOut(d))
+	}
+	if strings.Contains(log, "agent prompt") {
 		t.Fatalf("herdr guessed about this pane for the whole window and posse prompted it anyway, "+
 			"because the last explain failed (n=%d):\n%s", n, dispatcherOut(d))
 	}
