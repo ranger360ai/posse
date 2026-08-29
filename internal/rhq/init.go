@@ -3,10 +3,19 @@ package rhq
 // CmdInit seeds RHQ_HOME from the example instance, never overwriting.
 //
 // The seed tree has two possible sources (ADR 0012 D5). examples/ beside the
-// binary wins when it is there: that is a dev build run out of the checkout,
+// binary wins when it IS one: that is a dev build run out of the checkout,
 // where an edit to examples/ must take effect without a rebuild. Otherwise
 // the copy embedded at build time is used — which is the whole point of the
 // embed, because a release binary on a fresh laptop has no repo to read.
+//
+// "when it is one" is load-bearing and used not to be (ranger-base-e6y): the
+// arm was a bare stat on the name, so any directory called examples/ beside
+// the binary was seeded from. bin/ beside examples/ is an ordinary repo
+// shape and `go install` puts the binary in ~/go/bin, which makes the
+// consulted directory ~/go/examples — a path no install doc names. A
+// stranger's directory then won over the embed and laid down a home with no
+// crew at exit 0, which a second init could not repair because nothing here
+// ever overwrites.
 
 import (
 	"fmt"
@@ -21,14 +30,48 @@ import (
 	"github.com/ranger360ai/posse"
 )
 
+// seedRoots are the directories a seed tree has because init copies them.
+// skills/ is deliberately not among them: a seed with no skills/ seeds none,
+// quietly and on purpose (copyTree below).
+var seedRoots = []string{"agents", "recipes", "envs"}
+
+// looksLikeSeed asks whether a directory IS a seed tree rather than merely
+// being named like one. The test is exactly what init requires of a source —
+// config.yaml, and the three roots it copies — so nothing that passes it can
+// half-seed, and nothing that fails it is a seed anybody meant.
+func looksLikeSeed(src fs.FS) bool {
+	if st, err := fs.Stat(src, "config.yaml"); err != nil || st.IsDir() {
+		return false
+	}
+	for _, r := range seedRoots {
+		if st, err := fs.Stat(src, r); err != nil || !st.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
+// seedOverrideDir is the directory the override arm considers, or "" when
+// there is nothing there. Separate from the choice below so CmdInit can say
+// which directory it looked at and passed over.
+func seedOverrideDir(exeDir string) string {
+	if exeDir == "" {
+		return ""
+	}
+	dir := filepath.Join(exeDir, "..", "examples")
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return ""
+	}
+	return dir
+}
+
 // seedSource resolves the seed tree for a binary living in exeDir, and names
 // where it came from — worth printing, because "embedded" and "a directory
 // you can edit" behave differently on the next run.
 func seedSource(exeDir string) (fs.FS, string) {
-	if exeDir != "" {
-		dir := filepath.Join(exeDir, "..", "examples")
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return os.DirFS(dir), dir
+	if dir := seedOverrideDir(exeDir); dir != "" {
+		if src := os.DirFS(dir); looksLikeSeed(src) {
+			return src, dir
 		}
 	}
 	return posse.Seed, "embedded"
@@ -43,6 +86,14 @@ func (a *App) CmdInit(w io.Writer) error {
 		exeDir = filepath.Dir(exe)
 	}
 	src, from := seedSource(exeDir)
+	// A directory considered and passed over is said out loud. Otherwise the
+	// only witness to the choice is one word at the end of the success line,
+	// and an operator whose ~/go/examples was skipped has no way to learn
+	// that it was ever consulted.
+	if dir := seedOverrideDir(exeDir); dir != "" && from == "embedded" {
+		fmt.Fprintf(w, "ignored %s: not a seed tree (a seed has config.yaml and %s/) — seeding from the copy embedded in this binary\n",
+			dir, strings.Join(seedRoots, "/, "))
+	}
 	return a.initFrom(w, src, from)
 }
 
@@ -65,6 +116,11 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			return err
 		}
 	}
+	// What this run actually laid down. A seeded manifest is a hash of what
+	// init wrote (ADR 0015 §3), so a later init that fills a gap has to
+	// re-stamp it or leave the next dispatched launch refusing over the very
+	// files it just repaired.
+	wrote := 0
 	copyIfMissing := func(fromPath, to string, mode os.FileMode) error {
 		if _, err := os.Stat(to); err == nil {
 			return nil
@@ -73,13 +129,24 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(to, b, mode)
+		if err := os.WriteFile(to, b, mode); err != nil {
+			return err
+		}
+		wrote++
+		return nil
 	}
 	if err := copyIfMissing("config.yaml", a.ConfigPath, 0o644); err != nil {
 		return err
 	}
+	// Not swallowed, unlike copyTree's skills/: agents/, recipes/ and envs/
+	// are never legitimately absent from a seed, so a read that fails here
+	// says the source is not one — and the swallow turned that into an
+	// instance missing a root at exit 0 (ranger-base-e6y).
 	copyDir := func(fromDir, toDir string, mode os.FileMode) error {
-		ents, _ := fs.ReadDir(src, fromDir)
+		ents, err := fs.ReadDir(src, fromDir)
+		if err != nil {
+			return fmt.Errorf("seed %s is missing %s/, which every seed tree has: %w", from, fromDir, err)
+		}
 		for _, e := range ents {
 			if e.IsDir() {
 				continue
@@ -180,12 +247,31 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			return err
 		}
 	}
+	// A home that was already seeded and has just had a gap filled: the
+	// manifest describes a set this run changed, and re-stamping it is the
+	// same rule retireExamplePIDs follows a few lines up. A promoted home
+	// (not seeded) is never re-stamped here — there the manifest is a claim
+	// about a commit, and only `posse promote` may restate it.
+	repaired := !fresh && wrote > 0 && man != nil && man.Seeded
+	if repaired {
+		files, err := HashPromotedSet(a.Home)
+		if err != nil {
+			return err
+		}
+		man.Files = files
+		if err := man.write(a.PromoteManifestPath()); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintf(w, "initialized %s (seed: %s)\n", a.Home, from)
 	// Either way it is said out loud: an armed launch verify and an unarmed
 	// one are the difference between a dispatched launch refusing and not,
 	// and an operator who cannot tell which one they have finds out from the
 	// fleet.
 	switch {
+	case repaired:
+		fmt.Fprintf(w, "filled %d missing seed file(s) and re-stamped %s (seeded): the manifest follows what init lays down, so the launch verify matches the repaired home (ADR 0015 §3)\n",
+			wrote, AbbrevHome(a.PromoteManifestPath()))
 	case fresh:
 		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes agents/, config.yaml, recipes/ and skills/ against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
 			AbbrevHome(a.PromoteManifestPath()))

@@ -53,8 +53,8 @@ make build                       # dev build of the working tree → bin/posse-g
 make install                     # clean build of HEAD, then promote → ~/.local/bin/posse
 export PATH="$HOME/.local/bin:$PATH"   # ← where the line above wrote it
 posse init                       # seed $RHQ_HOME (default ~/.config/posse) from the
-                                 # examples: examples/ beside the binary when there
-                                 # is one, else the copy embedded at build time
+                                 # examples: examples/ beside the binary when that
+                                 # is a seed tree, else the copy embedded at build time
 mkdir -p ~/code/myproj           # --dir must exist; point it at a project of yours
 posse new myproj --dir ~/code/myproj --cmd claude
 posse list                       # live agent state per session

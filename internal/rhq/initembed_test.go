@@ -59,14 +59,18 @@ func TestEmbeddedSeedMatchesExamplesDir(t *testing.T) {
 
 // The dev override, both ways round: a binary in a checkout reads the live
 // examples/ (edit-and-run, no rebuild); a binary anywhere else reads itself.
+//
+// The fixture is a whole seed tree — config.yaml and the three roots init
+// copies — because that is now what wins the override arm, and a directory
+// merely NAMED examples/ no longer does (ranger-base-e6y). Pinning the dev
+// case against a one-file directory was pinning the bug.
 func TestSeedSourcePrefersExamplesBesideBinary(t *testing.T) {
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
-	if err := os.MkdirAll(filepath.Join(tmp, "examples"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
+	for _, d := range []string{bin, filepath.Join(tmp, "examples", "agents"), filepath.Join(tmp, "examples", "recipes"), filepath.Join(tmp, "examples", "envs")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(tmp, "examples", "config.yaml"), []byte("# on-disk\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -206,6 +210,10 @@ func TestInitCopiesSkillTrees(t *testing.T) {
 		}
 	}
 	must(os.WriteFile(filepath.Join(seed, "config.yaml"), []byte("# seed\n"), 0o644))
+	// The three roots init copies: empty is fine, absent is not a seed.
+	for _, r := range []string{"agents", "recipes", "envs"} {
+		must(os.MkdirAll(filepath.Join(seed, r), 0o755))
+	}
 	must(os.MkdirAll(filepath.Join(seed, "skills", "distributed-systems", "references"), 0o755))
 	must(os.WriteFile(filepath.Join(seed, "skills", "distributed-systems", "SKILL.md"), []byte("---\nname: distributed-systems\ndescription: d\n---\n"), 0o644))
 	must(os.WriteFile(filepath.Join(seed, "skills", "distributed-systems", "references", "leases.md"), []byte("canon\n"), 0o644))

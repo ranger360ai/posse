@@ -424,8 +424,12 @@ $ posse init
 
 **Verify:** `initialized <your RHQ_HOME> (seed: embedded)`. Run out of a
 checkout — `./bin/posse-go init` — and the seed line names the on-disk
-`examples/` instead: that directory wins when it is beside the binary, so
-edits to the examples take effect without a rebuild.
+`examples/` instead: that directory wins when it is beside the binary AND is
+a seed tree — a `config.yaml` with `agents/`, `recipes/` and `envs/` beside
+it — so edits to the examples take effect without a rebuild. A directory
+merely *named* `examples/` is not one, and init says which directory it
+looked at and passed over rather than seeding a half-instance from it
+(ranger-base-e6y).
 
 What `init` created, and what it did not:
 
@@ -1743,7 +1747,8 @@ one budget and the caps become conservative, not wrong.
 
 | symptom | cause | fix |
 |---|---|---|
-| `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a directory named `examples/` sits one level above the binary — `~/.local/bin/posse` reads `~/.local/examples` — and wins over the embed: right in a checkout, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in |
+| `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a real seed tree — `config.yaml` with `agents/`, `recipes/` and `envs/` — sits one level above the binary and wins over the embed: right in a dev build, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in |
+| `posse init` prints `ignored <dir>: not a seed tree` | a directory named `examples/` sits one level above the binary — `~/go/bin/posse` reads `~/go/examples`, and a project with its own `bin/` reads its own `examples/` — so init looked at it, found it was not a seed, and used the embed | nothing: the embed seeded the instance and it is whole. If that directory *was* meant to be the seed, give it a `config.yaml` and `agents/`, `recipes/`, `envs/` |
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
 | `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH |
 | launch refuses with a `DEGRADED` list | the wall cannot realize a PID gate on this runtime × cage | `posse gates <persona>` and fix the cause; `--allow-degraded` only knowingly |

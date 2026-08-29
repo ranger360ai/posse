@@ -66,8 +66,6 @@ func TestEmbeddedSeedShipsAContractValidCrew(t *testing.T) {
 // and lays down a home with no crew, at exit 0. Re-running init repairs
 // nothing: the hijack is still in place and nothing is ever overwritten.
 func TestSeedOverrideThatIsNotASeedDoesNotHalfSeedSilently(t *testing.T) {
-	t.Skip("ranger-base-e6y: a foreign examples/ beside the binary is taken as the seed and init exits 0 on a crewless home")
-
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
 	foreign := filepath.Join(tmp, "examples")
