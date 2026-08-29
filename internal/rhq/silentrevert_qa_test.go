@@ -3,7 +3,7 @@ package rhq
 // QA pins for the silent-revert detector (scripts/audit-silent-reverts.sh,
 // rangerhq-8rtf, verified under rangerhq-jkhb).
 //
-// Three claims:
+// Four claims:
 //
 //   1. The detector's own --self-test proves the detector FIRES, which is the
 //      only thing that separates "the audit ran" from "the audit works". But
@@ -28,6 +28,12 @@ package rhq
 //      line now, and every arm demands a positive witness that it scanned the
 //      commits the plant means to build. The last two tests here are the two
 //      escapes, one each.
+//
+//   4. The move exception asks git for rename similarity rather than exact blob
+//      identity (ranger-base-en75), at a threshold that is chosen and written
+//      down rather than inherited. That is a false-NEGATIVE widening, so the
+//      four pins at the end of this file are one per mutation, and no two of
+//      them red the same self-test arm.
 //
 // Self-contained on purpose (own helpers, own fixture): they must survive
 // whatever the next persona does to the script's neighbours.
@@ -370,5 +376,130 @@ func TestAuditFullBlobIdsHaveTheirOwnPin(t *testing.T) {
 	}
 	if !strings.Contains(out, "raw_log emitted") {
 		t.Fatalf("the abbreviation arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// --- ranger-base-en75: the move exception asks git, not the blob id ----------
+//
+// The move exception used to be exact-blob: a deletion was excused only when
+// the IDENTICAL blob appeared at another path in the same commit. A rename that
+// also EDITS the file is a different blob, so the exception could not see it and
+// the deletion half was reported as a silent revert. Three commits in ~460 paid
+// a triage line for that (631bda7, e82338c, 2eae58a) and the rate was not
+// falling. raw_log now asks git to pair renames at a chosen 50% similarity and
+// states_awk decomposes the R line into the two entries it stands for.
+//
+// This is a false-NEGATIVE widening, so it gets four pins rather than one
+// outcome assertion, and they are NOT interchangeable — each mutation below
+// reds a DIFFERENT arm, which is the whole reason the self-test grew three arms
+// and not just the obvious one:
+//
+//	--find-renames -> --no-renames    reds the rename-that-edits arm
+//	threshold 50% -> 75%              reds the rename-that-edits arm
+//	moved=emoved[i] -> moved=0        reds the rename-that-edits arm
+//	the R branch -> if (0)            reds the RE-LAND arm, and nothing else
+//
+// That last row is the escape worth naming. Deleting states_awk's R handling
+// makes a rename INVISIBLE — the line parses as one path literally named
+// "src<tab>dst" and no deletion is ever recorded — and invisible is
+// indistinguishable from excused to an arm that only asserts silence. So the
+// rename-that-edits arm stays green over it. The re-land arm is the pin that
+// branch actually has: it asserts that the DESTINATION of a rename is still
+// compared against every state its path has held.
+
+// TestSilentRevertSelfTestHasTheRenameArms pins the three arms themselves.
+// Deleting any of them leaves every other test in this file green, because they
+// all read an exit status a deleted arm no longer contributes to.
+func TestSilentRevertSelfTestHasTheRenameArms(t *testing.T) {
+	script := srScript(t)
+	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
+		t.Skipf("not a git checkout: %v", err)
+	}
+	out, code := srAudit(t, script, ".", "--self-test")
+	if code != 0 {
+		t.Fatalf("self-test failed: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"self-test PASS: a rename that also EDITS is not flagged",
+		"self-test PASS: a deletion plus an UNRELATED add in one commit still fires",
+		"self-test PASS: a re-land through a rename is still caught",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("self-test no longer reports %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestAuditRenameDetectionHasItsOwnPin is the mechanism: raw_log must ask git to
+// pair renames at all. Putting --no-renames back is the pre-fix behaviour, and
+// it must red the rename-that-edits arm rather than quietly cost another triage
+// line.
+func TestAuditRenameDetectionHasItsOwnPin(t *testing.T) {
+	mutant, dir := srMutateScript(t,
+		"--find-renames=50% -l0 --raw --no-abbrev",
+		"--no-renames --raw --no-abbrev")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with raw_log asking git for no renames:\n%s", out)
+	}
+	if !strings.Contains(out, "a rename that also edits was flagged as a silent revert") {
+		t.Fatalf("the rename arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditRenameThresholdIsLoadBearing pins the NUMBER. 50% is chosen, not
+// git's default inherited by accident: the two live strikes measure R097 and
+// R060, so 60% is the tightest value that clears both — zero margin, and the
+// next rename+edit at 55% buys the triage line back. The self-test fixture is
+// deliberately built at R065, the shape of the R060 strike rather than the easy
+// R097 one, so raising the threshold to 75% reds it. If somebody wants a
+// different number they get to change this pin, which is the point.
+func TestAuditRenameThresholdIsLoadBearing(t *testing.T) {
+	mutant, dir := srMutateScript(t,
+		"--find-renames=50% -l0 --raw --no-abbrev",
+		"--find-renames=75% -l0 --raw --no-abbrev")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with the rename threshold raised to 75%%:\n%s", out)
+	}
+	if !strings.Contains(out, "a rename that also edits was flagged as a silent revert") {
+		t.Fatalf("the rename arm did not notice the threshold change:\n%s", out)
+	}
+}
+
+// TestAuditRenameSourceSuppressionHasItsOwnPin is the excusing half. The source
+// path of an R leaves the tree, and flush() must read the per-entry moved flag
+// the parse sets rather than deciding for itself from the blob ids — which is
+// what the exact-blob rule did, and what could not see an edited rename.
+func TestAuditRenameSourceSuppressionHasItsOwnPin(t *testing.T) {
+	mutant, dir := srMutateScript(t, "moved=emoved[i]", "moved=0")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with the rename source no longer excused:\n%s", out)
+	}
+	if !strings.Contains(out, "a rename that also edits was flagged as a silent revert") {
+		t.Fatalf("the rename arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditRenameDestinationIsStillCompared is the pin states_awk's R branch
+// actually has, and the reason the self-test grew a third arm. Neutering the
+// branch makes every rename invisible: the raw line parses as one path named
+// "src<tab>dst", no deletion is recorded, and the rename-that-edits arm — which
+// asserts nothing but silence — stays GREEN. Only the re-land arm, which
+// asserts that a path returning to an older blob VIA a rename destination is
+// still flagged, can tell excused from invisible. Measured both directions.
+func TestAuditRenameDestinationIsStillCompared(t *testing.T) {
+	mutant, dir := srMutateScript(t, "if (m[5] ~ /^[RC]/) {", "if (0) {")
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with states_awk blind to rename lines:\n%s", out)
+	}
+	if !strings.Contains(out, "a re-land through a rename was not caught") {
+		t.Fatalf("the re-land arm did not name the defect it exists for:\n%s", out)
+	}
+	if strings.Contains(out, "a rename that also edits was flagged as a silent revert") {
+		t.Fatalf("expected the rename-that-edits arm to stay green over this mutation "+
+			"(invisible reads as excused); it did not, so this pin's rationale is stale:\n%s", out)
 	}
 }

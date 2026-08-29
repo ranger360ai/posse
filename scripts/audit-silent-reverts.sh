@@ -57,8 +57,11 @@
 # change. That one rule covers a content rollback, the deletion of a file that
 # was added earlier in the range, and the re-landing of either (the repair half
 # reads as a rollback of the revert, by construction — 1cc432e is triaged for
-# exactly that). Merges are excluded. A deletion whose exact blob is added at
-# another path in the SAME commit is a move, not a rollback, and is not flagged.
+# exactly that). Merges are excluded. A deletion that git pairs with an add in
+# the SAME commit is a move, not a rollback, and is not flagged — see raw_log
+# for the similarity threshold and why that number is chosen rather than
+# inherited (ranger-base-en75). Only the SOURCE half of a move is excused; the
+# destination is compared like any other write.
 #
 # COST OF THE DELETION RULE, measured on this repo's real history (447 commits,
 # 2026-08-23) before it was turned on: 30 deletions, of which 8 are exact moves
@@ -88,7 +91,9 @@
 # this repo's own history it cleared ONE of the two probe hits and left the
 # other (that path had four states, not two), and it silently un-flagged
 # e82338c, a rename+edit already triaged in the allow file. Rejected on the
-# measurement, not on taste.
+# measurement, not on taste. (That last clause is spent as of ranger-base-en75
+# — e82338c is not flagged at all any more — but the first two objections are
+# the load-bearing ones and they are unchanged.)
 #
 # PROBE FIXTURES, since two pairs landed here on 2026-08-29 (ranger-base-hvbj).
 # A fixture bead that has a session commit a file to prove a commit lands is a
@@ -130,9 +135,19 @@
 #     rather than a heuristic on the subject line.
 #   - It sees only what is committed. Work reverted in the working tree before
 #     it ever landed leaves no trace to find.
-#   - A rename that also EDITS the file is flagged. The move exception is
-#     exact-blob, like the rest of the tool; a 90%-similar file at a new path is
-#     git's heuristic, not this one's. Answer it with a triage line (631bda7).
+#   - A rename that also EDITS the file is NOT flagged any more: the move
+#     exception asks git to pair the deletion with the add at >=50% similarity
+#     (ranger-base-en75, after 631bda7, e82338c and 2eae58a each bought a
+#     triage line for the same shape). That is a deliberate false-NEGATIVE
+#     widening and raw_log carries the measurement behind the number. What it
+#     costs: a commit that deletes a newly-landed file while adding a
+#     >=50%-similar one in the same commit goes quiet. The exact-blob rule it
+#     replaced had the same hazard at 100%.
+#   - The rename pairing is only as good as git's rename detection. -l0 turns
+#     off the renameLimit that would otherwise make git skip it silently on a
+#     large commit, and there is no self-test arm for that flag: reproducing it
+#     needs a commit with more files than diff.renameLimit (1000 by default),
+#     which is not a fixture worth planting. Documented, not pinned.
 #   - The deletion rule needs the path's ADD inside the scanned range. On a
 #     partial range (`main~10..main`) a deletion of an older file is invisible;
 #     a full-history run (the default, and what `make test` runs) has no such
@@ -194,6 +209,77 @@ plant_move() {
   env -u RHQ_PERSONA git add -A; env -u RHQ_PERSONA git commit -qm "add moved.go"
   git mv moved.go elsewhere.go
   env -u RHQ_PERSONA git commit -qm "move it"
+}
+
+# RENAME-THAT-EDITS control — ranger-base-en75. The move exception used to be
+# exact-blob, so a rename that also edited the file was reported as a deletion
+# and cost a triage line; three commits in ~460 paid it. moved.go is 20 lines
+# with 5 of them rewritten in the same commit as the move, which git scores
+# R065 (git 2.50.1) — deliberately the shape of the real strike e82338c
+# (etc/cleanroom/{Dockerfile => Dockerfile.debian}, R060) and not of the easy
+# one 2eae58a (R097), so this arm also reds if the threshold is raised to 75%.
+plant_renameedit() {
+  plant_repo || return 2
+  local i
+  for i in $(seq 1 20); do echo "original line $i of the moved file"; done > mod.go
+  env -u RHQ_PERSONA git add -A; env -u RHQ_PERSONA git commit -qm "add mod.go"
+  git mv mod.go moved.go
+  for i in $(seq 1 20); do
+    if [ "$i" -le 5 ]; then echo "EDITED line $i after the move, quite different text here"
+    else echo "original line $i of the moved file"; fi
+  done > moved.go
+  env -u RHQ_PERSONA git add -A
+  env -u RHQ_PERSONA git commit -qm "move it and edit it"
+  # Fixture witness. This arm asserts an ABSENCE, so it has to show that the
+  # hazard is present (ranger-base-z4vx): the top commit must hold exactly one
+  # rename, and that rename must be INEXACT. An R100 here would be excused by
+  # the OLD exact-blob exception too, i.e. the arm would measure nothing.
+  git show --no-abbrev --raw --format= -M50% HEAD |
+    awk '$5 ~ /^R0*[0-9]+$/ { sim=substr($5,2)+0; if (sim>=50 && sim<100) n++ }
+         END { exit !(n==1) }' || return 2
+}
+
+# DELETE-PLUS-UNRELATED-ADD control — ranger-base-en75, and it is the wrong arm
+# the arm above needs. Widening the move exception from exact-blob to git's rename
+# pairing is a false-NEGATIVE widening: the failure it can cause is silence. So
+# one commit here deletes a file a previous commit added AND adds an unrelated
+# one, which is the add-only half of the rangerhq-8rtf mechanism wearing exactly
+# the coat the new exception hands out. It must still fire, or the exception is
+# not an exception, it is an off switch.
+plant_delplusadd() {
+  plant_repo || return 2
+  printf 'package x // the regression pin\n' > newpin_test.go
+  env -u RHQ_PERSONA git add -A
+  env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go"
+  env -u RHQ_PERSONA git rm -q newpin_test.go
+  printf 'title: notes\nthese bytes have nothing whatever in common with a go\npin; they exist to be an add in the same commit as a\ndeletion, and to sit far below any similarity threshold\nthis tool would ever choose.\n' > unrelated.md
+  env -u RHQ_PERSONA git add -A
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch"
+  # Fixture witness, and the chosen threshold's own control: the top commit must
+  # be exactly one deletion and one addition that git did NOT pair. If some
+  # future threshold ever pairs these two, the rig stops being the shape it
+  # claims and says so here, rather than quietly turning the arm into a
+  # tautology.
+  git show --no-abbrev --raw --format= -M50% HEAD |
+    awk '$5 ~ /^D/ {d++} $5 ~ /^A/ {a++} $5 ~ /^[RC]/ {r++}
+         END { exit !(d==1 && a==1 && r+0==0) }' || return 2
+}
+
+# RE-LAND-THROUGH-A-RENAME control — ranger-base-en75. Only the SOURCE half of a
+# rename is excused; the destination is a write like any other and is still
+# compared against every state its path has held. fix.go moves out to stale.go
+# and back, so its third state is a blob it already held, and that is a rollback
+# whichever way the bytes travelled. This is the arm that pins states_awk's R
+# handling: the rename-that-edits arm above does NOT, because deleting the R
+# branch outright makes a rename invisible, and invisible is indistinguishable
+# from excused when all you assert is silence.
+plant_reland() {
+  plant_repo || return 2
+  git mv fix.go stale.go
+  env -u RHQ_PERSONA git commit -qm "move the fix out of the way"
+  git mv stale.go fix.go
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch"
+  [ "$(git show HEAD:fix.go)" = "v1" ] || return 2
 }
 
 # NUMERIC-ID control — ranger-base-hhcu. n.txt holds three distinct states, and
@@ -262,13 +348,13 @@ self_test() {
   # hands it. A control that only counts absences needs a positive witness
   # that it looked at something; scan()'s own SCANNED line is that witness.
   local rc=0 prc n out scanned shape d fdir nonhex an; d=$(mktemp -d)
-  for shape in modify addonly move numeric; do
+  for shape in modify addonly move numeric renameedit delplusadd reland; do
     ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
     prc=$?
     [ "$prc" -eq 0 ] || {
         echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
   done
-  for shape in modify addonly move numeric; do
+  for shape in modify addonly move numeric renameedit delplusadd reland; do
     out=$( cd "$(cat "$d/$shape")" && scan HEAD )
     n=$(printf '%s\n' "$out" | grep -c 'path(s) went backwards')
     scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2+0}')
@@ -281,6 +367,26 @@ self_test() {
       move)
         if [ "$n" -eq 0 ]; then echo "self-test PASS: a plain move is not flagged (over $scanned planted commits)"
         else echo "self-test FAIL: plain move flagged as a silent revert"; rc=1; fi ;;
+      renameedit)
+        # ranger-base-en75. The exact-blob move exception could not see this
+        # shape, so every rename that also edited a file cost a triage line.
+        # Reds if raw_log stops asking git to pair renames, if the threshold is
+        # raised past the fixture R065, or if the source half of an R stops
+        # being suppressed.
+        if [ "$n" -eq 0 ]; then echo "self-test PASS: a rename that also EDITS is not flagged (over $scanned planted commits)"
+        else echo "self-test FAIL: a rename that also edits was flagged as a silent revert"; rc=1; fi ;;
+      delplusadd)
+        # The WRONG ARM for the one above. Widening the exception is a
+        # false-NEGATIVE widening, so the thing to prove is that it did not
+        # widen onto a real deletion that merely shares a commit with an add.
+        if [ "$n" -ge 1 ]; then echo "self-test PASS: a deletion plus an UNRELATED add in one commit still fires"
+        else echo "self-test FAIL: a deletion plus an unrelated add was silenced by the move exception"; rc=1; fi ;;
+      reland)
+        # The pin states_awk's R handling actually has: only the SOURCE of a
+        # rename is excused, the destination is still compared, so content that
+        # travels back to a path by rename is still a rollback.
+        if [ "$n" -ge 1 ]; then echo "self-test PASS: a re-land through a rename is still caught"
+        else echo "self-test FAIL: a re-land through a rename was not caught"; rc=1; fi ;;
       numeric)
         # Three assertions, because the fix has two independent layers and an
         # arm that only checks the outcome is green when EITHER survives.
@@ -332,7 +438,53 @@ self_test() {
   return $rc
 }
 
-# The raw log every scan reads. --no-abbrev is load-bearing (ranger-base-hhcu):
+# The raw log every scan reads.
+#
+# --find-renames=50% -l0 is the move exception (ranger-base-en75). It used to be
+# --no-renames, and the move exception lived entirely in states_awk as an
+# EXACT-BLOB rule: a deletion was excused only when the identical blob appeared
+# at another path in the same commit. A rename that also EDITS the file is a
+# different blob, so the exception could not see it and the deletion half was
+# reported. Three commits in ~460 paid a triage line for that (631bda7,
+# e82338c, 2eae58a) and the rate was not falling, so the question is asked of
+# git now instead of guessed at.
+#
+# THE THRESHOLD IS 50%, CHOSEN, NOT INHERITED. This is a false-NEGATIVE
+# widening and the number is the whole of its width, so it does not get to be
+# git's default by accident:
+#   - 50% is the LOWEST value at which git pairs anything, so it is the widest
+#     this exception can be. It is picked at the wide end deliberately: the two
+#     live strikes measure R097 (examples/agents/{ranger.md => ops.md}) and
+#     R060 (etc/cleanroom/{Dockerfile => Dockerfile.debian}), and 60% is the
+#     tightest threshold that clears both — i.e. zero margin, and the next
+#     rename+edit at 55% buys back the triage line this bead exists to stop.
+#   - What it costs is measured, not argued. Over this repo's 504 commits git
+#     pairs exactly THREE deletions with an add even at -M30% — the two above
+#     and one R100 exact move — and all three are real renames. There is no
+#     commit in this history where a lower threshold silences something that is
+#     not a rename, so the observed false-pairing rate at the chosen number is
+#     0/504.
+#   - What is still at risk, stated plainly: a stale-index commit that deletes
+#     a newly-landed file while adding a >=50%-similar one in the SAME commit
+#     goes quiet. The old exact-blob exception had the identical hazard at
+#     100%. Only the SOURCE half of a rename is excused; the destination is
+#     still compared against every state that path has held, so a re-land
+#     through a rename is still caught (the reland self-test arm).
+#   - -l0 is not decoration. git skips inexact rename detection entirely once
+#     the file count passes diff.renameLimit, whose default has changed across
+#     git versions, and it does so with a warning on stderr that nothing here
+#     reads. That is the ranger-base-hhcu shape again: the same history, two
+#     verdicts, decided by the toolchain. 0 means unlimited, and it costs 0.55s
+#     over this repo's full history (measured 2026-08-29, git 2.50.1). It has no
+#     self-test arm — see LIMITS.
+# Keep this flag and states_awk's R handling in step, in both directions. -M
+# WITHOUT the R branch is worse than either half alone: the rename line parses
+# as one path literally named "src<tab>dst", so the deletion is never recorded
+# at all and the audit under-reports in silence. The R branch WITHOUT -M is
+# dead code. Both directions are pinned in
+# internal/rhq/silentrevert_qa_test.go.
+#
+# --no-abbrev is load-bearing (ranger-base-hhcu):
 # git's default abbreviation is 7 hex, which is short enough that a blob id
 # lands on the <digit>e<digits> shape roughly once in 270, and that shape is
 # a NUMBER to awk. Full 40-hex ids are not immune in principle, but the shape
@@ -340,7 +492,7 @@ self_test() {
 # The string comparison in states_awk is the actual fix; this is the cheap
 # second layer, and each is pinned by its own assertion in the numeric arm.
 raw_log() {
-  git log --reverse --no-merges --no-renames --raw --no-abbrev \
+  git log --reverse --no-merges --find-renames=50% -l0 --raw --no-abbrev \
       --format="__C__%x09%H%x09%an%x09%s" "$1"
 }
 
@@ -357,7 +509,7 @@ states_awk() {
       split("", addedhere)
       for (i=1; i<=ne; i++) if (est[i] ~ /^A/) addedhere[edst[i]]=epath[i]
       for (i=1; i<=ne; i++) {
-        p=epath[i]; st=est[i]; d=edst[i]; s=esrc[i]; moved=0
+        p=epath[i]; st=est[i]; d=edst[i]; s=esrc[i]; moved=emoved[i]
         if (st ~ /^D/) {
           d=ABSENT
           if (s in addedhere) moved=1           # exact-content move, not a rollback
@@ -378,9 +530,32 @@ states_awk() {
     /^__C__\t/ { flush(); split($0,a,"\t"); ci++; sha[ci]=a[2]; auth[ci]=a[3]; subj[ci]=a[4]; next }
     /^:/ {
       t=index($0,"\t"); if (t==0) next
-      ne++
-      epath[ne]=substr($0,t+1)
+      rest=substr($0,t+1)
       split(substr($0,1,t-1),m," ")
+      # A RENAME IS TWO PATHS ON ONE LINE (ranger-base-en75). raw_log asks git
+      # to pair deletions with adds, so a rename arrives as
+      #   :<mode> <mode> <src> <dst> R<sim>\t<srcpath>\t<dstpath>
+      # which the single-tab path parse below would read as one path literally
+      # named "src<tab>dst". Decompose it into the two entries it stands for:
+      # the source LEAVES (a deletion, but a MOVED one, so not a rollback) and
+      # the destination ARRIVES with the possibly-edited blob. The destination
+      # is deliberately a plain write, compared against every state that path
+      # has held, so a re-land through a rename is still caught. C<sim> (a
+      # copy) is handled the same way minus the deletion; raw_log does not
+      # enable -C today, so that arm is defensive.
+      if (m[5] ~ /^[RC]/) {
+        tt=index(rest,"\t"); if (tt==0) next
+        if (m[5] ~ /^R/) {
+          ne++; epath[ne]=substr(rest,1,tt-1)
+          esrc[ne]=m[3] ""; edst[ne]=m[4] ""; est[ne]="D"; emoved[ne]=1
+        }
+        ne++; epath[ne]=substr(rest,tt+1)
+        esrc[ne]=m[3] ""; edst[ne]=m[4] ""; est[ne]="A"; emoved[ne]=0
+        next
+      }
+      ne++
+      epath[ne]=rest
+      emoved[ne]=0
       # FORCE STRING, and do it HERE so there is exactly one place that can be
       # got wrong (ranger-base-hhcu). A field, and every element split out of
       # one, is a STRNUM: awk compares two strnums NUMERICALLY when both look

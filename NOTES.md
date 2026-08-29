@@ -4941,11 +4941,30 @@ edit the file, so the exact-blob move exception does not cover them).
 **dcca7b5 is still the only silent revert on main** — the deletion rule found no
 new incident, which was measured independently under rangerhq-jkhb before it was
 written. What the audit cannot see, so do not read it as more: exact-blob
-matches only — a *partial* revert of some hunks is invisible, and a rename that
-also edits the file reads as a deletion and needs a triage line — it sees only
+matches only, so a *partial* revert of some hunks is invisible — it sees only
 what was committed, never work reverted in the working tree before it landed,
 and the deletion rule needs the path's add inside the scanned range, so a short
 `a..b` range under-reports.
+
+**The move exception asks git, at a chosen 50%** (ranger-base-en75). It used to
+be exact-blob, so a rename that *also edited* the file was reported as a
+deletion and cost a triage line — three commits in ~460 paid it (631bda7,
+e82338c, 2eae58a) and the rate was not falling. `raw_log` passes
+`--find-renames=50% -l0` now and the state machine decomposes git's `R` line
+into the two entries it stands for: the source leaves (excused) and the
+destination arrives (still compared, so a re-land *through* a rename is still
+caught). The number is chosen, not inherited: the two live strikes measure R060
+and R097, so 60% is the tightest value that clears both — zero margin — and over
+this repo's 504 commits git pairs exactly three deletions with an add even at
+`-M30%`, all three real renames. The cost is a false-*negative* widening: a
+stale-index commit that deletes a newly-landed file while adding a ≥50%-similar
+one in the same commit goes quiet. The exact-blob rule it replaced had the same
+hazard at 100%. `--self-test` grew three arms for it — a rename-that-edits is
+not flagged, a deletion plus an *unrelated* add still fires, and a re-land
+through a rename is still caught — and each is mutation-pinned separately in
+`internal/rhq/silentrevert_qa_test.go`, because deleting the `R` handling makes
+a rename *invisible*, which an arm asserting only silence cannot tell from
+*excused*.
 
 ## Testing
 
