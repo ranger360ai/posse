@@ -51,10 +51,11 @@ import (
 // FIRST explain already errored, awaitSettled's lastWhy stayed "" and the
 // concession path prompted — the exact shape the third assertion below says
 // is absent, so all three fired at once. Measured at 3583221: 3 of 30 red
-// on a box at load 13-16, and 5 of 10 red under 8 spinners on 8 cpus.
-// gwart measured 11 of 20 on main. The timer was never the point: a probe
-// on the old fixture logged only 2-3 explains served before it fired, i.e.
-// "after some guesses" was a coincidence of scheduling.
+// on a box at load 13-16, and 20 of 20 red under 8 spinners on 8 cpus;
+// ranger-base-9mwa reports 11 of 20 on main. The timer was never the
+// point — a probe on the old fixture logged only 2-3 explains served
+// before it fired, so "after some guesses" was a coincidence of
+// scheduling.
 //
 // The lever is the same countdown bootrace_qa_test.go uses — the first
 // `guesses` explains answer, every one after that errors, so the LAST
