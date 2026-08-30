@@ -142,7 +142,13 @@ jobs:
         shell: bash
         run: |
           scripts/release-notes.sh --version "$TAG" >"$NOTES"
-          args=(--draft --title "posse $TAG" --generate-notes --target "$SHA")
+          # --latest is stored on the draft and takes effect when the operator
+          # publishes it (gh release create --help: draft fields are mutable
+          # pre-publish). Without it GitHub's automatic "latest" pointer does
+          # not reliably follow publish order once releases are drafted out of
+          # band — v0.3.0 stayed "latest" through v0.4.0's publish
+          # (ranger-base-8vx0) — so state it explicitly every time.
+          args=(--draft --latest --title "posse $TAG" --generate-notes --target "$SHA")
           if [ -s "$NOTES" ]; then
             args+=(--notes-file "$NOTES")
             echo "release: notes will open with the CHANGELOG section for $TAG:"

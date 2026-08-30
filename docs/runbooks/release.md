@@ -224,6 +224,20 @@ platform nobody tried.
 Nothing is downloadable until you publish — and the formula's URLs 404 until
 you do, which makes step 3 fail in a way that looks like a bad formula.
 
+**After publishing, verify the "Latest" pointer moved (`ranger-base-8vx0`).**
+The draft carries `--latest` from the workflow, but the GitHub UI shows a
+"Set as the latest release" checkbox on the publish screen too — check it's
+ticked before you press Publish, and confirm after:
+
+```sh
+$ curl -fsS -o /dev/null -w '%{url_effective}\n' -L \
+    https://github.com/ranger360ai/posse/releases/latest
+```
+**Verify:** the redirect lands on `.../tag/vX.Y.Z`, not an older tag. This
+is the one check that catches GitHub's "latest" pointer silently staying on
+a prior release — it happened once (v0.3.0 stayed latest through v0.4.0's
+publish) with no error anywhere in the workflow log.
+
 **Read the notes body before you press Publish.** It must OPEN with the
 CHANGELOG section for this version — the same text `make release-notes` printed
 in precondition 6 — with GitHub's generated commit list underneath. If the
