@@ -134,3 +134,76 @@ func countCalls(t *testing.T, fake, prefix string) int {
 	}
 	return n
 }
+
+// The argv launch site, which the two tests above do not reach. Both
+// launchSession and launchWithPrompt pass d.runtimeWait(runtime) through,
+// but only the typed one is exercised there, and "the other call is the
+// same expression" is the reading-not-measuring this bead exists against.
+//
+// A note in one QA logbook had this arm down as undetectable by
+// construction, on the ground that `runtime check` refuses a runtime
+// declaring both prompt: argv and startup_wait:. It does not. That rule is
+// an assertion over the two BUILT-IN argv runtimes (runtimecheck_test.go:
+// codex and grok must carry no startup_wait:), and nothing in LoadRuntime
+// cross-checks the two keys, so a declared runtime carries both and reaches
+// the argv path with its own number. Which is the more useful answer: an
+// instance CAN put a startup_wait: on an argv profile, so dispatch had
+// better honour it there too.
+func TestDispatchArgvPathUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.StartupWait = 3 * time.Second
+	d.Poll = 10 * time.Millisecond
+
+	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.RuntimesDir(), "slowargv.yaml"),
+		[]byte("command: slowargv --rules=\"$(cat {file})\"\nprompt: argv\nstartup_wait: 80ms\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The profile really is on the argv ladder — otherwise this test is a
+	// second copy of the typed one wearing a different runtime name.
+	rt, err := b.App.LoadRuntime("slowargv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.PromptMode() != PromptArgv {
+		t.Fatalf("slowargv is on the %s ladder, so this pin does not reach launchWithPrompt", rt.PromptMode())
+	}
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: slowargv\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	// agents.json absent → herdr never sees an agent, so awaitDelivered runs
+	// its startup wait out and the refusal names the patience it waited.
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 0 || !strings.Contains(out, "no agent detected") {
+		t.Fatalf("want no-agent failure, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "work prompt on the launch line") {
+		t.Fatalf("this launch did not take the argv path, so it pins the wrong call site:\n%s", out)
+	}
+	if !strings.Contains(out, "80ms") {
+		t.Errorf("the argv launch must wait slowargv's declared startup_wait (80ms), not the pass default (%s):\n%s", d.StartupWait, out)
+	}
+	if strings.Contains(out, d.StartupWait.String()) {
+		t.Errorf("the refusal must not name the pass default (%s) when the runtime declared its own:\n%s", d.StartupWait, out)
+	}
+	// Same countable proof as the typed pin above, and the same ceiling —
+	// see its comment for why a wall-clock bound is the racy way to say this.
+	const maxAgentAsks = 30
+	if asks := countCalls(t, fake, "agent list"); asks > maxAgentAsks {
+		t.Errorf("the argv launch asked herdr for an agent %d times (ceiling %d) — looks like it waited the pass default (%s) instead of slowargv's 80ms:\n%s",
+			asks, maxAgentAsks, d.StartupWait, calls(t, fake))
+	}
+}
