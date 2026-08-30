@@ -558,7 +558,6 @@ func TestQueueCutoverInstructionsNameTheRepoIdMigrate(t *testing.T) {
 // 44 export-state files, each naming a worktree path, a persona and a bead
 // id, version-controlled in the store of record.
 func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
-	t.Skip("ranger-base-4l2z: the queue repo's first commit sweeps .beads paths the constitution's root .gitignore excludes")
 	constitution, _ := qcConstitution(t)
 	write(t, filepath.Join(constitution, ".beads", "export-state", "abc.json"),
 		`{"worktree_root":"/Users/someone/.posse/worktrees/posse/developer-x"}`+"\n")

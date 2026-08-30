@@ -403,6 +403,29 @@ else
   fi
   rm -f "$QUEUE/.git/queue-cutover-shamap"
 
+  # The constitution's ROOT `.gitignore` — not `.beads/.gitignore` — is where
+  # `.beads/export-state/` and `.beads/interactions.jsonl` are excluded
+  # (ranger-base-4l2z). The replay carries the `.beads` subtree and nothing
+  # else, so those rules never travel, and the queue repo's `git add -A
+  # .beads` below would stage them into the store of record on its first
+  # commit — 44 files naming a worktree path, a persona and a bead id, in one
+  # measured repro. Translate every root rule scoped to `.beads/` into the
+  # moved `.beads/.gitignore` before that add runs, so what the queue repo
+  # tracks is what the constitution tracked.
+  if [ -f "$CONSTITUTION/.gitignore" ]; then
+    while IFS= read -r pat; do
+      case $pat in
+        ''|'#'*) continue ;;
+        /.beads/*) pat=${pat#/.beads/} ;;
+        .beads/*)  pat=${pat#.beads/} ;;
+        *) continue ;;
+      esac
+      [ -n "$pat" ] || continue
+      grep -qxF "$pat" "$DST_BEADS/.gitignore" 2>/dev/null ||
+        printf '%s\n' "$pat" >> "$DST_BEADS/.gitignore"
+    done < "$CONSTITUTION/.gitignore"
+  fi
+
   # ─── 4. the constitution keeps a redirect and nothing else ────────────────
   # This lands BEFORE the queue's commit, and that order is the fix for
   # ranger-base-nzyn: from here on the fleet RESOLVES. Everything after can
