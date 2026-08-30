@@ -1668,7 +1668,10 @@ hook. It is **disarmed** until `autostart_interval:` appears in your
 config — the presence of that key is the arm switch. There is no off-value,
 and a bare `autostart_interval:` with nothing after it is not one: the hook
 refuses it by name and exits nonzero, and `posse status` says so as G7
-(`arm-broken`). Disarm by commenting the key out. Only the default herdr
+(`arm-broken`). A value the hook cannot read (`banana`, `5min`, `0`) gets the
+same treatment — refused in the terminal you are standing at, rather than
+armed into a loop that dies in a session log under a hook that already said
+"dispatch started". Disarm by commenting the key out. Only the default herdr
 server may arm the fleet loop; named-session servers stand down even though
 herdr's plugin registry is global.
 

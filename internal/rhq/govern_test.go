@@ -540,6 +540,56 @@ func TestGovG7BareIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
 	}
 }
 
+// The other broken arm: a value the hook cannot read. It used to fall
+// through to the lock and be reported as `loop-dead — autostart is armed`,
+// which after ranger-base-7rt5 is false twice over: nothing is armed, and
+// nothing will be at the next herdr start either. The hook and this row are
+// the two surfaces the seed config promises never disagree, so they move
+// together.
+func TestGovG7MalformedIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
+	// Not `""` here: yamlClean strips the surrounding quotes, so posse's own
+	// reader sees the empty value and this row takes the arm above. The hook's
+	// cfg() does not unquote and calls the same line malformed. Both refuse,
+	// both say arm-broken, both name the key — the reason they reach it by
+	// different arms is filed separately.
+	for _, value := range []string{"banana", "0", "5min", "-5m", "30 s"} {
+		t.Run(value, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			appendConfig(t, b.App, "autostart_interval: "+value+"\n")
+			g := find(shopSet(t, govIn(t, b)), "G7")
+			if g == nil {
+				t.Fatal("a broken arm delivers nothing — G7 must still fire")
+			}
+			if g.Key != "arm-broken" || g.Class != GovUrgent {
+				t.Errorf("G7 = %+v, want arm-broken URGENT", *g)
+			}
+			if strings.Contains(g.Detail, "is armed") {
+				t.Errorf("a refused value is not armed: %q", g.Detail)
+			}
+			if !strings.Contains(g.Detail, "autostart_interval:") ||
+				!strings.Contains(g.Detail, value) ||
+				!strings.Contains(g.Detail, b.App.ConfigPath) {
+				t.Errorf("the row must name the key, the value and the file: %q", g.Detail)
+			}
+		})
+	}
+}
+
+// The positive control for that table: an interval posse accepts is armed,
+// so with no loop up the row is loop-dead — never arm-broken.
+func TestGovG7ValidIntervalIsStillADeadLoop(t *testing.T) {
+	for _, value := range []string{"5m", "45", "1h30m", "500ms"} {
+		t.Run(value, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			appendConfig(t, b.App, "autostart_interval: "+value+"\n")
+			g := find(shopSet(t, govIn(t, b)), "G7")
+			if g == nil || g.Key != "loop-dead" {
+				t.Errorf("G7 = %+v, want loop-dead for an armed config with no loop", g)
+			}
+		})
+	}
+}
+
 // And the broken arm does not depend on the lock: a live loop clears
 // loop-dead, never arm-broken — the next herdr start still refuses the key.
 func TestGovG7BrokenArmSurvivesALiveLoop(t *testing.T) {

@@ -13,7 +13,9 @@
 # $RHQ_HOME/config.yaml (flat-YAML scalars, house subset):
 #
 #   autostart_interval:      base pass interval (30s, 5m, or bare seconds)
-#                            — PRESENCE OF THIS KEY IS THE ARM SWITCH
+#                            — PRESENCE OF THIS KEY IS THE ARM SWITCH, and a
+#                            value it cannot read is a broken arm, not a
+#                            disarm: refused by name, nothing armed
 #   autostart_max_interval:  backoff cap for quiet passes (default: posse's 8x)
 #   autostart_max_beads:     -n, launch attempts per dispatch_epoch: (default
 #                            1h, ADR 0028 §2) — RAISES OR LOWERS
@@ -216,6 +218,19 @@ haskey() {
 	grep -q "^$1:" "$CONFIG"
 }
 
+# Does posse accept this interval? Mirrors internal/rhq.ParseInterval
+# (internal/rhq/watch.go): bare seconds, or a Go duration — one or more
+# number+unit groups, units ns/us/µs/μs/ms/s/m/h. Positive, too, which for
+# this grammar is exactly "some magnitude is nonzero", there being no sign to
+# write: `0`, `0s` and `0h0m` all parse and are all refused by ParseInterval.
+# Asked here so the refusal lands in the deployer's terminal instead of in a
+# session log nobody opens (ranger-base-7rt5).
+valid_interval() {
+	local num='([0-9]+(\.[0-9]*)?|\.[0-9]+)' unit='(ns|us|µs|μs|ms|s|m|h)'
+	[[ $1 =~ ^\+?[0-9]+$ || $1 =~ ^\+?($num$unit)+$ ]] || return 1
+	[[ $1 =~ [1-9] ]]
+}
+
 interval=$(cfg autostart_interval)
 if [ -z "$interval" ]; then
 	# A bare `autostart_interval:` is a BROKEN ARM, not a disarm. The seed
@@ -233,6 +248,17 @@ if [ -z "$interval" ]; then
 	fi
 	say "disarmed (no autostart_interval: in $CONFIG)"
 	exit 0
+fi
+# ...and a value it cannot read is the same broken arm, one input shape over.
+# `posse dispatch --watch banana` dies with `bad interval "banana"` — inside
+# the herdr session, minutes later, under a hook that already said "dispatch
+# started". Every other value key here names what it cannot read
+# (autostart_max_beads, autostart_resume); this one cannot fall back on a
+# default because there is none to fall back on, so it stands down exactly the
+# way the empty key above does (ranger-base-7rt5).
+if ! valid_interval "$interval"; then
+	say "autostart_interval: '$interval' in $CONFIG is not an interval — use 30s, 5m, or bare seconds; nothing armed" >&2
+	exit 1
 fi
 # There used to be a fallback here that armed through the transition alias
 # bin/rhq when bin/posse was missing (rangerhq-tyay). `make link-plugin` no
