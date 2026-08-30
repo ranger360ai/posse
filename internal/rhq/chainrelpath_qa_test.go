@@ -21,7 +21,7 @@ package rhq
 // inside the repo survives by luck (git discovers the repo upwards from
 // .git/hooks).
 //
-// FIXED 2026-08-30 (gwart, ranger-base-87c9): chainDispatcher resolves the
+// FIXED 2026-08-30 (ranger-base-87c9): chainDispatcher resolves the
 // repo argument to an absolute path before abbreviating it, so step 3 still
 // names the repo after step 1's cd. `.` from inside the repo now survives on
 // purpose rather than by luck. Measured at HEAD with a binary built from this
