@@ -89,6 +89,17 @@ func TestQAForeignPosseSlotUnderAForeignHookRefusesWithoutAPasteBlock(t *testing
 	if PrePushHookInstalled(repo) {
 		t.Error("a refused install must not read as installed")
 	}
+
+	// The refusal is itself a recipe, so run it rather than read it: move the
+	// file aside as it says, re-run, and the prescription must be there.
+	if err := os.Rename(filepath.Join(hooks, "posse-pre-push"), filepath.Join(hooks, "mine-pre-push")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallPrePushHook(repo); err == nil {
+		t.Fatal("a foreign hook in the slot is still refused")
+	} else if !strings.Contains(err.Error(), "Chain it —") {
+		t.Errorf("the way through the refusal must lead to the prescription: %q", err)
+	}
 }
 
 // --chain over bd's shim reaches the same write with no paste at all: it
