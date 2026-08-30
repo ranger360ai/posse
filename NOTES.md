@@ -3050,12 +3050,28 @@ hard-coded `docker run`: built-in `docker`, `RHQ_HOME/cages/<name>.yaml`
 for anything else (only `command:` is required — `mount:`/`mount_ro:`/
 `env:`/`home:`/`build:`/`probe:` default to docker's spellings, which is
 what makes OrbStack a swap), chosen by config `default_engine:`. `posse
-cage` prints engine, image and readiness; `posse cage <persona>` prints
-what would cross the boundary; `posse cage build [dir]` cross-builds a
+cage` prints engine, image, readiness and the image's AGE; `posse cage
+<persona>` prints what would cross the boundary; `posse cage build [dir]`
+cross-builds a
 Linux `posse` and `bd` 0.49.1 out of a posse checkout and hands
 `etc/cage/Dockerfile` plus those binaries to the engine (~45s, ~600MB;
 `--runtimes` adds CLIs — claude is installed by default because it is
 the only runtime whose container credential is decided).
+
+Age, because the inner render below is the IMAGE's posse and until
+ranger-base-nwj7 nothing but a live test's FAIL ever said the image was
+behind it (`internal/rhq/cagestale.go`). `posse cage build` stamps the
+posse it bakes in with the checkout's identity — go's own `-buildvcs`
+stamp is absent for a build from a linked worktree, which is where every
+persona works, so without it an image cannot name the commit it came from
+— and the host compares that against what the source in hand builds.
+Three states, not two: the same build, a different one (**stale**: the
+wall in the cage is that build's, so rebuild before reading anything in
+there as a regression), or an image that could not be asked
+(**unclear**, deliberately not stale — a live pin that skips on a probe
+failure is one that goes green and stays there). The live pins whose
+subject is the inner render skip on stale rather than failing one clause
+of a claim they never measured.
 
 Mounts are **same-path in and out**, so the one rendering of the runtime
 command works on both sides: the session dir, the persona's memory, its
