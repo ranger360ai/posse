@@ -610,3 +610,61 @@ func parserGate(t *testing.T, command string) gateResult {
 	}
 	return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
 }
+
+// ranger-base-1lvm, found verifying ranger-base-hthx's close (ranger-base-nn0n).
+// The fast path above is fixed and I could not break it. This is the OTHER
+// half of that close — the fail-closed fallback, the arm taken when the parser
+// did not run at all — and it is still open, so this pin is SKIPPED. Remove
+// the skip when 1lvm is fixed; it is red until then.
+//
+// The fallback reasons about the JSON payload's TEXT while the parser reasons
+// about the DECODED command, and the two disagree about a newline. A newline
+// in a command arrives as the two characters backslash + n, so in
+// `hi\nbd daemon stop` the character before `bd` is the `n` of the escape —
+// which is in the excluded class, so the raw grep misses it; and stripping the
+// backslash JOINS that n to bd, giving `hinbd`, so the stripped grep misses it
+// too. Both forms are there precisely to cover each other and neither covers
+// this. A bd call that is not on the FIRST LINE of the command is waved
+// through whenever the parser is unavailable, which is the state the fallback
+// exists for.
+//
+// The control arm is the whole finding and must stay: the SAME verb on line
+// one is refused today, so a green run of this test can only mean the newline
+// case was fixed, not that the fallback started refusing everything.
+func TestQABdArgvGateFallbackSeesBdPastTheFirstLine(t *testing.T) {
+	t.Skip("ranger-base-1lvm: the fail-closed fallback greps the payload text, which a JSON-escaped newline hides bd behind")
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	missing := filepath.Join(t.TempDir(), "not-a-parser.py")
+	broken := filepath.Join(t.TempDir(), "broken.py")
+	if err := os.WriteFile(broken, []byte("def (\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, env := range [][]string{
+		{"BD_ARGV_GATE_PY=" + missing},
+		{"BD_ARGV_GATE_PY=" + broken},
+		{"BD_ARGV_GATE_PYTHON=" + filepath.Join(t.TempDir(), "no-python3")},
+	} {
+		for _, command := range []string{
+			"echo hi\nbd daemon stop",
+			"echo hi\nb\\d admin reset",
+			"cd /tmp\nbd delete some-id",
+		} {
+			// Positive witness: a fixture that stopped naming a denied verb
+			// would let this pass while measuring nothing.
+			if denied(t, parserGate(t, command)) == "" {
+				t.Fatalf("fixture: the parser must refuse %q for this to be about the fallback", command)
+			}
+			if r := runGate(t, env, command); r.code != 2 || !strings.Contains(r.stderr, "fail closed") {
+				t.Errorf("%v: %q must be refused when the parser is unavailable: code=%d err=%q",
+					env, command, r.code, r.stderr)
+			}
+		}
+		// CONTROL: the same verb on the first line already fails closed, so
+		// the newline is the entire difference.
+		if r := runGate(t, env, "bd daemon stop"); r.code != 2 {
+			t.Errorf("%v: control: a first-line bd call must fail closed, got code=%d", env, r.code)
+		}
+	}
+}
