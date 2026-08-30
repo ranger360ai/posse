@@ -159,7 +159,11 @@ type GovInputs struct {
 	GuardTrippedSince time.Time
 
 	// Spend is the cost scan behind G6; nil = ScanCosts. Injected so a test
-	// never reads the operator's live ledger.
+	// never reads the operator's live ledger — and so a caller that runs
+	// this check on a TIMER can hand in a scanner with a memory, rather than
+	// re-decoding the whole transcript pile every tick (rhq.CostScanner,
+	// ranger-base-325q: the cockpit was paying for this scan and its own,
+	// twice per thirty seconds).
 	Spend func(time.Time) *CostReport
 
 	// Plan is the plan-window reader behind G5/G6; nil = the instance's

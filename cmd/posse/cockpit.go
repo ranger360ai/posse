@@ -182,6 +182,41 @@ type cockpit struct {
 	govFailed int
 	govAt     time.Time
 
+	// costScan is the cost scanner, KEPT across ticks. It is what makes the
+	// 30s cadence affordable: the scan re-decodes only the transcripts
+	// whose bytes moved since the last one (rhq.CostScanner,
+	// ranger-base-325q). A fresh scanner every tick would remember nothing
+	// and re-read the whole pile, which is what it used to do.
+	costScan *rhq.CostScanner
+
+	// govScan is the SECOND kept scanner, and it is separate from costScan
+	// on purpose. The governance check's G6 row scans the day (Dial E, when
+	// the operator armed a cap) while the footer scans fourteen days, and a
+	// memo entry remembers the one window its answer was taken under: sharing
+	// a scanner between the two would have each tick evict the other's entry
+	// and both would miss, every time, forever. One scanner per window, each
+	// touched by one goroutine.
+	govScan *rhq.CostScanner
+
+	// costBusy/planBusy/govBusy are the in-flight guards, and the whole of
+	// why this screen can no longer run away with a core (ranger-base-325q).
+	//
+	// Each of the three scans runs off the event loop on a timer. The timer
+	// used to fire a fresh goroutine unconditionally — so the moment a scan
+	// took longer than its own period, which the governance check does on
+	// any loaded box (23.5s of its 30s budget when the box was IDLE), the
+	// next tick started a SECOND one over the top of it. Two scans contend,
+	// each gets slower, the tick after starts a third: measured at 101.9%
+	// of a core with the cockpit merely sitting there displaying.
+	//
+	// The rule is one of each at a time. A tick that arrives while its scan
+	// is still running is DROPPED, not queued: these are level readings, and
+	// the next tick will take a fresher one than the queued one would have.
+	// The flag is set on the event loop before the goroutine starts and
+	// cleared on the event loop in the matching apply — which is also why
+	// the scans send their result blocking rather than dropping it.
+	costBusy, planBusy, govBusy bool
+
 	// now is the clock the header reads; nil = time.Now. The golden tests
 	// (ADR 0004 §5) pin it so the render is byte-stable.
 	now func() time.Time
@@ -218,20 +253,65 @@ type govRead struct {
 	failed int
 }
 
-// scanGov runs off the event loop; the result lands on c.govs.
-func (c *cockpit) scanGov() {
-	in := rhq.StatusInputs(c.app, c.hb, io.Discard)
-	in.Caller = "cockpit"
-	set, failed := rhq.ShopCheck(in)
-	select {
-	case c.govs <- govRead{set: set, failed: len(failed)}:
-	default:
+// start runs one scan off the event loop, unless that scan is already
+// running. busy is the scan's own guard flag; the matching apply clears it.
+//
+// Every timer path goes through here and none may call `go c.scanX()`
+// directly — a tick that fires a second scan over a running one is
+// ranger-base-325q, and it costs a core. cockpitcpu_test.go pins that.
+func (c *cockpit) start(busy *bool, scan func()) {
+	if *busy {
+		return
 	}
+	*busy = true
+	go scan()
 }
 
-// scanCosts runs off the event loop; the result lands on c.costs.
+func (c *cockpit) startCost() { c.start(&c.costBusy, c.scanCosts) }
+func (c *cockpit) startPlan() { c.start(&c.planBusy, c.scanPlan) }
+func (c *cockpit) startGov()  { c.start(&c.govBusy, c.scanGov) }
+
+// scanGov runs off the event loop; the result lands on c.govs.
+//
+// The send BLOCKS. It used to drop the result when the channel was full,
+// which was safe only because nothing depended on the result arriving; now
+// the arrival is what clears govBusy, and a dropped one would wedge the
+// scan off for the life of the cockpit. The guard makes the block
+// impossible in practice — one scan in flight, one slot free, and every
+// loop selects on this channel unconditionally.
+func (c *cockpit) scanGov() {
+	set, failed := rhq.ShopCheck(c.govInputs())
+	c.govs <- govRead{set: set, failed: len(failed)}
+}
+
+// govInputs is what the cockpit hands the shop check. Its own function so
+// the one field this screen fills in can be pinned: left nil, G6's day scan
+// is a bare ScanCosts and the cockpit pays for a SECOND full decode of the
+// transcript pile on every governance tick, on top of the footer's own
+// (ranger-base-325q).
+func (c *cockpit) govInputs() rhq.GovInputs {
+	in := rhq.StatusInputs(c.app, c.hb, io.Discard)
+	in.Caller = "cockpit"
+	in.Spend = func(t time.Time) *rhq.CostReport { return c.govScan.Scan("", t) }
+	return in
+}
+
+// costSince is the cost window's opening edge, TRUNCATED to the hour.
+//
+// The window is fourteen days and the truncation moves its edge by under an
+// hour, which no reading in the footer can tell apart. What it buys is a
+// `since` that holds still between ticks, and rhq.CostScanner only reuses a
+// decode taken under the same cut — with `now-14d` computed fresh every
+// tick, every file missed the memo and the whole pile was re-read
+// (ranger-base-325q).
+func costSince(now time.Time) time.Time {
+	return now.Truncate(time.Hour).Add(-14 * 24 * time.Hour)
+}
+
+// scanCosts runs off the event loop; the result lands on c.costs. Blocking
+// send, for scanGov's reason.
 func (c *cockpit) scanCosts() {
-	rep := rhq.ScanCosts("", time.Now().Add(-14*24*time.Hour))
+	rep := c.costScan.Scan("", costSince(time.Now()))
 	// The day cap rides along with the scan: it is a config read, and the
 	// draw path must not do file I/O. 0 = Dial E dormant = no budget line.
 	_, rep.DayCap = c.app.BudgetCaps(io.Discard)
@@ -239,10 +319,7 @@ func (c *cockpit) scanCosts() {
 		rep.AttributePersonas(c.app, c.bd)
 	}
 	rep.CountUncounted(c.hb)
-	select {
-	case c.costs <- rep:
-	default:
-	}
+	c.costs <- rep
 }
 
 // applyCost lands one scan on the event loop's state — the whole of what
@@ -252,6 +329,7 @@ func (c *cockpit) scanCosts() {
 // report (which is how Unread was missing from the display in the first
 // place, ADR 0018 §3 / ranger-base-c65c).
 func (c *cockpit) applyCost(rep *rhq.CostReport) {
+	c.costBusy = false
 	c.costByBead = rep.ByBead()
 	c.costToday = rep.DayTotal(time.Now())
 	c.costUncounted = rep.Uncounted
@@ -343,10 +421,7 @@ func (c *cockpit) scanPlan() {
 	// the guard being armed — a mint expires on a box with no meter guard
 	// at all.
 	r.creds = c.app.ExpiringCredentials(c.clock())
-	select {
-	case c.plans <- r:
-	default:
-	}
+	c.plans <- r
 }
 
 // applyPlan lands one scan on the header. Split out of the event loop for
@@ -355,6 +430,7 @@ func (c *cockpit) scanPlan() {
 // header that renders a field nothing assigns is green in every test that
 // sets the field itself.
 func (c *cockpit) applyPlan(r planRead) {
+	c.planBusy = false
 	c.planLine, c.creds = c.planSegment(r), r.creds
 }
 
@@ -467,6 +543,7 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 // hold: runCockpit's own body is the raw-mode terminal, which no test has.
 func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 	c := &cockpit{app: a, hb: hb, bd: rhq.NewBd(), out: out,
+		costScan: new(rhq.CostScanner), govScan: new(rhq.CostScanner),
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
 		progress: make(chan string, 4), prompts: make(chan string, 4),
 		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
@@ -526,9 +603,9 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 	defer tick.Stop()
 	c.refresh()
 	c.draw()
-	go c.scanCosts()
-	go c.scanPlan()
-	go c.scanGov()
+	c.startCost()
+	c.startPlan()
+	c.startGov()
 	costTick := time.NewTicker(costEvery)
 	defer costTick.Stop()
 	planTick := time.NewTicker(planEvery)
@@ -547,11 +624,11 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 				c.draw()
 			}
 		case <-costTick.C:
-			go c.scanCosts()
+			c.startCost()
 		case <-planTick.C:
-			go c.scanPlan()
+			c.startPlan()
 		case <-govTick.C:
-			go c.scanGov()
+			c.startGov()
 		case g := <-c.govs:
 			c.applyGov(g)
 			if c.mode == modeNormal {
@@ -2280,14 +2357,14 @@ func (c *cockpit) displayOnly() error {
 	defer tick.Stop()
 	govTick := time.NewTicker(govEvery)
 	defer govTick.Stop()
-	go c.scanGov()
+	c.startGov()
 	for {
 		c.displayFrame()
 		select {
 		case <-stop:
 			return nil
 		case <-govTick.C:
-			go c.scanGov()
+			c.startGov()
 		case <-tick.C:
 		}
 	}
@@ -2322,6 +2399,7 @@ func (c *cockpit) takeGov() bool {
 // check found nothing" from "no check has run", and a path that set the set
 // without stamping it would render an all-clear it never earned.
 func (c *cockpit) applyGov(g govRead) {
+	c.govBusy = false
 	c.gov, c.govFailed, c.govAt = g.set, g.failed, time.Now()
 }
 

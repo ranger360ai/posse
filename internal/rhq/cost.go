@@ -33,6 +33,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -502,19 +503,150 @@ type CostReport struct {
 // and never this function's (ADR 0012 D4); a runtime with no adapter
 // contributes no segments here and is counted as uncounted instead.
 func ScanCosts(project string, since time.Time) *CostReport {
+	// A scanner with no history: every file is decoded, exactly as this
+	// function has always done. A caller that scans REPEATEDLY holds a
+	// CostScanner of its own instead.
+	return new(CostScanner).Scan(project, since)
+}
+
+// CostScanner is ScanCosts with a memory: it remembers what each transcript
+// decoded to and re-reads only the files whose bytes have changed. One-shot
+// callers want ScanCosts; a caller on a timer wants one of these, kept.
+//
+// Why it exists (ranger-base-325q). The cockpit re-scanned the whole 14-day
+// transcript pile every 30 seconds. Measured on this shop 2026-08-29: 1211
+// files, 786 MB, of which 1206 files / 784.6 MB had not been written in the
+// last 30 seconds — 6.9s of wall and ~5.5s of CPU per tick, ~18% of a core
+// spent re-decoding bytes that could not have changed, on an IDLE box. A CPU
+// profile put 62% of the process's samples in the transcript decoder.
+//
+// The memo key is the file's bytes' identity — mtime and size, both of which
+// an appended JSONL changes — plus the `since` the answer was computed
+// under, because ScanTranscript drops assistant records before it and a
+// different cut is a different answer. A caller that wants hits must
+// therefore hold its `since` still between scans; the cockpit truncates its
+// window to the hour for exactly this reason.
+//
+// Callers get COPIES of the cached segments. The scan itself writes
+// Segment.Runtime and CostReport.AttributePersonas writes Segment.Persona:
+// handing out the memo's own pointers would let one report's attribution
+// rewrite the next one's, and would race a concurrent scan. The Msgs map is
+// shared, not copied — nothing mutates it after the decode returns.
+//
+// The zero value is ready to use and safe for concurrent Scans, and so is a
+// nil *CostScanner — it is a scanner with no memory, which is exactly what
+// ScanCosts wants.
+type CostScanner struct {
+	mu   sync.Mutex
+	memo map[string]scanEntry
+}
+
+// scanEntry is one file's decode and the bytes it was taken from. err is
+// remembered with the rest: the same bytes decode to the same failure, and
+// the report must go on counting it as unread every scan (ADR 0018 §3).
+type scanEntry struct {
+	mtime time.Time
+	size  int64
+	since time.Time
+	segs  []*Segment
+	err   error
+}
+
+// Scan is ScanCosts over this scanner's memory.
+func (cs *CostScanner) Scan(project string, since time.Time) *CostReport {
 	rep := &CostReport{Since: since}
+	seen := map[string]bool{}
 	for _, p := range CostProviders() {
-		rep.scanProvider(p, project, since)
+		rep.scanProvider(cs, p, project, since, seen)
 	}
+	cs.forget(seen)
 	sort.Slice(rep.Beads, func(i, j int) bool { return rep.Beads[i].Start.Before(rep.Beads[j].Start) })
 	return rep
+}
+
+// memoKey namespaces a path by its adapter: two providers may legitimately
+// locate the same file and decode it differently.
+func memoKey(p CostProvider, path string) string { return p.Runtime() + "\x00" + path }
+
+// decode is p.Decode through the memo. A file whose bytes cannot be
+// identified is decoded and never remembered — a cache entry nothing can
+// invalidate is worse than no cache.
+//
+// The stat is taken BEFORE the decode on purpose. A file appended in between
+// leaves the entry stamped with the OLDER mtime, so the next scan re-decodes
+// it: the wasted read is the safe direction. Stamping after the decode would
+// record bytes newer than the answer and serve a stale segment forever.
+func (cs *CostScanner) decode(p CostProvider, path string, since time.Time) ([]*Segment, error) {
+	if cs == nil {
+		return p.Decode(path, since)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return p.Decode(path, since)
+	}
+	key := memoKey(p, path)
+	cs.mu.Lock()
+	e, ok := cs.memo[key]
+	cs.mu.Unlock()
+	if ok && e.size == st.Size() && e.mtime.Equal(st.ModTime()) && e.since.Equal(since) {
+		return copySegments(e.segs), e.err
+	}
+	segs, derr := p.Decode(path, since)
+	cs.mu.Lock()
+	if cs.memo == nil {
+		cs.memo = map[string]scanEntry{}
+	}
+	cs.memo[key] = scanEntry{mtime: st.ModTime(), size: st.Size(), since: since, segs: segs, err: derr}
+	cs.mu.Unlock()
+	return copySegments(segs), derr
+}
+
+// Remembered is how many files this scanner is holding a decode for. It
+// exists for the tests that have to say WHICH scanner did a read — a memo is
+// invisible from its answers, which are identical either way.
+func (cs *CostScanner) Remembered() int {
+	if cs == nil {
+		return 0
+	}
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return len(cs.memo)
+}
+
+// forget drops the memo of every file this scan did not list. Without it a
+// cockpit open for a week would remember every transcript ever rotated away.
+func (cs *CostScanner) forget(seen map[string]bool) {
+	if cs == nil {
+		return
+	}
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	for k := range cs.memo {
+		if !seen[k] {
+			delete(cs.memo, k)
+		}
+	}
+}
+
+// copySegments shallow-copies a decode so the caller can write Runtime and
+// Persona onto its own segments without touching the memo's.
+func copySegments(in []*Segment) []*Segment {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Segment, len(in))
+	for i, s := range in {
+		c := *s
+		out[i] = &c
+	}
+	return out
 }
 
 // scanProvider folds one adapter's transcripts into the report. A provider
 // whose records cannot be looked for is a read failure like any other (ADR
 // 0018 §3): the rest of the scan continues — a partial ledger is still the
 // best floor available — and the report remembers that it is a floor.
-func (r *CostReport) scanProvider(p CostProvider, project string, since time.Time) {
+func (r *CostReport) scanProvider(cs *CostScanner, p CostProvider, project string, since time.Time, seen map[string]bool) {
 	files, errs := p.Transcripts(project)
 	for _, err := range errs {
 		// A locator failure hides an unknown number of transcripts, so what
@@ -525,6 +657,10 @@ func (r *CostReport) scanProvider(p CostProvider, project string, since time.Tim
 		r.noteUnread(err)
 	}
 	for _, f := range files {
+		// Listed is enough to keep the memo of it: a file skipped below is
+		// still a file that exists, and forgetting it here would re-decode
+		// it the moment it is written again.
+		seen[memoKey(p, f)] = true
 		// A file untouched since `since` holds no record after it, and the
 		// decoder would drop every segment it built from one. Skipping
 		// it on mtime alone is what makes dispatch's per-launch budget check
@@ -534,7 +670,7 @@ func (r *CostReport) scanProvider(p CostProvider, project string, since time.Tim
 				continue
 			}
 		}
-		segs, err := p.Decode(f, since)
+		segs, err := cs.decode(p, f, since)
 		if err != nil {
 			// This file's spend is unknown, not zero. Keep scanning — a
 			// partial ledger is still the best floor available — but
