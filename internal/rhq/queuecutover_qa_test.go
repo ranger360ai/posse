@@ -1096,3 +1096,74 @@ func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
 		}
 	})
 }
+
+// ─── ranger-base-4lks: two live defects in the same Rollback section ─────────
+//
+// Both arms below are GREEN today and assert the HOLE, not the fix — a red
+// pin gets deleted and a skipped one gets forgotten. Each failure message
+// carries the inversion: when the defect is fixed the arm fails, and its
+// message says what the assertion should become.
+
+// The Rollback section's own verification step — the one ranger-base-g1js's
+// close added — says a `??` line means the store did not come home whole. Two
+// files bd leaves in `.beads` are matched by neither `.beads/.gitignore` (it
+// lists `bd.sock` exactly, and no `daemon-error`) nor the constitution's root
+// ignore, so a rollback that succeeded completely still prints them and tells
+// the operator to stop. `bd.sock.startlock` is in the live store now;
+// `daemon-error` is named in ranger-base-g1js's own repro.
+func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
+	f := qcRolledBack(t)
+	for _, name := range []string{"bd.sock.startlock", "daemon-error"} {
+		write(t, filepath.Join(f.queue, ".beads", name), "runtime\n")
+	}
+	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+
+	// The rollback itself must have worked, or this arm is measuring a
+	// broken rig rather than a false alarm.
+	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", ".gitignore")); err != nil {
+		t.Fatalf("the rig's rollback did not carry the ignore home, so nothing below is about the check: %v\n%s", err, out)
+	}
+	status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
+	for _, name := range []string{"bd.sock.startlock", "daemon-error"} {
+		if !strings.Contains(status, "?? .beads/"+name) {
+			t.Errorf("FIXED (ranger-base-4lks): a complete rollback no longer reports .beads/%s as untracked, "+
+				"so the runbook's check no longer cries wolf on the good path. Delete this arm and assert the "+
+				"absence instead.\nstatus:\n%s\n%s", name, status, out)
+		}
+	}
+}
+
+// Rollback opens with "the constitution repo's .beads deletion is staged, not
+// committed" — a premise step 8 of the same runbook destroys, and the live
+// window did destroy it. Once the untracking is committed, HEAD holds no
+// `.beads/.gitignore`, git refuses the whole `git checkout -- .gitignore
+// .beads/.gitignore` on the unmatched pathspec, and NEITHER ignore is
+// restored: the constitution comes back ignoring its entire store and
+// tracking none of it. The verification step then prints nothing at all,
+// which is indistinguishable from the clean result it exists to certify.
+func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
+	f := qcRolledBack(t)
+	// Step 8, verbatim in effect: commit the staged untracking.
+	mustGit(t, f.constitution, "commit", "-q", "-m",
+		"beads: the queue moves to its own repo (ADR 0015 §4)", "--", ".beads", ".gitignore")
+	if tree := mustGit(t, f.constitution, "ls-tree", "HEAD", "--name-only", ".beads/"); strings.TrimSpace(tree) != "" {
+		t.Fatalf("step 8 did not untrack .beads in the fixture, so this arm is not about the live state:\n%s", tree)
+	}
+
+	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+
+	if !strings.Contains(out, "did not match any file(s) known to git") {
+		t.Errorf("FIXED (ranger-base-4lks): the rollback's checkout no longer fails after step 8 — it has been "+
+			"taught the post-window state. Replace this arm with the positive assertion (both ignores restored).\n%s", out)
+	}
+	status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
+	if strings.TrimSpace(status) != "" {
+		t.Errorf("FIXED (ranger-base-4lks): the verification step now has something to say after a post-step-8 "+
+			"rollback. Assert what it says instead of its emptiness.\nstatus:\n%s\n%s", status, out)
+	}
+	tracked := mustGit(t, f.constitution, "ls-files", "--", ".beads")
+	if strings.Contains(tracked, beadsJSONL) {
+		t.Errorf("FIXED (ranger-base-4lks): the constitution tracks its store again after a post-step-8 rollback. "+
+			"This arm is the defect and should now assert the restoration.\ntracked:\n%s\n%s", tracked, out)
+	}
+}
