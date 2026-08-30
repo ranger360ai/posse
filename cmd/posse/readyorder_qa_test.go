@@ -157,7 +157,7 @@ exit 1
 		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
 		bd:  rhq.Bd{Bin: bd},
 	}
-	c.refresh()
+	c.refreshAll()
 
 	var ids []string
 	for _, is := range c.issues {

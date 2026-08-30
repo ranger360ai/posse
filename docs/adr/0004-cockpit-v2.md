@@ -122,6 +122,17 @@ the sessions row once it exists, which this layout already accommodates.
 - Refresh cost: one more `bd` invocation per repo per 2s tick. Acceptable
   at today's 2–3 repos; if it shows, the tick for beads becomes 6s while
   sessions stay at 2s (a knob, not a redesign).
+  - **It showed** (ranger-base-txio, 2026-08-30). One repo, 180 ready
+    beads: the two scans measured 5.3s EACH, so a 2s tick that ran them
+    synchronously never idled — one refresh per 10.6s, a keystroke waiting
+    up to ten seconds behind one, and two `bd list` processes on the box
+    forever per open cockpit. The knob is turned, as foreseen: sessions
+    (20ms) stay on the 2s tick and the bead scans moved off the event loop
+    onto their own goroutine → channel → apply, beside the cost, plan and
+    governance scans. The knob is not a constant — a 6s tick is still
+    back-to-back at 5.3s a call — so the gap is `max(beadsEvery, what the
+    last scan took)` after it lands, which holds bd to at most half the
+    wall clock on any store. Operator keys rescan at once regardless.
 - `dispatch --resume` from a key: `LaunchBead` already handles an
   in_progress bead whose holder is gone; the cockpit passes `Resume: true`
   for that one call.
