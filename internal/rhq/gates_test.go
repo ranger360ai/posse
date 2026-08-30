@@ -1734,13 +1734,22 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 		{"--include, qualifier and all", []string{"commit", "-i", "-m", "x", "--", "a.go"}},
 		{"--include spelled long", []string{"commit", "--include", "-m", "x", "--", "a.go"}},
 		{"-i bundled into a cluster", []string{"commit", "-im", "x", "--", "a.go"}},
+		// ranger-base-myai: two more options satisfy the qualifier and take
+		// the shared index INSTEAD of the named paths, plus every
+		// abbreviation git resolves on the way to them.
+		{"--patch", []string{"commit", "--patch", "-m", "x", "--", "a.go"}},
+		{"--patch abbreviated to git's boundary", []string{"commit", "--patc", "-m", "x", "--", "a.go"}},
+		{"-p, --patch's short name", []string{"commit", "-p", "-m", "x", "--", "a.go"}},
+		{"-p bundled into a cluster", []string{"commit", "-pm", "x", "--", "a.go"}},
+		{"--interactive", []string{"commit", "--interactive", "-m", "x", "--", "a.go"}},
+		{"--interactive abbreviated to git's boundary", []string{"commit", "--int", "-m", "x", "--", "a.go"}},
 	}
 	for _, c := range refused {
 		out, errs, code := run(c.argv...)
 		if code != 1 || out != "" || !strings.Contains(errs, "(deny: Bash(git commit unless --))") {
 			t.Errorf("%s must be refused: code=%d out=%q err=%q", c.what, code, out, errs)
 		}
-		if !strings.Contains(errs, "safe form: git commit … -- <operand> [<operand>…], and without -i/--include") {
+		if !strings.Contains(errs, "safe form: git commit … -- <operand> [<operand>…], and without -i/--include/-p/--patch/--interactive") {
 			t.Errorf("%s: refusal must name the safe form, got %q", c.what, errs)
 		}
 	}
@@ -1756,6 +1765,13 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 		{"commit", "--signoff", "-m", "x", "--", "a.go"},
 		{"commit", "--fixup=HEAD", "--", "a.go"},
 		{"commit", "-m", "x", "--", "-i"},
+		// A spoiler's NEGATION is the safe semantics, and a longer option
+		// that merely starts like one is a different option: measured, all
+		// four commit the named path only (ranger-base-myai).
+		{"commit", "--no-include", "-m", "x", "--", "a.go"},
+		{"commit", "--no-patch", "-m", "x", "--", "a.go"},
+		{"commit", "--no-interactive", "-m", "x", "--", "a.go"},
+		{"commit", "--porcelain", "-m", "x", "--", "a.go"},
 	}
 	for _, argv := range passed {
 		if out, errs, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {

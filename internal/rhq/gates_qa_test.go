@@ -546,3 +546,196 @@ func TestQACommitWallL1AbbreviationDoesNotSweepRealIndex(t *testing.T) {
 		t.Errorf("safe form must commit only b.txt, got %q", now)
 	}
 }
+
+// The spoiler table is an ALLOW-BY-OMISSION list over an option set GIT
+// owns and grows. TestQASpoilerLongMinIsGitsBoundary pins the boundary of
+// every entry that exists; nothing pinned that the entry SET was complete,
+// which is exactly how `-p`/`--patch` and `--interactive` sat outside it
+// (ranger-base-myai). This is the other half of that pin: ask the real git
+// for every option `git commit` has, put each one through the incident's
+// own shape — another persona's file staged, my own path named after `--` —
+// and require the set that sweeps to be EXACTLY the set the table declares.
+// A git that grows a sweeping option fails here instead of in someone's
+// history, and a table entry that no longer sweeps fails here as noise.
+//
+// Residual, named rather than measured: each option is tried BARE, which is
+// how a boolean is typed. A value-taking option eats the `--` as its value
+// instead (measured: none of them sweeps, they commit the named path), so
+// what this pins for those is that spelling and not `--opt=<value>`.
+func TestQASpoilerTableCoversEveryCommitOption(t *testing.T) {
+	_, git, write := qaCommitRepo(t)
+	// A second commit, so `--amend` has a parent and its `show --name-only`
+	// is a diff rather than a root listing.
+	write("base.txt", "base")
+	git(nil, "add", "--", "base.txt")
+	if out, err := git(nil, "commit", "-qm", "second", "--", "base.txt"); err != nil {
+		t.Fatalf("second commit: %v %s", err, out)
+	}
+	base, _ := git(nil, "rev-parse", "HEAD")
+	base = strings.TrimSpace(base)
+
+	declared := map[string]bool{}
+	for _, o := range qualifierSpoilers["git commit"].Opts {
+		declared[o] = true
+	}
+	opts := qaCommitOptions(t, git)
+	// The parse is the test's own premise: a `git commit -h` this cannot
+	// read would yield an empty list and pass vacuously.
+	if len(opts) < 40 {
+		t.Fatalf("parsed only %d options out of `git commit -h`: %v", len(opts), opts)
+	}
+	for _, want := range []string{"-i", "--include", "-p", "--patch", "--interactive", "-a", "--all", "-o", "--only", "--no-include"} {
+		if !contains(opts, want) {
+			t.Fatalf("parse missed %s, so it cannot be trusted to catch a new one: %v", want, opts)
+		}
+	}
+
+	for _, opt := range opts {
+		// mine.txt is my own unstaged edit; other.txt is another persona's
+		// staged work, which no form of this commit may take.
+		if out, err := git(nil, "reset", "-q", "--hard", base); err != nil {
+			t.Fatalf("reset: %v %s", err, out)
+		}
+		git(nil, "clean", "-qfdx")
+		write("b.txt", "MINE-EDITED")
+		write("other.txt", "THEIRS")
+		if out, err := git(nil, "add", "--", "other.txt"); err != nil {
+			t.Fatalf("stage other.txt: %v %s", err, out)
+		}
+		// GIT_EDITOR so `--edit` cannot hang the suite waiting on a human;
+		// no stdin, so the interactive selectors see EOF the way a fleet
+		// Bash call does — which is what makes them commit at all.
+		git([]string{"GIT_EDITOR=true"}, "commit", "-m", "x", opt, "--", "b.txt")
+		head, _ := git(nil, "show", "--name-only", "--format=", "HEAD")
+		swept := strings.Contains(head, "other.txt")
+		if swept && !declared[opt] {
+			t.Errorf("`git commit -m x %s -- b.txt` takes the other persona's staged work (HEAD %q) and %s is not in qualifierSpoilers[\"git commit\"]", opt, strings.Fields(head), opt)
+		}
+		if !swept && declared[opt] {
+			t.Errorf("%s is declared a spoiler but no longer sweeps (HEAD %q): the table is carrying noise", opt, strings.Fields(head))
+		}
+	}
+}
+
+// qaCommitOptions is every option `git commit` names in its own `-h`, the
+// full spellings only — the abbreviations on the way to them are
+// LongMin's job. `--[no-]x` yields both `--x` and `--no-x`, because both
+// are spellings a persona can type and the negation of a safe option is
+// not obviously safe.
+//
+// It reads the option lines (exactly four spaces, then a dash) and takes
+// tokens from the left while they still look like an option or an option's
+// own argument; the first plain word is the description and ends the line.
+func qaCommitOptions(t *testing.T, git func(env []string, args ...string) (string, error)) []string {
+	t.Helper()
+	help, _ := git(nil, "commit", "-h") // exits 129; the usage text is the point
+	var out []string
+	seen := map[string]bool{}
+	add := func(o string) {
+		if o != "-" && o != "--" && !seen[o] {
+			seen[o] = true
+			out = append(out, o)
+		}
+	}
+	cut := func(s string) string {
+		if i := strings.IndexAny(s, "[="); i >= 0 {
+			return s[:i]
+		}
+		return s
+	}
+	for _, line := range strings.Split(help, "\n") {
+		if !strings.HasPrefix(line, "    -") {
+			continue
+		}
+		for _, tok := range strings.Fields(line) {
+			tok = strings.TrimSuffix(tok, ",")
+			if !strings.HasPrefix(tok, "-") {
+				// `<file>` and `[(amend|reword):]commit` are the option's
+				// own argument; anything else begins the description.
+				if strings.HasPrefix(tok, "<") || strings.HasPrefix(tok, "[") {
+					continue
+				}
+				break
+			}
+			if rest, ok := strings.CutPrefix(tok, "--[no-]"); ok {
+				add("--" + cut(rest))
+				add("--no-" + cut(rest))
+				continue
+			}
+			add(cut(tok))
+		}
+	}
+	return out
+}
+
+// The bead's own repro end to end, with the rendered shim in front of the
+// REAL git and no L3 hook — the case L1 exists for. `--patch` is worse than
+// `--include` in the way that matters: `--include` at least also commits
+// the paths you named, while `--patch` with no TTY commits ONLY the other
+// persona's staged entry, exit 0, and leaves your own edit unstaged. Half
+// one is the premise, unguarded, so the pin dies loudly if git ever stops
+// doing that rather than quietly guarding a ghost (ranger-base-myai).
+func TestQACommitWallL1PatchDoesNotSweepRealIndex(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	// Half one: unguarded, `--patch` commits the other persona's file and
+	// NOT the path on the command line.
+	_, git, write := qaCommitRepo(t)
+	write("a.txt", "theirs")
+	git(nil, "add", "a.txt")
+	write("b.txt", "mine")
+	if out, err := git(nil, "commit", "-m", "x", "--patch", "--", "b.txt"); err != nil {
+		t.Fatalf("premise: unguarded `--patch` commit must land: %v %s", err, out)
+	}
+	took, _ := git(nil, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(took) != "a.txt" {
+		t.Fatalf("premise: `git commit -m x --patch -- b.txt` must commit ONLY a.txt, got %q", took)
+	}
+
+	// Half two: the same argv through the shim, over the real git.
+	repo, git2, write2 := qaCommitRepo(t)
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write2("a.txt", "theirs")
+	git2(nil, "add", "a.txt")
+	write2("b.txt", "mine")
+	head, _ := git2(nil, "rev-parse", "HEAD")
+	shim := func(args ...string) (string, error) {
+		cmd := exec.Command(filepath.Join(binDir, "git"), append([]string{"-C", repo}, args...)...)
+		cmd.Env = []string{"PATH=" + PathOutsideGates(binDir), "HOME=" + repo,
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	for _, argv := range [][]string{
+		{"commit", "-m", "x", "--patch", "--", "b.txt"},
+		{"commit", "-m", "x", "--patc", "--", "b.txt"},
+		{"commit", "-m", "x", "-p", "--", "b.txt"},
+		{"commit", "-pm", "x", "--", "b.txt"},
+		{"commit", "-m", "x", "--interactive", "--", "b.txt"},
+		{"commit", "-m", "x", "--int", "--", "b.txt"},
+	} {
+		out, err := shim(argv...)
+		if err == nil || !strings.Contains(out, "refused by posse gate") {
+			t.Errorf("`git %s` must be refused at L1: %v %s", strings.Join(argv, " "), err, out)
+		}
+		if now, _ := git2(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(now) != "a.txt" {
+			t.Errorf("%v: the other persona's staged entry must survive the refusal, got %q", argv, now)
+		}
+		if now, _ := git2(nil, "rev-parse", "HEAD"); now != head {
+			t.Errorf("%v: refused commit moved HEAD: %q -> %q", argv, head, now)
+		}
+	}
+	// And the way through, over the real git, still lands exactly one path.
+	if out, err := shim("commit", "-m", "safe", "--", "b.txt"); err != nil {
+		t.Fatalf("path-limited commit must still pass: %v %s", err, out)
+	}
+	if now, _ := git2(nil, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(now) != "b.txt" {
+		t.Errorf("safe form must commit only b.txt, got %q", now)
+	}
+}

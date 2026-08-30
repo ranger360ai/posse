@@ -318,9 +318,10 @@ func verbKey(cmd string, r shimRule) string {
 // Opts are matched before the qualifier's own operand: after `--` every
 // word is a path, and a file named `-i` is a file. Short options are
 // single-letter and match inside a cluster — `git commit -im x -- b.txt`
-// sweeps exactly as `-i` does (measured, git 2.39.3). That costs the one
-// false positive of the same class as above: `-mi` is the message "i", and
-// it is refused. The safe form is one space away.
+// sweeps exactly as `-i` does (measured, git 2.39.3), and so do `-pm x`,
+// `-qp` and `-sp` (measured, git 2.50.1, ranger-base-myai). That costs the
+// one false positive of the same class as above: `-mi`/`-mp` is the message
+// "i"/"p", and it is refused. The safe form is one space away.
 type spoiler struct {
 	Opts []string // `-x` (single letter, matches in a cluster) or `--long`
 	// LongMin is the shortest abbreviation git resolves to a long option in
@@ -337,12 +338,23 @@ type spoiler struct {
 // written: `Bash(git commit unless --)` looks up "git commit".
 var qualifierSpoilers = map[string]spoiler{
 	"git commit": {
-		Opts: []string{"-i", "--include"},
-		// Measured, git 2.50.1: `--inc` resolves to `--include`; `--in` and
-		// `--i` are ambiguous with `--interactive` and git rejects them
-		// itself, so the wall does not have to.
-		LongMin: map[string]string{"--include": "--inc"},
-		Why:     "it commits the shared index ON TOP of the named paths (rangerhq-ojnw)",
+		// Every `git commit` option that takes the shared index while
+		// carrying a pathspec. The set is measured, not reasoned about, and
+		// TestQASpoilerTableCoversEveryCommitOption keeps it from going
+		// stale under a git that grows one more (ranger-base-myai).
+		Opts: []string{"-i", "--include", "-p", "--patch", "--interactive"},
+		// Measured, git 2.50.1, one prefix at a time against the real git
+		// (qaGitResolves): `--inc` resolves to `--include`, `--patc` to
+		// `--patch`, `--int` to `--interactive`. `--in`/`--i` are ambiguous
+		// between the first and the last, and `--pat` is ambiguous with
+		// `--pathspec-from-file`, so git rejects those itself and the wall
+		// does not have to.
+		LongMin: map[string]string{"--include": "--inc", "--patch": "--patc", "--interactive": "--int"},
+		Why: "-i/--include commits the shared index ON TOP of the named paths\n" +
+			"  (rangerhq-ojnw); -p/--patch/--interactive commit it INSTEAD of them,\n" +
+			"  because a fleet Bash call has no TTY and the selector at EOF picks\n" +
+			"  nothing, so the commit is the other persona's staged work and only\n" +
+			"  that (ranger-base-myai)",
 	},
 }
 
@@ -832,7 +844,9 @@ func ruleHint(persona, cmd string, r shimRule) string {
 		}
 		hint := fmt.Sprintf("  safe form: %s %s… %s <operand> [<operand>…]", cmd, words, r.Unless)
 		if sp := spoilersFor(cmd, r); len(sp.Opts) > 0 {
-			hint += fmt.Sprintf(", and without %s — %s", strings.Join(sp.Opts, "/"), sp.Why)
+			// The reason gets its own line: the option list is as long as
+			// the option set that spoils, and it grows (ranger-base-myai).
+			hint += fmt.Sprintf(", and without %s —\n  %s", strings.Join(sp.Opts, "/"), sp.Why)
 		}
 		lines = append(lines, hint)
 		if pre := prereqFor(cmd, r); pre != "" {
