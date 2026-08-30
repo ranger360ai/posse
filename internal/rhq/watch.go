@@ -104,12 +104,13 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// state/pulse.yaml and may prompt — so a Watch that returned on the
 	// cancel alone left a goroutine still writing this instance's state/
 	// after its caller believed the loop was over. That is a lie to every
-	// caller: the pid record is dropped and the watch lock released below
-	// while the loop is demonstrably still running, and in a test whose
-	// StateDir is a t.TempDir it is the RemoveAll race that filed this bead.
-	// The join is deferred FIRST of the three, so the last write lands
-	// before the lock and the pid say the loop is gone; pulseCancel makes
-	// it safe on any exit, including one that does not end ctx.
+	// caller: dropWatchPid and lock.Release both ran while the loop was
+	// demonstrably still running, and in a test whose StateDir is a
+	// t.TempDir it is the RemoveAll race that filed this bead.
+	// This join is registered LAST of the three defers, so it RUNS first
+	// (LIFO): the tick's final write lands before the pid record and the
+	// lock say the loop is gone. pulseCancel is what makes it safe on any
+	// exit, including one that does not end ctx.
 	if cfg, err := LoadPulseConfig(d.App); err != nil {
 		fmt.Fprintf(d.errw(), "pulse: %v — disarmed for this loop\n", err)
 	} else if cfg.Armed {
