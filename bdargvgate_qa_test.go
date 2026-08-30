@@ -766,3 +766,220 @@ func TestQABdArgvGateFallbackSeesBdPastTheFirstLine(t *testing.T) {
 		}
 	}
 }
+
+// ranger-base-uxuy: A HEREDOC BODY IS DATA, NOT COMMAND LINES.
+//
+// segments() split the whole typed string on `\n`, so every line of every
+// heredoc body became a segment with a command word of its own. A line of
+// ENGLISH that opened with the tracker's name therefore resolved as an
+// invocation and was refused — MEASURED live by hoover, twice in one session,
+// appending a lesson to ORDERS.md:
+//
+//	cat >> ORDERS.md <<'EOF'
+//	bd owns the store; nobody else writes it.
+//	EOF
+//	-> "`bd owns` is not on the gate's allow-list"
+//
+// `owns` is not one of bd's verbs, there was no bd binary on the line, and
+// argv[0] was cat. The POSITION of the two words was the entire trigger: the
+// same sentence with one word in front of it passed all along (both spellings
+// are in the table below, so a fix that merely stopped matching the word
+// `owns` goes red here). A wall that refuses legitimate work teaches the crew
+// to spell around it, and this one taught that lesson twice in an hour.
+//
+// What replaces the line split is four questions a body can honestly answer,
+// each with its own refused row: does the segment's own command word EXECUTE
+// the body (`sh <<'EOF'`); does anything ELSE on the line (`cat <<'EOF' | sh`,
+// where the body's consumer is a different segment from its opener); is the
+// delimiter UNQUOTED, so the shell runs a substitution in the body before
+// anyone reads it; and is a real invocation still standing outside the body.
+//
+// The shell facts these arms rest on are MEASURED, not assumed (bash 3.2.57,
+// darwin 25.4.0):
+//
+//	cat <<'ZZZ' / echo RAN   -> printed "echo RAN". An unterminated heredoc is
+//	                            read to end of input and is DATA; nothing after
+//	                            it runs, so absorbing it as body is what bash
+//	                            does.
+//	(( 1 << 2 )) / echo RAN  -> printed RAN. `<<` inside arithmetic is a left
+//	                            shift, not a heredoc — which is why segments()
+//	                            consumes `(( … ))` whole. Delete that arm and
+//	                            the arithmetic row below swallows the real
+//	                            invocation that follows it.
+//	cat <<-ZZZ               -> strips TABS only, terminator line included.
+//	cat <<'A' <<'B'          -> BOTH bodies are consumed, in the order the
+//	                            redirections appear, and the command still runs.
+//	cat <<'Z' / $(echo X)    -> printed the substitution literally.
+//	cat <<Z   / $(echo X)    -> printed X. Quoting the delimiter is the whole
+//	                            difference, and it is what the `expands` arm
+//	                            keys on.
+func TestQABdArgvGateReadsAHeredocBodyAsData(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+
+	// Each row must PASS. `witness` is a command that must be REFUSED — the
+	// same text with the heredoc taken off it — so a row that passes because
+	// the gate went silent about everything is not mistaken for a row that
+	// passes because the body is read as data (rig must be shown able to
+	// fail). A row with no witness is one that passed before this fix too,
+	// and is here to hold the ground it already had.
+	passes := []struct{ cmd, witness string }{
+		// THE FILED REPRO, in the two positions that used to differ.
+		{"cat >> /tmp/x <<'EOF'\nbd owns this file\nEOF", "bd owns this file"},
+		{"cat >> ORDERS.md <<'EOF'\nlesson: only the operator promotes.\nbd owns the store; nobody else writes it.\nEOF",
+			"bd owns the store"},
+		{"cat >> /tmp/x <<'EOF'\nremember that bd owns the store\nEOF", ""},
+
+		// The two other spellings the same session was refused for: a body
+		// that quotes the command form, and a body with an apostrophe in it.
+		// Both were "bd behind a construct this gate cannot read" and "this
+		// segment could not be parsed (unterminated quote)" — refusals aimed
+		// at a shell construct, delivered about a sentence.
+		{"cat >> ORDERS.md <<'EOF'\nrun `bd show <id>` first\nEOF", "run `bd show <id>` first"},
+		{"cat >> ORDERS.md <<'EOF'\nbd's own stderr is the evidence\nEOF", "bd's own stderr is the evidence"},
+
+		// A runbook that writes the command form of a DENIED verb into a
+		// file. Nothing on this line runs it; a script that calls bd later is
+		// the indirection this layer has never held and says so in its
+		// docstring. The witness is the same text as a command, which is
+		// refused — so this row is exactly the data/command distinction.
+		{"cat > /tmp/runbook.md <<'EOF'\nbd daemon stop\nEOF", "bd daemon stop"},
+
+		// The redirection spellings, each of which has to survive
+		// tokenization as well as segmentation: `<<-` with tabs, a space
+		// before the delimiter, a double-quoted delimiter, an escaped one,
+		// two heredocs on one command, and a heredoc read by bd itself.
+		{"cat <<-'EOF' > /tmp/x\n\tbd owns this\n\tEOF", "bd owns this"},
+		{"cat << 'EOF' > /tmp/x\nbd owns this\nEOF", "bd owns this"},
+		{"cat <<\"EOF\" > /tmp/x\nbd owns this\nEOF", "bd owns this"},
+		{"cat <<\\EOF > /tmp/x\nbd owns this\nEOF", "bd owns this"},
+		{"cat <<'A' <<'B' > /tmp/x\nbd owns a\nA\nbd owns b\nB", "bd owns a"},
+		{"bd comments add ranger-base-uxuy -f - <<'EOF'\nbd owns the store\nEOF", "bd owns the store"},
+
+		// An UNQUOTED body is expanded, so it is refused only when it carries
+		// something to expand. Plain prose in one is still prose.
+		{"cat > /tmp/x <<EOF\nbd owns the store\nEOF", "bd owns the store"},
+
+		// An unterminated heredoc absorbs the rest, because bash does: the
+		// measurement above printed the trailing line instead of running it.
+		{"cat > /tmp/x <<'EOF'\nbd owns the store", "bd owns the store"},
+
+		// A here-STRING is not a heredoc and opens no body.
+		{"cat <<< 'bd owns the store'", ""},
+	}
+	for _, row := range passes {
+		if reason := denied(t, runGate(t, nil, row.cmd)); reason != "" {
+			t.Errorf("a heredoc body is data and must pass: %q -> %s", row.cmd, reason)
+		}
+		if row.witness == "" {
+			continue
+		}
+		if denied(t, runGate(t, nil, row.witness)) == "" {
+			t.Errorf("this row measures nothing: its witness %q is not refused on its own, "+
+				"so the row would pass over a gate that refused nothing at all", row.witness)
+		}
+	}
+
+	// And the other half. Every one of these carries the same body text as a
+	// row above; what differs is who reads it.
+	refused := map[string]string{
+		// The body IS the program for its consumer.
+		"sh <<'EOF'\nbd daemon stop\nEOF":               "sh",
+		"bash <<EOF\nbd admin reset\nEOF":               "bash",
+		"zsh <<-'EOF'\n\tbd delete some-id\n\tEOF":      "zsh",
+		"python3 <<'PY'\nrun('bd daemon stop')\nPY":     "python3",
+		"env python3 <<'PY'\nrun('bd admin reset')\nPY": "python3",
+		// …and the consumer is not always the opener.
+		"cat <<'EOF' | sh\nbd daemon stop\nEOF":        "sh",
+		"cat <<'EOF' | bash -s\nbd admin reset\nEOF":   "bash",
+		"cat <<'EOF' > /tmp/x | zsh\nbd delete x\nEOF": "zsh",
+
+		// An UNQUOTED delimiter expands the body, so a substitution in it runs
+		// before anything reads it. The quoted spelling of this exact command
+		// is a passing row above.
+		"cat > /tmp/x <<EOF\n$(bd daemon stop)\nEOF": "$(",
+		"cat > /tmp/x <<EOF\n`bd admin reset`\nEOF":  "`",
+
+		// A real invocation outside the body is still a real invocation,
+		// whether it comes after the terminator or before the opener.
+		"cat > /tmp/x <<'EOF'\nprose\nEOF\nbd daemon stop":   "daemon",
+		"bd daemon stop\ncat > /tmp/x <<'EOF'\nprose\nEOF":   "daemon",
+		"cat > /tmp/x <<'EOF' && bd admin reset\nprose\nEOF": "admin",
+
+		// `<<` in arithmetic is a left shift. Read it as a heredoc opener and
+		// the "body" runs to a line reading `2` — which is never — swallowing
+		// every command after it. Delete segments()' `(( … ))` arm and this
+		// row is the one that notices.
+		"(( a << 2 ))\nbd daemon stop": "daemon",
+		"(( 1 << 2 )); bd admin reset": "admin",
+
+		// A here-string is punctuation, not a body.
+		"bd daemon stop <<< x": "daemon",
+	}
+	for command, want := range refused {
+		reason := denied(t, runGate(t, nil, command))
+		if reason == "" {
+			t.Errorf("MUST be refused, was waved through: %q", command)
+			continue
+		}
+		if !strings.Contains(reason, want) {
+			t.Errorf("refusal of %q must name %q, said: %s", command, want, reason)
+		}
+	}
+}
+
+// ranger-base-uxuy, the second half of the bead: the refusal has to say WHAT
+// was matched and WHERE, so the next false positive is diagnosable from the
+// message alone.
+//
+// The filed one was not. It said "`bd owns` is not on the gate's allow-list"
+// and then, in boilerplate, "the fence is on the RESOLVED verb" — which reads
+// as a claim about a bd invocation that was nowhere on the line, and sent the
+// reporter looking for one. Naming the segment and its index turns the same
+// refusal into a bug report: segment 2 of 3, and here is its text.
+func TestQABdArgvGateRefusalNamesWhatMatchedAndWhere(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	for _, row := range []struct {
+		command string
+		want    []string
+	}{
+		{"bd daemon stop", []string{"resolved verb", "segment 1 of 1", "bd daemon stop"}},
+		{"cat > /tmp/x <<'EOF'\nprose\nEOF\nbd admin reset",
+			[]string{"resolved verb", "segment 2 of 2", "bd admin reset"}},
+		{"ls /tmp && bd delete some-id && echo done",
+			[]string{"resolved verb", "segment 2 of 3", "bd delete some-id"}},
+		{"sh <<'EOF'\nbd daemon stop\nEOF",
+			[]string{"heredoc body", "segment 1 of 1", "bd daemon stop"}},
+		{"sh -c \"bd daemon stop\"", []string{"command word", "segment 1 of 1"}},
+		{"BD=bd; $BD daemon stop", []string{"command word", "segment 2 of 2", "$BD"}},
+		{"bd sync --full", []string{"resolved verb", "segment 1 of 1"}},
+	} {
+		reason := denied(t, runGate(t, nil, row.command))
+		if reason == "" {
+			t.Errorf("fixture measures nothing: %q is not refused", row.command)
+			continue
+		}
+		for _, want := range row.want {
+			if !strings.Contains(reason, want) {
+				t.Errorf("the refusal of %q must name %q so it can be diagnosed from the "+
+					"message alone; it said: %s", row.command, want, reason)
+			}
+		}
+	}
+
+	// The segment text is elided, not dumped: a refusal is read in a terminal.
+	long := "bd daemon stop " + strings.Repeat("x", 400)
+	reason := denied(t, runGate(t, nil, long))
+	if reason == "" {
+		t.Fatalf("fixture measures nothing: %q is not refused", long)
+	}
+	if strings.Contains(reason, strings.Repeat("x", 200)) {
+		t.Errorf("a 400-character argument must not be echoed whole into the refusal: %s", reason)
+	}
+	if !strings.Contains(reason, "…") {
+		t.Errorf("an elided segment must say so with an ellipsis: %s", reason)
+	}
+}

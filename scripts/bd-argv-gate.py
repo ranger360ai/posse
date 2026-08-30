@@ -30,8 +30,24 @@ Contract (claude 2.1.251, read out of the shipped bundle):
 What it does NOT hold: a verb reached through shell indirection this file
 cannot read (an alias, `eval`, a substitution, a script that calls bd). Those
 are refused when bd is visible in the line, and are invisible when they are
-not. This is an L0 politeness layer with a parser, not a cage — see ADR 0014
-§5. The wall is the L1 shim (option-aware, every runtime) and the L2 cage.
+not. MEASURED against this file (ranger-base-uxuy), the line being the whole
+difference:
+
+    BD=bd; $BD daemon stop        -> refused ($BD, and the line spells bd)
+    B=/usr/local/bin/bd; $B stop  -> refused (same: bd is a word on the line)
+    V=b; ${V}d daemon stop        -> RUNS. No `bd` word anywhere, so nothing
+                                     here has anything to match on.
+    /tmp/wrapper daemon stop      -> RUNS, where the wrapper execs bd. A
+                                     command word this file cannot open is
+                                     just a command word.
+
+That is the shape of the layer, not a bug to file: an argv gate reads argv.
+This is an L0 politeness layer with a parser, not a cage — see ADR 0014 §5.
+The wall is the L1 shim (option-aware, every runtime) and the L2 cage.
+
+What it also does not do is read prose as commands. A heredoc body is data —
+the only questions asked of one are whether something on the line executes it
+and whether an unquoted body carries a substitution (ranger-base-uxuy).
 """
 
 import json
@@ -107,6 +123,22 @@ WRAPPERS = {"env", "command", "builtin", "exec", "nohup", "time", "nice",
 # Constructs whose contents this parser cannot see. If bd is mentioned in a
 # segment carrying one of these, the segment is refused rather than guessed.
 OPAQUE = ("$(", "`", "${", "eval ", "eval\t", "<(", ">(")
+
+# Command words a HEREDOC BODY is a program for, rather than data (ranger-base-uxuy).
+# `cat <<'EOF'` writes its body to a file and nothing in it runs; `sh <<'EOF'`
+# and `python3 <<'EOF'` execute theirs. So the body is read as prose for the
+# first and as an invocation this parser cannot follow for the second.
+#
+# This is deliberately NOT the same set as the six words in verdict()'s
+# "bd as a later word" arm. There the question is an ARGUMENT that names bd
+# (`sh -c 'bd …'`), which a python3 invocation may perfectly well carry as a
+# string it never runs; here the body IS the program text, so every
+# interpreter belongs.
+HEREDOC_EXEC = {
+    "sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh",
+    "python", "python3", "perl", "ruby", "node", "php", "tclsh", "expect",
+    "osascript", "awk", "gawk", "xargs", "watch", "script",
+}
 
 SEPARATORS = ("&&", "||", ";;", ";", "|", "&", "\n")
 
@@ -197,11 +229,73 @@ def in_redirect(cur, command, i):
     return command.startswith("&>", i)  # &>f, &>>f
 
 
+def heredoc_word(command, i):
+    """Read the heredoc redirection at command[i].
+
+    Returns (delimiter, index-after, expands, dash) — or (None, i, …) when
+    what follows `<<` is not a delimiter word this parser can read, in which
+    case the caller leaves the text alone and nothing is treated as a body.
+
+    `expands` is False when ANY part of the delimiter was quoted or escaped
+    (`<<'EOF'`, `<<"EOF"`, `<<\\EOF`): the shell then performs no expansion in
+    the body at all, so it is literal data end to end. `dash` is `<<-`, which
+    strips leading TABS (not spaces) from the body lines and from the line the
+    terminator is on.
+    """
+    j = i + 2
+    dash = command.startswith("-", j)
+    if dash:
+        j += 1
+    while j < len(command) and command[j] in " \t":
+        j += 1                          # `cat << EOF` is a heredoc too
+    word, expands = [], True
+    while j < len(command):
+        c = command[j]
+        if c in "'\"":
+            end = command.find(c, j + 1)
+            if end < 0:
+                return None, i, False, False    # unterminated; not readable
+            word.append(command[j + 1:end])
+            expands = False
+            j = end + 1
+            continue
+        if c == "\\" and j + 1 < len(command):
+            word.append(command[j + 1])
+            expands = False
+            j += 2
+            continue
+        if c in " \t\n;|&<>()":
+            break
+        word.append(c)
+        j += 1
+    if not word:
+        return None, i, False, False    # `<<` with nothing after it
+    return "".join(word), j, expands, dash
+
+
+def read_heredoc(command, i, delim, dash):
+    """Consume one heredoc body from command[i]; -> (body, index-after)."""
+    lines = []
+    while True:
+        nl = command.find("\n", i)
+        line = command[i:] if nl < 0 else command[i:nl]
+        if (line.lstrip("\t") if dash else line) == delim:
+            return "\n".join(lines), len(command) if nl < 0 else nl + 1
+        lines.append(line)
+        if nl < 0:
+            # No terminator anywhere. bash warns and runs the command with the
+            # body it got, so everything to the end is body — not command
+            # lines — and reading it that way here matches what would run.
+            return "\n".join(lines), len(command)
+        i = nl + 1
+
+
 def segments(command):
     """Split a command line into pipeline/list segments, quotes respected.
 
-    Returns (segment, opaque) pairs: `opaque` marks a segment this parser
-    read only approximately (an unterminated quote, a substitution).
+    Returns (segment, opaque, heredocs) triples: `opaque` marks a segment this
+    parser read only approximately (an unterminated quote, a substitution), and
+    `heredocs` is the (body, expands) pairs of the heredocs that segment opens.
 
     A command substitution is NOT split: its contents are one word to the
     shell, and tearing them apart at their pipes invented fragments whose
@@ -210,8 +304,18 @@ def segments(command):
     line that also named bd (ranger-base-4txk). `(subshell)` groups are
     deliberately still split: they are real segments, and tokens() strips
     their parens.
+
+    A HEREDOC BODY IS NOT COMMAND LINES (ranger-base-uxuy). Splitting the whole
+    string on `\\n` made every body line a segment of its own, so a line of
+    ENGLISH that happened to open with the tracker's name resolved as an
+    invocation and was refused: `cat >> ORDERS.md <<'EOF'` … `bd owns the
+    store` … `EOF` came back "`bd owns` is not on the gate's allow-list"
+    (MEASURED, hoover, twice in one session; `owns` is not even a real verb).
+    The body is handed to the segment that opened it instead, and verdict()
+    asks the only questions a body can honestly answer — see HEREDOC_EXEC.
     """
-    out, cur, quote, depth, tick, i = [], [], None, 0, False, 0
+    out, bodies, cur, quote, depth, tick, i = [], [], [], None, 0, False, 0
+    pending = []                        # heredocs opened, awaiting the newline
     while i < len(command):
         ch = command[i]
         if quote:
@@ -253,18 +357,56 @@ def segments(command):
             cur.append(ch)
             i += 1
             continue
+        # The redirection stays in the segment as text — shlex hands it over as
+        # a `<<EOF` token and skip_redirect steps past it — but the body it
+        # names is remembered separately and never tokenized.
+        if command.startswith("<<", i) and not command.startswith("<<<", i):
+            delim, end, expands, dash = heredoc_word(command, i)
+            if delim is not None:
+                pending.append((len(out), delim, expands, dash))
+                cur.append(command[i:end])
+                i = end
+                continue
+        # `(( … ))` is arithmetic, where `<<` is a left shift and not a
+        # heredoc at all. Consume it whole, or `(( a << 2 ))` on a multi-line
+        # command would open a "heredoc" delimited by `2` and swallow every
+        # command after it — a hole the body-is-data change would otherwise
+        # have opened. bash reads a literal `((` the same way, so a subshell
+        # spelled `( (a); (b) )` with its space is unaffected.
+        if command.startswith("((", i):
+            j, level = i, 0
+            while j < len(command):
+                level += {"(": 1, ")": -1}.get(command[j], 0)
+                j += 1
+                if level == 0:
+                    break
+            cur.append(command[i:j])
+            i = j
+            continue
         hit = next((s for s in SEPARATORS if command.startswith(s, i)), None)
         if hit in ("&", "&&", "|", "||") and in_redirect(cur, command, i):
             hit = None
         if hit:
             out.append("".join(cur))
+            bodies.append([])
             cur = []
             i += len(hit)
+            # Every heredoc opened on this line has its body here, in the order
+            # the redirections appeared — and each belongs to the segment that
+            # opened it, which for `cat <<'EOF' | sh` is NOT the segment that
+            # runs it. verdict() asks about the whole line for that reason.
+            if hit == "\n" and pending:
+                for idx, delim, expands, dash in pending:
+                    body, i = read_heredoc(command, i, delim, dash)
+                    bodies[idx].append((body, expands))
+                pending = []
             continue
         cur.append(ch)
         i += 1
     out.append("".join(cur))
-    return [(s, quote is not None) for s in out if s.strip()]
+    bodies.append([])
+    return [(s, quote is not None, tuple(b))
+            for s, b in zip(out, bodies) if s.strip()]
 
 
 def mask_subst(text):
@@ -407,52 +549,116 @@ def resolve_verb(args):
     return args[i], args[i + 1:]
 
 
+def elide(text, limit=120):
+    """One line of `text`, short enough to read in a refusal message."""
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit - 1] + "…"
+
+
+def interpreters_on_line(segs):
+    """Basenames of the HEREDOC_EXEC command words anywhere on this line.
+
+    `cat <<'EOF' | sh` opens the heredoc in one segment and executes the body
+    in the NEXT one, so asking only the opening segment's command word answers
+    the wrong question (ranger-base-uxuy).
+    """
+    found = set()
+    for text, unterminated, _ in segs:
+        toks = tokens(text)
+        if unterminated or toks is None:
+            continue
+        word, _rest = command_word(toks)
+        if word and os.path.basename(word) in HEREDOC_EXEC:
+            found.add(os.path.basename(word))
+    return found
+
+
 def verdict(command):
-    """Return None to stay out of the way, or a refusal reason."""
+    """Return None to stay out of the way, or a refusal reason.
+
+    Every refusal names WHAT was matched and WHERE (ranger-base-uxuy): the
+    filed false positive was undiagnosable from its message, which said only
+    that a spelling was not on the allow-list while the fence's own boilerplate
+    insisted the match was on a resolved verb.
+    """
     # Whether bd is named ANYWHERE on the line decides how suspicious an
     # indirection is: `$PYTHON script.py` is someone's build, `BD=bd; $BD
     # daemon stop` is this gate's business (MEASURED escaping an earlier cut).
     line_mentions_bd = bool(BD_WORD.search(command))
-    for segment, unterminated in segments(command):
+    segs = segments(command)
+    total = len(segs)
+    interpreters = None                 # computed at most once, and only if asked
+
+    for index, (segment, unterminated, heredocs) in enumerate(segs, 1):
+        def at(reason, matched, text=None):
+            return "%s [matched the %s of segment %d of %d: %s]" % (
+                reason, matched, index, total, elide(segment if text is None else text))
+
         toks = tokens(segment)
         # A quoted `sh -c "bd daemon stop"` is ONE token whose basename is not
         # bd, so bd-ness is read off the segment TEXT, not off the tokens.
-        mentions_bd = bool(BD_WORD.search(segment))
+        segment_names_bd = bool(BD_WORD.search(segment))
         if unterminated or toks is None:
-            if mentions_bd:
-                return ("this segment could not be parsed (%s) and mentions bd: %s"
-                        % ("unterminated quote" if unterminated else "bad quoting",
-                           segment.strip()))
+            if segment_names_bd:
+                return at("this segment could not be parsed (%s) and mentions bd"
+                          % ("unterminated quote" if unterminated else "bad quoting"),
+                          "segment text")
             continue
-        if any(o in segment for o in OPAQUE) and mentions_bd:
-            return ("bd behind a construct this gate cannot read (%s); "
-                    "type the command directly: %s"
-                    % (next(o for o in OPAQUE if o in segment).strip(), segment.strip()))
+        if any(o in segment for o in OPAQUE) and segment_names_bd:
+            return at("bd behind a construct this gate cannot read (%s); "
+                      "type the command directly"
+                      % next(o for o in OPAQUE if o in segment).strip(),
+                      "segment text")
         word, rest = command_word(toks)
+
+        # ── A heredoc body is DATA, and only these questions of it are honest.
+        for body, expands in heredocs:
+            if not mentions_bd(body):
+                continue
+            consumer = os.path.basename(word or "")
+            if consumer in HEREDOC_EXEC:
+                return at("bd inside a heredoc that %s EXECUTES; this gate "
+                          "cannot follow a program it is handed on stdin"
+                          % consumer, "heredoc body", body)
+            if interpreters is None:
+                interpreters = interpreters_on_line(segs)
+            if interpreters:
+                return at("bd inside a heredoc on a line that also runs %s, "
+                          "which may be what the body is piped into"
+                          % ", ".join(sorted(interpreters)), "heredoc body", body)
+            if expands and any(o in body for o in OPAQUE):
+                return at("bd inside an UNQUOTED heredoc carrying %s, which the "
+                          "shell runs before the body is data; quote the "
+                          "delimiter (<<'EOF') if it is meant literally"
+                          % next(o for o in OPAQUE if o in body).strip(),
+                          "heredoc body", body)
+            # Otherwise it is prose, a config file, a commit message — text
+            # bound for a file or a pager, and nothing in it runs.
+
         if word is None:
             continue
         if word.startswith("$") and line_mentions_bd:
-            return ("bd behind a variable this gate cannot resolve (%s); "
-                    "type the command directly: %s" % (word, segment.strip()))
+            return at("bd behind a variable this gate cannot resolve (%s); "
+                      "type the command directly" % word, "command word")
         if not is_bd(word):
             # bd as a later word of some other command (`sh -c 'bd …'`,
             # `xargs bd …`) is indirection this parser cannot follow.
-            if mentions_bd and os.path.basename(word) in ("sh", "bash", "zsh", "xargs", "watch", "script"):
-                return ("bd behind %s, which this gate cannot follow: %s"
-                        % (os.path.basename(word), segment.strip()))
+            if segment_names_bd and os.path.basename(word) in ("sh", "bash", "zsh", "xargs", "watch", "script"):
+                return at("bd behind %s, which this gate cannot follow"
+                          % os.path.basename(word), "command word")
             continue
         verb, tail = resolve_verb(rest)
         if verb is None:
             continue                    # `bd`, `bd --json` — bd prints usage
         if verb not in ALLOWED:
             why = WHY.get(verb)
-            return ("`bd %s` is not on the gate's allow-list%s"
-                    % (verb, " — " + why if why else ""))
+            return at("`bd %s` is not on the gate's allow-list%s"
+                      % (verb, " — " + why if why else ""), "resolved verb")
         sub = SUBDENY.get(verb)
         if sub:
             nxt, _ = resolve_verb(tail)
             if nxt in sub["subs"]:
-                return "`bd %s %s` is refused" % (verb, nxt)
+                return at("`bd %s %s` is refused" % (verb, nxt), "resolved verb")
             # `--flag=value` is the SAME FLAG to pflag, so an exact-token
             # scan missed it: `sync --full` was refused and `sync --full=true`
             # — pull, merge, export, commit, PUSH — was waved through
@@ -475,7 +681,7 @@ def verdict(command):
             bad = [t for t in tail
                    if t in sub["opts"] or t.split("=", 1)[0] in sub["opts"]]
             if bad:
-                return "`bd %s %s` is refused" % (verb, bad[0])
+                return at("`bd %s %s` is refused" % (verb, bad[0]), "resolved verb")
     return None
 
 
@@ -517,10 +723,11 @@ def main():
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason":
-            "%s: %s. The fence is on the RESOLVED verb, so reordering bd's "
-            "global flags does not move it. If this verb is legitimate work, "
-            "file it — the allow-list is scripts/bd-argv-gate.py in posse and "
-            "the operator owns the edit." % (GATE, reason),
+            "%s: %s. The bracket says what was matched and where — a fence "
+            "on the RESOLVED verb, which no reordering of bd's global flags "
+            "moves. If this verb is legitimate work, file it — the allow-list "
+            "is scripts/bd-argv-gate.py in posse and the operator owns the "
+            "edit." % (GATE, reason),
     }}, sys.stdout)
     sys.stdout.write("\n")
     return 0
