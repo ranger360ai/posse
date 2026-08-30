@@ -153,6 +153,16 @@ func porcelainZChanges(out []byte) []memoryChange {
 // made leaves the file exactly where it was — which is no worse than every
 // build before this one — and the line it returns is how that gets said out
 // loud instead of silently.
+//
+// It takes no launcher lock, and does not need one. Two kills landing two
+// personas' memory into one checkout at the same moment contend for git's
+// own index.lock, and the loser reports git's refusal and leaves its
+// persona's file untouched — which the NEXT kill of that persona lands,
+// because the evidence is the file itself and nothing consumed it. The
+// failure is self-healing in the direction that matters: memory is never
+// destroyed by losing this race, only deferred. Serializing it under the
+// launcher lock would instead put every kill behind whatever pass holds it,
+// for a store the launcher lock says nothing about.
 func (a *App) LandPersonaMemory(persona, why, bead string) *MemoryLanding {
 	changes := a.memoryChanges(persona)
 	if len(changes) == 0 {
