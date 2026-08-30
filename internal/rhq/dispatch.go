@@ -1499,20 +1499,40 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // on every bead, so the trigger travels with the work rather than depending
 // on a persona remembering to pull the cord.
 //
+// SPIKE files its bead with NO `--deps discovered-from:`, and that absence
+// is the whole of ranger-base-rs8j. bd 0.49.1's cycle check spans EVERY
+// dependency type, not only `blocks`: a spike carrying
+// `discovered-from:<id>` makes the `bd dep add <id> <sid>` on the same line
+// close a cycle, and bd refuses it — "cannot add dependency: would create a
+// cycle (<id> → <sid> → ... → <id>)", exit 1, deterministically and in
+// either order (measured 2026-08-30 against real bd on a copy of the queue
+// db; the sibling site is ranger-base-23oo/settleopen.go). The block is what
+// this rung is FOR — without it the deciding bead stays in `bd ready`, the
+// next pass dispatches it again, and "deciding waits on reading" never
+// happens — so the edge goes and the provenance moves to a comment on the
+// spike, where nothing can refuse it (discoveredFromMarkerPrefix is the same
+// idiom). That leaves HANDOFF as the only rung rendering the `--deps` form.
+//
 // The trailing `Provenance:` line is not a seventh rung — it is the caveat
-// on the one command two rungs share. `bd create --deps discovered-from:<id>`
-// is two writes and only the first is durable: measured on bd 0.49.1
-// (ranger-base-muoo, mechanism in ranger-base-pkqn), when a symmetric
-// `relates-to` pair is reachable from <id>, bd's cycle-check CTE does not
-// terminate, the client gives up at its 30s socket timeout, and the bead IS
-// committed while the edge is NOT — exit 1, no id on stdout, no error
-// naming the edge. So a persona following SPIKE or HANDOFF against such a
-// parent files a bead with no provenance and no way to notice, which is how
-// 33 edgeless duplicate verify beads got filed before verifyafter.go stopped
-// trusting the edge (verifyMarkerPrefix). Both rungs point at the bead the
-// persona is working, so both are exposed; ASK is not — its `bd dep add
-// <id> <qid>` targets the question bead it just created, which has no
-// outgoing edges (scripts/verify-bd-dep-safety.sh explains "target").
+// on that one command. `bd create --deps discovered-from:<id>` is two writes
+// and only the first is durable: measured on bd 0.49.1 (ranger-base-muoo,
+// mechanism in ranger-base-pkqn), when a symmetric `relates-to` pair is
+// reachable from <id>, bd's cycle-check CTE does not terminate, the client
+// gives up at its 30s socket timeout, and the bead IS committed while the
+// edge is NOT — exit 1, no id on stdout, no error naming the edge. So a
+// persona following HANDOFF against such a parent files a bead with no
+// provenance and no way to notice, which is how 33 edgeless duplicate verify
+// beads got filed before verifyafter.go stopped trusting the edge
+// (verifyMarkerPrefix). HANDOFF points at the bead the persona is working,
+// so it is exposed; ASK and SPIKE are not — their `bd dep add <id> <new-id>`
+// targets the bead just created, which has no outgoing edges
+// (scripts/verify-bd-dep-safety.sh explains "target").
+//
+// The caveat names the check per rung because the two rungs fail at
+// different edges. HANDOFF confirms the edge it filed (`bd dep list
+// <new-id>`). SPIKE must confirm the BLOCK (`bd dep list <id>`): reading the
+// spike back shows a `discovered-from` edge that looks fine even in the
+// broken shape, while the half that stops the bead is the one that failed.
 //
 // This is a check-after, not a preflight, and deliberately: the safe/unsafe
 // answer belongs to the graph at the moment of the create, which is minutes
@@ -1532,11 +1552,11 @@ func EscalationLadder(id, operator string) string {
 	return "Escalation (pick the lowest rung that is honest)\n" +
 		"- NOTE — a decision or finding worth keeping: `bd comments add " + id + " <note>`; continue.\n" +
 		"- ASSUME — a gap you can bridge without changing the deliverable's shape: comment `ASSUMED: <x> — <why>`; do the rest in full; continue.\n" +
-		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Check the skills you carry first; if they do not cover it, `bd create \"spike: <question>\" -t task -l <runner's lane> --deps discovered-from:" + id + "`, then `bd dep add " + id + " <sid>` so deciding waits on reading; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
+		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Check the skills you carry first; if they do not cover it, `bd create \"spike: <question>\" -t task -l <runner's lane>` with NO `--deps` (bd refuses the block below against a spike that carries one), then `bd dep add " + id + " <sid>` so deciding waits on reading, and `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
 		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
 		"- HANDOFF — part of the work belongs to another persona: `bd create \"<title>\" -a <persona> -l <their label> --deps discovered-from:" + id + "`; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n" +
-		"Provenance: `--deps discovered-from:` is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a SPIKE or HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives.\n"
+		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. SPIKE never files that edge, deliberately: bd's cycle check spans every dependency type, so a spike carrying it makes `bd dep add " + id + " <sid>` a cycle and bd refuses it in either order — check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
 }
 
 func fenceRefs(refs []BdRef) string {

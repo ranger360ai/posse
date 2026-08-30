@@ -90,7 +90,7 @@ behaviour, the ladder says which rung comes first:
 |---|---|---|---|
 | **NOTE** | a decision or finding worth keeping | `bd comments add <id> …` | continue |
 | **ASSUME** | a gap you can bridge without changing the deliverable's shape | comment `ASSUMED: <x> — <why>`; do the rest in full | continue |
-| **SPIKE** | the gap is knowledge, not permission — you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured | check the skills you carry first; on a shelf miss `bd create "spike: <question>" -t task -l <runner's lane> --deps discovered-from:<id>`, `bd dep add <id> <sid>` so deciding waits on reading; comment `SPIKE: <question> → <sid>` | continue with whatever the answer can't change; else **stop** |
+| **SPIKE** | the gap is knowledge, not permission — you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured | check the skills you carry first; on a shelf miss `bd create "spike: <question>" -t task -l <runner's lane>` with **no** `--deps`, `bd dep add <id> <sid>` so deciding waits on reading, `bd comments add <sid> "discovered-from: <id>"` for the provenance; comment `SPIKE: <question> → <sid>` | continue with whatever the answer can't change; else **stop** |
 | **ASK** | a gap only the operator can fill and the bead is useless if you guess | `bd create "<question>" -t task -l question -a <operator>` (config `operator:`; unassigned if unset), `bd dep add <id> <qid>` so the bead leaves `bd ready` until answered; comment `BLOCKED: <need> → <qid>` | **stop** |
 | **HANDOFF** | part of the work belongs to another persona | `bd create … -a <persona> -l <their label> --deps discovered-from:<id>`; comment it | continue with your part; if nothing is left, close yours |
 | **REFUSE** | a hard risk line (money · publishing · deployed systems · visibility) or a gate you can't realize | comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk` | **stop** |
@@ -101,13 +101,30 @@ and only the first is durable: measured on bd 0.49.1 (ranger-base-muoo,
 mechanism in ranger-base-pkqn), when a symmetric `relates-to` pair is
 reachable from `<id>` the cycle-check CTE does not terminate, the client
 gives up at its 30s socket timeout, and **the bead is committed while the
-edge is not** — exit 1, no id on stdout, nothing naming the edge. SPIKE and
-HANDOFF both render that command, so the ladder tells both to read the
+edge is not** — exit 1, no id on stdout, nothing naming the edge. HANDOFF
+is the rung that renders that command, so the ladder tells it to read the
 graph back (`bd dep list <new-id>`), to recover the id by title rather than
 re-run a failed create (the re-run is how 33 duplicate verify beads got
 filed), and to fall back to a comment, which is the provenance that
 survives. ASK is untouched: its `bd dep add <id> <qid>` targets the
 question bead it just created, which has no outgoing edges.
+
+SPIKE files **no** `discovered-from` edge, and the caveat says why
+(ranger-base-rs8j, amending this section 2026-08-30). bd 0.49.1's cycle
+check spans *every* dependency type, not only `blocks`: a spike carrying
+`discovered-from:<id>` makes the `bd dep add <id> <sid>` on the same rung
+close a cycle, and bd refuses it — `cannot add dependency: would create a
+cycle (<id> → <sid> → ... → <id>)`, exit 1, deterministically and in either
+order (measured against real bd on a copy of the queue db; the same pair at
+the harness's own settle-open escalation is ranger-base-23oo). The block is
+what this rung is *for* — without it the deciding bead never leaves `bd
+ready` and the next pass dispatches it again with the spike unanswered — so
+the edge goes and the provenance becomes a comment on the spike, where
+nothing can refuse it. That also moves the check: HANDOFF confirms the edge
+it filed (`bd dep list <new-id>`), SPIKE confirms the *block* (`bd dep list
+<id>` names `<sid>`), because reading the spike back shows a
+`discovered-from` edge that looks right even in the shape that never
+blocked anything.
 
 Check-after, not preflight, for three reasons: safety is a property of the
 graph at create time, which is minutes to hours after this text renders and

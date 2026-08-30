@@ -116,13 +116,22 @@ machinery:
 
 - Title prefix `spike:` phrased as the question, label = the lane of the
   persona who runs it (literature → the architect's lane; empirical →
-  the developer's or ops' lane), linked `--deps discovered-from:` the
-  bead where the cord was pulled.
+  the developer's or ops' lane).
 - Priority: inherit the priority of the bead it blocks — a spike on a
   P1's critical path is P1 work.
 - **The spike dep-blocks the bead it serves** (`bd dep add <deciding>
   <spike>`), so `bd ready` itself enforces read-before-decide; nothing
   relies on anyone remembering.
+- Provenance is a **comment** on the spike, `discovered-from:
+  <deciding>`, *not* a `--deps discovered-from:` on the create. This
+  clause read the other way until 2026-08-30 (ranger-base-rs8j) and the
+  two halves cannot both exist: bd 0.49.1's cycle check spans every
+  dependency type, so a spike holding that edge makes the `bd dep add`
+  above a cycle and bd refuses it — exit 1, in either order, measured.
+  The block is the mechanism this ADR rests on, so the block wins and
+  the provenance goes where nothing can refuse it. Confirm the block
+  (`bd dep list <deciding>`), not the edge: reading the spike back looks
+  right in the shape that never blocked anything.
 - The trigger is realized as the **SPIKE rung** (ADR 0005 §2,
   `EscalationLadder` in `dispatch.go`), between ASSUME and ASK — the gap
   is knowledge, not permission, so it sits below the rungs that spend

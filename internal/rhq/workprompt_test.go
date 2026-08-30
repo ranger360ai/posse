@@ -25,7 +25,8 @@ func TestWorkPromptAssembly(t *testing.T) {
 	}
 	for _, want := range []string{"Escalation (pick the lowest rung that is honest)", "- NOTE —", "- ASSUME —", "- SPIKE —", "- ASK —", "- HANDOFF —", "- REFUSE —",
 		"`bd comments add b-1 <note>`", "`bd create \"<question>\" -t task -l question`", "`bd dep add b-1 <qid>`", "--deps discovered-from:b-1", "`REFUSED: <line> — <what would be needed>`",
-		"`bd create \"spike: <question>\" -t task -l <runner's lane> --deps discovered-from:b-1`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
+		"`bd create \"spike: <question>\" -t task -l <runner's lane>` with NO `--deps`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
+		"`bd comments add <sid> \"discovered-from: b-1\"`",
 		"Done: `bd comments add b-1 <what you did, paths, ids>` then `bd close b-1`."} {
 		if !strings.Contains(p, want) {
 			t.Errorf("missing %q in:\n%s", want, p)
@@ -198,9 +199,9 @@ func TestBodySectionAndOptionalHeading(t *testing.T) {
 // --deps discovered-from:<id>` is two writes and only the first is durable:
 // on a parent that can reach a symmetric `relates-to` pair bd's cycle check
 // does not terminate, the client times out at 30s, and the bead is committed
-// with no edge and no id printed (ranger-base-muoo/pkqn). SPIKE and HANDOFF
-// both render that command, so both need the check-after; ASK does not — it
-// dep-adds onto the question bead it just created.
+// with no edge and no id printed (ranger-base-muoo/pkqn). HANDOFF is now the
+// only rung rendering that command, so it is the one needing the check-after;
+// ASK and SPIKE dep-add onto the bead they just created (ranger-base-rs8j).
 func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 	l := EscalationLadder("b-1", "")
 
@@ -236,7 +237,7 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 		"two writes, not one",                                 // why the create is not atomic
 		"lose the edge",                                       // what is lost
 		"no id printed",                                       // why <new-id> is not in hand
-		"SPIKE or HANDOFF",                                    // which rungs are exposed
+		"After a HANDOFF create",                              // which rung is exposed to the lost edge
 		"`bd dep list <new-id>`",                              // the check
 		"find the bead by title in `bd list`",                 // recovering the id
 		"never re-run a create that failed",                   // the duplicate the retry files
@@ -261,5 +262,74 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 	p := workPrompt(RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "t"}}, PromptContext{})
 	if !strings.Contains(p, prov+"\n") {
 		t.Errorf("caveat must render in the bare prompt:\n%s", p)
+	}
+}
+
+// ranger-base-rs8j: the SPIKE rung must not file a `discovered-from` edge on
+// the spike it creates, because the `bd dep add <id> <sid>` on the same line
+// is what the rung is FOR and bd 0.49.1 refuses that add as a cycle when the
+// spike already reaches <id> over ANY edge type. Measured 2026-08-30 against
+// real bd on a copy of the queue db: with the edge, "cannot add dependency:
+// would create a cycle (<id> → <sid> → ... → <id>)", exit 1, <id> still in
+// `bd ready`; without it, "Added dependency ... (blocks)" and <id> gone from
+// ready. The sibling site is settleopen.go (ranger-base-23oo).
+//
+// The rung is one long sentence, so this reads the SPIKE line alone rather
+// than the whole ladder: a `--deps` assertion over the ladder would pass on
+// HANDOFF's, which is legitimate and must stay.
+func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
+	spike, handoff, ask := "", "", ""
+	for _, ln := range strings.Split(EscalationLadder("b-1", ""), "\n") {
+		switch {
+		case strings.HasPrefix(ln, "- SPIKE — "):
+			spike = ln
+		case strings.HasPrefix(ln, "- HANDOFF — "):
+			handoff = ln
+		case strings.HasPrefix(ln, "- ASK — "):
+			ask = ln
+		}
+	}
+	if spike == "" || handoff == "" || ask == "" {
+		t.Fatalf("ladder lost a rung:\n%s", EscalationLadder("b-1", ""))
+	}
+
+	// The defect, stated as the string that must not be there. It is the
+	// rendered flag, not the word: the rung says "with NO `--deps`" in prose
+	// and that sentence is the fix, not the bug.
+	if strings.Contains(spike, "--deps discovered-from:") {
+		t.Errorf("SPIKE must file no dependency on the create — bd refuses the block that follows:\n%s", spike)
+	}
+	// And the block itself, which is the whole point of the rung.
+	if !strings.Contains(spike, "`bd dep add b-1 <sid>`") {
+		t.Errorf("SPIKE must still block the deciding bead:\n%s", spike)
+	}
+	// The provenance the dropped edge no longer carries, on the spike, not
+	// as a fallback — nothing files that edge here, ever.
+	if !strings.Contains(spike, "`bd comments add <sid> \"discovered-from: b-1\"`") {
+		t.Errorf("SPIKE must carry the provenance as a comment on the spike:\n%s", spike)
+	}
+	// A persona that is told to drop the flag with no reason drops the
+	// reason too, and the next editor puts it back.
+	if !strings.Contains(spike, "bd refuses the block") {
+		t.Errorf("SPIKE must say why there is no --deps:\n%s", spike)
+	}
+
+	// Controls, both directions. HANDOFF is the rung that legitimately files
+	// the edge and never dep-adds back, so its --deps must survive this fix;
+	// ASK is the shape SPIKE now copies and never had one.
+	if !strings.Contains(handoff, "--deps discovered-from:b-1") {
+		t.Errorf("HANDOFF still files provenance on the create:\n%s", handoff)
+	}
+	if strings.Contains(handoff, "bd dep add") {
+		t.Errorf("HANDOFF must not dep-add back — that is the pair bd refuses:\n%s", handoff)
+	}
+	if strings.Contains(ask, "--deps") {
+		t.Errorf("ASK never filed an edge:\n%s", ask)
+	}
+
+	// The ids are the bead's wherever they appear, comment included.
+	o := EscalationLadder("other-9", "opuser")
+	if !strings.Contains(o, "`bd comments add <sid> \"discovered-from: other-9\"`") || !strings.Contains(o, "`bd dep add other-9 <sid>`") {
+		t.Errorf("SPIKE must interpolate the bead id:\n%s", o)
 	}
 }

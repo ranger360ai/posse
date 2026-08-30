@@ -311,8 +311,9 @@ of the harness core:
    SPIKE / ASK / HANDOFF / REFUSE with exact bd commands, ASK beads `-l
    question -a <config operator:>` (unassigned when unset) plus `bd dep
    add` so the bead leaves `bd ready` until answered; SPIKE files a
-   `spike:` bead in the runner's lane and dep-blocks this one the same
-   way, because its gap is knowledge, not permission; `Done:` line; then
+   `spike:` bead in the runner's lane — with no `--deps`, see below — and
+   dep-blocks this one the same way, because its gap is knowledge, not
+   permission; `Done:` line; then
    the PID's `## Work prompt` section verbatim (optional; `posse agent
    check` warns when absent). Beads labelled `question` are for the
    operator: dispatch and the cockpit never route them, they cost no `-n`
