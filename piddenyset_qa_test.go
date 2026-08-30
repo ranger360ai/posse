@@ -13,13 +13,25 @@ package posse
 // within hours while the eleven PIDs of the crew that actually dispatches
 // carried none of them, with no command on the box able to say so.
 //
-// Two arms are the whole point:
+// Amended ranger-base-t2v2: the operator narrowed the two broad hook rows to
+// install/uninstall in both spellings on 2026-08-29 evening (ranger-base-y5g7,
+// promoted), because the broad rows deny the verb bd's OWN git hooks exec and
+// so took every commit and every `git worktree add` down with them across all
+// eleven crew PIDs (ranger-base-c7ek). The expected list here and the shipped
+// PIDs move together; TestShippedPIDsCarryTheNarrowedHookRows is the arm that
+// knows the ruling independently of the script, so they cannot revert together
+// in silence.
+//
+// Three arms are the whole point:
 //   - the SHIPPED arm. examples/agents/ is the half this repo can pin, and it
 //     is the half that was already right; it is here so the next amendment
 //     cannot quietly leave it behind the way the promoted half was left.
 //   - the EMPTY arm. A home with no PIDs in it has measured nothing, and
 //     "no findings" earned by looking at nothing is the negative-control trap
 //     in NOTES. It must exit 2, not 0.
+//   - the RULING arm. The shipped PIDs read directly, against the y5g7 rows
+//     spelled out here, so the pin does not rest on the script and the PIDs
+//     agreeing with each other.
 //
 // The script's own --self-test carries the arms that need planted fixtures
 // (both list spellings, the daemon/daemons substring trap, prose in the body);
@@ -63,9 +75,12 @@ func TestPIDDenySetSelfTestPasses(t *testing.T) {
 		t.Fatalf("--self-test failed (code %d):\n%s", code, out)
 	}
 	// A self-test that printed nothing and exited 0 is the same trap the
-	// EMPTY arm below guards against, one level up.
-	if n := strings.Count(out, "self-test PASS:"); n < 5 {
-		t.Errorf("--self-test reported only %d passing arms, want >= 5:\n%s", n, out)
+	// EMPTY arm below guards against, one level up. The floor is the arm
+	// count, not a token 5: ranger-base-t2v2 added six (the superseded-rows
+	// arm, one per narrowed hook alternative, and the list-shape arm), and a
+	// floor left behind the arms lets a deleted arm pass as a rounding error.
+	if n := strings.Count(out, "self-test PASS:"); n < 11 {
+		t.Errorf("--self-test reported only %d passing arms, want >= 11:\n%s", n, out)
 	}
 	if strings.Contains(out, "self-test FAIL") {
 		t.Errorf("--self-test reported a failure:\n%s", out)
@@ -83,6 +98,57 @@ func TestShippedPIDsCarryTheADR0015Fence(t *testing.T) {
 	// The positive witness: a clean report over zero PIDs is not a pass.
 	if !strings.Contains(out, "scanned 9 PIDs") {
 		t.Errorf("want a scan of all 9 shipped PIDs; got:\n%s", out)
+	}
+}
+
+// The y5g7 narrowing, pinned WITHOUT going through the script (ranger-base-
+// t2v2). TestShippedPIDsCarryTheADR0015Fence runs the script against the PIDs,
+// so if the expected list and the PIDs are reverted together it stays green
+// over the revert — the two halves agreeing is exactly what it measures. This
+// arm reads the shipped PIDs directly and knows the operator ruling on its
+// own, so reverting either half alone or both together reds `make test`.
+//
+// Why the ruling: the broad `Bash(bd hook:*)` / `Bash(bd hooks:*)` deny the
+// whole verb, and the whole verb is what beads' OWN git hooks exec — pre-commit
+// on the singular spelling, the prepare-commit-msg chain on the plural. Both
+// broad rows on a PID mean that persona cannot commit or add a worktree at all
+// (ranger-base-c7ek), and posse closes beads by committing.
+func TestShippedPIDsCarryTheNarrowedHookRows(t *testing.T) {
+	want := []string{
+		"\n  - Bash(bd hook install:*)\n",
+		"\n  - Bash(bd hook uninstall:*)\n",
+		"\n  - Bash(bd hooks install:*)\n",
+		"\n  - Bash(bd hooks uninstall:*)\n",
+	}
+	superseded := []string{
+		"\n  - Bash(bd hook:*)\n",
+		"\n  - Bash(bd hooks:*)\n",
+	}
+	pids, err := filepath.Glob(filepath.Join("examples", "agents", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The positive witness again: an all-absent assertion is satisfied by
+	// globbing nothing.
+	if len(pids) != 9 {
+		t.Fatalf("want the 9 shipped PIDs, globbed %d", len(pids))
+	}
+	for _, pid := range pids {
+		b, err := os.ReadFile(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(b)
+		for _, rule := range want {
+			if !strings.Contains(body, rule) {
+				t.Errorf("%s: missing the y5g7 narrowed row %q", pid, strings.TrimSpace(rule))
+			}
+		}
+		for _, rule := range superseded {
+			if strings.Contains(body, rule) {
+				t.Errorf("%s: still carries the superseded row %q — that PID cannot commit", pid, strings.TrimSpace(rule))
+			}
+		}
 	}
 }
 

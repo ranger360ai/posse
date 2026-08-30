@@ -25,8 +25,9 @@
 # question, and for both layers here the answer is cooperative. Green here
 # means the rules are spelled where the launch will read them, no more.
 #
-# EXIT CODES. 0 every PID carries the set - 1 at least one is missing a rule -
-# 2 nothing was measured (no home, no agents dir, no PIDs, unreadable file),
+# EXIT CODES. 0 every PID carries the set and no superseded rule - 1 at least
+# one PID is missing a required rule or still carries a superseded one - 2
+# nothing was measured (no home, no agents dir, no PIDs, unreadable file),
 # which is not a pass and must never be read as one.
 set -uo pipefail
 
@@ -34,9 +35,20 @@ set -uo pipefail
 # measured on ranger-base-az93 / ranger-base-3bqn; `posse promote` is the older
 # "Fence, spelled twice" bullet whose authority the bd amendment reuses.
 #
-# The four hook rules name a SUBVERB. That is not tidiness, it is the
-# ranger-base-c7ek amendment, and the whole-verb spellings they replace are in
-# FORBIDDEN below because carrying one is a defect, not a stricter fence.
+# The hook rows are NARROWED, and the narrowing is load-bearing (operator
+# ruling 2026-08-29 evening, ranger-base-y5g7, promoted; the ADR's own copy of
+# the list is amended on ranger-base-i6do). u9ud wrote them as the whole verb
+# in both spellings, and the whole verb is not something a persona types - it
+# is what beads' OWN git hooks run. `.git/hooks/pre-commit` ends by exec-ing
+# the singular hook verb and the prepare-commit-msg chain ends by exec-ing the
+# plural one, so those two rows refused every commit and every
+# `git worktree add` for all eleven crew PIDs at once: a fleet that closes
+# beads by committing could not close one (ranger-base-c7ek). `--no-verify` is
+# not a way around it - it skips the pre-commit slot and lands on the
+# prepare-commit-msg slot one step later, which is why BOTH spellings had to
+# narrow or the wall just moves. What the deny was FOR - a persona
+# reconfiguring bd's hooks by hand - is exactly install and uninstall, so these
+# four rows keep that and hand back the run/slot forms git needs.
 REQUIRED=(
   'Bash(posse promote:*)'
   'Bash(bd daemon:*)' 'Bash(bd daemons:*)' 'Bash(bd admin:*)'
@@ -51,28 +63,18 @@ REQUIRED=(
   'Bash(bd jira:*)' 'Bash(bd linear:*)' 'Bash(bd setup:*)'
 )
 
-# Rules a PID must NOT carry. Presence is a finding of the same weight as an
-# absence above, and this is the only list in the fence where that is true.
-#
-# WHY. The L1 shim a deny renders sits on PATH and is therefore matched by
-# EVERY execve of `bd`, not only the ones a persona types. `bd hook pre-commit`,
-# `bd hook post-checkout`, `bd hook post-merge`, `bd hooks run pre-push` and
-# `bd hooks run prepare-commit-msg` are what beads' OWN installed git hooks
-# exec. A whole-verb deny on hook/hooks therefore refuses beads' hooks, the
-# hooks exit non-zero, and git aborts: a persona carrying it cannot commit and
-# cannot check out AT ALL in any repo where bd installed hooks. Measured
-# 2026-08-29 across three personas (ranger-base-c7ek), which is how it was
-# found - it blocked the verifier's own commit.
-#
-# The hazard the whole-verb rule was reaching for is install/uninstall, which
-# REQUIRED still denies. Nothing is given up by narrowing: typed `bd hook ...`
-# is refused one layer up by scripts/bd-argv-gate.py, which is an ALLOW-list
-# and so walls every spelling of the verb - including ones this list cannot
-# enumerate. L2 covers what a persona types; L1 must stay narrow precisely
-# because it also sees what git spawns.
+# Rules a PID must NOT carry. Presence-only would enforce half the ruling: a
+# PID that gains the four narrowed rows and KEEPS the superseded broad one
+# satisfies every REQUIRED test and still cannot commit, because deny wins
+# (ADR 0001) and the broad row is the one bd's own pre-commit hook trips. That
+# state is one careless merge away - the broad spelling is what all twenty PIDs
+# carried until the evening of 2026-08-29, and what an un-amended ADR still
+# prints for someone to copy - so the superseded rows are named and checked for
+# ABSENCE rather than left to a reader to notice. This is NOT a general "no
+# rule outside REQUIRED" check: a PID's own extra denies are its business, and
+# only these two are known to break the fleet.
 FORBIDDEN=(
-  'Bash(bd hook:*)'
-  'Bash(bd hooks:*)'
+  'Bash(bd hook:*)' 'Bash(bd hooks:*)'
 )
 
 # deny_rules <pid> - one rule per line, from either spelling of the list. Both
@@ -118,8 +120,8 @@ verbose=0
 ELIDE_OVER=4
 
 check_home() {
-  local home=$1 agents pid name rule have rules found flagged
-  local pids=0 bad=0 checked=0
+  local home=$1 agents pid name rule have rules found
+  local pids=0 bad=0 checked=0 flagged
   agents="$home/agents"
   if [ ! -d "$agents" ]; then
     echo "nothing measured: no agents/ under $home" >&2
@@ -134,7 +136,6 @@ check_home() {
     pids=$((pids + 1))
     name=$(basename "$pid" .md)
     rules=$(deny_rules "$pid")
-    flagged=0
     local -a missing=()
     for rule in "${REQUIRED[@]}"; do
       checked=$((checked + 1))
@@ -144,6 +145,21 @@ check_home() {
       done <<<"$rules"
       [ "$found" = 1 ] || missing+=("$rule")
     done
+    local -a superseded=()
+    for rule in "${FORBIDDEN[@]}"; do
+      checked=$((checked + 1))
+      while IFS= read -r have; do
+        if [ "$have" = "$rule" ]; then superseded+=("$rule"); break; fi
+      done <<<"$rules"
+    done
+    flagged=0
+    if [ ${#superseded[@]} -gt 0 ]; then
+      flagged=1
+      # Never elided. There are two of these at most, and each one is a PID
+      # that cannot commit.
+      echo "SUPERSEDED  $name carries ${#superseded[@]} rule(s) the y5g7 ruling removed:"
+      printf '           %s\n' "${superseded[@]}"
+    fi
     if [ ${#missing[@]} -gt 0 ]; then
       flagged=1
       echo "MISSING  $name (${#missing[@]} of ${#REQUIRED[@]}):"
@@ -156,24 +172,7 @@ check_home() {
         echo "           ... and $((${#missing[@]} - ELIDE_OVER)) more (--verbose for all)"
       fi
     fi
-    # The other direction. A PID carrying a FORBIDDEN rule is broken even when
-    # it carries every REQUIRED one - the two lists are not alternatives, and
-    # the set that holds BOTH spellings is the shape a presence-only check
-    # calls clean while its persona cannot commit (ranger-base-c7ek). Never
-    # elided: the list is short and each entry is a live outage.
-    local -a carries=()
-    for rule in "${FORBIDDEN[@]}"; do
-      checked=$((checked + 1))
-      while IFS= read -r have; do
-        if [ "$have" = "$rule" ]; then carries+=("$rule"); break; fi
-      done <<<"$rules"
-    done
-    if [ ${#carries[@]} -gt 0 ]; then
-      flagged=1
-      echo "CARRIES  $name (${#carries[@]} rule(s) that wall beads' own git hooks):"
-      printf '           %s\n' "${carries[@]}"
-    fi
-    bad=$((bad + flagged))
+    [ "$flagged" = 0 ] || bad=$((bad + 1))
   done
   if [ "$pids" -eq 0 ]; then
     echo "nothing measured: no PIDs in $agents" >&2
@@ -181,23 +180,25 @@ check_home() {
   fi
   # The positive witness. An assertion of pure absence is satisfied by
   # measuring nothing (ranger-base-fm4p), so say what was actually read.
-  echo "scanned $pids PIDs in $agents against ${#REQUIRED[@]} required and ${#FORBIDDEN[@]} forbidden rules ($checked comparisons)"
+  echo "scanned $pids PIDs in $agents against ${#REQUIRED[@]} required and ${#FORBIDDEN[@]} superseded rules ($checked comparisons)"
   if [ "$bad" -ne 0 ]; then
-    echo "$bad PID(s) do not carry the ADR 0015 section 3 fence as written"
+    echo "$bad PID(s) do not carry the ADR 0015 section 3 fence"
     return 1
   fi
-  echo "every PID carries the ADR 0015 section 3 fence and none walls beads' hooks"
+  echo "every PID carries the ADR 0015 section 3 fence"
   return 0
 }
 
 # Every arm below has a wrong answer that fails: two complete PIDs that must
-# come back clean (one per list spelling), two PIDs that must be flagged - one
-# for an absence and one for a presence - and two homes with nothing in them
-# that must exit 2 rather than 0.
+# come back clean (one per list spelling), one PID that must be flagged, one
+# PID that carries the whole list AND the superseded broad rows, one arm per
+# narrowed hook alternative, one list-shape arm, and two homes with nothing in
+# them that must exit 2 rather than 0.
 self_test() {
-  local d rc=0 out r full_block full_flow
+  local d rc=0 out r full_block full_flow alt slug alts=0
   d=$(mktemp -d) || return 2
-  mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/broad/agents" "$d/empty/agents"
+  mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/empty/agents" \
+           "$d/superseded/agents"
 
   full_block=$(printf -- '  - %s\n' "${REQUIRED[@]}")
   full_flow=$(printf '%s, ' "${REQUIRED[@]}")
@@ -238,19 +239,22 @@ self_test() {
     echo '  - Bash(bd daemon:*)'
   } > "$d/gap/agents/a.md"
 
-  # The presence arm. This PID carries EVERY required rule, so the missing-rule
-  # half is silent, and it also carries the whole-verb hook denies - the exact
-  # shape that shipped to eleven PIDs and left none of them able to commit. An
-  # audit that only asks "is the rule there?" calls this file clean.
+  # ranger-base-t2v2. The regression the narrowing exists to prevent, and the
+  # one a presence-only control cannot see: this PID carries every REQUIRED
+  # rule, four narrowed hook rows included, and ALSO the two superseded broad
+  # rows u9ud wrote. Nothing is missing, so the REQUIRED half calls it clean —
+  # and deny wins (ADR 0001), so the broad rows are live and this persona
+  # cannot commit or add a worktree at all (ranger-base-c7ek). Delete the
+  # FORBIDDEN loop and this arm goes green over that.
   {
     echo '---'
-    echo 'name: keeps-broad-too'
+    echo 'name: still-broad'
     echo 'deny:'
-    printf -- '  - %s\n' "${REQUIRED[@]}"
+    echo "$full_block"
     printf -- '  - %s\n' "${FORBIDDEN[@]}"
     echo '---'
     echo body
-  } > "$d/broad/agents/a.md"
+  } > "$d/superseded/agents/a.md"
 
   out=$(check_home "$d/block"); r=$?
   if [ $r -eq 0 ] && [[ $out == *"scanned 1 PIDs"* ]]; then
@@ -273,11 +277,67 @@ self_test() {
     echo "self-test FAIL: the daemon/daemons gap was not caught (rc=$r): $out"; rc=1
   fi
 
-  out=$(check_home "$d/broad"); r=$?
-  if [ $r -eq 1 ] && [[ $out == *'CARRIES'* ]] && [[ $out == *'Bash(bd hook:*)'* ]]; then
-    echo "self-test PASS: a PID carrying every required rule AND the broad hook denies is flagged"
+  out=$(check_home "$d/superseded"); r=$?
+  if [ $r -eq 1 ] && [[ $out == *'SUPERSEDED'* ]] \
+     && [[ $out == *'Bash(bd hook:*)'* ]] && [[ $out == *'Bash(bd hooks:*)'* ]] \
+     && [[ $out != *'MISSING'* ]]; then
+    echo "self-test PASS: a PID keeping the superseded broad hook rows is flagged, with nothing missing"
   else
-    echo "self-test FAIL: the whole-verb hook deny was not caught (rc=$r): $out"; rc=1
+    echo "self-test FAIL: the superseded broad hook rows were not caught (rc=$r): $out"; rc=1
+  fi
+
+  # One arm per narrowed alternative (ranger-base-t2v2, the h6fx lesson: a
+  # wholesale rename can collapse two arms into one and leave the test green
+  # over the bug it guards). The four hook rows differ by a single character in
+  # two places — hook/hooks, install/uninstall — so each is dropped on its own
+  # and the report must name THAT row and count exactly one missing. A prefix
+  # or substring comparison lets `hooks install` answer for `hook install` and
+  # the count arm catches it; a fixture built from REQUIRED itself cannot, and
+  # that is what the count is for.
+  for alt in 'Bash(bd hook install:*)' 'Bash(bd hook uninstall:*)' \
+             'Bash(bd hooks install:*)' 'Bash(bd hooks uninstall:*)'; do
+    alts=$((alts + 1))
+    slug="alt$alts"
+    mkdir -p "$d/$slug/agents"
+    {
+      echo '---'
+      echo "name: $slug"
+      echo 'deny:'
+      printf -- '  - %s\n' "${REQUIRED[@]}" | grep -vxF -- "  - $alt"
+      echo '---'
+      echo body
+    } > "$d/$slug/agents/a.md"
+    out=$(check_home "$d/$slug"); r=$?
+    if [ $r -eq 1 ] && [[ $out == *"$alt"* ]] \
+       && [[ $out == *"(1 of ${#REQUIRED[@]})"* ]]; then
+      echo "self-test PASS: dropping $alt is caught, and only it"
+    else
+      echo "self-test FAIL: dropping $alt was not caught as exactly one gap (rc=$r): $out"; rc=1
+    fi
+  done
+
+  # Why the comparison above is allowed to be a plain string equality, stated
+  # rather than assumed: MEASURED on ranger-base-t2v2, mutating it to a
+  # substring test leaves every arm here green — an EQUIVALENT mutant, because
+  # no rule in either list is a proper substring of another. Every rule closes
+  # with `:*)`, so `bd hook` cannot answer for `bd hook install` and `bd daemon`
+  # cannot answer for `bd daemons`. That property is what makes the mutant
+  # equivalent, so it is checked here rather than left as a claim: add a rule
+  # that is a prefix of another and this arm reds, and the substring mutant
+  # stops being equivalent the same moment.
+  local a b overlap=0
+  for a in "${REQUIRED[@]}" "${FORBIDDEN[@]}"; do
+    for b in "${REQUIRED[@]}" "${FORBIDDEN[@]}"; do
+      [ "$a" = "$b" ] && continue
+      case "$b" in *"$a"*)
+        echo "self-test FAIL: '$a' is a proper substring of '$b'"; overlap=1;;
+      esac
+    done
+  done
+  if [ "$overlap" = 0 ]; then
+    echo "self-test PASS: no rule is a proper substring of another, so exact match is enough"
+  else
+    rc=1
   fi
 
   out=$(check_home "$d/empty" 2>&1); r=$?
