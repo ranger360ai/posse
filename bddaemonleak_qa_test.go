@@ -46,6 +46,10 @@ type bdCallSite struct {
 	line int
 }
 
+// guardFile is this file, excluded from the scan for the reason given at the
+// skip. Kept as a constant so the exclusion is one name, not a path.
+const guardFile = "bddaemonleak_qa_test.go"
+
 // scanRealBdCallSites returns every real-bd call site under root, and the
 // files that hold them. Errors are returned rather than swallowed: a walk
 // that reads nothing must not look like a tree with nothing in it.
@@ -62,6 +66,16 @@ func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string]stri
 			return nil
 		}
 		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		// This guard's OWN source is not a caller. Its three matches are a
+		// doc comment, the matcher literal below, and the control's planted
+		// fixture text — so counting them made the zero-witness unfirable:
+		// delete every real bd caller in the tree and the scan still read
+		// "3 sites in 1 file" off itself and passed (measured 2026-08-30,
+		// ranger-base-athy). A guard whose proof that it measured something
+		// is satisfied by reading itself is the shape it exists to catch.
+		if filepath.Base(path) == guardFile {
 			return nil
 		}
 		b, err := os.ReadFile(path)
@@ -163,5 +177,52 @@ func TestQABdDaemonGuardCatchesALeakyFile(t *testing.T) {
 	}
 	if bad := leakyBdTestFiles(files); len(bad) != 0 {
 		t.Fatalf("a daemon.pid cleanup must clear the file, got %v", bad)
+	}
+}
+
+// The zero-witness must be able to FIRE. TestQANoTestShellsRealBd…'s
+// `len(sites) == 0` guard exists so an empty PASS cannot masquerade as a
+// clean tree — a renamed helper, a walk rooted somewhere wrong. Until
+// 2026-08-30 it could not fire at all: the scan counted this file's own
+// comment, matcher literal and fixture text as three call sites, so a tree
+// with no bd caller whatsoever still reported "3 sites in 1 file" and
+// passed. This is the arm that keeps the exclusion honest, and it is a
+// without-arm for the control above: that one proves a leaky file is
+// caught, this one proves an EMPTY tree is not silently blessed.
+func TestQABdDaemonGuardZeroWitnessCanFire(t *testing.T) {
+	root := t.TempDir()
+	b, err := os.ReadFile(guardFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A tree holding only this guard: every real bd caller gone.
+	if err := os.WriteFile(filepath.Join(root, guardFile), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sites, files, err := scanRealBdCallSites(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 0 || len(files) != 0 {
+		t.Fatalf("a tree with no bd caller but this guard must scan to nothing, "+
+			"or the zero-witness is satisfied by the guard reading its own source: "+
+			"%d sites in %d files", len(sites), len(files))
+	}
+
+	// …and the other direction, or "scans to nothing" would just mean the
+	// walk is broken: one real caller beside it is still seen.
+	caller := "package x\n\nfunc f() { _ = exec.Command(\"bd\", \"list\") }\n"
+	if err := os.WriteFile(filepath.Join(root, "other_test.go"), []byte(caller), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sites, files, err = scanRealBdCallSites(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 1 || len(files) != 1 {
+		t.Fatalf("the exclusion must skip only this file, not blind the walk: %d sites in %d files", len(sites), len(files))
+	}
+	if bad := leakyBdTestFiles(files); len(bad) != 1 || bad[0] != "other_test.go" {
+		t.Fatalf("the real caller must still be judged, got %v", bad)
 	}
 }

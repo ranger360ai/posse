@@ -189,6 +189,86 @@ func TestSessionFailureKeepsThePersonaSlotOnceThenBenches(t *testing.T) {
 	}
 }
 
+// The half of ADR 0013 §2's ceiling that the pair above cannot see: the
+// counter must count SESSION failures and nothing else.
+//
+// ranger-base-4ctv's own words — "claimLost and unseen (awaitDelivered
+// seen=false) are NOT session failures and must not touch the counter."
+// That is true at HEAD by construction (claimLost has its own arm of the
+// three-way switch, and a delivered-but-unseen launch returns a nil error
+// and never reaches the switch at all), but nothing measured it: make the
+// claimLost arm increment sessFail and the ENTIRE internal/rhq package
+// still passes — 1626 tests, zero failures, measured 2026-08-30 under
+// ranger-base-athy. A rule that no test can tell you broke is one edit
+// from being untrue.
+//
+// It matters because the two failures mean opposite things. A lost claim
+// says somebody else is working this BEAD; the slot is fine and its next
+// bead should launch. Fold it into the ceiling and a persona whose queue
+// is being claimed out from under it gets benched for the pass after two
+// such losses — throughput lost to a seat that was never broken.
+//
+// The rig: a-1 is already held by someone else, so its claim is lost and
+// it must not count. a-2 and a-3 then take the pass's FIRST and SECOND
+// session failures, so the observable is the pair above's, unchanged, with
+// a claim loss in front of it.
+func TestClaimLossDoesNotCountTowardTheSessionFailureCeiling(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.StartupWait = 100 * time.Millisecond
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]},`+
+			`{"id":"a-3","title":"v","labels":["go"]},{"id":"a-4","title":"w","labels":["go"]}]`,
+		`[{"id":"a-1","status":"in_progress","assignee":"someone-else"}]`)
+	// One agent, pre-seeded on the FIRST pane the fake hands out — not
+	// agentPerLaunch, which gives every launch one. So a-1 alone is
+	// delivered and reaches its claim; a-2 and a-3 launch into panes where
+	// no agent ever appears and fail as sessions. That ordering is the
+	// whole rig: the claim path runs AFTER delivery, so a bead that session-
+	// fails never reaches a claim and the two arms cannot both fire on one
+	// bead. They can, and here do, fire on one PASS — which is the grain the
+	// ceiling counts at.
+	idleClaude(t, fake)
+	// ...and that claim is lost. Safe as a blanket knob precisely because
+	// a-1 is the only bead that gets far enough to claim.
+	if err := os.WriteFile(filepath.Join(repo, "fake-claim-lost"), []byte("someone-else"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+
+	if n := strings.Count(out, "claim lost"); n != 1 {
+		t.Fatalf("the rig wants exactly one lost claim, got %d — the rig, not the rule, is what failed:\n%s", n, out)
+	}
+	// The whole point: a-2 AND a-3 each got their own launch. Under a
+	// counter that also counts the lost claim, a-2 is already the second
+	// failure and a-3 never launches.
+	for _, want := range []string{SessionForBead("ranger", repo, "a-2"), SessionForBead("ranger", repo, "a-3")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a lost claim consumed a session-failure retry: %s never launched:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "keeps its slot"); n != 1 {
+		t.Errorf("want exactly one first-failure line after a lost claim, got %d:\n%s", n, out)
+	}
+	bench := "did not take the launch either — second session failure this pass; " +
+		SessionFor("ranger", repo) + " benched (ADR 0013 §2 ceiling)"
+	if !strings.Contains(out, bench) {
+		t.Errorf("the ceiling must still land on the second SESSION failure (%q):\n%s", bench, out)
+	}
+	// ...and it lands there and no earlier: a-4 is behind the bench.
+	if s4 := SessionForBead("ranger", repo, "a-4"); strings.Contains(out, s4) {
+		t.Errorf("a-4 launched into a benched slot (%s):\n%s", s4, out)
+	}
+	if strings.Contains(bdCalls(t, fake), "a-1 --status open") {
+		t.Errorf("a claim we never held must not be unclaimed:\n%s", bdCalls(t, fake))
+	}
+}
+
 // The other arm of the split, unchanged from rangerhq-81d: a failure that
 // is about the PERSONA on this runtime — here a runtime that will not load
 // at all — still benches the slot, because every bead routed to it would

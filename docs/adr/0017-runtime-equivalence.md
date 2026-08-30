@@ -6,7 +6,10 @@ promises are wired by this ADR's beads) · source bead ranger-base-il14 ·
 amended 2026-08-28: §3 shadow-predicate register updated — a fourth
 behavioural instance (dispatch's turn-outcome read) found and retired,
 the counted-ness pair retired by the D4 cost seam; §4 gains
-`turn_outcome:` and the two declarability shapes (ranger-base-ivf0)*
+`turn_outcome:` and the two declarability shapes (ranger-base-ivf0) ·
+amended 2026-08-30: §4's "not declarable" list is retired — all four
+shipped, the last two here (ranger-base-ncxa); §1's pin test exists
+(ranger-base-ncxa)*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -55,6 +58,17 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   reads it. This is the anti-drift device: the audit table below is a dated
   snapshot; the test is the living copy.
 
+  **Shipped** as `TestEveryRuntimeFieldIsClassified`
+  (`internal/rhq/runtimefields_qa_test.go`, ranger-base-ncxa). Each row
+  also names the production files the classification rests on, and the test
+  asserts each still mentions the field (or a named accessor) outside a
+  comment — so deleting or renaming a consumer reds it without anyone
+  remembering this ADR exists. What a green does NOT prove is that the
+  mention is a live read: a field referenced only from dead code passes.
+  Proving consumption is the per-field consumer tests' job; this test is
+  the census saying one must exist. Writing it moved two rows of §3's table
+  out of INERT (below).
+
 ### 2. What "equivalent" means — three verdicts, and UNDECLARED is loud, never fatal
 
 Per dimension, per runtime, exactly one of:
@@ -93,14 +107,14 @@ consumer or its defect. **Consumed** unless marked otherwise.
 | Skills / SkillsCwd | agents.go, skills.go materialization, parity.go | consumed |
 | SelfSandbox | parity.go, herdrback.go seatbelt gate | consumed |
 | ProjectConfig / -Keys | parity.go trust check | consumed |
-| Unattended | EnsureUnattended (agents.go:218) | consumed |
+| Unattended | EnsureUnattended (agents.go) | consumed; yaml-declarable since ranger-base-ncxa |
 | CageCred | cage.go CageCredential | consumed (built-ins via a side map, cage.go:385) |
 | Egress | egress.go allowlist, modelavail predicate | consumed |
 | Prompt | dispatch.go:1569, herdrback.go argv path | consumed |
-| **StartupWait** | **nothing** — dispatch reads `d.StartupWait` = the global constant (dispatch.go:146); `rt.Wait()`'s only caller is the display | **INERT** — ranger-base-p84 |
+| ~~**StartupWait**~~ | dispatch.go `agentWait` (per-runtime, overriding the pass default), promptready.go, runtimeprobe.go | **consumed** — the p84 inertness retired by ranger-base-ze9p, which split the detection patience from the relaunch grace |
 | Record / RecordWhy | dispatch recordClause, gather ✓ suppression; why is provenance | consumed / display-by-design |
 | NativeRules | `runtime check` rulebooks line | display-by-design — *decided* in ranger-base-00f ("declare, don't suppress"); not a defect |
-| **Interstitials** | grid + probes; Seeded honoured via SeedClaudeTrust — but the grid's "**LAUNCH REFUSE until silenced**" line (runtimecheck.go:195) is enforced by **no launch path**; nothing consults `Danger` or `Probe` before creating a session | **partially INERT** — the refuse ADR 0013 §2 promised is a printed sentence |
+| ~~**Interstitials**~~ | grid + probes, and `DangerLine` on BOTH launch paths (dispatch.go, herdrback.go) plus runtimepreflight.go | **consumed** — the ADR 0013 §2 refuse is enforced, not printed |
 | **CostAdapter / Counted()** | `runtime check` only. The *real* counted predicate is hardcoded `s.Runtime != "claude"` in cost.go:349 and cockpit.go:218 | **INERT + shadow predicate** — a runtime gaining an adapter, or Bob, changes nothing |
 
 Adjacent inert promise, same class: **`uncounted_cap_<runtime>:`** is
@@ -147,26 +161,55 @@ production per-runtime, not the grep.
 `runtimes/<name>.yaml` today takes: `command:`, `model_<tier>:`,
 `model_flag:`, `skills_flag:`, `egress:`, `cage_cred:`, `gate_shell:`,
 `prompt:`, `startup_wait:`, `record:`/`record_why:`, `native_rules:`
-(since this snapshot, also `state_dir:`, `env_required:`, and — added
-2026-08-28, ranger-base-02zr — `turn_outcome:`).
+(since this snapshot, also `state_dir:`, `env_required:`, `turn_outcome:`
+— added 2026-08-28, ranger-base-02zr — and `skills_cwd:`,
+`self_sandbox:`, `project_config:`/`project_config_keys:`, `unattended:`,
+the four below). `runtimeYamlKeys()` is the whole surface and the list to
+grep; this sentence is a projection of it.
 
-**Not declarable, and it must become so** (each is a Go field a built-in
-sets that a yaml runtime cannot — the grid has holes exactly where Bob
-would need it):
+**Was not declarable; all of it now is** (each was a Go field a built-in
+set that a yaml runtime could not — the grid had holes exactly where Bob
+would need it). Kept as a closed list rather than deleted, because the
+snapshot is what dates the claim:
 
-- `unattended:` — a yaml runtime with an unattended flag cannot say so;
-  `runtime check` prints "NO unattended flag known" with no remedy.
-- `self_sandbox:` — a self-sandboxing yaml runtime gets seatbelt-wrapped
-  (herdrback.go:1219) and macOS refuses to nest; the breakage is
-  undeclarable today.
-- `skills_cwd:` — cwd-discovery skills (the codex/grok shape) cannot be
-  declared; a yaml runtime is either `skills_flag:` or no surface.
-- `project_config:` / `project_config_keys:` — a runtime that reads
-  session-dir config cannot be declared, so parity's trust check silently
-  skips an unguarded repo→box channel. Safety-relevant.
+- `skills_cwd:` — cwd-discovery skills (the codex/grok shape); a yaml
+  runtime was either `skills_flag:` or no surface. **Shipped** — and
+  declaring both surfaces refuses at load ("a runtime has one skill
+  surface").
+- `self_sandbox:` — a self-sandboxing yaml runtime was seatbelt-wrapped
+  and macOS refuses to nest, so the breakage was undeclarable.
+  **Shipped.**
+- `project_config:` — a runtime reading session-dir config could not be
+  declared, so parity's trust check silently skipped an unguarded repo→box
+  channel. **Shipped.**
+- `project_config_keys:` — the JSON-key narrowing half stayed Go-only for
+  a further while (measured at HEAD 2026-08-29, ranger-base-qm6e).
+  **Shipped, ranger-base-ncxa.** It is the one declarable key that
+  *loosens* a safety check, so it refuses in two directions rather than
+  one: without `project_config:` there is no file to narrow, and empty is
+  the same declaration wearing a value. The check keeps its floor either
+  way — a keyed file that is not a readable top-level JSON object fails
+  closed, so keys declared over a TOML config degrade every launch instead
+  of narrowing anything.
+- `unattended:` — a yaml runtime with an unattended flag could not say so;
+  `runtime check` printed "NO unattended flag known" with no remedy.
+  **Shipped, ranger-base-ncxa.** What makes appending an operator's flag
+  safe where guessing one never was: posse still guesses nothing, and the
+  value is validated as something it may append to a shell line — it must
+  begin with the flag (a bare word lands as a positional, which an
+  interactive CLI reads as its prompt) and carry no shell punctuation.
 
 Present-but-wrong refuses, absent stays loud — the existing `prompt:`/
 `record:` semantics, verbatim.
+
+**Method note (2026-08-30).** This list was two-and-a-half items stale
+before anyone re-derived it, and the cheap check is why that was caught:
+`runtimeYamlKeys()` is the whole load surface and an unknown key warns on
+its own file, so "is X declarable" is one grep. Prose lists date; the
+generated warning does not. The onboarding footer `runtime check` prints
+had drifted the same way in the other direction — `turn_outcome:` shipped
+and never reached it — and is now pinned against `runtimeYamlKeys()`
+(`TestOnboardingFooterNamesEveryDeclarableKey`).
 
 **Two declarability shapes (added 2026-08-28, ranger-base-ivf0).** The
 grid now carries both, and a future seam picks deliberately rather than
