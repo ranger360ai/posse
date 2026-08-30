@@ -324,7 +324,19 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 		// Bash call for every persona. `python3 <missing file>` exits 2 all
 		// by itself, which is why the wrapper does not key on the code alone
 		// (MEASURED: the first cut of this gate denied `go test` here).
-		for _, safe := range []string{"go test ./...", "git status", "echo hello"} {
+		//
+		// The last three rows are the ones that make this control bite. The
+		// first three never reach the fail-closed test at all — the fast path
+		// answers them from a shell builtin, so they would stay green against
+		// a fallback that refused literally everything it saw. These carry a
+		// `bd` the fast path cannot rule out (a substring, a hyphenated name)
+		// and a newline, so they are decided by the fallback itself.
+		for _, safe := range []string{
+			"go test ./...", "git status", "echo hello",
+			"./scripts/verify-bd-dep-safety.sh ranger-base-f0y3",
+			"grep -rn lambda .\ncat abd.txt",
+			"echo one\ngit status",
+		} {
 			if r := runGate(t, env, safe); r.code != 0 || strings.TrimSpace(r.stdout) != "" {
 				t.Errorf("%v: %q must be untouched by a broken parser: code=%d out=%q err=%q",
 					env, safe, r.code, r.stdout, r.stderr)
@@ -359,6 +371,21 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 	// With the parser unavailable, an escaped spelling must fail closed the
 	// same way the literal one does — the fallback grep had the same blind
 	// spot as the fast path (ranger-base-hthx).
+	//
+	// The multi-line rows are ranger-base-1lvm, and they are the whole reason
+	// this table now carries a newline. The fallback reasoned about the
+	// payload's TEXT, where the harness writes a newline as the two characters
+	// `\` `n` — so the character standing in front of `bd` was the `n` of the
+	// escape, which is a word character, and the raw grep missed it; deleting
+	// backslashes then joined that same `n` on to make `anbd`, and the
+	// stripped grep missed it too. One newline was the entire difference
+	// between a refusal and a wave-through, on exactly the destructive verbs
+	// the allow-list is the only fence for. MEASURED: 228 escapes in 47275
+	// real command lines, every one an ordinary multi-line command.
+	//
+	// Every corpus that has ever been pointed at this fallback — this table,
+	// and `make verify-bd-argv-gate` — was single-line, which is why three
+	// separate reviews of it agreed it was sound. Keep a newline in here.
 	for _, env := range [][]string{
 		{"BD_ARGV_GATE_PY=" + missing},
 		{"BD_ARGV_GATE_PYTHON=" + filepath.Join(t.TempDir(), "no-python3")},
@@ -366,10 +393,81 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 		for _, spelling := range []string{
 			`b\d daemon stop`, "b''d daemon stop", `b"d" daemon stop`,
 			`cd /tmp && b\d admin reset`,
+			"echo hi\nbd daemon stop",
+			"echo hi\nb\\d admin reset",
+			"A=1\necho two\nbd jira sync",
+			"echo hi\nb''d daemon stop",
+			// Not a tab: `echo hi<TAB>bd daemon stop` is one segment running
+			// echo with arguments, so the parser is rightly silent and such a
+			// row would witness nothing (MEASURED — the guard below caught it).
 		} {
 			if r := runGate(t, env, spelling); r.code != 2 || !strings.Contains(r.stderr, "fail closed") {
 				t.Errorf("%v: %q must be refused when the parser is unavailable: code=%d err=%q",
 					env, spelling, r.code, r.stderr)
+			}
+			// The row is only a witness if the parser really refuses it —
+			// otherwise the fallback refusing it proves nothing about the
+			// fallback being no looser than the parser.
+			if parser := denied(t, parserGate(t, spelling)); parser == "" {
+				t.Errorf("fixture measures nothing: the parser does not refuse %q", spelling)
+			}
+		}
+	}
+
+	// The unicode escapes for `b` and `d` are the ONLY four-hex spellings that
+	// can decode to a b or a d — the hex letters a-f never occur in either —
+	// so the fallback decodes exactly those two and turns every other one into
+	// a separator, rather than refusing any payload that carries a unicode
+	// escape at all. That distinction is not cosmetic: node's JSON.stringify
+	// leaves `&<>` alone while Go's encoding/json escapes them, so a blanket
+	// refusal costs 0.06% of real commands under one encoder and 72% under the
+	// other (MEASURED on 47275 commands). Deciding it per-spelling makes the
+	// answer identical under both, which is the property worth having.
+	//
+	// esc is composed rather than written out so that nothing in the toolchain
+	// can normalize the sequence under test out of this file, and the payloads
+	// are raw because Go's marshaller would escape the backslash and destroy
+	// the very spelling being pinned.
+	esc := `\u`
+	for _, row := range []struct {
+		name    string
+		command string // the JSON string body, escapes left undecoded
+		refused bool
+	}{
+		{"b spelled as a unicode escape", esc + "0062" + "d daemon stop", true},
+		{"d spelled as a unicode escape", "b" + esc + "0064" + " daemon stop", true},
+		{"both, and on the second line", `echo hi\n` + esc + "0062" + esc + "0064" + " daemon stop", true},
+		{"escapes that are neither b nor d", "echo " + esc + "0041" + esc + "0042", false},
+	} {
+		payload := `{"tool_name":"Bash","tool_input":{"command":"` + row.command + `"}}`
+		r := runGateRaw(t, []string{"BD_ARGV_GATE_PY=" + missing}, payload)
+		if got := r.code == 2; got != row.refused {
+			t.Errorf("%s (%s): with the parser unavailable, refused=%v want %v (code=%d err=%q)",
+				row.name, payload, got, row.refused, r.code, r.stderr)
+		}
+	}
+
+	// A payload that is not JSON at all is the same question asked of text
+	// nobody encoded, so a backslash there is the shell's quoting rather than
+	// a JSON escape — and having failed to read the payload the gate cannot
+	// tell which. It refuses under either reading (ranger-base-1lvm, laurie's
+	// third site: BD_WORD against raw payload text appears in the wrapper
+	// fallback and in the parser's own unreadable-payload path).
+	for _, row := range []struct {
+		name, payload string
+		refused       bool
+	}{
+		{"not json, bd on line 1", "this is not json, bd daemon stop", true},
+		{"not json, bd on line 2 as \\n", `this is not json\nbd daemon stop`, true},
+		{"not json, bd on line 2, real newline", "this is not json\nbd daemon stop", true},
+		{"not json, concatenated b\\d", `this is not json, b\d daemon stop`, true},
+		{"not json, no bd at all", "this is not json at all", false},
+	} {
+		for _, env := range [][]string{nil, {"BD_ARGV_GATE_PY=" + missing}} {
+			r := runGateRaw(t, env, row.payload)
+			if got := r.code == 2; got != row.refused {
+				t.Errorf("%s (env %v): refused=%v want %v (code=%d err=%q)",
+					row.name, env, got, row.refused, r.code, r.stderr)
 			}
 		}
 	}

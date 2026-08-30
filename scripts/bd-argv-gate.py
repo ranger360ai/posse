@@ -127,7 +127,62 @@ SUBST_WORD = "$__subst__"
 # sh wrapper uses for its own fail-closed fallback; keep them spelled alike.
 BD_WORD = re.compile(r"(^|[^A-Za-z0-9_.\-])bd([^A-Za-z0-9_\-]|$)")
 
+STRIP_QUOTING = {ord(c): None for c in "\\'\""}
+
 GATE = "bd-argv-gate"
+
+
+def mentions_bd(command):
+    """True when a DECODED command line names bd as a word.
+
+    Two spellings, because the shell has two: written out, or concatenated out
+    of quoting the parser would have resolved with shlex — `b\\d`, `b''d`,
+    `b"d"` (ranger-base-hthx).
+    """
+    return bool(BD_WORD.search(command)) or bool(
+        BD_WORD.search(command.translate(STRIP_QUOTING)))
+
+
+def mentions_bd_in_payload(raw):
+    """The same question of a payload nobody could decode — escapes and all.
+
+    Reached only where this file has already failed to read the tool call, so
+    the JSON escapes are still sitting there as text. Testing that text
+    directly is what made the sh wrapper fail OPEN on any bd call that was not
+    on the FIRST line of the command (ranger-base-1lvm): the harness writes the
+    newline as `\\` `n`, and the `n` reads as a word character in front of the
+    `bd`. Decode, then ask.
+
+    `str.replace` and `re.sub` both scan left to right over non-overlapping
+    matches, which is exactly a JSON string decoder's scan: `\\\\n` is consumed
+    as the escaped backslash and never mistaken for the newline escape. Keep
+    this spelled like the sed pipeline in bd-argv-gate.sh — the wrapper's
+    fallback and this path have to agree, and `make verify-bd-argv-gate` sweeps
+    them against each other.
+    """
+    def decode_u(t):
+        # \u0062 and \u0064 are the ONLY four-hex spellings that can produce a
+        # `b` or a `d`, so everything else becomes a separator with no loss.
+        t = t.replace("\\u0062", "b").replace("\\u0064", "d")
+        return re.sub(r"\\u....", " ", t, flags=re.S)
+
+    # A. a literal bd: every escape becomes a separator, which can only create
+    #    word boundaries and can never hide a `bd`.
+    separated = re.sub(r"\\.", " ", decode_u(raw.replace("\\\\", " ")), flags=re.S)
+    # B. a concatenated bd: `\\` and `\"` decode to a backslash and a quote,
+    #    which the strip then deletes, so the concatenation survives.
+    joined = re.sub(r"\\.", " ",
+                    decode_u(raw.replace("\\\\", "")).replace('\\"', ""), flags=re.S)
+    # C. a backslash we get here can be a JSON escape (A and B) or, in a payload
+    #    nobody encoded, the shell's own quoting — and having failed to read the
+    #    payload we cannot tell which. So ask under the other reading too. This
+    #    is the test that shipped before; it costs nothing on top of A and B for
+    #    a real JSON payload (MEASURED: A|B is a strict superset over 47275 real
+    #    command lines) and it is what still catches `b\d` in a payload that is
+    #    not JSON at all.
+    return (bool(BD_WORD.search(separated))
+            or bool(BD_WORD.search(joined.translate(STRIP_QUOTING)))
+            or bool(BD_WORD.search(raw.translate(STRIP_QUOTING))))
 
 
 def in_redirect(cur, command, i):
@@ -436,19 +491,23 @@ def main():
     except Exception:
         # Cannot read the call. Fail closed only where bd is in play, so a
         # broken harness contract does not wedge every Bash call on the box.
-        if BD_WORD.search(raw):
+        # The payload is undecoded text here, so the test has to decode it
+        # (ranger-base-1lvm).
+        if mentions_bd_in_payload(raw):
             sys.stderr.write("%s: could not read the tool call; refusing (fail closed)\n" % GATE)
             return 2
         return 0
     if not isinstance(command, str):
-        if BD_WORD.search(raw):
+        if mentions_bd_in_payload(raw):
             sys.stderr.write("%s: tool_input.command is not a string; refusing (fail closed)\n" % GATE)
             return 2
         return 0
     try:
         reason = verdict(command)
     except Exception as exc:            # a parser bug must not be an opening
-        if BD_WORD.search(command):
+        # `command` is decoded here, but a concatenated spelling still hides
+        # from a bare word match (ranger-base-hthx), so ask both ways.
+        if mentions_bd(command):
             sys.stderr.write("%s: parser error (%s); refusing (fail closed)\n" % (GATE, exc))
             return 2
         return 0

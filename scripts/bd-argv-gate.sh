@@ -76,13 +76,61 @@ if [ "$rc" -eq 2 ] && grep -q '^bd-argv-gate:' "$err" 2>/dev/null; then
   exit 2
 fi
 
-# The parser did not run at all. Refuse anything that mentions bd as a word —
-# in the payload as it arrived, AND in the payload with the shell's quoting
-# characters removed, so `b\d daemon stop` is refused here too (ranger-base-hthx).
-# Both, not just the stripped one: deleting backslashes also eats the JSON
-# escapes, and `a\nbd` would collapse to the single word `anbd`.
+# The parser did not run at all. Refuse anything that mentions bd as a word.
+#
+# The parser reasons about the DECODED command; everything down here reasons
+# about the payload's TEXT, and that gap has been the fail-OPEN hole twice now.
+# The second time (ranger-base-1lvm) the counter-example was a bd call that is
+# simply not on the FIRST LINE of the command: the harness encodes the newline
+# as the two characters `\` `n`, so the character in front of `bd` was the `n`
+# of the escape — which is a word character — and the raw grep missed it, while
+# deleting backslashes joined that same `n` on to make `anbd` and the stripped
+# grep missed it too. MEASURED: 228 escapes in 47275 real command lines, ALL of
+# them ordinary multi-line commands.
+#
+# So decode first, then ask the question. Decoding a JSON string is a
+# left-to-right scan and sed's `s///g` IS one — it consumes non-overlapping
+# matches in order, so `\\n` is eaten as the escaped backslash `\\` (leaving a
+# literal `n`) and is never mistaken for the newline escape `\n`. That one
+# property is what makes this sound rather than one more character class.
+#
+# Two arms, because bd has two shapes in a payload:
+#   A. a literal `bd` in the decoded command. Every escape becomes a SEPARATOR,
+#      which can only create word boundaries — it can never hide a `bd`.
+#   B. a `bd` the shell concatenates — `b\d`, `b''d`, `b"d"` (ranger-base-hthx).
+#      Here `\\` and `\"` decode to a backslash and a quote, which the strip
+#      then deletes, so the concatenation survives the decode.
+#
+# `\uXXXX` is decoded exactly, not approximated: `\u0062` and `\u0064` are the
+# ONLY four-hex spellings that can yield a `b` or a `d` (the hex letters a-f
+# never occur in `0062`/`0064`), so every other one becomes a separator with
+# nothing lost. That keeps the answer identical whichever encoder produced the
+# payload — node's JSON.stringify leaves `&<>` alone, Go's encoding/json spells
+# them `\u0026`, and this arm no longer cares (MEASURED: same verdict on all
+# 47275, both encodings).
+#
+# Cost of decoding, measured on the same corpus: 279 of 47275 commands (0.59%)
+# are refused here that the old text test let through — every one of them a
+# command that already had to reach the parser, refused only while the parser
+# is broken. Collapsing this test into the fast path instead would have cost
+# 13.5%, which is the "wedges every Bash call on the box" that ranger-base-3bqn
+# forbids.
 bd_word='(^|[^A-Za-z0-9_.-])bd([^A-Za-z0-9_-]|$)'
-if printf '%s' "$input" | grep -Eq "$bd_word" ||
+
+# Shared by both arms, so the two spellings cannot drift apart.
+decode_u() { sed -e 's/\\u0062/b/g' -e 's/\\u0064/d/g' -e 's/\\u..../ /g'; }
+
+#   C. a backslash down here can be a JSON escape (A and B) or, in a payload
+#      nobody encoded, the shell's own quoting — and having failed to reach the
+#      parser we cannot tell which. So ask under the other reading too. This is
+#      the test that shipped before, kept for exactly that case: it adds
+#      nothing on top of A and B for a real JSON payload (MEASURED: A|B is a
+#      strict superset over all 47275 real command lines, both encodings), and
+#      it is what still catches `b\d` in a payload that is not JSON at all.
+if printf '%s' "$input" | sed -e 's/\\\\/ /g' | decode_u |
+     sed -e 's/\\./ /g' | grep -Eq "$bd_word" ||
+   printf '%s' "$input" | sed -e 's/\\\\//g' | decode_u |
+     sed -e 's/\\"//g' -e 's/\\./ /g' | tr -d '\\'\''"' | grep -Eq "$bd_word" ||
    printf '%s' "$input" | tr -d '\\'\''"' | grep -Eq "$bd_word"; then
   echo "bd-argv-gate: parser unavailable (${python} ${py}, exit ${rc}); refusing this bd call (fail closed)" >&2
   exit 2
