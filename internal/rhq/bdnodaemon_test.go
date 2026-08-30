@@ -69,7 +69,7 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 	// as an id or an issue, and the argv is recorded before any of that.
 	verbs := map[string]func(){
 		"ListAll":        func() { b.ListAll(dir) },
-		"Ready":          func() { b.Ready(dir, "jian-yang") },
+		"Ready":          func() { b.Ready(dir, "an-actor") },
 		"InProgress":     func() { b.InProgress(dir) },
 		"OpenLabeledAny": func() { b.OpenLabeledAny(dir, "bug") },
 		"Blocked":        func() { b.Blocked(dir) },
@@ -79,12 +79,12 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 		"DepList":        func() { b.DepList(dir, "x-1") },
 		"Dependents":     func() { b.Dependents(dir, "x-1") },
 		"Flush":          func() { b.Flush(dir) },
-		"Claim":          func() { b.Claim(dir, "x-1", "jian-yang") },
-		"Unclaim":        func() { b.Unclaim(dir, "x-1", "jian-yang", false) },
-		"Close":          func() { b.Close(dir, "x-1", "jian-yang") },
-		"Comment":        func() { b.Comment(dir, "x-1", "a note", "jian-yang") },
-		"DepAdd":         func() { b.DepAdd(dir, "x-1", "x-2", "jian-yang") },
-		"Create":         func() { b.Create(dir, BdNew{Title: "t", Actor: "jian-yang"}) },
+		"Claim":          func() { b.Claim(dir, "x-1", "an-actor") },
+		"Unclaim":        func() { b.Unclaim(dir, "x-1", "an-actor", false) },
+		"Close":          func() { b.Close(dir, "x-1", "an-actor") },
+		"Comment":        func() { b.Comment(dir, "x-1", "a note", "an-actor") },
+		"DepAdd":         func() { b.DepAdd(dir, "x-1", "x-2", "an-actor") },
+		"Create":         func() { b.Create(dir, BdNew{Title: "t", Actor: "an-actor"}) },
 	}
 	for _, run := range verbs {
 		run()
