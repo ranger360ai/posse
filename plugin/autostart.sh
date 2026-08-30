@@ -204,11 +204,27 @@ loop_alive() {
 	return 0
 }
 
-# Flat-YAML scalar read: `key: value`, trailing " #" comment stripped.
+# Flat-YAML scalar read: `key: value`, trailing " #" comment stripped, then a
+# wrapping pair of double quotes dropped.
+#
+# The unquote is not decoration. This file has TWO readers: posse reads it
+# with yamlClean (internal/rhq/yamlflat.go, behind CfgGet/YamlGet) and this
+# hook reads it here, and they must not disagree about what the operator
+# wrote. yamlClean drops a matched pair of double quotes, so YAML's own way
+# of writing a string — `autostart_interval: "5m"` — is 5m to posse, which
+# reports the loop armed, while cfg() handed the hook `"5m"` and the hook
+# refused it as not an interval. Same split on every key here: a quoted
+# session name was created WITH the quotes in it, a quoted dir did not
+# exist, a quoted count hit the "is not a count" arm.
+#
+# So the rule is yamlClean's rule, in yamlClean's order, and not a shell
+# unquote invented here: double quotes only (single quotes are not in the
+# house subset and stay part of the value), both ends or neither, and after
+# the comment and whitespace strip (ranger-base-k3yd).
 cfg() {
 	[ -f "$CONFIG" ] || return 0
 	sed -n "s/^$1:[[:space:]]*//p" "$CONFIG" | head -1 |
-		sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'
+		sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/'
 }
 
 # Is the key THERE, regardless of what it says? `cfg` answers with the value,

@@ -510,13 +510,15 @@ func TestGovG7DisarmedAutostartIsNotACondition(t *testing.T) {
 // refuses it and arms nothing (ranger-base-cxyk), so the row must name the
 // empty key rather than report a dead loop under a config that will never
 // start one. Gating G7 on presence alone said "autostart is armed" about
-// exactly that config (ranger-base-i6h). Three subtests for the shapes the
-// hook's cfg() and CfgGet both read as empty.
+// exactly that config (ranger-base-i6h). One subtest per shape the hook's
+// cfg() and CfgGet both read as empty — `""` among them since cfg() drops a
+// matched pair of double quotes the way yamlClean does (ranger-base-k3yd).
 func TestGovG7BareIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
 	for name, line := range map[string]string{
-		"bare":       "autostart_interval:\n",
-		"whitespace": "autostart_interval:   \n",
-		"comment":    "autostart_interval: # 5m\n",
+		"bare":         "autostart_interval:\n",
+		"whitespace":   "autostart_interval:   \n",
+		"comment":      "autostart_interval: # 5m\n",
+		"quoted empty": "autostart_interval: \"\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			b, _ := newTestBackend(t)
@@ -547,11 +549,11 @@ func TestGovG7BareIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
 // the two surfaces the seed config promises never disagree, so they move
 // together.
 func TestGovG7MalformedIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
-	// Not `""` here: yamlClean strips the surrounding quotes, so posse's own
-	// reader sees the empty value and this row takes the arm above. The hook's
-	// cfg() does not unquote and calls the same line malformed. Both refuse,
-	// both say arm-broken, both name the key — the reason they reach it by
-	// different arms is filed separately.
+	// `""` is not here because both readers now take the EMPTY arm above on
+	// it — one arm, named once. It used to be an empty value to yamlClean and
+	// a malformed one to the hook's cfg(), which is the split ranger-base-k3yd
+	// closed. A quoted value that is NOT empty is likewise not a fixture here:
+	// `"5m"` is 5m to both readers, and arms.
 	for _, value := range []string{"banana", "0", "5min", "-5m", "30 s"} {
 		t.Run(value, func(t *testing.T) {
 			b, _ := newTestBackend(t)

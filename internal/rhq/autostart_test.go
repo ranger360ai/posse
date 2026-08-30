@@ -602,6 +602,12 @@ func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
 		"bare":       "autostart_interval:\n",
 		"whitespace": "autostart_interval:   \n",
 		"comment":    "autostart_interval: # 5m\n",
+		// Quoted-empty belongs HERE, not in the malformed table below:
+		// cfg() drops a matched pair of double quotes the way yamlClean
+		// does, so both readers see an empty value and both take this arm
+		// (ranger-base-k3yd). It used to be a malformed value to the hook
+		// and an empty one to posse — the same line, two verdicts.
+		"quoted empty": "autostart_interval: \"\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newHookWorld(t, line)
@@ -639,13 +645,12 @@ func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
 // drift into pinning shapes posse would have accepted.
 func TestAutostartMalformedIntervalIsRefusedNotArmed(t *testing.T) {
 	for name, value := range map[string]string{
-		"word":         "banana",
-		"quoted empty": `""`,
-		"zero":         "0",
-		"zero units":   "0h0m",
-		"negative":     "-5m",
-		"wrong unit":   "5min",
-		"units only":   "m",
+		"word":       "banana",
+		"zero":       "0",
+		"zero units": "0h0m",
+		"negative":   "-5m",
+		"wrong unit": "5min",
+		"units only": "m",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseInterval(value); err == nil {
@@ -712,13 +717,12 @@ func TestAutostartMalformedMaxIntervalIsDroppedNotArmed(t *testing.T) {
 	// Same fixtures as the interval table, asked of ParseInterval the same
 	// way, so the two answers to one grammar cannot drift apart.
 	for name, value := range map[string]string{
-		"word":         "banana",
-		"quoted empty": `""`,
-		"zero":         "0",
-		"zero units":   "0h0m",
-		"negative":     "-5m",
-		"wrong unit":   "5min",
-		"units only":   "m",
+		"word":       "banana",
+		"zero":       "0",
+		"zero units": "0h0m",
+		"negative":   "-5m",
+		"wrong unit": "5min",
+		"units only": "m",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseInterval(value); err == nil {
@@ -790,6 +794,10 @@ func TestAutostartEmptyMaxIntervalIsSilentlyTheDefault(t *testing.T) {
 		"bare":       "autostart_max_interval:\n",
 		"whitespace": "autostart_max_interval:   \n",
 		"comment":    "autostart_max_interval: # 40m\n",
+		// Quoted-empty joins the empty shapes for the same reason the arm
+		// switch's does: cfg() unquotes it exactly as yamlClean does, so it
+		// is no more a malformed cap than a bare key is (ranger-base-k3yd).
+		"quoted empty": "autostart_max_interval: \"\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newHookWorld(t, armed+line)
@@ -978,6 +986,131 @@ func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
 	}
 	if !strings.Contains(r.calls, "dispatch --watch 5m --max-interval 40m -n 3 --resume --dry-run") {
 		t.Errorf("first-arm block lost the cap:\n%s", r.calls)
+	}
+}
+
+// ── the two readers (ranger-base-k3yd) ─────────────────────────────────────
+//
+// $RHQ_HOME/config.yaml has two readers and the seed config promises they
+// never disagree about what the operator wrote. posse reads it with
+// yamlClean (internal/rhq/yamlflat.go, behind CfgGet/YamlGet), which drops a
+// matched pair of double quotes; the hook's cfg() did not. So YAML's own way
+// of writing a string — `autostart_interval: "5m"` — was 5m to posse, which
+// reported the loop armed, and `"5m"` to the hook, which refused it as not an
+// interval. Every autostart key goes through cfg(), so this pin does too.
+//
+// The measurement is a comparison, not a spelling: the quoted line and the
+// bare line must produce the SAME argv. A shared miscount reds it as loudly
+// as the split did, which a substring check on one run would not.
+func TestAutostartQuotedValuesReadLikeBareOnes(t *testing.T) {
+	for _, c := range []struct {
+		key, value, want, notWant string
+	}{
+		{key: "autostart_interval", value: "5m", want: "dispatch --watch 5m "},
+		{key: "autostart_max_interval", value: "40m", want: "--max-interval 40m "},
+		{key: "autostart_max_beads", value: "7", want: " -n 7 "},
+		{key: "autostart_resume", value: "false", want: "dispatch --watch 30s -n 3", notWant: "--resume"},
+		{key: "autostart_dry_run", value: "true", want: "--dry-run"},
+		{key: "autostart_session", value: "dispatch-qa", want: "new dispatch-qa "},
+		{key: "autostart_dir", value: "/opt/queue", want: "--dir /opt/queue "},
+	} {
+		t.Run(c.key, func(t *testing.T) {
+			// The control, and the reason the hook-side assertion means
+			// anything: posse itself reads the quoted line unquoted. If that
+			// ever stops being true the pin is asking the wrong question.
+			probe := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(probe, []byte(c.key+`: "`+c.value+"\"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := YamlGet(probe, c.key); got != c.value {
+				t.Fatalf("posse reads %s: %q as %q, not %q — fixture is not a quoting case",
+					c.key, `"`+c.value+`"`, got, c.value)
+			}
+
+			// The arm switch is the one key that cannot also be armed by the
+			// `armed` prelude — it IS the prelude.
+			line := func(v string) string {
+				if c.key == "autostart_interval" {
+					return c.key + ": " + v + "\n"
+				}
+				return armed + c.key + ": " + v + "\n"
+			}
+			bare := runArgv(t, line(c.value))
+			quoted := runArgv(t, line(`"`+c.value+`"`))
+
+			if quoted != bare {
+				t.Errorf("%s: the quoted line armed a different loop than the bare one\nquoted: %s\nbare:   %s",
+					c.key, quoted, bare)
+			}
+			if !strings.Contains(bare, c.want) {
+				t.Fatalf("fixture never reached the loop even unquoted — want %q in:\n%s", c.want, bare)
+			}
+			if c.notWant != "" && strings.Contains(bare, c.notWant) {
+				t.Fatalf("fixture does not measure what it claims — %q is in:\n%s", c.notWant, bare)
+			}
+		})
+	}
+}
+
+// runArgv runs the hook over one config and returns everything it asked of
+// posse, with the world's own temp paths folded away so two worlds are
+// comparable. The hook must have armed something: a stand-down would compare
+// equal to another stand-down and pin nothing.
+func runArgv(t *testing.T, config string) string {
+	t.Helper()
+	w := newHookWorld(t, config)
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d on config %q:\n%s", r.code, config, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch ") {
+		t.Fatalf("no loop was armed on config %q — nothing to compare:\n%s\n%s", config, r.out, r.calls)
+	}
+	// A value posse accepts is never complained about; a hook that both
+	// warned and armed would otherwise compare equal on argv alone.
+	for _, complaint := range []string{"is not an interval", "is not a count", "not true/false"} {
+		if strings.Contains(r.out, complaint) {
+			t.Errorf("hook complained on a value posse reads fine (%q):\n%s", complaint, r.out)
+		}
+	}
+	return strings.ReplaceAll(strings.TrimSpace(r.calls), w.home, "$RHQ_HOME")
+}
+
+// The other side of the same rule, and the reason cfg() mirrors yamlClean
+// instead of inventing a shell unquote: a quote that is not a wrapping PAIR
+// is part of the value to posse, so it must stay part of the value here.
+// Stripping quotes greedily would make the hook the disagreeing reader again,
+// pointing the other way.
+func TestAutostartLoneQuotesAreNotStripped(t *testing.T) {
+	for name, value := range map[string]string{
+		"leading only":  `"5m`,
+		"trailing only": `5m"`,
+		"single quotes": `'5m'`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			probe := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(probe, []byte("autostart_interval: "+value+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := YamlGet(probe, "autostart_interval"); got != value {
+				t.Fatalf("posse unquoted %q to %q — this is not a lone-quote fixture", value, got)
+			}
+			if _, err := ParseInterval(value); err == nil {
+				t.Fatalf("fixture %q is one posse accepts — the hook refusing it would be the disagreement, not the fix", value)
+			}
+			w := newHookWorld(t, "autostart_interval: "+value+"\n")
+
+			r := w.run(t, "--startup")
+			if r.code == 0 {
+				t.Errorf("the hook read %q as an interval posse would refuse (exit 0):\n%s", value, r.out)
+			}
+			if r.calls != "" {
+				t.Errorf("the hook armed something off %q:\n%s", value, r.calls)
+			}
+			if !strings.Contains(r.out, value) {
+				t.Errorf("the refusal does not name the value the operator typed (%q):\n%s", value, r.out)
+			}
+		})
 	}
 }
 
