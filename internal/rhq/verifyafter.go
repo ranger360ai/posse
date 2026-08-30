@@ -15,10 +15,12 @@ package rhq
 // (`-a` only when `verify_assignee:` names one — unset files it unassigned)
 //
 // One close is exempt: one whose `close_reason` says it was REJECTED rather
-// than done (duplicate, invalid, wontfix — scorecard.go's rejectWords). Such
-// a close builds nothing, so the QA session it would file has one reachable
-// verdict; it is skipped and named on stdout. A close with no reason at all
-// is not exempt — unexplained is not rejected.
+// than done (duplicate, invalid, wontfix — scorecard.go's rejectWords) AND
+// which no commit names. Such a close builds nothing, so the QA session it
+// would file has one reachable verdict; it is skipped and named on stdout.
+// A close with no reason at all is not exempt — unexplained is not rejected
+// — and neither is one that shipped commits whatever its reason says
+// (ranger-base-5fyg: "15 duplicates closed" is a fix, not a rejection).
 //
 // with the closer, the close reason, the commits `git log --grep <id>` finds,
 // and the closer PID's "done when" row for the bead's intent — then comment
@@ -349,15 +351,45 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 		// the 08-26 lock storm cost exactly that). The vocabulary is the
 		// scorecard's rejectWords, already trusted to mean the same thing.
 		//
+		// The words alone are not enough to decide it (ranger-base-5fyg).
+		// The scorecard can afford an over-match — one metric cell is off.
+		// Here an over-match SUPPRESSES A CONTROL, and it is unrecoverable:
+		// the watermark advances past an exempted close, so no later pass
+		// re-examines it. So the exemption needs a second signal, and the
+		// only one that is not the closer's prose is what the close SHIPPED:
+		// a rejection builds nothing, so no commit names the bead.
+		//
+		// Both, in this order — the git call is one exec, and only a close
+		// whose reason already reads as a rejection pays for it:
+		//
+		//	words match + no commit names it  → exempt, named on stdout
+		//	words match + commits             → candidate, named on stdout
+		//	git cannot answer                 → candidate (doubt files the bead)
+		//
+		// The two not-exempt lines say what was measured, not what will
+		// happen: whether the bead is then filed, adopted or batched is
+		// decided below, and stdout must not claim a filing that a failed
+		// `bd create` did not do.
+		//
 		// Its limit, stated: only a close that CARRIES the reason is caught.
 		// `bd close` with no -r writes the bare "Closed", and a rationale
 		// left in a comment is invisible here. The rest is process, not code.
-		// Emptiness is not the test either — a doc-only or already-working
-		// close has no commits and still earns verification.
+		// Emptiness alone is not the test either — a doc-only or
+		// already-working close has no commits and still earns verification;
+		// it is only exempt when the reason ALSO says it was rejected.
 		if isRejectedClose(is.CloseReason) {
-			fmt.Fprintf(out, "- %-14s no verify bead: close reason is a rejection (%s)\n",
-				is.ID, verifyTruncate(verifyOneLine(is.CloseReason)))
-			continue
+			trail, err := gitCommitsFor(dir, is.ID)
+			switch {
+			case err != nil:
+				fmt.Fprintf(out, "- %-14s rejection words, not exempt: git could not say what this close shipped\n", is.ID)
+			case len(trail) == 0:
+				fmt.Fprintf(out, "- %-14s no verify bead: close reason is a rejection and no commit names it (%s)\n",
+					is.ID, verifyTruncate(verifyOneLine(is.CloseReason)))
+				continue
+			default:
+				fmt.Fprintf(out, "- %-14s rejection words, not exempt: %d commit(s) name it (%s)\n",
+					is.ID, len(trail), verifyTruncate(verifyOneLine(is.CloseReason)))
+			}
 		}
 		cands = append(cands, is)
 	}
@@ -665,7 +697,7 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 	if intent, done := a.closerDoneWhen(closer, is.Labels); done != "" {
 		fmt.Fprintf(&b, "- done when (%s · %s): %s\n", verifyOneLine(closer), verifyOneLine(intent), verifyOneLine(done))
 	}
-	if lines := gitCommitsFor(dir, is.ID); len(lines) > 0 {
+	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
 		fmt.Fprintf(&b, "- commits (git log --grep %s):\n", is.ID)
 		for _, l := range lines {
 			fmt.Fprintf(&b, "    %s\n", l)
@@ -697,17 +729,24 @@ func (a *App) closerDoneWhen(closer string, labels []string) (intent, doneWhen s
 	return ag.IntentDoneWhen(labels)
 }
 
-// gitCommitsFor is the commit trail the ADR asks for. Best effort: no repo,
-// no git, no matching message — no line. It never fails the filing, because
-// a verify bead without commits is still worth having.
-func gitCommitsFor(dir, id string) []string {
+// gitCommitsFor is the commit trail the ADR asks for, and the structured
+// half of the rejection exemption above. Best effort for the trail — no
+// repo, no git, no matching message, no line; it never fails the filing,
+// because a verify bead without commits is still worth having.
+//
+// The error is returned because the exemption cannot treat "git said no"
+// and "git could not say" alike: an unanswerable repo (not a checkout, no
+// commits yet, no git) would otherwise exempt every close whose reason
+// happens to hold a reject word. A repo with no matching commit is exit 0
+// and empty output, not an error, so the two really are distinguishable.
+func gitCommitsFor(dir, id string) ([]string, error) {
 	if dir == "" {
 		dir = "."
 	}
 	out, err := exec.Command("git", "-C", dir, "log", "--grep", id,
 		"--format=%h %s", "-n", strconv.Itoa(verifyCommitLimit)).Output()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var lines []string
 	for _, l := range strings.Split(string(out), "\n") {
@@ -715,7 +754,7 @@ func gitCommitsFor(dir, id string) []string {
 			lines = append(lines, l)
 		}
 	}
-	return lines
+	return lines, nil
 }
 
 func hasAnyLabel(labels, want []string) bool {

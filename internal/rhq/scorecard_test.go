@@ -533,3 +533,50 @@ func TestScorecardSaysWhenOnlySomeReposHaveReopenHistory(t *testing.T) {
 		}
 	}
 }
+
+// The vocabulary, both directions (ranger-base-5fyg). isRejectedClose was
+// strings.Contains, so every reject word matched inside a longer ordinary
+// word: "dup" inside dedupes/deduplicated/duplicated, "invalid" inside
+// invalidate/invalidation/invalidates. It is read by two callers — the
+// scorecard's Rejected column and verify-after's exemption — and one of
+// them pays for a wrong answer with a suppressed QA session.
+//
+// The false rows are the live close reasons the bead measured; the true
+// rows are what the word list is FOR, and without them a regex that matched
+// nothing at all would pass this test.
+func TestIsRejectedCloseMatchesWordsNotSubstrings(t *testing.T) {
+	for _, tc := range []struct {
+		reason string
+		want   bool
+	}{
+		// Real fixes, in this shop's own vocabulary.
+		{"verify-after dedupes on the description marker bd commits with the bead", false},
+		{"Fixed: deduplicated the render", false},
+		{"Fixed: cache invalidation now keys on the sha", false},
+		{"Fixed: a config write invalidates the cached probe", false},
+		{"Fixed: removed the duplicated branch in Route()", false},
+		{"the dedupe is keyed on the marker now", false},
+		{"Fixed: the guard refuses", false},
+		{"Closed", false},
+		{"", false},
+		// Rejections. The plurals matter: a real rejection reads "closed as
+		// duplicates of x", and the substring test caught those too.
+		{"duplicate of a-9", true},
+		{"Duplicate", true},
+		{"dup of a-9", true},
+		{"closed as duplicates of a-9", true},
+		{"invalid", true},
+		{"Closed as wontfix", true},
+		{"won't fix — the design changed", true},
+		{"not a bug", true},
+		// Whole words in a sentence that describes a fix. isRejectedClose
+		// says true here and is not wrong to: free text cannot carry this
+		// verdict alone, which is why verify-after reads the commit trail
+		// beside it rather than trusting this answer on its own.
+		{"Fixed: the retry no longer files a duplicate bead", true},
+	} {
+		if got := isRejectedClose(tc.reason); got != tc.want {
+			t.Errorf("isRejectedClose(%q) = %v, want %v", tc.reason, got, tc.want)
+		}
+	}
+}

@@ -1385,6 +1385,12 @@ func TestVerifyAfterSkipsARejectedClose(t *testing.T) {
 			a := b.App
 			closed := "2026-08-18T09:20:06Z"
 			repo := vaRepo(t, a, closedListReason("a-1", `["code"]`, closed, tc.reason))
+			// A real repo carrying a commit that names no bead. The
+			// exemption is a conjunction since ranger-base-5fyg — reject
+			// words AND nothing shipped — and in a bare temp dir git
+			// cannot answer the second half, which files the bead. So the
+			// rows below would all read 1 over a rig that never asked.
+			vaGitRepo(t, repo, "chore: a commit that names no bead")
 			writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
 
 			n, out, errs := vaRun(t, a, testBd(t))
@@ -1438,6 +1444,7 @@ func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
 		row("a-3", "shipped", "2026-08-18T09:22:06Z"),
 	}, ",") + "]"
 	repo := vaRepo(t, a, list, "verify_batch: 2")
+	vaGitRepo(t, repo, "chore: a commit that names no bead") // a-2 shipped nothing
 	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
 
 	n, out, errs := vaRun(t, a, testBd(t))
@@ -1453,5 +1460,109 @@ func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
 	}
 	if strings.Contains(out, "held for a verify batch") {
 		t.Errorf("the batch was held although two real closes were pending:\n%s", out)
+	}
+}
+
+// ranger-base-5fyg. The exemption was strings.Contains over rejectWords, so
+// a close describing a shipped fix in this shop's own vocabulary was read as
+// a rejection and its QA session was not deferred but CANCELLED — the
+// watermark advances past an exempted close, so no later pass recovers it.
+//
+// The rows are the bead's measured table, and they split into two arms that
+// fail for different reasons, which is why both are here:
+//
+//   - the first five are not the listed words at all ("dedupes" is not "dup",
+//     "invalidation" is not "invalid"). Word matching alone answers them.
+//   - the sixth IS the word "duplicate", in a sentence describing a fix.
+//     Word matching does not reach it; only the commit trail does. Delete
+//     the git half of the exemption and this row alone still passes over a
+//     boundary regex — which is why the bead calls that a narrowing.
+//
+// The last two rows are the controls the fix must not break: a real
+// rejection that shipped nothing is still exempt, and an ordinary close is
+// still verified. Every row runs in a repo whose ONLY commit names a-1, so
+// "no commit names it" is a fact about the reason, not about the rig.
+func TestVerifyAfterVerifiesACloseThatShippedDespiteRejectionWords(t *testing.T) {
+	for _, tc := range []struct {
+		reason  string
+		shipped bool // a commit names a-1
+		want    int  // verify beads filed
+	}{
+		{"verify-after dedupes on the description marker bd commits with the bead", true, 1},
+		{"Fixed: deduplicated the render", true, 1},
+		{"Fixed: cache invalidation now keys on the sha", true, 1},
+		{"Fixed: a config write invalidates the cached probe", true, 1},
+		{"Fixed: removed the duplicated branch in Route()", true, 1},
+		{"Fixed: the retry no longer files a duplicate bead", true, 1},
+		// The controls. The first is the exemption still doing its job —
+		// the same shape as row six with the commit trail taken away, so
+		// the two together isolate the git half of the conjunction. The
+		// second is an ordinary close, which no arm of this may touch.
+		{"duplicate of a-9", false, 0},
+		{"Fixed: the guard refuses", true, 1},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			a := b.App
+			closed := "2026-08-18T09:20:06Z"
+			repo := vaRepo(t, a, closedListReason("a-1", `["code"]`, closed, tc.reason))
+			// The trail is what a real fix leaves behind, not a marker
+			// planted for the test: the message is the sixth row's own
+			// close reason with the bead id a commit here always carries.
+			// The row without it still gets a repo and a commit, so the
+			// difference between the arms is the trail and nothing else.
+			if tc.shipped {
+				vaGitRepo(t, repo, "fix: the retry no longer files a duplicate bead (a-1)")
+			} else {
+				vaGitRepo(t, repo, "chore: a commit that names no bead")
+			}
+			writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+			n, out, errs := vaRun(t, a, testBd(t))
+			if n != tc.want {
+				t.Fatalf("close_reason %q filed %d verify beads, want %d\nout: %s\nerr: %s",
+					tc.reason, n, tc.want, out, errs)
+			}
+			calls := bdCalls(t, fake)
+			if tc.want == 0 {
+				if !strings.Contains(out, "no verify bead: close reason is a rejection") {
+					t.Errorf("the rejection control stopped being exempt:\n%s", out)
+				}
+				if strings.Contains(calls, "create") {
+					t.Errorf("a verify bead was filed for a rejected close:\n%s", calls)
+				}
+				return
+			}
+			if !strings.Contains(calls, "--deps discovered-from:a-1") {
+				t.Errorf("close_reason %q filed a bead that does not answer a-1:\n%s", tc.reason, calls)
+			}
+			if strings.Contains(out, "no verify bead") {
+				t.Errorf("the pass called a shipped close a rejection:\n%s", out)
+			}
+		})
+	}
+}
+
+// The exemption's third arm: git could not answer. A beads repo that is not
+// a checkout, or has no commits yet, makes "nothing shipped" unmeasurable —
+// and an unmeasurable half must not silently satisfy the conjunction, or
+// every reject word in that repo exempts again. Doubt files the bead.
+func TestVerifyAfterFilesWhenGitCannotSayWhatACloseShipped(t *testing.T) {
+	b, fake := newTestBackend(t)
+	a := b.App
+	closed := "2026-08-18T09:20:06Z"
+	// vaRepo's t.TempDir() is not a repo: `git log --grep` exits non-zero.
+	repo := vaRepo(t, a, closedListReason("a-1", `["code"]`, closed, "duplicate of a-9"))
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d verify beads, want 1 — an unanswerable repo must not exempt\nout: %s\nerr: %s", n, out, errs)
+	}
+	if !strings.Contains(out, "git could not say what this close shipped") {
+		t.Errorf("the pass did not name why it declined the exemption:\n%s", out)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "--deps discovered-from:a-1") {
+		t.Errorf("the filed bead does not answer a-1:\n%s", calls)
 	}
 }

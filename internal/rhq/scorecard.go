@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -138,19 +139,43 @@ func (a *App) MetricCatalogReport(w io.Writer) error {
 
 var rejectWords = []string{"invalid", "duplicate", "dup", "wontfix", "won't fix", "not a bug"}
 
-// isRejectedClose reports whether a close_reason says the bead was rejected
-// rather than done — the scorecard's `Rejected` column, and verify-after's
-// reason to file no QA session for it (verifyafter.go). One vocabulary, read
-// from the field bd writes when a closer passes `bd close -r <reason>`; a
-// close with no reason at all is not rejected, it is unexplained.
-func isRejectedClose(reason string) bool {
-	r := strings.ToLower(reason)
-	for _, w := range rejectWords {
-		if strings.Contains(r, w) {
-			return true
-		}
+// rejectRe matches rejectWords as WORDS. It was strings.Contains until
+// ranger-base-5fyg, and a substring test over a free-text field reads this
+// shop's own engineering vocabulary as a rejection: "dup" is inside dedupes,
+// deduplicated, duplicated; "invalid" is inside invalidate, invalidation,
+// invalidates. Measured on the live store, the substring test's precision
+// over closed -l code / -l devops beads was 1 in 3, and its one unambiguous
+// false hit was ranger-base-muoo — a P1 fix whose close reason opens
+// "verify-after dedupes on the description marker".
+//
+// The trailing s? keeps the plurals the substring test caught: real
+// rejections read "closed as duplicates of x". It deliberately does NOT
+// reach the -d/-tion forms, which is the whole point.
+var rejectRe = regexp.MustCompile(`\b(?:` + strings.Join(rejectWordsQuoted(), "|") + `)s?\b`)
+
+func rejectWordsQuoted() []string {
+	q := make([]string, len(rejectWords))
+	for i, w := range rejectWords {
+		q[i] = regexp.QuoteMeta(w)
 	}
-	return false
+	return q
+}
+
+// isRejectedClose reports whether a close_reason says the bead was rejected
+// rather than done — the scorecard's `Rejected` column, and one half of
+// verify-after's reason to file no QA session for it (verifyafter.go). One
+// vocabulary, read from the field bd writes when a closer passes
+// `bd close -r <reason>`; a close with no reason at all is not rejected, it
+// is unexplained.
+//
+// Word-matching is a narrowing, not a fix, and this function is not one
+// either: "the retry no longer files a duplicate bead" describes a shipped
+// fix in whole words. Free text cannot carry a machine verdict on its own,
+// so the caller that pays for a wrong answer — verify-after, where a false
+// rejection SUPPRESSES a control rather than miscounting a cell — reads a
+// structured signal alongside it (verifyafter.go: no commit names the id).
+func isRejectedClose(reason string) bool {
+	return rejectRe.MatchString(strings.ToLower(reason))
 }
 
 // ScoreIssues computes one persona's score over a repo's issues; reopens
