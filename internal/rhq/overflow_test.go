@@ -521,3 +521,102 @@ func TestLedgerCorruptLineIsUnknownNotZero(t *testing.T) {
 		})
 	}
 }
+
+// seedLedger appends entries to the pass's overflow log, standing in for
+// another launcher that spent the week while this one waited on the flock.
+func (f *overflowFixture) seedLedger(t *testing.T, es ...LedgerEntry) {
+	t.Helper()
+	for _, e := range es {
+		if err := f.b.App.AppendOverflow(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// refreshOverflowUsed is the cap's second reading, the one taken inside the
+// launcher critical section (ranger-base-af98). Directly, because the race it
+// closes is only reachable through two processes and the arithmetic under it
+// deserves to be pinned without one.
+func TestOverflowRefreshUnderTheLock(t *testing.T) {
+	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
+
+	// The race itself: this pass read 0/1 before the lock, another launcher
+	// spent the week while it waited, and the reading taken after the wait is
+	// the one the ladder gets.
+	t.Run("another launcher spent the week", func(t *testing.T) {
+		f := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
+		f.d.planTrip, f.d.overflow, f.d.overflowUsed = "plan 5h at 78% > 70%", Overflow{Runtime: "grok", Cap: 1}, 0
+		f.seedLedger(t, LedgerEntry{At: time.Now(), Runtime: "grok", Bead: "other-1", Persona: "ranger"})
+
+		f.d.refreshOverflowUsed()
+		if f.d.overflowUsed != 1 {
+			t.Fatalf("overflowUsed = %d after the re-read; want 1 — the other launcher's line is on disk", f.d.overflowUsed)
+		}
+		// A cap line the operator cannot account for is the one thing this
+		// must not become: the pass reported 0/1 and is acting on 1/1.
+		if out := dispatcherOut(f.d); !strings.Contains(out, "now 1/1 in 7d") || !strings.Contains(out, "reported 0") {
+			t.Fatalf("a moved count must say so and say what was reported; got:\n%s", out)
+		}
+	})
+
+	// The re-read is not a licence to re-spend what this pass launched but
+	// could not record: the file under-counts those beads for good.
+	t.Run("carries this pass's unlogged launches", func(t *testing.T) {
+		f := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
+		f.d.planTrip, f.d.overflow = "plan 5h at 78% > 70%", Overflow{Runtime: "grok", Cap: 1}
+		f.d.overflowUsed, f.d.overflowUnlogged = 1, 1
+
+		f.d.refreshOverflowUsed()
+		if f.d.overflowUsed != 1 {
+			t.Fatalf("overflowUsed = %d against an empty ledger with one unlogged launch; want 1 — an append that failed does not hand the room back", f.d.overflowUsed)
+		}
+	})
+
+	// Aging is the other direction the count legitimately moves, and the
+	// window is rolling: an entry that fell out is room again.
+	t.Run("entries age out of the window", func(t *testing.T) {
+		f := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
+		f.d.planTrip, f.d.overflow, f.d.overflowUsed = "plan 5h at 78% > 70%", Overflow{Runtime: "grok", Cap: 1}, 1
+		f.seedLedger(t, LedgerEntry{At: time.Now().Add(-8 * 24 * time.Hour), Runtime: "grok", Bead: "old-1", Persona: "ranger"})
+
+		f.d.refreshOverflowUsed()
+		if f.d.overflowUsed != 0 {
+			t.Fatalf("overflowUsed = %d with only an 8d-old entry; want 0 — the window rolls", f.d.overflowUsed)
+		}
+	})
+
+	// Nothing else reads the ledger, so a pass under its thresholds — or one
+	// with no overflow configured — must not touch it here either.
+	t.Run("no-op without a trip", func(t *testing.T) {
+		f := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
+		f.d.overflow, f.d.overflowUsed = Overflow{Runtime: "grok", Cap: 1}, 0
+		f.seedLedger(t, LedgerEntry{At: time.Now(), Runtime: "grok", Bead: "other-1", Persona: "ranger"})
+
+		f.d.refreshOverflowUsed() // planTrip is empty
+		if f.d.overflowUsed != 0 || dispatcherOut(f.d) != "" {
+			t.Fatalf("an untripped pass must read nothing; overflowUsed=%d out=%q", f.d.overflowUsed, dispatcherOut(f.d))
+		}
+	})
+
+	// Fail-closed applies on this side of the lock too: a ledger that became
+	// unreadable between the two readings turns overflow off for the pass
+	// rather than letting the ladder act on an unknown week.
+	t.Run("unreadable at refresh turns overflow off", func(t *testing.T) {
+		f := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
+		f.d.planTrip, f.d.overflow, f.d.overflowUsed = "plan 5h at 78% > 70%", Overflow{Runtime: "grok", Cap: 1}, 0
+		if err := os.MkdirAll(f.b.App.StateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f.b.App.OverflowLogPath(), []byte("2026-08-26T12:00 grok prior-1 ranger\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		f.d.refreshOverflowUsed()
+		if f.d.overflow.On() {
+			t.Fatalf("an unreadable ledger must turn overflow off, got %+v", f.d.overflow)
+		}
+		if !strings.Contains(f.errb.String(), "unreadable") || !strings.Contains(f.errb.String(), "overflow off this pass") {
+			t.Fatalf("want stderr naming the unreadable ledger; got:\n%s", f.errb.String())
+		}
+	})
+}

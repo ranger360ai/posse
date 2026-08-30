@@ -286,3 +286,60 @@ func (d *Dispatcher) overflowFor(is RepoIssue, persona string, ag *AgentFile, rt
 	}
 	return overflowDecision{Runtime: ov.Runtime, Moved: true}
 }
+
+// readOverflowCount is the rolling-window reading with its fail-closed half
+// attached. An unreadable ledger is not a licence to spend a pool with no
+// meter: overflow goes off for the rest of the pass — the pre-overflow
+// behaviour, which costs a skipped pass and heals itself, rather than an
+// uncounted week. ok is false exactly when that happened.
+//
+// What this pass launched but could not record is added back: the file will
+// under-count those beads for as long as it exists, so a re-read that trusted
+// it alone would hand their room out twice (ranger-base-af98).
+func (d *Dispatcher) readOverflowCount() (int, bool) {
+	n, err := d.App.OverflowCount(d.overflow.Runtime, d.now())
+	if err != nil {
+		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
+			AbbrevHome(d.App.OverflowLogPath()), err)
+		d.overflow = Overflow{}
+		return 0, false
+	}
+	return n + d.overflowUnlogged, true
+}
+
+// refreshOverflowUsed re-takes the cap's reading inside the launcher critical
+// section (ADR 0011 §1), and it is what makes `plan_guard_overflow_cap:` a cap
+// on the POOL rather than one per concurrent dispatcher (ranger-base-af98).
+//
+// The count and the launch are a check-then-act pair against overflow.log, a
+// file every launcher sharing this StateDir appends to. overThreshold takes
+// its reading when the guard trips, which is before this loop's lock and
+// therefore before any other launcher has had to finish: two passes that trip
+// together both read 0/1, both queue on the flock, and both then act on a
+// number the first one has already spent. Reading again here — after the wait,
+// where nobody else may be launching — is the whole fix, because the first
+// holder's ledger line is on disk by the time the second holder gets in.
+//
+// It is a no-op unless the guard tripped with overflow configured; nothing
+// else reads the ledger, and a pass under threshold must not touch it. It runs
+// per fireLoop call rather than per Run, so a refire (ADR 0028 §2) re-reads
+// too: it holds the lock separately, so it can go stale separately.
+func (d *Dispatcher) refreshOverflowUsed() {
+	if d.planTrip == "" || !d.overflow.On() {
+		return
+	}
+	was := d.overflowUsed
+	n, ok := d.readOverflowCount()
+	if !ok {
+		return
+	}
+	d.overflowUsed = n
+	if n != was {
+		// Somebody else's launches, or entries aging out of the rolling
+		// window while this pass waited. Either way the pass reported one
+		// number and is acting on another, and unexplained is the one thing
+		// a cap line must never be.
+		d.printf("plan guard: overflow %s now %d/%d in 7d, read under the launcher lock (this pass reported %d)\n",
+			d.overflow.Runtime, n, d.overflow.Cap, was)
+	}
+}

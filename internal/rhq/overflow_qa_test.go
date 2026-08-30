@@ -222,8 +222,6 @@ func TestQAOverflowCorruptTargetLedgerLineFailsClosed(t *testing.T) {
 }
 
 func TestQAOverflowCapReadIsSerializedWithLaunch(t *testing.T) {
-	t.Skip("ranger-base-af98: overflow count is read before the launcher flock, so two passes spend a cap of one")
-
 	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
 	f1 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
 	f2 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)

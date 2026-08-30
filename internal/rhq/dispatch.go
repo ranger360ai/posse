@@ -219,6 +219,13 @@ type Dispatcher struct {
 	planBlind    string
 	overflow     Overflow
 	overflowUsed int
+	// overflowUnlogged is how many of THIS pass's overflow launches never
+	// reached the ledger (ranger-base-af98). The count is re-read under the
+	// launcher lock, and an append that failed makes the file under-count by
+	// exactly this many, permanently — so re-reading must not hand those
+	// beads' room back. It is not a fix for the unwritable ledger itself
+	// (ranger-base-2y96), only the arithmetic that keeps the re-read honest.
+	overflowUnlogged int
 
 	// guardTrippedSince is the governance surface's G4 streak clock: when
 	// the plan guard first tripped in the current unbroken run of tripped
@@ -575,14 +582,8 @@ func (d *Dispatcher) overThreshold(reason string) {
 	if !d.overflow.On() {
 		return
 	}
-	n, err := d.App.OverflowCount(d.overflow.Runtime, d.now())
-	if err != nil {
-		// An unreadable ledger is not a licence to spend a pool with no
-		// meter: fail to the pre-overflow behaviour, which costs a skipped
-		// pass and heals itself, rather than to an uncounted week.
-		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
-			AbbrevHome(d.App.OverflowLogPath()), err)
-		d.overflow = Overflow{}
+	n, ok := d.readOverflowCount()
+	if !ok {
 		return
 	}
 	d.overflowUsed = n
@@ -1659,6 +1660,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0010: the guard's trip, the overflow config and the ledger count
 	// are one pass's reading — a new pass takes them fresh or not at all.
 	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0
+	d.overflowUnlogged = 0
 	// ADR 0013 §5: the account stage's caps, counts and per-pass tallies are
 	// this pass's too — a --watch loop must not report last pass's launches
 	// or brake on a ledger count it took an hour ago.
@@ -2017,6 +2019,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			return 0, nil, 0, err
 		}
 		defer lock.Release()
+		// The cap is a check-then-act against a file every launcher on this
+		// StateDir shares, so the count it checks belongs on THIS side of the
+		// lock (ranger-base-af98). overThreshold's reading is the pass's
+		// report, taken when the guard tripped; between that line and this
+		// one another launcher may have held the lock and spent the week —
+		// and a pass that waited on the lock is exactly the pass whose
+		// reading went stale while it waited.
+		d.refreshOverflowUsed()
 	}
 
 	// The Run's occupancy, plus this fire pass's own readings (seatMap).
@@ -2382,6 +2392,10 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		if moved {
 			d.overflowUsed++
 			if err := d.App.AppendOverflow(LedgerEntry{At: d.now(), Runtime: launchRT, Bead: is.ID, Persona: persona}); err != nil {
+				// The file is short by one for good, so every later re-read
+				// of it is too: carry the difference rather than hand this
+				// bead's room back at the next refresh (ranger-base-af98).
+				d.overflowUnlogged++
 				d.eprintf("plan guard: overflow ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
 			}
 		}
