@@ -21,6 +21,25 @@ package rhq
 // inside the repo survives by luck (git discovers the repo upwards from
 // .git/hooks).
 //
+// FIXED 2026-08-30 (gwart, ranger-base-87c9): chainDispatcher resolves the
+// repo argument to an absolute path before abbreviating it, so step 3 still
+// names the repo after step 1's cd. `.` from inside the repo now survives on
+// purpose rather than by luck. Measured at HEAD with a binary built from this
+// worktree and a scratch RHQ_HOME: `posse gates install-hooks r` prints the
+// re-invocation as an absolute path, the block pasted verbatim exits 0 leaving
+// pre-push, posse-pre-push, theirs-pre-push and prepare-commit-msg, and the
+// block's own verify step prints "refused by posse gate" and exits 1 — the
+// EXPECTED this bead was filed for. Full `go test ./...` green (exit 0).
+//
+// Two mutants, git as baseline, tree clean before and after each — the two
+// halves of this pin see different defects:
+//
+//   - the argument echoed as typed again: the two relative spellings red,
+//     absolute and `.` stay green, which is the split the bead reports;
+//   - the dispatcher's `|| exit $?` weakened to `|| true`: only the RUN half
+//     reds, and all four arms do. Without that one, the run below would be
+//     decoration nobody had shown able to fail.
+//
 // The pin both states the rule and runs the block. The rule: every path the
 // prescription prints has to still mean the same thing after step 1's `cd`.
 // The run: the steps are performed from the directory the block's own `cd`
