@@ -51,9 +51,24 @@ cfg_req=$(val required_maximum_version "$cfg")
 # offline arm: config false, updater true, exit 0 "pin intact"). Only an EMPTY
 # payload is offline. A payload we cannot parse is a FAIL, not silence — if the
 # field is ever renamed or restyled this script says so instead of passing.
+# That rule is BOTH fields' (ranger-base-phxj): `latestVersion` gets the same
+# three arms below, because losing it is the worse of the two — it turns the
+# re-audit gate off without a word.
+#
+# jsplit puts every `"key": value` pair at the start of its own line, and both
+# extractors then anchor to `^`. Two things follow. A key spelled inside a
+# STRING VALUE can no longer match. And the FIRST occurrence wins on a compact
+# payload exactly as `head -1` already made it win on a pretty one — before
+# this the leading `.*` was greedy, so on one line the LAST `"autoUpdate"` won
+# and a true answer could be masked by a nested false one, while on many lines
+# the first won: the two shapes disagreed about which answer was authoritative.
+# The captures require at least one character on purpose, so an unreadable
+# shape (`"true"`, `null`, `1.9`, `""`) yields NOTHING rather than an empty
+# match that would both look like an answer and hide any later line.
 # POSIX BRE only, no alternation: BSD sed has no `\|`.
-jstr() { printf '%s' "$2" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1; }
-jword() { printf '%s' "$2" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p" | head -1; }
+jsplit() { printf '%s' "$1" | tr ',{}[]' '\n\n\n\n\n'; }
+jstr() { jsplit "$2" | sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"][^\"]*\)\".*/\1/p" | head -1; }
+jword() { jsplit "$2" | sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\([a-z][a-z]*\).*/\1/p" | head -1; }
 
 chk=$(grok update --check --json 2>/dev/null)
 live_auto=$(jword autoUpdate "$chk")
@@ -80,6 +95,22 @@ case "$live_auto" in
       printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: autoUpdate" "—"
     fi ;;
 esac
+
+# latestVersion, same three arms (ranger-base-phxj). Its readability is not a
+# detail of the block below: an empty `$upstream` skips UPSTREAM MOVED in
+# silence, so `null`, an unquoted number and a rename all read as "nothing to
+# re-audit" and the gate on lifting the pin is simply off. The row says out
+# loud whether the gate is live. `read` rather than `ok` because reading the
+# field is all this row claims — whether upstream MOVED is the block below, and
+# a move is not a failure.
+if [ -n "$upstream" ]; then
+  printf '  %-28s %-10s read\n' "grok update: latestVersion" "$upstream"
+elif [ -n "$chk" ]; then
+  printf '  %-28s %-10s <-- FAIL (grok answered; no latestVersion in it)\n' "grok update: latestVersion" "?"
+  fail=$((fail + 1))
+else
+  printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: latestVersion" "—"
+fi
 
 ver_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]; }
 

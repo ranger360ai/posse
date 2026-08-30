@@ -507,3 +507,164 @@ func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
 		})
 	}
 }
+
+// --- latestVersion is an answer too (ranger-base-phxj) ---------------------
+//
+// ocfh gave `autoUpdate` three arms — empty payload is offline, a readable
+// value is the answer, an unreadable one FAILs — and left `latestVersion` with
+// one. That asymmetry is worse than the bug it replaced: an empty `$upstream`
+// skips the whole UPSTREAM MOVED block in silence, so `null`, an unquoted
+// number, a rename or an empty string all read as "nothing to re-audit", exit
+// 0, "pin intact". The gate that makes lifting the pin a security action is
+// off and nothing says so. Measured before the fix: all four rows below were
+// silent exit-0 passes.
+//
+// Every row differs from the control ONLY in the shape of latestVersion, so a
+// green row cannot be some other check failing.
+func TestQAGrokPinUnreadableLatestVersionFailsInsteadOfSilence(t *testing.T) {
+	// The control: identical but for a quoted version, and it must MOVE.
+	// Without it the rows below would be satisfied by a script that failed
+	// every payload, including the one the gate is supposed to fire on.
+	t.Run("control: quoted version still trips the gate", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, "1.0.5", `{"autoUpdate":false,"latestVersion":"1.9.9"}`)
+		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+		if code != 0 {
+			t.Fatalf("readable upstream: exit %d, want 0\n%s", code, out)
+		}
+		if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.9.9") {
+			t.Errorf("control must print the re-audit list:\n%s", out)
+		}
+		if gpRowFailed(out, "grok update: latestVersion") {
+			t.Errorf("a readable version is not a failure:\n%s", out)
+		}
+	})
+
+	for _, tc := range []struct{ name, json string }{
+		{"null", `{"autoUpdate":false,"latestVersion":null}`},
+		{"unquoted number", `{"autoUpdate":false,"latestVersion":1.9}`},
+		{"renamed key", `{"autoUpdate":false,"latest_version":"1.9.9"}`},
+		{"empty string", `{"autoUpdate":false,"latestVersion":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.5", tc.json)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1 — an unreadable version passed in silence\n%s", code, out)
+			}
+			if !gpRowFailed(out, "grok update: latestVersion") {
+				t.Errorf("want the latestVersion row FAILing on its own line:\n%s", out)
+			}
+			if strings.Contains(out, "offline") || strings.Contains(out, "pin intact") {
+				t.Errorf("grok answered — this is neither offline nor an intact pin:\n%s", out)
+			}
+		})
+	}
+}
+
+// The offline arm must survive the one above. A genuinely absent network is
+// still exit 0, for BOTH fields — otherwise the fail-closed arm creeps over
+// the case it was explicitly carved out of, and `make verify-grok-pin` starts
+// failing on a plane.
+func TestQAGrokPinEmptyPayloadIsOfflineForLatestVersionToo(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", "")
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("empty payload: exit %d, want 0\n%s", code, out)
+	}
+	if gpRowFailed(out, "grok update: latestVersion") {
+		t.Errorf("an absent network is not an unreadable answer:\n%s", out)
+	}
+	var offline int
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "offline?") {
+			offline++
+		}
+	}
+	if offline != 2 {
+		t.Errorf("want BOTH fields on the offline arm, got %d row(s):\n%s", offline, out)
+	}
+	if !strings.Contains(out, "pin intact at 1.0.5") {
+		t.Errorf("offline is not a failure:\n%s", out)
+	}
+}
+
+// A compact payload and a pretty one must agree about WHICH occurrence of a
+// repeated key is authoritative.
+//
+// The old extractors led with a greedy `.*`, so on a single line the LAST
+// match won while `head -1` made the FIRST win across lines: the same answer,
+// pretty-printed, read differently. The direction that matters is the compact
+// one — `{"autoUpdate":true,"nested":{"autoUpdate":false}}` reported `false
+// ok`, exit 0, the true answer masked by a later false one. Each case below is
+// asserted in both shapes and must give the same verdict.
+func TestQAGrokPinFirstOccurrenceWinsInBothShapes(t *testing.T) {
+	pretty := func(compact string) string {
+		return strings.NewReplacer(",", ",\n  ", "{", "{\n  ", "}", "\n}").Replace(compact)
+	}
+	for _, tc := range []struct {
+		name, compact string
+		wantCode      int
+		wantSubstr    string
+		refuseSubstr  string
+	}{
+		{
+			// The masked true. This is the one that passed.
+			name:         "nested autoUpdate false must not mask the outer true",
+			compact:      `{"autoUpdate":true,"nested":{"autoUpdate":false},"latestVersion":"1.0.5"}`,
+			wantCode:     1,
+			wantSubstr:   "true",
+			refuseSubstr: "pin intact",
+		},
+		{
+			// The mirror: the outer version is the one to re-audit against.
+			name:         "nested latestVersion must not mask the outer one",
+			compact:      `{"autoUpdate":false,"latestVersion":"1.9.9","nested":{"latestVersion":"1.0.5"}}`,
+			wantCode:     0,
+			wantSubstr:   "UPSTREAM MOVED",
+			refuseSubstr: "nothing to re-audit",
+		},
+	} {
+		for _, shape := range []struct{ label, json string }{
+			{"compact", tc.compact},
+			{"pretty", pretty(tc.compact)},
+		} {
+			t.Run(tc.name+"/"+shape.label, func(t *testing.T) {
+				root := gpRoot(t)
+				bin := t.TempDir()
+				gpStubGrok(t, bin, "1.0.5", shape.json)
+				out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+				if code != tc.wantCode {
+					t.Fatalf("exit %d, want %d\npayload: %s\n%s", code, tc.wantCode, shape.json, out)
+				}
+				if !strings.Contains(out, tc.wantSubstr) {
+					t.Errorf("missing %q:\npayload: %s\n%s", tc.wantSubstr, shape.json, out)
+				}
+				if strings.Contains(out, tc.refuseSubstr) {
+					t.Errorf("must not contain %q:\npayload: %s\n%s", tc.refuseSubstr, shape.json, out)
+				}
+			})
+		}
+	}
+}
+
+// A key spelled inside a STRING VALUE is prose, not an answer. Anchoring is
+// what tells them apart: unanchored, the first payload below reads the word
+// out of the error message and reports a `false` grok never said.
+func TestQAGrokPinKeyInsideAStringValueIsNotAnAnswer(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", `{"error":"autoUpdate: false is not supported","autoUpdate":true,"latestVersion":"1.0.5"}`)
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — prose was read as the answer\n%s", code, out)
+	}
+	if !gpRowFailed(out, "grok update: autoUpdate") {
+		t.Errorf("the real autoUpdate:true must FAIL:\n%s", out)
+	}
+}
