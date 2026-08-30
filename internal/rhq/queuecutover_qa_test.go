@@ -541,7 +541,6 @@ func TestQueueCutoverRefusesGroundItDoesNotExpect(t *testing.T) {
 // this costs a window rather than a database — but the script's last four
 // lines are what an operator is looking at when they run step 3.
 func TestQueueCutoverInstructionsNameTheRepoIdMigrate(t *testing.T) {
-	t.Skip("ranger-base-imfi: the script's next-steps block omits bd migrate --update-repo-id")
 	body, err := os.ReadFile(qcScript(t))
 	if err != nil {
 		t.Fatal(err)
