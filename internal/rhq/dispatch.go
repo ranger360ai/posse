@@ -3091,6 +3091,42 @@ func foreignFreeLine(session string) string {
 	return fmt.Sprintf("posse kill %s --foreign or rename it in herdr to free the name", session)
 }
 
+// launchTag is the runtime/tier half of a create line. Both create lines
+// printed the tier alone, so a pass that sent beads to three runtimes read
+// as three identical launches and the only per-launch record of WHERE the
+// spend went was the session meta — ADR 0013 §5 asks the pass to name the
+// runtime, and the end-of-pass account line (ADR 0017 §3) could say "1 bead
+// to codex" with nothing above it saying which bead. A pin that wanted the
+// runtime had to read it back off the resolved PID to get it
+// (accountstage_qa_test.go).
+//
+// The runtime is named unconditionally, including claude. RuntimeTierTag
+// suppresses the default pair because it is a deviation marker in a dense
+// listing; this is a transcript line, one per launch, and a field that
+// appears only sometimes cannot be told from a field that was dropped.
+//
+// The tier half is the DISPLAY tier, for ADR 0013 §6's reason and to match
+// the two other spellings of this pair: the work prompt this very launch
+// carries says `runtime/tier: claude/fast` (promptContext), and herdr lists
+// the session it creates as `@grok/default`. A create line claiming
+// `grok/strong` for a session that lists as `grok/default` would be the one
+// place in posse where the pair means the tier as ASKED.
+func (d *Dispatcher) launchTag(runtime, tier string) string {
+	if runtime == "" {
+		runtime = DefaultRuntime
+	}
+	// BeadTier never hands back an empty tier, so this is a guard rather
+	// than a case. It prints the runtime alone instead of defaulting the
+	// way RuntimeTierTag does: that reads a meta whose tier is already
+	// resolved, while an empty tier HERE is resolved later and from the
+	// PID (ResolveTier in CreateSession), so "standard" would be a guess
+	// about a session whose PID may well say strong.
+	if tier == "" {
+		return runtime
+	}
+	return runtime + "/" + d.App.DisplayTier(runtime, tier)
+}
+
 // launchSession is the shared front half of both dispatch flavors:
 // find-or-create the persona session, wait for its agent, claim the bead.
 // Returns the promptable target pane.
@@ -3156,7 +3192,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		d.HB.NoteBead(session, is.ID)
 	}
 	if resolveErr != nil {
-		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
+		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
 			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}); err != nil {
 			return launched{}, err
@@ -3238,7 +3274,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	if err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
-	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), tier)
+	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
 		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)

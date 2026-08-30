@@ -1730,3 +1730,54 @@ exit 1
 		t.Errorf("the control's mark was not recorded (%v): %s", err, b)
 	}
 }
+
+// The cockpit half of ranger-base-pjoy: sessionCost decided with
+// `s.Runtime != "claude"` — an ADR 0017 §3 shadow predicate, a runtime NAME
+// standing in for "does anything read this runtime's spend". It asks the
+// adapter registry now, and this drives it, because nothing did: the
+// $uncounted arm had no test at all, so the name could go back in and the
+// suite would stay green.
+//
+// grok is the row that matters. It has an adapter and is not claude, which
+// is exactly what the old predicate got wrong — it gained one in
+// ranger-base-k7nb and every grok pane in the cockpit said $uncounted about
+// spend `posse cost` was already totalling.
+func TestCockpitSessionCostAsksTheAdapterNotTheRuntimeName(t *testing.T) {
+	c := &cockpit{}
+	c.applyCost(&rhq.CostReport{})
+	cost := func(runtime string) string {
+		return c.sessionCost(rhq.HerdrSession{
+			Name: rhq.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir, Runtime: runtime})
+	}
+	// Derived from the registry, not spelled: a runtime gaining an adapter
+	// must move this test's expectation with it and not silently become an
+	// assertion that the adapter is ignored.
+	counted := rhq.CountedRuntimes()
+	if len(counted) < 2 {
+		t.Fatalf("this pin needs a counted runtime that is not claude; registry has %v", counted)
+	}
+	for _, r := range counted {
+		if got := cost(r); got == "$uncounted" {
+			t.Errorf("%s has a cost adapter; the cockpit must not call its spend uncounted (got %q)", r, got)
+		}
+	}
+	for _, r := range []string{"mycli", "gemini"} {
+		if _, ok := rhq.CostProviderFor(r); ok {
+			t.Fatalf("%s gained an adapter; this arm needs a runtime nothing reads", r)
+		}
+		if got := cost(r); got != "$uncounted" {
+			t.Errorf("nothing reads %s; its pane must say $uncounted, got %q", r, got)
+		}
+	}
+	// A session with no persona is not a per-bead one whatever its runtime,
+	// and "" is a pane whose runtime was never recorded — neither may be
+	// labelled with a claim about spend.
+	for _, s := range []rhq.HerdrSession{
+		{Name: "shell", Runtime: "mycli"},
+		{Name: rhq.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir},
+	} {
+		if got := c.sessionCost(s); got != "" {
+			t.Errorf("%+v must carry no cost label, got %q", s, got)
+		}
+	}
+}

@@ -173,13 +173,20 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 				t.Fatalf("the bead must launch either way, got n=%d:\n%s", n, out)
 			}
 			// Positive witness: the launch really went to the runtime under
-			// test. The pass does not print the runtime on the launch line,
-			// so read it back off the PID dispatch resolved — without this a
-			// silent rewrite failure leaves the grok arm measuring codex and
-			// passing for the wrong reason (nothing degraded either way).
+			// test. Without it a silent PID-rewrite failure leaves the grok
+			// arm measuring codex and passing for the wrong reason (nothing
+			// degraded either way).
+			//
+			// Two readings, because they fail independently. The PID is what
+			// dispatch resolved; the launch line is what the pass SAID, and
+			// it only says it since ranger-base-pjoy — before that this
+			// witness had to be the PID alone, and the comment here said so.
 			ag, err := f.b.App.LoadAgent("ranger")
 			if err != nil || ag.Runtime != c.runtime {
 				t.Fatalf("the persona dispatch ran is on %q, want %q (%v)", ag.Runtime, c.runtime, err)
+			}
+			if !strings.Contains(out, "creating session ") || !strings.Contains(createLineOf(t, out), c.runtime+"/") {
+				t.Fatalf("the create line must name %s:\n%s", c.runtime, out)
 			}
 			// Not "account-degraded <runtime>" but any degrade at all: a
 			// launch that silently landed on some OTHER degraded runtime
