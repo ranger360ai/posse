@@ -134,6 +134,49 @@ func TestQAVerifyDetectionReplaysEveryFixtureItShips(t *testing.T) {
 	}
 }
 
+// TestQAVerifyDetectionReplaysEveryFixtureItShips above measures the scope
+// gap through the suite's own accounting; this pin measures the same gap
+// through the SCRIPT's exit code and output, which is what a plain `make
+// verify-detection` actually reports. Before ranger-base-j66o's fix, deleting
+// grok.toml took the run to 4/4, exit 0, and named nothing.
+func TestQAVerifyDetectionFailsAnOverrideDeletion(t *testing.T) {
+	if _, err := exec.LookPath("herdr"); err != nil {
+		t.Skip("herdr not on PATH")
+	}
+	root := detectionRig(t)
+	installed := installComplete(t, root)
+
+	// Control: the intact tree passes.
+	out, code := runDetection(t, root, installed)
+	if code != 0 {
+		t.Fatalf("intact tree: exit %d, want 0\n%s", code, out)
+	}
+
+	manifest := filepath.Join(root, "etc", "herdr", "agent-detection", "grok.toml")
+	testdata := filepath.Join(root, "etc", "herdr", "agent-detection", "testdata", "grok")
+	fixtures, err := os.ReadDir(testdata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code = runDetection(t, root, installed)
+	if code == 0 {
+		t.Fatalf("grok.toml deleted from the checkout and verify-detection still passed (exit 0)\n%s", out)
+	}
+	for _, f := range fixtures {
+		if !strings.HasSuffix(f.Name(), ".txt") {
+			continue
+		}
+		base := strings.TrimSuffix(f.Name(), ".txt")
+		if !strings.Contains(out, base) {
+			t.Errorf("deleted override's fixture %s was not named in the output\n%s", base, out)
+		}
+	}
+}
+
 // The staging is only half the fix: herdr resolves a manifest from local
 // override, cached remote and bundled-in-binary and picks the HIGHEST version,
 // so a staged override can still lose and the run go green against a file

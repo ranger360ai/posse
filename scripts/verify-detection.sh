@@ -65,6 +65,24 @@ for toml in "$root"/*.toml; do
 done
 [ ${#agents[@]} -gt 0 ] || { echo "verify-detection: no overrides in $root"; exit 2; }
 
+# testdata/<agent>/ can outlive its manifest — an override deleted, or moved
+# aside per the README's retirement recipe. Fold those agents into the run
+# too, so their fixtures are named and failed below instead of silently never
+# being looked at: the agents built above come only from the tree's *.toml
+# files, and testdata for an agent missing from that list was invisible to
+# every loop that follows (ranger-base-j66o).
+for d in "$root"/testdata/*/; do
+  [ -d "$d" ] || continue
+  agent=$(basename "$d")
+  set -- "$d"*.txt
+  [ -e "$1" ] || continue
+  known=0
+  for a in "${agents[@]}"; do
+    [ "$a" = "$agent" ] && { known=1; break; }
+  done
+  [ "$known" -eq 1 ] || agents+=("$agent")
+done
+
 # Stage the checkout's overrides where herdr resolves a local override from.
 # XDG_STATE_HOME goes with it: herdr picks the HIGHEST version among local
 # override / cached remote / bundled, and an isolated state dir keeps a newer
@@ -85,12 +103,18 @@ for agent in "${agents[@]}"; do
     [ -e "$f" ] || continue
     base=$(basename "$f" .txt)
     want=${base%%-*}
+    n=$((n + 1))
+    if [ ! -e "$root/$agent.toml" ]; then
+      printf '%-8s %-38s %-8s %-8s %s   <-- FAIL (%s)\n' \
+        "$agent" "$base" "$want" "?" "—" "no manifest — $root/$agent.toml is missing"
+      fail=$((fail + 1))
+      continue
+    fi
     out=$(explain --file "$f" --agent "$agent" 2>&1)
     got=$(printf '%s\n' "$out" | awk -F': ' '/^state/{print $2; exit}')
     rule=$(printf '%s\n' "$out" | awk -F': ' '/^rule/{print $2; exit}')
     rule_id=${rule%% *}
     src=$(printf '%s\n' "$out" | awk '/^manifest: /{print $2; exit}')
-    n=$((n + 1))
     why=
     if [ "$got" != "$want" ]; then
       why=state
@@ -133,6 +157,7 @@ done
 herdr_now=$(herdr --version 2>/dev/null | awk '{print $NF}')
 for agent in "${agents[@]}"; do
   toml="$root/$agent.toml"
+  [ -e "$toml" ] || continue  # testdata-only agent (ranger-base-j66o) — already failed above, nothing to install-check
   fork=$(sed -n 's/^# posse_forked_from = "\(.*\)".*/\1/p' "$toml")
   bundled_from=$(sed -n 's/^# posse_bundled_from_herdr = "\(.*\)".*/\1/p' "$toml")
   installed=${XDG_CONFIG_HOME:-$HOME/.config}/herdr/agent-detection/$agent.toml
