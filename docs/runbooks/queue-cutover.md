@@ -107,8 +107,12 @@ already redirects. What it does:
 - rewrites `.beads/redirect` in `~/src/posse`, in every session worktree
   under `~/.posse/worktrees`, and in every other tree beside the
   constitution whose redirect still names it — the scan root is the
-  constitution's parent (`--scan DIR`, `--no-scan`, `--scan-depth N`), and
-  only a redirect matching the constitution's `.beads` exactly is rewritten;
+  constitution's parent (`--scan DIR`, `--no-scan`, `--scan-depth N`), and a
+  redirect is rewritten when it *resolves* to the constitution's `.beads`,
+  which is every spelling of it bd follows and no other directory (a trailing
+  slash, stray blanks, a CRLF ending, `//`, `/./`, `/../`, a relative path or
+  a symlink — ranger-base-4myz; a tree pointed at some other store is left
+  alone);
 - commits the live store's drift in the queue repo — **last**, after the
   redirects, because it is the only step whose failure costs nothing but a
   commit.
@@ -347,8 +351,14 @@ done
 find ~/src -maxdepth 3 -type d -name .beads | while read -r b; do
   # `x && y` as the last statement makes the loop exit 1 on a non-match, and
   # under `set -e` that kills the rest of a rollback. Measured; use `continue`.
-  cur=$(head -n 1 "$b/redirect" 2>/dev/null || true)
-  [ "$cur" = ~/src/ranger-queue/.beads ] || continue
+  # Resolve rather than compare bytes: bd follows a trailing slash, stray
+  # blanks, a CRLF ending, `//`, `/./`, `/../`, a relative path and a symlink
+  # to the same store, and a redirect written by a hand rather than by the
+  # script is spelled a hand's way (ranger-base-4myz). `-ef` is device+inode
+  # — same directory, whatever it is called.
+  cur=$(head -n 1 "$b/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
+  case $cur in ''|/*) ;; *) cur=${b%/.beads}/$cur ;; esac
+  [ -n "$cur" ] && [ -d "$cur" ] && [ "$cur" -ef ~/src/ranger-queue/.beads ] || continue
   printf '%s\n' ~/src/ranger-base/.beads > "$b/redirect"
 done
 cd ~/src/ranger-base && bd migrate --update-repo-id && bd daemon start

@@ -46,9 +46,10 @@
 # checkout. Worse is the arm where the middle tree KEPT a database: the same
 # warning goes to stderr and the command EXITS 0, reading and writing the
 # SUPERSEDED store. So the list has to be discovered, because the cost of
-# forgetting an entry is not an error message. The guard is exact: only a
-# tree whose redirect names $SRC_BEADS is rewritten, so a tree pointed at
-# some other store is never touched.
+# forgetting an entry is not an error message. The guard is that the redirect
+# RESOLVES to $SRC_BEADS — every spelling of it bd follows, and nothing else,
+# so a tree pointed at some other store is never touched (redirect_names,
+# below, and ranger-base-4myz for what "every spelling" turned out to mean).
 #
 # WHY THE HISTORY REPLAY IS NOT OPTIONAL: posse's bead-loss census
 # (internal/rhq/beadloss.go) IS the git log of `.beads/issues.jsonl` in
@@ -118,6 +119,47 @@ SRC_BEADS=$CONSTITUTION/.beads
 DST_BEADS=$QUEUE/.beads
 RUNBOOK=docs/runbooks/queue-cutover.md
 
+# ─── does this redirect name that directory? ─────────────────────────────────
+# The fan-out's job is to find every tree bd can still RESOLVE through the
+# constitution, so the question it has to ask is bd's question — "would bd
+# follow this redirect to that directory?" — and not "are these two strings
+# equal?". They are not the same question. MEASURED against bd 0.49.1
+# (2026-08-30, ranger-base-4myz), every one of these is a live redirect bd
+# follows to one store, and an exact compare recognises the first alone:
+#
+#   /s/.beads   /s/.beads/   /s/.beads␠   ␠/s/.beads   /s/.beads␉   ␉/s/.beads
+#   /s/.beads<CR>   /s//.beads   /s/./.beads   /s/x/../.beads
+#   ../s/.beads (relative — resolved against the tree holding the redirect,
+#   not the caller's cwd; measured from three different cwds)
+#   a symlinked spelling, and on a case-insensitive filesystem a different case
+#
+# A tree spelled any of those ways is left behind by the fan-out and becomes
+# hop one of the two-hop chain the discovery exists to prevent (see WHY THE
+# FAN-OUT DISCOVERS). That is not a hypothetical: hands are how this fleet
+# actually gets redirects — rangerhq's own was repointed out of band, 41 bytes
+# with no trailing newline where this script writes 42 — and a hand does not
+# spell paths the way a script does.
+#
+# So ask the filesystem instead of the string: trim the blanks and the CR,
+# resolve a relative path against the tree holding the redirect, and compare
+# with `-ef`, which is device+inode identity — the same "same directory" bd
+# means, and the one notion that gets the symlink and the case arms for free.
+# This is looser about SPELLING and no looser about TARGETS: a tree pointed at
+# some other store is a different inode and is still left alone, which
+# TestQueueCutoverFindsTheTreesTheListForgets holds from the other side, and a
+# redirect naming a path that is not a directory is one bd refuses to follow
+# too (measured: "redirect target does not exist or is not a directory").
+#
+# `-ef` is not in POSIX. It is in every shell this can run under — measured on
+# this box: /bin/sh, /bin/dash, /bin/bash and /bin/zsh all answer yes.
+redirect_names() { # <a .beads dir> <a directory> — true when bd would follow it there
+  _cur=$(head -n 1 "$1/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
+  [ -n "$_cur" ] || return 1
+  case $_cur in /*) ;; *) _cur=${1%/.beads}/$_cur ;; esac
+  [ -d "$_cur" ] || return 1
+  [ "$_cur" -ef "$2" ]
+}
+
 # ─── 0. what an abort leaves behind ──────────────────────────────────────────
 # `set -eu` exits SILENTLY, and everything below the preflight is destructive
 # until the step after it lands. Measured on ranger-base-lpz4 and filed as
@@ -183,8 +225,9 @@ EOF
   them, then finish them by hand:
     find '$SCAN' -maxdepth $SCAN_DEPTH -type d -name .beads |
       while read -r b; do
-        cur=\$(head -n 1 "\$b/redirect" 2>/dev/null || true)
-        [ "\$cur" = '$SRC_BEADS' ] || continue
+        cur=\$(head -n 1 "\$b/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*\$//')
+        case \$cur in ''|/*) ;; *) cur=\${b%/.beads}/\$cur ;; esac
+        [ -n "\$cur" ] && [ -d "\$cur" ] && [ "\$cur" -ef '$SRC_BEADS' ] || continue
         echo "\$b"
       done
     printf '%s\n' '$DST_BEADS' > <repo>/.beads/redirect
@@ -390,14 +433,14 @@ fi
 # ones nobody remembers: a checkout retired months ago still resolves through
 # the constitution, and after this script runs it holds hop one of a two-hop
 # chain that bd refuses — silently, if that middle tree kept a database (see
-# the header). The match is exact against $SRC_BEADS, so a tree pointed at a
-# different store is left alone, and the constitution itself is skipped
-# because step 4 already renamed its target to $DST_BEADS.
+# the header). The match is every spelling of $SRC_BEADS bd resolves and no
+# other directory, so a tree pointed at a different store is left alone, and
+# the constitution itself is skipped because step 4 already renamed its target
+# to $DST_BEADS.
 if [ -n "$SCAN" ] && [ -d "$SCAN" ]; then
   chained=$(find "$SCAN" -maxdepth "$SCAN_DEPTH" -type d -name .beads 2>/dev/null \
     | while read -r b; do
-        cur=$(head -n 1 "$b/redirect" 2>/dev/null || true)
-        [ "$cur" = "$SRC_BEADS" ] || continue
+        redirect_names "$b" "$SRC_BEADS" || continue
         printf '%s\n' "${b%/.beads}"
       done) || true
   if [ -n "$chained" ]; then
@@ -414,10 +457,19 @@ printf '%s\n' "$targets" | while read -r repo; do
   # Never point the store at itself. A redirect inside the queue repo is a
   # one-hop cycle: bd resolves it to the directory it is already in and the
   # cutover looks fine until something follows the chain twice. Discovery
-  # walks a directory the operator names, so it CAN reach the queue repo.
+  # walks a directory the operator names, so it CAN reach the queue repo —
+  # and so does a `--redirect` the operator types, which is why this is an
+  # `-ef` too and not a string compare: `--redirect $QUEUE/` spelled with one
+  # trailing slash used to walk straight past this guard and write the cycle
+  # (ranger-base-4myz).
+  # Both forms, and the string one FIRST: under --dry-run the queue repo does
+  # not exist yet, `-ef` cannot stat it, and a rehearsal must not start
+  # printing a self-redirect it would never write.
   [ "$repo/.beads" = "$DST_BEADS" ] && continue
+  [ -d "$DST_BEADS" ] && [ "$repo/.beads" -ef "$DST_BEADS" ] && continue
   cur=$(head -n 1 "$repo/.beads/redirect" 2>/dev/null || true)
   [ "$cur" = "$DST_BEADS" ] && continue
+  redirect_names "$repo/.beads" "$DST_BEADS" && continue
   run "printf '%s\n' '$DST_BEADS' > '$repo/.beads/redirect'"
   say "redirect: $repo -> $DST_BEADS"
 done
