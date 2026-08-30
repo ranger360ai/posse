@@ -839,7 +839,7 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # refuses to nest seatbelts. Declaring it makes
 #                              # `cage: seatbelt` degrade here HONESTLY instead
 #                              # of the launch wrapping it and failing.
-# unattended: -a never        # the flag that makes this CLI approve a tool
+# unattended: -a never         # the flag that makes this CLI approve a tool
 #                              # call with NOBODY WATCHING. Declared here it is
 #                              # a launch guarantee: posse appends it whenever
 #                              # the rendered line does not already name it,
