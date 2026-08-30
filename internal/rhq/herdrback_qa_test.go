@@ -195,6 +195,57 @@ func TestBackfillPreservesLaunchedAndKnownFields(t *testing.T) {
 	}
 }
 
+// mustRefuseWrites makes path unwritable and then PROVES it, because 0444 is
+// a promise about a uid and not about a file. Root carries CAP_DAC_OVERRIDE
+// and rewrites a 0444 file anyway. Measured 2026-08-29, alpine:3 on
+// overlayfs, as uid 0 and as uid 65534:
+//
+//	                                       uid 0    uid 65534
+//	chmod 0444 f; printf y >> f            wrote    refused
+//	chmod 0555 d; : > d/new                wrote    refused
+//	chmod 0555 d; printf y >> d/existing   wrote    WROTE
+//
+// The third row is why a read-only PARENT directory is not the fix here: the
+// capability bypasses a directory's write bit too, and even unprivileged it
+// never guarded an existing file — which is the only kind writeMeta targets.
+// So a caller that only chmods is asserting the environment its author had.
+// Under a hand-rolled `docker run --rm -v "$PWD":/w -w /w golang:1.26 go
+// test ./...` the suite runs as uid 0, the backfill SUCCEEDS, and the arm
+// below reports a product defect that is not there — which is how
+// ranger-base-c00 was found, while rehearsing a release. The repo's own gate
+// is not that command: `make test-linux` runs the container as the invoking
+// user (scripts/test-linux.sh), CI and darwin are non-root too, and the arm
+// is honestly green in all three. It is the by-hand run that lies, and that
+// is the run a releaser reaches for.
+//
+// Nothing in userspace makes a file readable and root-unwritable portably —
+// it takes an immutable flag or a read-only mount, neither of which a `go
+// test` may assume — and readable is not optional here: the meta has to
+// survive readMeta for the backfill to be attempted at all. When the
+// environment cannot pose the question, the honest report is that it did not
+// ask, not a red that names the wrong culprit. crew_test.go's unwritable-meta
+// arm is this same probe written inline, and costscan_root_qa_test.go guards
+// its unreadable arms on Geteuid; unify them deliberately, not by accident.
+func mustRefuseWrites(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	// O_WRONLY alone: the same permission check os.WriteFile's
+	// O_WRONLY|O_CREATE|O_TRUNC makes, without the truncation, so a probe
+	// that finds the file writable has not damaged it.
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err == nil {
+		f.Close()
+		t.Skipf("uid %d can write %s at mode 0444 — root with CAP_DAC_OVERRIDE, "+
+			"or a filesystem that ignores the bit. A backfill write that fails "+
+			"cannot be staged here, so the arm below would measure the "+
+			"environment and not the promise (ranger-base-c00). Run the suite "+
+			"as an unprivileged uid to exercise it.", os.Getuid(), path)
+	}
+}
+
 // rangerhq-5on: backfill is best-effort. A listing must still return the
 // live session when the stamp cannot be written.
 func TestBackfillDoesNotFailTheListing(t *testing.T) {
@@ -205,10 +256,10 @@ func TestBackfillDoesNotFailTheListing(t *testing.T) {
 
 	os.MkdirAll(b.metaDir(), 0o755)
 	body := []byte("name: ro\nworkspace: w1\npane: w1:p1\nemoji: R\nagent: qa\n")
-	if err := os.WriteFile(b.metaPath("ro"), body, 0o444); err != nil {
+	if err := os.WriteFile(b.metaPath("ro"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(b.metaPath("ro"), 0o644) })
+	mustRefuseWrites(t, b.metaPath("ro"))
 
 	sessions, err := b.Sessions()
 	if err != nil {
