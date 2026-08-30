@@ -850,11 +850,20 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 	still := c2.selInProg()
 	c2.handleKey([]byte("u"))
 	c2.handleKey([]byte("y"))
+	// The write is off the event loop now (ranger-base-v5mh), so the result
+	// is taken from the channel runCockpit's select drains rather than read
+	// off c.status the instant the key returns.
+	var landed string
+	select {
+	case landed = <-c2.claims:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the unclaim goroutine never reported")
+	}
 	if got := qaBdLog(t, log2); !strings.Contains(got, "update "+still.ID) {
 		t.Errorf("control: y on a bead that is still claimed must unclaim it: bd %q", got)
 	}
-	if c2.status != "unclaimed "+still.ID {
-		t.Errorf("control status: %q", c2.status)
+	if landed != "unclaimed "+still.ID {
+		t.Errorf("control status: %q", landed)
 	}
 }
 
@@ -932,6 +941,7 @@ exit 0
 
 	c := qaProgFixture()
 	c.app, c.bd = a, rhq.Bd{Bin: bd}
+	c.claims = make(chan string, 4)
 	c.hb = &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard}
 	// bd runs with cmd.Dir set to the bead's repo, so the fixture's dir has
 	// to be one that exists — otherwise every call dies at chdir and the

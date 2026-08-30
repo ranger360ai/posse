@@ -121,6 +121,22 @@ type cockpit struct {
 	prompting bool        // a prompt goroutine is in flight (one at a time)
 	prompts   chan string // prompt goroutine → event loop status line
 
+	// The `c` and `u` keys' own pair (ranger-base-v5mh). Both are bd
+	// WRITES, and a write costs more than a read does even with the daemon
+	// dial gone (ranger-base-cwu7): measured against a copy of this shop's
+	// store, `bd update --claim` is 1.25-2.14s and the unclaim 1.65-1.79s
+	// against 0.28s for a read, because a write re-exports the JSONL. A
+	// claim is up to three of them (Claim re-reads the bead when bd does
+	// not hand one back, and writes again to open a bead already ours), so
+	// `c` on the event loop freezes the TUI for as much as ~3.4s.
+	//
+	// Its own flag and its own channel, NOT c.results/c.dispatching: a
+	// claim landing on results would clear a still-running launch's flag
+	// and let a second `d` race it on the shared dispatcher — the same
+	// reason the prompt path has its own pair.
+	claiming bool        // a claim or unclaim goroutine is in flight (one at a time)
+	claims   chan string // claim goroutine → event loop status line
+
 	// Running cost (ADR 0003 §4): a background scan of every registered cost
 	// provider's transcripts, refreshed every costEvery, keyed by bead id;
 	// the day total in the footer. A session on a runtime with no adapter
@@ -643,8 +659,9 @@ func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 		costScan: new(rhq.CostScanner), govScan: new(rhq.CostScanner),
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
 		progress: make(chan string, 4), prompts: make(chan string, 4),
-		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
-		govs: make(chan govRead, 1), beads: make(chan beadRead, 1)}
+		claims: make(chan string, 4), costs: make(chan *rhq.CostReport, 1),
+		plans: make(chan planRead, 1), govs: make(chan govRead, 1),
+		beads: make(chan beadRead, 1)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
 	// written straight to it is garbage on the frame. That silences the one
 	// line a blocked launch has to say (ADR 0011 §1: "one line when a second
@@ -763,6 +780,14 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 			c.draw()
 		case msg := <-c.prompts:
 			c.prompting = false
+			c.status = msg
+			c.refresh()
+			c.draw()
+		case msg := <-c.claims:
+			// The refresh the claim is ordered against runs HERE, not in
+			// the goroutine: it has to see the write finished, and
+			// kickBeads/refreshSessions touch c and belong to this loop.
+			c.claiming = false
 			c.status = msg
 			c.refresh()
 			c.draw()
@@ -1234,17 +1259,9 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 				// which reads as if the unclaim happened (rangerhq-sei).
 				c.status = c.target.id + " is no longer claimed — nothing unclaimed"
 			default:
-				// ADR 0004 §3: actor none — bd's default actor is the
-				// operator, and this is the operator's hand, attributed as
-				// such. The assignee is cleared with the claim: taking a
-				// bead off a stalled holder puts it back in the pool, which
-				// is the whole point of the key.
-				if err := c.bd.Unclaim(c.target.dir, c.target.id, "", false); err != nil {
-					c.status = err.Error()
-				} else {
-					c.status = "unclaimed " + is.ID
-					c.refresh()
-				}
+				// Off the event loop (ranger-base-v5mh); the ADR 0004 §3
+				// reading of the actor and the assignee is on unclaimBead.
+				c.unclaimBead(c.target.dir, is.ID)
 			}
 			c.mode = modeNormal
 			return false, nil
@@ -1402,7 +1419,12 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 	case key == "u":
 		// ADR 0004 §3: claimed beads only — there is nothing to unclaim on
 		// a session or a ready row.
-		if is := c.selInProg(); is != nil {
+		if c.claiming {
+			// Refused at `u` rather than at the y, for `p`'s reason: the
+			// operator is not asked to confirm something that will be
+			// thrown away.
+			c.status = "a claim is already in flight"
+		} else if is := c.selInProg(); is != nil {
 			c.mode, c.confirm = modeConfirm, confirmUnclaim
 			c.target = confirmTarget{dir: is.Dir, id: is.ID}
 		}
@@ -1422,20 +1444,27 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			c.mode = modePeek
 		}
 	case key == "c":
+		if c.claiming {
+			c.status = "a claim is already in flight"
+			break
+		}
 		if is := c.selIssue(); is != nil {
-			resumed, err := c.bd.Claim(is.Dir, is.ID, "")
-			switch {
-			case err != nil:
-				c.status = err.Error()
-			case resumed:
-				c.status = is.ID + " was already yours — resumed"
-				c.refresh()
-			default:
-				c.status = "claimed " + is.ID
-				c.refresh()
-			}
+			c.claimBead(is.Dir, is.ID)
 		}
 	case key == "d":
+		// A dispatch claims the bead it launches, so a `d` aimed at the
+		// bead a claim is still writing is two writers on one row: bd
+		// answers the loser with "claim on X lost", which reads as a
+		// mystery. Refused for the ~2s the claim takes.
+		//
+		// Not the mirror of this: `c` and `u` are NOT refused while a
+		// dispatch is in flight. That guard would stretch a 2s wait over a
+		// launch's whole startup wait — 45s for claude — and it would take
+		// away a key the operator has today.
+		if c.claiming {
+			c.status = "a claim is already in flight"
+			break
+		}
 		if c.dispatching {
 			c.status = "a dispatch is already in flight"
 			break
@@ -1476,6 +1505,48 @@ func (c *cockpit) applyProgress(line string) {
 		return
 	}
 	c.status = line
+}
+
+// claimBead runs the `c` key's bd write off the event loop (ranger-base-v5mh).
+//
+// ADR 0004 §3: actor none — bd's default actor is the operator, and `c` is
+// the operator's own hand taking a bead, attributed as such.
+//
+// The status line is the whole of the progress there is, as it is for a
+// launch and a prompt. The refresh a successful claim used to end with is
+// not here: it belongs to the event loop, and it runs when the result lands
+// on c.claims — which is also what orders it after the write.
+func (c *cockpit) claimBead(dir, id string) {
+	c.claiming = true
+	c.status = "claiming " + id + "…"
+	go func() {
+		resumed, err := c.bd.Claim(dir, id, "")
+		switch {
+		case err != nil:
+			c.claims <- err.Error()
+		case resumed:
+			c.claims <- id + " was already yours — resumed"
+		default:
+			c.claims <- "claimed " + id
+		}
+	}()
+}
+
+// unclaimBead is claimBead's twin for the y that confirms a `u`.
+//
+// ADR 0004 §3: actor none, and the assignee is cleared with the claim —
+// taking a bead off a stalled holder puts it back in the pool, which is the
+// whole point of the key.
+func (c *cockpit) unclaimBead(dir, id string) {
+	c.claiming = true
+	c.status = "unclaiming " + id + "…"
+	go func() {
+		if err := c.bd.Unclaim(dir, id, "", false); err != nil {
+			c.claims <- err.Error()
+			return
+		}
+		c.claims <- "unclaimed " + id
+	}()
 }
 
 // launch runs a launcher off the event loop — session create + agent
