@@ -30,20 +30,16 @@ Contract (claude 2.1.251, read out of the shipped bundle):
 What it does NOT hold: a verb reached through shell indirection this file
 cannot read (an alias, `eval`, a substitution, a script that calls bd). Those
 are refused when bd is visible in the line, and are invisible when they are
-not. MEASURED against this file (ranger-base-uxuy), the line being the whole
-difference:
-
-    BD=bd; $BD daemon stop        -> refused ($BD, and the line spells bd)
-    B=/usr/local/bin/bd; $B stop  -> refused (same: bd is a word on the line)
-    V=b; ${V}d daemon stop        -> RUNS. No `bd` word anywhere, so nothing
-                                     here has anything to match on.
-    /tmp/wrapper daemon stop      -> RUNS, where the wrapper execs bd. A
-                                     command word this file cannot open is
-                                     just a command word.
-
-That is the shape of the layer, not a bug to file: an argv gate reads argv.
-This is an L0 politeness layer with a parser, not a cage — see ADR 0014 §5.
-The wall is the L1 shim (option-aware, every runtime) and the L2 cage.
+not. MEASURED spelling by spelling for ranger-base-uxuy, and the boundary is
+exactly where the word is: a variable holding the whole name is refused —
+because the name is then a word on the line for the `$`-variable arm to be
+suspicious about — while a name assembled out of parts, and a wrapper binary
+that execs bd under its own name, are not refused and never were. Nothing on
+those lines is bd to an argv reader. That is the shape of the layer and not a
+bug to file; the spelling-by-spelling table is ops-class and lives in the
+instance tree, not here. This is an L0 politeness layer with a parser, not a
+cage — see ADR 0014 §5. The wall is the L1 shim (option-aware, every runtime)
+and the L2 cage.
 
 What it also does not do is read prose as commands. A heredoc body is data —
 the only questions asked of one are whether something on the line executes it
