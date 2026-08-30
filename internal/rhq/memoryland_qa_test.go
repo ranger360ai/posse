@@ -18,16 +18,21 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-// memoryRepo is that shape. It returns the constitution checkout; the
-// persona's memory dir is repo/rhq/personas/dev, reachable from the home as
-// b.App.PersonasDir()/dev.
-func memoryRepo(t *testing.T, b *HerdrBackend) string {
+// memoryRepo is that shape. It returns the constitution checkout; each
+// persona's memory dir is repo/rhq/personas/<name>, reachable from the home
+// as b.App.PersonasDir()/<name>. Call it BEFORE anything creates a session:
+// the launch materializes the memory dir, and a directory already standing
+// at PersonasDir is a symlink that cannot be made.
+func memoryRepo(t *testing.T, b *HerdrBackend, personas ...string) string {
 	t.Helper()
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n")
+	for _, p := range append([]string{"dev"}, personas...) {
+		write(t, filepath.Join(repo, "rhq", "personas", p, "ORDERS.md"), "# Standing orders — "+p+"\n")
+	}
 	mustGit(t, repo, "add", "--", "rhq")
 	mustGit(t, repo, "commit", "-q", "-m", "seed the constitution", "--", "rhq")
 	if err := os.MkdirAll(b.App.Home, 0o755); err != nil {
@@ -434,5 +439,66 @@ func TestPorcelainZKeepsRenamesAndOddPathsWhole(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("record %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// ─── the path that actually reaps ────────────────────────────────────────────
+
+// The end-of-pass auto-reaper is where sessions are destroyed at scale —
+// ~30 in a day on the instance this bead was filed from — so it is the path
+// where memory was actually being lost. It commits, and it spends no landing
+// turn doing it: the bead is closed and the agent has settled, so the
+// persona already had its wrap-up, and N bounded turns in a row would stall
+// the pass this sweep is an epilogue to.
+func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
+	wtqaHome(t)
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	exe, _ := os.Executable()
+	b.Bd = Bd{Bin: exe}
+	con := memoryRepo(t, b, "ranger")
+	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"closed"}]`)
+	idleClaude(t, fake)
+
+	session := SessionForBead("ranger", repo, "a-1")
+	tr, err := b.App.EnsureSessionTree(repo, session, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeBdInTree(t, repo, tr.Path, `[{"id":"a-1","status":"closed"}]`)
+	commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: the fix")
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	// The lesson the persona appended while it worked, which nothing but
+	// this sweep will ever commit.
+	appendOrders(t, con, "ranger", "- a lesson the reap must not lose.\n")
+
+	write(t, filepath.Join(repo, "fake-ready.json"), `[]`)
+	agePrompt(t, b, session, d.PromptGrace+time.Minute)
+	d2 := newTestDispatcher(t, b)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d2)
+
+	if _, ok := b.readMeta(session); ok {
+		t.Fatalf("the sweep did not reap the session:\n%s", out)
+	}
+	if dirty := b.App.MemoryDirtyPaths("ranger"); len(dirty) != 0 {
+		t.Fatalf("the reap left the persona's memory uncommitted: %v\n%s", dirty, out)
+	}
+	if body := mustGit(t, con, "show", "HEAD:rhq/personas/ranger/ORDERS.md"); !strings.Contains(body, "must not lose") {
+		t.Errorf("the lesson is not in the commit:\n%s", body)
+	}
+	if !strings.Contains(out, "ranger memory committed") {
+		t.Errorf("the sweep must say what it did with the memory:\n%s", out)
+	}
+	// Not "no agent prompt" — the pass sent this session its WORK prompt,
+	// and that is in the same log. What must be absent is the landing turn,
+	// which is the only thing that says this.
+	if log := calls(t, fake); strings.Contains(log, "about to be CLOSED") {
+		t.Errorf("the sweep must spend no landing turn:\n%s", log)
 	}
 }

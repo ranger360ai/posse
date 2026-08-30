@@ -2332,7 +2332,7 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	// about and it costs one git process; only the TURN above is optional.
 	// A foreign row is somebody else's session and carries no persona of
 	// ours, which is why it returns above this line.
-	_ = b.App.LandPersonaMemory(m.Agent, "posse kill "+name, m.Bead)
+	l.Memory = b.App.LandPersonaMemory(m.Agent, "posse kill "+name, m.Bead)
 	t := SessionTreeOf(m)
 	if t == nil {
 		return l, nil
