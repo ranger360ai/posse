@@ -497,6 +497,52 @@ func sessionRefDirs(cwd string) []string {
 	return out
 }
 
+// packed-refs.lock is DECLARED, not granted (ranger-base-msex, second
+// finding on ranger-base-uuze). Every commit under the narrowed grant —
+// packed or not, first commit or fifth — prints
+//
+//	error: Unable to create '<common>/packed-refs.lock': Operation not permitted
+//
+// on stderr and then succeeds. MEASURED (2026-08-30, darwin 25.4.0): it is
+// unconditional, not a packing effect — reproduced on a fresh unpacked
+// fixture's very first commit, where the session's ref has never been
+// packed at all. Git's ref-transaction takes this lock speculatively on
+// every ref update to check the packed backend, needs nothing from it here
+// (the session's ref lives loose), and falls back cleanly when refused —
+// which is why the commit still lands.
+//
+// The tempting fix is a createOnly grant beside sessionRefDirs, the same
+// shape as the ref's parent directory. MEASURED and REJECTED: create-only
+// buys the create but not the delete, and git's own cleanup is an unlink of
+// that same lock file once it decides packed-refs needs no change. Refused,
+// that unlink leaves the lock FILE ITSELF behind in the shared common dir —
+// unlike the refusal it replaces, a stray lock is not self-healing, and it
+// is not symmetric either. A session's own later commits are UNAFFECTED:
+// each one retries the same create, finds the file already there, prints a
+// scarier line — `error: … packed-refs.lock: File exists … Another git
+// process seems to be running … remove the file manually to continue` — and
+// still lands, exit 0, because an ordinary commit's ref update never
+// actually needs that lock. What the stray file DOES break, hard, is
+// anything that does need it: the operator's own unsandboxed `git gc` and
+// `git pack-refs` on the shared repo both die at rc=128 with the identical
+// message, for as long as the file sits there — which is until a human
+// notices and removes it by hand, since no session may write there to
+// unstick it either. Reproduced with a hand-planted lock file, no sandbox
+// involved, so this is git's own locking discipline, not a profile quirk.
+//
+// So the grant trades a benign, self-repairing stderr line for a silent,
+// human-interrupt-shaped landmine in shared state — worse than what it
+// silences, and worse in a way that would not surface until whoever runs
+// gc next. No grant is added; the stderr line stays.
+// TestQAWorktreeCommitLeavesNoStrayPackedRefsLock pins the accepted
+// behaviour and TestQAPackedRefsLockCreateGrantIsUnsafe pins why the
+// tempting grant must not come back.
+//
+// `git gc` from inside a session dying separately at `gc.pid.lock:
+// Operation not permitted` is not this: a session should not gc the shared
+// repo, and that refusal is the point, not a gap — noted here only because
+// the same bead raised both and this is where the first one's answer lives.
+
 // SeatbeltCarveOut computes the trailing block for a session: the three
 // artifact classes ranger-base-6ne walked through, ENUMERATED at the
 // artifact level and never at a repo root.

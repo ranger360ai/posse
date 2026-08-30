@@ -3369,6 +3369,17 @@ is the same directory-granularity gap ADR 0002 already accepts for
 codex/grok `--add-dir` at L2. `.git/hooks` back to `:ro` over it is
 ranger-base-3c3 / h15.
 
+Every commit under that narrowing also prints `error: Unable to create
+'<common>/packed-refs.lock': Operation not permitted` on stderr and still
+succeeds — git takes that lock speculatively on every ref update and falls
+back cleanly when refused. DECLARED rather than fixed (ranger-base-msex):
+the tempting createOnly grant was measured and is worse than the noise —
+create-only buys the create but not git's own cleanup unlink, so the lock
+file is stranded in the shared common dir, which then hard-fails the
+operator's own unsandboxed `git gc`/`git pack-refs` until someone notices
+and removes it by hand. No session can write it away either. See the doc
+comment beside `sessionRefDirs` in `seatbelt.go` for the measurement.
+
 The **redirect target** joins them, unconditionally rather than only on a
 `:ro` repo: when `.beads/redirect` puts the store of record in another repo,
 `<dir>/.beads` holds a path and nothing else, so the carve-out above mounts

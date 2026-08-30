@@ -616,3 +616,102 @@ func TestQAWorktreeCommitNeedsTheRefsParentDirectory(t *testing.T) {
 		t.Error("arm 3 exited 0 but the ref did not move")
 	}
 }
+
+// ─── packed-refs.lock: declared, not granted (ranger-base-msex) ────────────
+//
+// The second finding on ranger-base-uuze: every commit under the
+// narrowed grant prints `error: Unable to create '<common>/packed-refs.lock':
+// Operation not permitted` on stderr and then succeeds. The two tests below
+// are the measurement that decision rests on, in both directions — the
+// accepted behaviour stays green, and the tempting fix is pinned as unsafe
+// so it cannot come back quietly.
+
+// The accepted shape: the refusal is noise, not damage. Two commits in a
+// row, one of them after a pack — the same commit TestQAWorktreeCommitStays-
+// GreenAfterPackRefs makes — and neither leaves anything behind in the
+// shared common dir. A stray lock is the failure mode the next test pins;
+// this one is the control that the SHIPPED profile does not produce it.
+func TestQAWorktreeCommitLeavesNoStrayPackedRefsLock(t *testing.T) {
+	sbSkipUnlessSandboxable(t)
+	f := wgNewFixture(t)
+	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(f.common, "packed-refs.lock")
+	commit := func(name string) (bool, string) {
+		return wgRun(t, prof, "echo "+name+" >> "+filepath.Join(f.tree, "work.txt")+
+			" && git -C "+f.tree+" add work.txt"+
+			" && git -C "+f.tree+" commit -q -m "+name+" -- work.txt")
+	}
+	if ok, out := commit("one"); !ok {
+		t.Fatalf("first commit refused:\n%s", out)
+	}
+	if wgExists(t, lock) {
+		t.Fatal("packed-refs.lock survived the first commit — the refusal is no longer self-healing")
+	}
+	wgPack(t, f)
+	if ok, out := commit("two"); !ok {
+		t.Fatalf("commit after pack-refs refused:\n%s", out)
+	}
+	if wgExists(t, lock) {
+		t.Fatal("packed-refs.lock survived a commit after pack-refs")
+	}
+}
+
+// The rejected shape, kept alive on purpose: a createOnly grant for
+// packed-refs.lock — the same shape sessionRefDirs uses for the ref's
+// parent directory — looks like the obvious fix for the stderr line above.
+// MEASURED and worse than what it silences: create-only buys the create but
+// not git's own cleanup unlink, so the lock file itself is stranded in the
+// shared common dir. The session's OWN later commits do not notice — same
+// as the doc comment on sessionRefDirs's neighbour says, an ordinary
+// commit's ref update never needs that lock — so that half is asserted here
+// as the reason this candidate looks safe from inside a session. What it
+// actually breaks is anyone who DOES need the lock: the operator's own
+// unsandboxed `git gc` / `git pack-refs` on the shared repo, hard, with no
+// session able to clear it.
+//
+// This builds the candidate profile that grant would produce and asserts
+// both halves, so the temptation cannot be re-added without this test
+// failing first.
+func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
+	sbSkipUnlessSandboxable(t)
+	f := wgNewFixture(t)
+	w := f.writable(t)
+	lock := filepath.Join(f.common, "packed-refs.lock")
+	createOnly := append(append([]string{}, sessionRefDirs(f.tree)...), lock)
+	carve := f.a.SeatbeltCarveOut(f.ag, f.tree, f.gates, w)
+	candidate := sbRenderProfile(t, "candidate.sb", SeatbeltProfile(f.ag.Name, w, carve, createOnly...))
+	commit := func(name string) (bool, string) {
+		return wgRun(t, candidate, "echo "+name+" >> "+filepath.Join(f.tree, "work.txt")+
+			" && git -C "+f.tree+" add work.txt"+
+			" && git -C "+f.tree+" commit -q -m "+name+" -- work.txt")
+	}
+	if ok, out := commit("one"); !ok {
+		t.Fatalf("first commit under the candidate grant was refused outright — the candidate must at least reach the strand:\n%s", out)
+	}
+	if !wgExists(t, lock) {
+		t.Fatal("the candidate grant left no stray lock — the hazard this test pins is gone, and the doc comment on sessionRefDirs's neighbour needs revisiting instead of this test")
+	}
+	// The session's own next commit is NOT where this bites — it still
+	// lands, only louder. Pinned so a future reader trusting a green commit
+	// here does not mistake it for the candidate being safe.
+	if ok, out := commit("two"); !ok {
+		t.Fatalf("a second commit was refused outright under the stray lock — that is a DIFFERENT, worse hazard than the one this test measures:\n%s", out)
+	} else if !strings.Contains(out, "File exists") {
+		t.Errorf("the second commit's noise changed shape — expected the stray-lock message:\n%s", out)
+	}
+	// The actual hazard: the operator's real gc/pack-refs on the shared
+	// repo, unsandboxed, dies as long as the stray file sits there.
+	if out, err := exec.Command("git", "-C", f.repo, "pack-refs", "--all").CombinedOutput(); err == nil {
+		t.Error("the operator's own unsandboxed pack-refs succeeded despite the stray lock — the shared-repo hazard this test pins is gone")
+	} else if !strings.Contains(string(out), "File exists") {
+		t.Errorf("the operator's pack-refs failed for some other reason than the stray lock:\n%s", out)
+	}
+	if out, err := exec.Command("git", "-C", f.repo, "gc").CombinedOutput(); err == nil {
+		t.Error("the operator's own unsandboxed gc succeeded despite the stray lock — the shared-repo hazard this test pins is gone")
+	} else if !strings.Contains(string(out), "File exists") {
+		t.Errorf("the operator's gc failed for some other reason than the stray lock:\n%s", out)
+	}
+}
