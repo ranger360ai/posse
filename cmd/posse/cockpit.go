@@ -154,6 +154,13 @@ type cockpit struct {
 	plans      chan planRead
 	planLine   string
 	planReadAt time.Time // last SUCCESSFUL reading (or cockpit start) — the header's blind clock
+	// planLast is the last reading APPLIED, kept so the COST tick can
+	// re-render the segment when the ledger's readability changes under it
+	// (applyCost, ADR 0018 §3). The two ticks are 30s and 2m apart, and
+	// without this the header would keep naming a brake for up to four cost
+	// ticks after the footer started hedging the same dollars. Nothing else
+	// reads it.
+	planLast planRead
 
 	// The credential-expiry segment (ADR 0019 D5, bead ranger-base-k6ha):
 	// the posse-owned session mints that die inside the window, soonest
@@ -384,6 +391,15 @@ func (c *cockpit) applyCost(rep *rhq.CostReport) {
 	c.costDayCap = rep.DayCap
 	c.costUnread = rep.Unread
 	c.costAt = time.Now()
+	// This scan is where §3's clause comes from, and it lands four times
+	// per plan tick — so the segment is re-rendered here rather than left
+	// naming a brake the footer beside it is already hedging. Only a BLIND
+	// segment: rendering a successful reading moves planReadAt, and doing
+	// that on every cost tick would keep resetting the blind clock this
+	// screen exists to count.
+	if c.planLast.guarded && c.planLast.line == "" {
+		c.planLine = c.planSegment(c.planLast)
+	}
 }
 
 // planRead is one scan's worth of fact. The clock that turns a failed read
@@ -477,8 +493,30 @@ func (c *cockpit) scanPlan() {
 // sets the field itself.
 func (c *cockpit) applyPlan(r planRead) {
 	c.planBusy = false
+	c.planLast = r
 	c.planLine, c.creds = c.planSegment(r), r.creds
 }
+
+// ledgerUnreadable is ADR 0018 §3's condition as this screen can see it: the
+// last cost scan came back short of a transcript, so what it counted is a
+// floor and an armed cap over it is not a brake. It is the footer's own
+// condition, deliberately — the two halves of one screen must not be able to
+// disagree about whether the ledger reads.
+//
+// It is asked here, of the cockpit, and does NOT ride in on planRead: that
+// struct is one PLAN scan's worth of fact, and this is the cost scan's. The
+// plan tick cannot take it (a second decode of the whole transcript pile
+// every two minutes, ranger-base-325q), so a field there could only be
+// filled in by a join step on the event loop — one more assignment to drop,
+// for a value that would then be as old as the last plan tick.
+//
+// The window is the footer's fourteen days and not dispatch's day. The
+// classes that produce this are mostly window-independent (an unreadable
+// transcript root or project dir is noted whatever `since` says), and where
+// it is one unreadable file too old for dispatch's own scan the header errs
+// toward parked — the direction ADR 0018 chose everywhere else, because an
+// unreadable ledger is not a licence to spend.
+func (c *cockpit) ledgerUnreadable() bool { return c.costUnread > 0 }
 
 // planSegment is the header's plan segment, and the witness half of
 // rangerhq-6h1. A good reading is the reading. A failed one is empty today
@@ -506,6 +544,13 @@ func (c *cockpit) applyPlan(r planRead) {
 // degrades under the ledger (`… — ledger brake`), with it unset that same
 // pass parks the fleet's on-meter lanes. Same blind clock, opposite days —
 // reading one as the other is the ambiguity this segment exists to close.
+//
+// §3 then added a THIRD outcome, and for a while this segment had no words
+// for it: caps armed over a ledger the cost scan cannot read is a brake that
+// counts nothing, and the pass parks. Rendering that as the degrade is the
+// same ambiguity inverted — a stopped shop whose header says it is running
+// under the ledger, which is the 2026-08-26 outage shape wearing the
+// degraded day's clothes — so it gets its own clause (ranger-base-3nvt).
 func (c *cockpit) planSegment(r planRead) string {
 	now := c.clock()
 	if c.planReadAt.IsZero() {
@@ -541,7 +586,13 @@ func (c *cockpit) planSegment(r planRead) string {
 	if r.class != "" {
 		seg += " · " + r.class
 	}
-	if r.ledger {
+	switch {
+	case r.ledger && c.ledgerUnreadable():
+		// §3, and not a brake: the caps are armed and counting nothing, so
+		// the pass stopped. The header must not name a brake that is not
+		// holding.
+		seg += " — ledger unreadable, parked"
+	case r.ledger:
 		seg += " — ledger brake"
 	}
 	return seg

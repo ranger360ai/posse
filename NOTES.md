@@ -843,7 +843,14 @@ then stops dispatch on API-equivalent spend.
   against them (or "no caps set … dormant"); the cockpit footer shows
   `today $… of $… budget_day (NN%)`, and the header's blind segment names
   which policy is waiting — `guard blind 14m` parks, `guard blind 14m —
-  ledger brake` degrades. Both read; only dispatch acts.
+  ledger brake` degrades, and `guard blind 14m — ledger unreadable, parked`
+  is §3's third state: caps armed over a ledger the cost scan came back
+  short of, where the brake counts nothing and the pass parks exactly as an
+  unarmed Dial E would (the footer hedges the same scan's dollars with `≥`
+  and `a floor, not a total`). The clause is the SCAN's fact, not the
+  config's — reading the third state as the second is a stopped shop whose
+  header says it is running under the ledger (ranger-base-3nvt). Both read;
+  only dispatch acts.
 
 **verify-after** (ADR 0006 §3, `internal/rhq/verifyafter.go`) is the one
 handoff the harness files rather than a persona. Every dispatch pass — right

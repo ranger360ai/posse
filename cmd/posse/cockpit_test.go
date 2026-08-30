@@ -1146,6 +1146,98 @@ func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
 	}
 }
 
+// ADR 0018 §3 (ranger-base-3nvt): the THIRD outcome, which the two-state
+// segment above rendered as the degrade. Caps armed over a ledger the cost
+// scan came back short of is a brake counting nothing, and the dispatcher
+// parks on it (internal/rhq, TestBlindDegradeParksWhenTheLedgerCannotBeRead)
+// — so a header reading " — ledger brake" there tells the operator the
+// opposite of what the pass did.
+func TestCockpitPlanBlindUnreadableLedgerIsParkedNotBraked(t *testing.T) {
+	at := time.Date(2026, 8, 30, 4, 0, 0, 0, time.UTC)
+	// costUnread is the fact, and it is the cost scan's: three transcripts
+	// the last scan could not read, which is what the footer beside this
+	// segment is already hedging its dollars with.
+	c := &cockpit{now: func() time.Time { return at }, costUnread: 3}
+
+	// A reading first, so the blind clock counts from something real.
+	c.planSegment(planRead{line: "5h 42% · 7d 61%", guarded: true, ledger: true})
+	at = at.Add(4 * time.Hour)
+
+	got := c.planSegment(planRead{guarded: true, ledger: true})
+	if want := "plan — · guard blind 4h00m — ledger unreadable, parked"; got != want {
+		t.Fatalf("an unreadable armed ledger = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "brake") {
+		t.Errorf("the parked state must not name a brake that is not holding: %q", got)
+	}
+	// Dial E unset is the unarmed park, which has no clause and gains none
+	// from a scan that could not read the ledger it is not keeping.
+	if got := c.planSegment(planRead{guarded: true}); got != "plan — · guard blind 4h00m" {
+		t.Errorf("unarmed says what it always said, got %q", got)
+	}
+	// A reading is the segment either way — this clause is about blindness.
+	if got := c.planSegment(planRead{line: "5h 9% · 7d 30%", guarded: true, ledger: true}); got != "5h 9% · 7d 30%" {
+		t.Errorf("a reading is the segment, got %q", got)
+	}
+	// WITHOUT-ARM, and the one that matters: a READABLE armed ledger is
+	// still the degrade. Delete the brake clause outright and every
+	// assertion above still passes — this is what refuses that fix.
+	c.costUnread = 0
+	at = at.Add(4 * time.Hour) // the reading above reset the blind clock
+	if got := c.planSegment(planRead{guarded: true, ledger: true}); got != "plan — · guard blind 4h00m — ledger brake" {
+		t.Errorf("a readable armed ledger is still the brake, got %q", got)
+	}
+}
+
+// The wiring pin. planSegment is exercised over a hand-built planRead, so a
+// clause that renders a field nothing ever assigns is green there and dead
+// on the screen — which is precisely how Unread came to be missing from the
+// display in the first place (ADR 0018 §3 / ranger-base-c65c). The fact is
+// the COST scan's, so this walks it from a *rhq.CostReport to c.planLine.
+func TestCockpitApplyPlanTakesTheLedgerFailureFromTheCostScan(t *testing.T) {
+	at := time.Date(2026, 8, 30, 4, 0, 0, 0, time.UTC)
+	c := &cockpit{now: func() time.Time { return at }}
+	c.applyPlan(planRead{line: "5h 42% · 7d 61%", guarded: true, ledger: true})
+	at = at.Add(4 * time.Hour)
+
+	// A clean scan: the degraded day, unchanged.
+	c.applyCost(&rhq.CostReport{DayCap: 250})
+	c.applyPlan(planRead{guarded: true, ledger: true})
+	if want := "plan — · guard blind 4h00m — ledger brake"; c.planLine != want {
+		t.Fatalf("clean scan = %q, want %q", c.planLine, want)
+	}
+
+	// The same blind read over a scan that lost three transcripts.
+	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 3})
+	c.applyPlan(planRead{guarded: true, ledger: true})
+	if want := "plan — · guard blind 4h00m — ledger unreadable, parked"; c.planLine != want {
+		t.Fatalf("unreadable scan = %q, want %q", c.planLine, want)
+	}
+	// And the header does not wait out a plan tick for it: the cost scan is
+	// 30s and the plan scan 2m, so the tick that LEARNS it re-renders.
+	c.applyCost(&rhq.CostReport{DayCap: 250})
+	if want := "plan — · guard blind 4h00m — ledger brake"; c.planLine != want {
+		t.Errorf("the cost tick must re-render the segment it feeds, got %q", c.planLine)
+	}
+	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 1})
+	if want := "plan — · guard blind 4h00m — ledger unreadable, parked"; c.planLine != want {
+		t.Errorf("re-render, other direction: %q", c.planLine)
+	}
+
+	// A SUCCESSFUL reading is not re-rendered by the cost tick: it is the
+	// segment, and re-running it would move planReadAt every 30s and reset
+	// the blind clock the header is counting.
+	c.applyPlan(planRead{line: "5h 9% · 7d 30%", guarded: true, ledger: true})
+	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 3})
+	if c.planLine != "5h 9% · 7d 30%" {
+		t.Errorf("a reading must survive the cost tick, got %q", c.planLine)
+	}
+	at = at.Add(30 * time.Minute)
+	if got := c.planSegment(planRead{guarded: true, ledger: true}); got != "plan — · guard blind 30m — ledger unreadable, parked" {
+		t.Errorf("the blind clock must count from the reading, got %q", got)
+	}
+}
+
 // ADR 0019 D3 (ranger-base-vmqg): the fourth state. An adapter ships, this
 // platform holds no credential for it, and the header must say so as itself
 // — no blind timer counting up toward a park that will never come, and not
