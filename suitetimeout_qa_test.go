@@ -45,22 +45,117 @@ import (
 // ranger-base-2ad3); the Makefile carries 25m, comfortably above this.
 const suiteTimeoutFloor = 15 * time.Minute
 
+// shellWords splits a line the way a shell splits a command line: blanks
+// separate words, and a quoted run — `'…'` or `"…"` — joins the word it
+// touches instead of breaking it. It returns each word with its quotes
+// removed, a parallel slice saying whether any part of that word came from
+// inside quotes, and whether every quote on the line closed.
+//
+// This is what tells an invocation from a mention of one. `probe "$w" "go
+// test ./..."` is three words, the third a single opaque string, and no `go`
+// stands next to a `test` anywhere in the argv.
+func shellWords(line string) (words []string, quoted []bool, balanced bool) {
+	var cur strings.Builder
+	var q rune // the open quote, or 0
+	inWord, sawQuote := false, false
+	flush := func() {
+		words = append(words, cur.String())
+		quoted = append(quoted, sawQuote)
+		cur.Reset()
+		inWord, sawQuote = false, false
+	}
+	for _, r := range line {
+		switch {
+		case q != 0:
+			if r == q {
+				q = 0
+				continue
+			}
+			cur.WriteRune(r)
+		case r == '\'' || r == '"':
+			q, inWord, sawQuote = r, true, true
+		case r == ' ' || r == '\t':
+			if inWord {
+				flush()
+			}
+		default:
+			cur.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		flush()
+	}
+	return words, quoted, q == 0
+}
+
+// adjacentGoTest returns the arguments of a `go test` standing in one word
+// list, or nil. It accepts the Makefile's `$(GOBIN)` spelling as well as a
+// literal `go`, because the recipe under test runs the former and a pin that
+// only knew the word `go` would be green over the very line it is about.
+func adjacentGoTest(words []string) []string {
+	for i := 0; i+1 < len(words); i++ {
+		switch words[i] {
+		case "go", "$(GOBIN)", "${GOBIN}", "$GOBIN":
+		default:
+			continue
+		}
+		if words[i+1] != "test" {
+			continue
+		}
+		return words[i+2:]
+	}
+	return nil
+}
+
+// reparsesItsArgument reports whether words[i] is handed to something that
+// runs its argument as a command line rather than reading it as text. Two
+// do: a shell's `-c`, and a workflow step's `run:`. Both are plausible
+// homes for a new entry point, which is what arm 2 exists to catch, so a
+// quoted word in either place is opened rather than trusted.
+func reparsesItsArgument(words []string, i int) bool {
+	if i == 0 {
+		return false
+	}
+	switch words[i-1] {
+	case "-c", "run:":
+		return true
+	}
+	return false
+}
+
 // goTestArgs returns the arguments of a `go test` invocation on one line of
-// shell/make, or nil when the line does not invoke one. It accepts the
-// Makefile's `$(GOBIN)` spelling as well as a literal `go`, because the
-// recipe under test runs the former and a pin that only knows the word `go`
-// would be green over the very line it is about.
+// shell/make/yml, or nil when the line does not invoke one.
+//
+// A quoted word is DATA, not argv — the string an `echo` prints, a usage
+// message, the JSON payload a gate probe hands to a gate that answers it
+// without running anything. That last one is ranger-base-quqn: `probe "$w"
+// "go test ./..."` in scripts/verify-gate-freshness.sh, and the `echo`
+// reporting its result, both read as entry points under a plain field scan
+// and reddened main for every branch that merged it. Neither runs the suite,
+// so neither can be running it on the default timeout.
 func goTestArgs(line string) []string {
-	fields := strings.Fields(line)
-	for i := 0; i+1 < len(fields); i++ {
-		cmd := strings.Trim(fields[i], `"'`)
-		if cmd != "go" && cmd != "$(GOBIN)" && cmd != "${GOBIN}" && cmd != "$GOBIN" {
+	words, quoted, balanced := shellWords(line)
+	if !balanced {
+		// The quoting does not close, so no split of this line is honest.
+		// Fall back to blank-separated fields — the sensitive direction: a
+		// line the tokenizer cannot read is still read for an invocation.
+		words = strings.Fields(line)
+		quoted = make([]bool, len(words))
+		for i := range words {
+			words[i] = strings.Trim(words[i], `"'`)
+		}
+	}
+	if args := adjacentGoTest(words); args != nil {
+		return args
+	}
+	for i, w := range words {
+		if !quoted[i] || !reparsesItsArgument(words, i) {
 			continue
 		}
-		if strings.Trim(fields[i+1], `"'`) != "test" {
-			continue
+		if args := goTestArgs(w); args != nil {
+			return args
 		}
-		return fields[i+2:]
 	}
 	return nil
 }
@@ -202,6 +297,29 @@ func TestQAGoTestDetectorReadsBothSpellingsAndSkipsProse(t *testing.T) {
 		{"      # The repo's own gate. `go test -timeout 25m ./...`", false, ""},
 		{"gate='go vet ./... && make test'", false, ""},
 		{"go build ./...", false, ""},
+
+		// ranger-base-quqn: a `go test` inside a quoted word is a string a
+		// command is HANDED, not a command that runs. All four are lines this
+		// repo really carries — the first two reddened main at 25503c1, and
+		// the third has been a false positive since it was written, green only
+		// because the text it prints happens to carry a 40m.
+		{`      probe "$w" "go test ./..."`, false, ""},
+		{`        echo "    behaves  bd list allowed · bd daemon stop denied by the parser · go test untouched"`, false, ""},
+		{`    echo "      go test $pkg -count=1 -timeout 40m"`, false, ""},
+		{`warn 'usage: scripts/test-times.sh <go test command...>'`, false, ""},
+
+		// ...but a quoted word that something RE-PARSES as a command line is
+		// an entry point, and hiding one there is exactly the route-around
+		// arm 2 exists to catch.
+		{`sh -c "go test ./..."`, true, ""},
+		{`bash -c 'go test -timeout 25m ./...'`, true, "25m"},
+		{"      run: go test ./...", true, ""},
+		{`      - run: "go test -timeout 20m ./..."`, true, "20m"},
+
+		// A line whose quoting never closes cannot be split honestly, so the
+		// detector falls back to blank-separated fields rather than going
+		// blind on it.
+		{"echo it's fine && go test ./...", true, ""},
 	} {
 		if isComment(c.line) {
 			if c.want {
