@@ -10,7 +10,7 @@ package rhq
 // It runs ONLY inside the throwaway CPU-limited container that
 // scripts/verify-orphan-report.sh starts, because it does on purpose the two
 // things the operator has ruled off this box: it loads a CPU, and it leaves
-// orphans behind while it measures them (ranger-base-teau, and monica's
+// orphans behind while it measures them (ranger-base-teau, and the coordinator's
 // ORDERS). The skip is not a dead pin hiding a broken assertion — the script
 // is the way it is run, and it fails loudly there.
 //
@@ -44,7 +44,7 @@ func TestOrphanReportControlNamesAPlantedLeak(t *testing.T) {
 	}
 	dir := t.TempDir()
 	gatesDir := filepath.Join(dir, "gates")
-	wrapper, err := writeGateShell("dinesh", gatesDir, filepath.Join(gatesDir, "bin"), "/bin/sh", "sh")
+	wrapper, err := writeGateShell("developer", gatesDir, filepath.Join(gatesDir, "bin"), "/bin/sh", "sh")
 	if err != nil {
 		t.Fatalf("writeGateShell: %v", err)
 	}

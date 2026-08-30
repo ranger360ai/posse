@@ -555,7 +555,7 @@ func TestAHealthyPassNeverReadsTheProcessTable(t *testing.T) {
 // literally), and then the persona's own command.
 func gateArgv(payload string) string {
 	return "/bin/zsh -c " + gateShellPreambleHead +
-		`_rge=${_rgr%%:*}; _rgr=${_rgr#*:}; case "$_rge" in ''|*/gates/*) ;; *) _rgp="$_rgp:$_rge";; esac; done; PATH="/h/state/gates/dinesh/bin$_rgp"` +
+		`_rge=${_rgr%%:*}; _rgr=${_rgr#*:}; case "$_rge" in ''|*/gates/*) ;; *) _rgp="$_rgp:$_rge";; esac; done; PATH="/h/state/gates/developer/bin$_rgp"` +
 		gateShellPreambleTail + payload
 }
 
@@ -746,7 +746,7 @@ func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
 	}
 	dir := t.TempDir()
 	gatesDir := filepath.Join(dir, "gates")
-	wrapper, err := writeGateShell("dinesh", gatesDir, filepath.Join(gatesDir, "bin"), "/bin/sh", "sh")
+	wrapper, err := writeGateShell("developer", gatesDir, filepath.Join(gatesDir, "bin"), "/bin/sh", "sh")
 	if err != nil {
 		t.Fatalf("writeGateShell: %v", err)
 	}
