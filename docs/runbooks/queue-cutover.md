@@ -356,7 +356,7 @@ find ~/src -maxdepth 3 -type d -name .beads | while read -r b; do
   # to the same store, and a redirect written by a hand rather than by the
   # script is spelled a hand's way (ranger-base-4myz). `-ef` is device+inode
   # — same directory, whatever it is called.
-  cur=$(head -n 1 "$b/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
+  cur=$(head -n 1 "$b/redirect" 2>/dev/null | tr -d '\r\v\f' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
   case $cur in ''|/*) ;; *) cur=${b%/.beads}/$cur ;; esac
   [ -n "$cur" ] && [ -d "$cur" ] && [ "$cur" -ef ~/src/ranger-queue/.beads ] || continue
   printf '%s\n' ~/src/ranger-base/.beads > "$b/redirect"

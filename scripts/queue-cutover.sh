@@ -128,7 +128,9 @@ RUNBOOK=docs/runbooks/queue-cutover.md
 # follows to one store, and an exact compare recognises the first alone:
 #
 #   /s/.beads   /s/.beads/   /s/.beads␠   ␠/s/.beads   /s/.beads␉   ␉/s/.beads
-#   /s/.beads<CR>   /s//.beads   /s/./.beads   /s/x/../.beads
+#   /s/.beads<CR>   the same with a vertical tab or a form feed — bd's trim is
+#   Go's strings.TrimSpace, so the `tr` below removes exactly what it removes
+#   /s//.beads   /s/./.beads   /s/x/../.beads
 #   ../s/.beads (relative — resolved against the tree holding the redirect,
 #   not the caller's cwd; measured from three different cwds)
 #   a symlinked spelling, and on a case-insensitive filesystem a different case
@@ -153,7 +155,7 @@ RUNBOOK=docs/runbooks/queue-cutover.md
 # `-ef` is not in POSIX. It is in every shell this can run under — measured on
 # this box: /bin/sh, /bin/dash, /bin/bash and /bin/zsh all answer yes.
 redirect_names() { # <a .beads dir> <a directory> — true when bd would follow it there
-  _cur=$(head -n 1 "$1/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
+  _cur=$(head -n 1 "$1/redirect" 2>/dev/null | tr -d '\r\v\f' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*$//')
   [ -n "$_cur" ] || return 1
   case $_cur in /*) ;; *) _cur=${1%/.beads}/$_cur ;; esac
   [ -d "$_cur" ] || return 1
@@ -225,7 +227,7 @@ EOF
   them, then finish them by hand:
     find '$SCAN' -maxdepth $SCAN_DEPTH -type d -name .beads |
       while read -r b; do
-        cur=\$(head -n 1 "\$b/redirect" 2>/dev/null | tr -d '\r' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*\$//')
+        cur=\$(head -n 1 "\$b/redirect" 2>/dev/null | tr -d '\r\v\f' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*\$//')
         case \$cur in ''|/*) ;; *) cur=\${b%/.beads}/\$cur ;; esac
         [ -n "\$cur" ] && [ -d "\$cur" ] && [ "\$cur" -ef '$SRC_BEADS' ] || continue
         echo "\$b"

@@ -1,6 +1,6 @@
 package rhq
 
-// QA pins for the cutover fan-out's redirect compare, filed by laurie as
+// QA pins for the cutover fan-out's redirect compare, filed as
 // ranger-base-4myz against scripts/queue-cutover.sh and fixed there.
 //
 // WHAT ranger-base-l9aa FIXED. The cutover fan-out used to rewrite a LIST of
@@ -22,9 +22,12 @@ package rhq
 // of them. So a tree spelled any of those ways was left behind by the fan-out
 // and became exactly the two-hop chain l9aa was filed for.
 //
-// The same measurement moved two things past the seven laurie filed:
+// The same measurement moved three things past the seven the bead filed:
 //
-//   - TABS. A leading or trailing tab resolves for bd just as a space does.
+//   - TABS, AND THE REST OF Go's TrimSpace. A leading or trailing tab resolves
+//     for bd just as a space does, and so do a vertical tab and a form feed —
+//     bd trims with strings.TrimSpace, so the script's `tr -d` removes exactly
+//     that set rather than a guess at which blanks a hand might type.
 //   - RELATIVE PATHS. `../canon/.beads` resolves, and it resolves against the
 //     TREE HOLDING THE REDIRECT rather than the caller's cwd — run from the
 //     tree root, from `sub/` and from `sub/deeper/`, all three found the store.
@@ -55,6 +58,7 @@ package rhq
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -84,6 +88,11 @@ var qcSloppySpellings = []struct {
 		return d + "/../" + filepath.Base(d) + "/" + filepath.Base(s)
 	}},
 	{"CRLF line ending", func(_ *testing.T, s, _ string) string { return s + "\r" }},
+	// bd's trim is Go's strings.TrimSpace, which is wider than "blanks":
+	// measured, a vertical tab and a form feed resolve too, so the script's
+	// `tr` removes exactly the set Go removes and these two hold it there.
+	{"trailing vertical tab", func(_ *testing.T, s, _ string) string { return s + "\v" }},
+	{"leading form feed", func(_ *testing.T, s, _ string) string { return "\f" + s }},
 	// Relative to the tree holding the redirect, which is what bd resolves it
 	// against — measured, see the header.
 	{"relative to the tree", func(t *testing.T, s, tree string) string {
@@ -178,7 +187,7 @@ func TestQueueCutoverFindsAForgottenTreeWhateverTheSpelling(t *testing.T) {
 }
 
 // The wrong arm for the pin above, and the one that makes the loosened compare
-// safe to have: the same eleven spellings pointed at a DIFFERENT store, which
+// safe to have: the same spellings pointed at a DIFFERENT store, which
 // the fan-out must not touch. A compare loosened by normalising strings until
 // something matches would pass the pin above and fail this one.
 func TestQueueCutoverLeavesAStrangerStoreAloneHoweverItIsSpelled(t *testing.T) {
@@ -325,4 +334,111 @@ func qcRedirectRaw(t *testing.T, dir string) string {
 		t.Fatalf("%s: %v", dir, err)
 	}
 	return strings.TrimSuffix(string(b), "\n")
+}
+
+// The third site, and the one nobody executes: when the script aborts in
+// stage `fanout` it prints a `find | while read` snippet for the operator to
+// paste — "list the stragglers, then finish them by hand". That snippet
+// carried the same byte-exact compare, and it is the recovery path for the
+// half-state where getting the list wrong is most expensive.
+//
+// So run it. The abort is forced by making one target's redirect unwritable,
+// the stragglers are planted AFTER the abort so the run cannot have touched
+// them, and the snippet is lifted out of the script's own stderr rather than
+// retyped here — a pin over a retyped copy goes green the day the heredoc's
+// escaping breaks.
+func TestQueueCutoverFanoutRecoveryListingFindsAStragglerSpelledAHandsWay(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through the 0444 this fixture blocks the fan-out with")
+	}
+	constitution, _ := qcConstitution(t)
+	src := filepath.Join(constitution, ".beads")
+	queue := filepath.Join(t.TempDir(), "queue")
+	root := filepath.Dir(constitution)
+
+	// An unwritable redirect in a named target: the fan-out's write fails and
+	// `set -e` takes the script out inside stage fanout. Not the directory
+	// mode — the file already exists, so a read-only directory would let the
+	// truncate through and the fixture would measure nothing.
+	project := qcWork(t, t.TempDir(), src)
+	victim := filepath.Join(project, ".beads", beadsRedirect)
+	if err := os.Chmod(victim, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(victim, 0o644) })
+
+	out, err := qcRun(t, constitution, queue, t.TempDir(), []string{project})
+	if err == nil {
+		t.Fatalf("the fixture did not block the fan-out, so this pin measures nothing:\n%s", out)
+	}
+	if !strings.Contains(out, `stage "fanout"`) {
+		t.Fatalf("the abort landed somewhere other than the fan-out:\n%s", out)
+	}
+	if got := qcRedirect(t, project); got != src {
+		t.Fatalf("the fixture blocked something other than the redirect write (%q):\n%s", got, out)
+	}
+
+	// The stragglers, planted after the abort: one spelled the way the script
+	// writes them, one spelled a hand's way, one pointed somewhere else.
+	plant := func(name, redirect string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		if err := os.WriteFile(filepath.Join(dir, ".beads", beadsRedirect),
+			[]byte(redirect+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	third := filepath.Join(t.TempDir(), "a-third-store", ".beads")
+	if err := os.MkdirAll(third, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exact := plant("left-behind-exact", src)
+	sloppy := plant("left-behind-sloppy", " "+filepath.Dir(src)+"/./"+filepath.Base(src)+"/")
+	stranger := plant("left-behind-stranger", third)
+	qcSameDir(t, qcRedirectRaw(t, sloppy), sloppy, src)
+
+	listing := qcFanoutRecoveryListing(t, out)
+	if strings.Contains(listing, "~/") || !strings.Contains(listing, root) {
+		t.Fatalf("the snippet does not walk the fixture, refusing to run it:\n%s", listing)
+	}
+	got, runErr := exec.Command("sh", "-c", listing).CombinedOutput()
+	if runErr != nil {
+		t.Fatalf("the snippet the operator is told to paste does not run: %v\n%s\n%s", runErr, listing, got)
+	}
+	found := string(got)
+
+	// The control first: a snippet that listed nothing would satisfy the
+	// stranger assertion below on its own.
+	if !strings.Contains(found, filepath.Join(exact, ".beads")) {
+		t.Fatalf("the recovery listing missed a BYTE-EXACT straggler, so it measures nothing about spelling\n%s\nlisted:\n%s", listing, found)
+	}
+	if !strings.Contains(found, filepath.Join(sloppy, ".beads")) {
+		t.Errorf("the recovery listing missed a straggler spelled a hand's way — the operator finishes the fleet by hand from this list\n%s\nlisted:\n%s", listing, found)
+	}
+	if strings.Contains(found, filepath.Join(stranger, ".beads")) {
+		t.Errorf("the recovery listing named a tree pointed at an unrelated store\n%s\nlisted:\n%s", listing, found)
+	}
+}
+
+// qcFanoutRecoveryListing lifts the `find … | while read … done` block out of
+// the stage-fanout abort message — the part the operator pastes to list what
+// the fan-out did not reach.
+func qcFanoutRecoveryListing(t *testing.T, out string) string {
+	t.Helper()
+	const start = "    find '"
+	i := strings.Index(out, start)
+	if i < 0 {
+		t.Fatalf("the fanout abort prints no listing to paste:\n%s", out)
+	}
+	rest := out[i:]
+	const end = "\n      done"
+	j := strings.Index(rest, end)
+	if j < 0 {
+		t.Fatalf("the listing in the fanout abort is unterminated:\n%s", rest)
+	}
+	return rest[:j+len(end)]
 }
