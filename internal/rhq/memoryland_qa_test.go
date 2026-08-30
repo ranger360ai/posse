@@ -508,18 +508,34 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 // climbs out of it would aim the commit at the constitution, which is the
 // one thing the parent bead states in capitals. LoadAgent does not check
 // names; this does.
+//
+// The home here is the constitution's own `rhq` directory, NOT the symlinked
+// shape the other tests use, and that is the whole point: filepath.Join
+// cleans `..` LEXICALLY, so through a symlinked `personas/` the climb lands
+// harmlessly back in the home. It is the plain-subdirectory home — rhq/agents
+// a real sibling of rhq/personas inside one checkout — where `../agents`
+// resolves to the constitution and the guard is the only thing in the way.
 func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
-	b, _ := newTestBackend(t)
-	repo := memoryRepo(t, b)
-	// The constitution, dirty, one directory up from every memory dir.
+	repo := wtRepo(t)
+	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
+	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n")
+	mustGit(t, repo, "add", "--", "rhq")
+	mustGit(t, repo, "commit", "-q", "-m", "seed", "--", "rhq")
+	a := NewAppAt(filepath.Join(repo, "rhq"))
+	if a.PersonasDir() != filepath.Join(repo, "rhq", "personas") {
+		t.Fatalf("fixture is not the shape under test: %s", a.PersonasDir())
+	}
+	// The constitution, dirty, one directory up from every memory dir — and
+	// reachable from it by name.
 	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "rewritten\n")
+	write(t, filepath.Join(repo, "rhq", "agents", "new.md"), "unratified\n")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	for _, name := range []string{"../agents", "..", ".", "dev/../../agents", "/etc"} {
-		if got := b.App.MemoryDirtyPaths(name); got != nil {
+		if got := a.MemoryDirtyPaths(name); got != nil {
 			t.Errorf("persona %q reached %v", name, got)
 		}
-		if l := b.App.LandPersonaMemory(name, "posse kill x", ""); l != nil {
+		if l := a.LandPersonaMemory(name, "posse kill x", ""); l != nil {
 			t.Errorf("persona %q landed something: %+v", name, l)
 		}
 	}
@@ -528,5 +544,14 @@ func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
 	}
 	if st := mustGit(t, repo, "status", "--porcelain", "--", "rhq/agents"); !strings.Contains(st, "rhq/agents") {
 		t.Errorf("the constitution's own change must still be uncommitted: %q", st)
+	}
+	// And the ordinary name still works in this shape, so the test above is
+	// about the CLIMB and not about a fixture nothing can reach.
+	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n- a lesson.\n")
+	if l := a.LandPersonaMemory("dev", "posse kill x", ""); l == nil || l.SHA == "" {
+		t.Fatalf("a valid persona must still land here: %+v", l)
+	}
+	if got := headFiles(t, repo); strings.Contains(got, "rhq/agents") {
+		t.Errorf("the valid landing took the constitution:\n%s", got)
 	}
 }
