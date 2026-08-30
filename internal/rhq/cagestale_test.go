@@ -330,3 +330,29 @@ func TestPosseVersionWordReadsOnlyAVersionLine(t *testing.T) {
 		}
 	}
 }
+
+// Which side `posse cage` compares against, since the two answer different
+// questions: a checkout is what a `posse cage build` typed there would put
+// in the image, and outside one the running binary is the only thing there
+// is to be behind.
+func TestCageAgeHereComparesAgainstTheCheckoutWhenThereIsOne(t *testing.T) {
+	a := cageStaleApp(t)
+	e := fakeCageEngine(t, a, "fake", "posse 0.0.1+aaaaaaa (herdr-native)")
+	const image = "posse-cage:latest"
+
+	src := PosseCheckout(".")
+	if src == "" || !IsPosseSource(src) {
+		t.Fatalf("the suite must run inside a posse checkout for this to mean anything (got %q)", src)
+	}
+	if g := a.CageAgeHere(e, image, "."); g.Whose != "this source" || g.Want != SourceBuildVersion(src) {
+		t.Errorf("inside a posse checkout the comparison is %s = %q, want this source = %q", g.Whose, g.Want, SourceBuildVersion(src))
+	}
+	// A git repository that is not a posse checkout is not something `posse
+	// cage build` would accept, so it is not what the image is measured
+	// against either.
+	for _, dir := range []string{t.TempDir(), tempGitTree(t)} {
+		if g := a.CageAgeHere(e, image, dir); g.Whose != "this posse" || g.Want != VersionString() {
+			t.Errorf("outside a posse checkout (%s) the comparison is %s = %q, want this posse = %q", dir, g.Whose, g.Want, VersionString())
+		}
+	}
+}
