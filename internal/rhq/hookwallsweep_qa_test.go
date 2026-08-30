@@ -425,7 +425,10 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := hwsRepo(t, t.TempDir(), "declared")
-	if err := os.WriteFile(b.App.ConfigPath, []byte("beads_visibility:\n  "+repo+": private\n"), 0o644); err != nil {
+	// beads: must point at a scratch dir — without it the dispatcher falls
+	// back to the process cwd, which for `go test ./internal/rhq` is inside
+	// this worktree and resolves to the live fleet queue (ranger-base-uk0v).
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+t.TempDir()+"\nbeads_visibility:\n  "+repo+": private\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, _, err := b.App.InstallCommitGuardHook(repo); err != nil {
