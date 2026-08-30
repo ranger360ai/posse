@@ -92,6 +92,36 @@ nothing.
 
 ### Fixed
 
+**The bd argv gate read your prose as commands, and refused it.**
+
+*Affected: every build before this one, on any box that installed the gate as
+a PreToolUse hook. It now refuses less, and says more when it does; nothing it
+refused as an invocation is refused any less.*
+
+Appending a lesson to a notes file with `cat >> file <<'EOF'` was refused
+whenever a line of the heredoc *body* happened to open with `bd` and a word.
+The gate split the whole typed line on newlines — a newline is a list
+separator to a shell — so every line of every heredoc body became a segment
+with a command word of its own. A sentence of English resolved as an
+invocation of a verb that does not exist, on a line whose `argv[0]` was `cat`,
+with no bd binary anywhere on it. The same sentence with one word in front of
+it passed all along. Two other spellings of the same thing: a body quoting a
+command in backticks was refused as "a construct this gate cannot read", and a
+body with an apostrophe in it as "unterminated quote" — refusals aimed at a
+shell construct, delivered about a sentence. That is the shape that teaches
+people to spell around a fence, and it did, twice in one session.
+
+A heredoc body is data now. The parser recognises the redirection in all its
+spellings, keeps the body with the command that opened it, and never tokenizes
+it — and asks instead the questions a body can honestly answer: does anything
+on the line *execute* what it is handed on stdin (`sh <<'EOF'` and
+`cat <<'EOF' | sh` are both still refused, and so is any interpreter's), is
+the delimiter unquoted so the shell expands a substitution in the body before
+anyone reads it, and is a real invocation still standing outside the body.
+Every refusal now names what was matched — resolved verb, command word,
+heredoc body — and where, as segment N of M with its text on one line, so the
+next false positive is a bug report rather than a puzzle.
+
 **A red cage pin could mean the image was two days old, and nothing said so.**
 
 *Affected: every build before this one, on `cage: container`. `posse cage`
