@@ -54,9 +54,11 @@ want_bin=$(val pinned_binary "$pin")
 formula=$(val formula "$pin")
 case $want_bin in "~"/*) want_bin=$HOME${want_bin#\~} ;; esac
 
-# `--no-daemon` so the check itself never spawns the thing it is checking. It
-# is a 0.49.x flag (0.51.0 deleted the daemon and this flag with it), so an
-# unpinned 1.x on PATH rejects it — fall back, and let the version row fail.
+# `--no-daemon` so the check itself never spawns the thing it is checking. The
+# daemon it spawns went at 0.50.0 and the flag outlived it as a deprecated
+# no-op until 0.51.0 deleted that too (ranger-base-db04), so the flag is
+# accepted by 0.49.x and 0.50.x and rejected by an unpinned 1.x on PATH — fall
+# back, and let the version row fail.
 live_ver=$(bd --no-daemon version 2>/dev/null || bd version 2>/dev/null)
 live_ver=$(printf '%s' "$live_ver" | tr ' ' '\n' | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+$')
 live_bin=$(command -v bd)

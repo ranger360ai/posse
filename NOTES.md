@@ -3795,7 +3795,8 @@ Four rows, all read-only, exit 1 on any failure and exit 2 when it cannot
 check at all:
 - `bd version` == 0.49.1 exactly. Asked as `bd --no-daemon version`, so the
   check never spawns the thing it is checking; a 1.x on PATH rejects that flag
-  (0.51.0 deleted the daemon and the flag with it) and the row fails anyway.
+  (0.50.0 deleted the daemon, 0.51.0 the flag — ranger-base-db04) and the row
+  fails anyway.
 - `command -v bd` == the pinned binary. Not "a bd reporting 0.49.1" — *the*
   pinned one. A shadowing 0.49.1 in front of it still fails, because the claim
   is about which inode the fleet runs.
@@ -3855,12 +3856,15 @@ plan, no renewal, nothing expires. Cost is never the argument on this chain.
   with the 1.2 features (work leases, events journal, `bd sync`, `bd serve`)
   taken back out. Upgrading to "latest" buys July's code and August's
   release-engineering record.
-- *What the upgrade would genuinely fix, and it is real:* **0.51.0 Phase 2
-  deleted the daemon** outright (and `--no-daemon` with it). Every mechanism
-  in this incident — a daemon auto-spawned per call, `daemon.lock`, an orphan
-  holding FDs on a deleted inode — is 0.49.x-only and **cannot recur on 1.x**.
-  That is the strongest thing on the migrate side and it should be said out
-  loud, not buried.
+- *What the upgrade would genuinely fix, and it is real:* **0.50.0 deleted the
+  daemon** outright — one minor earlier than this line said until
+  ranger-base-db04 read the source zips; `--no-daemon` outlived it as a
+  deprecated no-op and went at 0.51.0. Every mechanism in this incident — a
+  daemon auto-spawned per call, `daemon.lock`, an orphan holding FDs on a
+  deleted inode — is 0.49.x-only and **cannot recur on anything from 0.50.0
+  up**. That is the strongest thing on the migrate side and it should be said
+  out loud, not buried. It also means the fix is reachable without leaving
+  SQLite; see *the ~5.3s daemon dial is fixed upstream* below.
 - *What it costs:* the runbook above, twice, with writers frozen; a re-audit
   of the bd allowlist against a surface it has never seen; and re-verifying
   the three posse guards built around a 0.49.1 bug
@@ -3882,6 +3886,84 @@ plan, no renewal, nothing expires. Cost is never the argument on this chain.
   carry known defects with known workarounds over an untested migration. That
   choice is correct today and must be re-opened on the first *new* 0.49.1
   defect that has **no** workaround, not on the next release announcement.
+
+### the ~5.3s daemon dial is fixed upstream — by deletion, at 0.50.0 (ranger-base-db04)
+
+ranger-base-cwu7 measured every store-touching `bd` call at ~5.6s, ~5.3s of it
+spent dialling a daemon that is not there, and fixed the posse half by putting
+`--no-daemon` in front of every argv `rhq.Bd.run` builds. This is the half we
+do not own: is it fixed upstream, and report it if not. **It is fixed, nothing
+is owed upstream, and the way it is fixed changes the version arithmetic
+above.**
+
+**The defect, read out of the pinned source.** `cmd/bd/daemon_autostart.go`,
+`startDaemonProcess()`: bd spawns `bd daemon start` as a child, reaps it in
+`go func() { _ = cmd.Wait() }()` with the result discarded, then blocks in
+`waitForSocketReadinessFn(socketPath, 5*time.Second)` — a loop that polls the
+socket every 100ms and watches nothing else, not the child, not the error file.
+The child writes its fatal reason to `.beads/daemon-error` and exits; bd reads
+that file **after** the wait, only to print it. Measured 2026-08-30 on a
+throwaway rig (a `.beads/issues.jsonl` holding one row plus `git init`, no `bd
+init`): client starts 09:02:33.044, the daemon's own log records the
+fingerprint refusal at 09:02:34.739, the client returns at 09:02:39.320. The
+answer was on disk 4.6s before the client stopped waiting for it. The fix has
+precedent in the same function — the `isGitRepo()` early return just above it
+exists verbatim to "avoid the 5-second wait".
+
+**Present through 0.49.6, gone at 0.50.0.** `daemon_autostart.go` and both its
+`5*time.Second` waits are present in every 0.49.x source zip through 0.49.6.
+At **0.50.0** that file and all of `internal/rpc/` are gone; the vendor's
+CHANGELOG for 0.50.0 (2026-02-14) reads "Removed daemon/RPC subsystem —
+internal daemon, RPC layer, and `internal/rpc/` package deleted (~19,663
+lines). All commands use direct embedded database access". `--no-daemon`
+survives it as a deprecated no-op (`cmd/bd/daemon_compat.go`: "kept so existing
+hooks and configs don't break") and is itself deleted at 0.51.0. So this file's
+earlier reading was one minor late: 0.51.0 deleted the *flag*, 0.50.0 deleted
+the daemon.
+
+**Measured, not only read.** The v0.50.3 release binary
+(`beads_0.50.3_darwin_arm64.tar.gz`, sha256 matching the release's own
+`checksums.txt`, extracted to a scratch path, run only against throwaway rigs,
+never installed and never on PATH) against the pinned 0.49.1 on the same rig
+shape, `bd list --all --json --limit 0`, three runs each:
+
+```
+bd 0.49.1, plain              5.66 / 5.52 / 5.40s
+bd 0.49.1 --no-daemon         0.28 / 0.24 / 0.22s
+bd 0.50.3, no flag at all     0.70 / 0.17 / 0.19s   (0.70 materialises the db)
+```
+
+Identical rows out of all three. 0.50.3 leaves a **SQLite** `.beads/beads.db`
+and no Dolt directory, and it accepts posse's `--no-daemon` argv verbatim at
+rc=0. The backend cliff is still 0.51.0, and 0.50.3's cycle-check CTE is the
+pkqn landmine unchanged (`UNION ALL`, no visited set), so the three guards
+built around that defect stay valid across the bump.
+
+**Which opens an option this file had not priced: 0.49.1 → 0.50.3 is an
+in-substrate bump.** It ends the whole daemon class — this dial, the per-db
+daemon leak, the orphan holding FDs on a deleted inode — with no Dolt
+migration, no JSONL demotion and no `bd init --from-jsonl`. It is not free, and
+the first cost is load-bearing:
+
+- **0.50.x does not auto-flush the JSONL after a write.** Measured on the two
+  rigs: `bd create` on 0.49.1 takes `issues.jsonl` from 1 row to 2 with no
+  explicit sync; the same create on 0.50.3 leaves it at 1 row until `bd sync
+  --flush-only`, which still works and still exports. That is the CHANGELOG's
+  "Removed JSONL sync layer — `internal/importer/`,
+  `markDirtyAndScheduleFlush()`". JSONL-as-truth would then rest entirely on
+  the pre-commit flush hook and on every writer calling sync — a thinner thread
+  than today's.
+- 0.50.0 also makes **Dolt the default backend for new `bd init`** (existing
+  SQLite projects keep SQLite, and a bare JSONL rig still materialises SQLite —
+  measured), so `bd init` becomes the dangerous verb one minor earlier than the
+  section above says.
+- `bd daemon` as a command is gone, so `make verify-bd-pin`'s version row and
+  its whole process layer need rewriting, and the fleet's `Bash(bd daemon:*)`
+  denies become no-ops.
+
+**No upstream report was filed and none is owed** — the bead asked for one only
+if the defect was still live upstream. Whether to bump the pin is the
+operator's call, not this bead's: filed separately with these numbers.
 
 ### `bd dep add` never terminates when the target can reach a `relates-to` pair (ranger-base-pkqn)
 
