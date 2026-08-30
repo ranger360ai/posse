@@ -64,17 +64,35 @@ it is not a workflow engine. *(Amended 2026-08-20: a `--dry-run` pass
 files nothing — dry-run shows routing without acting, and filing a bead
 is acting. The code said so from the start; the record now does too.)*
 
-*(Amended 2026-08-28, from ranger-base-skgs.)* One close is exempt from
-the scan: one whose `close_reason` matches the scorecard's reject
-vocabulary (`invalid`, `duplicate`, `dup`, `wontfix`, `won't fix`, `not a
-bug`). A rejected close is not a claim about working software, so the
-verify bead it would mint has one reachable verdict — "nothing was
-built" — at a full QA session's price. The skip is named on the pass's
-stdout, and the exemption reads only the reason: a close with no reason
-at all still earns its verify bead, as does a commitless doc-only or
-already-working close. The limit is stated where the rule is: a closer
-who leaves the rationale in a comment instead of `bd close -r <reason>`
-is invisible here, and that half is process, not code.
+*(Amended 2026-08-28 from ranger-base-skgs; the test amended 2026-08-30
+from ranger-base-5fyg.)* One close is exempt from the scan: one whose
+`close_reason` matches the scorecard's reject vocabulary (`invalid`,
+`duplicate`, `dup`, `wontfix`, `won't fix`, `not a bug`) **and** that no
+commit names (`git log --grep <id>` in the bead's repo). A rejected
+close is not a claim about working software, so the verify bead it
+would mint has one reachable verdict — "nothing was built" — at a full
+QA session's price. Two conditions because each alone lies, and a false
+exemption here is unrecoverable: the watermark advances past it, so the
+QA session is cancelled, not deferred. The vocabulary is matched as
+whole words, plurals included, never substrings ("dedupes",
+"invalidation" and "duplicated" are this shop's fix vocabulary, not
+rejections) — yet words alone still read "the retry no longer files a
+duplicate bead" as a rejection; the commit trail is the one signal git
+writes rather than prose the closer typed. Commitlessness alone would
+exempt every doc-only or already-working close, which still earn
+verification. Where git cannot answer — no checkout, no git — the close
+is not exempt: doubt files the bead. Both the skip and a reject-worded
+close held in by its commits are named on the pass's stdout. A close
+with no reason at all still earns its verify bead — unexplained is not
+rejected. The limit is stated where the rule is: a closer who leaves
+the rationale in a comment instead of `bd close -r <reason>` is
+invisible here, and that half is process, not code. Measured
+(ranger-base-l2qv, live store 2026-08-30): of 520 closed
+`code`/`devops` closes carrying a reason, five match the vocabulary;
+four stay exempt — all genuine "nothing was built" closes — and one, a
+P1 fix whose reason opens "verify-after dedupes…", stops being exempt.
+That one bead is the whole behaviour change, and it is exactly the
+class this shop verifies hardest.
 
 *(Amended 2026-08-27, from ranger-base-f7pk/bh7q.)* Config gains
 `verify_batch: N` (default 1) and `verify_batch_age:` (default 24h). At
