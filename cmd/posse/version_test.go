@@ -67,6 +67,38 @@ func TestVersionNamesTheCommitWithoutTheLdflag(t *testing.T) {
 	}
 }
 
+// ranger-base-qyws: `make build`'s own dirty stamp must match
+// SourceBuildStamp's content fingerprint for the same tree, not the bare
+// "-dirty" bit it used to compose by hand (GIT_DIRTY) — see cmd/buildstamp,
+// which the Makefile now shells out to instead of recomposing the
+// fingerprint in make/shell. A mismatch here is exactly the false STALE
+// ranger-base-qyws exists to prevent: CageAgeVsPosse compares a `posse cage
+// build` image's fingerprinted stamp against a `make build` posse's
+// VersionString(), and the two must agree on a byte-identical dirty tree.
+func TestMakeBuildStampMatchesSourceBuildStamp(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("no make: nothing can drive the Makefile's own stamp")
+	}
+	repo, _, _ := tempRepoOfWorkingTree(t)
+	// An uncommitted edit exercises the fingerprint half, not just the sha
+	// — the bare bit and the fingerprint agree on a clean tree either way.
+	if err := os.WriteFile(filepath.Join(repo, "cmd", "posse", "scratch.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("make", "build")
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make build: %v\n%s", err, out)
+	}
+
+	got := posseVersion(t, filepath.Join(repo, "bin", "posse-go"))
+	want := "posse " + rhq.SourceBuildVersion(repo) + " (herdr-native)"
+	if got != want {
+		t.Errorf("`make build` reports %q, SourceBuildStamp of the same tree says %q", got, want)
+	}
+}
+
 func posseVersion(t *testing.T, bin string) string {
 	t.Helper()
 	out, err := exec.Command(bin, "version").CombinedOutput()

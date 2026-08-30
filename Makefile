@@ -15,9 +15,18 @@ BINDIR ?= $(HOME)/.local/bin
 
 # Stamp the dev build so `posse version` / the cockpit say which build is live.
 # The release build stamps itself — it knows its sha is clean.
-GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
-LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
+#
+# Shelled out to cmd/buildstamp rather than composed here: a dirty tree's
+# half of the stamp is a content fingerprint (internal/rhq.dirtyIdent), not a
+# bare bit, so two different dirty trees at the same HEAD read as two
+# different builds instead of one. A make/shell reimplementation of that
+# fingerprint would be a second implementation to keep in sync by hand —
+# exactly how GIT_DIRTY drifted from SourceBuildStamp in the first place
+# (ranger-base-qyws). An empty BUILD_STAMP (not a git checkout) stamps
+# nothing, same as before: `posse version` then falls back to go's own build
+# info instead of a hardcoded "unknown" (see versionString in version.go).
+BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
+LDFLAGS     := -X github.com/ranger360ai/posse/internal/rhq.Build=$(BUILD_STAMP)
 
 .PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
