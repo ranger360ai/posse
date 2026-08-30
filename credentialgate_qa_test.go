@@ -55,6 +55,12 @@ var (
 	cgRuntimeRead = regexp.MustCompile(`\b(cat|jq|grep|awk|sed|head|tail|cut|tr|python3?|perl|ruby|source)\b[^\n]*(\.credentials\.json|auth\.json)`)
 )
 
+// cgScannedDirs is every directory of the shipped tree that can hold a file
+// the fleet runs without an install. It is a list, so it can go stale; the
+// pin that it has not is TestEveryShippedRunnableFileIsInsideTheCredentialScan
+// (credentialscan_qa_test.go, ranger-base-zgek).
+var cgScannedDirs = []string{"scripts", "plugin", "etc", "docs"}
+
 // cgRunnable reports whether p is a file the fleet can RUN without an
 // install: a shell script by extension, anything with a shebang, or a
 // Makefile. Documentation under etc/ is not runnable and is not scanned —
@@ -118,14 +124,20 @@ func cgScan(t *testing.T, root string, dirs ...string) (findings []string, scann
 // The claim: everything that touches a credential store is compiled, so the
 // operator's `make install` really is the gate NOTES.md says it is.
 func TestNoShippedScriptAcquiresACredential(t *testing.T) {
-	findings, scanned := cgScan(t, ".", "scripts", "plugin", "etc")
+	// ranger-base-zgek: `docs` joined this list. docs/adr/*.probe.sh are
+	// shipped, executable and carry a shebang — runnable by the same
+	// definition as anything under scripts/, and they were outside the walk.
+	// cgScannedDirs is the one spelling of the list, so
+	// TestEveryShippedRunnableFileIsInsideTheCredentialScan can check it is
+	// complete rather than trusting it.
+	findings, scanned := cgScan(t, ".", cgScannedDirs...)
 	// Makefile is a runnable at the root, scanned on its own.
 	mk, mkn := cgScan(t, ".", "Makefile")
 	findings, scanned = append(findings, mk...), scanned+mkn
-	if scanned < 15 {
+	if scanned < 18 {
 		t.Fatalf("scanned only %d runnable files — the walk measured nothing, so "+
-			"a clean result here is not evidence (expected ~19 under scripts/, "+
-			"plugin/, etc/ plus the Makefile)", scanned)
+			"a clean result here is not evidence (expected ~22 under scripts/, "+
+			"plugin/, etc/, docs/ plus the Makefile)", scanned)
 	}
 	if len(findings) > 0 {
 		t.Errorf("a shipped runnable file acquires a credential — that path has NO\n"+
