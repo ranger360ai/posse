@@ -211,9 +211,47 @@ this branch as the recipe, so it says so.
    checked a release on — is unknown, and refusing there would refuse in
    the probe's own words ("cannot tell whether the update menu is
    silenced"). The screen is still not unguarded: herdr's `update_menu`
-   rule names it `blocked`, so a launch that meets it fails by name. A
-   `runtimes/<name>.yaml` interstitial has no probe at all, so declaring
-   a screen documents it and never walls the declarer's own launches.
+   rule names it `blocked`, so a launch that meets it fails by name.
+
+   **Amended 2026-08-30 (ranger-base-vbp3, from the ranger-base-il14
+   parity sweep).** 9r33 also excluded a screen with **no probe** —
+   every `runtimes/<name>.yaml` interstitial — on the reasoning that
+   declaring a screen documents it and never walls the declarer's own
+   launches. That exclusion made this whole rule unreachable for the only
+   runtimes that can newly meet it: the three built-ins are measured,
+   claude's screen is `Seeded` and codex/grok deliver by argv, so the
+   **first typed-delivery runtime with a machine-mutating dialog is by
+   construction a declared one**. It was dispatched onto that dialog while
+   `runtime check` printed LAUNCH REFUSE about it — the same "printed
+   sentence, no launch path" defect 9r33 was filed for, one layer in.
+   So: **a declared screen with `danger:` refuses too**, and it is still
+   a reading rather than ignorance — `danger:` is not posse guessing at a
+   config it cannot parse, it is the operator's own written statement that
+   this screen's default action mutates their machine. Declaring it is
+   choosing the wall. A declared screen **without** `danger:` still walls
+   nothing, which is the documentation case 9r33 meant to protect. The
+   refusal does not lift by silencing, because posse cannot read the key;
+   what lifts it is dropping `danger:` from the profile, and both the
+   refusal line and the `runtime check` grid say so.
+
+   **Ratified 2026-08-30 (ranger-base-mzmv)**, with one ground the
+   reversal itself did not state: 9r33's unknown-exclusion was safe
+   *because of a backstop* — herdr's `update_menu` rule, posse's own
+   manifest, still names codex's screen `blocked`, so an unknown reading
+   left the screen guarded by name. A declared yaml runtime has no herdr
+   rule unless the operator writes one, so the case 9r33 exempted was the
+   *less* guarded one, not the more — MEASURED on the fixture: the work
+   prompt was typed onto the danger screen while `runtime check` printed
+   LAUNCH REFUSE about it. The residual cost is accepted knowingly: an
+   operator who silences the screen in the CLI's own config must also
+   drop `danger:`, losing the yaml's documentation of the screen for the
+   next unsilenced box. Alternative priced and rejected: a declared
+   silence predicate in the yaml (file + key + expected value), which
+   would give the screen a probe and let silencing lift the refusal.
+   Rejected for now because zero shipped or known yamls declare
+   `danger:` — the mechanism would be invented ahead of its first user,
+   and the first declarer who hits the wall with a genuinely silenced
+   screen is the bead that specifies it.
 3. **Declared keystrokes** — last resort, keyed on a herdr *rule id*
    (today: none — grok's splash was the only entry, retired in
    rangerhq-6723 once detection stopped calling it a blocker
