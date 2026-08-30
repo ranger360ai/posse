@@ -653,18 +653,67 @@ func TestQAGrokPinFirstOccurrenceWinsInBothShapes(t *testing.T) {
 	}
 }
 
-// A key spelled inside a STRING VALUE is prose, not an answer. Anchoring is
-// what tells them apart: unanchored, the first payload below reads the word
-// out of the error message and reports a `false` grok never said.
-func TestQAGrokPinKeyInsideAStringValueIsNotAnAnswer(t *testing.T) {
-	root := gpRoot(t)
-	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", `{"error":"autoUpdate: false is not supported","autoUpdate":true,"latestVersion":"1.0.5"}`)
-	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
-	if code != 1 {
-		t.Fatalf("exit %d, want 1 — prose was read as the answer\n%s", code, out)
+// A key that is not the head of its own JSON pair is not an answer.
+//
+// Well-formed JSON escapes the quotes inside a string value, so a key can
+// never literally appear there — the reachable hazard is grok printing a plain
+// line alongside the payload. `head -1` then takes the PROSE line: the old
+// extractor read `false` out of a warning and reported `false ok`, exit 0,
+// over a grok that had just said true.
+//
+// ORDER IS THE TEST. With the prose line FIRST the old extractor answers from
+// it; with the prose LAST it lands on the real field and passes, so that arm
+// alone is green over the bug it exists to catch. Both are asserted; the first
+// is the one that discriminates.
+func TestQAGrokPinProseLineIsNotAnAutoUpdateAnswer(t *testing.T) {
+	const jsonLine = `{"autoUpdate":true,"latestVersion":"1.0.5"}`
+	const prose = `warning: config key "autoUpdate": false ignored`
+	for _, tc := range []struct{ name, json string }{
+		{"prose line first", prose + "\n" + jsonLine},
+		{"prose line last", jsonLine + "\n" + prose},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.5", tc.json)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1 — a warning line was read as the answer\n%s", code, out)
+			}
+			if !gpRowFailed(out, "grok update: autoUpdate") {
+				t.Errorf("the real autoUpdate:true must FAIL:\n%s", out)
+			}
+			if strings.Contains(out, "pin intact") {
+				t.Errorf("the updater says true — that is not an intact pin:\n%s", out)
+			}
+		})
 	}
-	if !gpRowFailed(out, "grok update: autoUpdate") {
-		t.Errorf("the real autoUpdate:true must FAIL:\n%s", out)
+}
+
+// The mirror, and the worse one: a version named in a plain line is not the
+// version to re-audit against. Reading it means the operator re-audits the
+// wrong build — hoover's list printed against a release that does not exist.
+func TestQAGrokPinProseLineIsNotTheUpstreamVersion(t *testing.T) {
+	const jsonLine = `{"latestVersion":"1.1.0","autoUpdate":false}`
+	const prose = `note: "latestVersion": "9.9.9" is not a stable release`
+	for _, tc := range []struct{ name, json string }{
+		{"prose line first", prose + "\n" + jsonLine},
+		{"prose line last", jsonLine + "\n" + prose},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.5", tc.json)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 0 {
+				t.Fatalf("exit %d, want 0\n%s", code, out)
+			}
+			if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.1.0") {
+				t.Errorf("must re-audit against grok's own 1.1.0:\n%s", out)
+			}
+			if strings.Contains(out, "9.9.9") {
+				t.Errorf("9.9.9 came from a prose line, not from latestVersion:\n%s", out)
+			}
+		})
 	}
 }
