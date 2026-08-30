@@ -252,12 +252,24 @@ func TestSourceBuildStampNamesTheCommitEvenFromAWorktree(t *testing.T) {
 	}
 
 	// An edit makes the ident stop claiming to be the commit it sits on —
-	// the Makefile's spelling, and go's own meaning for "+dirty".
+	// the Makefile's spelling, and go's own meaning for "+dirty" — and a
+	// SECOND, DIFFERENT edit at the same HEAD must stamp differently
+	// (ranger-base-b6fh: a bare "-dirty" bit could not tell them apart, so
+	// an image built at the first edit read as still current against the
+	// second). cagestaledirty_qa_test.go pins the false-CURRENT read this
+	// closes; this is the stamp shape itself.
 	if err := os.WriteFile(filepath.Join(src, "untracked"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := SourceBuildStamp(src), head[:7]+"-dirty"; got != want {
-		t.Errorf("stamp of an edited checkout is %q, want %q", got, want)
+	stampA := SourceBuildStamp(src)
+	if prefix := head[:7] + "-dirty-"; !strings.HasPrefix(stampA, prefix) || len(stampA) != len(prefix)+8 {
+		t.Errorf("stamp of an edited checkout is %q, want %q plus an 8-hex-char fingerprint", stampA, prefix)
+	}
+	if err := os.WriteFile(filepath.Join(src, "untracked"), []byte("x\ndifferent content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if stampB := SourceBuildStamp(src); stampB == stampA {
+		t.Errorf("two different dirty edits at the same HEAD both stamped %q — a moved target reads as still", stampB)
 	}
 
 	// And a directory that is not a checkout names nothing, which is

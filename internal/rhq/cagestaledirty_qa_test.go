@@ -17,8 +17,6 @@ import (
 )
 
 func TestQACageStaleIsBlindToWhichDirtyEditIsThere(t *testing.T) {
-	t.Skip("ranger-base-b6fh: SourceBuildStamp cannot tell two different dirty trees at the same HEAD apart")
-
 	src := tempGitTree(t)
 	f := filepath.Join(src, "f")
 

@@ -41,6 +41,8 @@ package rhq
 //     changed; ranger-base-jada's 12.2s was the docker half alone).
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,9 +171,29 @@ func posseVersionWord(out string) string {
 }
 
 // SourceBuildStamp is the identity a build of the checkout at src should
-// carry — the short sha, plus "-dirty" when the tree has edits, which is
-// the Makefile's spelling and the one versionString reads out of ldflags.
-// "" when src is not a git checkout.
+// carry — the short sha, plus a content fingerprint of the dirty edits when
+// the tree has any. "" when src is not a git checkout.
+//
+// The dirty half is a fingerprint and not the bare "-dirty" bit the
+// Makefile stamps, because a bit cannot tell two dirty trees apart
+// (ranger-base-b6fh). `posse cage build` from a dirty tree, then further
+// uncommitted edits before the next comparison, left both states naming
+// the same sha-dirty stamp — cageAge read them as one build and a stale
+// image reported CURRENT, the exact false positive this file exists to
+// prevent. Re-measured 2026-08-30: two dirty edits to the same untracked
+// line at the same HEAD now fingerprint differently (dirtyIdent below), so
+// the comparison this feeds — CageAgeVsSource, recomputed fresh against the
+// LIVE tree on every pin run — can no longer read a moved target as still.
+//
+// This is the comparison ident's own composition and BuildCageImage's own
+// embedded stamp (both call this function), so the two stay consistent
+// with each other by construction. It is NOT what the Makefile stamps into
+// an ordinary `make build`: that path still emits the bare bit, so
+// CageAgeVsPosse — which compares an image's stamp against the RUNNING
+// posse's already-baked VersionString(), not a fresh recomputation — can
+// read a dirty image as stale against a byte-identical dirty posse. That
+// asymmetry is real and is its own change with its own pins, the same
+// scoping ranger-base-fqfw used to punt the null/~ rule off the quote fix.
 //
 // Composed here rather than left to go's own -buildvcs stamp, because that
 // stamp is not always there: go looks for a `.git` DIRECTORY and every
@@ -199,9 +221,50 @@ func SourceBuildStamp(src string) string {
 	// same way. A dirty ident never proves two trees are identical — it
 	// only stops a dirty build from claiming to be the commit it sits on.
 	if st, err := git(src, "status", "--porcelain"); err == nil && st != "" {
-		stamp += "-dirty"
+		stamp += "-dirty-" + dirtyIdent(src)
 	}
 	return stamp
+}
+
+// dirtyIdent fingerprints what actually makes src dirty, not merely that it
+// is: the tracked diff against HEAD, plus every untracked file's path and
+// bytes. Two dirty trees at the same HEAD hash the same only when both of
+// those match — which is what "the same build" should mean, and what a
+// bare "-dirty" bit could never tell apart (ranger-base-b6fh).
+//
+// Read-only and best-effort by design: a git or filesystem error here
+// leaves the fingerprint short of some of the content rather than failing
+// the whole stamp, because "" would read as clean and worse, a hard error
+// would fail every live pin on a box where `git diff` merely raced an
+// editor's save. The tree is already known dirty by the caller's own
+// `status --porcelain` check, so an ident that fails to fully distinguish
+// two states is a narrower miss than the bare bit it replaces, never a
+// wider one.
+func dirtyIdent(src string) string {
+	h := sha256.New()
+	if diff, err := gitRaw(src, "diff", "HEAD", "--"); err == nil {
+		h.Write(diff)
+	}
+	// `-z` and `--untracked-files=all`: the plain porcelain format quotes
+	// odd bytes and collapses an untracked directory to `dir/`, either of
+	// which would send the read below at a name no file has
+	// (memoryland.go's memoryChanges uses the same spelling for the same
+	// reason). porcelainZChanges is the parser already pinned for that
+	// format; reused here rather than re-derived.
+	if out, err := gitRaw(src, "status", "--porcelain", "--untracked-files=all", "-z", "--"); err == nil {
+		for _, c := range porcelainZChanges(out) {
+			if !c.Untracked {
+				continue
+			}
+			h.Write([]byte{0})
+			h.Write([]byte(c.Path))
+			h.Write([]byte{0})
+			if b, err := os.ReadFile(filepath.Join(src, c.Path)); err == nil {
+				h.Write(b)
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:8]
 }
 
 // SourceBuildVersion is what a posse built from the checkout at src calls
