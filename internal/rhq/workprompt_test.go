@@ -25,7 +25,7 @@ func TestWorkPromptAssembly(t *testing.T) {
 	}
 	for _, want := range []string{"Escalation (pick the lowest rung that is honest)", "- NOTE —", "- ASSUME —", "- SPIKE —", "- ASK —", "- HANDOFF —", "- REFUSE —",
 		"`bd comments add b-1 <note>`", "`bd create \"<question>\" -t task -l question`", "`bd dep add b-1 <qid>`", "--deps discovered-from:b-1", "`REFUSED: <line> — <what would be needed>`",
-		"`bd create \"spike: <question>\" -t task -l <runner's lane>` with NO `--deps`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
+		"`bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
 		"`bd comments add <sid> \"discovered-from: b-1\"`",
 		"Done: `bd comments add b-1 <what you did, paths, ids>` then `bd close b-1`."} {
 		if !strings.Contains(p, want) {
@@ -310,7 +310,7 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	}
 	// A persona that is told to drop the flag with no reason drops the
 	// reason too, and the next editor puts it back.
-	if !strings.Contains(spike, "bd refuses the block") {
+	if !strings.Contains(spike, "bd refuses the `dep add`") {
 		t.Errorf("SPIKE must say why there is no --deps:\n%s", spike)
 	}
 

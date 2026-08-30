@@ -4039,10 +4039,11 @@ instead.** This is the same landmine as ranger-base-muoo from the other end:
 `bd create --deps discovered-from:<parent>` starts the same CTE at `<parent>`,
 so a poisoned parent loses its edge to the 30s timeout while the issue itself
 commits — which is how 33 edgeless duplicate verify beads got filed. The
-HANDOFF and SPIKE rungs of a dispatch prompt (`internal/rhq/dispatch.go`) have
+The HANDOFF rung of a dispatch prompt (`internal/rhq/dispatch.go`) has
 that exact shape. The ASK rung does **not**: its target is a freshly created
 question bead with no outgoing edges, so the CTE is empty and returns at once.
-Leave it alone.
+Leave it alone. SPIKE used to have HANDOFF's shape and no longer does — see
+below.
 
 Since ranger-base-qbwt the ladder carries the caveat itself: a trailing
 `Provenance:` line (not a seventh rung) tells the persona that the create is
@@ -4054,6 +4055,19 @@ safe/unsafe answer belongs to the graph at create time, hours after the prompt
 renders, and because reading the graph back also catches a create that failed
 for some other reason. ADR 0005 §2 has the reasoning; `verifyafter.go` is the
 harness applying the same rule to itself.
+
+Since ranger-base-rs8j (2026-08-30) the SPIKE rung files **no**
+`discovered-from` edge at all, and that is a different bd defect from the one
+above rather than the same one. bd 0.49.1's cycle check spans *every*
+dependency type, so a spike carrying `discovered-from:<deciding>` makes the
+`bd dep add <deciding> <spike>` that rung exists for a cycle, and bd refuses
+it — exit 1, deterministically, in either order (measured against real bd on a
+copy of the queue db; the harness's own settle-open escalation had the
+identical pair, ranger-base-23oo). The block is the deliverable, so the
+provenance is a comment on the spike. Note which edge the caveat's check
+points at: reading the *spike* back shows a `discovered-from` edge and looks
+fine even when the block never landed, so SPIKE confirms `bd dep list
+<deciding>` and HANDOFF confirms `bd dep list <new-id>`.
 
 **There is no drop-in fix.** Upstream did fix it, but only past the end of the
 SQLite line:
