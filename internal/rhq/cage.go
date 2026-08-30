@@ -995,8 +995,18 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 		return err
 	}
 	arch := runtime.GOARCH
-	fmt.Fprintf(out, "cross-building linux/%s posse from %s\n", arch, AbbrevHome(src))
-	build := exec.Command("go", "build", "-o", filepath.Join(bin, "posse"), "./cmd/posse")
+	// Stamped with src's identity, the same -X the Makefile uses, so the
+	// image can answer WHICH posse it carries and not merely that it has
+	// one (ranger-base-nwj7). Not left to go's own -buildvcs: measured
+	// 2026-08-30 on go1.26.5, a build from a LINKED WORKTREE carries no
+	// vcs.* settings at all and reports "+dev", and every persona builds
+	// from one — two images from two different worktrees would then have
+	// named themselves identically, which is the false CURRENT cagestale.go
+	// exists to prevent. An src that is not a checkout stamps nothing and
+	// the image says "+dev", which reads as unclear rather than as fresh.
+	stamp := SourceBuildStamp(src)
+	fmt.Fprintf(out, "cross-building linux/%s posse from %s (%s)\n", arch, AbbrevHome(src), VersionOrDev(stamp))
+	build := exec.Command("go", cagePosseBuildArgv(filepath.Join(bin, "posse"), stamp)...)
 	build.Dir, build.Stdout, build.Stderr = src, out, out
 	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch, "GOBIN=")
 	if err := build.Run(); err != nil {

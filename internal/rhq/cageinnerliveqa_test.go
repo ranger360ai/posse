@@ -309,7 +309,12 @@ func TestQALiveUnknownSocketRefusesTheLaunchItself(t *testing.T) {
 // fail, it pins the answer either way so the day one closes is noticed.
 func TestQALiveCageEscapeAttemptsOnAWritableRepo(t *testing.T) {
 	a, e := qaLiveCageApp(t)
-	qaLiveGuard(t, a, e)
+	// The one QA pin here whose clauses read the INNER RENDER (the shim's
+	// refusal and gates/<persona>/refusals.log), so the one that needs the
+	// image to be this source's — ranger-base-nwj7. The other three are
+	// about host-side mounts, the remount refusal and the parity wiring,
+	// and a staleness skip on those would cost more than it caught.
+	requireCurrentCageImage(t, a, e, qaLiveGuard(t, a, e))
 	dir := liveCageRepo(t, "")
 	probe := `
 echo "shim=$(git push origin main 2>&1 | head -1)"

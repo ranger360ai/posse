@@ -92,6 +92,31 @@ nothing.
 
 ### Fixed
 
+**A red cage pin could mean the image was two days old, and nothing said so.**
+
+*Affected: every build before this one, on `cage: container`. `posse cage`
+prints one more line and `posse cage build` stamps what it builds.*
+
+The L1/L3 wall inside a container is rendered by the posse in the IMAGE, so
+every change to that render is invisible in the cage until `posse cage build`
+runs again. Nothing ever said the image was behind — the only thing that
+noticed was a live test, and it noticed by failing. A FAIL is read as a
+regression before it is read at all: one instance cost half an hour proving a
+red pin was a two-day-old image and not a broken wall, against an image
+carrying a posse thirty commits behind the render it was being asked about.
+
+`posse cage` now prints the image's age above everything else it says about
+it: which posse the image carries, which one this source (or, outside a
+checkout, this binary) is, and whether those are the same build. `posse cage
+build` stamps the posse it puts in the image with the checkout it came from,
+so the image can answer that at all — a build from a linked git worktree,
+which is where every persona works, carries no commit identity of its own and
+called itself "dev". And the live pin that used to fail on a stale image now
+skips, naming both versions and the rebuild: "the artifact is too old to be
+asked" is a third state, not a broken claim. An image that cannot be asked at
+all is still read exactly as before — unclear is not stale, because a pin that
+skips on a probe failure is a pin that goes green and stays there.
+
 **Persona memory was never committed by anything, so it accumulated on disk
 until a human noticed.**
 

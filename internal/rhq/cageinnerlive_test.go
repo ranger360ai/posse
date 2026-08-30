@@ -131,6 +131,14 @@ func TestLiveInnerGatesHoldInsideTheCage(t *testing.T) {
 	if !a.CageImageBuilt(e, image) {
 		t.Skipf("%s is not built — run `posse cage build`", image)
 	}
+	// …and built from THIS source, which is the third state of a pin whose
+	// subject is a build artifact (ranger-base-nwj7). The inner render is
+	// the image's own posse, so an image behind this tree renders a wall
+	// this tree does not describe: every clause below would then be
+	// measuring a different build's render, and the first one to notice
+	// would say so as a FAIL. Skipped with both idents instead — see
+	// cagestale.go for why "cannot tell" is not this arm.
+	requireCurrentCageImage(t, a, e, image)
 	// The claim parity rests on, asked of the image itself.
 	if !a.CageInnerGatesReady(e, image) {
 		t.Fatalf("%s answers no to `posse gates wrap %s` — it carries no Linux posse, so this tier renders no gates", image, GatesWrapProbe)

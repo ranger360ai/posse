@@ -1245,6 +1245,16 @@ func main() {
 		}
 		fmt.Fprintf(out, "engine %s (%s) · image %s · %s\n", e.Name, e.Binary(), image, state)
 		fmt.Fprintf(out, "  %s\n", e.Command)
+		// How OLD the image is, before anything is said about what it can
+		// do (ranger-base-nwj7). The L1/L3 render inside the cage is the
+		// IMAGE's posse, so an image behind the source renders a wall that
+		// is not the one this tree describes — and until this line existed
+		// the only thing that ever said so was a live test's FAIL, which is
+		// read as a regression before it is read at all.
+		if a.ContainerAvailable() && a.CageImageBuilt(e, image) {
+			cwd, _ := os.Getwd()
+			fmt.Fprintf(out, "  %s\n", a.CageAgeHere(e, image, cwd))
+		}
 		if len(args) == 0 {
 			fmt.Fprintf(out, "engines: %s (built-in docker; %s/<name>.yaml, config default_engine:)\n",
 				strings.Join(a.ListEngines(), ", "), rhq.AbbrevHome(a.CagesDir()))
