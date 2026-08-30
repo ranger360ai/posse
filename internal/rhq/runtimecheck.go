@@ -131,7 +131,16 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	wrapGrid(w, "tier", a.tierLine(rt))
 	if len(rt.NativeRules) > 0 {
 		wrapGrid(w, "rulebooks", strings.Join(rt.NativeRules, ", "))
-		wrapGrid(w, "", "posse loads none of these and rewrites none of them — they are the operator's files in a shared checkout. Whether one outranks the PID is a probe, not a patch (ADR 0013 §4).")
+		wrapGrid(w, "", "posse loads none of these and rewrites none of them — they are the operator's files in a shared checkout.")
+		if ValidRulesPrecedence(rt.RulesPrecedence) {
+			val := "precedence: " + rt.RulesPrecedence
+			if rt.RulesPrecedenceWhy != "" {
+				val += " — " + rt.RulesPrecedenceWhy
+			}
+			wrapGrid(w, "", val)
+		} else {
+			wrapGrid(w, "", "precedence UNMEASURED — the PID-wins prompt line is the only reconciliation (ADR 0013 §4)")
+		}
 	} else {
 		wrapGrid(w, "rulebooks", "none declared — native_rules: in the yaml names the files this CLI loads by itself, ahead of anything posse types")
 	}
@@ -164,6 +173,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
+	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:),")
 	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
 	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")
 	fmt.Fprintln(w, "  state_dir:, env_required:, interstitial_<name>:. Undeclared is loud, never")

@@ -97,6 +97,8 @@ func TestDeclaredContractKeys(t *testing.T) {
 		"record: trusted",
 		"record_why: measured on 2026-08-24",
 		"native_rules: [AGENTS.md, HOUSE.md]",
+		"rules_precedence: native",
+		"rules_precedence_why: probe ranger-base-xaev, 2026-08-30",
 		"",
 	}, "\n"))
 	if rt.PromptMode() != PromptArgv {
@@ -111,14 +113,20 @@ func TestDeclaredContractKeys(t *testing.T) {
 	if strings.Join(rt.NativeRules, ",") != "AGENTS.md,HOUSE.md" {
 		t.Errorf("native_rules: not read: %v", rt.NativeRules)
 	}
+	if rt.RulesPrecedence != RulesPrecedenceNative || rt.RulesPrecedenceWhy == "" {
+		t.Errorf("rules_precedence:/rules_precedence_why: not read: %q %q", rt.RulesPrecedence, rt.RulesPrecedenceWhy)
+	}
 	var b bytes.Buffer
 	a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
 	if out := b.String(); !strings.Contains(out, "runtimes/declared.yaml (prompt:)") ||
 		!strings.Contains(out, "runtimes/declared.yaml (record:)") {
 		t.Errorf("the grid must credit the yaml for what it declared:\n%s", out)
 	}
+	if out := b.String(); !strings.Contains(out, "precedence: native — probe ranger-base-xaev, 2026-08-30") {
+		t.Errorf("the grid must round-trip a declared rules_precedence: with its why:\n%s", out)
+	}
 
-	for _, bad := range []string{"prompt: arvg", "record: trused", "startup_wait: soon"} {
+	for _, bad := range []string{"prompt: arvg", "record: trused", "startup_wait: soon", "rules_precedence: natvie"} {
 		name := "bad" + strings.Fields(bad)[0]
 		if err := os.WriteFile(filepath.Join(a.RuntimesDir(), name+".yaml"),
 			[]byte("command: x\n"+bad+"\n"), 0o644); err != nil {
@@ -171,6 +179,20 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 		}
 		if len(rt.NativeRules) == 0 {
 			t.Errorf("%s declares no native rulebooks; all three CLIs have them", c.name)
+		}
+		// ADR 0017 §5: NativeRules only says what a runtime READS; who WINS
+		// on a collision with the PID is ranger-base-xaev's probe, not yet
+		// run. Every built-in ships UNMEASURED until it lands.
+		if rt.RulesPrecedence != "" {
+			t.Errorf("%s: rules_precedence must ship UNMEASURED (zero value) until ranger-base-xaev lands, got %q", c.name, rt.RulesPrecedence)
+		}
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+		// wrapGrid may fold the line at gridWidth, so compare on collapsed
+		// whitespace rather than the literal (possibly wrapped) substring.
+		flat := strings.Join(strings.Fields(b.String()), " ")
+		if !strings.Contains(flat, "precedence UNMEASURED — the PID-wins prompt line is the only reconciliation (ADR 0013 §4)") {
+			t.Errorf("%s: the grid must print precedence UNMEASURED loudly:\n%s", c.name, b.String())
 		}
 	}
 	// ADR 0013 §2: argv delivery was ASSUMED until ranger-base-cl7 probed

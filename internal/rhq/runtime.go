@@ -75,6 +75,14 @@ const (
 	// --resume re-prompts.
 	RecordUntrusted = "untrusted"
 
+	// RulesPrecedencePID: measured — a collision between the PID's own
+	// rules and this runtime's native rulebooks (NativeRules) resolves in
+	// the PID's favor.
+	RulesPrecedencePID = "pid"
+	// RulesPrecedenceNative: measured the other way — a native rulebook
+	// this runtime discovers on its own outranks the PID on collision.
+	RulesPrecedenceNative = "native"
+
 	// DefaultStartupWait is the claude-shaped patience for a launch to reach
 	// a promptable screen. It is a per-runtime number (`startup_wait:`)
 	// because 45s is measured on claude and grok's cold start exceeds it on
@@ -85,6 +93,10 @@ const (
 func ValidPrompt(p string) bool { return p == PromptArgv || p == PromptTyped }
 
 func ValidRecord(r string) bool { return r == RecordTrusted || r == RecordUntrusted }
+
+func ValidRulesPrecedence(p string) bool {
+	return p == RulesPrecedencePID || p == RulesPrecedenceNative
+}
 
 // Interstitial is a first-run dialog this runtime draws that dispatch must
 // not answer for the operator (ADR 0013 §2, layer 2). Posse NAMES the key
@@ -333,6 +345,21 @@ type Runtime struct {
 	// declares them so `runtime check` can say what else is talking to the
 	// model. Whether a native file outranks the PID is a probe, not a patch.
 	NativeRules []string
+	// RulesPrecedence is which channel wins when a NativeRules file
+	// collides with the PID: RulesPrecedencePID or RulesPrecedenceNative.
+	// Zero value is UNMEASURED, the loud default (ADR 0017 §5) — NativeRules
+	// only declares what a runtime READS, and nothing else declares who
+	// WINS. Display-by-design like RecordWhy below: its consumer is the
+	// onboarder and the record-trust decision, never a code branch — ADR
+	// 0013 §4 already decided declare-don't-suppress, and a runtime
+	// measuring "native" stays record: untrusted by the existing rule.
+	// ranger-base-xaev's structural probe fills the first non-zero values;
+	// all three built-ins ship UNMEASURED until it lands.
+	RulesPrecedence string
+	// RulesPrecedenceWhy is the measurement behind a non-zero
+	// RulesPrecedence — a probe bead id and date, so a reader can tell a
+	// measured value from a guess. Ignored when RulesPrecedence is unset.
+	RulesPrecedenceWhy string
 	// Interstitials are the first-run dialogs this runtime draws, with the
 	// operator-owned config key that silences each. Documented, never
 	// written.
@@ -1347,6 +1374,16 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		}
 		rt.Record = v
 		rt.RecordWhy = YamlGet(p, "record_why")
+	}
+	// rules_precedence: which channel wins when a native rulebook collides
+	// with the PID. Absent is UNMEASURED, the loud default — a probe, not a
+	// patch (ADR 0017 §5). Present-but-wrong refuses, like record: above.
+	if v := YamlGet(p, "rules_precedence"); v != "" {
+		if !ValidRulesPrecedence(v) {
+			return nil, Die("runtime %s: %s has rules_precedence: %q (want %s or %s — ADR 0017 §5)", name, AbbrevHome(p), v, RulesPrecedencePID, RulesPrecedenceNative)
+		}
+		rt.RulesPrecedence = v
+		rt.RulesPrecedenceWhy = YamlGet(p, "rules_precedence_why")
 	}
 	// turn_outcome: which registered reader sees this runtime's own first
 	// turn. Absent is the loud default — the settle line says posse cannot

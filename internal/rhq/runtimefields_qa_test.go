@@ -82,6 +82,8 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"Record":             {fcConsumed, []string{"dispatch.go"}, nil, "recordClause and the ✓ suppression on a settle with the bead still open"},
 	"RecordWhy":          {fcDisplay, []string{"runtimecheck.go"}, nil, "the measurement behind a trusted record — provenance, so a reader tells a promotion from an assumption"},
 	"NativeRules":        {fcDisplay, []string{"runtimecheck.go"}, nil, "declared, never suppressed (ranger-base-00f): the grid names the other voice in the session"},
+	"RulesPrecedence":    {fcDisplay, []string{"runtimecheck.go"}, nil, "which channel wins a NativeRules/PID collision — a probe's answer for the onboarder and the record-trust decision, never a code branch (ADR 0017 §5)"},
+	"RulesPrecedenceWhy": {fcDisplay, []string{"runtimecheck.go"}, nil, "the measurement behind a non-zero RulesPrecedence — a probe bead id and date, so a reader tells a measurement from a guess"},
 	"Interstitials":      {fcConsumed, []string{"interstitial.go", "runtimepreflight.go"}, nil, "DangerUnsilenced/DangerLine on both launch paths; the grid probes each key"},
 	"StateDirs":          {fcConsumed, []string{"seatbelt.go"}, nil, "joins the L2 writable set, or the CLI re-runs its first-run flow every launch"},
 	"EnvRequired":        {fcConsumed, []string{"runtimepreflight.go"}, nil, "checked by NAME at launch preflight; a missing one refuses"},
