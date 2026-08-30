@@ -67,6 +67,34 @@ in a posse checkout is the same question on demand.
 
 ### Fixed
 
+**`posse cockpit` could take a whole CPU core while sitting there displaying,
+and cost a fifth of one even when it did not.**
+
+*Affected: every build with the cockpit's periodic scans. Measured at 101.9%
+of a core on a loaded box, 26.3% on an idle one.*
+
+The footer's cost reading re-decoded the entire fourteen-day transcript window
+every thirty seconds — on the shop this was measured on, 1211 files and 786 MB,
+of which 784.6 MB could not have been written since the previous tick — and the
+governance block's budget row scanned a second time on its own tick. That is
+the standing cost. The runaway on top of it was the timers: each scan was
+started unconditionally, so a scan that outran its own period (the governance
+check already used 78% of its thirty seconds on an idle box) had the next tick
+start a second one over the top of it, then a third.
+
+The cockpit now keeps its scans' results and re-reads only the transcripts
+whose bytes have moved, and it will not start a scan while that scan is still
+running — a tick that arrives during one is dropped, because these are level
+readings and the next tick takes a fresher one than a queued one would have.
+Same numbers on screen, same cadence; 0.69% of a core instead of 26.3%.
+
+`posse cost` and the dispatcher's per-launch budget guard are unchanged: they
+scan once and keep nothing, exactly as before.
+
+Not fixed here, and still open: the cockpit's two-second redraw actually takes
+around ten seconds, because it reads the bead lists on its own event loop. Key
+presses can wait behind one.
+
 **A deny rule naming a subcommand's flag — `Bash(bd sync --full:*)`,
 `Bash(git push --force:*)` — only refused the flag in one position.**
 
