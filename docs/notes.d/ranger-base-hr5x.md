@@ -33,7 +33,7 @@ Mutation check, with the bare form restored: 4 assertions fail — 3 decoy
 calls where 1 is the control's, both log lines stamped `DECOY-TIME`, and the
 rendered script carrying `$(date `.
 
-**Residual, filed as ranger-base-l97n (P3):** the gate shell's usercmd note
+**Residual, filed as ranger-base-l97n (P3) and since fixed there:** the gate shell's usercmd note
 and the three L3 hook refusal lines still spell `date` bare. With the cycle
 broken at the shim those cost one refused child each — measured: the
 caller's line loses its timestamp and a `refused by posse gate: date` lands

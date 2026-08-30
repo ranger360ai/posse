@@ -908,6 +908,15 @@ func refusalTimestamp(dateBin string) string {
 	return "$(" + shQuote(dateBin) + " -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+// quotedStamp is refusalTimestamp for a site that is assembled INSIDE a
+// double-quoted shell assignment and evaluated later — the gate shell's
+// user-command note, whose text becomes an argv word the runtime's shell
+// evals after the snapshot replay. The `$` must survive that first layer of
+// quoting, so it is escaped exactly like the `\$PATH` beside it.
+func quotedStamp(dateBin string) string {
+	return strings.ReplaceAll(refusalTimestamp(dateBin), "$", `\$`)
+}
+
 // renderShim writes the POSIX sh shim for one command.
 func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) string {
 	var b strings.Builder
@@ -1063,7 +1072,7 @@ while [ $i -lt $n ]; do
     optval) st=opts ;;
     str)  if [ $cflag -eq 1 ]; then a="$PRE$a"; st=argv0; else st=done; fi ;;
     argv0) if [ "$a" = "--" ]; then st=usercmd; else st=done; fi ;;
-    usercmd) a="case \"\$PATH:\" in \"$G\":*) ;; *) echo \"\$(date -u +%Y-%m-%dT%H:%M:%SZ) gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '$LOG' 2>/dev/null;; esac; $PRE$a"; st=done ;;
+    usercmd) a="case \"\$PATH:\" in \"$G\":*) ;; *) echo \"__STAMP__ gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '$LOG' 2>/dev/null;; esac; $PRE$a"; st=done ;;
     done) ;;
   esac
   set -- "$@" "$a"
@@ -1189,6 +1198,12 @@ func writeGateShell(persona, gatesDir, binDir, real, base string) (string, error
 		"__GATES_BIN__", shQuote(binDir),
 		"__REAL__", shQuote(real),
 		"__GATES_DIR__", shQuote(gatesDir),
+		// The note's own timestamp, resolved here for the reason
+		// refusalTimestamp gives — and the note is exactly the moment the
+		// bare form was worst: it fires when the gates dir is NOT first in
+		// the replayed PATH, so `date` is looked up against a PATH some
+		// other element leads, before PRE has rebuilt it.
+		"__STAMP__", quotedStamp(resolveOutside("date", binDir)),
 	).Replace(gateShellScript)
 	p := filepath.Join(dir, base)
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
@@ -1252,6 +1267,46 @@ func ownsHook(body, marker, legacy string) bool {
 	return strings.Contains(body, marker) || strings.Contains(body, legacy)
 }
 
+// hookStampFunc is the timestamp helper both L3 hooks call for their
+// refusals.log lines. They used to spell `date` bare, and a hook runs
+// inside the persona's session: the gate shim dir leads that PATH by
+// construction (ADR 0009 §1), so under a PID carrying Bash(date:*) the
+// bare name reached the persona's OWN date shim, which refused. The line
+// was written with no time in front of it and a stray "refused by posse
+// gate: date" landed on stderr in the middle of a git command
+// (ranger-base-l97n, the residual of ranger-base-hr5x — bounded at one
+// refused child there, since hr5x took the cycle out of the shim itself).
+//
+// The lookup skips every gates dir, spelled the way PathOutsideGates
+// spells it (a 'gates' path ELEMENT, so /opt/gateskeeper is not ours), and
+// walks PATH by chopping rather than by IFS-splitting it: the same shape
+// the gate shell's PRE uses, and for the same reasons — no IFS to restore
+// for the caller and no glob in a PATH element to expand.
+//
+// PATH ITSELF IS LEFT ALONE. Scrubbing the gates dirs off it for the
+// hook's duration is the shorter fix and the wrong one: installHook chains
+// a foreign hook behind ours, and that hook would then run with the
+// persona's fence taken off its PATH. The timestamp is cosmetic; the fence
+// is not.
+//
+// "-" when date is nowhere outside the gates — a line that keeps its shape
+// with the time unknown, never one that re-enters a shim.
+const hookStampFunc = `# The refusal lines below timestamp with posse_stamp and never with a bare
+# 'date': this hook runs inside a persona session whose PATH leads with that
+# session's gate shim dir, so the bare name is answered by the session's own
+# gate (ranger-base-l97n). The lookup skips every gates dir and leaves PATH
+# itself alone — a chained foreign hook inherits this PATH.
+posse_stamp() {
+  posse_sd=''; posse_sr="$PATH:"
+  while [ -n "$posse_sr" ]; do
+    posse_se=${posse_sr%%:*}; posse_sr=${posse_sr#*:}
+    case "$posse_se" in ''|*/gates/*) continue ;; esac
+    if [ -x "$posse_se/date" ]; then posse_sd=$posse_se/date; break; fi
+  done
+  if [ -n "$posse_sd" ]; then "$posse_sd" -u +%Y-%m-%dT%H:%M:%SZ; else printf '%s' -; fi
+}
+`
+
 // PrePushHook is the L3 wall for the one verb that is a hard risk line:
 // a pre-push hook that refuses when RHQ_TOOLS_DENY (newline-separated,
 // exported into every persona session by CreateSession) carries a rule
@@ -1264,7 +1319,7 @@ const PrePushHook = `#!/bin/sh
 # sessions whose PID denies it (RHQ_TOOLS_DENY). Foreign hooks are never
 # overwritten; remove this file to uninstall. ADR 0002 §3 (rangerhq-8s4).
 [ -n "$RHQ_TOOLS_DENY" ] || exit 0
-# Split the rules with a for-loop over IFS=newline, NOT with
+` + hookStampFunc + `# Split the rules with a for-loop over IFS=newline, NOT with
 # 'printf | while read': the right side of a pipeline is a subshell, so the
 # refusal's 'exit 1' would exit only the subshell and reach git solely by
 # being the script's last statement. One line appended after it printed the
@@ -1283,7 +1338,7 @@ for rule in $RHQ_TOOLS_DENY; do
     git|"git push"|"git push "*)
       echo "refused by posse gate: git push (deny: $rule) — pre-push hook, session ${RHQ_PERSONA:-?}" >&2
       if [ -n "$RHQ_GATES_DIR" ]; then
-        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) git push [pre-push hook] (deny: $rule) session ${RHQ_PERSONA:-?}" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        echo "$(posse_stamp) git push [pre-push hook] (deny: $rule) session ${RHQ_PERSONA:-?}" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
       fi
       exit 1
       ;;
@@ -2014,7 +2069,7 @@ fi
   fi
 } >&2
 if [ -n "$RHQ_GATES_DIR" ]; then
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $posse_form [prepare-commit-msg hook] (shared index)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+  echo "$(posse_stamp) $posse_form [prepare-commit-msg hook] (shared index)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
 fi
 exit 1
 `
@@ -2107,7 +2162,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
       if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
         echo "posse gate: visibility guard OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class content is going into a public repo's beads db" >&2
         if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) beads visibility guard OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+          echo "$(posse_stamp) beads visibility guard OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
         fi
       else
         {
@@ -2122,7 +2177,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
           echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
         } >&2
         if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) beads visibility guard [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+          echo "$(posse_stamp) beads visibility guard [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
         fi
         exit 1
       fi
@@ -2294,7 +2349,7 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
       echo "touch your tree, and what you staged is still exactly where you put it."
     } >&2
     if [ -n "$RHQ_GATES_DIR" ]; then
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) constitution path in a persona commit [prepare-commit-msg hook] (${` + EnvPersona + `})" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+      echo "$(posse_stamp) constitution path in a persona commit [prepare-commit-msg hook] (${` + EnvPersona + `})" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
     fi
     exit 1
   fi
@@ -2321,7 +2376,7 @@ fi
 // the shared-index arm, which exits 0 in a linked worktree and mid-merge —
 // and a dispatched worktree is where a persona's commits come from.
 func CommitGuardHook(visibility string, set OpsPatternSet) string {
-	return commitGuardHead + visibilityGuardBody(visibility, set) +
+	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set) +
 		constitutionGuardBody() + sharedIndexBody
 }
 

@@ -1233,8 +1233,14 @@ func TestGateShellArgvWalk(t *testing.T) {
 		"#!/bin/sh\nfor a in \"$@\"; do printf '<%s>' \"$a\"; done\nprintf '\\n'\n")
 	guard := "_rgp=; _rgr=\"$PATH:\"; while [ -n \"$_rgr\" ]; do _rge=${_rgr%%:*}; _rgr=${_rgr#*:}; case \"$_rge\" in ''|*/gates/*) ;; *) _rgp=\"$_rgp:$_rge\";; esac; done; PATH=\"" + binDir + "$_rgp\"; export PATH; unset _rgp _rgr _rge; "
 	// The user-command slot carries the log line ahead of the same guard.
+	// The line's timestamp comes from the same render-time resolution the
+	// wrapper uses (ranger-base-l97n: a bare `date` here is looked up
+	// against the REORDERED path, which is the one case this note fires
+	// in). WHETHER it is bare is not this test's question — that is
+	// TestGateShellNoteNeverLooksUpDateOnThePath, behaviorally; this one is
+	// about where the walk puts the string.
 	slot := func(cmd string) string {
-		return "case \"$PATH:\" in \"" + binDir + "\":*) ;; *) echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '" +
+		return "case \"$PATH:\" in \"" + binDir + "\":*) ;; *) echo \"" + refusalTimestamp(resolveOutside("date", binDir)) + " gates dir not first in replayed PATH; re-prepended (path_helper/rc reorder?)\" >> '" +
 			filepath.Dir(binDir) + "/shell.log' 2>/dev/null;; esac; " + guard + cmd
 	}
 	g := func(s string) string { return guard + s }
@@ -2622,5 +2628,249 @@ func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
 	// bound.
 	if strings.Contains(refusalTimestamp(""), "date") {
 		t.Errorf("the unresolvable fallback must not spell `date` either: %q", refusalTimestamp(""))
+	}
+}
+
+// ranger-base-l97n is hr5x's residual: with the CYCLE out of the shim, four
+// more rendered scripts still spelled `date` by bare name — the gate shell's
+// PATH-reorder note and the refusal lines of both L3 hooks. All of them run
+// inside the persona's session, where a gates dir leads PATH, so under a PID
+// carrying Bash(date:*) the timestamp was answered by a gate: the log line
+// was written with nothing in front of it and a stray "refused by posse
+// gate: date" landed on stderr in the middle of a git command.
+//
+// BOTH pins run the PRODUCTION SHAPE rather than a decoy — a real rendered
+// date shim, really in front on the PATH under test — and that is safe here
+// for hr5x's reason and only that one: the shim's own refusal no longer
+// calls `date`, so the wrong arm costs exactly one refused child instead of
+// a fork chain. Each has a control that fires the shim on purpose, because
+// "the shim was never reached" is also what a PATH that could not reach it
+// says.
+
+// TestL3HooksNeverLookUpDateOnThePath drives both hooks the way git does —
+// pre-push executed, prepare-commit-msg through a real `git commit` — with
+// the persona's own gates dir at the head of PATH.
+func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	if _, err := exec.LookPath("date"); err != nil {
+		t.Skip("no date")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	shimGates, shimBin, _, err := a.RenderGates("developer", []string{"Bash(date:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sep := string(os.PathListSeparator)
+	// What a session's PATH looks like (ADR 0009 §1): the shim dir first.
+	sessionPath := shimBin + sep + PathOutsideGates("")
+
+	// The control. It is not decoration: it proves the date shim is really
+	// in front of the real binary on this PATH, so "no refusal below" is a
+	// statement about the hooks and not about the fixture.
+	probe := exec.Command("/bin/sh", "-c", "date -u +%Y")
+	probe.Env = []string{"PATH=" + sessionPath, "RHQ_GATES_DIR=" + shimGates}
+	out, err := probe.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "refused by posse gate: date") {
+		t.Fatalf("control: a bare `date` on the session PATH must reach the shim: %v %q", err, out)
+	}
+
+	stamp := regexp.MustCompile(`(?m)^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z `)
+	// The hooks log to a gates dir of their own, so what is asserted below
+	// is the hook's line and never the control's refusal.
+	check := func(t *testing.T, what, out, hookGates string) {
+		t.Helper()
+		if strings.Contains(out, "refused by posse gate: date") {
+			t.Errorf("%s: the hook looked `date` up on PATH and its own session's gate answered — that refusal lands on stderr in the middle of the git command:\n%s", what, out)
+		}
+		b, err := os.ReadFile(filepath.Join(hookGates, "refusals.log"))
+		if err != nil {
+			t.Fatalf("%s: the refusal must be logged: %v", what, err)
+		}
+		if !stamp.MatchString(string(b)) {
+			t.Errorf("%s: the logged refusal must carry a real UTC timestamp, not an empty substitution: %q", what, b)
+		}
+	}
+
+	t.Run("pre-push", func(t *testing.T) {
+		repo := t.TempDir()
+		if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if _, err := InstallPrePushHook(repo); err != nil {
+			t.Fatal(err)
+		}
+		hooks, err := hooksDir(repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hookGates := t.TempDir()
+		cmd := exec.Command(filepath.Join(hooks, "pre-push"))
+		cmd.Env = []string{"PATH=" + sessionPath, "RHQ_GATES_DIR=" + hookGates,
+			"RHQ_TOOLS_DENY=Bash(git push:*)", "RHQ_PERSONA=developer"}
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "refused by posse gate: git push") {
+			t.Fatalf("the hook must refuse the push: %v %q", err, out)
+		}
+		check(t, "pre-push", string(out), hookGates)
+	})
+
+	t.Run("prepare-commit-msg", func(t *testing.T) {
+		repo := t.TempDir()
+		if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if _, err := installCommitGuard(repo); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("mine\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hookGates := t.TempDir()
+		env := []string{"PATH=" + sessionPath, "HOME=" + repo, "RHQ_GATES_DIR=" + hookGates,
+			"RHQ_PERSONA=developer",
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+		run := func(args ...string) (string, error) {
+			cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+			cmd.Env = env
+			out, err := cmd.CombinedOutput()
+			return string(out), err
+		}
+		if out, err := run("add", "--", "shared.txt"); err != nil {
+			t.Fatalf("git add: %v %s", err, out)
+		}
+		// The shared-index arm: a commit with no pathspec takes whatever is
+		// in the shared index, which is the form that wall refuses.
+		out, err := run("commit", "-qm", "sweep")
+		if err == nil || !strings.Contains(out, "refused by posse gate") {
+			t.Fatalf("the commit guard must refuse the bare form: %v %q", err, out)
+		}
+		check(t, "prepare-commit-msg", out, hookGates)
+	})
+}
+
+// TestGateShellNoteNeverLooksUpDateOnThePath drives the wrapper's usercmd
+// slot the way a runtime does, through a -c string that demotes the gates
+// dir first — which is the only condition under which the note fires at
+// all, and the reason the bare form was worst here: the note's `date` is
+// looked up against the REORDERED path, before PRE has rebuilt it.
+//
+// The dir in front is another persona's gates bin, not an invented decoy:
+// that is the PATH a session hand-launched from another persona's pane
+// actually carries (rangerhq-v553), and the verb the launched session gets
+// refused by is one only the OTHER PID denies.
+func TestGateShellNoteNeverLooksUpDateOnThePath(t *testing.T) {
+	if _, err := exec.LookPath("date"); err != nil {
+		t.Skip("no date")
+	}
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	// The persona under test denies nothing: its own bin holds no date
+	// shim, so what answers a bare lookup is the neighbour in front.
+	gatesDir, _, shell, err := a.RenderGates("developer", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherGates, otherBin, _, err := a.RenderGates("neighbour", []string{"Bash(date:*)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The replayed PATH a runtime hands back after its snapshot: the
+	// neighbour's shim dir in front, so this persona's $G is no longer
+	// first and the note fires.
+	reorder := "PATH=" + otherBin + ":$PATH; export PATH; "
+	logPath := filepath.Join(gatesDir, "shell.log")
+	run := func(cstring string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		// argv0 spelled `--`, which is where a runtime's user-command slot
+		// sits: `<shell> -c <string> -- <usercmd>` puts the slot in $1, and
+		// the wrapper's argv walk prefixes exactly that word.
+		cmd := exec.CommandContext(ctx, shell, "-c", cstring, "--", ":")
+		cmd.Env = []string{"PATH=" + PathOutsideGates(""), "RHQ_GATES_DIR=" + otherGates}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("gate shell %q: %v %s", cstring, err, out)
+		}
+		return string(out)
+	}
+
+	// The control, at exactly the moment the note runs: a bare `date` here
+	// is answered by the neighbour's gate. Without it, "the note reached a
+	// real date" could just mean the neighbour was never in front.
+	if out := run(reorder + "date -u +%Y >/dev/null; eval \"$1\""); !strings.Contains(out, "refused by posse gate: date") {
+		t.Fatalf("control: at the note's moment a bare `date` must reach the neighbour's shim: %q", out)
+	}
+	if err := os.Remove(logPath); err != nil {
+		t.Fatal(err)
+	}
+
+	out := run(reorder + "eval \"$1\"")
+	if strings.Contains(out, "refused by posse gate: date") {
+		t.Errorf("the note looked `date` up on the reordered PATH and a neighbour's gate answered it:\n%s", out)
+	}
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("the note must be written to shell.log: %v", err)
+	}
+	if !strings.Contains(string(b), "gates dir not first in replayed PATH") {
+		t.Fatalf("the note must fire — the fixture, not the fix, is what failed: %q", b)
+	}
+	if !regexp.MustCompile(`(?m)^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z `).MatchString(string(b)) {
+		t.Errorf("the note must carry a real UTC timestamp, not an empty substitution: %q", b)
+	}
+	// And the rendered wrapper says so on its face, so the bare form is not
+	// reintroduced by someone copying the line.
+	body, err := os.ReadFile(shell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "(date ") {
+		t.Errorf("the gate shell must not spell `date` bare:\n%s", body)
+	}
+	// Same escape hatch as the shim's: with no date outside the gates the
+	// note loses its time, never its bound.
+	if strings.Contains(quotedStamp(""), "date") {
+		t.Errorf("the unresolvable fallback must not spell `date` either: %q", quotedStamp(""))
+	}
+}
+
+// TestL3HooksStampWithoutABareDate is the static half: every refusals.log
+// line in either hook goes through posse_stamp, and the helper is defined
+// once, above every arm that calls it. A behavioral pin can only reach the
+// arms it can drive to a refusal; this one covers the rest, including the
+// visibility guard's two (an override and a refusal) and the constitution
+// arm.
+func TestL3HooksStampWithoutABareDate(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"pre-push", PrePushHook},
+		// An empty pattern set, not the operator's live one: the block
+		// renders whatever the set holds, and a test that reads config
+		// off the box measures the box (the neighbouring L3 tests
+		// spell it the same way).
+		{"prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
+	} {
+		if strings.Contains(tc.body, "$(date ") {
+			t.Errorf("%s: a refusal line spells `date` bare — inside a session that name is the persona's own gate (ranger-base-l97n):\n%s", tc.name, tc.body)
+		}
+		def := strings.Index(tc.body, "posse_stamp() {")
+		if def < 0 {
+			t.Fatalf("%s: no posse_stamp definition", tc.name)
+		}
+		if n := strings.Count(tc.body, "posse_stamp() {"); n != 1 {
+			t.Errorf("%s: posse_stamp must be defined once, got %d", tc.name, n)
+		}
+		if call := strings.Index(tc.body, "$(posse_stamp)"); call < 0 || call < def {
+			t.Errorf("%s: every call must sit below the definition (def=%d first call=%d)", tc.name, def, call)
+		}
+		// Every logged line, and there is one per arm.
+		for _, l := range strings.Split(tc.body, "\n") {
+			if strings.Contains(l, "refusals.log") && strings.Contains(l, "echo") && !strings.Contains(l, "$(posse_stamp)") {
+				t.Errorf("%s: a refusals.log line with no stamp:\n%s", tc.name, l)
+			}
+		}
 	}
 }
