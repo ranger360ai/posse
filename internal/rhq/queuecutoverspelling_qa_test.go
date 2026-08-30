@@ -22,11 +22,11 @@ package rhq
 // behind by the fan-out and becomes exactly the two-hop chain l9aa was filed
 // for.
 //
-// This is not hypothetical bookkeeping: rangerhq's own redirect — the tree
-// l9aa was about — was repointed BY HAND, out of band, with no bead recording
-// it (41 bytes, no trailing newline, where the script writes 42). Hand-edited
-// redirects are how this fleet actually gets them, and a hand does not spell
-// paths the way a script does.
+// This is not hypothetical bookkeeping: the originating instance's own
+// redirect — the tree l9aa was about — was repointed BY HAND, out of band,
+// with no bead recording it (41 bytes, no trailing newline, where the script
+// writes 42). Hand-edited redirects are how this fleet actually gets them,
+// and a hand does not spell paths the way a script does.
 //
 // The fix wants a compare that normalises before matching (or resolves both
 // sides to a real path) rather than a looser one: a stranger tree pointed at a
