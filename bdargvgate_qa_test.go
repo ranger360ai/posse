@@ -951,8 +951,14 @@ func TestQABdArgvGateRefusalNamesWhatMatchedAndWhere(t *testing.T) {
 			[]string{"resolved verb", "segment 2 of 2", "bd admin reset"}},
 		{"ls /tmp && bd delete some-id && echo done",
 			[]string{"resolved verb", "segment 2 of 3", "bd delete some-id"}},
+		// The two heredoc spellings are one arm with two messages, and the
+		// message is the whole diagnostic value: "sh EXECUTES this" and "sh is
+		// also on this line" send the reader to different places. Collapse
+		// them into one sentence and these two rows say so.
 		{"sh <<'EOF'\nbd daemon stop\nEOF",
-			[]string{"heredoc body", "segment 1 of 1", "bd daemon stop"}},
+			[]string{"heredoc body", "segment 1 of 1", "bd daemon stop", "sh EXECUTES"}},
+		{"cat <<'EOF' | sh\nbd daemon stop\nEOF",
+			[]string{"heredoc body", "segment 1 of 2", "bd daemon stop", "also runs sh"}},
 		{"sh -c \"bd daemon stop\"", []string{"command word", "segment 1 of 1"}},
 		{"BD=bd; $BD daemon stop", []string{"command word", "segment 2 of 2", "$BD"}},
 		{"bd sync --full", []string{"resolved verb", "segment 1 of 1"}},

@@ -615,17 +615,22 @@ def verdict(command):
         for body, expands in heredocs:
             if not mentions_bd(body):
                 continue
-            consumer = os.path.basename(word or "")
-            if consumer in HEREDOC_EXEC:
-                return at("bd inside a heredoc that %s EXECUTES; this gate "
-                          "cannot follow a program it is handed on stdin"
-                          % consumer, "heredoc body", body)
+            # ONE question, asked of the whole line rather than of this
+            # segment: does anything here execute what it is handed on stdin?
+            # Asking only the opening segment's command word answers the wrong
+            # question for `cat <<'EOF' | sh`, where the opener is cat. The two
+            # spellings differ in the MESSAGE only, so there is one arm to get
+            # wrong and both rows in the pin notice when it goes.
             if interpreters is None:
                 interpreters = interpreters_on_line(segs)
             if interpreters:
-                return at("bd inside a heredoc on a line that also runs %s, "
-                          "which may be what the body is piped into"
-                          % ", ".join(sorted(interpreters)), "heredoc body", body)
+                consumer = os.path.basename(word or "")
+                return at("bd inside a heredoc %s" % (
+                    "that %s EXECUTES; this gate cannot follow a program it is "
+                    "handed on stdin" % consumer if consumer in interpreters else
+                    "on a line that also runs %s, which may be what the body is "
+                    "piped into" % ", ".join(sorted(interpreters))),
+                    "heredoc body", body)
             if expands and any(o in body for o in OPAQUE):
                 return at("bd inside an UNQUOTED heredoc carrying %s, which the "
                           "shell runs before the body is data; quote the "
