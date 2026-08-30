@@ -2,9 +2,9 @@ package rhq
 
 // Readiness for the TYPED prompt path — ranger-base-3p0.
 //
-// THE INCIDENT. `posse new erlich-posse-q472`, footer read auto-mode-on,
-// and forty seconds later `posse prompt <name> "Work beads issue ..."`.
-// herdr returned agent_prompted success. The pane held:
+// THE INCIDENT. `posse new <session>`, footer read auto-mode-on, and forty
+// seconds later `posse prompt <session> "Work beads issue ..."`. herdr
+// returned agent_prompted success. The pane held:
 //
 //	Unknown command: /Work. Did you mean /fork?
 //	Args from unknown skill: beads issue ...        (plus stray "mc")
