@@ -133,6 +133,47 @@ func TestInstallSeedingRowNamesPromoteForAPromotedHome(t *testing.T) {
 	}
 }
 
+// ranger-base-g4cm: the third outcome the row has to name. A seed tree that
+// misses NOTHING the embed carries (fullForeignSeedDir, shared with the QA
+// pin in installseedsilence_qa_test.go) leaves the re-run's `wrote` at 0 on a
+// SEEDED home — the same silence init used to give a PROMOTED home, which is
+// what made the row's old inference (silence ⇒ promoted) unsound. init now
+// names this case; the row must too, and by the sentence init actually
+// prints, not by a position ("the re-run's second line") that
+// retireExamplePIDs can push around.
+func TestInstallSeedingRowNamesNothingMissingForASeededHomeWithNoGap(t *testing.T) {
+	a := initTestApp(t)
+	var out strings.Builder
+	if err := a.initFrom(&out, os.DirFS(fullForeignSeedDir(t)), "stale"); err != nil {
+		t.Fatalf("the wrong seed: %v\n%s", err, out.String())
+	}
+	m, err := ReadPromoteManifest(a.PromoteManifestPath())
+	if err != nil || m == nil || !m.Seeded {
+		t.Fatalf("the fixture must be a seeded home, or this measures nothing: %+v %v", m, err)
+	}
+
+	out.Reset()
+	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
+		t.Fatalf("the re-run: %v\n%s", err, out.String())
+	}
+	quoted := "nothing missing:"
+	if !strings.Contains(out.String(), quoted) {
+		t.Fatalf("a seeded home whose re-run fills no gap must say so by name, not by silence:\n%s", out.String())
+	}
+	if v := a.VerifyPromoted(); !v.OK() {
+		t.Errorf("a seeded home the re-run filled no gap in must still verify: %s\n%s", v.Line(), out.String())
+	}
+
+	body, err := os.ReadFile("../../INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := seedingRow(t, string(body))
+	if !strings.Contains(row, quoted) {
+		t.Errorf("INSTALL.md §14's seeding row no longer quotes %q, the line that disambiguates this case from a promoted home:\n%s", quoted, row)
+	}
+}
+
 // seedingRow is §14's first Troubleshooting row — the one the reader lands on
 // when init announces the wrong seed.
 func seedingRow(t *testing.T, doc string) string {

@@ -276,6 +276,14 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes agents/, config.yaml, recipes/ and skills/ against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
 			AbbrevHome(a.PromoteManifestPath()))
 		fmt.Fprintf(w, "  `posse promote` is what re-stamps it after you change any of them\n")
+	case !fresh && wrote == 0 && man != nil && man.Seeded:
+		// ranger-base-g4cm: a seeded home whose re-run fills no gap matched
+		// none of the arms above, so init said nothing here too — and
+		// INSTALL.md §14's row read that silence as a promoted home, wrongly.
+		// Naming the case removes the ambiguity at the source instead of
+		// asking the row to infer it from an absence.
+		fmt.Fprintf(w, "nothing missing: %s was already fully seeded, so this run copied no files and left the manifest (seeded) as it was — a file an earlier seed already wrote under the right name keeps that seed's content, not this one's (copyIfMissing never overwrites)\n",
+			AbbrevHome(a.Home))
 	case manErr == nil && man == nil:
 		fmt.Fprintf(w, "left this home unstamped: it already had a constitution, and a manifest init wrote over it would arm the launch verify on prose nobody ratified (ADR 0015 §3)\n")
 		fmt.Fprintf(w, "  the verify stays off until you run `posse promote`; until then no launch is refused for it\n")
