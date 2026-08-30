@@ -52,7 +52,6 @@ func detachedLegacyTree(t *testing.T) (*HerdrBackend, string, *SessionTree) {
 // what the operator reads when deciding whether it is safe to kill a
 // session, written into a bead, where the empty string outlives the pass.
 func TestQASettleTreeLinesNamesTheBaseItCannotKnow(t *testing.T) {
-	t.Skip("ranger-base-82d9: settleopen.go's tree line still interpolates t.Base raw")
 	b, session, _ := detachedLegacyTree(t)
 	got := (&Dispatcher{App: b.App, HB: b}).settleTreeLines(session)
 	if strings.Contains(got, "merges to  at close") {
@@ -66,8 +65,8 @@ func TestQASettleTreeLinesNamesTheBaseItCannotKnow(t *testing.T) {
 }
 
 // The rest of the sweep, which DOES hold — kept so a later refactor cannot
-// quietly undo it, and so the skipped pin above is the only red this state
-// produces. Every one of these was measured on 2026-08-30 at 25503c1.
+// quietly undo it. Every one of these was measured on 2026-08-30 at 25503c1,
+// when the pin above was the only red this state produced.
 func TestQADetachedLegacyBaseIsSweptEverywhereElse(t *testing.T) {
 	_, _, tr := detachedLegacyTree(t)
 	said := orDetached("")

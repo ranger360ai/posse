@@ -308,10 +308,11 @@ func repoBranch(repo string) string {
 // beats printing an empty string mid-sentence.
 //
 // Every sentence that renders a base goes through it — the persona's work
-// prompt, the pass's tree and merge-back lines, `posse worktrees`, and the
-// merge-back bead's own title and body. Base == "" is reachable at all of
-// them (ranger-base-nfgh), and the ones that skipped it read "never merge
-// to  yourself".
+// prompt, the pass's tree and merge-back lines, `posse worktrees`, the
+// merge-back bead's own title and body, and the settle-open escalation's
+// tree line (ranger-base-82d9). Base == "" is reachable at all of them
+// (ranger-base-nfgh), and the ones that skipped it read
+// "never merge to  yourself".
 func orDetached(base string) string {
 	if base == "" {
 		return "the branch it was cut from"

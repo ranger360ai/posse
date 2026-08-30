@@ -312,7 +312,7 @@ func (d *Dispatcher) settleTreeLines(session string) string {
 	}
 	dirty := dirtyPaths(t.Path)
 	var b strings.Builder
-	fmt.Fprintf(&b, "tree:     %s on %s (merges to %s at close)\n", AbbrevHome(t.Path), t.Branch, t.Base)
+	fmt.Fprintf(&b, "tree:     %s on %s (merges to %s at close)\n", AbbrevHome(t.Path), t.Branch, orDetached(t.Base))
 	if len(dirty) == 0 {
 		fmt.Fprintf(&b, "uncommitted: none — nothing is lost by killing the session\n")
 		return b.String()
