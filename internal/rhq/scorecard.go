@@ -143,10 +143,11 @@ var rejectWords = []string{"invalid", "duplicate", "dup", "wontfix", "won't fix"
 // ranger-base-5fyg, and a substring test over a free-text field reads this
 // shop's own engineering vocabulary as a rejection: "dup" is inside dedupes,
 // deduplicated, duplicated; "invalid" is inside invalidate, invalidation,
-// invalidates. Measured on the live store, the substring test's precision
-// over closed -l code / -l devops beads was 1 in 3, and its one unambiguous
-// false hit was ranger-base-muoo — a P1 fix whose close reason opens
-// "verify-after dedupes on the description marker".
+// invalidates. Measured through this function over the live store's 520
+// closed -l code / -l devops beads carrying a reason: 5 match the words,
+// and the one that is not a rejection at all is ranger-base-muoo — a P1
+// fix whose close reason opens "verify-after dedupes on the description
+// marker" and says "15 duplicates closed" further in.
 //
 // The trailing s? keeps the plurals the substring test caught: real
 // rejections read "closed as duplicates of x". It deliberately does NOT
