@@ -77,7 +77,17 @@ const (
 // target's pane, and returns an error — with nothing typed — when it never
 // does. The string is a note for the operator (a wait that was long enough
 // to mention, or the concession above); "" means there is nothing to say.
-func (b *HerdrBackend) AwaitPromptable(session, target string) (string, error) {
+//
+// The detection is the evidence the gate opened on, handed back for callers
+// whose rule is about the STATE and not only about the screen: the pulse
+// will not interrupt a persona mid-turn, and reading that from the session
+// listing is reading the very guess this gate exists to distrust
+// (ranger-base-k99a). It is Seen() only on the opening path — the
+// never-answered concession returns the zero detection, because a
+// diagnostic that is not working is evidence of no state at all — and on
+// the refusal it is the last guess, which is what the error already
+// describes.
+func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, string, error) {
 	wait := b.promptReadyWait(session)
 	start := time.Now()
 	deadline := start.Add(wait)
@@ -95,10 +105,10 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (string, error) {
 			lastErr = err.Error()
 		case det.Seen():
 			if waited := time.Since(start); waited >= promptReadyPoll {
-				return fmt.Sprintf("waited %s for %s to draw a screen herdr recognizes (%s)",
+				return det, fmt.Sprintf("waited %s for %s to draw a screen herdr recognizes (%s)",
 					waited.Round(100*time.Millisecond), session, seenBy(det)), nil
 			}
-			return "", nil
+			return det, "", nil
 		default:
 			lastErr, answered, lastGuess = "", true, det
 		}
@@ -111,13 +121,13 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (string, error) {
 		time.Sleep(promptReadyPoll)
 	}
 	if !answered {
-		return fmt.Sprintf("herdr cannot explain %s (%s) — prompting without the readiness gate", session, lastErr), nil
+		return AgentDetection{}, fmt.Sprintf("herdr cannot explain %s (%s) — prompting without the readiness gate", session, lastErr), nil
 	}
 	reason := lastGuess.FallbackReason
 	if reason == "" {
 		reason = "no rule matched"
 	}
-	return "", Die("nothing was sent: herdr has not recognized a screen in %s within %s — it reports %q with %s, "+
+	return lastGuess, "", Die("nothing was sent: herdr has not recognized a screen in %s within %s — it reports %q with %s, "+
 		"which is what a CLI that has not taken the keyboard yet looks like, and text typed there lands in whatever has it "+
 		"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
 		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw())

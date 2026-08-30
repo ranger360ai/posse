@@ -1642,6 +1642,12 @@ case "$1 $2" in
 "agent prompt")
   printf '%s\n' '{"result":{"submitted":true}}'
   exit 0;;
+"agent explain")
+  # A screen herdr has SEEN — a named rule, not the idle guess. The
+  # readiness gate (ranger-base-k99a) stands in front of every p now,
+  # and this test is about the crew mark behind it, not about the gate.
+  printf '%s\n' '{"state":"idle","matched_rule":{"id":"live_prompt_box"},"visible_idle":true,"fallback_reason":null}'
+  exit 0;;
 esac
 printf '%s\n' '{"error":{"code":"no","message":"unexpected '"$1 $2"'"}}'
 exit 1
@@ -1668,8 +1674,9 @@ exit 1
 		StateDir:   filepath.Join(home, "state"),
 	}
 	c := &cockpit{
-		app: a,
-		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+		app:     a,
+		hb:      &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+		prompts: make(chan string, 4),
 	}
 	c.refresh()
 	c.buildRows()
@@ -1684,6 +1691,10 @@ exit 1
 		t.Fatalf("no session row %q in %+v", name, c.sessions)
 		return -1
 	}
+	// The prompt runs off the event loop now (ranger-base-k99a): the keys
+	// only start it, and the line it produces arrives on c.prompts, which
+	// is where runCockpit's select puts it on the status line. So the test
+	// plays the event loop's one relevant case.
 	prompt := func(name string) string {
 		t.Helper()
 		c.cursor, c.mode, c.status = rowFor(name), modeNormal, ""
@@ -1691,6 +1702,13 @@ exit 1
 			if _, err := c.handleKey([]byte(k)); err != nil {
 				t.Fatal(err)
 			}
+		}
+		select {
+		case msg := <-c.prompts:
+			c.prompting = false
+			c.status = msg
+		case <-time.After(30 * time.Second):
+			t.Fatalf("the prompt goroutine never reported; status stuck at %q", c.status)
 		}
 		return c.status
 	}

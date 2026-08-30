@@ -111,6 +111,15 @@ type cockpit struct {
 	results     chan string // launch goroutine → event loop status line
 	progress    chan string // launch goroutine → event loop, while it is still in flight
 
+	// The `p` path's own pair (ranger-base-k99a). A hand prompt talks to
+	// herdr three times and waits for a screen herdr has SEEN, which is a
+	// startup wait on a fresh session — so it runs off the event loop like
+	// a launch does. Its own flag and its own channel, NOT c.dispatching /
+	// c.results: a prompt landing on results would clear a still-running
+	// launch's flag and let a second `d` race it on the shared dispatcher.
+	prompting bool        // a prompt goroutine is in flight (one at a time)
+	prompts   chan string // prompt goroutine → event loop status line
+
 	// Running cost (ADR 0003 §4): a background scan of every registered cost
 	// provider's transcripts, refreshed every costEvery, keyed by bead id;
 	// the day total in the footer. A session on a runtime with no adapter
@@ -459,8 +468,8 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 	c := &cockpit{app: a, hb: hb, bd: rhq.NewBd(), out: out,
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
-		progress: make(chan string, 4),
-		costs:    make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
+		progress: make(chan string, 4), prompts: make(chan string, 4),
+		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
 		govs: make(chan govRead, 1)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
 	// written straight to it is garbage on the frame. That silences the one
@@ -565,6 +574,11 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 			}
 		case msg := <-c.results:
 			c.dispatching = false
+			c.status = msg
+			c.refresh()
+			c.draw()
+		case msg := <-c.prompts:
+			c.prompting = false
 			c.status = msg
 			c.refresh()
 			c.draw()
@@ -983,28 +997,9 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			if s == nil {
 				break
 			}
-			target, err := c.hb.AgentTarget(s.Name)
-			if err != nil {
-				c.status = err.Error()
-				break
-			}
-			if _, err := c.hb.H.AgentPrompt(target, text, false, 0); err != nil {
-				c.status = err.Error()
-			} else {
-				// The operator just started a conversation here: the session
-				// is theirs until they hand it back with `o` (ADR 0008).
-				// A mark that could not be recorded rides the status line
-				// beside the prompt, the way a kill's worktree fate does —
-				// silence there would leave the operator believing the
-				// shield engaged (rangerhq-sk6p).
-				name := s.Name
-				missed := c.hb.MarkCrew(name)
-				c.refresh() // c.sessions is replaced — s is stale past here
-				c.status = "prompted " + name
-				if missed != "" {
-					c.status += " — " + missed
-				}
-			}
+			// Name, not the row: c.sessions is replaced by every refresh
+			// and the goroutine outlives several of them.
+			c.promptSession(s.Name, text)
 		case key == "\x7f" || key == "\b":
 			if len(c.input) > 0 {
 				c.input = c.input[:len(c.input)-1]
@@ -1056,7 +1051,11 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 		}
 		c.noHolder()
 	case key == "p":
-		if c.actSession() != nil {
+		if c.prompting {
+			// Refused at `p` rather than at enter, so the operator is not
+			// invited to type a prompt that will be thrown away.
+			c.status = "a prompt is already in flight"
+		} else if c.actSession() != nil {
 			c.mode, c.input = modePrompt, nil
 		} else {
 			c.noHolder()
@@ -1197,6 +1196,61 @@ func (c *cockpit) launch(bead rhq.RepoIssue, resume bool) {
 			return
 		}
 		c.results <- done + bead.ID + " → " + session
+	}()
+}
+
+// promptSession sends one hand-typed prompt off the event loop — the same
+// work `posse prompt` does: resolve the pane, wait for a screen herdr has
+// SEEN, type, mark crew.
+//
+// Every step of it talks to herdr, and the gate (rhq.AwaitPromptable) holds
+// for up to the session's runtime startup wait — 45s for claude — on the
+// one case it exists for: a session so fresh that herdr is still guessing
+// at its pane. That is exactly when an operator presses `p`, having just
+// dispatched, and a straight call would freeze the whole cockpit for it.
+// So: goroutine → channel → event loop, c.launch's shape, with the status
+// line as the only progress there is (ranger-base-k99a).
+//
+// A refusal from the gate goes onto the status line whole. It is longer
+// than the line — the same trade the kill refusal makes — but it leads with
+// what happened ("nothing was sent"), and the escape hatch it names
+// (`posse prompt --now`) is a CLI away. The cockpit deliberately has no
+// ungated key: a second prompt spelling would have to be a key nobody asked
+// for, and a prompt herdr cannot see landing is the bug, not the feature.
+func (c *cockpit) promptSession(name, text string) {
+	c.prompting = true
+	c.status = "prompting " + name + "…"
+	go func() {
+		target, err := c.hb.AgentTarget(name)
+		if err != nil {
+			c.prompts <- err.Error()
+			return
+		}
+		_, note, err := c.hb.AwaitPromptable(name, target)
+		if err != nil {
+			c.prompts <- err.Error()
+			return
+		}
+		if note != "" {
+			// The gate waited, or could not read the pane at all. Either is
+			// news while the prompt is still going in, so it rides the
+			// progress channel rather than replacing the result.
+			c.note(note)
+		}
+		if _, err := c.hb.H.AgentPrompt(target, text, false, 0); err != nil {
+			c.prompts <- err.Error()
+			return
+		}
+		// The operator just started a conversation here: the session is
+		// theirs until they hand it back with `o` (ADR 0008). A mark that
+		// could not be recorded rides the status line beside the prompt,
+		// the way a kill's worktree fate does — silence there would leave
+		// the operator believing the shield engaged (rangerhq-sk6p).
+		line := "prompted " + name
+		if missed := c.hb.MarkCrew(name); missed != "" {
+			line += " — " + missed
+		}
+		c.prompts <- line
 	}()
 }
 

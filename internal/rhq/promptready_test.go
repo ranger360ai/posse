@@ -54,7 +54,7 @@ func TestPromptGateRefusesAPaneHerdrOnlyGuessesAt(t *testing.T) {
 	}
 
 	start := time.Now()
-	note, err := b.AwaitPromptable("fresh", "w1:p1")
+	_, note, err := b.AwaitPromptable("fresh", "w1:p1")
 	if err == nil {
 		t.Fatalf("a guessed screen must not be prompted; got note %q", note)
 	}
@@ -84,7 +84,7 @@ func TestPromptGatePassesAPaneHerdrHasSeen(t *testing.T) {
 	promptReadySession(t, b, "live", "400ms")
 
 	start := time.Now()
-	note, err := b.AwaitPromptable("live", "w1:p1")
+	_, note, err := b.AwaitPromptable("live", "w1:p1")
 	if err != nil {
 		t.Fatalf("a seen screen must be promptable: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestPromptGateDoesNotWaitForIdle(t *testing.T) {
 	}
 
 	start := time.Now()
-	if _, err := b.AwaitPromptable("busy", "w1:p1"); err != nil {
+	if _, _, err := b.AwaitPromptable("busy", "w1:p1"); err != nil {
 		t.Fatalf("a working agent herdr can see must still take a prompt: %v", err)
 	}
 	if waited := time.Since(start); waited >= promptReadyPoll {
@@ -126,7 +126,7 @@ func TestPromptGateWaitsOutABootThenPrompts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	note, err := b.AwaitPromptable("booting", "w1:p1")
+	_, note, err := b.AwaitPromptable("booting", "w1:p1")
 	if err != nil {
 		t.Fatalf("the CLI drew its screen on the third read; the prompt must go: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestPromptGateProceedsWhenHerdrCannotExplain(t *testing.T) {
 	}
 
 	start := time.Now()
-	note, err := b.AwaitPromptable("opaque", "w1:p1")
+	_, note, err := b.AwaitPromptable("opaque", "w1:p1")
 	if err != nil {
 		t.Fatalf("a failed diagnostic must not refuse the prompt: %v", err)
 	}

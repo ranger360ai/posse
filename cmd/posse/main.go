@@ -284,7 +284,7 @@ func main() {
 		// hand path (promptready.go). --now is the operator saying they
 		// mean this pane as it is.
 		if !now {
-			note, err := hb.AwaitPromptable(name, target)
+			_, note, err := hb.AwaitPromptable(name, target)
 			if err != nil {
 				die(err)
 			}

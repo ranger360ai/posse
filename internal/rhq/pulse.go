@@ -246,6 +246,13 @@ func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
 	}
 }
 
+// pulseTakesPrompt is the pulse's state rule, in one place because it is
+// asked twice: once of herdr's agent listing as a cheap pre-filter, once of
+// the detection the readiness gate opened on, which is the answer that
+// counts. A shop check is an unsolicited nudge — it goes to a persona that
+// has stopped, never into a turn in progress.
+func pulseTakesPrompt(status string) bool { return status == "idle" || status == "done" }
+
 // deliverPulse decides whether this tick's non-empty condition set is due
 // for a prompt — a fingerprint not yet prompted, or an unchanged one whose
 // renag interval has elapsed — then attempts idle-only delivery to
@@ -297,12 +304,41 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 			strings.Join(state.Conditions, "; "), cfg.Persona)
 		return
 	}
-	if status != "idle" && status != "done" {
+	if !pulseTakesPrompt(status) {
 		reason := status
 		if reason == "" {
 			reason = "no agent"
 		}
 		fmt.Fprintf(d.Out, "pulse: skipped (%s)\n", reason)
+		return
+	}
+	// ...and now the same question again, of evidence rather than of the
+	// listing (ranger-base-k99a). `status` above came from herdr's agent
+	// listing, which answers `idle` for a pane holding a known agent that
+	// NO rule matched — the guess that let ranger-base-3p0 type a work
+	// prompt into a CLI which did not have the keyboard yet, and turned it
+	// into `/Work`. So the check above is only the cheap pre-filter that
+	// keeps a visibly-working persona from costing a startup wait; the
+	// gate is what decides, and it decides on a screen herdr has SEEN.
+	//
+	// Two readings, two rules. AwaitPromptable's own rule is "a CLI that
+	// holds the keyboard", which is weaker than the pulse's: `posse prompt`
+	// by hand may nudge an agent mid-turn, but a shop check is a nudge
+	// nobody asked for and must not land on one. So the pulse re-applies
+	// its idle|done rule to what the gate actually saw. Only on positive
+	// evidence: the never-answered concession returns a zero detection, and
+	// refusing a pulse because a diagnostic verb is missing would silence
+	// the shop check against an older herdr entirely.
+	det, note, err := d.HB.AwaitPromptable(name, name)
+	if err != nil {
+		fmt.Fprintf(d.Out, "pulse: skipped (%s not promptable: %v)\n", name, err)
+		return
+	}
+	if note != "" {
+		fmt.Fprintf(d.Out, "pulse: %s\n", note)
+	}
+	if det.Seen() && !pulseTakesPrompt(det.State) {
+		fmt.Fprintf(d.Out, "pulse: skipped (%s — herdr's listing said %q)\n", det.State, status)
 		return
 	}
 
