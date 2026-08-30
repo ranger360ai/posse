@@ -1114,6 +1114,194 @@ func TestAutostartLoneQuotesAreNotStripped(t *testing.T) {
 	}
 }
 
+// ranger-base-fqfw, the null half. yamlGetLines maps a cleaned `null` or `~`
+// to the empty string, so those are how YAML spells "unset" and every key
+// below must read them as the key not being there at all: posse's default,
+// not a backoff cap called null, a session named null, or a directory called
+// null that does not exist.
+//
+// The comparison is against the SAME config with the key left out — one more
+// pairing of the two readers, not a spelling. runArgv's complaint check is
+// half the measurement: pre-fix `autostart_max_beads: null` armed the right
+// `-n 3` by the wrong road ("'null' is not a count") and an argv-only
+// assertion would have gone green on it.
+//
+// autostart_interval: is not here because for the arm switch unset-by-value
+// is still not absent — that pairing is the test below.
+func TestAutostartNullValuesReadLikeAnAbsentKey(t *testing.T) {
+	absent := runArgv(t, armed)
+	for _, key := range []string{
+		"autostart_max_interval",
+		"autostart_max_beads",
+		"autostart_dry_run",
+		"autostart_resume",
+		"autostart_session",
+		"autostart_dir",
+	} {
+		// `"null"` is quoted on purpose: yamlGetLines checks for null AFTER
+		// yamlClean has dropped the wrapping pair, so posse reads it as unset
+		// too, and a cfg() that checked before unquoting would split here
+		// while passing on the bare spellings.
+		for _, value := range []string{"null", "~", `"null"`, `"~"`} {
+			t.Run(key+"/"+value, func(t *testing.T) {
+				probe := filepath.Join(t.TempDir(), "config.yaml")
+				if err := os.WriteFile(probe, []byte(key+": "+value+"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if got := YamlGet(probe, key); got != "" {
+					t.Fatalf("posse reads %s: %s as %q, not unset — fixture is not a null case", key, value, got)
+				}
+				if got := runArgv(t, armed+key+": "+value+"\n"); got != absent {
+					t.Errorf("%s: %s armed a different loop than leaving the key out\nnull:   %s\nabsent: %s",
+						key, value, got, absent)
+				}
+			})
+		}
+	}
+}
+
+// The arm switch is the one key where a null value is not the same as no key,
+// and the two surfaces have to reach that by the same arm. `autostart_dir:
+// null` is $HOME because the default is there to be had; `autostart_interval:
+// null` has no default to fall back on, so it is the broken arm the seed
+// config promises — present, unreadable, nothing armed.
+//
+// So the comparison is against a BARE `autostart_interval:`, whole: same exit
+// code, same words, same nothing armed. Pre-fix the hook was handed `null`
+// and took the malformed arm ("'null' is not an interval") while posse's G7
+// took the empty one ("present but empty") — both refusing, neither saying
+// the same thing, which is the disagreement the seed config's "posse status
+// reads both the same way" paragraph is about.
+func TestAutostartNullIntervalIsTheSameBrokenArmAsABareKey(t *testing.T) {
+	bare := runStandDown(t, "autostart_interval:\n")
+	if bare.code != 1 || !strings.Contains(bare.out, "present but empty") {
+		t.Fatalf("the bare key is not the broken arm this compares against: exit %d\n%s", bare.code, bare.out)
+	}
+	for _, value := range []string{"null", "~", `"null"`, `"~"`, "null # yes, off"} {
+		t.Run(value, func(t *testing.T) {
+			probe := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(probe, []byte("autostart_interval: "+value+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// The two facts G7's empty arm switches on (internal/rhq/govern.go):
+			// the key is there, and it reads as nothing. If either stops being
+			// true this pin is asking the wrong question.
+			if got := YamlGet(probe, "autostart_interval"); got != "" {
+				t.Fatalf("posse reads %s as %q, not unset — fixture is not a null case", value, got)
+			}
+			if !yamlHasKey(probe, "autostart_interval") {
+				t.Fatalf("posse cannot see the key in %q — fixture is an absent key, not a broken arm", value)
+			}
+			if got := runStandDown(t, "autostart_interval: "+value+"\n"); got != bare {
+				t.Errorf("%s stood down differently than a bare key\nnull: %+v\nbare: %+v", value, got, bare)
+			}
+		})
+	}
+}
+
+// ranger-base-fqfw, the comment half. yamlClean's findComment is awk's rule —
+// a comment starts at WHITESPACE followed by '#' — and it scans from index 1,
+// so a '#' with nothing before it is the first character of the value. cfg()'s
+// sed was 's/[[:space:]]*#.*$//', where the run may be empty, so a '#'
+// anywhere started a comment and the hook read an empty key where posse read
+// a value.
+//
+// Each row pairs two lines posse reads identically and requires the hook to
+// arm the same loop off both, so a shared miscount reds it too. The last rows
+// are the do-not-overreach half: a hash that IS preceded by whitespace is
+// still a comment, tab as well as space, and unquoting cannot resurrect one.
+func TestAutostartHashWithNothingBeforeItIsData(t *testing.T) {
+	for _, c := range []struct{ name, line, same, want string }{
+		{"hash heads a dir", "autostart_dir:#tmp\n", "autostart_dir: \"#tmp\"\n", "--dir #tmp "},
+		{"hash heads a session name", "autostart_session:#qa\n", "autostart_session: \"#qa\"\n", "new #qa "},
+		{"a spaced hash comments the value away", "autostart_dir: #tmp\n", "autostart_dir:\n", "--dir "},
+		{"a spaced hash is a comment", "autostart_dir: /q #tmp\n", "autostart_dir: /q\n", "--dir /q "},
+		{"a tabbed hash is a comment", "autostart_dir: /q\t#tmp\n", "autostart_dir: /q\n", "--dir /q "},
+		{"a comment cannot survive the unquote", "autostart_dir: \"/q\" #\"x\"\n", "autostart_dir: /q\n", "--dir /q "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// The control: posse reads the pair the same way. Without it the
+			// hook is being pinned against nothing.
+			a, b := probeGet(t, c.line, "autostart_"), probeGet(t, c.same, "autostart_")
+			if a != b {
+				t.Fatalf("posse does not read the pair alike (%q vs %q) — fixture is not a comment case:\n%q\n%q",
+					a, b, c.line, c.same)
+			}
+			got, same := runArgv(t, armed+c.line), runArgv(t, armed+c.same)
+			if got != same {
+				t.Errorf("the two lines armed different loops\n%q -> %s\n%q -> %s", c.line, got, c.same, same)
+			}
+			if !strings.Contains(same, c.want) {
+				t.Fatalf("fixture never reached the loop — want %q in:\n%s", c.want, same)
+			}
+		})
+	}
+}
+
+// And the same rule on the arm switch, where it picks which refusal the
+// deployer gets: `#5m` is a value posse reads and ParseInterval refuses, so
+// the hook must refuse it BY NAME (the malformed arm) rather than report an
+// empty key, which is what it did while a leading hash was a comment. G7 says
+// the malformed sentence about this config; a hook saying "present but empty"
+// beside it is the split (internal/rhq/govern.go, ranger-base-7rt5).
+func TestAutostartHashHeadedIntervalIsMalformedNotEmpty(t *testing.T) {
+	for _, line := range []string{"autostart_interval:#5m\n", "autostart_interval: \"#5m\"\n"} {
+		t.Run(strings.TrimSpace(line), func(t *testing.T) {
+			probe := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(probe, []byte(line), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := YamlGet(probe, "autostart_interval"); got != "#5m" {
+				t.Fatalf("posse reads %q as %q, not \"#5m\" — fixture is not a leading-hash case", line, got)
+			}
+			if _, err := ParseInterval("#5m"); err == nil {
+				t.Fatal("#5m parses — the hook refusing it would be the disagreement, not the fix")
+			}
+			r := runStandDown(t, line)
+			if r.code == 0 || r.calls != "" {
+				t.Errorf("the hook armed something off %q (exit %d):\n%s\n%s", line, r.code, r.out, r.calls)
+			}
+			if !strings.Contains(r.out, "is not an interval") || !strings.Contains(r.out, "#5m") {
+				t.Errorf("the refusal does not name the value the operator typed:\n%s", r.out)
+			}
+			if strings.Contains(r.out, "present but empty") {
+				t.Errorf("posse reads a value here; the hook read an empty key:\n%s", r.out)
+			}
+		})
+	}
+}
+
+// probeGet is the YamlGet control for a one-line config whose key the caller
+// does not want to spell twice: it reads back whichever autostart key the
+// line names.
+func probeGet(t *testing.T, line, prefix string) string {
+	t.Helper()
+	key, _, ok := strings.Cut(line, ":")
+	if !ok || !strings.HasPrefix(key, prefix) {
+		t.Fatalf("not a %s line: %q", prefix, line)
+	}
+	probe := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(probe, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return YamlGet(probe, key)
+}
+
+// runStandDown is runArgv's other half: the hook over one config, with the
+// world's temp paths folded away so two worlds compare, and no requirement
+// that anything was armed. What it returns is the whole refusal — exit code,
+// every line said, and the argv (empty, for a stand-down) — because a
+// disagreement between the two readers shows up in the WORDS as often as in
+// the exit code.
+func runStandDown(t *testing.T, config string) hookRun {
+	t.Helper()
+	w := newHookWorld(t, config)
+	r := w.run(t, "--startup")
+	r.out = strings.ReplaceAll(r.out, w.home, "$RHQ_HOME")
+	r.calls = strings.ReplaceAll(strings.TrimSpace(r.calls), w.home, "$RHQ_HOME")
+	return r
+}
+
 // ranger-base-g7lt. Every test above injects RHQ_HOME, which is exactly why
 // none of them could see this: the hook's default was a second, disagreeing
 // copy of newApp's both-paths read (internal/rhq/app.go). homeWorld runs the

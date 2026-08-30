@@ -204,10 +204,10 @@ loop_alive() {
 	return 0
 }
 
-# Flat-YAML scalar read: `key: value`, trailing " #" comment stripped, then a
-# wrapping pair of double quotes dropped.
+# Flat-YAML scalar read: `key: value`, a " #" comment stripped, a wrapping
+# pair of double quotes dropped, and null/~ read as unset.
 #
-# The unquote is not decoration. This file has TWO readers: posse reads it
+# None of that is decoration. This file has TWO readers: posse reads it
 # with yamlClean (internal/rhq/yamlflat.go, behind CfgGet/YamlGet) and this
 # hook reads it here, and they must not disagree about what the operator
 # wrote. yamlClean drops a matched pair of double quotes, so YAML's own way
@@ -218,13 +218,39 @@ loop_alive() {
 # exist, a quoted count hit the "is not a count" arm.
 #
 # So the rule is yamlClean's rule, in yamlClean's order, and not a shell
-# unquote invented here: double quotes only (single quotes are not in the
-# house subset and stay part of the value), both ends or neither, and after
-# the comment and whitespace strip (ranger-base-k3yd).
+# reader invented here (ranger-base-k3yd, ranger-base-fqfw). In order:
+#
+#   1. THE COMMENT. yamlClean's findComment is awk's rule — a comment starts
+#      at WHITESPACE followed by '#' — and it scans the value from index 1,
+#      so a '#' with nothing before it is data, not a comment. Hence the
+#      leading-whitespace strip moved DOWN here from the first sed: eating
+#      it first made `dir:#tmp` and `dir: #tmp` the same input, and posse
+#      reads them as `#tmp` and empty. `[[:blank:]]` is space and tab,
+#      exactly what findComment accepts.
+#   2. WHITESPACE, both ends (strings.TrimSpace).
+#   3. THE QUOTES: double only (single quotes are not in the house subset
+#      and stay part of the value), both ends or neither.
+#   4. NULL. yamlGetLines maps a cleaned `null` or `~` to the empty string,
+#      so those are YAML's spellings of "unset" and this hook must read them
+#      as the key not being there — for `autostart_dir:` that is $HOME and
+#      not a directory called null. AFTER the unquote, because that is where
+#      yamlGetLines checks: `"null"` is unset to posse too.
+#
+# The arm switch is the one key where unset-by-value is still not absent:
+# `autostart_interval: null` reads empty here and `haskey` still sees the
+# key, which is the broken-arm stand-down below and the EMPTY arm of G7
+# (internal/rhq/govern.go) — the same arm, on both surfaces, with the same
+# sentence.
 cfg() {
 	[ -f "$CONFIG" ] || return 0
-	sed -n "s/^$1:[[:space:]]*//p" "$CONFIG" | head -1 |
-		sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/'
+	local v
+	v=$(sed -n "s/^$1://p" "$CONFIG" | head -1 |
+		sed -e 's/[[:blank:]]#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+			-e 's/^"\(.*\)"$/\1/')
+	case "$v" in
+	null | '~') return 0 ;;
+	esac
+	printf '%s\n' "$v"
 }
 
 # Is the key THERE, regardless of what it says? `cfg` answers with the value,
