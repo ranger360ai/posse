@@ -64,10 +64,16 @@ import (
 // log holds no more explains than guesses served, the late error was never
 // reached and this fails naming the fixture rather than passing on an
 // assertion of absence.
+//
+// Which left the witness reporting the box rather than the fixture: at 900ms
+// it was red about 1 run in 10 under load with "fixture unmet: 2 explains"
+// (ranger-base-t1aq). The window below is sized off that measurement — see
+// the WINDOW SIZING note over the twin in bootrace_qa_test.go, which carries
+// the runs and why 4s.
 func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
-	d.StartupWait = 900 * time.Millisecond
+	d.StartupWait = 4 * time.Second
 	d.Poll = 100 * time.Millisecond
 	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644) // guess forever
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)  // the real 0.8.0 shape

@@ -103,10 +103,35 @@ func TestQAExplainErrorOnStderrStillPromptsOutLoud(t *testing.T) {
 // Production makes the window 22 polls wide (StartupWait 45s, Poll 2s) and
 // only the last one has to fail; a herdr restart or live handoff mid-launch
 // is how it fails (ranger-base-7t4).
+//
+// WINDOW SIZING — ranger-base-t1aq, and it governs the twin in
+// verify_nx85_qa_test.go too. The fixture witness below needs guesses+1 = 3
+// explains INSIDE the window, and at 900ms it did not reliably get them: the
+// twin was red about 1 run in 10 on the operator's box with "fixture unmet: 2
+// explains". The loop here runs to the deadline by construction — herdr only
+// ever guesses, so nothing returns early — which makes the window the test's
+// whole duration, and makes it the only wall clock left in the fixture now
+// that the late error is armed by call count (ranger-base-9mwa).
+//
+// Measured 2026-08-30, darwin 25.4.0, 8 cpus, this fixture standalone, load
+// manufactured with 16 spinners on top of a box already at 15-40:
+//
+//	load ~16, 900ms window       15 runs   6-8 explains
+//	load ~32-65, 900ms window    12 runs   2 and 4, then 6-7 — and the two
+//	                                       starved runs took 13s and 14s of
+//	                                       wall for a 900ms window
+//	load ~32-65, 3s window       12 runs   17-21 explains
+//
+// So the worst in-window iteration measured costs ~450ms (2 explains in
+// 900ms) against ~150ms idle, and 3 of those is ~1.35s. 4s carries what the
+// fixture needs at that worst cost with about 3x over, and buys it at ~3s of
+// wall per test. Raising this alone would not have been enough while the
+// error was still planted by a timer — that race was the ordering, this one
+// is only the margin.
 func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
-	d.StartupWait = 900 * time.Millisecond
+	d.StartupWait = 4 * time.Second
 	d.Poll = 100 * time.Millisecond
 	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644) // guess forever
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)  // the real 0.8.0 shape
