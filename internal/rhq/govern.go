@@ -387,15 +387,20 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// "Armed" is the HOOK's reading, not "the key is there". A bare
 	// `autostart_interval:` is a broken arm: plugin/autostart.sh refuses it
 	// by name and exits 1 rather than arming anything (ranger-base-cxyk),
-	// and CfgGet cleans the line the same way its cfg() does, so the two
-	// agree about the three shapes that read empty (bare, whitespace-only,
-	// value commented out). Gating on presence alone made this row say
+	// and so is a value posse cannot parse (ranger-base-7rt5). CfgGet cleans
+	// the line the same way its cfg() does and the hook's grammar check is a
+	// mirror of ParseInterval, so the two agree about the three shapes that
+	// read empty (bare, whitespace-only, value commented out) and about
+	// every shape that reads malformed. Gating on presence alone made this row say
 	// "autostart is armed" about a config nothing will ever arm from and
 	// point the operator at a dead loop instead of at the empty key in
 	// their file — the same false diagnostic, on the one row whose whole
 	// job is to be believed (ranger-base-i6h).
 	if yamlHasKey(in.App.ConfigPath, "autostart_interval") {
-		if in.App.CfgGet("autostart_interval", "") == "" {
+		interval := in.App.CfgGet("autostart_interval", "")
+		_, badInterval := ParseInterval(interval)
+		switch {
+		case interval == "":
 			// Still G7, and still URGENT: the table is closed at nine, the
 			// fact is the same one (nothing is delivering, and nothing
 			// will at the next herdr start), and only the cause differs —
@@ -403,7 +408,18 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 			add("G7", GovUrgent, "arm-broken",
 				fmt.Sprintf("autostart_interval: in %s is present but empty — the herdr startup hook refuses it and arms nothing; give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm",
 					AbbrevHome(in.App.ConfigPath)))
-		} else {
+		case badInterval != nil:
+			// The same broken arm, one input shape over: the hook refuses a
+			// value posse cannot parse and arms nothing (ranger-base-7rt5).
+			// It is asked with ParseInterval — the function the loop itself
+			// would have died in — because the hook's own check is a mirror
+			// of it, and a row that guessed the grammar instead would go on
+			// reporting "autostart is armed" about a config nothing will
+			// ever arm from.
+			add("G7", GovUrgent, "arm-broken",
+				fmt.Sprintf("autostart_interval: %q in %s is not an interval — the herdr startup hook refuses it and arms nothing; use 30s, 5m, or bare seconds",
+					interval, AbbrevHome(in.App.ConfigPath)))
+		default:
 			running, err := WatchLoopRunning(in.App)
 			switch {
 			case err != nil:

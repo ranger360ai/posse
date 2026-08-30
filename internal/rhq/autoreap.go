@@ -142,7 +142,15 @@ func (d *Dispatcher) autoReapPass() {
 			continue
 		}
 		fmt.Fprintf(d.Out, "reaped %s (bead %s %s)\n", s.Name, s.Bead, why)
-		if line := landing.Line(); line != "" {
+		// Since ranger-base-qxvh that includes what became of the persona's
+		// standing orders: the sweep commits them, because this is the path
+		// that reaps at scale — ~30 in a day on the instance that motivated
+		// it — and memory is the one artifact with no other copy. It spends
+		// no landing TURN doing it: the bead is closed and the agent has
+		// settled, so the persona has already had its wrap-up, and N
+		// bounded turns in a row would stall the pass this sweep is an
+		// epilogue to.
+		for _, line := range landing.Lines() {
 			fmt.Fprintf(d.Out, "  %s\n", line)
 		}
 	}

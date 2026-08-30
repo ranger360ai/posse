@@ -22,15 +22,47 @@ on:
     branches: [main]
   pull_request:
 
-# A superseded run is waste, so a newer push to the same ref cancels the older
-# one. Note the consequence on main: `github.ref` is refs/heads/main for every
-# push to it, so back-to-back merges cancel the earlier commit's run and only
-# the tip is verified. Acceptable because main is fast-forwarded from bead
-# branches that ran this same gate as PRs; drop cancel-in-progress if main ever
-# takes commits that were not gated first.
+# A superseded run is waste, so a newer push to the same PR cancels the older
+# one. On main the group is the COMMIT, not the ref, so pushes to main never
+# supersede each other: every commit that lands gets a run of its own.
+#
+# It did not used to be. This block grouped main by `github.ref` with
+# cancel-in-progress: true, on the stated premise that "main is fast-forwarded
+# from bead branches that ran this same gate as PRs". That premise was false
+# here from the first day — posse fast-forwards a bead branch onto main
+# directly and opens no pull request, so nothing was gated before it landed.
+# The file named that trigger and the trigger fired. Measured 2026-08-30
+# (ranger-base-sfb3): 128 runs of this workflow, 128 of them `push`, 0
+# `pull_request`, 19 commits cancelled mid-run.
+#
+#   gh run list --workflow=ci.yml --limit 200 --json event,conclusion
+#
+# What that cost is attribution: a cancelled commit is the one you cannot point
+# at when the next run is red. Fast-forward-only main still covers the earlier
+# commit's CONTENT at a later green tip, so nothing was unverified forever.
+#
+# Keying push on github.sha rather than setting `cancel-in-progress: false` is
+# deliberate. false does not mean "everything runs" — GitHub cancels a PENDING
+# run when a newer one queues into the same group ("any existing pending job or
+# workflow in the same concurrency group will be canceled"), so a shared group
+# drops commits whichever way that flag is set. A group of one supersedes
+# nothing, under either semantics.
+#
+# The selector is `case()`, GitHub's documented conditional, and NOT the
+# widely-copied `cond && a || b` idiom. That idiom relies on && and || yielding
+# their operand rather than a boolean, which GitHub's expression reference does
+# not state anywhere; if it ever yielded a boolean the group would collapse to
+# the literal `ci-true` and every PR would share one group — reintroducing this
+# bug in the one place nobody would re-read. Not a premise worth resting on
+# twice. actionlint v1.7.12 types the call `case(bool, any, any...) -> any`.
+#
+# BLAST RADIUS of the change: overlapping pushes to main used to collapse to
+# one run and now all of them run, so the runner-job count rises with push
+# rate. Still free (public repo, standard runners), and GitHub's own
+# concurrency ceiling queues the excess rather than cancelling it.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ case(github.event_name == 'pull_request', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. This workflow never writes to the repo, the release, or the tap.
 permissions:

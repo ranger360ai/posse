@@ -45,6 +45,15 @@ bd sync               # Sync with git
   already staged it (rangerhq-lrnp); undo that path-limited with
   `git restore --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
+- **The bead id in the subject is this shop's provenance; the
+  `Co-Authored-By` runtime trailer is the harness's** (ranger-base-5aks).
+  599 of 608 commits on `main` name a bead, and everything that asks "why is
+  this here" reads that. The trailer is typed by the model and enforced by
+  nothing: 60% of the same commits carry one, in runs, since the repo's first
+  week. No gate adds it and no gate removes it — `prepare-commit-msg` can
+  refuse a commit but never opens its message file for write, so a
+  trailer-less commit is a message that was written without one, never a
+  route that ate one. Type it; do not rewrite history that lacks it.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

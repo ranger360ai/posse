@@ -3794,6 +3794,17 @@ is unlinked — not a stale path. argv[0] survives in `ps -o args=`, which is
 why enumeration reads `args` and identification reads `comm`. Empty and
 "path that no longer exists" are the same verdict, so it holds either way.
 
+MEASURED second (ranger-base-zk8v): `comm` is the path **as invoked**, not a
+resolved one, so a daemon started from its own directory reports `./bd`. The
+script `cd`s to the repo root at the top, so a relative comm tested with `-e`
+there asks whether the *repo* holds that file — and a binary sitting on disk
+was called ORPHAN, which is the wrong runbook (reap and restart, for a foreign
+build that is still there to be identified). A relative comm is resolved
+against the daemon's own cwd, which the cwd layer reads anyway; with no cwd to
+resolve against, the verdict keeps only the half that still holds — a relative
+path is not the absolute pinned binary — and says the rest is unknown. Never a
+false negative on this arm either way: a relative path cannot equal `$want_bin`.
+
 It acts on nothing. No kill, no `brew pin`, no relink — `Bash(bd daemon:*)` is
 denied fleet-wide and killing a pid is in no PID. A failing run prints the
 operator's next step and stops; `bdpin_qa_test.go` asserts the script's *code*

@@ -627,6 +627,74 @@ func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
 	}
 }
 
+// One input shape over from the bare key, and the same broken arm: a value the
+// hook cannot read. `posse dispatch --watch banana` dies with
+// `bad interval "banana"` — but it dies inside the herdr session, after the
+// hook has already told the deployer "dispatch started", so the operator has
+// an unattended loop they believe is armed and is not (ranger-base-7rt5).
+// Every other value key here names what it cannot read; this one cannot fall
+// back on a default, so it stands down the way the empty key does.
+//
+// ParseInterval is asked about every fixture, so this table cannot quietly
+// drift into pinning shapes posse would have accepted.
+func TestAutostartMalformedIntervalIsRefusedNotArmed(t *testing.T) {
+	for name, value := range map[string]string{
+		"word":         "banana",
+		"quoted empty": `""`,
+		"zero":         "0",
+		"zero units":   "0h0m",
+		"negative":     "-5m",
+		"wrong unit":   "5min",
+		"units only":   "m",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseInterval(value); err == nil {
+				t.Fatalf("fixture %q is one posse accepts — not a malformed value", value)
+			}
+			w := newHookWorld(t, "autostart_interval: "+value+"\n")
+
+			r := w.run(t, "--startup")
+			if r.code == 0 {
+				t.Errorf("a malformed autostart_interval: was accepted (exit 0):\n%s", r.out)
+			}
+			if r.calls != "" {
+				t.Errorf("the hook armed something off an interval posse refuses:\n%s", r.calls)
+			}
+			// "dispatch started" is the specific lie: a positive claim, in the
+			// deployer's terminal, about a loop that dies in a session log.
+			if strings.Contains(r.out, "started") {
+				t.Errorf("the hook reported success having armed nothing:\n%s", r.out)
+			}
+			if !strings.Contains(r.out, "autostart_interval:") || !strings.Contains(r.out, value) {
+				t.Errorf("the refusal names neither the key nor the value the operator typed:\n%s", r.out)
+			}
+		})
+	}
+}
+
+// The other half of that check, and the reason it is a mirror of
+// ParseInterval rather than a guess: refusing a value posse would have
+// accepted is a disarmed fleet, which is the worse failure of the two. Every
+// shape posse takes must still arm, and must reach the loop verbatim.
+func TestAutostartArmsEveryIntervalPosseAccepts(t *testing.T) {
+	for _, value := range []string{"30s", "5m", "45", "1h30m", "2m30s", "500ms", "1.5m", ".5s", "007", "2h45m30s500ms"} {
+		t.Run(value, func(t *testing.T) {
+			if _, err := ParseInterval(value); err != nil {
+				t.Fatalf("fixture %q is not one posse accepts: %v", value, err)
+			}
+			w := newHookWorld(t, "autostart_interval: "+value+"\n")
+
+			r := w.run(t, "--startup")
+			if r.code != 0 {
+				t.Fatalf("exit %d on an interval posse accepts:\n%s", r.code, r.out)
+			}
+			if !strings.Contains(r.calls, "dispatch --watch "+value+" ") {
+				t.Errorf("the interval did not reach the loop verbatim:\n%s", r.calls)
+			}
+		})
+	}
+}
+
 // ── the resume arm (ranger-base-f0g) ────────────────────────────────────────
 //
 // The armed loop is the one the OPERATOR gets, and before this it was

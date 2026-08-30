@@ -573,7 +573,10 @@ default_emoji: ⚙️
 # rather than by setting some off-value. There is no off-value, and a bare
 # `autostart_interval:` with nothing after it is not one: it is a broken arm,
 # and the hook refuses it by name and exits nonzero rather than reading it as
-# a disarm. `posse status` reads it the same way and says so as G7
+# a disarm. Neither is a value that is not an interval (`banana`, `5min`, `0`):
+# the hook checks the grammar `posse dispatch --watch` would have checked and
+# refuses it here, where you are standing, instead of arming a loop that dies
+# in a session log. `posse status` reads both the same way and says so as G7
 # (`arm-broken`), so the two surfaces never disagree about whether you are
 # armed. Nothing else in this file starts a process on its own.
 #

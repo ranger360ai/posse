@@ -2163,6 +2163,10 @@ type KillLanding struct {
 	Tree  *SessionTree
 	Merge MergeOutcome
 	Kept  string // why the worktree was left in place ("" = it was removed)
+	// Memory is what the kill did with the persona's standing orders
+	// (ranger-base-qxvh). Nil is the quiet majority: no persona, no memory
+	// dir, or nothing in it a commit does not already hold.
+	Memory *MemoryLanding
 }
 
 // KillSessionAndLand ends a session and retires the tree it worked in: kill
@@ -2212,6 +2216,31 @@ func (b *HerdrBackend) KillSessionAndLandOpts(name string, o KillOpts) (*KillLan
 type KillOpts struct {
 	Force   bool // ADR 0013 §4's reap guard: dirty tree + open bead is killed anyway
 	Foreign bool // the ownership refusal: a workspace this home holds no meta for is closed anyway
+
+	// Land spends one bounded turn asking the agent to write its lessons
+	// down before the workspace closes — relaunch's landing turn, on the
+	// path that actually destroys sessions (ranger-base-qxvh).
+	//
+	// It is opt-IN at this layer and opt-OUT at the command line
+	// (`posse kill --no-land`), and the asymmetry is deliberate. A turn is
+	// real tokens and real minutes, and two of this method's callers cannot
+	// afford either: the cockpit runs a kill on its single select loop,
+	// where a ten-minute turn is a frozen TUI, and the auto-reaper runs
+	// inside a dispatch pass, where N of them in a row is the fleet stalled
+	// behind a sweep. Both reap sessions whose bead is CLOSED and whose
+	// agent has settled — a persona that already ran its own wrap-up — so
+	// what they need from this feature is the COMMIT, which is not optional
+	// and happens on every kill regardless of this field. `posse kill` by
+	// hand is the one caller that catches a session mid-anything, which is
+	// where a turn earns what it costs.
+	Land bool
+	// Timeout bounds that turn (0 → DefaultLandTimeout, relaunch's own
+	// bound for the same turn with the same prompt).
+	Timeout time.Duration
+	// Out is where the turn's progress is said. A kill that has become slow
+	// must say why while it is being slow; nil says nothing, which is what
+	// every caller that does not take a turn wants.
+	Out io.Writer
 }
 
 func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, error) {
@@ -2253,6 +2282,39 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 			return nil, err
 		}
 	}
+
+	// The landing turn, while the agent is still alive and before anything
+	// is closed (ranger-base-qxvh). It is gated on the persona having
+	// memory that no commit holds, which is one `git status` and is the
+	// difference between a feature that lands what exists and one that
+	// taxes every reap for a turn with nothing to say. The cost of that
+	// gate is named where it is paid: a session that learned something and
+	// never wrote a line of it down is not prompted to.
+	//
+	// A turn that does not settle inside the bound stops the kill, exactly
+	// as it stops a relaunch. The alternative is closing a workspace whose
+	// agent may be mid-commit, which is the loss this whole path exists to
+	// prevent — and a kill that refuses says so and names both ways
+	// through, where a kill that quietly skipped the turn would not.
+	if opts.Land && hadMeta && m.Agent != "" && len(b.App.MemoryDirtyPaths(m.Agent)) > 0 {
+		timeout := opts.Timeout
+		if timeout <= 0 {
+			timeout = DefaultLandTimeout
+		}
+		w := opts.Out
+		if w == nil {
+			w = io.Discard
+		}
+		settled, err := b.landThePlane(w, m, timeout, KillLandingPrompt(m))
+		if err != nil {
+			return nil, err
+		}
+		if !settled {
+			return nil, Die("NOT killed: %s is still working after %s — let it finish and kill it again (or --timeout %s, or --no-land to close it without the turn)",
+				name, timeout, (2 * timeout).String())
+		}
+	}
+
 	if err := b.H.CloseWorkspace(s.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -2260,14 +2322,22 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		os.Remove(b.metaPath(name))
 		b.App.DropPaneLine(name)
 	}
+	l := &KillLanding{}
 	if !hadMeta || s.Foreign {
-		return &KillLanding{}, nil
+		return l, nil
 	}
+	// The commit, after the workspace is closed and so after the last
+	// writer to that file is gone. It runs on every kill — --no-land, the
+	// cockpit, the auto-reaper — because it is the durability this bead is
+	// about and it costs one git process; only the TURN above is optional.
+	// A foreign row is somebody else's session and carries no persona of
+	// ours, which is why it returns above this line.
+	l.Memory = b.App.LandPersonaMemory(m.Agent, "posse kill "+name, m.Bead)
 	t := SessionTreeOf(m)
 	if t == nil {
-		return &KillLanding{}, nil
+		return l, nil
 	}
-	l := &KillLanding{Tree: t}
+	l.Tree = t
 	// Moving the repo's branch is a launcher act (ADR 0011 §1) — the same
 	// check-then-act against a store a dispatch pass is also writing. The
 	// lock is taken around the landing ONLY, never around the kill: a kill
@@ -2301,8 +2371,31 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	return l, nil
 }
 
-// Line is the one sentence a kill's landing is worth saying out loud. ""
-// when the session had no tree of its own and there is nothing to report.
+// Lines is everything a kill is worth saying out loud, in the order it
+// happened: what became of the persona's memory, then what became of the
+// session's tree. Empty when neither had anything to report, which is the
+// ordinary kill.
+//
+// It exists because a kill grew a SECOND thing worth reporting
+// (ranger-base-qxvh) and Line() can only carry one. Line() stays what it
+// was — the tree's sentence — so every caller and test that asks it that
+// question still gets that answer.
+func (l *KillLanding) Lines() []string {
+	if l == nil {
+		return nil
+	}
+	var out []string
+	if ln := l.Memory.Line(); ln != "" {
+		out = append(out, ln)
+	}
+	if ln := l.Line(); ln != "" {
+		out = append(out, ln)
+	}
+	return out
+}
+
+// Line is the one sentence a kill's TREE landing is worth saying out loud.
+// "" when the session had no tree of its own and there is nothing to report.
 func (l *KillLanding) Line() string {
 	if l == nil || l.Tree == nil {
 		return ""

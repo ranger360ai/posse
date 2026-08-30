@@ -163,6 +163,26 @@ proc_cwd() { # pid -> working directory, empty when unreadable
 	fi
 }
 
+# `ps -o comm=` reports the path AS INVOKED, not a resolved one, so a daemon
+# started with a relative argv0 reports a RELATIVE path — and this script has
+# already cd'd to the repo root, so testing that with `-e` asks whether the
+# REPO holds a file by that name. It does not, and a binary that is on disk
+# got the ORPHAN verdict and with it the wrong runbook (ranger-base-zk8v). A
+# relative comm means something only against the PROCESS's own cwd, which the
+# cwd layer reads anyway — so read it first and resolve against it, and when
+# there is no cwd to resolve against say so rather than guess. Only the common
+# `./x` form is tidied: a `../` comm still joins to a path `-e` answers
+# correctly, and simply will not string-equal $want_bin, which fails toward
+# FOREIGN — the safe direction, since the alarm still fires.
+resolve_comm() { # comm cwd -> path to test, empty when it cannot be resolved
+	case $1 in
+	'') : ;;
+	/*) printf '%s' "$1" ;;
+	*) [ -z "$2" ] || printf '%s/%s' "${2%/}" "${1#./}" ;;
+	esac
+	return 0
+}
+
 # The throwaway roots a daemon has no business living under. macOS resolves
 # both /tmp and $TMPDIR through /private, and lsof reports the resolved form,
 # so both spellings are listed rather than resolved at read time.
@@ -197,14 +217,25 @@ else
 		path=$(ps -wwo comm= -p "$pid" 2>/dev/null | sed 's/[[:space:]]*$//')
 		start=$(proc_start "$pid")
 		when=${start:+$(age "$start")}
+		# The cwd is read HERE, ahead of the binary layer, because a relative
+		# comm can only be resolved against it. The two layers stay REPORTED
+		# separately below; only the reading order moved.
+		cwd=$(proc_cwd "$pid")
+		real=$(resolve_comm "$path" "$cwd")
 		verdict=ok
-		if [ -z "$path" ] || [ ! -e "$path" ]; then
+		if [ -z "$path" ] || { [ -n "$real" ] && [ ! -e "$real" ]; }; then
 			# macOS empties `comm` once the executable is unlinked; either way
 			# the binary this process is running is not on disk any more.
 			verdict="<-- ORPHAN: its binary is gone from disk"
 			fail=$((fail + 1))
 			path=${path:-"(unlinked — no path)"}
-		elif [ "$path" != "$want_bin" ]; then
+		elif [ -z "$real" ]; then
+			# Relative comm, unreadable cwd: nothing to resolve it against, so
+			# its existence is unknowable. What still holds is that a relative
+			# path is not the absolute pinned binary — the honest half.
+			verdict="<-- FOREIGN: not the pinned binary (relative path, cwd unreadable — cannot tell whether it is still on disk)"
+			fail=$((fail + 1))
+		elif [ "$real" != "$want_bin" ]; then
 			verdict="<-- FOREIGN: not the pinned binary"
 			fail=$((fail + 1))
 		elif [ -n "$start" ] && [ -n "$bin_mtime" ] && [ "$start" -lt "$bin_mtime" ]; then
@@ -217,7 +248,6 @@ else
 		# never folded into it: a daemon can be running the right binary in a
 		# directory that no longer exists, and collapsing the two verdicts
 		# into one would print `ok` for exactly that process.
-		cwd=$(proc_cwd "$pid")
 		if [ -z "$cwd" ]; then
 			cwd_verdict="(working directory unverified — could not read it)"
 			cwd="?"
