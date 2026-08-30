@@ -1130,8 +1130,13 @@ func contentNotOnBase(repo, base, tip string) ([]string, error) {
 // blobInRange answers whether any commit in the range holds oid at path. The
 // range is the caller's bound, not this function's: an unbounded walk over a
 // question about destroying work is the wrong kind of slow.
+//
+// --full-history because the default simplification follows ONE parent
+// through a merge, and the commit that put these bytes on the base can be on
+// the side it drops. Missing one is a refusal, which is survivable, but the
+// question deserves the complete answer.
 func blobInRange(repo, rng, path, oid string) bool {
-	out, err := git(repo, "rev-list", rng, "--", ":(literal)"+path)
+	out, err := git(repo, "rev-list", "--full-history", rng, "--", ":(literal)"+path)
 	if err != nil {
 		return false
 	}
