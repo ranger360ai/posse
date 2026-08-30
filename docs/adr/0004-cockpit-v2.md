@@ -82,7 +82,15 @@ in-progress row: `enter` focuses the holder's session, `p` prompts it,
 `d` re-dispatches (dispatch's `--resume` semantics: re-prompt the holder,
 or launch it if gone), `u` unclaims (y confirms; `Bd.Unclaim`, actor =
 none — the operator's hand, attributed as such). Footer shows the keys of
-the *selected* section only.
+the *selected* section only. *(Amended 2026-08-30, ranger-base-v5mh: `c`
+and the y that confirms `u` are `bd` WRITES and they now run off the event
+loop, so each has an in-flight state the key table did not have. While one
+flies, `c`, `u` and `d` are all refused with "a claim is already in
+flight" — `d` too, because a dispatch claims the bead it launches and two
+writers on one row make bd answer the loser with "claim on X lost". Not
+the mirror: `c` and `u` stay available while a DISPATCH flies, because
+that guard would stretch a ~2s wait over the runtime's whole startup wait,
+45s for claude.)*
 
 **4. Scrolling.** A single viewport over the row model: header (2 lines)
 and footer (status + keys, up to 3 lines, mode-dependent) are fixed;
@@ -133,6 +141,16 @@ the sessions row once it exists, which this layout already accommodates.
     back-to-back at 5.3s a call — so the gap is `max(beadsEvery, what the
     last scan took)` after it lands, which holds bd to at most half the
     wall clock on any store. Operator keys rescan at once regardless.
+  - **The keys were the other half** (ranger-base-v5mh, 2026-08-30). Moving
+    the scans left exactly two `bd` calls on the event loop, both from
+    `handleKey`: `c`'s `Claim` and the y that confirms `u`. Both are
+    WRITES, and `--no-daemon` (ranger-base-cwu7) made bd cheap to read, not
+    cheap to write — measured on a copy of this shop's store, a write is
+    1.25–2.14s against 0.28s for a read, because it re-exports the JSONL,
+    and `Bd.Claim` is up to three of them. So they moved too, into the
+    launch/prompt shape with their own flag and channel (`claiming` /
+    `claims`), and the refresh each ends with runs in the event loop's case
+    for the channel — which is what orders it after the write.
 - `dispatch --resume` from a key: `LaunchBead` already handles an
   in_progress bead whose holder is gone; the cockpit passes `Resume: true`
   for that one call.
