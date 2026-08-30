@@ -2,6 +2,7 @@ package rhq
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -193,5 +194,72 @@ func TestOnboardingFooterNamesEveryDeclarableKey(t *testing.T) {
 		if !strings.Contains(footer, want) {
 			t.Errorf("runtime check's onboarding footer never names %s — a key posse reads and no screen lists is a declaration an operator cannot find:\n%s", want, footer)
 		}
+	}
+}
+
+// The DONE WHEN of ranger-base-ncxa for `self_sandbox:`, which the key's
+// own test did not reach. TestSelfSandboxIsDeclarable pins the getter and
+// the PARITY line ("cage seatbelt cannot wrap test"); the behaviour the key
+// exists for is one layer further down — planLaunch must not put
+// sandbox-exec in front of a runtime that sandboxes itself, because macOS
+// refuses to nest seatbelts and the launch dies with `sandbox_apply:
+// Operation not permitted`.
+//
+// The wrap is `cage == CageSeatbelt && AvailableCages[CageSeatbelt] &&
+// !rt.SelfSandbox` on both rendering paths (herdrback.go). This drives the
+// first through planLaunch and reads the rendered line, with an identical
+// yaml runtime lacking the key as the control — without that arm a green
+// here would only prove seatbelt was unavailable in the fixture.
+func TestSelfSandboxSkipsTheSeatbeltWrapAtLaunch(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"selfbox":  "command: selfbox --sys {file}\nself_sandbox: true\n",
+		"plainbox": "command: plainbox --sys {file}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(b.App.RuntimesDir(), name+".yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The host's own sandbox-exec probe must not decide this: pin the cage
+	// available, as parity_test.go and overflow_test.go do.
+	had := AvailableCages[CageSeatbelt]
+	AvailableCages[CageSeatbelt] = true
+	defer func() {
+		if !had {
+			delete(AvailableCages, CageSeatbelt)
+		}
+	}()
+
+	plan := func(runtime string) string {
+		t.Helper()
+		p, err := b.planLaunch(NewSessionOpts{
+			Name: "s-" + runtime, Dir: t.TempDir(), Agent: "dev",
+			Runtime: runtime, Cage: CageSeatbelt, AllowDegraded: true,
+		})
+		if err != nil {
+			t.Fatalf("%s: planLaunch: %v", runtime, err)
+		}
+		return p.Cmd
+	}
+
+	// The CONTROL first: without the key the same yaml IS wrapped. If this
+	// arm ever goes quiet the assertion below measures nothing.
+	if cmd := plan("plainbox"); !strings.Contains(cmd, "sandbox-exec") {
+		t.Fatalf("control: a runtime without self_sandbox: must be seatbelt-wrapped, or this test proves nothing about the key: %q", cmd)
+	}
+	// And the key itself.
+	if cmd := plan("selfbox"); strings.Contains(cmd, "sandbox-exec") {
+		t.Errorf("self_sandbox: true must NOT be seatbelt-wrapped — macOS refuses to nest and the launch dies with sandbox_apply: Operation not permitted: %q", cmd)
 	}
 }
