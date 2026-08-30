@@ -120,20 +120,24 @@ WRAPPERS = {"env", "command", "builtin", "exec", "nohup", "time", "nice",
 # segment carrying one of these, the segment is refused rather than guessed.
 OPAQUE = ("$(", "`", "${", "eval ", "eval\t", "<(", ">(")
 
-# Command words a HEREDOC BODY is a program for, rather than data (ranger-base-uxuy).
-# `cat <<'EOF'` writes its body to a file and nothing in it runs; `sh <<'EOF'`
-# and `python3 <<'EOF'` execute theirs. So the body is read as prose for the
-# first and as an invocation this parser cannot follow for the second.
+# Command words this parser will not vouch for what it hands to. Used for
+# both the "bd as a later word" arm (`sh -c 'bd …'`, `xargs bd …`) and the
+# heredoc arm (`sh <<'EOF'`, `cat <<'EOF' | sh`) — the same question asked of
+# an argument and of a body, which is why it is one list.
 #
-# This is deliberately NOT the same set as the six words in verdict()'s
-# "bd as a later word" arm. There the question is an ARGUMENT that names bd
-# (`sh -c 'bd …'`), which a python3 invocation may perfectly well carry as a
-# string it never runs; here the body IS the program text, so every
-# interpreter belongs.
-HEREDOC_EXEC = {
+# EVERY INTERPRETER WAS THE FIRST CUT AND IT WAS WRONG (ranger-base-uxuy).
+# A heredoc body IS the program text for python3, so putting python3 here
+# looks strictly more correct — and MEASURED over 51401 real command lines off
+# this box it newly refused 130 of them, every one a `python3 - <<'PY'` source
+# edit whose body quoted the tracker's name inside a string it was splicing
+# into a file. It would also have been incoherent: `python3 -c '…bd…'` and
+# `python3 script.py` pass this gate today and always have, so the heredoc
+# spelling alone would have been the strict one, for no reason a reader could
+# state. The line is the shell family, and it is the same line the argument
+# arm already drew.
+SHELL_CONSUMERS = {
     "sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh",
-    "python", "python3", "perl", "ruby", "node", "php", "tclsh", "expect",
-    "osascript", "awk", "gawk", "xargs", "watch", "script",
+    "xargs", "watch", "script",
 }
 
 SEPARATORS = ("&&", "||", ";;", ";", "|", "&", "\n")
@@ -308,7 +312,7 @@ def segments(command):
     store` … `EOF` came back "`bd owns` is not on the gate's allow-list"
     (MEASURED, hoover, twice in one session; `owns` is not even a real verb).
     The body is handed to the segment that opened it instead, and verdict()
-    asks the only questions a body can honestly answer — see HEREDOC_EXEC.
+    asks the only questions a body can honestly answer — see SHELL_CONSUMERS.
     """
     out, bodies, cur, quote, depth, tick, i = [], [], [], None, 0, False, 0
     pending = []                        # heredocs opened, awaiting the newline
@@ -551,8 +555,8 @@ def elide(text, limit=120):
     return flat if len(flat) <= limit else flat[:limit - 1] + "…"
 
 
-def interpreters_on_line(segs):
-    """Basenames of the HEREDOC_EXEC command words anywhere on this line.
+def shell_consumers_on_line(segs):
+    """Basenames of the SHELL_CONSUMERS command words anywhere on this line.
 
     `cat <<'EOF' | sh` opens the heredoc in one segment and executes the body
     in the NEXT one, so asking only the opening segment's command word answers
@@ -564,7 +568,7 @@ def interpreters_on_line(segs):
         if unterminated or toks is None:
             continue
         word, _rest = command_word(toks)
-        if word and os.path.basename(word) in HEREDOC_EXEC:
+        if word and os.path.basename(word) in SHELL_CONSUMERS:
             found.add(os.path.basename(word))
     return found
 
@@ -583,7 +587,7 @@ def verdict(command):
     line_mentions_bd = bool(BD_WORD.search(command))
     segs = segments(command)
     total = len(segs)
-    interpreters = None                 # computed at most once, and only if asked
+    consumers = None                    # computed at most once, and only if asked
 
     for index, (segment, unterminated, heredocs) in enumerate(segs, 1):
         def at(reason, matched, text=None):
@@ -617,15 +621,15 @@ def verdict(command):
             # question for `cat <<'EOF' | sh`, where the opener is cat. The two
             # spellings differ in the MESSAGE only, so there is one arm to get
             # wrong and both rows in the pin notice when it goes.
-            if interpreters is None:
-                interpreters = interpreters_on_line(segs)
-            if interpreters:
+            if consumers is None:
+                consumers = shell_consumers_on_line(segs)
+            if consumers:
                 consumer = os.path.basename(word or "")
                 return at("bd inside a heredoc %s" % (
                     "that %s EXECUTES; this gate cannot follow a program it is "
-                    "handed on stdin" % consumer if consumer in interpreters else
+                    "handed on stdin" % consumer if consumer in consumers else
                     "on a line that also runs %s, which may be what the body is "
-                    "piped into" % ", ".join(sorted(interpreters))),
+                    "piped into" % ", ".join(sorted(consumers))),
                     "heredoc body", body)
             if expands and any(o in body for o in OPAQUE):
                 return at("bd inside an UNQUOTED heredoc carrying %s, which the "
@@ -644,7 +648,7 @@ def verdict(command):
         if not is_bd(word):
             # bd as a later word of some other command (`sh -c 'bd …'`,
             # `xargs bd …`) is indirection this parser cannot follow.
-            if segment_names_bd and os.path.basename(word) in ("sh", "bash", "zsh", "xargs", "watch", "script"):
+            if segment_names_bd and os.path.basename(word) in SHELL_CONSUMERS:
                 return at("bd behind %s, which this gate cannot follow"
                           % os.path.basename(word), "command word")
             continue

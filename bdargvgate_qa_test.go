@@ -865,6 +865,19 @@ func TestQABdArgvGateReadsAHeredocBodyAsData(t *testing.T) {
 		// measurement above printed the trailing line instead of running it.
 		{"cat > /tmp/x <<'EOF'\nbd owns the store", "bd owns the store"},
 
+		// A NON-SHELL interpreter's heredoc. The body is a program, so this
+		// looks like the strictest possible reading would refuse it — and the
+		// first cut did, at a MEASURED cost of 130 real command lines off this
+		// box, every one a `python3 - <<'PY'` source edit whose body quoted
+		// the tracker's name inside a string it was splicing into a file. It
+		// would also have been incoherent, and that is the part that decided
+		// it: the two rows below already pass this gate and always have, so
+		// the heredoc spelling alone would have been the strict one for no
+		// reason a reader could state. The line is the shell family.
+		{"python3 - <<'PY'\ns = s.replace('bd daemon stop', 'x')\nPY", ""},
+		{"python3 -c \"import os; os.system('bd daemon stop')\"", ""},
+		{"python3 /tmp/thing.py bd daemon stop", ""},
+
 		// A here-STRING is not a heredoc and opens no body.
 		{"cat <<< 'bd owns the store'", ""},
 	}
@@ -885,11 +898,11 @@ func TestQABdArgvGateReadsAHeredocBodyAsData(t *testing.T) {
 	// row above; what differs is who reads it.
 	refused := map[string]string{
 		// The body IS the program for its consumer.
-		"sh <<'EOF'\nbd daemon stop\nEOF":               "sh",
-		"bash <<EOF\nbd admin reset\nEOF":               "bash",
-		"zsh <<-'EOF'\n\tbd delete some-id\n\tEOF":      "zsh",
-		"python3 <<'PY'\nrun('bd daemon stop')\nPY":     "python3",
-		"env python3 <<'PY'\nrun('bd admin reset')\nPY": "python3",
+		"sh <<'EOF'\nbd daemon stop\nEOF":          "sh",
+		"bash <<EOF\nbd admin reset\nEOF":          "bash",
+		"zsh <<-'EOF'\n\tbd delete some-id\n\tEOF": "zsh",
+		"dash <<'EOF'\nbd daemon stop\nEOF":        "dash",
+		"env bash <<'EOF'\nbd admin reset\nEOF":    "bash",
 		// …and the consumer is not always the opener.
 		"cat <<'EOF' | sh\nbd daemon stop\nEOF":        "sh",
 		"cat <<'EOF' | bash -s\nbd admin reset\nEOF":   "bash",
@@ -959,6 +972,8 @@ func TestQABdArgvGateRefusalNamesWhatMatchedAndWhere(t *testing.T) {
 			[]string{"heredoc body", "segment 1 of 1", "bd daemon stop", "sh EXECUTES"}},
 		{"cat <<'EOF' | sh\nbd daemon stop\nEOF",
 			[]string{"heredoc body", "segment 1 of 2", "bd daemon stop", "also runs sh"}},
+		{"cat <<'EOF' > /tmp/x\nbd daemon stop\nEOF\nbash /tmp/x",
+			[]string{"heredoc body", "segment 1 of 2", "also runs bash"}},
 		{"sh -c \"bd daemon stop\"", []string{"command word", "segment 1 of 1"}},
 		{"BD=bd; $BD daemon stop", []string{"command word", "segment 2 of 2", "$BD"}},
 		{"bd sync --full", []string{"resolved verb", "segment 1 of 1"}},
