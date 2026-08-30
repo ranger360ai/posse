@@ -39,7 +39,11 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/posse/test-linux"
 die() { printf 'verify-orphan-report: %s\n' "$*" >&2; exit 1; }
 
 command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
-docker info >/dev/null 2>&1 || die "docker daemon is not running — start Docker Desktop"
+# Do NOT tell the caller to start Docker Desktop: OPERATOR RULING 2026-08-30
+# (ranger-base-6mz7) abandoned Docker on this box permanently. This control
+# cannot run locally until an off-laptop cleanroom exists — skip it, do not
+# retry and do not hang waiting for a daemon that will not appear.
+docker info >/dev/null 2>&1 || die "docker daemon unavailable — Docker is abandoned on this box (operator ruling, ranger-base-6mz7); this planted control is parked until an off-laptop cleanroom exists, not runnable here"
 
 go_minor=$(sed -n 's/^go \([0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/go.mod" | head -1)
 [ -n "$go_minor" ] || die "could not read the go directive from go.mod"

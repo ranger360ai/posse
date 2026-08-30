@@ -53,7 +53,10 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/posse/test-linux"
 die() { printf 'test-linux: %s\n' "$*" >&2; exit 1; }
 
 command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
-docker info >/dev/null 2>&1 || die "docker daemon is not running — start Docker Desktop"
+# Do NOT tell the caller to start Docker Desktop: OPERATOR RULING 2026-08-30
+# (ranger-base-6mz7) abandoned Docker on this box permanently. Run this
+# rehearsal on a box that still has a container engine, or wait on CI.
+docker info >/dev/null 2>&1 || die "docker daemon unavailable — Docker is abandoned on this box (operator ruling, ranger-base-6mz7); run this rehearsal elsewhere, or rely on .github/workflows/release.yml"
 
 # Track go.mod rather than pinning a tag here: the major.minor stream always
 # exists upstream and always carries a patch >= the one go.mod asks for, so

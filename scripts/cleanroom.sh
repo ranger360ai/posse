@@ -101,7 +101,12 @@ fi
 
 need_docker() {
   command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
-  docker info >/dev/null 2>&1 || die "docker daemon is not running — start Docker Desktop"
+  # Do NOT tell the caller to start Docker Desktop: OPERATOR RULING 2026-08-30
+  # (ranger-base-6mz7, ranger-base-uhcc) abandoned Docker on this box
+  # permanently — the Virtualization.framework VM backing it held 3.8GB wired
+  # on a 16GB box already swapping under six crew sessions. This instrument is
+  # parked until an off-laptop cleanroom exists; see ranger-base-6mz7.
+  docker info >/dev/null 2>&1 || die "docker daemon unavailable — Docker is abandoned on this box (operator ruling, ranger-base-6mz7); the clean room is parked until an off-laptop cleanroom exists, not runnable here"
 }
 
 image_exists()     { docker image inspect "$IMAGE" >/dev/null 2>&1; }

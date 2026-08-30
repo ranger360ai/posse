@@ -1,5 +1,13 @@
 # The clean room — testing the public install story on a machine that has never seen posse
 
+> **PARKED on this box (`ranger-base-6mz7`, 2026-08-30).** OPERATOR RULING:
+> Docker is abandoned here permanently — the Virtualization.framework VM
+> backing it held 3.8GB wired on a 16GB box already swapping under six crew
+> sessions. `scripts/cleanroom.sh` and every `make cleanroom-*` target die
+> immediately, naming this ruling, rather than telling you to start Docker
+> Desktop. This instrument is re-staged on an off-laptop cleanroom once one
+> exists; until then treat it as design-only.
+
 `ranger-base-5zh`. Built for `ranger-base-33k` (the install QA) and for
 verifying any fix to `ranger-base-253`. Four distros since `ranger-base-5cj4`.
 
