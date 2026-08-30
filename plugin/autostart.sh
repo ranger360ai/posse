@@ -17,6 +17,10 @@
 #                            value it cannot read is a broken arm, not a
 #                            disarm: refused by name, nothing armed
 #   autostart_max_interval:  backoff cap for quiet passes (default: posse's 8x)
+#                            — a value it cannot read is NAMED AND DROPPED,
+#                            not refused: unlike the arm switch above, this
+#                            key has a default to fall back to, so a typo in
+#                            a backoff cap must not stand a fleet down
 #   autostart_max_beads:     -n, launch attempts per dispatch_epoch: (default
 #                            1h, ADR 0028 §2) — RAISES OR LOWERS
 #                            A CAP THAT IS ALWAYS PRESENT (default: 3).
@@ -272,6 +276,26 @@ fi
 
 session=$(cfg autostart_session); session=${session:-dispatch}
 maxint=$(cfg autostart_max_interval)
+# Same defect as the interval above, and deliberately NOT the same answer.
+# `posse dispatch --watch 5m --max-interval banana` dies exactly the way
+# `--watch banana` does, inside the session, under a hook that already said
+# "dispatch started" — but what to do about it is a real choice, because this
+# key has a default and that one does not: absent, the flag is omitted and
+# posse supplies 8x the base interval (cmd/posse/main.go). So it takes the
+# autostart_max_beads / autostart_resume precedent — name the value on stderr
+# and use the default — rather than the autostart_interval one, which refuses
+# only because there is no default to refuse in favour of. Standing a whole
+# fleet down over an unreadable backoff cap, on a key that is not the arm
+# switch, would be the more expensive failure of the two (ranger-base-x8y8).
+#
+# An EMPTY value stays silent: absent and empty both mean "no cap given, use
+# the default", which is what they already meant here and what an empty
+# autostart_max_beads: means one block down. Only a value that says something
+# posse cannot read gets a line.
+if [ -n "$maxint" ] && ! valid_interval "$maxint"; then
+	say "autostart_max_interval: '$maxint' in $CONFIG is not an interval — use 30s, 5m, or bare seconds; using posse's default cap (8x $interval)" >&2
+	maxint=
+fi
 maxbeads=$(cfg autostart_max_beads)
 # The cap is always passed. Absent key → 3; a malformed value would reach
 # `-n` as Atoi's 0 — unbounded, the one thing this default exists to

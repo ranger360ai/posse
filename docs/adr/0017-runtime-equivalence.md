@@ -9,7 +9,8 @@ the counted-ness pair retired by the D4 cost seam; §4 gains
 `turn_outcome:` and the two declarability shapes (ranger-base-ivf0) ·
 amended 2026-08-30: §4's "not declarable" list is retired — all four
 shipped, the last two here (ranger-base-ncxa); §1's pin test exists
-(ranger-base-ncxa)*
+(ranger-base-ncxa); §1's grid gained the five non-dispatch dimension rows
+(ranger-base-bcpa)*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -68,6 +69,23 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   Proving consumption is the per-field consumer tests' job; this test is
   the census saying one must exist. Writing it moved two rows of §3's table
   out of INERT (below).
+
+- **The grid draws every dimension a field expresses, not only the six ADR
+  0013 stages** (shipped ranger-base-bcpa). `runtime check` printed the six
+  stages plus tier and rulebooks and nothing for the ADR 0002/0007
+  dimensions the same struct declares — so the skills surface, the
+  runtime's own egress hosts, the container credential, the repo→box
+  project-config channel and the sandbox/gate-shell pair were facts the
+  code knew and no screen said, which is the "missing a row" bug this
+  section names. Five rows now carry them, in the same `stageRow` shape
+  with the same `declaredBy` provenance and §2's vocabulary throughout: a
+  measured-to-differ dimension reads as a DECLARED DIFFERENCE (codex's
+  `self_sandbox`; a `gate_shell: false` runtime), an unmeasured one as
+  UNDECLARED / UNDECIDED, and the two are never spelled the same way.
+  Pinned on the RENDERED row and not on the struct field (`gridRow`,
+  `internal/rhq/runtimecheck_test.go`): a substring assertion over the
+  whole screen answers about whichever row said the word first, which is
+  how the rulebooks line came to be pinned by nothing (ranger-base-qm6e).
 
 ### 2. What "equivalent" means — three verdicts, and UNDECLARED is loud, never fatal
 

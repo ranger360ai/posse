@@ -580,6 +580,13 @@ default_emoji: ⚙️
 # (`arm-broken`), so the two surfaces never disagree about whether you are
 # armed. Nothing else in this file starts a process on its own.
 #
+# The OTHER autostart keys are not refused, because they have defaults and the
+# arm switch does not: a value the hook cannot read in `autostart_max_interval:`,
+# `autostart_max_beads:` or `autostart_resume:` is named on stderr and replaced
+# with the default it would have used had you left the key out. A typo in a
+# backoff cap should not stand a fleet down; a typo in the arm switch has
+# nothing to fall back on.
+#
 # Arm it last, and in this order: a dry-run pass, then a hand-run pass, then
 # `autostart_dry_run: true` for a cycle, then live. The plan guard or the
 # budget caps above are what keep an unattended loop off your ceiling; the
@@ -590,7 +597,8 @@ default_emoji: ⚙️
 # by the loop for its whole life; `posse dispatch --watch-status` reads it)
 # and dispatch-watch.pid (which pid, since when, under what argv).
 # autostart_interval: 5m       # base pass interval (30s, 5m, or bare seconds) — THE ARM SWITCH
-# autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval)
+# autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval —
+#                              # which is also what an unreadable value falls back to)
 # autostart_max_beads: 3       # -n, launch attempts per EPOCH (dispatch_epoch:, default
 #                              # 1h — ADR 0028 §2; it was per pass before). A cap is
 #                              # ALWAYS present: absent key = 3, and 0 (unbounded) only

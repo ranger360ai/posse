@@ -17,6 +17,7 @@ package rhq
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 )
 
@@ -86,6 +87,18 @@ func (rt *Runtime) declaredBy(key string) string {
 	return "nothing — " + key + ": unset in " + yaml + ", so this is the loud default"
 }
 
+// declaredByList is declaredBy for a key whose value may be a BLOCK list.
+// `egress:` with its hosts on the following lines leaves nothing after the
+// colon, so YamlGet reads it as unset and the provenance line would credit a
+// built-in default the yaml had in fact overridden — the grid lying about
+// exactly the fact it exists to carry.
+func (rt *Runtime) declaredByList(key string) string {
+	if rt.Path != "" && len(YamlList(rt.Path, key)) > 0 {
+		return "runtimes/" + rt.Name + ".yaml (" + key + ":)"
+	}
+	return rt.declaredBy(key)
+}
+
 // RuntimeCheck prints the dispatch-contract grid for one runtime, then the
 // preflight (ADR 0012 D4): the gaps that stop a launch working at all, each
 // reported by name. It returns whether the preflight is CLEAN — no blocking
@@ -122,6 +135,25 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	} else {
 		wrapGrid(w, "rulebooks", "none declared — native_rules: in the yaml names the files this CLI loads by itself, ahead of anything posse types")
 	}
+	// The dimensions the Runtime struct declares that the six ADR 0013
+	// stages do not (ADR 0017 §1: the checklist IS the struct, and a
+	// dimension a field expresses and no row prints is git archaeology
+	// waiting to happen). Same row shape and the same declaredBy
+	// provenance, because an onboarder reads them in the same pass — and
+	// ADR 0017 §2's vocabulary throughout: a measured-to-differ dimension
+	// reads as a DECLARED DIFFERENCE, an unmeasured one as UNDECLARED, and
+	// the two are never spelled the same way.
+	fmt.Fprintln(w)
+	for _, r := range []stageRow{
+		a.skillsRow(rt),
+		egressRow(rt),
+		cageCredRow(rt),
+		projectConfigRow(rt),
+		sandboxRow(rt),
+	} {
+		r.write(w)
+	}
+
 	// The onboarding footer is about a runtime you DECLARE. Printed under a
 	// built-in it names a file that runtime never reads (LoadRuntime
 	// returns the built-in first), so a built-in gets the honest version.
@@ -420,4 +452,138 @@ func (rt *Runtime) tierFix() string {
 			" is a BUILT-IN and LoadRuntime returns it before it stats that file, so the map lives in runtime.go and wants a measured model id per tier"
 	}
 	return "Declare model_<tier>: (and model_flag:) in runtimes/" + rt.Name + ".yaml to change that"
+}
+
+// ─── the ADR 0002 / 0007 dimensions ──────────────────────────────────────
+//
+// Five rows the six-stage grid never carried, each a Runtime field a launch
+// changes behaviour on. They are here rather than in a doc because ADR 0017
+// §1's criterion is operational: onboarding a fourth runtime is filling this
+// grid, and a dimension that is only in git history is one the onboarder
+// meets in production instead.
+
+// skillsRow is the three-way split parity.go already computes (flag surface
+// / cwd-discovery / no surface at all), printed as the thing the CLI reads
+// rather than as the name of a Go field. Until this row existed, the only
+// trace of a skill surface on the screen was the {skills} placeholder inside
+// the echoed command template — so a runtime with NO surface, whose every
+// `skills:` PID refuses to launch, looked exactly like one with a flag
+// (ranger-base-qm6e).
+func (a *App) skillsRow(rt *Runtime) stageRow {
+	// The rendered tree per persona, spelled as the path it actually takes,
+	// so the flag arm shows what {skills} points at and not a placeholder.
+	tree := AbbrevHome(filepath.Join(a.StateDir, "skills", "<persona>", "claude"))
+	flag, ok := rt.SkillsText(tree, []string{"<skill>"})
+	r := stageRow{
+		stage:   "skills",
+		by:      rt.declaredBy("skills_flag"),
+		missing: "a PID with skills: cannot launch here at all — ADR 0007 §3 checks a bound skill like a gate, so the parity check REFUSES rather than degrading. A PID without skills: is unaffected",
+	}
+	switch {
+	case !ok:
+		r.value = "NO SURFACE — UNDECLARED: neither skills_flag: nor skills_cwd:, so posse has nothing to point this CLI at for one session"
+		r.by = "nothing — neither skills_flag: nor skills_cwd: is set for " + rt.Name + ", so this is the loud default"
+		r.note = append(r.note, "declare the one you MEASURED: skills_flag: (the printf form {skills} renders, e.g. \"--plugin-dir %s\") or skills_cwd: true (the CLI walks "+AgentsSkillsPath+" under the session dir itself). Declaring BOTH refuses at load — a runtime has one skill surface, and two half-bindings is a grid that cannot say which one the CLI read.")
+	case rt.SkillsCwd:
+		r.value = "cwd-discovery — " + AgentsSkillsPath + " under the session dir, symlinked at launch and ADDITIVE; {skills} renders nothing and the LINKS are the binding"
+		r.by = rt.declaredBy("skills_cwd")
+		r.note = append(r.note, "the dir belongs to the REPO, not to the persona: posse adds its own links, refuses to overwrite an entry it did not write, and sweeps a link whose target has left RHQ_HOME/skills. It is hidden from `git status` through .git/info/exclude, which hides it from git and not from the CLI (measured rangerhq-1qd).")
+	default:
+		r.value = "flag — " + flag + ", pointed at the tree posse renders per persona (session-only, additive)"
+		r.note = append(r.note, "that tree binds each skill as a SYMLINK into RHQ_HOME/skills, and whether this CLI FOLLOWS one is the thing to measure next: grok validates and installs the very same tree and surfaces ZERO skills, where a `cp -RL` copy of it surfaces every one (ranger-base-65rc). A row that said `flag` and stopped is how that reaches a fourth runtime.")
+	}
+	return r
+}
+
+// egressRow: the hosts this runtime itself must reach for a caged session on
+// it to be a session at all. ADR 0002 §4 — the launcher always adds them to
+// the PID's own allowlist, because a cage that cannot reach its model is not
+// an isolated persona, it is an offline one.
+func egressRow(rt *Runtime) stageRow {
+	r := stageRow{
+		stage:   "egress",
+		by:      rt.declaredByList("egress"),
+		missing: "a `cage: container` session here reaches ONLY what its PID names, its own API not among them — and the failure shape is per-CLI: claude degrades quietly, codex retries ~70× in 35s and then errors hard (measured, rangerhq-89a)",
+	}
+	if len(rt.Egress) > 0 {
+		r.value = strings.Join(rt.Egress, " ") + " — this runtime's OWN hosts, always added to a caged PID's egress: allowlist (ADR 0002 §4)"
+		r.note = append(r.note, "telemetry hosts are deliberately NOT declared here: a caged persona's traffic is the operator's business, and every CLI measured degrades quietly without theirs.")
+		return r
+	}
+	r.value = "UNDECLARED — no host of this runtime's own is known, so a caged session on it reaches only what its PID names"
+	r.note = append(r.note, "posse has no business guessing an API host, so absent is the honest default rather than a table: measure this CLI's API host and the host its OAuth refresh goes to, and name them in egress:.")
+	return r
+}
+
+// cageCredRow: the env var an authenticated CAGED session needs. A container
+// has no keychain and an on-disk credential is stale or unrefreshable there,
+// so an undecided one refuses `cage: container` with the reason instead of
+// spending the launch on a session that cannot reach its API.
+func cageCredRow(rt *Runtime) stageRow {
+	r := stageRow{
+		stage:   "cage_cred",
+		by:      rt.declaredBy("cage_cred"),
+		missing: "`cage: container` REFUSES on this runtime, naming the reason (cage.go CheckCageCredential). Every other cage tier is unaffected — this is the container's credential, not the runtime's",
+	}
+	if name := CageCredential(rt); name != "" {
+		r.value = name + " — the env NAME a containerised session authenticates with, checked by name at launch; posse never reads what it holds"
+		if rt.CageCred == "" {
+			r.by = "built-in table (cage.go cageCredential) — the operator's decision of 2026-08-20, rangerhq-kiz"
+		}
+	} else {
+		r.value = "UNDECIDED — cage: container refuses on this runtime: a container has no keychain, and the on-disk credential file is a stale leftover there or unrefreshable read-only (ADR 0002 §4, rangerhq-kiz)"
+		r.note = append(r.note, "cage_cred: in the yaml names it once the operator has minted one; every cage tier below container needs nothing here.")
+	}
+	r.note = append(r.note, "a METERED api key is not accepted as this credential — that is spending, and a persona is never the one who decides to spend. Mint it by hand, keep it in an env set (mode 600, never in the repo), and name that set in the PID's envs:.")
+	return r
+}
+
+// projectConfigRow: the repo→box configuration channel. A trusted session
+// directory means this CLI may read project-owned executable configuration
+// before any model turn — no PID and no tool gate sits in front of it — so
+// the launch checks for it and degrades unless the PID opts in.
+func projectConfigRow(rt *Runtime) stageRow {
+	r := stageRow{
+		stage:   "project_cfg",
+		by:      rt.declaredBy("project_config"),
+		missing: "the silent one: ProjectConfigTrust skips a channel nobody declared, so an unguarded repo→box channel reads as a CLEAN launch (parity.go)",
+	}
+	if len(rt.ProjectConfig) == 0 {
+		r.value = "none — no repo→box config surface declared for this runtime, so nothing in the session dir is taken to be executable configuration it reads"
+		r.note = append(r.note, "if it DOES read one, project_config: <path relative to the session dir> is what makes the channel visible; the launch then degrades unless the PID sets trust_project_config: true.")
+		return r
+	}
+	r.value = strings.Join(rt.ProjectConfig, " ") + " — read from the SESSION DIR at launch because posse made that directory trusted: project-owned executable configuration, running on the box with the whole session env, before any model turn or PID/tool gate can mediate it"
+	if len(rt.ProjectConfigKeys) > 0 {
+		r.note = append(r.note, "narrowed to top-level JSON keys: "+strings.Join(rt.ProjectConfigKeys, ", ")+" — only a file naming one of them degrades the launch. The floor holds either way: a keyed file that cannot be proved a readable top-level JSON object FAILS CLOSED, so keys declared over a TOML config degrade every launch instead of narrowing nothing quietly.")
+		r.note = append(r.note, "declared by: "+rt.declaredByList("project_config_keys"))
+	} else {
+		r.note = append(r.note, "the WHOLE FILE is the predicate: its mere presence degrades the launch. That is the conservative side, and where project_config_keys: is unset it is where this stays.")
+	}
+	r.note = append(r.note, "the PID opts in with trust_project_config: true; otherwise the launch is degraded and names the file.")
+	return r
+}
+
+// sandboxRow carries the two dimensions that decide which WALLS a launch on
+// this runtime actually gets: whether posse's own seatbelt can wrap it, and
+// whether the L1 gate shell survives on it. Both are DECLARED DIFFERENCES
+// when set — ADR 0017 §2 — and nothing here may render one as a failure.
+func sandboxRow(rt *Runtime) stageRow {
+	r := stageRow{
+		stage:   "sandbox",
+		by:      rt.declaredBy("self_sandbox"),
+		missing: "an undeclared self-sandboxing CLI is seatbelt-wrapped anyway and the launch dies with `sandbox_apply: Operation not permitted`, while the parity matrix claims an L2 it does not have",
+	}
+	if rt.SelfSandbox {
+		r.value = "self_sandbox — a DECLARED DIFFERENCE, not a failure: this CLI wraps its own child commands and macOS refuses to nest seatbelts, so `cage: seatbelt` does NOT wrap it and its own sandbox is what enforces Edit/Write here (verified 2026-08-17)"
+	} else {
+		r.value = "posse's seatbelt wraps this runtime — self_sandbox: unset, so `cage: seatbelt` renders sandbox-exec in front of the line and L2 is this runtime's write wall"
+	}
+	if rt.NoGateShell {
+		r.note = append(r.note, "gate_shell: false — a DECLARED DIFFERENCE (ADR 0009 §2): SHELL/GROK_SHELL are left alone because a wrapper named as the shell chokes this CLI. It is honest and it costs the L1 wall — every Bash(...) deny is UNREALIZED here but `git push`, which L3 catches as a git hook once CheckParityIn has behavior-probed it.")
+	} else {
+		r.note = append(r.note, "gate_shell: on — the launch points SHELL/GROK_SHELL at the gate shell, which is what keeps L1 alive on a CLI that re-execs a LOGIN shell per command: on macOS that hands PATH to path_helper, /usr/bin lands ahead of the gates dir and the shim never runs (measured on grok 1.0.5, rangerhq-vjl).")
+	}
+	r.note = append(r.note, "declared by: "+rt.declaredBy("gate_shell"))
+	return r
 }
