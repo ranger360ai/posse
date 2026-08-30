@@ -93,7 +93,16 @@ func (a *App) MemoryDirtyPaths(persona string) []string {
 }
 
 func (a *App) memoryChanges(persona string) []memoryChange {
-	if persona == "" {
+	// ValidName is where the path-limiting stops being a convention and
+	// becomes a fact. Everything below rests on the memory dir being UNDER
+	// PersonasDir, and filepath.Join resolves `..` cheerfully: a persona
+	// named `../agents` joins to the constitution, and this would then run
+	// git from inside it and commit `.` — the one thing the parent bead
+	// states in capitals, reached without a single unscoped git command.
+	// LoadAgent does not ask (it only needs a file to exist), so this asks.
+	// It is posse's own name predicate and not a new one, so a name this
+	// refuses is a name `posse agent new` would never have made.
+	if !ValidName(persona) {
 		return nil
 	}
 	dir := filepath.Join(a.PersonasDir(), persona)

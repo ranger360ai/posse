@@ -502,3 +502,31 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 		t.Errorf("the sweep must spend no landing turn:\n%s", log)
 	}
 }
+
+// The path-limiting rests on the memory dir being under PersonasDir, and
+// filepath.Join resolves `..` without complaint — so a persona name that
+// climbs out of it would aim the commit at the constitution, which is the
+// one thing the parent bead states in capitals. LoadAgent does not check
+// names; this does.
+func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
+	b, _ := newTestBackend(t)
+	repo := memoryRepo(t, b)
+	// The constitution, dirty, one directory up from every memory dir.
+	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "rewritten\n")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	for _, name := range []string{"../agents", "..", ".", "dev/../../agents", "/etc"} {
+		if got := b.App.MemoryDirtyPaths(name); got != nil {
+			t.Errorf("persona %q reached %v", name, got)
+		}
+		if l := b.App.LandPersonaMemory(name, "posse kill x", ""); l != nil {
+			t.Errorf("persona %q landed something: %+v", name, l)
+		}
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a climbing persona name committed %s:\n%s", after, headFiles(t, repo))
+	}
+	if st := mustGit(t, repo, "status", "--porcelain", "--", "rhq/agents"); !strings.Contains(st, "rhq/agents") {
+		t.Errorf("the constitution's own change must still be uncommitted: %q", st)
+	}
+}
