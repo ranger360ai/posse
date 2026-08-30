@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -38,26 +39,30 @@ import (
 // failure that names it. TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError
 // asserts only the silence; this asserts the diagnosis, so a fix that swapped
 // Die() for a quiet return would still be caught.
-// FLAKY UNDER LOAD — ranger-base-m8ko, found by ranger-base-pjoy.
+// NO WALL CLOCK HERE — ranger-base-9mwa, and before it ranger-base-m8ko.
+// This test used to plant explain-error from a goroutine 700ms after the
+// body started, which is the fixture commit 0ebdbce (ranger-base-4pjw)
+// retired in the OTHER test of the pair and left standing in this one.
 //
-// The 700ms timer below is the wall clock commit 0ebdbce
-// (ranger-base-4pjw) retired, and it was retired in only ONE test of a
-// pair: bootrace_qa_test.go arms through the fake's explain-error-after
-// countdown, this twin still plants the file from a goroutine.
+// Why that red: 700ms raced the launch's own setup. The first `agent
+// explain` of a fake-herdr launch lands 293-340ms in on an idle box
+// (0ebdbce, 10 runs), so the margin was ~395ms of
+// workspace-create/persona/launch forks. When the setup crossed 700ms the
+// FIRST explain already errored, awaitSettled's lastWhy stayed "" and the
+// concession path prompted — the exact shape the third assertion below says
+// is absent, so all three fired at once. Measured at 3583221: 3 of 30 red
+// on a box at load 13-16, and 5 of 10 red under 8 spinners on 8 cpus.
+// gwart measured 11 of 20 on main. The timer was never the point: a probe
+// on the old fixture logged only 2-3 explains served before it fired, i.e.
+// "after some guesses" was a coincidence of scheduling.
 //
-// Why that reds: 700ms after the test body starts races the launch's own
-// setup. 0ebdbce measured the first `agent explain` of a fake-herdr launch
-// landing 293-340ms in on an idle box, so the margin is ~395ms of
-// workspace-create/persona/launch forks. On a busy box the setup crosses
-// 700ms, the FIRST explain errors, awaitSettled's lastWhy stays "" and the
-// concession path prompts — which is the shape the third assertion here
-// says is absent. Observed 2026-08-30 on a full `make test` at load average
-// 24-29 (five worktrees testing at once); 25/25 green in isolation on the
-// same box at load 14.
-//
-// The fix is the lever plus 0ebdbce's own witness: if the log holds no more
-// explains than guesses served, fail naming the fixture rather than passing
-// on an assertion of absence.
+// The lever is the same countdown bootrace_qa_test.go uses — the first
+// `guesses` explains answer, every one after that errors, so the LAST
+// explain of the window is the failed one by construction. The window is
+// still time-driven, so the fixture carries 0ebdbce's witness too: if the
+// log holds no more explains than guesses served, the late error was never
+// reached and this fails naming the fixture rather than passing on an
+// assertion of absence.
 func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
@@ -65,17 +70,22 @@ func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 	d.Poll = 100 * time.Millisecond
 	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644) // guess forever
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)  // the real 0.8.0 shape
-
-	done := make(chan struct{})
-	go func() {
-		time.Sleep(700 * time.Millisecond)
-		os.WriteFile(filepath.Join(fake, "explain-error"), []byte("internal|no detection for w1:p1"), 0o644)
-		close(done)
-	}()
-	defer func() { <-done }()
+	// The late failure, armed by call count rather than by a timer: see
+	// fakeExplainErrorArmed, and the comment above for what the timer cost.
+	const guesses = 2
+	os.WriteFile(filepath.Join(fake, "explain-error-after"), []byte(strconv.Itoa(guesses)), 0o644)
+	os.WriteFile(filepath.Join(fake, "explain-error"), []byte("internal|no detection for w1:p1"), 0o644)
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
+	}
+	// The fixture's own witness. Both halves have to have happened: a window
+	// that never got past the guesses would satisfy the third assertion
+	// below for the wrong reason, since that one asserts an absence.
+	if explains := strings.Count(calls(t, fake), "agent explain"); explains <= guesses {
+		t.Fatalf("fixture unmet: %d explains in the window, so the late error was never served "+
+			"(needs more than %d) — the box is too slow for a %s window at %s polls:\n%s",
+			explains, guesses, d.StartupWait, d.Poll, dispatcherOut(d))
 	}
 	out := dispatcherOut(d)
 	if !strings.Contains(out, "never saw a screen it recognizes") {
@@ -93,6 +103,17 @@ func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 // START of the window, herdr back for the rest of it. lastErr must not
 // outlive a later real answer either — this is the arm that keeps the fix
 // from being "an error anywhere in the window wins".
+//
+// VACUOUS AS WRITTEN — ranger-base-3wc7, filed from ranger-base-9mwa and
+// not fixed here. The 300ms timer below is the same wall clock 9mwa took
+// out of the test above, with the opposite symptom: it never reds, it just
+// measures nothing. The delete races the launch's own setup and wins, so
+// no poll in the window is ever served the early error and both assertions
+// hold over a window of pure guesses. Measured 2026-08-30 with a throwaway
+// in-package probe that counted calls.log at the instant this goroutine
+// fired: 0 explains at 300ms, 12 of 12 runs. Fixing it needs the inverse
+// of explain-error-after — a countdown that errors for the FIRST n explains
+// and then stops — which is a new lever in the fake, hence the bead.
 func TestQAAnEarlyExplainErrorDoesNotOutliveALaterGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
