@@ -1166,9 +1166,9 @@ $ git config merge.beads.driver 'bd merge %A %O %A %B'
 Give the repo an `AGENTS.md` so a persona landing in it knows the queue
 exists. `bd onboard` prints instructions *at a human*, delimiters
 included — piping its output straight into the file leaves that prose,
-not the snippet, as orientation text. bd 0.49.1 fences the snippet
-between `--- BEGIN AGENTS.MD CONTENT ---` and `--- END AGENTS.MD CONTENT
----`; paste only that region, into the `AGENTS.md` that `bd init` already
+not the snippet, as orientation text. bd 0.49.1 fences that snippet between
+`--- BEGIN AGENTS.MD CONTENT ---` and `--- END AGENTS.MD CONTENT ---`;
+paste only that region, into the `AGENTS.md` that `bd init` already
 created (not "or create it", as `bd onboard`'s own text has it):
 
 ```sh
@@ -1178,7 +1178,7 @@ $ bd onboard | grep -c -e '^--- BEGIN AGENTS.MD CONTENT ---$' -e '^--- END AGENT
 $ tail -n 1 AGENTS.md
 ```
 **Verify:** `2`, then the last line of the region your bd printed — on bd
-0.49.1, ``For full workflow details: `bd prime` ``. Those two delimiters are
+0.49.1, `` For full workflow details: `bd prime` ``. Those two delimiters are
 the only thing the extraction cuts on and it cuts *silently*: on a bd that
 spells them differently the pipeline still exits `0` and reports nothing.
 `0` means neither marker matched, so **nothing was appended** — `AGENTS.md`
