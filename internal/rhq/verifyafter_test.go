@@ -1468,20 +1468,21 @@ func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
 // a rejection and its QA session was not deferred but CANCELLED — the
 // watermark advances past an exempted close, so no later pass recovers it.
 //
-// The rows are the bead's measured table, and they split into two arms that
-// fail for different reasons, which is why both are here:
+// The rows are the bead's measured table. Mutation-checked, and the two
+// halves of the fix do not cover the same rows:
 //
-//   - the first five are not the listed words at all ("dedupes" is not "dup",
-//     "invalidation" is not "invalid"). Word matching alone answers them.
+//   - the first five are not the listed words at all ("dedupes" is not
+//     "dup", "invalidation" is not "invalid"), AND they shipped. Either
+//     half alone keeps them green — restoring strings.Contains does not
+//     fail them, nor does dropping the commit trail.
 //   - the sixth IS the word "duplicate", in a sentence describing a fix.
-//     Word matching does not reach it; only the commit trail does. Delete
-//     the git half of the exemption and this row alone still passes over a
-//     boundary regex — which is why the bead calls that a narrowing.
+//     Only the commit trail reaches it: put the exemption back on the words
+//     alone, boundary regex and all, and this row is the one that fails.
+//     That is why the bead calls word matching a narrowing, not a fix.
 //
 // The last two rows are the controls the fix must not break: a real
-// rejection that shipped nothing is still exempt, and an ordinary close is
-// still verified. Every row runs in a repo whose ONLY commit names a-1, so
-// "no commit names it" is a fact about the reason, not about the rig.
+// rejection that shipped nothing is still exempt (invert the trail test and
+// it fails), and an ordinary close is still verified.
 func TestVerifyAfterVerifiesACloseThatShippedDespiteRejectionWords(t *testing.T) {
 	for _, tc := range []struct {
 		reason  string
