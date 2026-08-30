@@ -253,14 +253,16 @@ func main() {
 
 	case "prompt":
 		// The dispatch primitive: submit work to a session's agent.
-		args = need(args, 2, `posse prompt <name> "<text>" [--wait] [--timeout <ms>]`)
+		args = need(args, 2, `posse prompt <name> "<text>" [--wait] [--timeout <ms>] [--now]`)
 		name, text := args[0], args[1]
-		wait, timeout := false, 0
+		wait, timeout, now := false, 0, false
 		rest := args[2:]
 		for len(rest) > 0 {
 			switch rest[0] {
 			case "--wait":
 				wait, rest = true, rest[1:]
+			case "--now":
+				now, rest = true, rest[1:]
 			case "--timeout":
 				if len(rest) < 2 || !validCount(rest[1]) {
 					die(rhq.Die("--timeout needs a value in ms (0 = herdr default)"))
@@ -274,6 +276,21 @@ func main() {
 		target, err := hb.AgentTarget(name)
 		if err != nil {
 			die(err)
+		}
+		// A pane herdr has not recognized yet is a CLI that does not hold
+		// the keyboard, and text typed there lands in whatever does — the
+		// '/Work' slash command of ranger-base-3p0. Dispatch has waited for
+		// a SEEN screen since rangerhq-3hb5; this is the same gate on the
+		// hand path (promptready.go). --now is the operator saying they
+		// mean this pane as it is.
+		if !now {
+			note, err := hb.AwaitPromptable(name, target)
+			if err != nil {
+				die(err)
+			}
+			if note != "" {
+				fmt.Fprintf(out, "%s\n", note)
+			}
 		}
 		res, err := hb.H.AgentPrompt(target, text, wait, timeout)
 		if err != nil {
@@ -1691,8 +1708,12 @@ sessions (herdr workspaces):
                                  and prompting one by hand marks it)
 
 dispatch (beads):
-  posse prompt <name> "<text>" [--wait] [--timeout <ms>]
-                                 submit work to the session's agent
+  posse prompt <name> "<text>" [--wait] [--timeout <ms>] [--now]
+                                 submit work to the session's agent; waits first
+                                 for herdr to recognize the screen, so a prompt
+                                 into a CLI still starting up is refused rather
+                                 than typed at whatever holds the keyboard
+                                 (ranger-base-3p0) — --now skips that gate
   posse wait <name> [--until <state>]...   wait for idle|done|blocked
   posse peek <name> [<lines>]    read the session's terminal tail
   posse ready [--dir <repo>] [--as <persona>]

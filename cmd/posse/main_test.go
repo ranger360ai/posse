@@ -868,6 +868,11 @@ case "$1 $2" in
 "agent list")
   printf '%s\n' '{"result":{"agents":[{"agent":"claude","agent_status":"idle","pane_id":"p1","workspace_id":"w1"},{"agent":"claude","agent_status":"idle","pane_id":"p2","workspace_id":"w2"}]}}'
   exit 0;;
+"agent explain")
+  # A pane herdr HAS recognized: the readiness gate (ranger-base-3p0) opens
+  # on this and the crew mark is the only thing under test here.
+  printf '%s\n' '{"state":"idle","matched_rule":{"id":"live_prompt_box","state":"idle"},"visible_idle":true,"fallback_reason":null}'
+  exit 0;;
 "agent prompt")
   printf '%s\n' '{"result":{"submitted":true}}'
   exit 0;;
@@ -922,4 +927,139 @@ exit 1
 	if b, err := os.ReadFile(filepath.Join(metaDir, "owned.yaml")); err != nil || !strings.Contains(string(b), "crew: true") {
 		t.Errorf("the control's mark was not recorded (%v): %s", err, b)
 	}
+}
+
+// ranger-base-3p0: `posse prompt` into a session whose CLI had not taken the
+// keyboard typed the work prompt at whatever had — a leading '/' turned the
+// dispatch marker into `/Work` and the rest into its arguments, and herdr
+// returned success. The gate is unit-pinned in internal/rhq
+// (promptready_test.go); this runs the BINARY, because what the bead is
+// about is what the operator's `posse prompt` does — a gate nothing calls
+// is the regression this catches.
+func TestPromptRefusesAPaneHerdrHasNotRecognized(t *testing.T) {
+	bin := buildRhq(t)
+
+	// seen: the explain shape a settled pane has (a matched rule) vs the
+	// GUESS a booting one gets. The lever is a file the fake reads, so one
+	// herdr script serves both arms and the difference is the only variable.
+	setup := func(t *testing.T, seen bool) (string, string, []string) {
+		t.Helper()
+		home := t.TempDir()
+		binDir := t.TempDir()
+		herdr := filepath.Join(binDir, "herdr")
+		log := filepath.Join(binDir, "calls.log")
+		explain := `{"state":"idle","matched_rule":null,"visible_idle":false,` +
+			`"fallback_reason":"default_known_agent_idle_fallback",` +
+			`"evaluated_rules":[{"id":"live_prompt_box","matched":false,"region":"osc_title",` +
+			`"state":"idle","evidence":{"region_bytes":0,"region_preview":""}}]}`
+		if seen {
+			explain = `{"state":"idle","matched_rule":{"id":"live_prompt_box","state":"idle"},` +
+				`"visible_idle":true,"fallback_reason":null}`
+		}
+		if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+echo "$*" >> `+log+`
+case "$1 $2" in
+"workspace list")
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"boot","agent_status":"idle"}]}}'
+  exit 0;;
+"agent list")
+  printf '%s\n' '{"result":{"agents":[{"agent":"claude","agent_status":"idle","pane_id":"p1","workspace_id":"w1"}]}}'
+  exit 0;;
+"agent explain")
+  printf '%s\n' '`+explain+`'
+  exit 0;;
+"agent prompt")
+  printf '%s\n' '{"result":{"submitted":true}}'
+  exit 0;;
+esac
+printf '%s\n' '{"error":{"code":"no","message":"unexpected '"$1 $2"'"}}'
+exit 1
+`), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// A runtime with a short declared patience, so the refusal costs the
+		// suite 400ms instead of the claude-shaped 45s. Same lever a slow CLI
+		// uses in production.
+		if err := os.MkdirAll(filepath.Join(home, "runtimes"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "runtimes", "fastcli.yaml"),
+			[]byte("command: fastcli --sys {file}\nstartup_wait: 400ms\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		metaDir := filepath.Join(home, "state", "herdr")
+		if err := os.MkdirAll(metaDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(metaDir, "boot.yaml"),
+			[]byte("name: boot\nworkspace: w1\npane: p1\nemoji: 🙂\nruntime: fastcli\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return log, home, []string{
+			"HOME=" + t.TempDir(),
+			"RHQ_HOME=" + home,
+			"RHQ_HERDR_BIN=" + herdr,
+			"HERDR_SOCKET_PATH=" + filepath.Join(home, "no-such.sock"),
+			"PATH=" + os.Getenv("PATH"),
+		}
+	}
+	sent := func(t *testing.T, log string) bool {
+		t.Helper()
+		b, _ := os.ReadFile(log)
+		return strings.Contains(string(b), "agent prompt")
+	}
+
+	t.Run("guess refuses and types nothing", func(t *testing.T) {
+		log, _, env := setup(t, false)
+		cmd := exec.Command(bin, "prompt", "boot", "Work beads issue x")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("a prompt into an unrecognized pane must fail:\n%s", out)
+		}
+		for _, want := range []string{"nothing was sent", "boot", "posse peek boot", "--now"} {
+			if !strings.Contains(string(out), want) {
+				t.Errorf("the refusal must name %q:\n%s", want, out)
+			}
+		}
+		if sent(t, log) {
+			t.Errorf("the text went to herdr anyway — that is the bug:\n%s", out)
+		}
+	})
+
+	// The escape hatch, for a runtime whose rules cannot see its own screen.
+	t.Run("--now sends it anyway", func(t *testing.T) {
+		log, _, env := setup(t, false)
+		cmd := exec.Command(bin, "prompt", "boot", "Work beads issue x", "--now")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("--now must skip the gate: %v\n%s", err, out)
+		}
+		if !sent(t, log) {
+			t.Errorf("--now sent nothing:\n%s", out)
+		}
+	})
+
+	// The wrong arm: a pane herdr HAS recognized is prompted as it always
+	// was, with nothing extra said. Without this, a gate that refused
+	// everything would pass the test above.
+	t.Run("a seen screen is prompted", func(t *testing.T) {
+		log, _, env := setup(t, true)
+		cmd := exec.Command(bin, "prompt", "boot", "Work beads issue x")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("a seen screen must be prompted: %v\n%s", err, out)
+		}
+		if !sent(t, log) {
+			t.Errorf("the prompt never reached herdr:\n%s", out)
+		}
+		if strings.Contains(string(out), "waited") {
+			t.Errorf("nothing was waited for; the gate must be silent:\n%s", out)
+		}
+	})
 }

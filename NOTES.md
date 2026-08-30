@@ -133,9 +133,16 @@ live pin both sides of the cliff and the spill are measured from.
 
 ## Dispatch primitives
 
-- `posse prompt <name> "<text>" [--wait] [--timeout ms]` — submit work to the
-  session's detected agent (herdr `agent prompt`; `--wait` blocks until the
-  first settled idle|done|blocked state).
+- `posse prompt <name> "<text>" [--wait] [--timeout ms] [--now]` — submit work
+  to the session's detected agent (herdr `agent prompt`; `--wait` blocks until
+  the first settled idle|done|blocked state). **It waits for herdr to have
+  SEEN a screen before typing** (`internal/rhq/promptready.go`): a pane herdr
+  only *guesses* is idle is a CLI that has not taken the keyboard, and a
+  prompt sent there lands in whatever has — a leading `/` once turned a whole
+  work prompt into `/Work` plus arguments, and herdr reported success
+  (ranger-base-3p0). It waits for a seen screen, not for `idle`, so nudging a
+  working session is unchanged; at the deadline nothing is sent and the error
+  says so. `--now` skips the gate.
 - `posse wait <name> [--until <state>]…` — wait for an agent state.
 - `posse peek <name> [lines]` — the session's terminal tail (`pane read`;
   the tail is computed client-side because herdr's `--lines` counts padded
