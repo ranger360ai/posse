@@ -441,6 +441,103 @@ func TestQABdPinCatchesForeignBinary(t *testing.T) {
 	}
 }
 
+// ranger-base-zk8v. `ps -o comm=` reports the path AS INVOKED, so a daemon
+// started with a relative argv0 — `cd <dir> && ./bd daemon start`, which is
+// how a hand-built or vendored bd gets run — reports a RELATIVE path. The
+// script has already `cd`'d to the repo root by then, so testing it with `-e`
+// asked whether the REPO contains a file called `./bd`. It does not, and a
+// binary that is sitting on disk was called ORPHAN — the wrong verdict and
+// therefore the wrong runbook (ORPHAN says the artifact is gone, so the
+// operator is sent to reap and restart; what is actually running is a foreign
+// build that is still there to be identified).
+//
+// Fail-safe both ways — the alarm fired and the exit code was 1 either way,
+// because a relative path can never equal the absolute $want_bin — so only
+// the verdict text was ever wrong. It survived a green suite because every
+// other fixture in this file passes an ABSOLUTE comm.
+//
+// The cwd line reads EPHEMERAL here and that is not what this arm is about:
+// the daemon's directory has to be one the test can write a binary into, and
+// every directory a test owns is under a temp root. The claim is the BINARY
+// line, which is exactly why the two layers are reported separately.
+func TestQABdPinResolvesARelativeCommAgainstTheProcessCwdNotTheRepo(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	dir := filepath.Join(t.TempDir(), "vendor")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bpStubBD(t, filepath.Join(dir, "bd"), "1.2.2") // present, and NOT the pin
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("4548", "./bd", "./bd", mtime.Add(time.Hour), dir)})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a daemon on an unpinned binary is a failure\n%s", code, out)
+	}
+	if strings.Contains(out, "ORPHAN") {
+		t.Errorf("the binary is on disk in the daemon's own directory — ORPHAN is the repo root answering a question about another directory:\n%s", out)
+	}
+	if !strings.Contains(out, "FOREIGN") {
+		t.Errorf("a relative comm pointing at a present, unpinned binary must be FOREIGN:\n%s", out)
+	}
+}
+
+// The other side of the same fix: resolving against the cwd must not lose the
+// ORPHAN arm for a daemon whose binary really has been deleted out from under
+// it — the ranger-base-9x1 shape, only invoked relatively. `vendor/` exists,
+// `vendor/bd` does not.
+func TestQABdPinStillCallsARelativeCommOrphanWhenItsBinaryIsGone(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	dir := filepath.Join(t.TempDir(), "vendor")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("4549", "./bd", "./bd", mtime.Add(time.Hour), dir)})
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	if !strings.Contains(out, "ORPHAN") {
+		t.Errorf("a relative comm with nothing behind it in its own directory is still an orphan:\n%s", out)
+	}
+}
+
+// And the arm a blanket "every relative comm is FOREIGN" fix would get wrong:
+// a daemon started from inside ~/.local/bin as `./bd` IS the pinned binary.
+// The binary layer must read ok — the cwd line is EPHEMERAL only because the
+// pinned binary's directory is under $HOME and $HOME is a t.TempDir here.
+func TestQABdPinAcceptsThePinnedBinaryInvokedByARelativePath(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("4550", "./bd", "./bd", mtime.Add(time.Hour), filepath.Join(home, ".local", "bin"))})
+	out, code := bpRun(t, root, home, stubs, "")
+	if !strings.Contains(out, "binary ok") {
+		t.Errorf("exit %d: the pinned binary invoked from its own directory is still the pinned binary:\n%s", code, out)
+	}
+}
+
+// Relative comm and no cwd to resolve it against: there is nothing to test
+// for existence, so the honest answer is the one claim that still holds — a
+// relative path is not the absolute pinned binary. Never ok, and never a
+// confident ORPHAN.
+func TestQABdPinRelativeCommWithNoCwdIsNotOkAndNotOrphan(t *testing.T) {
+	root, home, stubs, mtime := bpFixture(t, "unlinked", nil)
+	bpStubPS(t, stubs, []bpProc{bpDaemonAt("4551", "./bd", "./bd", mtime.Add(time.Hour), "")})
+	fixture := filepath.Join(stubs, "ps.fixture")
+	b, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols := strings.SplitN(strings.TrimRight(string(b), "\n"), "\t", 5)
+	if err := os.WriteFile(fixture, []byte(strings.Join(cols[:4], "\t")+"\t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := bpRun(t, root, home, stubs, "")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a daemon that is provably not on the pin is a failure\n%s", code, out)
+	}
+	if strings.Contains(out, "binary ok") || strings.Contains(out, "ORPHAN") {
+		t.Errorf("with no cwd the binary's existence is unknowable — neither ok nor ORPHAN:\n%s", out)
+	}
+}
+
 // The 08-16 shape exactly: the orphan (started 08-13) predates the binary the
 // rollback wrote (08-16 23:54). Path checks alone say ok; the age check does
 // not.
