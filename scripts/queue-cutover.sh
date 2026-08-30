@@ -138,9 +138,9 @@ RUNBOOK=docs/runbooks/queue-cutover.md
 # A tree spelled any of those ways is left behind by the fan-out and becomes
 # hop one of the two-hop chain the discovery exists to prevent (see WHY THE
 # FAN-OUT DISCOVERS). That is not a hypothetical: hands are how this fleet
-# actually gets redirects — rangerhq's own was repointed out of band, 41 bytes
-# with no trailing newline where this script writes 42 — and a hand does not
-# spell paths the way a script does.
+# actually gets redirects — the originating instance's own was repointed out
+# of band, 41 bytes with no trailing newline where this script writes 42 —
+# and a hand does not spell paths the way a script does.
 #
 # So ask the filesystem instead of the string: trim the blanks and the CR,
 # resolve a relative path against the tree holding the redirect, and compare
