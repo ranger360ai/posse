@@ -119,17 +119,19 @@ func TestChainPrescriptionPathsSurviveItsOwnCd(t *testing.T) {
 			if !filepath.IsAbs(arg) {
 				arg = filepath.Join(cwd, arg)
 			}
-			// What that path is a repository OF is git's lookup, not string
+			// Which repo that argument names is git's lookup, not string
 			// arithmetic — which is why `.` survived the defect: from the
-			// hooks directory it names no repo root, and git discovers one
-			// upwards anyway. Ask git the same question step 3 will.
-			top, err := exec.Command("git", "-C", arg, "rev-parse", "--show-toplevel").Output()
+			// hooks directory it names no worktree at all, and git resolves
+			// the hooks path upwards anyway (`--show-toplevel` there is
+			// fatal; `--git-path hooks` is not). So ask the question step 3
+			// asks, with hooksDir, the function install-hooks resolves with.
+			gotHooks, err := hooksDir(arg)
 			if err != nil {
 				t.Fatalf("step 3 hands install-hooks %q, which from %q is %q — no git repository there, so the gate is never written and the steps below build a dispatcher around nothing (%v)",
 					inst[1], cd[1], arg, err)
 			}
-			if got, want := mustEval(t, strings.TrimSpace(string(top))), mustEval(t, repo); got != want {
-				t.Errorf("step 3 hands install-hooks %q, which from %q is the repo %q, not %q",
+			if got, want := mustEval(t, gotHooks), mustEval(t, hooks); got != want {
+				t.Errorf("step 3 hands install-hooks %q, which from %q installs into %q, not the repo's hooks dir %q",
 					inst[1], cd[1], got, want)
 			}
 
