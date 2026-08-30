@@ -98,10 +98,31 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// starts with this loop and dies with it. Disarmed (no pulse_interval:
 	// in config) starts nothing; a config error disarms this run rather
 	// than failing the watch loop over it.
+	//
+	// "Dies with it" is JOINED, not merely signalled (ranger-base-el3g). A
+	// tick already inside pulseOnce when ctx ends finishes it — it writes
+	// state/pulse.yaml and may prompt — so a Watch that returned on the
+	// cancel alone left a goroutine still writing this instance's state/
+	// after its caller believed the loop was over. That is a lie to every
+	// caller: the pid record is dropped and the watch lock released below
+	// while the loop is demonstrably still running, and in a test whose
+	// StateDir is a t.TempDir it is the RemoveAll race that filed this bead.
+	// The join is deferred FIRST of the three, so the last write lands
+	// before the lock and the pid say the loop is gone; pulseCancel makes
+	// it safe on any exit, including one that does not end ctx.
 	if cfg, err := LoadPulseConfig(d.App); err != nil {
 		fmt.Fprintf(d.errw(), "pulse: %v — disarmed for this loop\n", err)
 	} else if cfg.Armed {
-		go d.pulseLoop(ctx, cfg)
+		pulseCtx, pulseCancel := context.WithCancel(ctx)
+		pulseDone := make(chan struct{})
+		defer func() {
+			pulseCancel()
+			<-pulseDone
+		}()
+		go func() {
+			defer close(pulseDone)
+			d.pulseLoop(pulseCtx, cfg)
+		}()
 	}
 	// The settle-event channel (ADR 0016 §1, ADR 0028 §1). One subscription
 	// for the life of this loop. A hint wakes the next pass immediately

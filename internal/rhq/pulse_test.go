@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -305,5 +306,103 @@ func TestWatchPulseUnarmedNoTicker(t *testing.T) {
 	}
 	if _, err := os.Stat(PulsePath(b.App)); err == nil {
 		t.Error("unarmed watch must never write state/pulse.yaml")
+	}
+}
+
+// parkTap is a dispatcher sink that holds the FIRST writer of a "pulse: "
+// line — pulseOnce is the only thing in the package that writes one — and
+// lets every other write through untouched. Parking there parks the pulse
+// goroutine INSIDE pulseOnce, which is the state the flake needed: a tick
+// mid-flight, past its state/pulse.yaml write or about to take it, while
+// the loop that owns it is asked to stop.
+type parkTap struct {
+	mu      sync.Mutex
+	buf     strings.Builder
+	once    sync.Once
+	freed   sync.Once
+	parked  chan struct{} // closed when a tick is held
+	release chan struct{} // closed by the test to let it go
+}
+
+// let releases a parked tick. Idempotent: the test calls it where it means
+// to, and defers it so no tick is ever left holding a goroutine.
+func (p *parkTap) let() { p.freed.Do(func() { close(p.release) }) }
+
+func newParkTap() *parkTap {
+	return &parkTap{parked: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (p *parkTap) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	n, err := p.buf.Write(b)
+	p.mu.Unlock()
+	if strings.Contains(string(b), "pulse: ") {
+		held := false
+		p.once.Do(func() { held = true; close(p.parked) })
+		if held {
+			<-p.release
+		}
+	}
+	return n, err
+}
+
+func (p *parkTap) String() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.buf.String()
+}
+
+// Watch owns the pulse ticker, so Watch must not return while one of its
+// ticks is still running (ranger-base-el3g). Cancelling the context only
+// ASKS the ticker to stop; a tick already inside pulseOnce runs to the end
+// and writes state/pulse.yaml on its way out. A Watch that returned on the
+// cancel alone therefore left a goroutine writing this instance's state/
+// after every caller — the CLI, and a test whose StateDir is a t.TempDir —
+// believed the loop was over. That is what failed as
+// "TempDir RemoveAll cleanup: ... state: directory not empty": RemoveAll
+// unlinked pulse.yaml and the abandoned tick put it back before the rmdir.
+//
+// The pin holds a tick in flight on its own log line, cancels, and asserts
+// Watch is still in Watch. It cannot go red on a slow box: with the join,
+// Watch cannot return until the release below, whatever the load.
+func TestWatchWaitsForAPulseTickInFlight(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
+
+	noUpstream := wtRepo(t) // deterministic: no upstream, so no unpushed: noise
+	os.WriteFile(b.App.ConfigPath, []byte(
+		"pulse_interval: 15ms\npulse_persona: coordinator\nbeads:\n  - "+noUpstream+"\n"), 0o644)
+
+	tap := newParkTap()
+	d.Out = tap
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer tap.let() // never leave the tick parked, however this ends
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond)
+	}()
+
+	select {
+	case <-tap.parked:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("the pulse never logged a condition to park on:\n%s", tap.String())
+	}
+
+	cancel()
+	select {
+	case <-done:
+		t.Fatal("Watch returned with a pulse tick still in flight: the tick goes on writing state/pulse.yaml after the caller believes the loop is over (ranger-base-el3g)")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	tap.let()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Watch never returned after the parked pulse tick was released")
 	}
 }
