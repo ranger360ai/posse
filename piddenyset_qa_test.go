@@ -38,6 +38,7 @@ package posse
 // pdsSelfTest runs it here so `make test` covers the detector itself.
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,8 +80,12 @@ func TestPIDDenySetSelfTestPasses(t *testing.T) {
 	// count, not a token 5: ranger-base-t2v2 added six (the superseded-rows
 	// arm, one per narrowed hook alternative, and the list-shape arm), and a
 	// floor left behind the arms lets a deleted arm pass as a rounding error.
-	if n := strings.Count(out, "self-test PASS:"); n < 11 {
-		t.Errorf("--self-test reported only %d passing arms, want >= 11:\n%s", n, out)
+	// ranger-base-9ix7 added twelve more with the live-session and settings
+	// readers — eight for the argv comparison (one per decoration L0Spellings
+	// adds, plus both drift directions, the unknown persona and the empty
+	// process table) and four for the settings file.
+	if n := strings.Count(out, "self-test PASS:"); n < 23 {
+		t.Errorf("--self-test reported only %d passing arms, want >= 23:\n%s", n, out)
 	}
 	if strings.Contains(out, "self-test FAIL") {
 		t.Errorf("--self-test reported a failure:\n%s", out)
@@ -203,4 +208,126 @@ func TestPIDDenySetExitsTwoWhenNothingWasRead(t *testing.T) {
 			t.Errorf("%s: reported a clean fence having read nothing:\n%s", tc.name, out)
 		}
 	}
+}
+
+// --- the live-session and settings readers (ranger-base-9ix7) ---------
+//
+// The script's --self-test calls check_live and check_settings DIRECTLY, so
+// every arm in it stays green over a main that no longer reaches them: delete
+// `--live` from the argument loop and twenty-three self-test arms still pass.
+// These two arms are the wiring, which is the half a self-test structurally
+// cannot pin.
+
+// A stale session, end to end through the real command line. The fixture is a
+// captured `ps -Ao pid=,args=` line, which is what --live-from takes, so the
+// arm needs no live fleet and cannot go green because the box happens to be
+// quiet.
+func TestLiveFenceReaderIsReachableAndNamesBothDirections(t *testing.T) {
+	home := t.TempDir()
+	agents := filepath.Join(home, "agents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: probe\ndeny:\n  - Bash(git push:*)\n  - Bash(bd hook install:*)\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(agents, "probe.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The 2026-08-29 shape: the session was launched before the y5g7 ruling,
+	// so its argv still fences the broad verb and does not fence the narrowed
+	// one. Its L1 shim re-rendered hours ago; argv cannot.
+	capture := filepath.Join(t.TempDir(), "ps")
+	line := `  4321 claude --append-system-prompt ---\012name: probe\012 --disallowedTools ` +
+		`Bash(git push:*) Bash(git -* push *) Bash(bd hook:*) Bash(bd -* hook *)` + "\n"
+	if err := os.WriteFile(capture, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := pdsRun(t, "--live-from", capture, home)
+	if code != 1 {
+		t.Fatalf("a stale session must exit 1, got %d:\n%s", code, out)
+	}
+	for _, want := range []string{
+		"STALE", "probe pid 4321",
+		"Bash(bd hook install:*)", // the PID has it, the session does not
+		"Bash(bd hook:*)",         // the session has it, the PID dropped it
+		"LOOSER", "STRICTER",
+		"read 1 persona session(s): 1 compared",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report must contain %q; got:\n%s", want, out)
+		}
+	}
+	// The negative rule that made a literal comparison useless: `Bash(git
+	// push:*)` renders as itself plus an option-blind twin, and a reader that
+	// does not fold the twin reports it as a rule the PID dropped.
+	if strings.Contains(out, "Bash(git -* push *)") {
+		t.Errorf("the option-blind twin was reported as drift:\n%s", out)
+	}
+	help, code := pdsRun(t, "--help")
+	if code != 0 {
+		t.Fatalf("--help exited %d", code)
+	}
+	for _, want := range []string{"--live", "--live-from", "--settings", "--self-test"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("--help does not name %q, so the reader is unreachable by anyone reading it:\n%s", want, help)
+		}
+	}
+}
+
+// The settings reader, pointed at THIS repo, cross-checked against a parse Go
+// does itself.
+//
+// Not a tautology and not a pin on the file's current contents: the assertion
+// is that the script's awk reader and an independent reader agree about
+// whether .claude/settings.json carries a superseded rule, and that the exit
+// follows. A broken parser — one that reads the wrong "deny", stops at the
+// first line, or misses the last element — passes the planted fixtures in
+// --self-test and dies here against the real file.
+//
+// Why there is no assertion that the file itself is CLEAN, said plainly: on
+// 2026-08-29 it is not. It still carries the two rows ranger-base-y5g7
+// superseded, and .claude/settings.json is constitution class (ADR 0015 §3,
+// fourth spelling) — no persona session can commit it, so a red pin here would
+// be a suite no persona could turn green. The repair is filed for the
+// operator; when it lands, this arm gains the clean assertion.
+func TestSettingsFenceReaderAgreesWithAnIndependentParse(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Permissions struct {
+			Deny []string `json:"deny"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf("this repo's .claude/settings.json is not readable JSON: %v", err)
+	}
+	if len(settings.Permissions.Deny) == 0 {
+		t.Fatal("this repo's .claude/settings.json declares no permissions.deny — the arm would measure nothing")
+	}
+	// The rows the y5g7 ruling removed, spelled here rather than read from the
+	// script, so the two halves cannot revert together in silence.
+	superseded := map[string]bool{"Bash(bd hook:*)": true, "Bash(bd hooks:*)": true}
+	var want []string
+	for _, rule := range settings.Permissions.Deny {
+		if superseded[rule] {
+			want = append(want, rule)
+		}
+	}
+	out, code := pdsRun(t, "--settings", ".")
+	if len(want) == 0 {
+		if code != 0 {
+			t.Fatalf("the file carries no superseded rule but the reader exited %d:\n%s", code, out)
+		}
+		return
+	}
+	if code != 1 {
+		t.Fatalf("the file carries %v but the reader exited %d:\n%s", want, code, out)
+	}
+	for _, rule := range want {
+		if !strings.Contains(out, rule) {
+			t.Errorf("the reader did not name the superseded rule %q it carries:\n%s", rule, out)
+		}
+	}
+	t.Logf("this repo's .claude/settings.json still carries %v — constitution class, the operator's hand to repair", want)
 }

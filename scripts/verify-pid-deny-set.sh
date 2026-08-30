@@ -17,7 +17,28 @@
 # the nine shipped example PIDs carried the bd rules within hours of the
 # amendment while the eleven PIDs of the crew that actually dispatches carried
 # none of them, and no command on this box would have said so. This is that
-# command. It reads PIDs. It writes nothing and it runs no bd.
+# command. It writes nothing, and it runs no beads.
+#
+# THREE READERS, because the fence has three carriers and a PID is only the
+# first of them (ranger-base-9ix7):
+#
+#   default          check_home     the PIDs under <home>/agents carry the set.
+#   --live           check_live     every LIVE persona session's argv fence is
+#                                   the fence its PID spells now. The argv is
+#                                   rendered at launch and frozen for the life
+#                                   of the process, while the L1 shim beside it
+#                                   re-renders at every dispatch - so an edited
+#                                   PID reaches a running session by one carrier
+#                                   and not the other, in both directions.
+#   --settings <r>   check_settings that repo's COMMITTED .claude/settings.json
+#                                   carries no rule the ruling superseded. No
+#                                   renderer writes that file; git checks it out
+#                                   and the operator's hand is what changes it.
+#
+# Each reader's own header says what it does and does not assert. The one thing
+# that is deliberately NOT duplicated is the rule list: REQUIRED and FORBIDDEN
+# are declared once, below, and a second copy of a fence is the failure mode
+# this whole script exists to notice.
 #
 # WHAT IT IS NOT. A rule present in a PID is not a rule enforced. Whether it is
 # REALIZED on a given runtime and cage is `posse gates <persona>`, which probes
@@ -25,10 +46,14 @@
 # question, and for both layers here the answer is cooperative. Green here
 # means the rules are spelled where the launch will read them, no more.
 #
-# EXIT CODES. 0 every PID carries the set and no superseded rule - 1 at least
-# one PID is missing a required rule or still carries a superseded one - 2
-# nothing was measured (no home, no agents dir, no PIDs, unreadable file),
-# which is not a pass and must never be read as one.
+# EXIT CODES. 0 clean - 1 findings (a PID missing a required rule or keeping a
+# superseded one, a live session whose argv is not its PID's fence, a settings
+# file still carrying a superseded rule) - 2 nothing was measured (no home, no
+# agents dir, no PIDs, no persona session in the process table, no settings
+# file, an unreadable file), which is not a pass and must never be read as one.
+# With more than one reader asked for, the exit is the worst of them and 2
+# outranks 1: a run half of which was blind must not exit on the quieter
+# answer.
 set -uo pipefail
 
 # ADR 0015 section 3, in the ADR's own order. The bd list is the one staged and
@@ -186,6 +211,339 @@ check_home() {
     return 1
   fi
   echo "every PID carries the ADR 0015 section 3 fence"
+  return 0
+}
+
+# --- reader 2: the live sessions ---------------------------------------
+#
+# WHY A SECOND READER (ranger-base-9ix7). A PID's deny: reaches a session by
+# three carriers, and they do not refresh alike:
+#
+#   L1 PATH shim   state/gates/<persona>/bin/*  per-PERSONA. RenderGates
+#                  removes the bin dir and writes it fresh at EVERY dispatch,
+#                  so a session ALREADY RUNNING picks a change up at its next
+#                  exec - it looks the shim up on PATH each time.
+#   --disallowedTools argv                      per-SESSION. Rendered at launch
+#                  and frozen for the life of the process: nothing can rewrite
+#                  a running process's argv.
+#   .claude/settings.json                       per-REPO, hand-maintained,
+#                  constitution class. Reader 3 below.
+#
+# So the reader above answers "does the PID carry the rule" and `posse gates`
+# answers "is the rule realizable here", and BETWEEN them sits a question
+# neither asks: is the fence the sessions are actually running on the fence the
+# PID spells today. MEASURED 2026-08-29, and it was not. One session had been
+# up since 00:25 with four rules in its argv against the twenty-six its PID now
+# carries - every rule of the u9ud amendment absent - while two others were
+# still carrying the two broad hook rows the y5g7 ruling superseded, hours
+# after their shims had narrowed. Both directions at once: sessions LOOSER than
+# the constitution and sessions STRICTER than it (the ranger-base-c7ek
+# breakage class, one layer up from the shim that was fixed).
+#
+# The fix for a flagged session is `posse relaunch <name>`, which lands the
+# work first. That is why this is a detective control and not a re-render:
+# there is nothing to re-render - argv is not rewritable - and a session
+# mid-bead is not something to restart behind the operator's back.
+
+# norm_rule <rule> - a rule reduced to what it MEANS, so a PID spelling and the
+# argv spelling rendered from it compare equal.
+#
+# This exists because the argv is not a copy of the list. L0Spellings
+# (internal/rhq/gates.go) widens each rule on its way to claude: it adds an
+# option-blind twin (`Bash(x -* verb sub *)`) so a global option placed before
+# the verb cannot walk past the rule, and it rewrites a NEGATIVE rule entirely
+# - claude's dialect has no negation, so `Bash(git commit unless --)` is
+# rendered as the bare `Bash(git commit)` plus its twin. A literal comparison
+# therefore reports the negative rule missing from every session that is
+# perfectly current: MEASURED, it did, on all eleven live sessions before this
+# function existed.
+#
+# The reduction: drop the tool wrapper, drop a negation tail, drop the `-*` and
+# trailing `*` tokens the widening adds, and drop a rule's trailing `:*`, which
+# is the prefix marker rather than a word. What is left is the command and its
+# words, which is the pair both matchers actually key on. A non-Bash rule
+# (Edit, Write, Edit(.claude/**)) has no widening and passes through whole.
+#
+# NOT a reimplementation of L0Spellings, deliberately: it never SYNTHESIZES a
+# spelling, so it cannot drift into disagreeing with the renderer about what a
+# rule expands to. It only erases the three decorations the renderer adds, and
+# the self-test carries the arm that fails if any of the three stops being
+# erased.
+norm_rule() {
+  local r=$1 tool rest out="" t restore=0
+  case "$r" in
+    *'('*')') tool=${r%%(*}; rest=${r#*(}; rest=${rest%)} ;;
+    *) printf '%s\n' "$r"; return 0 ;;
+  esac
+  if [ "$tool" != "Bash" ]; then
+    printf '%s(%s)\n' "$tool" "$rest"
+    return 0
+  fi
+  rest=${rest%% unless *}
+  # The token loop word-splits, so a bare `*` would glob against the cwd.
+  case $- in *f*) ;; *) set -f; restore=1 ;; esac
+  for t in $rest; do
+    [ "$t" = "-*" ] && continue
+    [ "$t" = "*" ] && continue
+    t=${t%":*"}
+    [ -n "$t" ] || continue
+    out="$out $t"
+  done
+  [ "$restore" = 1 ] && set +f
+  printf 'Bash:%s\n' "$out"
+}
+
+# argv_rules <deny region> - the rules out of a rendered launch line's deny
+# region, one per line.
+#
+# ps space-joins argv, so a two-word rule arrives indistinguishable from two
+# words. The parentheses are what makes it recoverable and every command rule
+# has them; a bare tool name (Edit, Write) is matched separately. Anything the
+# region holds that is neither is not a rule this reader knows, and it is left
+# out rather than guessed at.
+argv_rules() {
+  printf '%s\n' "$1" | grep -o '[A-Za-z_][A-Za-z0-9_]*([^)]*)'
+  printf '%s\n' "$1" | tr ' ' '\n' | grep -E -x 'Edit|Write'
+}
+
+# The sets are delimited strings because macOS ships bash 3.2, which has no
+# associative arrays.
+setadd() {
+  case "$1" in *"|$2|"*) printf '%s' "$1" ;; *) printf '%s|%s|' "$1" "$2" ;; esac
+}
+sethas() {
+  case "$1" in *"|$2|"*) return 0 ;; *) return 1 ;; esac
+}
+
+check_live() {
+  local home=$1 fixture=${2:-} agents
+  local src line pid args persona pidfile region r n
+  local sessions=0 measured=0 unmeasured=0 bad=0 comparisons=0
+  agents="$home/agents"
+  if [ -n "$fixture" ]; then
+    if [ ! -r "$fixture" ]; then
+      echo "nothing measured: $fixture is unreadable" >&2
+      return 2
+    fi
+    src=$(cat "$fixture")
+  else
+    src=$(ps -Ao pid=,args= 2>/dev/null)
+  fi
+  if [ -z "$src" ]; then
+    echo "nothing measured: the process table read back empty" >&2
+    return 2
+  fi
+  while IFS= read -r line; do
+    # ps right-pads the pid column.
+    line=${line#"${line%%[![:space:]]*}"}
+    [ -n "$line" ] || continue
+    pid=${line%% *}
+    args=${line#* }
+    # posse's persona launch, on every runtime: the PID rides on the line.
+    case "$args" in *--append-system-prompt*) ;; *) continue ;; esac
+    sessions=$((sessions + 1))
+    persona=$(printf '%s' "$args" | grep -o 'name: [A-Za-z0-9_-][A-Za-z0-9_-]*' | head -1)
+    persona=${persona#name: }
+    pidfile="$agents/$persona.md"
+    if [ -z "$persona" ] || [ ! -r "$pidfile" ]; then
+      echo "UNMEASURED  pid $pid carries a system prompt no PID under $agents answers for (read '${persona:-?}')"
+      unmeasured=$((unmeasured + 1))
+      continue
+    fi
+    case "$args" in
+      *'--disallowedTools '*) region=${args##*--disallowedTools } ;;
+      *)
+        # grok renders one --deny per rule and codex renders none at all; both
+        # freeze the same way and neither argv shape is read here. Named, not
+        # skipped: an unmeasured session must not read as a current one.
+        echo "UNMEASURED  pid $pid ($persona) renders no --disallowedTools - not a claude launch line"
+        unmeasured=$((unmeasured + 1))
+        continue
+        ;;
+    esac
+    local pidset="" argvset="" extraset=""
+    local -a missing=() extra=()
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      pidset=$(setadd "$pidset" "$(norm_rule "$r")")
+    done <<<"$(deny_rules "$pidfile")"
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      argvset=$(setadd "$argvset" "$(norm_rule "$r")")
+    done <<<"$(argv_rules "$region")"
+    if [ -z "$pidset" ]; then
+      echo "UNMEASURED  pid $pid ($persona) - its PID carries no deny: list, so there is nothing to be stale against"
+      unmeasured=$((unmeasured + 1))
+      continue
+    fi
+    measured=$((measured + 1))
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      n=$(norm_rule "$r")
+      comparisons=$((comparisons + 1))
+      sethas "$argvset" "$n" || missing+=("$r")
+    done <<<"$(deny_rules "$pidfile")"
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      n=$(norm_rule "$r")
+      comparisons=$((comparisons + 1))
+      if ! sethas "$pidset" "$n" && ! sethas "$extraset" "$n"; then
+        extraset=$(setadd "$extraset" "$n")
+        extra+=("$r")
+      fi
+    done <<<"$(argv_rules "$region")"
+    if [ ${#missing[@]} -eq 0 ] && [ ${#extra[@]} -eq 0 ]; then
+      continue
+    fi
+    bad=$((bad + 1))
+    echo "STALE  $persona pid $pid - its argv fence is not the fence its PID spells now:"
+    if [ ${#missing[@]} -gt 0 ]; then
+      echo "       the PID has ${#missing[@]} the session lacks (running LOOSER than the constitution):"
+      if [ "$verbose" = 1 ] || [ ${#missing[@]} -le "$ELIDE_OVER" ]; then
+        printf '           %s\n' "${missing[@]}"
+      else
+        printf '           %s\n' "${missing[@]:0:$ELIDE_OVER}"
+        echo "           ... and $((${#missing[@]} - ELIDE_OVER)) more (--verbose for all)"
+      fi
+    fi
+    if [ ${#extra[@]} -gt 0 ]; then
+      # Never elided. This is the c7ek shape: a rule the ruling removed, still
+      # refusing inside a live session hours after the shim let it go.
+      echo "       the session has ${#extra[@]} the PID dropped (running STRICTER than the constitution):"
+      printf '           %s\n' "${extra[@]}"
+    fi
+    echo "       fix: posse relaunch <that session> - it lands the work first"
+  done <<<"$src"
+  if [ "$sessions" -eq 0 ]; then
+    echo "nothing measured: no persona sessions in the process table" >&2
+    return 2
+  fi
+  if [ "$measured" -eq 0 ]; then
+    echo "nothing measured: $sessions persona session(s) found, none readable against a PID under $agents" >&2
+    return 2
+  fi
+  # The positive witness, with the unmeasured half on its face rather than
+  # rounded into the pass (ranger-base-fm4p).
+  echo "read $sessions persona session(s): $measured compared against their PIDs ($comparisons rule comparisons), $unmeasured not measured"
+  if [ "$bad" -ne 0 ]; then
+    echo "$bad live session(s) are running on a fence their PID no longer spells"
+    return 1
+  fi
+  echo "every measured session's argv fence matches the PID it was launched from"
+  return 0
+}
+
+# --- reader 3: a repo's committed settings fence -----------------------
+#
+# WHY (ranger-base-9ix7). d866 found the fence living only in one repo's
+# .claude/settings.json and ADR 0015 section 3 moved it into the PIDs, where it
+# travels with the session. It moved; it did not DELETE the copy. posse's own
+# .claude/settings.json still carries that deny list, it is written by the
+# operator's hand (b100b60), no renderer touches it - `git worktree add` checks
+# it out and nothing in the binary writes it - and every posse worktree gets it
+# at checkout. MEASURED 2026-08-29: it still carried the two broad hook rows
+# the y5g7 ruling superseded, and was missing `Bash(posse promote:*)` besides,
+# with nothing on the box able to say so, because the reader above reads PIDs
+# and this file is not one.
+#
+# WHAT IS AND IS NOT ASSERTED, because inventing a requirement here would be
+# worse than the drift. ADR 0015 section 3 does not say a repo's settings file
+# must carry the list - the whole point of the amendment is that the PID
+# carries it instead. So:
+#   FORBIDDEN rows here are a FINDING (exit 1). A superseded row fences a verb
+#   the promoted ruling permits, in every worktree of that repo, for every
+#   persona, and that is the c7ek class: a fence refusing work the constitution
+#   allows. Claude Code matches only the top-level command, so a verb reached
+#   through a git hook is untouched and commits still land - which is exactly
+#   why this one went a day unnoticed.
+#   REQUIRED rows absent are a NOTE, never a failure. The PID is the carrier;
+#   an absent row here is a copy being shorter, not a fence with a hole.
+# Changing that split is an ADR's decision, not this script's.
+#
+# The file is constitution class (ADR 0015 section 3, fourth spelling): a
+# persona session is refused at the commit if it edits one. This reader
+# therefore only ever reports - the repair is the operator's hand.
+settings_deny() {
+  # permissions.deny, one rule per line. Reads the FIRST "deny" array in the
+  # file, one-line or block; a rule containing a `]` or an escaped quote would
+  # be misread and none does.
+  awk '
+    {
+      if (!indeny) {
+        if (match($0, /"deny"[[:space:]]*:[[:space:]]*\[/) == 0) next
+        indeny = 1
+        $0 = substr($0, RSTART + RLENGTH)
+      }
+      line = $0
+      if ((j = index(line, "]")) > 0) { line = substr(line, 1, j - 1); done = 1 }
+      while (match(line, /"[^"]*"/)) {
+        print substr(line, RSTART + 1, RLENGTH - 2)
+        line = substr(line, RSTART + RLENGTH)
+      }
+      if (done) exit
+    }
+  ' "$1"
+}
+
+check_settings() {
+  local repo=$1 f rules rule have found files=0 bad=0 comparisons=0 shown=0
+  for f in "$repo/.claude/settings.json" "$repo/.claude/settings.local.json"; do
+    [ -e "$f" ] || continue
+    if [ ! -r "$f" ]; then
+      echo "nothing measured: $f is unreadable" >&2
+      return 2
+    fi
+    rules=$(settings_deny "$f")
+    if [ -z "$rules" ]; then
+      echo "nothing measured: $f declares no permissions.deny this reader can parse" >&2
+      return 2
+    fi
+    files=$((files + 1))
+    local -a superseded=() absent=()
+    for rule in "${FORBIDDEN[@]}"; do
+      comparisons=$((comparisons + 1))
+      while IFS= read -r have; do
+        if [ "$have" = "$rule" ]; then superseded+=("$rule"); break; fi
+      done <<<"$rules"
+    done
+    for rule in "${REQUIRED[@]}"; do
+      comparisons=$((comparisons + 1))
+      found=0
+      while IFS= read -r have; do
+        if [ "$have" = "$rule" ]; then found=1; break; fi
+      done <<<"$rules"
+      [ "$found" = 1 ] || absent+=("$rule")
+    done
+    if [ ${#superseded[@]} -gt 0 ]; then
+      bad=$((bad + 1))
+      echo "SUPERSEDED  ${f#"$repo"/} carries ${#superseded[@]} rule(s) the y5g7 ruling removed:"
+      printf '            %s\n' "${superseded[@]}"
+    fi
+    if [ ${#absent[@]} -gt 0 ]; then
+      shown=1
+      echo "note  ${f#"$repo"/} does not carry ${#absent[@]} of the ${#REQUIRED[@]} ADR 0015 section 3 rules. The PID is the carrier, so this is a shorter copy and not a hole:"
+      if [ "$verbose" = 1 ] || [ ${#absent[@]} -le "$ELIDE_OVER" ]; then
+        printf '        %s\n' "${absent[@]}"
+      else
+        printf '        %s\n' "${absent[@]:0:$ELIDE_OVER}"
+        echo "        ... and $((${#absent[@]} - ELIDE_OVER)) more (--verbose for all)"
+      fi
+    fi
+  done
+  if [ "$files" -eq 0 ]; then
+    echo "nothing measured: no .claude/settings.json or .claude/settings.local.json under $repo" >&2
+    return 2
+  fi
+  echo "scanned $files settings file(s) under $repo against ${#FORBIDDEN[@]} superseded and ${#REQUIRED[@]} required rules ($comparisons comparisons)"
+  if [ "$bad" -ne 0 ]; then
+    echo "$bad settings file(s) still fence a verb the promoted ruling permits - the repair is the operator's hand (constitution class, ADR 0015 section 3)"
+    return 1
+  fi
+  if [ "$shown" = 1 ]; then
+    echo "no settings file carries a superseded rule"
+  else
+    echo "every settings file carries the ADR 0015 section 3 fence and no superseded rule"
+  fi
   return 0
 }
 
@@ -354,11 +712,222 @@ self_test() {
     echo "self-test FAIL: missing home returned rc=$r, want 2"; rc=1
   fi
 
+
+  # --- the live-session reader (ranger-base-9ix7) ------------------------
+  #
+  # Every arm below has a wrong answer that fails. The composite one is
+  # `live-current`: a session whose argv is the CORRECT render of its PID,
+  # carrying all three decorations L0Spellings adds. Each decoration also gets
+  # an arm of its own, because a composite arm dies to any one mutation and
+  # then cannot say which - and the three isolating arms are what keep
+  # norm_rule from being quietly narrowed to two.
+  #
+  # The decoration that mattered most in practice is the negation rewrite:
+  # before norm_rule existed, a literal comparison called
+  # `Bash(git commit unless --)` missing from all eleven live sessions, every
+  # one of which was current in that rule. An always-red control is a control
+  # nobody runs.
+  local psdir="$d/ps"
+  mkdir -p "$psdir" "$d/live/agents"
+  {
+    echo '---'
+    echo 'name: livecrew'
+    echo 'deny:'
+    echo '  - Bash(git push:*)'
+    echo '  - Bash(git commit unless --)'
+    echo '  - Bash(security:*)'
+    echo '  - Bash(bd hook install:*)'
+    echo '---'
+    echo body
+  } > "$d/live/agents/livecrew.md"
+
+  # Built in pieces rather than edited by parameter expansion: the rules are
+  # full of glob metacharacters, and a fixture whose difference from its
+  # sibling depends on a `*` being read literally is a fixture that will
+  # eventually measure something other than what it says.
+  local pre='  4321 claude --model claude-opus-5 --permission-mode auto --append-system-prompt ---\012name: livecrew\012deny:\012 --add-dir /m --settings {} --disallowedTools '
+  local base='Bash(git push:*) Bash(git -* push *) Bash(git commit) Bash(git -* commit) Bash(security:*)'
+  local narrowed='Bash(bd hook install:*) Bash(bd -* hook install *)'
+  local broadrow='Bash(bd hook:*) Bash(bd -* hook *)'
+
+  echo "$pre$base $narrowed" > "$psdir/current"
+  out=$(check_live "$d/live" "$psdir/current"); r=$?
+  if [ $r -eq 0 ] && [[ $out == *"read 1 persona session(s): 1 compared"* ]] \
+     && [[ $out != *STALE* ]]; then
+    echo "self-test PASS: a session whose argv is the correct render of its PID is clean, and 1 session was read"
+  else
+    echo "self-test FAIL: a correctly-rendered session was called stale (rc=$r): $out"; rc=1
+  fi
+
+  # Decoration 1: the option-blind twin. Drop the `-*` skip in norm_rule and
+  # the twin becomes a rule the PID does not carry - a false STRICTER finding.
+  {
+    echo '---'; echo 'name: twin'; echo 'deny:'
+    echo '  - Bash(git push:*)'
+    echo '---'; echo body
+  } > "$psdir/twin.md"
+  mkdir -p "$d/twin/agents"; cp "$psdir/twin.md" "$d/twin/agents/twin.md"
+  echo '  11 claude --append-system-prompt ---\012name: twin\012 --disallowedTools Bash(git push:*) Bash(git -* push *)' > "$psdir/twin"
+  out=$(check_live "$d/twin" "$psdir/twin"); r=$?
+  if [ $r -eq 0 ] && [[ $out != *STALE* ]]; then
+    echo "self-test PASS: the option-blind twin is not read as a rule the PID dropped"
+  else
+    echo "self-test FAIL: the option-blind twin was read as drift (rc=$r): $out"; rc=1
+  fi
+
+  # Decoration 2: the negation rewrite. Drop the `unless` tail-strip and this
+  # session is called stale in the one rule it is not stale in.
+  mkdir -p "$d/neg/agents"
+  {
+    echo '---'; echo 'name: neg'; echo 'deny:'
+    echo '  - Bash(git commit unless --)'
+    echo '---'; echo body
+  } > "$d/neg/agents/neg.md"
+  echo '  12 claude --append-system-prompt ---\012name: neg\012 --disallowedTools Bash(git commit) Bash(git -* commit)' > "$psdir/neg"
+  out=$(check_live "$d/neg" "$psdir/neg"); r=$?
+  if [ $r -eq 0 ] && [[ $out != *STALE* ]]; then
+    echo "self-test PASS: a negative rule and the bare form rendered from it compare equal"
+  else
+    echo "self-test FAIL: the negative rule was read as drift (rc=$r): $out"; rc=1
+  fi
+
+  # Decoration 3: the prefix marker. A wordless rule renders as itself PLUS the
+  # `:*` form; drop the strip and the second is a phantom finding.
+  mkdir -p "$d/bare/agents"
+  {
+    echo '---'; echo 'name: bare'; echo 'deny:'
+    echo '  - Bash(security)'
+    echo '---'; echo body
+  } > "$d/bare/agents/bare.md"
+  echo '  13 claude --append-system-prompt ---\012name: bare\012 --disallowedTools Bash(security) Bash(security:*)' > "$psdir/bare"
+  out=$(check_live "$d/bare" "$psdir/bare"); r=$?
+  if [ $r -eq 0 ] && [[ $out != *STALE* ]]; then
+    echo "self-test PASS: a wordless rule and its :* prefix form compare equal"
+  else
+    echo "self-test FAIL: the :* prefix form was read as drift (rc=$r): $out"; rc=1
+  fi
+
+  # A PID TIGHTENED after the session launched: the session is LOOSER than the
+  # constitution. Exactly one rule, named, and no STRICTER half.
+  echo "$pre$base" > "$psdir/loose"
+  out=$(check_live "$d/live" "$psdir/loose"); r=$?
+  if [ $r -eq 1 ] && [[ $out == *"the PID has 1 the session lacks"* ]] \
+     && [[ $out == *'Bash(bd hook install:*)'* ]] && [[ $out != *STRICTER* ]]; then
+    echo "self-test PASS: a session missing one rule its PID gained is flagged, and only it"
+  else
+    echo "self-test FAIL: the tightened-PID gap was not caught as exactly one (rc=$r): $out"; rc=1
+  fi
+
+  # The ranger-base-c7ek shape, and the one a one-directional control cannot
+  # see: the session still carries the BROAD row the ruling narrowed. Both
+  # halves must be named - the narrowed rule it lacks and the broad rule it
+  # kept - and the broad rule must be reported ONCE, not once per spelling.
+  echo "$pre$base $broadrow" > "$psdir/strict"
+  out=$(check_live "$d/live" "$psdir/strict"); r=$?
+  if [ $r -eq 1 ] && [[ $out == *"the session has 1 the PID dropped"* ]] \
+     && [[ $out == *'Bash(bd hook:*)'* ]] \
+     && [[ $out == *"the PID has 1 the session lacks"* ]] \
+     && [[ $out == *'Bash(bd hook install:*)'* ]]; then
+    echo "self-test PASS: a session still carrying the superseded broad row is flagged in both directions, the broad row once"
+  else
+    echo "self-test FAIL: the superseded-row session was not caught in both directions (rc=$r): $out"; rc=1
+  fi
+
+  # A session this home has no PID for is NAMED, never counted as current.
+  echo '  99 claude --append-system-prompt ---\012name: stranger\012 --disallowedTools Bash(git push:*)' > "$psdir/mixed"
+  cat "$psdir/current" >> "$psdir/mixed"
+  out=$(check_live "$d/live" "$psdir/mixed"); r=$?
+  if [ $r -eq 0 ] && [[ $out == *UNMEASURED* ]] && [[ $out == *stranger* ]] \
+     && [[ $out == *"1 not measured"* ]]; then
+    echo "self-test PASS: a session with no PID in this home is named unmeasured, not passed"
+  else
+    echo "self-test FAIL: the unknown-persona session was not named (rc=$r): $out"; rc=1
+  fi
+
+  # Nothing measured is not a pass, here too: a process table with no persona
+  # session in it answers 2.
+  echo '  1 /sbin/launchd' > "$psdir/none"
+  out=$(check_live "$d/live" "$psdir/none" 2>&1); r=$?
+  if [ $r -eq 2 ]; then
+    echo "self-test PASS: a process table with no persona session exits 2, not 0"
+  else
+    echo "self-test FAIL: an empty process table returned rc=$r, want 2"; rc=1
+  fi
+
+  # --- the settings reader (ranger-base-9ix7) ---------------------------
+  local sd
+  for sd in clean broad flow bare_repo; do mkdir -p "$d/$sd/.claude"; done
+
+  {
+    echo '{ "permissions": { "allow": ["Read"], "deny": ['
+    printf '    "%s",\n' "${REQUIRED[@]}" | sed '$ s/,$//'
+    echo '  ] } }'
+  } > "$d/clean/.claude/settings.json"
+  out=$(check_settings "$d/clean"); r=$?
+  if [ $r -eq 0 ] && [[ $out == *"scanned 1 settings file(s)"* ]] && [[ $out != *SUPERSEDED* ]]; then
+    echo "self-test PASS: a settings file carrying the whole set and no superseded row is clean"
+  else
+    echo "self-test FAIL: a clean settings file was flagged (rc=$r): $out"; rc=1
+  fi
+
+  # The live shape on 2026-08-29: the whole set AND the two rows the ruling
+  # removed. A presence-only reader calls this clean.
+  {
+    echo '{ "permissions": { "deny": ['
+    printf '    "%s",\n' "${REQUIRED[@]}"
+    printf '    "%s",\n' "${FORBIDDEN[@]}" | sed '$ s/,$//'
+    echo '  ] } }'
+  } > "$d/broad/.claude/settings.json"
+  out=$(check_settings "$d/broad"); r=$?
+  if [ $r -eq 1 ] && [[ $out == *SUPERSEDED* ]] \
+     && [[ $out == *'Bash(bd hook:*)'* ]] && [[ $out == *'Bash(bd hooks:*)'* ]]; then
+    echo "self-test PASS: a settings file keeping the superseded broad rows is flagged"
+  else
+    echo "self-test FAIL: the superseded rows in a settings file were not caught (rc=$r): $out"; rc=1
+  fi
+
+  # The one-line array shape, which the block-shape reader must not need.
+  # A missing REQUIRED row here is a NOTE and must NOT turn the exit red - the
+  # PID is the carrier, and asserting otherwise would invent a requirement no
+  # ADR wrote.
+  echo '{"permissions":{"deny":["Bash(make install:*)","Bash(bd delete:*)"]}}' > "$d/flow/.claude/settings.json"
+  out=$(check_settings "$d/flow"); r=$?
+  if [ $r -eq 0 ] && [[ $out == *"does not carry"* ]] && [[ $out == *'Bash(bd daemon:*)'* ]]; then
+    echo "self-test PASS: a one-line deny array parses, and a short copy is a note rather than a failure"
+  else
+    echo "self-test FAIL: the one-line array or the note/failure split is wrong (rc=$r): $out"; rc=1
+  fi
+
+  out=$(check_settings "$d/bare_repo" 2>&1); r=$?
+  if [ $r -eq 2 ]; then
+    echo "self-test PASS: a repo with no settings file exits 2, not 0"
+  else
+    echo "self-test FAIL: a repo with no settings file returned rc=$r, want 2"; rc=1
+  fi
+
   rm -rf "$d"
   return $rc
 }
 
+usage() {
+  local me
+  me=$(basename "$0")
+  echo "usage: $me [--verbose] [<posse-home>]"
+  echo "           the PIDs under <home>/agents carry the ADR 0015 section 3 fence"
+  echo "       $me --live [--live-from <ps capture>] [<posse-home>]"
+  echo "           every live persona session's argv fence is the fence its PID spells NOW"
+  echo "       $me --settings <repo>"
+  echo "           <repo>'s committed .claude/settings.json carries no superseded rule"
+  echo "       $me --pids ...   run the PID reader alongside the readers above"
+  echo "       $me --self-test"
+  echo "exit: 0 clean · 1 findings · 2 nothing measured, which is never a pass"
+}
+
 home=""
+live=0
+live_from=""
+settings_repo=""
+pids_arm=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test)
@@ -368,13 +937,31 @@ while [ $# -gt 0 ]; do
     --verbose)
       verbose=1
       ;;
+    --pids)
+      pids_arm=1
+      ;;
+    --live)
+      live=1
+      ;;
+    --live-from)
+      # A captured `ps -Ao pid=,args=` instead of this box's process table:
+      # what the self-test drives, and what reads a capture taken elsewhere.
+      live=1
+      live_from=${2:-}
+      if [ -z "$live_from" ]; then echo "--live-from needs a file" >&2; exit 2; fi
+      shift
+      ;;
+    --settings)
+      settings_repo=${2:-}
+      if [ -z "$settings_repo" ]; then echo "--settings needs a repo path" >&2; exit 2; fi
+      shift
+      ;;
     -h|--help)
-      echo "usage: $(basename "$0") [--verbose] [<posse-home>]"
-      echo "       $(basename "$0") --self-test"
+      usage
       exit 0
       ;;
     -*)
-      echo "usage: $(basename "$0") [--verbose] [<posse-home>|--self-test]" >&2
+      usage >&2
       exit 2
       ;;
     *)
@@ -385,5 +972,32 @@ while [ $# -gt 0 ]; do
 done
 
 home=${home:-${RHQ_HOME:-$HOME/.config/posse}}
-check_home "$home"
-exit $?
+# No reader asked for is the reader this script was born as.
+if [ "$live" = 0 ] && [ -z "$settings_repo" ]; then pids_arm=1; fi
+
+# Worst-of, ranked 2 > 1 > 0: an arm that measured nothing outranks an arm that
+# found something, because a run half of which was blind must not exit on the
+# quieter of the two answers.
+rc=0
+worst() {
+  case "$1" in
+    2) rc=2 ;;
+    1) [ "$rc" = 2 ] || rc=1 ;;
+  esac
+}
+
+if [ "$pids_arm" = 1 ]; then
+  check_home "$home"
+  worst $?
+fi
+if [ "$live" = 1 ]; then
+  [ "$pids_arm" = 1 ] && echo
+  check_live "$home" "$live_from"
+  worst $?
+fi
+if [ -n "$settings_repo" ]; then
+  { [ "$pids_arm" = 1 ] || [ "$live" = 1 ]; } && echo
+  check_settings "$settings_repo"
+  worst $?
+fi
+exit $rc

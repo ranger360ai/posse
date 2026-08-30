@@ -325,6 +325,17 @@ verify-bd-argv-gate:
 # staying edited. Defaults to the repo's own examples/ so it runs anywhere;
 # pass a home (or set RHQ_HOME) to audit a promoted one. Read-only, no bd.
 # `make verify-pid-deny-set HOME_DIR=~/.config/posse`, or --self-test.
+#
+# The same script carries two more readers (ranger-base-9ix7), and neither is
+# on this target ON PURPOSE. `--live` compares every live session's frozen
+# --disallowedTools argv against the PID it was launched from, so it answers 2
+# on a box with no fleet running and 1 whenever a session is mid-bead behind a
+# PID edit -- both correct, neither a build result. `--settings <repo>` reads a
+# repo's committed .claude/settings.json, which is constitution class: no
+# persona can repair a finding it reports, and a target no one can turn green
+# is the c7ek shape. Run them by hand:
+#   scripts/verify-pid-deny-set.sh --live ~/.config/posse
+#   scripts/verify-pid-deny-set.sh --settings .
 HOME_DIR ?= examples
 verify-pid-deny-set:
 	scripts/verify-pid-deny-set.sh --self-test
