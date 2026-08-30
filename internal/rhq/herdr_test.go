@@ -1056,21 +1056,54 @@ func fakeHerdr(args []string) int {
 }
 
 // fakeExplainErrorArmed reports whether the explain-error lever is live on
-// THIS call. explain-error-after holds a countdown of explains to answer
-// normally first, and the error arms on the one after that — the shape of a
-// herdr that went away mid-window (rangerhq-lhy2), where the early polls got
-// real answers and a late one did not.
+// THIS call. The two countdowns place the failure at either end of a window:
 //
-// It counts CALLS because the only other way to place an error late in the
-// window is a wall clock, and a wall-clock timer races the launch's own
-// setup: the first `agent explain` of a fake-herdr launch lands ~305ms after
-// the test body starts on an idle box (measured 2026-08-29, 10 runs, spread
-// 293-340ms) and later than that on a loaded one, so "arm it at 700ms,
-// after some guesses" silently becomes "arm it before the first guess" and
-// the test measures the opposite window — ranger-base-4pjw, ~1 red in 3 on
-// the operator's box. Each fake call is its own process, so the count lives
-// in the file, the way explain-fallback's does.
+//	explain-error-after N  answer N explains normally, then error from the
+//	                       next one on — a herdr that went away mid-window
+//	                       (rangerhq-lhy2), early polls answered, a late one
+//	                       not.
+//	explain-error-for N    error the FIRST N explains, then answer normally
+//	                       from N+1 on — the other ordering: herdr away at
+//	                       the start of the window and back for the rest of
+//	                       it (ranger-base-3wc7). It is the arm that keeps a
+//	                       fix from being "an error anywhere in the window
+//	                       wins", so lastErr must not outlive the guesses
+//	                       that followed it.
+//
+// explain-error-for wins if both are set; there is no ordering that wants
+// both, and silently composing two countdowns would make either one's number
+// mean something other than what it says.
+//
+// Both count CALLS because the only other way to place an error at one end
+// of the window is a wall clock, and a wall-clock timer races the launch's
+// own setup: the first `agent explain` of a fake-herdr launch lands ~305ms
+// after the test body starts on an idle box (measured 2026-08-29, 10 runs,
+// spread 293-340ms) and later than that on a loaded one. At the late end
+// that made "arm it at 700ms, after some guesses" silently mean "arm it
+// before the first guess", and the test measured the opposite window
+// (ranger-base-4pjw, ~1 red in 3 on the operator's box). At the early end
+// the same race is silent instead of red: a 300ms timer that removed
+// explain-error beat the first explain 12 times out of 12, so the window
+// held no error at all and the test measured nothing (ranger-base-3wc7).
+// Each fake call is its own process, so the count lives in the file, the way
+// explain-fallback's does.
 func fakeExplainErrorArmed() bool {
+	// Only a countdown that has RUN OUT disarms: an unreadable number leaves
+	// the error armed, the way explain-error-after's does, so a typo in a
+	// fixture cannot quietly turn explain-error off and make a test that
+	// asserts an absence pass for the wrong reason.
+	forP := filepath.Join(fakeDir(), "explain-error-for")
+	if b, err := os.ReadFile(forP); err == nil {
+		n, numErr := strconv.Atoi(strings.TrimSpace(string(b)))
+		if numErr != nil {
+			return true
+		}
+		if n <= 0 {
+			return false // the countdown is spent: herdr is back
+		}
+		os.WriteFile(forP, []byte(strconv.Itoa(n-1)), 0o644)
+		return true
+	}
 	p := filepath.Join(fakeDir(), "explain-error-after")
 	b, err := os.ReadFile(p)
 	if err != nil {
@@ -1109,6 +1142,9 @@ func fakeExplainErrorArmed() bool {
 //	                  a countdown: that many explains are answered before
 //	                  explain-error arms, for a herdr that goes away partway
 //	                  through the window
+//	explain-error-for a countdown the other way: that many explains fail
+//	                  before explain-error disarms, for a herdr that is away
+//	                  at the start of the window and back for the rest of it
 func fakeExplain() string {
 	state := fakeWaitStatus()
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-state")); err == nil {

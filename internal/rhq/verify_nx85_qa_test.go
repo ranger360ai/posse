@@ -139,41 +139,60 @@ func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 // outlive a later real answer either — this is the arm that keeps the fix
 // from being "an error anywhere in the window wins".
 //
-// VACUOUS AS WRITTEN — ranger-base-3wc7, filed from ranger-base-9mwa and
-// not fixed here. The 300ms timer below is the same wall clock 9mwa took
-// out of the test above, with the opposite symptom: it never reds, it just
-// measures nothing. The delete races the launch's own setup and wins, so
-// no poll in the window is ever served the early error and both assertions
-// hold over a window of pure guesses. Measured 2026-08-30 with a throwaway
-// in-package probe that counted calls.log at the instant this goroutine
-// fired: 0 explains at 300ms, 12 of 12 runs. Fixing it needs the inverse
-// of explain-error-after — a countdown that errors for the FIRST n explains
-// and then stops — which is a new lever in the fake, hence the bead.
+// NO WALL CLOCK HERE — ranger-base-3wc7. This test used to remove
+// explain-error from a goroutine 300ms after the body started, which is the
+// same wall clock ranger-base-9mwa took out of the twin above, with the
+// opposite symptom: it never went red, it just measured nothing. The delete
+// raced the launch's own setup and won, so no poll in the window was ever
+// served the early error and both assertions below held over a window of
+// pure guesses. Measured 2026-08-30 with a throwaway in-package probe that
+// counted calls.log at the instant the goroutine fired: 0 explains at 300ms,
+// 12 of 12 runs.
+//
+// The lever is now the inverse of the twin's: explain-error-for errors the
+// FIRST `broken` explains and answers every one after that, so the error is
+// at the head of the window by construction rather than by scheduling. The
+// window is still time-driven, so the fixture carries a witness of its own:
+// if the log holds no more explains than the countdown consumed, herdr never
+// came back and this fails naming the fixture rather than passing on an
+// assertion of absence. Window sized as the twin's — see the WINDOW SIZING
+// note over TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError in
+// bootrace_qa_test.go, which carries the runs and why 4s.
 func TestQAAnEarlyExplainErrorDoesNotOutliveALaterGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
-	d.StartupWait = 900 * time.Millisecond
+	d.StartupWait = 4 * time.Second
 	d.Poll = 100 * time.Millisecond
-	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644)
-	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)
+	os.WriteFile(filepath.Join(fake, "explain-fallback"), nil, 0o644) // guess forever
+	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)  // the real 0.8.0 shape
+	// herdr away at the head of the window and back for the rest of it,
+	// armed by call count rather than by a timer: see fakeExplainErrorArmed,
+	// and the comment above for what the timer cost.
+	const broken = 2
+	os.WriteFile(filepath.Join(fake, "explain-error-for"), []byte(strconv.Itoa(broken)), 0o644)
 	os.WriteFile(filepath.Join(fake, "explain-error"), []byte("internal|no detection for w1:p1"), 0o644)
-
-	done := make(chan struct{})
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		os.Remove(filepath.Join(fake, "explain-error")) // herdr comes back
-		close(done)
-	}()
-	defer func() { <-done }()
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
+	// The fixture's own witness. Both halves have to have happened: a window
+	// that never got past the errors would satisfy the first assertion below
+	// for the wrong reason, since that one asserts an absence — and it would
+	// take the concession path, which is what the third one is for.
+	if explains := strings.Count(calls(t, fake), "agent explain"); explains <= broken {
+		t.Fatalf("fixture unmet: %d explains in the window, so herdr never came back "+
+			"(needs more than %d) — the box is too slow for a %s window at %s polls:\n%s",
+			explains, broken, d.StartupWait, d.Poll, dispatcherOut(d))
+	}
 	if strings.Contains(calls(t, fake), "agent prompt") {
 		t.Errorf("prompted at a screen herdr only ever guessed about:\n%s", dispatcherOut(d))
 	}
-	if out := dispatcherOut(d); !strings.Contains(out, "never saw a screen it recognizes") {
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "never saw a screen it recognizes") {
 		t.Errorf("an early error must not survive the guesses that followed it:\n%s", out)
+	}
+	if strings.Contains(out, "prompting on its") {
+		t.Errorf("the cannot-be-read concession fired over a window that WAS read after the error:\n%s", out)
 	}
 }
 
