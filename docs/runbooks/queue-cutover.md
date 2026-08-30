@@ -323,23 +323,44 @@ that works, not a form personas are stopped from typing.
 
 ## Rollback
 
-The window's rollback is cheap because nothing is destroyed: the
-constitution repo's `.beads` deletion is **staged, not committed**, and the
-live store was moved rather than copied.
+The window's rollback is cheap because nothing is destroyed: the live store
+was moved rather than copied, and the constitution's `.beads` untracking is
+at most one commit — **staged** if you catch it before step 8, **committed**
+if step 8 already ran. The block below checks which and undoes the right
+one; do that before the store goes home, or the incoming files land
+untracked and collide with what a revert would otherwise recreate
+(ranger-base-4lks).
 
 ```sh
 bd daemons stop ~/src/ranger-queue && bd daemons list   # verify, per step 1
+cd ~/src/ranger-base
+if git cat-file -e HEAD:.beads/.gitignore >/dev/null 2>&1; then
+  # Staged, not committed — step 8 has not run. The root ignore AND the one
+  # that hides beads.db are both still in HEAD for checkout to restore.
+  git reset -q HEAD -- .beads .gitignore && git checkout -- .gitignore .beads/.gitignore
+else
+  # Committed — step 8 ran (this runbook makes its commit the last one
+  # touching the constitution before Rollback runs). HEAD has no
+  # `.beads/.gitignore` for `checkout` to restore — `did not match any
+  # file(s) known to git`, restoring NEITHER ignore — so undo the commit
+  # itself instead.
+  git revert --no-edit HEAD
+fi
 # The store goes home — DOTFILES INCLUDED. `.beads/*` alone leaves
-# `.beads/.gitignore` (tracked, and the only thing ignoring the database)
-# and `.local_version` behind, so the constitution comes back with a 10MB
+# `.local_version` behind, so the constitution comes back with a 10MB
 # `beads.db` untracked AND unignored, one `git add -A` from being committed
 # (ranger-base-g1js). Same loop the script's own undos print.
 for f in ~/src/ranger-queue/.beads/* ~/src/ranger-queue/.beads/.[!.]*; do
   [ -e "$f" ] && mv -f "$f" ~/src/ranger-base/.beads/
 done
 rm -f ~/src/ranger-base/.beads/redirect   # -f: an abort in stage `move` never wrote one
-cd ~/src/ranger-base && git reset -q HEAD -- .beads .gitignore &&
-  git checkout -- .gitignore .beads/.gitignore   # the root ignore AND the one that hides beads.db
+# bd leaves runtime files its own shipped `.beads/.gitignore` does not cover
+# (`bd.sock.startlock`, `daemon-error` — ranger-base-4lks); without this the
+# verification step below reports a rollback that worked as one that didn't.
+for pat in bd.sock.startlock daemon-error; do
+  grep -qxF "$pat" ~/src/ranger-base/.beads/.gitignore 2>/dev/null ||
+    printf '%s\n' "$pat" >> ~/src/ranger-base/.beads/.gitignore
+done
 # Put every redirect back — INCLUDING the ones the fan-out's scan found,
 # which are not on any list here either. Anything still naming the queue's
 # `.beads` after the store has gone home is a dangling redirect, and the
@@ -369,12 +390,17 @@ catches a half-rollback while it is still cheap:
 
 ```sh
 git -C ~/src/ranger-base status --porcelain -- .beads .gitignore
+echo 'rollback check: ran clean if nothing printed above this line'
 ```
 
 Only ` M .beads/issues.jsonl` and ` M .beads/deleted.jsonl` (the window's
-drift, which is real work and stays). A `??` line, or ` D .beads/.gitignore`,
-means the store did not come home whole — do not commit anything until it
-does.
+drift, which is real work and stays), plus ` M .beads/.gitignore` the first
+time this rollback appends the two patterns above. A `??` line, or
+` D .beads/.gitignore`, means the store did not come home whole — do not
+commit anything until it does. And if the `rollback check:` line above is
+missing, the block above it errored before reaching this one — an empty
+status is not the same thing as a checked one (ranger-base-4lks: a rollback
+that fails after step 8 used to print nothing here, which read as clean).
 
 Then unset `queue_repo:` in config. `rm -rf ~/src/ranger-queue` last, once
 `bd ready` answers from the constitution repo again.
