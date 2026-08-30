@@ -620,3 +620,83 @@ func TestOverflowRefreshUnderTheLock(t *testing.T) {
 		}
 	})
 }
+
+// The append probe (ranger-base-2y96), on its own. It has to answer for a
+// ledger that does not exist yet as well as one that does — the first append
+// creates the file, so a directory nothing may write to is the same refusal
+// as a file nothing may write to — and it must answer without leaving either
+// one changed: a pass that overflows nothing writes no ledger, and the tests
+// above pin that.
+func TestLedgerAppendable(t *testing.T) {
+	b, _ := newTestBackend(t)
+	if err := os.MkdirAll(b.App.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := b.App.OverflowLogPath()
+
+	t.Run("no ledger yet is appendable and stays absent", func(t *testing.T) {
+		if err := b.App.OverflowAppendable(); err != nil {
+			t.Fatalf("a writable StateDir with no ledger must be appendable: %v", err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("the probe must not create the ledger (%v)", err)
+		}
+		// And nothing else is left behind either.
+		ents, err := os.ReadDir(b.App.StateDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range ents {
+			if strings.HasPrefix(e.Name(), ".ledger-probe-") {
+				t.Errorf("the probe file survived: %s", e.Name())
+			}
+		}
+	})
+
+	t.Run("a writable ledger is appendable and unchanged", func(t *testing.T) {
+		body := LedgerEntry{At: time.Now(), Runtime: "grok", Bead: "a-1", Persona: "ranger"}.line()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.App.OverflowAppendable(); err != nil {
+			t.Fatalf("a 0644 ledger must be appendable: %v", err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != body {
+			t.Errorf("the probe wrote to the ledger: %q err=%v", got, err)
+		}
+	})
+
+	t.Run("a 0444 ledger is not", func(t *testing.T) {
+		if err := os.Chmod(path, 0o444); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(path, 0o644) })
+		// 0444 is a promise about a uid, not about the process: root keeps
+		// its write and would turn the repro into a false pass.
+		if err := b.App.AppendOverflow(LedgerEntry{Runtime: "grok"}); err == nil {
+			t.Skip("test process can append to a 0444 ledger")
+		}
+		if err := b.App.OverflowAppendable(); err == nil {
+			t.Fatal("a ledger this process cannot append to must be refused")
+		}
+	})
+
+	t.Run("no ledger and an unwritable StateDir is not", func(t *testing.T) {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(b.App.StateDir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(b.App.StateDir, 0o755) })
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			f.Close()
+			os.Remove(path)
+			t.Skip("test process can create files in a 0555 directory")
+		}
+		if err := b.App.OverflowAppendable(); err == nil {
+			t.Fatal("a StateDir the first append could not create the ledger in must be refused")
+		}
+	})
+}

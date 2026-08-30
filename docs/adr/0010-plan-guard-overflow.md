@@ -223,6 +223,11 @@ remote shape; its scope note points here.
   runtime). Both cut as beads off ranger-base-qs0z. `overflow.log` is
   still written on every overflow launch, cap or no cap: it feeds the
   metric, and the cap if one is later set.
+- *(2026-08-29)* The ledger's WRITABILITY is a precondition of the move,
+  not a warning after it (ranger-base-2y96): a readable-but-unwritable
+  `overflow.log` counted every pass at whatever it already said, so a cap
+  admitted its number of launches per pass forever and recorded none. It
+  now fails closed with the unreadable case. `docs/notes.d/ranger-base-2y96.md`.
 - *(2026-08-29)* Tripwire: the arming check keys on the grok meter by
   name, deliberately not a registry. When a **second** local pool meter
   appears, the rejected per-pool budget model's "file it when a second

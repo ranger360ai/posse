@@ -147,9 +147,11 @@ func TestQAOverflowTargetCannotBeTheGuardedRuntime(t *testing.T) {
 	}
 }
 
+// The ledger reads clean and refuses every write. Nothing about the count
+// says so — an empty ledger is 0/1, which is room — so a pass that only
+// checked the reading launches, warns, and leaves the file at zero for the
+// next pass to read as room again, forever (ranger-base-2y96).
 func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
-	t.Skip("ranger-base-2y96: append failure only warns, so every pass spends against the same stale count")
-
 	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
 	f1 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
 	f2 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
@@ -182,6 +184,25 @@ func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
 	if total != 0 {
 		t.Fatalf("readable but unwritable overflow ledger admitted %d unrecorded launches with cap 1; want 0\npass 1 stderr: %s\npass 2 stderr: %s",
 			total, f1.errb.String(), f2.errb.String())
+	}
+	// Zero launches is also what a fixture that never reached the guard would
+	// produce. The witness that this is the fail-closed path — and not the
+	// pass falling over somewhere earlier — is each pass naming the ledger it
+	// cannot write, and its on-meter bead parking on the guard's own line.
+	for i, f := range []*overflowFixture{f1, f2} {
+		for _, want := range []string{"overflow ledger", "cannot be appended to", "overflow off this pass"} {
+			if !strings.Contains(f.errb.String(), want) {
+				t.Fatalf("pass %d: want stderr naming the unwritable ledger (%q); got:\n%s", i+1, want, f.errb.String())
+			}
+		}
+		if out := dispatcherOut(f.d); !strings.Contains(out, "— skipped") {
+			t.Fatalf("pass %d: the on-meter bead must park on the guard's own line; got:\n%s", i+1, out)
+		}
+	}
+	// And the ledger is untouched: refusing to spend is not a licence to
+	// rewrite the record either.
+	if b, err := os.ReadFile(f1.b.App.OverflowLogPath()); err != nil || len(b) != 0 {
+		t.Fatalf("the ledger must be left exactly as found; got %q err=%v", b, err)
 	}
 }
 

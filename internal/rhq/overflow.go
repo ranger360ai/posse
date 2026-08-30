@@ -207,9 +207,49 @@ func countLedger(path, runtime string, now time.Time, window time.Duration) (int
 	return n, nil
 }
 
+// ledgerAppendable reports whether appendLedger could write to path right
+// now, and writes nothing to it either way. It is the precondition for
+// spending a pool the ledger is the only record of: a cap counted off a file
+// nothing can be added to is a cap of zero that reads as room forever.
+//
+// The probe is an OPEN, never the mode bits: a 0444 file is a promise about
+// a uid, and root — or an ACL — defeats it in both directions
+// (ranger-base-c00). O_CREATE is deliberately absent so a pass that overflows
+// nothing leaves no ledger behind; when there is no ledger yet, what has to
+// be writable is the directory the first append will create it in, so that is
+// what gets opened instead, and the probe file is taken away again.
+func (a *App) ledgerAppendable(path string) error {
+	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err == nil {
+		return f.Close()
+	}
+	if !os.IsNotExist(err) {
+		return err
+	}
+	probe, err := os.CreateTemp(a.StateDir, ".ledger-probe-*")
+	if err != nil {
+		return err
+	}
+	name := probe.Name()
+	if err := probe.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Remove(name)
+}
+
 // AppendOverflow records one overflow launch (ADR 0010 §3).
 func (a *App) AppendOverflow(e LedgerEntry) error {
 	return a.appendLedger(a.OverflowLogPath(), e)
+}
+
+// OverflowAppendable is the ledger-writability half of the cap's reading:
+// whether the line this pass would owe for a move can be written at all.
+func (a *App) OverflowAppendable() error {
+	return a.ledgerAppendable(a.OverflowLogPath())
 }
 
 // OverflowCount is the rolling-window count `plan_guard_overflow_cap:` is
@@ -293,13 +333,33 @@ func (d *Dispatcher) overflowFor(is RepoIssue, persona string, ag *AgentFile, rt
 // behaviour, which costs a skipped pass and heals itself, rather than an
 // uncounted week. ok is false exactly when that happened.
 //
+// An UNWRITABLE one is the same refusal for a sharper reason (ranger-base-2y96).
+// Reading is only half of what the cap needs; the other half is the line the
+// move owes afterwards. A ledger that can be read but not appended to counts
+// every pass at whatever it already says — zero, for an empty one — so cap 1
+// admits one launch per pass forever and records none of them. The count is
+// the number, but the append is what makes the number mean anything, so both
+// are checked before the ladder is allowed to spend, not after.
+//
 // What this pass launched but could not record is added back: the file will
 // under-count those beads for as long as it exists, so a re-read that trusted
-// it alone would hand their room out twice (ranger-base-af98).
+// it alone would hand their room out twice (ranger-base-af98). The probe does
+// not retire that arithmetic — it cannot see a write that will fail for a
+// reason an open does not, a full disk being the obvious one — it only stops
+// the case where the failure was knowable before anything was spent.
+//
+// Order matters: the count is taken first, so a ledger that is both corrupt
+// and unwritable is named by the fault an operator has to fix first.
 func (d *Dispatcher) readOverflowCount() (int, bool) {
 	n, err := d.App.OverflowCount(d.overflow.Runtime, d.now())
 	if err != nil {
 		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
+			AbbrevHome(d.App.OverflowLogPath()), err)
+		d.overflow = Overflow{}
+		return 0, false
+	}
+	if err := d.App.OverflowAppendable(); err != nil {
+		d.eprintf("plan guard: overflow ledger %s cannot be appended to (%v) — overflow off this pass, on-meter beads park\n",
 			AbbrevHome(d.App.OverflowLogPath()), err)
 		d.overflow = Overflow{}
 		return 0, false
