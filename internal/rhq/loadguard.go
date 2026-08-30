@@ -17,7 +17,8 @@ package rhq
 // cannot fork it is strictly worse than waiting.
 //
 // Two rules follow, and they are why the reading is taken in two places:
-//   - a dispatch pass over the limit is skipped whole, with one witness line;
+//   - a dispatch pass over the limit is skipped whole, with a witness line
+//     naming the load and a second naming who is holding it (below);
 //   - no launch — `posse new`, `posse relaunch`, a recipe, a cockpit key —
 //     starts a session while the box is over it.
 //
