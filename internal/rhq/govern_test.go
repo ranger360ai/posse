@@ -512,13 +512,19 @@ func TestGovG7DisarmedAutostartIsNotACondition(t *testing.T) {
 // start one. Gating G7 on presence alone said "autostart is armed" about
 // exactly that config (ranger-base-i6h). One subtest per shape the hook's
 // cfg() and CfgGet both read as empty — `""` among them since cfg() drops a
-// matched pair of double quotes the way yamlClean does (ranger-base-k3yd).
+// matched pair of double quotes the way yamlClean does (ranger-base-k3yd),
+// and null/~ since yamlGetLines maps a cleaned one to the empty string and
+// cfg() now does too (ranger-base-fqfw). This is the posse half of that
+// pairing; the hook half is TestAutostartNullIntervalIsTheSameBrokenArmAsABareKey.
 func TestGovG7BareIntervalIsABrokenArmNotADeadLoop(t *testing.T) {
 	for name, line := range map[string]string{
 		"bare":         "autostart_interval:\n",
 		"whitespace":   "autostart_interval:   \n",
 		"comment":      "autostart_interval: # 5m\n",
 		"quoted empty": "autostart_interval: \"\"\n",
+		"null":         "autostart_interval: null\n",
+		"tilde":        "autostart_interval: ~\n",
+		"quoted null":  "autostart_interval: \"null\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			b, _ := newTestBackend(t)
