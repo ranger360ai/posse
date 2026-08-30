@@ -1543,6 +1543,18 @@ default action mutates the machine is a **launch refuse** until your own
 config silences it. `posse runtime check <name>` prints each one with its
 key, its file, and whether it is already silenced on this box.
 
+**What that refusal does to you, in practice.** Anything **dispatched** —
+a pass, `--watch`, the cockpit's `d`, a recipe — refuses *before it claims
+the bead*, so nothing is taken and no session is made; the persona's slot
+is benched for the rest of that pass, because every bead routed to it would
+meet the same screen. Your **own** launch (`posse new`, `posse attach` on a
+session you create) warns `DEGRADED` and **proceeds** — answering that
+screen is exactly what you would open the session to do, so refusing it
+would leave you no way to clear the refusal. And posse refuses on a
+*reading*, never on ignorance: if it cannot read the file at all it says
+"cannot tell" and launches, because herdr recognizes the menu as `blocked`
+and a session that does meet it fails by name.
+
 | runtime | screen | key | you do |
 |---|---|---|---|
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |

@@ -108,6 +108,20 @@ func qcWork(t *testing.T, dir, store string) string {
 	return dir
 }
 
+// qcRedirect is the one line of `dir/.beads/redirect`, or "" when there is
+// none — the whole of what the fan-out writes.
+func qcRedirect(t *testing.T, dir string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, ".beads", beadsRedirect))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		t.Fatalf("%s: %v", dir, err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
 // qcRun drives the script. Every path is overridden, always: the defaults
 // are the LIVE ones (~/src/ranger-base, ~/src/ranger-queue, ~/src/posse,
 // ~/.posse/worktrees), and `--only-redirect` rather than `--redirect`
@@ -396,6 +410,85 @@ func TestQueueCutoverNeverPointsTheStoreAtItself(t *testing.T) {
 	}
 }
 
+// The trees nobody lists. A checkout retired before the move still resolves
+// through the constitution's `.beads`, so after the move it holds hop one of
+// a two-hop chain — and bd 0.49.1 refuses the second hop:
+//
+//	Warning: redirect chains not allowed, ignoring redirect in <middle>
+//	Error: no beads database found
+//	Hint: run 'bd init' to create a database in the current directory
+//
+// stderr and exit 1, with a hint inviting a second store in an archived
+// tree. The other arm is worse: when that middle tree KEPT a database, the
+// same warning goes to stderr and the command exits 0 against the SUPERSEDED
+// store. Both measured on ranger-base-l9aa, where the archived pre-POSSE
+// checkout was dead in exactly this way for a day because the fan-out took a
+// list and a list can be short.
+func TestQueueCutoverFindsTheTreesTheListForgets(t *testing.T) {
+	constitution, _ := qcConstitution(t)
+	store := filepath.Join(constitution, ".beads")
+	queue := filepath.Join(t.TempDir(), "queue")
+
+	// Both of these live beside the constitution, which is what the scan
+	// root is derived from. One points at the constitution and is on no
+	// list; the other points at an unrelated store and must be left alone.
+	root := filepath.Dir(constitution)
+	forgotten := qcWork(t, filepath.Join(root, "retired-checkout"), store)
+	elsewhere := filepath.Join(t.TempDir(), "someone-elses-store", ".beads")
+	stranger := qcWork(t, filepath.Join(root, "unrelated-repo"), elsewhere)
+	t.Cleanup(func() { os.RemoveAll(forgotten); os.RemoveAll(stranger) })
+
+	project := qcWork(t, t.TempDir(), store)
+	out, err := qcRun(t, constitution, queue, t.TempDir(), []string{project})
+	if err != nil {
+		t.Fatalf("queue-cutover.sh: %v\n%s", err, out)
+	}
+
+	dst := filepath.Join(queue, ".beads")
+	if got := qcRedirect(t, forgotten); got != dst {
+		t.Errorf("a tree on nobody's list still redirects to %q, want %q — that is a two-hop chain\n%s", got, dst, out)
+	}
+	if got := qcRedirect(t, stranger); got != elsewhere {
+		t.Errorf("a tree pointed at an unrelated store was rewritten to %q; it must keep %q", got, elsewhere)
+	}
+	// The scan root is DERIVED from --constitution rather than hard-coded to
+	// $HOME/src. A hard-coded one would follow this fixture's override onto
+	// the live box and repoint the working fleet at a t.TempDir queue.
+	if !strings.Contains(out, "scan: "+root) {
+		t.Errorf("the scan did not run under the constitution's parent %q:\n%s", root, out)
+	}
+}
+
+// The wrong arm for the pin above: same fixture, scan switched off, and the
+// forgotten tree stays stale. Without this, a fan-out that rewrote every
+// `.beads` it could reach — including trees pointed at other stores — would
+// pass the pin above just as well.
+func TestQueueCutoverScanCanBeSwitchedOffAndThenTheChainSurvives(t *testing.T) {
+	constitution, _ := qcConstitution(t)
+	store := filepath.Join(constitution, ".beads")
+	queue := filepath.Join(t.TempDir(), "queue")
+
+	root := filepath.Dir(constitution)
+	forgotten := qcWork(t, filepath.Join(root, "retired-checkout"), store)
+	t.Cleanup(func() { os.RemoveAll(forgotten) })
+
+	project := qcWork(t, t.TempDir(), store)
+	out, err := qcRun(t, constitution, queue, t.TempDir(), []string{project}, "--no-scan")
+	if err != nil {
+		t.Fatalf("queue-cutover.sh: %v\n%s", err, out)
+	}
+
+	if got := qcRedirect(t, forgotten); got != store {
+		t.Errorf("--no-scan rewrote a tree anyway: %q, want it left at %q\n%s", got, store, out)
+	}
+	if got, want := qcRedirect(t, project), filepath.Join(queue, ".beads"); got != want {
+		t.Errorf("--no-scan also skipped a repo that WAS named: %q, want %q", got, want)
+	}
+	if strings.Contains(out, "scan: ") {
+		t.Errorf("--no-scan still announced a scan:\n%s", out)
+	}
+}
+
 // Every preflight refusal is a statement that the window is not open yet,
 // and each one fails CLOSED — the script writes nothing before it refuses.
 func TestQueueCutoverRefusesGroundItDoesNotExpect(t *testing.T) {
@@ -552,6 +645,12 @@ func qcRollbackRun(t *testing.T, block string, f qcFixture) string {
 		{"~/src/ranger-base", f.constitution},
 		{"~/src/posse", f.posse},
 		{"~/.posse/worktrees", f.worktrees},
+		// LAST, and only what the four above did not claim: the block ends
+		// by walking `~/src` for trees that redirect at the queue and are on
+		// no list (ranger-base-l9aa). Pointed at the fixture's own root, that
+		// walk is exercised; left unsubstituted it would run against the live
+		// box — which is what the guard below refuses to let happen.
+		{"~/src", filepath.Dir(f.constitution)},
 	} {
 		block = strings.ReplaceAll(block, sub[0], sub[1])
 	}
@@ -736,6 +835,39 @@ func readFile(t *testing.T, path string) string {
 // redirect, so the refusal killed bd fleet-wide (see the abort pin below).
 // `git add -A .beads` stages nothing else, so the qualified form is the same
 // commit: measured, same tree sha, deletions included.
+// The rollback half of ranger-base-l9aa. The cutover's fan-out discovers
+// trees that redirect at the constitution; the rollback has to bring those
+// same trees home, or the ones nobody listed keep naming a queue repo the
+// last line of the rollback deletes — a redirect into thin air, which reads
+// exactly like the two-hop chain that started this: no database, and a hint
+// offering to make a new one.
+func TestQueueRollbackBringsHomeTheTreesTheListForgets(t *testing.T) {
+	f := qcRolledBack(t)
+	store := filepath.Join(f.constitution, ".beads")
+
+	// Beside the constitution, redirecting at the queue — the state the
+	// cutover left it in — and named nowhere in the rollback block.
+	forgotten := qcWork(t, filepath.Join(filepath.Dir(f.constitution), "retired-checkout"),
+		filepath.Join(f.queue, ".beads"))
+	t.Cleanup(func() { os.RemoveAll(forgotten) })
+
+	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+
+	if got := qcRedirect(t, forgotten); got != store {
+		t.Errorf("the rollback left a tree pointed at the deleted queue: %q, want %q\n%s", got, store, out)
+	}
+	// The control: the block as it read before this bead walked nothing, so
+	// the rig can see the defect.
+	f2 := qcRolledBack(t)
+	forgotten2 := qcWork(t, filepath.Join(filepath.Dir(f2.constitution), "retired-checkout"),
+		filepath.Join(f2.queue, ".beads"))
+	t.Cleanup(func() { os.RemoveAll(forgotten2) })
+	qcRollbackRun(t, qcRollbackBefore, f2)
+	if got := qcRedirect(t, forgotten2); got == filepath.Join(f2.constitution, ".beads") {
+		t.Error("the control block brought the tree home too — this pin measures nothing")
+	}
+}
+
 func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 	shimDir := qcCageShim(t)
 	// The witness that the fixture blocks anything at all: the shim refuses

@@ -4423,6 +4423,41 @@ default action mutates the machine is a launch refuse until that config
 silences it, and nothing blind-sends Enter.** The coordinator's
 string-match Escape watchdog is a stopgap, not the architecture.
 
+**What enforces it, since `ranger-base-9r33`.** For eleven months that rule
+was a sentence in three documents and nothing in the code: `Interstitial.Danger`
+was read by `posse runtime check` and by nobody on a launch path, so codex
+launched onto the menu the contract said must gate it. Three surfaces now
+agree, all reading `DangerUnsilenced` (`internal/rhq/interstitial.go`):
+
+- **dispatch refuses above the claim.** `launchSession` asks before it
+  creates a session, so a refused bead is never claimed and no workspace is
+  made — the argv path claims *first*, so a refusal raised any later would
+  hand back a bead it had already taken. The refusal is a persona/runtime
+  failure by the §2 busy-key split, so the slot is benched for the pass
+  rather than the refusal being printed once per bead.
+- **every other launch path refuses from `planLaunch`** — the cockpit's `d`
+  on a session it must create, a recipe, a relaunch — *if it carries a
+  bead*. An **interactive** launch warns `DEGRADED` and proceeds. That is
+  ADR 0015 §3's asymmetry, and here it is not merely analogous: the remedy
+  for codex's menu is to **answer it**, in a codex session, so a posse that
+  refused interactive launches too would have walled off the only way to
+  clear its own refusal. It is also the escape hatch, and the reason there
+  is no config key for one.
+- **`posse runtime check` reports it as a BLOCKING gap**, and `posse runtime
+  probe` refuses to probe — the probe launches a scratch session, which
+  would meet the same screen.
+
+**A refusal is a reading, never ignorance.** The probes are tri-state
+(`Silence`: silenced / not silenced / **unknown**), and only the middle one
+refuses. posse cannot read `~/.codex/version.json` on a box codex has never
+checked for a release on, and a refusal whose own words are "cannot tell
+whether the update menu is silenced" walls a box for something nobody
+measured. The screen is not unguarded meanwhile: herdr names it `blocked`
+by its own `update_menu` rule, so a launch that *does* meet it fails by name
+instead of being typed into. An interstitial declared in a
+`runtimes/<name>.yaml` has no probe at all, so declaring a screen documents
+it and never walls the declarer's own launches.
+
 **The keys, per runtime.** `posse runtime check <name>` prints each with
 its file and whether it is silenced on this box — read-only probes, which
 is the only thing posse does to these files.

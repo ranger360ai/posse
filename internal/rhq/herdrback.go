@@ -1442,6 +1442,35 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// dropped rather than carried.
 			fallback = o.Fallback
 		}
+		// ADR 0013 §2 layer 2 (ranger-base-a9y9, escaped as ranger-base-9r33):
+		// a first-run dialog whose DEFAULT ACTION MUTATES THE MACHINE is a
+		// launch REFUSE until the operator's own config silences it. Asked
+		// HERE because this is the first line at which `rt` is the runtime
+		// the session will really open on — the availability preflight above
+		// may have moved it — and because it is above every render below, so
+		// a refused launch cuts no worktree, writes no gates and seeds no
+		// trust.
+		//
+		// The dispatched/interactive split is ADR 0015 §3's, twelve lines up,
+		// and here it is not merely the same shape: the operator's remedy for
+		// codex's update menu is to ANSWER it, in their own codex session, and
+		// a posse that refused to open one would have walled off the only way
+		// to clear its own refusal. So a launch nobody is watching refuses,
+		// and the operator's own is told what it is about to open on and left
+		// to decide — which is also the escape hatch, and the reason there is
+		// no config key for one.
+		//
+		// Dispatch does not normally reach this arm: launchSession refuses
+		// above the claim, because by the time a launch is being planned the
+		// argv path has already taken the bead (dispatch.go). This is the
+		// backstop for every other path that carries a bead — the cockpit's
+		// `d` on a session it must create, a recipe, a relaunch.
+		if line := DangerLine(rt); line != "" {
+			if o.Bead != "" {
+				return nil, DangerRefusal(rt, line)
+			}
+			b.warn("posse: DEGRADED — %s launch opens on %s; an interactive launch proceeds because answering that screen is what you would open a session to do (ADR 0013 §2)\n", rt.Name, line)
+		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
 		// gate no wall layer realizes refuses the launch unless degradation

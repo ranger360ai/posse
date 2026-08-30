@@ -115,7 +115,27 @@ type Interstitial struct {
 	Seeded bool
 	// Probe reports whether the key is set on this machine. nil = posse
 	// cannot cheaply tell, which prints as "unknown" rather than as "no".
-	Probe func() (bool, string)
+	Probe func() Silence
+}
+
+// Silence is what a read-only probe can honestly say about one interstitial
+// key on this box — three states, not two, and the third is the one that
+// decides a launch.
+//
+// The distinction was prose in interstitial.go's header ("an unreadable or
+// absent file is 'unknown', never 'no'") and a plain `false` in the code,
+// which is fine while the answer only prints. It stopped being fine when
+// DangerUnsilenced started refusing launches on it: refusing on "posse
+// could not read the file" walls a box for something nobody measured, and
+// says so in the refusal's own words (ranger-base-9r33).
+//
+// A probe that cannot distinguish the two never returns Unknown — grok's
+// two keys are written by grok itself, so a config without them is an
+// answered question, not an unreadable one.
+type Silence struct {
+	Silenced bool   // the key is set: this screen will not draw
+	Unknown  bool   // posse could not read the file — "cannot tell", never "no"
+	Why      string // the reading, in the probe's own words, for the line that prints it
 }
 
 // Realized is what a native realizer produced: the two placeholder

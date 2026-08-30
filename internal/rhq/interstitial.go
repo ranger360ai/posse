@@ -88,26 +88,30 @@ func tomlFlag(path, key string) (val string, found bool) {
 // ("2026-08-24T21:35:58Z"), not a bool, which is why this tests for
 // "present and not false" rather than for "true". A bool test read a live
 // acked config as un-acked.
-func grokPrivacyProbe() (bool, string) {
+func grokPrivacyProbe() Silence {
 	p := filepath.Join(grokHome(), "config.toml")
 	v, ok := tomlFlag(p, "privacy_banner_acked")
 	if !ok || v == "" || v == "false" {
-		return false, "privacy_banner_acked unset in " + AbbrevHome(p) + " — the banner re-arms every launch"
+		// No config and an unanswered config are the same reading here, and
+		// it is a reading rather than a shrug: grok writes the ack itself,
+		// so a file that does not carry it is a banner that has not been
+		// answered on this box.
+		return Silence{Why: "privacy_banner_acked unset in " + AbbrevHome(p) + " — the banner re-arms every launch"}
 	}
-	return true, "privacy_banner_acked = " + v + " in " + AbbrevHome(p) + " (the ack, not the answer)"
+	return Silence{Silenced: true, Why: "privacy_banner_acked = " + v + " in " + AbbrevHome(p) + " (the ack, not the answer)"}
 }
 
 // grokAutoUpdateProbe: the fleet pin (etc/grok/version-pin.toml,
 // rangerhq-y7jr) already kills grok's update check AND the shared leader's
 // mid-life self-update, so grok has no update interstitial while it holds.
 // `make verify-grok-pin` is the assertion; this is the cheap read.
-func grokAutoUpdateProbe() (bool, string) {
+func grokAutoUpdateProbe() Silence {
 	p := filepath.Join(grokHome(), "config.toml")
 	v, ok := tomlFlag(p, "auto_update")
 	if !ok {
-		return false, "[cli] auto_update not set in " + AbbrevHome(p) + " — pin not applied (make verify-grok-pin)"
+		return Silence{Why: "[cli] auto_update not set in " + AbbrevHome(p) + " — pin not applied (make verify-grok-pin)"}
 	}
-	return v == "false", "[cli] auto_update = " + v + " in " + AbbrevHome(p)
+	return Silence{Silenced: v == "false", Why: "[cli] auto_update = " + v + " in " + AbbrevHome(p)}
 }
 
 // codexUpdateProbe: codex's update menu is silenced for one release at a
@@ -115,26 +119,32 @@ func grokAutoUpdateProbe() (bool, string) {
 // ~/.codex/version.json, and the menu returns when latest_version moves
 // past it. So this is a probe with a shelf life, which is the point of
 // printing the two versions rather than a bare yes.
-func codexUpdateProbe() (bool, string) {
+func codexUpdateProbe() Silence {
 	p := filepath.Join(codexHome(), "version.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return false, "unreadable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"
+		// UNKNOWN, and this is the one probe where the difference is
+		// load-bearing: it is the only DANGER entry, so a reading of "no"
+		// here refuses launches (DangerUnsilenced). codex writes this file
+		// itself when it first checks for a release, so its absence is a
+		// box that has not been told anything yet, not a box carrying a
+		// menu — and posse does not wall a launch on what it did not read.
+		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"}
 	}
 	var v struct {
 		Latest    string `json:"latest_version"`
 		Dismissed string `json:"dismissed_version"`
 	}
 	if json.Unmarshal(b, &v) != nil {
-		return false, "unparseable " + AbbrevHome(p)
+		return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"}
 	}
 	if v.Dismissed == "" {
-		return false, "dismissed_version unset in " + AbbrevHome(p) + " (latest " + v.Latest + ") — the menu draws on next launch"
+		return Silence{Why: "dismissed_version unset in " + AbbrevHome(p) + " (latest " + v.Latest + ") — the menu draws on next launch"}
 	}
 	if v.Dismissed == v.Latest {
-		return true, "dismissed_version " + v.Dismissed + " = latest_version " + v.Latest + " — silenced until the next release"
+		return Silence{Silenced: true, Why: "dismissed_version " + v.Dismissed + " = latest_version " + v.Latest + " — silenced until the next release"}
 	}
-	return false, "dismissed_version " + v.Dismissed + " but latest_version " + v.Latest + " — the menu is back"
+	return Silence{Why: "dismissed_version " + v.Dismissed + " but latest_version " + v.Latest + " — the menu is back"}
 }
 
 // GrokInterstitials — measured on grok 1.0.5 (ranger-base-3j8,
@@ -180,3 +190,77 @@ var ClaudeInterstitials = []Interstitial{{
 	Seeded:  true,
 	Probe:   claudeTrustProbe,
 }}
+
+// DangerUnsilenced is ADR 0013 §2's launch rule, in one place because three
+// surfaces have to agree about it: the dispatch loop refuses before it
+// claims (dispatch.go launchSession), every other launch path refuses or
+// warns from planLaunch (herdrback.go), and `posse runtime check` reports
+// the same reading as a BLOCKING gap (runtimepreflight.go). It returns one
+// line per declared screen of rt whose default action mutates the machine
+// and which this box cannot show to be silenced — empty when a launch here
+// meets no such screen.
+//
+// Three exclusions, and each is a different kind of "not this rule":
+//
+//   - Danger == "" — the default action is safe. grok's consent banner is
+//     the case: answering it wrong is a visibility decision, which is why
+//     posse still never answers it, but arriving at it mutates nothing.
+//   - Seeded — the launch writes this key itself (claude's directory
+//     trust), so there is nothing for the operator to have done first.
+//   - the reading is UNKNOWN — either Probe == nil, because posse cannot
+//     read this CLI's config format at all (every interstitial declared in
+//     a runtimes/<name>.yaml is here, so an operator who declares a screen
+//     documents it and does not thereby wall their own launches), or the
+//     probe ran and could not read the file (Silence.Unknown).
+//
+// That last exclusion is the one worth arguing with, because "REFUSE until
+// that config silences it" reads like silence must be SHOWN. Two things
+// answer it. A refusal whose own words are "cannot tell whether the update
+// menu is silenced" walls a box for something nobody measured — and the
+// screen is not unguarded meanwhile: herdr names it `blocked` by its own
+// rule (etc/herdr/agent-detection/codex.toml, update_menu), so a launch
+// that does meet it fails by name instead of being typed into. So this
+// refuses on a reading, never on ignorance (ranger-base-9r33).
+//
+// The line carries the probe's own words (which for codex are the two
+// version numbers, because the dismissal expires) and the operator's
+// action, since a refusal an operator cannot clear from the line is a dead
+// end.
+func DangerUnsilenced(rt *Runtime) []string {
+	if rt == nil {
+		return nil
+	}
+	var lines []string
+	for _, in := range rt.Interstitials {
+		if in.Danger == "" || in.Seeded || in.Probe == nil {
+			continue
+		}
+		sil := in.Probe()
+		if sil.Silenced || sil.Unknown {
+			continue
+		}
+		lines = append(lines, in.Key+" is NOT silenced — "+sil.Why+
+			". Its DEFAULT ACTION MUTATES THE MACHINE: "+in.Danger+
+			". To silence it: "+in.Silence)
+	}
+	return lines
+}
+
+// DangerLine is DangerUnsilenced as the one sentence a refusal or a warning
+// leads with ("" = nothing to say). Joined with "; " rather than newlines
+// because both callers embed it in a message that adds its own indented
+// lines under it.
+func DangerLine(rt *Runtime) string {
+	return strings.Join(DangerUnsilenced(rt), "; ")
+}
+
+// DangerRefusal is the launch refusal itself, so the dispatch loop and
+// planLaunch cannot drift into saying different things about the same
+// screen. It names the runtime, what is unsilenced, and the one place an
+// operator goes to see the whole grid.
+func DangerRefusal(rt *Runtime, line string) error {
+	return Die("%s launch refused: %s\n"+
+		"  ADR 0013 §2: a first-run dialog whose default action mutates the machine is a launch REFUSE until the operator's own config silences it, and posse never answers one — nothing blind-sends Enter\n"+
+		"  the whole grid, with what this box reads today: posse runtime check %s",
+		rt.Name, line, rt.Name)
+}

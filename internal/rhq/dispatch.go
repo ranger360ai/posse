@@ -3096,6 +3096,33 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	if resolveErr == nil && s.Foreign {
 		return launched{}, Die("%s %s — not dispatched; %s", is.ID, foreignHoldLine(session), foreignFreeLine(session))
 	}
+	// ADR 0013 §2 layer 2, above BOTH launch branches and above the claim:
+	// a fresh pane of this runtime would open on a first-run dialog whose
+	// default action mutates the machine, and nothing here may answer it.
+	// planLaunch makes the same refusal for every other launch path
+	// (herdrback.go), but it cannot make it EARLY enough for this one — the
+	// argv path claims the bead before it creates the session, so a refusal
+	// raised from inside CreateSession would hand back a bead it had already
+	// taken, and the bead is what dispatch must leave untouched
+	// (ranger-base-9r33).
+	//
+	// Only a session this pass would CREATE meets the screen. A live CLI is
+	// already past it — refusing to prompt one would strand the claim of a
+	// bead that is being worked, on a fact about a pane that no longer
+	// exists.
+	//
+	// It is a plain error, so fireLoop's busy-key split reads it as the
+	// persona/runtime arm and benches the slot: every bead routed to this
+	// persona on this runtime meets the same screen, and claiming them one
+	// at a time to refuse them one at a time is the sterilised queue ADR
+	// 0013 §2 already named once.
+	if resolveErr != nil {
+		if rt, err := d.App.LoadRuntime(runtime); err == nil {
+			if line := DangerLine(rt); line != "" {
+				return launched{}, DangerRefusal(rt, line)
+			}
+		}
+	}
 	// ADR 0013 §2, and the whole reason this function grew a `prompt`
 	// argument: on a runtime that declares `prompt: argv`, a session posse
 	// is about to CREATE gets the work prompt on its launch line, and the

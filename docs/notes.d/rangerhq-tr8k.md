@@ -43,10 +43,16 @@ operator silenced years ago. `Seeded` is likewise not declarable — that is
 posse *writing* the operator's config, argued to a standstill in
 rangerhq-w4uf.
 
-`Interstitial.Danger` is still documentation: no launch path reads it. The
+`Interstitial.Danger` was documentation here: no launch path read it. The
 grid used to promise "LAUNCH REFUSE until silenced", which the code did not
-make good on; it now says what actually happens, and the refuse is
-`ranger-base-a9y9`.
+make good on, so it was reworded to say what actually happened and the
+refuse was filed as `ranger-base-a9y9`.
+
+**Superseded 2026-08-29 by `ranger-base-9r33`**, which wired it: dispatch
+refuses above the claim, every other bead-carrying path refuses from
+`planLaunch`, an interactive launch warns `DEGRADED` and proceeds, and the
+`interstitial` gap below is BLOCKING for a `Danger` entry. The grid says
+"LAUNCH REFUSE" again, and means it. See ADR 0013 §2's amendment.
 
 ### `posse runtime check <name>` exits 1 on a blocking gap
 

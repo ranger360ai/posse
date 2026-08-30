@@ -98,8 +98,11 @@ already redirects. What it does:
   (see *What the rehearsal broke*, below);
 - leaves `~/src/ranger-base/.beads/` holding one file, `redirect`, with the
   untracking **staged and not committed**;
-- rewrites `.beads/redirect` in `~/src/posse` and in every session worktree
-  under `~/.posse/worktrees`;
+- rewrites `.beads/redirect` in `~/src/posse`, in every session worktree
+  under `~/.posse/worktrees`, and in every other tree beside the
+  constitution whose redirect still names it — the scan root is the
+  constitution's parent (`--scan DIR`, `--no-scan`, `--scan-depth N`), and
+  only a redirect matching the constitution's `.beads` exactly is rewritten;
 - commits the live store's drift in the queue repo — **last**, after the
   redirects, because it is the only step whose failure costs nothing but a
   commit.
@@ -282,6 +285,21 @@ recorded because each would have been silent in production:
    the commit is path-qualified (same tree, measured), it runs last, and
    every step past the preflight prints its half-state and its undo.
 
+**And a sixth the rehearsal could not have caught** (ranger-base-l9aa, found
+2026-08-28, hours after the real move and fixed on 08-29): the fan-out took a *list*, and a
+list can be short. A tree that redirected at the constitution but was on
+nobody's list — here the archived pre-POSSE checkout, `~/src/rangerhq` —
+kept its redirect, which after the move is hop one of a two-hop chain. bd
+0.49.1 refuses the second hop, so that checkout resolved **no database at
+all**: `Warning: redirect chains not allowed…` then `Error: no beads
+database found`, plus a hint inviting `bd init` to mint a second store
+there. The worse arm, measured on a throwaway rig the same day: when the
+middle tree still holds a `beads.db`, the warning goes to stderr and the
+command **exits 0 against the superseded store** — a chain that reads and
+writes the wrong database with nothing on stdout to say so. The fan-out now
+discovers those trees instead of being told about them
+(`TestQueueCutoverFindsTheTreesTheListForgets`).
+
 Not rehearsable from a persona session, and therefore untested until the
 window: `bd daemon stop`/`start` and `bd migrate --update-repo-id` are both
 denied to personas. Steps 1, 4 and 7 are the operator's, and step 4 is the
@@ -312,10 +330,20 @@ done
 rm -f ~/src/ranger-base/.beads/redirect   # -f: an abort in stage `move` never wrote one
 cd ~/src/ranger-base && git reset -q HEAD -- .beads .gitignore &&
   git checkout -- .gitignore .beads/.gitignore   # the root ignore AND the one that hides beads.db
-# put every redirect back
+# Put every redirect back — INCLUDING the ones the fan-out's scan found,
+# which are not on any list here either. Anything still naming the queue's
+# `.beads` after the store has gone home is a dangling redirect, and the
+# same two-hop trap in reverse (ranger-base-l9aa).
 printf '%s\n' ~/src/ranger-base/.beads > ~/src/posse/.beads/redirect
 for w in ~/.posse/worktrees/*/*; do
   [ -d "$w/.beads" ] && printf '%s\n' ~/src/ranger-base/.beads > "$w/.beads/redirect"
+done
+find ~/src -maxdepth 3 -type d -name .beads | while read -r b; do
+  # `x && y` as the last statement makes the loop exit 1 on a non-match, and
+  # under `set -e` that kills the rest of a rollback. Measured; use `continue`.
+  cur=$(head -n 1 "$b/redirect" 2>/dev/null || true)
+  [ "$cur" = ~/src/ranger-queue/.beads ] || continue
+  printf '%s\n' ~/src/ranger-base/.beads > "$b/redirect"
 done
 cd ~/src/ranger-base && bd migrate --update-repo-id && bd daemon start
 ```

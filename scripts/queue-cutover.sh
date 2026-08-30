@@ -12,8 +12,10 @@
 #   3. moves the live store (database and friends) on top of it;
 #   4. leaves the constitution repo holding one file — `.beads/redirect` —
 #      and stages the untracking, without committing;
-#   5. rewrites `.beads/redirect` in every repo named with --redirect, and in
-#      every session worktree under ~/.posse/worktrees;
+#   5. rewrites `.beads/redirect` in every repo named with --redirect, in
+#      every session worktree under ~/.posse/worktrees, and in every OTHER
+#      tree under --scan that already redirected at the constitution (see
+#      WHY THE FAN-OUT DISCOVERS, below);
 #   6. commits the live store's drift in the QUEUE repo — LAST, because it is
 #      the only step whose failure costs nothing but a commit
 #      (ranger-base-nzyn: it used to run inside the window, and a persona
@@ -28,6 +30,23 @@
 # remote, or push anything anywhere. A queue repo with no remote cannot push
 # even if some future bd flag tries to.
 #
+# WHY THE FAN-OUT DISCOVERS rather than taking a list: a tree the fan-out
+# misses does not keep working and it does not fail loudly — it keeps a
+# redirect at the constitution, which now redirects onward, and bd 0.49.1
+# refuses the second hop. Measured on ranger-base-l9aa, bd 0.49.1:
+#
+#   Warning: redirect chains not allowed, ignoring redirect in <middle>
+#   Error: no beads database found
+#   Hint: run 'bd init' to create a database in the current directory
+#
+# stderr and exit 1 — and the hint invites a second store in an archived
+# checkout. Worse is the arm where the middle tree KEPT a database: the same
+# warning goes to stderr and the command EXITS 0, reading and writing the
+# SUPERSEDED store. So the list has to be discovered, because the cost of
+# forgetting an entry is not an error message. The guard is exact: only a
+# tree whose redirect names $SRC_BEADS is rewritten, so a tree pointed at
+# some other store is never touched.
+#
 # WHY THE HISTORY REPLAY IS NOT OPTIONAL: posse's bead-loss census
 # (internal/rhq/beadloss.go) IS the git log of `.beads/issues.jsonl` in
 # whatever repo the redirect lands in. A queue repo that starts at one fresh
@@ -38,6 +57,7 @@
 # Usage:
 #   scripts/queue-cutover.sh [--constitution DIR] [--queue DIR]
 #                            [--redirect DIR]... [--worktrees DIR]
+#                            [--scan DIR] [--scan-depth N] [--no-scan]
 #                            [--dry-run] [--force-daemon]
 #
 # Defaults are the live paths, so the window step is one line with no
@@ -50,6 +70,17 @@ CONSTITUTION=${CONSTITUTION:-$HOME/src/ranger-base}
 QUEUE=${QUEUE:-$HOME/src/ranger-queue}
 WORKTREES=${WORKTREES:-$HOME/.posse/worktrees}
 REDIRECTS=${REDIRECTS:-$HOME/src/posse}
+# Where to look for trees that already redirect at the constitution. The
+# default is DERIVED from --constitution (its parent) below, after the
+# arguments are read, rather than hard-coded to $HOME/src: every other path
+# here is overridable, and a scan root that is NOT follows a --constitution
+# override onto a fixture while still walking the live fleet — which would
+# let a rehearsal, or a test, repoint the working crew's redirects at a
+# throwaway queue. Empty means no scan at all.
+SCAN_SET=0
+[ "${SCAN+x}" = x ] && SCAN_SET=1
+SCAN=${SCAN:-}
+SCAN_DEPTH=${SCAN_DEPTH:-3}
 DRYRUN=0
 FORCE_DAEMON=0
 
@@ -61,12 +92,20 @@ while [ $# -gt 0 ]; do
     --redirect)     REDIRECTS="$REDIRECTS
 $2"; shift 2 ;;
     --only-redirect) REDIRECTS=$2; shift 2 ;;
+    --scan)         SCAN=$2; SCAN_SET=1; shift 2 ;;
+    --scan-depth)   SCAN_DEPTH=$2; shift 2 ;;
+    --no-scan)      SCAN=''; SCAN_SET=1; shift ;;
     --dry-run)      DRYRUN=1; shift ;;
     --force-daemon) FORCE_DAEMON=1; shift ;;
-    -h|--help)      sed -n '2,40p' "$0"; exit 0 ;;
+    # Every comment line of the header, not a line range: the range this
+    # used to carry (2,40) already cut the usage block's last line, and the
+    # next edit to the header would have cut more.
+    -h|--help)      awk 'NR>1 && /^#/{print} NR>1 && !/^#/{exit}' "$0"; exit 0 ;;
     *) echo "queue-cutover: unknown argument $1" >&2; exit 2 ;;
   esac
 done
+
+[ "$SCAN_SET" = 1 ] || SCAN=$(dirname "$CONSTITUTION")
 
 say() { printf '%s\n' "$*"; }
 run() { if [ "$DRYRUN" = 1 ]; then printf 'would: %s\n' "$*"; else eval "$@"; fi; }
@@ -136,7 +175,15 @@ EOF
   other redirects are partial — the ones printed above are done, the rest
   still name $SRC_BEADS.
   Re-running this script will (correctly) refuse: the store already
-  redirects. Finish the stragglers by hand:
+  redirects. A straggler does not keep working — it now names a
+  '$SRC_BEADS' that redirects onward, and bd refuses the second hop. List
+  them, then finish them by hand:
+    find '$SCAN' -maxdepth $SCAN_DEPTH -type d -name .beads |
+      while read -r b; do
+        cur=\$(head -n 1 "\$b/redirect" 2>/dev/null || true)
+        [ "\$cur" = '$SRC_BEADS' ] || continue
+        echo "\$b"
+      done
     printf '%s\n' '$DST_BEADS' > <repo>/.beads/redirect
 EOF
       ;;
@@ -314,6 +361,28 @@ if [ -d "$WORKTREES" ]; then
   [ -n "$more" ] && targets="$targets
 $more"
 fi
+# Any OTHER tree that already redirects at the constitution. These are the
+# ones nobody remembers: a checkout retired months ago still resolves through
+# the constitution, and after this script runs it holds hop one of a two-hop
+# chain that bd refuses — silently, if that middle tree kept a database (see
+# the header). The match is exact against $SRC_BEADS, so a tree pointed at a
+# different store is left alone, and the constitution itself is skipped
+# because step 4 already renamed its target to $DST_BEADS.
+if [ -n "$SCAN" ] && [ -d "$SCAN" ]; then
+  chained=$(find "$SCAN" -maxdepth "$SCAN_DEPTH" -type d -name .beads 2>/dev/null \
+    | while read -r b; do
+        cur=$(head -n 1 "$b/redirect" 2>/dev/null || true)
+        [ "$cur" = "$SRC_BEADS" ] || continue
+        printf '%s\n' "${b%/.beads}"
+      done) || true
+  if [ -n "$chained" ]; then
+    n=$(printf '%s\n' "$chained" | wc -l | tr -d ' ')
+    say "scan: $SCAN (depth $SCAN_DEPTH) found $n tree(s) still pointed at the constitution"
+    targets="$targets
+$chained"
+  fi
+fi
+targets=$(printf '%s\n' "$targets" | sed '/^$/d' | sort -u)
 printf '%s\n' "$targets" | while read -r repo; do
   [ -n "$repo" ] || continue
   [ -d "$repo/.beads" ] || continue

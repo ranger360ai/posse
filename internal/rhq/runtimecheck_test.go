@@ -253,30 +253,35 @@ func TestInterstitialProbesReadRealShapes(t *testing.T) {
 	os.MkdirAll(filepath.Join(home, ".grok"), 0o755)
 	os.MkdirAll(filepath.Join(home, ".codex"), 0o755)
 
-	if ok, why := grokPrivacyProbe(); ok || !strings.Contains(why, "unset") {
-		t.Errorf("absent config must read as not-silenced: %v %q", ok, why)
+	if sil := grokPrivacyProbe(); sil.Silenced || sil.Unknown || !strings.Contains(sil.Why, "unset") {
+		t.Errorf("absent config must read as not-silenced: %+v", sil)
 	}
-	if ok, why := codexUpdateProbe(); ok || !strings.Contains(why, "cannot tell") {
-		t.Errorf("absent version.json must read as unknown, not as silenced: %v %q", ok, why)
+	// UNKNOWN and NOT-SILENCED are two readings, not one, and since
+	// ranger-base-9r33 the difference decides a launch: DangerUnsilenced
+	// refuses on the second and never on the first. A probe that returned a
+	// bare "no" here would wall every codex dispatch on a box posse could
+	// not read a file on.
+	if sil := codexUpdateProbe(); !sil.Unknown || sil.Silenced || !strings.Contains(sil.Why, "cannot tell") {
+		t.Errorf("absent version.json must read as unknown, not as silenced or as no: %+v", sil)
 	}
 
 	cfg := filepath.Join(home, ".grok", "config.toml")
 	os.WriteFile(cfg, []byte("[cli]\nauto_update = false\n\n[privacy]\nprivacy_banner_acked = \"2026-08-24T21:35:58Z\"\n"), 0o644)
-	if ok, why := grokPrivacyProbe(); !ok {
-		t.Errorf("an RFC3339 ack is an ack, not a false: %q", why)
+	if sil := grokPrivacyProbe(); !sil.Silenced {
+		t.Errorf("an RFC3339 ack is an ack, not a false: %+v", sil)
 	}
-	if ok, why := grokAutoUpdateProbe(); !ok || !strings.Contains(why, "false") {
-		t.Errorf("auto_update = false is the pin holding: %v %q", ok, why)
+	if sil := grokAutoUpdateProbe(); !sil.Silenced || !strings.Contains(sil.Why, "false") {
+		t.Errorf("auto_update = false is the pin holding: %+v", sil)
 	}
 
 	vj := filepath.Join(home, ".codex", "version.json")
 	os.WriteFile(vj, []byte(`{"latest_version":"0.149.1","dismissed_version":"0.149.1"}`), 0o644)
-	if ok, _ := codexUpdateProbe(); !ok {
-		t.Error("dismissed == latest is silenced")
+	if sil := codexUpdateProbe(); !sil.Silenced {
+		t.Errorf("dismissed == latest is silenced: %+v", sil)
 	}
 	os.WriteFile(vj, []byte(`{"latest_version":"0.150.0","dismissed_version":"0.149.1"}`), 0o644)
-	if ok, why := codexUpdateProbe(); ok || !strings.Contains(why, "the menu is back") {
-		t.Errorf("a dismissal expires when latest_version moves: %v %q", ok, why)
+	if sil := codexUpdateProbe(); sil.Silenced || sil.Unknown || !strings.Contains(sil.Why, "the menu is back") {
+		t.Errorf("a dismissal expires when latest_version moves, and that is a READING, not an unknown: %+v", sil)
 	}
 }
 

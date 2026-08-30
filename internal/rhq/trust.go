@@ -396,23 +396,23 @@ func lockClaudeConfig(cfg string) (func(), error) {
 // claudeTrustProbe backs the interstitial row in `posse runtime check`:
 // would a claude launched in the CWD draw the trust dialog today? It reads
 // the operator's config and nothing else, like every other probe there.
-func claudeTrustProbe() (bool, string) {
+func claudeTrustProbe() Silence {
 	p := ClaudeConfigFile()
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return false, "unreadable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"
+		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
 	}
 	state := map[string]any{}
 	if err := json.Unmarshal(b, &state); err != nil {
-		return false, "unparseable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"
+		return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return false, "no cwd to ask about"
+		return Silence{Unknown: true, Why: "no cwd to ask about"}
 	}
 	key := ClaudeTrustKey(cwd)
 	if ClaudeTrusted(state, cwd) {
-		return true, key + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"
+		return Silence{Silenced: true, Why: key + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"}
 	}
-	return false, key + " is not trusted in " + AbbrevHome(p) + " — the launch seeds it (a dir the operator has never run claude in draws the modal)"
+	return Silence{Why: key + " is not trusted in " + AbbrevHome(p) + " — the launch seeds it (a dir the operator has never run claude in draws the modal)"}
 }
