@@ -115,12 +115,18 @@ A heredoc body is data now. The parser recognises the redirection in all its
 spellings, keeps the body with the command that opened it, and never tokenizes
 it — and asks instead the questions a body can honestly answer: does anything
 on the line *execute* what it is handed on stdin (`sh <<'EOF'` and
-`cat <<'EOF' | sh` are both still refused, and so is any interpreter's), is
-the delimiter unquoted so the shell expands a substitution in the body before
-anyone reads it, and is a real invocation still standing outside the body.
-Every refusal now names what was matched — resolved verb, command word,
-heredoc body — and where, as segment N of M with its text on one line, so the
-next false positive is a bug report rather than a puzzle.
+`cat <<'EOF' | sh` are both still refused, and the shell family is the line —
+a `python3 - <<'PY'` whose body quotes a command is prose, the same way
+`python3 -c` with that text in it always was), is the delimiter unquoted so
+the shell expands a substitution in the body before anyone reads it, and is a
+real invocation still standing outside the body. Every refusal now names what
+was matched — resolved verb, command word, heredoc body — and where, as
+segment N of M with its text on one line, so the next false positive is a bug
+report rather than a puzzle.
+
+Measured against every Bash command line in this box's transcripts, 51408 of
+them: 1085 stop being refused, 7 start — each of those 7 a heredoc whose line
+really does carry a shell.
 
 **A red cage pin could mean the image was two days old, and nothing said so.**
 
