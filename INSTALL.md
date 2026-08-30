@@ -839,6 +839,18 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # refuses to nest seatbelts. Declaring it makes
 #                              # `cage: seatbelt` degrade here HONESTLY instead
 #                              # of the launch wrapping it and failing.
+# unattended: -a never        # the flag that makes this CLI approve a tool
+#                              # call with NOBODY WATCHING. Declared here it is
+#                              # a launch guarantee: posse appends it whenever
+#                              # the rendered line does not already name it,
+#                              # including a line a PID's own command: wrote.
+#                              # posse never guesses one — this is YOUR
+#                              # measurement of YOUR CLI. Must begin with the
+#                              # flag (a bare word would land as a positional,
+#                              # which an interactive CLI reads as its prompt)
+#                              # and carry no shell punctuation. Left out, the
+#                              # grid says "NO unattended flag known" and your
+#                              # command: had better name it itself.
 # project_config: .foo/cfg.toml  # a file IN THE SESSION DIRECTORY this CLI
 #                              # reads as configuration once the directory is
 #                              # trusted — MCP servers, hooks, notify commands.
@@ -847,6 +859,16 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # present unless the PID sets
 #                              # `trust_project_config: true`. Relative to the
 #                              # session dir; absolute or `..` refuses.
+# project_config_keys: [hooks, mcpServers]
+#                              # ...and only if that file is JSON whose keys you
+#                              # have READ: the degrade then fires only when one
+#                              # of these TOP-LEVEL keys is present, instead of
+#                              # on the file existing at all. The one key here
+#                              # that LOOSENS a check, so it refuses without
+#                              # project_config: and refuses empty. A body that
+#                              # is not a readable top-level JSON object still
+#                              # fails closed — keys over a TOML config degrade
+#                              # every launch rather than narrowing anything.
 # cage_cred: <ENV_VAR>         # the credential a *containerised* session of
 #                              # this runtime authenticates with; absent means
 #                              # `cage: container` refuses here
@@ -955,11 +977,15 @@ Four things about template profiles that will bite you if nobody says them:
    wall (the L1 shims, and the L3 pre-push hook). This is safe by
    construction — it is strictly more enforcement, not less — but do not
    expect the CLI to refuse anything on its own.
-3. **posse does not know this CLI's unattended flag, so it cannot add one.**
-   The built-ins get theirs guaranteed at launch; a template profile does
-   not. **Your `command:` must name it itself** (codex `-a never`, grok
-   `--permission-mode auto`, claude `--permission-mode auto`). Omit it and
-   your session sits forever on a dialog nobody is watching.
+3. **posse guesses no CLI's unattended flag — but you can declare it.**
+   The built-ins get theirs guaranteed at launch. A template profile gets
+   the same guarantee once `unattended:` names the flag (codex `-a never`,
+   grok `--permission-mode auto`, claude `--permission-mode auto`): posse
+   appends it whenever the rendered line does not already name it, which
+   covers the one template it did not write — a PID's own `command:`. A
+   spelling already on the line keeps its own value. Declare neither that
+   nor a flag in `command:` and your session sits forever on a dialog
+   nobody is watching; `posse runtime check` says so on the launch row.
 4. **A glued model dialect needs the `%s`.** `model_flag: --model`
    renders separated — `--model 'gpt-5-codex'`. If your CLI wants
    `-c model=<id>` or `--model=<id>`, write the printf form:
@@ -973,10 +999,13 @@ the config path for an engine posse does not ship a realizer for:
 
 ```yaml
 # $RHQ_HOME/runtimes/codex-local.yaml
-# `-a never` is codex's unattended flag; posse will not add it here.
-# The model IS mapped: codex's dialect is glued, which model_flag: spells
+# `-a never` is codex's unattended flag. It is BOTH in command: and declared
+# below: the declaration is what makes posse put it back on a line rendered
+# without it, and EnsureUnattended sees the one already there and appends
+# nothing. The model IS mapped: codex's dialect is glued, which model_flag: spells
 # as a printf form (caveat 4).
 command: codex {model} {skills} -a never --disable hooks -c allow_login_shell=false -c developer_instructions="$(cat {file})"
+unattended: -a never
 model_flag: -c model=%s
 model_strong: <model-id>
 model_standard: <model-id>
@@ -996,10 +1025,12 @@ fine (`--model` takes a separated value) but needs the glued `=` on
 
 ```yaml
 # $RHQ_HOME/runtimes/grok-local.yaml
-# `--permission-mode auto` is grok's unattended flag; posse will not add it here.
+# `--permission-mode auto` is grok's unattended flag, declared as well as
+# typed for the reason the codex profile above gives.
 # `--rules=` must be glued — the separated form reads the PID's leading
 # `---` as a flag and refuses to start (caveat 1).
 command: grok --permission-mode auto --rules="$(cat {file})"
+unattended: --permission-mode auto
 model_flag: --model
 model_strong: <model-id>
 model_standard: <model-id>
