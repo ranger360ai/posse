@@ -511,6 +511,42 @@ func TestASkippedPassNamesTheCulprits(t *testing.T) {
 	}
 }
 
+// The same, for the report that would have ended the incident at 04:35: the
+// operator reading dispatch-watch.log on the skipped pass gets the leaks by
+// name, on the pass itself, in one write (ranger-base-apwr).
+func TestASkippedPassNamesTheLeakedGateShellChildren(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	b.App.Load1 = func() (float64, error) { return 149.08, nil }
+	b.App.TopCPU = func() ([]Proc, error) { return leakRows(16), nil }
+
+	if n, err := d.Run("", "", 0); n != 0 || err != nil {
+		t.Fatalf("the guard must skip the pass: n=%d err=%v", n, err)
+	}
+	out := dispatcherOut(d)
+	for _, want := range []string{
+		"pass skipped",
+		"16 orphaned gate-shell children",
+		"REPORT ONLY, nothing was killed",
+		"36.9% pid 49235 2h30m: MARK=teau2;",
+		"13 more like these",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a skipped pass must say %q:\n%s", want, out)
+		}
+	}
+	// One printf, under the load it explains: a concurrent gather() must not
+	// be able to land between the witness and the leaks it is about.
+	witness := strings.Index(out, "pass skipped")
+	report := strings.Index(out, "orphaned gate-shell children")
+	if witness < 0 || report < witness {
+		t.Errorf("the report must follow the witness it explains:\n%s", out)
+	}
+	if strings.Count(out[witness:report], "\n") != 2 { // witness, culprits, report
+		t.Errorf("the report belongs under the culprit line, with nothing between:\n%s", out)
+	}
+}
+
 // §2: it runs ONLY when the guard is already over the limit. A healthy
 // fleet pass must not fork `ps` — that is the cost this feature promised
 // never to charge.

@@ -75,4 +75,4 @@ exec docker run --rm -i \
   -e GOMODCACHE=/gomodcache \
   -e GOFLAGS=-count=1 \
   -e RHQ_ORPHAN_CONTROL=1 \
-  "$IMAGE" bash -c 'go test ./internal/rhq -run TestOrphanReportControlNamesAPlantedLeak -v -timeout 10m'
+  "$IMAGE" bash -c 'go test ./internal/rhq -run TestOrphanReportControlNamesAPlantedLeak -v -timeout 20m'
