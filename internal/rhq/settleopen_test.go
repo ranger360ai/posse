@@ -195,6 +195,107 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 	}
 }
 
+// ranger-base-23oo — the escalation is filed WITHOUT a `discovered-from`
+// edge, because bd 0.49.1's cycle check spans every dependency type and will
+// not carry that edge and the block together. The block is the deliverable,
+// so the provenance goes in the body and in a comment on the stuck bead,
+// which is fileMergeBlocked's idiom for the neighbouring reason.
+//
+// The pin that matters is the ABSENCE of `--deps` on the create: with it,
+// real bd refuses the `dep add` and the stuck bead stays in `bd ready` — the
+// exact loop the rung exists to stop.
+func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d, errb := settleDispatcher(t, b)
+	repo := settleRepo(t)
+
+	p := settlePending(repo, "ranger-posse-a-1")
+	d.noteSettleOpen(p, "idle", "in_progress")
+	d.noteSettleOpen(p, "idle", "in_progress")
+
+	qs := settleEscalations(t, repo)
+	if len(qs) != 1 {
+		t.Fatalf("want exactly one escalation, got %d: %v", len(qs), qs)
+	}
+	qid, _ := qs[0]["id"].(string)
+
+	for _, line := range strings.Split(bdCalls(t, fake), "\n") {
+		if strings.Contains(line, "create "+settleStuckPrefix) && strings.Contains(line, "--deps") {
+			t.Fatalf("the escalation was filed WITH an edge bd refuses the block against:\n%s", line)
+		}
+	}
+	if desc, _ := qs[0]["description"].(string); !strings.Contains(desc, discoveredFromMarkerPrefix+"a-1") {
+		t.Errorf("the escalation body does not carry its provenance line:\n%s", desc)
+	}
+
+	// The other half: the stuck bead names the escalation, and that comment
+	// must never be counted as a settle-open by the next pass.
+	var breadcrumb string
+	for _, c := range readComments(t, repo) {
+		if txt, _ := c["text"].(string); strings.Contains(txt, "escalated to "+qid) {
+			breadcrumb = txt
+		}
+	}
+	if breadcrumb == "" {
+		t.Fatalf("the stuck bead carries no pointer to %s: %v", qid, readComments(t, repo))
+	}
+	if settleOpenStatus(breadcrumb) != "" {
+		t.Errorf("the breadcrumb reads as a settle-open marker and would inflate the count:\n%s", breadcrumb)
+	}
+	if errb.String() != "" {
+		t.Errorf("unexpected stderr: %s", errb)
+	}
+}
+
+// The fake bd's own pin, and the second half of ranger-base-23oo: ten green
+// pins missed the refusal because the fake granted every `dep add`. Real bd
+// refuses one whose blocker already carries an edge back to the issue — ANY
+// type, `discovered-from` included — and the control is the same add against
+// a blocker created without one. A fake that cannot fail this test cannot
+// pin escalateSettleOpen either.
+func TestFakeBdRefusesTheDepAddCycleRealBdRefuses(t *testing.T) {
+	_, fake := newTestBackend(t)
+	_ = fake
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+	repo := t.TempDir()
+
+	qid, err := bd.Create(repo, BdNew{Title: "q", Deps: []string{"discovered-from:a-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bd.DepAdd(repo, "a-1", qid, "posse"); err == nil {
+		t.Fatalf("the fake granted a dep add real bd refuses as a cycle (a-1 → %s → ... → a-1)", qid)
+	} else if !strings.Contains(err.Error(), "would create a cycle") {
+		t.Errorf("the refusal is not bd's: %v", err)
+	}
+	if deps, err := bd.DepList(repo, "a-1"); err != nil || len(deps) != 0 {
+		t.Errorf("a refused add left an edge in the graph: %v %v", deps, err)
+	}
+
+	// CONTROL: no discovered-from edge, same add, and it lands.
+	q2, err := bd.Create(repo, BdNew{Title: "q2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bd.DepAdd(repo, "a-1", q2, "posse"); err != nil {
+		t.Fatalf("the control add was refused too — the fake refuses everything, which pins nothing: %v", err)
+	}
+	deps, err := bd.DepList(repo, "a-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, dep := range deps {
+		if dep.ID == q2 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the control add reported success and wrote no edge: %v", deps)
+	}
+}
+
 // Idempotence — the part devops flagged as the one that would bite. One
 // question bead per stuck bead, not one per pass, and the dedupe is the
 // escalation's TITLE rather than any second write (ranger-base-muoo: bd's
