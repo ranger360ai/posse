@@ -54,9 +54,15 @@ exit 1
 	// in_progress` with nothing. One canned answer for both would put every
 	// ready bead in IN PROGRESS as well, and readyOnly would then empty
 	// READY WORK — a rig that looks like the bug it is meant to measure.
+	//
+	// The verb is resolved PAST bd's global flags, the way orderBd does and
+	// the way posse's own argv gate must: Bd.run leads every call with
+	// `--no-daemon` (ranger-base-cwu7), so a fake keyed on $1 answers `[]`
+	// to everything and the rig quietly stops measuring what it is named for.
 	bd := filepath.Join(binDir, "bd")
 	if err := os.WriteFile(bd, []byte("#!/bin/sh\necho \"$@\" >> "+calls+"\n"+sleep+
-		"if [ \"$1\" = ready ]; then cat <<'JSON'\n"+bdOut+"\nJSON\nelse echo '[]'; fi\n"), 0o755); err != nil {
+		"verb=\nfor a in \"$@\"; do case \"$a\" in -*) ;; *) verb=$a; break ;; esac; done\n"+
+		"if [ \"$verb\" = ready ]; then cat <<'JSON'\n"+bdOut+"\nJSON\nelse echo '[]'; fi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// ServerGen() stats the operator's live herdr socket unless this points

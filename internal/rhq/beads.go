@@ -60,10 +60,14 @@ func (b Bd) Available() bool {
 // spell our calls this way, and CageBdFlags carries it into the cage.
 //
 // The one delta, for whoever revisits this once a daemon CAN connect
-// (ranger-base-thx5): a live daemon auto-imports a JSONL newer than the
+// here: a live daemon auto-imports a JSONL newer than the
 // database, and direct mode refuses instead — "Database out of sync with
-// JSONL". It fails CLOSED and loudly, and it is already what our scans get
-// today, because the daemon does not start.
+// JSONL". It fails CLOSED and loudly, it is already what our scans get
+// today because the daemon does not start, and it is the side this repo
+// has twice chosen on its own: worktree.go declines to hand a persona
+// `--allow-stale` or `bd sync --import-only` for that same message, and
+// WarnLostBeads (rangerhq-fuom) exists because that auto-import can delete
+// rows and log nothing when it does.
 var bdGlobalFlags = []string{"--no-daemon"}
 
 func (b Bd) run(dir string, args ...string) ([]byte, error) {
