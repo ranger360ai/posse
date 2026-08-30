@@ -3362,8 +3362,8 @@ own ref (ranger-base-m2wf) plus that ref's parent directory for CREATION
 only (ranger-base-uuze — the branch carries a slash, so git must `mkdir
 refs/heads/posse`, and `git gc` prunes it as soon as a pack empties it),
 and a bind mount cannot express that set — its source must EXIST, and
-`refs/heads/<branch>.lock` is created by git at commit time. So a caged worktree persona can move any ref in the repo it
-was dispatched into. It is the same directory-granularity gap ADR 0002
+`refs/heads/<branch>.lock` is created by git at commit time. So a caged
+worktree persona can move any ref in the repo it was dispatched into. It is the same directory-granularity gap ADR 0002
 already accepts for codex/grok `--add-dir` at L2. `.git/hooks` back to
 `:ro` over it is ranger-base-3c3 / h15.
 
