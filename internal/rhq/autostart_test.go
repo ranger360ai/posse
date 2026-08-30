@@ -695,6 +695,140 @@ func TestAutostartArmsEveryIntervalPosseAccepts(t *testing.T) {
 	}
 }
 
+// ── the backoff cap (ranger-base-x8y8) ─────────────────────────────────────
+//
+// autostart_max_interval: has the same defect as the interval above — the
+// hook appended whatever the key said to the argv unvalidated, so
+// `--max-interval banana` died inside the session under a hook that had
+// already said "dispatch started" — and deliberately NOT the same answer.
+// The arm switch refuses because posse has no default interval to fall back
+// on; this key's absent-flag case IS a default (8x the base, cmd/posse
+// main.go), so it takes the autostart_max_beads / autostart_resume
+// precedent: name the value, use the default, arm. Standing a fleet down
+// over an unreadable backoff cap is the more expensive of the two failures,
+// and the key is not the arm switch.
+
+func TestAutostartMalformedMaxIntervalIsDroppedNotArmed(t *testing.T) {
+	// Same fixtures as the interval table, asked of ParseInterval the same
+	// way, so the two answers to one grammar cannot drift apart.
+	for name, value := range map[string]string{
+		"word":         "banana",
+		"quoted empty": `""`,
+		"zero":         "0",
+		"zero units":   "0h0m",
+		"negative":     "-5m",
+		"wrong unit":   "5min",
+		"units only":   "m",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseInterval(value); err == nil {
+				t.Fatalf("fixture %q is one posse accepts — not a malformed value", value)
+			}
+			w := newHookWorld(t, armed+"autostart_max_interval: "+value+"\n")
+
+			r := w.run(t, "--startup")
+			// Armed, unlike the arm switch: the cap has a default and the
+			// fleet is not stood down over one.
+			if r.code != 0 {
+				t.Fatalf("exit %d — a malformed cap stood the fleet down:\n%s", r.code, r.out)
+			}
+			if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
+				t.Errorf("the loop was not armed with posse's default cap:\n%s", r.calls)
+			}
+			// The flag is DROPPED, not passed through and not passed empty:
+			// `--max-interval` with a value posse refuses is the whole bug,
+			// and `--max-interval` with nothing after it eats the next flag.
+			if strings.Contains(r.calls, "--max-interval") {
+				t.Errorf("a cap posse refuses reached the loop:\n%s", r.calls)
+			}
+			if !strings.Contains(r.out, "autostart_max_interval:") || !strings.Contains(r.out, value) {
+				t.Errorf("the fallback names neither the key nor the value the operator typed:\n%s", r.out)
+			}
+			// Named AND replaced: the operator has to be able to tell which
+			// cap the armed loop is actually running under.
+			if !strings.Contains(r.out, "default") {
+				t.Errorf("the line does not say the default was used instead:\n%s", r.out)
+			}
+		})
+	}
+}
+
+// The other half, and the reason valid_interval is a mirror of ParseInterval
+// rather than a guess: dropping a cap posse would have accepted is a loop
+// backing off to 8x when the operator asked for 40m. Every shape posse takes
+// must reach the loop verbatim, and quietly.
+func TestAutostartArmsEveryMaxIntervalPosseAccepts(t *testing.T) {
+	for _, value := range []string{"30s", "5m", "45", "1h30m", "2m30s", "500ms", "1.5m", ".5s", "007", "2h45m30s500ms"} {
+		t.Run(value, func(t *testing.T) {
+			if _, err := ParseInterval(value); err != nil {
+				t.Fatalf("fixture %q is not one posse accepts: %v", value, err)
+			}
+			w := newHookWorld(t, armed+"autostart_max_interval: "+value+"\n")
+
+			r := w.run(t, "--startup")
+			if r.code != 0 {
+				t.Fatalf("exit %d on a cap posse accepts:\n%s", r.code, r.out)
+			}
+			if !strings.Contains(r.calls, "--max-interval "+value+" ") {
+				t.Errorf("the cap did not reach the loop verbatim:\n%s", r.calls)
+			}
+			if strings.Contains(r.out, "autostart_max_interval:") {
+				t.Errorf("a cap posse accepts was warned about:\n%s", r.out)
+			}
+		})
+	}
+}
+
+// An empty value is not a malformed one. Absent and empty both mean "no cap
+// given" — the flag is omitted and posse's default applies — which is what
+// they already meant here and what an empty autostart_max_beads: means. Only
+// a value that says something posse cannot read earns a line, or every
+// deployer who left the key as a placeholder gets a warning about nothing.
+func TestAutostartEmptyMaxIntervalIsSilentlyTheDefault(t *testing.T) {
+	for name, line := range map[string]string{
+		"absent":     "",
+		"bare":       "autostart_max_interval:\n",
+		"whitespace": "autostart_max_interval:   \n",
+		"comment":    "autostart_max_interval: # 40m\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newHookWorld(t, armed+line)
+
+			r := w.run(t, "--startup")
+			if r.code != 0 {
+				t.Fatalf("exit %d:\n%s", r.code, r.out)
+			}
+			if strings.Contains(r.calls, "--max-interval") {
+				t.Errorf("an empty cap reached the loop as a flag:\n%s", r.calls)
+			}
+			if strings.Contains(r.out, "autostart_max_interval:") {
+				t.Errorf("an empty cap was warned about:\n%s", r.out)
+			}
+		})
+	}
+}
+
+// Both interval keys malformed at once. The arm switch decides: it refuses
+// first and nothing is armed, so the cap's fallback never runs and never
+// says anything — one diagnostic, naming the key that actually stopped it.
+func TestAutostartMalformedIntervalWinsOverMalformedMax(t *testing.T) {
+	w := newHookWorld(t, "autostart_interval: banana\nautostart_max_interval: kumquat\n")
+
+	r := w.run(t, "--startup")
+	if r.code == 0 {
+		t.Fatalf("a malformed arm switch was accepted (exit 0):\n%s", r.out)
+	}
+	if r.calls != "" {
+		t.Errorf("the hook armed something off a refused interval:\n%s", r.calls)
+	}
+	if !strings.Contains(r.out, "autostart_interval: 'banana'") {
+		t.Errorf("the refusal does not name the key that stopped the arm:\n%s", r.out)
+	}
+	if strings.Contains(r.out, "autostart_max_interval:") {
+		t.Errorf("the cap was diagnosed on a run that armed nothing:\n%s", r.out)
+	}
+}
+
 // ── the resume arm (ranger-base-f0g) ────────────────────────────────────────
 //
 // The armed loop is the one the OPERATOR gets, and before this it was
