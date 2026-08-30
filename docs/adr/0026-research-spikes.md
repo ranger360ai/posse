@@ -2,7 +2,9 @@
 
 *Status: accepted 2026-08-27 · owner: architect · realized by the SPIKE
 rung, ADR 0005 §2 (bead rangerhq-qe37); this restatement is bead
-ranger-base-5t6i*
+ranger-base-5t6i · amended 2026-08-30 (§5: provenance is a comment, not
+`--deps discovered-from:` — bd will not carry that edge and the block
+together, ranger-base-rs8j)*
 
 > Restated from the private archive of the instance this harness was
 > developed in (its research-spikes ADR, bead rangerhq-dfz8); incident

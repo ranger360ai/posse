@@ -1,6 +1,8 @@
 # ADR 0005 — Work-prompt blueprints and the escalation ladder
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-08-30
+(§2: the SPIKE rung files no `discovered-from` edge — bd refuses the
+block it exists for as a cycle against that edge, ranger-base-rs8j)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -61,7 +63,7 @@ Context                                                      # assembled from bd
                                                              # fixed text, always rendered
 Escalation (pick the lowest rung that is honest)              # fixed text, §2
 - NOTE … ASSUME … SPIKE … ASK … HANDOFF … REFUSE …
-Provenance: `--deps discovered-from:` is two writes, not one …  # fixed text, §2
+Provenance: only HANDOFF files `--deps discovered-from:` …      # fixed text, §2
 Done: `bd comments add <id> <what you did, paths, ids>` then `bd close <id>`.
 <persona hook: the PID's `## Work prompt` section, verbatim>  # §3
 ```
