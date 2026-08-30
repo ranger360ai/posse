@@ -881,6 +881,19 @@ func TestRemoveSessionTreeRetiresOnlyWhatIsMeasuredOnTheBase(t *testing.T) {
 		name: "a pick with no trailer retires on patch-id alone",
 		land: func(t *testing.T, repo, sha string) { mustGit(t, repo, "cherry-pick", sha) },
 	}, {
+		// The second layer of the content guard, alone (ranger-base-x8jp).
+		// The base's TREE no longer holds the branch's bytes — it was edited
+		// after the pick — but its history does, so this is not the last
+		// copy of anything. Without this arm the guard could refuse on the
+		// tree comparison alone and every other pin stays green, which is
+		// the every-pass refusal ranger-base-as19 removed, back again.
+		name: "a clean pick the base then built on top of still retires",
+		land: func(t *testing.T, repo, sha string) {
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended on main)\n",
+				"main: built on top of the pick")
+		},
+	}, {
 		name: "a hand-resolved pick is kept, and says why",
 		land: func(t *testing.T, repo, sha string) {
 			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",

@@ -23,11 +23,10 @@ import (
 // resolution never reaches the trailer arm, because the trailer arm is only
 // consulted when the patch-id does NOT match.
 //
-// Un-skip when x8jp is fixed. It asserts the branch is KEPT, so it goes green
-// on the fix rather than needing to be rewritten with it.
+// Fixed in ranger-base-x8jp: the measured arm now asks contentNotOnBase as
+// well, and the branch is KEPT. Un-skipped unchanged — it asserted the
+// keeping all along, so the fix is what turned it green.
 func TestRemoveSessionTreeDeletesABranchWhoseBytesAreNotOnTheBase(t *testing.T) {
-	t.Skip("ranger-base-x8jp: patch-id ignores whitespace, so the measured arm deletes a branch whose bytes are not on the base")
-
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
@@ -63,6 +62,19 @@ func TestRemoveSessionTreeDeletesABranchWhoseBytesAreNotOnTheBase(t *testing.T) 
 	}
 	if err == nil {
 		t.Errorf("a branch was retired without --force while its bytes are not on the base:\n  main   = %q\n  branch = %q", onMain, onBranch)
+	} else {
+		// The refusal has to name THIS evidence. A trailer sentence here
+		// would be the mixed-pairing overstatement wearing the fix's
+		// clothes: nothing in this fixture has a trailer.
+		if !strings.Contains(err.Error(), "patch-id normalises whitespace") {
+			t.Errorf("the refusal must say which evidence it does not have, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "adr.md") {
+			t.Errorf("the refusal must name the path whose bytes are only here, got: %v", err)
+		}
+		if strings.Contains(err.Error(), "-x trailer") {
+			t.Errorf("no commit in this fixture is accounted for by a trailer, got: %v", err)
+		}
 	}
 	if _, serr := os.Stat(tr.Path); serr != nil {
 		t.Error("the tree was removed although the base does not hold its content")
@@ -122,6 +134,18 @@ func TestRemoveSessionTreeKeepsAMixedPairing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "-x trailer") {
 		t.Errorf("the refusal must name the evidence it does not have, got: %v", err)
+	}
+	// The SECONDARY of ranger-base-x8jp: the sentence used to count every
+	// commit ahead of the base and then list the patch-measured pairing
+	// among the ones it says only a trailer accounts for. The refusal is
+	// right; the count and the list were not.
+	if !strings.Contains(err.Error(), "1 of which have no record of landing beyond") {
+		t.Errorf("the refusal must count only the trailer-accounted commits, got: %v", err)
+	}
+	for _, e := range eq {
+		if e.byPatch && strings.Contains(err.Error(), e.note) {
+			t.Errorf("the refusal lists a patch-measured pairing among the ones only a trailer accounts for: %q in %v", e.note, err)
+		}
 	}
 	if _, serr := os.Stat(tr.Path); serr != nil {
 		t.Error("the refused tree was removed anyway")

@@ -1058,6 +1058,133 @@ func measuredOnBase(eqs []equiv) bool {
 	return len(eqs) > 0
 }
 
+// trailerOnly is the pairing's UNMEASURED half: the commits accounted for by
+// git's `-x` trailer alone. A refusal names those and counts those — it used
+// to count every commit ahead of the base and list the patch-measured
+// pairing among them, which reads as though a measurement were missing when
+// it is not (ranger-base-x8jp).
+func trailerOnly(eqs []equiv) []string {
+	var out []string
+	for _, e := range eqs {
+		if !e.byPatch {
+			out = append(out, e.note)
+		}
+	}
+	return out
+}
+
+// contentNotOnBase names the paths the branch touched whose BYTES the base
+// does not hold anywhere. It is the destructive half's second question, and
+// it exists because the first one is not what it claims (ranger-base-x8jp).
+//
+// `git cherry` compares PATCH-IDs, and `git patch-id` normalises whitespace.
+// So a hand resolution that only re-indented — a gofmt, an editor, a YAML or
+// Makefile fixup — leaves the patch-ids EQUAL: byPatch is true, the trailer
+// arm is never consulted, and `branch -D` took the only copy of those exact
+// bytes. "The base holds this patch" was never the same statement as "the
+// base holds this content", and only the second licenses a delete.
+//
+// Asked in two layers, because the cheap question over-refuses. The tree
+// comparison first: for the paths the branch changed since the merge-base,
+// does the base's tree already agree byte for byte? That is the ordinary
+// answer and it costs two git calls. Where it disagrees the base may still
+// hold those bytes further back — a clean pick that the base then edited on
+// top of is exactly that, and refusing it would put back the every-pass
+// refusal ranger-base-as19 removed. So each disagreeing path is looked for
+// in the commits the BASE has and the branch does not, the same bound the
+// trailer lookup uses: a copy of this branch's bytes can only be in there.
+//
+// Renames are not detected, so a rename is read as the add and the delete it
+// is and both sides get compared. A path the branch never touched is none of
+// its business: the base moves on while a session works, and that is not
+// something the branch is the last copy of.
+//
+// Strictly narrower than the guard it joins: every commit must still be
+// patch-id equivalent first. Nothing this adds can license a deletion the
+// old code refused.
+func contentNotOnBase(repo, base, tip string) ([]string, error) {
+	touched, err := gitPathsZ(repo, "diff", "--name-only", "--no-renames", "-z", base+"..."+tip)
+	if err != nil || len(touched) == 0 {
+		return nil, err
+	}
+	differing, err := gitPathsZ(repo, append([]string{"diff", "--name-only", "--no-renames", "-z", base, tip, "--"}, literalPathspecs(touched)...)...)
+	if err != nil || len(differing) == 0 {
+		return nil, err
+	}
+	var lost []string
+	for _, path := range differing {
+		want := blobAt(repo, tip, path)
+		if want == "" {
+			// The branch does not have this path at all — it deleted it,
+			// and a deletion is an intent, not bytes. There is no content
+			// here for the branch to be the last copy of.
+			continue
+		}
+		if !blobInRange(repo, tip+".."+base, path, want) {
+			lost = append(lost, path)
+		}
+	}
+	return lost, nil
+}
+
+// blobInRange answers whether any commit in the range holds oid at path. The
+// range is the caller's bound, not this function's: an unbounded walk over a
+// question about destroying work is the wrong kind of slow.
+func blobInRange(repo, rng, path, oid string) bool {
+	out, err := git(repo, "rev-list", rng, "--", ":(literal)"+path)
+	if err != nil {
+		return false
+	}
+	for _, sha := range strings.Fields(out) {
+		if blobAt(repo, sha, path) == oid {
+			return true
+		}
+	}
+	return false
+}
+
+// blobAt is the object id of path in rev, or "" when rev does not have it.
+// `ls-tree` rather than `rev-parse rev:path`, which splits on the FIRST
+// colon and so mis-reads a path spelled with one.
+func blobAt(repo, rev, path string) string {
+	out, err := git(repo, "ls-tree", rev, "--", ":(literal)"+path)
+	if err != nil || out == "" {
+		return ""
+	}
+	f := strings.Fields(out)
+	if len(f) < 3 || f[1] != "blob" {
+		return ""
+	}
+	return f[2]
+}
+
+// literalPathspecs stops a path spelled with a `*` or a `[` from being read
+// as a glob and comparing the wrong files.
+func literalPathspecs(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, ":(literal)"+p)
+	}
+	return out
+}
+
+// gitPathsZ runs a `-z` path-listing git command and splits it. Not `git`:
+// that trims, and a path is allowed to be spelled with whitespace — which is
+// the whole subject here.
+func gitPathsZ(repo string, args ...string) ([]string, error) {
+	out, err := gitRaw(repo, args...)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
 // reaches is the fast-forward precondition, asked of git rather than assumed
 // from an exit status somewhere else: does ref already contain sha?
 func reaches(repo, ref, sha string) bool {
@@ -1137,14 +1264,19 @@ func dirtyPaths(path string) []string {
 // escape left was the same override that stands down a real strand's
 // refusal, one layer down.
 //
-// It honours only the half of that equivalence that MEASURES content. A
-// patch-id match says the base holds this patch and the branch is the last
-// copy of nothing, which is what licenses `branch -D` (the sha guard is not
-// the only by-sha check in this path: `branch -d` refuses an unmerged branch
-// too). git's `-x` trailer says only that a human decided this landed as
-// that, and a hand resolution can drop a hunk while writing it — so on that
-// evidence the tree is still kept, and the refusal now says which of the two
-// this is instead of counting shas at the operator.
+// It honours only the half of that equivalence that MEASURES content, and
+// then it checks what the measurement actually measured. git's `-x` trailer
+// says only that a human decided this landed as that, and a hand resolution
+// can drop a hunk while writing it — so on that evidence the tree is kept,
+// and the refusal says which of the two this is instead of counting shas at
+// the operator. A patch-id match says the base holds this PATCH, which is a
+// weaker statement than it reads as: `git patch-id` normalises whitespace,
+// so a resolution that only re-indented is "equivalent" while the bytes
+// differ (ranger-base-x8jp). What licenses `branch -D` is both halves — every
+// commit measured by patch-id, AND the base's tree holding the branch's
+// bytes for every path the branch touched (contentNotOnBase). (The sha guard
+// is not the only by-sha check in this path: `branch -d` refuses an unmerged
+// branch too.)
 func RemoveSessionTree(t *SessionTree, force bool) error {
 	// The branch is provably redundant: its every commit's work is on the
 	// base under another sha, measured. Nothing here is the last copy.
@@ -1168,10 +1300,25 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 				eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
 				switch {
 				case measuredOnBase(eq):
+					// Patch-id said the base holds these patches. It did
+					// NOT say the base holds these bytes — it normalises
+					// whitespace — and it is the bytes that are about to be
+					// deleted (ranger-base-x8jp).
+					lost, err := contentNotOnBase(t.Repo, t.Base, t.Branch)
+					if err != nil {
+						return err
+					}
+					if len(lost) > 0 {
+						return Die("%s is ahead of %s by %s commit(s) git calls equivalent by patch-id (%s), but patch-id normalises whitespace and %s does not hold this branch's bytes for %s — so the branch is still the last copy of that content and is not removed here; read `git -C %s diff %s %s -- %s`, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
+							t.Branch, t.Base, n, strings.Join(equivNotes(eq), ", "), t.Base, strings.Join(lost, " "),
+							AbbrevHome(t.Repo), t.Base, t.Branch, strings.Join(lost, " "),
+							AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
+					}
 					redundant = true
 				case len(eq) > 0:
-					return Die("%s is ahead of %s by %s commit(s) whose only record of landing is git's own -x trailer (%s) — a trailer is somebody's decision, not a measurement of what the resolution kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
-						t.Branch, t.Base, n, strings.Join(equivNotes(eq), ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
+					only := trailerOnly(eq)
+					return Die("%s is ahead of %s by %s commit(s), %d of which have no record of landing beyond git's own -x trailer (%s) — a trailer is somebody's decision, not a measurement of what the resolution kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
+						t.Branch, t.Base, n, len(only), strings.Join(only, ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
 				default:
 					return Die("%s has %s commit(s) not on %s — not removed", t.Branch, n, t.Base)
 				}
