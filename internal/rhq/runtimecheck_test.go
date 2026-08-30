@@ -397,3 +397,297 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 		t.Errorf("strong is unmapped on halfcli; the grid may not show it as mapped:\n%s", out)
 	}
 }
+
+// ─── ADR 0017 §1/§4: the dimensions the six stages never carried ─────────
+//
+// skills surface, egress, cage credential, project config, sandbox/gate
+// shell. Each is a Runtime field a launch changes behaviour on, and none of
+// them had a row — so onboarding a fourth runtime meant reading runtime.go
+// for facts the code already knew (ranger-base-qm6e measured the skills
+// half: no row at all, only a {skills} placeholder inside the echoed
+// template).
+//
+// Everything here is asserted against the RENDERED row, scoped to that row,
+// for laurie's reason: the grid is a page of prose in which almost every
+// word appears somewhere, so an unscoped `strings.Contains` over the screen
+// answers about whichever row said it first. gridRow is the same shape-based
+// reader gridStages uses (runtimegrid_qa_test.go), one row deep.
+
+// gridRow returns one row of the grid — its value line plus every
+// continuation under it — flattened to single spaces, so an assertion reads
+// the sentence and not the wrap.
+func gridRow(t *testing.T, out, label string) string {
+	t.Helper()
+	var got []string
+	in := false
+	for _, line := range strings.Split(out, "\n") {
+		isRow := len(line) >= 15 && strings.HasPrefix(line, "  ") && line[13] == ' ' && line[14] != ' '
+		lab := ""
+		if isRow {
+			lab = strings.TrimSpace(line[2:13])
+		}
+		switch {
+		case isRow && lab == label:
+			in = true
+			got = append(got, strings.TrimSpace(line[13:]))
+		case !in:
+		case isRow && lab != "", strings.TrimSpace(line) == "":
+			in = false
+		default:
+			got = append(got, strings.TrimSpace(line))
+		}
+	}
+	if len(got) == 0 {
+		t.Fatalf("the grid has no %q row:\n%s", label, out)
+	}
+	return strings.Join(strings.Fields(strings.Join(got, " ")), " ")
+}
+
+// dimensionRows is the order they are drawn in, and the list every test
+// below walks: a row that stops being drawn must red something.
+var dimensionRows = []string{"skills", "egress", "cage_cred", "project_cfg", "sandbox"}
+
+// Drawn as ROWS — not as a sentence inside somebody else's row — on a
+// template-only yaml and on all three built-ins, after the six stages.
+func TestGridDrawsTheDeclaredDimensionRows(t *testing.T) {
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+	runtimes := []*Runtime{writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")}
+	for _, n := range []string{"claude", "codex", "grok"} {
+		rt, err := a.LoadRuntime(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtimes = append(runtimes, rt)
+	}
+	for _, rt := range runtimes {
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, h, &b)
+		out := b.String()
+		rows := gridStages(out)
+		// After the six stages, in the ADR's own order, and each with the
+		// provenance pair every other row of this grid carries.
+		var idx []int
+		for _, want := range dimensionRows {
+			at := -1
+			for i, r := range rows {
+				if r == want && i >= 6 {
+					at = i
+					break
+				}
+			}
+			if at < 0 {
+				t.Fatalf("%s: no %q ROW after the six stages — the grid drew %v\n%s", rt.Name, want, rows, out)
+			}
+			idx = append(idx, at)
+			row := gridRow(t, out, want)
+			if !strings.Contains(row, "by ") || !strings.Contains(row, "missing → ") {
+				t.Errorf("%s: the %s row is missing its declared-by / missing-→ pair, which is what makes it a grid row rather than a remark: %s", rt.Name, want, row)
+			}
+		}
+		for i := 1; i < len(idx); i++ {
+			if idx[i] < idx[i-1] {
+				t.Errorf("%s: dimension rows are out of order (%v at %v)", rt.Name, dimensionRows, idx)
+			}
+		}
+	}
+}
+
+// A bare template-only yaml — the runtime this command exists for — prints a
+// LOUD line on every one of the five. ADR 0017 §2's vocabulary is the thing
+// under test as much as the values: an absence must read as UNDECLARED /
+// UNDECIDED / none, and DECLARED DIFFERENCE may not appear anywhere, because
+// nothing here was measured to differ.
+func TestUndeclaredDimensionsAreLoudNotBlank(t *testing.T) {
+	a := checkApp(t)
+	rt := writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")
+	var b bytes.Buffer
+	a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+	out := b.String()
+
+	for _, c := range []struct{ row, want, unwanted string }{
+		// No surface at all is the third arm of parity.go's split, and the
+		// expensive one: every `skills:` PID refuses to launch here.
+		{"skills", "NO SURFACE — UNDECLARED: neither skills_flag: nor skills_cwd:", "cwd-discovery"},
+		{"skills", "skills_cwd: true (the CLI walks .agents/skills", "--plugin-dir '"},
+		{"egress", "UNDECLARED — no host of this runtime's own is known", "always added to a caged PID's"},
+		{"cage_cred", "UNDECIDED — cage: container refuses on this runtime", "the env NAME a containerised session authenticates with"},
+		{"project_cfg", "none — no repo→box config surface declared", "read from the SESSION DIR at launch"},
+		{"sandbox", "posse's seatbelt wraps this runtime — self_sandbox: unset", "macOS refuses to nest seatbelts"},
+		{"sandbox", "gate_shell: on — the launch points SHELL/GROK_SHELL at the gate shell", "every Bash(...) deny is UNREALIZED here"},
+	} {
+		row := gridRow(t, out, c.row)
+		if !strings.Contains(row, c.want) {
+			t.Errorf("the %s row of an undeclared runtime must say %q:\n%s", c.row, c.want, row)
+		}
+		if strings.Contains(row, c.unwanted) {
+			t.Errorf("the %s row of an undeclared runtime must NOT say %q — that is the declared reading:\n%s", c.row, c.unwanted, row)
+		}
+	}
+	// Every one of them must credit the yaml that declared nothing, by the
+	// key an onboarder would type. A row that fell back silently is the
+	// whole failure class (ADR 0013's declaredBy).
+	for _, key := range []string{"egress", "cage_cred", "project_config", "self_sandbox", "gate_shell"} {
+		if !strings.Contains(out, key+": unset in runtimes/mycli.yaml") {
+			t.Errorf("nothing on the screen says %s: was left unset in the yaml:\n%s", key, out)
+		}
+	}
+	// §2's presentation rule: an UNKNOWN and a measured difference may never
+	// be spelled the same way, and on a runtime nobody measured there is no
+	// difference to declare.
+	for _, r := range dimensionRows {
+		if row := gridRow(t, out, r); strings.Contains(row, "DECLARED DIFFERENCE") {
+			t.Errorf("the %s row calls an UNMEASURED runtime a declared difference:\n%s", r, row)
+		}
+	}
+}
+
+// The other direction: a yaml that declares all five is read, and each row
+// credits the key. `egress:` is written in BLOCK form on purpose — the value
+// after the colon is empty there, so a provenance line built on YamlGet
+// credits a built-in default the yaml had in fact overridden (declaredByList).
+func TestDeclaredDimensionsAreReadAndCredited(t *testing.T) {
+	a := checkApp(t)
+	rt := writeRuntime(t, a, "fullcli", strings.Join([]string{
+		"command: fullcli --sys {file} {skills}",
+		`skills_flag: "--skills=%s"`,
+		"egress:",
+		"  - api.fullcli.example",
+		"  - auth.fullcli.example",
+		"cage_cred: FULLCLI_TOKEN",
+		"project_config: .fullcli/settings.json",
+		"project_config_keys: [hooks, mcpServers]",
+		"self_sandbox: true",
+		"gate_shell: false",
+		"",
+	}, "\n"))
+	var b bytes.Buffer
+	a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+	out := b.String()
+
+	for _, c := range []struct {
+		row      string
+		want     []string
+		unwanted []string
+	}{
+		{"skills",
+			// The flag AND what the tree it points at is made of: a runtime
+			// that installs the same tree and follows no symlink surfaces
+			// zero skills while every screen says "flag" (ranger-base-65rc).
+			[]string{"flag — --skills=", "SYMLINK into RHQ_HOME/skills", "runtimes/fullcli.yaml (skills_flag:)"},
+			[]string{"NO SURFACE", "cwd-discovery"}},
+		{"egress",
+			[]string{"api.fullcli.example auth.fullcli.example", "runtimes/fullcli.yaml (egress:)"},
+			[]string{"UNDECLARED", "egress: unset in runtimes/fullcli.yaml"}},
+		{"cage_cred",
+			[]string{"FULLCLI_TOKEN — the env NAME", "runtimes/fullcli.yaml (cage_cred:)"},
+			[]string{"UNDECIDED", "cage.go cageCredential"}},
+		{"project_cfg",
+			[]string{".fullcli/settings.json — read from the SESSION DIR", "narrowed to top-level JSON keys: hooks, mcpServers",
+				"runtimes/fullcli.yaml (project_config:)", "runtimes/fullcli.yaml (project_config_keys:)", "trust_project_config: true"},
+			[]string{"none — no repo→box config surface", "the WHOLE FILE is the predicate"}},
+		{"sandbox",
+			[]string{"self_sandbox — a DECLARED DIFFERENCE, not a failure", "gate_shell: false — a DECLARED DIFFERENCE",
+				"every Bash(...) deny is UNREALIZED here but `git push`",
+				"runtimes/fullcli.yaml (self_sandbox:)", "runtimes/fullcli.yaml (gate_shell:)"},
+			[]string{"posse's seatbelt wraps this runtime", "gate_shell: on"}},
+	} {
+		row := gridRow(t, out, c.row)
+		for _, w := range c.want {
+			if !strings.Contains(row, w) {
+				t.Errorf("the declared %s row must carry %q:\n%s", c.row, w, row)
+			}
+		}
+		for _, u := range c.unwanted {
+			if strings.Contains(row, u) {
+				t.Errorf("the declared %s row still carries the undeclared reading %q:\n%s", c.row, u, row)
+			}
+		}
+	}
+	// And the values reached the struct, not only the screen — the p84 shape
+	// in reverse (a row that renders a fact no loader read).
+	if strings.Join(rt.Egress, ",") != "api.fullcli.example,auth.fullcli.example" ||
+		rt.CageCred != "FULLCLI_TOKEN" || !rt.SelfSandbox || !rt.NoGateShell ||
+		strings.Join(rt.ProjectConfig, ",") != ".fullcli/settings.json" ||
+		strings.Join(rt.ProjectConfigKeys, ",") != "hooks,mcpServers" {
+		t.Errorf("the grid printed declarations LoadRuntime did not read: %+v", rt)
+	}
+}
+
+// The built-ins are where the vocabulary earns its keep. codex sandboxes
+// itself, which is a first-class runtime and not a broken one: ADR 0017 §2
+// says nothing may render a DECLARED DIFFERENCE as a failure, and the row
+// that would have to get this wrong is the one that also carries the word
+// UNDECLARED for the runtime next door.
+func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+	grid := func(name string) string {
+		t.Helper()
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, h, &b)
+		return b.String()
+	}
+
+	// codex: self_sandbox is a DECLARED DIFFERENCE, and the row may not
+	// read as an absence or as a fault.
+	codex := gridRow(t, grid("codex"), "sandbox")
+	for _, w := range []string{"a DECLARED DIFFERENCE, not a failure", "macOS refuses to nest seatbelts", "its own sandbox is what enforces Edit/Write here"} {
+		if !strings.Contains(codex, w) {
+			t.Errorf("codex's sandbox row must carry %q:\n%s", w, codex)
+		}
+	}
+	for _, u := range []string{"UNDECLARED", "UNDECIDED", "posse's seatbelt wraps this runtime"} {
+		if strings.Contains(codex, u) {
+			t.Errorf("codex's self_sandbox is measured, not missing; the row may not say %q:\n%s", u, codex)
+		}
+	}
+	// claude: the flag surface, spelled as the flag the CLI reads.
+	claude := gridRow(t, grid("claude"), "skills")
+	for _, w := range []string{"flag — --plugin-dir ", "SYMLINK into RHQ_HOME/skills"} {
+		if !strings.Contains(claude, w) {
+			t.Errorf("claude's skills row must carry %q:\n%s", w, claude)
+		}
+	}
+	// codex and grok: the cwd surface, whose binding is the links and not
+	// anything on the line — the fact a "flag" row would hide.
+	for _, n := range []string{"codex", "grok"} {
+		row := gridRow(t, grid(n), "skills")
+		for _, w := range []string{"cwd-discovery — .agents/skills under the session dir", "the LINKS are the binding", "ADDITIVE"} {
+			if !strings.Contains(row, w) {
+				t.Errorf("%s's skills row must carry %q:\n%s", n, w, row)
+			}
+		}
+		if strings.Contains(row, "NO SURFACE") || strings.Contains(row, "--plugin-dir") {
+			t.Errorf("%s discovers skills from the cwd; the row may not show a flag surface:\n%s", n, row)
+		}
+	}
+	// codex and grok keep plain auth.json files, so their container
+	// credential is UNDECIDED — the state that refuses `cage: container`
+	// rather than starting an unauthenticated session (rangerhq-kiz).
+	if row := gridRow(t, grid("claude"), "cage_cred"); !strings.Contains(row, "CLAUDE_CODE_OAUTH_TOKEN") ||
+		!strings.Contains(row, "built-in table (cage.go cageCredential)") {
+		t.Errorf("claude's cage_cred row must name the var and the table it came from:\n%s", row)
+	}
+	for _, n := range []string{"codex", "grok"} {
+		if row := gridRow(t, grid(n), "cage_cred"); !strings.Contains(row, "UNDECIDED") {
+			t.Errorf("%s has no decided container credential; the row must say so:\n%s", n, row)
+		}
+	}
+	// grok declares no project config surface and codex declares one with no
+	// key narrowing — the two arms claude's keyed row does not reach.
+	if row := gridRow(t, grid("grok"), "project_cfg"); !strings.Contains(row, "none — no repo→box config surface") {
+		t.Errorf("grok declares no project config surface:\n%s", row)
+	}
+	if row := gridRow(t, grid("codex"), "project_cfg"); !strings.Contains(row, ".codex/config.toml") ||
+		!strings.Contains(row, "the WHOLE FILE is the predicate") {
+		t.Errorf("codex's whole-file predicate must be on the row:\n%s", row)
+	}
+	if row := gridRow(t, grid("claude"), "project_cfg"); !strings.Contains(row, "narrowed to top-level JSON keys: hooks, mcpServers") {
+		t.Errorf("claude's project config is key-narrowed; the row must name the keys:\n%s", row)
+	}
+}
