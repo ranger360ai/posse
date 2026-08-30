@@ -1290,6 +1290,10 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 //     1-minute load average, and refuses every launch in the test when it
 //     is over `load_guard:`. Quiet by construction; the tests that want the
 //     guard to fire set this field.
+//   - TopCPU: the guard's culprit line otherwise forks `ps` and names
+//     whatever the suite's own machine is running. An empty table renders
+//     nothing, so a refusal in a test says only what the test set up; the
+//     tests that want culprits named supply rows.
 //
 // It is a named function rather than four lines inside newTestBackend
 // because a test that builds its OWN App and swaps it behind the backend
@@ -1299,6 +1303,7 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 func hermetic(a *App) *App {
 	a.ModelLister = &ModelLister{}
 	a.Load1 = func() (float64, error) { return 0, nil }
+	a.TopCPU = func() ([]Proc, error) { return nil, nil }
 	return a
 }
 

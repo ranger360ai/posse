@@ -57,6 +57,14 @@ type App struct {
 	// ModelLister: a guard whose reading comes from the machine the suite
 	// happens to be running on is red per-day, not per-commit.
 	Load1 func() (float64, error)
+	// TopCPU reads the box's process table for the load guard's culprit
+	// line (loadguard.go). nil = SysTopCPU, one bounded `ps` on the real
+	// box, which is what every real refusal uses. It is a field for the
+	// same reason Load1 is one — a witness assembled from whatever the
+	// suite's own machine happens to be running is red per-day, not
+	// per-commit — and it is read ONLY on a pass the guard is already
+	// skipping.
+	TopCPU func() ([]Proc, error)
 }
 
 var legacyHomeNotices sync.Map

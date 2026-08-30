@@ -1738,10 +1738,15 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// routing. Hiding the routing behind the guard would take the one
 	// command someone reaches for on a sick box and make it silent.
 	if why := d.App.LoadHigh(d.errw()); why != "" {
+		// The culprit line rides on the same printf as the witness: two
+		// calls under outMu is two writes a concurrent gather() may split,
+		// and a "top CPU" line orphaned from the load it explains is worse
+		// than none (ranger-base-0p6x).
+		who := d.App.LoadCulpritLine()
 		if d.DryRun {
-			d.printf("◷ %s — a real pass would be skipped here; --dry-run launches nothing, so routing follows\n", why)
+			d.printf("◷ %s — a real pass would be skipped here; --dry-run launches nothing, so routing follows%s\n", why, who)
 		} else {
-			d.printf("◷ %s — pass skipped, nothing launched into a saturated box (running sessions are left alone)\n", why)
+			d.printf("◷ %s — pass skipped, nothing launched into a saturated box (running sessions are left alone)%s\n", why, who)
 			return 0, nil
 		}
 	}
@@ -2472,7 +2477,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // this file already may.
 func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max int, busy map[string]bool, sessFail map[string]int) ([]*pendingBead, int, error) {
 	if why := d.App.LoadHigh(d.errw()); why != "" {
-		d.printf("◷ refill for settled seat %s skipped: %s\n", seat, why)
+		d.printf("◷ refill for settled seat %s skipped: %s%s\n", seat, why, d.App.LoadCulpritLine())
 		return nil, 0, nil
 	}
 	d.rollEpoch(d.now())
