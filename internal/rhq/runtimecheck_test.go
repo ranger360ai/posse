@@ -408,10 +408,13 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 // template).
 //
 // Everything here is asserted against the RENDERED row, scoped to that row,
-// for laurie's reason: the grid is a page of prose in which almost every
-// word appears somewhere, so an unscoped `strings.Contains` over the screen
-// answers about whichever row said it first. gridRow is the same shape-based
-// reader gridStages uses (runtimegrid_qa_test.go), one row deep.
+// for the reason ranger-base-qm6e names: the grid is a page of prose in
+// which almost every word appears somewhere, so an unscoped
+// `strings.Contains` over the screen answers about whichever row said it
+// first. gridRow is the same shape-based reader gridStages uses
+// (runtimegrid_qa_test.go), one row deep — and adding these rows proved the
+// point on a neighbour, which TestRuntimeCheckPrintsTheProbeRowBothWays now
+// scopes the same way.
 
 // gridRow returns one row of the grid — its value line plus every
 // continuation under it — flattened to single spaces, so an assertion reads

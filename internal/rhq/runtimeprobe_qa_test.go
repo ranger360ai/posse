@@ -172,21 +172,29 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 	var out bytes.Buffer
 	a.RuntimeCheck(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
 	got := out.String()
-	for _, want := range []string{"probe", "ASSUMED", "posse runtime probe bob"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the unprobed grid must carry %q:\n%s", want, got)
+	// Scoped to the probe ROW, not to the screen. ASSUMED and MEASURED are
+	// ordinary English on a grid that spends most of its width telling an
+	// onboarder which facts were measured — the skills row says "declare the
+	// one you MEASURED" — so an unscoped Contains here answers about
+	// whichever row said the word first, and would have called this runtime
+	// probed on the strength of a sentence about skills (ranger-base-bcpa).
+	row := gridRow(t, got, "probe")
+	for _, want := range []string{"ASSUMED", "posse runtime probe bob"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the unprobed grid's probe row must carry %q:\n%s", want, row)
 		}
 	}
-	if strings.Contains(got, "MEASURED") {
-		t.Errorf("an unprobed runtime must not print MEASURED:\n%s", got)
+	if strings.Contains(row, "MEASURED") {
+		t.Errorf("an unprobed runtime must not print MEASURED:\n%s", row)
 	}
 
 	writeProbe(t, a, true)
 	out.Reset()
 	a.RuntimeCheck(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
 	got = out.String()
-	if !strings.Contains(got, "MEASURED") || strings.Contains(got, "ASSUMED") {
-		t.Errorf("a probed runtime prints MEASURED and not ASSUMED:\n%s", got)
+	row = gridRow(t, got, "probe")
+	if !strings.Contains(row, "MEASURED") || strings.Contains(row, "ASSUMED") {
+		t.Errorf("a probed runtime prints MEASURED and not ASSUMED:\n%s", row)
 	}
 	if !strings.Contains(got, a.ProbeRecordPath("bob")) && !strings.Contains(got, AbbrevHome(a.ProbeRecordPath("bob"))) {
 		t.Errorf("the grid must name the record it read:\n%s", got)
