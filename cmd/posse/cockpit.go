@@ -203,6 +203,14 @@ type cockpit struct {
 	// it landed, which holds bd to at most half the wall clock wherever the
 	// cockpit is opened.
 	beadsNext time.Time
+	// beadsDirty is a FORCED kick that arrived while a scan was already
+	// out. The scan in flight was started before the claim, unclaim, kill or
+	// dispatch that forced it, so its answer is already the old one — and
+	// dropping the force would leave the bead the operator just claimed
+	// sitting in READY WORK for another scan's worth of seconds. So the
+	// force is remembered and spent the moment the stale scan lands.
+	// Only a forced kick sets it; the ticker's never does.
+	beadsDirty bool
 	// herdrDown is what the last session read found, kept because the two
 	// halves no longer land together: a ready-scan failure yields the status
 	// line to a down herdr (rangerhq-llse), and the bead scan that has to
@@ -812,7 +820,11 @@ func (c *cockpit) timedScanBeads() beadRead {
 // assumed because a send on a nil channel blocks forever, and this goroutine
 // holds beadsIn.
 func (c *cockpit) kickBeads(force bool) {
-	if c.beadsIn || c.beads == nil {
+	if c.beads == nil {
+		return
+	}
+	if c.beadsIn {
+		c.beadsDirty = c.beadsDirty || force
 		return
 	}
 	if !force && time.Now().Before(c.beadsNext) {
@@ -853,6 +865,14 @@ func (c *cockpit) applyBeads(r beadRead) {
 	}
 	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
 	c.buildRows()
+
+	// A force that arrived mid-scan is spent here, on the answer that was
+	// already stale when it arrived. Last, so it rescans over the lists this
+	// call just drew rather than under them.
+	if c.beadsDirty {
+		c.beadsDirty = false
+		c.kickBeads(true)
+	}
 }
 
 // beadsScanning is the state where both bead sections are empty because the

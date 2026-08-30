@@ -166,9 +166,41 @@ func TestCockpitBeadKickHonoursTheFloorButNotTheOperator(t *testing.T) {
 	// One at a time, forced or not: a second scan while one is out is the
 	// storm again, and its goroutine would block forever on a full channel.
 	c.kickBeads(true)
-	<-c.beads
+	// But it is not DROPPED. The scan in flight started before the claim
+	// that forced it, so its answer is already the old one.
+	if !c.beadsDirty {
+		t.Error("a force refused mid-scan must be remembered, not dropped")
+	}
+	// Counted only after the one scan that DID start has landed — a count
+	// taken while its goroutine is still starting measures the schedule,
+	// not the rule.
+	first := <-c.beads
 	if n := bdCalls(t, calls); n != 2 {
 		t.Errorf("%d bd calls — a forced kick must still refuse to start a second scan", n)
+	}
+	c.applyBeads(first)
+	if !c.beadsIn {
+		t.Fatal("the remembered force must be spent when the stale scan lands")
+	}
+	<-c.beads
+	if n := bdCalls(t, calls); n != 4 {
+		t.Errorf("%d bd calls — the deferred force must rescan once, and once only", n)
+	}
+	if c.beadsDirty {
+		t.Error("a spent force must not still be pending")
+	}
+}
+
+// The ticker's own kick is never remembered: it is the thing the floor
+// exists to refuse, and holding it would rescan the moment every scan
+// landed — the storm again, one field further in.
+func TestCockpitATickerKickIsNeverRemembered(t *testing.T) {
+	c, _ := beadScanRig(t, 0, "[]")
+	c.beadsIn = true
+
+	c.kickBeads(false)
+	if c.beadsDirty {
+		t.Error("a ticker kick refused mid-scan must be forgotten, not queued")
 	}
 }
 
