@@ -186,7 +186,7 @@ func (c SeatbeltCarveOut) Empty() bool { return len(c.Deny) == 0 && len(c.Seal) 
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
 // allow block, and then the carve-out the allow block cannot outvote.
-func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut) string {
+func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, createOnly ...string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, ";; posse seatbelt for %s — rendered from the PID at launch; do not edit (rangerhq-5vt)\n", persona)
 	b.WriteString("(version 1)\n(allow default)\n(deny file-write*)\n")
@@ -200,6 +200,21 @@ func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut) 
 	b.WriteString("  (regex #\"^/dev/\")\n")
 	b.WriteString("  (literal \"/dev/null\")\n")
 	b.WriteString(")\n")
+	// Create-only, and above the carve-out so the carve-out still outvotes
+	// it: the directories git must MAKE to write a ref it may write
+	// (sessionRefDirs, ranger-base-uuze). A subpath here would grant every
+	// sibling session's ref; this grants the mkdir and nothing inside.
+	if len(createOnly) > 0 {
+		b.WriteString(";; create-only (ranger-base-uuze): making these paths is allowed,\n;; writing anything inside them is not.\n")
+		b.WriteString("(allow file-write-create\n")
+		for _, p := range createOnly {
+			if p == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
+		}
+		b.WriteString(")\n")
+	}
 	if carve.Empty() {
 		return b.String()
 	}
@@ -393,11 +408,16 @@ func pidWritableExtras(ag *AgentFile, cwd string) []string {
 // The ref is granted as that pair of subpaths rather than as the posture
 // check's prescribed `(regex #"^<common>/refs/heads/<branch>")`: the pair is
 // strictly narrower (the regex is a prefix match, so it would also cover a
-// sibling branch whose name extends this one) and it needs no second shape
-// in the writable set, which is a []string every caller of SeatbeltWritable
-// reads as subpaths. A detached HEAD has no branch and gets neither entry —
+// sibling branch whose name extends this one) and it stays inside the
+// writable set, which is a []string every caller of SeatbeltWritable reads
+// as subpaths. A detached HEAD has no branch and gets neither entry —
 // a commit there moves only the per-worktree HEAD, which is inside the
 // per-worktree dir this still grants whole.
+//
+// The ref's PARENT directories are not in this list and cannot be: they are
+// granted for creation only, in a shape a subpath cannot say. See
+// sessionRefDirs below — without them this list is enough to commit only
+// while nothing has packed the repo's refs.
 //
 // LinkedGitDirs itself is deliberately unchanged: it is also what codex and
 // grok are handed as `--add-dir` roots (herdrback.go), and `--add-dir` is
@@ -415,6 +435,64 @@ func sessionGitGrants(cwd string) []string {
 	if b := repoBranch(cwd); b != "" {
 		ref := filepath.Join(common, "refs", "heads", b)
 		out = append(out, ref, ref+".lock")
+	}
+	return out
+}
+
+// sessionRefDirs names the directories git must CREATE to write that ref,
+// and is the create-only half of the same grant (ranger-base-uuze).
+//
+// The leaf grant above is a file two directories deep: the fleet's branches
+// are `posse/<session>`, so the loose ref is `refs/heads/posse/<session>`
+// and git has to `mkdir refs/heads/posse` before it can take the lock.
+// That directory is not the ref and no grant named it. While it happens to
+// exist a commit works — which is why the narrowing shipped green — but
+// `git pack-refs --all` deletes the loose refs and then prunes the emptied
+// directory, and `git gc` packs refs by default and runs itself at
+// gc.auto. One gc leaves EVERY live session on the repo unable to commit,
+// at `fatal: cannot lock ref 'HEAD': unable to create directory for …`,
+// with the commit lost; a session cannot repair it from inside, because
+// making that directory is the write it is refused.
+//
+// MEASURED three ways on one fixture, varying only the directory
+// (2026-08-30, darwin 25.4.0), with `refs/heads` itself unwritable so only
+// this create is in question: loose ref present and the directory there —
+// commit lands; refs packed and the directory pruned — the fatal above,
+// nothing committed; refs packed and the directory recreated by hand —
+// commit lands. So the missing write is the mkdir and nothing else.
+//
+// Granted as `file-write-create` on the directory rather than as another
+// writable subpath, because a subpath would hand back `refs/heads/posse`
+// whole — every other session's branch ref, which is most of what
+// ranger-base-m2wf narrowed away. Creating the path is allowed; writing
+// anything inside it is not, and the leaf pair above is what makes the
+// session's own ref writable. `refs/heads` itself is never named: git
+// leaves it in place across a pack (measured), and a create grant on it
+// would let a session cut a top-level branch.
+//
+// Every ancestor between `refs/heads` and the leaf, not just the first,
+// because git creates them all and a branch may carry more than one slash.
+// A detached HEAD and a slashless branch get nothing — there is no
+// intermediate directory to make.
+func sessionRefDirs(cwd string) []string {
+	dirs := LinkedGitDirs(cwd)
+	if len(dirs) != 2 {
+		return nil
+	}
+	b := repoBranch(cwd)
+	if b == "" {
+		return nil
+	}
+	base := filepath.Join(dirs[1], "refs", "heads")
+	parts := strings.Split(b, "/")
+	var out []string
+	d := base
+	for _, part := range parts[:len(parts)-1] {
+		d = filepath.Join(d, part)
+		if !underDir(base, d) || absResolve(d) == absResolve(base) {
+			return nil // a name that climbs out is not a ref this grants
+		}
+		out = append(out, absResolve(d))
 	}
 	return out
 }
@@ -706,7 +784,7 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable))
+	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable), sessionRefDirs(cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -732,6 +810,12 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
+	}
+	// Create-only grants are grants, so an operator reads them here too —
+	// under their own marker, because "w" would say the directory is
+	// writable and it is not (ranger-base-uuze).
+	for _, d := range sessionRefDirs(cwd) {
+		fmt.Fprintf(out, "    + %s (create only — the directory git makes for the session's ref; nothing inside it is writable)\n", AbbrevHome(d))
 	}
 	// The carve-out under the set it takes back from, for the same reader:
 	// a deny that only a profile knows about is a deny nobody checks.

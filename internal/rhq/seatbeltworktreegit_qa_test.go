@@ -392,3 +392,227 @@ func mustRead(t *testing.T, p string) string {
 	}
 	return string(b)
 }
+
+// ─── the ref's parent directory (ranger-base-uuze) ───────────────────────────
+//
+// The narrowing above names the branch ref as a LEAF. The fleet's branches
+// carry a slash, so that leaf is a file two directories deep and git must
+// make `refs/heads/posse` before it can take the lock. Nothing granted it.
+// While the directory happens to exist the commit works — which is how the
+// narrowing shipped green — and `git pack-refs --all` prunes it the moment
+// it empties, which `git gc` does on its own at gc.auto. The fixture above
+// never reaches that state: it packs at :61, BEFORE `worktree add` cuts the
+// branch at :67, so the directory is created afterwards and never pruned.
+//
+// wgPack constructs the state the fleet reaches instead, and asserts it was
+// really constructed. A rig for "the directory is gone" that quietly leaves
+// it there measures nothing, and every sandbox probe below it would pass
+// under the defect (ranger-base-h15's shape, again).
+
+func wgPack(t *testing.T, f wgFixture) {
+	t.Helper()
+	mustGit(t, f.repo, "pack-refs", "--all")
+	dir := filepath.Dir(f.ref(f.branch))
+	if wgExists(t, dir) {
+		t.Fatalf("pack-refs left %s in place — the arm this test needs was not built, so nothing below it is measured", dir)
+	}
+	if got, head := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch), mustGit(t, f.tree, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("the packed ref no longer names the session's commit (%s != %s)", got, head)
+	}
+}
+
+// The grant, as two lists with two different meanings: the ref's parent is
+// creatable and is NOT writable. If it ever joins the writable set instead,
+// every sibling session's branch ref comes back with it and the narrowing
+// this file pins is undone from the other side.
+func TestQAWorktreeRefParentIsGrantedForCreationOnly(t *testing.T) {
+	f := wgNewFixture(t)
+	parent := filepath.Dir(f.ref(f.branch)) // <common>/refs/heads/posse
+	got := sessionRefDirs(f.tree)
+	if len(got) != 1 || got[0] != absResolve(parent) {
+		t.Fatalf("sessionRefDirs = %v, want [%s]", got, parent)
+	}
+	w := f.writable(t)
+	for _, p := range []string{
+		parent,
+		filepath.Join(parent, "other-probe"), // the sibling's ref lives in it
+		filepath.Join(parent, "sneaky"),
+	} {
+		if sbCovers(w, p) {
+			t.Errorf("the create-only directory leaked into the writable set: %s\n  %s", p, strings.Join(w, "\n  "))
+		}
+	}
+	// And it is spelled as a create, above the carve-out that must still
+	// outvote it — a literal allow BELOW the trailing deny would re-open
+	// whatever that deny closed.
+	prof := SeatbeltProfile("developer-2", w, SeatbeltCarveOut{Deny: []string{f.gates}}, got...)
+	line := "  (literal " + sbQuote(absResolve(parent)) + ")\n"
+	create := strings.Index(prof, "(allow file-write-create\n")
+	if create < 0 || !strings.Contains(prof[create:], line) {
+		t.Fatalf("the profile does not grant %s for creation:\n%s", parent, prof)
+	}
+	if deny := strings.Index(prof, "(deny file-write*\n  (subpath"); deny < 0 || deny < create {
+		t.Errorf("the create block renders at %d and the carve-out deny at %d — the deny must come last:\n%s", create, deny, prof)
+	}
+	if strings.Contains(prof, "(subpath "+sbQuote(absResolve(parent))+")") {
+		t.Errorf("the parent directory is granted as a subpath as well — that is every sibling's ref:\n%s", prof)
+	}
+}
+
+// Nothing to create is nothing granted: a detached HEAD has no branch, a
+// main checkout has no common dir of its own, and a slashless branch's ref
+// sits directly in refs/heads, which git leaves in place across a pack.
+func TestQAWorktreeRefParentIsEmptyWhenThereIsNoDirectoryToMake(t *testing.T) {
+	f := wgNewFixture(t)
+	if got := sessionRefDirs(f.repo); got != nil {
+		t.Errorf("sessionRefDirs(main checkout) = %v, want none", got)
+	}
+	mustGit(t, f.tree, "checkout", "-q", "-b", "flat")
+	if got := sessionRefDirs(f.tree); got != nil {
+		t.Errorf("sessionRefDirs(slashless branch) = %v, want none — refs/heads is not this bead's to grant", got)
+	}
+	mustGit(t, f.tree, "checkout", "-q", "--detach")
+	if got := sessionRefDirs(f.tree); got != nil {
+		t.Errorf("sessionRefDirs(detached) = %v, want none", got)
+	}
+}
+
+// The regression, by execution: the same commit TestQAWorktreeCommitStays-
+// GreenUnderTheNarrowedProfile makes, on a repo whose refs have been packed
+// since the branch was cut. The control arm is the profile as it shipped —
+// same fixture, same command, the create block removed and nothing else —
+// so a green here is the create grant and not the fixture.
+func TestQAWorktreeCommitStaysGreenAfterPackRefs(t *testing.T) {
+	sbSkipUnlessSandboxable(t)
+	commit := func(f wgFixture) string {
+		return "echo caged >> " + filepath.Join(f.tree, "work.txt") +
+			" && git -C " + f.tree + " add work.txt" +
+			" && git -C " + f.tree + " commit -q -m 'caged commit' -- work.txt"
+	}
+
+	// The control first, because it is the claim that this test measures
+	// anything at all: without the create grant the commit DIES, and the
+	// commit is lost rather than landing somewhere else.
+	ctl := wgNewFixture(t)
+	wgPack(t, ctl)
+	gates := ctl.a.GatesDir(ctl.ag.Name)
+	w := ctl.writable(t)
+	shipped := sbRenderProfile(t, "shipped.sb", SeatbeltProfile(ctl.ag.Name, w, ctl.a.SeatbeltCarveOut(ctl.ag, ctl.tree, gates, w)))
+	if ok, out := wgRun(t, shipped, commit(ctl)); ok {
+		t.Errorf("the pre-fix profile committed after a pack — the control proves nothing:\n%s", out)
+	} else if !strings.Contains(out, "unable to create directory") {
+		t.Errorf("the control failed for some other reason than the missing directory:\n%s", out)
+	}
+	if got := mustGit(t, ctl.repo, "rev-parse", "refs/heads/"+ctl.branch); got != ctl.head {
+		t.Errorf("the refused commit moved the ref anyway: %s", got)
+	}
+
+	f := wgNewFixture(t)
+	wgPack(t, f)
+	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, out := wgRun(t, prof, commit(f)); !ok {
+		t.Fatalf("a worktree commit is refused after a pack-refs:\n%s\n\nprofile:\n%s", out, mustRead(t, prof))
+	}
+	after := mustGit(t, f.tree, "rev-parse", "HEAD")
+	if after == f.head {
+		t.Fatalf("git exited 0 but the branch did not move: %s", after)
+	}
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); got != after {
+		t.Errorf("the session branch ref did not follow the commit: %s != %s", got, after)
+	}
+
+	// What the create grant must NOT have bought back, under the very
+	// profile that just committed: the directory is creatable, and nothing
+	// in it — or beside it — is writable.
+	for _, p := range []wgProbe{
+		{what: "the sibling session's ref, inside the same directory", sh: func(f wgFixture) string {
+			return "printf '%s\\n' " + after + " > " + f.ref("posse/other-probe")
+		}},
+		{what: "the sibling's ref via git update-ref", sh: func(f wgFixture) string {
+			return "git -C " + f.tree + " update-ref refs/heads/posse/other-probe " + after
+		}},
+		{what: "a new branch beside its own in the same directory", sh: func(f wgFixture) string {
+			return "git -C " + f.tree + " branch posse/sneaky " + after
+		}},
+		{what: "the operator's main", sh: func(f wgFixture) string {
+			return "git -C " + f.tree + " update-ref refs/heads/main " + after
+		}},
+		{what: "packed-refs", sh: func(f wgFixture) string {
+			return ": > " + filepath.Join(f.common, "packed-refs")
+		}},
+		{what: "the shared pre-push hook", sh: func(f wgFixture) string {
+			return "echo 'exit 0' > " + filepath.Join(f.common, "hooks", "pre-push")
+		}},
+	} {
+		if ok, out := wgRun(t, prof, p.sh(f)); ok {
+			t.Errorf("the create grant bought back %s:\n%s", p.what, out)
+		}
+	}
+}
+
+// The premise the grant rests on, measured without sandbox-exec so it holds
+// in a CAGED session too — where every probe above skips (ranger-base-xjw9)
+// and this file would otherwise assert nothing about the defect at all.
+//
+// The variable is the one directory, and the wall is a read-only
+// `refs/heads` rather than a profile: what a create grant buys is exactly
+// the mkdir, so refusing the mkdir by any means reproduces the same failure.
+// Three arms, one variable — the third is the discriminator, because it has
+// the same packed refs as the second and differs only in the directory.
+func TestQAWorktreeCommitNeedsTheRefsParentDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a read-only directory is not a wall, so the middle arm cannot fail (see the memory note on chmod)")
+	}
+	f := wgNewFixture(t)
+	heads := filepath.Join(f.common, "refs", "heads")
+	commit := func(name string) error {
+		if err := os.WriteFile(filepath.Join(f.tree, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(f.tree, "add", "--", name); err != nil {
+			t.Fatal(err)
+		}
+		_, err := git(f.tree, "commit", "-q", "-m", name, "--", name)
+		return err
+	}
+	sealed := func(fn func()) {
+		if err := os.Chmod(heads, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Chmod(heads, 0o755)
+		fn()
+	}
+
+	// 1. the loose ref is there, so is its directory: nothing to create.
+	sealed(func() {
+		if err := commit("one.txt"); err != nil {
+			t.Fatalf("arm 1 was refused with the directory in place — the wall is not measuring the directory: %v", err)
+		}
+	})
+	// 2. the pack prunes it, and the commit dies with it.
+	wgPack(t, f)
+	before := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch)
+	sealed(func() {
+		if err := commit("two.txt"); err == nil {
+			t.Error("arm 2 committed with refs/heads unwritable and the directory pruned — git did not need to create it, and the grant this bead adds is dead weight")
+		}
+	})
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); got != before {
+		t.Errorf("the refused commit moved the ref anyway: %s != %s", got, before)
+	}
+	// 3. same packed state, the directory back: it commits again.
+	if err := os.MkdirAll(filepath.Dir(f.ref(f.branch)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sealed(func() {
+		if err := commit("three.txt"); err != nil {
+			t.Fatalf("arm 3 was refused with the directory recreated — then arm 2 was failing for some other reason: %v", err)
+		}
+	})
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); got == before {
+		t.Error("arm 3 exited 0 but the ref did not move")
+	}
+}
