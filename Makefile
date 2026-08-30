@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -50,6 +50,7 @@ install: release
 	@echo "  promoted: $$(git rev-parse --short HEAD) $$(git log -1 --format=%s HEAD)"
 	@echo "  version : $$($(BINDIR)/posse version)"
 	@scripts/path-warning.sh '$(BINDIR)'
+	@scripts/verify-gate-freshness.sh --warn || true
 
 deploy: install
 
@@ -315,6 +316,32 @@ verify-bd-pin:
 # to refuse. Read-only; ~23s at the default MAXLEN=4.
 verify-bd-argv-gate:
 	scripts/verify-bd-argv-gate.sh
+
+# The other half of that gate: the copy that actually fences this box
+# (ranger-base-d0jo). `scripts/bd-argv-gate.{sh,py}` here is SOURCE. What the
+# PreToolUse hook runs is `~/.config/posse/gate/bd-argv-gate.sh`, an operator-
+# owned copy — "a PreToolUse hook the operator may install, not one posse
+# renders" (ADR 0015 section 3) — so landing a fix to the source moves nothing
+# and nothing notices. ranger-base-hthx landed its wrapper fix and wrote that
+# caveat on its own close; c892569 (ranger-base-1lvm) landed the next one, and
+# a copy predating it keeps the fail-OPEN wrapper with no signal anywhere. A
+# note on a close is not a control.
+#
+# So `make install` ends with this, in --warn (report, never fail the promote:
+# the binary went out fine and a stale gate is a different repair). It resolves
+# the wrapper from the operator's settings.json rather than assuming the path,
+# compares BOTH files against the MAIN CHECKOUT's HEAD -- never a persona
+# worktree's, which is the tree that must not reach a box-wide hook -- and then
+# runs the installed wrapper three times, because a byte-perfect gate with no
+# python3 under it passes everything. A finding prints the one line to type.
+#
+# It installs nothing: the copy exists precisely so a persona-writable tree
+# cannot move it, and an --install flag here would be that tree, one flag away.
+# Exit 1 = drift or a dead gate. Exit 2 = the gate is not installed here —
+# `|| true` on the install line swallows both, because a box that never
+# installed the gate must not fail a promote over it.
+verify-gate-freshness:
+	scripts/verify-gate-freshness.sh
 
 # Does every PID in a posse home carry the fence ADR 0015 section 3 says it
 # carries (ranger-base-d866)? The rules only travel with a dispatched session

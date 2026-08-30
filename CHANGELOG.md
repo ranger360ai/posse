@@ -65,6 +65,31 @@ not a git repository is skipped, not reported, and an instance with no
 `beads_visibility:` block hears nothing at all. `make verify-hook-freshness`
 in a posse checkout is the same question on demand.
 
+**The bd argv gate you installed by hand went stale the moment the source
+changed, and nothing told you.**
+
+*Affected: every build before this one, on any box where the gate is
+installed. Reports only — it installs nothing.*
+
+`scripts/bd-argv-gate.{sh,py}` is source; what fences your box is the copy a
+PreToolUse hook names in your Claude settings, installed by hand because posse
+renders no box-wide hook (ADR 0015 §3). So a fix landing in this repo moves
+nothing, and the copy falls behind in silence — which is how a wrapper that
+failed OPEN on any bd call not on a command's first line stayed live after the
+fix for it had landed.
+
+`make install` now ends with that comparison, and `make verify-gate-freshness`
+asks it on demand. It resolves the wrapper out of your settings rather than
+assuming a path, compares both files against the main checkout's HEAD — never
+a worktree's, so no unfinished branch is ever prescribed for a box-wide hook —
+and then runs the installed wrapper three times, because a byte-perfect gate
+with no working `python3` under it passes everything: an allowed verb must get
+through, a denied one must be refused by the parser rather than by the
+wrapper's own fallback, and an unrelated command must be untouched. A finding
+prints the one line to type — a line written to survive the gate it repairs.
+A promote is never failed by it, and a box that never installed the gate hears
+nothing.
+
 ### Fixed
 
 **Persona memory was never committed by anything, so it accumulated on disk
