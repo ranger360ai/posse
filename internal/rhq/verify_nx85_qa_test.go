@@ -38,6 +38,26 @@ import (
 // failure that names it. TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError
 // asserts only the silence; this asserts the diagnosis, so a fix that swapped
 // Die() for a quiet return would still be caught.
+// FLAKY UNDER LOAD — ranger-base-m8ko, found by ranger-base-pjoy.
+//
+// The 700ms timer below is the wall clock commit 0ebdbce
+// (ranger-base-4pjw) retired, and it was retired in only ONE test of a
+// pair: bootrace_qa_test.go arms through the fake's explain-error-after
+// countdown, this twin still plants the file from a goroutine.
+//
+// Why that reds: 700ms after the test body starts races the launch's own
+// setup. 0ebdbce measured the first `agent explain` of a fake-herdr launch
+// landing 293-340ms in on an idle box, so the margin is ~395ms of
+// workspace-create/persona/launch forks. On a busy box the setup crosses
+// 700ms, the FIRST explain errors, awaitSettled's lastWhy stays "" and the
+// concession path prompts — which is the shape the third assertion here
+// says is absent. Observed 2026-08-30 on a full `make test` at load average
+// 24-29 (five worktrees testing at once); 25/25 green in isolation on the
+// same box at load 14.
+//
+// The fix is the lever plus 0ebdbce's own witness: if the log holds no more
+// explains than guesses served, fail naming the fixture rather than passing
+// on an assertion of absence.
 func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
