@@ -1639,6 +1639,16 @@ wrote. A persona closed a real bead in a fresh instance; the install works.
 Sessions of finished beads are left idle for you to reap (`posse kill`, or
 `x` in the cockpit). They cost nothing and do not block the next pass.
 
+A reap is also when a persona's memory is made durable. Personas append what
+they learn to `$RHQ_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
+`posse kill` does — path-limited to that one persona's directory, scanned for
+credential shapes first, and never pushed. It is a no-op unless your home keeps
+`personas/` in git. Killing by hand also *lands the plane* first: one bounded
+turn asking the agent to write down what it learned, spent only when that
+persona has memory no commit holds, and refusing the kill rather than closing a
+workspace whose turn never settled. `posse kill <session> --no-land` declines
+the turn — a wedged session, or a sweep of many — and still commits.
+
 A session whose bead is *not* finished is a different matter: `posse kill`
 **refuses** one whose bead is still `in_progress` while its working
 directory holds uncommitted work, and names both halves (ADR 0013 §4).
