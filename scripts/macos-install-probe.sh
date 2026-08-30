@@ -17,7 +17,7 @@
 #   scripts/macos-install-probe.sh all          all five
 #
 # Options:
-#   --version vX.Y.Z   which release to probe (default: v0.3.0). `bottle` mode
+#   --version vX.Y.Z   which release to probe (default: v0.4.0). `bottle` mode
 #                      ignores it and uses internal/rhq.Version at HEAD, which
 #                      is the only version it can build.
 #   --keep             do not delete the scratch root on exit
@@ -69,7 +69,7 @@
 # green result cannot come from a box that would have installed either way.
 set -uo pipefail
 
-VERSION=v0.3.0
+VERSION=v0.4.0
 KEEP=0
 STUB_CLT=0
 REPO=ranger360ai/posse

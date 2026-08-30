@@ -2,7 +2,9 @@
 # nobody has automated
 
 Status: **MEASURED** (ranger-base-hza, 2026-08-29; §7 added by
-ranger-base-9vg3 the same day, which fixed §2's third finding). The operator authorised
+ranger-base-9vg3 the same day, which fixed §2's third finding; §7's published-tap
+pour added by ranger-base-aq0l, 2026-08-30, once v0.4.0 made it runnable). The
+operator authorised
 this on 2026-08-28: *verify the macOS install routes as far as automation
 reaches; anything that truly needs the operator's own Mac, name it precisely
 and hand back.*
@@ -162,13 +164,6 @@ claim.
   this box **cannot** reproduce the defect: `scripts/macos-install-probe.sh
   bottle` still measures the pour, but its control reports that this box would
   have installed either way, and says so rather than claiming a contrast.
-- **A first `brew install` from a *bottled published tap*.** §7 pours from a
-  loopback server standing in for the release. The published tap still carries
-  the v0.3.0 formula, which predates bottles — so
-  `scripts/macos-install-probe.sh brew` exits 1 today, on its new "did brew
-  POUR?" assertion, and it is right to. Re-run it after the next release is
-  published and its formula pushed into the tap; that is the run nobody can do
-  before then.
 - **A genuinely fresh macOS user account.** Every "not on the default PATH"
   result here is derived from `path_helper` and from zsh's own startup
   sequence in an isolated `HOME`/`ZDOTDIR`, which is exactly the mechanism —
@@ -237,6 +232,40 @@ existing assertion stays green over a tap that lost its bottles — the
 regression would be invisible to everyone who could report it and fatal to
 everyone who could not. Measured: with the tools current, `brew` mode's install
 succeeds and the pour check is the single line that fails.
+
+### A first `brew install` from the bottled published tap
+
+The two rows above measure THIS tree's bottles through a loopback server
+standing in for the release — the tap itself still carried the bottle-less
+v0.3.0 formula when they were run. `ranger-base-9vg3` named that as the one
+pour the runbook had never done, and `v0.4.0`, published 2026-08-29, is
+bottled — so `ranger-base-aq0l` ran it, 2026-08-30, `scripts/macos-install-probe.sh
+brew` unchanged, against `ranger360ai/tap` as GitHub actually serves it:
+
+```
+ok      brew resolves this formula's version as 0.4.0 — the bottle url it builds will name a published asset
+ok      brew install ranger360ai/tap/posse
+ok      the published formula POURED a bottle: Pouring posse-0.4.0.arm64_sonoma.bottle.tar.gz
+ok      the brew-installed posse reports 0.4.0: posse 0.4.0+feaf301 (herdr-native)
+ok      brew's download carries no com.apple.quarantine — the brew route never meets Gatekeeper
+ok      the caveats print, and they still name 'brew install beads' as the wrong bd
+```
+
+Exit 0 — every assertion in `brew` mode, including the "did brew POUR?" check
+this section added and the version-scan check §8 added, agreed with
+INSTALL.md. This is the gap §5 named in earlier drafts of this document: it is
+now closed, on this box, against the tap as published. It does not cover a
+stale-CLT box — none remains to measure against, per the point above — nor
+does it repeat once the tap is re-rendered again; re-run it after each
+release the way §6 says.
+
+`scripts/macos-install-probe.sh`'s own `--version` default was still `v0.3.0`
+when this was run — a second copy of the exact staleness this bead exists to
+fix, this time in the probe rather than the prose. Fixed alongside this
+section: the default now tracks the current release, `v0.4.0`, so §6's
+`scripts/macos-install-probe.sh brew` — no flag — measures the tap as it
+actually stands rather than replaying the release this document was
+originally measured against.
 
 ### Four things that were measured rather than assumed
 
