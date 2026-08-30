@@ -43,6 +43,28 @@ past it — which the hook's arm, keyed on an environment variable, can be.
 Reinstall the hooks in repos you have already hooked (`posse gates
 install-hooks <repo>`); a dispatch into a repo refreshes it automatically.
 
+**...and the walls above go stale in every repo no session enters — including
+the one that holds the constitution.**
+
+*Affected: every build before this one.*
+
+The hook bodies are compiled into the binary, so every installed hook is a
+*copy* of the render that was current when someone wrote it. Only `posse gates
+install-hooks` and a dispatch re-render one, and a dispatch refreshes the repo
+it was cut from and no other — so a repo that never holds a session keeps
+whatever it was given, indefinitely. That is how a constitution repo can run a
+`prepare-commit-msg` without the arm above for hours after the arm shipped:
+the wall existed exactly where sessions launch, and nowhere else.
+
+`posse promote` and the `posse dispatch --watch` preamble now sweep every repo
+`beads_visibility:` names and print the ones whose hooks are not this binary's
+render — stale, foreign, or never installed — naming the repo and the command
+that fixes it. Both report and rewrite nothing: a hook rewrite in a shared
+checkout is a change you should type. A configured repo that is absent or is
+not a git repository is skipped, not reported, and an instance with no
+`beads_visibility:` block hears nothing at all. `make verify-hook-freshness`
+in a posse checkout is the same question on demand.
+
 ### Fixed
 
 **A deny rule naming a subcommand's flag — `Bash(bd sync --full:*)`,

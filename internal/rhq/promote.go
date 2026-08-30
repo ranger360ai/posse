@@ -500,6 +500,17 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 	// runbook: the failure it catches is an instance coming up on the far
 	// side of the cutover window with no env sets and no error at all.
 	warnDanglingDefaultEnv(w, a)
+	// The second tripwire, and here for the same reason as the first: this
+	// is the operator's regular touch point, and the thing it catches is
+	// invisible from anywhere a session runs. The L3 walls are copies of a
+	// render compiled into the binary, and only a session create or a typed
+	// `posse gates install-hooks` refreshes one — so the repo that holds the
+	// constitution, which holds no session, is the repo whose wall goes
+	// stale first and is noticed last (ranger-base-ixv4: it waved a
+	// promoted-class commit through hours after the constitution arm
+	// shipped). Read-only: it names what to re-render and re-renders
+	// nothing.
+	a.ReportHookWall(w, "promote")
 	return nil
 }
 

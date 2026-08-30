@@ -2282,7 +2282,12 @@ from concrete parity. The probe is launch-time
 evidence, not a permanent lock: at `cage: shims` the session can still edit
 the slot after the probe (the TOCTOU residual); the L2/L4 hook carve-out is
 what removes that capability. Chain foreign slots per INSTALL.md §9.
-`posse init` does not touch repos.
+`posse init` does not touch repos. And because a launch reconciles only the
+repo its worktree was cut from, a hooked repo that never holds a session is
+re-rendered by nothing — `SweepHookWall` asks the same identity question of
+every `beads_visibility:` key from `posse promote`'s epilogue and the
+`dispatch --watch` preamble, and names the ones to re-render by hand
+(ranger-base-ixv4).
 
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
@@ -3545,7 +3550,21 @@ install rather than read at commit time — a commit-time read would mean a
 flat-YAML parser in POSIX sh, the one thing this repo stopped doing — and
 the stamp is refreshed by `posse gates install-hooks` **and by every
 persona launch into the repo**, so a mark the operator changes is in force
-on the next dispatch. The way through is to re-file the bead in the
+on the next dispatch — *in a repo that gets a dispatch*. That qualifier is
+the whole of ranger-base-ixv4: a launch refreshes the common hooks dir of
+the repo its worktree was cut from and no other, so a repo nobody launches
+into keeps whatever render it was given, stamp included, indefinitely. The
+constitution repo is the extreme case — it holds the PIDs and holds no
+session — and it ran a `prepare-commit-msg` without the constitution-path
+arm for hours after that arm shipped. `SweepHookWall`
+(`internal/rhq/hookfresh.go`) is the standing answer: it walks the
+`beads_visibility:` keys and asks each one the ADR 0023 question through
+the same `probeL3Hooks`, rendering per repo from *that repo's* configured
+visibility so a stamp that disagrees with config is a byte mismatch in
+either direction. It runs from `posse promote`'s epilogue and once at the
+top of a `dispatch --watch` loop — once, because the answer can only change
+when the binary does and a loop is a binary. It reports and installs
+nothing. The way through is to re-file the bead in the
 private db and cite its id; the override is
 `RHQ_VISIBILITY_OVERRIDE=i-mean-it`, operator-typed, never in a session's
 environment (a test pins that), and it is logged to `refusals.log` when it

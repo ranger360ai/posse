@@ -137,6 +137,15 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
 	// and changed under a flag that did not.
 	fmt.Fprintln(d.Out, LaunchCapLine(max, d.App.DispatchEpoch(d.errw())))
+	// The L3 wall across every repo config declares, swept once, here
+	// (ranger-base-ixv4). Once and not per pass on purpose: the hook bodies
+	// are compiled into the binary, so the answer can only change when the
+	// binary does — and a loop IS a binary, started by an operator who has
+	// just installed one. A per-pass sweep would re-spawn git and sh for
+	// every configured repo forever to re-derive an answer that cannot have
+	// moved. Read-only, like the launch probe it reuses; findings name the
+	// repo and the command, and this loop dispatches either way.
+	d.App.ReportHookWall(d.Out, "watch")
 	passes := 0
 	wait := base
 	for {

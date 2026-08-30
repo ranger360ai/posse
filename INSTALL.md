@@ -1430,6 +1430,25 @@ half still runs, but on a private temp copy of *posse's own render*: it
 catches a renderer regression (a bad render, a broken `/bin/sh`) and says
 nothing about what is planted in your repo.
 
+Nothing re-renders a repo that holds no session. Only `posse gates
+install-hooks` and a dispatch write a hook, and a dispatch refreshes the
+common hooks dir of the repo its worktree was cut from and no other — so a
+repo you hooked once and never dispatch into keeps whatever render it was
+given, however far the binary moves on. It still refuses; what it loses is
+whatever the newer render says, including arms added since. That is not
+hypothetical: the repo holding a constitution is the repo least likely to hold
+a session, and it ran a `prepare-commit-msg` without the constitution-path arm
+for hours after that arm shipped.
+
+So `posse promote` and the `posse dispatch --watch` preamble each sweep every
+repo `beads_visibility:` names (step 5) and print the ones whose hooks are not
+that binary's render, naming the repo and the command that fixes it. They
+report only — re-render each one yourself with `posse gates install-hooks
+<repo>`. `make verify-hook-freshness` in a posse checkout asks the same
+question on demand, and adds the two behavioural arms (an unqualified commit
+must exit 1 *and* the path-limited form must exit 0) against the file actually
+installed.
+
 So **a foreign hook is refused however well it behaves.** A hand-written
 chain that refuses with exit 1 and passes the path-limited form — all four
 probes green — is still reported `DEGRADED` as "foreign
