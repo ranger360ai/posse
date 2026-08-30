@@ -35,7 +35,10 @@ package rhq
 //     that rots into a lie, and the honest precondition is the simple one —
 //     this image is not this source, so what is about to be measured is not
 //     this source's render. The cost of the coarse arm is a rebuild that
-//     was not strictly needed, and `posse cage build` is 12.2s measured.
+//     was not strictly needed, and a rebuild is ~55s: measured end to end on
+//     this box 2026-08-30 (55.4s wall — the two cross-builds plus the image
+//     layers after them, which always rebuild because the binaries are what
+//     changed; ranger-base-jada's 12.2s was the docker half alone).
 
 import (
 	"fmt"
@@ -79,7 +82,7 @@ func (g CageAge) String() string {
 	case CageImageCurrent:
 		return fmt.Sprintf("image %s carries posse %s — the same build as %s, so the L1/L3 render inside it is this one", g.Name, g.Image, g.Whose)
 	case CageImageStale:
-		return fmt.Sprintf("image %s carries posse %s and %s is %s — STALE. The L1/L3 render inside the cage is the IMAGE's, so the wall in there is that build's and not this one's; rebuild it with `posse cage build <posse checkout>` (12.2s measured) before reading anything in the cage as a regression.",
+		return fmt.Sprintf("image %s carries posse %s and %s is %s — STALE. The L1/L3 render inside the cage is the IMAGE's, so the wall in there is that build's and not this one's; rebuild it with `posse cage build <posse checkout>` (~55s measured) before reading anything in the cage as a regression.",
 			g.Name, g.Image, g.Whose, g.Want)
 	default:
 		return fmt.Sprintf("image %s: age unknown — its posse answers %q and %s reads %q, and the comparison needs both. Nothing is claimed about the render's age either way, so this is neither fresh nor stale.",
