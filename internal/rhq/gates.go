@@ -1663,6 +1663,22 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 			}
 			return chained, nil
 		}
+		// Everything below this point puts our gate at posse-<slot>: the
+		// prescription's third step is a bare `mv <slot> posse-<slot>` and
+		// chainBdShim writes that path outright. Neither name is free to
+		// change the way theirs-<slot> is (ranger-base-q32o) — installHook's
+		// own recognizer above reads exactly `posse-<slot>`, so a chain built
+		// around any other name would not be recognized or refreshed. When
+		// that file is there and is NOT ours, then, there is no arrangement
+		// left that keeps it: `mv` destroys it without a word and so does the
+		// WriteFile. Refuse, name it, and print no paste block — the same
+		// answer the dispatcher-over-a-foreign-member case above already
+		// gives (ranger-base-hd56). No posse instruction creates a foreign
+		// posse-<slot>, so this is the operator's own file and moving it is
+		// the operator's call.
+		if owned, readErr := os.ReadFile(chained); readErr == nil && !ownsHook(string(owned), marker, legacy) {
+			return "", Die("%s exists and is not a posse hook, and neither is %s — not overwriting.\nChaining this slot puts posse's %s gate at %s: move that file aside yourself, then re-run install-hooks for the chain prescription.", AbbrevHome(p), AbbrevHome(chained), slot, AbbrevHome(chained))
+		}
 		if chain && isBdShim(string(b)) {
 			return chainBdShim(hooks, slot, script)
 		}
