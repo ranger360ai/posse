@@ -216,7 +216,10 @@ type Runtime struct {
 	ProjectConfig []string
 	// ProjectConfigKeys narrows the check to the top-level JSON keys that
 	// declare a repo-to-box executable channel. Empty preserves the
-	// whole-file presence predicate (codex). A keyed file that cannot be
+	// whole-file presence predicate (codex) — which is why
+	// `project_config_keys:` is the one declarable key that LOOSENS a
+	// safety check, and why declaring it without `project_config:`, or
+	// empty, refuses at load rather than narrowing nothing quietly. A keyed file that cannot be
 	// classified as a readable top-level JSON object fails closed (claude).
 	// The check is on CONTENT, not on the runtime's trust state: claude's
 	// trust gates its permission keys, its hooks are gated a layer down and
@@ -234,9 +237,15 @@ type Runtime struct {
 	// mode where an undenied command sits unapproved forever is not an
 	// unattended session; it is a dialog nobody is watching, which is what
 	// the mode landing was (claude), and what every mode but auto and
-	// bypassPermissions is (grok). Empty = this runtime has no such flag:
-	// every template-only runtime, where posse knows no CLI's dialect and
-	// appending a guess would be worse than the gap.
+	// bypassPermissions is (grok). Empty = this runtime has no such flag,
+	// or nobody has measured one: posse knows no unmeasured CLI's dialect
+	// and appending a guess would be worse than the gap.
+	//
+	// Declarable as `unattended:` in a template-only runtime's yaml
+	// (ranger-base-ncxa). What makes that safe is whose measurement it is:
+	// posse never guesses the flag, the operator names one they ran. The
+	// value is validated as a flag posse may append to a shell line, not
+	// merely as a string (runtimeFlagValue).
 	//
 	// Matched on the flag's own key (the first word), so a template that
 	// names the flag with a different VALUE keeps its value — an explicit
@@ -271,9 +280,11 @@ type Runtime struct {
 	// get to edit.
 	//
 	// Empty = this runtime has no such flag, or nobody has measured one.
-	// Built-in only, like Unattended and for the same reason: on a
-	// template-only runtime posse knows no CLI's dialect, and a guessed
-	// flag name would refuse launches for a spelling nobody measured.
+	// Built-in only, and NOT for Unattended's reason any more now that
+	// `unattended:` is declarable: an unattended flag posse gets wrong is
+	// appended and visible in `ps`, while a PIDVoid entry got wrong REFUSES
+	// launches for a spelling nobody measured. The declarable one is the
+	// one whose error is recoverable.
 	PIDVoid []string
 	// CageCred names the env var an authenticated *caged* session of this
 	// runtime needs (`cage_cred:` in a template-only runtime's yaml). A
@@ -1234,15 +1245,55 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	// unguarded repo→box channel reads as a clean launch. Declared, the
 	// launch degrades unless the PID sets trust_project_config: true.
 	//
-	// project_config_keys: (the JSON-key narrowing claude's built-in uses) is
-	// deliberately not here: without it the whole-file presence predicate
-	// applies, which is the conservative side of the same check.
 	if v := YamlGet(p, "project_config"); v != "" {
 		rel, err := runtimeRelPath("project_config", v)
 		if err != nil {
 			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
 		}
 		rt.ProjectConfig = []string{rel}
+	}
+	// project_config_keys: the JSON-key narrowing claude's built-in uses —
+	// only a file naming one of these top-level keys degrades the launch,
+	// instead of the file's mere presence.
+	//
+	// This is the one declarable key that LOOSENS a safety check, so it
+	// refuses in two directions rather than one. Alone it names no file to
+	// narrow, which would be a lever born inert (the ADR 0017 §3 class);
+	// present-but-empty is the same declaration wearing a value. Both
+	// refuse, and both refusals name removing the key as the way back to the
+	// conservative whole-file predicate.
+	//
+	// Loosening is only honest over a config whose keys the onboarder has
+	// READ, and the check keeps its own floor either way: a keyed file that
+	// is not a readable top-level JSON object fails closed (parity.go
+	// projectConfigTrustFile), so keys declared over a TOML config degrade
+	// every launch rather than narrowing anything.
+	if yamlHasKey(p, "project_config_keys") {
+		keys := YamlList(p, "project_config_keys")
+		switch {
+		case len(rt.ProjectConfig) == 0:
+			return nil, Die("runtime %s: %s declares project_config_keys: without project_config: — there is no session-dir file to narrow, so the keys are read by nothing", name, AbbrevHome(p))
+		case len(keys) == 0:
+			return nil, Die("runtime %s: %s declares an empty project_config_keys: — name the top-level keys that carry executable configuration, or remove the key to check the whole file's presence (the conservative side)", name, AbbrevHome(p))
+		}
+		rt.ProjectConfigKeys = keys
+	}
+	// unattended: the flag that makes this CLI approve a tool call with
+	// nobody watching. Declarable separately from command: because it is a
+	// launch GUARANTEE and not a template detail — EnsureUnattended puts it
+	// back on a line a PID's hand-written command: rendered without it, and
+	// `runtime check`'s launch row is what an onboarder reads it off.
+	//
+	// A built-in's flag is posse's measurement; a yaml runtime's is the
+	// OPERATOR's, which is the only reason appending it is safe. Absent
+	// stays loud rather than guessed: posse knows no unmeasured CLI's
+	// dialect, and the launch row says "NO unattended flag known".
+	if v := YamlGet(p, "unattended"); v != "" {
+		flag, err := runtimeFlagValue("unattended", v)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.Unattended = flag
 	}
 	// cage_cred: the env var this runtime authenticates with inside a
 	// container (cage.go). Absent = undecided, and `cage: container`

@@ -214,6 +214,12 @@ func TestRuntimeYamlV2Refusals(t *testing.T) {
 		{"both skill surfaces", "command: e\nskills_cwd: true\nskills_flag: --p\n", "one skill surface"},
 		{"project_config absolute", "command: e\nproject_config: /etc/passwd\n", "must be relative"},
 		{"project_config escapes", "command: e\nproject_config: ../../etc/passwd\n", "no .. elements"},
+		{"project_config_keys alone", "command: e\nproject_config_keys: [hooks]\n", "without project_config:"},
+		{"project_config_keys empty", "command: e\nproject_config: .a/b.json\nproject_config_keys: []\n", "empty project_config_keys:"},
+		{"unattended not a flag", "command: e\nunattended: yolo\n", "must begin with the flag itself"},
+		{"unattended is a positional", "command: e\nunattended: run --approve\n", "must begin with the flag itself"},
+		{"unattended shell punctuation", "command: e\nunattended: --approve; curl evil.example\n", "shell punctuation"},
+		{"unattended command substitution", "command: e\nunattended: --approve $(id)\n", "shell punctuation"},
 	} {
 		if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "bad.yaml"), []byte(c.body), 0o644); err != nil {
 			t.Fatal(err)
@@ -321,5 +327,125 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("runtime check missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+// unattended: the flag that makes this CLI approve a tool call with nobody
+// watching. Built-ins carry theirs in Go; a yaml runtime could not say it
+// had one at all, so `runtime check`'s launch row printed "NO unattended
+// flag known" with no remedy and every dispatched session on that runtime
+// could sit on an approval dialog forever (ranger-base-ncxa).
+//
+// Tested at the CONSUMER: the rendered launch line, which is the only place
+// the flag does anything.
+func TestUnattendedIsDeclarable(t *testing.T) {
+	a := checkApp(t)
+	ag := yamlV2Agent(t, "")
+
+	rt := writeRuntime(t, a, "uncli", "command: uncli --sys {file}\nunattended: --approve-all\n")
+	if rt.Unattended != "--approve-all" {
+		t.Fatalf("unattended: %q", rt.Unattended)
+	}
+	got := ag.RenderCommandFor(rt, "uncli", TierStrong)
+	if !strings.HasSuffix(got, " --approve-all") {
+		t.Errorf("unattended: must reach the launch line: %q", got)
+	}
+
+	// The before-picture, and the arm that would stay green on a getter-only
+	// fix: the same yaml without the key renders a line with no flag on it.
+	none := writeRuntime(t, a, "nocli", "command: nocli --sys {file}\n")
+	if got := ag.RenderCommandFor(none, "nocli", TierStrong); strings.Contains(got, "--approve-all") {
+		t.Errorf("an undeclared runtime must append nothing: %q", got)
+	}
+
+	// EnsureUnattended's key match, on a declared flag: a PID that spells the
+	// flag itself with a DIFFERENT value keeps its own. An explicit spelling
+	// in a hand-written command: beats an implicit one from the yaml, and it
+	// is visible in `ps` where a silent override would not be.
+	val := writeRuntime(t, a, "valcli", "command: valcli --sys {file}\nunattended: --approval auto\n")
+	own := loadTestAgent(t, "---\nname: p\ncommand: valcli --approval never --sys {file}\n---\nYou are p.\n")
+	line := own.RenderCommandFor(val, "valcli", TierStrong)
+	if !strings.Contains(line, "--approval never") || strings.Contains(line, "--approval auto") {
+		t.Errorf("a PID's own spelling of the flag must win: %q", line)
+	}
+
+	// And the grid stops saying there is no remedy.
+	var b bytes.Buffer
+	a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+	if s := b.String(); !strings.Contains(s, "unattended flag --approve-all on the line") || strings.Contains(s, "NO unattended flag known") {
+		t.Errorf("launch row must name the declared flag:\n%s", s)
+	}
+	b.Reset()
+	a.RuntimeCheck(none, Herdr{Bin: "no-such-herdr-binary"}, &b)
+	if !strings.Contains(b.String(), "NO unattended flag known") {
+		t.Errorf("an undeclared runtime must still say so loudly:\n%s", b.String())
+	}
+}
+
+// project_config_keys: the key-narrowing half of the trust check, Go-only
+// until now — a yaml runtime whose session-dir config is keyed JSON had to
+// take the whole-file predicate and degrade every launch that had the file
+// at all, whatever it held (ranger-base-ncxa).
+//
+// This is the one declarable key that LOOSENS a safety check, so the arms
+// here are the loosening (a non-matching body goes clean), the check that
+// survives it (a matching body still degrades), and the floor (a body that
+// cannot be classified still fails closed).
+func TestProjectConfigKeysAreDeclarable(t *testing.T) {
+	a := checkApp(t)
+	ag := yamlV2Agent(t, "")
+	keyed := writeRuntime(t, a, "kcli", "command: kcli --sys {file}\nproject_config: .kcli/settings.json\nproject_config_keys: [hooks, mcpServers]\n")
+	if len(keyed.ProjectConfigKeys) != 2 || keyed.ProjectConfigKeys[0] != "hooks" {
+		t.Fatalf("project_config_keys: %q", keyed.ProjectConfigKeys)
+	}
+	// Same file, same directory, no keys declared: the conservative half.
+	whole := writeRuntime(t, a, "wcli", "command: wcli --sys {file}\nproject_config: .kcli/settings.json\n")
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, ".kcli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	degraded := func(rt *Runtime) string {
+		t.Helper()
+		return strings.Join(a.CheckParityIn(ag, rt, CageShims, TierStrong, dir).Degraded, "\n")
+	}
+
+	// A body naming none of the declared keys: the narrowing is the whole
+	// point, and the undeclared-keys runtime in the same dir is the control
+	// that says the file really is there.
+	write(`{"permissions":{"allow":[]}}`)
+	if why := degraded(keyed); why != "" {
+		t.Errorf("a body naming no declared key must go clean: %q", why)
+	}
+	if why := degraded(whole); !strings.Contains(why, "project config is present") {
+		t.Errorf("without the keys the same file must degrade on presence alone: %q", why)
+	}
+
+	// A body naming one: the check that survives the loosening, and it names
+	// which key it matched so the operator knows what to remove.
+	write(`{"permissions":{},"hooks":{"PreToolUse":[]}}`)
+	if why := degraded(keyed); !strings.Contains(why, "matched top-level project config keys: hooks") {
+		t.Errorf("a matching key must still degrade, by name: %q", why)
+	}
+
+	// The floor: keys declared over something that is not a readable
+	// top-level JSON object fail closed, they do not read as "no match".
+	write("[mcp_servers.probe]\ncommand = \"/bin/sh\"\n")
+	if why := degraded(keyed); !strings.Contains(why, "classification failed") {
+		t.Errorf("an unclassifiable body must fail closed: %q", why)
+	}
+
+	// And the PID's opt-in still clears it, keyed or not.
+	write(`{"hooks":{}}`)
+	opted := yamlV2Agent(t, "trust_project_config: true\n")
+	if why := ProjectConfigTrust(keyed, opted, dir); why != "" {
+		t.Errorf("trust_project_config: true must clear the keyed finding too: %q", why)
 	}
 }

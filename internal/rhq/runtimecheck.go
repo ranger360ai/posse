@@ -131,9 +131,10 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	} else {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
-	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), native_rules:, model_flag:/model_<tier>:,")
-	fmt.Fprintln(w, "  skills_flag: OR skills_cwd:, self_sandbox:, project_config:, egress:, cage_cred:,")
-	fmt.Fprintln(w, "  gate_shell:, state_dir:, env_required:, interstitial_<name>:. Undeclared is loud, never")
+	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
+	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
+	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")
+	fmt.Fprintln(w, "  state_dir:, env_required:, interstitial_<name>:. Undeclared is loud, never")
 	fmt.Fprintln(w, "  silent — and a key none of these names is warned on load, because a dropped")
 	fmt.Fprintln(w, "  declaration never arrives (ADR 0012 D4).")
 

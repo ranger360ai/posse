@@ -77,6 +77,33 @@ func runtimeBool(path, key string) (bool, error) {
 	}
 }
 
+// runtimeFlagValue validates a key whose value posse APPENDS to a rendered
+// launch line (`unattended:`). Two refusals, each for what a wrong value
+// DOES rather than for how it looks:
+//
+//   - the first word must be the flag itself. A bare word is appended as a
+//     POSITIONAL, and a positional on an interactive CLI is usually its
+//     prompt — so the declaration meant to stop the session asking for
+//     approval would instead hand it work nobody wrote.
+//   - no shell punctuation anywhere. The rendered line is handed to a
+//     shell, so a `;`, `|`, `&`, backquote or `$(` here does not configure
+//     the CLI: it runs a second command with the whole session env, from a
+//     file posse appends to every launch on this runtime.
+//
+// Quotes and backslashes are deliberately allowed: `--mode='a b'` is a
+// legitimate spelling, and an unbalanced one breaks the launch loudly
+// rather than running anything.
+func runtimeFlagValue(key, val string) (string, error) {
+	f := strings.Fields(val)
+	if len(f) == 0 || !strings.HasPrefix(f[0], "-") {
+		return "", fmt.Errorf("%s: %q — must begin with the flag itself (`-a never`, `--permission-mode auto`): posse appends this to the launch line, where a bare word lands as a positional and an interactive CLI reads that as its prompt", key, val)
+	}
+	if i := strings.IndexAny(val, ";|&<>()`$\n\r"); i >= 0 {
+		return "", fmt.Errorf("%s: %q — %q is shell punctuation, and this value is appended to a rendered shell line: it would run a command with the session env rather than configure the CLI", key, val, string(val[i]))
+	}
+	return val, nil
+}
+
 // runtimeRelPath validates a key that names a file *inside the session
 // directory*. Absolute is refused because the key's whole meaning is
 // "relative to wherever this session starts"; a `..` element is refused
@@ -106,7 +133,8 @@ func runtimeYamlKeys() []string {
 		"model_flag",
 		"skills_flag", "skills_cwd",
 		"self_sandbox",
-		"project_config",
+		"project_config", "project_config_keys",
+		"unattended",
 		"cage_cred", "egress", "gate_shell",
 		"prompt", "startup_wait", "record", "record_why", "native_rules", "turn_outcome",
 		"state_dir", "env_required",

@@ -34,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -217,6 +218,40 @@ type cockpit struct {
 	// the scans send their result blocking rather than dropping it.
 	costBusy, planBusy, govBusy bool
 
+	// The bead lists, scanned off the event loop (ranger-base-txio). The two
+	// bd scans behind IN PROGRESS and READY WORK cost 5.3s EACH on the shop
+	// this was measured on — 10.6s of subprocess wait, run synchronously
+	// from a 2s ticker, so the tick was ALWAYS already ready when refresh
+	// returned and the loop never idled once: a keystroke waited up to ten
+	// seconds behind it, and the box carried two `bd list` processes
+	// forever, per open cockpit. So they run where the cost, plan and
+	// governance scans run, and only sessions (20ms) stay on the 2s tick.
+	beads   chan beadRead
+	beadsIn bool      // a scan is in flight (one at a time)
+	beadsAt time.Time // when the last scan LANDED; zero = none has
+	// beadsNext is the earliest the NEXT scan may start, and it is what
+	// makes this a cadence rather than the same storm moved off the loop.
+	// A fixed constant cannot do that job: the pair costs ~200ms on a small
+	// store and 10.6s on this one, and a floor short enough to feel fresh on
+	// the first is back-to-back on the second. So the floor is the scan's
+	// OWN cost — max(beadsEvery, what the last one took), counted from when
+	// it landed, which holds bd to at most half the wall clock wherever the
+	// cockpit is opened.
+	beadsNext time.Time
+	// beadsDirty is a FORCED kick that arrived while a scan was already
+	// out. The scan in flight was started before the claim, unclaim, kill or
+	// dispatch that forced it, so its answer is already the old one — and
+	// dropping the force would leave the bead the operator just claimed
+	// sitting in READY WORK for another scan's worth of seconds. So the
+	// force is remembered and spent the moment the stale scan lands.
+	// Only a forced kick sets it; the ticker's never does.
+	beadsDirty bool
+	// herdrDown is what the last session read found, kept because the two
+	// halves no longer land together: a ready-scan failure yields the status
+	// line to a down herdr (rangerhq-llse), and the bead scan that has to
+	// know now lands seconds after the read that learned it.
+	herdrDown bool
+
 	// now is the clock the header reads; nil = time.Now. The golden tests
 	// (ADR 0004 §5) pin it so the render is byte-stable.
 	now func() time.Time
@@ -235,6 +270,17 @@ const (
 	// snapshot is older than `plan_usage_ttl:`. Two minutes keeps the
 	// header picking up a reading a dispatch pass took, for free.
 	planEvery = 2 * time.Minute
+	// beadsEvery is the FLOOR under how often the two bead lists rescan,
+	// not the period: the real gap is max(beadsEvery, the last scan's own
+	// duration) after the last one landed (see cockpit.beadsNext). Five
+	// seconds is what a store cheap enough to be asked that often gets; a
+	// store where the scan costs ten seconds sets its own gap and pays bd
+	// at most half the wall clock.
+	//
+	// Nothing here is the operator's own latency. Every key that changes
+	// these lists — c, u, x, o, r, and a landed dispatch — rescans at once
+	// through refresh(), which ignores the floor.
+	beadsEvery = 5 * time.Second
 )
 
 // govEvery is how often the GOVERNANCE block is recomputed. It is the
@@ -547,7 +593,7 @@ func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
 		progress: make(chan string, 4), prompts: make(chan string, 4),
 		costs: make(chan *rhq.CostReport, 1), plans: make(chan planRead, 1),
-		govs: make(chan govRead, 1)}
+		govs: make(chan govRead, 1), beads: make(chan beadRead, 1)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
 	// written straight to it is garbage on the frame. That silences the one
 	// line a blocked launch has to say (ADR 0011 §1: "one line when a second
@@ -620,7 +666,17 @@ func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
 			c.draw()
 		case <-tick.C:
 			if c.mode == modeNormal {
-				c.refresh()
+				c.refreshSessions()
+				c.draw()
+			}
+			// Not inside the mode gate: the bead scan is off the loop, it
+			// lands through its own case, and a prompt left open for a
+			// minute must not stop the lists underneath it from tracking
+			// the fleet. kickBeads is a no-op until the floor is up.
+			c.kickBeads(false)
+		case r := <-c.beads:
+			c.applyBeads(r)
+			if c.mode == modeNormal {
 				c.draw()
 			}
 		case <-costTick.C:
@@ -746,10 +802,32 @@ func reselect(sessions []rhq.HerdrSession, inprog, issues []rhq.RepoIssue, sel s
 	return 0 // section vanished — top of whatever is left
 }
 
+// refresh re-reads what the event loop can afford to re-read on the event
+// loop — the sessions, 20ms — and STARTS the bead scan rather than running
+// it (ranger-base-txio). Every caller that used to mean "re-read everything
+// now" still means it; what changed is that the bead half arrives on
+// c.beads a moment later instead of holding the loop for ten seconds.
+//
+// It forces the scan past the cadence floor, because every caller is an
+// operator action that just changed those lists: a claim, an unclaim, a
+// kill, a crew toggle, `r`, or a dispatch that landed.
 func (c *cockpit) refresh() {
+	c.refreshSessions()
+	c.kickBeads(true)
+}
+
+// refreshAll is refresh's synchronous twin: the bead scan runs here, on this
+// goroutine, and is applied before it returns. It is the non-tty loop's path
+// (nothing there to starve) and the one a test can call without an event
+// loop to deliver the channel.
+func (c *cockpit) refreshAll() {
+	c.refreshSessions()
+	c.applyBeads(c.timedScanBeads())
+}
+
+func (c *cockpit) refreshSessions() {
 	sel := c.selected()
 	defer func() { c.cursor = reselect(c.sessions, c.inprog, c.issues, sel) }()
-	herdrDown := false
 	if s, err := c.hb.Sessions(); err == nil {
 		c.sessions = s
 		// Blocked first — the whole point of the oversight view.
@@ -769,25 +847,119 @@ func (c *cockpit) refresh() {
 				c.sessions[j], c.sessions[j-1] = c.sessions[j-1], c.sessions[j]
 			}
 		}
+		c.herdrDown = false
 	} else {
 		c.status = err.Error()
-		herdrDown = true
-	}
-	if c.bd.Available() {
-		// The in-progress join reads c.sessions, so it runs after them.
-		c.inprog = c.bd.InProgressAll(c.app)
-		c.sortInProg()
-		ready, failed := c.bd.ReadyAll(c.app, "")
-		c.issues = readyOnly(ready, c.inprog)
-		// An unreadable repo has an unknown queue, and a READY list that is
-		// merely shorter is all the operator would otherwise see
-		// (rangerhq-llse). Herdr being down is the more basic failure and
-		// keeps the line when both happen in the same refresh.
-		if len(failed) > 0 && !herdrDown {
-			c.status = "ready scan failed: " + failed[0].Error()
-		}
+		c.herdrDown = true
 	}
 	c.buildRows()
+}
+
+// beadRead is one scan of the two bead lists, taken off the event loop.
+// Deliberately RAW: the sort and the READY/IN PROGRESS split both read
+// c.sessions, which only the event loop may touch, so they happen in
+// applyBeads and not here.
+type beadRead struct {
+	inprog []rhq.RepoIssue
+	ready  []rhq.RepoIssue
+	failed []error       // the repos whose ready scan could not be read
+	took   time.Duration // what this scan cost — the next one's floor
+}
+
+// scanBeads runs off the event loop and touches nothing on c but the two
+// immutable seams (the app config and the bd binary). bd unavailable is a
+// valid empty read rather than a skip: it still lands, so beadsAt is
+// stamped and the sections say (none) rather than staying blank forever.
+func (c *cockpit) scanBeads() beadRead {
+	var r beadRead
+	if !c.bd.Available() {
+		return r
+	}
+	r.inprog = c.bd.InProgressAll(c.app)
+	r.ready, r.failed = c.bd.ReadyAll(c.app, "")
+	return r
+}
+
+// timedScanBeads is scanBeads with the stopwatch the cadence floor reads.
+func (c *cockpit) timedScanBeads() beadRead {
+	start := time.Now()
+	r := c.scanBeads()
+	r.took = time.Since(start)
+	return r
+}
+
+// kickBeads starts a scan if one may start: never two at once, and never
+// before the floor unless the caller forces it (an operator action that
+// just changed these lists — see refresh).
+//
+// A nil c.beads is a cockpit with nowhere to deliver: the hand-built ones in
+// the tests, which call refreshAll instead. It is checked rather than
+// assumed because a send on a nil channel blocks forever, and this goroutine
+// holds beadsIn.
+func (c *cockpit) kickBeads(force bool) {
+	if c.beads == nil {
+		return
+	}
+	if c.beadsIn {
+		c.beadsDirty = c.beadsDirty || force
+		return
+	}
+	if !force && time.Now().Before(c.beadsNext) {
+		return
+	}
+	c.beadsIn = true
+	go func() { c.beads <- c.timedScanBeads() }()
+}
+
+// applyBeads lands one scan on the event loop's state. Split out for
+// applyGov's reason: the scan and the lists it feeds are each testable on
+// their own, and the step that JOINS them is the one a refactor drops
+// silently.
+func (c *cockpit) applyBeads(r beadRead) {
+	sel := c.selected()
+	c.beadsIn = false
+	c.beadsAt = time.Now()
+	// The floor is the scan's own cost, counted from now (the field's
+	// comment): a 10.6s scan cannot be asked again for 10.6s, which is what
+	// turns "off the event loop" into "off the box's back" as well.
+	gap := r.took
+	if gap < beadsEvery {
+		gap = beadsEvery
+	}
+	c.beadsNext = c.beadsAt.Add(gap)
+
+	// The in-progress join reads c.sessions, which is why it is here and not
+	// in the scan.
+	c.inprog = r.inprog
+	c.sortInProg()
+	c.issues = readyOnly(r.ready, c.inprog)
+	// An unreadable repo has an unknown queue, and a READY list that is
+	// merely shorter is all the operator would otherwise see
+	// (rangerhq-llse). Herdr being down is the more basic failure and keeps
+	// the line when both are true.
+	if len(r.failed) > 0 && !c.herdrDown {
+		c.status = "ready scan failed: " + r.failed[0].Error()
+	}
+	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
+	c.buildRows()
+
+	// A force that arrived mid-scan is spent here, on the answer that was
+	// already stale when it arrived. Last, so it rescans over the lists this
+	// call just drew rather than under them.
+	if c.beadsDirty {
+		c.beadsDirty = false
+		c.kickBeads(true)
+	}
+}
+
+// beadsScanning is the state where both bead sections are empty because the
+// FIRST scan has not landed yet, not because there is nothing in them. It
+// has to be drawn: `(none)` under READY WORK is an answer an operator acts
+// on, and for the first ten seconds of a cockpit on a big store it would be
+// an answer nobody had measured. False the moment any scan lands, so a shop
+// that really is empty says so.
+func (c *cockpit) beadsScanning() bool {
+	return c.beadsIn && c.beadsAt.IsZero()
 }
 
 // stallRank is ADR 0004 §2's stalled-first order — blocked, no session,
@@ -1875,6 +2047,16 @@ func govCols(g rhq.GovCondition) []col {
 	}
 }
 
+// beadCount is a bead section's heading number, or `scanning…` while the
+// first scan is still out (beadsScanning). Nothing but that first window
+// changes: once any scan has landed the number is the number, empty or not.
+func (c *cockpit) beadCount(n int) string {
+	if c.beadsScanning() {
+		return "scanning…"
+	}
+	return strconv.Itoa(n)
+}
+
 // buildRows turns the three lists into the flat row model. Item rows carry
 // their index in cursor space, so the cursor keeps meaning what it always
 // meant (sessions, then issues) and reselect (rangerhq-5li) is untouched.
@@ -1909,7 +2091,7 @@ func (c *cockpit) buildRows() {
 		rows = append(rows, row{kind: rowItem, sec: secSessions, item: i, cols: c.sessionCols(s)})
 	}
 	rows = append(rows, row{kind: rowFiller, sec: secInProg})
-	rows = append(rows, heading(fmt.Sprintf("IN PROGRESS (%d)", len(c.inprog)), secInProg))
+	rows = append(rows, heading(fmt.Sprintf("IN PROGRESS (%s)", c.beadCount(len(c.inprog))), secInProg))
 	if len(c.inprog) == 0 {
 		rows = append(rows, none(secInProg))
 	}
@@ -1918,7 +2100,7 @@ func (c *cockpit) buildRows() {
 			item: len(c.sessions) + i, cols: c.inprogCols(is)})
 	}
 	rows = append(rows, row{kind: rowFiller, sec: secIssues})
-	rows = append(rows, heading(fmt.Sprintf("READY WORK (%d)", len(c.issues)), secIssues))
+	rows = append(rows, heading(fmt.Sprintf("READY WORK (%s)", c.beadCount(len(c.issues))), secIssues))
 	if len(c.issues) == 0 {
 		rows = append(rows, none(secIssues))
 	}
@@ -2380,7 +2562,17 @@ func (c *cockpit) displayOnly() error {
 // draw. Split out of displayOnly so the drain is testable without a signal
 // — the frame, not the loop, is where a landed check becomes a drawn line.
 func (c *cockpit) displayFrame() {
-	c.refresh()
+	c.refreshSessions()
+	// Synchronous here, unlike the tty loop's: this loop has no keystrokes
+	// to starve, and a piped cockpit is very often read for exactly one
+	// frame — an empty READY WORK because the scan had not landed yet would
+	// be read as an empty queue. It keeps the cadence floor, which is the
+	// half of ranger-base-txio that is about the box's load rather than the
+	// operator's latency: a zero beadsNext lets the first frame straight
+	// through, and every frame after it waits out the last scan's own cost.
+	if !time.Now().Before(c.beadsNext) {
+		c.applyBeads(c.timedScanBeads())
+	}
 	c.takeGov()
 	fmt.Fprint(c.out, "\033[2J\033[H")
 	c.drawPlain()

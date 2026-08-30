@@ -136,7 +136,7 @@ exit 1
 		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
 		bd:  rhq.Bd{Bin: bd},
 	}
-	c.refresh()
+	c.refreshAll()
 	if !strings.Contains(c.status, "ready scan failed") || !strings.Contains(c.status, "database is locked") {
 		t.Fatalf("status must name the failed scan, got %q", c.status)
 	}

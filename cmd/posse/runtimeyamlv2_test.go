@@ -70,7 +70,18 @@ func TestRuntimesListsAYamlV2Profile(t *testing.T) {
 	grid := string(cout)
 	for _, want := range []string{
 		"standard=sol fast=sol (rendered with -c model=%s)",
-		"skills_flag: OR skills_cwd:, self_sandbox:, project_config:",
+		// The onboarding footer names the declarable keys. Asserted key by
+		// key rather than as one wrapped literal: where the line breaks fall
+		// is cosmetic, and adding two keys reddened this test for a change
+		// that moved no behaviour (ranger-base-ncxa). Exhaustiveness against
+		// runtimeYamlKeys() is pinned in internal/rhq by
+		// TestOnboardingFooterNamesEveryDeclarableKey, which slices the
+		// footer out of the screen instead of matching across it; these are
+		// the keys this command's own contract turns on.
+		"skills_flag: OR skills_cwd:",
+		"self_sandbox:",
+		"unattended:",
+		"project_config: (+ project_config_keys:)",
 		// The preflight, each gap by name (ADR 0012 D4).
 		"preflight — ",
 		"✗ exe:",
