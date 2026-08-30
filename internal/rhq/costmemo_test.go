@@ -152,6 +152,7 @@ func TestCostScannerDoesNotServeAcrossAWindow(t *testing.T) {
 // AttributePersonas writes Segment.Persona: if callers got the memo's own
 // pointers, one report's attribution would rewrite the next one's, and two
 // concurrent scans would race over the same struct.
+//
 // Both the miss path and the hit path must copy, and they are two separate
 // returns: writing through a MISS result is the arm that catches a scanner
 // storing the same slice it hands back, and writing through a HIT result is
@@ -161,7 +162,7 @@ func TestCostScannerHandsOutCopies(t *testing.T) {
 	cs := new(CostScanner)
 
 	miss := cs.Scan("", time.Time{}) // decoded
-	miss.Beads[0].Persona, miss.Beads[0].Bead = "gwart", "clobbered-by-the-miss"
+	miss.Beads[0].Persona, miss.Beads[0].Bead = "qa-persona", "clobbered-by-the-miss"
 
 	hit := cs.Scan("", time.Time{}) // served
 	if n := p.decodes.Load(); n != 1 {
@@ -170,7 +171,7 @@ func TestCostScannerHandsOutCopies(t *testing.T) {
 	if hit.Beads[0].Persona != "" || hit.Beads[0].Bead != "a.jsonl-v1" {
 		t.Fatalf("a write through the decoded result reached the memo: %+v", hit.Beads[0])
 	}
-	hit.Beads[0].Persona, hit.Beads[0].Bead = "gwart", "clobbered-by-the-hit"
+	hit.Beads[0].Persona, hit.Beads[0].Bead = "qa-persona", "clobbered-by-the-hit"
 
 	again := cs.Scan("", time.Time{}) // served again
 	if again.Beads[0].Persona != "" || again.Beads[0].Bead != "a.jsonl-v1" {
