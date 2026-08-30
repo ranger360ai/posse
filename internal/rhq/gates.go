@@ -1516,6 +1516,20 @@ func chainDispatcher(dir, hooks, slot string) string {
 		probe = `RHQ_PERSONA=probe RHQ_TOOLS_DENY='Bash(git push:*)' \
   sh -c 'printf "refs/heads/main a refs/heads/main b\n" | ./` + slot + ` origin x'; echo $?`
 	}
+	// Step 1 of the block below is a `cd`, so every path printed after it has
+	// to still mean the same thing from the hooks directory. The repo
+	// argument echoed AS TYPED does not: a relative one resolves against the
+	// operator's old cwd, so after the cd install-hooks refuses ("<repo> is
+	// not a git repository"), the gate is never written, and the mv and the
+	// heredoc below still build a dispatcher around a file that is not there
+	// — a slot that looks chained and exits 127 on every push
+	// (ranger-base-87c9). Print it resolved, the way the cd line prints the
+	// hooks dir git resolved. Abs only fails if the cwd is gone, and then the
+	// argument as typed is the best that is left.
+	repo := dir
+	if abs, err := filepath.Abs(repo); err == nil {
+		repo = abs
+	}
 	neighbour := chainNeighbourName(hooks, slot)
 	collision := ""
 	if neighbour != "theirs-"+slot {
@@ -1546,7 +1560,7 @@ Then verify by running the slot, not by reading it — from that same dir:
 %[5]s
 
 It must print "refused by posse gate" and exit 1. A slot that prints the
-refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(dir), chainHookDispatcherWith(slot, neighbour), probe, collision, neighbour)
+refusal and exits 0 is not installed.`, AbbrevHome(hooks), slot, AbbrevHome(repo), chainHookDispatcherWith(slot, neighbour), probe, collision, neighbour)
 }
 
 // chainNeighbourName is the name chainDispatcher's first step moves the

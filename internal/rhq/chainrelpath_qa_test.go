@@ -21,10 +21,13 @@ package rhq
 // inside the repo survives by luck (git discovers the repo upwards from
 // .git/hooks).
 //
-// The pin is on the printed TEXT rather than a pasted run, because pasting it
-// needs a real posse on PATH: what is wrong is one printed word, and the rule
-// it breaks states cleanly — every path the block prints has to still mean the
-// same thing after step 1's `cd`.
+// The pin both states the rule and runs the block. The rule: every path the
+// prescription prints has to still mean the same thing after step 1's `cd`.
+// The run: the steps are performed from the directory the block's own `cd`
+// names, with the arguments the block printed — step 3 is InstallPrePushHook
+// with the process cwd where the paste put it, which is exactly what `posse
+// gates install-hooks <arg>` is there, so no posse binary on PATH is needed
+// and nothing is retyped. Then the block's own verify step runs the slot.
 
 import (
 	"os"
@@ -59,29 +62,38 @@ func relGitRepo(t *testing.T, repo string) string {
 	return hooks
 }
 
+// inParent is the ordinary case: the operator stands beside the repo.
+func inParent(parent, repo string) string { return parent }
+
 var (
 	relCdLine      = regexp.MustCompile(`(?m)^cd (\S+)$`)
 	relInstallLine = regexp.MustCompile(`(?m)^posse gates install-hooks (\S+)$`)
 )
 
 func TestChainPrescriptionPathsSurviveItsOwnCd(t *testing.T) {
-	t.Skip("ranger-base-87c9: the re-invocation prints the repo argument as typed, so a relative path does not resolve after the cd")
-
 	for _, tc := range []struct {
 		name string
-		// spell returns the argument to hand install-hooks, given the parent
-		// directory the test has chdir'd into and the repo inside it.
+		// from is the directory the operator types the command in, and spell
+		// the argument they hand install-hooks there. Both are given the
+		// parent directory and the repo inside it.
+		from  func(parent, repo string) string
 		spell func(parent, repo string) string
 	}{
-		{"relative to the parent", func(parent, repo string) string { return filepath.Base(repo) }},
-		{"absolute", func(parent, repo string) string { return repo }},
-		{"dot-slash relative", func(parent, repo string) string { return "./" + filepath.Base(repo) }},
+		{"relative to the parent", inParent, func(parent, repo string) string { return filepath.Base(repo) }},
+		{"absolute", inParent, func(parent, repo string) string { return repo }},
+		{"dot-slash relative", inParent, func(parent, repo string) string { return "./" + filepath.Base(repo) }},
+		// `.` from inside the repo used to survive by luck: the block became
+		// `cd .git/hooks` then `install-hooks .`, and git discovers the repo
+		// upwards from inside .git/hooks. It has to keep working when the
+		// argument stops being echoed as typed.
+		{"dot from inside the repo", func(parent, repo string) string { return repo }, func(parent, repo string) string { return "." }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parent := t.TempDir()
 			repo := filepath.Join(parent, "r")
 			hooks := relGitRepo(t, repo)
-			t.Chdir(parent)
+			typedIn := tc.from(parent, repo)
+			t.Chdir(typedIn)
 
 			_, err := InstallPrePushHook(tc.spell(parent, repo))
 			if err == nil {
@@ -101,7 +113,7 @@ func TestChainPrescriptionPathsSurviveItsOwnCd(t *testing.T) {
 			// Where the paste actually stands when step 3 runs.
 			cwd := cd[1]
 			if !filepath.IsAbs(cwd) {
-				cwd = filepath.Join(parent, cwd)
+				cwd = filepath.Join(typedIn, cwd)
 			}
 			arg := inst[1]
 			if !filepath.IsAbs(arg) {
@@ -129,7 +141,66 @@ func TestChainPrescriptionPathsSurviveItsOwnCd(t *testing.T) {
 			if !strings.Contains(text, "mv pre-push ") {
 				t.Errorf("prescription no longer moves the slot aside: %q", text)
 			}
+
+			// And now run it, from where its own first step stands.
+			relPaste(t, text, cwd)
+
+			if !PrePushHookInstalled(repo) {
+				t.Error("the pasted chain is not recognized as installed")
+			}
+			q32oNoSelfExec(t, hooks)
+			// The prescription's own verify step: it says this must print the
+			// refusal and exit 1. Around a gate that was never written the
+			// dispatcher exits 127 instead, on every push, denied or not.
+			if out, code := q32oRun(t, repo, "pre-push", "RHQ_PERSONA=qa", "RHQ_TOOLS_DENY=Bash(git push:*)", "RHQ_GATES_DIR="+t.TempDir()); code != 1 ||
+				!strings.Contains(out, "refused by posse gate: git push") {
+				t.Errorf("the prescription's verify step must refuse with exit 1: code=%d %q", code, out)
+			}
+			// A permitted push is the only run that reaches the neighbour.
+			if out, code := q32oRun(t, repo, "pre-push"); code != 0 || !strings.Contains(out, "their pre-push ran") {
+				t.Errorf("permitted push must pass and reach their hook: code=%d %q", code, out)
+			}
 		})
+	}
+}
+
+// relPaste performs the printed prescription the way an operator does: from
+// the directory step 1 names, with the arguments step 3 printed. Nothing here
+// is retyped — a fixture that is a copy of the thing under test measures the
+// copy.
+func relPaste(t *testing.T, text, cwd string) {
+	t.Helper()
+	t.Chdir(cwd)
+
+	moves := q32oMove.FindAllStringSubmatch(text, -1)
+	if len(moves) != 2 {
+		t.Fatalf("prescription no longer has exactly two mv steps: %q", text)
+	}
+	arg := relInstallLine.FindStringSubmatch(text)[1]
+
+	if err := os.Rename(moves[0][1], moves[0][2]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InstallPrePushHook(ExpandTilde(arg)); err != nil {
+		t.Fatalf("step 3 `posse gates install-hooks %s` fails from %s: %v — the gate is never written, and the mv and heredoc below build a dispatcher around a file that is not there",
+			arg, cwd, err)
+	}
+	if err := os.Rename(moves[1][1], moves[1][2]); err != nil {
+		t.Fatalf("step 4 `mv %s %s` fails from %s: %v", moves[1][1], moves[1][2], cwd, err)
+	}
+
+	open := "cat > pre-push <<'EOF'\n"
+	i := strings.Index(text, open)
+	if i < 0 {
+		t.Fatalf("prescription no longer writes pre-push with a heredoc: %q", text)
+	}
+	rest := text[i+len(open):]
+	j := strings.Index(rest, "\nEOF\n")
+	if j < 0 {
+		t.Fatalf("prescription's heredoc has no terminator: %q", text)
+	}
+	if err := os.WriteFile("pre-push", []byte(rest[:j+1]), 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 
