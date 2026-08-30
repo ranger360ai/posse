@@ -51,11 +51,39 @@ import (
 // FIRST explain already errored, awaitSettled's lastWhy stayed "" and the
 // concession path prompted — the exact shape the third assertion below says
 // is absent, so all three fired at once. Measured at 3583221: 3 of 30 red
-// on a box at load 13-16, and 20 of 20 red under 8 spinners on 8 cpus;
-// ranger-base-9mwa reports 11 of 20 on main. The timer was never the
-// point — a probe on the old fixture logged only 2-3 explains served
-// before it fired, so "after some guesses" was a coincidence of
-// scheduling.
+// on a box at load 13-16; ranger-base-9mwa reports 11 of 20 on main. The
+// timer was never the point — a probe on the old fixture
+// logged only 2-3 explains served before it fired, so "after some guesses"
+// was a coincidence of scheduling.
+//
+// THE UNDER-LOAD NUMBERS WERE RE-TAKEN — ranger-base-0qny. 9mwa's loaded
+// pair ("20 of 20 red under 8 spinners, 0 of 20 after") came off a rig that
+// leaked its own spinners: the arms ran in two blocks, the first block was
+// still burning when the second started, so they were measured under 8 and
+// 16 while both labels said 8. Re-taken with the three fixtures INTERLEAVED
+// inside each repetition — any drift then falls on all three equally — in a
+// container pinned to 2 real cpus, 20 reps per arm per level. The three are
+// e2b1cfe (the timer), 6ee039e (the countdown as landed) and ff1779e (the 4s
+// window), each built with `GOOS=linux go test -c ./internal/rhq/`:
+//
+//	                              idle   1 spin/cpu   2 spin/cpu
+//	timer, 900ms window          11/20     19/20        16/20
+//	countdown, 900ms window       0/20      1/20         0/20
+//	countdown, 4s window (here)   0/20      1/20         0/20
+//
+// The direction 9mwa claimed holds, and its own numbers understate it: every
+// red of the timer fixture is the concession path, at every load level, and
+// the countdown removes it entirely — 0 in 120. What "0 of 20" overstated is
+// what is left. The countdown's remaining reds are a different failure
+// wearing the same red: "fixture unmet", the witness below reporting the box
+// rather than the fixture, which is the defect ranger-base-t1aq then sized
+// this window against. It survives that sizing here — one 4s red in 60 — so
+// the witness is doing its job, not the window's.
+//
+// Read the columns, not the rows: only the three arms of one level were
+// measured against each other. 16/20 under the heaviest load is not a
+// recovery from 19/20 (n=20, and the host under the container quieted from
+// loadavg 21 to 9 across that level) — it is the same number.
 //
 // The lever is the same countdown bootrace_qa_test.go uses — the first
 // `guesses` explains answer, every one after that errors, so the LAST
