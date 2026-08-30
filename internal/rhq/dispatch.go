@@ -3873,12 +3873,21 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 // is therefore also the listing the dedupe reads back.
 const MergeBlockedLabel = "code"
 
-// mergeBlockedMarkerPrefix opens the description line naming the close this
-// handoff came out of. It is in the description because the `discovered-from`
-// edge is a write bd can lose while committing the issue
-// (verifyMarkerPrefix), and a P1 assigned to a persona with no provenance is
-// a bead nobody can trace back to the work it is about.
-const mergeBlockedMarkerPrefix = "discovered-from: "
+// discoveredFromMarkerPrefix opens the description line naming the bead a
+// filed bead came out of, and both sites that write one have their own
+// reason for putting it in the DESCRIPTION rather than on the edge.
+//
+// Here: the `discovered-from` edge is a write bd can lose while committing
+// the issue (verifyMarkerPrefix), and a P1 assigned to a persona with no
+// provenance is a bead nobody can trace back to the work it is about.
+//
+// settleopen.go: the escalation must also BLOCK the bead it came out of, and
+// bd 0.49.1 will not carry both edges — its cycle check spans every
+// dependency type, not only `blocks`, so `dep add <stuck> <qid>` against a
+// qid holding `discovered-from:<stuck>` is refused as a cycle
+// (ranger-base-23oo, measured). The block is the deliverable there, so the
+// provenance goes where nothing can refuse it.
+const discoveredFromMarkerPrefix = "discovered-from: "
 
 // fileMergeBlocked hands a stuck merge to the persona whose branch it is.
 // ADR 0006 §1: a handoff is a bead, never a comment on someone else's and
@@ -3911,7 +3920,7 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 				"launcher pass or `posse kill` lands it. The branch is untouched and still\n"+
 				"holds every commit.",
 			persona, is.ID, o.Commits, t.Branch, base, o.Reason,
-			mergeBlockedMarkerPrefix, is.ID,
+			discoveredFromMarkerPrefix, is.ID,
 			t.Path, t.Repo, base, base, base),
 	})
 	if err != nil {

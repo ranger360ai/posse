@@ -94,6 +94,17 @@ func settleOpenComment(status, session, settled string) string {
 		settleOpenPrefix, status, settleOpenAfter, session, settled)
 }
 
+// settleEscalatedComment is the breadcrumb left on the stuck bead naming the
+// escalation filed for it. It replaces provenance the `discovered-from` edge
+// cannot carry here (escalateSettleOpen), so it names both beads' side of the
+// story — and it deliberately does NOT open with settleOpenPrefix, because
+// the count reads every comment on this bead back.
+func settleEscalatedComment(qid, status string) string {
+	return fmt.Sprintf("escalated to %s — settled open twice with the bead saying %q, so dispatch stopped "+
+		"re-prompting it and blocked it on %s (ranger-base-9hm). Closing %s puts it back in bd ready.",
+		qid, status, qid, qid)
+}
+
 // settleOpenStatus recovers the bead status a settle-open comment recorded,
 // or "" when the text is not one the harness wrote.
 func settleOpenStatus(text string) string {
@@ -176,11 +187,23 @@ func (d *Dispatcher) escalateSettleOpen(p *pendingBead, settled, status string) 
 		return
 	}
 	if qid == "" {
+		// NO `Deps: discovered-from:<stuck>` here, and that absence is the
+		// whole of ranger-base-23oo. bd 0.49.1's cycle check spans EVERY
+		// dependency type, not only `blocks`: the create writes qid
+		// --discovered-from--> stuck, and the `dep add stuck qid` two lines
+		// below then closes a cycle and is refused, exit 1. Measured both
+		// orderings — the edges are mutually exclusive whichever lands
+		// first, so this is not a reordering. The block is the deliverable
+		// (without it the bead stays in `bd ready` and --resume re-prompts
+		// it forever, which is the loop this rung exists to stop), so the
+		// provenance moves to where nothing can refuse it: the
+		// discoveredFromMarkerPrefix line in the body, and a comment on the
+		// stuck bead naming the escalation — fileMergeBlocked's idiom, for
+		// the neighbouring reason.
 		qid, err = d.Bd.Create(p.is.Dir, BdNew{
 			Title:       settleStuckTitle(p.is.ID, p.persona, status),
 			Assignee:    d.App.CfgGet("operator", ""),
 			Labels:      []string{SettleQuestionLabel},
-			Deps:        []string{"discovered-from:" + p.is.ID},
 			Priority:    "1",
 			Actor:       VerifyActor,
 			Description: d.settleStuckBody(p, settled, status),
@@ -190,6 +213,15 @@ func (d *Dispatcher) escalateSettleOpen(p *pendingBead, settled, status string) 
 			return
 		}
 		d.printf("  ↳ %-14s escalated to %s — the operator decides; not re-prompted\n", p.is.ID, qid)
+		// The pointer back, and the other half of the provenance the edge
+		// no longer carries. Best effort: the escalation exists either way,
+		// so a failed comment costs a breadcrumb, not the stop — and it must
+		// never cost a second question bead. It is not the settle-open
+		// marker and must never read as one (settleOpenStatus refuses it),
+		// or an escalated bead would count its own escalation as a settle.
+		if err := d.Bd.Comment(p.is.Dir, p.is.ID, settleEscalatedComment(qid, status), VerifyActor); err != nil {
+			d.eprintf("posse: %s not commented with %s (%v) — the escalation exists, the pointer back does not\n", p.is.ID, qid, err)
+		}
 	} else {
 		// The escalation exists and the bead was dispatched anyway, so the
 		// blocking edge is what is missing — the one half of this that bd
@@ -253,8 +285,9 @@ func (d *Dispatcher) settleStuckBody(p *pendingBead, settled, status string) str
 		"so dispatch stopped re-prompting it: the agent believes it is done and the bead disagrees,\n"+
 		"and a third identical prompt is a token loop with no reader (ranger-base-9hm).\n\n",
 		p.is.ID, settled, status)
-	fmt.Fprintf(&b, "bead:     %s (%s)\nassignee: %s\nsession:  %s\nrepo:     %s\n\n",
-		p.is.ID, p.is.Title, p.persona, p.session, AbbrevHome(p.is.Dir))
+	fmt.Fprintf(&b, "bead:     %s (%s)\nassignee: %s\nsession:  %s\nrepo:     %s\n%s%s\n\n",
+		p.is.ID, p.is.Title, p.persona, p.session, AbbrevHome(p.is.Dir),
+		discoveredFromMarkerPrefix, p.is.ID)
 	b.WriteString(d.settleTreeLines(p.session))
 	fmt.Fprintf(&b, "\nWhat to decide: whether the work is done (close %s), whether it is not (say what is\n"+
 		"left on it), or whether the session cannot finish it (kill and relaunch — a session keeps the\n"+

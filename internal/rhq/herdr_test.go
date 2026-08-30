@@ -196,13 +196,28 @@ func fakeBd(args []string) int {
 		// that forgets the edge would make that read a false negative.
 		for i, a := range args {
 			if a == "add" && i+2 < len(args) {
+				id, blocker := args[i+1], args[i+2]
+				// bd's cycle rule, which is UNCONDITIONAL and spans every
+				// dependency type rather than only `blocks`
+				// (ranger-base-23oo, measured against 0.49.1): if the
+				// blocker already carries an edge back to the issue — a
+				// `discovered-from` written by the create that filed it,
+				// say — this add closes a cycle and bd refuses it, exit 1.
+				// A fake that granted it would let the suite pin a block
+				// real bd will never make, which is exactly what ten green
+				// pins did.
+				if fakeBdReaches(blocker, id) {
+					fmt.Fprintf(os.Stderr, "Error: cannot add dependency: would create a cycle (%s → %s → ... → %s)\n", id, blocker, id)
+					return 1
+				}
 				// A `fake-dep-add-fail` marker is bd's own worst shape,
 				// opt-in: exit 0 with nothing wrong on the wire and no edge
 				// in the graph (the muoo class). It is what makes a caller
 				// that reads the graph back distinguishable from one that
 				// trusts the status.
 				if _, err := os.Stat("fake-dep-add-fail"); err != nil {
-					fakeBdAddDep(args[i+2])
+					fakeBdAddDep(blocker)
+					fakeBdAddEdge(id, blocker)
 				}
 				fmt.Print("{}")
 				return 0
@@ -245,6 +260,8 @@ func fakeBd(args []string) int {
 		// and only a mixed listing can pin that one poisoned close does not
 		// cost the healthy ones their handoff.
 		if fakeBdCreatePoisoned(args) {
+			// The issue commits and the `--deps` edge does NOT — that is the
+			// whole shape — so nothing goes into the graph here.
 			fakeBdAppendCreated(id, args)
 			fmt.Fprint(os.Stderr, "Error: failed to read response: read unix ->bd.sock: i/o timeout")
 			return 1
@@ -254,6 +271,7 @@ func fakeBd(args []string) int {
 		// dedupes the next one while the watermark still holds its close in
 		// view (ranger-base-muoo).
 		fakeBdAppendCreated(id, args)
+		fakeBdRecordCreateDeps(id, args)
 		fmt.Printf(`{"id":%q,"title":"created"}`, id)
 		return 0
 	case "comments": // comments <id> --json → fake-comments.json; comments add appends to it
@@ -428,6 +446,78 @@ func fakeBdAddDep(blocker string) {
 	deps = append(deps, map[string]any{"id": blocker, "dependency_type": "blocks"})
 	if b, err := json.Marshal(deps); err == nil {
 		os.WriteFile("fake-deps.json", b, 0o644)
+	}
+}
+
+// ─── the fake's dependency GRAPH ─────────────────────────────────────────────
+//
+// fake-deps.json is the LISTING `dep list` serves, and it is per-repo rather
+// than per-issue — enough for a caller asking about the one bead it just
+// filed against, and useless for "does this blocker already reach me". The
+// cycle rule needs the second question answered, so the edges bd is ASKED to
+// write are recorded separately, keyed by the issue each one leaves, of any
+// dependency type (ranger-base-23oo: bd's check spans them all).
+//
+// Only edges this fake wrote are in here. A fixture that seeds fake-deps.json
+// by hand is stating what `dep list` returns, not what the graph holds, and
+// does not make a later `dep add` a cycle.
+
+// fakeBdEdges reads the graph: issue → the issues it points at.
+func fakeBdEdges() map[string][]string {
+	m := map[string][]string{}
+	if b, err := os.ReadFile("fake-dep-edges.json"); err == nil {
+		json.Unmarshal(b, &m)
+	}
+	return m
+}
+
+// fakeBdAddEdge records one edge, whatever its type.
+func fakeBdAddEdge(from, to string) {
+	m := fakeBdEdges()
+	m[from] = append(m[from], to)
+	if b, err := json.Marshal(m); err == nil {
+		os.WriteFile("fake-dep-edges.json", b, 0o644)
+	}
+}
+
+// fakeBdReaches reports whether from reaches to over any chain of edges, so
+// `dep add <id> <blocker>` can ask bd's own question: does the blocker
+// already reach the issue? An id reaches itself, which is how bd refuses a
+// self-dependency too.
+func fakeBdReaches(from, to string) bool {
+	m := fakeBdEdges()
+	seen := map[string]bool{}
+	var walk func(string) bool
+	walk = func(n string) bool {
+		if n == to {
+			return true
+		}
+		if seen[n] {
+			return false
+		}
+		seen[n] = true
+		for _, next := range m[n] {
+			if walk(next) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(from)
+}
+
+// fakeBdRecordCreateDeps puts a create's `--deps` into the graph. Real bd
+// writes those edges in the same breath as the issue, and a fake that dropped
+// them — as this one did — cannot refuse the cycle they close.
+func fakeBdRecordCreateDeps(id string, args []string) {
+	deps, _ := fakeBdFlag(args, "--deps")
+	for _, d := range strings.Split(deps, ",") {
+		if i := strings.Index(d, ":"); i >= 0 {
+			d = d[i+1:]
+		}
+		if d = strings.TrimSpace(d); d != "" {
+			fakeBdAddEdge(id, d)
+		}
 	}
 }
 

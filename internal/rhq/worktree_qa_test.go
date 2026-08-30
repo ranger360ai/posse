@@ -297,7 +297,7 @@ func TestMergeBlockedCreateThatCommittedTheIssueIsReportedFiledEdgeless(t *testi
 	// And the provenance the edge did not carry: in the description, and
 	// commented back onto the close it came out of.
 	bd := bdCalls(t, fakeDir())
-	if !strings.Contains(bd, mergeBlockedMarkerPrefix+"a-1") {
+	if !strings.Contains(bd, discoveredFromMarkerPrefix+"a-1") {
 		t.Errorf("the filed bead's description does not name the close it came from:\n%s", bd)
 	}
 	if !strings.Contains(bd, "comments add a-1 merge-back blocked: filed "+id) {

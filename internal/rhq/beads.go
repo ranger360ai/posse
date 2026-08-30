@@ -38,8 +38,41 @@ func (b Bd) Available() bool {
 	return err == nil
 }
 
+// bdGlobalFlags go in front of every verb Bd.run invokes.
+//
+// `--no-daemon` is a 12x speedup, not a preference (ranger-base-cwu7,
+// measured 2026-08-30 on bd 0.49.1 against the fleet's own store, 1275
+// issues): every store-touching call cost ~5.6s, and ~5.3s of that was bd
+// trying to reach a daemon it could not start — flat across result size,
+// so one row and 180 rows cost the same. `--no-auto-import`,
+// `--no-auto-flush` and `--allow-stale` each changed nothing; `--sandbox`
+// matched `--no-daemon` exactly, so the daemon dial is the whole of it.
+// The same calls with the flag: 0.36-0.49s. That is 5.3s off each of the
+// cockpit's two scans, off every dispatch pass and off every `posse status`.
+//
+// It is not a semantic change here, and that is measured rather than
+// assumed: `bd info` in the configured beads dir already answers
+// `Mode: direct, Connected: no` — bd pays the full dial, gives up, and does
+// the work directly anyway. Same store, same rows. Writes and
+// `sync --flush-only` behave the same way and still export to JSONL, so the
+// flag belongs on the runner rather than on a hand-picked list of read
+// verbs; scripts/verify-bd-pin.sh and scripts/queue-cutover.sh already
+// spell our calls this way, and CageBdFlags carries it into the cage.
+//
+// The one delta, for whoever revisits this once a daemon CAN connect
+// here: a live daemon auto-imports a JSONL newer than the
+// database, and direct mode refuses instead — "Database out of sync with
+// JSONL". It fails CLOSED and loudly, it is already what our scans get
+// today because the daemon does not start, and it is the side this repo
+// has twice chosen on its own: worktree.go declines to hand a persona
+// `--allow-stale` or `bd sync --import-only` for that same message, and
+// WarnLostBeads (rangerhq-fuom) exists because that auto-import can delete
+// rows and log nothing when it does.
+var bdGlobalFlags = []string{"--no-daemon"}
+
 func (b Bd) run(dir string, args ...string) ([]byte, error) {
-	cmd := exec.Command(b.Bin, args...)
+	argv := append(append([]string{}, bdGlobalFlags...), args...)
+	cmd := exec.Command(b.Bin, argv...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -53,7 +86,9 @@ func (b Bd) run(dir string, args ...string) ([]byte, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return nil, Die("bd %s: %s", strings.Join(args, " "), msg)
+		// The full argv, flags included: an operator who retypes the verb
+		// without them gets the daemon path, and possibly a different answer.
+		return nil, Die("bd %s: %s", strings.Join(argv, " "), msg)
 	}
 	return out.Bytes(), nil
 }
