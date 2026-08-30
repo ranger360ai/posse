@@ -157,7 +157,17 @@ func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 // came back and this fails naming the fixture rather than passing on an
 // assertion of absence. Window sized as the twin's — see the WINDOW SIZING
 // note over TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError in
-// bootrace_qa_test.go, which carries the runs and why 4s.
+// bootrace_qa_test.go, which carries the runs and why 4s. It needs the same
+// broken+1 = 3 explains that note is sized for; measured here 2026-08-30 on
+// a box at load ~24, this window served 33, and the pair ran 12 for 12 green
+// at that load.
+//
+// Mutation-checked, because green is what the old fixture was: make the
+// guess branch of awaitSettled refuse to overwrite lastWhy while lastErr is
+// set — "an error anywhere in the window wins", the fix this arm exists to
+// refuse — and this test reds on all three assertions while the twin above
+// and TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError both stay
+// green. The 300ms-timer version of this test stayed green under it too.
 func TestQAAnEarlyExplainErrorDoesNotOutliveALaterGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
