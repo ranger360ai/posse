@@ -459,7 +459,15 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	go func() { p, _ := d.Watch(ctx, "", "", 0, 10*time.Millisecond, 20*time.Millisecond); done <- p }()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	// ranger-base-fa55: this deadline is not bounding the loop (3 passes at
+	// a 10ms base interval finish in well under a second) — it is bounding
+	// the ONE real hook-wall sweep the loop preamble runs, which forks git
+	// and sh against a real repo. That cost is ~24s alone and grows with
+	// box load (31s observed at load ~35), so a 30s ceiling chosen for an
+	// idle machine reds under load without the loop ever actually hanging.
+	// 90s matches the margin launchlock_qa_test.go gives its own real
+	// cross-process work.
+	case <-time.After(90 * time.Second):
 		t.Fatalf("watch never returned:\n%s", tap.String())
 	}
 
