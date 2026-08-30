@@ -56,12 +56,16 @@ cfg_req=$(val required_maximum_version "$cfg")
 # re-audit gate off without a word.
 #
 # jsplit puts every `"key": value` pair at the start of its own line, and both
-# extractors then anchor to `^`. Two things follow. A key spelled inside a
-# STRING VALUE can no longer match. And the FIRST occurrence wins on a compact
-# payload exactly as `head -1` already made it win on a pretty one — before
-# this the leading `.*` was greedy, so on one line the LAST `"autoUpdate"` won
-# and a true answer could be masked by a nested false one, while on many lines
-# the first won: the two shapes disagreed about which answer was authoritative.
+# extractors then anchor to `^`. Two things follow. The FIRST occurrence wins
+# on a compact payload exactly as `head -1` already made it win on a pretty one
+# — before this the leading `.*` was greedy, so on one line the LAST
+# `"autoUpdate"` won and a true answer could be masked by a nested false one,
+# while on many lines the first won: the two shapes disagreed about which
+# answer was authoritative. And only a line that IS a key/value pair can
+# answer. A key cannot literally appear inside a well-formed JSON string value
+# — the quotes there are escaped (measured) — so the reachable case is grok
+# printing a plain line alongside the payload; unanchored, `head -1` read
+# `false` out of a warning that merely mentioned the key.
 # The captures require at least one character on purpose, so an unreadable
 # shape (`"true"`, `null`, `1.9`, `""`) yields NOTHING rather than an empty
 # match that would both look like an answer and hide any later line.
