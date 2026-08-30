@@ -19,7 +19,7 @@ GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 GIT_DIRTY := $(shell test -n "$$(git status --porcelain 2>/dev/null)" && echo -dirty)
 LDFLAGS   := -X github.com/ranger360ai/posse/internal/rhq.Build=$(GIT_SHA)$(GIT_DIRTY)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -263,6 +263,21 @@ verify-govern-honesty:
 # when upstream stable moves past the pin. Lifting the pin is the operator's.
 verify-grok-pin:
 	scripts/verify-grok-pin.sh
+
+# The codex version pin (ranger-base-poj5). codex has NO version-ceiling
+# config key at all — required_maximum_version, maximum_version and
+# auto_update appear zero times in the binary against a positive control — so
+# unlike grok there is nothing to set that refuses to START. The pin is the
+# Homebrew cask (`brew pin --cask codex`, which also blocks codex's own
+# updater, since on a brew install its update action IS `brew upgrade --cask
+# codex`), plus `check_for_update_on_startup = false` to stop the startup menu
+# whose default option is "1. Update now", plus an asserted rollback target: a
+# cask keeps exactly one version and `brew cleanup` takes the old one, where
+# grok keeps every build in ~/.grok/downloads/. etc/codex/version-pin.toml is
+# the declaration; this asserts the live box still matches it and prints the
+# re-audit list when the tap moves. Lifting the pin is the operator's.
+verify-codex-pin:
+	scripts/verify-codex-pin.sh
 
 # ADR 0019 "path 3": a credential file in the Claude Code config directory
 # (ranger-base-zzc, escaped as ranger-base-m6cm). The operator deleted the file

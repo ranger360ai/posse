@@ -210,7 +210,11 @@ func TestInterstitialsAreNamedNotWritten(t *testing.T) {
 			t.Errorf("grok grid must name %q:\n%s", want, gb.String())
 		}
 	}
-	for _, want := range []string{"dismissed_version", "~/.codex/version.json", "LAUNCH REFUSE", "brew upgrade", "blind-sends Enter"} {
+	// ranger-base-poj5 adds the durable half: the grid has to name the key
+	// that actually silences the menu and the target that asserts it, or an
+	// operator reading this reaches for the one-release dismissal instead.
+	for _, want := range []string{"dismissed_version", "~/.codex/version.json", "LAUNCH REFUSE", "brew upgrade", "blind-sends Enter",
+		"check_for_update_on_startup", "etc/codex/version-pin.toml", "verify-codex-pin"} {
 		if !strings.Contains(cb.String(), want) {
 			t.Errorf("codex grid must name %q:\n%s", want, cb.String())
 		}
@@ -692,5 +696,73 @@ func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
 	}
 	if row := gridRow(t, grid("claude"), "project_cfg"); !strings.Contains(row, "narrowed to top-level JSON keys: hooks, mcpServers") {
 		t.Errorf("claude's project config is key-narrowed; the row must name the keys:\n%s", row)
+	}
+}
+
+// ranger-base-poj5: the durable silence, and the three ways a naive read of
+// it would be wrong.
+//
+// codex has no version ceiling to set — required_maximum_version and friends
+// appear zero times in the 0.150.1 binary against a positive control — so the
+// fleet pin is the Homebrew cask plus check_for_update_on_startup = false,
+// which stops the "1. Update now" menu being drawn at all. That is a value,
+// not a presence: the same key at TRUE is the menu armed. It also outranks
+// version.json, because with the startup check off what that file says is not
+// a reading about any screen the operator will meet — which is the case this
+// pins, since on 2026-08-30 version.json alone walled every codex dispatch
+// (tap 0.151.0 against a dismissal of 0.149.1) on a box where the menu could
+// no longer draw.
+func TestCodexUpdateProbePrefersTheDurableSilence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".codex", "config.toml")
+	vj := filepath.Join(home, ".codex", "version.json")
+
+	// A version.json that is DUE a menu, held constant across every arm: an
+	// arm that read as silenced because the dismissal happened to be current
+	// would prove nothing about the key under test.
+	if err := os.WriteFile(vj, []byte(`{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if sil := codexUpdateProbe(); sil.Silenced {
+		t.Fatalf("fixture is not due a menu — the arms below would be vacuous: %+v", sil)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		body     string
+		silenced bool
+	}{
+		{"pin applied", "check_for_update_on_startup = false\n", true},
+		{"pin applied among other keys", "model = \"gpt-5.6-sol\"\ncheck_for_update_on_startup = false\n\n[tui]\ntheme = \"dark\"\n", true},
+		// The wrong arms. Each one is a config.toml that MENTIONS the key
+		// and must still read as armed.
+		{"key set true", "check_for_update_on_startup = true\n", false},
+		{"key commented out", "# check_for_update_on_startup = false\n", false},
+		{"an unrelated key", "unrelated_bogus_key_xyz = false\n", false},
+		{"no config at all", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Remove(cfg)
+			if tc.body != "" {
+				if err := os.WriteFile(cfg, []byte(tc.body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sil := codexUpdateProbe()
+			if sil.Silenced != tc.silenced {
+				t.Fatalf("silenced=%v, want %v: %+v", sil.Silenced, tc.silenced, sil)
+			}
+			if tc.silenced && !strings.Contains(sil.Why, "check_for_update_on_startup = false") {
+				t.Errorf("the reading must name the key it read: %+v", sil)
+			}
+			if !tc.silenced && !strings.Contains(sil.Why, "the menu is back") {
+				t.Errorf("an armed box must fall through to the version.json reading: %+v", sil)
+			}
+		})
 	}
 }

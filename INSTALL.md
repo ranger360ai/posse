@@ -45,6 +45,13 @@ If you install `grok`, pin it: the fleet runs **1.0.5** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
 verify-grok-pin`). An upgrade is a security re-audit, not a version bump.
 
+`codex` is pinned too, at **0.150.1**, but by a different mechanism, because
+codex has no version-ceiling config key at all: the lever is
+`brew pin --cask codex` plus `check_for_update_on_startup = false`
+(`etc/codex/version-pin.toml`, `make verify-codex-pin`). Both refuse to *move*
+codex; neither refuses to *run* a build that got past them. See
+`docs/notes.d/ranger-base-poj5.md`.
+
 **herdr** installs with its own script:
 
 ```sh
@@ -1628,12 +1635,21 @@ and a session that does meet it fails by name.
 |---|---|---|---|
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |
 | grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
-| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | pick **3. Skip until next version**: arrow **Down** twice, *verify the caret moved*, **then** Enter. The default-selected option is `1. Update now`, which runs `brew upgrade --cask codex` — an unreviewed roll-forward of a pinned tool. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin the only silence is picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release. |
 | claude | `Quick safety check: Is this a project you created or one you trust?` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per session directory, because this one fires in every new directory and has no flag to answer it with. See below. |
 
-The codex dismissal is good for **one release**: the menu returns as soon
-as `latest_version` moves past `dismissed_version`. `posse runtime check
-codex` prints both numbers, so you can see when it is due again.
+**The codex dismissal has a shelf life; the fleet pin does not.**
+`dismissed_version` silences one release — the menu returns as soon as
+`latest_version` moves past it, and `posse runtime check codex` prints both
+numbers so you can see when it is due again. The pin
+(`check_for_update_on_startup = false`) is the durable answer: the menu is
+never drawn. It exists because codex, unlike grok, has **no version-ceiling
+config key at all** — `required_maximum_version`, `maximum_version` and
+`auto_update` appear zero times in the binary, against a positive control. So
+the pin refuses to *move* codex (the cask pin) and refuses to *offer* to
+(this key); nothing available refuses to *run* a build that got past it.
+`etc/codex/version-pin.toml` states that accepted risk, and so does every run
+of `make verify-codex-pin`.
 
 **The one posse answers for you: claude's directory trust.** Claude asks
 *"Quick safety check: Is this a project you created or one you trust?"* the

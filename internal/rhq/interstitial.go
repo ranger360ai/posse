@@ -114,12 +114,30 @@ func grokAutoUpdateProbe() Silence {
 	return Silence{Silenced: v == "false", Why: "[cli] auto_update = " + v + " in " + AbbrevHome(p)}
 }
 
-// codexUpdateProbe: codex's update menu is silenced for one release at a
-// time — "3. Skip until next version" writes dismissed_version into
-// ~/.codex/version.json, and the menu returns when latest_version moves
-// past it. So this is a probe with a shelf life, which is the point of
-// printing the two versions rather than a bare yes.
+// codexUpdateProbe: two silences, and only one of them expires.
+//
+// The DURABLE one is the fleet pin (etc/codex/version-pin.toml,
+// ranger-base-poj5): check_for_update_on_startup = false in the operator's
+// ~/.codex/config.toml, and codex never draws the menu again. Measured in a
+// four-arm tmux rig against a version.json that was DUE a menu — key absent,
+// key true, and an unrelated key all drew it; only this key at false did
+// not. It is checked first because it outranks the other: with the startup
+// check off, what version.json happens to say is not a reading about any
+// screen the operator will see.
+//
+// The PER-RELEASE one is "3. Skip until next version", which writes
+// dismissed_version into ~/.codex/version.json and lapses the moment
+// latest_version moves past it. That is the shelf life this probe prints
+// both numbers for, and on 2026-08-30 it is what walled every codex dispatch:
+// the tap moved to 0.151.0 against a dismissal of 0.149.1, and DangerUnsilenced
+// refuses on a reading of "no".
 func codexUpdateProbe() Silence {
+	// The pin is a value, not a presence: a key that is present and true is
+	// the menu ARMED, so this must never read as "someone mentioned it".
+	cp := filepath.Join(codexHome(), "config.toml")
+	if v, ok := tomlFlag(cp, "check_for_update_on_startup"); ok && v == "false" {
+		return Silence{Silenced: true, Why: "check_for_update_on_startup = false in " + AbbrevHome(cp) + " — the menu is never drawn (fleet pin, make verify-codex-pin)"}
+	}
 	p := filepath.Join(codexHome(), "version.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
@@ -164,13 +182,14 @@ var GrokInterstitials = []Interstitial{{
 }}
 
 // CodexInterstitials — measured on codex-cli 0.147.0 (ranger-base-3j8,
-// rangerhq-9py0).
+// rangerhq-9py0); the durable silence and the cask pin re-measured on
+// 0.150.1 (ranger-base-poj5).
 var CodexInterstitials = []Interstitial{{
 	Screen:  `"Update available! → 1. Update now  2. Skip  3. Skip until next version", footed "Press enter to continue". herdr reads it blocked (update_menu, etc/herdr/agent-detection/codex.toml — before that rule it fell through to idle with no rule matched), so a launch fails by name instead of waiting it out. Text sent to the untouched menu is discarded, not buffered: nothing typed there reaches a composer.`,
-	Where:   "~/.codex/version.json",
-	Key:     "dismissed_version",
-	Silence: "the OPERATOR picks \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter). It silences one release; the menu returns when latest_version moves.",
-	Danger:  "the default-selected option is \"1. Update now\", which runs `brew upgrade --cask codex` — a pinned tool rolled forward with no decision, through a Homebrew this box has broken before (rangerhq-y5on)",
+	Where:   "~/.codex/config.toml (declared in etc/codex/version-pin.toml), else ~/.codex/version.json",
+	Key:     "check_for_update_on_startup = false, else dismissed_version",
+	Silence: "already applied — the fleet pin sets check_for_update_on_startup = false and the menu is never drawn again. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes \"1. Update now\" fail instead of upgrade. Without the pin the only silence is the OPERATOR picking \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter), which lasts exactly one release.",
+	Danger:  "the default-selected option is \"1. Update now\", which runs `brew upgrade --cask codex` — a pinned tool rolled forward with no decision, through a Homebrew this box has broken before (rangerhq-y5on). The cask pin makes that command exit 1 rather than upgrade, so the danger is what the screen ATTEMPTS, which is why it stays declared: the pin is a second thing that has to hold, not a reason to stop reading this one.",
 	Probe:   codexUpdateProbe,
 }}
 

@@ -1,0 +1,110 @@
+# The fleet's codex version pin — ranger-base-poj5.
+#
+# These keys, and only these keys, are what posse requires of the live box.
+# Nothing here is installed over anything: the cask is Homebrew's and
+# ~/.codex/config.toml is the operator's, rewritten by codex itself (project
+# trust levels, marketplace stamps), so copying either would clobber both.
+# `make verify-codex-pin` asserts the live machine still matches what is here.
+#
+# WHY THIS FILE IS SHAPED UNLIKE etc/grok/version-pin.toml. grok's pin is two
+# config keys — a soft ceiling the updater obeys and a hard one the binary
+# refuses to start above. codex has neither, and that is measured, not read
+# off documentation. On the 0.150.1 binary (229 MB Mach-O; `strings` emits
+# NOTHING on it, and `grep -c` needs LC_ALL=C or it dies on the first invalid
+# byte, so both readings below are `LC_ALL=C grep -ac`):
+#
+#   required_maximum_version     0
+#   maximum_version              0
+#   minimum_version              0
+#   auto_update                  0
+#   model_reasoning_effort      27   <- positive control: the grep DOES reach
+#                                       codex's config-key strings
+#
+# Never read a zero without the control. So `required_maximum_version` is a
+# grok/xAI mechanism; there is no codex equivalent to set, and no version of
+# this file can give codex a hard ceiling. That is a result, not an omission:
+# ACCEPTED RISK, ranger-base-poj5 — a codex binary that ends up above the pin
+# by any route still STARTS. Everything below refuses to MOVE it; nothing
+# refuses to RUN it.
+#
+# LIFTING THE PIN is an operator action, gated on re-running the list that
+# `scripts/verify-codex-pin.sh` prints when upstream moves. Runbook:
+# docs/notes.d/ranger-base-poj5.md.
+
+posse_pinned_version = "0.150.1"   # `codex --version` at the time of the pin
+
+# The binary the pin lives in. codex is a Homebrew CASK: the artifact is a
+# `binary` stanza symlinking /opt/homebrew/bin/codex at the Caskroom tree, so
+# `command -v codex` resolving anywhere else means something was linked in
+# front of the pin — or codex was reinstalled by npm/bun/pnpm/the standalone
+# installer, each of which is a separate update channel this file does not
+# reach. The check resolves the symlink and asserts it lands in the Caskroom
+# directory for the pinned version.
+pinned_binary = "/opt/homebrew/bin/codex"
+
+[homebrew]
+# THE LEVER. `brew pin --cask codex` is the whole refusal, and it is
+# maximum_version's shape, not required_maximum_version's: it refuses to
+# UPGRADE, never to START. Measured on Homebrew 6.0.20 with the cask at
+# 0.150.1 and 0.151.0 in the tap:
+#
+#   before the pin   `brew upgrade --cask codex -n`  -> "Would upgrade 1 ...
+#                                                        codex 0.150.1 -> 0.151.0"
+#   after the pin    `brew upgrade --cask codex -n`  -> "Error: Not upgrading
+#                                                        1 pinned package", rc=1
+#   after the pin    `brew upgrade -n`               -> "==> 1 Pinned cask"
+#   after the pin    `brew outdated --cask`          -> "codex (0.150.1) !=
+#                                                        0.151.0 [pinned at 0.150.1]"
+#
+# That rc=1 is why the pin covers the in-TUI update too: codex's own update
+# action on a brew install IS `brew upgrade --cask codex` — codex says so
+# itself, `codex doctor --json`, .checks["updates.status"].details["update
+# action"] — so "1. Update now" now fails loudly instead of rolling the fleet
+# forward. `brew pin` has a documented hole for casks that declare
+# `auto_updates true` (they can update themselves outside Homebrew); the codex
+# cask declares no such stanza, which is what makes the pin load-bearing here.
+formula = "codex"
+pin_state = "pinned"
+
+[codex_config]
+# THE AFFORDANCE KILL, and the half that answers the incident rather than the
+# tap. codex's startup update menu default-selects "1. Update now"; one Enter
+# on it is how this fleet last moved a codex version with no decision. This
+# key stops the menu being drawn at all, permanently — unlike
+# `dismissed_version`, which silences exactly one release.
+#
+# Measured in a four-arm tmux rig against a CODEX_HOME whose version.json says
+# dismissed 0.149.1 / latest 0.151.0 (i.e. the menu is due):
+#
+#   key absent                             -> menu draws
+#   check_for_update_on_startup = true     -> menu draws
+#   unrelated_bogus_key_xyz    = false     -> menu draws   (the wrong arm)
+#   check_for_update_on_startup = false    -> NO menu; codex goes straight on
+#
+# The bogus-key arm is there because "any extra key suppresses it" and "this
+# key suppresses it" are different claims and only one of them is true.
+# Lives in ~/.codex/config.toml as a TOP-LEVEL key: appended after a [table]
+# header it becomes that table's key and does nothing, silently.
+path = "~/.codex/config.toml"
+check_for_update_on_startup = false
+
+[rollback]
+# grok keeps every build it has ever run in ~/.grok/downloads/, so rolling
+# back is `grok update --version <old>`. A Homebrew cask keeps ONE: the
+# Caskroom holds only the installed version, homebrew-cask carries no version
+# history, and the 0.150.1 tarball is not in Homebrew's download cache (the
+# cache is keyed on the URL of the CURRENT cask, which is 0.151.0's).
+# `brew cleanup` after any upgrade takes the only copy on the box.
+#
+# So the rollback target is asserted, not assumed: verify-codex-pin.sh fails
+# if the Caskroom directory for the pinned version stops existing. Off-box,
+# upstream still serves the artifact — measured 2026-08-30, HTTP 200,
+# 113348973 bytes — and the checksum below is homebrew-cask's own for the
+# arm64 macOS build at the tap head this box installed from
+# (b8931574c9d5ad2049056a4daaae6454d6a65d34).
+#
+# FETCH IT BEFORE LIFTING THE PIN, not after: the moment an upgrade lands,
+# the on-box copy is what `brew cleanup` deletes and this URL is all there is.
+caskroom_dir = "Caskroom/codex/0.150.1"
+url = "https://github.com/openai/codex/releases/download/rust-v0.150.1/codex-package-aarch64-apple-darwin.tar.gz"
+sha256 = "3ecaec1e7dd7873fac5e505533618a92a7e3bf12de7869b6130c0e3cc7faf677"

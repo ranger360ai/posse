@@ -4626,13 +4626,20 @@ is the only thing posse does to these files.
 |---|---|---|---|
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner above the composer | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | the **operator**, clicking `[Opt out]` once in their own grok session. The value is an RFC3339 stamp, not a bool, and it records only *that* the banner was answered — never which way. In 1.0.5 the consent RPC has no server handler, so even an accidental `[Opt in]` cannot persist; that defense is version-verified and evaporates the day xAI ships the handler (`rangerhq-sz7u`). |
 | grok | New worktree / Resume session / Quit startup menu, plus the changelog line | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | **already applied** — the fleet pin, declared in `etc/grok/version-pin.toml`, kills the update check *and* the shared leader's mid-life self-update. `make verify-grok-pin`; runbook in *grok substrate* above. |
-| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `dismissed_version` in `~/.codex/version.json` | the **operator**, picking `3. Skip until next version`: Down twice, *verify the caret moved by re-peeking*, then Enter. Two steps with a verification between them, because getting it wrong upgrades their tooling. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin the only silence is picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release. |
 | claude | `Quick safety check: Is this a project you created or one you trust?` — full screen, `1. Yes, I trust this folder / 2. No, exit`, footed `Enter to confirm · Esc to cancel` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`, or the config dir's `.config.json` where that exists) | **the LAUNCH**, per session directory — the one exception, below. |
 
-**The codex dismissal has a shelf life.** It silences one release: the menu
-returns the moment `latest_version` moves past `dismissed_version`. That is
-why `runtime check` prints both numbers rather than a bare yes — a probe
-whose answer expires should say when.
+**The codex dismissal has a shelf life; the fleet pin does not
+(ranger-base-poj5).** `dismissed_version` silences one release: the menu
+returns the moment `latest_version` moves past it. That is why `runtime check`
+prints both numbers rather than a bare yes — a probe whose answer expires
+should say when. It is also why the probe reads
+`check_for_update_on_startup = false` *first*: with the startup check off,
+what `version.json` says is not a reading about any screen the operator will
+meet, and on 2026-08-30 the expired dismissal alone refused every codex
+dispatch on this box. codex has no version-ceiling key to pin with — the
+declaration, the measurement and the runbook for lifting it are in
+`docs/notes.d/ranger-base-poj5.md`.
 
 **The one key the launch writes, and why it is not the same kind of key
 (rangerhq-w4uf).** Claude's directory-trust dialog is not a first-*run*
