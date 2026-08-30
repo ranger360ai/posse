@@ -91,9 +91,15 @@ already redirects. What it does:
   one — same paths, same authors, same dates, **new shas** — and nothing
   else from that repo's history (152M of constitution objects became 5.6M
   of queue objects in the rehearsal);
-- moves the live store on top of it, leaving `daemon.pid`, `daemon.lock`,
-  `daemon.log` and `bd.sock` behind, because they name a path and a process
-  that both stop being true at the move;
+- clears that checkout out of the new repo's working tree (the index is
+  kept, so the live store still reads as drift against the replayed history)
+  and moves the live store **into** it, so the queue's `.beads` holds the
+  live store and nothing else — an abort partway through the move then
+  leaves no replayed copy for the rollback below to walk home on top of a
+  live file that never left (ranger-base-iycc);
+- leaves `daemon.pid`, `daemon.lock`, `daemon.log` and `bd.sock` behind,
+  because they name a path and a process that both stop being true at the
+  move;
 - rewrites `.beads/deleted.jsonl`'s commit shas onto the replayed history
   (see *What the rehearsal broke*, below);
 - leaves `~/src/ranger-base/.beads/` holding one file, `redirect`, with the

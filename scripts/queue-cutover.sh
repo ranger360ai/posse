@@ -9,7 +9,10 @@
 #   2. replays the `.beads/` history out of the constitution repo into a NEW
 #      repo, keeping the `.beads/` path prefix and every commit's author,
 #      date and message, and NOTHING else from that repo's history;
-#   3. moves the live store (database and friends) on top of it;
+#   3. clears the replay's checkout out of the new repo's working tree —
+#      keeping the index, so the drift below still reads as drift — and
+#      moves the live store (database and friends) into it, so what is
+#      there is the live store and nothing else (ranger-base-iycc);
 #   4. leaves the constitution repo holding one file — `.beads/redirect` —
 #      and stages the untracking, without committing;
 #   5. rewrites `.beads/redirect` in every repo named with --redirect, in
@@ -300,7 +303,29 @@ else
   git -C "$QUEUE" gc --prune=now --quiet
   git -C "$QUEUE" checkout --quiet main
 
-  # ─── 3. the live store, moved on top of the replayed tree ─────────────────
+  # ...and then empty that working tree again, keeping the index. The
+  # checkout above put the last COMMITTED projection into $DST_BEADS, and the
+  # move loop below only overwrites the entries the live store happens to
+  # share with it. An abort partway through that loop would leave $DST_BEADS
+  # holding moved live files AND leftover replayed ones, and the trap's UNDO
+  # — which walks everything in $DST_BEADS home — would then put the replayed
+  # copies on top of the live files that had not moved yet: the live
+  # projection replaced by the last commit, every uncommitted bead in it
+  # gone, and the UNDO exiting 0 saying nothing (ranger-base-iycc, measured).
+  # Emptying here makes the UNDO's assumption true instead of documenting it:
+  # from this line on, $DST_BEADS holds nothing but what the loop moved, so
+  # the same two-line UNDO is right in stage move, in stage redirect and in
+  # the runbook's Rollback. It costs nothing — every byte removed IS HEAD and
+  # `git checkout -- .beads` brings it back, while the live store it would
+  # otherwise overwrite is recoverable from nowhere. The index still holds
+  # the replayed state, so the queue's final `git add -A .beads` records the
+  # live store's drift against the replayed history exactly as before.
+  for f in "$DST_BEADS"/* "$DST_BEADS"/.[!.]*; do
+    [ -e "$f" ] || continue
+    rm -rf "$f"
+  done
+
+  # ─── 3. the live store, moved into the emptied tree ───────────────────────
   STAGE=move
   # daemon.pid/lock/sock/log name a path and a process that both stop being
   # true at the mv; they are gitignored and per-location, and carrying them

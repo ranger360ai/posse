@@ -40,6 +40,18 @@ package rhq
 // or have the UNDO refuse to overwrite a file already at home and name the
 // ones it skipped.
 //
+// FIXED, the second way: the queue's working tree is emptied (the index
+// kept) between the replay's checkout and the move loop, so $DST_BEADS holds
+// nothing but what the loop moved and the UNDO's assumption is true rather
+// than merely documented. That keeps the same two-line UNDO right in stage
+// move, in stage redirect and in the runbook's Rollback, where the other two
+// directions would have had the three diverge. Two consequences, both
+// measured: the success path no longer resurrects a file tracked at the last
+// commit but deleted from the live store (pinned as
+// TestQueueCutoverDoesNotResurrectAFileTheLiveStoreDeleted), and the nesting
+// below stops happening, because `mv` only renames a directory INTO another
+// when one of the same name is already there.
+//
 // ─── ranger-base-8izk: a tracked subdirectory nests instead of aborting ─────
 //
 // The nzyn close recorded, as adjacent and unreachable, that a tracked
@@ -109,7 +121,7 @@ func qcUndoBlock(t *testing.T, out string) string {
 }
 
 func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
-	t.Skip("ranger-base-iycc: the move-window UNDO walks the replayed checkout home over the live store")
+	// unskipped by ranger-base-iycc
 	if os.Geteuid() == 0 {
 		t.Skip("root")
 	}
@@ -131,8 +143,13 @@ func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
 	}
 
 	// The witnesses that the half-state is the bead's, not the shipped
-	// pin's: something DID move, the drifted projection did NOT, and the
-	// replayed copy waiting in the queue is a different file from it.
+	// pin's: something DID move, the drifted projection did NOT, and
+	// nothing waiting in the queue under that name already carries the
+	// drift — otherwise an overwrite would be invisible here. That last one
+	// is deliberately written to hold on BOTH sides of the fix: before it
+	// the file is the replayed projection, which lacks q-4; after it there
+	// is no such file at all, because the queue's working tree is emptied
+	// before the move loop starts.
 	dst := filepath.Join(queue, ".beads")
 	if _, e := os.Stat(filepath.Join(dst, "beads.db")); e != nil {
 		t.Fatalf("nothing moved at all — no partial move, nothing measured: %v", e)
@@ -140,8 +157,8 @@ func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
 	if _, e := os.Stat(filepath.Join(src, beadsJSONL)); e != nil {
 		t.Fatalf("everything moved — no partial move, nothing measured: %v", e)
 	}
-	if strings.Contains(readFile(t, filepath.Join(dst, beadsJSONL)), "q-4") {
-		t.Fatalf("the replayed copy already carries the drift, so an overwrite would be invisible")
+	if b, e := os.ReadFile(filepath.Join(dst, beadsJSONL)); e == nil && strings.Contains(string(b), "q-4") {
+		t.Fatalf("the copy waiting in the queue already carries the drift, so an overwrite would be invisible")
 	}
 
 	undo := qcUndoBlock(t, out)

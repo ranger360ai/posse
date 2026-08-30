@@ -901,6 +901,43 @@ func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 	}
 }
 
+// The other half of ranger-base-iycc's fix, on the SUCCESS path. The queue
+// repo's working tree is emptied after the replay's checkout and before the
+// move, so what lands in $DST_BEADS is the live store and nothing else. That
+// makes the live store the store of record here too: a file tracked at the
+// last commit but no longer live used to survive the move — the checkout put
+// it there, the move loop never touched it, and `git add -A .beads` saw no
+// change — so the queue's first commit RESURRECTED a file the store had
+// deleted. Measured both ways before and after the fix.
+func TestQueueCutoverDoesNotResurrectAFileTheLiveStoreDeleted(t *testing.T) {
+	constitution, _ := qcConstitution(t)
+	src := filepath.Join(constitution, ".beads")
+	write(t, filepath.Join(src, "stale.txt"), "committed, then deleted live\n")
+	mustGit(t, constitution, "add", ".beads/stale.txt")
+	mustGit(t, constitution, "commit", "-q", "-m", "beads: a file that later leaves", "--", ".beads")
+	if err := os.Remove(filepath.Join(src, "stale.txt")); err != nil {
+		t.Fatal(err)
+	}
+	qcDrift(t, constitution)
+
+	queue := filepath.Join(t.TempDir(), "queue")
+	out, err := qcRun(t, constitution, queue, t.TempDir(), []string{qcWork(t, t.TempDir(), src)})
+	if err != nil {
+		t.Fatalf("the cutover failed: %v\n%s", err, out)
+	}
+	// The witness that the replay carried it at all — without this the pin
+	// passes over a history that never had the file.
+	if !strings.Contains(mustGit(t, queue, "log", "--format=%H", "--name-only", "--", ".beads/stale.txt"), "stale.txt") {
+		t.Fatalf("the replayed history never carried stale.txt, so nothing here is measured")
+	}
+	if tree := mustGit(t, queue, "ls-tree", "-r", "--name-only", "HEAD"); strings.Contains(tree, "stale.txt") {
+		t.Errorf("the queue's commit resurrected a file the live store had deleted:\n%s", tree)
+	}
+	if _, e := os.Stat(filepath.Join(queue, ".beads", "stale.txt")); e == nil {
+		t.Errorf("the replayed copy of stale.txt is still in the queue's working tree")
+	}
+}
+
 // The bead's headline (ranger-base-nzyn, hit on lpz4): an abort between the
 // mv and the redirect left the constitution's `.beads` EMPTY, the store in
 // the queue repo, every redirect in the fleet naming the empty directory —
