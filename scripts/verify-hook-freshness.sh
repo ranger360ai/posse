@@ -84,7 +84,13 @@ done < <(awk '
   { echo "verify-hook-freshness: no beads_visibility: entries in $config — nothing measured"; exit 2; }
 
 tmp=$(mktemp -d) || { echo "verify-hook-freshness: mktemp failed — nothing measured"; exit 2; }
-trap 'rm -rf "$tmp"' EXIT
+# The behavior arm needs a temporary index INSIDE the repo's git dir (see
+# below), which is the one thing this script writes outside its own tmpdir.
+# Named here so the trap can take it with everything else if we are killed
+# mid-repo; git leaves its own next-index-<pid> behind on a crash too, and
+# ignores them, so a stray costs nothing but tidiness.
+stray_idx=""
+trap 'rm -rf "$tmp"; [ -n "$stray_idx" ] && rm -f "$stray_idx"' EXIT
 
 # The reference render. A throwaway repo is unmarked in config, and unmarked is
 # public (fail closed) — assert that rather than assume it, so a change to the
@@ -177,14 +183,41 @@ for e in "${entries[@]}"; do
     for f in MERGE_HEAD CHERRY_PICK_HEAD rebase-merge rebase-apply; do
       [ -e "$gitdir/$f" ] && exempt="$f present"
     done
+    # THE PATH-LIMITED ARM NEEDS AN INDEX, NOT AN INDEX NAME (ranger-base-ixv4).
+    # git's own next-index-<pid> is a COPY of the index with the named paths
+    # refreshed into it. A name pointing at a file that does not exist is an
+    # EMPTY index, and `git diff --cached --name-only` against an empty index
+    # reports every tracked file — so since ranger-base-ak3e added the
+    # constitution arm, which reads exactly that, the fabricated safe form is
+    # refused for touching the whole class. MEASURED 2026-08-29: this reported
+    # "a path-limited commit is refused too — the safe form has no way through"
+    # in ~/src/ranger-base and ~/src/posse, the two repos that carry class
+    # paths (rhq/agents/** and .claude/settings.json), and nowhere else. A
+    # control that cries wolf in the constitution repo is the one place it
+    # must not.
+    # Seeded from HEAD rather than from the live index on purpose: the arm is
+    # a question about the WALL, and seeding from the index would make the
+    # answer depend on whatever another persona happens to have staged.
+    # In a repo with no commits git's own next-index IS empty, so leaving the
+    # file absent there is the accurate emulation, not a fallback.
+    tmpidx="$gitdir/next-index-$$"
+    if git -C "$repo" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+      if GIT_INDEX_FILE="$tmpidx" git -C "$repo" read-tree HEAD 2>/dev/null; then
+        stray_idx="$tmpidx"
+      else
+        exempt="cannot seed a temporary index from HEAD"
+      fi
+    fi
     if [ -n "$exempt" ]; then
       say "    behavior not measured — $exempt"
     else
       ( cd "$repo" && RHQ_PERSONA=verify-hook-freshness /bin/sh "$m" /dev/null message ) >/dev/null 2>&1
       refused=$?
-      ( cd "$repo" && GIT_INDEX_FILE="$gitdir/next-index-$$" \
+      ( cd "$repo" && GIT_INDEX_FILE="$tmpidx" \
           RHQ_PERSONA=verify-hook-freshness /bin/sh "$m" /dev/null message ) >/dev/null 2>&1
       allowed=$?
+      [ -n "$stray_idx" ] && rm -f "$stray_idx"
+      stray_idx=""
       if [ "$refused" -ne 1 ]; then
         finding "$short: an unqualified commit is NOT refused (hook exited $refused)"
       elif [ "$allowed" -ne 0 ]; then

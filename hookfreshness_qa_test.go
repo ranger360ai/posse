@@ -253,6 +253,66 @@ func TestQAHookFreshnessCatchesAHookThatRefusesTheSafeFormToo(t *testing.T) {
 	}
 }
 
+// ranger-base-ixv4, and the reason this control had to be fixed before it was
+// pointed at anyone: the safe-form arm needs an INDEX, not an index NAME.
+//
+// git's own next-index-<pid> is a copy of the index with the named paths
+// refreshed into it. Handing the hook a name that points at nothing is an
+// EMPTY index, and `git diff --cached --name-only` against an empty index
+// reports every tracked file — so once ranger-base-ak3e added the
+// constitution arm, which reads exactly that, the fabricated safe form was
+// refused for touching the whole class. Measured on the live box
+// 2026-08-29: `a path-limited commit is refused too — the safe form has no
+// way through` in ~/src/ranger-base and ~/src/posse, the two configured
+// repos that carry class paths, and in neither of the two that do not.
+//
+// The rig's other repos have no commits, where an empty index is what git
+// itself would hand the slot — which is why every pin above stayed green
+// through the defect and none of them could have caught it. This one commits
+// a class member first.
+func TestQAHookFreshnessDoesNotCallTheSafeFormRefusedOverAClassPathInHEAD(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	repo := r.repos["priv"]
+	dir := filepath.Join(repo, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// .claude/settings.json is in the constitution class in EVERY hooked
+	// repo (ranger-base-az93: it carries the session's own deny list), so it
+	// is the whole trigger without needing an rhq/agents tree.
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"-C", repo, "config", "user.email", "t@t"},
+		{"-C", repo, "config", "user.name", "t"},
+		{"-C", repo, "add", "--", ".claude/settings.json"},
+		{"-C", repo, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "class member", "--", ".claude/settings.json"},
+	} {
+		if out, err := exec.Command(r.git, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if out, err := exec.Command(r.git, "-C", repo, "ls-tree", "--name-only", "HEAD", "-r").Output(); err != nil ||
+		!strings.Contains(string(out), ".claude/settings.json") {
+		t.Fatalf("rig never built: HEAD does not carry the class path (%v)\n%s", err, out)
+	}
+
+	out, code := r.run(t)
+	if strings.Contains(out, "a path-limited commit is refused too") {
+		t.Fatalf("the safe form was called refused over a class path that HEAD already carries — "+
+			"the arm is measuring its own empty index, not the wall:\n%s", out)
+	}
+	if !strings.Contains(out, "path-limited allowed (0)") {
+		t.Fatalf("the safe-form arm did not run at all:\n%s", out)
+	}
+	if code != 0 {
+		t.Fatalf("a fresh box with a class path in HEAD must still pass, got %d:\n%s", code, out)
+	}
+	// And the arm is still an arm: the wrong-arm control above
+	// (CatchesAHookThatRefusesTheSafeFormToo) is what proves it can fail.
+}
+
 func TestQAHookFreshnessCatchesAForeignHook(t *testing.T) {
 	r := hfNewRig(t, map[string]string{"priv": "private"})
 	hfWrite(t, r.hook("priv"), "#!/bin/sh\n# somebody else's hook\nexit 0\n")
