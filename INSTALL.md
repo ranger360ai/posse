@@ -1197,14 +1197,33 @@ $ git config merge.beads.driver 'bd merge %A %O %A %B'
 Give the repo an `AGENTS.md` so a persona landing in it knows the queue
 exists. `bd onboard` prints instructions *at a human*, delimiters
 included — piping its output straight into the file leaves that prose,
-not the snippet, as orientation text. Paste only the delimited region,
-into the `AGENTS.md` that `bd init` already created (not "or create it",
-as `bd onboard`'s own text has it):
+not the snippet, as orientation text. bd 0.49.1 fences that snippet between
+`--- BEGIN AGENTS.MD CONTENT ---` and `--- END AGENTS.MD CONTENT ---`;
+paste only that region, into the `AGENTS.md` that `bd init` already
+created (not "or create it", as `bd onboard`'s own text has it):
 
 ```sh
 $ bd onboard | sed -n '/--- BEGIN AGENTS.MD CONTENT ---/,/--- END AGENTS.MD CONTENT ---/p' \
     | sed '1d;$d' >> AGENTS.md
+$ bd onboard | grep -c -e '^--- BEGIN AGENTS.MD CONTENT ---$' -e '^--- END AGENTS.MD CONTENT ---$'
+$ tail -n 1 AGENTS.md
 ```
+**Verify:** `2`, then the last line of the region your bd printed — on bd
+0.49.1, `` For full workflow details: `bd prime` ``. Those two delimiters are
+the only thing the extraction cuts on and it cuts *silently*: on a bd that
+spells them differently the pipeline still exits `0` and reports nothing.
+`0` means neither marker matched, so **nothing was appended** — `AGENTS.md`
+is whatever `bd init` wrote and carries no queue pointer at all. `1` means
+only one matched, so `sed` ran to the end of the output and the trailing
+prose ("For GitHub Copilot users…") went into the file behind the snippet —
+the exact leak this step exists to prevent, re-armed by a one-marker change.
+Neither shows up in `AGENTS.md` as an error; the count is what says so. On
+anything but `2`, re-derive the region from what *your* bd prints before
+continuing (ranger-base-3fhb).
+
+Do not check this by grepping the file for a line of the snippet. `bd init`'s
+own `AGENTS.md` already contains `bd ready`, so that grep is non-zero after
+the no-op too — it certifies a paste that never happened.
 
 **Then reconcile that file with the crew's guardrails, before any persona
 reads it.** `bd init` writes an `AGENTS.md` carrying a "Landing the Plane"
