@@ -358,10 +358,15 @@ func TestCulpritLineDegradesToSilence(t *testing.T) {
 		name string
 		read func() ([]Proc, error)
 	}{
+		// Both error arms hand back rows AS WELL as the error, which is the
+		// arm that measures something: a reading that failed must be
+		// discarded, not rendered from whatever partial table came with it.
 		{"ps timed out on a box that cannot fork", func() ([]Proc, error) {
-			return nil, Die("signal: killed")
+			return procRows(), Die("signal: killed")
 		}},
-		{"ps is not on this box", func() ([]Proc, error) { return nil, Die("exec: \"ps\": not found") }},
+		{"ps is not on this box", func() ([]Proc, error) {
+			return procRows(), Die("exec: \"ps\": not found")
+		}},
 		{"a table it could not parse", func() ([]Proc, error) { return nil, nil }},
 		{"an idle table", func() ([]Proc, error) {
 			return []Proc{{PID: 1, PPID: 0, CPU: 0, Comm: "launchd"}}, nil
@@ -447,6 +452,15 @@ func TestSysTopCPUReadsThisBox(t *testing.T) {
 		if p.PID == self {
 			if p.PPID != os.Getppid() {
 				t.Errorf("this test's own row says ppid %d, want %d — the columns moved", p.PPID, os.Getppid())
+			}
+			// comm is what this binary is CALLED. args would be that plus
+			// the -test.* flags go test invoked it with, and reading args
+			// is the mistake that named teau's spinners after the shell
+			// that had merely spawned them. (procps truncates comm to 15
+			// characters; darwin does not.)
+			want := filepath.Base(os.Args[0])
+			if p.Comm != want && !strings.HasPrefix(want, p.Comm) {
+				t.Errorf("own comm = %q, want %q — that is args, not comm", p.Comm, want)
 			}
 			return
 		}

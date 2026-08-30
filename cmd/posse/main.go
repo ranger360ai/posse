@@ -1860,8 +1860,10 @@ dispatch (beads):
                                  unreadable cost scan is not $0 spent, so it
                                  parks there and says so on stderr elsewhere
                                config load_guard: (1-min load average)
-                                 skip the whole pass above it, one witness
-                                 line, and refuse every session launch —
+                                 skip the whole pass above it, a witness line
+                                 naming the load and a second naming the top
+                                 CPU burners (orphans flagged), and refuse
+                                 every session launch —
                                  posse new, relaunch, recipes — while the
                                  box is over — a box far above its core count
                                  cannot fork, and every spawn on it hangs

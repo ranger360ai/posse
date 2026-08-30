@@ -508,7 +508,7 @@ default_emoji: ⚙️
 
 # ─── load guard ──────────────────────────────────────────────────────────────
 # The 1-minute load average above which this instance launches NOTHING: a
-# dispatch pass over it is skipped whole with one witness line, and `posse
+# dispatch pass over it is skipped whole with a witness line, and `posse
 # new`, `posse relaunch`, a recipe and a cockpit launch all refuse. Nothing
 # already running is touched — a saturated box needs its sessions to finish.
 #
@@ -532,6 +532,16 @@ default_emoji: ⚙️
 # An unreadable load average gates nothing and says so once: this is a belt
 # over `budget_*`/`plan_guard_*`, and a monitoring failure must not be able to
 # stop the shop.
+#
+# A skipped pass names the load AND who is holding it, on a second line:
+#
+#   load guard: top CPU: 36.9% pid 49235 zsh [ORPHANED 2h30m], ...
+#
+# `[ORPHANED]` is ppid 1 — a process reparented to init and still burning CPU
+# is a leak, and knowing that took an operator running `ps` by hand 2.5h into
+# a frozen fleet. That reading is one bounded `ps`, taken only on a pass that
+# is already being skipped, and it prints nothing at all rather than delay or
+# fail a pass it cannot take it for.
 # load_guard: 25             # 1-min loadavg ceiling for launching; 0 = off
 
 # ─── governance: what needs a human (`posse status`) ─────────────────────────
