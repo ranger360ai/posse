@@ -67,6 +67,37 @@ in a posse checkout is the same question on demand.
 
 ### Fixed
 
+**Persona memory was never committed by anything, so it accumulated on disk
+until a human noticed.**
+
+*Affected: every build before this one, in any home that keeps `personas/`
+in git. On by default; homes that keep it outside git are unchanged.*
+
+Every persona appends what it learned to its standing orders
+(`$RHQ_PERSONA_DIR/ORDERS.md`) and no path in posse ever committed the
+result — measured on one instance at 203 uncommitted lines one day, 1419 the
+next, 1538 by the time someone landed them by hand. That file is the one
+artifact with no other copy: a bead has the queue behind it and code has git,
+but a lesson lives in exactly one place until something commits it, and
+sessions get reaped by the dozen.
+
+`posse kill` now commits it — by hand, from the cockpit, and from the
+end-of-pass auto-reaper — after the workspace closes and before the session's
+worktree is landed. The commit is path-limited to the killed session's own
+persona directory, so it can take neither another persona's memory nor
+`rhq/agents` beside it, and what it is about to add is scanned for credential
+shapes first: a hit holds the commit, names the file and line, and never
+prints what it matched. It never pushes.
+
+Killing a session by hand also lands the plane first, the way `posse relaunch`
+does: one bounded turn asking the agent to write down what it learned, spent
+only when that persona actually has memory no commit holds. A turn that does
+not settle refuses the kill rather than closing a workspace mid-commit.
+`posse kill --no-land` skips the turn (`--timeout` re-bounds it) and still
+commits — the flag declines to spend a turn, not to keep the memory. The
+cockpit and the auto-reaper take no turn at all, so neither the TUI nor a
+dispatch pass can block behind one.
+
 **A deny rule naming a subcommand's flag — `Bash(bd sync --full:*)`,
 `Bash(git push --force:*)` — only refused the flag in one position.**
 

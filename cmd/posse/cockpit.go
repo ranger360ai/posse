@@ -968,12 +968,17 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 				// way through it is `posse kill <name> --force`, which
 				// the refusal names.
 				c.status = err.Error()
-			case landing.Line() != "":
+			case len(landing.Lines()) > 0:
 				// The worktree's fate is the half of a kill that can
 				// lose work, so it goes on the status line rather than
 				// into a stream the cockpit does not show
-				// (rangerhq-09o2).
-				c.status = "killed " + c.target.name + " — " + landing.Line()
+				// (rangerhq-09o2) — and since ranger-base-qxvh the
+				// persona's memory is beside it, for the same reason.
+				// The cockpit takes no landing TURN: `k` runs on the
+				// single select loop and a bounded agent turn there is
+				// a frozen TUI. It still commits the memory, which is
+				// the durable half and costs one git process.
+				c.status = "killed " + c.target.name + " — " + strings.Join(landing.Lines(), "; ")
 			default:
 				c.status = "killed " + c.target.name
 			}

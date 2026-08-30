@@ -214,7 +214,7 @@ func main() {
 		}
 
 	case "kill":
-		args = need(args, 1, "posse kill <name> [--force] [--foreign]")
+		args = need(args, 1, "posse kill <name> [--force] [--foreign] [--no-land] [--timeout <interval>]")
 		// A kill is also the moment a session's own worktree is retired:
 		// its branch lands on the repo's branch and the tree goes away
 		// (rangerhq-09o2). It refuses to remove a tree that still holds
@@ -231,15 +231,38 @@ func main() {
 		// operator saying they mean that row; it is its own flag because
 		// --force is about their own session's unfinished work and says
 		// nothing about whose session this is.
-		o := rhq.KillOpts{}
-		for _, f := range args[1:] {
-			switch f {
+		//
+		// And the landing turn (ranger-base-qxvh): a kill by hand is the
+		// path that destroys sessions, and persona memory is the one
+		// artifact with no other copy, so this caller takes the turn
+		// relaunch takes — bounded, and only when the persona actually has
+		// memory no commit holds. --no-land is the operator saying not to
+		// spend it, on a wedged session or a sweep of thirty; it does NOT
+		// stand down the commit, which is what makes the memory durable and
+		// costs one git process. Nor does it stand down the WORKTREE
+		// landing below, which was never optional and is a different sense
+		// of the word.
+		o := rhq.KillOpts{Land: true, Out: out}
+		rest := args[1:]
+		for len(rest) > 0 {
+			switch rest[0] {
 			case "--force":
-				o.Force = true
+				o.Force, rest = true, rest[1:]
 			case "--foreign":
-				o.Foreign = true
+				o.Foreign, rest = true, rest[1:]
+			case "--no-land":
+				o.Land, rest = false, rest[1:]
+			case "--timeout":
+				if len(rest) < 2 {
+					die(rhq.Die("--timeout needs an interval (10m, 90s, or seconds)"))
+				}
+				iv, err := rhq.ParseInterval(rest[1])
+				if err != nil {
+					die(err)
+				}
+				o.Timeout, rest = iv, rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", f))
+				die(rhq.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		landing, err := hb.KillSessionAndLandOpts(args[0], o)
@@ -247,7 +270,7 @@ func main() {
 			die(err)
 		}
 		fmt.Fprintf(out, "killed %s\n", args[0])
-		if line := landing.Line(); line != "" {
+		for _, line := range landing.Lines() {
 			fmt.Fprintf(out, "  %s\n", line)
 		}
 
@@ -1683,15 +1706,22 @@ sessions (herdr workspaces):
       --no-land                skip the landing turn (dead or wedged sessions)
       --timeout <interval>     bound on the landing turn (default 10m)
       --force                  refresh even while its bead is open and its tree dirty
-  posse kill <name>              close the workspace, land its worktree's branch on
-                                 the repo's branch and remove the worktree (a tree
-                                 still holding work is kept and says so). A session
-                                 still holding an in_progress bead over uncommitted
-                                 work is NOT killed at all (ADR 0013 §4)
+  posse kill <name>              land the plane (one bounded turn to write lessons
+                                 down), commit the persona's standing orders, close
+                                 the workspace, land its worktree's branch on the
+                                 repo's branch and remove the worktree (a tree still
+                                 holding work is kept and says so). A session still
+                                 holding an in_progress bead over uncommitted work is
+                                 NOT killed at all (ADR 0013 §4)
       --force                  kill it anyway, once you have read the refusal
       --foreign                close a workspace this home holds no session meta for
                                (another instance's session, or one made in herdr by
                                hand) — refused without it, naming the workspace id
+      --no-land                skip the landing turn (dead or wedged sessions, or a
+                               sweep of many). The persona's memory is still
+                               committed, and the worktree still lands — this flag
+                               only declines to spend a turn
+      --timeout <interval>     bound on the landing turn (default 10m)
   posse worktrees [--dir <repo>] [--land [--force]]
                                  session worktrees, which bead each one's unlanded
                                  work belongs to, and what has not landed yet;
