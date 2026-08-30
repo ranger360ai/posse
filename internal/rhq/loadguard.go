@@ -18,12 +18,18 @@ package rhq
 //
 // Two rules follow, and they are why the reading is taken in two places:
 //   - a dispatch pass over the limit is skipped whole, with a witness line
-//     naming the load and a second naming who is holding it (below);
+//     naming the load, a second naming who is holding it, and — when the
+//     holders are posse's own leaked gate-shell children — a third naming
+//     those one by one (below);
 //   - no launch — `posse new`, `posse relaunch`, a recipe, a cockpit key —
 //     starts a session while the box is over it.
 //
 // It gates LAUNCHING only. Nothing already running is touched: a saturated
-// box needs its sessions to finish, not to be interrupted.
+// box needs its sessions to finish, not to be interrupted. The orphan report
+// does not change that and is not allowed to (ranger-base-apwr): it names
+// leaks and kills none of them, because a persona's deliberate long-lived
+// background process has the same signature as a leak and choosing between
+// them is the operator's, behind an explicit exception.
 
 import (
 	"context"
@@ -133,10 +139,30 @@ const (
 	// processes" tail: an orphan over this much of one core is a leak
 	// worth counting, below it is noise on any busy box.
 	LoadCulpritOrphanCPU = 20.0
-	// loadCulpritTimeout bounds the one fork. Past this the reading is
+	// loadCulpritTimeout bounds the census. Past this the reading is
 	// abandoned and the line is not printed: the guard's job is to skip
-	// the pass promptly, not to find out who is at fault.
+	// the pass promptly, not to find out who is at fault. It bounds BOTH
+	// of the census's reads together (SysTopCPU), not each of them, so
+	// adding the second one cannot lengthen the worst case.
 	loadCulpritTimeout = 2 * time.Second
+
+	// LoadOrphanMinAge is the age floor of the orphan predicate
+	// (ranger-base-apwr). It is there to exclude the transient rather than
+	// to measure anything: a child is briefly ppid 1 while the session
+	// that forked it tears down, and the teau RCA measured a last-forked
+	// pid outliving its own fork/exec window by about a second. A minute
+	// clears both by a wide margin, and it is far under the age of
+	// anything this report can be about — the guard only reads on a pass
+	// it is already skipping, and teau's sixteen were 2h30m old when a
+	// human finally found them.
+	LoadOrphanMinAge = time.Minute
+	// loadOrphanTop is how many orphans the report names outright, for the
+	// reason loadCulpritTop exists: sixteen leaks are sixteen lines of the
+	// same thing, and the rest are counted.
+	loadOrphanTop = 3
+	// loadOrphanPayload bounds the shown command. The point is to say what
+	// the process WAS, not to reproduce it; the transcript has the rest.
+	loadOrphanPayload = 90
 )
 
 // Proc is one row of the box's process table as the culprit reading needs
@@ -147,6 +173,24 @@ type Proc struct {
 	CPU  float64       // pcpu: percent of one core, as ps reports it
 	Age  time.Duration // etime: elapsed since start
 	Comm string        // comm, NOT args — see SysTopCPU
+	// Args is the UNTRUNCATED argv, and it is filled only for the rows the
+	// orphan report could be about (orphanSuspect) — never for a row the
+	// culprit line renders, which reads Comm and must go on reading Comm.
+	// Empty is the normal case and the honest one: on a healthy box no row
+	// qualifies and the census does not take the second read at all.
+	Args string
+}
+
+// orphanSuspect is the half of the orphan predicate that the census's first
+// `ps` can answer: reparented to init, burning real CPU, and old enough not
+// to be a teardown or a fork/exec window. It is what decides whether the
+// argv read below is taken at all, and the report then adds the half that
+// needs argv — that the process came out of one of our gated commands.
+//
+// An orphan burning CPU is ALWAYS a leak by itself; what the argv adds is
+// that it is OURS rather than the operator's (ranger-base-apwr).
+func (p Proc) orphanSuspect() bool {
+	return p.Orphaned() && p.CPU >= LoadCulpritOrphanCPU && p.Age >= LoadOrphanMinAge
 }
 
 // Orphaned is "reparented to init", the leak signal (ppid 1).
@@ -167,6 +211,23 @@ func (p Proc) Orphaned() bool { return p.PPID == 1 }
 // last column may contain spaces, so comm is the whole remainder of the
 // line and nothing ahead of it can shift under a field-index that counted
 // on a fixed width.
+//
+// WHY THERE ARE TWO READS AND NOT ONE (ranger-base-apwr). The orphan report
+// needs the UNTRUNCATED argv as well as comm, and darwin's ps cannot hand
+// over both in one call: every column but the LAST is cut to a fixed width,
+// measured on darwin 25.4.0 as 16 characters for comm and 63 for args, and
+// `-ww` does not lift it — `pid=,comm=,args=` renders
+// "/usr/libexec/com /usr/libexec/com.apple.cmio.videodriverkithostextension…",
+// whose comm no longer has a basename to take. So one column set cannot
+// serve both consumers, and the census takes a SECOND, pid-scoped read
+// where args IS last and is therefore whole.
+//
+// That second read costs nothing on a healthy box: fillOrphanArgs only runs
+// when the first read already found a reparented process burning CPU, which
+// on every box that is not wedged is no rows and no fork. It shares this
+// function's one deadline, so two reads cannot outlast what one was allowed,
+// and it fails open to no argv at all — which renders no orphan report and
+// leaves the culprit line exactly as ranger-base-0p6x shipped it.
 func SysTopCPU() ([]Proc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), loadCulpritTimeout)
 	defer cancel()
@@ -174,7 +235,100 @@ func SysTopCPU() ([]Proc, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseProcTable(string(out)), nil
+	procs := parseProcTable(string(out))
+	fillOrphanArgs(ctx, procs)
+	return procs, nil
+}
+
+// fillOrphanArgs reads the untruncated argv of the census rows the orphan
+// report could be about, and of no others. It reports nothing: an argv it
+// could not get is an empty Args, which the report reads as "not shown to be
+// ours" and skips. The guard exists for a box that cannot fork, so this must
+// never be able to fail or delay a pass — it takes the caller's deadline and
+// every failure is silence.
+func fillOrphanArgs(ctx context.Context, procs []Proc) {
+	ids := orphanSuspectPIDs(procs)
+	if len(ids) == 0 {
+		return
+	}
+	// args is the only column and so the last one: whole on both platforms,
+	// with -ww asking procps not to cut it to a screen width either.
+	out, err := exec.CommandContext(ctx, "ps", "-ww", "-o", "pid=,args=", "-p", strings.Join(ids, ",")).Output()
+	if err != nil {
+		return
+	}
+	args := parseArgsTable(string(out))
+	for i := range procs {
+		if a, ok := args[procs[i].PID]; ok {
+			procs[i].Args = a
+		}
+	}
+}
+
+// orphanSuspectPIDs is the scope of the census's second read, as ps wants it.
+// It is a function of its own because "only the suspects" is the property
+// that keeps the extra fork off a healthy box, and a property worth having
+// is worth being able to pin.
+func orphanSuspectPIDs(procs []Proc) []string {
+	var ids []string
+	for _, p := range procs {
+		if p.orphanSuspect() {
+			ids = append(ids, strconv.Itoa(p.PID))
+		}
+	}
+	return ids
+}
+
+// parseArgsTable reads `pid=,args=` — pid, then the whole rest of the line,
+// which is argv space-joined and may hold anything a persona typed. Lines it
+// cannot read are dropped rather than guessed at, exactly as parseProcTable
+// drops them.
+func parseArgsTable(out string) map[int]string {
+	args := map[int]string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimLeft(line, " ")
+		sp := strings.IndexByte(line, ' ')
+		if sp < 0 {
+			continue
+		}
+		pid, err := strconv.Atoi(line[:sp])
+		if err != nil {
+			continue
+		}
+		args[pid] = strings.TrimSpace(line[sp+1:])
+	}
+	return args
+}
+
+// gateShellForkPayload says whether an argv came out of one of our gated
+// commands, and hands back the persona's own command with our preamble taken
+// off the front.
+//
+// A forked subshell never execs, so it carries its parent's whole -c string
+// — the ADR 0009 preamble included. That is what makes this test cheap and
+// what makes it OURS: a busy orphan is always a leak, and the preamble is
+// what says the leak came from a persona Bash line rather than from
+// something the operator started (ranger-base-apwr).
+//
+// "OPENS with" is load-bearing and is enforced. The preamble must be the
+// head of a command string — the whole of the argv, or whatever follows the
+// shell's own `-c `. A preamble found deeper in a line is some other
+// process's text ABOUT ours (an editor, a grep, a `ps` of this very report),
+// and calling that a leak would be the teau misreading in a new costume.
+func gateShellForkPayload(args string) (string, bool) {
+	i := strings.Index(args, gateShellPreambleHead)
+	if i < 0 {
+		return "", false
+	}
+	if i != 0 && !strings.HasSuffix(args[:i], "-c ") {
+		return "", false
+	}
+	rest := args[i+len(gateShellPreambleHead):]
+	j := strings.Index(rest, gateShellPreambleTail)
+	if j < 0 {
+		return "", true // ours, but we cannot see where our own text ends
+	}
+	return strings.TrimSpace(rest[j+len(gateShellPreambleTail):]), true
 }
 
 // parseProcTable turns `ps` output into rows, dropping any line it cannot
@@ -292,5 +446,75 @@ func (a *App) LoadCulpritLine() string {
 		}
 		line += fmt.Sprintf(" — %d more orphaned process%s over %g%% CPU", rest, plural, LoadCulpritOrphanCPU)
 	}
-	return "\n  " + line
+	return "\n  " + line + orphanReport(busy)
+}
+
+// orphanReport is arm 1 of ranger-base-apwr: the leaked gate-shell children
+// this box is holding, named. It rides under the culprit line, off the same
+// single census, and it KILLS NOTHING.
+//
+// The report-only floor is deliberate and it is the operator's call to lift,
+// not ours. A persona that deliberately starts a long-lived process with a
+// trailing ampersand and lets the tool call return produces exactly this
+// signature, so a reaper that guessed would eventually kill something
+// somebody meant. What arm 1 buys is the 2.5 hours teau spent with sixteen
+// of these visible to any `ps` and named by nothing: the wedge becomes loud
+// without anything becoming destroyable.
+//
+// It is "" whenever it has nothing to say, which is every healthy box and
+// every box whose orphans are not ours.
+func orphanReport(busy []Proc) string {
+	type leak struct {
+		p       Proc
+		payload string
+	}
+	var leaks []leak
+	for _, p := range busy {
+		if !p.orphanSuspect() {
+			continue
+		}
+		payload, ours := gateShellForkPayload(p.Args)
+		if !ours {
+			continue
+		}
+		leaks = append(leaks, leak{p, payload})
+	}
+	if len(leaks) == 0 {
+		return ""
+	}
+	kids := "children"
+	if len(leaks) == 1 {
+		kids = "child"
+	}
+	out := fmt.Sprintf("\n  load guard: %d orphaned gate-shell %s (ppid 1, over %g%% CPU, over %s) — REPORT ONLY, nothing was killed:",
+		len(leaks), kids, LoadCulpritOrphanCPU, BlindFor(LoadOrphanMinAge))
+	shown := leaks
+	if len(shown) > loadOrphanTop {
+		shown = shown[:loadOrphanTop]
+	}
+	for _, l := range shown {
+		what := ellipsize(l.payload, loadOrphanPayload)
+		if what == "" {
+			// The head of our preamble matched and its tail did not, so
+			// where our text stops is unknown. Say so rather than print a
+			// slice of our own guard as if it were the persona's command.
+			what = "(command not readable behind the preamble)"
+		}
+		out += fmt.Sprintf("\n    %.1f%% pid %d %s: %s", l.p.CPU, l.p.PID, BlindFor(l.p.Age), what)
+	}
+	if n := len(leaks) - len(shown); n > 0 {
+		out += fmt.Sprintf("\n    %d more like these", n)
+	}
+	return out
+}
+
+// ellipsize cuts s to at most n runes, marking that it did. Runes, because
+// a persona command holds whatever the persona typed and half a UTF-8
+// sequence in a log line is a mess someone else has to read.
+func ellipsize(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }

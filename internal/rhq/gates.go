@@ -1094,6 +1094,28 @@ done
 exec "$REAL" "$@"
 `
 
+// The two placeholder-free ends of PRE above, as they appear in the argv of
+// anything the gate shell exec'd — read by the load guard's orphan report
+// (loadguard.go), which is the one consumer that must recognise our own
+// preamble in a stranger's `ps` row.
+//
+// A forked subshell never execs, so it keeps its parent's whole -c string:
+// that is what makes the preamble a reliable "this process came out of a
+// gated command" marker, and it is the same property that sent teau's first
+// diagnosis into the preamble when the argv was read as a stack. Both ends
+// are needed and neither is decoration — the HEAD says the string is ours,
+// and the TAIL is where our text stops and the persona's command begins, so
+// the report can show what the process actually was. Everything between them
+// interpolates $G (the persona's gates bin) and cannot be matched literally.
+//
+// TestGateShellPreambleEndsMatchTheScript renders the script and pins both
+// against it, so a preamble edit that forgets this pair fails there rather
+// than silently turning the report off.
+const (
+	gateShellPreambleHead = `_rgp=; _rgr="$PATH:"; while [ -n "$_rgr" ]; do `
+	gateShellPreambleTail = `; export PATH; unset _rgp _rgr _rge; `
+)
+
 // realShell resolves the shell the gate wrapper execs and the basename it
 // must be installed under: $SHELL when it is a bash or zsh that is really
 // there, else the first of zsh/bash on PATH, else /bin/sh. The basename

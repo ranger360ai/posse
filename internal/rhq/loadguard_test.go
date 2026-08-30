@@ -8,8 +8,11 @@ package rhq
 import (
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -449,6 +452,13 @@ func TestSysTopCPUReadsThisBox(t *testing.T) {
 		if p.PID <= 0 || p.PPID < 0 || p.CPU < 0 || p.Comm == "" || strings.Contains(p.Comm, "/") {
 			t.Errorf("unreadable row %+v — the columns moved", p)
 		}
+		// The census's SECOND read is scoped to the rows the orphan report
+		// could be about (ranger-base-apwr). Every other row's argv is
+		// unread, which is what keeps the extra fork off a healthy box —
+		// and this is the arm that measures it on a real table.
+		if p.Args != "" && !p.orphanSuspect() {
+			t.Errorf("argv was read for a row that is not a suspect: %+v", p)
+		}
 		if p.PID == self {
 			if p.PPID != os.Getppid() {
 				t.Errorf("this test's own row says ppid %d, want %d — the columns moved", p.PPID, os.Getppid())
@@ -528,5 +538,275 @@ func TestAHealthyPassNeverReadsTheProcessTable(t *testing.T) {
 	}
 	if strings.Contains(dispatcherOut(d), "top CPU") {
 		t.Errorf("a healthy pass named culprits it has no reason to look for:\n%s", dispatcherOut(d))
+	}
+}
+
+// ─── the orphan report, arm 1 (ranger-base-apwr) ────────────────────────────
+//
+// Nothing on this box ends a leaked gate-shell child. A non-interactive zsh
+// does not hang up its background jobs, so a Bash line that backgrounds
+// something and returns leaves it running with launchd as its parent; the
+// load guard then correctly declines to launch into the wreckage and waits
+// forever, because the wreckage has no living parent and nothing is looking
+// for it. That is teau's 2.5h freeze. Arm 1 makes it loud and kills nothing.
+
+// gateArgv is what a forked gate-shell child carries: the shell, the -c, our
+// whole preamble (with the per-persona middle that cannot be matched
+// literally), and then the persona's own command.
+func gateArgv(payload string) string {
+	return "/bin/zsh -c " + gateShellPreambleHead +
+		`_rge=${_rgr%%:*}; _rgr=${_rgr#*:}; case "$_rge" in ''|*/gates/*) ;; *) _rgp="$_rgp:$_rge";; esac; done; PATH="/h/state/gates/dinesh/bin$_rgp"` +
+		gateShellPreambleTail + payload
+}
+
+const teauPayload = `MARK=teau2; for i in 1 2 3 4 5 6 7 8; do (while :; do :; done) & done; spins=$(jobs -p); sleep 3; uptime`
+
+// leakRows is the incident: two batches of eight, orphaned, still burning.
+func leakRows(n int) []Proc {
+	var rows []Proc
+	for i := 0; i < n; i++ {
+		rows = append(rows, Proc{
+			PID: 49235 + i, PPID: 1, CPU: 36.9 - float64(i), Comm: "zsh",
+			Age: 2*time.Hour + 30*time.Minute, Args: gateArgv(teauPayload),
+		})
+	}
+	return rows
+}
+
+func TestOrphanReportNamesTheLeakedGateShellChildren(t *testing.T) {
+	a := NewAppAt(t.TempDir())
+	a.TopCPU = func() ([]Proc, error) { return leakRows(16), nil }
+	got := a.LoadCulpritLine()
+
+	for _, want := range []string{
+		"16 orphaned gate-shell children (ppid 1, over 20% CPU, over 1m)",
+		"REPORT ONLY, nothing was killed",
+		"36.9% pid 49235 2h30m: MARK=teau2; for i in 1 2 3 4 5 6 7 8;", // pid, CPU, age, payload
+		"13 more like these",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the orphan report must carry %q:\n%s", want, got)
+		}
+	}
+	// The payload is the persona's command — our own preamble is what the
+	// operator already knows and is exactly what cost teau its first hour.
+	if strings.Contains(got, gateShellPreambleHead) || strings.Contains(got, "_rgp") {
+		t.Errorf("the report must show the payload AFTER the preamble, not the preamble:\n%s", got)
+	}
+	// Three named outright, the rest counted: a log line, not a listing.
+	if n := strings.Count(got, "2h30m:"); n != loadOrphanTop {
+		t.Errorf("want %d orphans named outright, got %d:\n%s", loadOrphanTop, n, got)
+	}
+	// It rides under the culprit line, off the same one census reading.
+	if !strings.HasPrefix(got, "\n  load guard: top CPU:") {
+		t.Errorf("the culprit line must still come first:\n%s", got)
+	}
+	// A long command is cut, and cut visibly.
+	long := leakRows(1)
+	long[0].Args = gateArgv(strings.Repeat("x", 400))
+	a.TopCPU = func() ([]Proc, error) { return long, nil }
+	one := a.LoadCulpritLine()
+	if !strings.Contains(one, strings.Repeat("x", loadOrphanPayload)+"…") ||
+		strings.Contains(one, strings.Repeat("x", loadOrphanPayload+1)) {
+		t.Errorf("the payload must be cut to %d and marked:\n%s", loadOrphanPayload, one)
+	}
+	if !strings.Contains(one, "1 orphaned gate-shell child (") || strings.Contains(one, "more like these") {
+		t.Errorf("one leak is one child, singular, with nothing left to count:\n%s", one)
+	}
+}
+
+// Everything the predicate must NOT fire on. Each row here is a top CPU
+// burner, so each one reaches the culprit line and none may reach the report.
+func TestOrphanReportSkipsWhatIsNotALeak(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		row  Proc
+	}{
+		{"a busy child of a live session, gate shell and all", Proc{
+			PID: 812, PPID: 4021, CPU: 99, Age: time.Hour, Comm: "zsh", Args: gateArgv(teauPayload)}},
+		{"an orphan under the CPU floor", Proc{
+			PID: 813, PPID: 1, CPU: LoadCulpritOrphanCPU - 0.1, Age: time.Hour, Comm: "zsh", Args: gateArgv(teauPayload)}},
+		{"an orphan younger than the age floor", Proc{
+			PID: 814, PPID: 1, CPU: 99, Age: LoadOrphanMinAge - time.Second, Comm: "zsh", Args: gateArgv(teauPayload)}},
+		{"the operator's own orphaned build", Proc{
+			PID: 815, PPID: 1, CPU: 99, Age: time.Hour, Comm: "go", Args: "go build ./..."}},
+		{"an orphan whose argv we could not read", Proc{
+			PID: 816, PPID: 1, CPU: 99, Age: time.Hour, Comm: "zsh", Args: ""}},
+		// The teau misreading in a new costume: a process whose argv TALKS
+		// about the preamble is not a process that came out of one.
+		{"something merely holding our preamble in its argv", Proc{
+			PID: 817, PPID: 1, CPU: 99, Age: time.Hour, Comm: "grep",
+			Args: "grep -n " + gateShellPreambleHead + " internal/rhq/gates.go"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := NewAppAt(t.TempDir())
+			a.TopCPU = func() ([]Proc, error) { return []Proc{tc.row}, nil }
+			got := a.LoadCulpritLine()
+			if !strings.Contains(got, "top CPU:") {
+				t.Fatalf("the row must still reach the culprit line, or this proves nothing: %q", got)
+			}
+			if strings.Contains(got, "orphaned gate-shell chil") {
+				t.Errorf("this is not a leaked gate-shell child:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestGateShellForkPayloadOpensWithThePreamble(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args string
+		want string
+		ours bool
+	}{
+		{"a forked child of a gated -c line", gateArgv(teauPayload), teauPayload, true},
+		{"the -c string on its own, no argv0", gateArgv(teauPayload)[len("/bin/zsh -c "):], teauPayload, true},
+		{"nothing of ours in it", "node /x/server.js", "", false},
+		// A -c ANYWHERE ahead of it is not enough: what must precede the
+		// preamble is the shell's own `-c `, immediately.
+		{"our preamble, but not at the head of a command string",
+			"cat /tmp/gates.log " + gateShellPreambleHead + "_rge=${_rgr%%:*}" + gateShellPreambleTail + "rm -rf /", "", false},
+		{"a head with no tail: ours, but we cannot see where our text stops",
+			"/bin/zsh -c " + gateShellPreambleHead + "_rge=${_rgr%%:*}", "", true},
+		{"an empty argv", "", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ours := gateShellForkPayload(tc.args)
+			if ours != tc.ours || got != tc.want {
+				t.Errorf("gateShellForkPayload(...) = %q, %v; want %q, %v", got, ours, tc.want, tc.ours)
+			}
+		})
+	}
+}
+
+// The second read is scoped to the suspects, and that scope is the whole
+// reason it costs nothing: on a box that is loaded but not leaking there is
+// no second fork at all.
+func TestOrphanSuspectPIDsScopeTheSecondRead(t *testing.T) {
+	// A loaded box with nothing reparented takes no second read at all,
+	// which is what keeps the extra fork off every healthy box.
+	var busy []Proc
+	for i := 0; i < 8; i++ {
+		busy = append(busy, Proc{PID: 900 + i, PPID: 4021, CPU: 99, Age: time.Hour, Comm: "go"})
+	}
+	if ids := orphanSuspectPIDs(busy); ids != nil {
+		t.Errorf("a loaded box with no orphan must take no second read, got %v", ids)
+	}
+	// Each half of the cheap predicate excludes on its own.
+	busy = append(busy,
+		Proc{PID: 910, PPID: 1, CPU: LoadCulpritOrphanCPU - 0.1, Age: time.Hour, Comm: "zsh"},
+		Proc{PID: 911, PPID: 1, CPU: 99, Age: LoadOrphanMinAge - time.Second, Comm: "zsh"},
+		Proc{PID: 912, PPID: 1, CPU: LoadCulpritOrphanCPU, Age: LoadOrphanMinAge, Comm: "zsh"},
+		Proc{PID: 913, PPID: 1, CPU: 36.9, Age: 2*time.Hour + 30*time.Minute, Comm: "zsh"},
+	)
+	got := orphanSuspectPIDs(busy)
+	if len(got) != 2 || got[0] != "912" || got[1] != "913" {
+		t.Errorf("only the suspects may have their argv read, and both floors are inclusive; got %v", got)
+	}
+}
+
+func TestParseArgsTable(t *testing.T) {
+	got := parseArgsTable("" +
+		"49235 /bin/zsh -c echo  hi   there\n" +
+		"  812 node /x/server.js\n" +
+		"\n" +
+		"nopid something\n" +
+		"999\n")
+	want := map[int]string{
+		49235: "/bin/zsh -c echo  hi   there", // the command's own spacing survives
+		812:   "node /x/server.js",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d: %v", len(got), len(want), got)
+	}
+	for pid, w := range want {
+		if got[pid] != w {
+			t.Errorf("pid %d = %q, want %q", pid, got[pid], w)
+		}
+	}
+}
+
+// The predicate against a REAL argv, produced by the real gate shell on the
+// box this suite is running on: render the wrapper, run a gated -c line that
+// forks a subshell and returns, then read that subshell's argv with the same
+// `ps` the census uses and hand it to the same predicate.
+//
+// It is the argv half of the control, and it is the half that can be taken
+// safely anywhere: the child blocks on a fifo instead of burning a core, so
+// nothing here loads the box. The ppid-1 and CPU halves need a leak that is
+// really orphaned and really spinning, which is scripts/verify-orphan-report.sh
+// in a CPU-limited container, per the operator's ruling on ranger-base-teau.
+//
+// A detector that has never fired has not been shown able to fire, and the
+// arm that shows it CAN fail is right below: the same shell, the same fork,
+// the same `ps` read, with the wrapper taken out of the line.
+func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
+	if _, err := exec.LookPath("ps"); err != nil {
+		t.Skipf("no ps: %v", err)
+	}
+	dir := t.TempDir()
+	gatesDir := filepath.Join(dir, "gates")
+	wrapper, err := writeGateShell("dinesh", gatesDir, filepath.Join(gatesDir, "bin"), "/bin/sh", "sh")
+	if err != nil {
+		t.Fatalf("writeGateShell: %v", err)
+	}
+
+	// fork(2) with no exec(2) is the whole mechanism: the child keeps its
+	// parent's -c string, preamble and all. `read` is a builtin, so the
+	// subshell blocks in ITSELF rather than in a grandchild — nothing to
+	// leak but the one process this test opens the fifo to release. stdout
+	// is redirected because a backgrounded child inherits the pipe Output()
+	// is waiting on, and that wait would never end (teau RCA, probe note).
+	fifo := filepath.Join(dir, "hold")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	payload := "( read x < " + fifo + " ) >/dev/null 2>&1 & echo $!"
+
+	fork := func(shell string) (int, string) {
+		t.Helper()
+		out, err := exec.Command(shell, "-c", payload).Output()
+		if err != nil {
+			t.Fatalf("%s -c: %v", shell, err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Fatalf("%s printed no pid: %q", shell, out)
+		}
+		t.Cleanup(func() {
+			// Release it the way it is meant to end, and kill only if that
+			// did not take. O_NONBLOCK so an already-dead child cannot hang
+			// this open forever.
+			if f, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+				f.Write([]byte("\n"))
+				f.Close()
+			}
+			syscall.Kill(pid, syscall.SIGKILL)
+		})
+		table, err := exec.Command("ps", "-ww", "-o", "pid=,args=", "-p", strconv.Itoa(pid)).Output()
+		if err != nil {
+			t.Fatalf("ps -p %d: %v", pid, err)
+		}
+		args := parseArgsTable(string(table))[pid]
+		if args == "" {
+			t.Fatalf("ps said nothing about pid %d: %q", pid, table)
+		}
+		return pid, args
+	}
+
+	_, gated := fork(wrapper)
+	got, ours := gateShellForkPayload(gated)
+	if !ours {
+		t.Fatalf("a real forked child of a real gate shell was not recognised as ours:\n%s", gated)
+	}
+	if got != payload {
+		t.Errorf("the payload after the preamble must be the persona's own command:\n got  %q\n want %q\n argv %s", got, payload, gated)
+	}
+
+	// The wrong arm. Same shell, same fork, same read — no wrapper, so no
+	// preamble, so not ours. Without this the pin above is green over a
+	// predicate that could be answering "yes" to everything.
+	if _, ungated := fork("/bin/sh"); func() bool { _, o := gateShellForkPayload(ungated); return o }() {
+		t.Errorf("a fork of an UNGATED shell must not be ours:\n%s", ungated)
 	}
 }

@@ -2890,3 +2890,47 @@ func TestL3HooksStampWithoutABareDate(t *testing.T) {
 		}
 	}
 }
+
+// The load guard's orphan report (ranger-base-apwr) recognises a leaked
+// gate-shell child by the two placeholder-free ends of PRE. They are copies
+// of text that lives in gateShellScript, so they can drift out of it — and
+// the drift is SILENT in the direction that matters: a preamble edit that
+// leaves the markers behind turns the report off, and a report that names
+// nothing looks exactly like a healthy box.
+//
+// This reads PRE out of the script the way sh does: the value is a
+// double-quoted assignment, so `\"` is a quote and `\$` is a dollar, and
+// what is left is what a child's argv carries.
+func TestGateShellPreambleEndsMatchTheScript(t *testing.T) {
+	var line string
+	for _, l := range strings.Split(gateShellScript, "\n") {
+		if strings.HasPrefix(l, "PRE=") {
+			line = l
+			break
+		}
+	}
+	if line == "" {
+		t.Fatal("gateShellScript no longer assigns PRE — the orphan report reads its ends")
+	}
+	pre := strings.TrimSuffix(strings.TrimPrefix(line, `PRE="`), `"`)
+	if pre == line {
+		t.Fatalf("PRE is not the double-quoted assignment this pin knows how to read: %s", line)
+	}
+	pre = strings.NewReplacer(`\"`, `"`, `\$`, `$`).Replace(pre)
+
+	if !strings.HasPrefix(pre, gateShellPreambleHead) {
+		t.Errorf("PRE must OPEN with gateShellPreambleHead, or a forked child's argv is not recognised as ours:\n  PRE  %q\n  head %q", pre, gateShellPreambleHead)
+	}
+	if !strings.HasSuffix(pre, gateShellPreambleTail) {
+		t.Errorf("PRE must END with gateShellPreambleTail, or the report cannot say where our text stops and the persona's command begins:\n  PRE  %q\n  tail %q", pre, gateShellPreambleTail)
+	}
+	// Neither end may carry a placeholder: they are matched literally
+	// against an argv rendered for some other persona, on some other box.
+	for _, ph := range []string{"__PERSONA__", "__GATES_BIN__", "__REAL__", "__GATES_DIR__", "__STAMP__", "$G"} {
+		for _, end := range []string{gateShellPreambleHead, gateShellPreambleTail} {
+			if strings.Contains(end, ph) {
+				t.Errorf("%q is rendered per persona and cannot be matched literally, but %q carries it", ph, end)
+			}
+		}
+	}
+}

@@ -542,6 +542,27 @@ default_emoji: ⚙️
 # a frozen fleet. That reading is one bounded `ps`, taken only on a pass that
 # is already being skipped, and it prints nothing at all rather than delay or
 # fail a pass it cannot take it for.
+#
+# When those orphans are posse's own, they are named individually under it:
+#
+#   load guard: 16 orphaned gate-shell children (ppid 1, over 20% CPU, over 1m)
+#     — REPORT ONLY, nothing was killed:
+#     36.9% pid 49235 2h30m: MARK=x; for i in 1 2 3 4 5 6 7 8; do (while :; …
+#     13 more like these
+#
+# A persona Bash line that backgrounds something and returns leaves it
+# running: a non-interactive shell does not hang up its background jobs, so
+# the child is adopted by init and NOTHING on the box ends it. The guard then
+# correctly declines to launch into the wreckage and waits forever, because
+# the wreckage has no living parent and nothing is looking for it. That is the
+# whole of the 2.5h freeze, and this line is what makes it loud.
+#
+# "Ours" is read off the argv: a subshell forked from a gated command never
+# execs, so it carries the gate shell's PATH preamble, and what is shown is
+# the command AFTER that preamble. **It kills nothing, by design.** A persona
+# that deliberately starts a long-lived process with a trailing `&` looks
+# exactly the same from here, so ending one is the operator's call and needs
+# an explicit exception, not a threshold that looked convincing.
 # load_guard: 25             # 1-min loadavg ceiling for launching; 0 = off
 
 # ─── governance: what needs a human (`posse status`) ─────────────────────────
