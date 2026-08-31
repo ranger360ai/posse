@@ -319,7 +319,7 @@ by the absence of a symlink, not by policy.
 
 The belt is the operator's hand, not this lane's:
     brew pin $formula
-  or install the operator's own formula: brew install davidstacy/local/$formula@$want_ver
+  or install from the operator's own tap: brew install <your-tap>/$formula@$want_ver
 
 EOF
 fi
