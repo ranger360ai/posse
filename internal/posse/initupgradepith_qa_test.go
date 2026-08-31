@@ -20,6 +20,8 @@ package posse
 
 import (
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -51,7 +53,6 @@ func newerSeed(t *testing.T) fs.FS {
 }
 
 func TestQAUpgradeInitDoesNotBreakTheLaunchVerifyItCannotSee(t *testing.T) {
-	t.Skip("ranger-base-pith: an upgrade init adds seed files to the promoted set of an armed home and never re-stamps, so every dispatched launch is refused from then on")
 	wtqaHome(t)
 	b, _ := newTestBackend(t)
 	a := b.App
@@ -96,5 +97,88 @@ func TestQAUpgradeInitDoesNotBreakTheLaunchVerifyItCannotSee(t *testing.T) {
 	}
 	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "architect", Bead: "x-1"}); err != nil {
 		t.Errorf("the advertised upgrade refuses every dispatched launch: %v", err)
+	}
+}
+
+// TestQAUpgradeInitOnAPromotedHomeNamesPossePromote is the same trap on the
+// OTHER kind of armed home. A `seeded` manifest gets re-stamped for exactly
+// what this run wrote (the case above); a genuinely PROMOTED one (Seeded ==
+// false) never may be — that manifest is a claim about a commit, and only
+// `posse promote` may restate it (init.go's comment on `repaired`). So an
+// upgrade init that adds recipes/ or skills/ files to a promoted home has no
+// re-stamp available to it at all, and used to say nothing either — exit 0,
+// the manifest untouched, every dispatched launch refusing from then on with
+// nothing connecting it back to this init.
+func TestQAUpgradeInitOnAPromotedHomeNamesPossePromote(t *testing.T) {
+	wtqaHome(t)
+	b, _ := newTestBackend(t)
+	a := b.App
+
+	var out strings.Builder
+	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
+		t.Fatal(err)
+	}
+	qaPID(t, b, "architect", TierStandard)
+	// Stand in for `posse promote`: a manifest that is a claim about a
+	// commit, Seeded left false the way CmdPromote writes one.
+	m := &PromoteManifest{Version: promoteManifestVersion, Source: "/somewhere/constitution", SHA: strings.Repeat("a", 40)}
+	files, err := HashPromotedSet(a.Home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Files = files
+	if err := m.write(a.PromoteManifestPath()); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.VerifyPromoted(); !v.OK() {
+		t.Fatalf("fixture does not verify: %s", v.Line())
+	}
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s0", Dir: t.TempDir(), Agent: "architect", Bead: "x-1"}); err != nil {
+		t.Fatalf("board not set up: %v", err)
+	}
+
+	// THE UPGRADE, on the promoted home this time.
+	out.Reset()
+	if err := a.initFrom(&out, newerSeed(t), "newer"); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.VerifyPromoted(); v.OK() {
+		t.Fatal("fixture: the upgrade did not add anything the manifest doesn't already name")
+	} else if !strings.Contains(out.String(), "posse promote") {
+		t.Errorf("init broke the launch verify and said nothing about it:\n  verdict: %s\n  init said:\n%s", v.Line(), out.String())
+	}
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "architect", Bead: "x-1"}); err == nil {
+		t.Fatal("fixture: expected the upgrade to trip the launch verify on a promoted home")
+	}
+}
+
+// TestQAUpgradeInitOnUnreadableManifestNamesTheProblem — a second, smaller
+// instance of the same silence (ranger-base-pith comment, 2026-08-29).
+// Before 5fbb28c a promoted.json init could not read killed
+// `posse init` outright; now the read error is swallowed into `manErr` and
+// init exits 0 having left a home the unattended fleet cannot dispatch to,
+// with nothing printed connecting the two.
+func TestQAUpgradeInitOnUnreadableManifestNamesTheProblem(t *testing.T) {
+	wtqaHome(t)
+	// Hermetic against the operator fence (ADR 0031 §2): see newTestBackend.
+	t.Setenv(EnvPersona, "")
+	a := NewAppAt(filepath.Join(t.TempDir(), "home"))
+	if err := os.MkdirAll(a.Home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a.PromoteManifestPath(), []byte("not json{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
+		t.Fatal(err)
+	}
+	v := a.VerifyPromoted()
+	if v.Err == nil {
+		t.Fatal("fixture: expected the manifest to still be unreadable after init")
+	}
+	if !strings.Contains(out.String(), "unreadable") || !strings.Contains(out.String(), "posse promote") {
+		t.Errorf("init left a home the fleet cannot dispatch to and said nothing about it:\n  verdict: %s\n  init said:\n%s", v.Line(), out.String())
 	}
 }

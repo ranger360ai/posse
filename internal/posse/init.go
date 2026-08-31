@@ -341,6 +341,21 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		fmt.Fprintf(w, "left this home unstamped: it already had a constitution, and a manifest init wrote over it would arm the launch verify on prose nobody ratified (ADR 0015 §3)\n")
 		fmt.Fprintf(w, "  the verify stays off until you run `posse promote`; until then no launch is refused for it\n")
 	}
+	// The arms above cover every way THIS run can leave the launch verify
+	// clean; what they do not cover is a home the verify already reads as
+	// broken for a reason none of them names — a promoted (not seeded) home
+	// this run just added recipes/ or skills/ files to (ranger-base-pith:
+	// copyIfMissing only ever ADDS, and only `posse promote` may re-stamp a
+	// promoted manifest, so init cannot fix this one itself), or a
+	// promoted.json this run found already unreadable (ranger-base-pith,
+	// comment 2026-08-29).
+	// Both used to reach exit 0 with nothing printed, so a dispatched launch
+	// started refusing hours later with nothing connecting it back to this
+	// init. One check closes both: whatever VerifyPromoted reads on the way
+	// out is what the next dispatched launch will read too.
+	if v := a.VerifyPromoted(); !v.OK() {
+		fmt.Fprintf(w, "%s — every dispatched launch will refuse until you run `posse promote` (ADR 0015 §3)\n", v.Line())
+	}
 	// A fresh instance has no crew, and that is the shipped state, not a
 	// half-seed: say where the reference PIDs are and how to get a real
 	// one, or the next command an operator runs is a dispatch pass that
