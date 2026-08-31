@@ -257,6 +257,44 @@ You are developer.
 	}
 }
 
+// ranger-base-wogo: a persona's `verify_labels` default is its own
+// catch-all routing label (`code`, `devops`), which by design matches no
+// intent slug — so a close carrying only that label, with no second, more
+// specific label alongside it, must still recover the row from the bead's
+// issue type.
+func TestVerifyDescriptionDoneWhenFallsBackToIssueType(t *testing.T) {
+	b, _ := newTestBackend(t)
+	a := b.App
+	os.MkdirAll(a.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(a.AgentsDir, "developer.md"), []byte(`---
+name: developer
+labels: [code, feature, bug]
+---
+You are developer.
+
+## Intents
+| intent | mode | done when |
+|---|---|---|
+| build-features | fleet | implemented per spec, tested, committed |
+| fix-bugs | fleet | root cause named in the commit, regression test added, suite green |
+`), 0o644)
+
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	// Only the catch-all label — exactly what a production close carries
+	// (0/30 live verify beads had a second, more specific label).
+	is := BdIssue{ID: "a-1", Title: "gate shell", Assignee: "developer",
+		Labels: []string{"code"}, IssueType: "bug", CloseReason: "fixed", ClosedAt: &closed}
+
+	if intent, done := a.closerDoneWhen(verifyCloser(is), is); intent != "fix-bugs" || !strings.Contains(done, "root cause named") {
+		t.Errorf("issue_type fallback failed: intent=%q done=%q", intent, done)
+	}
+
+	got := a.verifyDescription(t.TempDir(), is, verifyCloser(is))
+	if !strings.Contains(got, "done when (developer · fix-bugs): root cause named in the commit") {
+		t.Errorf("description missing done-when row recovered from issue_type:\n%s", got)
+	}
+}
+
 // A label that matches no intent row costs a line, not an error.
 func TestIntentDoneWhenNoMatch(t *testing.T) {
 	ag := &AgentFile{Body: "## Intents\n| intent | mode | done when |\n|---|---|---|\n| design | crew | an ADR is committed |\n"}

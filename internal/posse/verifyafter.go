@@ -694,7 +694,7 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 	if len(is.Labels) > 0 {
 		fmt.Fprintf(&b, "- labels: %s\n", verifyOneLine(strings.Join(is.Labels, ", ")))
 	}
-	if intent, done := a.closerDoneWhen(closer, is.Labels); done != "" {
+	if intent, done := a.closerDoneWhen(closer, is); done != "" {
 		fmt.Fprintf(&b, "- done when (%s · %s): %s\n", verifyOneLine(closer), verifyOneLine(intent), verifyOneLine(done))
 	}
 	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
@@ -718,7 +718,17 @@ func verifyOneLine(s string) string { return strings.TrimSpace(verifyLineBreaks.
 
 // closerDoneWhen is best effort in both directions: the closer may not be a
 // persona on this box, and its PID may have no intent matching the bead.
-func (a *App) closerDoneWhen(closer string, labels []string) (intent, doneWhen string) {
+//
+// The match candidates are the bead's labels PLUS its bd issue type
+// (`bug`, `feature`, ...). Labels alone are structurally unreachable for
+// most closes: a persona's `verify_labels` default is its own catch-all
+// routing label (`code`, `devops`, ...), which by design names no specific
+// intent, and a production close rarely carries a second, more specific
+// label alongside it (ranger-base-wogo — 0/30 live verify beads carried
+// this row). The issue type is set on every bead and is exactly the kind
+// of word `intentMatchesLabel` already expects (`bug` -> `fix-bugs`), so it
+// recovers the match without inventing a label vocabulary.
+func (a *App) closerDoneWhen(closer string, is BdIssue) (intent, doneWhen string) {
 	if closer == "" {
 		return "", ""
 	}
@@ -726,7 +736,11 @@ func (a *App) closerDoneWhen(closer string, labels []string) (intent, doneWhen s
 	if err != nil {
 		return "", ""
 	}
-	return ag.IntentDoneWhen(labels)
+	cands := is.Labels
+	if is.IssueType != "" {
+		cands = append(append([]string{}, is.Labels...), is.IssueType)
+	}
+	return ag.IntentDoneWhen(cands)
 }
 
 // gitCommitsFor is the commit trail the ADR asks for, and the structured
