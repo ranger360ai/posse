@@ -560,10 +560,16 @@ func (a *App) envSetsWith(key string) []envSite {
 // to something else, and a stamp read off the wrong variable is a date
 // reported about a credential it is not true of.
 //
+// A key assigned more than once keeps scanning and returns the stamps off
+// the LAST assignment, not the first: parseEnvLines keeps every assignment
+// in file order, and the last one is the value a launch ends up exporting.
+// Dating the first would be a confident date on a mint nobody uses.
+//
 // The assignment is recognized exactly as parseEnvLines recognizes one, so
 // the line posse rewrites is the line a launch reads.
 func readStamps(data, key string) (envSite, bool) {
-	var pending envSite
+	var pending, last envSite
+	found := false
 	for _, line := range strings.Split(data, "\n") {
 		t := strings.TrimSpace(line)
 		if t == "" {
@@ -580,11 +586,11 @@ func readStamps(data, key string) (envSite, bool) {
 			continue
 		}
 		if assignsKey(line, key) {
-			return pending, true
+			last, found = pending, true
 		}
 		pending = envSite{}
 	}
-	return envSite{}, false
+	return last, found
 }
 
 // assignsKey reads a line the way parseEnvLines does: "export " tolerated,

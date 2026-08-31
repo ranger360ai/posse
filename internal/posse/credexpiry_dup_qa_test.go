@@ -8,10 +8,6 @@ package posse
 // that belongs to the line above the one it looks like it belongs to — and
 // the two edges (the window's own boundary and expiryIn's) the rules are
 // expressed in.
-//
-// One of them is skipped: ranger-base-bb6i, where a set that assigns the
-// same variable twice is dated off the FIRST assignment while a launch
-// exports the LAST.
 
 import (
 	"strings"
@@ -21,14 +17,12 @@ import (
 
 // ─── ranger-base-bb6i ───────────────────────────────────────────────────────
 
-// readStamps returns on the first line that assigns the key. parseEnvLines
-// keeps every assignment in file order and the last is what a launch ends up
-// exporting. So a set with the variable twice is dated off a value nobody
-// uses — a confident wrong date over a live mint, which is the one direction
-// ADR 0019 D5's design says it will never err in ("strictly worse than
-// cannot tell").
+// readStamps returns the stamps off the LAST line that assigns the key.
+// parseEnvLines keeps every assignment in file order and the last is what a
+// launch ends up exporting, so dating the first would be a confident wrong
+// date over a live mint — the one direction ADR 0019 D5's design says it
+// will never err in ("strictly worse than cannot tell").
 func TestQAExpiryDatesTheAssignmentALaunchActuallyExports(t *testing.T) {
-	t.Skip("ranger-base-bb6i: the first assignment's stamp dates the last assignment's value")
 	a := refreshApp(t)
 	key := CageCredential(mustRuntime(t, a, "claude"))
 	writeEnvFile(t, a, "container",
