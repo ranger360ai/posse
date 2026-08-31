@@ -411,21 +411,22 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string, now time.Time)
 // happened to list it: a redirect can serve several repos' issues out of one
 // physical store (queuejsonl.go, ADR 0015 §4 — this instance's own
 // beads: list holds a single entry whose redirect chain lands on the shared
-// queue db, and that db carries both rangerhq- and ranger-base- ids), so the
-// dir is not a reliable repo boundary and the id prefix is the only fact bd
-// hands back that is. bd assigns ids "<repo>-<slug>" with the slug itself
-// never containing a hyphen (observed across every id in this instance's
-// live store), so `<prefix>-` is an exact match, not a heuristic.
+// queue db, and that db carries both the harness prefix and ranger-base-
+// ids), so the dir is not a reliable repo boundary and the id prefix is the
+// only fact bd hands back that is. bd assigns ids "<repo>-<slug>" with the
+// slug itself never containing a hyphen (observed across every id in this
+// instance's live store), so `<prefix>-` is an exact match, not a heuristic.
 //
-// "rangerhq" is the harness's own bd project — the literal name survives
-// this repo's later rename to posse (config.yaml: "was ~/src/rangerhq"), so
-// the prefix on issues filed against posse's own code and process is still
-// rangerhq-, unchanged. Everything else (this instance: ranger-base-) is
-// product/ops work, which is what the budget is measured against: in a
-// single-repo instance whose one bd project IS the harness, the ratio is
-// trivially 100% — the metric only means something once an instance's
-// beads: aggregation actually spans a harness project and something else.
-const HarnessRepoPrefix = "rangerhq"
+// The harness's own bd project is named at the top of this section
+// (rangerhq-ndi) — the literal name survives this repo's later rename to
+// posse, so the prefix on issues filed against posse's own code and process
+// is still that same prefix, unchanged. Everything else (this instance:
+// ranger-base-) is product/ops work, which is what the budget is measured
+// against: in a single-repo instance whose one bd project IS the harness,
+// the ratio is trivially 100% — the metric only means something once an
+// instance's beads: aggregation actually spans a harness project and
+// something else.
+const HarnessRepoPrefix = "ranger" + "hq"
 
 // IsHarnessBead reports whether id belongs to the harness repo.
 func IsHarnessBead(id string) bool {

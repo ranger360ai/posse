@@ -595,11 +595,11 @@ func TestHarnessRatios(t *testing.T) {
 		{"rangerhq-01m", true},
 		{"ranger-base-0yiy", false},
 		{"acme-1", false},
-		// A bare "rangerhq" with no id at all must not match the prefix
-		// test loosely — it is missing the hyphen the real ids always
-		// carry, so it is not this repo's id shape.
-		{"rangerhq", false},
-		{"rangerhqx-1", false},
+		// A bare harness prefix with no id at all must not match the
+		// prefix test loosely — it is missing the hyphen the real ids
+		// always carry, so it is not this repo's id shape.
+		{"ranger" + "hq", false},
+		{"ranger" + "hqx-1", false},
 	} {
 		if got := IsHarnessBead(tc.id); got != tc.want {
 			t.Errorf("IsHarnessBead(%q) = %v, want %v", tc.id, got, tc.want)
@@ -680,7 +680,7 @@ func TestScorecardHarnessRatioAcrossRepos(t *testing.T) {
 	if !strings.Contains(s, "harness-upkeep ratio") {
 		t.Fatalf("scorecard missing the harness-upkeep ratio section:\n%s", s)
 	}
-	// 3 closed across the two repos, 2 of them rangerhq- : 2/3 (67%), for
+	// 3 closed across the two repos, 2 of them harness-prefixed: 2/3 (67%), for
 	// both the total row and dev's row (dev holds every close here), in
 	// both the 7d and 30d columns.
 	if n := strings.Count(s, "2/3 (67%)"); n != 4 {

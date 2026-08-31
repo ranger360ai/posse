@@ -2492,17 +2492,18 @@ DIRECTION.md's caution that Gas Town died of harness self-refinement budgets
 ~20-25% of all work at harness upkeep, and this makes the number a fact
 rather than a feeling — closed beads, harness vs everything else, over 7d
 and 30d, per persona and total. **What counts as "harness"**: a bead whose
-own id carries the `rangerhq-` prefix — the harness's bd project, unchanged
-since this repo's prior name (config.yaml: "was ~/src/rangerhq"), so issues
-filed against posse's own code and process still read `rangerhq-` regardless
-of the directory's current name. Everything else counts as product/ops
-work, which is the bucket the budget is measured against. The classifier
-reads the id (`IsHarnessBead`, scorecard.go), never the configured `beads:`
-dir: a `.beads/redirect` can serve several repos' issues out of one shared
-store (ADR 0015 §4) — this instance's own `beads:` list holds a single
-entry whose redirect chain lands on the shared queue db, and that db mixes
-`rangerhq-` and `ranger-base-` ids — so the dir is not a repo boundary and
-the id prefix is the only fact bd hands back that is. `IsHarnessBead` costs
+own id carries the same prefix as this bead's own id above (rangerhq-ndi)
+— the harness's bd project, unchanged since this repo's prior name, so
+issues filed against posse's own code and process still carry that prefix
+regardless of the directory's current name. Everything else counts as
+product/ops work, which is the bucket the budget is measured against. The
+classifier reads the id (`IsHarnessBead`, scorecard.go), never the
+configured `beads:` dir: a `.beads/redirect` can serve several repos'
+issues out of one shared store (ADR 0015 §4) — this instance's own
+`beads:` list holds a single entry whose redirect chain lands on the
+shared queue db, and that db mixes the harness prefix and `ranger-base-`
+ids — so the dir is not a repo boundary and the id prefix is the only
+fact bd hands back that is. `IsHarnessBead` costs
 nothing extra to compute: the ratio buckets the same `bd list --all --json`
 rows the rest of the card already scanned, across the same repos and with
 the same "scored N of M" caveat when one fails to read. In a single-repo
