@@ -1488,6 +1488,10 @@ func TestHerdrCreateSession(t *testing.T) {
 		// ones — a crew session runs rhq/bd tools too, and without this
 		// they would resolve the wrong instance's config, queue, skills.
 		"--env RHQ_HOME=" + b.App.Home,
+		// ADR 0031 §1: RHQ_LAUNCH_HOME rides every session too (crew
+		// included) — it is the origin record init compares against,
+		// not an address, so it carries the same value here.
+		"--env RHQ_LAUNCH_HOME=" + b.App.Home,
 		"pane run w1:p1 npm run dev",
 	} {
 		if !strings.Contains(log, want) {
@@ -2152,6 +2156,13 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	}
 	if !strings.Contains(log, "--env RHQ_HOME="+b.App.Home) {
 		t.Errorf("RHQ_HOME missing (rangerhq-ysly):\n%s", log)
+	}
+	// ADR 0031 §1: RHQ_LAUNCH_HOME is a persona session's origin record —
+	// same value as RHQ_HOME at launch, but init compares against this one
+	// because a persona overriding RHQ_HOME for a scratch run leaves it
+	// standing.
+	if !strings.Contains(log, "--env RHQ_LAUNCH_HOME="+b.App.Home) {
+		t.Errorf("RHQ_LAUNCH_HOME missing (ADR 0031 §1):\n%s", log)
 	}
 	if !strings.Contains(log, "GATES claude --model 'claude-fable-5' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -c model='gpt-5.6-sol' -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
 		t.Errorf("rendered commands:\n%s", log)

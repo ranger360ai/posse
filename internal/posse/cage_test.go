@@ -139,7 +139,7 @@ func TestCageRenderMountsAndEnvNames(t *testing.T) {
 		t.Errorf("the engine's own binary leads the argv: %q", argv)
 	}
 	for _, want := range [][]string{
-		{"-e", "RHQ_HOME"}, {"-e", "BD_ACTOR"}, {"-e", "RHQ_TOOLS_DENY"}, {"-e", "CLAUDE_CODE_OAUTH_TOKEN"},
+		{"-e", "RHQ_HOME"}, {"-e", "RHQ_LAUNCH_HOME"}, {"-e", "BD_ACTOR"}, {"-e", "RHQ_TOOLS_DENY"}, {"-e", "CLAUDE_CODE_OAUTH_TOKEN"},
 		{"-w", dir}, {"img:tag"},
 		{"-v", ag.Path + ":" + ag.Path + ":ro"}, {"-v", dir + ":" + dir},
 	} {

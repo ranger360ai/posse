@@ -469,6 +469,13 @@ func UnpointedBeadSession(s HerdrSession) bool {
 // operator.
 const EnvPersona = "RHQ_PERSONA"
 
+// EnvLaunchHome is set in every session's env (ADR 0031 §1) to the home the
+// launcher created it under. Unlike RHQ_HOME it is not an address — nothing
+// resolves paths through it — it is a record of origin that survives a
+// persona overriding RHQ_HOME for a scratch run, which is what init (ADR
+// 0031 §2) compares the target home against.
+const EnvLaunchHome = "RHQ_LAUNCH_HOME"
+
 // SetCrew marks a session as the operator's conversation — dispatch then
 // treats it as if it did not exist — or releases it back to the fleet
 // (ADR 0008). The mark lives in the session meta, so it dies with the
@@ -1689,6 +1696,12 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// so an installed L3 hook or shim reading the old name does not go quiet
 	// mid-transition. Drop POSSE_HOME's sibling read once the window closes.
 	vars = append(vars, EnvVar{"RHQ_HOME", a.Home}, EnvVar{"POSSE_HOME", a.Home})
+
+	// RHQ_LAUNCH_HOME (ADR 0031 §1): the record of where this session was
+	// born, stamped alongside RHQ_HOME but never overridden by a persona's
+	// scratch run — that is the whole reason init (ADR 0031 §2) compares
+	// against it instead of RHQ_HOME.
+	vars = append(vars, EnvVar{EnvLaunchHome, a.Home})
 
 	if ag != nil {
 		// The persona's durable identity rides the environment: BD_ACTOR
