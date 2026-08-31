@@ -285,10 +285,7 @@ func TestBalancedParens(t *testing.T) {
 // (TestExampleAgentsArePIDs) cannot see anything the linter checks that is
 // not a heading.
 func TestShelfPIDsLintCleanAsASet(t *testing.T) {
-	shelf, _ := filepath.Glob(filepath.Join("..", "..", "examples", "agents", "*.md"))
-	if len(shelf) < 9 {
-		t.Skipf("reference PIDs not present (%d found)", len(shelf))
-	}
+	shelf := shelfPIDs(t)
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {

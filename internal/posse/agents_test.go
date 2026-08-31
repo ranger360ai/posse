@@ -278,12 +278,9 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 	// examples/agents/*.md are the reference PIDs (ADR 0001, rangerhq-cd3):
 	// every one carries the full frontmatter, the four hard risk lines
 	// verbatim, the headings in contract order, and a push deny.
-	dir := filepath.Join("..", "..", "examples", "agents")
-	a := &App{Home: t.TempDir(), AgentsDir: dir}
+	shelf := shelfPIDs(t)
+	a := &App{Home: t.TempDir(), AgentsDir: filepath.Dir(shelf[0])}
 	names := a.ListAgents()
-	if len(names) < 9 {
-		t.Skipf("reference PIDs not present (%d found)", len(names))
-	}
 	for _, name := range names {
 		ag, err := a.LoadAgent(name)
 		if err != nil {
@@ -660,12 +657,9 @@ func TestTiers(t *testing.T) {
 // who · label · what the bead must contain. The greppable part is the
 // label; the rest is prose a reviewer reads.
 func TestExampleAgentsHandoffsAreShapes(t *testing.T) {
-	dir := filepath.Join("..", "..", "examples", "agents")
-	a := &App{Home: t.TempDir(), AgentsDir: dir}
+	shelf := shelfPIDs(t)
+	a := &App{Home: t.TempDir(), AgentsDir: filepath.Dir(shelf[0])}
 	names := a.ListAgents()
-	if len(names) < 9 {
-		t.Skipf("reference PIDs not present (%d found)", len(names))
-	}
 	for _, name := range names {
 		ag, err := a.LoadAgent(name)
 		if err != nil {
