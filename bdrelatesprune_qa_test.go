@@ -6,7 +6,7 @@ package posse
 // Measured on a VACUUM INTO snapshot of the fleet db, direct storage mode, no
 // daemon and therefore no socket at all: `bd --no-daemon create ... --deps
 // discovered-from:ranger-base-okbr` was killed at 90s with the issue row
-// COMMITTED and the dependency absent. The 30s timeout dinesh saw through the
+// COMMITTED and the dependency absent. The 30s timeout developer saw through the
 // daemon is incidental — raising it buys a longer hang, not an edge. The one
 // thing that fixes it is removing the symmetric pairs: after the prune, the
 // same create against okbr, x6ic and cpyb ran in 0.38-0.41s with the edge

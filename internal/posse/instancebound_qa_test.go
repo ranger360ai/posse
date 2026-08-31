@@ -22,6 +22,15 @@ package posse
 // WIDENED again by rangerhq-gk4k to examples/ — the seed tree embed.go ships
 // inside the binary — see qibShippedRoots.
 //
+// WIDENED again by ranger-base-4say to the repo root's *_test.go family: the
+// live-QA suite sitting beside go.mod (release_injection_qa_test.go,
+// bdpin_qa_test.go and 32 more) held 7 comment-prose hits that neither this
+// walk (root untouched) nor TestShippedStringsNameRolesNotThisCrew's fourth
+// root (test files excluded there on purpose) could see. Fixed at the names,
+// not swept: renamed to the roles rangerhq-24yt already established for the
+// rest of the corpus, or dropped where the attribution read worse renamed
+// than gone (ADR 0012 D2/D6). See qibRootTestFloor below.
+//
 // An archive id survives a sweep either way — "measured (rangerhq-lrnp)" is
 // the shape the amendment names: D6 grandfathers *ids* (nothing promises to
 // resolve one), D2 depersonalizes *names* (any deployer could have written
@@ -98,10 +107,13 @@ func qibCrewPattern() *regexp.Regexp {
 // wrong because the amendment left none: a file is in scope if it is in the
 // tree.
 //
-// The repo root is not walked here. Its non-test .go is
-// TestShippedStringsNameRolesNotThisCrew's fourth root below; its *_test.go
-// is a real gap, filed as ranger-base-4say rather than absorbed; and its
-// .md is the root narrative the amendment excludes on purpose.
+// The repo root's directories are not walked here — its non-test .go is
+// TestShippedStringsNameRolesNotThisCrew's fourth root below, and its .md is
+// the root narrative the amendment excludes on purpose. Its *_test.go family
+// WAS a real gap (ranger-base-4say) and gets its own non-recursive pass
+// below, after the three trees: root is where the QA suite lives, not a tree
+// this walk should recurse into (that would re-read cmd/, internal/, etc/
+// and examples/ a second time and double-count their hits).
 func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
@@ -135,6 +147,41 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The repo root's *_test.go family (ranger-base-4say): the live-QA suite
+	// sitting beside go.mod, outside every tree walked above. Non-recursive —
+	// os.ReadDir does not descend, so cmd/, internal/, etc/ and examples/ are
+	// not re-read here, and docs/ and the root .md narrative (D6's excluded
+	// class) are never reached either.
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootTestFiles := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		rootTestFiles++
+		body, err := os.ReadFile(filepath.Join(root, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range bytes.Split(body, []byte("\n")) {
+			if loc := re.FindIndex(line); loc != nil {
+				hits = append(hits, e.Name()+":"+strconv.Itoa(i+1)+": "+string(line[loc[0]:loc[1]]))
+			}
+		}
+	}
+	// Same fm4p-lesson witness as the per-root floors below, sized off the 34
+	// *_test.go files at root when this pass was added — comfortably under
+	// that, so ordinary growth doesn't flake it, but nowhere near 0.
+	const qibRootTestFloor = 20
+	if rootTestFiles < qibRootTestFloor {
+		t.Fatalf("only %d _test.go files read at the repo root (floor %d) — the walk found nothing to pin there",
+			rootTestFiles, qibRootTestFloor)
+	}
+	t.Logf("read %d _test.go files at repo root", rootTestFiles)
+
 	// A pin that measures pure absence is satisfied by measuring nothing
 	// (the fm4p lesson, and the guard q3gp put on the pin below): say how
 	// many files were actually read — and say it PER ROOT, because a total

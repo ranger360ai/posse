@@ -450,7 +450,7 @@ func TestQABdArgvGateFailsClosedOnlyForBd(t *testing.T) {
 	// A payload that is not JSON at all is the same question asked of text
 	// nobody encoded, so a backslash there is the shell's quoting rather than
 	// a JSON escape — and having failed to read the payload the gate cannot
-	// tell which. It refuses under either reading (ranger-base-1lvm, laurie's
+	// tell which. It refuses under either reading (ranger-base-1lvm, qa's
 	// third site: BD_WORD against raw payload text appears in the wrapper
 	// fallback and in the parser's own unreadable-payload path).
 	for _, row := range []struct {
@@ -772,7 +772,7 @@ func TestQABdArgvGateFallbackSeesBdPastTheFirstLine(t *testing.T) {
 // segments() split the whole typed string on `\n`, so every line of every
 // heredoc body became a segment with a command word of its own. A line of
 // ENGLISH that opened with the tracker's name therefore resolved as an
-// invocation and was refused — MEASURED live by hoover, twice in one session,
+// invocation and was refused — MEASURED live by security, twice in one session,
 // appending a lesson to ORDERS.md:
 //
 //	cat >> ORDERS.md <<'EOF'

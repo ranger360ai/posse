@@ -3,7 +3,7 @@ package posse
 // QA pins for ranger-base-m6cm — the ADR 0019 "path 3" detective control.
 //
 // The defect this came from: ranger-base-zzc closed on a DELETE. The operator
-// removed ~/.claude/.credentials.json at 2026-08-26 03:40, monica verified it
+// removed ~/.claude/.credentials.json at 2026-08-26 03:40, coordinator verified it
 // clean at 03:05, and a new 994-byte file was created at 11:47:07 the same day
 // — 8h06m later — with nothing on the box watching for two days. A one-shot
 // remediation of a self-regenerating condition is not a control, so the check

@@ -656,7 +656,7 @@ func bpDaemonAt(pid, argv0, comm string, started time.Time, cwd string) bpProc {
 	return p
 }
 
-// The nine monica reaped by hand on 2026-08-26: session scratchpads and test
+// The nine coordinator reaped by hand on 2026-08-26: session scratchpads and test
 // fixtures that were deleted with the daemon still holding them. The binary
 // is fine, the version is fine, and every command-layer row is green — the
 // directory is what is gone.

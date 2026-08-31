@@ -5,7 +5,7 @@ package posse
 // Claim: grok is pinned at 1.0.5 via [cli] auto_update = false and
 // maximum_version, declared in etc/grok/version-pin.toml and asserted by
 // scripts/verify-grok-pin.sh. The script is also the re-audit gate: when
-// upstream stable moves past the pin it prints hoover's list and still
+// upstream stable moves past the pin it prints security's list and still
 // exits 0 (the pin is holding; lifting it is the operator's).
 //
 // Live grok 1.0.5 emits compact update JSON (`"autoUpdate":false` with no
@@ -692,7 +692,7 @@ func TestQAGrokPinProseLineIsNotAnAutoUpdateAnswer(t *testing.T) {
 
 // The mirror, and the worse one: a version named in a plain line is not the
 // version to re-audit against. Reading it means the operator re-audits the
-// wrong build — hoover's list printed against a release that does not exist.
+// wrong build — security's list printed against a release that does not exist.
 func TestQAGrokPinProseLineIsNotTheUpstreamVersion(t *testing.T) {
 	const jsonLine = `{"latestVersion":"1.1.0","autoUpdate":false}`
 	const prose = `note: "latestVersion": "9.9.9" is not a stable release`

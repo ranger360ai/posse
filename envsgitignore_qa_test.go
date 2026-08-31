@@ -1,6 +1,6 @@
 package posse
 
-// QA pins for rangerhq-lti6 (from hoover's security review of rangerhq-812n).
+// QA pins for rangerhq-lti6 (from a security review of rangerhq-812n).
 //
 // Claim: INSTALL.md §4's seed commit tracked everything but `state/`, and §6
 // then designated `envs/` the secret surface — so the runbook instructed a
@@ -107,7 +107,7 @@ func untrackedAfterRecipe(t *testing.T, recipe, leaf string) []string {
 	repo := t.TempDir()
 	for _, f := range []string{
 		leaf + "/config.yaml",
-		leaf + "/agents/dinesh.md",
+		leaf + "/agents/developer.md",
 		leaf + "/envs/default.env",
 		leaf + "/state/dispatch-watch.log",
 	} {
@@ -157,7 +157,7 @@ func TestInstallSection4SeedCommitLeavesEnvsOutOfGit(t *testing.T) {
 			t.Errorf("INSTALL.md §4's seed commit still tracks the secret surface: %s (rangerhq-lti6)", p)
 		case strings.HasPrefix(p, leaf+"/state/"):
 			t.Errorf("INSTALL.md §4's seed commit still tracks machine-local state: %s", p)
-		case p == leaf+"/config.yaml", p == leaf+"/agents/dinesh.md":
+		case p == leaf+"/config.yaml", p == leaf+"/agents/developer.md":
 			sawConstitution = true
 		}
 	}

@@ -78,7 +78,7 @@ func bdPrefixRig(t *testing.T) (string, func(...string) (string, error), func(st
 
 	if out, err := bd("init", "--prefix", "mainx"); err != nil {
 		// Naming the reason matters. Under a persona PID that denies `bd init`
-		// and `bd config set` — laurie's does, and laurie is who runs the QA
+		// and `bd config set` — qa's does, and qa is who runs these
 		// pins — this skip is not an environment gap, it is the whole arm
 		// silently measuring nothing. The two arms that need no allow-list use
 		// bdPrefixRigNoInit below and run under any PID.

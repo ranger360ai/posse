@@ -1,6 +1,6 @@
 package posse
 
-// QA pins for ranger-base-qqxm (hoover's verification of ranger-base-u9at):
+// QA pins for ranger-base-qqxm (security's verification of ranger-base-u9at):
 // release.yml must never hand an attacker-influenced value to a shell as
 // SCRIPT TEXT, and its tag guard must be an allowlist rather than a prefix
 // check.
@@ -31,7 +31,7 @@ import (
 	"testing"
 )
 
-// The payloads hoover measured, plus a newline (a workflow_dispatch input can
+// The payloads security measured, plus a newline (a workflow_dispatch input can
 // carry one; `tag=v0.3.0\nid` in $GITHUB_OUTPUT is its own forgery) and the
 // shapes that are merely wrong rather than hostile.
 var releaseBadTags = []string{
