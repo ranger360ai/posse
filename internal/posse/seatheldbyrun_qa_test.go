@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
@@ -38,6 +39,20 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 		`[{"id":"b-1","status":"open"},{"id":"b-2","status":"open"}]`)
 	agentPerLaunch(t, fake)
 	d.PromptGrace = 0
+	// The first fireLoop below must really launch b-1 — the witness at line
+	// ~54 depends on it, and so does the seat-hold invariant this test
+	// exists for. That launch is awaitAgent's two full gates (awaitTarget
+	// then awaitSettled), each armed for newTestDispatcher's default 2s,
+	// and each poll is another `agent list`/`agent explain` fork of this
+	// whole test binary via the fake herdr (RHQ_FAKE_HERDR). agentPerLaunch
+	// answers both on their FIRST poll, so ordinarily this costs no wall
+	// time at all — the 2s is headroom, spent only when a full
+	// `go test ./...` run has this box's CPU busy enough that a subprocess
+	// fork does not schedule inside it (SIGHTED once, ranger-base-qhf8: red
+	// 1/3 full internal/rhq runs, green alone and green on a second full
+	// run in the same tree). Widened well past that so the launch survives
+	// the load this suite runs under, not to change what either gate does.
+	d.StartupWait = 15 * time.Second
 
 	slot := SessionFor("hopper", repo)
 	busy := map[string]bool{}
