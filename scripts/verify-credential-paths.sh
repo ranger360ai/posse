@@ -11,11 +11,14 @@
 # it prints, and it exits non-zero while a file is there.
 #
 # WHAT A FINDING MEANS. ~/.claude is in every runtime's writable set
-# (internal/posse/seatbelt.go) and the seatbelt denies no reads at all — the
-# rendered profile's only deny is file-write* — so any same-user persona
-# session below the container tier can read whatever is in that directory.
-# The keychain OAuth item is the credential the fleet actually uses; a file
-# here is a second copy of a live grant, outside the store ADR 0019 counts.
+# (internal/posse/seatbelt.go), so any same-user persona session below the
+# container tier can still WRITE whatever is in that directory. The read side
+# is walled: the rendered profile now carries a file-read* deny on this exact
+# literal (ranger-base-hw18), so a caged session cannot read it — but that
+# deny stops a READ, not the regeneration, and this script is still the only
+# thing that notices the file coming back. The keychain OAuth item is the
+# credential the fleet actually uses; a file here is a second copy of a live
+# grant, outside the store ADR 0019 counts.
 #
 # WHAT THIS SCRIPT WILL NOT DO. It never reads a byte of any file it finds, it
 # never deletes or renames one, and it never runs `security`. Removing a live

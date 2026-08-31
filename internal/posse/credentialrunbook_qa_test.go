@@ -186,14 +186,13 @@ func TestTheRunbookOnlyNamesMakeTargetsThatExist(t *testing.T) {
 	}
 }
 
-// The runbook claims, in move 4, that reading ~/.claude is not fenced: the
-// rendered seatbelt profile denies file-write* and nothing else, so the
-// preventive half (ranger-base-hw18) has not landed and the sweep is the
-// whole control.
-//
-// That is a claim about code, and it is the one claim on the page with an
-// expiry date on it. When hw18 lands this goes red, which is the alarm: the
-// page must then stop saying the sweep is the whole control.
+// The runbook USED TO claim, in move 4, that reading ~/.claude was not
+// fenced at all: the rendered seatbelt profile denied file-write* and
+// nothing else, so the sweep was the whole control. ranger-base-hw18 closed
+// that read half — this pin flipped with it (it was the alarm that told a
+// future session to make this edit) and now watches the opposite claim: a
+// revert of the deny, or a runbook that reverts to the old wording, trips
+// it either way.
 func TestTheSeatbeltClaimInTheRunbookIsStillTrue(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "posse", "seatbelt.go"))
 	if err != nil {
@@ -208,11 +207,14 @@ func TestTheSeatbeltClaimInTheRunbookIsStillTrue(t *testing.T) {
 	if !strings.Contains(src, "(deny file-write*)") {
 		t.Fatal("seatbelt.go no longer renders a file-write* deny — this arm is measuring nothing")
 	}
-	if strings.Contains(src, "file-read") {
-		t.Error("seatbelt.go now mentions file-read: docs/runbooks/credential-rotation.md still tells the operator the profile denies no reads and that the credential-path sweep is the whole control (ranger-base-hw18)")
+	if !strings.Contains(src, "(deny file-read*") {
+		t.Fatal("seatbelt.go no longer renders a file-read* deny — ranger-base-hw18's credential read-deny is gone; the runbook's closed-read-half wording would then be false")
 	}
 	page := crRunbook(t)
-	if !strings.Contains(page, "grep -n file-read") {
-		t.Error("the runbook dropped the file-read claim this arm exists to guard")
+	if strings.Contains(page, "grep -n file-read") {
+		t.Error("the runbook still tells the operator the profile denies no reads — ranger-base-hw18 landed and closed that half")
+	}
+	if !strings.Contains(page, "ranger-base-hw18") {
+		t.Error("the runbook dropped the pointer to the bead that closed the read half")
 	}
 }

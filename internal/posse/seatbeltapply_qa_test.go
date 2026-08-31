@@ -182,7 +182,7 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	}
 	// A corpus assertion that scanned nothing is satisfied by an empty
 	// corpus: name what it actually read.
-	if len(scanned) != 5 {
-		t.Errorf("expected the five sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	if len(scanned) != 6 {
+		t.Errorf("expected the six sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

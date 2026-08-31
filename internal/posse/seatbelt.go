@@ -139,7 +139,7 @@ func sbQuote(p string) string {
 // ranger-base-0djg). Narrowing the grant is not available: the session is
 // there to work in that tree.
 //
-// The three lists are three different SBPL shapes and are kept apart for
+// The four lists are four different SBPL shapes and are kept apart for
 // that reason, not for tidiness:
 //
 //   - Deny: subpaths, denied after the allow. MEASURED (2026-08-28, macOS
@@ -164,6 +164,18 @@ func sbQuote(p string) string {
 //     appends. Nothing else in that directory (the shims, seatbelt.sb, or
 //     another persona's dir) comes back.
 //
+//   - DenyRead: literals denied `file-read*` (ranger-base-hw18, ADR 0019
+//     D2 item 3) — not a subtree, because the only thing worth walling is
+//     the credential file itself, not the directory it sits in (a
+//     runtime's own state dir is still granted `file-write*` above and
+//     needs no read wall at all). Computed by credentialReadDenyLiterals,
+//     which is where the runtime-aware reasoning and the GOOS shape live.
+//     Unlike Deny/Seal/Keep this list answers no question about the
+//     allow block above it: nothing in this profile ever allows a read,
+//     so there is nothing for it to outvote — it stands alone in its own
+//     `(deny file-read* …)` block (SeatbeltProfile) rather than joining
+//     the write carve-out's last-match-wins trick.
+//
 // A hardlink needs no rule of its own, and the profile deliberately does
 // not carry one: `ln <denied>/x ./x` into a granted directory is REFUSED by
 // the file-write* deny already — measured, under both spellings of the
@@ -176,13 +188,16 @@ func sbQuote(p string) string {
 // records can still forge it. The deny takes the log out of reach of every
 // OTHER persona's session, which is what item 2 of the bead asked for.
 type SeatbeltCarveOut struct {
-	Deny []string // subpaths no grant above may reach
-	Seal []string // directories whose rename would carry a Deny path away
-	Keep []string // literals re-allowed after the deny
+	Deny     []string // subpaths no grant above may reach
+	Seal     []string // directories whose rename would carry a Deny path away
+	Keep     []string // literals re-allowed after the deny
+	DenyRead []string // literal files no session may file-read*, whatever grants it
 }
 
 // Empty reports whether the block renders nothing.
-func (c SeatbeltCarveOut) Empty() bool { return len(c.Deny) == 0 && len(c.Seal) == 0 }
+func (c SeatbeltCarveOut) Empty() bool {
+	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0
+}
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
 // allow block, and then the carve-out the allow block cannot outvote.
@@ -215,21 +230,32 @@ func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, 
 		}
 		b.WriteString(")\n")
 	}
-	if carve.Empty() {
-		return b.String()
+	if len(carve.Deny) > 0 || len(carve.Seal) > 0 {
+		b.WriteString(";; the carve-out (ranger-base-h15): LAST match wins in SBPL, so these\n;; override every grant above them, cwd included.\n")
+		b.WriteString("(deny file-write*\n")
+		for _, p := range carve.Deny {
+			fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
+		}
+		for _, p := range carve.Seal {
+			fmt.Fprintf(&b, "  (literal %s)   ; rename seal\n", sbQuote(p))
+		}
+		b.WriteString(")\n")
+		if len(carve.Keep) > 0 {
+			b.WriteString("(allow file-write*\n")
+			for _, p := range carve.Keep {
+				fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
+			}
+			b.WriteString(")\n")
+		}
 	}
-	b.WriteString(";; the carve-out (ranger-base-h15): LAST match wins in SBPL, so these\n;; override every grant above them, cwd included.\n")
-	b.WriteString("(deny file-write*\n")
-	for _, p := range carve.Deny {
-		fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
-	}
-	for _, p := range carve.Seal {
-		fmt.Fprintf(&b, "  (literal %s)   ; rename seal\n", sbQuote(p))
-	}
-	b.WriteString(")\n")
-	if len(carve.Keep) > 0 {
-		b.WriteString("(allow file-write*\n")
-		for _, p := range carve.Keep {
+	if len(carve.DenyRead) > 0 {
+		// No allow-block to outvote (ranger-base-hw18's own note): nothing
+		// above ever allows file-read*, so this needs no last-match-wins
+		// positioning and stands in its own block rather than joining the
+		// write carve-out above.
+		b.WriteString(";; credential read deny (ranger-base-hw18, ADR 0019 D2 item 3)\n")
+		b.WriteString("(deny file-read*\n")
+		for _, p := range carve.DenyRead {
 			fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
 		}
 		b.WriteString(")\n")
@@ -599,9 +625,17 @@ func sessionRefDirs(cwd string) []string {
 //     grant, so last-match-wins is what makes deny-wins (ADR 0001) true at
 //     this tier. `posse agent check` warns; the profile just refuses.
 //
+//  5. Known credential-store literals (ranger-base-hw18, ADR 0019 D2's
+//     third store) — never a subtree, a file-read* deny on the file
+//     itself. See credentialReadDenyLiterals for the runtime-aware,
+//     GOOS-shaped reasoning; stateDirs is the launching runtime's own
+//     state_dir declaration (ADR 0012 D4), the same value RenderSeatbelt
+//     already carries, threaded through here so a runtime can still read
+//     its own credential.
+//
 // writable is the allow block this block will follow: the seal needs to
 // know which ancestors a grant made renamable.
-func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []string) SeatbeltCarveOut {
+func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []string, stateDirs ...string) SeatbeltCarveOut {
 	var c SeatbeltCarveOut
 	add := func(dst *[]string, p string) {
 		if p != "" {
@@ -632,7 +666,56 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 		}
 	}
 	c.Seal = renameSeal(c.Deny, writable)
+	for _, p := range credentialReadDenyLiterals(runtime.GOOS, stateDirs) {
+		add(&c.DenyRead, p)
+	}
+	c.DenyRead = dedupeStrings(c.DenyRead)
 	return c
+}
+
+// credentialReadDenyLiterals names the file-read denies ranger-base-hw18
+// asks for: known credential-store files a caged session should never be
+// able to read (ADR 0019 D2 item 3), minus whichever one belongs to the
+// runtime THIS session is launching on — stateDirs is that runtime's own
+// state_dir declaration (rt.StateDirs, ADR 0012 D4), the same value
+// RenderSeatbelt already threads through, matched by the same literal
+// spelling builtinRuntimes declares it in. A runtime denied its own
+// credential cannot authenticate itself; every other runtime's credential
+// file is never this session's business, ADR 0019's own words for it.
+//
+// `~/.claude/.credentials.json` is the one exception denied even for a
+// claude-launched session, and only on darwin: D2 names it a recurring
+// UNOWNED byproduct there, never the store of record (the keychain is,
+// D2 store 1), and a caged claude session authenticates with
+// CLAUDE_CODE_OAUTH_TOKEN when it needs a credential injected at all
+// (cageCredential, ADR 0002 §4) rather than by reading this file — so
+// denying its read costs claude nothing on darwin. That is backwards on
+// any other platform: D2 names the same path the store of record there,
+// so denying it would strand a future linux session's own credential
+// behind a wall posse itself put up — goos is a parameter, not
+// `runtime.GOOS` read here directly, so the branch a linux box would take
+// is provable from a darwin one too (credential.go's meterStore made the
+// same call, for the same reason).
+func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
+	own := func(dir string) bool {
+		for _, d := range stateDirs {
+			if d == dir {
+				return true
+			}
+		}
+		return false
+	}
+	var out []string
+	if goos == "darwin" {
+		out = append(out, ExpandTilde("~/.claude/.credentials.json"))
+	}
+	if !own("~/.codex") {
+		out = append(out, ExpandTilde("~/.codex/auth.json"))
+	}
+	if !own("~/.grok") {
+		out = append(out, ExpandTilde("~/.grok/auth.json"))
+	}
+	return out
 }
 
 // sessionHooksDirs names where git dispatches hooks for the repos a session
@@ -830,7 +913,7 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable), sessionRefDirs(cwd)...)
+	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...), sessionRefDirs(cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -852,7 +935,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	gatesDir := a.GatesDir(ag.Name)
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable)
+	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
@@ -893,6 +976,9 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	for _, p := range carve.Keep {
 		fmt.Fprintf(out, "    w %s (re-allowed after the deny: the session's own audit trail)\n", AbbrevHome(p))
+	}
+	for _, p := range carve.DenyRead {
+		fmt.Fprintf(out, "    r %s (file-read* deny — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
 	}
 	// A grant that reaches the constitution is still named, deny or no
 	// deny: the carve-out is a wall, not a licence to grant it. What the

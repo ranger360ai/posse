@@ -185,13 +185,23 @@ mtime. It reads no content, deletes nothing, and never runs `security`.
 **Anything printed is a finding.** The harness ADR counts the keychain and the
 env-set mints as darwin's owned stores; a file here is a third one nobody
 owns. `~/.claude` is in every runtime's writable set
-(`internal/posse/seatbelt.go`) and the rendered seatbelt profile's only deny is
-`file-write*` — `grep -n file-read` over that file returns nothing — so every
-same-user persona session below the container tier can read whatever sits
-there. The preventive half (a `file-read` deny on the credential-file
-literals, GOOS-shaped so a linux store of record stays readable) is
-`ranger-base-hw18` and has not landed; until it does, this check is the whole
-control.
+(`internal/posse/seatbelt.go`), so every same-user persona session below the
+container tier can still WRITE whatever sits there — this check is still the
+whole control for that half. The read half is closed: the rendered seatbelt
+profile now carries a `file-read*` deny on `~/.claude/.credentials.json`
+itself — always, on darwin, even for a claude-launched session, because the
+keychain (not this file) is claude's store of record there and a caged
+session authenticates with `CLAUDE_CODE_OAUTH_TOKEN` instead of reading it.
+(`~/.codex/auth.json` and `~/.grok/auth.json` are denied the same way, minus
+whichever one belongs to the runtime a session is actually launching on — a
+runtime still needs to read its own credential. GOOS-shaped throughout: on
+linux this file is the store of record and stays readable. `ranger-base-hw18`.)
+So a session below the container tier can no longer read this file. This
+check stays the
+detective half regardless — a deny that stops a read proves nothing about a
+byproduct that keeps regenerating, and `posse gates <persona>` is where an
+operator reads the deny off a live profile (`ADR 0015` verification items 5
+and 6).
 
 ### Why it is a glob and not the path
 
