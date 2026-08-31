@@ -2713,13 +2713,14 @@ wait:
 
 	// The agent settling is not success — the bead's own status is.
 	after, showErr := d.Bd.Show(p.is.Dir, p.is.ID)
+	// WHICH runtime this is, is not the question — whether posse can read
+	// this runtime's own turn outcome is, and that is a declaration (ADR
+	// 0017 §3: no name-keyed branch stands in for a dimension). nil reader
+	// = blind, and observed=false on a non-nil reader = looked and found
+	// nothing (ranger-base-1mei); both are the settle line's to say below.
+	find := d.turnOutcomeReader(p.runtime)
+	message, observed := "", false
 	if showErr != nil || after.Status != "closed" {
-		// WHICH runtime this is, is not the question — whether posse can
-		// read this runtime's own turn outcome is, and that is a
-		// declaration (ADR 0017 §3: no name-keyed branch stands in for a
-		// dimension). nil reader = blind, and the ◑ line below says so.
-		find := d.turnOutcomeReader(p.runtime)
-		message, observed := "", false
 		if find != nil {
 			message, observed = find(p.is.Dir, p.is.ID, p.prompted)
 		}
@@ -2750,10 +2751,10 @@ wait:
 		// answer, so there is none. An unreadable store of record is
 		// settle-without-record until it reads.
 		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
-			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime, p.session))
+			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime, p.session, find, observed))
 	default:
 		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
-			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime, p.session))
+			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime, p.session, find, observed))
 		// The second time this exact disagreement happens, the re-prompt
 		// stops being a nudge and becomes an infinite polite retry
 		// (settleopen.go, ranger-base-9hm). Only this branch: bd answered,
@@ -2790,13 +2791,13 @@ func (d *Dispatcher) turnOutcomeReader(runtime string) TurnOutcomeReader {
 
 // settleClause is everything a settle-without-close on THIS runtime needs
 // beside the bare disagreement: the declared record degrade (below), and
-// the declared turn-outcome blindness (turnBlindClause). Both are
-// per-runtime declarations, both can be true at once, and they read as one
-// parenthesis because they are one answer to one question — how much of
-// this line is news?
-func (d *Dispatcher) settleClause(runtime, session string) string {
+// the turn-outcome fact this pass has — or does not have (turnOutcomeClause).
+// Both are per-runtime declarations, both can be true at once, and they read
+// as one parenthesis because they are one answer to one question — how much
+// of this line is news?
+func (d *Dispatcher) settleClause(runtime, session string, find TurnOutcomeReader, observed bool) string {
 	var parts []string
-	for _, c := range []string{d.recordClause(runtime), d.turnBlindClause(runtime, session)} {
+	for _, c := range []string{d.recordClause(runtime), turnOutcomeClause(find, runtime, session, observed)} {
 		if c != "" {
 			parts = append(parts, c)
 		}
@@ -2807,23 +2808,32 @@ func (d *Dispatcher) settleClause(runtime, session string) string {
 	return " (" + strings.Join(parts, "; ") + ")"
 }
 
-// turnBlindClause is the per-bead half of the account-degraded report (ADR
-// 0013 §5), and the cheap rung of ranger-base-02zr: on a runtime posse
-// cannot read a turn outcome for, this exact line is ALSO what an exhausted
-// account looks like — no model handled the prompt, the CLI settled anyway,
-// and the bead is open because no work ran. MEASURED the same day the bead
-// was filed: grok's account was returning `402 Payment Required` while a
-// pass called it an ordinary settle.
+// turnOutcomeClause is the per-bead half of the account-degraded report (ADR
+// 0013 §5). It names whichever of the two facts posse does NOT have — never
+// the reassuring one it does — because a settle line that only fits one
+// explanation is the harness guessing where it just admitted it cannot see.
 //
-// So the line says which fact posse does not have, rather than a sentence
-// that only fits the other explanation. It names no verdict — the two
-// causes are still one line apart, and pretending otherwise would be the
-// harness guessing where it just admitted it cannot see.
-func (d *Dispatcher) turnBlindClause(runtime, session string) string {
-	if d.turnOutcomeReader(runtime) != nil {
-		return ""
+// find == nil is the declared blindness ranger-base-02zr fixed: on a
+// runtime posse reads no turn outcome for, this exact line is ALSO what an
+// exhausted account looks like — no model handled the prompt, the CLI
+// settled anyway. MEASURED the same day that bead was filed: grok's account
+// was returning `402 Payment Required` while a pass called it an ordinary
+// settle.
+//
+// find != nil but !observed is the rung ranger-base-1mei fixes: the reader
+// looked and the transcript was not readable yet (cage moved, project dir
+// name did not round-trip, not flushed) — the third state
+// FindClaudeTurnOutcome deliberately distinguishes from ("", true). Without
+// this clause that settle line was byte-identical to a reader that looked
+// and saw a healthy first turn, on the one runtime posse can actually read.
+func turnOutcomeClause(find TurnOutcomeReader, runtime, session string, observed bool) string {
+	if find == nil {
+		return fmt.Sprintf("posse reads no turn outcome on %s — an account that refused the turn settles exactly like this, so posse peek %s before reading it as work that ran", runtimeName(runtime), session)
 	}
-	return fmt.Sprintf("posse reads no turn outcome on %s — an account that refused the turn settles exactly like this, so posse peek %s before reading it as work that ran", runtimeName(runtime), session)
+	if !observed {
+		return fmt.Sprintf("posse looked for a turn outcome on %s and found none this pass — an account that refused the turn can settle exactly like this, so posse peek %s before reading it as a healthy first turn", runtimeName(runtime), session)
+	}
+	return ""
 }
 
 // runtimeName is what a line calls this runtime. Empty means the launch

@@ -224,6 +224,54 @@ func TestQAReadableRuntimeSettleCarriesNoBlindnessClause(t *testing.T) {
 	}
 }
 
+// The pin ranger-base-1mei was filed on: a declared reader that looked and
+// found nothing (observed=false — transcript not readable yet, not "the
+// turn was healthy") must not print byte-identical to the readable-and-
+// healthy arm above. Before this fix neither arm carried a clause.
+func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	idleClaude(t, fake)
+	asked := 0
+	d.TurnOutcome = func(string, string, time.Time) (string, bool) {
+		asked++
+		return "", false
+	}
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	session := SessionForBead("ranger", repo, "a-1")
+	if asked != 1 {
+		t.Errorf("a declared reader must be asked exactly once, asked %dx:\n%s", asked, out)
+	}
+	if !strings.Contains(out, "◑ a-1") {
+		t.Fatalf("want the settle-without-close line:\n%s", out)
+	}
+	for _, want := range []string{
+		"posse looked for a turn outcome on claude and found none this pass",
+		"an account that refused the turn can settle exactly like this",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the settle line must say the read came back unobserved (%q):\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "reads no turn outcome") {
+		t.Errorf("claude declares a reader — this is not the blind case:\n%s", out)
+	}
+	if strings.Contains(out, "refused the first turn") {
+		t.Errorf("observed=false is not a refusal:\n%s", out)
+	}
+	if m, _ := b.readMeta(session); m.TurnFailure != "" {
+		t.Errorf("an unobserved read must not mark a turn failure: %+v", m)
+	}
+}
+
 // The declaration itself: absent is blind, a registered name reads, and a name
 // no reader implements REFUSES at load rather than degrading quietly — the
 // same rule `record: trused` gets (ADR 0013 §1).
