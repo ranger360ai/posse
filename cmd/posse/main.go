@@ -487,12 +487,26 @@ func main() {
 		}
 
 	case "beads":
-		// posse beads check — the bead-loss alarm (rangerhq-fuom). bd's
-		// auto-import deletes rows from the database on a git-history
-		// signal and logs nothing when it does, so the git census of
-		// .beads/issues.jsonl is the only witness. --record moves what it
-		// finds into .beads/deleted.jsonl, which is the record a deletion
-		// owes and the last copy of the bead itself.
+		// posse beads check — two independent alarms under one verb
+		// (ranger-base-z3s3), each over its own store:
+		//
+		//   - the bead-loss census (rangerhq-fuom): bd's auto-import
+		//     deletes rows from the database on a git-history signal and
+		//     logs nothing when it does, so the git census of
+		//     .beads/issues.jsonl is the only witness. --record moves what
+		//     it finds into .beads/deleted.jsonl, which is the record a
+		//     deletion owes and the last copy of the bead itself.
+		//   - the pair check (NOTES.md, ranger-base-pkqn): a live read of
+		//     the dependency graph in beads.db for a symmetric same-type
+		//     pair, the bd 0.49.1 `dep add` landmine that
+		//     scripts/verify-bd-dep-safety.sh --gate already answers with
+		//     no caller wired up. --record does not touch this one — a
+		//     pair is not a deletion, it is pruned instead
+		//     (scripts/prune-bd-relates-to.sh).
+		//
+		// Neither answers the other's question, so neither folds into the
+		// other's finding count; both still gate the same exit code, since
+		// both are things CI must fail on.
 		args = need(args, 1, "posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]")
 		if args[0] != "check" {
 			die(rhq.Die("usage: posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]"))
@@ -530,48 +544,83 @@ func main() {
 			fmt.Fprintf(os.Stderr, "beads census failed: %v\n", err)
 		}
 		found := 0
+		pairsFound := 0
+		var pairUnavailable []error
 		for _, d := range dirs {
 			lost, err := rhq.LostBeads(bd, d)
 			if err != nil {
 				die(err)
 			}
-			if len(lost) == 0 {
+			if len(lost) > 0 {
+				found += len(lost)
+				for _, lb := range lost {
+					fmt.Fprintf(out, "%-14s %-12s %-10s dropped %s by %s  %s\n",
+						lb.ID, lb.Status, lb.Assignee,
+						lb.When.Format("2006-01-02 15:04"), lb.Commit[:min(8, len(lb.Commit))],
+						rhq.AbbrevHome(d))
+					fmt.Fprintf(out, "               %s\n", lb.Title)
+				}
+				if reason != "" {
+					if who == "" {
+						who = "operator"
+					}
+					if err := rhq.RecordDeletions(d, reason, who, lost, time.Now()); err != nil {
+						die(err)
+					}
+					// Not necessarily under d: a .beads/redirect puts the
+					// ledger in the repo whose git tracks it.
+					fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), rhq.AbbrevHome(rhq.DeletionLedgerPath(d)))
+				}
+			}
+
+			// The pair check reads beads.db directly rather than git, so a
+			// repo LostBeads read fine can still fail here (a WAL-mode db
+			// with no live writer and no -shm refuses even a read-only
+			// open) — that failure must read as unknown, never as clean
+			// (PairCheckUnavailableError, ranger-base-z3s3).
+			pairs, err := rhq.PairCheck(d)
+			if err != nil {
+				pairUnavailable = append(pairUnavailable, err)
+				fmt.Fprintf(os.Stderr, "pair check failed: %v\n", err)
 				continue
 			}
-			found += len(lost)
-			for _, lb := range lost {
-				fmt.Fprintf(out, "%-14s %-12s %-10s dropped %s by %s  %s\n",
-					lb.ID, lb.Status, lb.Assignee,
-					lb.When.Format("2006-01-02 15:04"), lb.Commit[:min(8, len(lb.Commit))],
-					rhq.AbbrevHome(d))
-				fmt.Fprintf(out, "               %s\n", lb.Title)
-			}
-			if reason != "" {
-				if who == "" {
-					who = "operator"
+			if len(pairs) > 0 {
+				pairsFound += len(pairs)
+				ids := make([]string, len(pairs))
+				for i, p := range pairs {
+					ids[i] = p.ID
 				}
-				if err := rhq.RecordDeletions(d, reason, who, lost, time.Now()); err != nil {
-					die(err)
-				}
-				// Not necessarily under d: a .beads/redirect puts the
-				// ledger in the repo whose git tracks it.
-				fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), rhq.AbbrevHome(rhq.DeletionLedgerPath(d)))
+				fmt.Fprintf(out, "PAIR: %d node(s) sit in a symmetric dependency pair in %s: %s\n",
+					len(pairs), rhq.AbbrevHome(d), strings.Join(ids, ", "))
 			}
 		}
-		if found == 0 && len(unresolved) == 0 {
+		if pairsFound > 0 {
+			fmt.Fprintln(out, "  'bd dep add' / 'bd create --deps' onto anything upstream of one of those never returns.")
+			fmt.Fprintln(out, "  Prune: scripts/prune-bd-relates-to.sh --apply, then `make verify-bd-no-relate-pairs` to confirm.")
+		}
+		if found == 0 && len(unresolved) == 0 && pairsFound == 0 && len(pairUnavailable) == 0 {
 			fmt.Fprintln(out, "no lost beads: every id git ever carried still resolves")
+			fmt.Fprintln(out, "no symmetric dependency pair in the live graph")
 			break
 		}
 		if found == 0 {
 			fmt.Fprintf(out, "no lost beads in the %d repo(s) that resolved — %d configured path(s) are not there, so that census is unknown, not clean\n",
 				len(dirs)-len(unresolved), len(unresolved))
 		}
-		if reason == "" || len(unresolved) > 0 {
+		switch {
+		case len(pairUnavailable) > 0:
+			fmt.Fprintf(out, "pair check unknown in %d repo(s) — the live graph could not be read, so that check is unknown, not clean\n", len(pairUnavailable))
+		case pairsFound == 0:
+			fmt.Fprintln(out, "no symmetric dependency pair in the live graph")
+		}
+		if reason == "" || len(unresolved) > 0 || pairsFound > 0 || len(pairUnavailable) > 0 {
 			// Non-zero so an instance repo can run this in CI, the way
 			// `posse agent check` reports PID findings. A census that could
 			// not be taken everywhere is not an all-clear either, --record
 			// or not: --record owns the losses it found, not the ones it
-			// could not go looking for.
+			// could not go looking for. A pair finding is not owned by
+			// --record at all — it has no lost-bead shape for the ledger to
+			// carry — so it gates the exit code unconditionally.
 			os.Exit(1)
 		}
 
@@ -1761,12 +1810,18 @@ dispatch (beads):
                                  files the verify beads the last closes earned
                                  (verify_labels:, ADR 0006 §3)
   posse beads check [--dir <repo>] [--record "<reason>"] [--as <who>]
-                                 beads git ever carried that bd can no longer
-                                 resolve — bd's auto-import deletes rows on a
-                                 git-history signal and logs nothing when it
-                                 does (rangerhq-fuom). Non-zero on findings;
-                                 --record owns them in .beads/deleted.jsonl,
-                                 which keeps the bead's last JSONL line
+                                 two alarms: beads git ever carried that bd
+                                 can no longer resolve — bd's auto-import
+                                 deletes rows on a git-history signal and
+                                 logs nothing when it does (rangerhq-fuom) —
+                                 and a symmetric same-type dependency pair in
+                                 the live graph, the bd 0.49.1 dep-add
+                                 landmine (NOTES.md, ranger-base-pkqn).
+                                 Non-zero on either; --record owns a lost
+                                 bead in .beads/deleted.jsonl (keeping its
+                                 last JSONL line) but does not touch a pair —
+                                 prune those with
+                                 scripts/prune-bd-relates-to.sh
   posse claim <id> [--as <persona>] [--dir <repo>]   atomically claim an issue
   posse done  <id> [--as <persona>] [--dir <repo>]   close an issue
   posse dispatch [--dry-run] [--dir <repo>] [--persona <p>] [-n <max>] [--timeout <ms>]

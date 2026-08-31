@@ -584,6 +584,108 @@ func TestBeadsCheckStillAllClearsWhenEveryRepoResolves(t *testing.T) {
 	}
 }
 
+// beadsCheckSeedPairDB writes repo/.beads/beads.db with a symmetric
+// same-type dependency pair — the bd 0.49.1 `dep add` landmine (NOTES.md,
+// ranger-base-pkqn) — the second alarm `posse beads check` now carries
+// alongside the bead-loss census (ranger-base-z3s3).
+func beadsCheckSeedPairDB(t *testing.T, repo string) {
+	t.Helper()
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not on PATH")
+	}
+	beads := filepath.Join(repo, ".beads")
+	if err := os.MkdirAll(beads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sqlite3", filepath.Join(beads, "beads.db"))
+	cmd.Stdin = strings.NewReader(`
+CREATE TABLE dependencies (
+  issue_id TEXT NOT NULL,
+  depends_on_id TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'blocks',
+  PRIMARY KEY (issue_id, depends_on_id, type)
+);
+INSERT INTO dependencies VALUES ('pair-a','pair-b','relates-to'), ('pair-b','pair-a','relates-to');
+`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("seed: %v\n%s", err, out)
+	}
+}
+
+// The alarm this whole bead exists for: a symmetric pair in the live graph
+// must fail `posse beads check` even though the git census — a different
+// store, a different question — is perfectly clean.
+func TestBeadsCheckFailsOnASymmetricDependencyPair(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	beadsCheckSeedPairDB(t, repo)
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "beads", "check")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("a symmetric dependency pair must fail the check, not just a lost bead:\n%s", out)
+	}
+	got := string(out)
+	for _, want := range []string{"PAIR:", "pair-a", "pair-b", "prune-bd-relates-to.sh"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %q in the output, got:\n%s", want, got)
+		}
+	}
+	// The census over git history is unrelated and clean; the pair alarm
+	// must not borrow its wording or silently ride along with it.
+	if strings.Contains(got, "every id git ever carried still resolves") {
+		t.Errorf("a live pair finding must not read alongside a census all-clear as if nothing were wrong:\n%s", got)
+	}
+}
+
+// The positive control: a real beads.db with no pair must not trip the new
+// alarm, so the command still all-clears when both stores are clean.
+func TestBeadsCheckAllClearsWithNoSymmetricPair(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+repo+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not on PATH")
+	}
+	beads := filepath.Join(repo, ".beads")
+	if err := os.MkdirAll(beads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := exec.Command("sqlite3", filepath.Join(beads, "beads.db"))
+	seed.Stdin = strings.NewReader(`
+CREATE TABLE dependencies (
+  issue_id TEXT NOT NULL,
+  depends_on_id TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'blocks',
+  PRIMARY KEY (issue_id, depends_on_id, type)
+);
+INSERT INTO dependencies VALUES ('c','a','blocks');
+`)
+	if out, err := seed.CombinedOutput(); err != nil {
+		t.Fatalf("seed: %v\n%s", err, out)
+	}
+	bd := writeExec(t, t.TempDir(), "bd", fakeBdScript)
+
+	cmd := exec.Command(bin, "beads", "check")
+	cmd.Env = readyEnv(t, home, "RHQ_BD_BIN="+bd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("a clean live graph beside a clean census must exit 0: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "PAIR:") {
+		t.Errorf("a store with no pair must not raise the pair alarm:\n%s", out)
+	}
+}
+
 // ranger-base-xotg: `posse ready` prints ONE queue, ordered by priority
 // across every configured source. It used to print each repo's `bd ready`
 // output concatenated, so priority held inside a source and not across it:
