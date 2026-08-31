@@ -478,17 +478,20 @@ func TestShimMatchesAVerbFlagWhereverItSits(t *testing.T) {
 	}
 }
 
-// `Bash(git push --force:*)` is a wall around ONE SPELLING. Three others
-// force-push and none of them carries the token `--force` (**MEASURED**,
-// git-push(1) as the install ships it, git 2.50.1 / Apple Git-155 — read
-// rather than run, because every PID carrying this rule denies the verb):
+// `Bash(git push --force:*)` is a wall around ONE SPELLING. At least three
+// others force-push and none of them carries the token `--force`
+// (**MEASURED**, git-push(1) as the install ships it, git 2.50.1 / Apple
+// Git-155 — read rather than run, because every PID carrying this rule
+// denies the verb) — a floor, not a count; ranger-base-e7eo found a fourth
+// (`--mirror`, pinned separately in forcespelling_qa_test.go) after this
+// list was first written down:
 //
 //   - `-f, --force` declares `-f` as a SEPARATE short name. It is not a
 //     prefix of `--force`, so 0zln's ambiguity result — every proper prefix
 //     is refused by git itself — says nothing at all about it.
 //   - `--force-with-lease` disables the same ancestry check by another name
-//     (`--force-if-includes` beside it is ancillary — a SAFETY option, not a
-//     third force-push, which is why the row below pairs the two).
+//     (`--force-if-includes` beside it is ancillary — a SAFETY option, not
+//     another force-push, which is why the row below pairs the two).
 //   - a leading `+` on the refspec: "All of the rules described above about
 //     what's not allowed as an update can be overridden by adding an the
 //     optional leading + to a refspec (or using --force command line
@@ -500,15 +503,15 @@ func TestShimMatchesAVerbFlagWhereverItSits(t *testing.T) {
 // carrying the flag rule already carries beside it. (a), an alias set per
 // denied option in renderFlagIn, was rejected because it cannot close this
 // hole: a wall that decides how an OPTION is spelled has nothing to match in
-// `+main`. It would buy two spellings of three and then read like a force
-// wall, which is worse than a documented residual.
+// `+main`. It would buy every spelling that IS an option and then read like
+// a force wall, which is worse than a documented residual.
 //
 // So the residual rows below PASS, deliberately, and the same argv refuses
 // under the verb rule. Both halves are pinned: the first says the hole is
 // real, the second says the prescribed remedy closes it. L3 is unaffected —
 // PrePushHook matches the RULE, not the argv, so a session carrying either
 // rule loses every push (TestPrePushHook), which is what bounds this to P2.
-func TestForceFlagRuleLeavesThreeSpellingsThatTheVerbRuleCloses(t *testing.T) {
+func TestForceFlagRuleLeavesSpellingsThatTheVerbRuleCloses(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}

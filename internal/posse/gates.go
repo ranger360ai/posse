@@ -239,21 +239,30 @@ var globalValueOpts = map[string][]string{
 // rule needs it, and not then without a per-option measurement.
 //
 // What is NOT closed by any of that is a spelling the RULE does not name.
-// THREE force-push and none carries the token `--force` (**MEASURED**,
-// git-push(1) as this install ships it, read rather than run because every
-// PID carrying the rule denies the verb):
+// At least FOUR force-push and none carries the token `--force`
+// (**MEASURED**, git-push(1) as this install ships it, read rather than run
+// because every PID carrying the rule denies the verb) — a floor, not a
+// count: it is however many this comment's author found in one manpage, not
+// a claim that git-push(1) holds no more:
 //
 //   - `git push -f`. `-f, --force` registers `-f` as a SEPARATE short name,
 //     so it is not a prefix of anything and the ambiguity result above says
 //     nothing at all about it. It clusters, too: `-qf`.
 //   - `git push --force-with-lease`, which disables the same ancestry check
-//     under another name. (`--force-if-includes` is NOT a fourth: the page
+//     under another name. (`--force-if-includes` is NOT a fifth: the page
 //     calls it "an ancillary option along with --force-with-lease" — a
 //     safety check on a force that is already happening.)
 //   - `git push origin +main`: "All of the rules described above about
 //     what's not allowed as an update can be overridden by adding an the
 //     optional leading + to a refspec (or using --force command line
 //     option)."
+//   - `git push --mirror origin`: "locally updated refs will be FORCE
+//     UPDATED on the remote end ... This is the default if the
+//     configuration option remote.<remote>.mirror is set" (ranger-base-e7eo).
+//     Under that config a bare `git push origin` force-updates with no
+//     option and no refspec in the argv at all — the `+main` lesson one
+//     step further out, and the strongest argument that the wall belongs on
+//     the verb.
 //
 // That is the rule's scope rather than the shim's fidelity, so matcherFor
 // may still claim it.
@@ -269,11 +278,13 @@ var globalValueOpts = map[string][]string{
 // The rule that means "no force-push" is `Bash(git push:*)`, and every PID
 // in examples/agents carries it — asserted, not merely observed
 // (TestExampleAgentsArePIDs; ADR 0001). The flag rule beside it is a label
-// on the refusal, never the wall. Both halves are pinned in gates_test.go:
-// the residual passes the flag rule, the same argv refuses under the verb
-// rule. L3 bounds the whole thing — PrePushHook matches the RULE, not the
-// argv, so a session carrying either rule loses every push whatever the
-// spelling.
+// on the refusal, never the wall. Both halves are pinned in gates_test.go
+// (TestForceFlagRuleLeavesSpellingsThatTheVerbRuleCloses) and, for `--mirror`
+// and the bare push it can mean, forcespelling_qa_test.go
+// (TestQAMirrorIsAFourthForcePushSpellingThatOnlyTheVerbRuleCloses): the
+// residual passes the flag rule, the same argv refuses under the verb rule.
+// L3 bounds the whole thing — PrePushHook matches the RULE, not the argv, so
+// a session carrying either rule loses every push whatever the spelling.
 //
 // bd's parser abbreviates nothing — `bd list --js` answers `unknown flag:
 // --js` (**MEASURED**) — which is why the spelling set for `--full` closes
