@@ -1936,12 +1936,15 @@ func TestLaunchBead(t *testing.T) {
 		t.Errorf("bead not claimed as persona:\n%s", bdlog)
 	}
 
-	// A busy persona session must not be double-prompted.
+	// A busy persona session must not be double-prompted. ADR 0020 §2
+	// (amended): with no holder, `d` seats availability-first over the
+	// whole lane, so a lane fully busy refuses by naming the LANE, not the
+	// one persona (ranger-base-f8m9) — the same line the pass gives.
 	ws := fakeLoadWSFrom(t, fake)
 	ws[0].AgentStatus = "working"
 	saveWSTo(t, fake, ws)
-	if _, err := d.LaunchBead(is); err == nil || !strings.Contains(err.Error(), "working") {
-		t.Errorf("busy session should refuse dispatch, got %v", err)
+	if _, err := d.LaunchBead(is); err == nil || !strings.Contains(err.Error(), "lane busy") || !strings.Contains(err.Error(), "ranger") {
+		t.Errorf("busy lane should refuse dispatch naming the lane, got %v", err)
 	}
 
 	// Unroutable beads error instead of silently vanishing.

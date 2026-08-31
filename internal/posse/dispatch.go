@@ -3442,11 +3442,42 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	if hasLabel(is.Labels, "question") {
 		return "", Die("%s is a question for the operator — not dispatched", is.ID)
 	}
-	persona, why := d.Route(is)
-	if persona == "" {
-		return "", Die("%s unroutable (%s)", is.ID, why)
+	// ADR 0020 §2 (amended): the cockpit's `d` answers the same two
+	// questions the pass does, WHICH LANE then WHICH SEAT, instead of
+	// taking Route's single head — the amendment's whole point, since Route
+	// always named the lane's first name and left every other seat idle.
+	lane := d.laneFor(is)
+	if lane.deny != "" {
+		return "", Die("%s unroutable (%s)", is.ID, lane.deny)
 	}
-	// A claimed bead belongs to its assignee. Route prefers a loadable
+	persona := ""
+	if is.Status == "in_progress" && is.Assignee != "" {
+		// An assignee is a lane of one (laneFor), and `d` on a holder
+		// resumes — it never reseats (§2).
+		persona = lane.seats[0].name
+	} else if is.Status == "in_progress" {
+		// Unassigned in progress: an unclaim erased the assignee under a
+		// live run. The run record answers before availability does — a
+		// hit narrows the lane to the seat that already holds this bead.
+		for _, m := range lane.seats {
+			if _, ok := d.HB.RunHolder(is.Dir, m.name, is.ID); ok {
+				persona = m.name
+				break
+			}
+		}
+	}
+	if persona == "" {
+		// No holder — a fresh launch, or an unassigned in-progress bead
+		// with no run record — is seated availability-first: empty bench,
+		// no --persona filter, the same walk the pass uses under the
+		// launcher lock this function already holds.
+		seat, _, full := d.seatFor(lane, is, "", newSeatMap(map[string]bool{}))
+		if seat < 0 {
+			return "", Die("%s %s", is.ID, full)
+		}
+		persona = lane.seats[seat].name
+	}
+	// A claimed bead belongs to its assignee. laneFor prefers a loadable
 	// assignee, but falls through to label match / default_persona when the
 	// assignee is not a persona this app can load — which would launch a
 	// stranger onto a bead someone else holds (rangerhq-lwx). `d` acts on the
