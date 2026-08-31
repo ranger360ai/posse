@@ -138,11 +138,11 @@ func TestQAUnpromotedHomeLaunchesUnchanged(t *testing.T) {
 }
 
 // The home-cutover runbook, walked end to end at the live constitution's
-// shape (docs/runbooks/home-cutover.md steps 2–6, ADR 0015 verification
-// items 1, 2, 3 and 7). It is one test rather than seven because the thing
-// the window can get wrong is the ORDER: promote before the env carry comes
-// up warning, promote after it does not, and a launch in between must not be
-// refused for a reason that is not the constitution.
+// shape (the instance tree's docs/runbooks/home-cutover.md steps 2–6, ADR
+// 0015 verification items 1, 2, 3 and 7). It is one test rather than seven
+// because the thing the window can get wrong is the ORDER: promote before
+// the env carry comes up warning, promote after it does not, and a launch
+// in between must not be refused for a reason that is not the constitution.
 func TestQAHomeCutoverRehearsal(t *testing.T) {
 	wtqaHome(t)
 	if _, err := exec.LookPath("git"); err != nil {

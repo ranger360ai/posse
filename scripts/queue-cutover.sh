@@ -117,7 +117,7 @@ die() { printf 'queue-cutover: %s\n' "$*" >&2; exit 1; }
 
 SRC_BEADS=$CONSTITUTION/.beads
 DST_BEADS=$QUEUE/.beads
-RUNBOOK=docs/runbooks/queue-cutover.md
+RUNBOOK=$CONSTITUTION/docs/runbooks/queue-cutover.md
 
 # ─── does this redirect name that directory? ─────────────────────────────────
 # The fan-out's job is to find every tree bd can still RESOLVE through the

@@ -601,14 +601,6 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 			if base == ".git" || base == ".beads" {
 				return fs.SkipDir
 			}
-			// docs/runbooks/ is off the seed surface by construction — the
-			// allowlist carries no docs/ (TestPublicationRootCommitHasNoExcludedPaths
-			// pins that it did not cross), and a runbook that drives the
-			// retirement of the operator's old checkout has to name it
-			// (ranger-base-poi). Every other path here ships and is counted.
-			if rel == filepath.Join("docs", "runbooks") {
-				return fs.SkipDir
-			}
 			return nil
 		}
 		if !d.Type().IsRegular() {

@@ -976,7 +976,8 @@ func warnDanglingDefaultEnv(w io.Writer, a *App) {
 	}
 	fmt.Fprintf(w, "warning: config default_env: names %q and %s has no such env set\n"+
 		"  promote never carries env values (ADR 0015 §7 — they are gitignored secrets)\n"+
-		"  during the cutover window this is expected here; docs/runbooks/home-cutover.md step 3 clears it\n",
+		"  during the cutover window this is expected here; the instance tree's\n"+
+		"  docs/runbooks/home-cutover.md step 3 clears it\n",
 		name, AbbrevHome(a.EnvsDir))
 }
 

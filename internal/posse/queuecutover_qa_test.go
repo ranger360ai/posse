@@ -51,16 +51,21 @@ func qcScript(t *testing.T) string {
 // qcRunbook is the same for docs/runbooks/queue-cutover.md — the window step
 // the script is only half of. Two of the pins below are about its text: the
 // operator reads it under time pressure with the fleet quiesced, which is
-// the worst moment for a step to be missing.
+// the worst moment for a step to be missing. ADR 0024 D4 moved the runbook
+// out of posse into the instance tree (ranger-base-99ps), so it no longer
+// ships in this checkout; it reads the operator's own ~/src/ranger-base,
+// same default scripts/queue-cutover.sh's CONSTITUTION uses, and skips on
+// any box that has no such tree (CI, a fresh clone, another operator).
 func qcRunbook(t *testing.T) string {
 	t.Helper()
-	p, err := filepath.Abs("../../docs/runbooks/queue-cutover.md")
+	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Fatalf("abs: %v", err)
+		t.Skipf("no home dir: %v", err)
 	}
+	p := filepath.Join(home, "src", "ranger-base", "docs", "runbooks", "queue-cutover.md")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		t.Skipf("runbook not present: %v", err)
+		t.Skipf("instance tree runbook not present: %v", err)
 	}
 	return string(b)
 }

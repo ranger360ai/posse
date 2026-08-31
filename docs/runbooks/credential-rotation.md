@@ -11,7 +11,7 @@ which one every time:
 
 - **the harness ADR 0019** — `docs/adr/0019-credential-architecture.md`, in
   this repo. The credential seam, `posse refresh`, structural absence, expiry.
-- **the instance ADR 0019** — the rangerhq tree, private (ADR 0012 D6: this
+- **the instance ADR 0019** — the instance tree, private (ADR 0012 D6: this
   repo is public and that page names one instance's topology). The keychain
   decision, the four guard failure classes, and D7. Accepted 2026-08-28.
 
