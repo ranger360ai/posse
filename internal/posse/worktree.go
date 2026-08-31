@@ -1533,11 +1533,32 @@ func treeState(t *SessionTree) string {
 	if t.Base == "" {
 		parts = append(parts, "repo HEAD is detached — cannot say what is unmerged")
 	} else if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch); err == nil && n != "0" {
-		who := "no record says which bead"
-		if t.Bead != "" {
-			who = "for " + t.Bead
+		// Ahead by sha is not ahead by work (ranger-base-hk02): the count
+		// alone reads the same for a strand and for a branch RemoveSessionTree
+		// is about to delete on the next pass. equivalentOnBase is the same
+		// question RemoveSessionTree asks before it deletes, and
+		// MergeSessionWork before it reports — the listing wants that answer
+		// too, not just the sha count.
+		eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
+		switch {
+		case measuredOnBase(eq):
+			// Every commit is a measured patch-id match on the base: the
+			// branch is the last copy of nothing, the same fact that lets
+			// RemoveSessionTree delete it unattended.
+			parts = append(parts, fmt.Sprintf("nothing unlanded (%s)", strings.Join(equivNotes(eq), "; ")))
+		case len(eq) > 0:
+			// The -x trailer alone: somebody's decision, not a measurement of
+			// what a by-hand resolution kept, so RemoveSessionTree still
+			// refuses to delete here — the listing should not read as settled
+			// either.
+			parts = append(parts, fmt.Sprintf("%s commit(s) not on %s by sha, recorded as landed in %s — compare before retiring", n, t.Base, strings.Join(trailerOnly(eq), "; ")))
+		default:
+			who := "no record says which bead"
+			if t.Bead != "" {
+				who = "for " + t.Bead
+			}
+			parts = append(parts, n+" commit(s) not on "+t.Base+", "+who)
 		}
-		parts = append(parts, n+" commit(s) not on "+t.Base+", "+who)
 	}
 	if d := dirtyPaths(t.Path); len(d) > 0 {
 		parts = append(parts, fmt.Sprintf("%d uncommitted path(s)", len(d)))

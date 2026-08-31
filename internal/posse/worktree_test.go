@@ -1376,3 +1376,84 @@ func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
 		t.Errorf("the unlanded commit's file is gone from the session tree: %v", err)
 	}
 }
+
+// ranger-base-hk02: treeState counted shas the way MergeSessionWork used to
+// (ranger-base-g2xf) — "N commit(s) not on main" reads the same for a strand
+// and for a branch RemoveSessionTree is about to delete on the next pass. It
+// now asks equivalentOnBase the same question those two already ask, and
+// prints the two answers RemoveSessionTree already tells apart (measuredOnBase
+// vs. the -x trailer alone) rather than one sentence for both.
+//
+// Three arms: a clean pick (measured, safe to retire), a hand-resolved pick
+// (recorded only by the -x trailer, not yet safe), and the control — real
+// unlanded work must still read as the unchanged strand sentence. Without the
+// control, a listing that always said "nothing unlanded" would pass the first
+// two arms.
+func TestListSessionTreesTellsACherryPickedBranchFromAStrand(t *testing.T) {
+	cases := []struct {
+		name   string
+		land   func(t *testing.T, repo, sha string) string
+		want   []string
+		unwant []string
+	}{{
+		name: "a clean cherry-pick reads as nothing unlanded",
+		land: func(t *testing.T, repo, sha string) string {
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+			return mustGit(t, repo, "rev-parse", "HEAD")
+		},
+		want:   []string{"nothing unlanded", "equivalent patch on main"},
+		unwant: []string{"not on main, no record", "compare before retiring"},
+	}, {
+		name: "a hand-resolved pick reads as recorded but not yet measured",
+		land: func(t *testing.T, repo, sha string) string {
+			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+				"s-1: the fix\n\n(cherry picked from commit "+sha+")")
+			return mustGit(t, repo, "rev-parse", "HEAD")
+		},
+		want:   []string{"commit(s) not on main by sha, recorded as landed in", "compare before retiring"},
+		unwant: []string{"nothing unlanded", "no record says which bead"},
+	}, {
+		name: "real unlanded work still reads as a strand, unchanged",
+		land: func(t *testing.T, repo, sha string) string {
+			commitIn(t, repo, "adr.md", "status: rejected\n", "main: the operator's own line")
+			return ""
+		},
+		want:   []string{"1 commit(s) not on main, no record says which bead"},
+		unwant: []string{"nothing unlanded", "compare before retiring"},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			// The base moves first, same premise as ranger-base-g2xf's fixture:
+			// a pick onto an unmoved base rebuilds the identical commit object
+			// and the base reaches it by sha, measuring nothing here.
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			c.land(t, repo, sha)
+
+			var out strings.Builder
+			if err := ListSessionTrees(&out, []string{repo}); err != nil {
+				t.Fatal(err)
+			}
+			got := out.String()
+			for _, want := range c.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("listing does not say %q:\n%s", want, got)
+				}
+			}
+			for _, unwant := range c.unwant {
+				if strings.Contains(got, unwant) {
+					t.Errorf("listing should not say %q:\n%s", unwant, got)
+				}
+			}
+		})
+	}
+}
