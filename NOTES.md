@@ -5419,6 +5419,29 @@ through a rename is still caught — and each is mutation-pinned separately in
 a rename *invisible*, which an arm asserting only silence cannot tell from
 *excused*.
 
+### `docs/notes.d/`: NOTES.md has one writer per file, by construction (ADR 0022)
+
+Personas in the shared checkout do not edit or commit NOTES.md — it is the
+one file every session touches, so a path-limited commit sweeps whoever else
+had a hunk in flight and lands it under the wrong bead id (ranger-base-yuwy,
+both directions in one afternoon). Two routes keep `git log --grep <id>`
+true instead:
+
+- **Fragment.** Write `docs/notes.d/<bead-id>.md` — a file the bead creates,
+  sole writer by construction — and commit it path-limited under the bead
+  id. No waiting on other writers, exact provenance, and the content is live
+  documentation right where it sits. `docs/notes.d/` exists from the first
+  fragment; there is no scaffolding to run first.
+- **Worktree.** Edit NOTES.md itself from a dispatched session's own tree.
+  Same-file divergence then surfaces at land time as a rebase conflict the
+  launcher reports, never a silent sweep, and each commit keeps its own
+  bead id through the replay.
+
+**Folding a fragment into NOTES.md is ordinary work** — a docs bead, worked
+in a worktree, that reads the fragment, merges its content into the right
+section here, and deletes the fragment. Nothing about a fragment's existence
+promises it stays a separate file.
+
 ## Testing
 
 **The suite command is `make test`, not a bare `go test ./...`**

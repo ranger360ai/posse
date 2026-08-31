@@ -19,11 +19,15 @@ bd sync               # Sync with git
   `posse/<session>` — its own index, its own HEAD, nobody else's. The work
   prompt names it. An operator session, and any session in the checkout at
   `~/src/posse` itself, shares that checkout with everyone.
-- Close the bead, and commit. **In the shared checkout, name your own
-  paths** (`git commit -F - -- <paths>`): there the index is shared and an
+- Close the bead, and commit **naming your own paths** (`git commit -F - --
+  <paths>`). That form is unconditional: every crew PID carries
+  `deny: Bash(git commit unless --)`, a PID-level deny realized as a PATH
+  shim that reads argv and never the tree, so it refuses an unqualified
+  commit in your own worktree too. What differs between the trees is the
+  reason and the hook: in the shared checkout the index is shared, an
   unqualified commit takes whatever another persona has staged, and the
-  `prepare-commit-msg` gate refuses one. In your own worktree nothing is
-  shared, the gate stands down, and the ordinary form is fine.
+  `prepare-commit-msg` gate refuses it as well; in a session worktree
+  nothing is shared and that gate stands down — the PID does not.
 - **A NEW file needs two steps** (rangerhq-4pbt): `git add -- <the new
   paths>`, then `git commit -F - -- <all your paths>`. A pathspec only matches
   a file git already has an index entry for, so the path-limited form on its
@@ -54,6 +58,12 @@ bd sync               # Sync with git
   refuse a commit but never opens its message file for write, so a
   trailer-less commit is a message that was written without one, never a
   route that ate one. Type it; do not rewrite history that lacks it.
+  **The `git log --grep <id>` promise is scoped the same way it is earned**
+  (ADR 0022): it holds unconditionally in a session worktree; in the shared
+  checkout it holds only for a file with one in-flight writer, and NOTES.md
+  is never that — personas write a `docs/notes.d/<bead-id>.md` fragment
+  instead, or edit NOTES.md from a worktree (see NOTES.md, "The shared
+  working tree").
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

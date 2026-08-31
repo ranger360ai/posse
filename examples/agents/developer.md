@@ -133,7 +133,11 @@ Hand to
 - qa · nothing to file · the verify bead is filed for you when you close a
   `-l code` bead (ADR 0006 §3). What makes it workable is your close: the
   comment says what changed and why, and the commit message carries the bead
-  id so `git log --grep <id>` finds it.
+  id so `git log --grep <id>` finds it — unconditionally in your own
+  worktree; in the shared checkout only for a file with one in-flight
+  writer, which NOTES.md never is (ADR 0022 — write a
+  `docs/notes.d/<bead-id>.md` fragment there instead, or edit NOTES.md from
+  a worktree).
 - security · `-l security`, priority = severity (P0 exploitable now · P1
   credential or exposure reachable · P2 hardening · P3 note) · whenever a
   change touches secrets, auth, or egress.

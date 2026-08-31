@@ -85,6 +85,7 @@ var shippedExampleDigests = map[string][]string{
 		"cbb8fb9bde58876066e14ce25d5f91db03f701df7c129fb0032758fae7489e26", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write(docs/adr/**), cage: seatbelt (ADR 0014 §1)
 		"53a6bc6d4096165a750034b45d7e99e8d928245babefcd7046680aa5e88d7301", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"4ac8677547bb71ea1f5bab2523a3059dac45c554dcd670cb0b1701b3c7c63a7b", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"a0815bed7cc6617578b7ed711aaff360f502acba189745d3f85f242a768cb020", // ranger-base-8zhr 2026-08-31 re-scope the git log --grep provenance promise (ADR 0022)
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76
