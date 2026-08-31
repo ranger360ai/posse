@@ -181,7 +181,6 @@ func TestCockpitPromptRefusesAPaneHerdrOnlyGuessesAt(t *testing.T) {
 func TestCockpitPromptStillSendsToAPaneHerdrHasSeen(t *testing.T) {
 	c, log := promptGateCockpit(t, "seen", "600ms")
 
-	start := time.Now()
 	pressKeys(t, c, "p", "h", "i", "\r")
 	msg := ""
 	select {
@@ -189,15 +188,18 @@ func TestCockpitPromptStillSendsToAPaneHerdrHasSeen(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("the prompt goroutine never reported")
 	}
-	if waited := time.Since(start); waited >= 600*time.Millisecond {
-		t.Errorf("an established session paid %s at the gate — it costs one explain", waited)
-	}
 	if msg != "prompted fresh" {
 		t.Errorf("status %q, want %q", msg, "prompted fresh")
 	}
 	calls, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// It costs one explain, not a wall clock: on a loaded box a single
+	// subprocess call can outrun 600ms all by itself, so the invariant is
+	// counted rather than timed (ranger-base-vstc).
+	if n := strings.Count(string(calls), "agent explain"); n != 1 {
+		t.Errorf("an established session must pay exactly one explain, paid %d:\n%s", n, calls)
 	}
 	if !strings.Contains(string(calls), "agent prompt p1 hi") {
 		t.Errorf("the prompt never went in:\n%s", calls)

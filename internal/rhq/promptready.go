@@ -61,9 +61,8 @@ import (
 )
 
 const (
-	// promptReadyPoll paces the gate. It is also the threshold under which
-	// a wait is not reported: one poll's worth of delay is the ordinary
-	// cost of asking, not news.
+	// promptReadyPoll paces the gate: the sleep between one `agent explain`
+	// and the next while the screen is still a guess.
 	promptReadyPoll = 250 * time.Millisecond
 
 	// promptExplainGrace bounds the never-answered concession above. Long
@@ -96,17 +95,23 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	// the full wait and worth refusing on) and "the diagnostic is not
 	// working" (worth neither).
 	answered := false
+	attempts := 0
 	var lastGuess AgentDetection
 	var lastErr string
 	for {
+		attempts++
 		det, err := b.H.AgentExplain(target)
 		switch {
 		case err != nil:
 			lastErr = err.Error()
 		case det.Seen():
-			if waited := time.Since(start); waited >= promptReadyPoll {
+			// News is a second `agent explain`, not a slow first one: a box
+			// under load can make one subprocess call take longer than a
+			// poll all by itself, and that is not the gate looping — it is
+			// the ordinary cost of asking (dinesh, ranger-base-vstc).
+			if attempts > 1 {
 				return det, fmt.Sprintf("waited %s for %s to draw a screen herdr recognizes (%s)",
-					waited.Round(100*time.Millisecond), session, seenBy(det)), nil
+					time.Since(start).Round(100*time.Millisecond), session, seenBy(det)), nil
 			}
 			return det, "", nil
 		default:
