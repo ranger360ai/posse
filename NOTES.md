@@ -618,7 +618,7 @@ watching them is the operator's interactive headroom — a fleet that eats the
   - **over it, with a cap set** — there is a floor under the blind meter, so
     the pass **degrades** instead of parking: one line per pass on the pass
     output (`plan guard: blind 4h00m (…) — degraded, running under ledger
-    brake (pass $8.20/$30.00, day $146.00/$250.00)`), then Dial E's ordinary
+    brake (pass $X.XX/$Y.YY, day $X.XX/$Y.YY)`), then Dial E's ordinary
     rungs decide per bead. The degrade is bounded **by the ledger, never by
     wall-clock** — run while something is still counting, never because the
     clock ran out. The classes of failure do not fork this (§2): a shape
@@ -3789,19 +3789,20 @@ rollback.* That process ran unnoticed for 12d21h and then detonated.
   keg — `brew upgrade`, `brew link beads`, a `gastown` reinstall — and 1.2.2
   wins silently, which is precisely the 08-16 outage re-armed.
 - `beads` is **not `brew pin`ned** (`brew list --pinned` empty, no
-  `/opt/homebrew/var/homebrew/pinned`). The operator's own tap formula
-  `davidstacy/local/beads@0.49.1` exists and is **not installed**.
+  `/opt/homebrew/var/homebrew/pinned`). A local tap pin for `beads@0.49.1`
+  exists and is **not installed**.
 - `make` carries `verify-grok-pin`, `verify-bd-dep-safety` and
   `verify-bd-no-relate-pairs`. There is **no `verify-bd-pin`** — the one
   substrate whose unpin has already taken the fleet down twice.
 
-**What it cost, priced.** 27 daemon `ERROR`s in the 21:00 hour and 1 in
-22:00 — a ~40-minute storm, landing on the leading edge of the shop's densest
-block: 08-26 closed **100 beads local**, **38 of them between 21:00 and
-23:59**. Nothing was lost; counts clean before and after. The day ran 138
-bead-segments / **$491.65 API-equiv**, median $3.27. So the bill was the
-operator's Wednesday evening and a degraded prime shift, **not dollars** —
-and 12d21h of not looking is the number to fix, not the 40 minutes.
+**What it cost, priced.** A burst of daemon `ERROR`s concentrated in one
+hour — a ~40-minute storm, landing on the leading edge of the shop's densest
+block, a busy stretch of local closes with the heaviest cluster near the top
+of the hour. Nothing was lost; counts clean before and after. Priced out
+against bead-segments run that day, the API-equiv spend and the median
+per-bead cost were unremarkable. So the bill was the operator's Wednesday
+evening and a degraded prime shift, **not dollars** — and 12d21h of not
+looking is the number to fix, not the 40 minutes.
 
 **Detection is one `test -e`, and it is all we can have.** The running
 daemon's own binary path either still exists or it does not; `bd version`
@@ -4315,8 +4316,9 @@ what the commit did.
 The store of record moves out of the constitution repo into
 `~/src/ranger-queue`, reached from every repo the crew touches — the
 constitution repo now included — by the same `.beads/redirect` mechanism
-D3-C already uses. The runbook is `docs/runbooks/queue-cutover.md` and the
-script it drives is `scripts/queue-cutover.sh`; both were rehearsed on a
+D3-C already uses. The runbook moved to the instance tree (ADR 0024 D4;
+one-deployment procedure) and the script it drives is
+`scripts/queue-cutover.sh`; both were rehearsed on a
 full copy of the live store (ranger-base-tjfw). What is worth knowing here
 rather than there:
 
@@ -4355,8 +4357,8 @@ rather than there:
 
 `~/.config/posse` stops being a symlink onto the instance repo and becomes a
 **copy** of it, taken from a commit: `posse promote` (`internal/posse/promote.go`,
-ranger-base-o943). The runbook is `docs/runbooks/home-cutover.md`. What is
-worth knowing here rather than there:
+ranger-base-o943). The runbook moved to the instance tree (ADR 0024 D4;
+one-deployment procedure). What is worth knowing here rather than there:
 
 - **The promoted set is four paths** — `agents/`, `config.yaml`, `recipes/`,
   `skills/` — and the exclusions are a symbol, not a sentence: `PromotedPaths`

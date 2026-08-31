@@ -21,8 +21,8 @@ These are one unmodelled concept, twice over: **selection among peers in
 a lane**, and **lane concurrency as distinct from persona concurrency**.
 
 Constraint the operator set: design for THROUGHPUT (closes per day), not
-utilisation or token cost. Cost is measured non-binding ($4.34
-mean/bead, windows 5h 13% / 7d 15% — 1t7r).
+utilisation or token cost. Cost is measured non-binding (a measured
+per-bead cost, windows 5h 13% / 7d 15% — 1t7r).
 
 ## Decision
 
@@ -112,7 +112,8 @@ instead of folklore.** An epoch's effective width is
     min(autostart_max_beads, floor(budget_pass / cost-per-bead), free seats with ready work)
 
 so raising one bound without the others does nothing (MEASURED today:
-cap 3 vs budget 30/$4.34 ≈ 6.9 vs 11 seats). The caps are blast-radius
+cap vs budget/a measured per-bead cost worked out lower than seats
+hired). The caps are blast-radius
 and spend bounds, and spend is incurred per bead fired — beads are the
 unit both are actually denominated in. A seat-denominated cap would
 re-denominate spend authority so that a hire silently raises it, a
