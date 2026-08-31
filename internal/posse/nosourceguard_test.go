@@ -110,6 +110,33 @@ func assertUnconfigured(t *testing.T, d *Dispatcher, errb *strings.Builder, n in
 	}
 }
 
+// The control: the same rig, unattended and three hours past a ten minute
+// blind budget, with an ORDINARY read failure instead of a NoSource — the
+// same shape TestGovNoCredentialSourceIsNotGuardBlind carries for G5, but for
+// the dispatch surface. This is what noSourceRig is supposed to do when
+// nothing about the absence is structural: park. Without this test, all four
+// NoSource pins above are satisfied just as well by a rig that can never
+// park in the first place, and a change to noSourceRig, planDispatcher or
+// the blind budget that broke parking would leave every one of them green.
+func TestNoSourceRigWithAnOrdinaryFailureDoesPark(t *testing.T) {
+	d, _ := noSourceRig(t)
+	d.Plan = &fakePlanReader{err: Die("usage endpoint: 500")}
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("an ordinary blind read past budget must park the pass: %d dispatched\n%s", n, dispatcherOut(d))
+	}
+	if d.planBlind == "" {
+		t.Error("planBlind unset: an ordinary read failure past the blind budget must set the per-bead park reason")
+	}
+	if !d.blindFailed {
+		t.Error("blindFailed unset: an ordinary read failure must be recorded as a failed reading")
+	}
+}
+
 // Arrival one: the availability check caught it, so no reader was ever
 // built. This is the shape of every real linux box that has not logged in.
 func TestPlanGuardWithNoCredentialSourceIsUnconfiguredNotBlind(t *testing.T) {
