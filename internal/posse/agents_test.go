@@ -221,13 +221,15 @@ func TestScaffoldAgentIsPID(t *testing.T) {
 		t.Error("the scaffold's commit rule is not one L1 realizes as a negative match")
 	}
 	// The render: no placeholders, no empty --allowedTools (allow IS empty),
-	// and the deny arrives as the two exact L0 spellings the negative rule
-	// widens into for a dialect with no negation.
+	// and the deny arrives as the one exact L0 spelling the negative rule
+	// widens into for a dialect with no negation (ranger-base-xll2 dropped
+	// the option-blind twin, which carried a false positive with no
+	// narrower fallback — see L0Spellings).
 	r := ag.RenderCommand()
 	if strings.Contains(r, "{allow}") || strings.Contains(r, "{deny}") || strings.Contains(r, "--allowedTools") {
 		t.Errorf("render leaked placeholders or an empty flag: %s", r)
 	}
-	if !strings.Contains(r, "--disallowedTools 'Bash(git commit)' 'Bash(git -* commit)'") {
+	if !strings.Contains(r, "--disallowedTools 'Bash(git commit)'") {
 		t.Errorf("render does not carry the scaffold's deny: %s", r)
 	}
 

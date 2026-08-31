@@ -5167,13 +5167,16 @@ verdict: sweeps). `-a` needs no case of its own: git itself refuses
 `commit -a` together with a pathspec (`fatal: paths … with -a does not make
 sense`), so a rule that demands a pathspec excludes `-a` by construction.
 Claude's dialect has no negation, so `L0Spellings` widens a negative rule
-into the two **exact** shapes that are unsafe whatever follows —
-`Bash(git commit)` and `Bash(git -* commit)` — and nothing longer, because
-anything longer might be the safe form. The second carries rangerhq-ky3's
-false positive (`git -C <r> log --grep commit` is refused, measured) and
-keeps it for now: with no wildcard half to fall back on, dropping it would
-leave the negative rule no option-blind L0 cover at all — ranger-base-xll2
-decides which way that goes.
+into the one **exact** shape that is unsafe whatever follows —
+`Bash(git commit)` — and nothing longer, because anything longer might be
+the safe form. It used to carry a second, option-blind shape,
+`Bash(git -* commit)`, with rangerhq-ky3's false positive attached
+(`git -C <r> log --grep commit` refused, `--grep=commit` ran); unlike the
+verb branch, this one had no ` *` half to narrow it with — a trailing
+wildcard would also have caught the safe form. ranger-base-xll2 applied the
+rangerhq-3mc/ky3 standard (a false positive is a hard block the model
+cannot ask its way past) and dropped it: `git <globals> commit -m x` with
+no `--` now draws no polite L0 refusal, only L1's hard one.
 
 *L3, the hook — and the slot is `prepare-commit-msg`, not `pre-commit`.*
 Two measured reasons. `pre-commit` is bd's, bd reinstalls it, and a wall a

@@ -1800,11 +1800,34 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 		t.Error("deniesUnqualifiedCommit")
 	}
 	// L0 (claude --disallowedTools) has no negation, so the widening is the
-	// two EXACT shapes that are unsafe whatever follows — never a prefix or
-	// trailing wildcard, which would refuse the safe form too.
-	got := strings.Join(L0Spellings([]string{"Bash(git commit unless --)"}), " ")
-	if got != "Bash(git commit) Bash(git -* commit)" {
+	// one EXACT shape that is unsafe whatever follows — never a prefix or
+	// trailing wildcard, which would refuse the safe form too. The
+	// option-blind twin (`Bash(git -* commit)`) used to ride alongside; it
+	// carried the same false positive rangerhq-ky3 found on the verb
+	// branch (`git -C <r> log --grep commit` refused, `--grep=commit` ran)
+	// and had no ` *` fallback to narrow it with, so ranger-base-xll2
+	// dropped it rather than pin the false positive as accepted.
+	rules := L0Spellings([]string{"Bash(git commit unless --)"})
+	if got := strings.Join(rules, " "); got != "Bash(git commit)" {
 		t.Errorf("L0 spellings for a negative rule: %q", got)
+	}
+	// The false positive is gone: an option-blind read-only git whose last
+	// word is `commit` must not be refused (measured live before the fix:
+	// "git -C . log --grep commit" -> denied, "git -C . log --grep=commit" -> ran).
+	for _, cmd := range []string{
+		"git -C /r log --grep commit",
+		"git -C /r stash commit",
+	} {
+		if deniedByAny(rules, cmd) {
+			t.Errorf("L0 must not refuse %q — rules %q", cmd, rules)
+		}
+	}
+	// The stated cost: a real commit behind global options and with no `--`
+	// draws no polite L0 refusal, only L1's hard one. TestShimNegativeMatchUnless's
+	// "behind git's global options" row (`-C /tmp commit -m x`) pins that L1
+	// still refuses it, which is the trade L0 is allowed to make (ADR 0002 §3).
+	if deniedByAny(rules, "git -C /r commit -m x") {
+		t.Error("unexpected coverage of \"git -C /r commit -m x\" — if the option-blind twin is back, so is the false positive above")
 	}
 }
 

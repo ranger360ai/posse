@@ -697,21 +697,27 @@ func L0Spellings(deny []string) []string {
 		// A negative rule (`Bash(git commit unless --)`) has no spelling in
 		// claude's dialect at all — it has no negation — and the rule text
 		// itself would reach the matcher as a literal, matching nothing. What
-		// CAN be said is the shapes that are unsafe whatever follows: the bare
-		// form and the bare form behind global options, both EXACT so they
-		// cannot swallow a commit that does carry the qualifier. Anything
-		// longer might be the safe form, and refusing it at L0 would refuse
-		// the very form the wall is pointing at.
-		// The option-blind form here keeps the shape rangerhq-ky3 removed
-		// below, and carries its false positive with it (`git -C <r> log
-		// --grep commit` is refused, measured). The trade is not the same
-		// one: this branch has no ` *` half to fall back on, so dropping it
-		// would leave the negative rule with no option-blind L0 cover at
-		// all. Filed rather than decided here: ranger-base-xll2.
+		// CAN be said is the shape that is unsafe whatever follows: the bare
+		// form with no leading options, EXACT so it cannot swallow a commit
+		// that does carry the qualifier. Anything longer might be the safe
+		// form, and refusing it at L0 would refuse the very form the wall is
+		// pointing at.
+		// ranger-base-xll2: the option-blind twin, `Bash(cmd -* words)`, used
+		// to ride alongside — the same shape rangerhq-ky3 removed from the
+		// verb branch above, carrying the same false positive here (`git -C
+		// <r> log --grep commit` was refused, measured; `--grep=commit` ran).
+		// Unlike the verb branch, this one has no ` *` fallback: a trailing
+		// wildcard would also catch the SAFE form (anything after `commit`,
+		// including `-- <pathspec>`), so there was no narrower spelling to
+		// fall back to — only drop-it-or-keep-it. The rangerhq-3mc/ky3
+		// standard (at L0 a false positive is a hard block the model cannot
+		// ask its way past) decides it the same way here: drop it. Stated
+		// cost: `git <globals> commit -m x` with no `--` draws no polite L0
+		// refusal, only L1's hard one (TestShimNegativeMatchUnless's "behind
+		// git's global options" row pins that L1 still refuses it).
 		if r.Unless != "" {
 			words := strings.Join(r.Words, " ")
 			add("Bash(" + cmd + " " + words + ")")
-			add("Bash(" + cmd + " -* " + words + ")")
 			continue
 		}
 		add(rule)
