@@ -58,15 +58,63 @@ func cageRank(c string) int {
 	return -1
 }
 
+// EnforcementClass names which side of ADR 0025 §1 a realized gate sits on:
+// held outside the gated process, surviving an adversarial one (Enforced —
+// L2 seatbelt, L4 mount boundary, egress network+proxy, codex `-s
+// read-only`), or held only by the process's own ordinary path, defeated by
+// an emptied environment, `--no-verify`, `core.hooksPath`, or editing the
+// slot (Cooperative — L1 shims, L3 hooks, the gate shell). "" is not a third
+// class: it marks a Realized row that is not itself an adversarial gate
+// claim (`skills:`, the record-reach probe's abstain/no-target/unmeasured
+// rows) — nothing to class, nothing printed.
+type EnforcementClass string
+
+const (
+	Enforced    EnforcementClass = "enforced"
+	Cooperative EnforcementClass = "cooperative"
+)
+
+// RealizedGate is one row of the parity matrix's realized half. Class is
+// typed so a printer (`posse gates`, a launch refusal, session meta) reads
+// it off a field instead of parsing "L1 shim" / "L2 seatbelt" out of
+// Detail's prose — ADR 0025 §1's whole point is that "realized" stopped
+// being one word a printer could trust. Effect is ADR 0025 §3's push-effect
+// note: set only for `Bash(git push:*)` at `cage: container`, and always a
+// printed note, never a computed claim — the launcher does not know the
+// remote's host.
+type RealizedGate struct {
+	Class  EnforcementClass
+	Detail string
+	Effect string
+}
+
+// String renders one realized row's tail the way `posse gates` prints it:
+// "→ <class> (<detail>)", or bare Detail for a "" class (a row that is not
+// itself an adversarial gate claim). The Effect note, when set, trails
+// after an em dash.
+func (g RealizedGate) String() string {
+	s := g.Detail
+	if g.Class != "" {
+		s = "→ " + string(g.Class)
+		if g.Detail != "" {
+			s += " (" + g.Detail + ")"
+		}
+	}
+	if g.Effect != "" {
+		s += " — " + g.Effect
+	}
+	return s
+}
+
 // Parity is the realization matrix for one launch.
 type Parity struct {
 	Runtime    string
-	Cage       string            // the tier the session actually gets
-	Tier       string            // the model tier the launch resolved to (ADR 0003)
-	NoDegrade  bool              // the degradation below cannot be waived: --allow-degraded is not accepted at fast
-	Realized   map[string]string // gate → layer(s) that realize it
-	Unrealized []string          // gate → reason
-	Degraded   []string          // everything that makes the launch degrading (unrealized gates, cage shortfall)
+	Cage       string                  // the tier the session actually gets
+	Tier       string                  // the model tier the launch resolved to (ADR 0003)
+	NoDegrade  bool                    // the degradation below cannot be waived: --allow-degraded is not accepted at fast
+	Realized   map[string]RealizedGate // gate → what realizes it, classed (ADR 0025 §1)
+	Unrealized []string                // gate → reason
+	Degraded   []string                // everything that makes the launch degrading (unrealized gates, cage shortfall)
 	// DeclaredDifference (ADR 0017 §2): safe-by-design facts about the
 	// runtime — a mechanism differs, not a wall. codex's own sandbox cannot
 	// nest under our seatbelt; a SelfSandbox runtime that already realizes
@@ -82,7 +130,7 @@ type Parity struct {
 // ownership and behavior are facts about a concrete repo, added only by
 // CheckParityIn after executing the slots.
 func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity {
-	p := Parity{Runtime: rt.Name, Cage: cage, Tier: tier, Realized: map[string]string{}}
+	p := Parity{Runtime: rt.Name, Cage: cage, Tier: tier, Realized: map[string]RealizedGate{}}
 	if cage == "" {
 		cage = DefaultCage
 		p.Cage = cage
@@ -222,7 +270,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			if inner {
 				layers = "L1 shim (" + kind + ") rendered inside the cage"
 			}
-			p.Realized[rule] = layers
+			p.Realized[rule] = RealizedGate{Class: Cooperative, Detail: layers}
 		case rule == "Edit" || rule == "Write" || rule == "NotebookEdit":
 			a.wholeTreeWriteWall(&p, rule, rule, rt, inner, seatbelt, container, enforced)
 		case isPathScopedWrite(rule):
@@ -243,9 +291,9 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 				// do I write instead".
 				p.unrealized(rule, "not a directory-prefix glob; the wall realizes subtrees (Edit(docs/adr/**)), not file filters")
 			case inner:
-				p.Realized[rule] = "L4 :ro overlay (" + d.Path + ")"
+				p.Realized[rule] = RealizedGate{Class: Enforced, Detail: "L4 :ro overlay (" + d.Path + ")"}
 			case seatbelt:
-				p.Realized[rule] = "L2 trailing deny (subpath " + d.Path + ")"
+				p.Realized[rule] = RealizedGate{Class: Enforced, Detail: "L2 trailing deny (subpath " + d.Path + ")"}
 			case enforced[d.Tool]:
 				// Only reachable when the PID ALSO denies the whole tree
 				// bare, which is what turns codex's -s read-only on: the
@@ -255,7 +303,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 				// the other direction. `-s read-only` alone never lands
 				// here — ADR 0014 §2's row is that it has no per-path
 				// surface, and over-enforcement is not realization.
-				p.Realized[rule] = rt.Name + " sandbox (OS-enforced): the whole tree this subtree is in, bought by the PID's bare Edit/Write"
+				p.Realized[rule] = RealizedGate{Class: Enforced, Detail: rt.Name + " sandbox (OS-enforced): the whole tree this subtree is in, bought by the PID's bare Edit/Write"}
 			case container:
 				p.unrealized(rule, "cage container overlays this subtree :ro, but image "+a.CageImage()+" is not one this posse built (`posse cage build`) — and L2 does not stack under this tier: sandbox-exec around the engine cages the client, not the container")
 			default:
@@ -272,7 +320,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			web := rule == "WebFetch" || rule == "WebSearch"
 			switch {
 			case egress && web:
-				p.Realized[rule] = "L4 container, as far as egress: goes (the proxy stops unknown hosts, not a fetch through an allowed one)"
+				p.Realized[rule] = RealizedGate{Class: Enforced, Detail: "L4 container, as far as egress: goes (the proxy stops unknown hosts, not a fetch through an allowed one)"}
 			case container && web:
 				p.unrealized(rule, "cage container realizes this only as far as egress: goes, and engine "+a.ResolveEngine()+" spells no route (net_create:/proxy_up:)")
 			case container:
@@ -286,7 +334,7 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 		gate := "egress: " + strings.Join(ag.Egress, ",")
 		switch {
 		case egress:
-			p.Realized[gate] = "L4 --internal network + CONNECT proxy (the route, not the env var)"
+			p.Realized[gate] = RealizedGate{Class: Enforced, Detail: "L4 --internal network + CONNECT proxy (the route, not the env var)"}
 			// rangerhq-rm5's instruction, and the one honest limit of this
 			// gate: the proxy sees the CONNECT authority and nothing else,
 			// so a PID that denies fetching AND names hosts is asking for
@@ -317,9 +365,10 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 		case rt.SkillsCwd:
 			// No flag to show: the binding is the symlinks the launch writes
 			// into the session dir, which is as session-scoped as the cwd is.
-			p.Realized["skills: "+names] = rt.Name + " reads " + AgentsSkillsPath + " in the session dir (symlinked at launch, additive)"
+			// Class "": a skills binding is not an adversarial gate claim.
+			p.Realized["skills: "+names] = RealizedGate{Detail: rt.Name + " reads " + AgentsSkillsPath + " in the session dir (symlinked at launch, additive)"}
 		default:
-			p.Realized["skills: "+names] = rt.Name + " " + flag + " (session-only, additive)"
+			p.Realized["skills: "+names] = RealizedGate{Detail: rt.Name + " " + flag + " (session-only, additive)"}
 		}
 	}
 	// ADR 0003 §3, the security review's caveat made a rule: at fast the model behind
@@ -422,6 +471,7 @@ func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
 	a.applyL3Probe(&p, ag, rt, dir)
+	applyPushEffectNote(&p, ag.Deny)
 	// ADR 0013 §4: the cage half of the record stage. Directory-aware for
 	// the same reason L3 is — which .beads bd opens is a fact about a
 	// concrete launch dir, not about a persona — and the dir is already in
@@ -478,16 +528,47 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	}
 }
 
+// L3-observed merge (ADR 0025 §1): L3, like L1, is cooperative — held only
+// in-process, by the ordinary path the hook happens to run on. Merging into
+// an existing L1 row keeps that row's class (already Cooperative); a fresh
+// row (L3 alone, e.g. NoGateShell runtimes) is stamped Cooperative here.
 func applyHookResult(p *Parity, gate, observed string, works bool, noL1 string) {
 	if !works {
 		return
 	}
-	if layer := p.Realized[gate]; layer != "" {
-		p.Realized[gate] = layer + " + " + observed
+	if g, ok := p.Realized[gate]; ok {
+		g.Detail = g.Detail + " + " + observed
+		p.Realized[gate] = g
 		return
 	}
 	clearGateDegradation(p, gate)
-	p.Realized[gate] = observed + " — " + noL1
+	p.Realized[gate] = RealizedGate{Class: Cooperative, Detail: observed + " — " + noL1}
+}
+
+// applyPushEffectNote is ADR 0025 §3: at `cage: container` the verb gate for
+// `git push` stays cooperative — L1/L3 do not hold any harder just because
+// the process runs in a container — but the push's EFFECT can still die at
+// an enforced layer, as far as this launch is configured for it: a path
+// remote inside the mounts is stopped by `:ro` (granted when the PID also
+// denies Edit/Write), a network remote by the egress proxy unless `egress:`
+// names its host. Printed as a note beside the class, never as a computed
+// claim — the launcher does not know the remote's host, so it must not
+// pretend to.
+func applyPushEffectNote(p *Parity, deny []string) {
+	if p.Cage != CageContainer {
+		return
+	}
+	for _, rule := range deny {
+		if !deniesGitPush([]string{rule}) {
+			continue
+		}
+		g, ok := p.Realized[rule]
+		if !ok || g.Effect != "" {
+			continue
+		}
+		g.Effect = "at cage: container the push's EFFECT still dies at an enforced layer as far as this launch is configured — a path remote inside the mounts is stopped by :ro (granted when the PID also denies Edit/Write), a network remote by the egress proxy unless egress: names its host (ADR 0025 §3); the verb gate itself stays cooperative"
+		p.Realized[rule] = g
+	}
 }
 
 func clearGateDegradation(p *Parity, gate string) {
@@ -553,11 +634,11 @@ func (a *App) CheckTier(ag *AgentFile, rt *Runtime, cage, tier string, allowDegr
 func (a *App) wholeTreeWriteWall(p *Parity, gate, tool string, rt *Runtime, inner, seatbelt, container bool, enforced map[string]bool) {
 	switch {
 	case inner:
-		p.Realized[gate] = "L4 mount boundary (repo mounted :ro)"
+		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: "L4 mount boundary (repo mounted :ro)"}
 	case seatbelt:
-		p.Realized[gate] = "L2 seatbelt"
+		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: "L2 seatbelt"}
 	case enforced[tool]:
-		p.Realized[gate] = rt.Name + " sandbox (OS-enforced)"
+		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: rt.Name + " sandbox (OS-enforced)"}
 	case container:
 		p.unrealized(gate, "cage container mounts the repo :ro for this deny, but image "+a.CageImage()+" is not one this posse built (`posse cage build`) — and L2 does not stack under this tier: sandbox-exec around the engine cages the client, not the container")
 	default:
@@ -661,7 +742,7 @@ func (p Parity) String() string {
 // with a diff. The order chosen is the shape the ✗ half already has: the
 // PID's deny rules first, then the gates that are not deny rules at all,
 // each in a fixed place rather than wherever its name happens to sort.
-func realizedOrder(realized map[string]string) []string {
+func realizedOrder(realized map[string]RealizedGate) []string {
 	gates := make([]string, 0, len(realized))
 	for gate := range realized {
 		gates = append(gates, gate)

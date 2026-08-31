@@ -1364,9 +1364,14 @@ posse_stamp() {
 // a pre-push hook that refuses when RHQ_TOOLS_DENY (newline-separated,
 // exported into every persona session by CreateSession) carries a rule
 // matching git push — Bash(git push:*), Bash(git push --force:*),
-// Bash(git:*), Bash(git). Catches /usr/bin/git push, subprocess pushes,
-// and anything that dodged the L1 shim but kept the env. It cannot see
-// through `env -i` (nothing in-process can); that is the container tier's.
+// Bash(git:*), Bash(git). Catches /usr/bin/git push and subprocess pushes
+// that keep the env — cooperative class at every tier (ADR 0025 §1): it
+// cannot see through `env -i` (nothing in-process can), `--no-verify`
+// skips it outright, and `-c core.hooksPath=` redirects past it with zero
+// writes (measured, ranger-base-3csb). At cage: container the push's
+// EFFECT can still die at an enforced layer (mount :ro / egress proxy)
+// where the launch is configured for it (ADR 0025 §3) — the verb gate
+// itself never gets stronger just because the process is caged.
 const PrePushHook = `#!/bin/sh
 ` + prePushMarker + ` — installed by posse gates install-hooks; refuses git push in persona
 # sessions whose PID denies it (RHQ_TOOLS_DENY). Foreign hooks are never

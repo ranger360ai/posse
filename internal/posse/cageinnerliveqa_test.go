@@ -320,6 +320,9 @@ func TestQALiveCageEscapeAttemptsOnAWritableRepo(t *testing.T) {
 echo "shim=$(git push origin main 2>&1 | head -1)"
 echo "hook=$(/usr/bin/git push origin main 2>&1 | grep -ci refused)"
 echo "stripped=$(env -i /usr/bin/git push origin main 2>&1 | grep -ci refused)"
+echo "noverify=$(/usr/bin/git push --no-verify origin main 2>&1 | grep -ci refused)"
+echo "hookspath=$(/usr/bin/git -c core.hooksPath= push origin main 2>&1 | grep -ci refused)"
+echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | grep -ci refused)"
 before=$(wc -c < "$RHQ_GATES_DIR/refusals.log")
 if : > "$RHQ_GATES_DIR/refusals.log" 2>/dev/null; then echo "truncate=ok"; else echo "truncate=refused"; fi
 echo "shrank=$([ "$(wc -c < "$RHQ_GATES_DIR/refusals.log")" -lt "$before" ] && echo yes || echo no)"
@@ -346,6 +349,44 @@ echo "shrank=$([ "$(wc -c < "$RHQ_GATES_DIR/refusals.log")" -lt "$before" ] && e
 		t.Logf("MEASURED (rangerhq-pafo, 2026-08-27): `env -i /usr/bin/git push` is NOT refused. Both L1 and L3 read the deny list out of the environment, so a process that clears its own clears the gates with it. This is the shims tier's own hole, inherited unchanged — the container tier adds the mount boundary on top of it, not a seal underneath it.")
 	default:
 		t.Errorf("the strip probe did not run: %q", got["stripped"])
+	}
+
+	// (1b)-(1d) ADR 0025 verification 4 / the escape-C amendment to ADR 0002
+	// §3 (ranger-base-3csb, docs/adr/0002-runtimes-and-gates.md "Amendment
+	// 2026-08-27"): L3 is a cooperative backstop, not the boundary for the
+	// absolute-path hole. MEASURED there (git 2.39.3, ungated scratch: bare
+	// local remote, a refusing pre-push, /usr/bin/git throughout; ground
+	// truth was which refs landed on the remote) — `--no-verify` and an
+	// empty `core.hooksPath=` both skip the hook outright, and the two
+	// combined (`/usr/bin/git -c core.hooksPath=<hookless> push`) defeat L1
+	// (absolute path) and L3 (redirect) together, with zero writes to
+	// .git/hooks. Pinned here too, either way — richard's instruction on
+	// this bead (ranger-base-evb1) is to log the measured answer, not to
+	// assert the escape must keep working: the day one of these flips is
+	// the day someone notices (the 6uq6 pattern).
+	switch got["noverify"] {
+	case "0":
+		t.Logf("MEASURED (ranger-base-3csb): `/usr/bin/git push --no-verify` is NOT refused — --no-verify skips pre-push outright, cooperative class (ADR 0025 §1)")
+	case "1":
+		t.Logf("MEASURED: `/usr/bin/git push --no-verify` is still refused here (%q) — narrower than the ranger-base-3csb scratch measurement", got["noverify"])
+	default:
+		t.Errorf("the --no-verify probe did not run: %q", got["noverify"])
+	}
+	switch got["hookspath"] {
+	case "0":
+		t.Logf("MEASURED (ranger-base-3csb): `/usr/bin/git -c core.hooksPath= push` is NOT refused — the redirect finds no pre-push at the (empty) path, cooperative class, zero writes to .git/hooks")
+	case "1":
+		t.Logf("MEASURED: `/usr/bin/git -c core.hooksPath= push` is still refused here (%q)", got["hookspath"])
+	default:
+		t.Errorf("the core.hooksPath= probe did not run: %q", got["hookspath"])
+	}
+	switch got["combined"] {
+	case "0":
+		t.Logf("MEASURED (escape C, ranger-base-3csb): `/usr/bin/git -c core.hooksPath=<hookless> push` is NOT refused, defeating L1 (absolute path) and L3 (redirect) in one call — while a plain `git push` in this same session IS refused (%q), so the gates are otherwise live", got["shim"])
+	case "1":
+		t.Logf("MEASURED: the combined escape-C form is still refused here (%q)", got["combined"])
+	default:
+		t.Errorf("the combined escape-C probe did not run: %q", got["combined"])
 	}
 
 	// (2) The audit trail is mounted read-write because the shims append to

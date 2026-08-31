@@ -85,18 +85,22 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		// dir. Said out loud rather than skipped in silence — a check that
 		// measured nothing and a check that measured a pass must not print
 		// the same line (ranger-base-fm4p).
-		p.Realized[RecordReachGate] = "no store of record at " + AbbrevHome(home) + " — nothing to reach (bd creates it on first write)"
+		// Class "": nothing is there to reach, so no wall is being claimed
+		// either way — this row is a "nothing to check" pass, not a gate.
+		p.Realized[RecordReachGate] = RealizedGate{Detail: "no store of record at " + AbbrevHome(home) + " — nothing to reach (bd creates it on first write)"}
 		return
 	}
 	switch {
 	case p.Cage == CageContainer && a.cageAvailable(p.Cage):
-		p.Realized[RecordReachGate] = "cage container: not judged here — the wall at this tier is the mount set, not a profile (ADR 0013 §4)"
+		// Class "": this row abstains — it measured nothing, so it must not
+		// read like either enforcement class (ranger-base-fm4p).
+		p.Realized[RecordReachGate] = RealizedGate{Detail: "cage container: not judged here — the wall at this tier is the mount set, not a profile (ADR 0013 §4)"}
 	case rt.SelfSandbox:
 		if why := codexReachRow(a.renderedLaunchLine(ag, rt, p.Tier, dir), dir, targets); why != "" {
 			p.unrealized(RecordReachGate, why)
 			return
 		}
-		p.Realized[RecordReachGate] = fmt.Sprintf("%s's own sandbox names %s (rendered launch line, %d targets)", rt.Name, AbbrevHome(home), len(targets))
+		p.Realized[RecordReachGate] = RealizedGate{Class: Enforced, Detail: fmt.Sprintf("%s's own sandbox names %s (rendered launch line, %d targets)", rt.Name, AbbrevHome(home), len(targets))}
 	case p.Cage == CageSeatbelt && a.cageAvailable(p.Cage):
 		if !SeatbeltAvailable() {
 			// The tier was pinned available on a host that cannot run the
@@ -109,7 +113,8 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		// .sb is a write), and a second finding drawn from the same
 		// unmeasured fact is no better than the first.
 		if why := sandboxApplyRefusal(); why != "" {
-			p.Realized[RecordReachGate] = recordReachUnmeasured(why)
+			// Class "": unmeasured, not enforcement — see recordReachUnmeasured.
+			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(why)}
 			return
 		}
 		prof, err := a.RenderSeatbelt(ag, dir, rt.StateDirs...)
@@ -119,16 +124,18 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		}
 		why, unmeasured := seatbeltReachRow(prof, targets)
 		if unmeasured != "" {
-			p.Realized[RecordReachGate] = recordReachUnmeasured(unmeasured)
+			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(unmeasured)}
 			return
 		}
 		if why != "" {
 			p.unrealized(RecordReachGate, why)
 			return
 		}
-		p.Realized[RecordReachGate] = fmt.Sprintf("L2 %s probed at launch: %d targets created and removed under sandbox-exec", AbbrevHome(prof), len(targets))
+		p.Realized[RecordReachGate] = RealizedGate{Class: Enforced, Detail: fmt.Sprintf("L2 %s probed at launch: %d targets created and removed under sandbox-exec", AbbrevHome(prof), len(targets))}
 	default:
-		p.Realized[RecordReachGate] = "cage " + p.Cage + " has no file wall — every path this session can write, it can write"
+		// Class "": stated plainly as NOT a wall — shims has no file gate at
+		// all, so this row is the honest opposite of a claim.
+		p.Realized[RecordReachGate] = RealizedGate{Detail: "cage " + p.Cage + " has no file wall — every path this session can write, it can write"}
 	}
 }
 

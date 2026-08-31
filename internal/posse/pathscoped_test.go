@@ -118,7 +118,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	// seatbelt: the trailing deny, on the two runtimes that can be wrapped.
 	for _, rt := range []*Runtime{claude, grok} {
 		p := a.CheckParity(scoped, rt, CageSeatbelt, TierStrong)
-		if len(p.Degraded) != 0 || p.Realized["Edit(docs/adr/**)"] != "L2 trailing deny (subpath docs/adr)" {
+		if len(p.Degraded) != 0 || p.Realized["Edit(docs/adr/**)"].Detail != "L2 trailing deny (subpath docs/adr)" {
 			t.Errorf("%s@seatbelt: %+v", rt.Name, p)
 		}
 	}
@@ -129,7 +129,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	// here, since a path-scoped deny is not what turns codex's read-only
 	// mode on (ranger-base-d17a).
 	pc := a.CheckParity(scoped, codex, CageSeatbelt, TierStrong)
-	if pc.Realized["Edit(docs/adr/**)"] != "" ||
+	if pc.Realized["Edit(docs/adr/**)"].Detail != "" ||
 		!strings.Contains(strings.Join(pc.DeclaredDifference, "\n"), "cage seatbelt cannot wrap codex") ||
 		!strings.Contains(strings.Join(pc.Degraded, "\n"), "needs cage: seatbelt (or container) — a path-scoped write is not a tool-name deny") {
 		t.Errorf("codex@seatbelt: %+v", pc)
@@ -138,7 +138,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	// container with the inner gates: the :ro overlay, every runtime.
 	for _, rt := range []*Runtime{claude, grok, codex} {
 		p := a.CheckParity(scoped, rt, CageContainer, TierStrong)
-		if len(p.Degraded) != 0 || p.Realized["Write(docs/adr/**)"] != "L4 :ro overlay (docs/adr)" {
+		if len(p.Degraded) != 0 || p.Realized["Write(docs/adr/**)"].Detail != "L4 :ro overlay (docs/adr)" {
 			t.Errorf("%s@container: %+v", rt.Name, p)
 		}
 	}
@@ -165,7 +165,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	// `Edit(**)` is the bare rule's row verbatim — the matrix prints back
 	// the rule as written, and claims exactly what the bare name claims.
 	long := cageAgent(t, a, "deny: [Edit(**)]\n")
-	if p := a.CheckParity(long, claude, CageSeatbelt, TierStrong); p.Realized["Edit(**)"] != "L2 seatbelt" {
+	if p := a.CheckParity(long, claude, CageSeatbelt, TierStrong); p.Realized["Edit(**)"].Detail != "L2 seatbelt" {
 		t.Errorf("Edit(**)@seatbelt: %+v", p)
 	}
 	if p := a.CheckParity(long, claude, CageShims, TierStrong); len(p.Unrealized) != 1 ||
@@ -178,7 +178,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	// refusal here would be the lie in the other direction.
 	both := cageAgent(t, a, "deny: [Edit, Write, Edit(docs/adr/**)]\n")
 	pb := a.CheckParity(both, codex, CageShims, TierStrong)
-	if len(pb.Degraded) != 0 || !strings.Contains(pb.Realized["Edit(docs/adr/**)"], "codex sandbox (OS-enforced): the whole tree") {
+	if len(pb.Degraded) != 0 || !strings.Contains(pb.Realized["Edit(docs/adr/**)"].Detail, "codex sandbox (OS-enforced): the whole tree") {
 		t.Errorf("bare pair + subtree on codex: %+v", pb)
 	}
 }
@@ -198,7 +198,7 @@ func TestBareFileWriteRowUnchangedByPathScoping(t *testing.T) {
 		{CageSeatbelt, "NotebookEdit", "L2 seatbelt"},
 		{CageContainer, "Write", "L4 mount boundary (repo mounted :ro)"},
 	} {
-		if got := a.CheckParity(ag, claude, tc.cage, TierStrong).Realized[tc.gate]; got != tc.want {
+		if got := a.CheckParity(ag, claude, tc.cage, TierStrong).Realized[tc.gate].Detail; got != tc.want {
 			t.Errorf("claude@%s %s: %q want %q", tc.cage, tc.gate, got, tc.want)
 		}
 	}
@@ -206,7 +206,7 @@ func TestBareFileWriteRowUnchangedByPathScoping(t *testing.T) {
 	if len(p.Unrealized) != 3 || !strings.Contains(p.Unrealized[0], "needs cage: seatbelt (or codex -s read-only) — native flags are politeness") {
 		t.Errorf("the shims row is the old one: %+v", p.Unrealized)
 	}
-	if got := a.CheckParity(ag, codex, CageShims, TierStrong).Realized["Edit"]; got != "codex sandbox (OS-enforced)" {
+	if got := a.CheckParity(ag, codex, CageShims, TierStrong).Realized["Edit"].Detail; got != "codex sandbox (OS-enforced)" {
 		t.Errorf("codex read-only still realizes the bare rule: %q", got)
 	}
 	// And the seatbelt's own writable set: the repo out, .beads/.git in.

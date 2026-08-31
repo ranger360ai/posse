@@ -239,7 +239,7 @@ func TestQARecordReachRidesTheParityPath(t *testing.T) {
 	if row := reachRow(f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)); row != "" {
 		t.Fatalf("the ordinary redirect is reachable; parity must not degrade: %s", row)
 	}
-	if got := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work).Realized[RecordReachGate]; !strings.Contains(got, "probed at launch") {
+	if got := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work).Realized[RecordReachGate].Detail; !strings.Contains(got, "probed at launch") {
 		t.Errorf("a pass must be a printed row, not a silence: %q", got)
 	}
 
@@ -279,7 +279,7 @@ func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
 	rchFakeApplyRefusal(t, rchKernelRefusal)
 
 	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)
-	got := p.Realized[RecordReachGate]
+	got := p.Realized[RecordReachGate].Detail
 	if !strings.Contains(got, "NOT MEASURED") || !strings.Contains(got, rchKernelRefusal) {
 		t.Fatalf("the row must say nothing was measured, in the kernel's own words: %q", got)
 	}
@@ -351,7 +351,7 @@ func TestQARecordReachAbstainsBeforeItRendersTheProfile(t *testing.T) {
 	}
 
 	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)
-	got := p.Realized[RecordReachGate]
+	got := p.Realized[RecordReachGate].Detail
 	if !strings.Contains(got, "NOT MEASURED") || !strings.Contains(got, rchKernelRefusal) {
 		t.Fatalf("an unappliable probe is unmeasured whether or not the profile renders: %q", got)
 	}
@@ -443,12 +443,12 @@ func TestQAApplyRefusalAgreesWithTheProfileTheProbeWouldApply(t *testing.T) {
 // print the same line.
 func TestRecordReachAtShimsAndWithNoStore(t *testing.T) {
 	f := rchNew(t)
-	got := f.a.CheckParityIn(f.ag, f.rt, CageShims, TierStrong, f.work).Realized[RecordReachGate]
+	got := f.a.CheckParityIn(f.ag, f.rt, CageShims, TierStrong, f.work).Realized[RecordReachGate].Detail
 	if !strings.Contains(got, "no file wall") {
 		t.Errorf("cage shims: %q", got)
 	}
 	bare := sbMkdir(t, filepath.Join(t.TempDir(), "bare"))
-	got = f.a.CheckParityIn(f.ag, f.rt, CageShims, TierStrong, bare).Realized[RecordReachGate]
+	got = f.a.CheckParityIn(f.ag, f.rt, CageShims, TierStrong, bare).Realized[RecordReachGate].Detail
 	if !strings.Contains(got, "nothing to reach") {
 		t.Errorf("no store of record: %q", got)
 	}

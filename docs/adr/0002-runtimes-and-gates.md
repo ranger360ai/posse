@@ -152,11 +152,16 @@ session never needs it (herdr prompts the pane from the host), only a
 persona that itself dispatches does, and such a persona is not the one
 you cage. When it is on, session meta records it and the cockpit marks
 the cage (`container+herdr`): declared, so not refused — but the parity
-claim it costs is stated where the operator can see it. Known holes of L1
-(`/usr/bin/git`, `command -p`) are why L3 exists for the one verb that
-is a hard risk line; the remaining holes are what the seatbelt/container
-tiers are for. `sandbox-exec` is deprecated by Apple but is what codex
-itself ships on today; its successor is the container tier.
+claim it costs is stated where the operator can see it. L3 is a
+*cooperative* backstop for the one hard-risk verb, not the boundary for
+L1's absolute-path hole (`/usr/bin/git`, `command -p`): it raises the cost
+of an ordinary absolute-path or subprocess push that keeps its environment
+and dispatches hooks normally, but `--no-verify`, an emptied environment,
+and a `-c core.hooksPath=` redirect (which needs no file write) each walk
+past it — measured, escape C, ranger-base-3csb (amendment below). The
+remaining holes, this one included, are what the seatbelt/container tiers
+are for. `sandbox-exec` is deprecated by Apple but is what codex itself
+ships on today; its successor is the container tier.
 
 **4. Enforcement parity: refuse, or degrade out loud.** At launch the
 launcher computes, for the chosen (runtime × cage), which PID gates are

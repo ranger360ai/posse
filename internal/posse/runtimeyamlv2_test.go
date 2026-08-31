@@ -120,7 +120,7 @@ func TestSkillsCwdIsDeclarable(t *testing.T) {
 
 	// And the parity line says which surface it is, rather than degrading.
 	p := a.CheckParity(ag, rt, CageShims, TierStrong)
-	if got := p.Realized["skills: s1"]; !strings.Contains(got, AgentsSkillsPath) {
+	if got := p.Realized["skills: s1"].Detail; !strings.Contains(got, AgentsSkillsPath) {
 		t.Errorf("parity must name the cwd surface: %q (degraded: %v)", got, p.Degraded)
 	}
 	// Without the key the same yaml has no surface at all, which is the
@@ -319,7 +319,7 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 	if !strings.Contains(strings.Join(p.DeclaredDifference, "\n"), "cage seatbelt cannot wrap test") {
 		t.Errorf("parity must declare the nesting difference: %s", strings.Join(p.DeclaredDifference, "\n"))
 	}
-	if got := p.Realized["skills: s1"]; !strings.Contains(got, AgentsSkillsPath) {
+	if got := p.Realized["skills: s1"].Detail; !strings.Contains(got, AgentsSkillsPath) {
 		t.Errorf("parity must name the cwd skill surface: %q", got)
 	}
 	// Edit/Write are unrealized here and say so: a template runtime declaring

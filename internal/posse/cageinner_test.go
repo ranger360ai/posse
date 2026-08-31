@@ -297,7 +297,7 @@ func TestInnerGatesAreClaimedOnlyWhenTheImageCanRender(t *testing.T) {
 		"command: env {mounts} {env} -w {workdir} {image} {cmd}\nprobe: true {image}\ninner: true {image} {cmd}\n"), 0o644)
 	os.WriteFile(a.ConfigPath, []byte("default_engine: real-image\n"), 0o644)
 	ok := a.CheckParity(ag, claude, CageContainer, TierStrong)
-	if !strings.Contains(ok.Realized["Bash(git push:*)"], "rendered inside the cage") {
+	if !strings.Contains(ok.Realized["Bash(git push:*)"].Detail, "rendered inside the cage") {
 		t.Errorf("the shim is claimed as what it is: %+v", ok.Realized)
 	}
 	if len(ok.Unrealized) != 0 {

@@ -301,10 +301,10 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 	// The egress route is built, so it is claimed — and the fetch gate is
 	// claimed only to the edge of the allowlist, which the degraded list
 	// says out loud when a PID sets both (rangerhq-rm5).
-	if !strings.Contains(p.Realized["egress: api.example.com"], "--internal network") {
+	if !strings.Contains(p.Realized["egress: api.example.com"].Detail, "--internal network") {
 		t.Errorf("the egress route is realized at this tier now: %+v", p.Realized)
 	}
-	if p.Realized["WebFetch"] == "" {
+	if p.Realized["WebFetch"].Detail == "" {
 		t.Errorf("WebFetch is realized as far as egress: goes: %+v", p.Realized)
 	}
 	if !strings.Contains(strings.Join(p.Degraded, "\n"), "not a fetch through an allowed one") {
@@ -314,11 +314,11 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 	// verb keeps its shim, rendered inside, and Edit/Write is the mount
 	// boundary that replaces L2. This directory-independent check does not
 	// claim an unprobed pre-push hook.
-	if !strings.Contains(p.Realized["Bash(git push:*)"], "rendered inside the cage") ||
-		strings.Contains(p.Realized["Bash(git push:*)"], "pre-push hook") {
+	if !strings.Contains(p.Realized["Bash(git push:*)"].Detail, "rendered inside the cage") ||
+		strings.Contains(p.Realized["Bash(git push:*)"].Detail, "pre-push hook") {
 		t.Errorf("the shell verb is realized by L1 here; unprobed L3 must be absent: %+v", p.Realized)
 	}
-	if !strings.Contains(p.Realized["Edit"], ":ro") || !strings.Contains(p.Realized["Write"], ":ro") {
+	if !strings.Contains(p.Realized["Edit"].Detail, ":ro") || !strings.Contains(p.Realized["Write"].Detail, ":ro") {
 		t.Errorf("Edit/Write are the mount boundary at this tier: %+v", p.Realized)
 	}
 	// A stdio MCP server is a child process inside the cage: the allowlist
@@ -344,7 +344,7 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 	// Below the tier, the shims are the host's and really do hold — the
 	// container claims must not have cost the tier that works.
 	ps := a.CheckParity(ag, claude, CageShims, TierStrong)
-	if ps.Realized["Bash(git push:*)"] == "" {
+	if ps.Realized["Bash(git push:*)"].Detail == "" {
 		t.Errorf("L1 still realizes the shell verb at shims: %+v", ps)
 	}
 	// And an unavailable container tier degrades to that host launch, so
@@ -352,7 +352,7 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 	os.WriteFile(a.ConfigPath, []byte("default_engine: ghost\n"), 0o644)
 	os.WriteFile(filepath.Join(a.CagesDir(), "ghost.yaml"), []byte("command: no-such-engine-binary run {cmd}\n"), 0o644)
 	pu := a.CheckParity(ag, claude, CageContainer, TierStrong)
-	if pu.Realized["Bash(git push:*)"] == "" {
+	if pu.Realized["Bash(git push:*)"].Detail == "" {
 		t.Errorf("a cage that cannot be provided falls back to the host wall: %+v", pu)
 	}
 	if !strings.Contains(strings.Join(pu.Degraded, "\n"), "cage container is not available") {

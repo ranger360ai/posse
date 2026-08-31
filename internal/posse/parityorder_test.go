@@ -13,15 +13,15 @@ import (
 func TestParityStringOrdersTheRealizedLines(t *testing.T) {
 	p := Parity{
 		Runtime: "claude", Cage: CageShims, Tier: TierStrong,
-		Realized: map[string]string{
-			"Write":                       "L2 seatbelt",
-			"Bash(git push:*)":            "L1 shim (subcommand, option-aware)",
-			"mcp__deploy":                 "L4 container",
-			"Edit":                        "L2 seatbelt",
-			"skills: distributed-systems": "claude --plugin-dir (session-only, additive)",
-			RecordReachGate:               "cage shims has no file wall",
-			"egress: api.anthropic.com":   "L4 --internal network + CONNECT proxy",
-			"Bash(security:*)":            "L1 shim (whole verb)",
+		Realized: map[string]RealizedGate{
+			"Write":                       {Class: Enforced, Detail: "L2 seatbelt"},
+			"Bash(git push:*)":            {Class: Cooperative, Detail: "L1 shim (subcommand, option-aware)"},
+			"mcp__deploy":                 {Class: Enforced, Detail: "L4 container"},
+			"Edit":                        {Class: Enforced, Detail: "L2 seatbelt"},
+			"skills: distributed-systems": {Detail: "claude --plugin-dir (session-only, additive)"},
+			RecordReachGate:               {Detail: "cage shims has no file wall"},
+			"egress: api.anthropic.com":   {Class: Enforced, Detail: "L4 --internal network + CONNECT proxy"},
+			"Bash(security:*)":            {Class: Cooperative, Detail: "L1 shim (whole verb)"},
 		},
 		Degraded: []string{"WebFetch — runtime-native only below cage: container"},
 	}

@@ -188,8 +188,8 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 				if written != root {
 					t.Errorf("cwd surface must land in the session dir: %s", written)
 				}
-				if !strings.Contains(p.Realized[key], AgentsSkillsPath) {
-					t.Errorf("parity must name the cwd surface: %q", p.Realized[key])
+				if !strings.Contains(p.Realized[key].Detail, AgentsSkillsPath) {
+					t.Errorf("parity must name the cwd surface: %q", p.Realized[key].Detail)
 				}
 				if flag, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills); flag != "" {
 					t.Errorf("a cwd runtime types no skills flag, got %q", flag)
@@ -203,8 +203,8 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 				if !ok || !strings.Contains(flag, s.flag) || !strings.Contains(flag, written) {
 					t.Errorf("{skills} must render %q at %s, got %q", s.flag, written, flag)
 				}
-				if !strings.Contains(p.Realized[key], s.flag) {
-					t.Errorf("parity must name the flag: %q", p.Realized[key])
+				if !strings.Contains(p.Realized[key].Detail, s.flag) {
+					t.Errorf("parity must name the flag: %q", p.Realized[key].Detail)
 				}
 			}
 			// MULTIPLE, not one — and only what the PID named.

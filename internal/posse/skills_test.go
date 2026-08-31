@@ -232,13 +232,13 @@ func TestSkillsParity(t *testing.T) {
 
 	claude, _ := a.LoadRuntime("claude")
 	if p := a.CheckParity(ag, claude, CageShims, TierStrong); len(p.Degraded) != 0 ||
-		!strings.Contains(p.Realized["skills: dataviz, code-review"], "--plugin-dir") {
+		!strings.Contains(p.Realized["skills: dataviz, code-review"].Detail, "--plugin-dir") {
 		t.Errorf("claude realizes the binding: %+v", p)
 	}
 	for _, n := range []string{"codex", "grok"} {
 		rt, _ := a.LoadRuntime(n)
 		p := a.CheckParity(ag, rt, CageShims, TierStrong)
-		if len(p.Degraded) != 0 || !strings.Contains(p.Realized["skills: dataviz, code-review"], AgentsSkillsPath) {
+		if len(p.Degraded) != 0 || !strings.Contains(p.Realized["skills: dataviz, code-review"].Detail, AgentsSkillsPath) {
 			t.Errorf("%s realizes the binding from the session dir: %+v", n, p)
 		}
 	}

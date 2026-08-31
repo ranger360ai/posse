@@ -71,8 +71,8 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 		t.Fatalf("both Bash denies must be unrealized on an unprobed template runtime: %+v", p)
 	}
 	for _, rule := range []string{"Bash(git push:*)", "Bash(rm -rf /)"} {
-		if p.Realized[rule] != "" {
-			t.Errorf("%s must not read as realized before a probe: %q", rule, p.Realized[rule])
+		if p.Realized[rule].Detail != "" {
+			t.Errorf("%s must not read as realized before a probe: %q", rule, p.Realized[rule].Detail)
 		}
 	}
 	joined := strings.Join(p.Degraded, "\n")
@@ -100,7 +100,7 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 	if len(p.Degraded) != 0 {
 		t.Fatalf("a passing probe must clear the degradation: %+v", p.Degraded)
 	}
-	if p.Realized["Bash(rm -rf /)"] != "L1 shim (literal argv prefix)" || p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware)" {
+	if p.Realized["Bash(rm -rf /)"].Detail != "L1 shim (literal argv prefix)" || p.Realized["Bash(git push:*)"].Detail != "L1 shim (subcommand, option-aware)" {
 		t.Errorf("after a passing probe the wall reads as it does on a built-in: %+v", p.Realized)
 	}
 }
@@ -134,7 +134,7 @@ func TestBuiltinRuntimesDoNotWaitOnAProbe(t *testing.T) {
 			t.Fatal(err)
 		}
 		p := a.CheckParity(dev, rt, CageShims, TierStrong)
-		if len(p.Degraded) != 0 || p.Realized["Bash(rm -rf /)"] == "" {
+		if len(p.Degraded) != 0 || p.Realized["Bash(rm -rf /)"].Detail == "" {
 			t.Errorf("%s is probe-backed by ADR 0009 and must not degrade: %+v", name, p)
 		}
 	}
@@ -299,7 +299,7 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 	dev := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(rm -rf /)\n---\nYou are dev.\n")
 	p := a.CheckParityIn(dev, bob, CageShims, TierStrong, repo)
 
-	got := p.Realized["Bash(git push:*)"]
+	got := p.Realized["Bash(git push:*)"].Detail
 	if !strings.Contains(got, "L3 pre-push hook") {
 		t.Fatalf("L3 does not depend on the shim's PATH race and must still count: %q / %+v", got, p.Unrealized)
 	}
@@ -311,7 +311,7 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 	}
 	// And the gate that L3 cannot reach stays assumed, or the recovery
 	// would be reading as a wall for every shell verb.
-	if p.Realized["Bash(rm -rf /)"] != "" {
-		t.Errorf("L3 recovers git, not every shell verb: %q", p.Realized["Bash(rm -rf /)"])
+	if p.Realized["Bash(rm -rf /)"].Detail != "" {
+		t.Errorf("L3 recovers git, not every shell verb: %q", p.Realized["Bash(rm -rf /)"].Detail)
 	}
 }

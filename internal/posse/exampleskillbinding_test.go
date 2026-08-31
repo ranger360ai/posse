@@ -125,7 +125,7 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		case tc.want != "" && (len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], tc.want)):
 			t.Errorf("%s @ %s: want exactly one declared-difference row containing %q, got %v", tc.name, cage, tc.want, p.DeclaredDifference)
 		}
-		if p.Realized[claim] == "" {
+		if p.Realized[claim].Detail == "" {
 			t.Errorf("%s: %q not realized: %+v", tc.name, claim, p.Realized)
 		}
 	}

@@ -206,8 +206,8 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 			t.Errorf("the wall is genuinely armed at the redirect; degraded: %v", p.Degraded)
 		}
 		for _, gate := range ag.Deny {
-			if !strings.Contains(p.Realized[gate], "render probed, dispatch verified") {
-				t.Errorf("%s -> %q, want an identity-verified L3 claim", gate, p.Realized[gate])
+			if !strings.Contains(p.Realized[gate].Detail, "render probed, dispatch verified") {
+				t.Errorf("%s -> %q, want an identity-verified L3 claim", gate, p.Realized[gate].Detail)
 			}
 		}
 	})

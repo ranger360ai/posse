@@ -21,14 +21,14 @@ func TestCheckParity(t *testing.T) {
 	// security on codex at shims: read-only + shim realize all three in the
 	// directory-independent matrix; a concrete repo may add L3 below.
 	p := a.CheckParity(security, codex, CageShims, TierStrong)
-	if len(p.Degraded) != 0 || p.Realized["Edit"] != "codex sandbox (OS-enforced)" || p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware)" {
+	if len(p.Degraded) != 0 || p.Realized["Edit"].Detail != "codex sandbox (OS-enforced)" || p.Realized["Bash(git push:*)"].Detail != "L1 shim (subcommand, option-aware)" {
 		t.Errorf("security@codex: %+v", p)
 	}
 	// security on grok (and claude): Edit/Write are politeness → degraded,
 	// but the shell verb is the wall's on both (ADR 0009).
 	for _, rt := range []*Runtime{grok, claude} {
 		p := a.CheckParity(security, rt, CageShims, TierStrong)
-		if len(p.Unrealized) != 2 || !strings.HasPrefix(p.Unrealized[0], "Edit — needs cage: seatbelt") || p.Realized["Bash(git push:*)"] == "" {
+		if len(p.Unrealized) != 2 || !strings.HasPrefix(p.Unrealized[0], "Edit — needs cage: seatbelt") || p.Realized["Bash(git push:*)"].Detail == "" {
 			t.Errorf("security@%s: %+v", rt.Name, p)
 		}
 	}
@@ -38,19 +38,19 @@ func TestCheckParity(t *testing.T) {
 	// verb — so it must degrade the launch, not read as a wall.
 	npm := loadTestAgent(t, "---\nname: npm\ndeny: [Bash(npm publish:*)]\n---\nYou are npm.\n")
 	pn := a.CheckParity(npm, claude, CageShims, TierStrong)
-	if len(pn.Unrealized) != 1 || !strings.Contains(pn.Unrealized[0], "no global-option table for npm") || pn.Realized["Bash(npm publish:*)"] != "" {
+	if len(pn.Unrealized) != 1 || !strings.Contains(pn.Unrealized[0], "no global-option table for npm") || pn.Realized["Bash(npm publish:*)"].Detail != "" {
 		t.Errorf("subcommand deny without an option table must not read as realized: %+v", pn)
 	}
 	// Denying the whole verb is the matcher-independent fix the message
 	// points at, and it does realize the gate.
 	npmAll := loadTestAgent(t, "---\nname: npm\ndeny: [Bash(npm)]\n---\nYou are npm.\n")
-	if p := a.CheckParity(npmAll, claude, CageShims, TierStrong); len(p.Degraded) != 0 || p.Realized["Bash(npm)"] != "L1 shim (whole verb)" {
+	if p := a.CheckParity(npmAll, claude, CageShims, TierStrong); len(p.Degraded) != 0 || p.Realized["Bash(npm)"].Detail != "L1 shim (whole verb)" {
 		t.Errorf("whole-verb deny is matcher-independent: %+v", p)
 	}
 	// git has a table, so its subcommand denies are option-aware. L3 is a
 	// directory fact and is deliberately absent here.
-	if p := a.CheckParity(security, claude, CageShims, TierStrong); p.Realized["Bash(git push:*)"] != "L1 shim (subcommand, option-aware)" {
-		t.Errorf("git push layers: %q", p.Realized["Bash(git push:*)"])
+	if p := a.CheckParity(security, claude, CageShims, TierStrong); p.Realized["Bash(git push:*)"].Detail != "L1 shim (subcommand, option-aware)" {
+		t.Errorf("git push layers: %q", p.Realized["Bash(git push:*)"].Detail)
 	}
 
 	// A shell-verb-only PID is fully realized on every runtime — grok
@@ -61,7 +61,7 @@ func TestCheckParity(t *testing.T) {
 	dev := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(rm -rf /)\n---\nYou are dev.\n")
 	for _, rt := range []*Runtime{claude, codex, grok} {
 		p := a.CheckParity(dev, rt, CageShims, TierStrong)
-		if len(p.Degraded) != 0 || p.Realized["Bash(rm -rf /)"] != "L1 shim (literal argv prefix)" {
+		if len(p.Degraded) != 0 || p.Realized["Bash(rm -rf /)"].Detail != "L1 shim (literal argv prefix)" {
 			t.Errorf("dev@%s must be clean: %+v", rt.Name, p)
 		}
 	}
@@ -71,7 +71,7 @@ func TestCheckParity(t *testing.T) {
 	// the git verdict only after it executes a concrete repo's hook.
 	nogs := &Runtime{Name: "odd", NoGateShell: true}
 	pg := a.CheckParity(dev, nogs, CageShims, TierStrong)
-	if len(pg.Unrealized) != 2 || !strings.Contains(strings.Join(pg.Unrealized, "\n"), "Bash(rm -rf /) — L1 shim cannot hold on odd (gate_shell: false)") || pg.Realized["Bash(git push:*)"] != "" {
+	if len(pg.Unrealized) != 2 || !strings.Contains(strings.Join(pg.Unrealized, "\n"), "Bash(rm -rf /) — L1 shim cannot hold on odd (gate_shell: false)") || pg.Realized["Bash(git push:*)"].Detail != "" {
 		t.Errorf("dev@odd: %+v", pg)
 	}
 	// Tool-name denies are container-only; egress implies container; a
@@ -102,7 +102,7 @@ func TestCheckParity(t *testing.T) {
 			delete(AvailableCages, CageSeatbelt)
 		}
 	}()
-	if p = a.CheckParity(sb, claude, CageSeatbelt, TierStrong); len(p.Degraded) != 0 || p.Realized["Edit"] != "L2 seatbelt" {
+	if p = a.CheckParity(sb, claude, CageSeatbelt, TierStrong); len(p.Degraded) != 0 || p.Realized["Edit"].Detail != "L2 seatbelt" {
 		t.Errorf("seatbelt must realize Edit once available: %+v", p)
 	}
 	// Bad cage values are agent-check findings.
@@ -209,7 +209,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	grok, _ := b.App.LoadRuntime("grok")
 	codex, _ := b.App.LoadRuntime("codex")
 	for _, rt := range []*Runtime{claude, grok} {
-		if p := b.App.CheckParity(security, rt, CageSeatbelt, TierStrong); len(p.Degraded) != 0 || p.Realized["Edit"] != "L2 seatbelt" {
+		if p := b.App.CheckParity(security, rt, CageSeatbelt, TierStrong); len(p.Degraded) != 0 || p.Realized["Edit"].Detail != "L2 seatbelt" {
 			t.Errorf("security@%s seatbelt: %+v", rt.Name, p)
 		}
 	}
@@ -218,7 +218,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	// degradation — the wall holds by a different mechanism, and neither
 	// --allow-degraded nor DEGRADED applies (ranger-base-d17a).
 	p := b.App.CheckParity(security, codex, CageSeatbelt, TierStrong)
-	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], "does not nest") || p.Realized["Edit"] != "codex sandbox (OS-enforced)" {
+	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], "does not nest") || p.Realized["Edit"].Detail != "codex sandbox (OS-enforced)" {
 		t.Errorf("security@codex seatbelt must be a declared difference, Edit still enforced by codex: %+v", p)
 	}
 	// Launch: the typed command is PATH=… sandbox-exec -f <profile> grok …
@@ -249,7 +249,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	p = b.App.CheckParity(security, codex, CageShims, TierStrong)
 	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 ||
 		!strings.Contains(p.DeclaredDifference[0], "cage: PID demands seatbelt, launching at shims") ||
-		p.Realized["Edit"] != "codex sandbox (OS-enforced)" {
+		p.Realized["Edit"].Detail != "codex sandbox (OS-enforced)" {
 		t.Errorf("security@codex shims must be a declared difference, not degraded: %+v", p)
 	}
 	if got := p.String(); !strings.Contains(got, "DECLARED DIFFERENCE") || strings.Contains(got, "DEGRADED") ||
@@ -693,8 +693,8 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 		t.Fatalf("a byte-exact chain must be clean: %+v", p)
 	}
 	for _, gate := range ag.Deny {
-		if !strings.Contains(p.Realized[gate], "render probed, dispatch verified") {
-			t.Errorf("%s must name the identity-verified L3 claim: %q", gate, p.Realized[gate])
+		if !strings.Contains(p.Realized[gate].Detail, "render probed, dispatch verified") {
+			t.Errorf("%s must name the identity-verified L3 claim: %q", gate, p.Realized[gate].Detail)
 		}
 	}
 	// A runtime that opts out of the gate shell has no L1. Successful L3
@@ -706,8 +706,8 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	// row that is not a PID gate (ADR 0013 §4 reachability), and a count
 	// asserts a number where the claim is "these two, on L3, without L1".
 	if p := a.CheckParityIn(ag, nogs, CageShims, TierStrong, repo); len(p.Degraded) != 0 ||
-		!strings.Contains(p.Realized["Bash(git push:*)"], "L3 pre-push hook") ||
-		!strings.Contains(p.Realized["Bash(git commit unless --)"], "L3 prepare-commit-msg hook") {
+		!strings.Contains(p.Realized["Bash(git push:*)"].Detail, "L3 pre-push hook") ||
+		!strings.Contains(p.Realized["Bash(git commit unless --)"].Detail, "L3 prepare-commit-msg hook") {
 		t.Errorf("identity-verified L3 must realize both git gates without L1: %+v", p)
 	}
 
@@ -727,8 +727,8 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 		}
 	}
 	for _, gate := range ag.Deny {
-		if strings.Contains(p.Realized[gate], "L3") {
-			t.Errorf("a foreign refuser must remove L3 from %s: %q", gate, p.Realized[gate])
+		if strings.Contains(p.Realized[gate].Detail, "L3") {
+			t.Errorf("a foreign refuser must remove L3 from %s: %q", gate, p.Realized[gate].Detail)
 		}
 	}
 

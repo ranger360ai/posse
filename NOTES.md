@@ -2279,8 +2279,13 @@ push (`Bash(git push:*)`, `Bash(git push --force:*)`, `Bash(git:*)`,
 `Bash(git)`), with the same message shape and a `[pre-push hook]` line in
 `refusals.log`; without the variable (an interactive operator) it passes.
 Catches `/usr/bin/git push` and pushes from subprocesses that kept the
-env. It cannot see through `env -i` — nothing in-process can; that is
-the container tier's job. Install: `posse gates install-hooks [repo]`
+env — cooperative class at every tier (ADR 0025 §1): it cannot see
+through `env -i` (nothing in-process can), `--no-verify` skips it
+outright, and `-c core.hooksPath=` redirects past it with zero writes
+(measured, ranger-base-3csb). At `cage: container` the push's *effect*
+can still die at an enforced layer (mount `:ro` / egress proxy) where the
+launch is configured for it (ADR 0025 §3); the verb gate itself stays
+cooperative. Install: `posse gates install-hooks [repo]`
 (replaces its own hook, refuses to overwrite a foreign one — chain by
 hand). Persona launch reconciles the pre-push slot when the PID denies git
 push and always reconciles `prepare-commit-msg`, then decides each slot on
