@@ -231,13 +231,24 @@ func (p Proc) Orphaned() bool { return p.PPID == 1 }
 func SysTopCPU() ([]Proc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), loadCulpritTimeout)
 	defer cancel()
+	procs, err := sysProcTable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fillOrphanArgs(ctx, procs)
+	return procs, nil
+}
+
+// sysProcTable is the census's first `ps` — see SysTopCPU for why the
+// columns are what they are. Shared with SysSelfOrphans (ranger-base-6mhxw),
+// which needs the same table under a different predicate for which rows get
+// their argv read.
+func sysProcTable(ctx context.Context) ([]Proc, error) {
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pcpu=,etime=,comm=").Output()
 	if err != nil {
 		return nil, err
 	}
-	procs := parseProcTable(string(out))
-	fillOrphanArgs(ctx, procs)
-	return procs, nil
+	return parseProcTable(string(out)), nil
 }
 
 // fillOrphanArgs reads the untruncated argv of the census rows the orphan
@@ -247,7 +258,16 @@ func SysTopCPU() ([]Proc, error) {
 // never be able to fail or delay a pass — it takes the caller's deadline and
 // every failure is silence.
 func fillOrphanArgs(ctx context.Context, procs []Proc) {
-	ids := orphanSuspectPIDs(procs)
+	fillArgsForPIDs(ctx, procs, orphanSuspectPIDs(procs))
+}
+
+// fillArgsForPIDs reads the untruncated argv of exactly the given pids and
+// writes it back onto the matching rows of procs — the half of the census
+// that fillOrphanArgs (the load guard's own CPU-gated suspects) and
+// SysSelfOrphans (no CPU floor: a leak that never uses much of a core is
+// still a leak, ranger-base-6mhxw) share. It reports nothing: a read it
+// could not take leaves those rows' Args empty, same as before the call.
+func fillArgsForPIDs(ctx context.Context, procs []Proc, ids []string) {
 	if len(ids) == 0 {
 		return
 	}
@@ -506,6 +526,124 @@ func orphanReport(busy []Proc) string {
 		out += fmt.Sprintf("\n    %d more like these", n)
 	}
 	return out
+}
+
+// ─── did *I* just leak (ranger-base-6mhxw) ──────────────────────────────────
+//
+// Arm 1 above only reads the process table on a pass the load guard is
+// already skipping — a box already over the limit. That leaves the ordinary
+// case unanswered: a persona backgrounds something, the Bash call returns,
+// and it wants to know whether that leaked, on a box whose load never went
+// anywhere near the guard. The incident this closes (ranger-base-k6csq) was
+// exactly that: the session's own cleanup check read clean while forty
+// spinners it had started kept running for two hours, and it failed for two
+// structural reasons neither of which the guard above has:
+//
+//   - `jobs -l` is scoped to the CURRENT shell process. A gate session's
+//     Bash tool calls each fork their own shell (ADR 0009 preamble), so a
+//     job backgrounded in an earlier call is already invisible to a later
+//     call's `jobs -l`, alive or dead.
+//   - A per-process %CPU floor is blind to a leak that fans out wide: forty
+//     spinners at ~1% each sit under any threshold worth setting, the same
+//     way LoadCulpritOrphanCPU would miss them here.
+//
+// So this predicate drops the CPU floor entirely: orphaned, old enough not
+// to be a fork/exec teardown window, and ours (the ADR 0009 preamble is the
+// head of its argv) is leak enough on its own, however little CPU it burns.
+
+// SelfCheckMinAge is SysSelfOrphans' age floor. It exists for the same
+// reason LoadOrphanMinAge does — to clear the fork/exec teardown window a
+// process is briefly ppid 1 in while the shell that forked it exits, which
+// the teau RCA measured at about a second — and it is far shorter because
+// the two checks run at a different distance from the fork: the load guard
+// only reads on a pass it was already skipping, minutes into a stuck box,
+// while a self-check runs seconds after the Bash call that might have
+// leaked and should not have to wait a full minute to find out.
+const SelfCheckMinAge = 3 * time.Second
+
+// SysSelfOrphans is the reusable half of arm 1, without the load-spike
+// framing: any caller can run it, at any time, to ask "did anything I just
+// backgrounded leak past that call" — the question `jobs -l` and a CPU
+// threshold cannot answer (see above). It returns one Proc per leak — ppid
+// 1, old enough, argv matched against the ADR 0009 gate-shell preamble —
+// with Args already trimmed to the persona's own command, preamble
+// stripped, same as orphanReport's payload. Empty and nil on a clean box.
+//
+// It costs one `ps` on every call and a second, pid-scoped one only when the
+// first turns up an orphan — the same shape as SysTopCPU, so a call that
+// finds nothing costs what SysTopCPU costs a healthy box.
+func SysSelfOrphans() ([]Proc, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), loadCulpritTimeout)
+	defer cancel()
+	procs, err := sysProcTable(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fillArgsForPIDs(ctx, procs, selfCheckSuspectPIDs(procs))
+	return selfOrphansFrom(procs), nil
+}
+
+// selfOrphansFrom is the pure predicate over an already-read table (Args
+// already filled for the rows selfCheckSuspectPIDs asked for) — the part of
+// SysSelfOrphans a unit test can drive without a real `ps`.
+func selfOrphansFrom(procs []Proc) []Proc {
+	var leaks []Proc
+	for _, p := range procs {
+		if !selfCheckSuspect(p) {
+			continue
+		}
+		payload, ours := gateShellForkPayload(p.Args)
+		if !ours {
+			continue
+		}
+		p.Args = payload
+		leaks = append(leaks, p)
+	}
+	return leaks
+}
+
+// selfCheckSuspect is the CPU-agnostic half of the self-check predicate:
+// orphaned and old enough. The argv-matched "ours" half is applied after the
+// second read, in selfOrphansFrom, the same as orphanSuspect/orphanReport
+// above.
+func selfCheckSuspect(p Proc) bool {
+	return p.Orphaned() && p.Age >= SelfCheckMinAge
+}
+
+// selfCheckSuspectPIDs scopes the second read to rows that could pass
+// selfCheckSuspect — the reason a self-check on a clean box takes only one
+// fork, the same property orphanSuspectPIDs keeps for the load guard.
+func selfCheckSuspectPIDs(procs []Proc) []string {
+	var ids []string
+	for _, p := range procs {
+		if selfCheckSuspect(p) {
+			ids = append(ids, strconv.Itoa(p.PID))
+		}
+	}
+	return ids
+}
+
+// FormatSelfOrphans renders SysSelfOrphans' leaks for a persona to read on a
+// terminal or in a gate session's transcript. "" when there is nothing to
+// report, so a caller can append it unconditionally.
+func FormatSelfOrphans(leaks []Proc) string {
+	if len(leaks) == 0 {
+		return ""
+	}
+	kids := "children"
+	if len(leaks) == 1 {
+		kids = "child"
+	}
+	lines := make([]string, 0, len(leaks)+1)
+	lines = append(lines, fmt.Sprintf("%d leaked gate-shell %s (ppid 1, over %s old):", len(leaks), kids, BlindFor(SelfCheckMinAge)))
+	for _, p := range leaks {
+		what := p.Args
+		if what == "" {
+			what = "(command not readable behind the preamble)"
+		}
+		lines = append(lines, fmt.Sprintf("  pid %d, %s old: %s", p.PID, BlindFor(p.Age), ellipsize(what, loadOrphanPayload)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ellipsize cuts s to at most n runes, marking that it did. Runes, because

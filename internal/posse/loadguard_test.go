@@ -853,3 +853,132 @@ func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
 		t.Errorf("a fork of an UNGATED shell must not be ours:\n%s", ungated)
 	}
 }
+
+// ─── did *I* just leak (ranger-base-6mhxw) ──────────────────────────────────
+//
+// The whole point of this predicate is that it does NOT have a CPU floor:
+// teau's incident was 40 spinners at ~1% each, individually under any
+// per-process threshold worth setting. Every case below plants that shape.
+
+// The incident itself, at self-check scale: a fan-out of low-CPU orphans
+// that a CPU threshold would miss one by one, and jobs -l cannot see at all
+// because it is scoped to a shell instance a later Bash call does not share.
+func TestSelfOrphansFromNamesThinWideLeaksACPUFloorMisses(t *testing.T) {
+	var procs []Proc
+	for i := 0; i < 40; i++ {
+		procs = append(procs, Proc{
+			PID: 60000 + i, PPID: 1, CPU: 0.98, Age: 2 * time.Minute, Comm: "zsh",
+			Args: gateArgv(teauPayload),
+		})
+	}
+	got := selfOrphansFrom(procs)
+	if len(got) != 40 {
+		t.Fatalf("want all 40 thin leaks named, got %d: %+v", len(got), got)
+	}
+	for _, p := range got {
+		if strings.Contains(p.Args, gateShellPreambleHead) {
+			t.Errorf("Args must be the persona's payload, preamble stripped: %q", p.Args)
+		}
+		if p.Args != teauPayload {
+			t.Errorf("Args = %q, want %q", p.Args, teauPayload)
+		}
+	}
+}
+
+// Everything the predicate must NOT fire on — the same three arms
+// TestOrphanReportSkipsWhatIsNotALeak checks for the load guard's own
+// report, minus the CPU floor case (there is none here) and plus the age
+// floor at self-check's own, much shorter, value.
+func TestSelfOrphansFromSkipsWhatIsNotALeak(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		row  Proc
+	}{
+		{"a busy child of a live session, gate shell and all", Proc{
+			PID: 812, PPID: 4021, CPU: 0.1, Age: time.Hour, Comm: "zsh", Args: gateArgv(teauPayload)}},
+		{"an orphan younger than the self-check age floor", Proc{
+			PID: 814, PPID: 1, CPU: 0, Age: SelfCheckMinAge - time.Millisecond, Comm: "zsh", Args: gateArgv(teauPayload)}},
+		{"the operator's own orphaned build", Proc{
+			PID: 815, PPID: 1, CPU: 5, Age: time.Hour, Comm: "go", Args: "go build ./..."}},
+		{"an orphan whose argv we could not read", Proc{
+			PID: 816, PPID: 1, CPU: 0, Age: time.Hour, Comm: "zsh", Args: ""}},
+		{"something merely holding our preamble in its argv", Proc{
+			PID: 817, PPID: 1, CPU: 0, Age: time.Hour, Comm: "grep",
+			Args: "grep -n " + gateShellPreambleHead + " internal/posse/gates.go"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := selfOrphansFrom([]Proc{tc.row}); len(got) != 0 {
+				t.Errorf("this is not a leak: %+v", got)
+			}
+		})
+	}
+	// At the floor, inclusive — the mirror of the case above that is one
+	// millisecond short of it.
+	atFloor := Proc{PID: 818, PPID: 1, CPU: 0, Age: SelfCheckMinAge, Comm: "zsh", Args: gateArgv(teauPayload)}
+	if got := selfOrphansFrom([]Proc{atFloor}); len(got) != 1 {
+		t.Errorf("an orphan exactly at the age floor must be named, got %+v", got)
+	}
+}
+
+// The second read is scoped to orphaned-and-old-enough, with no CPU term at
+// all — the reason a self-check on a healthy box still costs only one fork.
+func TestSelfCheckSuspectPIDsScopeTheSecondReadWithNoCPUFloor(t *testing.T) {
+	var busy []Proc
+	for i := 0; i < 8; i++ {
+		busy = append(busy, Proc{PID: 900 + i, PPID: 4021, CPU: 99, Age: time.Hour, Comm: "go"})
+	}
+	if ids := selfCheckSuspectPIDs(busy); ids != nil {
+		t.Errorf("a loaded box with no orphan must take no second read, got %v", ids)
+	}
+	busy = append(busy,
+		Proc{PID: 910, PPID: 1, CPU: 0, Age: SelfCheckMinAge - time.Second, Comm: "zsh"}, // too young
+		Proc{PID: 911, PPID: 1, CPU: 0.01, Age: SelfCheckMinAge, Comm: "zsh"},            // old enough, almost no CPU
+	)
+	got := selfCheckSuspectPIDs(busy)
+	if len(got) != 1 || got[0] != "911" {
+		t.Errorf("only the orphaned-and-old-enough row qualifies, CPU is not a term here; got %v", got)
+	}
+}
+
+func TestFormatSelfOrphans(t *testing.T) {
+	if got := FormatSelfOrphans(nil); got != "" {
+		t.Errorf("nothing to report must render \"\", got %q", got)
+	}
+	one := []Proc{{PID: 49235, Age: 2*time.Minute + 3*time.Second, Args: teauPayload}}
+	got := FormatSelfOrphans(one)
+	for _, want := range []string{
+		"1 leaked gate-shell child (ppid 1, over 3s old):",
+		"pid 49235, 2m old: MARK=teau2; for i in 1 2 3 4 5 6 7 8;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("FormatSelfOrphans must carry %q:\n%s", want, got)
+		}
+	}
+	two := []Proc{{PID: 1}, {PID: 2}}
+	if got := FormatSelfOrphans(two); !strings.Contains(got, "2 leaked gate-shell children") {
+		t.Errorf("plural for more than one, got:\n%s", got)
+	}
+	unreadable := []Proc{{PID: 3, Args: ""}}
+	if got := FormatSelfOrphans(unreadable); !strings.Contains(got, "(command not readable behind the preamble)") {
+		t.Errorf("an empty payload must say so, not print a blank line:\n%s", got)
+	}
+}
+
+// The reader for whatever platform this is built for, the sibling of
+// TestSysTopCPUReadsThisBox: only that `ps` answers and the columns land
+// where the parser looks. What this box is running is whatever it is — a
+// clean dev box is expected to come back empty.
+func TestSysSelfOrphansReadsThisBox(t *testing.T) {
+	leaks, err := SysSelfOrphans()
+	if errors.Is(err, os.ErrPermission) {
+		t.Skipf("SysSelfOrphans: %v — cage denies exec of ps, not a parser fault", err)
+	}
+	if err != nil {
+		t.Fatalf("SysSelfOrphans: %v", err)
+	}
+	for _, p := range leaks {
+		if p.PPID != 1 || p.Age < SelfCheckMinAge {
+			t.Errorf("a returned leak must satisfy its own predicate: %+v", p)
+		}
+	}
+}

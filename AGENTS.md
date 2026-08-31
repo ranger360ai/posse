@@ -64,3 +64,16 @@ bd sync               # Sync with git
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
   landing. Work is complete when it is committed locally and the bead is
   closed; `posse worktrees` shows anything that has not landed.
+- **Checking that a background process actually died: not `jobs -l`, not a
+  %CPU threshold** (ranger-base-6mhxw). Both look like a clean check and
+  both can read empty over a real leak. `jobs -l` only sees the CURRENT
+  shell process — a gate session's Bash tool calls each fork their own shell
+  (ADR 0009 preamble), so anything backgrounded in an earlier call is
+  already invisible to a later call's `jobs -l`, alive or dead. A
+  per-process %CPU threshold is blind the other way: a leak that fans out
+  into many low-CPU children (forty spinners at ~1% each was the incident)
+  sits under any floor worth setting. After backgrounding anything, in a
+  LATER Bash call, run `go run ./cmd/checkorphans` from the repo root
+  instead — it reads the real process table (ppid 1, old enough not to be a
+  fork/exec teardown window, argv matched against the ADR 0009 gate-shell
+  preamble) and exits nonzero if anything of yours is still there.
