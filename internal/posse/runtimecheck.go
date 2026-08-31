@@ -129,6 +129,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	// behind it honours.
 	fmt.Fprintln(w)
 	wrapGrid(w, "tier", a.tierLine(rt))
+	wrapGrid(w, "", "by "+rt.tierBy())
 	if len(rt.NativeRules) > 0 {
 		wrapGrid(w, "rulebooks", strings.Join(rt.NativeRules, ", "))
 		wrapGrid(w, "", "posse loads none of these and rewrites none of them — they are the operator's files in a shared checkout.")
@@ -164,11 +165,17 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	}
 
 	// The onboarding footer is about a runtime you DECLARE. Printed under a
-	// built-in it names a file that runtime never reads (LoadRuntime
-	// returns the built-in first), so a built-in gets the honest version.
+	// built-in it names the ADR 0021 overlay instead: runtimes/<name>.yaml
+	// IS read there, but only for the keys that name a measured instance
+	// fact — command:/skills_flag: refuse, because those change the launch
+	// mechanism a built-in's realizer and verified skill surface already
+	// wear, not a number this box measured.
 	if rt.Builtin {
-		fmt.Fprintf(w, "\n  %s is a BUILT-IN: a runtimes/%s.yaml is never read for it — LoadRuntime returns the\n", rt.Name, rt.Name)
-		fmt.Fprintln(w, "  built-in first. Onboarding your OWN CLI is filling this grid: it takes command:, prompt:,")
+		fmt.Fprintf(w, "\n  %s is a BUILT-IN: runtimes/%s.yaml is a per-key OVERLAY onto it (ADR 0021) — the yaml\n", rt.Name, rt.Name)
+		fmt.Fprintln(w, "  wins for a MEASURED fact (model_<tier>:, model_flag:, prompt:, startup_wait:, record: (+")
+		fmt.Fprintln(w, "  record_why:), native_rules:, egress:, cage_cred:, gate_shell:), the built-in supplies the")
+		fmt.Fprintln(w, "  rest; command: and skills_flag: REFUSE there — the launch mechanism, not a measured fact.")
+		fmt.Fprintln(w, "  Onboarding your OWN CLI, by contrast, is filling this WHOLE grid: it takes command:, prompt:,")
 	} else {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
@@ -448,20 +455,41 @@ func (a *App) tierLine(rt *Runtime) string {
 		strings.Join(unmapped, ", ") + " — " + inert(unmapped)
 }
 
-// tierFix says where the missing mapping would have to be declared, and it
-// has to distinguish the two cases or it prints a remedy that does not
-// work: App.LoadRuntime returns a BUILT-IN as soon as the name matches,
-// before it ever stats RHQ_HOME/runtimes/<name>.yaml, so model_<tier>: in
-// a yaml named after a built-in is read by nothing (ranger-base-arm —
-// whether that precedence is right is a separate decision; that it is the
-// behaviour is not in doubt, and a grid that told an operator to write
-// that file would be sending them somewhere the value cannot arrive).
+// tierFix says where the missing mapping would have to be declared. Before
+// ADR 0021 that had to distinguish a built-in from a declared runtime — a
+// built-in's own runtimes/<name>.yaml was read by nothing, so sending an
+// operator to write model_<tier>: there was a remedy the value could never
+// reach (ranger-base-arm). ADR 0021 made that file a per-key OVERLAY onto
+// the built-in, and model_<tier>: is one of the overlay keys (Decision 1),
+// so the remedy is the same file for a built-in and a declared runtime
+// alike — only command:/skills_flag: still refuse there (Decision 2).
 func (rt *Runtime) tierFix() string {
-	if rt.Builtin {
-		return "A runtimes/" + rt.Name + ".yaml cannot supply it: " + rt.Name +
-			" is a BUILT-IN and LoadRuntime returns it before it stats that file, so the map lives in runtime.go and wants a measured model id per tier"
-	}
 	return "Declare model_<tier>: (and model_flag:) in runtimes/" + rt.Name + ".yaml to change that"
+}
+
+// tierBy is the tier row's declared-by line, one attribution per MAPPED
+// tier rather than one for the whole row — since ADR 0021 a built-in's
+// overlay can set model_fast: alone and leave strong/standard on the
+// built-in map, and a row that named a single source for all three would
+// credit the yaml for two tiers it never touched. fast falls back to
+// standard (Runtime.Model) when model_fast: is itself unset, so that
+// tier's attribution follows the value it actually rendered rather than
+// reporting the untouched key as unset.
+func (rt *Runtime) tierBy() string {
+	mapped, _ := rt.TierMap()
+	if len(mapped) == 0 {
+		return rt.declaredBy("model_<tier>")
+	}
+	var parts []string
+	for _, t := range Tiers {
+		switch {
+		case rt.Models[t] != "":
+			parts = append(parts, t+": "+rt.declaredBy("model_"+t))
+		case t == TierFast && rt.Models[TierStandard] != "":
+			parts = append(parts, t+": falls back to standard — "+rt.declaredBy("model_"+TierStandard))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // ─── the ADR 0002 / 0007 dimensions ──────────────────────────────────────

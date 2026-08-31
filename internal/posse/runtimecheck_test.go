@@ -334,11 +334,12 @@ func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
 //     rangerhq-jp6): the ids, and the flag they render with, so nobody
 //     diffs two runtimes to learn which one honours the key;
 //   - fully unmapped: UNMAPPED, "ignores tier: entirely", and the yaml key
-//     that would change it — plus the BUILT-IN variant of that remedy,
-//     which says runtime.go instead. No built-in is unmapped any more, so
-//     that arm is driven by a Runtime value rather than by whichever
-//     built-in happened to carry no map that week: it is tierLine and
-//     tierFix under test, and the fixture only has to reach them.
+//     that would change it. Since ADR 0021 that remedy is the SAME file for
+//     a built-in and a declared runtime alike — model_<tier>: is an overlay
+//     key, not a mechanism one — so there is no separate BUILT-IN arm to
+//     pin any more. No built-in is unmapped today, so this is driven off a
+//     Runtime value; it is tierLine and tierFix under test, and the fixture
+//     only has to reach them.
 //   - PARTIAL: the mapped tiers AND the unmapped ones. A partial map shown
 //     as a list of what is mapped reads as complete, which is the silence.
 func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
@@ -387,26 +388,22 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 	}
 
 	// Fully unmapped, and loud about it — including WHERE the mapping would
-	// have to go. For a BUILT-IN that is runtime.go and NOT a yaml: naming
-	// runtimes/<name>.yaml here would send an operator to a file
-	// LoadRuntime never stats for a built-in, which is a remedy that
-	// silently does nothing — the exact shape of bug this line exists to
-	// prevent. Driven off a Runtime value because no built-in is unmapped
+	// have to go. Since ADR 0021 a built-in's own runtimes/<name>.yaml IS
+	// the answer (model_<tier>: is an overlay key, Decision 1), the same as
+	// for a declared runtime, so both arms of the fixture get the same
+	// remedy: driven off a Runtime value because no built-in is unmapped
 	// today; the two flags it sets (Builtin, no Models) are exactly the two
-	// tierLine and tierFix branch on.
+	// tierLine/tierFix used to branch on before this ADR.
 	out = a.tierLine(&Runtime{Name: "blankcli", Builtin: true, ModelFlag: "-m %s"})
-	for _, want := range []string{"UNMAPPED", "ignores tier: entirely", "blankcli/default", "BUILT-IN", "runtime.go"} {
+	for _, want := range []string{"UNMAPPED", "ignores tier: entirely", "blankcli/default", "Declare model_<tier>:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("an unmapped built-in tier line must carry %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "Declare model_<tier>:") {
-		t.Errorf("a yaml cannot override a built-in; the grid may not prescribe one:\n%s", out)
-	}
-	// The non-built-in half of the same remedy, so the branch is pinned
-	// both ways: a DECLARED runtime with no map is sent to its yaml.
+	// The non-built-in half of the same remedy, so both fixtures land on
+	// the identical instruction post-ADR-0021.
 	out = a.tierLine(&Runtime{Name: "blankyaml", ModelFlag: "-m %s"})
-	if !strings.Contains(out, "Declare model_<tier>:") || strings.Contains(out, "BUILT-IN") {
+	if !strings.Contains(out, "Declare model_<tier>:") {
 		t.Errorf("an unmapped declared runtime must be sent to its yaml:\n%s", out)
 	}
 
@@ -421,6 +418,57 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 	}
 	if strings.Contains(out, "strong=") {
 		t.Errorf("strong is unmapped on halfcli; the grid may not show it as mapped:\n%s", out)
+	}
+}
+
+// ADR 0021: a yaml naming a built-in can set model_fast: alone and leave
+// strong/standard on the built-in map, so the tier row's declared-by has to
+// name the source PER TIER — a single "by" for the whole row would credit
+// the yaml for two tiers it never touched (ranger-base-4jig).
+func TestTierRowAttributesEachTierSeparately(t *testing.T) {
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+
+	writeOverlay(t, a, "claude", "model_fast: claude-instance-fast\n")
+	rt, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	a.RuntimeCheck(rt, h, &b)
+	row := gridRow(t, b.String(), "tier")
+	for _, want := range []string{
+		"strong: built-in default",
+		"standard: built-in default",
+		"fast: runtimes/claude.yaml (model_fast:)",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("an overlaid built-in's tier row must carry %q:\n%s", want, row)
+		}
+	}
+
+	// A declared (non-built-in) runtime with a partial map: fast falls back
+	// to standard's VALUE, so its attribution follows standard's key rather
+	// than reading as unset, and strong (truly unmapped) gets no entry at
+	// all — nothing declared it, and the UNMAPPED clause already covers it.
+	writeRuntime(t, a, "halfcli", "command: halfcli {model} --sys {file}\nmodel_standard: mid\n")
+	rt2, err := a.LoadRuntime("halfcli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Reset()
+	a.RuntimeCheck(rt2, h, &b)
+	row = gridRow(t, b.String(), "tier")
+	for _, want := range []string{
+		"standard: runtimes/halfcli.yaml (model_standard:)",
+		"fast: falls back to standard — runtimes/halfcli.yaml (model_standard:)",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("a partially-declared runtime's tier row must carry %q:\n%s", want, row)
+		}
+	}
+	if strings.Contains(row, "strong:") {
+		t.Errorf("strong is unmapped on halfcli; the tier row's by-line may not attribute it:\n%s", row)
 	}
 }
 
