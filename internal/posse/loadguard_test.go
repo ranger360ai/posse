@@ -824,6 +824,9 @@ func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
 			syscall.Kill(pid, syscall.SIGKILL)
 		})
 		table, err := exec.Command("ps", "-ww", "-o", "pid=,args=", "-p", strconv.Itoa(pid)).Output()
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("ps -p %d: %v — cage denies exec of ps, not a detector fault", pid, err)
+		}
 		if err != nil {
 			t.Fatalf("ps -p %d: %v", pid, err)
 		}
