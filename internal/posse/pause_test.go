@@ -349,7 +349,7 @@ func TestAPausedShopStillPulses(t *testing.T) {
 	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
 
 	log := calls(t, fake)
-	if !strings.Contains(log, "agent prompt coordinator-work") {
+	if !strings.Contains(log, "agent prompt "+target+":p1") {
 		t.Fatalf("a paused shop stopped escalating — that is `kill`, not pause:\n%s", log)
 	}
 	// And the pause itself is one of the things it escalates (G8), beside

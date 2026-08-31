@@ -77,7 +77,8 @@ func TestPulseDoesNotPromptAPaneHerdrOnlyGuessesAt(t *testing.T) {
 // has — a named rule — and the pulse delivers exactly as it did before.
 func TestPulseStillPromptsAPaneHerdrHasSeen(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	pulseFastRuntime(t, b, "coordinator-work", "400ms")
 	unpushedRepo(t, b)
 
@@ -90,7 +91,7 @@ func TestPulseStillPromptsAPaneHerdrHasSeen(t *testing.T) {
 	if !strings.Contains(dispatcherOut(d), "→ prompted coordinator-work") {
 		t.Errorf("a seen idle screen must still take the pulse:\n%s", dispatcherOut(d))
 	}
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
 		t.Errorf("want exactly one prompt, got %d:\n%s", n, calls(t, fake))
 	}
 }

@@ -187,7 +187,8 @@ func TestGovCredentialBlindInsideTheBudgetIsNotACondition(t *testing.T) {
 // dedup that bounds every other condition bounds this one too.
 func TestPulseDeliversTheCredentialConditionOnce(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	govRepo(t, b) // a fake bd over an empty queue: G5 is the only row
 	appendConfig(t, b.App, govGuardCfg+"plan_guard_blind_max: 10m\n")
 
@@ -200,7 +201,7 @@ func TestPulseDeliversTheCredentialConditionOnce(t *testing.T) {
 	d.pulseOnce(cfg)
 
 	log := calls(t, fake)
-	if !strings.Contains(log, "agent prompt coordinator-work Pulse check:") {
+	if !strings.Contains(log, "agent prompt "+pane+" Pulse check:") {
 		t.Fatalf("a parked-blind fleet must reach the coordinator:\n%s\n%s", dispatcherOut(d), log)
 	}
 	if !strings.Contains(log, "guard-credential:401") {
@@ -213,7 +214,7 @@ func TestPulseDeliversTheCredentialConditionOnce(t *testing.T) {
 	// No storm: the same condition on the next tick is inside renag.
 	clock = clock.Add(2 * time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
 		t.Errorf("want exactly one pulse for one blind stretch, got %d:\n%s", n, calls(t, fake))
 	}
 }

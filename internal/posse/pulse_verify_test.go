@@ -97,6 +97,9 @@ func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) 
 		t.Fatal(err)
 	}
 
+	coordinatorPane := ids["coordinator-work"] + ":p1"
+	developerPane := ids["developer-work"] + ":p1"
+
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
 	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
@@ -104,28 +107,28 @@ func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) 
 	d.pulseOnce(cfg)
 
 	log := calls(t, fake)
-	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt "+coordinatorPane); n != 1 {
 		t.Fatalf("a blocked session must yield exactly one prompt, got %d:\n%s", n, log)
 	}
-	if !strings.Contains(log, "agent prompt coordinator-work Pulse check:") {
+	if !strings.Contains(log, "agent prompt "+coordinatorPane+" Pulse check:") {
 		t.Errorf("the prompt must carry the fixed marker:\n%s", log)
 	}
 	if !strings.Contains(log, "blocked:developer-work") {
 		t.Errorf("the prompt must name the condition it was raised by:\n%s", log)
 	}
-	if strings.Contains(log, "agent prompt developer-work") {
+	if strings.Contains(log, "agent prompt "+developerPane) {
 		t.Errorf("the blocked session is the SUBJECT of the pulse, never its target:\n%s", log)
 	}
 
 	// Renag honours the backoff on the same set, and releases after it.
 	clock = clock.Add(10 * time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+coordinatorPane); n != 1 {
 		t.Errorf("inside the renag window the same set must not re-prompt, got %d", n)
 	}
 	clock = clock.Add(21 * time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+coordinatorPane); n != 2 {
 		t.Errorf("past the renag window the same set must re-prompt once, got %d", n)
 	}
 }

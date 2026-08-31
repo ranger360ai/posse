@@ -75,7 +75,8 @@ func deliveryDispatcher(t *testing.T, b *HerdrBackend, clock *time.Time) *Dispat
 
 func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -89,10 +90,13 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 		t.Errorf("no prompt logged:\n%s", out)
 	}
 	log := calls(t, fake)
-	if !strings.Contains(log, "agent prompt coordinator-work Pulse check:") {
+	// The pane, not the session label — herdr's real AgentPrompt addresses
+	// panes (ranger-base-5qe6); "agent prompt coordinator-work" is the bug
+	// this fixes, and would 404 against real herdr with agent_not_found.
+	if !strings.Contains(log, "agent prompt "+pane+" Pulse check:") {
 		t.Errorf("calls.log missing the pulse prompt:\n%s", log)
 	}
-	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt "+pane); n != 1 {
 		t.Errorf("want exactly one prompt, got %d:\n%s", n, log)
 	}
 
@@ -104,7 +108,8 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 
 func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -112,7 +117,7 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg) // prompts once, sets the renag clock
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
 		t.Fatalf("setup: want exactly one prompt before the suppression window, got %d", n)
 	}
 
@@ -120,14 +125,15 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	d.pulseOnce(cfg)
 
 	log := calls(t, fake)
-	if n := strings.Count(log, "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(log, "agent prompt "+pane); n != 1 {
 		t.Errorf("renag window must suppress the re-prompt, got %d prompts:\n%s", n, log)
 	}
 }
 
 func TestPulseRenagDoublesUpToMax(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -138,7 +144,7 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 
 	clock = clock.Add(30 * time.Minute)
 	d.pulseOnce(cfg) // 2nd: renag elapsed, doubles to 60m
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
 		t.Fatalf("want 2 prompts after the first renag, got %d", n)
 	}
 	state := ReadPulseState(PulsePath(b.App))
@@ -148,7 +154,7 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 
 	clock = clock.Add(60 * time.Minute)
 	d.pulseOnce(cfg) // 3rd: renag elapsed again, would double to 120m but caps at RenagMax=90m
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 3 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 3 {
 		t.Fatalf("want 3 prompts after the second renag, got %d", n)
 	}
 	state = ReadPulseState(PulsePath(b.App))
@@ -160,6 +166,7 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "working", false)
+	pane := id + ":p1"
 	unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -186,7 +193,7 @@ func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 	// away, not held behind a renag wait it never actually served.
 	setAgentStatus(t, fake, id, "idle")
 	d.pulseOnce(cfg)
-	if !strings.Contains(calls(t, fake), "agent prompt coordinator-work") {
+	if !strings.Contains(calls(t, fake), "agent prompt "+pane) {
 		t.Errorf("must retry next tick once idle:\n%s", calls(t, fake))
 	}
 }
@@ -219,7 +226,8 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 // crewHeld) which treats a crew session as if it did not exist.
 func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", true)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", true)
+	pane := id + ":p1"
 	unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -228,7 +236,7 @@ func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 
 	d.pulseOnce(cfg)
 
-	if !strings.Contains(calls(t, fake), "agent prompt coordinator-work") {
+	if !strings.Contains(calls(t, fake), "agent prompt "+pane) {
 		t.Errorf("a crew-marked session must still receive the pulse:\n%s", calls(t, fake))
 	}
 	s, err := b.Resolve("coordinator-work")
@@ -245,7 +253,8 @@ func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 
 func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
 	repo := unpushedRepo(t, b)
 
 	clock := time.Now()
@@ -253,7 +262,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
 
 	d.pulseOnce(cfg) // condition present, prompts once
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 1 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
 		t.Fatalf("setup: want exactly one prompt, got %d", n)
 	}
 
@@ -268,7 +277,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	commitIn(t, repo, "extra2.txt", "y", "extra2") // same condition shape recurs
 	clock = clock.Add(time.Minute)
 	d.pulseOnce(cfg)
-	if n := strings.Count(calls(t, fake), "agent prompt coordinator-work"); n != 2 {
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
 		t.Errorf("a fresh episode after a clear must prompt again immediately, got %d prompts", n)
 	}
 }
@@ -318,12 +327,12 @@ func TestPulseWithNoPersonaDeliversToNobody(t *testing.T) {
 func TestPulseTargetEmptyPersonaMatchesNothing(t *testing.T) {
 	sessions := []HerdrSession{
 		{Name: "agentless", Agent: "", Status: "idle"},
-		{Name: "qa-work", Agent: "qa", Status: "idle"},
+		{Name: "qa-work", Agent: "qa", PaneID: "w1:p1", Status: "idle"},
 	}
-	if name, _, found := pulseTarget(sessions, ""); found {
+	if name, _, _, found := pulseTarget(sessions, ""); found {
 		t.Errorf("empty persona matched %q; it must match nothing", name)
 	}
-	if name, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" {
-		t.Errorf("named persona must still match: %q %v", name, found)
+	if name, pane, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" || pane != "w1:p1" {
+		t.Errorf("named persona must still match: %q %q %v", name, pane, found)
 	}
 }

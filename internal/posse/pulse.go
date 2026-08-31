@@ -296,7 +296,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		fmt.Fprintf(d.errw(), "pulse: cannot read sessions: %v\n", err)
 		return
 	}
-	name, status, found := pulseTarget(sessions, cfg.Persona)
+	name, pane, status, found := pulseTarget(sessions, cfg.Persona)
 	if !found {
 		// Condition (c) from the sensing bead — already in state.Conditions.
 		// Never create a session to deliver into; log and retry next tick.
@@ -329,7 +329,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 	// evidence: the never-answered concession returns a zero detection, and
 	// refusing a pulse because a diagnostic verb is missing would silence
 	// the shop check against an older herdr entirely.
-	det, note, err := d.HB.AwaitPromptable(name, name)
+	det, note, err := d.HB.AwaitPromptable(name, pane)
 	if err != nil {
 		fmt.Fprintf(d.Out, "pulse: skipped (%s not promptable: %v)\n", name, err)
 		return
@@ -343,7 +343,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 	}
 
 	text := pulsePromptText(state.Conditions)
-	if _, err := d.HB.H.AgentPrompt(name, text, false, 0); err != nil {
+	if _, err := d.HB.H.AgentPrompt(pane, text, false, 0); err != nil {
 		fmt.Fprintf(d.errw(), "pulse: prompt failed for %s: %v\n", name, err)
 		return
 	}
@@ -366,23 +366,27 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 }
 
 // pulseTarget finds cfg.Persona's live session among sessions — first match
-// by agent — returning its name and herdr status. ("", "", false) is
+// by agent — returning its session name, herdr status, and the pane herdr's
+// real AgentPrompt/AgentExplain addresses (HerdrSession.PaneID, the root pane
+// on record from session creation — not the session name every other caller
+// in this codebase resolves to a pane through, HerdrBackend.AgentTarget,
+// before speaking to herdr; ranger-base-5qe6). ("", "", "", false) is
 // condition (c): no live session for persona. Deliberately not filtered by
 // Crew: the whole point of the ADR 0008 §2 carve-out is that this prompt may
 // reach the operator's own conversation.
-func pulseTarget(sessions []HerdrSession, persona string) (name, status string, found bool) {
+func pulseTarget(sessions []HerdrSession, persona string) (name, pane, status string, found bool) {
 	if persona == "" {
 		// A session herdr reports with no agent would otherwise match, and
 		// delivering a shop check into an arbitrary session is worse than
 		// not delivering one.
-		return "", "", false
+		return "", "", "", false
 	}
 	for _, s := range sessions {
 		if s.Agent == persona {
-			return s.Name, s.Status, true
+			return s.Name, s.PaneID, s.Status, true
 		}
 	}
-	return "", "", false
+	return "", "", "", false
 }
 
 // pulsePromptText is the fixed 'Pulse check' marker plus the observed
