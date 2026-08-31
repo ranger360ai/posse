@@ -143,15 +143,23 @@ func TestSelfSandboxIsDeclarable(t *testing.T) {
 	if !self.SelfSandbox {
 		t.Fatal("self_sandbox: true must set SelfSandbox")
 	}
+	// The nesting fact is a DECLARED DIFFERENCE (ADR 0017 §2), not a
+	// degradation — but this generic yaml runtime has no Realize/Enforced of
+	// its own, so it does not actually deliver the Edit/Write wall it
+	// cannot get from our seatbelt either: those stay genuinely Degraded
+	// (ranger-base-d17a).
 	p := a.CheckParity(ag, self, CageSeatbelt, TierStrong)
-	if !strings.Contains(strings.Join(p.Degraded, "\n"), "cage seatbelt cannot wrap selfbox") {
-		t.Errorf("self_sandbox must degrade cage: seatbelt with the nesting reason: %+v", p.Degraded)
+	if !strings.Contains(strings.Join(p.DeclaredDifference, "\n"), "cage seatbelt cannot wrap selfbox") {
+		t.Errorf("self_sandbox must declare the nesting difference: %+v", p.DeclaredDifference)
+	}
+	if len(p.Degraded) != 2 || !strings.Contains(strings.Join(p.Degraded, "\n"), "Edit — needs cage: seatbelt") {
+		t.Errorf("self_sandbox with no Enforced still leaves Edit/Write genuinely degraded: %+v", p.Degraded)
 	}
 	// Undeclared, the same yaml is seatbelt-wrappable — the nesting line is
 	// absent, which is what makes the assertion above about the key.
 	plain := writeRuntime(t, a, "plainbox", "command: plainbox --sys {file}\n")
-	if q := a.CheckParity(ag, plain, CageSeatbelt, TierStrong); strings.Contains(strings.Join(q.Degraded, "\n"), "cannot wrap") {
-		t.Errorf("without self_sandbox: there is no nesting refusal: %+v", q.Degraded)
+	if q := a.CheckParity(ag, plain, CageSeatbelt, TierStrong); strings.Contains(strings.Join(q.Degraded, "\n"), "cannot wrap") || strings.Contains(strings.Join(q.DeclaredDifference, "\n"), "cannot wrap") {
+		t.Errorf("without self_sandbox: there is no nesting refusal: %+v / %+v", q.Degraded, q.DeclaredDifference)
 	}
 }
 
@@ -303,10 +311,13 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 	}
 
 	// The parity lines, in the tier the self-sandbox declaration is about.
+	// The nesting refusal is a DECLARED DIFFERENCE (ADR 0017 §2), not a
+	// degradation, on its own (ranger-base-d17a) — but this template
+	// runtime makes no Enforced claim of its own, so Edit/Write stay
+	// genuinely Degraded below.
 	p := a.CheckParity(ag, rt, CageSeatbelt, TierStrong)
-	joined := strings.Join(p.Degraded, "\n")
-	if !strings.Contains(joined, "cage seatbelt cannot wrap test") {
-		t.Errorf("parity must refuse to nest the seatbelt: %s", joined)
+	if !strings.Contains(strings.Join(p.DeclaredDifference, "\n"), "cage seatbelt cannot wrap test") {
+		t.Errorf("parity must declare the nesting difference: %s", strings.Join(p.DeclaredDifference, "\n"))
 	}
 	if got := p.Realized["skills: s1"]; !strings.Contains(got, AgentsSkillsPath) {
 		t.Errorf("parity must name the cwd skill surface: %q", got)

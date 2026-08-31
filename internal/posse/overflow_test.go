@@ -193,17 +193,23 @@ func TestOverflowPIDOptOut(t *testing.T) {
 	}
 }
 
-// §2(a): parity decides, with no runtime special-casing. The same seatbelt
-// PID is refused on codex (macOS will not nest a sandbox) and admitted on
-// grok (it nests) — one PID, one rule, two answers.
+// §2(a): parity decides, with no runtime special-casing. codex not nesting
+// our seatbelt is, on its own, a DECLARED DIFFERENCE (ADR 0017 §2,
+// ranger-base-d17a) and never excludes a target by itself — a bare
+// Edit/Write deny would launch clean on codex too, since its own read-only
+// mode realizes the wall by a different mechanism. What still genuinely
+// diverges is a PATH-SCOPED write: codex's own sandbox only ever covers the
+// whole tree, never a subtree, so that stays truly unrealized under
+// seatbelt while grok's seatbelt realizes it as a trailing deny. One PID,
+// one rule, two answers — from a real gate gap, not a mislabeled one.
 func TestOverflowParityDecidesPerTarget(t *testing.T) {
-	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\ncage: seatbelt\ndeny: [Bash(git push:*)]\n---\nYou are ranger.\n"
+	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\ncage: seatbelt\ndeny: [Edit(docs/adr/**), Write(docs/adr/**)]\n---\nYou are ranger.\n"
 	for _, tc := range []struct {
 		target   string
 		launched bool
 		want     string
 	}{
-		{"codex", false, "does not nest"},
+		{"codex", false, "path-scoped write is not a tool-name deny"},
 		{"grok", true, "[grok ← overflow]"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {

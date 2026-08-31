@@ -213,8 +213,13 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 			t.Errorf("security@%s seatbelt: %+v", rt.Name, p)
 		}
 	}
-	if p := b.App.CheckParity(security, codex, CageSeatbelt, TierStrong); len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], "does not nest") || p.Realized["Edit"] != "codex sandbox (OS-enforced)" {
-		t.Errorf("security@codex seatbelt must be flagged incompatible, Edit still enforced by codex: %+v", p)
+	// codex's own sandbox already realizes Edit/Write here (both are denied
+	// bare), so the nesting refusal is a DECLARED DIFFERENCE, not a
+	// degradation — the wall holds by a different mechanism, and neither
+	// --allow-degraded nor DEGRADED applies (ranger-base-d17a).
+	p := b.App.CheckParity(security, codex, CageSeatbelt, TierStrong)
+	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], "does not nest") || p.Realized["Edit"] != "codex sandbox (OS-enforced)" {
+		t.Errorf("security@codex seatbelt must be a declared difference, Edit still enforced by codex: %+v", p)
 	}
 	// Launch: the typed command is PATH=… sandbox-exec -f <profile> grok …
 	mustCreate(t, b, NewSessionOpts{Name: "hg", Agent: "security", Runtime: "grok", Dir: repo})
@@ -233,6 +238,29 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	// --cage shims on the same PID demands less than the PID → degraded.
 	if err := b.CreateSession(NewSessionOpts{Name: "hs", Agent: "security", Runtime: "grok", Cage: CageShims}); err == nil || !strings.Contains(err.Error(), "PID demands seatbelt") {
 		t.Errorf("launching below the PID's cage must refuse: %v", err)
+	}
+	// codex is the other answer to the same demand: at shims its own
+	// sandbox already realizes Edit/Write (both denied bare), an equivalent
+	// posture to seatbelt, so the cage shortfall is a DECLARED DIFFERENCE —
+	// launch succeeds with no --allow-degraded (ranger-base-d17a, the
+	// bead's own done-when). The rendered block must tell that row apart
+	// from a real unrealized gate at a glance: ⊘ for the declared
+	// difference, never ✗.
+	p = b.App.CheckParity(security, codex, CageShims, TierStrong)
+	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 ||
+		!strings.Contains(p.DeclaredDifference[0], "cage: PID demands seatbelt, launching at shims") ||
+		p.Realized["Edit"] != "codex sandbox (OS-enforced)" {
+		t.Errorf("security@codex shims must be a declared difference, not degraded: %+v", p)
+	}
+	if got := p.String(); !strings.Contains(got, "DECLARED DIFFERENCE") || strings.Contains(got, "DEGRADED") ||
+		!strings.Contains(got, "⊘ cage: PID demands seatbelt, launching at shims") || strings.Contains(got, "✗ cage: PID demands seatbelt") {
+		t.Errorf("rendered block must mark the cage shortfall ⊘, not ✗, and never say DEGRADED for it alone:\n%s", got)
+	}
+	if err := b.CreateSession(NewSessionOpts{Name: "hc", Agent: "security", Runtime: "codex", Cage: CageShims, Dir: repo}); err != nil {
+		t.Errorf("codex at shims must launch without --allow-degraded: %v", err)
+	}
+	if m, _ := b.readMeta("hc"); m == nil || m.Degraded != "" || m.Cage != CageShims {
+		t.Errorf("codex@shims session must not be marked degraded: %+v", m)
 	}
 	// Relaunch re-wraps with the seatbelt for the recorded dir.
 	os.Remove(filepath.Join(fake, "agents.json"))

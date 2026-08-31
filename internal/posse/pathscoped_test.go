@@ -124,8 +124,14 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 	}
 	// codex cannot nest under our seatbelt, so nothing there realizes it —
 	// which is why ADR 0014 §2 sends codex to container for this feature.
+	// The nesting fact is a DECLARED DIFFERENCE (informational, about the
+	// mechanism); the subtree write itself is a genuine unrealized gate
+	// here, since a path-scoped deny is not what turns codex's read-only
+	// mode on (ranger-base-d17a).
 	pc := a.CheckParity(scoped, codex, CageSeatbelt, TierStrong)
-	if pc.Realized["Edit(docs/adr/**)"] != "" || !strings.Contains(strings.Join(pc.Degraded, "\n"), "cage seatbelt cannot wrap codex") {
+	if pc.Realized["Edit(docs/adr/**)"] != "" ||
+		!strings.Contains(strings.Join(pc.DeclaredDifference, "\n"), "cage seatbelt cannot wrap codex") ||
+		!strings.Contains(strings.Join(pc.Degraded, "\n"), "needs cage: seatbelt (or container) — a path-scoped write is not a tool-name deny") {
 		t.Errorf("codex@seatbelt: %+v", pc)
 	}
 

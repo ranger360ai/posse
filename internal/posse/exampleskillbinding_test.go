@@ -98,9 +98,13 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 	// still reds this test. The skill claim is asserted on all three either
 	// way, which is what this file is about.
 	seatbeltForTest(t)
+	// codex denies bare Edit/Write here too, so its own sandbox already
+	// realizes the wall the seatbelt nesting refusal cannot give it — a
+	// DECLARED DIFFERENCE (ADR 0017 §2), not a degradation
+	// (ranger-base-d17a).
 	for _, tc := range []struct {
 		name string
-		want string // the one degraded row, "" for none
+		want string // the one declared-difference row, "" for none
 	}{
 		{"claude", ""},
 		{"grok", ""},
@@ -112,11 +116,14 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		}
 		cage := ResolveCage("", ag)
 		p := a.CheckParity(ag, rt, cage, ag.Tier)
-		switch {
-		case tc.want == "" && len(p.Degraded) != 0:
+		if len(p.Degraded) != 0 {
 			t.Errorf("%s @ %s: degraded on the shipped example: %v", tc.name, cage, p.Degraded)
-		case tc.want != "" && (len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], tc.want)):
-			t.Errorf("%s @ %s: want exactly one degraded row containing %q, got %v", tc.name, cage, tc.want, p.Degraded)
+		}
+		switch {
+		case tc.want == "" && len(p.DeclaredDifference) != 0:
+			t.Errorf("%s @ %s: unexpected declared difference on the shipped example: %v", tc.name, cage, p.DeclaredDifference)
+		case tc.want != "" && (len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], tc.want)):
+			t.Errorf("%s @ %s: want exactly one declared-difference row containing %q, got %v", tc.name, cage, tc.want, p.DeclaredDifference)
 		}
 		if p.Realized[claim] == "" {
 			t.Errorf("%s: %q not realized: %+v", tc.name, claim, p.Realized)

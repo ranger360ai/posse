@@ -67,6 +67,14 @@ type Parity struct {
 	Realized   map[string]string // gate → layer(s) that realize it
 	Unrealized []string          // gate → reason
 	Degraded   []string          // everything that makes the launch degrading (unrealized gates, cage shortfall)
+	// DeclaredDifference (ADR 0017 §2): safe-by-design facts about the
+	// runtime — a mechanism differs, not a wall. codex's own sandbox cannot
+	// nest under our seatbelt; a SelfSandbox runtime that already realizes
+	// the demanded wall by its own means, at a cage rank below what the PID
+	// asked for. Never counted toward Degraded/NoDegrade: a declared
+	// difference must never gate a launch or force --allow-degraded, or it
+	// renders exactly like the missing wall it is not (ranger-base-d17a).
+	DeclaredDifference []string
 }
 
 // CheckParity computes the directory-independent matrix for a PID on a
@@ -83,9 +91,29 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 		tier = DefaultTier
 		p.Tier = tier
 	}
-	// The PID's minimum tier.
+	// What the runtime enforces at OS level (codex read-only). Computed
+	// before the cage-rank check below, which needs it to tell a real cage
+	// shortfall from a SelfSandbox runtime that already delivers the
+	// demanded wall by its own means.
+	enforced := map[string]bool{}
+	if rt.Realize != nil {
+		for _, r := range rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir).Enforced {
+			enforced[r] = true
+		}
+	}
+	// The PID's minimum tier. A SelfSandbox runtime whose own sandbox
+	// already enforces Edit/Write is not shorted the wall the PID's `cage:
+	// seatbelt` was asking for — codex's -s read-only IS that wall, at
+	// shims — so this reads as a DECLARED DIFFERENCE (ADR 0017 §2), never
+	// as degradation: a first-class runtime must not need --allow-degraded
+	// to launch at its own correct cage (ranger-base-d17a).
 	if ag.Cage != "" && cageRank(ag.Cage) > cageRank(cage) {
-		p.Degraded = append(p.Degraded, fmt.Sprintf("cage: PID demands %s, launching at %s", ag.Cage, cage))
+		msg := fmt.Sprintf("cage: PID demands %s, launching at %s", ag.Cage, cage)
+		if ag.Cage == CageSeatbelt && rt.SelfSandbox && enforced["Edit"] && enforced["Write"] {
+			p.DeclaredDifference = append(p.DeclaredDifference, msg+" — "+rt.Name+"'s own sandbox already realizes the write wall (OS-enforced Edit/Write) here, an equivalent posture to seatbelt")
+		} else {
+			p.Degraded = append(p.Degraded, msg)
+		}
 	}
 	// The PID's model floor (ADR 0003 §3): a guardrail that lives only in
 	// the persona's prose ("no commitments", "findings only") needs a model
@@ -101,16 +129,12 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// A runtime that sandboxes its own children cannot sit inside our
 	// seatbelt: macOS refuses nested sandbox_apply. Its own sandbox is the
 	// file gate there (counted below via Enforced); the seatbelt is not.
+	// This is the canonical DECLARED DIFFERENCE (ADR 0017 §2): the
+	// mechanism differs, and whether any gate actually goes unrealized is
+	// judged separately, per rule, below — never here.
 	seatbeltIncompatible := cage == CageSeatbelt && rt.SelfSandbox
 	if seatbeltIncompatible {
-		p.Degraded = append(p.Degraded, fmt.Sprintf("cage seatbelt cannot wrap %s: its own child sandbox does not nest (sandbox_apply: Operation not permitted) — use cage: shims; %s's sandbox is OS-enforced there", rt.Name, rt.Name))
-	}
-	// What the runtime enforces at OS level (codex read-only).
-	enforced := map[string]bool{}
-	if rt.Realize != nil {
-		for _, r := range rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir).Enforced {
-			enforced[r] = true
-		}
+		p.DeclaredDifference = append(p.DeclaredDifference, fmt.Sprintf("cage seatbelt cannot wrap %s: its own child sandbox does not nest (sandbox_apply: Operation not permitted) — use cage: shims; %s's sandbox is OS-enforced there", rt.Name, rt.Name))
 	}
 	shims := ParseShimRules(ag.Deny)
 	// The seatbelt is applied at its own tier and nowhere else: ADR 0002 §3
@@ -600,17 +624,29 @@ func (e degradedError) Error() string {
 		e.p.Runtime, e.p.Cage, e.p.Tier, strings.Join(e.p.Degraded, "\n  "), tail)
 }
 
-// String renders the matrix for posse gates.
+// String renders the matrix for posse gates. Three verdicts, never spelled
+// the same way (ADR 0017 §2's presentation rule): ✓ realized, ⊘ declared
+// difference (safe by design — codex's SelfSandbox is the canonical
+// example), ✗ degraded (a gate the wall does not hold). A declared
+// difference alone never earns the header's DEGRADED — that word is
+// reserved for a launch --allow-degraded actually has to waive
+// (ranger-base-d17a).
 func (p Parity) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s @ %s/%s:", p.Runtime, p.Cage, p.Tier)
-	if len(p.Degraded) == 0 {
-		b.WriteString(" all gates realized\n")
-	} else {
+	switch {
+	case len(p.Degraded) > 0:
 		b.WriteString(" DEGRADED\n")
+	case len(p.DeclaredDifference) > 0:
+		b.WriteString(" DECLARED DIFFERENCE\n")
+	default:
+		b.WriteString(" all gates realized\n")
 	}
 	for _, gate := range realizedOrder(p.Realized) {
 		fmt.Fprintf(&b, "    ✓ %-28s %s\n", gate, p.Realized[gate])
+	}
+	for _, d := range p.DeclaredDifference {
+		fmt.Fprintf(&b, "    ⊘ %s\n", d)
 	}
 	for _, u := range p.Degraded {
 		fmt.Fprintf(&b, "    ✗ %s\n", u)
