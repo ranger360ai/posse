@@ -360,10 +360,10 @@ echo "shrank=$([ "$(wc -c < "$RHQ_GATES_DIR/refusals.log")" -lt "$before" ] && e
 	// empty `core.hooksPath=` both skip the hook outright, and the two
 	// combined (`/usr/bin/git -c core.hooksPath=<hookless> push`) defeat L1
 	// (absolute path) and L3 (redirect) together, with zero writes to
-	// .git/hooks. Pinned here too, either way — richard's instruction on
-	// this bead (ranger-base-evb1) is to log the measured answer, not to
-	// assert the escape must keep working: the day one of these flips is
-	// the day someone notices (the 6uq6 pattern).
+	// .git/hooks. Pinned here too, either way, per ranger-base-evb1's own
+	// comment thread: log the measured answer, do not assert the escape
+	// must keep working — the day one of these flips is the day someone
+	// notices (the ranger-base-6uq6 pattern).
 	switch got["noverify"] {
 	case "0":
 		t.Logf("MEASURED (ranger-base-3csb): `/usr/bin/git push --no-verify` is NOT refused — --no-verify skips pre-push outright, cooperative class (ADR 0025 §1)")
