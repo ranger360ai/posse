@@ -64,6 +64,45 @@ const VisibilityWayThrough = `the way through: re-file the bead in the instance'
 from the public one. A private bead can be re-filed public later; the reverse
 is a history purge.`
 
+// PublicDocsGenres is the docs/ subdirectories a staged NEW file may land in,
+// in a public-stamped repo (ADR 0024 D2 check 1) — a shipped constant, not
+// config: admitting a genre to the public tree is a reviewed code change,
+// which is exactly the review the wall exists to force. A file staged
+// directly under docs/, with no subdirectory, has no genre and is refused
+// the same as an unlisted one.
+var PublicDocsGenres = []string{"adr", "runbooks", "notes.d"}
+
+// DocsGenreRule is what a check-1 refusal names.
+const DocsGenreRule = `ADR 0024 D2 check 1: a public repo's docs/ tree only carries genres any
+deployer of this software could have written — an allowlisted docs/
+subdirectory, shipped as a constant beside OpsPatterns rather than config,
+because admitting a genre to the public tree is a reviewed code change.`
+
+// DocsGenreWayThrough names both ways through a check-1 refusal: the
+// instance tree, or a deliberate constant edit — both named so a session
+// does not have to guess which one applies.
+const DocsGenreWayThrough = `the way through, either one: write it in the instance tree instead, whichever
+worktree this session holds — or, if this genre belongs in every deployer's
+public tree, add it to PublicDocsGenres in internal/posse/visibility.go (a
+deliberate, reviewed code change) and re-run posse gates install-hooks.`
+
+// OpsProseRule is what a check-2 (markdown prose) refusal names — the same
+// classification test as VisibilityRule, restated for prose rather than a
+// bead: ADR 0024 D1 extends NOTES.md's "Privacy model" to every artifact,
+// not only beads.
+const OpsProseRule = `NOTES.md "Privacy model", extended to every artifact by ADR 0024 D1: an
+artifact belongs in a public repo only when any deployer of this software
+could have written it. Instance-ops content — cost figures, plan names, live
+guard values, credential locations — belongs in the instance's private tree
+even in prose, even when the file it is written into is this repo's.`
+
+// OpsProseWayThrough is the remedy a check-2 refusal names: restate the
+// invariant rather than the measurement (ADR 0024 D3, restate-and-cite).
+const OpsProseWayThrough = `the way through (ADR 0024 D3, restate-and-cite): write the full account in
+the instance tree first, then have the public document restate the mechanism
+and cite the instance artifact by bead id or a private-path label — never
+excerpt the measurement itself.`
+
 // OpsPattern is one class of instance-ops content: a name for the refusal,
 // the ERE both readers use, and what it is looking for.
 type OpsPattern struct {

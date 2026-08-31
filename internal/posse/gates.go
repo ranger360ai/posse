@@ -2233,11 +2233,21 @@ exit 1
 // that decide ownership, kept away from either wall's body.
 const commitGuardHead = `#!/bin/sh
 ` + sharedIndexMarker + ` — installed by posse gates install-hooks. Three walls
-# in one slot: the beads visibility guard (rangerhq-hrz), the constitution-path
-# guard (ranger-base-ak3e) and the shared-index commit guard (rangerhq-lmq9).
+# in one slot: the beads visibility guard (rangerhq-hrz, extended by ADR 0024
+# D2 checks 1+2 to a docs-genre allowlist and an OpsPatterns scan over staged
+# markdown), the constitution-path guard (ranger-base-ak3e) and the
+# shared-index commit guard (rangerhq-lmq9).
 # Foreign hooks are never overwritten; remove this file to uninstall.
 # ADR 0002 §3.
 `
+
+// publicDocsGenrePattern is PublicDocsGenres rendered as a shell case
+// pattern — a `|`-joined alternation. Every genre name matches
+// opsClassRE-adjacent boring characters (letters, digits, a dot), so none of
+// them needs shell quoting to stay a literal alternative rather than a glob.
+func publicDocsGenrePattern() string {
+	return strings.Join(PublicDocsGenres, "|")
+}
 
 // visibilityGuardBody renders the first wall against a repo whose beads db
 // carries the given visibility. THE VERDICT IS STAMPED AT INSTALL TIME
@@ -2259,6 +2269,15 @@ const commitGuardHead = `#!/bin/sh
 //
 // The block always renders, gated on the stamp, so the hook FILE is the
 // record of what it was stamped with — a human reads it and knows.
+//
+// ADR 0024 D2 adds two more checks to this same arm, same gate
+// (posse_beads_visibility = public), same reason for the slot: check 1 is
+// the docs-genre allowlist (a staged NEW file under docs/ must sit in an
+// allowlisted subdirectory); check 2 is OpsPatterns over the ADDED lines of
+// every staged *.md, any path — the same list and the same posse_check
+// function the beads-jsonl check above uses, just pointed at a different
+// staged set, which is what "same list, both readers" (visibility.go) means
+// here: one Go slice, one shell function, two call sites.
 func visibilityGuardBody(visibility string, set OpsPatternSet) string {
 	var checks strings.Builder
 	for _, p := range set.All() {
@@ -2277,13 +2296,15 @@ func visibilityGuardBody(visibility string, set OpsPatternSet) string {
 		}
 	}
 	return `
-# ─── the beads visibility guard (rangerhq-hrz) ────────────────────────────
+# ─── the beads visibility guard (rangerhq-hrz), extended by ADR 0024 D2 ───
 # A bead belongs in a public repo's db only when any deployer of this
 # software could have written it; everything describing ONE deployment goes
-# in that instance's private db (NOTES.md, "Privacy model"). This is a
-# pattern lint, not a boundary — same class as the allowlist. The boundary
-# is the routing rule plus repo visibility; the lint exists so a mis-routed
-# bead is a refusal at commit time instead of a public artifact.
+# in that instance's private db (NOTES.md, "Privacy model"). ADR 0024 D1
+# extends the same test to every artifact, not only beads — which is what
+# checks 1 and 2 below enforce. This is a pattern lint, not a boundary —
+# same class as the allowlist. The boundary is the routing rule plus repo
+# visibility; the lint exists so a mis-routed artifact is a refusal at
+# commit time instead of a public one.
 #
 # The slot is prepare-commit-msg and not pre-commit for the reason the wall
 # below documents: pre-commit is bd's own flush hook, reinstalled silently
@@ -2292,9 +2313,25 @@ func visibilityGuardBody(visibility string, set OpsPatternSet) string {
 ` + rejects.String() + `posse_beads_visibility=` + shQuote(visibility) + `
 if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # Compare against HEAD, or against the empty tree in a repo with no
-  # commit yet — a first commit is exactly when a db arrives whole.
+  # commit yet — a first commit is exactly when a db (or a docs tree) arrives
+  # whole. Shared by all three checks below.
   posse_base=$(git hash-object -t tree /dev/null 2>/dev/null)
   if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_base=HEAD; fi
+
+  # A function, not a 'while read' over a pipeline: the right side of a
+  # pipeline is a subshell and the assignment would not survive it — the
+  # rangerhq-kk6e lesson, which cost a push. Shared by check 0 (below) and
+  # check 2 (ADR 0024 D2): each sets $posse_added and $posse_bad, then calls
+  # this over the SAME OpsPatterns list — one Go slice, one shell function.
+  posse_check() {
+    posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
+    [ -n "$posse_m" ] || return 0
+    posse_bad="$posse_bad  $1: $2
+    matched: $posse_m
+"
+  }
+
+  # ─── check 0: the beads db (rangerhq-hrz) ───────────────────────────────
   # ADDED lines only, and every .beads jsonl: the db and the deletion ledger
   # beside it (rangerhq-fuom), which holds whole bead records and inherits
   # the repo's visibility exactly as the db does. GIT_INDEX_FILE is
@@ -2303,16 +2340,6 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
-    # A function, not a 'while read' over a pipeline: the right side of a
-    # pipeline is a subshell and the assignment would not survive it — the
-    # rangerhq-kk6e lesson, which cost a push.
-    posse_check() {
-      posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
-      [ -n "$posse_m" ] || return 0
-      posse_bad="$posse_bad  $1: $2
-    matched: $posse_m
-"
-    }
 ` + checks.String() + `    if [ -n "$posse_bad" ]; then
       if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
         echo "posse gate: visibility guard OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class content is going into a public repo's beads db" >&2
@@ -2333,6 +2360,101 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
         } >&2
         if [ -n "$RHQ_GATES_DIR" ]; then
           echo "$(posse_stamp) beads visibility guard [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+  fi
+
+  # ─── check 1: docs-genre allowlist (ADR 0024 D2) ────────────────────────
+  # Staged NEW files under docs/ only — 'A' entries; a MODIFIED existing
+  # file already cleared this the day it was added. name-status, not -z:
+  # docs/ paths are this repo's own and ASCII by convention, and the
+  # tab-delimited form is what the cut below expects — a path carrying a
+  # literal newline is the same residual constitutionGuardBody's -z form
+  # already accepts elsewhere in this hook, just not paid for here.
+  posse_docs_hits=$(git diff --cached --name-status "$posse_base" -- 'docs/*' 2>/dev/null | grep -E '^A[[:space:]]')
+  if [ -n "$posse_docs_hits" ]; then
+    posse_docs_bad=''
+    posse_docs_ifs=$IFS
+    IFS='
+'
+    for posse_docs_line in $posse_docs_hits; do
+      posse_docs_path=$(printf '%s\n' "$posse_docs_line" | cut -f2-)
+      case "$posse_docs_path" in
+        docs/*/*)
+          posse_docs_genre=${posse_docs_path#docs/}
+          posse_docs_genre=${posse_docs_genre%%/*}
+          ;;
+        *)
+          posse_docs_genre='(none — staged directly under docs/, no subdirectory)'
+          ;;
+      esac
+      case "$posse_docs_genre" in
+        ` + publicDocsGenrePattern() + `) ;;
+        *)
+          posse_docs_bad="$posse_docs_bad  $posse_docs_path    (genre: $posse_docs_genre)
+"
+          ;;
+      esac
+    done
+    IFS=$posse_docs_ifs
+    if [ -n "$posse_docs_bad" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: docs-genre allowlist OVERRIDDEN by ` + VisibilityOverrideEnv + ` — a new docs/ file outside the allowlist is going into a public repo" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) docs-genre allowlist OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: a new docs/ file outside the public genre allowlist — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(DocsGenreRule) + `
+          echo "today's allowlist: ` + publicDocsGenrePattern() + `"
+          echo "staged new file(s):"
+          printf '%s' "$posse_docs_bad"
+          echo ` + shQuote(DocsGenreWayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) docs-genre allowlist [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+  fi
+
+  # ─── check 2: OpsPatterns over staged markdown (ADR 0024 D2) ────────────
+  # Every staged *.md, any path — NOT code: the detector's own source and
+  # tests are byte-identical to hits (the assembled plan-brand names in
+  # visibility.go exist because of exactly this), and a wall carrying an
+  # allowlist of its own files is a wall with a hole list.
+  posse_added=$(git diff --cached -U0 "$posse_base" -- '*.md' 2>/dev/null |
+    grep '^+' | grep -v '^+++')
+  if [ -n "$posse_added" ]; then
+    posse_bad=''
+` + checks.String() + `    if [ -n "$posse_bad" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: markdown ops-content scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class prose is going into a public repo" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) markdown ops-content scan OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: ops-class content in staged markdown in a public repo — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(OpsProseRule) + `
+          echo "matched in the staged *.md additions:"
+          printf '%s' "$posse_bad"
+          echo ` + shQuote(OpsProseWayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) markdown ops-content scan [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
         fi
         exit 1
       fi

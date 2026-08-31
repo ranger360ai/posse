@@ -273,11 +273,13 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 		t.Errorf("the operator's override must pass, and say so: %v\n%s", err, out)
 	}
 
-	// A file outside .beads is not this guard's business, whatever it says.
-	os.WriteFile(filepath.Join(pub, "NOTES.md"), []byte("plan_guard_5h: 70 and $715/wk\n"), 0o644)
-	git(pub, nil, "add", "NOTES.md")
-	if out, err := git(pub, persona, "commit", "-m", "docs", "--", "NOTES.md"); err != nil {
-		t.Errorf("only the beads db is scanned: %v\n%s", err, out)
+	// A non-markdown file outside .beads is not this guard's business,
+	// whatever it says — check 2 (ADR 0024 D2) scans every staged *.md, not
+	// arbitrary text; TestDocsGenreAndProseGuardHook covers the *.md case.
+	os.WriteFile(filepath.Join(pub, "notes.txt"), []byte("plan_guard_5h: 70 and $715/wk\n"), 0o644)
+	git(pub, nil, "add", "notes.txt")
+	if out, err := git(pub, persona, "commit", "-m", "docs", "--", "notes.txt"); err != nil {
+		t.Errorf("only the beads db and staged markdown are scanned: %v\n%s", err, out)
 	}
 
 	// Both refusals and the override are evidence, so all three are logged.
@@ -287,6 +289,130 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 	}
 	if !strings.Contains(string(logb), "OVERRIDDEN") {
 		t.Errorf("an override that leaves no trace is worse than a refusal:\n%s", logb)
+	}
+}
+
+// ADR 0024 D2 checks 1 and 2, in the same arm and the same slot as the
+// beads-jsonl guard above: a docs-genre allowlist over staged NEW files
+// under docs/, and an OpsPatterns scan over the ADDED lines of every staged
+// *.md, any path. Both run only in a public-stamped repo, fail closed, and
+// share the beads visibility guard's override and refusals.log shape.
+func TestDocsGenreAndProseGuardHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	gates := t.TempDir()
+	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
+	cfg := filepath.Join(home, "config.yaml")
+	os.WriteFile(cfg, []byte("beads_visibility:\n  "+pub+": public\n  "+priv+": private\n"), 0o644)
+	a := &App{ConfigPath: cfg}
+
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(repo string, env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	persona := []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + gates}
+
+	for _, repo := range []string{pub, priv} {
+		os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
+		if out, err := git(repo, nil, "init", "-q", "-b", "main"); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAndAdd := func(repo, rel, body string) {
+		p := filepath.Join(repo, rel)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+		git(repo, nil, "add", rel)
+	}
+
+	// Check 1 — an unlisted docs/ genre is refused, naming the rule and
+	// both ways through: the instance tree, or a deliberate constant edit.
+	// This is also the DONE WHEN example verbatim: "committing docs/rca/x.md
+	// is refused (genre)".
+	writeAndAdd(pub, "docs/rca/x.md", "just an rca, no ops content\n")
+	out, err := git(pub, persona, "commit", "-m", "x", "--", "docs/rca/x.md")
+	if err == nil {
+		t.Fatalf("an unlisted docs/ genre must be refused: %s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate: a new docs/ file outside the public genre allowlist",
+		"docs/rca/x.md",
+		"(genre: rca)",
+		"ADR 0024 D2 check 1",
+		"write it in the instance tree instead",
+		"add it to PublicDocsGenres in internal/posse/visibility.go",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("genre refusal must carry %q:\n%s", want, out)
+		}
+	}
+
+	// A file staged directly under docs/, with no subdirectory, has no
+	// genre and is refused the same way — the DONE WHEN's "no genre" case.
+	writeAndAdd(pub, "docs/loose.md", "no subdir\n")
+	if out, err := git(pub, persona, "commit", "-m", "x", "--", "docs/loose.md"); err == nil ||
+		!strings.Contains(out, "none — staged directly under docs/") {
+		t.Errorf("a file directly under docs/ must be refused as having no genre: %v\n%s", err, out)
+	}
+
+	// An allowlisted genre, clean content: through.
+	writeAndAdd(pub, "docs/adr/0099-example.md", "# an ADR\n\nno ops content here.\n")
+	if out, err := git(pub, persona, "commit", "-m", "x", "--", "docs/adr/0099-example.md"); err != nil {
+		t.Fatalf("an allowlisted genre with clean content must commit: %v\n%s", err, out)
+	}
+
+	// Check 2 — an allowlisted genre is still scanned for ops content: a
+	// dollar figure in an ADR is refused, showing the matched text. This is
+	// the DONE WHEN's other half verbatim: "a docs/adr/x.md carrying a
+	// dollar figure is refused (content)".
+	writeAndAdd(pub, "docs/adr/0100-example.md", "# an ADR\n\nthe pilot cost $715/wk to run.\n")
+	out, err = git(pub, persona, "commit", "-m", "x", "--", "docs/adr/0100-example.md")
+	if err == nil {
+		t.Fatalf("ops content in a staged .md must be refused: %s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate: ops-class content in staged markdown in a public repo",
+		"cost:", "$715/wk",
+		`NOTES.md "Privacy model"`,
+		"ADR 0024 D3, restate-and-cite",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("md-scan refusal must carry %q:\n%s", want, out)
+		}
+	}
+
+	// The override passes the same content, and says so.
+	if out, err := git(pub, append(persona, VisibilityOverrideEnv+"="+VisibilityOverrideValue), "commit", "-m", "x", "--", "docs/adr/0100-example.md"); err != nil ||
+		!strings.Contains(out, "OVERRIDDEN") {
+		t.Errorf("the operator's override must pass, and say so: %v\n%s", err, out)
+	}
+
+	// Private: the same content — an unlisted genre AND ops-class prose —
+	// commits clean, the DONE WHEN's "same content commits clean
+	// private-stamped".
+	writeAndAdd(priv, "docs/rca/x.md", "the pilot cost $715/wk to run.\n")
+	if out, err := git(priv, persona, "commit", "-m", "x", "--", "docs/rca/x.md"); err != nil {
+		t.Errorf("a private repo must take any docs genre and any content: %v\n%s", err, out)
+	}
+
+	logb, _ := os.ReadFile(filepath.Join(gates, "refusals.log"))
+	if !strings.Contains(string(logb), "docs-genre allowlist [prepare-commit-msg hook] (public repo)") {
+		t.Errorf("a genre refusal must be logged:\n%s", logb)
+	}
+	if !strings.Contains(string(logb), "markdown ops-content scan [prepare-commit-msg hook] (public repo)") {
+		t.Errorf("a md-scan refusal must be logged:\n%s", logb)
+	}
+	if !strings.Contains(string(logb), "markdown ops-content scan OVERRIDDEN") {
+		t.Errorf("the override must be logged:\n%s", logb)
 	}
 }
 
@@ -622,8 +748,11 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	if strings.Contains(hook, "Northwind") {
 		t.Error("the hook recorded a REFUSED entry's value — the class is the record, the value is the secret")
 	}
-	if strings.Count(hook, "posse_check ") != len(OpsPatterns)+1 {
-		t.Errorf("want shipped+1 checks stamped, got %d", strings.Count(hook, "posse_check "))
+	// The list is stamped twice: once for the beads-jsonl arm (check 0), once
+	// for the markdown-prose arm (ADR 0024 D2 check 2) — same list, two
+	// call sites (visibilityGuardBody).
+	if want, got := 2*(len(OpsPatterns)+1), strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want shipped+1 checks stamped twice (%d), got %d", want, got)
 	}
 
 	// And the launch-time identity probe must agree with the install, or an
