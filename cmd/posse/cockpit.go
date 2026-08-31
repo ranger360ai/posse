@@ -1701,9 +1701,16 @@ type row struct {
 // wrong default: under-counting wraps the row, over-counting only leaves a
 // blank cell, and a table with holes plus a narrow default fails in the
 // wrapping direction. 🟡 in a bead title did exactly that (rangerhq-53p), as
-// did 🀄, 🃏 and 🈚. So this table has no holes to fall through: it is every
-// code point a terminal draws two cells wide, which is East_Asian_Width
-// Wide/Fullwidth ∪ Emoji_Modifier_Base.
+// did 🀄, 🃏 and 🈚. So this table is every code point a terminal draws two
+// cells wide, which is East_Asian_Width Wide/Fullwidth ∪ Emoji_Modifier_Base
+// — as of the Unicode version this was last checked against. That union is
+// a moving target: it is a snapshot of the Unicode Emoji_Presentation and
+// EastAsianWidth data at the time of writing, and each new Unicode version
+// adds glyphs a terminal already draws wide before this table is updated to
+// match. Unicode 16.0 added seven such (ranger-base-qmjc): 🪉 🪏 🪾 🫆 🫜 🫟
+// 🫩. There is no dependency on a Unicode data package to auto-track this —
+// closing a gap here means re-measuring the terminal's cursor advance for
+// the new range, the same way this table was built.
 //
 // The second half of that union is not redundant. ☝ ⛹ ✌ ✍ 🏋 🕴 🖐 are
 // East_Asian_Width Neutral and a terminal still gives them two cells, because
@@ -1754,8 +1761,8 @@ var wideRanges = [...][2]rune{
 	{0x1F6D5, 0x1F6D7}, {0x1F6DC, 0x1F6DF}, {0x1F6EB, 0x1F6EC},
 	{0x1F6F4, 0x1F6FC}, {0x1F7E0, 0x1F7EB}, {0x1F7F0, 0x1F7F0},
 	{0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1F9FF},
-	{0x1FA70, 0x1FA7C}, {0x1FA80, 0x1FA88}, {0x1FA90, 0x1FABD},
-	{0x1FABF, 0x1FAC5}, {0x1FACE, 0x1FADB}, {0x1FAE0, 0x1FAE8},
+	{0x1FA70, 0x1FA7C}, {0x1FA80, 0x1FA89}, {0x1FA8F, 0x1FAC6},
+	{0x1FACE, 0x1FADC}, {0x1FADF, 0x1FAE9},
 	{0x1FAF0, 0x1FAF8}, {0x20000, 0x2FFFD}, {0x30000, 0x3FFFD},
 }
 

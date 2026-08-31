@@ -1010,7 +1010,6 @@ func TestCockpitDispWidthMeasuredEdges(t *testing.T) {
 // seven advance two cells and count one, and a 60-column row built from any of
 // them wraps exactly as the original report described.
 func TestCockpitDispWidthUnicode16Gaps(t *testing.T) {
-	t.Skip("ranger-base-qmjc: wideRanges stops at Unicode 15.1; \U0001FAE9 \U0001FAC6 \U0001FABE \U0001FA89 \U0001FA8F \U0001FADC \U0001FADF undercount by one cell")
 	for _, g := range []string{"\U0001FAE9", "\U0001FAC6", "\U0001FABE", "\U0001FA89", "\U0001FA8F", "\U0001FADC", "\U0001FADF"} {
 		if got := dispWidth(g); got != 2 {
 			t.Errorf("dispWidth(%q) = %d, the terminal advances 2", g, got)
