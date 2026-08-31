@@ -1495,9 +1495,9 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
 // not permission: nobody has to be asked for it, so it belongs below the
 // rungs that spend the operator's attention. It is the mechanism behind the
-// research-spike practice — the ladder is the one text every persona reads
-// on every bead, so the trigger travels with the work rather than depending
-// on a persona remembering to pull the cord.
+// research-spike practice (ADR 0026) — the ladder is the one text every
+// persona reads on every bead, so the trigger travels with the work rather
+// than depending on a persona remembering to pull the cord.
 //
 // SPIKE files its bead with NO `--deps discovered-from:`, and that absence
 // is the whole of ranger-base-rs8j. bd 0.49.1's cycle check spans EVERY
