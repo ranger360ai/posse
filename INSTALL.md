@@ -1705,8 +1705,13 @@ $ posse list
 its `Assignee` is your persona, and it has a close comment the persona
 wrote. A persona closed a real bead in a fresh instance; the install works.
 
-Sessions of finished beads are left idle for you to reap (`posse kill`, or
-`x` in the cockpit). They cost nothing and do not block the next pass.
+Sessions of finished beads are swept automatically: the end-of-pass auto-reap
+kills a per-bead session whose bead the store calls closed and in which
+nobody is working any more (config `auto_reap:`, default on; `--no-reap`
+skips it for one pass). You can still reap by hand — `posse kill`, or `x` in
+the cockpit — and `posse list` tags a session the sweep can never claim
+(`🏷️no-bead`) so you can see why it is still sitting there. Either way they
+cost nothing and do not block the next pass.
 
 A reap is also when a persona's memory is made durable. Personas append what
 they learn to `$POSSE_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
