@@ -5069,6 +5069,21 @@ What was measured, before and during the build:
   and the fact is true of both. What worktrees do not add is a *new* source
   of it. The live pin (`RHQ_LIVE_BD=1 go test ./internal/rhq -run
   TestLiveWorktreeSharesOneGraph`) asserts exactly that discrimination.
+  **UPDATE (ranger-base-p969)**: the "no `bd sync --import-only` left sitting
+  as a persona's obvious next step" line above is still right — that stays a
+  human's call, never a suggested command — but it turned out to describe
+  the wrong target for the same recovery run *programmatically*, inside
+  `Bd.run` (beads.go). Measured 2026-08-30: a `--no-daemon` dispatch pass
+  refused the ready scan on this exact message nine times in twenty minutes,
+  triggered by *any* daemon-path bd write from another actor in the
+  preceding ~10 minutes, and a `sync --import-only` run by hand right after
+  each failure reported "0 created / 0 updated" every time — the refusal is
+  a timestamp/marker check, not a content one, so a daemon flush that
+  rewrites `issues.jsonl` without changing it still trips it. `Bd.run` now
+  imports once and retries once on this one message before giving up;
+  `WarnLostBeads` (beadloss.go, rangerhq-fuom) is unchanged and remains the
+  backstop for the case this staleness check exists to catch — an import
+  that silently drops rows.
 - `redirect` is in bd's own bundled `.beads/.gitignore`, so seeding one leaves
   the worktree clean in any bd-initialised repo.
 - bd's bundled `pre-commit` and `post-merge` hooks are already worktree-aware

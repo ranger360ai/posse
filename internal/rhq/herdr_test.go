@@ -119,6 +119,18 @@ func fakeBd(args []string) int {
 	}
 	switch sub {
 	case "ready":
+		// ranger-base-p969: bd's own staleness refusal, exactly as it reads
+		// in the wild — a --no-daemon reader that finds issues.jsonl newer
+		// than the database it resolved to. `run` treats this one message
+		// as self-healing (beads.go): import once, retry once. The marker
+		// fails every call until the "sync" case below clears it, so a test
+		// can tell "healed on retry" from "served straight through" apart.
+		// A marker holding "keep" is left alone by that clear, for the test
+		// that wants the retry to fail too.
+		if _, err := os.Stat("fake-ready-stale"); err == nil {
+			fmt.Fprint(os.Stderr, "Database out of sync with JSONL. Run 'bd sync --import-only' to fix.")
+			return 1
+		}
 		// The scan failing the way it fails in the wild: bd exits non-zero
 		// with a word on stderr, and the repo's queue is unknown, not empty
 		// (rangerhq-llse).
@@ -309,6 +321,16 @@ func fakeBd(args []string) int {
 		// The launcher's pre-commit export (ADR 0015 §4, queuejsonl.go).
 		// bd owns the export; what a test can pin is that posse asked for
 		// the git-free form, and bd-calls.log above is where it reads that.
+		//
+		// ranger-base-p969's self-heal import: `--import-only` clears the
+		// "ready" case's stale marker so the retry it provokes succeeds,
+		// unless the marker itself says "keep" — the fixture for a db that
+		// is still out of sync after the import bd actually ran.
+		if hasArg(args, "--import-only") {
+			if b, err := os.ReadFile("fake-ready-stale"); err == nil && strings.TrimSpace(string(b)) != "keep" {
+				os.Remove("fake-ready-stale")
+			}
+		}
 		return 0
 	}
 	fmt.Fprintf(os.Stderr, "fake bd: unhandled %s\n", strings.Join(args, " "))

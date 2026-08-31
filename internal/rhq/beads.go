@@ -68,9 +68,50 @@ func (b Bd) Available() bool {
 // `--allow-stale` or `bd sync --import-only` for that same message, and
 // WarnLostBeads (rangerhq-fuom) exists because that auto-import can delete
 // rows and log nothing when it does.
+//
+// UPDATED ranger-base-p969: "twice chosen" above was about a persona
+// hand-walking a *different* trap — the worktree's own materialized jsonl,
+// which never actually triggers this check (worktree.go). This is the real
+// thing, and refusing it unconditionally turned out to be the wrong default
+// for a --no-daemon reader running alongside daemon-path writers. Measured
+// 2026-08-30 (ranger-base-p969): a dispatch --watch pass failed its ready
+// scan on this exact message nine times across ~20 minutes, triggered by
+// ANY daemon-path bd write (close/create/comment) from another actor in the
+// same repo in roughly the preceding ten minutes — and a `sync
+// --import-only` run immediately after a failure, by hand, repeatedly
+// reported "0 created / 0 updated": nothing was actually stale. The refusal
+// is a timestamp/marker check, not a content check, so a daemon flush that
+// rewrites issues.jsonl without changing it still trips it. WarnLostBeads
+// runs every pass regardless of why an import happened, so it remains the
+// backstop for the case this staleness check exists to catch — an import
+// that silently drops rows; it just no longer stands between that backstop
+// and the pass being able to see the queue at all. So `run` now treats this
+// one message as recoverable: import once, retry the call once. A second
+// failure (including a second "out of sync") is returned as-is — no loop.
 var bdGlobalFlags = []string{"--no-daemon"}
 
+// staleDBMessage is the substring bd 0.49.1 puts in both stdout and stderr
+// when a --no-daemon reader finds issues.jsonl newer than the database it
+// resolved to and refuses rather than importing (worktree.go, beads.go
+// above). It is the one bd error `run` treats as self-healing rather than
+// fatal.
+const staleDBMessage = "Database out of sync with JSONL"
+
 func (b Bd) run(dir string, args ...string) ([]byte, error) {
+	out, err := b.runOnce(dir, args...)
+	if err == nil || !strings.Contains(err.Error(), staleDBMessage) {
+		return out, err
+	}
+	// The import call goes through runOnce directly, not run: a failure here
+	// (e.g. "database is locked") must not itself be treated as a stale-db
+	// hit and retried, or a lock contest turns into a loop.
+	if _, ierr := b.runOnce(dir, "sync", "--import-only"); ierr != nil {
+		return nil, err
+	}
+	return b.runOnce(dir, args...)
+}
+
+func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	argv := append(append([]string{}, bdGlobalFlags...), args...)
 	cmd := exec.Command(b.Bin, argv...)
 	if dir != "" {
