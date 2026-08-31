@@ -170,6 +170,10 @@ type BdIssue struct {
 	Owner       string     `json:"owner"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	CloseReason string     `json:"close_reason"`
+	// DeferUntil is set when Status is "deferred" via `bd defer --until`
+	// (ranger-base-5aln): a defer with a future date is an answer someone
+	// already gave — the answer is a date — not silence.
+	DeferUntil *time.Time `json:"defer_until"`
 }
 
 // Flush exports the database to its JSONL projection and leaves git alone:

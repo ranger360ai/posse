@@ -544,6 +544,15 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			if is.Created.IsZero() || now.Sub(is.Created) < maxAge {
 				continue
 			}
+			// A defer with a future date is an answer — the answer is a
+			// date (ranger-base-5aln). `bd list` still returns a deferred
+			// bead (unlike `bd ready`), so this reader has to make the
+			// same call bd's own queue already made. Once the date is
+			// past, the park has expired and nobody revisited it: that is
+			// unanswered again.
+			if is.Status == "deferred" && is.DeferUntil != nil && is.DeferUntil.After(now) {
+				continue
+			}
 			age := now.Sub(is.Created)
 			class, blocks := GovLane, ""
 			// URGENT if it dep-blocks work: an unanswered question that

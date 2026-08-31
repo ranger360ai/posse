@@ -324,6 +324,38 @@ func TestGovG3NonOpenBlockedBeadDoesNotPromote(t *testing.T) {
 	}
 }
 
+// A defer with a future date is an answer — the answer is a date
+// (ranger-base-5aln). `bd list` still returns a deferred bead (unlike `bd
+// ready`), so without this the row nags a question the operator already
+// parked on purpose.
+func TestGovG3DeferredUntilFutureIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
+			"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(48 * time.Hour)},
+	})
+	if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
+		t.Errorf("a defer-until-future is answered, not open: %+v", *g)
+	}
+}
+
+// Once defer_until is in the past, the park has expired and nobody
+// revisited it — that is unanswered again, same as any other aging
+// question.
+func TestGovG3DeferredUntilPastStillNags(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
+			"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(-1 * time.Hour)},
+	})
+	g := find(shopSet(t, govIn(t, b)), "G3")
+	if g == nil || g.Key != "question:bd-q" {
+		t.Fatalf("G3 = %+v, want question:bd-q once the defer date has passed", g)
+	}
+}
+
 // ─── G4/G5 · the plan guard ──────────────────────────────────────────────────
 
 // govGuardCfg arms the guard on the fake adapter's own window names, so
