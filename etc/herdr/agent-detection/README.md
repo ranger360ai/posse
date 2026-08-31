@@ -255,11 +255,17 @@ agent:
 1. Save the current upstream: the cached remote
    (`~/.local/state/herdr/agent-detection/remote/<agent>.toml`) **or**, if the
    bundled one is the live source, re-extract it with the `dd` recipe above.
-2. Move `etc/herdr/agent-detection/<agent>.toml` aside — that is the copy
-   verify-detection stages — and run `make verify-detection`. (Moving only
-   the installed copy proves nothing now; it is not what the fixtures read.)
-3. If the fixtures still pass, upstream fixed it — delete
-   `etc/herdr/agent-detection/<agent>.toml` and
+2. Replace `etc/herdr/agent-detection/<agent>.toml` with the upstream copy
+   saved in step 1 — that is the copy verify-detection stages — and run
+   `make verify-detection`. (Moving the file aside instead removes it from
+   the run: the script builds its agent list from the `*.toml` files in
+   `etc/`, so an absent manifest means no manifest to stage and no fixtures
+   replayed against anything, upstream included — it now fails outright,
+   flagged as a missing manifest for an agent whose fixtures still exist,
+   rather than passing vacuously as it once did (ranger-base-j66o). Neither
+   outcome answers the question this step asks.)
+3. If the fixtures still pass **against that upstream copy**, upstream fixed
+   it — delete `etc/herdr/agent-detection/<agent>.toml` and
    `~/.config/herdr/agent-detection/<agent>.toml`. Drop the make targets only
    once the last override is gone.
 4. If not, re-fork the new upstream version and re-apply our rules.
