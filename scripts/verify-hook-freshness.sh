@@ -61,6 +61,17 @@ config="$home/config.yaml"
 # The repos posse claims to guard are exactly the keys of beads_visibility:,
 # which is also where the stamp each hook must carry comes from. Reading one
 # block for both keeps the two halves from disagreeing.
+#
+# This has to be posse's rule (yamlClean, internal/rhq/yamlflat.go), not a
+# spelling invented here (ranger-base-heyb; the same split fqfw and k3yd
+# already closed one level up, in cfg()): a comment starts at whitespace
+# followed by '#', not '#' anywhere (a hash with no space before it is data,
+# not a truncated line); a matched pair of double quotes is dropped, not
+# kept; and the value is the REST of the line after the first ':', trimmed —
+# not the awk field after it, which stops at the first space. Key and value
+# split on the first ':' only, so a repo path or a value with a space in it
+# does not get misread either.
+#
 # Read with a while-loop, not mapfile: the bash this box runs from
 # /usr/bin/env is 3.2, where mapfile does not exist and `set -u` then turns
 # its absence into an unbound-variable crash that exits 1 — a "findings"
@@ -72,11 +83,20 @@ done < <(awk '
   /^beads_visibility:/ { in_block = 1; next }
   in_block && /^[^[:space:]#]/ { in_block = 0 }
   in_block {
-    sub(/#.*/, "")
-    if (match($0, /^[[:space:]]+[^[:space:]]+:[[:space:]]*[^[:space:]]+/)) {
-      k = $1; sub(/:$/, "", k)
-      print k " " $2
+    line = $0
+    trimmed = line
+    sub(/^[ \t]+/, "", trimmed)
+    if (trimmed == "" || trimmed == line || substr(trimmed, 1, 1) == "#") next
+    i = index(trimmed, ":")
+    if (i <= 1) next
+    key = substr(trimmed, 1, i - 1)
+    val = substr(trimmed, i + 1)
+    sub(/[[:blank:]]#.*$/, "", val)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+    if (length(val) >= 2 && substr(val, 1, 1) == "\"" && substr(val, length(val), 1) == "\"") {
+      val = substr(val, 2, length(val) - 2)
     }
+    printf "%s\t%s\n", key, val
   }
 ' "$config")
 
@@ -139,7 +159,7 @@ findings=0
 finding() { findings=$((findings + 1)); echo "  FINDING  $*"; }
 
 for e in "${entries[@]}"; do
-  repo=${e%% *}; want=${e##* }
+  repo=${e%%$'\t'*}; want=${e#*$'\t'}
   repo=${repo/#\~/$HOME}
   short=${repo/#$HOME/\~}
   say ""

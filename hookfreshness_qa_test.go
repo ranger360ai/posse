@@ -1,4 +1,4 @@
-package posse
+package posse_test
 
 // QA pins for ranger-base-8zki — the detective control over L3 hook staleness,
 // scripts/verify-hook-freshness.sh.
@@ -37,6 +37,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/rhq"
 )
 
 const hfScript = "scripts/verify-hook-freshness.sh"
@@ -363,6 +365,87 @@ func TestQAHookFreshnessRefusesToPassWhenNothingWasMeasured(t *testing.T) {
 	}
 	if !strings.Contains(out, "nothing measured, not a pass") {
 		t.Errorf("it must say so:\n%s", out)
+	}
+}
+
+// ranger-base-heyb. The block reader disagreed with YamlMapPairs
+// (internal/rhq/yamlflat.go) on three rules — the same class of split fqfw
+// and k3yd already closed one level up, in cfg(): a comment starts at
+// whitespace + '#', not '#' anywhere, so a hash with no space before it is
+// data, not a truncated line; a matched pair of double quotes is dropped,
+// not kept, so a quoted path is not a different path; and the value is the
+// REST of the line after the first ':', trimmed — not the awk field after
+// it, which stopped at the first space and truncated a value (or a key)
+// with a space in it.
+//
+// Compared against YamlMapPairs directly, not a spelling: every corpus line
+// is read by both, and the script's printed "(config says: ...)" line must
+// name the same key and value YamlMapPairs read from the same file. The
+// repos are fictitious — the point is what got parsed out of config, not
+// whether anything was found on disk, so the run exits 2 (nothing measured)
+// on purpose, and that is not a failure of this test.
+func TestQAHookFreshnessSubkeyReaderAgreesWithYamlMapPairs(t *testing.T) {
+	bin := hfBuild(t)
+	git := hfGit(t)
+
+	corpus := []string{
+		"  /nowhere/plain: private",
+		"  /nowhere/hash#nospace: private",      // rule 1: no space before '#' — data, not a comment
+		`  /nowhere/quoted: "private"`,          // rule 2: a matched pair of quotes is dropped
+		"  /nowhere/valspace: pub lic",          // rule 3: the rest of the line, not the first field
+		"  /nowhere/keyspace with gap: private", // rule 3 on the key side too
+		"  /nowhere/spacedhash: private # a real comment",
+		"  /nowhere/tabhash: private\t# tab comment",
+		`  /nowhere/lonequote: "priv`,  // an unmatched quote is not a pair
+		`  /nowhere/nested: "pub#lic"`, // a hash inside a quoted value is data
+	}
+	config := "beads_visibility:\n" + strings.Join(corpus, "\n") + "\n"
+
+	home := t.TempDir()
+	rhqHome := filepath.Join(home, ".config", "posse")
+	if err := os.MkdirAll(rhqHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(rhqHome, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The control: what posse itself reads. Without it a mismatch below
+	// could mean the fixture is not what it claims to be, not that the
+	// script disagrees.
+	want := rhq.YamlMapPairs(cfgPath, "beads_visibility")
+	if len(want) != len(corpus) {
+		t.Fatalf("fixture is not what it claims to be: YamlMapPairs read %d pairs from %d corpus lines", len(want), len(corpus))
+	}
+
+	abs, err := filepath.Abs(hfScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(abs)
+	cmd.Env = []string{
+		"HOME=" + home,
+		"RHQ_HOME=" + rhqHome,
+		"POSSE=" + bin,
+		"PATH=" + filepath.Dir(git) + ":/usr/bin:/bin",
+	}
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("%s: %v\n%s", hfScript, err, out)
+	}
+	if code != 2 {
+		t.Fatalf("none of the corpus repos exist, so nothing measured (exit 2) is what proves the loop ran the whole corpus; got %d:\n%s", code, out)
+	}
+
+	for _, kv := range want {
+		line := "  " + kv[0] + "  (config says: " + kv[1] + ")"
+		if !strings.Contains(string(out), line) {
+			t.Errorf("script did not read %q the way YamlMapPairs did — wanted %q in:\n%s", kv[0]+": "+kv[1], line, out)
+		}
 	}
 }
 
