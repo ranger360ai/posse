@@ -123,10 +123,12 @@ launched with. Headroom as of 2026-08-27: every crew PID's line rendered to
 **591–691 bytes** against the 1023 limit — ~330 bytes of slack. Growing a
 typed line spends that slack — another deny rule (`--disallowedTools` is
 variadic), a longer `--settings`, more mounts — and by 2026-08-31 it was
-gone: the `--disallowedTools` per-verb prefix-spelling fix (`ranger-base-e7eo`)
-pushed every crew PID's line over 1023 B, and `state/launch/` held a spilled
-script per persona. A populated `state/launch/` is not a healthy-fleet
-signal; it is this fallback working as designed — a line that outgrew the
+gone: `ranger-base-u9ud`'s 23-verb `bd` deny-set widening (every crew PID's
+deny: list grows by 23 lines, each rendered through `--disallowedTools`'
+existing doubling) pushed every crew PID's line over 1023 B, and
+`state/launch/` held a spilled script per persona. A populated
+`state/launch/` is not a healthy-fleet signal; it is this fallback working
+as designed — a line that outgrew the
 limit gets sourced from a script instead of typed. The container tier's
 ~1.6KB engine line spent it in one go and had to render a file before this
 rule existed; see *Container tier* below.
