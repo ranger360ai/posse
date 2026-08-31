@@ -2854,6 +2854,9 @@ type l3HookProbe struct {
 // general.
 func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale bool, path string) {
 	top := filepath.Join(hooks, slot)
+	if !isRegularFile(top) {
+		return false, false, top
+	}
 	body, err := os.ReadFile(top)
 	if err == nil {
 		if identityMatch(top, render) {
@@ -2865,8 +2868,10 @@ func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale boo
 				if identityMatch(chained, render) {
 					return true, false, chained
 				}
-				if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker, legacy) {
-					return false, true, chained
+				if isRegularFile(chained) {
+					if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker, legacy) {
+						return false, true, chained
+					}
 				}
 				return false, false, chained
 			}
@@ -2877,12 +2882,24 @@ func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale boo
 	return false, false, top
 }
 
+// isRegularFile answers the question l3Identity must ask before it reads:
+// a FIFO or other special file at the dispatch path is never our render, and
+// os.ReadFile on a FIFO with no writer never returns (ranger-base-gs9r).
+// os.Stat follows symlinks, so a symlink to a regular file still passes.
+func isRegularFile(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular()
+}
+
 // identityMatch is byte-exact content plus the execute bit — the degenerate
 // check that DETERMINES behavior instead of hinting at it (ADR 0023,
-// amending ADR 0002 §3's "behavior, not the marker" doctrine).
+// amending ADR 0002 §3's "behavior, not the marker" doctrine). Non-regular
+// files (a FIFO, a device) never match — ranger-base-gs9r: an executable
+// FIFO passed the directory and execute-bit checks here and then blocked
+// forever on the ReadFile below.
 func identityMatch(path, render string) bool {
 	fi, err := os.Stat(path)
-	if err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+	if err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 || !fi.Mode().IsRegular() {
 		return false
 	}
 	body, err := os.ReadFile(path)

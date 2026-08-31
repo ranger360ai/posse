@@ -276,7 +276,6 @@ func TestQAAChainCertifiedByIdentityRefusesThroughAHostileNeighbour(t *testing.T
 // fast); at 88a7726 both modes block. The executable case predates the ADR;
 // the widening to any mode does not.
 func TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath(t *testing.T) {
-	t.Skip("ranger-base-gs9r: os.ReadFile on a FIFO at the dispatch path never returns; every launch into the repo hangs")
 	repo, hooks := qaHookRepo(t)
 	slot := filepath.Join(hooks, "prepare-commit-msg")
 	if err := syscall.Mkfifo(slot, 0o644); err != nil {
