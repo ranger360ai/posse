@@ -1058,7 +1058,7 @@ func main() {
 		if !posse.NewBd().Available() {
 			die(posse.Die("bd not found in PATH"))
 		}
-		if err := a.Scorecard(posse.NewBd(), out, persona); err != nil {
+		if err := a.Scorecard(posse.NewBd(), out, persona, time.Now()); err != nil {
 			die(err)
 		}
 

@@ -297,7 +297,7 @@ func ReopensFromGit(dir string) map[string]int {
 
 // Scorecard aggregates scores across the configured repos for every
 // persona (or one), and prints them with the metric lines each PID names.
-func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
+func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string, now time.Time) error {
 	personas := a.ListAgents()
 	if personaFilter != "" {
 		personas = []string{personaFilter}
@@ -308,6 +308,7 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 	totals := map[string]Score{}
 	repos := 0
 	var failed []error
+	var allIssues []BdIssue
 	for _, dir := range a.BeadsDirs() {
 		issues, err := bd.ListAll(dir)
 		if err != nil {
@@ -325,6 +326,7 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 			continue
 		}
 		repos++
+		allIssues = append(allIssues, issues...)
 		reopens := ReopensFromGit(dir)
 		for _, p := range personas {
 			totals[p] = addScore(totals[p], ScoreIssues(p, issues, reopens))
@@ -393,7 +395,134 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string) error {
 	case !coverage.ReopensKnown():
 		fmt.Fprintln(w, "\nreopened: ? — no git history of .beads/issues.jsonl to read transitions from")
 	}
+	writeHarnessRatios(w, allIssues, personas, now)
 	return nil
+}
+
+// ─── harness-upkeep ratio (rangerhq-ndi) ─────────────────────────────────────
+//
+// DIRECTION.md's caution: Gas Town died of harness self-refinement, and
+// Yegge budgets ~20-25% of all work going to harness upkeep. This makes the
+// number visible so the budget is a fact, not a feeling: per window, the
+// share of closed beads whose OWN id names the harness repo versus every
+// other repo the instance's beads: config aggregates.
+//
+// A bead's repo is read from its id, not from which configured `beads:` dir
+// happened to list it: a redirect can serve several repos' issues out of one
+// physical store (queuejsonl.go, ADR 0015 §4 — this instance's own
+// beads: list holds a single entry whose redirect chain lands on the shared
+// queue db, and that db carries both rangerhq- and ranger-base- ids), so the
+// dir is not a reliable repo boundary and the id prefix is the only fact bd
+// hands back that is. bd assigns ids "<repo>-<slug>" with the slug itself
+// never containing a hyphen (observed across every id in this instance's
+// live store), so `<prefix>-` is an exact match, not a heuristic.
+//
+// "rangerhq" is the harness's own bd project — the literal name survives
+// this repo's later rename to posse (config.yaml: "was ~/src/rangerhq"), so
+// the prefix on issues filed against posse's own code and process is still
+// rangerhq-, unchanged. Everything else (this instance: ranger-base-) is
+// product/ops work, which is what the budget is measured against: in a
+// single-repo instance whose one bd project IS the harness, the ratio is
+// trivially 100% — the metric only means something once an instance's
+// beads: aggregation actually spans a harness project and something else.
+const HarnessRepoPrefix = "rangerhq"
+
+// IsHarnessBead reports whether id belongs to the harness repo.
+func IsHarnessBead(id string) bool {
+	return strings.HasPrefix(id, HarnessRepoPrefix+"-")
+}
+
+// HarnessWindows are the report windows for the ratio: 7d and 30d, in that
+// order, so a slower creep (30d) never hides behind a quiet week (7d) or
+// vice versa — both windows print, always.
+var HarnessWindows = []time.Duration{7 * 24 * time.Hour, 30 * 24 * time.Hour}
+
+func fmtHarnessWindow(d time.Duration) string {
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// HarnessCounts is closed beads and how many of those are harness, for one
+// persona (or the instance total) over one window.
+type HarnessCounts struct {
+	Harness int
+	Closed  int
+}
+
+// String renders the ratio next to the counts — no threshold, no verdict,
+// just the two numbers and the percent (rangerhq-ndi: "no thresholds or
+// alerts, just the ratio next to the counts").
+func (c HarnessCounts) String() string {
+	if c.Closed == 0 {
+		return "no closes"
+	}
+	return fmt.Sprintf("%d/%d (%.0f%%)", c.Harness, c.Closed, 100*float64(c.Harness)/float64(c.Closed))
+}
+
+// HarnessRatios buckets every closed issue into each window it falls in
+// (now − ClosedAt ≤ window), split harness vs everything else, by persona
+// (assignee) and total ("" key). now is a parameter rather than time.Now()
+// so a hermetic test can hold the clock still against fixed closed_at
+// stamps; a bead closed after now (clock skew) counts in no window rather
+// than in every one.
+func HarnessRatios(issues []BdIssue, now time.Time) map[time.Duration]map[string]HarnessCounts {
+	out := make(map[time.Duration]map[string]HarnessCounts, len(HarnessWindows))
+	for _, w := range HarnessWindows {
+		out[w] = map[string]HarnessCounts{}
+	}
+	for _, is := range issues {
+		if is.Status != "closed" || is.ClosedAt == nil {
+			continue
+		}
+		age := now.Sub(*is.ClosedAt)
+		if age < 0 {
+			continue
+		}
+		harness := IsHarnessBead(is.ID)
+		for _, w := range HarnessWindows {
+			if age > w {
+				continue
+			}
+			bucket := out[w]
+			add := func(key string) {
+				c := bucket[key]
+				c.Closed++
+				if harness {
+					c.Harness++
+				}
+				bucket[key] = c
+			}
+			add("")
+			if is.Assignee != "" {
+				add(is.Assignee)
+			}
+		}
+	}
+	return out
+}
+
+// writeHarnessRatios prints the ratio table: one column per window, one row
+// per persona plus the instance total, read from every issue Scorecard
+// already scanned — the same repos, the same failed-repo caveat above.
+func writeHarnessRatios(w io.Writer, issues []BdIssue, personas []string, now time.Time) {
+	ratios := HarnessRatios(issues, now)
+	fmt.Fprintf(w, "\nharness-upkeep ratio (%s-* beads vs everything else the beads: config aggregates; DIRECTION.md budgets ~20-25%%, no threshold enforced here)\n", HarnessRepoPrefix)
+	fmt.Fprintf(w, "%-16s", "persona")
+	for _, win := range HarnessWindows {
+		fmt.Fprintf(w, " %18s", fmtHarnessWindow(win))
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%-16s", "total")
+	for _, win := range HarnessWindows {
+		fmt.Fprintf(w, " %18s", ratios[win][""].String())
+	}
+	fmt.Fprintln(w)
+	for _, p := range personas {
+		fmt.Fprintf(w, "%-16s", p)
+		for _, win := range HarnessWindows {
+			fmt.Fprintf(w, " %18s", ratios[win][p].String())
+		}
+		fmt.Fprintln(w)
+	}
 }
 
 func fmtAge(d time.Duration) string {

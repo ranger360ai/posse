@@ -167,7 +167,7 @@ func TestScorecardOutput(t *testing.T) {
 	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
 
 	var out strings.Builder
-	if err := b.App.Scorecard(bd, &out, ""); err != nil {
+	if err := b.App.Scorecard(bd, &out, "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	s := out.String()
@@ -273,7 +273,7 @@ func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
 	card := func() string {
 		t.Helper()
 		var out strings.Builder
-		if err := b.App.Scorecard(bd, &out, "dev"); err != nil {
+		if err := b.App.Scorecard(bd, &out, "dev", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		return out.String()
@@ -318,7 +318,7 @@ func scorecardRig(t *testing.T, dirs ...string) func() (string, error) {
 	os.WriteFile(b.App.ConfigPath, []byte(cfg), 0o644)
 	return func() (string, error) {
 		var out strings.Builder
-		err := b.App.Scorecard(bd, &out, "dev")
+		err := b.App.Scorecard(bd, &out, "dev", time.Now())
 		return out.String(), err
 	}
 }
@@ -578,5 +578,112 @@ func TestIsRejectedCloseMatchesWordsNotSubstrings(t *testing.T) {
 		if got := isRejectedClose(tc.reason); got != tc.want {
 			t.Errorf("isRejectedClose(%q) = %v, want %v", tc.reason, got, tc.want)
 		}
+	}
+}
+
+// The harness-upkeep ratio (rangerhq-ndi, DIRECTION.md's ~20-25% budget):
+// a bead's repo is read from its OWN id prefix, not from which configured
+// beads: dir served it — a redirect can serve several repos out of one
+// store. This pins IsHarnessBead and the window bucketing in isolation,
+// against a fixed clock, before the end-to-end aggregation test below.
+func TestHarnessRatios(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want bool
+	}{
+		{"rangerhq-ndi", true},
+		{"rangerhq-01m", true},
+		{"ranger-base-0yiy", false},
+		{"acme-1", false},
+		// A bare "rangerhq" with no id at all must not match the prefix
+		// test loosely — it is missing the hyphen the real ids always
+		// carry, so it is not this repo's id shape.
+		{"rangerhq", false},
+		{"rangerhqx-1", false},
+	} {
+		if got := IsHarnessBead(tc.id); got != tc.want {
+			t.Errorf("IsHarnessBead(%q) = %v, want %v", tc.id, got, tc.want)
+		}
+	}
+
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	at := func(daysAgo int) *time.Time { x := now.AddDate(0, 0, -daysAgo); return &x }
+	issues := []BdIssue{
+		{ID: "rangerhq-1", Status: "closed", Assignee: "dev", ClosedAt: at(1)},  // harness, in both windows
+		{ID: "other-1", Status: "closed", Assignee: "dev", ClosedAt: at(2)},     // product, in both windows
+		{ID: "rangerhq-2", Status: "closed", Assignee: "dev", ClosedAt: at(10)}, // harness, 30d only
+		{ID: "other-2", Status: "closed", Assignee: "ops", ClosedAt: at(40)},    // outside both windows
+		{ID: "rangerhq-3", Status: "open", Assignee: "dev"},                     // not closed at all
+		{ID: "other-3", Status: "closed", Assignee: "", ClosedAt: at(0)},        // unassigned: total only
+		{ID: "rangerhq-4", Status: "closed", Assignee: "dev", ClosedAt: at(-1)}, // closed after now: clock skew, counted nowhere
+	}
+	ratios := HarnessRatios(issues, now)
+
+	week, month := 7*24*time.Hour, 30*24*time.Hour
+	if got, want := ratios[week][""], (HarnessCounts{Harness: 1, Closed: 3}); got != want {
+		t.Errorf("7d total = %+v, want %+v", got, want)
+	}
+	if got, want := ratios[week]["dev"], (HarnessCounts{Harness: 1, Closed: 2}); got != want {
+		t.Errorf("7d dev = %+v, want %+v", got, want)
+	}
+	if got, want := ratios[month][""], (HarnessCounts{Harness: 2, Closed: 4}); got != want {
+		t.Errorf("30d total = %+v, want %+v", got, want)
+	}
+	if got, want := ratios[month]["dev"], (HarnessCounts{Harness: 2, Closed: 3}); got != want {
+		t.Errorf("30d dev = %+v, want %+v", got, want)
+	}
+	// A persona with no closes inside the window is the zero value, not a
+	// missing entry that a caller must special-case.
+	if got := ratios[week]["ops"]; got.Closed != 0 {
+		t.Errorf("ops has no closes within 7d, got %+v", got)
+	}
+	if s := ratios[week]["ops"].String(); s != "no closes" {
+		t.Errorf(`empty HarnessCounts.String() = %q, want "no closes"`, s)
+	}
+	if s := ratios[week][""].String(); s != "1/3 (33%)" {
+		t.Errorf("7d total String() = %q, want %q", s, "1/3 (33%)")
+	}
+}
+
+// The unit test above pins the math; this is the DONE WHEN at the command's
+// own level (rangerhq-ndi: "must use the same multi-repo aggregation rhq
+// ready uses"). Two fake repos stand in for an instance whose beads:
+// aggregation spans a harness project and a product one — exactly the case
+// the bead says is the only one this ratio means anything for — and the
+// card must sum both, not just the one bd happened to read first.
+func TestScorecardHarnessRatioAcrossRepos(t *testing.T) {
+	b, _ := newTestBackend(t)
+	exe, _ := os.Executable()
+	bd := Bd{Bin: exe}
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\nlabels: [code]\n---\nYou are dev.\n"), 0o644)
+
+	harnessRepo := t.TempDir()
+	os.WriteFile(filepath.Join(harnessRepo, "fake-list.json"), []byte(`[
+		{"id":"rangerhq-1","status":"closed","assignee":"dev","closed_at":"2026-08-01T00:00:00Z"},
+		{"id":"rangerhq-2","status":"closed","assignee":"dev","closed_at":"2026-08-01T00:00:00Z"}]`), 0o644)
+	productRepo := t.TempDir()
+	os.WriteFile(filepath.Join(productRepo, "fake-list.json"), []byte(`[
+		{"id":"acme-1","status":"closed","assignee":"dev","closed_at":"2026-08-01T00:00:00Z"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+harnessRepo+"\n  - "+productRepo+"\n"), 0o644)
+
+	// now is two days after every fixture's closed_at, well inside both
+	// report windows — fixed rather than time.Now() so the assertion does
+	// not depend on when the suite happens to run.
+	now := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	var out strings.Builder
+	if err := b.App.Scorecard(bd, &out, "dev", now); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "harness-upkeep ratio") {
+		t.Fatalf("scorecard missing the harness-upkeep ratio section:\n%s", s)
+	}
+	// 3 closed across the two repos, 2 of them rangerhq- : 2/3 (67%), for
+	// both the total row and dev's row (dev holds every close here), in
+	// both the 7d and 30d columns.
+	if n := strings.Count(s, "2/3 (67%)"); n != 4 {
+		t.Errorf("want the 2/3 (67%%) ratio 4 times (total+dev × 7d+30d), got %d:\n%s", n, s)
 	}
 }
