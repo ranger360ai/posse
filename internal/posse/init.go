@@ -121,6 +121,26 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	// re-stamp it or leave the next dispatched launch refusing over the very
 	// files it just repaired.
 	wrote := 0
+	// touchedPromoted is the subset of what init wrote that actually falls
+	// inside PromotedPaths — envs/ and the example shelf are copied through
+	// the same helper but are neither promoted nor part of what the seeded
+	// manifest attests to. Narrowing the "repaired" re-stamp below to just
+	// these paths keeps it from re-anchoring drift already sitting in a
+	// promoted file this run never touched (ranger-base-9afo).
+	var touchedPromoted []string
+	promotedRel := func(to string) (string, bool) {
+		rel, err := filepath.Rel(a.Home, to)
+		if err != nil {
+			return "", false
+		}
+		rel = filepath.ToSlash(rel)
+		for _, base := range PromotedPaths {
+			if rel == base || strings.HasPrefix(rel, base+"/") {
+				return rel, true
+			}
+		}
+		return "", false
+	}
 	copyIfMissing := func(fromPath, to string, mode os.FileMode) error {
 		if _, err := os.Stat(to); err == nil {
 			return nil
@@ -133,6 +153,9 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			return err
 		}
 		wrote++
+		if rel, ok := promotedRel(to); ok {
+			touchedPromoted = append(touchedPromoted, rel)
+		}
 		return nil
 	}
 	if err := copyIfMissing("config.yaml", a.ConfigPath, 0o644); err != nil {
@@ -254,11 +277,13 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	// about a commit, and only `posse promote` may restate it.
 	repaired := !fresh && wrote > 0 && man != nil && man.Seeded
 	if repaired {
-		files, err := HashPromotedSet(a.Home)
-		if err != nil {
-			return err
+		for _, rel := range touchedPromoted {
+			sum, err := sha256File(filepath.Join(a.Home, filepath.FromSlash(rel)))
+			if err != nil {
+				return err
+			}
+			man.Files[rel] = sum
 		}
-		man.Files = files
 		if err := man.write(a.PromoteManifestPath()); err != nil {
 			return err
 		}
@@ -476,13 +501,16 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 		fmt.Fprintf(w, "  work parked on them is not reassigned: check `bd list --assignee <name>` in each repo you dispatch from\n")
 		// A seeded manifest is a hash of what init laid down; init just
 		// changed that, so it re-stamps rather than leaving the next launch
-		// to report the files it removed on purpose as MISSING.
+		// to report the files it removed on purpose as MISSING. Narrow to
+		// exactly the paths retirement touched: dropping the retired
+		// agents/<name>.md entries, not re-hashing the whole promoted set,
+		// which would silently re-anchor any unrelated drift already
+		// sitting in config.yaml, recipes/ or skills/ — exactly what the
+		// ADR 0015 §3 launch verify exists to refuse (ranger-base-9afo).
 		if man != nil && man.Seeded {
-			files, err := HashPromotedSet(a.Home)
-			if err != nil {
-				return err
+			for _, name := range retired {
+				delete(man.Files, path.Join("agents", name+".md"))
 			}
-			man.Files = files
 			if err := man.write(a.PromoteManifestPath()); err != nil {
 				return err
 			}

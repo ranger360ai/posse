@@ -5,13 +5,13 @@ package posse
 // leaves agents/ empty. The UPGRADE half — the half the bead called the one
 // that "must not be worse than the bug" — had two defects, pinned here.
 //
-// Both live in retireExamplePIDs (init.go). DEFECT 1 is FIXED
-// (ranger-base-8ehw) and its pin is now the inversion: it asserts the fixed
-// behaviour and fails if judging ever goes back to the running binary's bytes
-// alone. DEFECT 2 is still open (ranger-base-9afo) and is pinned the way
-// rangerhq-th7l asks for: the CURRENT behaviour is asserted and the assertion
-// fails loudly the moment it changes, so the suite stays green and the defect
-// cannot be fixed — or made worse — without this file saying so.
+// Both are FIXED. DEFECT 1 (ranger-base-8ehw) lives in retireExamplePIDs
+// (init.go); its pin is the inversion — it asserts the fixed behaviour and
+// fails if judging ever goes back to the running binary's bytes alone.
+// DEFECT 2 (ranger-base-9afo) spanned retireExamplePIDs and initFrom's
+// "repaired" re-stamp; its pin now asserts the fixed behaviour directly
+// (an upgrade retirement leaves unrelated drift anchored, so the launch
+// verify still refuses it) rather than pinning the defect.
 //
 // Self-contained (own helpers, own fixtures): a pin an edit next door can
 // carry away pinned nothing.
@@ -263,17 +263,24 @@ init said:
 	}
 }
 
-// DEFECT 2 (ranger-base-8b3h). When a retirement happens on a `seeded` home,
-// init re-stamps the manifest with HashPromotedSet(Home) — the WHOLE promoted
-// set, not the agents/ entries it just changed. Anything already drifted in
-// config.yaml, recipes/ or skills/ is silently re-anchored as the new truth,
-// so the ADR 0015 §3 launch verify that would have refused dispatch on it
-// comes back clean instead. Pre-fix `posse init` never wrote over an existing
-// manifest at all (SeedPromoteManifest returns early), so this is new, and it
-// is wider than the close's stated intent ("re-stamps rather than leaving the
-// next launch to report the files it removed on purpose as MISSING").
+// DEFECT 2 (ranger-base-8b3h), FIXED by ranger-base-9afo. When a retirement
+// happened on a `seeded` home, init used to re-stamp the manifest with
+// HashPromotedSet(Home) — the WHOLE promoted set, not just the paths it
+// actually changed — which silently re-anchored any drift already sitting in
+// config.yaml, recipes/ or skills/ and let the ADR 0015 §3 launch verify come
+// back clean over it. The same defect lived a second place in this file: the
+// "repaired" re-stamp in initFrom (fired when a gap-filling init writes a
+// missing seed file) did the identical whole-tree rehash, and reproduced the
+// same blessing on its own even after retireExamplePIDs was narrowed — a
+// single init call exercises both, and the pin here stayed green against the
+// first fix alone until the second site was narrowed too.
 //
-// The narrow form is available: drop the retired paths from man.Files.
+// Both sites now touch only the paths this run actually wrote or moved:
+// retireExamplePIDs drops the retired agents/<name>.md entries, and the
+// initFrom "repaired" branch re-hashes only the promoted files copyIfMissing
+// wrote (tracked as touchedPromoted, which excludes envs/ and the example
+// shelf — copied through the same helper but neither promoted nor part of
+// what the seeded manifest attests to).
 func TestRetirementRestampBlessesUnrelatedConstitutionDrift(t *testing.T) {
 	a := preFixHome(t, posse.Seed) // same-version home, so the retirement fires
 	recipe := filepath.Join(a.RecipesDir, "scratch.yaml")
@@ -330,19 +337,15 @@ func TestRetirementRestampBlessesUnrelatedConstitutionDrift(t *testing.T) {
 	if err != nil || after == nil {
 		t.Fatalf("manifest after: %v", err)
 	}
-	switch after.Files[rel] {
-	case anchored:
-		t.Fatalf(`ranger-base-8b3h DEFECT 2 LOOKS FIXED — the retirement re-stamp no longer
-re-hashes %s. If it now only drops the retired agents/ entries, that is the fix:
-delete this pin and say so on the bead.`, rel)
-	case drifted:
-		// The pinned defect: drift outside agents/ is now blessed, and the
-		// verify that would have refused dispatch comes back clean.
-		if v := a.VerifyPromoted(); !v.OK() {
-			t.Fatalf("re-stamp recorded the drifted hash but the verify still fails: %s", v.Line())
-		}
-	default:
-		t.Fatalf(`ranger-base-8b3h DEFECT 2 MOVED — %s is now anchored at neither the seeded
-hash nor the drifted one. Re-read the bead before touching this pin.`, rel)
+	if after.Files[rel] != anchored {
+		t.Fatalf(`ranger-base-9afo REGRESSED — %s is no longer anchored at the pre-drift hash after
+an upgrade init that retired the nine. The re-stamp must touch only the paths
+this run actually changed (the retired agents/ entries, and whatever
+copyIfMissing wrote), never re-hash the whole promoted set — that re-anchors
+unrelated drift and lets the ADR 0015 §3 launch verify come back clean over
+it. got %q, want the pre-drift hash %q`, rel, after.Files[rel], anchored)
+	}
+	if v := a.VerifyPromoted(); v.OK() {
+		t.Fatalf("ranger-base-9afo REGRESSED — the drift in %s is no longer refused by the launch verify: %s", rel, v.Line())
 	}
 }
