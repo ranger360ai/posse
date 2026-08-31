@@ -21,13 +21,27 @@ func (a *App) envFilePath(name string) (string, error) {
 	}
 	f := filepath.Join(a.EnvsDir, name+".env")
 	if _, err := os.Stat(f); err == nil {
-		return f, nil
+		return storeContained(a.EnvsDir, f, "env set", name)
 	}
 	f = filepath.Join(a.EnvsDir, name) // allow names with or without .env
 	if _, err := os.Stat(f); err == nil {
-		return f, nil
+		return storeContained(a.EnvsDir, f, "env set", name)
 	}
 	return "", Die("env set not found: %s (looked in %s)", name, a.EnvsDir)
+}
+
+// storeContained is storeName's other half: the guard above is on the NAME,
+// this is on where it RESOLVES. A name with no `/` still reaches outside its
+// store if the name itself is a symlink — `envs/leak.env -> ../secrets/x` —
+// so f is resolved the way the seatbelt already resolves paths (absResolve,
+// EvalSymlinks over the longest existing prefix) and checked against dir
+// with the same underDir ConstitutionGrants uses. ADR 0019 D1's one-hand
+// rule again, one layer down (ranger-base-a7e4).
+func storeContained(dir, f, kind, name string) (string, error) {
+	if !underDir(dir, f) {
+		return "", Die("%s name resolves outside its store: %q", kind, name)
+	}
+	return f, nil
 }
 
 // storeName reports whether name may be resolved inside a credential store
@@ -107,11 +121,14 @@ func tightenCredentialDir(w io.Writer, dir, why string) {
 }
 
 // ListEnvSets returns env set names (envs/*.env, extension stripped), sorted.
+// A symlink is skipped, not followed: `posse envs` must not name a set the
+// operator did not write into envs/ as a file (ranger-base-a7e4, same
+// question one directory down as storeContained).
 func (a *App) ListEnvSets() []string {
 	ents, _ := os.ReadDir(a.EnvsDir)
 	var out []string
 	for _, e := range ents {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".env") {
+		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".env") {
 			out = append(out, strings.TrimSuffix(e.Name(), ".env"))
 		}
 	}

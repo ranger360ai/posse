@@ -52,11 +52,11 @@ func (a *App) secretFilePath(name string) (string, error) {
 	}
 	f := filepath.Join(a.SecretsDir, name+".env")
 	if _, err := os.Stat(f); err == nil {
-		return f, nil
+		return storeContained(a.SecretsDir, f, "harness secret", name)
 	}
 	f = filepath.Join(a.SecretsDir, name)
 	if _, err := os.Stat(f); err == nil {
-		return f, nil
+		return storeContained(a.SecretsDir, f, "harness secret", name)
 	}
 	return "", Die("harness secret not found: %s (looked in %s)", name, AbbrevHome(a.SecretsDir))
 }
