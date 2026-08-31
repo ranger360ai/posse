@@ -100,6 +100,34 @@ func (a *App) CmdInit(w io.Writer) error {
 // initFrom copies src into RHQ_HOME. Paths inside src are slash-separated
 // (io/fs), paths under Home are the platform's — hence path vs filepath.
 func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
+	// ADR 0031 §2: init joins the operator fence, keyed on the target home
+	// rather than blanket-refusing under EnvPersona (the promote/refresh
+	// shape) — a persona's throwaway `RHQ_HOME=<scratch> posse init` is how
+	// QA seeds fixtures and how the leak this ADR fixes was itself measured,
+	// and only the target home decides whether a write is harmful. §3: no
+	// PID deny line — the L1 shim sees only argv, never what RHQ_HOME
+	// resolves to, so it cannot express "this target, not that one".
+	if os.Getenv(EnvPersona) != "" {
+		origin := os.Getenv(EnvLaunchHome)
+		if origin == "" {
+			// Fail closed: a session that cannot prove where it came from
+			// does not get to write anywhere it might have come from. Only
+			// reachable in the window between promoting a post-0031 binary
+			// and a session's next relaunch (a pre-0031 launcher never
+			// stamped EnvLaunchHome).
+			return Die("posse init refuses to run (ADR 0031 §2): %s is set but %s is not, so this session cannot prove it wasn't launched from the home it's about to write — relaunch the session (a post-0031 launcher stamps %s), or ask the operator to run init themselves\n  to seed a scratch home from here instead: RHQ_HOME=<scratch> posse init",
+				EnvPersona, EnvLaunchHome, EnvLaunchHome)
+		}
+		// underDir resolves the longest existing prefix of each side through
+		// symlinks (a throwaway target usually does not exist yet; the
+		// pre-cutover home is a symlink onto the instance repo, ADR 0015
+		// §2) before comparing cleaned paths, so this catches both the
+		// exact-match case and a target nested inside the origin.
+		if underDir(origin, a.Home) {
+			return Die("posse init refuses to write the home it was launched from (ADR 0031 §2): %s resolves inside %s\n  to seed a scratch home instead: RHQ_HOME=<scratch> posse init",
+				a.Home, origin)
+		}
+	}
 	// Both facts are about the home init FOUND, and init writes into the
 	// promoted set itself — so they are only knowable here, before the first
 	// copy. What they decide is the manifest stamp at the bottom

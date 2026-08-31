@@ -30,6 +30,8 @@ import (
 
 func homeQA8b3h(t *testing.T) *App {
 	t.Helper()
+	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
+	t.Setenv(EnvPersona, "")
 	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 

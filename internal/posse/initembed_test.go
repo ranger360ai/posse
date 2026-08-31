@@ -20,6 +20,11 @@ import (
 func initTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
+	// Hermetic against the operator fence (ADR 0031 §2): a test process
+	// running inside a real persona session inherits RHQ_PERSONA from the
+	// ambient env, and initFrom now reads it. These callers are all driving
+	// init as the operator would, so the fence must not see a persona at all.
+	t.Setenv(EnvPersona, "")
 	return NewApp()
 }
 

@@ -23,6 +23,8 @@ import (
 func seedQAHome(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
+	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
+	t.Setenv(EnvPersona, "")
 	return NewApp()
 }
 

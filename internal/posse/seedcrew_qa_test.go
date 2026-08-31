@@ -31,6 +31,10 @@ import (
 
 func crewQAHome(t *testing.T) *App {
 	t.Helper()
+	// Hermetic against the operator fence (ADR 0031 §2): these fixtures drive
+	// init as the operator, and a test process inside a real persona session
+	// otherwise inherits RHQ_PERSONA from the ambient env.
+	t.Setenv(EnvPersona, "")
 	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 

@@ -46,6 +46,8 @@ import (
 // binary seeded with.
 func olderHomeRgx0(t *testing.T, seed map[string][]byte) *App {
 	t.Helper()
+	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
+	t.Setenv(EnvPersona, "")
 	a := NewAppAt(filepath.Join(t.TempDir(), "home"))
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("seeding the fixture home: %v", err)

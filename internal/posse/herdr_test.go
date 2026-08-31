@@ -1325,6 +1325,11 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("RHQ_FAKE_HERDR", "1")
 	t.Setenv("RHQ_FAKE_DIR", fake)
+	// Hermetic against the operator fence (ADR 0031 §2): this backend
+	// defaults to an operator session, and a test process running inside a
+	// real persona session otherwise inherits RHQ_PERSONA from the ambient
+	// env. A test that means to drive init as a persona sets it back.
+	t.Setenv(EnvPersona, "")
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
