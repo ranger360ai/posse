@@ -1,12 +1,12 @@
 package posse
 
 // The REAL-line audit (ranger-base-urnj, cut from the 2026-08-27 fleet-freeze
-// RCA — see ranger-base-ernt and [[bash-tool-wedged-in-posse-worktree]]).
+// RCA — see ranger-base-ernt).
 //
 // ranger-base-f0ay makes writeGateShell REFUSE to render a wrapper whose
-// REAL is another gate wrapper — the chain that closed into a cycle
-// (monica↔jian-yang) and wedged every Bash spawn in the fleet for ~2h. That
-// is prevention, at render time, in the binary doing the rendering. This is
+// REAL is another gate wrapper — the chain that closed into a two-persona
+// cycle and wedged every Bash spawn in the fleet for ~2h. That is
+// prevention, at render time, in the binary doing the rendering. This is
 // detection, standing: a wrapper written by a binary older than f0ay, or one
 // a future bug re-introduces, sits on disk as a live wedge waiting for its
 // next spawn — and until this file existed, nothing ever looked. The

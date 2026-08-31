@@ -53,8 +53,8 @@ func TestChainedGateWrappersCleanAuditIsEmpty(t *testing.T) {
 // wrapper. The audit must name persona, path and REAL — not just say "bad".
 func TestChainedGateWrappersFindsAChain(t *testing.T) {
 	a := NewAppAt(t.TempDir())
-	monica := plantWrapper(t, a, "monica", "zsh", filepath.Join(a.GatesDir("jian-yang"), "shell", "zsh"))
-	jianYang := plantWrapper(t, a, "jian-yang", "zsh", filepath.Join(a.GatesDir("monica"), "shell", "zsh"))
+	alpha := plantWrapper(t, a, "alpha", "zsh", filepath.Join(a.GatesDir("bravo"), "shell", "zsh"))
+	bravo := plantWrapper(t, a, "bravo", "zsh", filepath.Join(a.GatesDir("alpha"), "shell", "zsh"))
 	// A third, honest wrapper must not be swept up as a false positive.
 	plantWrapper(t, a, "coordinator", "zsh", "/bin/zsh")
 
@@ -69,15 +69,15 @@ func TestChainedGateWrappersFindsAChain(t *testing.T) {
 	for _, w := range bad {
 		byPersona[w.Persona] = w
 	}
-	if w, ok := byPersona["monica"]; !ok || w.Path != monica || w.Real != jianYang {
-		t.Errorf("monica's row = %+v, want Path=%s Real=%s", w, monica, jianYang)
+	if w, ok := byPersona["alpha"]; !ok || w.Path != alpha || w.Real != bravo {
+		t.Errorf("alpha's row = %+v, want Path=%s Real=%s", w, alpha, bravo)
 	}
-	if w, ok := byPersona["jian-yang"]; !ok || w.Path != jianYang || w.Real != monica {
-		t.Errorf("jian-yang's row = %+v, want Path=%s Real=%s", w, jianYang, monica)
+	if w, ok := byPersona["bravo"]; !ok || w.Path != bravo || w.Real != alpha {
+		t.Errorf("bravo's row = %+v, want Path=%s Real=%s", w, bravo, alpha)
 	}
 
 	witness := a.RealAuditWitness(os.Stderr)
-	for _, want := range []string{"2 chained gate wrapper", "monica", "jian-yang", monica, jianYang, "ranger-base-f0ay"} {
+	for _, want := range []string{"2 chained gate wrapper", "alpha", "bravo", alpha, bravo, "ranger-base-f0ay"} {
 		if !strings.Contains(witness, want) {
 			t.Errorf("the witness must name %q:\n%s", want, witness)
 		}
@@ -108,8 +108,8 @@ func TestDispatchLogsTheAuditButDoesNotDecline(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	pauseRepo(t, b, fake)
-	plantWrapper(t, b.App, "monica", "zsh", filepath.Join(b.App.GatesDir("jian-yang"), "shell", "zsh"))
-	plantWrapper(t, b.App, "jian-yang", "zsh", filepath.Join(b.App.GatesDir("monica"), "shell", "zsh"))
+	plantWrapper(t, b.App, "alpha", "zsh", filepath.Join(b.App.GatesDir("bravo"), "shell", "zsh"))
+	plantWrapper(t, b.App, "bravo", "zsh", filepath.Join(b.App.GatesDir("alpha"), "shell", "zsh"))
 
 	n, err := d.Run("", "", 0)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestDispatchLogsTheAuditButDoesNotDecline(t *testing.T) {
 		t.Fatalf("a found chain must not stop the pass from dispatching: n=%d\n%s", n, dispatcherOut(d))
 	}
 	out := dispatcherOut(d)
-	for _, want := range []string{"gate audit", "monica", "jian-yang"} {
+	for _, want := range []string{"gate audit", "alpha", "bravo"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the pass must log the audit hit loudly, want %q:\n%s", want, out)
 		}
