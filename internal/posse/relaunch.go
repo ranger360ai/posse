@@ -662,6 +662,26 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 		return false, nil
 	}
 
+	// No PromptMode() check here, unlike dispatch.go's and herdrback.go's
+	// AgentPrompt/launch-line callers (ranger-base-ewq9) — and that is not
+	// an oversight. Both of those consult it to decide where a CREATE's
+	// work prompt goes: on the runtime's argv line, because no process
+	// exists yet to type into, or typed once one is up. landThePlane never
+	// creates — AgentTarget just resolved a LIVE process, above — so there
+	// is no launch line to choose between; typed AgentPrompt is the only
+	// delivery mechanism there is, on every runtime. pulse.go's mid-session
+	// nudge is the same shape and is unguarded for the same reason.
+	//
+	// And typed delivery was measured, live, to land on both prompt:argv
+	// runtimes post-turn — including a pane that had never taken a turn at
+	// all: it appended real ORDERS.md lessons on grok and produced a real
+	// summary on codex (ranger-base-i0qp, laurie 2026-08-29). ADR 0013 §2's
+	// undetectable virgin pane did not reproduce here: that finding is
+	// about a pane with no turn behind it, not a relaunch target, which by
+	// definition has already worked. This bead's original premise — that
+	// the landing turn silently fails on these runtimes — is refuted; keep
+	// this call branchless rather than building an argv landing path on
+	// the strength of a failure that was never there.
 	fmt.Fprintf(w, "landing %s (up to %s)…\n", m.Name, timeout)
 	if _, err := b.H.AgentPrompt(target, prompt, true, remaining()); err != nil {
 		if IsHerdrCode(err, "timeout") {
