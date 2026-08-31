@@ -554,9 +554,9 @@ func egressRow(rt *Runtime) stageRow {
 }
 
 // cageCredRow: the env var an authenticated CAGED session needs. A container
-// has no keychain and an on-disk credential is stale or unrefreshable there,
-// so an undecided one refuses `cage: container` with the reason instead of
-// spending the launch on a session that cannot reach its API.
+// has no keychain and posse never reads an on-disk credential file there
+// either, so an undecided one refuses `cage: container` with the reason
+// instead of spending the launch on a session that cannot reach its API.
 func cageCredRow(rt *Runtime) stageRow {
 	r := stageRow{
 		stage:   "cage_cred",
@@ -569,7 +569,7 @@ func cageCredRow(rt *Runtime) stageRow {
 			r.by = "built-in table (cage.go cageCredential) — the operator's decision of 2026-08-20, rangerhq-kiz"
 		}
 	} else {
-		r.value = "UNDECIDED — cage: container refuses on this runtime: a container has no keychain, and the on-disk credential file is a stale leftover there or unrefreshable read-only (ADR 0002 §4, rangerhq-kiz)"
+		r.value = "UNDECIDED — cage: container refuses on this runtime: a container has no keychain, and any on-disk credential file there is not the store of record and posse never reads it (ADR 0002 §4, rangerhq-kiz)"
 		r.note = append(r.note, "cage_cred: in the yaml names it once the operator has minted one; every cage tier below container needs nothing here.")
 	}
 	r.note = append(r.note, "a METERED api key is not accepted as this credential — that is spending, and a persona is never the one who decides to spend. Mint it by hand, keep it in an env set (mode 600, never in the repo), and name that set in the PID's envs:.")

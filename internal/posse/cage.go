@@ -679,7 +679,7 @@ func CheckCageCredential(rt *Runtime, names []string) error {
 			return nil
 		}
 	}
-	return Die("cage container: %s is not in this session's environment — a caged %s has no keychain and its ~/.claude/.credentials.json is a stale leftover (rangerhq-kiz). Mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs: or pass --env-file. ANTHROPIC_API_KEY is metered spending and was rejected as the container credential",
+	return Die("cage container: %s is not in this session's environment — a caged %s has no keychain, and its ~/.claude/.credentials.json is not the store of record and posse never reads it (rangerhq-kiz). Mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs: or pass --env-file. ANTHROPIC_API_KEY is metered spending and was rejected as the container credential",
 		want, rt.Name)
 }
 

@@ -535,10 +535,12 @@ func keychainCmd(bin string) *exec.Cmd {
 }
 
 // CredentialsFile is where Claude Code keeps the same OAuth envelope on a
-// platform with no keychain. It is NOT read on darwin: there the file is a
-// stale leftover of a keychain login (MEASURED on the reference box, ADR
-// 0019's rejected alternatives), and reading it would invert the store of
-// record on the one platform whose record lives elsewhere.
+// platform with no keychain. It is NOT read on darwin: there the keychain is
+// the store of record and the file is a recurring unowned byproduct — some
+// darwin auth flow regenerates it on its own schedule, but MEASURED it then
+// sits frozen for days while the keychain keeps rotating (ADR 0019 D2 store
+// 3 / amended rejected-alternatives entry) — so reading it would invert the
+// store of record on the one platform whose record lives elsewhere.
 func CredentialsFile() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
