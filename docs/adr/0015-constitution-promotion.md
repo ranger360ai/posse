@@ -19,7 +19,10 @@ beads' own git hooks and no PID carrying them could commit
 2026-08-29: §3's
 actor split gains a third and fourth spelling, at the commit and at the
 land (ranger-base-ak3e, from ranger-base-7pq0; recorded by
-ranger-base-ubtc) · informs 0002
+ranger-base-ubtc) · amended 2026-08-31: §3's launch-verify claim
+tier-conditioned — an ABSENT or re-stamped anchor defeats detection at
+shims, accepted with reasons; anchor-state line added
+(ranger-base-zio33, from ranger-base-bejb) · informs 0002
 §3, 0012 D3-C, 0014 §3, 0025*
 
 > The operator asked for the constitution to be clearly separated from
@@ -176,11 +179,60 @@ the same way twice:
   (seatbelt never grants the home's constitution area; only
   `home/state` and the persona's own memory dir) covers the promoted
   copy for every caged session.
+
+  **The anchor itself, tier-conditioned** *(amended 2026-08-31,
+  ranger-base-zio33, from ranger-base-bejb — the sentence above was
+  honest about modification and silent about the anchor)*. The
+  manifest is a trust anchor stored inside the tree it attests, and an
+  ABSENT manifest is by design not a mismatch: `ReadPromoteManifest`
+  reads a missing file as "never promoted — OK", because every
+  pre-0015 home and every `RHQ_HOME` test rig must keep launching
+  (pinned, `TestVerifyPromotedIsSilentWithNoManifest`). So the
+  detection claim splits by tier, and is now conditioned rather than
+  universal:
+
+  - At **seatbelt**, the anchor is walled: `HomeConstitutionPaths`
+    includes `promoted.json`, so a caged session can neither modify
+    the promoted copy nor remove the thing that would notice.
+  - At **shims**, detection covers *modification* and is loud there —
+    a changed byte, a truncated manifest, an unpromoted file all
+    DEGRADE or refuse (**MEASURED**, ranger-base-bejb cases A/B). A
+    session that *deletes* the anchor, or re-stamps it with its own
+    tampered file's sha256, silences detection with no output on any
+    surface (**MEASURED**, cases C/D, one command each). At shims the
+    manifest is a fence against accident and drift; against a session
+    that means it, it is a speed bump, and this ADR says so instead
+    of fixing it.
+
+  Why accepted rather than fixed: shims applies no sandbox — the
+  session holds the operator's uid whole (ADR 0002 §3) — so **every
+  candidate location for a second anchor is session-writable in
+  exactly the tier the anchor would serve**: operator config, launcher
+  state, the constitution repo, a user-launchd path — all the same
+  trust domain. A second same-domain anchor converts one `rm` into
+  two and adds a consistency obligation whose failure mode is a false
+  refusal on the unattended fleet (the ranger-base-h7cd/rgx0 class,
+  already paid once when init over-stamped homes). And case D
+  subsumes case C: a session that would delete the anchor can instead
+  re-stamp it, which no presence rule, doctor line, or same-domain
+  second anchor catches. Adversary-proof anchoring requires leaving
+  the uid — the shapes Alternatives already rejects. What *is* bought
+  (ranger-base-zio33's one mechanism): a read-only **anchor-state
+  line** on the operator surfaces that already sweep launch health at
+  the watch preamble (beside `ReportHookWall`) — `promoted <sha>
+  <date>` / `seeded by init <date>` / `never promoted — no
+  promoted.json` — so an *accidental* deletion (cleanup script,
+  botched restore) is visible at the operator's next touch point
+  instead of never. It changes no launch behavior, refuses nothing,
+  and claims nothing against a deliberate session (a re-stamped home
+  reads "promoted").
 - **Fence, spelled twice** (ORDERS rule): every crew PID gains
   `deny: [Bash(posse promote:*)]` — an L1-realizable named verb on all
   runtimes — and `promote` itself refuses to run when the persona env
   marker is set. Both are politeness against a determined session;
-  the manifest check is what notices.
+  the manifest check is what notices — at seatbelt unconditionally, at
+  shims only while the anchor stands (the launch-verify bullet's
+  tier-conditioning, ranger-base-zio33).
 - **The fence widens to bd's destructive and egress verbs** *(amended
   2026-08-29, ranger-base-u9ud, from ranger-base-3bqn/az93)*. This
   bullet is the precedent being reused, not the subject: a shipped PID
@@ -348,8 +400,10 @@ the same way twice:
   earlier than promotion. A persona's constitution draft goes under a
   path outside the class (the az93 route the refusal prints), and the
   operator applies it and promotes. The manifest remains the detector
-  at every tier; these spellings move the first refusal from
-  taking-effect to the commit.
+  at every tier against accident and drift — with the anchor caveat
+  the launch-verify bullet now carries (a shims session can delete or
+  re-stamp what detects, ranger-base-zio33); these spellings move the
+  first refusal from taking-effect to the commit.
 
 **4. The queue gets its own tree.** A new repo (proposed
 `~/src/ranger-queue`; name is the operator's to veto at ratification)
@@ -540,6 +594,26 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
   operating model; macOS ACL maintenance would be a fourth policy
   regime; and detection (manifest) plus a promotion step buys the
   same assurance without fighting the platform.
+- **An external anchor for the manifest** (ranger-base-bejb option 1:
+  record "this home was promoted" outside the home — operator config,
+  the constitution repo, a launchd-owned path). Rejected 2026-08-31,
+  ranger-base-zio33. Every same-uid location is writable by the shims
+  sessions it would anchor against, so it moves the problem rather
+  than fixing it (bejb's own words) and adds a two-anchor consistency
+  obligation whose failure mode is a false refusal on the unattended
+  fleet (the h7cd class). The variants that would hold — a root-owned
+  path, a second OS user, a signature whose key the session cannot
+  read, a remote — are the alternative above plus key management this
+  fleet does not have, bought for one file in a tier whose design says
+  no wall exists or is coming (ADR 0002 §3), while the same session
+  can still edit the promoted PIDs, shadow `posse` on PATH, or scrub
+  the env marker. Also rejected, same grounds: **arming absence**
+  ("once ever-promoted, a missing manifest refuses") — the arming bit
+  is itself same-domain state, the (nil, nil) branch is load-bearing
+  three ways (pre-0015 homes, `RHQ_HOME` test rigs, the pinned test),
+  and re-stamping (case D) walks past any presence rule anyway. The
+  posture is the tier-conditioned claim plus the anchor-state line,
+  both in §3.
 - **Leave the bd verbs as a hand-maintained `.claude/settings.json`
   deny list** (the status quo this amendment replaces, az93's
   rai0/3bqn work). Claude-only, per-repo rather than per-PID, and
@@ -618,6 +692,16 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    word only looks like the flag (`bd sync -m --full` is a commit
    message, `bd sync -- --full` an operand).
 
+9. The anchor-state line (§3, ranger-base-zio33): with a promoted
+   home, the watch preamble prints `constitution: promoted <sha>
+   <date>`; on a freshly seeded home, `constitution: seeded <date>`;
+   after `rm $RHQ_HOME/promoted.json`, `constitution: never promoted —
+   no promoted.json` — and the launch behavior of all three states is
+   unchanged (absence still launches; item 3's mismatch still
+   DEGRADEs/refuses). *(Unverified until ranger-base-xevp7 is built;
+   the C/D silences themselves are MEASURED — ranger-base-bejb repro
+   at 12ce5be.)*
+
 ## Measured versus assumed
 
 | claim | status |
@@ -646,3 +730,6 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
 | pre-ak3e, a persona session could commit the entire promoted set with nothing refusing (9dfbbd4: all eleven crew PIDs) | **MEASURED** 2026-08-29 (ranger-base-7pq0, verified at HEAD) |
 | the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/rhq/constitutionwall_qa_test.go`, `internal/rhq/constitutionland_qa_test.go`) |
+| a shims session silences the launch verify by deleting `promoted.json` or re-stamping it with its tampered file's sha256, no output on any surface; a truncated manifest is loud | **MEASURED** 2026-08-28 (ranger-base-bejb repro at 12ce5be, cases A–D) |
+| 10 of the 11 live PIDs declare no `cage:` and run at shims; only hoover declares `cage: seatbelt` | **MEASURED** 2026-08-28 (ranger-base-bejb, `~/.config/rhq/agents`) |
+| every same-uid location for a second anchor is session-writable at shims | by definition of the tier (ADR 0002 §3: shims applies no sandbox, so file access is the uid's); the exceptions are the out-of-uid shapes Alternatives rejects |
