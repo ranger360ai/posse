@@ -1,27 +1,28 @@
 package posse
 
-// QA pin for the leg of the cost seam that has no consumer
+// QA pin for the leg of the cost seam that used to have no consumer
 // (ranger-base-8tut, found verifying the ranger-base-k7nb close).
 //
 // costseam.go says an adapter answers four questions — what it reads, price
-// table, transcript locator, record decoder. Three of the four are wired:
-// the scan calls Transcripts and Decode, and the account stage calls
-// Reads/Prices. Nothing in production ever calls PriceFor.
-//
-// MEASURED 2026-08-29, and the measurement is a compile: delete the
-// PriceFor line from the CostProvider interface and `go build ./...` stays
-// clean, while `go vet ./...` names ONE call site — cost_codex_test.go:435,
-// a test. Segment.Total() prices every segment that is not ProviderPriced
-// through Usage.Priced()/Usage.Cost(), and both call the package-level
+// table, transcript locator, record decoder. Before this bead three of the
+// four were wired: the scan called Transcripts and Decode, and the account
+// stage called Reads/Prices. Nothing in production ever called PriceFor —
+// MEASURED 2026-08-29, and the measurement was a compile: deleting the
+// PriceFor line from the CostProvider interface left `go build ./...`
+// clean, while `go vet ./...` named ONE call site — cost_codex_test.go:435,
+// a test. Segment.Total() priced every segment that was not ProviderPriced
+// through Usage.Priced()/Usage.Cost(), and both called the package-level
 // PriceFor: claude's table, plus its substring family fallback, applied
 // regardless of Segment.Runtime.
 //
-// Latent today (claude's adapter delegates to that same global; codex and
-// grok price nothing and are ProviderPriced or unpriced), which is why this
-// is a skip and not a red build. It stops being latent the first time an
-// adapter ships a rate card of its own, or the first time a non-claude
-// model id contains "opus"/"sonnet"/"haiku"/"fable" and is silently billed
-// at claude list rates.
+// Fixed by routing Segment.Total() through Segment.priceFor(model), which
+// asks CostProviderFor(s.Runtime) first and falls back to the global table
+// only when no adapter is registered for that runtime. claude's own adapter
+// still delegates to that same global, so the claude reading is byte-for-
+// byte unchanged; the three decoders (cost.go's ScanTranscript, cost_codex.go,
+// cost_grok.go) now stamp Segment.Runtime at construction so the resolver
+// has an answer the moment Total() runs, not only after scanProvider labels
+// the segment post-decode.
 
 import (
 	"testing"
@@ -51,11 +52,10 @@ func (tablePricedCost) Transcripts(string) ([]string, []error) { return nil, nil
 func (tablePricedCost) Decode(string, time.Time) ([]*Segment, error) { return nil, nil }
 
 // A segment on a runtime whose adapter prices its own models must be priced
-// by THAT adapter. Read this skip as a red: it is the seam's third leg, and
-// today the pricing path never asks.
+// by THAT adapter (ranger-base-8tut: Segment.Total now resolves through
+// Segment.priceFor, which asks CostProviderFor(s.Runtime) before falling
+// back to claude's global table).
 func TestQACostAdapterPriceTableIsConsulted(t *testing.T) {
-	t.Skip("ranger-base-8tut: CostProvider.PriceFor has no production caller — Segment.Total prices every runtime through claude's table")
-
 	p := tablePricedCost{}
 	RegisterCostProvider(p)
 	t.Cleanup(func() { delete(costProviders, p.Runtime()) })

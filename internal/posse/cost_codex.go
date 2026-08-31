@@ -318,7 +318,7 @@ func newCodexSegment(bead, path string, ts time.Time, model string) *Segment {
 	if model == "" {
 		model = "codex"
 	}
-	return &Segment{Bead: bead, File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}, Model: model}
+	return &Segment{Bead: bead, Runtime: "codex", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}, Model: model}
 }
 
 func init() { RegisterCostProvider(codexCost{}) }

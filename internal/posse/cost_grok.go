@@ -223,7 +223,7 @@ func newGrokSegment(bead, path string, ts time.Time, model string) *Segment {
 	if model == "" {
 		model = "grok"
 	}
-	return &Segment{Bead: bead, File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}, Model: model}
+	return &Segment{Bead: bead, Runtime: "grok", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}, Model: model}
 }
 
 func init() { RegisterCostProvider(grokCost{}) }

@@ -119,13 +119,20 @@ func (u Usage) Priced() bool {
 	return ok
 }
 
-// Cost prices one message. An unpriced model costs 0 here; Priced is how the
-// caller tells that 0 apart from a message that genuinely cost nothing.
+// Cost prices one message against the global claude table. An unpriced model
+// costs 0 here; Priced is how the caller tells that 0 apart from a message
+// that genuinely cost nothing. Segment.Total prices against the message's own
+// runtime adapter instead (costAt) — this method stays the claude reading.
 func (u Usage) Cost() float64 {
 	p, ok := PriceFor(u.Model)
 	if !ok {
 		return 0
 	}
+	return u.costAt(p)
+}
+
+// costAt prices one message at an already-resolved rate.
+func (u Usage) costAt(p Price) float64 {
 	w5, w1 := u.CacheW5m, u.CacheW1h
 	if w5+w1 == 0 { // no TTL breakdown: the script's flat 1.25×
 		w5 = u.CacheW
@@ -204,6 +211,19 @@ func (s *Segment) NoteCumulative(usd float64) {
 	}
 }
 
+// priceFor resolves a model id through THIS segment's runtime adapter
+// (costseam.go's third leg), falling back to the global claude table only
+// when no adapter is registered for s.Runtime — the shape a Segment built
+// without one (a stray test fixture) has always had. A registered adapter is
+// consulted even when it is claude's own: claudeCost.PriceFor delegates to
+// the same global, so the claude reading is unchanged (ranger-base-8tut).
+func (s *Segment) priceFor(model string) (Price, bool) {
+	if p, ok := CostProviderFor(s.Runtime); ok {
+		return p.PriceFor(model)
+	}
+	return PriceFor(model)
+}
+
 func (s *Segment) Total() (u Usage, cost float64) {
 	if s.ProviderPriced {
 		// The provider already priced this. Nothing to reprice, and any
@@ -221,7 +241,8 @@ func (s *Segment) Total() (u Usage, cost float64) {
 		u.CacheW1h += m.CacheW1h
 		u.CacheR += m.CacheR
 		u.Out += m.Out
-		if !m.Priced() {
+		p, ok := s.priceFor(m.Model)
+		if !ok {
 			// Unknown model: its spend is unknown, not zero. Counted here so
 			// the report can say the total is a floor (ADR 0012 D4).
 			//
@@ -236,7 +257,7 @@ func (s *Segment) Total() (u Usage, cost float64) {
 			}
 			continue
 		}
-		c := m.Cost()
+		c := m.costAt(p)
 		cost += c
 		byModel[m.Model] += c
 	}
@@ -305,10 +326,10 @@ func ScanTranscript(path string, since time.Time) ([]*Segment, error) {
 				case "user":
 					txt := userText(d.Message.Content)
 					if m := workPromptRe.FindStringSubmatch(txt); m != nil {
-						cur = &Segment{Bead: m[1], File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
+						cur = &Segment{Bead: m[1], Runtime: "claude", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
 						segs = append(segs, cur)
 					} else if cur == nil && txt != "" && !strings.HasPrefix(txt, "<") {
-						cur = &Segment{Bead: "interactive", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
+						cur = &Segment{Bead: "interactive", Runtime: "claude", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
 						segs = append(segs, cur)
 					}
 				case "assistant":
