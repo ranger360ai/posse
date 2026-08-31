@@ -185,7 +185,7 @@ mtime. It reads no content, deletes nothing, and never runs `security`.
 **Anything printed is a finding.** The harness ADR counts the keychain and the
 env-set mints as darwin's owned stores; a file here is a third one nobody
 owns. `~/.claude` is in every runtime's writable set
-(`internal/rhq/seatbelt.go`) and the rendered seatbelt profile's only deny is
+(`internal/posse/seatbelt.go`) and the rendered seatbelt profile's only deny is
 `file-write*` — `grep -n file-read` over that file returns nothing — so every
 same-user persona session below the container tier can read whatever sits
 there. The preventive half (a `file-read` deny on the credential-file
@@ -245,5 +245,5 @@ reach the cage tier and their `cage_cred:` is decided.
 ---
 
 *The five sentences quoted in move 2 are pinned against the code that emits
-them — `internal/rhq/credentialrunbook_qa_test.go`. If you edit one here and
+them — `internal/posse/credentialrunbook_qa_test.go`. If you edit one here and
 the suite goes red, the code is right and this page is wrong.*

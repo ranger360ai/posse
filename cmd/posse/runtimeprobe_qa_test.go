@@ -1,7 +1,7 @@
 package main
 
 // ADR 0032 §1 rule 2, through the real process. The library half is pinned
-// in internal/rhq; this is the wiring, which is a SEPARATE declaration —
+// in internal/posse; this is the wiring, which is a SEPARATE declaration —
 // `posse runtime probe` is a second arm of the same switch as `runtime
 // check`, and a package that is perfectly tested is still unreachable if
 // nothing routes to it.

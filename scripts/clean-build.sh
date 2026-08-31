@@ -83,6 +83,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 git -C "$repo" worktree add --detach --quiet "$src" HEAD
-(cd "$src" && "${GOBIN:-go}" build -ldflags "-X github.com/ranger360ai/posse/internal/rhq.Build=$sha" -o "$out" ./cmd/posse)
+(cd "$src" && "${GOBIN:-go}" build -ldflags "-X github.com/ranger360ai/posse/internal/posse.Build=$sha" -o "$out" ./cmd/posse)
 
 echo "clean-build: built $out from $sha"

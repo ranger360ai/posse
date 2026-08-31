@@ -151,7 +151,7 @@ Failing environment, ambiguous spec, missing access: say exactly what you
 need and stop. Being blocked is not being wrong.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons —
 codebase gotchas, commands that work, conventions learned.
 
 ## Metrics

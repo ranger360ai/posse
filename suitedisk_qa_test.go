@@ -6,7 +6,7 @@ package posse
 // two moments a reader is present.
 //
 // MEASURED 2026-08-29 on the machine that runs every session's suite: `make
-// test` came back exit 2 with ~80 reds in internal/rhq, every one of them
+// test` came back exit 2 with ~80 reds in internal/posse, every one of them
 //
 //	--- FAIL: TestWatchPidRoundTrip (0.00s)
 //	    testing.go:1426: TempDir: mkdir /var/folders/.../TestWatchPid...:

@@ -1,4 +1,4 @@
-// Command buildstamp prints internal/rhq.SourceBuildStamp(".") for the
+// Command buildstamp prints internal/posse.SourceBuildStamp(".") for the
 // current directory — nothing else. The Makefile's `build` target shells out
 // to it rather than recomposing the dirty half in make/shell, which is what
 // left GIT_DIRTY a bare "-dirty" bit unable to tell two dirty trees apart
@@ -11,9 +11,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 func main() {
-	fmt.Print(rhq.SourceBuildStamp("."))
+	fmt.Print(posse.SourceBuildStamp("."))
 }

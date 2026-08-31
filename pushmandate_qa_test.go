@@ -23,7 +23,7 @@ package posse
 // regenerated back into the bug by a `bd init` in the checkout or a bd
 // upgrade — which §9 itself warns about ("neither edit survives being
 // regenerated"). The doc's `guardrails:` quote is pinned against the constant
-// it quotes in internal/rhq/pushmandate_qa_test.go.
+// it quotes in internal/posse/pushmandate_qa_test.go.
 
 import (
 	"os"

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // A backticked token that is entirely a version: `0.4.0`, `v0.4.0`,
@@ -47,9 +47,9 @@ func TestReaderDocsPromiseThisSourcesVersion(t *testing.T) {
 		for i, line := range strings.Split(string(body), "\n") {
 			for _, m := range docVersionToken.FindAllStringSubmatch(line, -1) {
 				sites++
-				if m[2] != rhq.Version {
+				if m[2] != posse.Version {
 					t.Errorf("%s:%d promises `%s` but this source is %s — a brew user reads the copy frozen at the tag, and it cannot be corrected in place.\n  %s",
-						f, i+1, m[1]+m[2]+m[3], rhq.Version, strings.TrimSpace(line))
+						f, i+1, m[1]+m[2]+m[3], posse.Version, strings.TrimSpace(line))
 				}
 			}
 		}
@@ -58,5 +58,5 @@ func TestReaderDocsPromiseThisSourcesVersion(t *testing.T) {
 		t.Errorf("scanned %d version claims across INSTALL.md and README.md, expected %d.\n"+
 			"If a claim was deliberately added or removed, move this number. If it dropped to 0, the pattern stopped matching and this test is measuring nothing.", sites, wantSites)
 	}
-	t.Logf("scanned %d version claims across INSTALL.md and README.md against %s", sites, rhq.Version)
+	t.Logf("scanned %d version claims across INSTALL.md and README.md against %s", sites, posse.Version)
 }

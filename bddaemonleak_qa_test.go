@@ -18,7 +18,7 @@ package posse
 //   - `--no-daemon` on the calls — prevention, nothing is ever started. The
 //     right answer when the daemon is not part of the claim.
 //   - a cleanup that stops what was started — the right answer when a RUNNING
-//     daemon IS the claim (liveCageBeadStore in internal/rhq: it imports a
+//     daemon IS the claim (liveCageBeadStore in internal/posse: it imports a
 //     newer JSONL before answering, and stopping it first turns the same read
 //     into a staleness refusal). `.beads/daemon.pid` beside the fixture's own
 //     database is that cleanup's handle, and never `bd daemon stop-all`, which

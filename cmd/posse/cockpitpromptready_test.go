@@ -4,7 +4,7 @@ package main
 // the one ranger-base-3p0 deliberately left alone. Same entry point, same
 // race — the operator dispatches, sees the row appear and presses p before
 // the CLI has taken the keyboard — but the fix could not simply be wired in
-// where it was on `posse prompt`: rhq.AwaitPromptable holds for the
+// where it was on `posse prompt`: posse.AwaitPromptable holds for the
 // session's runtime startup wait (45s, claude), and the key handler runs on
 // the render loop. A straight call would freeze the whole cockpit for the
 // duration of exactly the case the gate exists for.
@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // promptGateCockpit builds a one-session cockpit over a shell fake herdr
@@ -70,7 +70,7 @@ exit 1
 		[]byte("name: fresh\nworkspace: w1\npane: p1\nruntime: fastcli\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),
 		StateDir:   filepath.Join(home, "state"),
@@ -88,7 +88,7 @@ exit 1
 
 	c := &cockpit{
 		app:      a,
-		hb:       &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+		hb:       &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard},
 		prompts:  make(chan string, 4),
 		progress: make(chan string, 4),
 	}

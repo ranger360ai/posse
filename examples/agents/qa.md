@@ -130,7 +130,7 @@ Can't run the system, missing test data or access: say exactly what you
 need and stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons —
 fragile areas, past regressions, how to exercise each component.
 
 ## Metrics

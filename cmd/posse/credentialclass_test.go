@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // planClassCockpit is a cockpit whose plan scan reads a fake usage endpoint
@@ -39,7 +39,7 @@ func planClassCockpit(t *testing.T, status int) *cockpit {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("RHQ_PLAN_USAGE_URL", srv.URL)
-	a := rhq.NewAppAt(filepath.Join(home, "config"))
+	a := posse.NewAppAt(filepath.Join(home, "config"))
 	if err := os.MkdirAll(a.StateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

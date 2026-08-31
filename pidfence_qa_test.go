@@ -20,7 +20,7 @@ package posse_test
 // BOTH shapes, and it still refuses to rewrite a shape it cannot parse.
 //
 // The reader is the discriminator, not the bytes: the drafted file is fed
-// back through `rhq.App.LoadAgent`, the same `yamlListLines` path posse's own
+// back through `posse.App.LoadAgent`, the same `yamlListLines` path posse's own
 // PID reader uses, so a draft that produces plausible-looking YAML the
 // reader does not accept fails here.
 
@@ -31,7 +31,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 const pidFenceRule = "Bash(posse promote:*)"
@@ -107,7 +107,7 @@ func pfEnv() []string {
 // pfDeny reads the drafted PID back through posse's own PID reader.
 func pfDeny(t *testing.T, dir, name string) []string {
 	t.Helper()
-	app := &rhq.App{AgentsDir: dir}
+	app := &posse.App{AgentsDir: dir}
 	ag, err := app.LoadAgent(name)
 	if err != nil {
 		t.Fatalf("LoadAgent(%s): %v", name, err)

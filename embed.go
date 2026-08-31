@@ -5,7 +5,7 @@
 // Seed is what `posse init` copies into a fresh RHQ_HOME. Embedding it is what
 // lets a release binary seed an instance with no repo beside it (ADR 0012 D5:
 // "public repo + release binary with embedded examples"). The on-disk tree
-// still wins when the binary is run out of a checkout — see internal/rhq's
+// still wins when the binary is run out of a checkout — see internal/posse's
 // seedSource.
 package posse
 

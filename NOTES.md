@@ -6,10 +6,10 @@ NOTES. This file describes the herdr-native harness on main.
 
 ## The mapping
 
-Every herdr call goes through `Herdr.Run` (`internal/rhq/herdr.go`), which
+Every herdr call goes through `Herdr.Run` (`internal/posse/herdr.go`), which
 shells out to the `herdr` CLI and decodes its JSON envelope
 (`{"result":…}` / `{"error":{code,message}}`). The mapping
-(`internal/rhq/herdrback.go`):
+(`internal/posse/herdrback.go`):
 
 | posse concept | herdr concept |
 |---|---|
@@ -96,7 +96,7 @@ per-line buffer is `MAX_CANON`, 1024 bytes *including* the newline that
 would submit it (`sys/syslimits.h`). Over that, the head is echoed raw, the
 tail sits in the buffer without its newline, and **nothing runs** — the next
 thing typed is appended to the leftover. Hence `PaneLineMax = 1023` in
-`internal/rhq/paneline.go`, the last length that survives.
+`internal/posse/paneline.go`, the last length that survives.
 
 Waiting is not the fix, twice over. `herdr pane process-info` reports a
 `shell_pid` from the very first sample and a shell-alone foreground group
@@ -127,7 +127,7 @@ variadic), a longer `--settings`, more mounts. The container tier's ~1.6KB
 engine line spent it in one go and had to render a file before this rule
 existed; see *Container tier* below.
 
-None of this is asserted from memory: `internal/rhq/panelinelive_test.go`
+None of this is asserted from memory: `internal/posse/panelinelive_test.go`
 (`RHQ_LIVE_PANE_LINE=1`, against a scratch herdr server, no API turn) is the
 live pin both sides of the cliff and the spill are measured from.
 
@@ -136,7 +136,7 @@ live pin both sides of the cliff and the spill are measured from.
 - `posse prompt <name> "<text>" [--wait] [--timeout ms] [--now]` — submit work
   to the session's detected agent (herdr `agent prompt`; `--wait` blocks until
   the first settled idle|done|blocked state). **It waits for herdr to have
-  SEEN a screen before typing** (`internal/rhq/promptready.go`): a pane herdr
+  SEEN a screen before typing** (`internal/posse/promptready.go`): a pane herdr
   only *guesses* is idle is a CLI that has not taken the keyboard, and a
   prompt sent there lands in whatever has — a leading `/` once turned a whole
   work prompt into `/Work` plus arguments, and herdr reported success
@@ -148,7 +148,7 @@ live pin both sides of the cliff and the spill are measured from.
   the tail is computed client-side because herdr's `--lines` counts padded
   blank screen rows from the bottom).
 - `posse ready [--dir] [--as]` — unblocked work via `bd ready --json` (the
-  `Bd` runner in `internal/rhq/beads.go`). Without `--dir` it aggregates
+  `Bd` runner in `internal/posse/beads.go`). Without `--dir` it aggregates
   across the config `beads:` repo list; missing or unreadable repos are named
   as failed scans while readable repos still report their work.
 - `posse crew <name> [--off]` — hand a session to the operator or back to the
@@ -174,7 +174,7 @@ preferred). Nothing depends on herdr agent *names*, which die with the
 process — durable identity is the beads **assignee**: a persona is its
 assignee name + `agents/<name>.md` + (future) a per-persona memory dir.
 
-These compose into `posse dispatch` (`internal/rhq/dispatch.go`) — one pass
+These compose into `posse dispatch` (`internal/posse/dispatch.go`) — one pass
 of the harness core:
 
 1. Gather ready beads (config `beads:` repos, or `--dir`) and order them
@@ -356,7 +356,7 @@ of the harness core:
    `dispatch` (no `--watch`) never sets `Refill` and never refires: it
    fires once, gathers, and returns, exactly as before this ADR. `--watch`
    also wakes the next pass on a herdr settle hint instead of waiting out
-   the backoff (`internal/rhq/watch.go`) — the backstop for whatever a
+   the backoff (`internal/posse/watch.go`) — the backstop for whatever a
    `Run`'s own cascade did not catch (a seat freed by something dispatch
    never fired into), never the refill's own mechanism.
    A refill **says whose seat it is refilling** (ranger-base-59jd): the fire
@@ -372,7 +372,7 @@ of the harness core:
    the same lines at every settle. Launches, `✗` errors and every other
    report are untouched, and a fire pass that is NOT a refill — the head of a
    `Run`, every one-shot `dispatch`, every `--dry-run` — still enumerates per
-   bead (`internal/rhq/refillreport.go`).
+   bead (`internal/posse/refillreport.go`).
 
    **Which arm a measured idle-to-next window belongs to is read off the call
    path, not off a constant.** ADR 0028 §5 observable 1 shipped before the
@@ -387,7 +387,7 @@ of the harness core:
    first launch into each seat still comes from the head of its pass, so that
    window is a baseline one and is stamped as one; keying the arm on the
    `Refill` flag instead would put "before" data inside the "after" figure
-   (`internal/rhq/seatidle.go`, `docs/notes.d/ranger-base-59jd.md`).
+   (`internal/posse/seatidle.go`, `docs/notes.d/ranger-base-59jd.md`).
 6. Judge by the **bead**, not the agent: issue closed → ✓; agent settled
    `blocked` → ⛔ flagged (herdr's sidebar already shows it); settled but
    issue still open → ◑ review the session.
@@ -416,7 +416,7 @@ of the harness core:
    0.8.0 typed into it and the text was swallowed (rangerhq-ejf).
 
 **The `await` in that sequence is the readiness gate**, and it waits for a
-state herdr can *see* (`awaitSettled`, `internal/rhq/dispatch.go`). herdr
+state herdr can *see* (`awaitSettled`, `internal/posse/dispatch.go`). herdr
 answers `idle` for a pane it has identified as a known agent even when no rule
 matched anything — `agent explain` calls that
 `default_known_agent_idle_fallback`, `matched_rule: null` — and in a launch
@@ -475,7 +475,7 @@ into the file is read for exactly one purpose, printing that waiting line;
 nothing decides anything from it, and a dead or unreadable pid degrades to
 "another launcher". The file is created and **never removed** — unlinking it
 would let the next launcher lock a fresh inode: two holders, one path, no
-error anywhere. `internal/rhq/launchlock.go`.
+error anywhere. `internal/posse/launchlock.go`.
 
 **The session meta is the run record** (ADR 0011 §3, rangerhq-o2ki). The lock
 serializes launchers; it does not give one a way to *see* what the last one
@@ -516,7 +516,7 @@ rather than inferring one from a name pattern or a snapshot.
   directory, since a per-session worktree's `dir:` is not the repo dispatch
   names — `repo:` is (rangerhq-09o2).
 
-Pins: `internal/rhq/runrecord_qa_test.go`, and the pass↔pass repro in
+Pins: `internal/posse/runrecord_qa_test.go`, and the pass↔pass repro in
 `launchlock_qa_test.go` (`TestTwoPassesDoNotDoubleClaimOneBead`).
 
 **The plan-utilization guard** (rangerhq-jgm) takes one shared reading before
@@ -540,11 +540,11 @@ watching them is the operator's interactive headroom — a fleet that eats the
   are the adapter's business and documented instance-side). The token
   lives in memory for the one request and is written
   **nowhere** — not logs, not meta files, not bead comments; the errors in
-  `internal/rhq/planusage.go` are deliberately generic so the credential
+  `internal/posse/planusage.go` are deliberately generic so the credential
   cannot ride out in one.
 - **Where that credential comes from** (ADR 0019, ranger-base-x584) one
   seam — `ReadCredential(runtime, purpose)` in
-  `internal/rhq/credential.go` — is the only place posse acquires a
+  `internal/posse/credential.go` — is the only place posse acquires a
   credential at all. The `meter` purpose reads the RUNTIME's own store of
   record, picked by `runtime.GOOS` at run time and never by a build tag (so
   `make test-linux` compiles and tests both branches): the macOS keychain
@@ -744,7 +744,7 @@ watching them is the operator's interactive headroom — a fleet that eats the
   (rangerhq-6h1). Unconfigured stays clean. `RHQ_PLAN_USAGE_URL` redirects
   the endpoint for tests, and **only to loopback**: an override naming any
   other host is refused by name rather than followed or silently ignored
-  (`internal/rhq/credpin.go`, ranger-base-17i). Loopback buys the seam and
+  (`internal/posse/credpin.go`, ranger-base-17i). Loopback buys the seam and
   nothing else (ranger-base-dr6u) — on this machine a `127.0.0.1` listener
   is something any caged persona can bind, so an override is asked with **no
   Authorization header** and the keychain is not read for it at all, and its
@@ -759,7 +759,7 @@ watching them is the operator's interactive headroom — a fleet that eats the
   is an explicit operator ask, not a pass, and is not plan-gated.
 
 **Budget caps and step-down** (ADR 0003 Dial E, rangerhq-25p,
-`internal/rhq/budget.go`) are the dollar half of the same idea: where the
+`internal/posse/budget.go`) are the dollar half of the same idea: where the
 plan guard parks beads that spend the guarded rate windows, Dial E slows and
 then stops dispatch on API-equivalent spend.
 
@@ -853,7 +853,7 @@ then stops dispatch on API-equivalent spend.
   header says it is running under the ledger (ranger-base-3nvt). Both read;
   only dispatch acts.
 
-**verify-after** (ADR 0006 §3, `internal/rhq/verifyafter.go`) is the one
+**verify-after** (ADR 0006 §3, `internal/posse/verifyafter.go`) is the one
 handoff the harness files rather than a persona. Every dispatch pass — right
 after the plan guard, before ready work is gathered, so what it files is
 dispatched by the same pass — and every `posse ready` sweeps each `beads:`
@@ -1149,7 +1149,7 @@ what tests and pipes see).
 ## The YAML subset
 
 Config, recipes, meta files, and agent frontmatter all use the same flat
-subset (`internal/rhq/yamlflat.go`, ~100 lines, no deps):
+subset (`internal/posse/yamlflat.go`, ~100 lines, no deps):
 
 ```yaml
 key: value          # scalars; "null", "~" and empty mean unset
@@ -1180,7 +1180,7 @@ later page where the two overlap).
   adds explicitly. The persona **and every tool it runs** may hold it.
 - **Harness credential** — `secrets/<name>.env`. Read by posse's own
   processes, injected into no session, listed by no command, and nameable by
-  no PID key (`internal/rhq/secrets.go`, rangerhq-5s5d).
+  no PID key (`internal/posse/secrets.go`, rangerhq-5s5d).
 
 The one-hand rule, one sentence because it has to survive being quoted:
 **everything under `envs/` may reach a session; nothing under `secrets/` ever
@@ -1212,7 +1212,7 @@ isn't the meter token (a second provider's meter, a webhook).
    interactive login/refresh loop writes it, so posse is the **second reader**
    of somebody else's rotating token and never a writer of it. The plan guard
    and `modelavail.go` both reach it the one way anything reaches a credential
-   here — `ReadCredential(runtime, CredMeter)` in `internal/rhq/credential.go`.
+   here — `ReadCredential(runtime, CredMeter)` in `internal/posse/credential.go`.
    Its ACL is **per binary**: every `make install` can silently drop this
    binary's read. MEASURED three times on 2026-08-24, once while the
    operator's own interactive shell read the same item fine.
@@ -1296,7 +1296,7 @@ refresh` with no arguments.
 
 ### `make install` is the credential wall, and it is not temporary (ADR 0019 D3)
 
-Personas write `internal/rhq/`. **Any code path that reads `secrets/`,
+Personas write `internal/posse/`. **Any code path that reads `secrets/`,
 `envs/`, or the keychain ships only through the operator's `make install`
 review.** That promotion gate is the only wall between persona-authored code
 and a credential store, and it is load-bearing for credential access
@@ -1352,7 +1352,7 @@ implies `container`; the example PIDs that deny Edit/Write declare
 optional `## Work prompt` (ADR 0005): the persona's standing per-bead
 instruction, appended verbatim to every dispatched work prompt.
 
-**Runtimes (ADR 0002 §1–2, `internal/rhq/runtime.go`).** A persona
+**Runtimes (ADR 0002 §1–2, `internal/posse/runtime.go`).** A persona
 launches on a named launch profile, not a command string. Built-ins
 `claude`, `codex`, `grok` each carry a template and a *native realizer*
 for `{allow}`/`{deny}`: claude → `--allowedTools r…`/`--disallowedTools
@@ -1401,7 +1401,7 @@ codex:  codex {model} {skills} {deny} -a never --disable hooks -c allow_login_sh
 grok:   grok {model} {skills} --permission-mode auto --rules="$(cat {file})" {allow} {deny}
 ```
 
-**The dispatch contract (ADR 0013, `internal/rhq/runtimecheck.go`).** A
+**The dispatch contract (ADR 0013, `internal/posse/runtimecheck.go`).** A
 runtime that *launches* safely is not the same claim as a runtime that can
 *take work*, and one evening of two non-claude runtimes in production broke
 the second claim about once an hour. So dispatch names six stages —
@@ -1439,7 +1439,7 @@ trused` silently reading as untrusted is exactly the silence this contract
 removes.
 
 `turn_outcome:` is a **registry key, not prose**: the value names a reader
-that exists in `internal/rhq/turnfailure.go` (today there is exactly one,
+that exists in `internal/posse/turnfailure.go` (today there is exactly one,
 `claude-transcript`), and a value no reader implements refuses at load for
 the same reason `record: trused` does — a declaration that promises a
 reading nothing performs is worse than no declaration.
@@ -1623,7 +1623,7 @@ bead** on the agent's behalf — that hides the defect and puts a human back
 in the loop dispatch exists to replace. A `record: trusted` runtime gets the
 same honest `◑` and no clause: a runtime measured to close its beads that
 has stopped closing them is a signal, not a footnote.
-(`internal/rhq/recordskip_qa_test.go`.)
+(`internal/posse/recordskip_qa_test.go`.)
 
 ### The other half of that line: what posse cannot see (ADR 0013 §1 settle)
 
@@ -1656,7 +1656,7 @@ per-pass half of the same honesty is the account-degraded report (ADR 0013
 §5); this is its per-bead half. codex writes `~/.codex/sessions/*.jsonl`
 and grok writes `$GROK_HOME/sessions/<cwd>/<id>/` (`ranger-base-xaev`), so
 both are reachable in principle — building those readers is a decision, not
-an oversight. (`internal/rhq/turnoutcome_qa_test.go`.)
+an oversight. (`internal/posse/turnoutcome_qa_test.go`.)
 
 ### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
 
@@ -1698,7 +1698,7 @@ answer to an unanswerable question about destroying work is no, and the
 costs are asymmetric (a wrong refusal is one `--force`; a wrong kill is
 work with no other copy). `--force` on either command stands the guard
 down and nothing else — the landing still refuses to *remove* a tree that
-holds work. (`internal/rhq/reapguard.go`, `reapguard_qa_test.go`.)
+holds work. (`internal/posse/reapguard.go`, `reapguard_qa_test.go`.)
 
 ### The ownership refusal: a foreign row is not this home's to kill
 
@@ -1747,8 +1747,8 @@ What no override can repair is the other side's bookkeeping: the owning
 home's `state/herdr/<name>.yaml` still points at the workspace that was
 closed, and that file is outside this home. Its own next listing prunes it
 (ADR 0011 §2). One more reason the refusal is the default and the flag is
-the exception. (`ForeignKillRefusal` in `internal/rhq/herdrback.go`,
-`internal/rhq/foreignkill_qa_test.go`; the launch half is rangerhq-ynx8's
+the exception. (`ForeignKillRefusal` in `internal/posse/herdrback.go`,
+`internal/posse/foreignkill_qa_test.go`; the launch half is rangerhq-ynx8's
 `foreignHeld`.)
 
 Which runtime a session gets: `posse new --runtime` / `posse dispatch
@@ -1764,7 +1764,7 @@ so the cockpit shows what the persona runs on (`🎭name@codex` when not
 claude). `posse runtimes` lists profiles. Verified flags on this machine:
 codex — see **Codex specifics** below; grok — see **Grok specifics**.
 
-**Skills (ADR 0007, `internal/rhq/skills.go`).** `skills: [dataviz,
+**Skills (ADR 0007, `internal/posse/skills.go`).** `skills: [dataviz,
 code-review]` on a PID binds those skills to the persona on whatever it
 launches as — the cross-agent binding posse owns, as against the
 per-user-per-runtime accident of "whatever this machine installed into
@@ -1861,8 +1861,8 @@ re-checks it:
   discovery deliberately ignores git's ignore rules — so `.git/info/exclude`
   hides the dir from `git status` without hiding it from the CLI. (Both
   CLIs behave the same way about this; it is what makes the exclude honest
-  rather than a trick.) `internal/rhq/skills_e2e_test.go` re-runs the whole
-check against the installed CLIs (`RHQ_E2E=1 go test ./internal/rhq/ -run
+  rather than a trick.) `internal/posse/skills_e2e_test.go` re-runs the whole
+check against the installed CLIs (`RHQ_E2E=1 go test ./internal/posse/ -run
 E2ESkillSurfaces`) — worth doing when either updates, since this is a
 discovery convention, not a documented flag.
 
@@ -2184,7 +2184,7 @@ self-updated mid-verification; no behaviour below differed).**
   `[stable]` channel tag, which today's panes do not render, so the rule
   matched nothing at all until 7sbo widened it).
 
-**Gates L1 (ADR 0002 §3, `internal/rhq/gates.go`).** Native flags are
+**Gates L1 (ADR 0002 §3, `internal/posse/gates.go`).** Native flags are
 politeness; the wall for shell-verb denies is ours and runtime-agnostic.
 At every persona launch (create and crash-relaunch alike) the PID's
 `deny:` rules of the shape `Bash(<cmd> <prefix>:*)`, `Bash(<cmd> <args>)`
@@ -2483,7 +2483,7 @@ neither is computed yet.
 
 `posse cost [--since <date>] [--project <substr>] | --plan` is ADR 0003 §4's
 accounting: the analyst's `bead-cost.py` method in Go. Every runtime with a
-**cost adapter** (ADR 0012 D4, `internal/rhq/costseam.go`) is segmented by the
+**cost adapter** (ADR 0012 D4, `internal/posse/costseam.go`) is segmented by the
 dispatcher's "Work beads issue <id>" prompts; three ship, and a runtime with
 no adapter is reported as *uncounted*, never $0.
 
@@ -3053,7 +3053,7 @@ wrap`), the pre-push hook rides in on the repo mount, and the repo goes
 `:ro` for `Edit`/`Write` denies — all built in rangerhq-6so, below.
 
 **What is built (rangerhq-9fv): the engine, the image, the launch.**
-`internal/rhq/cage.go`. The engine is a command template, never a
+`internal/posse/cage.go`. The engine is a command template, never a
 hard-coded `docker run`: built-in `docker`, `RHQ_HOME/cages/<name>.yaml`
 for anything else (only `command:` is required — `mount:`/`mount_ro:`/
 `env:`/`home:`/`build:`/`probe:` default to docker's spellings, which is
@@ -3068,7 +3068,7 @@ the only runtime whose container credential is decided).
 
 Age, because the inner render below is the IMAGE's posse and until
 ranger-base-nwj7 nothing but a live test's FAIL ever said the image was
-behind it (`internal/rhq/cagestale.go`). `posse cage build` stamps the
+behind it (`internal/posse/cagestale.go`). `posse cage build` stamps the
 posse it bakes in with the checkout's identity — go's own `-buildvcs`
 stamp is absent for a build from a linked worktree, which is where every
 persona works, so without it an image cannot name the commit it came from
@@ -3095,7 +3095,7 @@ seeded with `~/.claude.json` (onboarding, theme, `autoUpdates: false`,
 `trust_level`, merged rather than overwritten.
 
 **The pane runs the argv0 launcher (rangerhq-1k1), not the engine.**
-`internal/rhq/cagelauncher.go`. `state/cages/<persona>/bin/claude` is a
+`internal/posse/cagelauncher.go`. `state/cages/<persona>/bin/claude` is a
 symlink to the running `posse`, which recognizes its own second entry point
 (`<launcher> --posse-cage <plan>`) and `execve`s the engine with `argv[0]`
 reset to the runtime's name — so herdr identifies the session as `claude`
@@ -3139,7 +3139,7 @@ clean only when the image answers `posse gates wrap --probe`, and is
 the strongest cage is never the one that silently loses `git push`.
 
 **The egress route (rangerhq-9d0): the one gate only this tier realizes.**
-`internal/rhq/egress.go`. Unconditional at `cage: container`, not
+`internal/posse/egress.go`. Unconditional at `cage: container`, not
 conditional on the PID having typed `egress:` — the ADR describes L4 as a
 container joined to a `--internal` network whose only other member is the
 proxy, and a cage whose network is open *by omission* is exactly the
@@ -3193,7 +3193,7 @@ arrived), any other host → curl exit 56 with the denial in
 when its parent exits.
 
 **The wall inside (rangerhq-6so): L1/L3 in the cage, the mount boundary,
-`sockets:`.** `internal/rhq/cageinner.go`. The tiers are cumulative in
+`sockets:`.** `internal/posse/cageinner.go`. The tiers are cumulative in
 *gates realized*, and the mechanism is a fourth entry point rather than a
 mount: the inner command of a container launch is
 
@@ -3465,7 +3465,7 @@ installs OrbStack for their own reasons, posse needs no change.
 **What the re-evaluation actually found was in our house.** Our boundary
 check had upstream's bug. Probe 2 of `0002-container-tier.probe.sh`, check
 1 of `TestLiveEgressBoundaryIsTheRouteNotTheEnvVar`, and the header of
-`internal/rhq/egress.go` all rested on one assertion:
+`internal/posse/egress.go` all rested on one assertion:
 
 ```
 curl https://api.anthropic.com/v1/models  →  exit 6
@@ -3595,7 +3595,7 @@ into keeps whatever render it was given, stamp included, indefinitely. The
 constitution repo is the extreme case — it holds the PIDs and holds no
 session — and it ran a `prepare-commit-msg` without the constitution-path
 arm for hours after that arm shipped. `SweepHookWall`
-(`internal/rhq/hookfresh.go`) is the standing answer: it walks the
+(`internal/posse/hookfresh.go`) is the standing answer: it walks the
 `beads_visibility:` keys and asks each one the ADR 0023 question through
 the same `probeL3Hooks`, rendering per repo from *that repo's* configured
 visibility so a stamp that disagrees with config is a byte mismatch in
@@ -3612,7 +3612,7 @@ is used.
 boundary is the routing rule plus repo visibility; the lint exists so a
 mis-routed bead is a refusal at commit time instead of a public artifact.
 
-The pattern list lives in one place (`OpsPatterns`, `internal/rhq/visibility.go`)
+The pattern list lives in one place (`OpsPatterns`, `internal/posse/visibility.go`)
 and is read twice — by Go and by `grep -E` in the hook — so it is written in
 the intersection of both dialects. The start set from the bead was narrowed
 against this repo's own 402-bead db rather than argued: bare `\$[0-9]` hit 37
@@ -4050,7 +4050,7 @@ instead.** This is the same landmine as ranger-base-muoo from the other end:
 `bd create --deps discovered-from:<parent>` starts the same CTE at `<parent>`,
 so a poisoned parent loses its edge to the 30s timeout while the issue itself
 commits — which is how 33 edgeless duplicate verify beads got filed. The
-The HANDOFF rung of a dispatch prompt (`internal/rhq/dispatch.go`) has
+The HANDOFF rung of a dispatch prompt (`internal/posse/dispatch.go`) has
 that exact shape. The ASK rung does **not**: its target is a freshly created
 question bead with no outgoing edges, so the CTE is empty and returns at once.
 Leave it alone. SPIKE used to have HANDOFF's shape and no longer does — see
@@ -4257,7 +4257,7 @@ new losses of this shape should stop.
 
 posse never deletes a bead — no call site passes `delete` to bd, and
 verify-after only reads and creates — so there is nothing here to guard. What
-posse owes instead is that a loss cannot stay quiet (`internal/rhq/beadloss.go`):
+posse owes instead is that a loss cannot stay quiet (`internal/posse/beadloss.go`):
 
 - **The census.** Every id a committed `issues.jsonl` ever carried is
   git-durable, and the diff history is cheap to walk (~0.8s over 237 commits
@@ -4318,7 +4318,7 @@ rather than there:
   sync` exports without committing while `bd sync --full` commits *and*
   pushes (measured, 0.49.1). So a dispatch pass that judges a close flushes
   and commits it, path-limited, in the repo config `queue_repo:` names —
-  `internal/rhq/queuejsonl.go`. Absent key = no commits, which is what
+  `internal/posse/queuejsonl.go`. Absent key = no commits, which is what
   every instance that never moves its store keeps doing.
 - **Never a push, structurally.** Nothing on this path runs `git push`, and
   the cutover leaves the queue repo with no remote at all, so a future bd
@@ -4345,7 +4345,7 @@ rather than there:
 ### the constitution's promote, and what it will never carry (ADR 0015 §2/§3/§7)
 
 `~/.config/posse` stops being a symlink onto the instance repo and becomes a
-**copy** of it, taken from a commit: `posse promote` (`internal/rhq/promote.go`,
+**copy** of it, taken from a commit: `posse promote` (`internal/posse/promote.go`,
 ranger-base-o943). The runbook is `docs/runbooks/home-cutover.md`. What is
 worth knowing here rather than there:
 
@@ -4598,7 +4598,7 @@ string-match Escape watchdog is a stopgap, not the architecture.
 was a sentence in three documents and nothing in the code: `Interstitial.Danger`
 was read by `posse runtime check` and by nobody on a launch path, so codex
 launched onto the menu the contract said must gate it. Three surfaces now
-agree, all reading `DangerUnsilenced` (`internal/rhq/interstitial.go`):
+agree, all reading `DangerUnsilenced` (`internal/posse/interstitial.go`):
 
 - **dispatch refuses above the claim.** `launchSession` asks before it
   creates a session, so a refused bead is never claimed and no workspace is
@@ -4666,7 +4666,7 @@ it prints when it drops a project's hooks for want of trust: *"Run Claude
 Code interactively here once and accept the trust dialog, or set
 projects[<dir>].hasTrustDialogAccepted: true in ~/.claude.json"*.
 
-So the launch seeds it (`SeedClaudeTrust`, `internal/rhq/trust.go`), which
+So the launch seeds it (`SeedClaudeTrust`, `internal/posse/trust.go`), which
 is the same grant posse already types on codex's line (`-c
 "projects={\"$PWD\"={trust_level=\"trusted\"}}"`, ADR 0002 §4) and the
 same one `SeedCageHome` already writes into a container HOME. What it does
@@ -4844,7 +4844,7 @@ no generation token in the API. Two anchors are real:
   no herdr call: same path + different inode ⇒ this server did not issue that
   id, so the id is evidence about nothing.
 
-**What landed** (rangerhq-yt1p, `internal/rhq/herdrback.go`). `gen:` in the
+**What landed** (rangerhq-yt1p, `internal/posse/herdrback.go`). `gen:` in the
 session meta — `dev:inode` of the api socket, stamped at create, backfilled
 on positive identity — plus one predicate, `notOurWorkspace`, asked by all
 three destructive paths through `idEvidence`: the prune (`Sessions`), the
@@ -4936,7 +4936,7 @@ each — because it is the only candidate that also removes `git checkout <path>
 discarding another persona's edits, `git stash` taking someone else's WIP,
 half-written files landing under a green message, and two personas racing
 writes to one file. A commit lock fixes only the sweep. It is now built
-(`internal/rhq/worktree.go`), and the merge-back is the operator's option A
+(`internal/posse/worktree.go`), and the merge-back is the operator's option A
 (rangerhq-jbyr): **the launcher merges**.
 
 What a dispatched session gets:
@@ -5338,7 +5338,7 @@ longer does is SPRING one: the only form that restages every path from the
 shared index is the unqualified commit, and there is now no shell that gets to
 make one here. Kept measured rather than asserted:
 `TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual`
-(`internal/rhq/privateindex_qa_test.go`) lands a fix through
+(`internal/posse/privateindex_qa_test.go`) lands a fix through
 `$GIT_DIR/next-index-1` with `RHQ_PERSONA` set, pins the shared index at the
 pre-fix blob afterwards, pins the follow-up `bd sync:` commit being REFUSED
 with no persona in the environment and HEAD keeping the fix, and carries the
@@ -5406,7 +5406,7 @@ one in the same commit goes quiet. The exact-blob rule it replaced had the same
 hazard at 100%. `--self-test` grew three arms for it — a rename-that-edits is
 not flagged, a deletion plus an *unrelated* add still fires, and a re-land
 through a rename is still caught — and each is mutation-pinned separately in
-`internal/rhq/silentrevert_qa_test.go`, because deleting the `R` handling makes
+`internal/posse/silentrevert_qa_test.go`, because deleting the `R` handling makes
 a rename *invisible*, which an arm asserting only silence cannot tell from
 *excused*.
 

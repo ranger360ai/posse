@@ -5,7 +5,7 @@ package main
 //
 // The fix landed three sorts — ReadyAll's, `posse ready`'s, and the
 // dispatch pass's — and mutation testing found two of the three already
-// pinned and one not: deleting `rhq.OrderBeads` from the `posse ready` arm
+// pinned and one not: deleting `posse.OrderBeads` from the `posse ready` arm
 // (main.go, the line whose only unique job is the --dir path) left the
 // whole suite green. These tests close that hole and pin the surface the
 // bug was actually reported on: what an operator READS.
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // orderBd answers `ready` from the repo's own fake-ready.json and
@@ -147,15 +147,15 @@ exit 1
 `)
 	bd := writeExec(t, binDir, "bd", orderBd)
 
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),
 		StateDir:   filepath.Join(home, "state"),
 	}
 	c := &cockpit{
 		app: a,
-		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
-		bd:  rhq.Bd{Bin: bd},
+		hb:  &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard},
+		bd:  posse.Bd{Bin: bd},
 	}
 	c.refreshAll()
 

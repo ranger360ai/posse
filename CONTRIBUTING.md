@@ -7,7 +7,7 @@ self-contained, and read the section below: it is the bar every
 contribution is held to.
 
 Run the suite through `make test`, not a bare `go test ./...`. The target
-adds `-timeout 25m`, and it is load-bearing: `internal/rhq` is a long serial
+adds `-timeout 25m`, and it is load-bearing: `internal/posse` is a long serial
 package that has been measured at and past `go test`'s default 10m per-package
 ceiling, so on a busy machine the bare command times out and reports a panic
 that names no test — a red belonging to the box, wearing your diff's clothes.

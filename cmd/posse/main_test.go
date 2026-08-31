@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 func TestArgLead(t *testing.T) {
@@ -516,13 +516,13 @@ func TestBeadsCheckRefusesAMissingRepoAsACleanCensus(t *testing.T) {
 	}
 	got := string(out)
 	// ranger-base-33vp: every path posse prints goes through
-	// rhq.AbbrevHome — here via ScanError.Error — so the assertion is that
+	// posse.AbbrevHome — here via ScanError.Error — so the assertion is that
 	// rendering, not the raw absolute path. Asserting the absolute form
 	// passed only where t.TempDir() landed OUTSIDE $HOME; under
 	// scripts/test-linux.sh (HOME=/tmp, no TMPDIR) it never does, and the
 	// leg was red on every box. readyEnv keeps os.Environ(), so the child
 	// abbreviates against the same $HOME this process does.
-	if want := rhq.AbbrevHome(gone); !strings.Contains(got, want) {
+	if want := posse.AbbrevHome(gone); !strings.Contains(got, want) {
 		t.Errorf("want the unresolvable path named as %s, got:\n%s", want, got)
 	}
 	if !strings.Contains(got, "unknown, not clean") {
@@ -554,7 +554,7 @@ func TestBeadsCheckNamesATypoBesideARealRepo(t *testing.T) {
 	}
 	got := string(out)
 	// ranger-base-33vp: home-abbreviated, as above.
-	if want := rhq.AbbrevHome(typo); !strings.Contains(got, want) {
+	if want := posse.AbbrevHome(typo); !strings.Contains(got, want) {
 		t.Errorf("want the typo named as %s, got:\n%s", want, got)
 	}
 	if !strings.Contains(got, "1 repo(s) that resolved") {
@@ -893,7 +893,7 @@ func TestPauseAndResumeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pause: %v\n%s", err, out)
 	}
-	for _, want := range []string{"paused", rhq.PauseOperator, "waiting on the operator", "the pulse keeps ticking"} {
+	for _, want := range []string{"paused", posse.PauseOperator, "waiting on the operator", "the pulse keeps ticking"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pause must say %q:\n%s", want, out)
 		}
@@ -902,7 +902,7 @@ func TestPauseAndResumeCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no pause file: %v", err)
 	}
-	for _, want := range []string{"by: " + rhq.PauseOperator, "at: 20", "why: waiting on the operator"} {
+	for _, want := range []string{"by: " + posse.PauseOperator, "at: 20", "why: waiting on the operator"} {
 		if !strings.Contains(string(file), want) {
 			t.Errorf("state/pause.yaml must carry %q:\n%s", want, file)
 		}
@@ -1034,7 +1034,7 @@ exit 1
 // ranger-base-3p0: `posse prompt` into a session whose CLI had not taken the
 // keyboard typed the work prompt at whatever had — a leading '/' turned the
 // dispatch marker into `/Work` and the rest into its arguments, and herdr
-// returned success. The gate is unit-pinned in internal/rhq
+// returned success. The gate is unit-pinned in internal/posse
 // (promptready_test.go); this runs the BINARY, because what the bead is
 // about is what the operator's `posse prompt` does — a gate nothing calls
 // is the regression this catches.

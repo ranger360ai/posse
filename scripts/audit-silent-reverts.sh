@@ -29,7 +29,7 @@
 # it calls the hook, and hands the hook a separate `next-index-<pid>.lock` to
 # add into. So the flush reaches the commit and never reaches the real index,
 # which is left holding the pre-flush blob. Measured 2026-08-29, git 2.39.3;
-# pinned in internal/rhq/staleindex_qa_test.go. The prepare-commit-msg wall
+# pinned in internal/posse/staleindex_qa_test.go. The prepare-commit-msg wall
 # refuses the private form and both carriers that spring a stale entry (the
 # unqualified form and `-i`) for every shell in the checkout since
 # rangerhq-lt2w — but it cannot refuse the producer, because the producer is
@@ -482,7 +482,7 @@ self_test() {
 # as one path literally named "src<tab>dst", so the deletion is never recorded
 # at all and the audit under-reports in silence. The R branch WITHOUT -M is
 # dead code. Both directions are pinned in
-# internal/rhq/silentrevert_qa_test.go.
+# internal/posse/silentrevert_qa_test.go.
 #
 # --no-abbrev is load-bearing (ranger-base-hhcu):
 # git's default abbreviation is 7 hex, which is short enough that a blob id

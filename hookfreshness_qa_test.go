@@ -38,7 +38,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 const hfScript = "scripts/verify-hook-freshness.sh"
@@ -369,7 +369,7 @@ func TestQAHookFreshnessRefusesToPassWhenNothingWasMeasured(t *testing.T) {
 }
 
 // ranger-base-heyb. The block reader disagreed with YamlMapPairs
-// (internal/rhq/yamlflat.go) on three rules — the same class of split fqfw
+// (internal/posse/yamlflat.go) on three rules — the same class of split fqfw
 // and k3yd already closed one level up, in cfg(): a comment starts at
 // whitespace + '#', not '#' anywhere, so a hash with no space before it is
 // data, not a truncated line; a matched pair of double quotes is dropped,
@@ -414,7 +414,7 @@ func TestQAHookFreshnessSubkeyReaderAgreesWithYamlMapPairs(t *testing.T) {
 	// The control: what posse itself reads. Without it a mismatch below
 	// could mean the fixture is not what it claims to be, not that the
 	// script disagrees.
-	want := rhq.YamlMapPairs(cfgPath, "beads_visibility")
+	want := posse.YamlMapPairs(cfgPath, "beads_visibility")
 	if len(want) != len(corpus) {
 		t.Fatalf("fixture is not what it claims to be: YamlMapPairs read %d pairs from %d corpus lines", len(want), len(corpus))
 	}

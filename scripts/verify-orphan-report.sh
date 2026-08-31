@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS. Arm 1 of the orphan report names leaked gate-shell children
 # when the load guard skips a pass. A detector that has never fired has not
-# been shown able to fire, and the unit pins in internal/rhq/loadguard_test.go
+# been shown able to fire, and the unit pins in internal/posse/loadguard_test.go
 # only hand the predicate rows a test wrote. The control that measures
 # something plants the real thing: a gate shell forks a subshell, the parent
 # exits, the subshell lands on ppid 1 and burns a core, and the real census —
@@ -79,4 +79,4 @@ exec docker run --rm -i \
   -e GOMODCACHE=/gomodcache \
   -e GOFLAGS=-count=1 \
   -e RHQ_ORPHAN_CONTROL=1 \
-  "$IMAGE" bash -c 'go test ./internal/rhq -run TestOrphanReportControlNamesAPlantedLeak -v -timeout 20m'
+  "$IMAGE" bash -c 'go test ./internal/posse -run TestOrphanReportControlNamesAPlantedLeak -v -timeout 20m'

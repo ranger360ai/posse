@@ -87,24 +87,29 @@ startup=false
 say() { echo "dispatch autostart: $*"; }
 
 # Which home. This is the SECOND decision site for one fact — newApp
-# (internal/rhq/app.go) is the first — so it reads the same way or the hook
+# (internal/posse/app.go) is the first — so it reads the same way or the hook
 # arms out of one instance while the loop it starts runs out of another
-# (ranger-base-g7lt). RHQ_HOME wins; otherwise ~/.config/posse, unless it
-# does not exist and ~/.config/rhq does. `-e` follows symlinks and is true
-# for a plain file, matching os.Stat; `-d` matches st.IsDir() on the legacy
-# side, so a dangling posse symlink falls back and a posse *file* does not.
+# (ranger-base-g7lt). RHQ_HOME wins, then POSSE_HOME (both-names window,
+# ranger-base-mlc Q2), then ~/.config/posse, unless it does not exist and
+# ~/.config/rhq does. `-e` follows symlinks and is true for a plain file,
+# matching os.Stat; `-d` matches st.IsDir() on the legacy side, so a dangling
+# posse symlink falls back and a posse *file* does not.
 #
 # Not a bare default either way: ~/.config/rhq alone would leave a fresh
 # `posse init` disarmed forever, and ~/.config/posse alone would disarm every
 # instance that still has only the old home — this operator's included — at
 # the next herdr start.
 if [ -z "${RHQ_HOME:-}" ]; then
-	preferred=$HOME/.config/posse
-	legacy=$HOME/.config/rhq
-	RHQ_HOME=$preferred
-	if [ ! -e "$preferred" ] && [ -d "$legacy" ]; then
-		RHQ_HOME=$legacy
-		say "$preferred does not exist; using existing home $legacy (nothing moved)" >&2
+	if [ -n "${POSSE_HOME:-}" ]; then
+		RHQ_HOME=$POSSE_HOME
+	else
+		preferred=$HOME/.config/posse
+		legacy=$HOME/.config/rhq
+		RHQ_HOME=$preferred
+		if [ ! -e "$preferred" ] && [ -d "$legacy" ]; then
+			RHQ_HOME=$legacy
+			say "$preferred does not exist; using existing home $legacy (nothing moved)" >&2
+		fi
 	fi
 fi
 # Exported, not just assigned: the probe, `posse new`, and the dispatch loop
@@ -127,7 +132,7 @@ MAXLOG=${AUTOSTART_MAXLOG:-5242880} # 5 MiB, then one .1 generation
 # HERDR_SOCKET_PATH is authoritative when present, matching herdr itself. If
 # it is absent, HERDR_SESSION still proves this is a named server. The fixed
 # default socket layout is measured and shared with herdrSocketPath in
-# internal/rhq/herdrback.go; herdr has no config-dir override.
+# internal/posse/herdrback.go; herdr has no config-dir override.
 if $startup; then
 	default_socket=$HOME/.config/herdr/herdr.sock
 	case "${HERDR_SOCKET_PATH:-}" in
@@ -208,7 +213,7 @@ loop_alive() {
 # pair of double quotes dropped, and null/~ read as unset.
 #
 # None of that is decoration. This file has TWO readers: posse reads it
-# with yamlClean (internal/rhq/yamlflat.go, behind CfgGet/YamlGet) and this
+# with yamlClean (internal/posse/yamlflat.go, behind CfgGet/YamlGet) and this
 # hook reads it here, and they must not disagree about what the operator
 # wrote. yamlClean drops a matched pair of double quotes, so YAML's own way
 # of writing a string — `autostart_interval: "5m"` — is 5m to posse, which
@@ -239,7 +244,7 @@ loop_alive() {
 # The arm switch is the one key where unset-by-value is still not absent:
 # `autostart_interval: null` reads empty here and `haskey` still sees the
 # key, which is the broken-arm stand-down below and the EMPTY arm of G7
-# (internal/rhq/govern.go) — the same arm, on both surfaces, with the same
+# (internal/posse/govern.go) — the same arm, on both surfaces, with the same
 # sentence.
 cfg() {
 	[ -f "$CONFIG" ] || return 0
@@ -264,8 +269,8 @@ haskey() {
 	grep -q "^$1:" "$CONFIG"
 }
 
-# Does posse accept this interval? Mirrors internal/rhq.ParseInterval
-# (internal/rhq/watch.go): bare seconds, or a Go duration — one or more
+# Does posse accept this interval? Mirrors internal/posse.ParseInterval
+# (internal/posse/watch.go): bare seconds, or a Go duration — one or more
 # number+unit groups, units ns/us/µs/μs/ms/s/m/h. Positive, too, which for
 # this grammar is exactly "some magnitude is nonzero", there being no sign to
 # write: `0`, `0s` and `0h0m` all parse and are all refused by ParseInterval.

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // ranger-base-325q. The cockpit was measured at 101.9% of a core while
@@ -65,7 +65,7 @@ func TestCockpitScanGuardsAreReleasedByTheirApply(t *testing.T) {
 		busy  func(*cockpit) *bool
 		apply func(*cockpit)
 	}{
-		{"cost", func(c *cockpit) *bool { return &c.costBusy }, func(c *cockpit) { c.applyCost(&rhq.CostReport{}) }},
+		{"cost", func(c *cockpit) *bool { return &c.costBusy }, func(c *cockpit) { c.applyCost(&posse.CostReport{}) }},
 		{"plan", func(c *cockpit) *bool { return &c.planBusy }, func(c *cockpit) { c.applyPlan(planRead{}) }},
 		{"gov", func(c *cockpit) *bool { return &c.govBusy }, func(c *cockpit) { c.applyGov(govRead{}) }},
 	} {
@@ -115,7 +115,7 @@ func TestCockpitTimersNeverStartAScanUnguarded(t *testing.T) {
 }
 
 // The cost window's opening edge must hold still between ticks, or
-// rhq.CostScanner's memo — which keys on the `since` a decode was taken
+// posse.CostScanner's memo — which keys on the `since` a decode was taken
 // under — misses on every file and the whole transcript pile is re-read. It
 // is the difference between a 1.5 MB scan and a 786 MB one every 30 seconds.
 func TestCockpitCostWindowIsStableAcrossTicks(t *testing.T) {
@@ -160,7 +160,7 @@ func TestCockpitGovCheckScansThroughItsOwnMemory(t *testing.T) {
 	}
 
 	t.Setenv("RHQ_HOME", filepath.Join(home, "posse"))
-	c := newCockpit(rhq.NewApp(), nil, io.Discard)
+	c := newCockpit(posse.NewApp(), nil, io.Discard)
 	if c.costScan == nil || c.govScan == nil {
 		t.Fatal("a cockpit must be built with both scanners")
 	}

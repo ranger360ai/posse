@@ -115,7 +115,7 @@ The decision is teed up with numbers and a recommendation —
 Name the missing information or the human decision needed, then stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable facts — what
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable facts — what
 we pay for, renewal dates, decisions made and their reasoning.
 
 ## Metrics

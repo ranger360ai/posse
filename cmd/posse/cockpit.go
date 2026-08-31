@@ -42,7 +42,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 type cockpitMode int
@@ -88,19 +88,19 @@ const (
 )
 
 type cockpit struct {
-	app  *rhq.App
-	hb   *rhq.HerdrBackend
-	bd   rhq.Bd
-	disp *rhq.Dispatcher
+	app  *posse.App
+	hb   *posse.HerdrBackend
+	bd   posse.Bd
+	disp *posse.Dispatcher
 	out  io.Writer
 
-	sessions    []rhq.HerdrSession
-	inprog      []rhq.RepoIssue // claimed beads, stalled-first (ADR 0004 §2)
-	issues      []rhq.RepoIssue // ready work, with the claimed ones filtered out
-	rows        []row           // the view model both draw paths render (ADR 0004 §1)
-	cursor      int             // sessions, then inprog, then issues
-	offset      int             // first row of the viewport (ADR 0004 §4)
-	width       int             // terminal size at the last draw; paging keys read it
+	sessions    []posse.HerdrSession
+	inprog      []posse.RepoIssue // claimed beads, stalled-first (ADR 0004 §2)
+	issues      []posse.RepoIssue // ready work, with the claimed ones filtered out
+	rows        []row             // the view model both draw paths render (ADR 0004 §1)
+	cursor      int               // sessions, then inprog, then issues
+	offset      int               // first row of the viewport (ADR 0004 §4)
+	width       int               // terminal size at the last draw; paging keys read it
 	height      int
 	mode        cockpitMode
 	confirm     confirmKind   // what a y answers in modeConfirm
@@ -141,7 +141,7 @@ type cockpit struct {
 	// provider's transcripts, refreshed every costEvery, keyed by bead id;
 	// the day total in the footer. A session on a runtime with no adapter
 	// shows "uncounted" and names its runtime (ADR 0012 D4).
-	costs      chan *rhq.CostReport
+	costs      chan *posse.CostReport
 	costByBead map[string]float64
 	costToday  float64
 	costAt     time.Time
@@ -188,7 +188,7 @@ type cockpit struct {
 	// Empty is the overwhelmingly common state and draws NOTHING: the
 	// header keeps the bytes it had before this existed, and the column
 	// only appears when there is something to say.
-	creds []rhq.CredExpiry
+	creds []posse.CredExpiry
 
 	// The governance surface (ADR 0029 §2, bead rangerhq-81y0): the third
 	// rendering of ShopCheck, drawn as a block
@@ -202,16 +202,16 @@ type cockpit struct {
 	// block is filler rows, cursor space is untouched, and nothing about
 	// selection, tab or reselect changes.
 	govs      chan govRead
-	gov       rhq.GovSet
+	gov       posse.GovSet
 	govFailed int
 	govAt     time.Time
 
 	// costScan is the cost scanner, KEPT across ticks. It is what makes the
 	// 30s cadence affordable: the scan re-decodes only the transcripts
-	// whose bytes moved since the last one (rhq.CostScanner,
+	// whose bytes moved since the last one (posse.CostScanner,
 	// ranger-base-325q). A fresh scanner every tick would remember nothing
 	// and re-read the whole pile, which is what it used to do.
-	costScan *rhq.CostScanner
+	costScan *posse.CostScanner
 
 	// govScan is the SECOND kept scanner, and it is separate from costScan
 	// on purpose. The governance check's G6 row scans the day (Dial E, when
@@ -220,7 +220,7 @@ type cockpit struct {
 	// a scanner between the two would have each tick evict the other's entry
 	// and both would miss, every time, forever. One scanner per window, each
 	// touched by one goroutine.
-	govScan *rhq.CostScanner
+	govScan *posse.CostScanner
 
 	// costBusy/planBusy/govBusy are the in-flight guards, and the whole of
 	// why this screen can no longer run away with a core (ranger-base-325q).
@@ -282,7 +282,7 @@ type cockpit struct {
 	// launcher is what `d` calls; nil = the real dispatcher. The key tests
 	// have no herdr to launch into, and a launch runs off the event loop
 	// where a panic would take the process with it.
-	launcher func(bead rhq.RepoIssue, resume bool) (string, error)
+	launcher func(bead posse.RepoIssue, resume bool) (string, error)
 }
 
 const (
@@ -318,7 +318,7 @@ const govEvery = 30 * time.Second
 // and `posse status` is where the reasons are printed — the cockpit owns the
 // whole terminal and has nowhere to put a multi-line error.
 type govRead struct {
-	set    rhq.GovSet
+	set    posse.GovSet
 	failed int
 }
 
@@ -349,7 +349,7 @@ func (c *cockpit) startGov()  { c.start(&c.govBusy, c.scanGov) }
 // impossible in practice — one scan in flight, one slot free, and every
 // loop selects on this channel unconditionally.
 func (c *cockpit) scanGov() {
-	set, failed := rhq.ShopCheck(c.govInputs())
+	set, failed := posse.ShopCheck(c.govInputs())
 	c.govs <- govRead{set: set, failed: len(failed)}
 }
 
@@ -358,10 +358,10 @@ func (c *cockpit) scanGov() {
 // is a bare ScanCosts and the cockpit pays for a SECOND full decode of the
 // transcript pile on every governance tick, on top of the footer's own
 // (ranger-base-325q).
-func (c *cockpit) govInputs() rhq.GovInputs {
-	in := rhq.StatusInputs(c.app, c.hb, io.Discard)
+func (c *cockpit) govInputs() posse.GovInputs {
+	in := posse.StatusInputs(c.app, c.hb, io.Discard)
 	in.Caller = "cockpit"
-	in.Spend = func(t time.Time) *rhq.CostReport { return c.govScan.Scan("", t) }
+	in.Spend = func(t time.Time) *posse.CostReport { return c.govScan.Scan("", t) }
 	return in
 }
 
@@ -369,7 +369,7 @@ func (c *cockpit) govInputs() rhq.GovInputs {
 //
 // The window is fourteen days and the truncation moves its edge by under an
 // hour, which no reading in the footer can tell apart. What it buys is a
-// `since` that holds still between ticks, and rhq.CostScanner only reuses a
+// `since` that holds still between ticks, and posse.CostScanner only reuses a
 // decode taken under the same cut — with `now-14d` computed fresh every
 // tick, every file missed the memo and the whole pile was re-read
 // (ranger-base-325q).
@@ -397,7 +397,7 @@ func (c *cockpit) scanCosts() {
 // hand and would stay green if a field stopped being carried across from the
 // report (which is how Unread was missing from the display in the first
 // place, ADR 0018 §3 / ranger-base-c65c).
-func (c *cockpit) applyCost(rep *rhq.CostReport) {
+func (c *cockpit) applyCost(rep *posse.CostReport) {
 	c.costBusy = false
 	c.costByBead = rep.ByBead()
 	c.costToday = rep.DayTotal(time.Now())
@@ -439,7 +439,7 @@ type planRead struct {
 	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
 	// because it is read at the same cadence, off the same goroutine, and
 	// lands on the same channel — nothing in the header may do I/O.
-	creds []rhq.CredExpiry
+	creds []posse.CredExpiry
 }
 
 // planOffState classifies a failed read into the two states that are NOT
@@ -452,14 +452,14 @@ type planRead struct {
 // tested only through a rig is a rule nobody re-checks when the error
 // plumbing moves.
 func planOffState(err error) (noSource, noAdapter bool) {
-	if rhq.NoSourceReason(err) != nil {
+	if posse.NoSourceReason(err) != nil {
 		// Asked first and asked through the seam's own reader: a NoSource
 		// arrives BOTH on its own (the store went away after the
 		// availability check) and inside a *NoPlanAdapter (the check caught
 		// it), and both are the same fact about this platform.
 		return true, false
 	}
-	var na *rhq.NoPlanAdapter
+	var na *posse.NoPlanAdapter
 	return false, errors.As(err, &na)
 }
 
@@ -492,7 +492,7 @@ func (c *cockpit) scanPlan() {
 		// the first. "Guard blind 40m" was every word of it true on
 		// 2026-08-22 and said nothing an operator could act on; the class
 		// is the half that names the next move (ADR 0019 D2).
-		r.class = string(rhq.PlanFailureOf(err))
+		r.class = string(posse.PlanFailureOf(err))
 	}
 	// Files under the posse home, read here for the same reason the plan
 	// reading is: the draw path does no I/O. Nothing about this depends on
@@ -595,7 +595,7 @@ func (c *cockpit) planSegment(r planRead) string {
 	if r.noAdapter {
 		return "plan — · guard off, no adapter"
 	}
-	seg := "plan — · guard blind " + rhq.BlindFor(now.Sub(c.planReadAt))
+	seg := "plan — · guard blind " + posse.BlindFor(now.Sub(c.planReadAt))
 	// The class before the policy: what broke, then what the shop does about
 	// it. A read that is blind for a reason no class covers says nothing
 	// extra rather than an empty separator.
@@ -616,7 +616,7 @@ func (c *cockpit) planSegment(r planRead) string {
 
 // sessionCost is the running api-equiv $ for a persona session's bead, or
 // "" when the session is not a per-bead one (or the runtime is uncounted).
-func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
+func (c *cockpit) sessionCost(s posse.HerdrSession) string {
 	if s.Agent == "" {
 		return ""
 	}
@@ -624,14 +624,14 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 	// D4) — grok gained one and stopped printing $uncounted here on the same
 	// commit, with nothing in the cockpit to edit.
 	if s.Runtime != "" {
-		if _, ok := rhq.CostProviderFor(s.Runtime); !ok {
+		if _, ok := posse.CostProviderFor(s.Runtime); !ok {
 			return "$uncounted"
 		}
 	}
 	if s.Dir == "" || c.costByBead == nil {
 		return ""
 	}
-	prefix := rhq.SessionFor(s.Agent, s.Dir) + "-"
+	prefix := posse.SessionFor(s.Agent, s.Dir) + "-"
 	if !strings.HasPrefix(s.Name, prefix) {
 		return ""
 	}
@@ -654,12 +654,12 @@ func (c *cockpit) sessionCost(s rhq.HerdrSession) string {
 // newCockpit builds the cockpit and the channels its background work
 // reports on. Separate from runCockpit so the wiring is a thing a test can
 // hold: runCockpit's own body is the raw-mode terminal, which no test has.
-func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
-	c := &cockpit{app: a, hb: hb, bd: rhq.NewBd(), out: out,
-		costScan: new(rhq.CostScanner), govScan: new(rhq.CostScanner),
-		disp: rhq.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
+func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
+	c := &cockpit{app: a, hb: hb, bd: posse.NewBd(), out: out,
+		costScan: new(posse.CostScanner), govScan: new(posse.CostScanner),
+		disp: posse.NewDispatcher(a, hb, io.Discard), results: make(chan string, 4),
 		progress: make(chan string, 4), prompts: make(chan string, 4),
-		claims: make(chan string, 4), costs: make(chan *rhq.CostReport, 1),
+		claims: make(chan string, 4), costs: make(chan *posse.CostReport, 1),
 		plans: make(chan planRead, 1), govs: make(chan govRead, 1),
 		beads: make(chan beadRead, 1)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
@@ -673,7 +673,7 @@ func newCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) *cockpit {
 	return c
 }
 
-func runCockpit(a *rhq.App, hb *rhq.HerdrBackend, out io.Writer) error {
+func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 	c := newCockpit(a, hb, out)
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
@@ -820,12 +820,12 @@ type selection struct {
 	present bool    // there was a row under the cursor
 }
 
-func sessionKey(s rhq.HerdrSession) string { return "s:" + s.Name }
+func sessionKey(s posse.HerdrSession) string { return "s:" + s.Name }
 
 // issueKey is deliberately the same for both bead sections: a claim moves a
 // bead from READY WORK to IN PROGRESS under the operator's cursor, and the
 // cursor should follow it there rather than snap to whatever took its place.
-func issueKey(is rhq.RepoIssue) string { return "i:" + is.Dir + "|" + is.ID }
+func issueKey(is posse.RepoIssue) string { return "i:" + is.Dir + "|" + is.ID }
 
 func (c *cockpit) selected() selection {
 	if c.cursor < len(c.sessions) {
@@ -844,7 +844,7 @@ func (c *cockpit) selected() selection {
 // same item if it still exists (in any section — a bead changes section
 // when it is claimed or unclaimed), else the same offset in the same
 // section (clamped), else 0.
-func reselect(sessions []rhq.HerdrSession, inprog, issues []rhq.RepoIssue, sel selection) int {
+func reselect(sessions []posse.HerdrSession, inprog, issues []posse.RepoIssue, sel selection) int {
 	if !sel.present {
 		return 0
 	}
@@ -907,7 +907,7 @@ func (c *cockpit) refreshSessions() {
 	if s, err := c.hb.Sessions(); err == nil {
 		c.sessions = s
 		// Blocked first — the whole point of the oversight view.
-		rank := func(s rhq.HerdrSession) int {
+		rank := func(s posse.HerdrSession) int {
 			switch s.Status {
 			case "blocked":
 				return 0
@@ -936,8 +936,8 @@ func (c *cockpit) refreshSessions() {
 // c.sessions, which only the event loop may touch, so they happen in
 // applyBeads and not here.
 type beadRead struct {
-	inprog []rhq.RepoIssue
-	ready  []rhq.RepoIssue
+	inprog []posse.RepoIssue
+	ready  []posse.RepoIssue
 	failed []error       // the repos whose ready scan could not be read
 	took   time.Duration // what this scan cost — the next one's floor
 }
@@ -1070,12 +1070,12 @@ func (c *cockpit) sortInProg() {
 // readyOnly drops the beads the IN PROGRESS section already shows: a bead
 // belongs to one section only (ADR 0004 §2), and `bd ready` today can hand
 // back an in_progress bead whose claim never blocked it.
-func readyOnly(ready, inprog []rhq.RepoIssue) []rhq.RepoIssue {
+func readyOnly(ready, inprog []posse.RepoIssue) []posse.RepoIssue {
 	held := make(map[string]bool, len(inprog))
 	for _, is := range inprog {
 		held[issueKey(is)] = true
 	}
-	out := make([]rhq.RepoIssue, 0, len(ready))
+	out := make([]posse.RepoIssue, 0, len(ready))
 	for _, is := range ready {
 		if is.Status == "in_progress" || held[issueKey(is)] {
 			continue
@@ -1085,7 +1085,7 @@ func readyOnly(ready, inprog []rhq.RepoIssue) []rhq.RepoIssue {
 	return out
 }
 
-func (c *cockpit) selSession() *rhq.HerdrSession {
+func (c *cockpit) selSession() *posse.HerdrSession {
 	if c.cursor < len(c.sessions) {
 		return &c.sessions[c.cursor]
 	}
@@ -1093,7 +1093,7 @@ func (c *cockpit) selSession() *rhq.HerdrSession {
 }
 
 // selInProg is the claimed bead under the cursor, or nil.
-func (c *cockpit) selInProg() *rhq.RepoIssue {
+func (c *cockpit) selInProg() *posse.RepoIssue {
 	if i := c.cursor - len(c.sessions); i >= 0 && i < len(c.inprog) {
 		return &c.inprog[i]
 	}
@@ -1102,7 +1102,7 @@ func (c *cockpit) selInProg() *rhq.RepoIssue {
 
 // selIssue is the *ready* bead under the cursor, or nil — claimed beads are
 // selInProg's, and the two sections answer to different keys (ADR 0004 §3).
-func (c *cockpit) selIssue() *rhq.RepoIssue {
+func (c *cockpit) selIssue() *posse.RepoIssue {
 	if i := c.cursor - len(c.sessions) - len(c.inprog); i >= 0 && i < len(c.issues) {
 		return &c.issues[i]
 	}
@@ -1112,7 +1112,7 @@ func (c *cockpit) selIssue() *rhq.RepoIssue {
 // inProgTarget is the bead a modeConfirm y aimed at, if it is still
 // claimed — matched by identity, so a re-sort does not move it and a
 // disappearance reads as nil rather than as the row that took its place.
-func (c *cockpit) inProgTarget() *rhq.RepoIssue {
+func (c *cockpit) inProgTarget() *posse.RepoIssue {
 	if c.target.id == "" {
 		return nil
 	}
@@ -1127,7 +1127,7 @@ func (c *cockpit) inProgTarget() *rhq.RepoIssue {
 // sessionTarget is the session a modeConfirm y aimed at, if it is still
 // listed. Same reasoning as inProgTarget: the sessions list re-sorts
 // blocked-first on every refresh.
-func (c *cockpit) sessionTarget() *rhq.HerdrSession {
+func (c *cockpit) sessionTarget() *posse.HerdrSession {
 	if c.target.name == "" {
 		return nil
 	}
@@ -1176,13 +1176,13 @@ const noSession = "no session"
 // SessionForBead, so the slot alone would report "no session" for nearly
 // every claimed bead. These are the same two names dispatch checks when it
 // decides whether a bead is held (dispatch.go, the --resume path).
-func (c *cockpit) holderSession(is rhq.RepoIssue) *rhq.HerdrSession {
+func (c *cockpit) holderSession(is posse.RepoIssue) *posse.HerdrSession {
 	if is.Assignee == "" {
 		return nil
 	}
 	for _, name := range []string{
-		rhq.SessionForBead(is.Assignee, is.Dir, is.ID),
-		rhq.SessionFor(is.Assignee, is.Dir),
+		posse.SessionForBead(is.Assignee, is.Dir, is.ID),
+		posse.SessionFor(is.Assignee, is.Dir),
 	} {
 		for i := range c.sessions {
 			if c.sessions[i].Name == name {
@@ -1196,7 +1196,7 @@ func (c *cockpit) holderSession(is rhq.RepoIssue) *rhq.HerdrSession {
 // holderState is the herdr status of the holder's session, or noSession.
 // A session with no agent detected reads "shell" — the same word the
 // sessions section uses for it.
-func (c *cockpit) holderState(is rhq.RepoIssue) string {
+func (c *cockpit) holderState(is posse.RepoIssue) string {
 	s := c.holderSession(is)
 	switch {
 	case s == nil:
@@ -1210,7 +1210,7 @@ func (c *cockpit) holderState(is rhq.RepoIssue) string {
 // actSession is the session a key acts on: the selected session row, or the
 // holder of the selected in-progress bead — enter/p/v on an in-progress row
 // act on the holder (ADR 0004 §3).
-func (c *cockpit) actSession() *rhq.HerdrSession {
+func (c *cockpit) actSession() *posse.HerdrSession {
 	if s := c.selSession(); s != nil {
 		return s
 	}
@@ -1409,7 +1409,7 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			// what makes this a wall and not a hint. There is no cockpit
 			// override: the way through is the CLI's --foreign, which the
 			// refusal names.
-			if err := rhq.ForeignKillRefusal(s); err != nil {
+			if err := posse.ForeignKillRefusal(s); err != nil {
 				c.status = err.Error()
 				break
 			}
@@ -1481,7 +1481,7 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 // dispatchBead is the real launcher. Only one launch is ever in flight
 // (c.dispatching), so setting the shared dispatcher's --resume flag per
 // call is safe.
-func (c *cockpit) dispatchBead(bead rhq.RepoIssue, resume bool) (string, error) {
+func (c *cockpit) dispatchBead(bead posse.RepoIssue, resume bool) (string, error) {
 	c.disp.Resume = resume
 	return c.disp.LaunchBead(bead)
 }
@@ -1554,7 +1554,7 @@ func (c *cockpit) unclaimBead(dir, id string) {
 // resume is `d` on an in-progress row: dispatch's --resume semantics, which
 // LaunchBead already realizes (re-prompt the holder, or launch it if the
 // session is gone).
-func (c *cockpit) launch(bead rhq.RepoIssue, resume bool) {
+func (c *cockpit) launch(bead posse.RepoIssue, resume bool) {
 	verb, done := "dispatching", "dispatched "
 	if resume {
 		verb, done = "resuming", "resumed "
@@ -1579,7 +1579,7 @@ func (c *cockpit) launch(bead rhq.RepoIssue, resume bool) {
 // work `posse prompt` does: resolve the pane, wait for a screen herdr has
 // SEEN, type, mark crew.
 //
-// Every step of it talks to herdr, and the gate (rhq.AwaitPromptable) holds
+// Every step of it talks to herdr, and the gate (posse.AwaitPromptable) holds
 // for up to the session's runtime startup wait — 45s for claude — on the
 // one case it exists for: a session so fresh that herdr is still guessing
 // at its pane. That is exactly when an operator presses `p`, having just
@@ -1961,7 +1961,7 @@ func renderRow(r row, w int, selected bool) string {
 
 // sessionCols is a session row: mark · emoji · status · name+persona (flex)
 // · cost and (focused) as droppable context.
-func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
+func (c *cockpit) sessionCols(s posse.HerdrSession) []col {
 	mark, color := "·", aDim
 	switch s.Status {
 	case "blocked":
@@ -1984,7 +1984,7 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 		// The cage above the default tier, and the host sockets it was
 		// opened for: `container+herdr` says the session is caged AND that
 		// it holds a capability over the rest of the herd (ADR 0002 §3).
-		if tag := rhq.CageTag(s.Cage, s.Sockets); tag != "" {
+		if tag := posse.CageTag(s.Cage, s.Sockets); tag != "" {
 			name += " " + tag
 		}
 		if s.Degraded != "" {
@@ -1993,14 +1993,14 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 		// The tag above says the session runs at the tier it names; this one
 		// says that tier is not the one its PID asked for (rangerhq-oay).
 		if s.Fallback != "" {
-			name += " " + rhq.FallbackTag
+			name += " " + posse.FallbackTag
 		}
 		if s.TurnFailure != "" {
-			name += " " + rhq.TurnFailureTag
+			name += " " + posse.TurnFailureTag
 		}
 	}
 	if s.Crew {
-		name += " " + rhq.CrewTag
+		name += " " + posse.CrewTag
 	}
 	cols := []col{
 		{text: mark},
@@ -2019,7 +2019,7 @@ func (c *cockpit) sessionCols(s rhq.HerdrSession) []col {
 
 // issueCols is a ready-work row: id · priority · holder · title (flex) ·
 // repo dir as droppable context.
-func issueCols(is rhq.RepoIssue) []col {
+func issueCols(is posse.RepoIssue) []col {
 	who := is.Assignee
 	if who == "" {
 		who = "unassigned"
@@ -2029,7 +2029,7 @@ func issueCols(is rhq.RepoIssue) []col {
 		{text: fmt.Sprintf("p%d", is.Priority)},
 		{text: who, pad: 12, clip: true, ansi: aDim, drop: dropHolderAt},
 		{kind: colFlex, text: is.Title},
-		{kind: colDrop, text: rhq.AbbrevHome(is.Dir), ansi: aDim},
+		{kind: colDrop, text: posse.AbbrevHome(is.Dir), ansi: aDim},
 	}
 }
 
@@ -2075,7 +2075,7 @@ func shortAge(now, t time.Time) string {
 // holder *name* drops with the sessions' holder column below dropHolderAt;
 // the state does not — it is the stall signal this whole section exists to
 // show, and it costs at most ten cells.
-func (c *cockpit) inprogCols(is rhq.RepoIssue) []col {
+func (c *cockpit) inprogCols(is posse.RepoIssue) []col {
 	who := is.Assignee
 	if who == "" {
 		who = "unassigned"
@@ -2088,7 +2088,7 @@ func (c *cockpit) inprogCols(is rhq.RepoIssue) []col {
 		{text: state, pad: 10, ansi: holderAnsi(state)},
 		{text: shortAge(c.clock(), is.Updated), pad: 3, ansi: aDim},
 		{kind: colFlex, text: is.Title},
-		{kind: colDrop, text: rhq.AbbrevHome(is.Dir), ansi: aDim},
+		{kind: colDrop, text: posse.AbbrevHome(is.Dir), ansi: aDim},
 	}
 }
 
@@ -2096,7 +2096,7 @@ func (c *cockpit) inprogCols(is rhq.RepoIssue) []col {
 // could not be read — an unreadable store is not an all-clear, and a count
 // rendered without that word would read as one.
 func (c *cockpit) govHeading() string {
-	h := rhq.GovSummary(c.gov)
+	h := posse.GovSummary(c.gov)
 	if c.govFailed > 0 {
 		h += fmt.Sprintf(" · partial, %d store(s) unread", c.govFailed)
 	}
@@ -2129,7 +2129,7 @@ func (c *cockpit) govSegment() string {
 	if c.govAt.IsZero() {
 		return "gov …"
 	}
-	seg := "gov " + rhq.GovSummary(c.gov)
+	seg := "gov " + posse.GovSummary(c.gov)
 	for _, g := range c.gov {
 		if g.ID != "G7" {
 			continue
@@ -2157,9 +2157,9 @@ func (c *cockpit) govSegment() string {
 // column. URGENT is red because the shop is stopped; LANE is plain because
 // the rest of the shop is still flowing and a colour that shouts at both
 // tells the eye nothing.
-func govCols(g rhq.GovCondition) []col {
+func govCols(g posse.GovCondition) []col {
 	color := ""
-	if g.Class == rhq.GovUrgent {
+	if g.Class == posse.GovUrgent {
 		color = aRed
 	}
 	return []col{
@@ -2200,7 +2200,7 @@ func (c *cockpit) buildRows() {
 	// comment), so tab, reselect and every key below are untouched.
 	if len(c.gov) > 0 || c.govFailed > 0 {
 		rows = append(rows, heading(fmt.Sprintf("GOVERNANCE (%s)", c.govHeading()), secSessions))
-		for _, g := range rhq.GovOrdered(c.gov) {
+		for _, g := range posse.GovOrdered(c.gov) {
 			rows = append(rows, row{kind: rowFiller, sec: secSessions, cols: govCols(g)})
 		}
 		rows = append(rows, row{kind: rowFiller, sec: secSessions})
@@ -2385,7 +2385,7 @@ func (c *cockpit) moveRows(n int) {
 func (c *cockpit) headerCols() []col {
 	cols := []col{
 		{text: "🤠 posse", ansi: aBold},
-		{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + rhq.VersionString() + planSuffix(c.planLine), ansi: aDim},
+		{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + posse.VersionString() + planSuffix(c.planLine), ansi: aDim},
 	}
 	// The credential warning goes between them, fixed, and ONLY when there
 	// is one. Appended unconditionally it would spend a separator cell of
@@ -2418,7 +2418,7 @@ func (c *cockpit) headerCols() []col {
 // two states cost different things, and one colour for both tells the eye
 // nothing. Neither is a stop — the shop below the header is running, and
 // expiry parks nothing.
-func credCol(ex []rhq.CredExpiry, now time.Time) (col, bool) {
+func credCol(ex []posse.CredExpiry, now time.Time) (col, bool) {
 	if len(ex) == 0 {
 		return col{}, false
 	}

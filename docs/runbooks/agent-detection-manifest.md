@@ -118,7 +118,7 @@ all = [                            # all/any/not, each with contains/regex/line_
 
 **`visible_*`** is what separates a rule that MATCHED from herdr's guess.
 posse's readiness gate demands a seen state (`awaitSettled`,
-`internal/rhq/dispatch.go`), because `default_known_agent_idle_fallback`
+`internal/posse/dispatch.go`), because `default_known_agent_idle_fallback`
 answers `idle` for any known agent whose screen matched nothing — including
 a pane that is still a shell 0.2s into a launch. Set it on every rule you
 write.

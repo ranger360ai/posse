@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // qaPrescription pulls the runnable block out of a refusal: everything from
@@ -104,7 +104,7 @@ func qaInstallHooks(t *testing.T, bin, home string, args ...string) (string, int
 // neither the hook nor the chain.
 func gitOutsideGates(t *testing.T) string {
 	t.Helper()
-	for _, dir := range filepath.SplitList(rhq.PathOutsideGates("")) {
+	for _, dir := range filepath.SplitList(posse.PathOutsideGates("")) {
 		p := filepath.Join(dir, "git")
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
 			return p
@@ -310,10 +310,10 @@ func qaAssertBothSlotsChained(t *testing.T, repo string) {
 	// longer a way to ask this question.
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a"), 0o644)
 	add := exec.Command(gitOutsideGates(t), "-C", repo, "add", "a.txt")
-	add.Env = []string{"PATH=" + rhq.PathOutsideGates("")}
+	add.Env = []string{"PATH=" + posse.PathOutsideGates("")}
 	add.Run()
 	ci := exec.Command(gitOutsideGates(t), "-C", repo, "commit", "-qm", "operator commit", "--", "a.txt")
-	ci.Env = []string{"PATH=" + rhq.PathOutsideGates(""), "HOME=" + t.TempDir(),
+	ci.Env = []string{"PATH=" + posse.PathOutsideGates(""), "HOME=" + t.TempDir(),
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	if out, err := ci.CombinedOutput(); err != nil {
 		t.Errorf("a path-limited commit must survive the chain: %v %s", err, out)

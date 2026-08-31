@@ -283,7 +283,7 @@ func TestQABdArgvGateResolvesTheVerb(t *testing.T) {
 		// difference. The guard itself is untouched: `BD=bd; $BD daemon stop`
 		// stays in the refused table above.
 		`P=$(echo "$PATH" | tr ':' '\n'); grep -n bd f`,
-		`NEWPATH=$(echo "$PATH" | tr ':' '\n' | grep -v gates | paste -sd: -); PATH="$NEWPATH" go test ./internal/rhq/ ; grep -n '"bd": {' gates.go`,
+		`NEWPATH=$(echo "$PATH" | tr ':' '\n' | grep -v gates | paste -sd: -); PATH="$NEWPATH" go test ./internal/posse/ ; grep -n '"bd": {' gates.go`,
 		"echo $(date | wc -l) && grep -rn bd internal/",
 		// These two are what hold segments()' `$(`-depth and backtick arms
 		// specifically: the fragment a split leaves behind starts with a

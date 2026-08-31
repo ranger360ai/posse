@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 var qaANSI = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
@@ -31,7 +31,7 @@ func qaPlain(s string) string { return qaANSI.ReplaceAllString(s, "") }
 // enough rows to overflow a small pane in both directions.
 func qaFixture() *cockpit {
 	c := &cockpit{
-		sessions: []rhq.HerdrSession{
+		sessions: []posse.HerdrSession{
 			{Name: "devops-rangerhq-h3n", Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: "/w"},
 			{Name: "developer-rangerhq-fei", Emoji: "🐿️", Agent: "developer", Status: "working", Dir: "/w", Focused: true},
 			{Name: "business-manager-rangerhq-a1a", Emoji: "🙂", Agent: "business-manager", Status: "idle", Runtime: "codex", Tier: "premium"},
@@ -39,8 +39,8 @@ func qaFixture() *cockpit {
 		},
 	}
 	for i := 0; i < 12; i++ {
-		c.issues = append(c.issues, rhq.RepoIssue{
-			BdIssue: rhq.BdIssue{
+		c.issues = append(c.issues, posse.RepoIssue{
+			BdIssue: posse.BdIssue{
 				ID:       fixtureBeadID(i),
 				Title:    fmt.Sprintf("bead %d — a title long enough that the flex column has to cut it 👨‍💻", i),
 				Priority: i % 4,
@@ -388,7 +388,7 @@ func TestCockpitDispWidthTableGaps(t *testing.T) {
 	// End to end, the repro from the report: the layout believed this row was
 	// exactly 60 cells and the terminal drew 61, wrapping the trailing … onto
 	// the next line and pushing the footer off a full pane.
-	is := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "rangerhq-yel", Priority: 1,
+	is := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "rangerhq-yel", Priority: 1,
 		Title: "🟡 flaky suite " + strings.Repeat("x", 60)}, Dir: "/Users/x/src/posse"}
 	if got := dispWidth(qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is)}, 60, false))); got != 60 {
 		t.Errorf("row rendered at 60 measures %d", got)
@@ -396,7 +396,7 @@ func TestCockpitDispWidthTableGaps(t *testing.T) {
 	// ...and no title built from the newly-tabled glyphs may overflow its
 	// terminal at any width — the wrap invariant, not just the arithmetic.
 	for _, title := range []string{"🟡 flaky suite", "☝ a pointed remark", "🐿 bare, 🐿️ promoted"} {
-		is := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "rangerhq-yel", Priority: 1,
+		is := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "rangerhq-yel", Priority: 1,
 			Title: title + strings.Repeat(" x", 40)}, Dir: "/Users/x/src/posse"}
 		for _, w := range []int{40, 60, 80, 100, 140} {
 			line := qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is)}, w, false))
@@ -420,10 +420,10 @@ var qaClock = time.Date(2026, 8, 18, 14, 5, 9, 0, time.UTC)
 func qaProgFixture() *cockpit {
 	c := &cockpit{
 		now: func() time.Time { return qaClock },
-		sessions: []rhq.HerdrSession{
-			{Name: rhq.SessionForBead("devops", qaDir, "b-blocked"), Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: qaDir, PaneID: "w1:p1"},
-			{Name: rhq.SessionForBead("developer", qaDir, "b-working"), Emoji: "🐿️", Agent: "developer", Status: "working", Dir: qaDir, PaneID: "w2:p1"},
-			{Name: rhq.SessionFor("business-manager", qaDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: qaDir, PaneID: "w3:p1"},
+		sessions: []posse.HerdrSession{
+			{Name: posse.SessionForBead("devops", qaDir, "b-blocked"), Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: qaDir, PaneID: "w1:p1"},
+			{Name: posse.SessionForBead("developer", qaDir, "b-working"), Emoji: "🐿️", Agent: "developer", Status: "working", Dir: qaDir, PaneID: "w2:p1"},
+			{Name: posse.SessionFor("business-manager", qaDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: qaDir, PaneID: "w3:p1"},
 		},
 		status: "dispatched b-working → developer",
 	}
@@ -436,16 +436,16 @@ func qaProgFixture() *cockpit {
 		{"b-blocked", "devops", 26 * time.Hour},
 		{"b-none", "qa", 12 * time.Minute},
 	} {
-		c.inprog = append(c.inprog, rhq.RepoIssue{
-			BdIssue: rhq.BdIssue{ID: ip.id, Title: "a claimed bead with a reasonably long title so the flex column has work to do",
+		c.inprog = append(c.inprog, posse.RepoIssue{
+			BdIssue: posse.BdIssue{ID: ip.id, Title: "a claimed bead with a reasonably long title so the flex column has work to do",
 				Status: "in_progress", Priority: 2, Assignee: ip.who, Updated: qaClock.Add(-ip.age)},
 			Dir: qaDir,
 		})
 	}
 	c.sortInProg()
 	for i := 0; i < 6; i++ {
-		c.issues = append(c.issues, rhq.RepoIssue{
-			BdIssue: rhq.BdIssue{ID: "r-" + string(rune('a'+i)), Title: "ready work item", Priority: i % 4},
+		c.issues = append(c.issues, posse.RepoIssue{
+			BdIssue: posse.BdIssue{ID: "r-" + string(rune('a'+i)), Title: "ready work item", Priority: i % 4},
 			Dir:     qaDir,
 		})
 	}
@@ -499,10 +499,10 @@ func TestQAInProgressGeometrySweep(t *testing.T) {
 // Every in-progress row must survive the same sweep with hostile content in
 // the fields the join controls: a long assignee, a long id, an empty one.
 func TestQAInProgressHostileFields(t *testing.T) {
-	for _, bad := range []rhq.RepoIssue{
-		{BdIssue: rhq.BdIssue{ID: strings.Repeat("i", 80), Title: "t", Assignee: strings.Repeat("a", 60), Updated: qaClock}, Dir: qaDir},
-		{BdIssue: rhq.BdIssue{ID: "", Title: "", Assignee: "", Priority: -1}, Dir: ""},
-		{BdIssue: rhq.BdIssue{ID: "e-1", Title: "🧛🐿️🙂 emoji title 日本語テキスト", Assignee: "🎭persona", Updated: qaClock.Add(-time.Hour)}, Dir: qaDir},
+	for _, bad := range []posse.RepoIssue{
+		{BdIssue: posse.BdIssue{ID: strings.Repeat("i", 80), Title: "t", Assignee: strings.Repeat("a", 60), Updated: qaClock}, Dir: qaDir},
+		{BdIssue: posse.BdIssue{ID: "", Title: "", Assignee: "", Priority: -1}, Dir: ""},
+		{BdIssue: posse.BdIssue{ID: "e-1", Title: "🧛🐿️🙂 emoji title 日本語テキスト", Assignee: "🎭persona", Updated: qaClock.Add(-time.Hour)}, Dir: qaDir},
 	} {
 		c := qaProgFixture()
 		c.inprog = append(c.inprog, bad)
@@ -525,27 +525,27 @@ func TestQAHolderJoinPrecision(t *testing.T) {
 
 	// The per-bead session of a DIFFERENT bead must not be mistaken for
 	// this bead's holder — that is the whole point of joining on the id.
-	other := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "b-other", Assignee: "devops"}, Dir: qaDir}
+	other := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "b-other", Assignee: "devops"}, Dir: qaDir}
 	if got := c.holderState(other); got != noSession {
 		t.Errorf("bead with only another bead's session: state %q, want %q", got, noSession)
 	}
 
 	// Same persona, same bead id, DIFFERENT repo: not the holder.
-	elsewhere := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "b-blocked", Assignee: "devops"}, Dir: "/other/repo"}
+	elsewhere := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "b-blocked", Assignee: "devops"}, Dir: "/other/repo"}
 	if got := c.holderState(elsewhere); got != noSession {
 		t.Errorf("same bead id in another repo: state %q, want %q", got, noSession)
 	}
 
 	// An unassigned in-progress bead has no holder, and must not join to
 	// whatever session happens to be first.
-	orphan := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "b-orphan"}, Dir: qaDir}
+	orphan := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "b-orphan"}, Dir: qaDir}
 	if s := c.holderSession(orphan); s != nil {
 		t.Errorf("unassigned bead joined to %q", s.Name)
 	}
 
 	// Dial F wins over the slot when both exist.
-	c.sessions = append(c.sessions, rhq.HerdrSession{Name: rhq.SessionFor("devops", qaDir), Status: "idle"})
-	held := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "b-blocked", Assignee: "devops"}, Dir: qaDir}
+	c.sessions = append(c.sessions, posse.HerdrSession{Name: posse.SessionFor("devops", qaDir), Status: "idle"})
+	held := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "b-blocked", Assignee: "devops"}, Dir: qaDir}
 	if got := c.holderState(held); got != "blocked" {
 		t.Errorf("per-bead session must win over the slot: state %q, want blocked", got)
 	}
@@ -571,7 +571,7 @@ func TestQAStalledFirstExactOrder(t *testing.T) {
 	// Ties keep bd's order (SliceStable).
 	c2 := qaProgFixture()
 	c2.sessions = nil // everything is "no session" — one rank, all ties
-	before := append([]rhq.RepoIssue(nil), c2.inprog...)
+	before := append([]posse.RepoIssue(nil), c2.inprog...)
 	c2.sortInProg()
 	for i := range before {
 		if c2.inprog[i].ID != before[i].ID {
@@ -584,12 +584,12 @@ func TestQAStalledFirstExactOrder(t *testing.T) {
 // ── one bead, one section (ADR 0004 §2) ─────────────────────────────────────
 
 func TestQAReadyFilterBothWays(t *testing.T) {
-	inprog := []rhq.RepoIssue{{BdIssue: rhq.BdIssue{ID: "x", Status: "in_progress"}, Dir: "/r"}}
-	ready := []rhq.RepoIssue{
-		{BdIssue: rhq.BdIssue{ID: "x", Status: "in_progress"}, Dir: "/r"}, // both signals
-		{BdIssue: rhq.BdIssue{ID: "y", Status: "in_progress"}, Dir: "/r"}, // status only (repo bd failed)
-		{BdIssue: rhq.BdIssue{ID: "z", Status: "open"}, Dir: "/r"},
-		{BdIssue: rhq.BdIssue{ID: "x", Status: "open"}, Dir: "/other"}, // same id, other repo: keep
+	inprog := []posse.RepoIssue{{BdIssue: posse.BdIssue{ID: "x", Status: "in_progress"}, Dir: "/r"}}
+	ready := []posse.RepoIssue{
+		{BdIssue: posse.BdIssue{ID: "x", Status: "in_progress"}, Dir: "/r"}, // both signals
+		{BdIssue: posse.BdIssue{ID: "y", Status: "in_progress"}, Dir: "/r"}, // status only (repo bd failed)
+		{BdIssue: posse.BdIssue{ID: "z", Status: "open"}, Dir: "/r"},
+		{BdIssue: posse.BdIssue{ID: "x", Status: "open"}, Dir: "/other"}, // same id, other repo: keep
 	}
 	got := readyOnly(ready, inprog)
 	var ids []string
@@ -644,7 +644,7 @@ func TestQADResumeFlag(t *testing.T) {
 	var gotResume []bool
 	var gotID []string
 	done := make(chan struct{}, 4)
-	c.launcher = func(b rhq.RepoIssue, resume bool) (string, error) {
+	c.launcher = func(b posse.RepoIssue, resume bool) (string, error) {
 		gotResume = append(gotResume, resume)
 		gotID = append(gotID, b.ID)
 		done <- struct{}{}
@@ -668,8 +668,8 @@ func TestQADResumeFlag(t *testing.T) {
 func TestQADOnSlotHeldRowPassesHolderFields(t *testing.T) {
 	c := qaProgFixture()
 	c.results = make(chan string, 2)
-	done := make(chan rhq.RepoIssue, 1)
-	c.launcher = func(b rhq.RepoIssue, resume bool) (string, error) {
+	done := make(chan posse.RepoIssue, 1)
+	c.launcher = func(b posse.RepoIssue, resume bool) (string, error) {
 		if !resume {
 			t.Errorf("d on slot-held row: resume=%v, want true", resume)
 		}
@@ -688,7 +688,7 @@ func TestQADOnSlotHeldRowPassesHolderFields(t *testing.T) {
 		t.Fatal("qaProgFixture lost the slot-held row")
 	}
 	held := c.inprog[idx]
-	if s := c.holderSession(held); s == nil || s.Name != rhq.SessionFor("business-manager", qaDir) {
+	if s := c.holderSession(held); s == nil || s.Name != posse.SessionFor("business-manager", qaDir) {
 		t.Fatalf("b-slot holder = %+v, want the business-manager slot", c.holderSession(held))
 	}
 	c.cursor = len(c.sessions) + idx
@@ -799,7 +799,7 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 	// A refresh in which the aimed bead still exists but the list re-sorts
 	// (its holder went from working to blocked, say).
 	sel := c.selected()
-	c.inprog = []rhq.RepoIssue{c.inprog[3], c.inprog[1], c.inprog[0], c.inprog[2]}
+	c.inprog = []posse.RepoIssue{c.inprog[3], c.inprog[1], c.inprog[0], c.inprog[2]}
 	c.cursor = reselect(c.sessions, c.inprog, c.issues, sel)
 	if got := c.selInProg().ID; got != aimed {
 		t.Errorf("confirm retargeted after a re-sort: aimed %s, now %s", aimed, got)
@@ -812,7 +812,7 @@ func TestQAUnclaimTargetSurvivesRefresh(t *testing.T) {
 	// cursor lands on another claimed bead — that is reselect doing its job —
 	// and the confirm must not follow it there.
 	sel = c.selected()
-	var left []rhq.RepoIssue
+	var left []posse.RepoIssue
 	for _, is := range c.inprog {
 		if is.ID != aimed {
 			left = append(left, is)
@@ -937,12 +937,12 @@ exit 0
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads:\n  - "+dir+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := &rhq.App{Home: home, ConfigPath: filepath.Join(home, "config.yaml"), StateDir: filepath.Join(home, "state")}
+	a := &posse.App{Home: home, ConfigPath: filepath.Join(home, "config.yaml"), StateDir: filepath.Join(home, "state")}
 
 	c := qaProgFixture()
-	c.app, c.bd = a, rhq.Bd{Bin: bd}
+	c.app, c.bd = a, posse.Bd{Bin: bd}
 	c.claims = make(chan string, 4)
-	c.hb = &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard}
+	c.hb = &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard}
 	// bd runs with cmd.Dir set to the bead's repo, so the fixture's dir has
 	// to be one that exists — otherwise every call dies at chdir and the
 	// "nothing was unclaimed" arm passes for the wrong reason.
@@ -1048,7 +1048,7 @@ func TestCockpitCellScanFoldGuards(t *testing.T) {
 // cockpit offers no override: the refusal names the CLI flag that is one.
 func TestQAForeignRowIsNotKillableFromTheCockpit(t *testing.T) {
 	c := qaProgFixture()
-	c.sessions = append(c.sessions, rhq.HerdrSession{
+	c.sessions = append(c.sessions, posse.HerdrSession{
 		Name: "someone-elses", WorkspaceID: "w9", Emoji: "👽", Status: "working", Foreign: true})
 	c.cursor = len(c.sessions) - 1
 

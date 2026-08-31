@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // ranger-base-bzu: a binary the Makefile did not build must still name its
@@ -38,7 +38,7 @@ func TestVersionNamesTheCommitWithoutTheLdflag(t *testing.T) {
 	}
 	scratch := filepath.Join(repo, "cmd", "posse", "scratch.go")
 
-	if got, want := build(), "posse "+rhq.Version+"+"+short+" (herdr-native)"; got != want {
+	if got, want := build(), "posse "+posse.Version+"+"+short+" (herdr-native)"; got != want {
 		t.Errorf("a plain `go build` reports %q, want %q", got, want)
 	}
 
@@ -48,21 +48,21 @@ func TestVersionNamesTheCommitWithoutTheLdflag(t *testing.T) {
 	if err := os.WriteFile(scratch, []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := build(), "posse "+rhq.Version+"+"+short+"-dirty (herdr-native)"; got != want {
+	if got, want := build(), "posse "+posse.Version+"+"+short+"-dirty (herdr-native)"; got != want {
 		t.Errorf("a build of an edited tree reports %q, want %q", got, want)
 	}
 
 	// qa's case on this bead: an exact tag, sitting in the binary's own
 	// build info, and the version line still said "dev". Rendered as the
 	// bare version — "0.4.0+v0.4.0" says the same thing twice. The tag is
-	// spelled from rhq.Version, not a literal: this stanza is ABOUT the two
+	// spelled from posse.Version, not a literal: this stanza is ABOUT the two
 	// agreeing, so a release bump must not be able to leave it asserting the
 	// collapse against last release's tag (ranger-base-qlrx).
 	if err := os.Remove(scratch); err != nil {
 		t.Fatal(err)
 	}
-	git("tag", "v"+rhq.Version)
-	if got, want := build(), "posse "+rhq.Version+" (herdr-native)"; got != want {
+	git("tag", "v"+posse.Version)
+	if got, want := build(), "posse "+posse.Version+" (herdr-native)"; got != want {
 		t.Errorf("a build at the release tag reports %q, want %q", got, want)
 	}
 }
@@ -93,7 +93,7 @@ func TestMakeBuildStampMatchesSourceBuildStamp(t *testing.T) {
 	}
 
 	got := posseVersion(t, filepath.Join(repo, "bin", "posse-go"))
-	want := "posse " + rhq.SourceBuildVersion(repo) + " (herdr-native)"
+	want := "posse " + posse.SourceBuildVersion(repo) + " (herdr-native)"
 	if got != want {
 		t.Errorf("`make build` reports %q, SourceBuildStamp of the same tree says %q", got, want)
 	}

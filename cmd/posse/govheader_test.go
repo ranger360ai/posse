@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // headerOf is the first line of the render — the one line that is not in the
@@ -71,9 +71,9 @@ func TestCockpitGovHeaderNamesTheDeadLoop(t *testing.T) {
 func TestCockpitGovHeaderSaysLoopDeadOnlyForG7(t *testing.T) {
 	c := fixture()
 	c.govAt = c.clock()
-	c.gov = rhq.GovSet{
-		{ID: "G1", Class: rhq.GovLane, Key: "blocked:devops-x", Detail: "devops-x is blocked"},
-		{ID: "G6", Class: rhq.GovUrgent, Key: "budget-stop:day", Detail: "budget stop"},
+	c.gov = posse.GovSet{
+		{ID: "G1", Class: posse.GovLane, Key: "blocked:devops-x", Detail: "devops-x is blocked"},
+		{ID: "G6", Class: posse.GovUrgent, Key: "budget-stop:day", Detail: "budget stop"},
 	}
 	c.buildRows()
 	got := headerOf(c, 140, 40)
@@ -93,8 +93,8 @@ func TestCockpitGovHeaderSaysLoopDeadOnlyForG7(t *testing.T) {
 func TestCockpitGovHeaderNamesABrokenArmNotADeadLoop(t *testing.T) {
 	c := fixture()
 	c.govAt = c.clock()
-	c.gov = rhq.GovSet{
-		{ID: "G7", Class: rhq.GovUrgent, Key: "arm-broken",
+	c.gov = posse.GovSet{
+		{ID: "G7", Class: posse.GovUrgent, Key: "arm-broken",
 			Detail: "autostart_interval: in /x/config.yaml is present but empty"},
 	}
 	c.buildRows()

@@ -112,7 +112,7 @@ func TestPIDPlaceholderChecksDiscriminate(t *testing.T) {
 var cmdTemplate = regexp.MustCompile("(?m)^\\s*(?:Command|const DefaultAgentCommand =)\\s*:?\\s*(`.*)$")
 
 func TestBuiltinTemplatesPassThePIDInAFlagValue(t *testing.T) {
-	for _, path := range []string{"internal/rhq/runtime.go", "internal/rhq/agents.go"} {
+	for _, path := range []string{"internal/posse/runtime.go", "internal/posse/agents.go"} {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)

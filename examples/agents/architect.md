@@ -144,7 +144,7 @@ Missing requirement, or two designs that need a human tiebreak: state the
 options and your recommendation in a comment, then stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons there —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons there —
 especially decisions that got reversed, and why.
 
 ## Metrics

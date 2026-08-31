@@ -242,7 +242,7 @@ cmd_status() {
 # hook-deps — what the generated hooks need, and what this distro has
 # ---------------------------------------------------------------------------
 # This is the probe that pays for the whole multi-distro route. The hooks posse
-# renders (internal/rhq/gates.go) are SHELL, and shell is where distro variance
+# renders (internal/posse/gates.go) are SHELL, and shell is where distro variance
 # is visible — the Go suite cannot see it at all. ranger-base-rmgz is the
 # finding: `cmp` ships in diffutils, a minimal RHEL box does not have it, and
 # without it the prepare-commit-msg wall still refuses but silently drops the
@@ -262,7 +262,7 @@ cmd_hook_deps() {
   need_docker
   container_running || cmd_start
   echo "cleanroom: commands the generated hooks call, on $DISTRO ($IMAGE)"
-  echo "cleanroom: source of the list — internal/rhq/gates.go, enumerated for ranger-base-rmgz"
+  echo "cleanroom: source of the list — internal/posse/gates.go, enumerated for ranger-base-rmgz"
   echo
   local out
   out=$(as_tester "for c in $HOOK_DEPS; do

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // ADR 0013 §6 in the cockpit row: the persona tag carries the DISPLAY tier,
@@ -20,7 +20,7 @@ import (
 // every tier now, so a rule about the map has to be fixtured on the map.
 func TestCockpitRowShowsTheDisplayTier(t *testing.T) {
 	home := t.TempDir()
-	app := &rhq.App{Home: home, ConfigPath: filepath.Join(home, "config.yaml")}
+	app := &posse.App{Home: home, ConfigPath: filepath.Join(home, "config.yaml")}
 	if err := os.MkdirAll(app.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestCockpitRowShowsTheDisplayTier(t *testing.T) {
 	}
 	c := &cockpit{
 		app: app,
-		sessions: []rhq.HerdrSession{
+		sessions: []posse.HerdrSession{
 			{Name: "dev-blank", Agent: "dev", Status: "idle", Runtime: "blankcli", Tier: "standard"},
 			{Name: "dev-claude", Agent: "dev", Status: "idle", Runtime: "claude", Tier: "fast"},
 			{Name: "dev-grok", Agent: "dev", Status: "idle", Runtime: "grok", Tier: "fast"},

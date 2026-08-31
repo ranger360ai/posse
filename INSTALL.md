@@ -1709,7 +1709,7 @@ Sessions of finished beads are left idle for you to reap (`posse kill`, or
 `x` in the cockpit). They cost nothing and do not block the next pass.
 
 A reap is also when a persona's memory is made durable. Personas append what
-they learn to `$RHQ_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
+they learn to `$POSSE_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
 `posse kill` does — path-limited to that one persona's directory, scanned for
 credential shapes first, and never pushed. It is a no-op unless your home keeps
 `personas/` in git. Killing by hand also *lands the plane* first: one bounded

@@ -36,7 +36,7 @@ generates.** Both halves are measured.
 *Invisible to the Go suite.* The failure set of `make test` is byte-identical
 on Debian and on Fedora:
 
-| image | posse | cmd/posse | internal/rhq | failures |
+| image | posse | cmd/posse | internal/posse | failures |
 |---|---|---|---|---|
 | `golang:1.26` (Debian trixie) | ok 4.5s | **FAIL** 33.0s | **FAIL** 90.8s | 5 `TestQueue*` + 2 `TestQAInstallRefusal*` |
 | `probe-fedora:1` (Fedora 44) | ok 4.6s | **FAIL** 26.1s | **FAIL** 113.0s | *the same 7* |
@@ -60,7 +60,7 @@ cause, and it is not a test artifact:
 .git/hooks/prepare-commit-msg: line 193: cmp: command not found
 ```
 
-`internal/rhq/gates.go:1490` renders
+`internal/posse/gates.go:1490` renders
 
 ```sh
 if [ -f "$posse_gitdir/MERGE_MSG" ] && cmp -s "$1" "$posse_gitdir/MERGE_MSG"; then

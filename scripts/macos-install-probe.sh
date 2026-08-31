@@ -18,7 +18,7 @@
 #
 # Options:
 #   --version vX.Y.Z   which release to probe (default: v0.4.0). `bottle` mode
-#                      ignores it and uses internal/rhq.Version at HEAD, which
+#                      ignores it and uses internal/posse.Version at HEAD, which
 #                      is the only version it can build.
 #   --keep             do not delete the scratch root on exit
 #   --stub-clt-gate    `brew` mode only, and it makes the result NOT a user's
@@ -631,9 +631,9 @@ probe_bottle() {
 	# (from the commit, not the working tree) so the two cannot disagree and
 	# turn a version mismatch into a confusing build refusal.
 	local ver
-	ver=$(git -C "$REPO_ROOT" show HEAD:internal/rhq/app.go 2>/dev/null |
+	ver=$(git -C "$REPO_ROOT" show HEAD:internal/posse/app.go 2>/dev/null |
 		sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-	[ -n "$ver" ] || { skip "could not read internal/rhq.Version at HEAD"; return; }
+	[ -n "$ver" ] || { skip "could not read internal/posse.Version at HEAD"; return; }
 	note "building v$ver from HEAD ($(git -C "$REPO_ROOT" rev-parse --short HEAD))"
 
 	local D=$ROOT/bottle

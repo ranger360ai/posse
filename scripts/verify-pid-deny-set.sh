@@ -249,7 +249,7 @@ check_home() {
 # argv spelling rendered from it compare equal.
 #
 # This exists because the argv is not a copy of the list. L0Spellings
-# (internal/rhq/gates.go) widens each rule on its way to claude: it adds an
+# (internal/posse/gates.go) widens each rule on its way to claude: it adds an
 # option-blind twin (`Bash(x -* verb sub *)`) so a global option placed before
 # the verb cannot walk past the rule, and it rewrites a NEGATIVE rule entirely
 # - claude's dialect has no negation, so `Bash(git commit unless --)` is

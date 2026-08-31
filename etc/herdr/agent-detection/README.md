@@ -78,7 +78,7 @@ the **boot race**, not this screen. Timeline of a dispatch-shaped launch
 fired in the launch path at all, and could not have: the screen at the
 dangerous moment belongs to the shell, and no rule of ours can match it.
 That hole was rangerhq-3hb5. It is closed in the launcher's readiness gate
-(`awaitSettled`, `internal/rhq/dispatch.go`), and that fix leans on this rule
+(`awaitSettled`, `internal/posse/dispatch.go`), and that fix leans on this rule
 existing:
 `agent explain` distinguishes a **seen** idle (`visible_idle: true`,
 `matched_rule` set) from herdr's **guess** (`visible_idle: false`,
@@ -118,7 +118,7 @@ A third, live 2026-08-25 capture
 changelog/tip lines, and **no** consent banner — the banner is not always
 drawn; the menu + Grok Build anchor still must match. The production-width
 boxed capture is `testdata/grok/idle-startup-splash-wide-boxed.txt`, pinned
-twice: `internal/rhq/splashwide_qa_test.go` and `verify-detection` both run
+twice: `internal/posse/splashwide_qa_test.go` and `verify-detection` both run
 it against the manifest in *this checkout* — a committed fix proves itself
 before deployment. verify-detection used to explain against the *installed*
 manifest, which made it unable to fail a committed change at all
@@ -137,7 +137,7 @@ a live, prompt-accepting composer; keying on it would strand every grok pane
 forever. `testdata/grok/idle-composer-with-consent-banner.txt` pins it.
 The live splash above pins the other direction: a splash with no banner.
 
-`startupScreenDismissals` in `internal/rhq/dispatch.go` pressed Esc at this
+`startupScreenDismissals` in `internal/posse/dispatch.go` pressed Esc at this
 rule id when a pane reported blocked. **Retired in rangerhq-6723**: the state
 change above made that branch unreachable, and dispatch now answers *no*
 blocked screen at all — a blocker is the operator's, always (rangerhq-4mzt).
@@ -201,10 +201,10 @@ the diff against `~/.local/state/herdr/agent-detection/remote/codex.toml`:
   `blocked` is measured, not assumed: text sent to the untouched menu is
   **discarded**, where grok's `startup_splash` buffers it into the composer
   beneath (rangerhq-1xsj). Nothing may answer this screen — see
-  `Interstitial.Danger` in `internal/rhq/interstitial.go`.
+  `Interstitial.Danger` in `internal/posse/interstitial.go`.
 
 This does not change the fleet's posture. `posse`'s codex template still passes
-`--disable hooks` (`internal/rhq.CodexFleetFlags`) because the cage is ours, not
+`--disable hooks` (`internal/posse.CodexFleetFlags`) because the cage is ours, not
 the runtime's plugins'. The override is what protects **operator-started** codex
 panes, which get no such flag.
 
@@ -235,7 +235,7 @@ The installed copy is *reported*, not verified: each agent gets an
 the tree's. `--check-install` turns a mismatch into a failure — it is only
 honest immediately after installing, which is where `make install-detection`
 wires it. Both directions are pinned in
-`internal/rhq/verifydetection_qa_test.go`.
+`internal/posse/verifydetection_qa_test.go`.
 
 Snapshots are **text only**, so they cannot carry the OSC title/progress
 regions. Rules keyed on those (`osc_progress_working`, `osc_title_*`)

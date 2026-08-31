@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 func die(err error) {
@@ -43,7 +43,7 @@ func need(args []string, n int, usage string) []string {
 		os.Exit(0)
 	}
 	if len(args) < n {
-		die(rhq.Die("usage: %s", usage))
+		die(posse.Die("usage: %s", usage))
 	}
 	return args
 }
@@ -93,8 +93,8 @@ func main() {
 	// reset to the runtime's name — the only way herdr identifies an agent
 	// through the container boundary. It never returns on success, and it
 	// reads no config, so it is the first thing main does.
-	if rhq.IsCageLaunch(os.Args) {
-		die(rhq.RunCageLaunch(os.Args))
+	if posse.IsCageLaunch(os.Args) {
+		die(posse.RunCageLaunch(os.Args))
 	}
 	// Third entry point (rangerhq-9d0): the egress watcher the launcher
 	// forks just before that exec. It outlives the launcher on purpose —
@@ -103,14 +103,14 @@ func main() {
 	// Unlike the launcher, this one RETURNS on success — the cage it was
 	// watching is over — so it must not go through die(), which exists for
 	// a call that only ever comes back to report a failure.
-	if rhq.IsCageReap(os.Args) {
-		if err := rhq.RunCageReap(os.Args); err != nil {
+	if posse.IsCageReap(os.Args) {
+		if err := posse.RunCageReap(os.Args); err != nil {
 			die(err)
 		}
 		return
 	}
-	a := rhq.NewApp()
-	hb := rhq.NewHerdrBackend(a)
+	a := posse.NewApp()
+	hb := posse.NewHerdrBackend(a)
 	args := os.Args[1:]
 	cmd := "help"
 	if len(args) > 0 {
@@ -140,16 +140,16 @@ func main() {
 			case rest[0] == "--force":
 				force, rest = true, rest[1:]
 			default:
-				die(rhq.Die("posse worktrees [--dir <repo>] [--land [--force]]"))
+				die(posse.Die("posse worktrees [--dir <repo>] [--land [--force]]"))
 			}
 		}
 		dirs := a.BeadsDirs()
 		if dir != "" {
-			dirs = []string{rhq.ExpandTilde(dir)}
+			dirs = []string{posse.ExpandTilde(dir)}
 		}
-		fn := rhq.ListSessionTrees
+		fn := posse.ListSessionTrees
 		if land {
-			fn = func(w io.Writer, dirs []string) error { return rhq.LandSessionTrees(w, a, dirs, force) }
+			fn = func(w io.Writer, dirs []string) error { return posse.LandSessionTrees(w, a, dirs, force) }
 		}
 		if err := fn(out, dirs); err != nil {
 			die(err)
@@ -169,7 +169,7 @@ func main() {
 	case "attach", "up", "local", "focus":
 		args = need(args, 1, "posse attach <name>")
 		if (cmd == "up" || cmd == "local") && !hb.HasSession(args[0]) {
-			if err := hb.CreateSession(rhq.NewSessionOpts{Name: args[0], Crew: true}); err != nil {
+			if err := hb.CreateSession(posse.NewSessionOpts{Name: args[0], Crew: true}); err != nil {
 				die(err)
 			}
 		}
@@ -188,7 +188,7 @@ func main() {
 		// Session refresh: land the plane, close the workspace, recreate it
 		// from the same meta (rangerhq-dxq).
 		args = need(args, 1, "posse relaunch <name> [--no-land] [--force] [--timeout <interval>]")
-		o := rhq.RelaunchOpts{Name: args[0]}
+		o := posse.RelaunchOpts{Name: args[0]}
 		rest := args[1:]
 		for len(rest) > 0 {
 			switch rest[0] {
@@ -198,15 +198,15 @@ func main() {
 				o.Force, rest = true, rest[1:]
 			case "--timeout":
 				if len(rest) < 2 {
-					die(rhq.Die("--timeout needs an interval (10m, 90s, or seconds)"))
+					die(posse.Die("--timeout needs an interval (10m, 90s, or seconds)"))
 				}
-				iv, err := rhq.ParseInterval(rest[1])
+				iv, err := posse.ParseInterval(rest[1])
 				if err != nil {
 					die(err)
 				}
 				o.Timeout, rest = iv, rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		if err := hb.RelaunchSession(out, o); err != nil {
@@ -242,7 +242,7 @@ func main() {
 		// costs one git process. Nor does it stand down the WORKTREE
 		// landing below, which was never optional and is a different sense
 		// of the word.
-		o := rhq.KillOpts{Land: true, Out: out}
+		o := posse.KillOpts{Land: true, Out: out}
 		rest := args[1:]
 		for len(rest) > 0 {
 			switch rest[0] {
@@ -254,15 +254,15 @@ func main() {
 				o.Land, rest = false, rest[1:]
 			case "--timeout":
 				if len(rest) < 2 {
-					die(rhq.Die("--timeout needs an interval (10m, 90s, or seconds)"))
+					die(posse.Die("--timeout needs an interval (10m, 90s, or seconds)"))
 				}
-				iv, err := rhq.ParseInterval(rest[1])
+				iv, err := posse.ParseInterval(rest[1])
 				if err != nil {
 					die(err)
 				}
 				o.Timeout, rest = iv, rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		landing, err := hb.KillSessionAndLandOpts(args[0], o)
@@ -288,12 +288,12 @@ func main() {
 				now, rest = true, rest[1:]
 			case "--timeout":
 				if len(rest) < 2 || !validCount(rest[1]) {
-					die(rhq.Die("--timeout needs a value in ms (0 = herdr default)"))
+					die(posse.Die("--timeout needs a value in ms (0 = herdr default)"))
 				}
 				timeout, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		target, err := hb.AgentTarget(name)
@@ -340,7 +340,7 @@ func main() {
 		crew := true
 		for _, a := range args[1:] {
 			if a != "--off" {
-				die(rhq.Die("unknown flag: %s", a))
+				die(posse.Die("unknown flag: %s", a))
 			}
 			crew = false
 		}
@@ -363,18 +363,18 @@ func main() {
 			switch rest[0] {
 			case "--until":
 				if len(rest) < 2 {
-					die(rhq.Die("--until needs a state"))
+					die(posse.Die("--until needs a state"))
 				}
 				until = append(until, rest[1])
 				rest = rest[2:]
 			case "--timeout":
 				if len(rest) < 2 || !validCount(rest[1]) {
-					die(rhq.Die("--timeout needs a value in ms (0 = herdr default)"))
+					die(posse.Die("--timeout needs a value in ms (0 = herdr default)"))
 				}
 				timeout, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		target, err := hb.AgentTarget(name)
@@ -399,7 +399,7 @@ func main() {
 		lines := 0
 		if len(args) > 1 {
 			if !validCount(args[1]) {
-				die(rhq.Die("peek <lines> needs a count (0 = whole pane)"))
+				die(posse.Die("peek <lines> needs a count (0 = whole pane)"))
 			}
 			lines, _ = strconv.Atoi(args[1])
 		}
@@ -408,7 +408,7 @@ func main() {
 			die(err)
 		}
 		if s.PaneID == "" {
-			die(rhq.Die("session %s has no recorded pane (created outside posse)", args[0]))
+			die(posse.Die("session %s has no recorded pane (created outside posse)", args[0]))
 		}
 		text, err := hb.H.PaneRead(s.PaneID, lines)
 		if err != nil {
@@ -425,18 +425,18 @@ func main() {
 			switch rest[0] {
 			case "--dir":
 				if len(rest) < 2 {
-					die(rhq.Die("--dir needs a path"))
+					die(posse.Die("--dir needs a path"))
 				}
-				dir = rhq.ExpandTilde(rest[1])
+				dir = posse.ExpandTilde(rest[1])
 				rest = rest[2:]
 			case "--assignee", "--as":
 				if len(rest) < 2 {
-					die(rhq.Die("%s needs a name", rest[0]))
+					die(posse.Die("%s needs a name", rest[0]))
 				}
 				assignee = rest[1]
 				rest = rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		bd := needBd()
@@ -448,14 +448,14 @@ func main() {
 			verifyDirs = []string{dir}
 		}
 		a.VerifyAfter(bd, verifyDirs, out, os.Stderr)
-		var issues []rhq.RepoIssue
+		var issues []posse.RepoIssue
 		if dir != "" {
 			single, err := bd.Ready(dir, assignee)
 			if err != nil {
 				die(err)
 			}
 			for _, is := range single {
-				issues = append(issues, rhq.RepoIssue{BdIssue: is, Dir: dir})
+				issues = append(issues, posse.RepoIssue{BdIssue: is, Dir: dir})
 			}
 		} else {
 			var failed []error
@@ -467,13 +467,13 @@ func main() {
 				fmt.Fprintf(os.Stderr, "ready scan failed: %v\n", err)
 			}
 			if len(issues) == 0 && len(failed) > 0 {
-				die(rhq.Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed)))
+				die(posse.Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed)))
 			}
 		}
 		// One queue, one order — priority first, across every source
 		// (ranger-base-xotg). ReadyAll already hands back an ordered list;
 		// this covers --dir, where bd's own order is the query's.
-		rhq.OrderBeads(issues, false)
+		posse.OrderBeads(issues, false)
 		if len(issues) == 0 {
 			fmt.Fprintln(out, "no ready work")
 			break
@@ -483,7 +483,7 @@ func main() {
 			if who == "" {
 				who = "unassigned"
 			}
-			fmt.Fprintf(out, "%-14s p%d  %-12s %-40s %s\n", is.ID, is.Priority, who, is.Title, rhq.AbbrevHome(is.Dir))
+			fmt.Fprintf(out, "%-14s p%d  %-12s %-40s %s\n", is.ID, is.Priority, who, is.Title, posse.AbbrevHome(is.Dir))
 		}
 
 	case "beads":
@@ -509,23 +509,23 @@ func main() {
 		// both are things CI must fail on.
 		args = need(args, 1, "posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]")
 		if args[0] != "check" {
-			die(rhq.Die("usage: posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]"))
+			die(posse.Die("usage: posse beads check [--dir <repo>] [--record \"<reason>\"] [--as <who>]"))
 		}
 		dir, reason, who := "", "", os.Getenv("BD_ACTOR")
 		rest := args[1:]
 		for len(rest) > 0 {
 			if len(rest) < 2 {
-				die(rhq.Die("%s needs a value", rest[0]))
+				die(posse.Die("%s needs a value", rest[0]))
 			}
 			switch rest[0] {
 			case "--dir":
-				dir = rhq.ExpandTilde(rest[1])
+				dir = posse.ExpandTilde(rest[1])
 			case "--record":
 				reason = rest[1]
 			case "--as":
 				who = rest[1]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 			rest = rest[2:]
 		}
@@ -539,7 +539,7 @@ func main() {
 		// where a repo has no census, so a path that does not resolve at all
 		// reads exactly like a healthy check — the same shape as the ready
 		// scan folding a missing repo into an empty queue (rangerhq-llse).
-		unresolved := rhq.UnresolvedDirs(dirs)
+		unresolved := posse.UnresolvedDirs(dirs)
 		for _, err := range unresolved {
 			fmt.Fprintf(os.Stderr, "beads census failed: %v\n", err)
 		}
@@ -547,7 +547,7 @@ func main() {
 		pairsFound := 0
 		var pairUnavailable []error
 		for _, d := range dirs {
-			lost, err := rhq.LostBeads(bd, d)
+			lost, err := posse.LostBeads(bd, d)
 			if err != nil {
 				die(err)
 			}
@@ -557,19 +557,19 @@ func main() {
 					fmt.Fprintf(out, "%-14s %-12s %-10s dropped %s by %s  %s\n",
 						lb.ID, lb.Status, lb.Assignee,
 						lb.When.Format("2006-01-02 15:04"), lb.Commit[:min(8, len(lb.Commit))],
-						rhq.AbbrevHome(d))
+						posse.AbbrevHome(d))
 					fmt.Fprintf(out, "               %s\n", lb.Title)
 				}
 				if reason != "" {
 					if who == "" {
 						who = "operator"
 					}
-					if err := rhq.RecordDeletions(d, reason, who, lost, time.Now()); err != nil {
+					if err := posse.RecordDeletions(d, reason, who, lost, time.Now()); err != nil {
 						die(err)
 					}
 					// Not necessarily under d: a .beads/redirect puts the
 					// ledger in the repo whose git tracks it.
-					fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), rhq.AbbrevHome(rhq.DeletionLedgerPath(d)))
+					fmt.Fprintf(out, "recorded %d deletion(s) in %s — commit it\n", len(lost), posse.AbbrevHome(posse.DeletionLedgerPath(d)))
 				}
 			}
 
@@ -578,7 +578,7 @@ func main() {
 			// with no live writer and no -shm refuses even a read-only
 			// open) — that failure must read as unknown, never as clean
 			// (PairCheckUnavailableError, ranger-base-z3s3).
-			pairs, err := rhq.PairCheck(d)
+			pairs, err := posse.PairCheck(d)
 			if err != nil {
 				pairUnavailable = append(pairUnavailable, err)
 				fmt.Fprintf(os.Stderr, "pair check failed: %v\n", err)
@@ -591,7 +591,7 @@ func main() {
 					ids[i] = p.ID
 				}
 				fmt.Fprintf(out, "PAIR: %d node(s) sit in a symmetric dependency pair in %s: %s\n",
-					len(pairs), rhq.AbbrevHome(d), strings.Join(ids, ", "))
+					len(pairs), posse.AbbrevHome(d), strings.Join(ids, ", "))
 			}
 		}
 		if pairsFound > 0 {
@@ -635,18 +635,18 @@ func main() {
 			switch rest[0] {
 			case "--dir":
 				if len(rest) < 2 {
-					die(rhq.Die("--dir needs a path"))
+					die(posse.Die("--dir needs a path"))
 				}
-				dir = rhq.ExpandTilde(rest[1])
+				dir = posse.ExpandTilde(rest[1])
 				rest = rest[2:]
 			case "--as":
 				if len(rest) < 2 {
-					die(rhq.Die("--as needs a persona name"))
+					die(posse.Die("--as needs a persona name"))
 				}
 				actor = rest[1]
 				rest = rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		bd := needBd()
@@ -669,7 +669,7 @@ func main() {
 
 	case "dispatch":
 		// One pass of the harness core: route ready beads to personas.
-		d := rhq.NewDispatcher(a, hb, out)
+		d := posse.NewDispatcher(a, hb, out)
 		dirF, personaF, maxN := "", "", 0
 		var watch, watchMax time.Duration
 		watchStatus := false
@@ -687,7 +687,7 @@ func main() {
 				rest = rest[1:]
 			case "--runtime":
 				if len(rest) < 2 {
-					die(rhq.Die("--runtime needs a name (claude, codex, grok, or runtimes/<name>.yaml)"))
+					die(posse.Die("--runtime needs a name (claude, codex, grok, or runtimes/<name>.yaml)"))
 				}
 				if _, err := a.LoadRuntime(rest[1]); err != nil {
 					die(err)
@@ -695,8 +695,8 @@ func main() {
 				d.Runtime = rest[1]
 				rest = rest[2:]
 			case "--tier":
-				if len(rest) < 2 || !rhq.ValidTier(rest[1]) {
-					die(rhq.Die("--tier needs strong, standard, or fast"))
+				if len(rest) < 2 || !posse.ValidTier(rest[1]) {
+					die(posse.Die("--tier needs strong, standard, or fast"))
 				}
 				d.Tier = rest[1]
 				rest = rest[2:]
@@ -707,16 +707,16 @@ func main() {
 				d.NoReap = true
 				rest = rest[1:]
 			case "--cage":
-				if len(rest) < 2 || !rhq.ValidCage(rest[1]) {
-					die(rhq.Die("--cage needs shims, seatbelt, or container"))
+				if len(rest) < 2 || !posse.ValidCage(rest[1]) {
+					die(posse.Die("--cage needs shims, seatbelt, or container"))
 				}
 				d.Cage = rest[1]
 				rest = rest[2:]
 			case "--watch":
 				if len(rest) < 2 {
-					die(rhq.Die("--watch needs an interval (30s, 2m, or seconds)"))
+					die(posse.Die("--watch needs an interval (30s, 2m, or seconds)"))
 				}
-				iv, err := rhq.ParseInterval(rest[1])
+				iv, err := posse.ParseInterval(rest[1])
 				if err != nil {
 					die(err)
 				}
@@ -724,9 +724,9 @@ func main() {
 				rest = rest[2:]
 			case "--max-interval":
 				if len(rest) < 2 {
-					die(rhq.Die("--max-interval needs an interval"))
+					die(posse.Die("--max-interval needs an interval"))
 				}
-				iv, err := rhq.ParseInterval(rest[1])
+				iv, err := posse.ParseInterval(rest[1])
 				if err != nil {
 					die(err)
 				}
@@ -734,40 +734,40 @@ func main() {
 				rest = rest[2:]
 			case "--dir":
 				if len(rest) < 2 {
-					die(rhq.Die("--dir needs a path"))
+					die(posse.Die("--dir needs a path"))
 				}
-				dirF = rhq.ExpandTilde(rest[1])
+				dirF = posse.ExpandTilde(rest[1])
 				rest = rest[2:]
 			case "--persona":
 				if len(rest) < 2 {
-					die(rhq.Die("--persona needs a name"))
+					die(posse.Die("--persona needs a name"))
 				}
 				personaF = rest[1]
 				rest = rest[2:]
 			case "-n":
 				if len(rest) < 2 || !validCount(rest[1]) {
-					die(rhq.Die("-n needs a count (0 = no cap)"))
+					die(posse.Die("-n needs a count (0 = no cap)"))
 				}
 				maxN, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
 			case "--timeout":
 				if len(rest) < 2 || !validCount(rest[1]) {
-					die(rhq.Die("--timeout needs a value in ms (0 = herdr default)"))
+					die(posse.Die("--timeout needs a value in ms (0 = herdr default)"))
 				}
 				d.PromptWaitMS, _ = strconv.Atoi(rest[1])
 				rest = rest[2:]
 			case "--ceiling":
 				if len(rest) < 2 {
-					die(rhq.Die("--ceiling needs an interval (2h, 90m, or seconds)"))
+					die(posse.Die("--ceiling needs an interval (2h, 90m, or seconds)"))
 				}
-				iv, err := rhq.ParseInterval(rest[1])
+				iv, err := posse.ParseInterval(rest[1])
 				if err != nil {
 					die(err)
 				}
 				d.WaitCeiling = iv
 				rest = rest[2:]
 			default:
-				die(rhq.Die("unknown flag: %s", rest[0]))
+				die(posse.Die("unknown flag: %s", rest[0]))
 			}
 		}
 		if watchStatus {
@@ -775,7 +775,7 @@ func main() {
 			// one line (rangerhq-gir5). Reads no bd, talks to no herdr, and
 			// launches nothing — plugin/autostart.sh runs it at every herdr
 			// server start, before the fleet is up.
-			line, err := rhq.WatchStatus(a)
+			line, err := posse.WatchStatus(a)
 			if err != nil {
 				die(err)
 			}
@@ -783,7 +783,7 @@ func main() {
 			return
 		}
 		if !d.Bd.Available() {
-			die(rhq.Die("bd not found in PATH"))
+			die(posse.Die("bd not found in PATH"))
 		}
 		if watch > 0 {
 			// Continuous passes with quiet-pass backoff; SIGINT/SIGTERM end
@@ -826,9 +826,9 @@ func main() {
 		// not be read": an unreadable store is not an all-clear, the same
 		// rule `posse beads check` keeps.
 		need(args, 0, "posse status")
-		set, failed := rhq.ShopCheck(rhq.StatusInputs(a, hb, os.Stderr))
-		fmt.Fprintf(out, "shop check · %s · %s\n", rhq.GovSummary(set), rhq.AbbrevHome(a.Home))
-		rhq.GovReport(out, set, failed)
+		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
+		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))
+		posse.GovReport(out, set, failed)
 		if len(set) > 0 || len(failed) > 0 {
 			os.Exit(1)
 		}
@@ -843,22 +843,22 @@ func main() {
 		// why work. A stop is typed in a hurry, and a shell quoting slip is
 		// not a reason for the shop to keep spending.
 		args = need(args, 1, `posse pause "<why>"   (the why is mandatory: every declining pass prints it)`)
-		by, err := rhq.PauseActor(a)
+		by, err := posse.PauseActor(a)
 		if err != nil {
 			die(err)
 		}
 		// A second pause keeps the first. Overwriting would move `at:`
 		// forward and lose the reason the shop actually stopped for, and the
 		// intent — dispatch stops — is already in force.
-		if p := rhq.ReadPause(rhq.PausePath(a)); p.Present {
-			fmt.Fprintf(out, "already %s — the standing pause is kept (`posse resume` first to change it)\n", rhq.PauseLine(p))
+		if p := posse.ReadPause(posse.PausePath(a)); p.Present {
+			fmt.Fprintf(out, "already %s — the standing pause is kept (`posse resume` first to change it)\n", posse.PauseLine(p))
 			break
 		}
-		p, err := rhq.WritePause(a, by, strings.Join(args, " "), time.Now(), os.Stderr)
+		p, err := posse.WritePause(a, by, strings.Join(args, " "), time.Now(), os.Stderr)
 		if err != nil {
 			die(err)
 		}
-		fmt.Fprintf(out, "%s\n", rhq.PauseLine(p))
+		fmt.Fprintf(out, "%s\n", posse.PauseLine(p))
 		fmt.Fprintf(out, "dispatch declines every pass until `posse resume`; the pulse keeps ticking — a paused shop still escalates\n")
 
 	case "resume":
@@ -866,11 +866,11 @@ func main() {
 		// not an error, because an off switch that can fail is one more thing
 		// to get right while the shop is stopped.
 		need(args, 0, "posse resume")
-		by, err := rhq.PauseActor(a)
+		by, err := posse.PauseActor(a)
 		if err != nil {
 			die(err)
 		}
-		p, err := rhq.ClearPause(a)
+		p, err := posse.ClearPause(a)
 		if err != nil {
 			die(err)
 		}
@@ -878,7 +878,7 @@ func main() {
 			fmt.Fprintln(out, "not paused — nothing to resume")
 			break
 		}
-		fmt.Fprintf(out, "resumed by %s · lifted a pause%s; the next pass dispatches\n", by, rhq.PauseClause(p))
+		fmt.Fprintf(out, "resumed by %s · lifted a pause%s; the next pass dispatches\n", by, posse.PauseClause(p))
 
 	case "cockpit":
 		if err := runCockpit(a, hb, out); err != nil {
@@ -901,8 +901,8 @@ func main() {
 		sub, name := args[0], args[1]
 		switch sub {
 		case "edit", "new":
-			if !rhq.ValidName(name) {
-				die(rhq.Die("bad env set name '%s'", name))
+			if !posse.ValidName(name) {
+				die(posse.Die("bad env set name '%s'", name))
 			}
 			p, err := a.EnsureEnvSet(name)
 			if err != nil {
@@ -917,7 +917,7 @@ func main() {
 			}
 			fmt.Fprintf(out, "deleted env set %s\n", name)
 		default:
-			die(rhq.Die("usage: posse env <edit|rm> <name>"))
+			die(posse.Die("usage: posse env <edit|rm> <name>"))
 		}
 
 	case "memory", "orders":
@@ -977,7 +977,7 @@ func main() {
 			if sub == "new" {
 				p, err = a.ScaffoldAgent(name)
 			} else {
-				var ag *rhq.AgentFile
+				var ag *posse.AgentFile
 				ag, err = a.LoadAgent(name)
 				if ag != nil {
 					p = ag.Path
@@ -990,7 +990,7 @@ func main() {
 				die(err)
 			}
 		default:
-			die(rhq.Die("usage: posse agent <new|edit|check> <name>"))
+			die(posse.Die("usage: posse agent <new|edit|check> <name>"))
 		}
 
 	case "cost":
@@ -1019,11 +1019,11 @@ func main() {
 			fmt.Fprintln(out, line)
 			break
 		}
-		rep := rhq.ScanCosts(o.project, o.since)
+		rep := posse.ScanCosts(o.project, o.since)
 		// Dial E's caps, for the footer: what the numbers above are measured
 		// against (rangerhq-25p). Reading them here never enforces anything.
 		rep.PassCap, rep.DayCap = a.BudgetCaps(os.Stderr)
-		if bd := rhq.NewBd(); bd.Available() {
+		if bd := posse.NewBd(); bd.Available() {
 			rep.AttributePersonas(a, bd)
 		}
 		rep.CountUncounted(hb)
@@ -1055,10 +1055,10 @@ func main() {
 		} else if len(args) == 1 {
 			persona = args[0]
 		}
-		if !rhq.NewBd().Available() {
-			die(rhq.Die("bd not found in PATH"))
+		if !posse.NewBd().Available() {
+			die(posse.Die("bd not found in PATH"))
 		}
-		if err := a.Scorecard(rhq.NewBd(), out, persona); err != nil {
+		if err := a.Scorecard(posse.NewBd(), out, persona); err != nil {
 			die(err)
 		}
 
@@ -1086,7 +1086,7 @@ func main() {
 			// Not `die(RunGatesWrap(…))`: die() exits whatever it is handed,
 			// and --probe returns nil on purpose — that nil is the answer the
 			// host's parity check reads.
-			if err := rhq.RunGatesWrap(args[1:], out); err != nil {
+			if err := posse.RunGatesWrap(args[1:], out); err != nil {
 				die(err)
 			}
 			return
@@ -1099,7 +1099,7 @@ func main() {
 					chain = true
 					continue
 				}
-				dir = rhq.ExpandTilde(a2)
+				dir = posse.ExpandTilde(a2)
 			}
 			// Both slots are attempted and reported independently — a
 			// foreign hook taking one must not cost the other
@@ -1110,15 +1110,15 @@ func main() {
 			var p string
 			var err error
 			if chain {
-				p, err = rhq.InstallPrePushHookChained(dir)
+				p, err = posse.InstallPrePushHookChained(dir)
 			} else {
-				p, err = rhq.InstallPrePushHook(dir)
+				p, err = posse.InstallPrePushHook(dir)
 			}
 			if err != nil {
 				fmt.Fprintf(out, "not installed: pre-push — %v\n", err)
 				failed = true
 			} else {
-				fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", rhq.AbbrevHome(p))
+				fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", posse.AbbrevHome(p))
 			}
 			var c, vis, src string
 			var cerr error
@@ -1131,14 +1131,14 @@ func main() {
 				fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
 				failed = true
 			} else {
-				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit from any shell in this checkout — the index is shared; rangerhq-lmq9, rangerhq-lt2w)\n", rhq.AbbrevHome(c))
+				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit from any shell in this checkout — the index is shared; rangerhq-lmq9, rangerhq-lt2w)\n", posse.AbbrevHome(c))
 				// The same slot carries the beads visibility guard, and its
 				// verdict is stamped into the file — so say which one was
 				// stamped and where it came from, or an operator has to read a
 				// hook to find out whether their db is guarded (rangerhq-hrz).
 				fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
-				if vis == rhq.VisibilityPublic {
-					fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", rhq.AbbrevHome(dir))
+				if vis == posse.VisibilityPublic {
+					fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", posse.AbbrevHome(dir))
 				}
 				// What THIS instance added to the pattern list, and what it
 				// asked for and did not get. A refused pattern is said out
@@ -1151,7 +1151,7 @@ func main() {
 					for _, p := range set.Extra {
 						classes = append(classes, p.Class)
 					}
-					fmt.Fprintf(out, "  instance patterns stamped in (config %s:): %s\n", rhq.OpsPatternsConfigKey, strings.Join(classes, ", "))
+					fmt.Fprintf(out, "  instance patterns stamped in (config %s:): %s\n", posse.OpsPatternsConfigKey, strings.Join(classes, ", "))
 				}
 				for _, r := range set.Rejected {
 					fmt.Fprintf(out, "  instance pattern REFUSED, not in force: %s\n", r)
@@ -1176,7 +1176,7 @@ func main() {
 		// one part of the check that depends on a directory (a runtime that
 		// reads the session dir's own config) is invisible otherwise.
 		cwd, _ := os.Getwd()
-		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, rhq.AbbrevHome(cwd))
+		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, posse.AbbrevHome(cwd))
 		for _, rn := range a.ListRuntimes() {
 			if rt, err := a.LoadRuntime(rn); err == nil {
 				// Every other input to a launch is on this machine; this one
@@ -1188,15 +1188,15 @@ func main() {
 				if line := a.PreflightReport(ag.Name, rn, tier, os.Stderr); line != "" {
 					fmt.Fprintf(out, "  %s\n", line)
 				}
-				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.DefaultCage, tier, cwd).String())
-				if rhq.AvailableCages[rhq.CageSeatbelt] {
-					fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, rhq.CageSeatbelt, tier, cwd).String())
+				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd).String())
+				if posse.AvailableCages[posse.CageSeatbelt] {
+					fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd).String())
 				}
 			}
 		}
-		fmt.Fprintf(out, "%s\n", rhq.AbbrevHome(gatesDir))
-		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", rhq.AbbrevHome(gateShell))
-		if rhq.ResolveCage("", ag) == rhq.CageSeatbelt && rhq.AvailableCages[rhq.CageSeatbelt] {
+		fmt.Fprintf(out, "%s\n", posse.AbbrevHome(gatesDir))
+		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", posse.AbbrevHome(gateShell))
+		if posse.ResolveCage("", ag) == posse.CageSeatbelt && posse.AvailableCages[posse.CageSeatbelt] {
 			// Said out loud rather than swallowed: this block is where an
 			// operator reads ADR 0015 §2's wall off the output, and a
 			// report that silently prints nothing is the failure it exists
@@ -1212,7 +1212,7 @@ func main() {
 				fmt.Fprintf(out, "  seatbelt profile not rendered: %v\n", err)
 			}
 		}
-		rules := rhq.ParseShimRules(ag.Deny)
+		rules := posse.ParseShimRules(ag.Deny)
 		if len(rules) == 0 {
 			fmt.Fprintln(out, "  no shell-verb denies → no shims (Edit/Write/WebFetch-class denies are other layers')")
 		}
@@ -1246,7 +1246,7 @@ func main() {
 			// (rangerhq-9d0): every rendered launch plan for this persona,
 			// its route taken down. Safe when nothing is up.
 			if len(args) < 2 {
-				die(rhq.Die("usage: posse cage down <persona>"))
+				die(posse.Die("usage: posse cage down <persona>"))
 			}
 			n, err := a.TearDownCageEgress(args[1], out)
 			if err != nil {
@@ -1263,12 +1263,12 @@ func main() {
 				switch args[i] {
 				case "--runtimes":
 					if i+1 >= len(args) {
-						die(rhq.Die("--runtimes needs an npm package list, e.g. \"@anthropic-ai/claude-code @openai/codex\""))
+						die(posse.Die("--runtimes needs an npm package list, e.g. \"@anthropic-ai/claude-code @openai/codex\""))
 					}
 					i++
 					runtimes = args[i]
 				default:
-					src = rhq.ExpandTilde(args[i])
+					src = posse.ExpandTilde(args[i])
 				}
 			}
 			if abs, err := filepath.Abs(src); err == nil {
@@ -1306,7 +1306,7 @@ func main() {
 		}
 		if len(args) == 0 {
 			fmt.Fprintf(out, "engines: %s (built-in docker; %s/<name>.yaml, config default_engine:)\n",
-				strings.Join(a.ListEngines(), ", "), rhq.AbbrevHome(a.CagesDir()))
+				strings.Join(a.ListEngines(), ", "), posse.AbbrevHome(a.CagesDir()))
 			return
 		}
 		ag, err := a.LoadAgent(args[0])
@@ -1318,34 +1318,34 @@ func main() {
 			die(err)
 		}
 		cwd, _ := os.Getwd()
-		fmt.Fprintf(out, "%s at cage container in %s — what crosses the boundary:\n", ag.Name, rhq.AbbrevHome(cwd))
+		fmt.Fprintf(out, "%s at cage container in %s — what crosses the boundary:\n", ag.Name, posse.AbbrevHome(cwd))
 		for _, m := range a.CageMounts(ag, e, cwd) {
 			mode := "rw"
 			if m.RO {
 				mode = "ro"
 			}
-			fmt.Fprintf(out, "  mount %s %-46s → %-20s %s\n", mode, rhq.AbbrevHome(m.Src), m.Dst, m.Why)
+			fmt.Fprintf(out, "  mount %s %-46s → %-20s %s\n", mode, posse.AbbrevHome(m.Src), m.Dst, m.Why)
 		}
 		fmt.Fprintf(out, "  env   names forwarded (values stay out of the typed line): %s\n",
-			strings.Join(rhq.CageEnvNames(nil), " "))
-		if cred := rhq.CageCredential(rt); cred != "" {
+			strings.Join(posse.CageEnvNames(nil), " "))
+		if cred := posse.CageCredential(rt); cred != "" {
 			fmt.Fprintf(out, "  auth  %s must be in the session env (rangerhq-kiz)\n", cred)
 		}
-		fmt.Fprintf(out, "  home  %s seeded for %s\n", rhq.AbbrevHome(a.CageHome(ag.Name)), rt.Name)
+		fmt.Fprintf(out, "  home  %s seeded for %s\n", posse.AbbrevHome(a.CageHome(ag.Name)), rt.Name)
 		// The inner wall (rangerhq-6so). Printed as what it is: a question
 		// asked of the image, whose answer decides whether the tier may claim
 		// a shell-verb deny at all.
 		if a.CageInnerGatesReady(e, image) {
 			fmt.Fprintf(out, "  gates rendered INSIDE by `%s` → %s (image PATH and shell; refusals mount out to %s)\n",
-				strings.Join(rhq.GatesWrapArgv(ag.Name, rt), " "), rhq.CageGatesDir(ag.Name),
-				rhq.AbbrevHome(a.RefusalsLogPath(ag.Name)))
+				strings.Join(posse.GatesWrapArgv(ag.Name, rt), " "), posse.CageGatesDir(ag.Name),
+				posse.AbbrevHome(a.RefusalsLogPath(ag.Name)))
 		} else {
-			fmt.Fprintf(out, "  gates ⚠️  image %s answers no to `posse gates wrap %s` — no Linux posse in it, so L1/L3 do not cross and every shell-verb deny is unrealized here (run `posse cage build`)\n", image, rhq.GatesWrapProbe)
+			fmt.Fprintf(out, "  gates ⚠️  image %s answers no to `posse gates wrap %s` — no Linux posse in it, so L1/L3 do not cross and every shell-verb deny is unrealized here (run `posse cage build`)\n", image, posse.GatesWrapProbe)
 		}
-		for _, m := range rhq.CageSockets {
+		for _, m := range posse.CageSockets {
 			state := "not mounted (default — a caged persona holding it can prompt or close every other pane)"
-			if rhq.CageSocketTag(ag) != "" && strings.Contains(","+rhq.CageSocketTag(ag)+",", ","+m+",") {
-				state = "MOUNTED — the PID declared it; meta and the cockpit mark the cage " + rhq.CageTag(rhq.CageContainer, rhq.CageSocketTag(ag))
+			if posse.CageSocketTag(ag) != "" && strings.Contains(","+posse.CageSocketTag(ag)+",", ","+m+",") {
+				state = "MOUNTED — the PID declared it; meta and the cockpit mark the cage " + posse.CageTag(posse.CageContainer, posse.CageSocketTag(ag))
 			}
 			fmt.Fprintf(out, "  sock  %s: %s\n", m, state)
 		}
@@ -1354,14 +1354,14 @@ func main() {
 		// the container's only route out IS the proxy, and the effective
 		// allowlist — the runtime's hosts plus the PID's — is the thing the
 		// operator most needs to read before launching.
-		hosts, bad := rhq.EgressHosts(ag, rt)
+		hosts, bad := posse.EgressHosts(ag, rt)
 		if e.NetCreate == "" {
 			fmt.Fprintf(out, "  egress engine %s spells no route (net_create:/proxy_up:) — `egress:` is unrealizable on it\n", e.Name)
 		} else {
 			fmt.Fprintf(out, "  egress --internal network + CONNECT proxy on %s:%d; allowed: %s\n",
-				rhq.EgressHost, rhq.EgressPort, strings.Join(hosts, " "))
+				posse.EgressHost, posse.EgressPort, strings.Join(hosts, " "))
 			fmt.Fprintf(out, "        (%s's own hosts are always added; denials land in %s)\n",
-				rt.Name, rhq.AbbrevHome(filepath.Join(a.GatesDir(ag.Name), "refusals.log")))
+				rt.Name, posse.AbbrevHome(filepath.Join(a.GatesDir(ag.Name), "refusals.log")))
 		}
 		for _, b := range bad {
 			fmt.Fprintf(out, "  egress ⚠️  %q is not a host — the proxy matches the CONNECT authority; the launch refuses on it\n", b)
@@ -1370,14 +1370,14 @@ func main() {
 		// herdr reads the pane's argv0, so a caged session is only visible
 		// as an agent behind a launcher named for the runtime (rangerhq-1k1).
 		fmt.Fprintf(out, "  argv0 %s → this posse, which execs %s with argv[0]=%s (herdr identifies the session by that name)\n",
-			rhq.AbbrevHome(a.CageLauncher(ag.Name, rt.Exe())), e.Binary(), rt.Exe())
+			posse.AbbrevHome(a.CageLauncher(ag.Name, rt.Exe())), e.Binary(), rt.Exe())
 
 	case "runtime":
 		// The ADR 0013 dispatch-contract grid for ONE runtime — six stages,
 		// who declared each, and what a missing one costs. `posse runtimes`
 		// (plural) stays the catalog; this is the onboarding surface.
 		if len(args) < 2 || (args[0] != "check" && args[0] != "probe") {
-			die(rhq.Die("usage: posse runtime check|probe <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
+			die(posse.Die("usage: posse runtime check|probe <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
 		}
 		rt, err := a.LoadRuntime(args[1])
 		if err != nil {
@@ -1391,7 +1391,7 @@ func main() {
 		// (ADR 0012 D4). A `check` that reported an uninstalled CLI and then
 		// exited 0 would be the class of green-while-broken this command was
 		// filed to end (rangerhq-tr8k and the note on it).
-		if !a.RuntimeCheck(rt, rhq.NewHerdr(), out) {
+		if !a.RuntimeCheck(rt, posse.NewHerdr(), out) {
 			os.Exit(1)
 		}
 
@@ -1433,10 +1433,10 @@ func main() {
 		// PIDs that bind each name, plus the names a PID declares that
 		// nothing answers (which `posse agent check` reports as a finding).
 		if len(args) > 0 && args[0] != "list" {
-			die(rhq.Die("usage: posse skills [list]"))
+			die(posse.Die("usage: posse skills [list]"))
 		}
 		bound := a.SkillBindings()
-		fmt.Fprintf(out, "%s — skills bound by PIDs (materialized per runtime at launch)\n", rhq.AbbrevHome(a.SkillsDir()))
+		fmt.Fprintf(out, "%s — skills bound by PIDs (materialized per runtime at launch)\n", posse.AbbrevHome(a.SkillsDir()))
 		present := map[string]bool{}
 		for _, n := range a.ListSkills() {
 			present[n] = true
@@ -1478,17 +1478,17 @@ func main() {
 			fmt.Fprintln(out, "usage: posse promote [<constitution dir>] [--dry-run]")
 			os.Exit(0)
 		}
-		var po rhq.PromoteOpts
+		var po posse.PromoteOpts
 		for _, v := range args {
 			switch {
 			case v == "--dry-run":
 				po.DryRun = true
 			case strings.HasPrefix(v, "-"):
-				die(rhq.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
+				die(posse.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
 			case po.Source == "":
 				po.Source = v
 			default:
-				die(rhq.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
+				die(posse.Die("usage: posse promote [<constitution dir>] [--dry-run]"))
 			}
 		}
 		if err := a.CmdPromote(out, po); err != nil {
@@ -1508,14 +1508,14 @@ func main() {
 			fmt.Fprintf(out, "usage: %s\n", usage)
 			os.Exit(0)
 		}
-		var ro rhq.RefreshOpts
+		var ro posse.RefreshOpts
 		for len(args) > 0 {
 			switch v := args[0]; {
 			case v == "--paste":
 				ro.Paste, args = true, args[1:]
 			case v == "--env-set", v == "--expires":
 				if len(args) < 2 {
-					die(rhq.Die("%s needs a value — usage: %s", v, usage))
+					die(posse.Die("%s needs a value — usage: %s", v, usage))
 				}
 				if v == "--env-set" {
 					ro.EnvSet = args[1]
@@ -1524,13 +1524,13 @@ func main() {
 				}
 				args = args[2:]
 			case strings.HasPrefix(v, "-"):
-				die(rhq.Die("unknown flag: %s — usage: %s", v, usage))
+				die(posse.Die("unknown flag: %s — usage: %s", v, usage))
 			case ro.Runtime == "":
 				ro.Runtime, args = v, args[1:]
 			case ro.Purpose == "":
-				ro.Purpose, args = rhq.CredPurpose(v), args[1:]
+				ro.Purpose, args = posse.CredPurpose(v), args[1:]
 			default:
-				die(rhq.Die("usage: %s", usage))
+				die(posse.Die("usage: %s", usage))
 			}
 		}
 		if err := a.CmdRefresh(out, ro); err != nil {
@@ -1540,16 +1540,16 @@ func main() {
 	case "help", "-h", "--help":
 		help()
 	case "version", "--version":
-		fmt.Fprintf(out, "posse %s (herdr-native)\n", rhq.VersionString())
+		fmt.Fprintf(out, "posse %s (herdr-native)\n", posse.VersionString())
 	default:
-		die(rhq.Die("unknown command: %s (try: posse help)", cmd))
+		die(posse.Die("unknown command: %s (try: posse help)", cmd))
 	}
 }
 
-func needBd() rhq.Bd {
-	bd := rhq.NewBd()
+func needBd() posse.Bd {
+	bd := posse.NewBd()
 	if !bd.Available() {
-		die(rhq.Die("bd not found in PATH (brew install beads or see github.com/steveyegge/beads)"))
+		die(posse.Die("bd not found in PATH (brew install beads or see github.com/steveyegge/beads)"))
 	}
 	return bd
 }
@@ -1592,20 +1592,20 @@ func parseCostFlags(args []string) (costOpts, error) {
 		switch rest[0] {
 		case "--since":
 			if len(rest) < 2 {
-				return o, rhq.Die("--since needs a date (YYYY-MM-DD or RFC3339)")
+				return o, posse.Die("--since needs a date (YYYY-MM-DD or RFC3339)")
 			}
 			t, err := time.Parse(time.RFC3339, rest[1])
 			if err != nil {
 				t, err = time.ParseInLocation("2006-01-02", rest[1], time.Local)
 			}
 			if err != nil {
-				return o, rhq.Die("--since: %v", err)
+				return o, posse.Die("--since: %v", err)
 			}
 			o.since = t
 			rest = rest[2:]
 		case "--project":
 			if len(rest) < 2 {
-				return o, rhq.Die("--project needs a path substring")
+				return o, posse.Die("--project needs a path substring")
 			}
 			o.project = rest[1]
 			rest = rest[2:]
@@ -1613,25 +1613,25 @@ func parseCostFlags(args []string) (costOpts, error) {
 			o.plan = true
 			rest = rest[1:]
 		default:
-			return o, rhq.Die("unknown flag: %s", rest[0])
+			return o, posse.Die("unknown flag: %s", rest[0])
 		}
 	}
 	// --plan prints one reading and never scans a transcript, so the
 	// selectors have nothing to select. Refusing beats ignoring: a caller
 	// who wrote `--plan --since` believes the date did something.
 	if o.plan && (!o.since.IsZero() || o.project != "") {
-		return costOpts{}, rhq.Die("--plan takes no other flags")
+		return costOpts{}, posse.Die("--plan takes no other flags")
 	}
 	return o, nil
 }
 
-func parseNewFlags(args []string) rhq.NewSessionOpts {
-	o := rhq.NewSessionOpts{Name: args[0]}
+func parseNewFlags(args []string) posse.NewSessionOpts {
+	o := posse.NewSessionOpts{Name: args[0]}
 	rest := args[1:]
 	for len(rest) > 0 {
 		flagArg := func() string {
 			if len(rest) < 2 {
-				die(rhq.Die("flag %s needs a value", rest[0]))
+				die(posse.Die("flag %s needs a value", rest[0]))
 			}
 			v := rest[1]
 			rest = rest[2:]
@@ -1652,19 +1652,19 @@ func parseNewFlags(args []string) rhq.NewSessionOpts {
 			o.Runtime = flagArg()
 		case "--tier":
 			o.Tier = flagArg()
-			if !rhq.ValidTier(o.Tier) {
-				die(rhq.Die("--tier must be strong, standard, or fast"))
+			if !posse.ValidTier(o.Tier) {
+				die(posse.Die("--tier must be strong, standard, or fast"))
 			}
 		case "--allow-degraded":
 			o.AllowDegraded = true
 			rest = rest[1:]
 		case "--cage":
 			o.Cage = flagArg()
-			if !rhq.ValidCage(o.Cage) {
-				die(rhq.Die("--cage must be shims, seatbelt, or container"))
+			if !posse.ValidCage(o.Cage) {
+				die(posse.Die("--cage must be shims, seatbelt, or container"))
 			}
 		default:
-			die(rhq.Die("unknown flag: %s", rest[0]))
+			die(posse.Die("unknown flag: %s", rest[0]))
 		}
 	}
 	return o
@@ -1677,8 +1677,8 @@ func parseNewFlags(args []string) rhq.NewSessionOpts {
 // Exit status is the probe's verdict, because the whole point is that this is
 // usable as an onboarding gate: a probe that failed and exited 0 is the
 // green-while-broken shape `runtime check` was filed to end.
-func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
-	o := rhq.ProbeOpts{Out: out}
+func runtimeProbe(a *posse.App, rt *posse.Runtime, args []string, out io.Writer) {
+	o := posse.ProbeOpts{Out: out}
 	for len(args) > 0 {
 		switch args[0] {
 		case "--keep":
@@ -1686,16 +1686,16 @@ func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
 			args = args[1:]
 		case "--timeout":
 			if len(args) < 2 {
-				die(rhq.Die("flag --timeout needs a value (e.g. 4m)"))
+				die(posse.Die("flag --timeout needs a value (e.g. 4m)"))
 			}
 			d, err := time.ParseDuration(args[1])
 			if err != nil || d <= 0 {
-				die(rhq.Die("--timeout must be a positive duration (e.g. 90s, 4m)"))
+				die(posse.Die("--timeout must be a positive duration (e.g. 90s, 4m)"))
 			}
 			o.Timeout = d
 			args = args[2:]
 		default:
-			die(rhq.Die("unknown flag: %s (usage: posse runtime probe <name> [--timeout 4m] [--keep])", args[0]))
+			die(posse.Die("unknown flag: %s (usage: posse runtime probe <name> [--timeout 4m] [--keep])", args[0]))
 		}
 	}
 	if rt.Builtin {
@@ -1708,7 +1708,7 @@ func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
 		fmt.Fprintln(out, "      evidence, and this is how the same CLI redeclared as a template profile is checked.")
 		fmt.Fprintln(out)
 	}
-	rec, err := a.RuntimeProbe(rt, rhq.NewHerdr(), o)
+	rec, err := a.RuntimeProbe(rt, posse.NewHerdr(), o)
 	if err != nil {
 		die(err)
 	}
@@ -1720,7 +1720,7 @@ func runtimeProbe(a *rhq.App, rt *rhq.Runtime, args []string, out io.Writer) {
 		}
 		fmt.Fprintf(out, "  %s %d %-16s %s\n", mark, ob.N, ob.Name, ob.Detail)
 	}
-	fmt.Fprintf(out, "\n  record %s (%s %s)\n", rhq.AbbrevHome(a.ProbeRecordPath(rt.Name)), rt.Exe(), versionOrUnknown(rec.Version))
+	fmt.Fprintf(out, "\n  record %s (%s %s)\n", posse.AbbrevHome(a.ProbeRecordPath(rt.Name)), rt.Exe(), versionOrUnknown(rec.Version))
 	if rec.Passed() {
 		fmt.Fprintf(out, "  PASS — Bash(...) denies on %s are measured, not assumed. Re-probe after upgrading %s.\n", rt.Name, rt.Exe())
 		return
@@ -2062,7 +2062,9 @@ cockpit (herdr plugin pane — make link-plugin):
                                  x kill · c claim · q quit
 
 environment:
-  RHQ_HOME       config dir (default ~/.config/posse; existing ~/.config/rhq falls back)
+  RHQ_HOME       config dir (default ~/.config/posse; existing ~/.config/rhq falls back).
+                 POSSE_HOME is also accepted; RHQ_HOME wins when both are set
+                 (transition window, ranger-base-mlc)
   RHQ_HERDR_BIN  herdr binary override (testing)
   RHQ_BD_BIN     bd binary override (testing)
   RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing; loopback hosts only —

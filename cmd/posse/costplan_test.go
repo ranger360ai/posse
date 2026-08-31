@@ -49,7 +49,7 @@ func TestParseCostFlags(t *testing.T) {
 }
 
 // seedPlan writes the shared snapshot every posse process reads
-// (internal/rhq/plancache.go). Written straight to the state dir rather
+// (internal/posse/plancache.go). Written straight to the state dir rather
 // than through the library, so the test is exercising the file format the
 // binary actually reads.
 func seedPlan(t *testing.T, home string, e map[string]any) {

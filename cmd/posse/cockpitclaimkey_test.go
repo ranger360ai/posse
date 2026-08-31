@@ -19,13 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // slowClaimCockpit is qaProgFixture wired to a fake bd that takes `pause`
 // over every call and records its argv, plus the claims channel runCockpit
 // makes. The fake resolves the verb PAST bd's global flags, because
-// rhq.Bd.run leads every argv with --no-daemon (ranger-base-cwu7) and a
+// posse.Bd.run leads every argv with --no-daemon (ranger-base-cwu7) and a
 // fake keyed on $1 answers the wrong thing to everything.
 func slowClaimCockpit(t *testing.T, pause string) (*cockpit, string) {
 	t.Helper()
@@ -48,7 +48,7 @@ esac
 exit 0
 `)
 	c := qaProgFixture()
-	c.bd = rhq.Bd{Bin: bd}
+	c.bd = posse.Bd{Bin: bd}
 	c.claims = make(chan string, 4)
 	for i := range c.issues {
 		c.issues[i].Dir = dir
@@ -156,7 +156,7 @@ func TestCockpitUnclaimConfirmDoesNotFreezeTheRenderLoop(t *testing.T) {
 func TestCockpitRefusesASecondWriteWhileOneIsInFlight(t *testing.T) {
 	c, log := slowClaimCockpit(t, "2")
 	launched := false
-	c.launcher = func(rhq.RepoIssue, bool) (string, error) {
+	c.launcher = func(posse.RepoIssue, bool) (string, error) {
 		launched = true
 		return "some-session", nil
 	}

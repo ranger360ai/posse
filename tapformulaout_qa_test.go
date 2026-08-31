@@ -33,7 +33,7 @@ import (
 const (
 	tapOutGuardOpen  = "# >>> out-guard (ranger-base-qkd0)"
 	tapOutGuardClose = "# <<< out-guard (ranger-base-qkd0)"
-	// Deliberately not internal/rhq.Version: this pin is about --out and must
+	// Deliberately not internal/posse.Version: this pin is about --out and must
 	// not go red on a release bump.
 	tapOutVersion = "9.9.9"
 	// The first line the script writes, and the token its guard recognises.

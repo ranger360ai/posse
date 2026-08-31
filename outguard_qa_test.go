@@ -32,7 +32,7 @@ const (
 	outGuardOpen  = "# >>> out-guard (ranger-base-9hyc)"
 	outGuardClose = "# <<< out-guard (ranger-base-9hyc)"
 	// The version the fixture's app.go carries. Deliberately not
-	// internal/rhq.Version: this pin is about --out, and must not go red on a
+	// internal/posse.Version: this pin is about --out, and must not go red on a
 	// release bump.
 	outGuardVersion = "9.9.9"
 )
@@ -66,20 +66,20 @@ func outGuardEnv(home string) []string {
 }
 
 // outGuardFixture builds a git repo the script will accept — one commit, an
-// internal/rhq/app.go whose Version matches outGuardVersion — and returns the
+// internal/posse/app.go whose Version matches outGuardVersion — and returns the
 // repo path and the fixture $HOME beside it.
 func outGuardFixture(t *testing.T) (repo, home string) {
 	t.Helper()
 	root := t.TempDir()
 	repo = filepath.Join(root, "repo")
 	home = filepath.Join(root, "home")
-	for _, d := range []string{filepath.Join(repo, "internal", "rhq"), home} {
+	for _, d := range []string{filepath.Join(repo, "internal", "posse"), home} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	app := "package rhq\n\nconst (\n\tVersion = \"" + outGuardVersion + "\"\n)\n"
-	if err := os.WriteFile(filepath.Join(repo, "internal", "rhq", "app.go"), []byte(app), 0o644); err != nil {
+	app := "package posse\n\nconst (\n\tVersion = \"" + outGuardVersion + "\"\n)\n"
+	if err := os.WriteFile(filepath.Join(repo, "internal", "posse", "app.go"), []byte(app), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git := func(args ...string) {
@@ -96,7 +96,7 @@ func outGuardFixture(t *testing.T) (repo, home string) {
 	// The safe form the posse gate demands (rangerhq-ojnw): named paths
 	// after --, no -i. A fixture is not exempt from the crew's own deny.
 	git("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
-		"commit", "-qm", "fixture", "--", filepath.Join("internal", "rhq", "app.go"))
+		"commit", "-qm", "fixture", "--", filepath.Join("internal", "posse", "app.go"))
 	return repo, home
 }
 
@@ -250,7 +250,7 @@ func TestReleaseOutGuardRefusesWhatItDidNotWrite(t *testing.T) {
 				t.Errorf("--out %q: canary .env is gone: %v", tc.out, err)
 			}
 			// The repo-root and $HOME cases must not have been wiped either.
-			if _, err := os.Stat(filepath.Join(repo, "internal", "rhq", "app.go")); err != nil {
+			if _, err := os.Stat(filepath.Join(repo, "internal", "posse", "app.go")); err != nil {
 				t.Fatalf("--out %q: the fixture repo lost app.go: %v", tc.out, err)
 			}
 			if _, err := os.Stat(filepath.Join(home, "sub")); err != nil {

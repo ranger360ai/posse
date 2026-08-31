@@ -62,7 +62,7 @@ config="$home/config.yaml"
 # which is also where the stamp each hook must carry comes from. Reading one
 # block for both keeps the two halves from disagreeing.
 #
-# This has to be posse's rule (yamlClean, internal/rhq/yamlflat.go), not a
+# This has to be posse's rule (yamlClean, internal/posse/yamlflat.go), not a
 # spelling invented here (ranger-base-heyb; the same split fqfw and k3yd
 # already closed one level up, in cfg()): a comment starts at whitespace
 # followed by '#', not '#' anywhere (a hash with no space before it is data,

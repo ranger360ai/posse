@@ -95,7 +95,7 @@ all = [
 # DO NOT teach anything to answer this screen. The default-selected option is
 # "1. Update now", which runs a package upgrade of the operator's pinned
 # tooling: ADR 0013 §2 layer 2, and Interstitial.Danger in
-# internal/rhq/interstitial.go. Blocked here means the launch fails by name
+# internal/posse/interstitial.go. Blocked here means the launch fails by name
 # and a human decides.
 id = "update_menu"
 state = "blocked"

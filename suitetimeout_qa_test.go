@@ -290,7 +290,7 @@ func TestQAGoTestDetectorReadsBothSpellingsAndSkipsProse(t *testing.T) {
 		dur  string
 	}{
 		{"\t$(GOBIN) test -timeout 25m ./...", true, "25m"},
-		{"go test -timeout=25m ./internal/rhq", true, "25m"},
+		{"go test -timeout=25m ./internal/posse", true, "25m"},
 		{"go test --timeout 20m ./...", true, "20m"},
 		{"GOBIN=go go test ./...", true, ""},
 		{"# `make test` is `go test ./...` and nothing lighter", false, ""},

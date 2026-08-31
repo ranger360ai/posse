@@ -23,7 +23,7 @@ package posse
 //     files that are there, and TestCredentialGateScannerCatchesEachShape
 //     plants one file per shape to prove the matchers are not asleep);
 //   - the keychain read is exec'd from exactly ONE non-test file of the
-//     binary, `internal/rhq/credential.go` — the seam NOTES names. Exactly
+//     binary, `internal/posse/credential.go` — the seam NOTES names. Exactly
 //     one, not at-most-one: if the exec disappears or is spelled across
 //     lines, this fails and the sentence needs re-deriving rather than
 //     silently covering nothing.
@@ -205,7 +205,7 @@ func TestCredentialGateScannerCatchesEachShape(t *testing.T) {
 // names the file. `exec.Command` + the item flag on one line is the read
 // itself; a comment that merely mentions it (gates.go's header does) is not.
 func TestKeychainReadIsExecdFromExactlyOneFile(t *testing.T) {
-	const seam = "internal/rhq/credential.go"
+	const seam = "internal/posse/credential.go"
 	var hits []string
 	var goFiles int
 	for _, root := range []string{"internal", "cmd"} {

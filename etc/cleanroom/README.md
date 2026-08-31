@@ -160,7 +160,7 @@ CLEANROOM_DISTRO=rhel make cleanroom-hook-deps
 ```
 
 The probe that pays for the whole multi-distro route. The hooks posse renders
-(`internal/rhq/gates.go`) are **shell**, and shell is where distro variance is
+(`internal/posse/gates.go`) are **shell**, and shell is where distro variance is
 visible at all. It reports each of the external commands those hooks call
 against this distro's userland, and exits non-zero on any `MISSING`.
 

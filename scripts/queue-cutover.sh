@@ -52,7 +52,7 @@
 # below, and ranger-base-4myz for what "every spelling" turned out to mean).
 #
 # WHY THE HISTORY REPLAY IS NOT OPTIONAL: posse's bead-loss census
-# (internal/rhq/beadloss.go) IS the git log of `.beads/issues.jsonl` in
+# (internal/posse/beadloss.go) IS the git log of `.beads/issues.jsonl` in
 # whatever repo the redirect lands in. A queue repo that starts at one fresh
 # commit has no census, so `LostBeads` reports nothing, forever, and the
 # alarm that exists because bd deletes rows silently (rangerhq-fuom) is
@@ -444,7 +444,7 @@ fi
 
 # ─── 5. every other redirect in the fleet ────────────────────────────────────
 # Session worktrees are seeded from their main checkout's redirect at
-# creation (internal/rhq/worktree.go), so the ones cut AFTER this are right
+# creation (internal/posse/worktree.go), so the ones cut AFTER this are right
 # by construction; the ones already open are not, and they are where the
 # fleet is working right now.
 STAGE=fanout

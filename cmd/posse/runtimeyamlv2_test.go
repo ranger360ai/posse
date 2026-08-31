@@ -74,7 +74,7 @@ func TestRuntimesListsAYamlV2Profile(t *testing.T) {
 		// key rather than as one wrapped literal: where the line breaks fall
 		// is cosmetic, and adding two keys reddened this test for a change
 		// that moved no behaviour (ranger-base-ncxa). Exhaustiveness against
-		// runtimeYamlKeys() is pinned in internal/rhq by
+		// runtimeYamlKeys() is pinned in internal/posse by
 		// TestOnboardingFooterNamesEveryDeclarableKey, which slices the
 		// footer out of the screen instead of matching across it; these are
 		// the keys this command's own contract turns on.

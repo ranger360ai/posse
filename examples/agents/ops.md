@@ -97,7 +97,7 @@ Hand to
 Say what you need in one line, then stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons.
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons.
 
 ## Metrics
 - `closed-no-reopen`: your closed beads not reopened within 14 days.

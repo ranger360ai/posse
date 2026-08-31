@@ -118,7 +118,7 @@ checked) — `bd comments add <id> <summary>`, `bd close <id>`.
 State what access or decision you need, then stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons —
 recurring weaknesses, accepted risks and their rationale.
 
 ## Metrics

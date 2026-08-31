@@ -12,23 +12,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // rangerhq-5li: the cursor follows the item, not the row index, across
 // refreshes that reshuffle the lists.
 func TestCockpitReselect(t *testing.T) {
-	ss := func(names ...string) []rhq.HerdrSession {
-		var out []rhq.HerdrSession
+	ss := func(names ...string) []posse.HerdrSession {
+		var out []posse.HerdrSession
 		for _, n := range names {
-			out = append(out, rhq.HerdrSession{Name: n})
+			out = append(out, posse.HerdrSession{Name: n})
 		}
 		return out
 	}
-	is := func(ids ...string) []rhq.RepoIssue {
-		var out []rhq.RepoIssue
+	is := func(ids ...string) []posse.RepoIssue {
+		var out []posse.RepoIssue
 		for _, id := range ids {
-			out = append(out, rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: id}, Dir: "/r"})
+			out = append(out, posse.RepoIssue{BdIssue: posse.BdIssue{ID: id}, Dir: "/r"})
 		}
 		return out
 	}
@@ -126,15 +126,15 @@ exit 1
 		t.Fatal(err)
 	}
 
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),
 		StateDir:   filepath.Join(home, "state"),
 	}
 	c := &cockpit{
 		app: a,
-		hb:  &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
-		bd:  rhq.Bd{Bin: bd},
+		hb:  &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard},
+		bd:  posse.Bd{Bin: bd},
 	}
 	c.refreshAll()
 	if !strings.Contains(c.status, "ready scan failed") || !strings.Contains(c.status, "database is locked") {
@@ -169,18 +169,18 @@ func TestCockpitPlanHeader(t *testing.T) {
 func TestCockpitCrewTagAndFooter(t *testing.T) {
 	var b strings.Builder
 	c := &cockpit{out: &b,
-		sessions: []rhq.HerdrSession{
+		sessions: []posse.HerdrSession{
 			{Name: "developer-rangerhq-b3p", Agent: "developer", Status: "idle", Crew: true},
 			{Name: "devops-rangerhq-h3n", Agent: "devops", Status: "idle"},
 		},
-		issues: []rhq.RepoIssue{{BdIssue: rhq.BdIssue{ID: "x-1"}, Dir: "/r"}},
+		issues: []posse.RepoIssue{{BdIssue: posse.BdIssue{ID: "x-1"}, Dir: "/r"}},
 	}
 	c.draw()
 	for _, ln := range strings.Split(b.String(), "\r\n") {
-		if strings.Contains(ln, "developer") && !strings.Contains(ln, rhq.CrewTag) {
+		if strings.Contains(ln, "developer") && !strings.Contains(ln, posse.CrewTag) {
 			t.Errorf("crew row untagged: %q", ln)
 		}
-		if strings.Contains(ln, "devops") && strings.Contains(ln, rhq.CrewTag) {
+		if strings.Contains(ln, "devops") && strings.Contains(ln, posse.CrewTag) {
 			t.Errorf("fleet row wearing the crew tag: %q", ln)
 		}
 	}
@@ -197,13 +197,13 @@ func TestCockpitCrewTagAndFooter(t *testing.T) {
 }
 
 func TestCockpitTurnFailureOverridesIdlePresentation(t *testing.T) {
-	c := &cockpit{sessions: []rhq.HerdrSession{{
+	c := &cockpit{sessions: []posse.HerdrSession{{
 		Name: "security-posse-6ne", Agent: "security", Status: "idle",
 		TurnFailure: "You've reached your Fable 5 limit.",
 	}}}
 	got := stripANSI(renderRow(row{kind: rowItem, cols: c.sessionCols(c.sessions[0])}, 100, false))
 	if !strings.Contains(got, "⛔") || !strings.Contains(got, "failed") ||
-		!strings.Contains(got, rhq.TurnFailureTag) || strings.Contains(got, "idle") {
+		!strings.Contains(got, posse.TurnFailureTag) || strings.Contains(got, "idle") {
 		t.Errorf("turn failure rendered as a healthy idle session: %q", got)
 	}
 }
@@ -240,10 +240,10 @@ func fixture() *cockpit {
 	c := &cockpit{
 		now:      func() time.Time { return at },
 		planLine: "5h 42% · 7d 61%",
-		sessions: []rhq.HerdrSession{
-			{Name: rhq.SessionForBead("devops", repoDir, "rangerhq-h3n"), Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: repoDir},
-			{Name: rhq.SessionForBead("developer", repoDir, "rangerhq-fei"), Emoji: "🐿️", Agent: "developer", Status: "working", Dir: repoDir, Focused: true},
-			{Name: rhq.SessionFor("business-manager", repoDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: repoDir, Runtime: "gemini", Tier: "premium"},
+		sessions: []posse.HerdrSession{
+			{Name: posse.SessionForBead("devops", repoDir, "rangerhq-h3n"), Emoji: "🧛", Agent: "devops", Status: "blocked", Dir: repoDir},
+			{Name: posse.SessionForBead("developer", repoDir, "rangerhq-fei"), Emoji: "🐿️", Agent: "developer", Status: "working", Dir: repoDir, Focused: true},
+			{Name: posse.SessionFor("business-manager", repoDir), Emoji: "🙂", Agent: "business-manager", Status: "idle", Dir: repoDir, Runtime: "gemini", Tier: "premium"},
 			{Name: "notes", Emoji: "📓", Status: "", Crew: true},
 		},
 		costByBead:    map[string]float64{"rangerhq-fei": 1.25},
@@ -271,8 +271,8 @@ func fixture() *cockpit {
 		"envs: tighten mode on write",
 	}
 	for i, t := range titles {
-		c.issues = append(c.issues, rhq.RepoIssue{
-			BdIssue: rhq.BdIssue{ID: fixtureBeadID(i), Title: t, Priority: i % 4},
+		c.issues = append(c.issues, posse.RepoIssue{
+			BdIssue: posse.BdIssue{ID: fixtureBeadID(i), Title: t, Priority: i % 4},
 			Dir:     "/Users/x/src/posse",
 		})
 	}
@@ -289,8 +289,8 @@ func fixture() *cockpit {
 		{"rangerhq-h3n", "devops", "herdr: codex detection override — the dialog reads as idle", 26 * time.Hour},
 		{"rangerhq-9q2", "qa", "verify: dispatch honours budget_day", 12 * time.Minute},
 	} {
-		c.inprog = append(c.inprog, rhq.RepoIssue{
-			BdIssue: rhq.BdIssue{ID: ip.id, Title: ip.title, Priority: 2,
+		c.inprog = append(c.inprog, posse.RepoIssue{
+			BdIssue: posse.BdIssue{ID: ip.id, Title: ip.title, Priority: 2,
 				Status: "in_progress", Assignee: ip.who, Updated: at.Add(-ip.age)},
 			Dir: repoDir,
 		})
@@ -328,14 +328,14 @@ func golden(t *testing.T, name string, got string) {
 // stop meaning anything. What the version actually IS is
 // cmd/posse.TestVersionNamesTheCommitWithoutTheLdflag's question.
 func versionMask() (from, to string) {
-	return rhq.Version, strings.Repeat("V", len(rhq.Version))
+	return posse.Version, strings.Repeat("V", len(posse.Version))
 }
 
 // ADR 0004 §5: render(w,h) is a pure function of the row model, drawn to a
 // size. Three sizes, one fixed clock, byte-for-byte.
 func TestCockpitGolden(t *testing.T) {
-	defer func(b string) { rhq.Build = b }(rhq.Build)
-	rhq.Build = "test"
+	defer func(b string) { posse.Build = b }(posse.Build)
+	posse.Build = "test"
 	from, to := versionMask()
 	for _, sz := range []struct {
 		name string
@@ -446,7 +446,7 @@ func TestCockpitWideRangesSorted(t *testing.T) {
 // The regression the smoke test caught: a session row with emoji in both the
 // fixed marks and the flex column must still fit a 60-column popup.
 func TestCockpitRowFitsNarrow(t *testing.T) {
-	c := &cockpit{sessions: []rhq.HerdrSession{
+	c := &cockpit{sessions: []posse.HerdrSession{
 		{Name: "developer-posse-rangerhq-fei", Emoji: "🤖", Agent: "developer",
 			Status: "working", Runtime: "claude", Tier: "standard", Crew: true, Focused: true},
 	}}
@@ -460,8 +460,8 @@ func TestCockpitRowFitsNarrow(t *testing.T) {
 
 // ADR 0004 §1, one case per column kind.
 func TestCockpitColumnKinds(t *testing.T) {
-	is := rhq.RepoIssue{
-		BdIssue: rhq.BdIssue{ID: "rangerhq-fei", Priority: 2, Assignee: "developer",
+	is := posse.RepoIssue{
+		BdIssue: posse.BdIssue{ID: "rangerhq-fei", Priority: 2, Assignee: "developer",
 			Title: "cockpit v2 (a): row model and render(w,h), width-aware columns, SIGWINCH"},
 		Dir: "/Users/x/src/posse",
 	}
@@ -507,14 +507,14 @@ func TestCockpitColumnKinds(t *testing.T) {
 func TestCockpitHolderColumnClips(t *testing.T) {
 	const w = 140
 	c := fixture()
-	issue := func(who string) rhq.RepoIssue {
-		return rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "rangerhq-fei", Priority: 2,
+	issue := func(who string) posse.RepoIssue {
+		return posse.RepoIssue{BdIssue: posse.BdIssue{ID: "rangerhq-fei", Priority: 2,
 			Assignee: who, Title: "cockpit v2 (a): row model and render(w,h)"},
 			Dir: repoDir}
 	}
 	for _, tc := range []struct {
 		name string
-		cols func(rhq.RepoIssue) []col
+		cols func(posse.RepoIssue) []col
 	}{
 		{"ready", issueCols},
 		{"inprog", c.inprogCols},
@@ -756,7 +756,7 @@ func TestCockpitHolderJoin(t *testing.T) {
 		{"rangerhq-h3n", "blocked"}, //
 		{"rangerhq-9q2", noSession}, // holder has no session at all
 	} {
-		is := rhq.RepoIssue{}
+		is := posse.RepoIssue{}
 		for _, ip := range c.inprog {
 			if ip.ID == tc.id {
 				is = ip
@@ -770,7 +770,7 @@ func TestCockpitHolderJoin(t *testing.T) {
 		}
 	}
 	// No assignee, no holder — and never a panic looking for one.
-	if got := c.holderState(rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "x"}, Dir: repoDir}); got != noSession {
+	if got := c.holderState(posse.RepoIssue{BdIssue: posse.BdIssue{ID: "x"}, Dir: repoDir}); got != noSession {
 		t.Errorf("unassigned bead: holderState = %q, want %q", got, noSession)
 	}
 }
@@ -788,9 +788,9 @@ func TestCockpitInProgressStalledFirst(t *testing.T) {
 	}
 	// Ties keep bd's order: two blocked beads stay as they came.
 	c.sessions = nil
-	c.inprog = []rhq.RepoIssue{
-		{BdIssue: rhq.BdIssue{ID: "b"}, Dir: repoDir},
-		{BdIssue: rhq.BdIssue{ID: "a"}, Dir: repoDir},
+	c.inprog = []posse.RepoIssue{
+		{BdIssue: posse.BdIssue{ID: "b"}, Dir: repoDir},
+		{BdIssue: posse.BdIssue{ID: "a"}, Dir: repoDir},
 	}
 	c.sortInProg()
 	if c.inprog[0].ID != "b" {
@@ -805,18 +805,18 @@ func TestCockpitInProgressStalledFirst(t *testing.T) {
 
 // A bead appears in one section only (ADR 0004 §2).
 func TestCockpitReadyFilter(t *testing.T) {
-	mk := func(id, status string) rhq.RepoIssue {
-		return rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: id, Status: status}, Dir: repoDir}
+	mk := func(id, status string) posse.RepoIssue {
+		return posse.RepoIssue{BdIssue: posse.BdIssue{ID: id, Status: status}, Dir: repoDir}
 	}
-	ready := []rhq.RepoIssue{mk("a", "open"), mk("b", "in_progress"), mk("c", "open"), mk("d", "open")}
-	inprog := []rhq.RepoIssue{mk("d", "in_progress")}
+	ready := []posse.RepoIssue{mk("a", "open"), mk("b", "in_progress"), mk("c", "open"), mk("d", "open")}
+	inprog := []posse.RepoIssue{mk("d", "in_progress")}
 	got := readyOnly(ready, inprog)
 	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
 		t.Errorf("readyOnly kept %v, want [a c]", got)
 	}
 	// Same id, different repo: a different bead, and it stays.
-	other := rhq.RepoIssue{BdIssue: rhq.BdIssue{ID: "d", Status: "open"}, Dir: "/other"}
-	if got := readyOnly([]rhq.RepoIssue{other}, inprog); len(got) != 1 {
+	other := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "d", Status: "open"}, Dir: "/other"}
+	if got := readyOnly([]posse.RepoIssue{other}, inprog); len(got) != 1 {
 		t.Errorf("a same-id bead in another repo must survive: %v", got)
 	}
 }
@@ -933,7 +933,7 @@ func TestCockpitInProgressKeys(t *testing.T) {
 	c.buildRows()
 	c.results = make(chan string, 4)
 	var launched []string
-	c.launcher = func(bead rhq.RepoIssue, resume bool) (string, error) {
+	c.launcher = func(bead posse.RepoIssue, resume bool) (string, error) {
 		launched = append(launched, fmt.Sprintf("%s resume=%v", bead.ID, resume))
 		return "session", nil
 	}
@@ -988,7 +988,7 @@ func TestCockpitInProgressKeys(t *testing.T) {
 	if c.mode != modePrompt {
 		t.Fatalf("p with a live holder: mode %v, want modePrompt", c.mode)
 	}
-	if got := stripANSI(strings.Join(c.footerLines(120), "\n")); !strings.Contains(got, rhq.SessionForBead("developer", repoDir, "rangerhq-fei")) {
+	if got := stripANSI(strings.Join(c.footerLines(120), "\n")); !strings.Contains(got, posse.SessionForBead("developer", repoDir, "rangerhq-fei")) {
 		t.Errorf("the prompt names the holder's session:\n%s", got)
 	}
 	press("\033") // esc
@@ -1149,7 +1149,7 @@ func TestCockpitPlanBlindNamesTheLedgerBrake(t *testing.T) {
 // ADR 0018 §3 (ranger-base-3nvt): the THIRD outcome, which the two-state
 // segment above rendered as the degrade. Caps armed over a ledger the cost
 // scan came back short of is a brake counting nothing, and the dispatcher
-// parks on it (internal/rhq, TestBlindDegradeParksWhenTheLedgerCannotBeRead)
+// parks on it (internal/posse, TestBlindDegradeParksWhenTheLedgerCannotBeRead)
 // — so a header reading " — ledger brake" there tells the operator the
 // opposite of what the pass did.
 func TestCockpitPlanBlindUnreadableLedgerIsParkedNotBraked(t *testing.T) {
@@ -1193,7 +1193,7 @@ func TestCockpitPlanBlindUnreadableLedgerIsParkedNotBraked(t *testing.T) {
 // clause that renders a field nothing ever assigns is green there and dead
 // on the screen — which is precisely how Unread came to be missing from the
 // display in the first place (ADR 0018 §3 / ranger-base-c65c). The fact is
-// the COST scan's, so this walks it from a *rhq.CostReport to c.planLine.
+// the COST scan's, so this walks it from a *posse.CostReport to c.planLine.
 func TestCockpitApplyPlanTakesTheLedgerFailureFromTheCostScan(t *testing.T) {
 	at := time.Date(2026, 8, 30, 4, 0, 0, 0, time.UTC)
 	c := &cockpit{now: func() time.Time { return at }}
@@ -1201,25 +1201,25 @@ func TestCockpitApplyPlanTakesTheLedgerFailureFromTheCostScan(t *testing.T) {
 	at = at.Add(4 * time.Hour)
 
 	// A clean scan: the degraded day, unchanged.
-	c.applyCost(&rhq.CostReport{DayCap: 250})
+	c.applyCost(&posse.CostReport{DayCap: 250})
 	c.applyPlan(planRead{guarded: true, ledger: true})
 	if want := "plan — · guard blind 4h00m — ledger brake"; c.planLine != want {
 		t.Fatalf("clean scan = %q, want %q", c.planLine, want)
 	}
 
 	// The same blind read over a scan that lost three transcripts.
-	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 3})
+	c.applyCost(&posse.CostReport{DayCap: 250, Unread: 3})
 	c.applyPlan(planRead{guarded: true, ledger: true})
 	if want := "plan — · guard blind 4h00m — ledger unreadable, parked"; c.planLine != want {
 		t.Fatalf("unreadable scan = %q, want %q", c.planLine, want)
 	}
 	// And the header does not wait out a plan tick for it: the cost scan is
 	// 30s and the plan scan 2m, so the tick that LEARNS it re-renders.
-	c.applyCost(&rhq.CostReport{DayCap: 250})
+	c.applyCost(&posse.CostReport{DayCap: 250})
 	if want := "plan — · guard blind 4h00m — ledger brake"; c.planLine != want {
 		t.Errorf("the cost tick must re-render the segment it feeds, got %q", c.planLine)
 	}
-	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 1})
+	c.applyCost(&posse.CostReport{DayCap: 250, Unread: 1})
 	if want := "plan — · guard blind 4h00m — ledger unreadable, parked"; c.planLine != want {
 		t.Errorf("re-render, other direction: %q", c.planLine)
 	}
@@ -1228,7 +1228,7 @@ func TestCockpitApplyPlanTakesTheLedgerFailureFromTheCostScan(t *testing.T) {
 	// segment, and re-running it would move planReadAt every 30s and reset
 	// the blind clock the header is counting.
 	c.applyPlan(planRead{line: "5h 9% · 7d 30%", guarded: true, ledger: true})
-	c.applyCost(&rhq.CostReport{DayCap: 250, Unread: 3})
+	c.applyCost(&posse.CostReport{DayCap: 250, Unread: 3})
 	if c.planLine != "5h 9% · 7d 30%" {
 		t.Errorf("a reading must survive the cost tick, got %q", c.planLine)
 	}
@@ -1275,7 +1275,7 @@ func TestCockpitPlanNoCredentialSourceIsOffNotBlind(t *testing.T) {
 // cockpit: both ways a *NoSource arrives read as the same state, and a
 // refusal that is not one reads as the adapter state it is.
 func TestCockpitPlanOffStateReadsBothArrivals(t *testing.T) {
-	ns := &rhq.NoSource{Runtime: "claude", Purpose: rhq.CredMeter, GOOS: "linux",
+	ns := &posse.NoSource{Runtime: "claude", Purpose: posse.CredMeter, GOOS: "linux",
 		Store: "the Claude Code credentials file", Arm: "log in once with `claude`"}
 	cases := []struct {
 		name               string
@@ -1284,12 +1284,12 @@ func TestCockpitPlanOffStateReadsBothArrivals(t *testing.T) {
 	}{
 		// Caught by the availability check, so the reason arrives flattened
 		// into a sentence AND kept as a value.
-		{"availability check", &rhq.NoPlanAdapter{Why: "no adapter serves this machine", Errs: []error{ns}}, true, false},
+		{"availability check", &posse.NoPlanAdapter{Why: "no adapter serves this machine", Errs: []error{ns}}, true, false},
 		// Caught by the read: the store went away after that check.
 		{"the read", ns, true, false},
 		{"wrapped", fmt.Errorf("reading the meter: %w", ns), true, false},
 		// A refusal with no credential in it is the third state, unchanged.
-		{"no adapter", &rhq.NoPlanAdapter{Why: "no plan-window adapter is compiled in"}, false, true},
+		{"no adapter", &posse.NoPlanAdapter{Why: "no plan-window adapter is compiled in"}, false, true},
 		// Everything else is blindness and keeps its clock.
 		{"ordinary failure", errors.New("usage endpoint unreachable"), false, false},
 	}
@@ -1310,10 +1310,10 @@ func TestCockpitPlanOffStateReadsBothArrivals(t *testing.T) {
 // LANE, and a carry-over with no G-row.
 func govFixture() *cockpit {
 	c := fixture()
-	c.gov = rhq.GovSet{
-		{ID: "G1", Class: rhq.GovLane, Key: "blocked:devops-x", Detail: "devops-x (devops) is blocked on an approval"},
-		{ID: "G7", Class: rhq.GovUrgent, Key: "loop-dead", Detail: "autostart is armed and no watch loop holds the lock"},
-		{Class: rhq.GovLane, Key: "no-live:coordinator", Detail: "no live session for coordinator"},
+	c.gov = posse.GovSet{
+		{ID: "G1", Class: posse.GovLane, Key: "blocked:devops-x", Detail: "devops-x (devops) is blocked on an approval"},
+		{ID: "G7", Class: posse.GovUrgent, Key: "loop-dead", Detail: "autostart is armed and no watch loop holds the lock"},
+		{Class: posse.GovLane, Key: "no-live:coordinator", Detail: "no live session for coordinator"},
 	}
 	return c
 }
@@ -1397,8 +1397,8 @@ func TestCockpitGovBlockSaysPartial(t *testing.T) {
 // says how long and gets out of the way.
 func TestCockpitCredSegment(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
-	mint := func(set string, at time.Time) rhq.CredExpiry {
-		return rhq.CredExpiry{Runtime: "claude", Purpose: "session", Set: set,
+	mint := func(set string, at time.Time) posse.CredExpiry {
+		return posse.CredExpiry{Runtime: "claude", Purpose: "session", Set: set,
 			Key: "CLAUDE_CODE_OAUTH_TOKEN", At: at}
 	}
 
@@ -1409,7 +1409,7 @@ func TestCockpitCredSegment(t *testing.T) {
 		t.Error("an empty warning list drew a column")
 	}
 
-	c, ok := credCol([]rhq.CredExpiry{mint("container", now.Add(6*24*time.Hour))}, now)
+	c, ok := credCol([]posse.CredExpiry{mint("container", now.Add(6*24*time.Hour))}, now)
 	if !ok || c.text != "cred: claude in 6d" {
 		t.Errorf("approaching: %q ok=%v", c.text, ok)
 	}
@@ -1419,7 +1419,7 @@ func TestCockpitCredSegment(t *testing.T) {
 
 	// Expired is a different colour AND different words: they cost
 	// different things, and one rendering for both tells the eye nothing.
-	c, _ = credCol([]rhq.CredExpiry{mint("container", now.Add(-time.Hour))}, now)
+	c, _ = credCol([]posse.CredExpiry{mint("container", now.Add(-time.Hour))}, now)
 	if c.text != "cred: claude EXPIRED" || c.ansi != aRed {
 		t.Errorf("expired: %q %q", c.text, c.ansi)
 	}
@@ -1427,7 +1427,7 @@ func TestCockpitCredSegment(t *testing.T) {
 	// Several: the soonest is named and the rest are COUNTED. A header
 	// column that listed them would push the shop's own status off an
 	// 80-column pane to report a fortnight of notice.
-	c, _ = credCol([]rhq.CredExpiry{
+	c, _ = credCol([]posse.CredExpiry{
 		mint("alpha", now.Add(2*24*time.Hour)),
 		mint("zulu", now.Add(9*24*time.Hour)),
 	}, now)
@@ -1455,7 +1455,7 @@ func TestCockpitCredSegmentRendersInTheHeader(t *testing.T) {
 	if n := len(c.headerCols()); n != 3 {
 		t.Errorf("a healthy shop draws %d header columns, want 3", n)
 	}
-	c.creds = []rhq.CredExpiry{{Runtime: "claude", Purpose: "session", Set: "container",
+	c.creds = []posse.CredExpiry{{Runtime: "claude", Purpose: "session", Set: "container",
 		Key: "CLAUDE_CODE_OAUTH_TOKEN", At: c.clock().Add(3 * 24 * time.Hour)}}
 	warned := head()
 	i, g := strings.Index(warned, "cred: claude in 3d"), strings.Index(warned, "gov ")
@@ -1482,7 +1482,7 @@ func TestCockpitCredSegmentRendersInTheHeader(t *testing.T) {
 func TestCockpitCredSegmentComesFromTheEnvSetsOnDisk(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	a := rhq.NewAppAt(filepath.Join(home, "config"))
+	a := posse.NewAppAt(filepath.Join(home, "config"))
 	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -1568,9 +1568,9 @@ func TestCockpitCostLineMarksAnUnreadableScanAFloor(t *testing.T) {
 // here is exactly the defect (the report carried Unread; no display path
 // read it).
 func TestCockpitApplyCostCarriesTheScansReadFailures(t *testing.T) {
-	seg := &rhq.Segment{Bead: "a-1", Model: "claude-sonnet-5", Start: time.Now(), Msgs: map[string]*rhq.Usage{"a": {Model: "claude-sonnet-5"}}}
+	seg := &posse.Segment{Bead: "a-1", Model: "claude-sonnet-5", Start: time.Now(), Msgs: map[string]*posse.Usage{"a": {Model: "claude-sonnet-5"}}}
 	seg.CostUSD = 4.5
-	rep := &rhq.CostReport{Beads: []*rhq.Segment{seg}, Uncounted: 1, DayCap: 20, Unread: 3}
+	rep := &posse.CostReport{Beads: []*posse.Segment{seg}, Uncounted: 1, DayCap: 20, Unread: 3}
 	c := &cockpit{}
 	c.applyCost(rep)
 	if c.costUnread != 3 {
@@ -1597,20 +1597,20 @@ func TestCockpitApplyCostCarriesTheScansReadFailures(t *testing.T) {
 // bead reads $unpriced, and a claude bead that genuinely cost $0.00 still
 // prints its zero.
 func TestCockpitSessionCostIsBlankForACountedRuntimeWithNoRate(t *testing.T) {
-	cx := &rhq.Segment{Bead: "c-1", Runtime: "codex", Model: "gpt-5.6-sol", Start: time.Now(),
-		Msgs: map[string]*rhq.Usage{"turn-0": {Model: "gpt-5.6-sol", In: 1000, Out: 200}}}
-	free := &rhq.Segment{Bead: "a-1", Runtime: "claude", Model: "claude-opus-5", Start: time.Now(),
-		Msgs: map[string]*rhq.Usage{"m1": {Model: "claude-opus-5"}}}
+	cx := &posse.Segment{Bead: "c-1", Runtime: "codex", Model: "gpt-5.6-sol", Start: time.Now(),
+		Msgs: map[string]*posse.Usage{"turn-0": {Model: "gpt-5.6-sol", In: 1000, Out: 200}}}
+	free := &posse.Segment{Bead: "a-1", Runtime: "claude", Model: "claude-opus-5", Start: time.Now(),
+		Msgs: map[string]*posse.Usage{"m1": {Model: "claude-opus-5"}}}
 	cx.Total()
 	free.Total()
 	c := &cockpit{}
-	c.applyCost(&rhq.CostReport{Beads: []*rhq.Segment{cx, free}})
+	c.applyCost(&posse.CostReport{Beads: []*posse.Segment{cx, free}})
 	if !c.costBlankBeads["c-1"] || c.costBlankBeads["a-1"] {
 		t.Fatalf("applyCost did not carry the blank beads: %v", c.costBlankBeads)
 	}
 	cost := func(agent, bead string) string {
-		return c.sessionCost(rhq.HerdrSession{
-			Name: rhq.SessionForBead(agent, repoDir, bead), Agent: agent, Dir: repoDir, Runtime: "codex"})
+		return c.sessionCost(posse.HerdrSession{
+			Name: posse.SessionForBead(agent, repoDir, bead), Agent: agent, Dir: repoDir, Runtime: "codex"})
 	}
 	if got := cost("dev", "c-1"); got != "$unpriced" {
 		t.Errorf("codex bead cost %q, want $unpriced — 0.00 would say it was free", got)
@@ -1629,7 +1629,7 @@ func TestCockpitSessionCostIsBlankForACountedRuntimeWithNoRate(t *testing.T) {
 // the negative arm here asks the registry rather than spelling a name that
 // will be wrong again on the next adapter.
 func TestCockpitFooterNamesTheUncountedRuntimes(t *testing.T) {
-	rep := &rhq.CostReport{Uncounted: 1, UncountedRuntimes: []string{"gemini"}}
+	rep := &posse.CostReport{Uncounted: 1, UncountedRuntimes: []string{"gemini"}}
 	c := &cockpit{}
 	c.applyCost(rep)
 	if len(c.costUncountedRuntimes) != 1 || c.costUncountedRuntimes[0] != "gemini" {
@@ -1639,7 +1639,7 @@ func TestCockpitFooterNamesTheUncountedRuntimes(t *testing.T) {
 	if !strings.Contains(line, "1 gemini session(s) uncounted") {
 		t.Errorf("the footer must name the runtime the scan could not count: %q", line)
 	}
-	for _, counted := range rhq.CountedRuntimes() {
+	for _, counted := range posse.CountedRuntimes() {
 		if strings.Contains(line, counted) {
 			t.Errorf("%s has an adapter; naming it as uncounted is the defect: %q", counted, line)
 		}
@@ -1760,14 +1760,14 @@ exit 1
 	// it somewhere else (ranger-base-ouf9): a test must not read the box.
 	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "no-such.sock"))
 
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),
 		StateDir:   filepath.Join(home, "state"),
 	}
 	c := &cockpit{
 		app:     a,
-		hb:      &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
+		hb:      &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard},
 		prompts: make(chan string, 4),
 	}
 	c.refresh()
@@ -1836,15 +1836,15 @@ exit 1
 // spend `posse cost` was already totalling.
 func TestCockpitSessionCostAsksTheAdapterNotTheRuntimeName(t *testing.T) {
 	c := &cockpit{}
-	c.applyCost(&rhq.CostReport{})
+	c.applyCost(&posse.CostReport{})
 	cost := func(runtime string) string {
-		return c.sessionCost(rhq.HerdrSession{
-			Name: rhq.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir, Runtime: runtime})
+		return c.sessionCost(posse.HerdrSession{
+			Name: posse.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir, Runtime: runtime})
 	}
 	// Derived from the registry, not spelled: a runtime gaining an adapter
 	// must move this test's expectation with it and not silently become an
 	// assertion that the adapter is ignored.
-	counted := rhq.CountedRuntimes()
+	counted := posse.CountedRuntimes()
 	if len(counted) < 2 {
 		t.Fatalf("this pin needs a counted runtime that is not claude; registry has %v", counted)
 	}
@@ -1854,7 +1854,7 @@ func TestCockpitSessionCostAsksTheAdapterNotTheRuntimeName(t *testing.T) {
 		}
 	}
 	for _, r := range []string{"mycli", "gemini"} {
-		if _, ok := rhq.CostProviderFor(r); ok {
+		if _, ok := posse.CostProviderFor(r); ok {
 			t.Fatalf("%s gained an adapter; this arm needs a runtime nothing reads", r)
 		}
 		if got := cost(r); got != "$uncounted" {
@@ -1864,9 +1864,9 @@ func TestCockpitSessionCostAsksTheAdapterNotTheRuntimeName(t *testing.T) {
 	// A session with no persona is not a per-bead one whatever its runtime,
 	// and "" is a pane whose runtime was never recorded — neither may be
 	// labelled with a claim about spend.
-	for _, s := range []rhq.HerdrSession{
+	for _, s := range []posse.HerdrSession{
 		{Name: "shell", Runtime: "mycli"},
-		{Name: rhq.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir},
+		{Name: posse.SessionForBead("dev", repoDir, "a-1"), Agent: "dev", Dir: repoDir},
 	} {
 		if got := c.sessionCost(s); got != "" {
 			t.Errorf("%+v must carry no cost label, got %q", s, got)

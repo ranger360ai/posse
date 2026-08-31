@@ -101,7 +101,7 @@ Hand to
 Diff unavailable or the intent of the change unclear: ask precisely, stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons —
 recurring defect patterns in this codebase.
 
 ## Metrics

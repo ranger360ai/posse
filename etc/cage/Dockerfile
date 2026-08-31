@@ -8,7 +8,7 @@
 #
 # Nothing host-specific belongs in here. The repo, the persona's memory,
 # its PID and its HOME arrive as bind mounts at launch, at the same paths
-# they have on the host — see internal/rhq/cage.go (CageMounts).
+# they have on the host — see internal/posse/cage.go (CageMounts).
 #
 # Built by `posse cage build [dir]`, which cross-compiles the two Go
 # binaries into bin/ next to a copy of this file and hands that directory

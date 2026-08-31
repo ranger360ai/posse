@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // ranger-base-txio: the two bd scans behind IN PROGRESS and READY WORK cost
@@ -68,15 +68,15 @@ exit 1
 	// ServerGen() stats the operator's live herdr socket unless this points
 	// it somewhere else (ranger-base-ouf9): a test must not read the box.
 	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "no-such.sock"))
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		ConfigPath: filepath.Join(home, "config.yaml"),
 		StateDir:   filepath.Join(home, "state"),
 	}
 	c := &cockpit{
 		app:   a,
-		hb:    &rhq.HerdrBackend{App: a, H: rhq.Herdr{Bin: herdr}, Warn: io.Discard},
-		bd:    rhq.Bd{Bin: bd},
+		hb:    &posse.HerdrBackend{App: a, H: posse.Herdr{Bin: herdr}, Warn: io.Discard},
+		bd:    posse.Bd{Bin: bd},
 		beads: make(chan beadRead, 1),
 	}
 	return c, calls
@@ -273,8 +273,8 @@ func TestCockpitBeadHeadingsSayScanningUntilTheFirstScanLands(t *testing.T) {
 // herdr is down has to survive from one to the other.
 func TestCockpitHerdrDownStillOutranksAReadyScanFailure(t *testing.T) {
 	c, _ := beadScanRig(t, 0, "[]")
-	c.hb = &rhq.HerdrBackend{App: c.app, H: rhq.Herdr{Bin: "/nonexistent/herdr"}, Warn: io.Discard}
-	c.bd = rhq.Bd{Bin: "/nonexistent/bd"}
+	c.hb = &posse.HerdrBackend{App: c.app, H: posse.Herdr{Bin: "/nonexistent/herdr"}, Warn: io.Discard}
+	c.bd = posse.Bd{Bin: "/nonexistent/bd"}
 
 	c.refreshSessions()
 	if !c.herdrDown {
@@ -284,14 +284,14 @@ func TestCockpitHerdrDownStillOutranksAReadyScanFailure(t *testing.T) {
 	if down == "" {
 		t.Fatal("a failed session read must reach the status line")
 	}
-	c.applyBeads(beadRead{failed: []error{rhq.ScanError{Dir: "/repo", Err: rhq.Die("database is locked")}}})
+	c.applyBeads(beadRead{failed: []error{posse.ScanError{Dir: "/repo", Err: posse.Die("database is locked")}}})
 	if c.status != down {
 		t.Errorf("a ready-scan failure took the line from a down herdr: %q", c.status)
 	}
 	// The control: herdr up, and the ready-scan failure is what the
 	// operator is told.
 	c.herdrDown, c.status = false, ""
-	c.applyBeads(beadRead{failed: []error{rhq.ScanError{Dir: "/repo", Err: rhq.Die("database is locked")}}})
+	c.applyBeads(beadRead{failed: []error{posse.ScanError{Dir: "/repo", Err: posse.Die("database is locked")}}})
 	if !strings.Contains(c.status, "ready scan failed") || !strings.Contains(c.status, "database is locked") {
 		t.Errorf("status must name the failed scan, got %q", c.status)
 	}

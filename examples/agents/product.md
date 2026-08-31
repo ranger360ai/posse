@@ -111,7 +111,7 @@ Needs a human decision: state the decision, the options, and your
 recommendation, then stop — the harness flags you.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons — how
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons — how
 the crew reads specs, which acceptance criteria caused questions.
 
 ## Metrics

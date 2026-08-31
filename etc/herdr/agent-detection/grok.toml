@@ -118,7 +118,7 @@ contains = ["Action Required"]
 # verify-detection fails the day grok turns the splash into a real modal.
 #
 # THE ID IS STILL LOAD-BEARING, but no longer to dispatch.
-# startupScreenDismissals in internal/rhq/dispatch.go pressed Esc at this
+# startupScreenDismissals in internal/posse/dispatch.go pressed Esc at this
 # id when a pane reported blocked; that branch was unreachable the moment
 # this rule became `idle`, and rangerhq-6723 retired it. dispatch answers
 # no blocked screen now — a blocker is the operator's, always. What still

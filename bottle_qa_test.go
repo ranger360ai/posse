@@ -216,7 +216,7 @@ func releaseFixture(t *testing.T, version string) (out string) {
 
 	root := t.TempDir()
 	repo := filepath.Join(root, "repo")
-	if err := os.MkdirAll(filepath.Join(repo, "internal", "rhq"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, "internal", "posse"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	write := func(rel, content string) {
@@ -224,8 +224,8 @@ func releaseFixture(t *testing.T, version string) (out string) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join("internal", "rhq", "app.go"),
-		"package rhq\n\nconst (\n\tVersion       = \""+version+"\"\n)\n")
+	write(filepath.Join("internal", "posse", "app.go"),
+		"package posse\n\nconst (\n\tVersion       = \""+version+"\"\n)\n")
 	write("README.md", "readme fixture\n")
 	write("INSTALL.md", "install fixture\n")
 	write("LICENSE", "license fixture\n")
@@ -244,7 +244,7 @@ func releaseFixture(t *testing.T, version string) (out string) {
 	git("init", "-q", ".")
 	git("add", "-A")
 	git("commit", "-qm", "fixture", "--",
-		filepath.Join("internal", "rhq", "app.go"), "README.md", "INSTALL.md", "LICENSE")
+		filepath.Join("internal", "posse", "app.go"), "README.md", "INSTALL.md", "LICENSE")
 
 	// The stub compiler. It honours only `-o <path>`, which is the whole of
 	// what release-artifacts.sh asks of it.

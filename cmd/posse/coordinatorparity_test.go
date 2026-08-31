@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // ADR 0033 §5 where an operator meets it: `posse agent check`. The alarm is
 // "mechanical and advisory ... never the enforcement", and at this surface
 // advisory means exactly one thing — the line is printed and the exit code
-// does not move. The unit pin (internal/rhq TestCheckAgentCoordinatorParity)
+// does not move. The unit pin (internal/posse TestCheckAgentCoordinatorParity)
 // holds the two arms inside CheckAgent, but it reads the warnings return
 // directly, so it is green over a command that counts warnings toward its
 // exit status: measured 2026-08-28 on rangerhq-l72e, `findings += len(fs) +
@@ -24,7 +24,7 @@ import (
 func TestAgentCheckCoordinatorDriftIsAdvisory(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
-	a := &rhq.App{
+	a := &posse.App{
 		Home:       home,
 		AgentsDir:  filepath.Join(home, "agents"),
 		ConfigPath: filepath.Join(home, "config.yaml"),

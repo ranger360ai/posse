@@ -11,7 +11,7 @@
 # it prints, and it exits non-zero while a file is there.
 #
 # WHAT A FINDING MEANS. ~/.claude is in every runtime's writable set
-# (internal/rhq/seatbelt.go) and the seatbelt denies no reads at all — the
+# (internal/posse/seatbelt.go) and the seatbelt denies no reads at all — the
 # rendered profile's only deny is file-write* — so any same-user persona
 # session below the container tier can read whatever is in that directory.
 # The keychain OAuth item is the credential the fleet actually uses; a file
@@ -48,7 +48,7 @@ esac
 [ -n "${HOME:-}" ] || { echo "verify-credential-paths: HOME is unset — nothing to scan"; exit 2; }
 
 # The lookup dir claude actually uses: $CLAUDE_CONFIG_DIR when set, else
-# ~/.claude (internal/rhq/trust.go:92). Scan both when they differ, so setting
+# ~/.claude (internal/posse/trust.go:92). Scan both when they differ, so setting
 # the variable cannot turn a finding into a silent pass.
 dirs=("$HOME/.claude")
 if [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ "$CLAUDE_CONFIG_DIR" != "$HOME/.claude" ]; then

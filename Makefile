@@ -17,7 +17,7 @@ BINDIR ?= $(HOME)/.local/bin
 # The release build stamps itself — it knows its sha is clean.
 #
 # Shelled out to cmd/buildstamp rather than composed here: a dirty tree's
-# half of the stamp is a content fingerprint (internal/rhq.dirtyIdent), not a
+# half of the stamp is a content fingerprint (internal/posse.dirtyIdent), not a
 # bare bit, so two different dirty trees at the same HEAD read as two
 # different builds instead of one. A make/shell reimplementation of that
 # fingerprint would be a second implementation to keep in sync by hand —
@@ -26,7 +26,7 @@ BINDIR ?= $(HOME)/.local/bin
 # nothing, same as before: `posse version` then falls back to go's own build
 # info instead of a hardcoded "unknown" (see versionString in version.go).
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
-LDFLAGS     := -X github.com/ranger360ai/posse/internal/rhq.Build=$(BUILD_STAMP)
+LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
 .PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
@@ -79,7 +79,7 @@ deploy: install
 #   make release-artifacts VERSION=v0.3.0   -> dist/*.tar.gz + dist/checksums.txt
 #   make tap-formula       VERSION=v0.3.0   -> dist/posse.rb (needs checksums)
 #
-# VERSION must agree with internal/rhq.Version; release-artifacts.sh refuses
+# VERSION must agree with internal/posse.Version; release-artifacts.sh refuses
 # the build otherwise, because a binary whose `posse version` contradicts its
 # own download URL is worse than no release.
 VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null)
@@ -524,4 +524,4 @@ cleanroom-verify-all:
 # it spends anything — a fact about the bill, never a runtime defect.
 verify-runtime-walk:
 	@test -n "$(RUNTIME)" || { echo "usage: make verify-runtime-walk RUNTIME=grok|codex|claude"; exit 2; }
-	RHQ_LIVE_RUNTIME=$(RUNTIME) $(GOBIN) test ./internal/rhq -run TestLiveRuntimeContractWalk -v -count=1 -timeout 30m
+	RHQ_LIVE_RUNTIME=$(RUNTIME) $(GOBIN) test ./internal/posse -run TestLiveRuntimeContractWalk -v -count=1 -timeout 30m

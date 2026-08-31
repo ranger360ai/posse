@@ -150,7 +150,7 @@ func makeRecipe(makefile, target string) []string {
 // recipeWritesNoRhq reports whether any recipe line names a path whose last
 // element is `rhq`. Deliberately about the NAME and not about `ln`: what the
 // retirement forbids is a second name reaching this binary, however it is
-// written (internal/rhq/gates.go — every permission layer matches the typed
+// written (internal/posse/gates.go — every permission layer matches the typed
 // word, so a second name is a second command).
 func recipeWritesNoRhq(lines []string) error {
 	for _, line := range lines {

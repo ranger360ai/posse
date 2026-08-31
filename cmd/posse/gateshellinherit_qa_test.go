@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // qaPID writes a minimal PID denying one verb.
@@ -41,7 +41,7 @@ func qaGateShell(t *testing.T, bin, home, persona, shell string) (wrapper, binDi
 	cmd.Env = []string{
 		"HOME=" + filepath.Join(home, "h"),
 		"RHQ_HOME=" + home,
-		"PATH=" + rhq.PathOutsideGates(""),
+		"PATH=" + posse.PathOutsideGates(""),
 		"SHELL=" + shell,
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -78,7 +78,7 @@ func TestQALaunchedPersonaCarriesOnlyItsOwnGates(t *testing.T) {
 	run := func(cmd string) string {
 		c := exec.Command(alphaShell, "-c", cmd)
 		c.Env = []string{
-			"PATH=" + betaBin + ":" + rhq.PathOutsideGates(""),
+			"PATH=" + betaBin + ":" + posse.PathOutsideGates(""),
 			"RHQ_GATES_DIR=" + filepath.Join(home, "state", "gates", "alpha"),
 		}
 		out, _ := c.CombinedOutput()

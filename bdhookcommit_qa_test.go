@@ -14,7 +14,7 @@ package posse_test
 // where bd installed hooks. Measured across three personas the day it shipped.
 //
 // WHY NOTHING CAUGHT IT. scripts/verify-pid-deny-set.sh reads PIDs and asks
-// whether a rule is PRESENT. Every rendering test in internal/rhq invokes a
+// whether a rule is PRESENT. Every rendering test in internal/posse invokes a
 // shim by absolute path with the gates dir taken OFF the child's PATH. Neither
 // shape can see this defect, because the defect is not in what the rules say
 // or in what the shim does when you call it — it is in what git's own hooks
@@ -55,7 +55,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ranger360ai/posse/internal/rhq"
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // The operative line of each hook beads installs (bd-shim v1, 0.49.1). The
@@ -144,7 +144,7 @@ func bhcDeny(t *testing.T, pid string) []string {
 func bhcLookOutside(t *testing.T, cmd string) string {
 	t.Helper()
 	old := os.Getenv("PATH")
-	os.Setenv("PATH", rhq.PathOutsideGates(""))
+	os.Setenv("PATH", posse.PathOutsideGates(""))
 	defer os.Setenv("PATH", old)
 	p, err := exec.LookPath(cmd)
 	if err != nil {
@@ -163,7 +163,7 @@ func bhcLookOutside(t *testing.T, cmd string) string {
 // gitconfig, which may set core.hooksPath; without them a green arm could come
 // from git ignoring the hooks dir this test just populated.
 func bhcEnv(repo, binDir, stubDir, log string) []string {
-	path := strings.Join([]string{binDir, stubDir, rhq.PathOutsideGates(binDir)}, string(os.PathListSeparator))
+	path := strings.Join([]string{binDir, stubDir, posse.PathOutsideGates(binDir)}, string(os.PathListSeparator))
 	return []string{
 		"PATH=" + path,
 		"HOME=" + repo,
@@ -198,9 +198,9 @@ func bhcWorld(t *testing.T, persona string, deny []string) (repo, binDir, stubDi
 	// RenderGates bakes the real binary the shim execs, resolving it on the
 	// ambient PATH with gates dirs dropped. Put the stub there so the shim
 	// execs the stub and not the operator's bd.
-	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+rhq.PathOutsideGates(""))
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+posse.PathOutsideGates(""))
 
-	app := &rhq.App{StateDir: filepath.Join(home, "state")}
+	app := &posse.App{StateDir: filepath.Join(home, "state")}
 	_, binDir, _, err := app.RenderGates(persona, deny)
 	if err != nil {
 		t.Fatalf("RenderGates: %v", err)

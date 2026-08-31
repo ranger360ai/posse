@@ -16,7 +16,7 @@
 # ============================================================================
 # THIS IS THE IMAGE THAT EARNED THE ROUTE.
 # ============================================================================
-# ranger-base-rmgz was found here, on the first run: `internal/rhq/gates.go`
+# ranger-base-rmgz was found here, on the first run: `internal/posse/gates.go`
 # renders a prepare-commit-msg hook that calls `cmp`, `cmp` ships in diffutils,
 # and a minimal RHEL/AlmaLinux box does not have diffutils installed. Absent,
 # the test is simply false, the wall still refuses — and the paragraph telling

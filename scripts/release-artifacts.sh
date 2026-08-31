@@ -5,7 +5,7 @@
 # Usage: scripts/release-artifacts.sh [--rev <commit>] [--version vX.Y.Z] [--out <dir>]
 #   --rev      commit to build (default: HEAD)
 #   --version  the release tag; default is the annotated/lightweight tag that
-#              points exactly at --rev. Must agree with internal/rhq.Version.
+#              points exactly at --rev. Must agree with internal/posse.Version.
 #   --out      output directory (default: dist). It is EMPTIED before use, so
 #              it is refused unless it is absent, empty, or holds nothing but
 #              this build's own output (posse_*.tar.gz, posse-*.bottle.tar.gz,
@@ -24,7 +24,7 @@
 # in the bead; this is the version that can be RUN on the machine that wrote
 # it, which is the only kind of release config worth having.
 #
-# THE VERSION IS THE CODE'S, NOT THE TAG'S. internal/rhq.Version is a const, so
+# THE VERSION IS THE CODE'S, NOT THE TAG'S. internal/posse.Version is a const, so
 # it cannot be stamped from outside; a tag that disagrees with it would ship a
 # binary whose `posse version` contradicts its own download URL. So the tag is
 # checked AGAINST the source and the build refuses on a mismatch. Bumping a
@@ -70,19 +70,28 @@ bare=${VERSION#v}
 
 # The preflight described in the header. Read from the COMMIT, not the working
 # tree: someone else's uncommitted app.go edit must not decide what ships.
-src_version=$(git -C "$repo" show "$REV:internal/rhq/app.go" |
+# internal/posse/app.go first; a tag cut before the internal/rhq -> posse
+# rename has no such path at that revision, so fall back to the old one —
+# re-cutting an existing tag's artifacts must not break on the rename.
+app_go_path=internal/posse/app.go
+src_version=$(git -C "$repo" show "$REV:internal/posse/app.go" 2>/dev/null |
 	sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
 if [ -z "$src_version" ]; then
-	echo "release-artifacts: could not read internal/rhq.Version at $sha" >&2
+	app_go_path=internal/rhq/app.go
+	src_version=$(git -C "$repo" show "$REV:internal/rhq/app.go" 2>/dev/null |
+		sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+fi
+if [ -z "$src_version" ]; then
+	echo "release-artifacts: could not read internal/posse.Version at $sha" >&2
 	exit 1
 fi
 if [ "$src_version" != "$bare" ]; then
 	cat >&2 <<EOF
 release-artifacts: tag/source version mismatch — refusing to build
   tag    : $VERSION  (-> $bare)
-  app.go : $src_version   (internal/rhq.Version at $sha)
+  app.go : $src_version   ($app_go_path Version at $sha)
   A binary whose \`posse version\` says $src_version must not ship from a URL
-  that says $bare. Fix internal/rhq.Version, commit, re-tag.
+  that says $bare. Fix $app_go_path's Version, commit, re-tag.
 EOF
 	exit 1
 fi
@@ -308,7 +317,7 @@ for platform in $PLATFORMS; do
 	mkdir -p "$stage"
 	(cd "$src" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" "${GOBIN:-go}" build \
 		-trimpath \
-		-ldflags "-s -w -X github.com/ranger360ai/posse/internal/rhq.Build=$sha" \
+		-ldflags "-s -w -X github.com/ranger360ai/posse/internal/posse.Build=$sha" \
 		-o "$stage/posse" ./cmd/posse)
 	for doc in LICENSE README.md INSTALL.md; do
 		[ -f "$src/$doc" ] && cp "$src/$doc" "$stage/" || :

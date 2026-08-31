@@ -117,7 +117,7 @@ Applied, verified, captured in versioned config — `bd comments add <id>
 Name the missing access or approval precisely, then stop.
 
 ## Memory
-Read $RHQ_PERSONA_DIR/ORDERS.md at start; append durable lessons —
+Read $POSSE_PERSONA_DIR/ORDERS.md at start; append durable lessons —
 environment quirks, credential locations by name, runbooks.
 
 ## Metrics
