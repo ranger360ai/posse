@@ -1092,8 +1092,8 @@ const GrokFleetFlags = `--permission-mode auto`
 //     verbatim against measurement); a separate declarable key is the
 //     cleaner shape but is six touch points and the grid's first
 //     unverifiable free-text fact, an ADR 0013 §4 grid-shape call left for
-//     richard. Closed without rendering it — this comment and the red-on-
-//     drift test are what holds the fact meanwhile.
+//     the architecture persona. Closed without rendering it — this comment
+//     and the red-on-drift test are what holds the fact meanwhile.
 //   - grok 1.0.5, docs/user-guide/12-project-rules.md, in its own order,
 //     every match in a directory loaded (not first-wins), plus *.md under
 //     the rules dirs at each level from repo root to cwd. .claude/CLAUDE.md
