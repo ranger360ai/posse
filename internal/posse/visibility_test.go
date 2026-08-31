@@ -750,9 +750,11 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	}
 	// The list is stamped twice: once for the beads-jsonl arm (check 0), once
 	// for the markdown-prose arm (ADR 0024 D2 check 2) — same list, two
-	// call sites (visibilityGuardBody).
-	if want, got := 2*(len(OpsPatterns)+1), strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want shipped+1 checks stamped twice (%d), got %d", want, got)
+	// call sites (visibilityGuardBody). Plus once per identity literal this
+	// box derives for pub (ADR 0024 D2 check 3), a single call site.
+	identityCalls := len(testIdentity(t, pub))
+	if want, got := 2*(len(OpsPatterns)+1)+identityCalls, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want shipped+1 checks stamped twice plus %d identity checks (%d), got %d", identityCalls, want, got)
 	}
 
 	// And the launch-time identity probe must agree with the install, or an
@@ -760,5 +762,361 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	// (ADR 0023 identity is byte-for-byte).
 	if p := a.probeL3Hooks(pub, false); !p.CommitGuard {
 		t.Errorf("L3 must vouch for the hook it just stamped: %s", p.CommitGuardDegraded)
+	}
+}
+
+// ─── ADR 0024 D2 check 3: identity literals ──────────────────────────────
+
+// DeriveIdentityLiterals's three sources, each pinned against a fixture that
+// controls it: username always comes back (os/user basically never fails),
+// email is repo-config (git's own repo-then-global priority needs no help
+// from this code), and the instance path is the redirect target's DIRNAME,
+// resolved the same way beadsHome and seedBeadsRedirect resolve it — both
+// forms, deduplicated when they coincide.
+func TestDeriveIdentityLiterals(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	// HOME has to be a real ancestor of the redirect target, or AbbrevHome
+	// has nothing to abbreviate and instance-path/instance-path-abs
+	// coincide — which is a real, DEDUPED case (seen in TestDeriveIdentity
+	// LiteralsSkipsAbsentSourcesSilently's kin below), not this test's.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := filepath.Join(home, "repo")
+	os.MkdirAll(repo, 0o755)
+	mustGit(t, repo, "init", "-q", "-b", "main", ".")
+	mustGit(t, repo, "config", "user.email", "t@example.com")
+
+	// No .beads/redirect yet: username and email only.
+	lits, err := DeriveIdentityLiterals(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	classes := map[string]string{}
+	for _, l := range lits {
+		classes[l.Class] = l.Value
+	}
+	if classes["email"] != "t@example.com" {
+		t.Errorf("email = %q, want t@example.com", classes["email"])
+	}
+	if classes["username"] == "" {
+		t.Error("username must always be derived")
+	}
+	if _, ok := classes["instance-path"]; ok {
+		t.Error("no .beads/redirect yet — instance-path must not appear")
+	}
+
+	// A redirect, written RELATIVE — bd's own spelling — resolves against
+	// the repo root, not against .beads/ itself (identityRedirectTarget's
+	// doc comment; the same arithmetic beadsHome and seedBeadsRedirect use).
+	os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
+	write(t, filepath.Join(repo, ".beads", "redirect"), "../instance/.beads\n")
+	instance := filepath.Clean(filepath.Join(repo, "..", "instance"))
+
+	lits, err = DeriveIdentityLiterals(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	classes = map[string]string{}
+	for _, l := range lits {
+		classes[l.Class] = l.Value
+	}
+	if classes["instance-path-abs"] != instance {
+		t.Errorf("instance-path-abs = %q, want %q", classes["instance-path-abs"], instance)
+	}
+	if want := AbbrevHome(instance); classes["instance-path"] != want || want == instance {
+		t.Errorf("instance-path = %q, want the ~-abbreviated %q (and the fixture must make them differ)", classes["instance-path"], want)
+	}
+}
+
+// A box with no git email configured anywhere derives none — `git config
+// user.email` reads the global layer even outside a repo, which is exactly
+// what "repo-then-global" means, so a bare non-repo dir is not by itself
+// what makes email absent; an empty ~/.gitconfig is. A repo with no
+// .beads/redirect at all — or one naming no target — derives nothing from
+// THAT source, and does so silently: no error, just an absent class.
+// Skipped sources are check 3's normal case, not a failure of it.
+func TestDeriveIdentityLiteralsSkipsAbsentSourcesSilently(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.gitconfig: no global email to fall through to
+	dir := t.TempDir()
+	lits, err := DeriveIdentityLiterals(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range lits {
+		if l.Class == "instance-path" || l.Class == "instance-path-abs" || l.Class == "email" {
+			t.Errorf("no configured email, no .beads at all — must not derive %s", l.Class)
+		}
+	}
+	os.MkdirAll(filepath.Join(dir, ".beads"), 0o755)
+	write(t, filepath.Join(dir, ".beads", "redirect"), "\n") // present, empty
+	lits, err = DeriveIdentityLiterals(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range lits {
+		if strings.HasPrefix(l.Class, "instance-path") {
+			t.Error("an empty redirect must derive nothing, not a path built from garbage")
+		}
+	}
+}
+
+// A literal containing a single quote cannot render into the single-quoted
+// sh word the hook uses — the same init-panic class validateOpsERE holds
+// the shipped OpsPatterns list to, except this is caught at install time
+// (the value is only known on the box, never at compile time) and REFUSES
+// the whole install rather than shipping a hook that would break its own
+// quoting.
+func TestIdentityLiteralSingleQuoteRefusesInstall(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", repo, "config", "user.email", "o'brien@example.com").CombinedOutput(); err != nil {
+		t.Fatalf("git config user.email: %v %s", err, out)
+	}
+	if _, err := DeriveIdentityLiterals(repo); err == nil || !strings.Contains(err.Error(), "single quote") {
+		t.Fatalf("DeriveIdentityLiterals must refuse a single-quote literal, got: %v", err)
+	}
+	a := &App{}
+	if _, _, _, err := a.InstallCommitGuardHook(repo); err == nil || !strings.Contains(err.Error(), "single quote") {
+		t.Fatalf("InstallCommitGuardHook must refuse rather than render broken quoting, got: %v", err)
+	}
+	// And nothing was written: a refused install must not leave a foreign
+	// or half-rendered hook behind for the next call to trip over.
+	if _, err := os.Stat(filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")); err == nil {
+		t.Error("a refused install must not write the slot")
+	}
+}
+
+// The constraint CommitGuardHook's own doc comment states in the ADR's
+// words: a bead id is a hyphenated word, and the rendered ERE is the WHOLE
+// literal, slashes included — so a bare bead id with none of the
+// surrounding path can never satisfy it. Pinned at both layers: the ERE
+// itself (Go's regexp, the same dialect the shell reads) and the rendered
+// hook run for real.
+func TestIdentityLiteralDoesNotTripOnABareBeadID(t *testing.T) {
+	const path = "/Users/t/src/ranger-base-gk6e" // a path whose LAST segment IS a bead id
+	ere := identityLiteralERE(path)
+	re, err := regexp.Compile(ere)
+	if err != nil {
+		t.Fatalf("identityLiteralERE(%q) does not compile: %v", path, err)
+	}
+	if !re.MatchString("see " + path + " for detail") {
+		t.Fatalf("the full path must still match itself")
+	}
+	if re.MatchString("filed as ranger-base-gk6e, no relation") {
+		t.Errorf("a bare hyphenated bead id must not match a path literal — the ERE requires the slashes too")
+	}
+
+	// And for real, through the rendered hook: staging a file that mentions
+	// only the bead id (no path) must commit clean even though the box's
+	// derived instance path happens to END in the same id.
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	repo := filepath.Join(home, "pub")
+	cfg := filepath.Join(home, "config.yaml")
+	os.WriteFile(cfg, []byte("beads_visibility:\n  "+repo+": public\n"), 0o644)
+	a := &App{ConfigPath: cfg}
+	os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
+	write(t, filepath.Join(repo, ".beads", "redirect"), filepath.Join(home, "instance-ranger-base-gk6e", ".beads")+"\n")
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git(nil, "init", "-q", "-b", "main"); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(repo, "notes.md"), "discussed ranger-base-gk6e in standup\n")
+	git(nil, "add", "notes.md")
+	if out, err := git([]string{"RHQ_PERSONA=tester"}, "commit", "-m", "x", "--", "notes.md"); err != nil {
+		t.Errorf("a bare bead id must not trip the instance-path literal: %v\n%s", err, out)
+	}
+}
+
+// The end-to-end acceptance, DONE WHEN (a): a scratch public repo refuses a
+// commit whose added lines carry this box's rendered username or its
+// redirect-derived instance path, naming the identity class; the same
+// content commits clean in a private-stamped repo. Any staged file, not
+// only markdown — check 3 is not check 2.
+func TestIdentityLiteralGuardHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	// Install runs IN this Go process, not through the git subprocess
+	// helper below — DeriveIdentityLiterals reads $HOME directly (AbbrevHome),
+	// so it has to be THIS home too, or instance and instance-abs never
+	// differ and dedupe drops one of them.
+	t.Setenv("HOME", home)
+	gates := t.TempDir()
+	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
+	cfg := filepath.Join(home, "config.yaml")
+	os.WriteFile(cfg, []byte("beads_visibility:\n  "+pub+": public\n  "+priv+": private\n"), 0o644)
+	a := &App{ConfigPath: cfg}
+
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(repo string, env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	persona := []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + gates}
+
+	instance := filepath.Join(home, "instance")
+	for _, repo := range []string{pub, priv} {
+		os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
+		write(t, filepath.Join(repo, ".beads", "redirect"), filepath.Join(instance, ".beads")+"\n")
+		if out, err := git(repo, nil, "init", "-q", "-b", "main"); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	identity := testIdentity(t, pub)
+	var username, instancePath string
+	for _, l := range identity {
+		switch l.Class {
+		case "username":
+			username = l.Value
+		case "instance-path-abs":
+			instancePath = l.Value
+		}
+	}
+	if username == "" || instancePath == "" {
+		t.Fatalf("fixture premise: both username and instance-path-abs must derive, got %+v", identity)
+	}
+
+	writeAndAdd := func(repo, rel, body string) {
+		p := filepath.Join(repo, rel)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+		git(repo, nil, "add", rel)
+	}
+
+	// The username, in a code file — check 3 is not markdown-only.
+	writeAndAdd(pub, "cmd/example.go", "// owned by "+username+"\npackage main\n")
+	out, err := git(pub, persona, "commit", "-m", "x", "--", "cmd/example.go")
+	if err == nil {
+		t.Fatalf("the box's own username in a staged file must be refused: %s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate: an operator identity literal in a staged file",
+		"username:", username,
+		"ADR 0024 D2 check 3",
+		"ADR 0024 D3, restate-and-cite",
+		VisibilityOverrideEnv + "=" + VisibilityOverrideValue,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("identity refusal must carry %q:\n%s", want, out)
+		}
+	}
+
+	// The redirect-derived instance path, in a fresh file.
+	writeAndAdd(pub, "notes.txt", "the instance lives at "+instancePath+"\n")
+	out, err = git(pub, persona, "commit", "-m", "x", "--", "notes.txt")
+	if err == nil {
+		t.Fatalf("the box's own instance path must be refused: %s", out)
+	}
+	if !strings.Contains(out, "instance-path-abs:") {
+		t.Errorf("refusal must name the instance-path-abs class:\n%s", out)
+	}
+
+	// The override passes it through, and says so.
+	if out, err := git(pub, append(persona, VisibilityOverrideEnv+"="+VisibilityOverrideValue), "commit", "-m", "x", "--", "notes.txt"); err != nil ||
+		!strings.Contains(out, "OVERRIDDEN") {
+		t.Errorf("the operator's override must pass, and say so: %v\n%s", err, out)
+	}
+
+	// Private: the identical content commits clean.
+	writeAndAdd(priv, "notes.txt", "the instance lives at "+instancePath+", owned by "+username+"\n")
+	if out, err := git(priv, persona, "commit", "-m", "x", "--", "notes.txt"); err != nil {
+		t.Errorf("a private repo must take the same content: %v\n%s", err, out)
+	}
+
+	// Content with NEITHER literal commits clean in the public repo too —
+	// the wall is not simply refusing everything.
+	writeAndAdd(pub, "clean.txt", "nothing identifying here\n")
+	if out, err := git(pub, persona, "commit", "-m", "x", "--", "clean.txt"); err != nil {
+		t.Errorf("clean content must commit in the public repo: %v\n%s", err, out)
+	}
+
+	logb, _ := os.ReadFile(filepath.Join(gates, "refusals.log"))
+	if !strings.Contains(string(logb), "identity literal scan [prepare-commit-msg hook] (public repo)") {
+		t.Errorf("an identity refusal must be logged:\n%s", logb)
+	}
+	if !strings.Contains(string(logb), "identity literal scan OVERRIDDEN") {
+		t.Errorf("the override must be logged:\n%s", logb)
+	}
+}
+
+// DONE WHEN (b)+(c): this box's own identity literals, derived exactly as
+// InstallCommitGuardHook would for THIS repo, must not appear in any
+// git-tracked file — the never-committed property — except a small,
+// explicitly dispositioned set (ranger-base-gk6e's own close comment
+// carries the full measurement and disposition of each). Anything past
+// that set is a hit nobody has judged, which is worth failing loud over.
+func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skip("not inside a git checkout")
+	}
+	repo := strings.TrimSpace(string(out))
+	identity, err := DeriveIdentityLiterals(hookRepo(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identity) == 0 {
+		t.Skip("this box derives no identity literals — nothing to measure")
+	}
+	// scripts/verify-bd-pin.sh: a real, already-committed hit (the
+	// operator's brew-tap username, hardcoded in generic advice text) this
+	// check exists to catch — filed rather than scrubbed silently here
+	// (adjacent to this bead's scope, ADR 0024 D2 check 3).
+	//
+	// NOTES.md, docs/adr/0015-constitution-promotion.md and
+	// internal/posse/queuecutover_qa_test.go all name, in full, the shared
+	// queue repo's conventional path — the software's OWN shipped,
+	// documented location for it (ADR 0015 §4), not an operator secret. A
+	// residual of deriving "the instance path" from THIS repo's own
+	// .beads/redirect, which after the queue cutover names that shared
+	// repo rather than a private one. (Spelled out here only in prose, on
+	// purpose — the literal value itself would be a fourth hit.)
+	known := map[string]bool{
+		"scripts/verify-bd-pin.sh": true,
+		"NOTES.md":                 true,
+		"docs/adr/0015-constitution-promotion.md": true,
+		"internal/posse/queuecutover_qa_test.go":  true,
+	}
+	for _, lit := range identity {
+		out, err := exec.Command("git", "-C", repo, "grep", "-lF", "--", lit.Value).Output()
+		if err != nil {
+			continue // grep exits 1 on no match, which is the property holding
+		}
+		for _, file := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if file == "" || known[file] {
+				continue
+			}
+			t.Errorf("identity literal (%s = %q) appears in tracked %s — undispositioned hit; either scrub it or disposition it here", lit.Class, lit.Value, file)
+		}
 	}
 }

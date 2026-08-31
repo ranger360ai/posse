@@ -25,6 +25,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"regexp/syntax"
@@ -433,6 +435,144 @@ func opsClassLabel(class string) string {
 		if b.Len() >= 40 {
 			break
 		}
+	}
+	return b.String()
+}
+
+// ─── ADR 0024 D2 check 3: identity literals ──────────────────────────────
+
+// IdentityLiteral is one identity value the hook installer derived from
+// this box — a value with no legitimate public use anywhere (ADR 0024 D2
+// check 3). It lives only in the rendered hook file: never a shipped
+// constant, never committed anywhere, derived fresh at every render.
+type IdentityLiteral struct {
+	Class string
+	Value string
+}
+
+// IdentityRule is what a check-3 refusal names.
+const IdentityRule = `ADR 0024 D2 check 3: the operator's identity has no legitimate public use in
+this repo — the box's own username, git email, and the instance repo's path
+are derived at hook-render time (never shipped, never committed) and refused
+wherever they appear in the ADDED lines of any staged text file, code
+included.`
+
+// IdentityWayThrough is the remedy a check-3 refusal names.
+const IdentityWayThrough = `the way through: nothing that names this operator, this box, or this
+instance's path belongs in a public repo's history — generalize whatever
+carries it (a comment, a fixture, a hardcoded path), or move the content to
+the instance tree (ADR 0024 D3, restate-and-cite).`
+
+// identityLiteralMaxLen guards against a pathologically long identity value
+// rendering into the hook a pattern so long the hook file stops being
+// something a human can read. No source DeriveIdentityLiterals reads from
+// should ever approach it; a literal past it is skipped, not refused —
+// surprising box state should cost one uncovered source, not a broken
+// install.
+const identityLiteralMaxLen = 4096
+
+// DeriveIdentityLiterals derives ADR 0024 D2 check 3's identity literals
+// from the box, for the repo at dir (hookRepo's answer — the shared repo a
+// worktree's hook actually belongs to). Each source is independent and
+// contributes nothing silently when it has nothing to say — there is no
+// identity to protect on a box with no git email configured, and the
+// renderer says so only for what it DID derive:
+//
+//   - username: os/user's Current().Username — not $USER, which a caller
+//     can set to anything.
+//   - email: `git config user.email`, read with no --local/--global flag,
+//     which is exactly repo-then-global (git's own config file priority).
+//   - the instance repo path, when dir's .beads/redirect names one: the
+//     dirname of the redirect's target (the same resolution beadsHome and
+//     seedBeadsRedirect use — relative resolves against the repo root, not
+//     against .beads/ itself), rendered BOTH ~-relative (AbbrevHome) and
+//     absolute. Skipped whole when there is no .beads, or no redirect in
+//     it.
+//
+// Every literal is checked for a single quote before it is returned — it is
+// rendered into a single-quoted sh word, and a literal that broke that
+// quoting is the renderer's own init-panic class of bug, refused rather
+// than rendered wrong.
+func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
+	var out []IdentityLiteral
+	seen := map[string]bool{} // AbbrevHome(p) == p whenever p is not under $HOME (or HOME is unset): one literal, not two.
+	add := func(class, value string) error {
+		if value == "" || len(value) > identityLiteralMaxLen || seen[value] {
+			return nil
+		}
+		if strings.Contains(value, "'") {
+			return fmt.Errorf("identity literal (%s) contains a single quote — cannot render into a single-quoted sh word", class)
+		}
+		seen[value] = true
+		out = append(out, IdentityLiteral{Class: class, Value: value})
+		return nil
+	}
+
+	if u, err := user.Current(); err == nil {
+		if err := add("username", u.Username); err != nil {
+			return nil, err
+		}
+	}
+
+	if email, err := git(dir, "config", "user.email"); err == nil {
+		if err := add("email", email); err != nil {
+			return nil, err
+		}
+	}
+
+	if target := identityRedirectTarget(dir); target != "" {
+		repo := filepath.Dir(target)
+		if err := add("instance-path", AbbrevHome(repo)); err != nil {
+			return nil, err
+		}
+		if err := add("instance-path-abs", repo); err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
+}
+
+// identityRedirectTarget reads dir's .beads/redirect and returns its
+// target, resolved exactly as beadsHome (beadloss.go) and seedBeadsRedirect
+// (worktree.go) resolve it — relative against the repo root, not against
+// .beads/ itself. "" when dir has no .beads, or .beads has no redirect:
+// check 3 has nothing to derive from a repo with no instance to point at.
+func identityRedirectTarget(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, beadsDirName, beadsRedirect))
+	if err != nil {
+		return ""
+	}
+	target := strings.TrimSpace(firstLine(string(b)))
+	if target == "" {
+		return ""
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(dir, target)
+	}
+	return filepath.Clean(target)
+}
+
+// identityLiteralERE renders a fixed-string identity literal as an ERE
+// matching only that literal — every ERE metacharacter escaped, nothing
+// else touched — so the shipped patterns' own two-reader dialect (POSIX
+// ERE ∩ Go regexp, see the OpsPatterns comment above) covers it too, and
+// check 3 reuses the SAME posse_check shell function checks 0 and 2 already
+// render rather than a second matcher with its own escaping bugs to find.
+//
+// This is also what keeps a bead-id prefix from tripping check 3
+// (ADR 0024 D2): the rendered ERE is the WHOLE literal, slashes included,
+// so it only matches where the full path appears — a bare hyphenated bead
+// id with none of the path around it is a proper substring miss, not a
+// match (TestIdentityLiteralDoesNotTripOnABareBeadID).
+func identityLiteralERE(s string) string {
+	const meta = `.^$*+?()[]{}|\`
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune(meta, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
 	}
 	return b.String()
 }

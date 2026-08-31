@@ -687,7 +687,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	write("posse-pre-push", PrePushHook)
 	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
 	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
+	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}, testIdentity(t, repo)...))
 	p := a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
 	if len(p.Degraded) != 0 {
 		t.Fatalf("a byte-exact chain must be clean: %+v", p)

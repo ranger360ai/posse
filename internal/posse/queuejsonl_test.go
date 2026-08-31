@@ -389,7 +389,7 @@ func TestQueueCommitInstallsTheStampItCommitsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the projection committed with nothing in the slot: %v", err)
 	}
-	if string(body) != CommitGuardHook(VisibilityPrivate, OpsPatternSet{}) {
+	if string(body) != CommitGuardHook(VisibilityPrivate, OpsPatternSet{}, testIdentity(t, repo)...) {
 		t.Errorf("the slot does not carry the render config's visibility calls for:\n%s", body)
 	}
 	if fi, _ := os.Stat(slot); fi != nil && fi.Mode()&0o111 == 0 {
@@ -457,7 +457,8 @@ func TestQueueCommitRestampsASlotConfigHasReMarked(t *testing.T) {
 		t.Fatal(err)
 	}
 	slot := filepath.Join(repo, ".git", "hooks", "prepare-commit-msg")
-	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPublic, OpsPatternSet{}) {
+	identity := testIdentity(t, repo)
+	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...) {
 		t.Fatalf("fixture: the slot does not carry the public stamp to drift from")
 	}
 
@@ -468,7 +469,7 @@ func TestQueueCommitRestampsASlotConfigHasReMarked(t *testing.T) {
 	if err != nil || c.SHA == "" {
 		t.Fatalf("CommitQueueJSONL = (%+v, %v)", c, err)
 	}
-	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPrivate, OpsPatternSet{}) {
+	if b, _ := os.ReadFile(slot); string(b) != CommitGuardHook(VisibilityPrivate, OpsPatternSet{}, identity...) {
 		t.Errorf("the slot still carries the stamp config no longer calls for")
 	}
 }

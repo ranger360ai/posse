@@ -2234,8 +2234,9 @@ exit 1
 const commitGuardHead = `#!/bin/sh
 ` + sharedIndexMarker + ` — installed by posse gates install-hooks. Three walls
 # in one slot: the beads visibility guard (rangerhq-hrz, extended by ADR 0024
-# D2 checks 1+2 to a docs-genre allowlist and an OpsPatterns scan over staged
-# markdown), the constitution-path guard (ranger-base-ak3e) and the
+# D2 checks 1+2+3 to a docs-genre allowlist, an OpsPatterns scan over staged
+# markdown, and a scan for this box's own identity literals over every staged
+# text file), the constitution-path guard (ranger-base-ak3e) and the
 # shared-index commit guard (rangerhq-lmq9).
 # Foreign hooks are never overwritten; remove this file to uninstall.
 # ADR 0002 §3.
@@ -2270,18 +2271,26 @@ func publicDocsGenrePattern() string {
 // The block always renders, gated on the stamp, so the hook FILE is the
 // record of what it was stamped with — a human reads it and knows.
 //
-// ADR 0024 D2 adds two more checks to this same arm, same gate
+// ADR 0024 D2 adds three more checks to this same arm, same gate
 // (posse_beads_visibility = public), same reason for the slot: check 1 is
 // the docs-genre allowlist (a staged NEW file under docs/ must sit in an
 // allowlisted subdirectory); check 2 is OpsPatterns over the ADDED lines of
 // every staged *.md, any path — the same list and the same posse_check
 // function the beads-jsonl check above uses, just pointed at a different
 // staged set, which is what "same list, both readers" (visibility.go) means
-// here: one Go slice, one shell function, two call sites.
-func visibilityGuardBody(visibility string, set OpsPatternSet) string {
+// here: one Go slice, one shell function, two call sites. Check 3 is the
+// identity literals this box's own render derived (DeriveIdentityLiterals)
+// — rendered as escaped EREs (identityLiteralERE) so the SAME posse_check
+// function serves all three, over the ADDED lines of every staged text
+// file, code included.
+func visibilityGuardBody(visibility string, set OpsPatternSet, identity []IdentityLiteral) string {
 	var checks strings.Builder
 	for _, p := range set.All() {
 		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
+	}
+	var identityChecks strings.Builder
+	for _, lit := range identity {
+		fmt.Fprintf(&identityChecks, "    posse_check %s %s\n", shQuote(lit.Class), shQuote(identityLiteralERE(lit.Value)))
 	}
 	// A config pattern this instance asked for and did not get is recorded
 	// HERE, in the file, for the same reason the stamp is: a human reading
@@ -2460,7 +2469,62 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
       fi
     fi
   fi
-fi
+` + identityGuardCheck(identityChecks.String()) + `fi
+`
+}
+
+// identityGuardCheck renders check 3's block (ADR 0024 D2): the ADDED lines
+// of every staged text file, code included, against this box's own identity
+// literals. "" when identityChecks is empty — a box that derived nothing
+// (no git email, no .beads/redirect, an unset $HOME) skips the block whole
+// rather than paying for a full `git diff` that can never find a match.
+func identityGuardCheck(identityChecks string) string {
+	if identityChecks == "" {
+		return ""
+	}
+	return `
+  # ─── check 3: identity literals (ADR 0024 D2) ───────────────────────────
+  # Derived from THIS box at render time — whoami, git config user.email,
+  # and the instance repo path (dirname of .beads/redirect's target, both
+  # ~-relative and absolute) — never a shipped constant, never a commit:
+  # only this rendered hook file carries them (identityGuardCheck's own
+  # caller, DeriveIdentityLiterals, visibility.go). Rendered as
+  # regexp-escaped fixed strings, so the SAME matcher checks 0 and 2 already
+  # call below covers this too. Scanned over the ADDED lines of ALL
+  # staged TEXT files, any path, code included — unlike check 2, which is
+  # markdown-only: these literals have no legitimate public use anywhere,
+  # so the detector-source residual check 2 accepts does not apply here.
+  # Binary files are already excluded: git diff with no --text emits
+  # "Binary files ... differ" for them, never a '+' line.
+  posse_added=$(git diff --cached -U0 "$posse_base" 2>/dev/null |
+    grep '^+' | grep -v '^+++')
+  if [ -n "$posse_added" ]; then
+    posse_bad=''
+` + identityChecks + `    if [ -n "$posse_bad" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: identity literal scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — an operator identifier is going into a public repo" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) identity literal scan OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: an operator identity literal in a staged file — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(IdentityRule) + `
+          echo "matched in the staged additions:"
+          printf '%s' "$posse_bad"
+          echo ` + shQuote(IdentityWayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) identity literal scan [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+  fi
 `
 }
 
@@ -2653,8 +2717,15 @@ fi
 // Order is load-bearing at one join: the constitution arm must sit ABOVE
 // the shared-index arm, which exits 0 in a linked worktree and mid-merge —
 // and a dispatched worktree is where a persona's commits come from.
-func CommitGuardHook(visibility string, set OpsPatternSet) string {
-	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set) +
+//
+// identity is variadic so every existing call site that renders a hook with
+// no interest in ADR 0024 D2 check 3 (a byte-exact fixture for a marker or
+// ordering test, say) keeps compiling unchanged; a caller that must match
+// what InstallCommitGuardHook actually writes has to pass the SAME slice
+// DeriveIdentityLiterals(hookRepo(dir)) would derive, or the two renders
+// diverge on check 3 alone.
+func CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
+	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + sharedIndexBody
 }
 
@@ -2698,9 +2769,21 @@ func hookRepo(dir string) string {
 // overwrite a foreign prepare-commit-msg; replaces ours in place. Returns
 // the hook path and the visibility it stamped, so the caller can say which
 // wall the operator just got.
+//
+// ADR 0024 D2 check 3's identity literals are derived HERE, from hookRepo's
+// answer, same as the visibility mark — never read at commit time, for the
+// same reason the mark is not (visibilityGuardBody's comment). A literal
+// that cannot be rendered (a single quote) refuses the WHOLE install, the
+// same init-panic class validateOpsERE holds the shipped pattern list to:
+// better an install that says why it did not happen than a hook that
+// renders wrong.
 func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(hookRepo(dir))
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), false)
+	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	if err != nil {
+		return "", "", "", err
+	}
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), false)
 	return path, visibility, source, err
 }
 
@@ -2708,7 +2791,11 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 // occupied by bd's own shim is chained rather than refused (rangerhq-mgdk).
 func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(hookRepo(dir))
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet()), true)
+	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	if err != nil {
+		return "", "", "", err
+	}
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), true)
 	return path, visibility, source, err
 }
 
@@ -2932,10 +3019,15 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	// the install two lines above it in herdrback reads every worktree
 	// launch in a marked repo as "ours but stale" (ranger-base-up22).
 	visibility, _ := a.BeadsVisibility(hookRepo(dir))
-	// The SAME set the install stamps with, or an instance that adds a
-	// pattern reads as "ours but stale" on every launch (the identity half
-	// of ADR 0023 is byte-for-byte).
-	commitRender := CommitGuardHook(visibility, a.OpsPatternSet())
+	// The SAME set, and the SAME identity literals, the install stamps
+	// with — or an instance that adds a pattern, or check 3's derived
+	// literals, reads as "ours but stale" on every launch (the identity
+	// half of ADR 0023 is byte-for-byte). A derivation error here (a
+	// literal with a single quote) is not this probe's to report — an
+	// install that hit it already failed loudly — so it degrades to no
+	// literals rather than propagating.
+	identity, _ := DeriveIdentityLiterals(hookRepo(dir))
+	commitRender := CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
 
 	var prePushIdentity, prePushStale bool
 	var prePushPath string

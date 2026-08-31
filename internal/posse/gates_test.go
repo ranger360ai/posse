@@ -1996,7 +1996,7 @@ func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) 
 			t.Errorf("%s: install reported (%q, %q, %q), want the chained member stamped %q from config",
 				c.mark, path, vis, src, c.want)
 		}
-		if body, _ := os.ReadFile(ours); string(body) != CommitGuardHook(c.want, a.OpsPatternSet()) {
+		if body, _ := os.ReadFile(ours); string(body) != CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, repo)...) {
 			t.Errorf("%s: the chained hook does not carry the mark config now says:\n%s",
 				c.mark, firstStampLine(string(body)))
 		}
@@ -2007,6 +2007,21 @@ func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) 
 			t.Errorf("%s: the restamp overwrote the neighbouring hook", c.mark)
 		}
 	}
+}
+
+// testIdentity is the ADR 0024 D2 check 3 literal set InstallCommitGuardHook
+// / probeL3Hooks would derive for dir on THIS box, right now — for a test
+// that constructs a byte-exact CommitGuardHook fixture instead of installing
+// one, and needs it to agree with what an install (or a probe) would
+// actually write. Fatal on a derivation error: a test fixture that cannot
+// even be compared is a fixture worth stopping on, not silently trusting.
+func testIdentity(t *testing.T, dir string) []IdentityLiteral {
+	t.Helper()
+	lits, err := DeriveIdentityLiterals(hookRepo(dir))
+	if err != nil {
+		t.Fatalf("DeriveIdentityLiterals(%s): %v", dir, err)
+	}
+	return lits
 }
 
 // firstStampLine is the one line of a rendered hook that says which way it
@@ -2098,7 +2113,7 @@ func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
 				if src != wantSrc {
 					t.Errorf("reported source = %q, want %q", src, wantSrc)
 				}
-				if body, _ := os.ReadFile(shared); string(body) != CommitGuardHook(c.want, a.OpsPatternSet()) {
+				if body, _ := os.ReadFile(shared); string(body) != CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, wt)...) {
 					t.Errorf("the shared repo's hook does not carry the mark config gives %s:\n  %s",
 						AbbrevHome(repo), firstStampLine(string(body)))
 				}
@@ -2502,6 +2517,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 		}
 	}
 	a := &App{}
+	identity := testIdentity(t, repo)
 
 	// A legitimate chain dispatcher: no marker at the slot itself, posse-<slot>
 	// behind it byte-exact our render. Must count, by identity.
@@ -2510,7 +2526,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	write("posse-pre-push", PrePushHook)
 	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
 	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
+	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
 	if got := a.probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
 		t.Errorf("byte-exact chain must count by identity: %+v", got)
 	}
@@ -2540,7 +2556,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	// wantPrePush=false is vacuous for the push arm regardless of what sits
 	// there; the commit-guard arm still requires identity.
 	os.Remove(filepath.Join(hooks, "pre-push"))
-	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
+	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
 	if got := a.probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
 		t.Errorf("commit-only probe: %+v", got)
 	}

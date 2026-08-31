@@ -253,7 +253,7 @@ func TestQAAChainCertifiedByIdentityRefusesThroughAHostileNeighbour(t *testing.T
 	os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"),
 		[]byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755)
 	os.WriteFile(filepath.Join(hooks, "theirs-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
-	os.WriteFile(filepath.Join(hooks, "posse-prepare-commit-msg"), []byte(CommitGuardHook(vis, OpsPatternSet{})), 0o755)
+	os.WriteFile(filepath.Join(hooks, "posse-prepare-commit-msg"), []byte(CommitGuardHook(vis, OpsPatternSet{}, testIdentity(t, repo)...)), 0o755)
 
 	if got := a.probeL3Hooks(repo, false); !got.CommitGuard {
 		t.Fatalf("the prescribed chain must certify: %+v (%q)", got, got.CommitGuardDegraded)
