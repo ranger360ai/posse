@@ -177,10 +177,17 @@ func isDirPath(p string) bool {
 //	why, ""          a target was refused — the finding, naming the first
 //	"",  unmeasured  the kernel refused the APPLY: nothing was measured
 //
-// The third is checked before the loop and again per probe, because it is
-// a fact about this process and not about a target: the apply is refused
-// for every profile, so the first probe's failure would otherwise be read
-// as a denial of the first target (ranger-base-heur).
+// The third is checked once, before the loop, because it is a fact about
+// this process and not about a target: sandboxApplyRefusal is cached for
+// the process's lifetime (seatbelt.go), so if this process could not apply
+// at all the caller (applyRecordReach) already abstained before rendering
+// the profile, and if it reached here it can apply. A per-probe error can
+// therefore only be the target's own write refused, never a fresh apply
+// refusal — reclassifying it by matching the PROBE'S OWN OUTPUT against the
+// same "sandbox_apply" token read a target path that happens to contain
+// that literal (e.g. a store under a dir named sandbox_apply) as an apply
+// refusal instead of the denial it is, and the launch went unmeasured
+// instead of degraded (ranger-base-2w9l).
 //
 // Behavior and not inspection, because inspection cannot answer the
 // question: the profile's allow block may name the target and a trailing
@@ -196,9 +203,6 @@ func seatbeltReachRow(profile string, targets []string) (why, unmeasured string)
 			continue
 		}
 		reason := reachProbeReason(out, err)
-		if isSandboxApplyRefusal(reason) {
-			return "", reason
-		}
 		return fmt.Sprintf("%s is not writable under the profile this launch runs (%s): %s — a caged session cannot `bd sync`, `bd export` or commit the JSONL there, so it claims, comments and closes nothing however good the runtime's record: grade is (ADR 0013 §4 reachability, ranger-base-hxhb; measured in ranger-base-rhw/oyta). SBPL is last-match-wins: a trailing deny naming this target beats every grant above it",
 			AbbrevHome(t), AbbrevHome(profile), reason), ""
 	}
