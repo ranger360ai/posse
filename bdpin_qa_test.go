@@ -807,6 +807,57 @@ func TestQABdPinFailsWhenSomethingIsLinkedInFrontOfThePin(t *testing.T) {
 	}
 }
 
+// bpStubGateShim writes a posse gate shim (internal/rhq/gates.go renderShim)
+// that execs target — the shape every persona session actually has on PATH
+// ahead of ~/.local/bin, distinct from an arbitrary shadowing binary.
+func bpStubGateShim(t *testing.T, dir, target string) {
+	t.Helper()
+	body := "#!/bin/sh\n" +
+		"# posse gate for testpersona — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n" +
+		"exec '" + target + "' \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ranger-base-43v1: row 2 compared raw paths, so a posse gate shim — which
+// every persona session has on PATH ahead of ~/.local/bin by design — never
+// string-equalled the pinned path and FAILed in every session on a box whose
+// pin was intact. A shim whose own exec line targets the pinned binary must
+// read GATED, not FAIL, and must not fail the run.
+func TestQABdPinTreatsAGateShimExecingThePinnedBinaryAsGated(t *testing.T) {
+	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+	shadow := t.TempDir()
+	bpStubGateShim(t, shadow, filepath.Join(home, ".local", "bin", "bd"))
+	out, code := bpRun(t, root, home, stubs, shadow)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 — the gate shim execs the pinned binary\n%s", code, out)
+	}
+	if !strings.Contains(out, "command -v bd") || !strings.Contains(out, "GATED") {
+		t.Errorf("must report the resolution row GATED:\n%s", out)
+	}
+	if strings.Contains(out, "command -v bd") && strings.Contains(out[strings.Index(out, "command -v bd"):], "FAIL") {
+		t.Errorf("gated row must not read FAIL:\n%s", out)
+	}
+}
+
+// The shim's OWN exec target is what is asserted, not merely that a gate
+// shim is present: a shim left stale by a render that predates a pin bump
+// still points at the wrong binary, and that must still FAIL.
+func TestQABdPinFailsWhenAGateShimExecsSomethingElse(t *testing.T) {
+	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+	shadow := t.TempDir()
+	wrong := filepath.Join(t.TempDir(), "bd")
+	bpStubGateShim(t, shadow, wrong)
+	out, code := bpRun(t, root, home, stubs, shadow)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — the gate shim execs the wrong binary\n%s", code, out)
+	}
+	if !strings.Contains(out, "command -v bd") || !strings.Contains(out, "FAIL") || !strings.Contains(out, wrong) {
+		t.Errorf("must FAIL the resolution row and name the shim's real target:\n%s", out)
+	}
+}
+
 func TestQABdPinFailsWhenTheKegIsLinked(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("no python3: the keg row degrades to a non-failing note by design")

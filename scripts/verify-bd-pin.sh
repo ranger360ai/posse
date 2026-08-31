@@ -12,8 +12,14 @@
 #
 # So this asserts four things (etc/bd/version-pin.toml is the declaration):
 #   1. `bd version` is the pinned version, exactly.
-#   2. `bd` on PATH resolves to the pinned binary. /opt/homebrew/bin precedes
-#      ~/.local/bin, so anything linked in front of the pin wins silently.
+#   2. `bd` on PATH resolves to the pinned binary — or, inside a persona
+#      session, to a posse gate shim (internal/rhq/gates.go) whose own exec
+#      line targets it. The gate shim dir leads every persona's PATH ahead
+#      of ~/.local/bin by design (ADR 0009 §1), so row 2 comparing raw paths
+#      failed in EVERY persona session on a box whose pin was intact
+#      (ranger-base-43v1) — the shim is recognised by the header renderShim
+#      stamps on it, and what it actually execs is read out of the shim
+#      file itself, not re-derived from today's PATH.
 #   3. homebrew's beads keg is unlinked, or brew-pinned. Either holds; LINKED
 #      is the 08-16 outage re-armed.
 #   4. every live `bd daemon` process is running the pinned binary, and started
@@ -68,9 +74,41 @@ chk_row() { # label want got
 	else printf '  %-24s %-34s <-- FAIL (want %s)\n' "$1" "${3:-?}" "$2"; fail=$((fail + 1)); fi
 }
 
+# A posse gate shim (internal/rhq/gates.go renderShim) is the header it
+# stamps on itself, not the path it lives at — a persona name in the path
+# would need reproducing here and drift the day gates move. rangerhq-9ha
+# is the fixed half of that header, present regardless of persona.
+is_gate_shim() {
+	head -2 "$1" 2>/dev/null | grep -q 'posse gate for .*rangerhq-9ha'
+}
+
+# What the shim actually execs, read out of its OWN last line — the target
+# renderShim froze in at render time — never re-derived from today's PATH,
+# which can drift out from under a shim nobody re-rendered since.
+shim_target() {
+	sed -n "s/^exec '\\(.*\\)' \"\\\$@\"\$/\\1/p" "$1" | head -1
+}
+
 echo "bd version pin — $pin"
 chk_row "bd version" "$want_ver" "$live_ver"
-chk_row "command -v bd" "$want_bin" "$live_bin"
+if is_gate_shim "$live_bin"; then
+	gate_target=$(shim_target "$live_bin")
+	case $gate_target in
+	"$want_bin")
+		printf '  %-24s %-34s GATED (execs %s)\n' "command -v bd" "$live_bin" "$want_bin"
+		;;
+	"")
+		printf '  %-24s %-34s <-- FAIL (gate shim, exec target unparseable)\n' "command -v bd" "$live_bin"
+		fail=$((fail + 1))
+		;;
+	*)
+		printf '  %-24s %-34s <-- FAIL (gate shim execs %s, want %s)\n' "command -v bd" "$live_bin" "$gate_target" "$want_bin"
+		fail=$((fail + 1))
+		;;
+	esac
+else
+	chk_row "command -v bd" "$want_bin" "$live_bin"
+fi
 
 # ------------------------------------------------------- homebrew keg state
 # brew's own answer, not our reading of a symlink. Compact JSON either way, but
