@@ -2541,16 +2541,19 @@ gated, shown for the ratio, and it names its own unpriced turns), and the
 honest gaps — per pass is not attributable until dispatch records a pass id
 (rangerhq-25p). The runtime column is what makes a mixed day readable: two
 beads with the same tier and persona can have come out of two different pools,
-and only one of them has a dollar figure. **Tier is `?` on codex and grok**, and
-that is not an oversight: tier is re-derived from the model id that did the
-work by `TierForModel`, which knows claude's ids only, and both other
-runtimes name one id on two tiers anyway (`gpt-5.6-sol` for codex strong
-and standard, `grok-4.6` for grok's since rangerhq-jp6) — so the id does
-not identify a tier there and the report says `?` rather than picking one.
-`grok-4.5` is the one id on either that WOULD identify a tier (`fast`);
-teaching `TierForModel` about it is filed as ranger-base-3st5, not done
-here — and the rule when it is done is that only an id ONE tier names may
-resolve, or the fix reintroduces the guess the `?` exists to avoid. The cockpit shows
+and only one of them has a dollar figure. **`strong`/`standard` are `?` on
+codex and grok**, and that is not an oversight: tier is re-derived from the
+model id that did the work by `TierForModel`, and codex and grok both name
+one id on two tiers (`gpt-5.6-sol` for codex strong and standard, `grok-4.6`
+for grok's since rangerhq-jp6) — so the id does not identify a tier there
+and the report says `?` rather than picking one, whichever tier a map
+iteration happens to hit (ranger-base-3st5). `fast` DOES resolve on both:
+`gpt-5.6-luna` and `grok-4.5` are each named by exactly one tier in their
+runtime's built-in map, so a fast-tier turn on either identifies its own
+tier unambiguously, same as claude. The rule stays symmetric across all
+three runtimes — only an id ONE tier names may resolve — so a future
+runtime whose ids collide the other way (`fast` shared, `strong`/`standard`
+distinct) reports the shared one as `?` too. The cockpit shows
 each per-bead session's running cost and the day total in the footer (rescanned
 every 30s off the event loop).
 

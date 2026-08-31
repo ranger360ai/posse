@@ -84,7 +84,38 @@ func PriceFor(model string) (Price, bool) {
 	return Price{}, false
 }
 
-// TierForModel maps a claude model id back to the ADR 0003 tier name.
+// grokTierByModel and codexTierByModel resolve a model id to its tier only
+// for ids that ONE tier in that runtime's built-in map names — never by
+// picking whichever tier a map iteration happens to hit. codex and grok
+// both name the same id on strong and standard (gpt-5.6-sol, grok-4.6), so
+// those ids stay ambiguous; only each runtime's fast id (gpt-5.6-luna,
+// grok-4.5) is named nowhere else and resolves (ranger-base-3st5).
+var (
+	grokTierByModel  = uniqueModelTiers(grokModels)
+	codexTierByModel = uniqueModelTiers(codexModels)
+)
+
+// uniqueModelTiers inverts a runtime's tier->model map, keeping only the
+// models named by exactly one tier.
+func uniqueModelTiers(models map[string]string) map[string]string {
+	count := map[string]int{}
+	for _, id := range models {
+		count[id]++
+	}
+	byModel := map[string]string{}
+	for tier, id := range models {
+		if count[id] == 1 {
+			byModel[id] = tier
+		}
+	}
+	return byModel
+}
+
+// TierForModel maps a model id back to the ADR 0003 tier name — the model
+// that actually ran, read from the transcript, never the PID or session
+// meta (rangerhq-oay). "?" is the honest answer whenever the id does not
+// name exactly one tier, whether because the runtime is unrecognized or
+// because its built-in map names that id on more than one tier.
 func TierForModel(model string) string {
 	m := strings.ToLower(model)
 	switch {
@@ -94,6 +125,12 @@ func TierForModel(model string) string {
 		return TierStandard
 	case strings.Contains(m, "sonnet"), strings.Contains(m, "haiku"):
 		return TierFast
+	}
+	if tier, ok := grokTierByModel[m]; ok {
+		return tier
+	}
+	if tier, ok := codexTierByModel[m]; ok {
+		return tier
 	}
 	return "?"
 }

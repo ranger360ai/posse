@@ -34,9 +34,18 @@ func TestPricesAndTiers(t *testing.T) {
 	if (Usage{Model: "mystery-model"}).Priced() {
 		t.Error("mystery-model must report unpriced")
 	}
-	for m, want := range map[string]string{"claude-fable-5": TierStrong, "claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?"} {
+	for m, want := range map[string]string{
+		"claude-fable-5": TierStrong, "claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?",
+		// grok-4.5 and gpt-5.6-luna are each named by exactly one tier
+		// (fast) in their runtime's built-in map, so they resolve. Their
+		// strong/standard twins (grok-4.6, gpt-5.6-sol) are each named by
+		// two tiers and must stay "?" rather than resolve to whichever
+		// tier a map iteration happens to hit (ranger-base-3st5).
+		"grok-4.5": TierFast, "grok-4.6": "?",
+		"gpt-5.6-luna": TierFast, "gpt-5.6-sol": "?",
+	} {
 		if got := TierForModel(m); got != want {
-			t.Errorf("TierForModel(%q) = %q", m, got)
+			t.Errorf("TierForModel(%q) = %q, want %q", m, got, want)
 		}
 	}
 	// Pricing math: 1M in, 1M cache 5m, 1M cache 1h, 1M read, 1M out on fable.
