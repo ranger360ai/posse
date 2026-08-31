@@ -2165,6 +2165,23 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		if is.Status == "in_progress" && is.Assignee == persona {
 			holder, holderStatus = d.heldSession(runHolder, session, slot)
 		}
+		// ADR 0030 §1: the exact recovery moment — an in_progress bead
+		// assigned to this persona that no live session holds under any
+		// name (the record, the Dial F name, the slot: heldSession just
+		// answered "nobody" for all three) — is genuinely ambiguous: a
+		// crashed fleet run recovery should relaunch, or the operator's
+		// own hand-work typed straight into a pane, which stamps no
+		// record and carries no naming-convention name for heldSession to
+		// have found. Asked only here, only once every record has already
+		// answered "nobody" — never in place of them, never against one
+		// that named a holder — so the crew-session walk below is
+		// presence consulted at ambiguity, never against a fact.
+		if holder == "" && is.Status == "in_progress" && is.Assignee == persona {
+			if cs, ok := d.HB.CrewHolder(is.Dir, persona); ok {
+				d.skipf(skipOrphaned, "– %-14s %s\n", is.ID, orphanedClaimLine(persona, cs.Name))
+				continue
+			}
+		}
 		guard := namesThrough(crewNames, holder)
 		if h := d.crewHeld(guard...); h != "" {
 			d.skipf(skipCrewHeld, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
@@ -3151,6 +3168,16 @@ func foreignFreeLine(session string) string {
 	return fmt.Sprintf("posse kill %s --foreign or rename it in herdr to free the name", session)
 }
 
+// orphanedClaimLine is ADR 0030 §1's one sentence, shared by fireLoop (which
+// wraps it with the `– <id> ` lead every skip line carries) and LaunchBead
+// (which wraps it with `<id> ` and the `— not dispatched` every refusal
+// carries) — the two releases named exactly once, so the wording an
+// operator reads for a park cannot drift from the wording the cockpit's
+// `d` refuses with.
+func orphanedClaimLine(persona, crewName string) string {
+	return fmt.Sprintf("claimed by %s, no session posse started — crew session %s is live, assumed the operator's (posse prompt it with the bead, or posse crew %s --off)", persona, crewName, crewName)
+}
+
 // launchTag is the runtime/tier half of a create line. Both create lines
 // printed the tier alone, so a pass that sent beads to three runtimes read
 // as three identical launches and the only per-launch record of WHERE the
@@ -3530,6 +3557,16 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		}
 		holder, status = name, s.Status
 		break
+	}
+	// ADR 0030 §1, the same tiebreak Run's fireLoop asks, asked of the same
+	// two questions this function already answered above: an in_progress
+	// bead this persona is assigned and no live session names above — no
+	// record, no Dial F name, no slot — is the one ambiguous recovery
+	// moment, and the cockpit's `d` refuses it exactly as a pass parks it.
+	if holder == "" && is.Status == "in_progress" && is.Assignee == persona {
+		if cs, ok := d.HB.CrewHolder(is.Dir, persona); ok {
+			return "", Die("%s %s — not dispatched", is.ID, orphanedClaimLine(persona, cs.Name))
+		}
 	}
 	guard := namesThrough(names, holder)
 	// ADR 0008: the operator's own conversation is not the fleet's to prompt,

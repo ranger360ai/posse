@@ -2142,6 +2142,37 @@ func (b *HerdrBackend) RunHolder(dir, persona, bead string) (*HerdrSession, bool
 	return nil, false
 }
 
+// CrewHolder is ADR 0030 §1's tiebreak: the assignee's own live conversation
+// in the bead's repo, asked only at the one moment a claim is genuinely
+// ambiguous — an in_progress bead no live session holds under any name (run
+// record, Dial F name, slot). The typed route (a crew session made and
+// worked by hand) stamps no `bead:` and carries no naming-convention name,
+// so RunHolder and the name walk both come back empty for it; this is the
+// question that comes next, and only next — callers ask it after those have
+// already answered "nobody", never in place of them.
+//
+// First match, same shape as RunHolder: a live session's Crew mark, its
+// Agent, and its Checkout against the repo. Not keyed to the bead, because
+// the whole point is that this session carries no pointer to one — asking
+// "does the assignee have ANY live conversation here" is the question
+// ADR 0030 answers, not "does this one name the bead".
+func (b *HerdrBackend) CrewHolder(dir, persona string) (*HerdrSession, bool) {
+	if dir == "" || persona == "" {
+		return nil, false
+	}
+	sessions, err := b.Sessions()
+	if err != nil {
+		return nil, false
+	}
+	for i := range sessions {
+		s := &sessions[i]
+		if s.Crew && s.Agent == persona && s.Checkout() == dir {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
 // Checkout is the repo a session's work belongs to: the checkout its own
 // worktree hangs off, or its working directory when it shares one.
 func (s *HerdrSession) Checkout() string {

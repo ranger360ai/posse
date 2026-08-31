@@ -38,6 +38,7 @@ const (
 	skipUnroutable = "unroutable"
 	skipLaneBusy   = "lane busy"
 	skipCrewHeld   = "held by a crew session"
+	skipOrphaned   = "orphaned claim, assignee's crew session live"
 	skipForeign    = "held by another posse"
 	skipSettled    = "held, agent settled"
 	skipGrace      = "inside another launcher's prompt grace"

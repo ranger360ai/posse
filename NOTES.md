@@ -168,7 +168,13 @@ live pin both sides of the cliff and the spill are measured from.
   run record first** (`bead:`, ADR 0011 §3), then of the two name patterns:
   a crew session the operator made by hand carries neither Dial F name, so
   a name-only shield protected the SESSION and left the BEAD open for a
-  fleet twin (ranger-base-adb7). `posse list` and the cockpit tag it `👤`.
+  fleet twin (ranger-base-adb7). **An in_progress bead no live session
+  holds under any name at all** — the record, the Dial F name, the slot —
+  is an orphaned claim: crash-recovery's twin, or the operator's own
+  hand-work, and only a live crew session of the assignee in the bead's
+  repo tells them apart, so dispatch parks it (`claimed by <persona>, no
+  session posse started — crew session <name> is live …`) rather than
+  guessing (ADR 0030). `posse list` and the cockpit tag it `👤`.
 - `posse claim <id> [--as <persona>] [--dir]` / `posse done <id> …` — atomic
   claim (`bd update --claim`) and close, with the persona as bd actor. The
   claim's outcome is read from the bead, never from bd's exit code (see the
