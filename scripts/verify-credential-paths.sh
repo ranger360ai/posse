@@ -74,7 +74,15 @@ for d in "${dirs[@]}"; do
     continue
   fi
   present=$((present + 1))
-  hits=$(find "$d" -maxdepth 1 -name '.credentials.json*' -print 2>/dev/null)
+  # -H follows a symlinked "$d" itself (the operand) without following
+  # symlinks under it — [ -d "$d" ] above already follows the operand, so
+  # find must match or a symlinked config dir scans as empty (ranger-base-dpuf).
+  hits=$(find -H "$d" -maxdepth 1 -name '.credentials.json*' -print 2>/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "verify-credential-paths: could not scan $d (find exit $rc) — nothing measured, not a pass"
+    exit 2
+  fi
   if [ -z "$hits" ]; then
     [ "$quiet" -eq 1 ] || echo "  clean    $d"
     continue

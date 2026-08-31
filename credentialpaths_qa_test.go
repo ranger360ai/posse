@@ -156,6 +156,71 @@ func TestQACredentialPathsEnvOverrideCannotHideTheHomeFinding(t *testing.T) {
 	}
 }
 
+// [ -d "$d" ] follows a symlink; find's starting point must too, or a
+// symlinked config dir scans as empty (ranger-base-dpuf).
+func TestQACredentialPathsFollowsASymlinkedConfigDir(t *testing.T) {
+	real := t.TempDir()
+	if err := os.WriteFile(filepath.Join(real, ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	if err := os.Symlink(real, filepath.Join(home, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	out, code := cpRun(t, home)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a symlinked .claude hid the finding\n%s", code, out)
+	}
+	if !strings.Contains(out, "FINDING") || !strings.Contains(out, ".credentials.json") {
+		t.Errorf("must name the file found through the symlink:\n%s", out)
+	}
+}
+
+// Same trap, reached through CLAUDE_CONFIG_DIR — the header's own claim is
+// that setting the variable cannot turn a finding into a silent pass.
+func TestQACredentialPathsFollowsASymlinkedConfigDirEnv(t *testing.T) {
+	real := t.TempDir()
+	if err := os.WriteFile(filepath.Join(real, ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(t.TempDir(), "cfg")
+	if err := os.Symlink(real, cfg); err != nil {
+		t.Fatal(err)
+	}
+	out, code := cpRun(t, cpHome(t), "CLAUDE_CONFIG_DIR="+cfg)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a symlinked CLAUDE_CONFIG_DIR hid the finding\n%s", code, out)
+	}
+	if !strings.Contains(out, "FINDING") || !strings.Contains(out, ".credentials.json") {
+		t.Errorf("must name the file found through the symlinked CLAUDE_CONFIG_DIR:\n%s", out)
+	}
+}
+
+// A directory find cannot read is not evidence of clean — it is nothing
+// measured, same reasoning as the present==0 arm (ranger-base-dpuf).
+func TestQACredentialPathsRefusesToPassOverAnUnreadableDir(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permission bits")
+	}
+	home := cpHome(t, ".credentials.json")
+	dir := filepath.Join(home, ".claude")
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o755)
+
+	out, code := cpRun(t, home)
+	if code != 2 {
+		t.Fatalf("exit %d, want 2\n%s", code, out)
+	}
+	if strings.Contains(out, "clean") {
+		t.Errorf("an unreadable dir must not read as clean:\n%s", out)
+	}
+	if !strings.Contains(out, "nothing measured") {
+		t.Errorf("must say it measured nothing:\n%s", out)
+	}
+}
+
 func TestQACredentialPathsIsReadOnlyAndWired(t *testing.T) {
 	info, err := os.Stat(cpScript)
 	if err != nil {
