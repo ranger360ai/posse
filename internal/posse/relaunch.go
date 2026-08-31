@@ -675,7 +675,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	// And typed delivery was measured, live, to land on both prompt:argv
 	// runtimes post-turn — including a pane that had never taken a turn at
 	// all: it appended real ORDERS.md lessons on grok and produced a real
-	// summary on codex (ranger-base-i0qp, laurie 2026-08-29). ADR 0013 §2's
+	// summary on codex (ranger-base-i0qp, 2026-08-29). ADR 0013 §2's
 	// undetectable virgin pane did not reproduce here: that finding is
 	// about a pane with no turn behind it, not a relaunch target, which by
 	// definition has already worked. This bead's original premise — that
