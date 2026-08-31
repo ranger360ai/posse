@@ -287,6 +287,36 @@ func TestHerdrSettleHintsFilter(t *testing.T) {
 	}
 }
 
+// The cockpit's own reading of ADR 0016 §2: every subscribed event reaches
+// the channel, blocked included — the settle gate above is the watch's
+// alone, and treating `blocked` as noise here is exactly what would cost
+// the operator's ⛔ its event latency. An unreadable envelope is still
+// dropped; that filtering happens in envelope decoding (h.Kind == ""),
+// before this consumer's want function ever runs.
+func TestHerdrAllHintsFilter(t *testing.T) {
+	s := newHintServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var lines []string
+	hints := HerdrAllHints(ctx, s.path, panesAre("w1:p1"), nil, collect(&mu, &lines))
+	c := s.conn()
+
+	s.push(c, `{"event":"","data":{}}`)
+	s.push(c, settled("w1:p1", "blocked"))
+	if h := recvHint(t, hints, hintWait); h.AgentStatus != "blocked" {
+		t.Fatalf("first hint = %+v, want the blocked status change (the unreadable envelope before it must not have produced one)", h)
+	}
+	s.push(c, settled("w1:p1", "working"))
+	if h := recvHint(t, hints, hintWait); h.AgentStatus != "working" {
+		t.Fatalf("second hint = %+v, want working — a still-working status change redraws the cockpit too", h)
+	}
+	s.push(c, `{"data":{"type":"workspace_created","workspace":{"workspace_id":"w2"}},"event":"workspace_created"}`)
+	if h := recvHint(t, hints, hintWait); h.Kind != "workspace_created" {
+		t.Fatalf("third hint = %+v, want workspace_created delivered before the planned reconnect it also triggers", h)
+	}
+}
+
 // A pane cannot be added to a live subscription — the server takes one
 // subscribe per connection — so a newly detected agent pane is answered by
 // redialling with the pane set as it now stands. Silently: nothing failed.

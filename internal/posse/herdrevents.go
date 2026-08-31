@@ -139,6 +139,17 @@ func HerdrSettleHints(ctx context.Context, sock string, panes func() []string, r
 	return herdrHints(ctx, sock, herdrHintRetry, panes, refresh, isSettleHint, report)
 }
 
+// HerdrAllHints subscribes to herdr and yields every subscribed event, with
+// no settle filter — the cockpit's own reading of ADR 0016 §2, and
+// deliberately not HerdrSettleHints: a `blocked` status change is where the
+// operator's ⛔ gets event latency, and the watch's settle gate would drop
+// exactly that. The subscription, reconnect, and outage/recovery reporting
+// are identical to HerdrSettleHints; only which decoded events reach the
+// channel differs.
+func HerdrAllHints(ctx context.Context, sock string, panes func() []string, refresh <-chan struct{}, report func(string)) <-chan HerdrHint {
+	return herdrHints(ctx, sock, herdrHintRetry, panes, refresh, func(HerdrHint) bool { return true }, report)
+}
+
 func herdrHints(ctx context.Context, sock string, retry time.Duration, panes func() []string, refresh <-chan struct{}, want func(HerdrHint) bool, report func(string)) <-chan HerdrHint {
 	out := make(chan HerdrHint, 1)
 	go func() {

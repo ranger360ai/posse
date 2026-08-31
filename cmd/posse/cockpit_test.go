@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -1945,6 +1946,207 @@ func TestCockpitSessionCostAsksTheAdapterNotTheRuntimeName(t *testing.T) {
 	} {
 		if got := c.sessionCost(s); got != "" {
 			t.Errorf("%+v must carry no cost label, got %q", s, got)
+		}
+	}
+}
+
+// ─── ADR 0016 §2 — the cockpit's own hint filter ─────────────────────────────
+
+// fakeAgentBackend is a HerdrBackend backed by a herdr binary that reports
+// one workspace-with-agent for every (workspace, pane) id pair given.
+// Sessions() only lists a workspace herdr's listing actually carries — an
+// agent with no matching workspace row is invisible to it — so this keeps
+// both lists in step rather than reporting agents alone, and every pane
+// shows up as a foreign session (no meta file), which is enough for tests
+// that only care about the pane set moving under the hint subscription.
+func fakeAgentBackend(t *testing.T, home string, panes ...[2]string) *posse.HerdrBackend {
+	t.Helper()
+	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "no-such.sock"))
+	binDir := t.TempDir()
+	herdr := filepath.Join(binDir, "herdr")
+	var workspaces, agents []string
+	for _, p := range panes {
+		ws, pane := p[0], p[1]
+		workspaces = append(workspaces, fmt.Sprintf(`{"workspace_id":%q,"label":%q,"agent_status":"working"}`, ws, ws))
+		agents = append(agents, fmt.Sprintf(`{"agent":"claude","agent_status":"working","pane_id":%q,"workspace_id":%q}`, pane, ws))
+	}
+	script := `#!/bin/sh
+case "$1 $2" in
+"workspace list")
+  printf '%s\n' '{"result":{"workspaces":[` + strings.Join(workspaces, ",") + `]}}'
+  exit 0;;
+"agent list")
+  printf '%s\n' '{"result":{"agents":[` + strings.Join(agents, ",") + `]}}'
+  exit 0;;
+esac
+exit 1
+`
+	if err := os.WriteFile(herdr, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return &posse.HerdrBackend{App: &posse.App{Home: home}, H: posse.Herdr{Bin: herdr}, Warn: io.Discard}
+}
+
+// In normal mode a hint is a full refresh, same as `r` — any subscribed
+// event, blocked included, which is the whole reason the cockpit carries
+// its own filter instead of the watch's settle gate (ADR 0016 §2).
+// sessions starting empty and landing non-empty is the refresh's evidence.
+func TestCockpitApplyHintRefreshesInNormalMode(t *testing.T) {
+	home := t.TempDir()
+	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})
+	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modeNormal}
+
+	c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "blocked"})
+	if len(c.sessions) == 0 {
+		t.Error("a hint in normal mode must run a full refresh — sessions is still empty")
+	}
+	if c.hintDirty {
+		t.Error("normal mode redraws immediately; there is nothing left to defer")
+	}
+}
+
+// In prompt/confirm/peek mode the same hint must NOT refresh — drawing
+// over operator input mid-keystroke is exactly what those modes exist to
+// prevent — and must instead set the dirty bit for consumeHintDirty to
+// spend on the return to normal.
+func TestCockpitApplyHintDefersInModalMode(t *testing.T) {
+	home := t.TempDir()
+	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})
+	for _, mode := range []cockpitMode{modePrompt, modeConfirm, modePeek} {
+		c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: mode}
+		c.applyHint(posse.HerdrHint{Kind: "workspace_closed", WorkspaceID: "w9"})
+		if len(c.sessions) != 0 {
+			t.Errorf("mode %v: a hint must not refresh over operator input", mode)
+		}
+		if !c.hintDirty {
+			t.Errorf("mode %v: a hint under a mode must set the dirty bit", mode)
+		}
+	}
+}
+
+// consumeHintDirty is where a deferred hint is actually spent: on the
+// return to normal mode, which is every path handleKey has out of
+// prompt/confirm/peek.
+func TestCockpitConsumeHintDirtyRefreshesOnReturnToNormal(t *testing.T) {
+	home := t.TempDir()
+	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})
+	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modePrompt}
+	c.applyHint(posse.HerdrHint{Kind: "workspace_closed", WorkspaceID: "w9"})
+	if len(c.sessions) != 0 || !c.hintDirty {
+		t.Fatal("setup: the hint above must have deferred, not refreshed")
+	}
+
+	c.mode = modeNormal // what handleKey does on esc, enter, y and n
+	c.consumeHintDirty()
+	if len(c.sessions) == 0 {
+		t.Error("the deferred hint must be spent as a refresh on the return to normal")
+	}
+	if c.hintDirty {
+		t.Error("consumeHintDirty must clear the bit it spent")
+	}
+}
+
+// pokeHintsIfPanesMoved is the cockpit's own truth path for ADR 0016 §1's
+// refresh poke: it must fire only when the agent pane set actually differs
+// from what the subscription was last dialled or poked with, never on
+// every refreshSessions — poking at the cockpit's 2s cadence would redial
+// the subscription at 0.5 Hz (§1).
+func TestCockpitPokesOnlyWhenPaneSetMoves(t *testing.T) {
+	home := t.TempDir()
+	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})
+	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modeNormal}
+	c.hintRefresh = make(chan struct{}, 1)
+	c.hintPanes = hb.AgentPanes() // as if the subscription was just dialled with this set
+
+	poked := func() bool {
+		select {
+		case <-c.hintRefresh:
+			return true
+		default:
+			return false
+		}
+	}
+
+	c.refreshSessions()
+	if poked() {
+		t.Fatal("an unchanged pane set must not poke the subscription")
+	}
+
+	// The herdr binary is replaced with one reporting a second pane —
+	// exactly what a newly detected agent looks like from this consumer's
+	// truth path.
+	moved := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"}, [2]string{"w2", "w2:p1"})
+	c.hb = moved
+	c.refreshSessions()
+	if !poked() {
+		t.Fatal("a pane set that grew must poke the subscription")
+	}
+
+	// It settled at the new set: the very next refresh must not poke again.
+	c.refreshSessions()
+	if poked() {
+		t.Fatal("the same pane set twice must not poke twice")
+	}
+}
+
+// startHints wires whatever Hints returns into c.hints, and its report
+// callback reaches c.hintReports without blocking — the same shape
+// Dispatcher.Hints gives the watch loop (watch.go), so a test can drive
+// the cockpit's hint handling without a socket at all.
+func TestCockpitStartHintsWiresOverrideAndReports(t *testing.T) {
+	hintsCh := make(chan posse.HerdrHint, 1)
+	c := &cockpit{
+		Hints: func(ctx context.Context, report func(string)) <-chan posse.HerdrHint {
+			report("herdr events unavailable — polling (dial unix: no such file)")
+			return hintsCh
+		},
+		hintReports: make(chan string, 4),
+	}
+	c.startHints(context.Background())
+	if c.hints == nil {
+		t.Fatal("startHints must set c.hints from the Hints override")
+	}
+	select {
+	case line := <-c.hintReports:
+		if !strings.Contains(line, "unavailable") {
+			t.Errorf("report line = %q", line)
+		}
+	default:
+		t.Fatal("the report callback must reach c.hintReports without blocking")
+	}
+	hintsCh <- posse.HerdrHint{Kind: "workspace_closed"}
+	select {
+	case h := <-c.hints:
+		if h.Kind != "workspace_closed" {
+			t.Errorf("hint = %+v", h)
+		}
+	default:
+		t.Fatal("a hint sent on the override's channel must be readable through c.hints")
+	}
+}
+
+// Neither loop can be run under go test — the tty loop needs a raw
+// terminal and the display-only loop waits on an OS signal — so, like
+// TestCockpitEventLoopDrainsProgress above, this pins the source: the
+// select statements actually feed a hint to applyHint/consumeHintDirty
+// (tty) or at least wake the loop early (display-only), which is what the
+// behavior tests above exercise once a hint arrives.
+func TestCockpitEventLoopsWireTheHintChannel(t *testing.T) {
+	src, err := os.ReadFile("cockpit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	for _, want := range []string{
+		"c.startHints(hintCtx)",
+		"case h, ok := <-c.hints:",
+		"c.applyHint(h)",
+		"c.consumeHintDirty()",
+		"case line := <-c.hintReports:",
+		"case _, ok := <-c.hints:",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the event loops do not %s — the hint channel is not wired in", want)
 		}
 	}
 }

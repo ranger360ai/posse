@@ -28,6 +28,7 @@ package main
 // renders the same row model at 80 wide.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -283,6 +284,30 @@ type cockpit struct {
 	// have no herdr to launch into, and a launch runs off the event loop
 	// where a panic would take the process with it.
 	launcher func(bead posse.RepoIssue, resume bool) (string, error)
+
+	// The ADR 0016 §2 hint channel: the tty and display-only loops select
+	// on it beside their 2s tick. This is the cockpit's OWN filter, not
+	// the watch's settle gate — any subscribed event redraws, blocked
+	// included, which is where the operator's ⛔ gets event latency
+	// instead of tick latency.
+	//
+	// Hints overrides the real subscriber, mirroring Dispatcher.Hints;
+	// nil means startHints dials SocketID() for real. Tests point it at a
+	// hermetic socket or stub it to nil-channel so an unrelated test never
+	// dials anything.
+	Hints       func(ctx context.Context, report func(string)) <-chan posse.HerdrHint
+	hints       <-chan posse.HerdrHint
+	hintReports chan string   // subscriber outage/recovery line → event loop status
+	hintRefresh chan struct{} // this cockpit's own poke — see pokeHintsIfPanesMoved
+	// hintPanes is the pane set the live subscription was last dialled or
+	// poked with. Compared against a fresh AgentPanes() on every
+	// refreshSessions so the poke fires only when the pane set actually
+	// moved (§1: poking on the 2s tick would redial at 0.5 Hz).
+	hintPanes []string
+	// hintDirty is a hint that landed while a mode was up (prompt/confirm/
+	// peek): drawing over operator input is exactly what those modes
+	// exist to prevent, so the refresh waits for the return to normal.
+	hintDirty bool
 }
 
 const (
@@ -661,7 +686,7 @@ func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
 		progress: make(chan string, 4), prompts: make(chan string, 4),
 		claims: make(chan string, 4), costs: make(chan *posse.CostReport, 1),
 		plans: make(chan planRead, 1), govs: make(chan govRead, 1),
-		beads: make(chan beadRead, 1)}
+		beads: make(chan beadRead, 1), hintReports: make(chan string, 4)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
 	// written straight to it is garbage on the frame. That silences the one
 	// line a blocked launch has to say (ADR 0011 §1: "one line when a second
@@ -715,6 +740,12 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
+	// The ADR 0016 §2 hint channel, for this process's whole life — ctx
+	// ties it to this loop, cancelled by the same defer/return path as
+	// raw-mode restore and the alt-screen exit.
+	hintCtx, cancelHints := context.WithCancel(context.Background())
+	defer cancelHints()
+	c.startHints(hintCtx)
 	c.refresh()
 	c.draw()
 	c.startCost()
@@ -742,6 +773,23 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 			// minute must not stop the lists underneath it from tracking
 			// the fleet. kickBeads is a no-op until the floor is up.
 			c.kickBeads(false)
+		case h, ok := <-c.hints:
+			if !ok {
+				// The subscriber is gone for good (ctx ended, or it
+				// stopped); the 2s tick remains the completeness path
+				// (ADR 0016 §2).
+				c.hints = nil
+				break
+			}
+			c.applyHint(h)
+			if c.mode == modeNormal {
+				c.draw()
+			}
+		case line := <-c.hintReports:
+			c.status = line
+			if c.mode == modeNormal {
+				c.draw()
+			}
 		case r := <-c.beads:
 			c.applyBeads(r)
 			if c.mode == modeNormal {
@@ -802,6 +850,10 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 			if quit {
 				return nil
 			}
+			// A hint that landed while a mode was up is spent the moment
+			// that mode returns to normal, not on the next tick (ADR 0016
+			// §2's "refresh on return to normal").
+			c.consumeHintDirty()
 			c.draw()
 		}
 	}
@@ -924,11 +976,113 @@ func (c *cockpit) refreshSessions() {
 			}
 		}
 		c.herdrDown = false
+		c.pokeHintsIfPanesMoved()
 	} else {
 		c.status = err.Error()
 		c.herdrDown = true
 	}
 	c.buildRows()
+}
+
+// startHints begins the ADR 0016 §2 subscription for this process's whole
+// life — called once, by whichever loop actually runs. The tty cockpit and
+// its non-tty fallback are mutually exclusive within one process, so one
+// call site is the ADR's "one connection per long-running process."
+//
+// Hints overrides the real subscriber for tests, mirroring
+// Dispatcher.Hints (watch.go): nil dials SocketID() for real, so a
+// hermetic test clears it explicitly and points HERDR_SOCKET_PATH at a
+// test server, exactly like the watch tests do. Most cockpit tests never
+// call startHints at all, so they are unaffected either way.
+func (c *cockpit) startHints(ctx context.Context) {
+	c.hintRefresh = make(chan struct{}, 1)
+	subscribe := c.Hints
+	if subscribe == nil {
+		subscribe = func(ctx context.Context, report func(string)) <-chan posse.HerdrHint {
+			panes := func() []string { return nil }
+			if c.hb != nil {
+				panes = c.hb.AgentPanes
+			}
+			return posse.HerdrAllHints(ctx, posse.SocketID(), panes, c.hintRefresh, report)
+		}
+	}
+	c.hints = subscribe(ctx, func(line string) {
+		select {
+		case c.hintReports <- line:
+		default:
+		}
+	})
+	if c.hb != nil {
+		c.hintPanes = c.hb.AgentPanes()
+	}
+}
+
+// applyHint is this consumer's own filter (ADR 0016 §2): any subscribed
+// event redraws in normal mode, blocked included — never the watch's
+// settle gate, which drops exactly the transition the operator's ⛔ needs
+// at event latency. In prompt/confirm/peek mode it only marks the screen
+// dirty; drawing over operator input mid-keystroke is the one thing those
+// modes exist to prevent, so the deferred refresh happens in
+// consumeHintDirty instead, on the return to normal.
+func (c *cockpit) applyHint(posse.HerdrHint) {
+	if c.mode != modeNormal {
+		c.hintDirty = true
+		return
+	}
+	c.refresh()
+}
+
+// consumeHintDirty is applyHint's other half: called after every key, it
+// catches the return to normal mode and spends the dirty bit there instead
+// of leaving the screen stale until the next tick.
+func (c *cockpit) consumeHintDirty() {
+	if c.mode == modeNormal && c.hintDirty {
+		c.hintDirty = false
+		c.refresh()
+	}
+}
+
+// pokeHintsIfPanesMoved is this consumer's own truth path for ADR 0016
+// §1's refresh poke: fed only when the agent pane set differs from the one
+// the live subscription was last dialled or poked with — never on every
+// tick, because poking at the cockpit's 2s cadence would redial the
+// subscription at 0.5 Hz (§1). The watch pokes unconditionally after every
+// pass instead, because its cadence is minutes, not seconds.
+func (c *cockpit) pokeHintsIfPanesMoved() {
+	if c.hintRefresh == nil || c.hb == nil {
+		return
+	}
+	now := c.hb.AgentPanes()
+	if samePaneSet(c.hintPanes, now) {
+		return
+	}
+	c.hintPanes = now
+	select {
+	case c.hintRefresh <- struct{}{}:
+	default:
+	}
+}
+
+// samePaneSet compares two pane lists as sets: herdr's agent listing
+// carries no ordering contract, and a false "moved" reading costs a
+// needless reconnect.
+func samePaneSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, p := range a {
+		seen[p]++
+	}
+	for _, p := range b {
+		seen[p]--
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // beadRead is one scan of the two bead lists, taken off the event loop.
@@ -2698,6 +2852,13 @@ func (c *cockpit) displayOnly() error {
 	defer tick.Stop()
 	govTick := time.NewTicker(govEvery)
 	defer govTick.Stop()
+	// The ADR 0016 §2 hint channel, for this process's whole life. This
+	// loop has no modes to draw over — every frame is already a full
+	// redraw — so a hint just cuts the wait for the next one short,
+	// exactly like the tick does.
+	hintCtx, cancelHints := context.WithCancel(context.Background())
+	defer cancelHints()
+	c.startHints(hintCtx)
 	c.startGov()
 	for {
 		c.displayFrame()
@@ -2706,6 +2867,15 @@ func (c *cockpit) displayOnly() error {
 			return nil
 		case <-govTick.C:
 			c.startGov()
+		case _, ok := <-c.hints:
+			// Any subscribed event redraws (ADR 0016 §2) — the loop top
+			// just did, and the next iteration's is what this case exists
+			// to bring forward instead of waiting out the tick.
+			if !ok {
+				c.hints = nil
+			}
+		case line := <-c.hintReports:
+			c.status = line
 		case <-tick.C:
 		}
 	}
