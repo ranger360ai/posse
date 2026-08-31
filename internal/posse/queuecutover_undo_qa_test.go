@@ -181,7 +181,8 @@ func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
 }
 
 func TestQAQueueCutoverTrackedSubdirDoesNotNestSilently(t *testing.T) {
-	t.Skip("ranger-base-8izk: BSD mv nests the live subdir instead of aborting the move")
+	// unskipped by ranger-base-8izk: FIXED as a side effect of ranger-base-iycc
+	// (326a8dc) — see the FIXED block above.
 	constitution, _ := qcConstitution(t)
 	src := filepath.Join(constitution, ".beads")
 	write(t, filepath.Join(src, "sub", "x"), "tracked\n")
