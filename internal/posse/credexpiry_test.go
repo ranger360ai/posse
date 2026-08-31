@@ -247,6 +247,76 @@ func TestTheSoonestExpiryIsTheOneWithTheVerb(t *testing.T) {
 	}
 }
 
+// ─── V6-as-amended (ranger-base-swqk): the meter is report-only ────────────
+
+// ExpiringCredentials is the one reader both timer surfaces (the cockpit
+// header, credentialExpiry's stderr line) use — credexpiry.go's own doc
+// comment says so, and dispatch.go and cmd/posse/cockpit.go both call
+// nothing else to build theirs. So pinning what THIS returns pins both
+// surfaces at once; there is no third path either one could take instead.
+//
+// The session mint dated inside the same window is the positive witness
+// (probe-needs-a-failing-wrong-arm): without it, "no meter in the list"
+// cannot be told apart from "the reader never ran" or "nothing on this box
+// is expiring at all". Mutation-checked by temporarily appending a
+// CredMeter CredExpiry built from meterRow's own reading into
+// ExpiringCredentials' loop — that turns this pin red.
+func TestMeterEnvelopeReachesReportButNeitherTimerSurface(t *testing.T) {
+	a := refreshApp(t)
+	key := CageCredential(mustRuntime(t, a, "claude"))
+
+	// The positive witness: a session mint inside the window.
+	stampedSet(t, a, "container", key, "sk-ant-oat01-SESSION-MINT", day(5))
+
+	// The meter envelope, also inside the window — read through the file
+	// adapter (goos="linux" below), never a live keychain (ranger-base-ouf9:
+	// a test must not read the box). credentialsHome and envelope are
+	// credseam_test.go's fixtures for exactly this seam.
+	meterExpires := expiryNow.AddDate(0, 0, 5)
+	credentialsHome(t, envelope("sk-ant-oat01-METER-TOKEN", meterExpires.UnixMilli()))
+
+	// The seam both timer surfaces read: the meter must not be in it, and
+	// the session mint — the positive witness — must be.
+	ex := a.ExpiringCredentials(expiryNow)
+	if len(ex) != 1 || ex[0].Purpose != CredSession || ex[0].Set != "container" {
+		t.Fatalf("want exactly the session mint (the positive witness), got %+v", ex)
+	}
+	for _, e := range ex {
+		if e.Purpose == CredMeter {
+			t.Fatalf("a meter envelope reached the timer surfaces' own reader: %+v", ex)
+		}
+	}
+
+	// The report carries both purposes: the meter row is there and dated.
+	o := opts(RefreshOpts{}, "", nil)
+	o.clock = func() time.Time { return expiryNow }
+	var sawMeterRow bool
+	for _, r := range a.CredReport(o) {
+		if r.Runtime != "claude" || r.Purpose != CredMeter {
+			continue
+		}
+		sawMeterRow = true
+		if !strings.Contains(r.Expiry, "in 5d") {
+			t.Errorf("the meter's near-expiry date did not reach the report: %+v", r)
+		}
+	}
+	if !sawMeterRow {
+		t.Fatal("no meter row for claude in the report — the report is supposed to carry both purposes")
+	}
+
+	// The dispatch pass's stderr line — one of the two timer surfaces —
+	// names the session mint and never the meter.
+	d, _, errb := expiryDispatcher(t, a)
+	d.credentialExpiry()
+	line := errb.String()
+	if !strings.Contains(line, "claude session") {
+		t.Errorf("the pass line did not name the session mint: %q", line)
+	}
+	if strings.Contains(line, "meter") {
+		t.Errorf("the pass line named the meter, which V6-as-amended gives no timer surface: %q", line)
+	}
+}
+
 // ─── the dispatch pass: one line, and nothing else ─────────────────────────
 
 func expiryDispatcher(t *testing.T, a *App) (*Dispatcher, *bytes.Buffer, *bytes.Buffer) {
