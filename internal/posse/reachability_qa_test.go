@@ -517,6 +517,85 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 	}
 }
 
+// The container tier (ranger-base-w68m, closing the abstention
+// ranger-base-2nan left in place): membership of the RENDERED mount set
+// (CageMounts), the same list semantics codexReachRow judges a launch line
+// by. Uses the hermetic `env` engine (cageApp/cageAgent, cage_test.go) —
+// this asks CageMounts to render, not a real container runtime.
+func TestContainerReachRowCatchesADenyThatCoversTheStore(t *testing.T) {
+	a := cageApp(t)
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// An ordinary repo: no deny touches .beads, so the whole tree — .beads
+	// included — is read-write and the row is silent.
+	pass := cageAgent(t, a, "cage: container\n")
+	if row := reachRow(a.CheckParityIn(pass, claude, CageContainer, TierStrong, dir)); row != "" {
+		t.Errorf("an ordinary repo must reach its own .beads: %s", row)
+	}
+
+	// The regression this row exists to catch, one mechanism over from
+	// seatbelt's h15: a path-scoped deny that happens to cover `.beads` is
+	// DEEPER than the repo mount that grants it, and cagePathScopedOverlays
+	// (ADR 0014 §4) overlays it `:ro` — the exact carve-out ranger-base-yu5
+	// added, silently taken back by a PID rule that never mentions `.beads`
+	// by name. Not contrived: `deny: [Edit(docs/**)]` beside a PID that
+	// keeps its store under a top-level dir a broader glob also reaches
+	// is the same shape as h15's trailing seatbelt deny.
+	deny := cageAgent(t, a, "cage: container\ndeny: [Edit(.beads/**), Write(.beads/**)]\n")
+	row := reachRow(a.CheckParityIn(deny, claude, CageContainer, TierStrong, dir))
+	if !strings.Contains(row, "not writable under the mount set") {
+		t.Errorf("a deny covering .beads must be caught: %q", row)
+	}
+
+	// The pass above is not vacuous: the SAME dir, judged with the SAME
+	// call, differs only in the PID's deny: — so a row that measured
+	// nothing would pass both instead of just the first (ranger-base-fm4p).
+	if row := reachRow(a.CheckParityIn(pass, claude, CageContainer, TierStrong, dir)); row != "" {
+		t.Errorf("the pass arm must still be silent after the deny arm ran: %s", row)
+	}
+}
+
+// The redirect shape (ADR 0012 D3-C, ranger-base-rhw's path at L4): this is
+// the observable ranger-base-yu5's mount-side fix was missing — a mount-list
+// pin proved CageMounts renders the bind, but nothing proved a session could
+// actually USE it until this row exists. A PID that denies Edit/Write keeps
+// the redirect target reachable; the same PID's session with the target's
+// own `.git` left unmounted must NOT be asked for — the inner bd is
+// `--no-db --no-daemon` at this tier and never commits (unlike codex, tested
+// in TestRecordReachOnASelfSandboxingRuntime, where the git dir IS required).
+func TestContainerReachRowOnTheRedirectShape(t *testing.T) {
+	a := cageApp(t)
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := absResolve(t.TempDir())
+	target := filepath.Join(store, beadsDirName)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, beadsDirName, beadsRedirect), []byte(target+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, front := range []string{"cage: container\ndeny: [Edit, Write]\n", "cage: container\n"} {
+		ag := cageAgent(t, a, front)
+		if row := reachRow(a.CheckParityIn(ag, claude, CageContainer, TierStrong, dir)); row != "" {
+			t.Errorf("%s: the redirect target must be reachable: %s", front, row)
+		}
+	}
+}
+
 // shellTokens reads flag VALUES, so it has to survive what shellQuote
 // writes — a path with a space, and an apostrophe in a persona's own name.
 func TestShellTokensUnquotesLikeTheShellThatTypesIt(t *testing.T) {

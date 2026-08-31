@@ -68,12 +68,16 @@ const reachProbeFile = ".posse-reach-probe"
 //   - a self-sandboxing runtime (codex): membership of the writable roots
 //     its RENDERED launch line names — the workspace plus every --add-dir
 //     realizeCodex emitted. List semantics, no ordering trap, no probe.
-//
-// The container tier is deliberately not judged here: its wall is a mount
-// set (CageMounts), not a profile or a flag list, and it mounts `<dir>/.beads`
-// rather than the redirect target — a real gap of the same class, filed
-// rather than guessed at (ranger-base-w68m). The row says it abstains
-// instead of printing a pass it did not measure.
+//   - the container tier: membership of the RENDERED mount set (CageMounts)
+//     — the same list semantics as codex, because a bind mount is a list
+//     the engine sorts by destination depth (cageCovering), not a profile
+//     with an ordering trap to fall into. Only `home` is judged, not its
+//     git dirs: the inner `bd` this tier runs is always `--no-db
+//     --no-daemon` (cageinner.go), so a container session appends JSONL
+//     and never takes index.lock or moves a ref — unlike codex and L2,
+//     where a real `bd sync` commits (ranger-base-w68m; the mount side of
+//     the redirect target landed in ranger-base-yu5, this is the row that
+//     judges it instead of abstaining).
 func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	if dir == "" || ag == nil || rt == nil {
 		return
@@ -92,9 +96,11 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 	}
 	switch {
 	case p.Cage == CageContainer && a.cageAvailable(p.Cage):
-		// Class "": this row abstains — it measured nothing, so it must not
-		// read like either enforcement class (ranger-base-fm4p).
-		p.Realized[RecordReachGate] = RealizedGate{Detail: "cage container: not judged here — the wall at this tier is the mount set, not a profile (ADR 0013 §4)"}
+		if why := a.containerReachRow(ag, dir, home); why != "" {
+			p.unrealized(RecordReachGate, why)
+			return
+		}
+		p.Realized[RecordReachGate] = RealizedGate{Class: Enforced, Detail: fmt.Sprintf("cage container's rendered mount set names %s read-write (CageMounts, ADR 0002 amendment)", AbbrevHome(home))}
 	case rt.SelfSandbox:
 		if why := codexReachRow(a.renderedLaunchLine(ag, rt, p.Tier, dir), dir, targets); why != "" {
 			p.unrealized(RecordReachGate, why)
@@ -262,6 +268,34 @@ func codexReachRow(cmd, dir string, targets []string) string {
 			return fmt.Sprintf("%s is in no writable root the rendered launch line names — the workspace is %s and the line's --add-dir set is [%s], so the sandbox denies the store of record and the session records nothing (ADR 0013 §4 reachability, ranger-base-hxhb; the same shape left five dispatched codex sessions silent in ranger-base-0fb). launchWritableRoots names the store, its git dirs and the session tree's own; a target outside all of them means a PID `command:` that drops {deny}, or a store this resolver cannot reach",
 				AbbrevHome(t), AbbrevHome(dir), strings.Join(abbrevAll(roots[1:]), " "))
 		}
+	}
+	return ""
+}
+
+// containerReachRow judges the container tier's own artifact — the
+// rendered mount set CageMounts would produce — for membership: the
+// deepest bind covering `home` decides its mode inside the cage
+// (cageCovering, the same rule the mount renderer itself resolves
+// overlays by), so this asks the identical question CageMounts answers
+// rather than a second, looser one. No probe, because a bind mount is a
+// list the engine sorts by destination depth and not by the order this
+// list was built in.
+//
+// The engine loads without error here: a.cageAvailable(p.Cage) already
+// proved LoadEngine + the binary's presence on PATH before this is
+// called. The session name is synthetic ("reach-probe") and unused by
+// anything CageMounts reads from disk — it only spells two paths from it
+// (the refusals spool, a socket mount), neither a fact this question
+// depends on.
+func (a *App) containerReachRow(ag *AgentFile, dir, home string) string {
+	e, err := a.LoadEngine(a.ResolveEngine())
+	if err != nil {
+		return "cage container: engine " + a.ResolveEngine() + " could not be loaded to judge the mount set: " + err.Error()
+	}
+	ms := a.CageMounts(ag, e, dir, "reach-probe")
+	if i, _ := cageCovering(ms, absResolve(home)); i < 0 || ms[i].RO {
+		return fmt.Sprintf("%s is not writable under the mount set this launch would render — no read-write bind covers it, so a caged session cannot `bd comments add` or `bd close` there (ADR 0013 §4 reachability, ranger-base-w68m)",
+			AbbrevHome(home))
 	}
 	return ""
 }
