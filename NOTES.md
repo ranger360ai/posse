@@ -119,13 +119,17 @@ is wired at both launch sites (`startPlanned`, `RelaunchAgent`), and
 
 Under the limit the command is still typed verbatim, because the pane's
 scrollback and herdr's log are where an operator reads what a session was
-launched with. Headroom today: every crew PID's line renders to **591–691
-bytes** against the 1023 limit, so nothing spills (`state/launch/` does not
-exist on a healthy fleet). That is ~330 bytes of slack, and anything that
-grows a typed line spends it — another deny rule (`--disallowedTools` is
-variadic), a longer `--settings`, more mounts. The container tier's ~1.6KB
-engine line spent it in one go and had to render a file before this rule
-existed; see *Container tier* below.
+launched with. Headroom as of 2026-08-27: every crew PID's line rendered to
+**591–691 bytes** against the 1023 limit — ~330 bytes of slack. Growing a
+typed line spends that slack — another deny rule (`--disallowedTools` is
+variadic), a longer `--settings`, more mounts — and by 2026-08-31 it was
+gone: the `--disallowedTools` per-verb prefix-spelling fix (`ranger-base-e7eo`)
+pushed every crew PID's line over 1023 B, and `state/launch/` held a spilled
+script per persona. A populated `state/launch/` is not a healthy-fleet
+signal; it is this fallback working as designed — a line that outgrew the
+limit gets sourced from a script instead of typed. The container tier's
+~1.6KB engine line spent it in one go and had to render a file before this
+rule existed; see *Container tier* below.
 
 None of this is asserted from memory: `internal/posse/panelinelive_test.go`
 (`RHQ_LIVE_PANE_LINE=1`, against a scratch herdr server, no API turn) is the
