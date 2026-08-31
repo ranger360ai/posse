@@ -1500,11 +1500,25 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// best-effort — a legitimate foreign chain is expected to make install
 		// refuse — but a slot that does not actually gate the probe is now a
 		// visible degradation instead of a swallowed error.
+		//
+		// The commit-guard slot is probed BEFORE InstallCommitGuardHook
+		// overwrites it (ranger-base-2mogn): install-then-probe always sees
+		// this binary's own fresh render, so a repo IN the launch rotation
+		// whose stamp had drifted from config self-heals SILENTLY and the
+		// operator never learns the wall was wrong, or for how long.
+		// preHeal is compared, not enforced — CheckParityIn below still
+		// judges the launch on the POST-heal state; this only reports what
+		// was actually on disk a moment earlier, so a real drift is a
+		// finding rather than a repair nobody heard about.
+		preHeal := a.probeL3Hooks(dir, deniesGitPush(ag.Deny))
 		if deniesGitPush(ag.Deny) {
 			InstallPrePushHook(dir)
 		}
 		a.InstallCommitGuardHook(dir)
 		parity := a.CheckParityIn(ag, rt, cage, tier, dir)
+		if preHeal.Repo && !preHeal.CommitGuard {
+			b.warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
+		}
 		if len(parity.Degraded) > 0 {
 			// ADR 0003 §3: at fast the operator's consent is not on offer —
 			// the wall is the only thing left holding the PID's gates.
