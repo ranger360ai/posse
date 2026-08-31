@@ -211,7 +211,7 @@ func TestQAConstitutionWallPassesTheIdenticalCommitUnmarked(t *testing.T) {
 // constitution repo would be routed around within a day.
 func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
 	for _, rel := range []string{
-		"docs/rca/az93-settings.json", // the prescribed route itself has to work
+		"docs/notes.d/az93-settings.json", // the prescribed route itself has to work
 		"rhq/personas/developer/ORDERS.md",
 		"rhq/state/gates/refusals.log",
 		"scripts/thing.sh",
@@ -463,8 +463,12 @@ func TestQAConstitutionWallHoldsOverHostilePathShapes(t *testing.T) {
 		})
 	}
 	t.Run("CONTROL ordinary work still lands", func(t *testing.T) {
-		stageAt(t, repo, git, persona, "docs/note.md", "ordinary\n")
-		if out, err := git(persona, "commit", "-m", "draft", "--", "docs/note.md"); err != nil {
+		// docs/adr/, not a bare docs/note.md: a staged NEW file directly under
+		// docs/ with no subdirectory has no genre and check 1 (ADR 0024 D2)
+		// refuses it on its own — this control needs a path outside BOTH the
+		// constitution class and the docs-genre allowlist's refusal.
+		stageAt(t, repo, git, persona, "docs/adr/note.md", "ordinary\n")
+		if out, err := git(persona, "commit", "-m", "draft", "--", "docs/adr/note.md"); err != nil {
 			t.Fatalf("the wall refuses everything, which makes every row above meaningless: %v\n%s", err, out)
 		}
 	})

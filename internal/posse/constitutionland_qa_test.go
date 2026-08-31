@@ -86,7 +86,7 @@ func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
 // worked around within the day.
 func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 	for _, rel := range []string{
-		"docs/rca/proposed-settings.json", // the prescribed route has to land
+		"docs/notes.d/proposed-settings.json", // the prescribed route has to land
 		"rhq/personas/developer/ORDERS.md",
 		"rhq/state/gates/refusals.log",
 		"scripts/thing.sh",
