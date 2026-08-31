@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,7 +74,10 @@ type LostBead struct {
 // DeletionRecord is one line of .beads/deleted.jsonl — a deletion somebody
 // owns. Record carries the bead itself so the ledger is the restore source
 // too: once the row is gone from bd, git history and this file are all that
-// is left of it.
+// is left of it. It also does a second job: a rebase or squash rewrites
+// Commit out of the history the census walks entirely, and Record is then
+// the only thing sameRemoval has left to compare against a replay of the
+// same drop under a new sha (ranger-base-6mbz).
 //
 // Commit is the removal this record accounts for — LostBead.Commit, not a
 // clock. A ledger keyed by id alone exempts the id for the life of the repo,
@@ -147,7 +151,7 @@ func LostBeads(bd Bd, dir string) ([]LostBead, error) {
 		for _, rec := range recs {
 			if rec.Commit != "" {
 				modern = true
-				covered = covered || sameRemoval(home, id, rec.Commit, lb.Commit)
+				covered = covered || sameRemoval(home, id, rec.Commit, lb.Commit, rec.Record, json.RawMessage(lb.Record))
 			}
 		}
 		if covered || !modern {
@@ -243,25 +247,84 @@ func removedBeads(dir string) (map[string]LostBead, error) {
 // ancestor of found and nothing between them puts the id back. A restore in
 // the range is rangerhq-6he5's second loss and must stay a finding.
 //
-// A record naming a commit that is not an ancestor — a rebased-away sha, a
-// record from another line of history — covers nothing, which is the false
-// alarm direction: `--record` answers it, and silence would not.
-func sameRemoval(home, id, rec, found string) bool {
+// A record naming a commit that is not an ancestor at all — a record from
+// another, still-unmerged line of history that never carried the id into
+// found's history (ranger-base-ntsz's off-history case) — covers nothing.
+// But a rebase or a squash merge ALSO make rec a non-ancestor of found, for a
+// different reason: history was rewritten out from under the recorded sha
+// rather than merged, so ancestry cannot speak to this pair at all
+// (ranger-base-6mbz). Both replay rec's tree change onto whatever the
+// branch's base had grown into by the time it landed, so the same question
+// moves one commit further back — did nothing between rec's PARENT and found
+// put the id back — with two more guards a plain rebase/squash needs and an
+// off-history record must fail: the parent must actually have moved (a
+// record whose parent equals found's parent forked from that exact point
+// with nothing rewritten, which is the off-history shape, not a replay), and
+// the replayed line must read back identical, because moving the ancestry
+// root back one commit alone reopens exactly the false-exemption ntsz fixed.
+//
+// A record naming a commit that is not an ancestor by either route covers
+// nothing, which is the false alarm direction: `--record` answers it, and
+// silence would not.
+func sameRemoval(home, id, rec, found string, recRecord, foundRecord json.RawMessage) bool {
 	if rec == "" || found == "" {
 		return false
 	}
 	if rec == found {
 		return true
 	}
-	if _, err := gitBead(home, "merge-base", "--is-ancestor", rec, found); err != nil {
+	if exemptRange(home, id, rec, found) {
+		return true
+	}
+	if !sameRecord(recRecord, foundRecord) {
+		return false
+	}
+	recParent, err := gitBead(home, "rev-parse", rec+"^")
+	if err != nil {
+		return false
+	}
+	foundParent, err := gitBead(home, "rev-parse", found+"^")
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(string(recParent)) == strings.TrimSpace(string(foundParent)) {
+		return false
+	}
+	return exemptRange(home, id, strings.TrimSpace(string(recParent)), found)
+}
+
+// exemptRange reports whether from is an ancestor of to and nothing in
+// between puts id's line back — the ancestry-and-no-readdition test
+// sameRemoval runs both against a record's own commit and, when history was
+// rewritten out from under that commit, against its parent instead.
+func exemptRange(home, id, from, to string) bool {
+	if _, err := gitBead(home, "merge-base", "--is-ancestor", from, to); err != nil {
 		return false
 	}
 	out, err := gitBead(home, "log", "--format=", "-p", "--diff-merges=first-parent",
-		"--no-renames", rec+".."+found, "--", beadsJSONL)
+		"--no-renames", from+".."+to, "--", beadsJSONL)
 	if err != nil {
 		return false
 	}
 	return !readdsID(out, id)
+}
+
+// sameRecord reports whether two ledger-carried JSONL lines describe the
+// same bead state. Structural, not byte, equality: the ledger re-encodes its
+// embedded record through encoding/json, which escapes HTML-sensitive
+// characters on the way in and so can change bytes a plain string compare
+// would trip over even for the same state (rangerhq's own titles use `&`).
+// Either side missing or unparsable answers no — the false-alarm direction,
+// never the silent one.
+func sameRecord(a, b json.RawMessage) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return false
+	}
+	var ia, ib BdIssue
+	if json.Unmarshal(a, &ia) != nil || json.Unmarshal(b, &ib) != nil {
+		return false
+	}
+	return reflect.DeepEqual(ia, ib)
 }
 
 // readdsID reports whether any diff in out puts id's line back. A read it
