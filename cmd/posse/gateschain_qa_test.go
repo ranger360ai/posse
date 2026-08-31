@@ -133,7 +133,11 @@ func qaSh(t *testing.T, home, script string) (string, int) {
 	cmd := exec.Command("/bin/sh", "-s")
 	cmd.Dir = scratch
 	cmd.Stdin = strings.NewReader(script)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}
+	// PathOutsideGates, not os.Getenv("PATH") — same leak as gitOutsideGates
+	// above: a persona pane's own gate bin dir sits ahead of the real tools
+	// on the session PATH, and this script is run the way an operator's
+	// shell would run it, not the way this persona's shell would.
+	cmd.Env = []string{"PATH=" + posse.PathOutsideGates(""), "HOME=" + home}
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
