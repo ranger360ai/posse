@@ -967,7 +967,10 @@ Four things about template profiles that will bite you if nobody says them:
    $ claude --append-system-prompt="$(cat /tmp/p.md)" mcp list
    No MCP servers configured. …                    # rc=0 — bound
    $ claude --append-system-promt="$(cat /tmp/p.md)" mcp list
-   error: unknown option '--append-system-promt'   # rc=1 — control fails
+   error: unknown option '--append-system-promt=---   # rc=1 — control fails,
+   name: x                                            # glued: the option's
+   ---                                                # value is part of the
+   hello'                                             # failing token too
    ```
 
    **A passing pair proves the parser accepted the value, not that the CLI

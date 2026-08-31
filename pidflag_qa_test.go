@@ -232,7 +232,13 @@ func TestInstallSection8ProbeRecipeCarriesAControl(t *testing.T) {
 		{`--append-system-prompt="$(cat /tmp/p.md)" mcp list`, "the repair's PROBE arm, runnable as written"},
 		{`--append-system-promt="$(cat /tmp/p.md)" mcp list`, "the repair's CONTROL arm, runnable as written"},
 		{"No MCP servers configured", "what the probe arm prints when the flag bound"},
-		{"unknown option", "what the control arm prints when it did not"},
+		// "unknown option" alone survives both the glued and the separated
+		// misspelling (ranger-base-21n5), so it cannot notice the arm moving
+		// back and forth. Pin the glued arm's actual failing token instead:
+		// commander echoes the WHOLE value, so gluing with `=` means the PID
+		// itself — "name: x", the closing "hello'" — spills into the error.
+		{"unknown option '--append-system-promt=---", "the control arm is glued, so its failing token carries the `=` plus the PID's opening line, not just the flag name"},
+		{"hello'", "the PID's last line reaching the closing quote — a stale single-line error here means the shown output no longer matches the glued arm"},
 	} {
 		if !strings.Contains(recipe, want.text) {
 			t.Errorf("INSTALL.md §8: the subcommand repair is no longer runnable as written — missing %s: %q (ranger-base-1fad, pinned by ranger-base-yuhs)", want.why, want.text)
