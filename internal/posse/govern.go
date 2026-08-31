@@ -769,24 +769,23 @@ func overThresholdWindow(a *App, u PlanUsage, errw io.Writer) string {
 	return ""
 }
 
-// dialE is G6's reading: the DAY window and the plan windows.
+// dialE is G6's reading: the EPOCH window, the DAY window, and the plan
+// windows (ADR 0029 §1 amendment, bead ranger-base-jbmh: "G6 carries the
+// epoch window once the rolling-seats epoch re-key lands", ranger-base-f0y3).
+// The epoch is wall-clock-aligned (epoch.go EpochStart), so any process can
+// compute its own start and spend the same way dispatch.go's budget() does —
+// which is what makes it readable here at all.
 //
-// The `budget_pass:` window is deliberately absent, and since ADR 0028 §2
-// the reason has changed under it. It used to be that the window did not
-// exist outside a pass: it opened when `Run` did, so a view rendered from
-// another process had no pass to measure, and the day's spend under the pass
-// cap would have been a made-up number wearing a real cap's name. The epoch
-// is on the wall clock and any process can compute it, so that objection is
-// gone — what keeps the row out now is only that G6's content is ADR 0029's
-// to decide, and a scan of a second window is a cost this view does not take
-// on its own authority (ranger-base-f0y3 filed the question).
+// One scan feeds both windows, same as budget(): the floor is the earlier of
+// local midnight and the epoch start, so an epoch configured longer than a
+// day still gets one scan rather than two.
 //
 // Unset caps mean Dial E is dormant and NOTHING is scanned — the same
 // dormancy dispatch keeps, and the reason this row costs a transcript scan
 // only where the operator armed one.
 func (in GovInputs) dialE(now time.Time, plan PlanUsage) BudgetState {
 	var st BudgetState
-	_, st.DayCap = in.App.BudgetCaps(in.errw())
+	st.PassCap, st.DayCap = in.App.BudgetCaps(in.errw())
 	st.Plan = plan
 	if !st.Set() {
 		return st
@@ -795,8 +794,13 @@ func (in GovInputs) dialE(now time.Time, plan PlanUsage) BudgetState {
 	if scan == nil {
 		scan = func(t time.Time) *CostReport { return ScanCosts("", t) }
 	}
-	rep := scan(startOfDay(now))
-	st.DaySpend = rep.DayTotal(now)
+	epochStart := EpochStart(now, in.App.DispatchEpoch(in.errw()))
+	since := startOfDay(now)
+	if epochStart.Before(since) {
+		since = epochStart
+	}
+	rep := scan(since)
+	st.PassSpend, st.DaySpend = rep.PassTotal(epochStart), rep.DayTotal(now)
 	st.Unreadable = rep.ReadErr
 	st.resolve()
 	return st

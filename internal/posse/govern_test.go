@@ -494,6 +494,34 @@ func TestGovG6DormantScansNothing(t *testing.T) {
 	shopSet(t, in)
 }
 
+// ADR 0029 §1 amendment (bead ranger-base-jbmh): once the epoch re-key
+// landed (ranger-base-f0y3), G6 reads `budget_pass:` too — denominated in
+// the wall-clock epoch, not a dispatcher's own pass.
+func TestGovG6EpochWindowTripsOnEpochSpend(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "budget_pass: 10\n")
+	in := govIn(t, b)
+	in.Spend = func(time.Time) *CostReport { return spendReport(govNow, 12.50) }
+	g := find(shopSet(t, in), "G6")
+	if g == nil || g.Key != "budget-stop:epoch" || g.Class != GovUrgent {
+		t.Fatalf("G6 = %+v, want budget-stop:epoch URGENT", g)
+	}
+}
+
+// The control arm the bead names: day under cap and epoch over cap must
+// still trip G6 — the case a day-only reading is blind to, and the whole
+// reason this row costs the second in-memory sum.
+func TestGovG6DayUnderCapEpochOverCapStillTrips(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "budget_day: 100\nbudget_pass: 5\n")
+	in := govIn(t, b)
+	in.Spend = func(time.Time) *CostReport { return spendReport(govNow, 6) }
+	g := find(shopSet(t, in), "G6")
+	if g == nil || g.Key != "budget-stop:epoch" || g.Class != GovUrgent {
+		t.Fatalf("day 6%% under its $100 cap must not hide an epoch at 120%% of its $5 cap: G6 = %+v, want budget-stop:epoch URGENT", g)
+	}
+}
+
 // An unreadable ledger is not $0 spent (ADR 0018 §3). Under the cap on a
 // FLOOR is not an all-clear, so it comes back as a partial set rather than
 // as silence.
