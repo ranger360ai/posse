@@ -2,6 +2,7 @@ package posse
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -367,6 +368,129 @@ func TestLandingPageBrewPanelLinkRejectsAMissingOrUnanchoredHref(t *testing.T) {
 			t.Fatal("stripping href from the real panel must fail the pin")
 		}
 	})
+}
+
+// ranger-base-l9y shipped a live truncation on the landing panel
+// ("...and how to rev") because the only check on the terminal's width was
+// somebody remembering to look. l9y measured the budget: at 12.5px Plex
+// Mono under the <=480px mobile rule, ~37 visible characters fit on a line
+// before the panel truncates instead of wrapping (desktop is wider, ~69).
+// The mobile number is the binding constraint, so it is the one pinned
+// here. There is no browser on this box — this is a character count
+// against the source, not a rendered screenshot.
+//
+// Only comment lines are budgeted: a line whose visible text starts with
+// "#" is an explanation and must fit whole. Commands (lines starting with
+// "$") are allowed to scroll — the terminal itself is real and wide,
+// mobile CSS is not — so a long command does not trip this pin.
+const terminalCommentBudget = 37
+
+func TestLandingPageTerminalCommentsFitTheCharacterBudget(t *testing.T) {
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	comments, err := terminalCommentLines(string(index))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) == 0 {
+		t.Fatal("no comment lines found in the landing-page terminal panel — did it move or change shape?")
+	}
+	for _, line := range comments {
+		if n := len([]rune(line)); n > terminalCommentBudget {
+			t.Errorf("terminal comment exceeds the %d-character budget (%d): %q", terminalCommentBudget, n, line)
+		}
+	}
+}
+
+// The pin above is only as strong as what it rejects. Grow a real comment
+// line from the live panel past the budget — the same shape as l9y's
+// "...and how to rev" — and confirm the pin names the offending line and
+// its length rather than staying green.
+func TestTerminalCommentBudgetPinRejectsAGrownComment(t *testing.T) {
+	index, err := os.ReadFile("www/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	comments, err := terminalCommentLines(string(index))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) == 0 {
+		t.Fatal("no comment lines found in the landing-page terminal panel to mutate")
+	}
+	victim := comments[0]
+	grown := victim + ", and how to revoke it too"
+	if n := len([]rune(grown)); n <= terminalCommentBudget {
+		t.Fatalf("test fixture bug: mutated line %q (%d chars) is still within budget", grown, n)
+	}
+
+	mutated := strings.Replace(string(index), victim, grown, 1)
+	if mutated == string(index) {
+		t.Fatalf("fixture bug: victim line %q was not found verbatim in www/index.html", victim)
+	}
+
+	err = terminalCommentsFitBudget(mutated, terminalCommentBudget)
+	if err == nil {
+		t.Fatal("expected the pin to fail once a comment grows past the budget, got nil")
+	}
+	if !strings.Contains(err.Error(), grown) {
+		t.Fatalf("error must name the offending line %q; got %v", grown, err)
+	}
+	if wantLen := fmt.Sprint(len([]rune(grown))); !strings.Contains(err.Error(), wantLen) {
+		t.Fatalf("error must name the offending length (%s); got %v", wantLen, err)
+	}
+}
+
+// terminalCommentLines returns the visible text of every line in the
+// landing-page terminal panel whose stripped, entity-unescaped content
+// starts with "#": the explanation lines the character budget applies to.
+func terminalCommentLines(index string) ([]string, error) {
+	panel, err := terminalPanel(index)
+	if err != nil {
+		return nil, err
+	}
+	var comments []string
+	for _, raw := range strings.Split(panel, "\n") {
+		line := html.UnescapeString(stripHTMLTags(raw))
+		if strings.HasPrefix(line, "#") {
+			comments = append(comments, line)
+		}
+	}
+	return comments, nil
+}
+
+func terminalCommentsFitBudget(index string, budget int) error {
+	comments, err := terminalCommentLines(index)
+	if err != nil {
+		return err
+	}
+	for _, line := range comments {
+		if n := len([]rune(line)); n > budget {
+			return fmt.Errorf("terminal comment exceeds %d-character budget (%d): %q", budget, n, line)
+		}
+	}
+	return nil
+}
+
+// stripHTMLTags removes "<...>" markup, leaving the rendered text. It runs
+// before entity-unescaping: an escaped "&lt;" must stay literal text, not
+// be mistaken for a tag boundary once unescaped.
+func stripHTMLTags(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // ranger-base-88m: `make install` writes $(BINDIR)/posse — ~/.local/bin by
