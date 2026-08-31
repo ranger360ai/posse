@@ -3253,10 +3253,22 @@ shell verb that is **not refused**. Three consequences worth knowing:
   rendering of `deny:` — the same one the pre-push hook reads. One source,
   both layers.
 - The gates render to **`/posse/gates/<persona>`, a path of the image's**, so
-  two caged sessions of one persona cannot clear each other's shims. The
-  one file that must outlive the container — `refusals.log` — is
-  bind-mounted out to `gates/<p>/refusals.log`, where L1's host refusals
-  and the egress proxy's 403s already land.
+  two caged sessions of one persona cannot clear each other's shims. The one
+  file mounted out at that same name — `refusals.log` — is never the
+  canonical `gates/<p>/refusals.log` any more (ADR 0025 §4, ranger-base-l40c):
+  it is this SESSION's own spool, `state/cages/<p>/<session>/refusals.log`
+  (`CageSpoolPath`), because a bind mount cannot tell an append from a
+  rewrite and mounting the canonical log rw let a caged persona erase its
+  own refusals (`: > refusals.log`, measured live in rangerhq-pafo). A
+  host-side FOLD (`internal/posse/refusalfold.go`) is the only path from a
+  spool into the canonical log L1's host refusals and the egress proxy's
+  403s already land in: a cursor per spool (byte offset + SHA-256 of the
+  bytes up to it, `state/gates/<p>/spool-cursors/<session>`, host-only)
+  makes the fold idempotent, and a spool shorter than its own cursor, or
+  hashing different at the same length, folds as a `tampered` line naming
+  the session instead of silently losing the gap — the erasure attempt
+  becomes evidence. Folds ride host loops that already run — the dispatch
+  sweep, a session close, a relaunch — never a new daemon.
 - `realShell` now **resolves a shell that exists** (`$SHELL` if it is a
   real bash/zsh, else zsh, else bash, else `/bin/sh`). Inside the image
   `$SHELL` is unset and `/bin/zsh` is not there; the old hard-coded
@@ -3265,7 +3277,8 @@ shell verb that is **not refused**. Three consequences worth knowing:
 **The mount boundary** is the repo, and only the repo: `:ro` when the PID
 denies `Edit`/`Write`/`NotebookEdit` (any one of the three — the boundary
 is a property of the mount, not of a rule), while `{memory}`, the cage
-HOME and the refusals log stay writable. A **worktree** gets its git
+HOME and this session's refusals spool stay writable — the canonical log
+itself is never mounted (ADR 0025 §4). A **worktree** gets its git
 common dir mounted alongside, because `.git` there is a *file* pointing at
 the main repo's `.git` and L3's hooks live in it — a hook the container
 cannot see is a `git push` this tier lost.
@@ -3305,6 +3318,13 @@ paragraph needs. Stop it and the same read fails: `bd show` waits 5s for a
 daemon it cannot start, drops to direct mode and refuses with *Database out
 of sync with JSONL. Run 'bd sync --import-only' to fix.* The import is the
 daemon's, not the JSONL's.
+
+Superseded 2026-08-31 (ADR 0025 §4, ranger-base-l40c): "both refusals land
+in the host's `refusals.log`" above was true because the file was mounted
+straight into the cage — that mount is gone. They land in this session's
+spool now, and reach `refusals.log` only once something folds it (see the
+bullet above); `TestQALiveCageEscapeAttemptsOnAWritableRepo` folds
+explicitly rather than reading the log right after the container exits.
 
 **What it costs, measured on the day (2026-08-22, Docker 29.0.1):** a unix
 socket reached through a bind-mounted **directory** is not connectable —

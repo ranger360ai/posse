@@ -472,6 +472,16 @@ func (b *HerdrBackend) closeRecorded(m *HerdrMeta) error {
 	if err := b.H.CloseWorkspace(m.Workspace); err != nil {
 		return err
 	}
+	// Both of ADR 0025 §4's remaining fold points meet here: this is the
+	// SESSION CLOSE half of a relaunch, and the recreate that follows
+	// (replace, above) reuses this same session name for its own new spool.
+	// Fold what the old container wrote before that name starts filling a
+	// spool again — best effort, like every other fold site.
+	if m.Agent != "" {
+		if err := b.App.FoldRefusalsSpool(m.Agent, m.Name); err != nil {
+			b.warn("fold refusals spool for %s: %v\n", m.Name, err)
+		}
+	}
 	os.Remove(b.metaPath(m.Name))
 	return nil
 }

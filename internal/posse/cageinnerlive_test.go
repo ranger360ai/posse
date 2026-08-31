@@ -313,15 +313,21 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 			t.Errorf("the caged comment must be visible to an ordinary host `bd show`, with no manual import:\n%s", b)
 		}
 	}
-	// Both refusals land in the host's audit trail, not in the container's
-	// ephemeral filesystem: that mount is the whole reason it is a mount.
+	// Both refusals land in the host's audit trail — never by a mount any
+	// more (ADR 0025 §4), but by a host-side FOLD of this session's spool.
+	if err := a.FoldRefusalsSpool("p", "live"); err != nil {
+		t.Fatalf("fold: %v", err)
+	}
 	b, err := os.ReadFile(a.RefusalsLogPath("p"))
 	if err != nil {
 		t.Fatalf("refusals.log must survive the container: %v", err)
 	}
 	log := string(b)
 	if !strings.Contains(log, "git push") || !strings.Contains(log, "[pre-push hook]") {
-		t.Errorf("both layers must append to gates/p/refusals.log on the host:\n%s", log)
+		t.Errorf("both layers must append to gates/p/refusals.log on the host, via the fold:\n%s", log)
+	}
+	if !strings.Contains(log, "session=live") {
+		t.Errorf("a folded line must name the session it came from:\n%s", log)
 	}
 
 	// A WORKTREE, where `.git` is a file pointing at the main repo's common

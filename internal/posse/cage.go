@@ -287,8 +287,9 @@ func (a *App) CageHome(persona string) string {
 // CageMounts is everything of the host the cage can see, and nothing else:
 // the session dir, the persona's memory, the persona's PID (read-only — it
 // is the prompt, not a workspace), the rendered skills tree when the PID
-// binds skills, the persona's cage HOME, its refusals log, and whatever
-// `sockets:` asked for.
+// binds skills, the persona's cage HOME, this session's refusals SPOOL (the
+// canonical log is never mounted, ADR 0025 §4), and whatever `sockets:`
+// asked for.
 //
 // **The repo goes `:ro` for a PID that denies Edit/Write** — the mount
 // boundary of ADR 0002 §4, and the successor of L2, which cannot wrap a
@@ -341,7 +342,7 @@ func (a *App) CageHome(persona string) string {
 // because it is the only pass that has to see every OTHER mount: which
 // regions the cage can write is what decides whether a denied subtree
 // needs an overlay at all.
-func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
+func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMount {
 	ro := deniesFileWrite(ag.Deny)
 	why := "the session's repo"
 	if ro {
@@ -400,15 +401,21 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir string) []CageMount {
 		ms = append(ms, CageMount{Src: ag.SkillsStateDir, Dst: ag.SkillsStateDir, RO: true, Why: "bound skills (ADR 0007)"})
 	}
 	ms = append(ms, CageMount{Src: a.CageHome(ag.Name), Dst: e.Home, Why: "the caged runtime's HOME (seeded)"})
-	// The one file of the gates that must outlive the container. The rest of
-	// gates/<persona>/ is rendered INSIDE, at CageGatesDir, against the
-	// image's own PATH and shell (cageinner.go); the audit trail is the
-	// host's, so an inner refusal reads next to an L1 refusal on the host
-	// and next to the egress proxy's 403s in the same log.
+	// The canonical gates/<persona>/refusals.log is NEVER mounted (ADR 0025
+	// §4, ranger-base-l40c) — a bind mount cannot tell an append from a
+	// rewrite, so mounting the audit trail rw let a caged persona erase its
+	// own refusals (`: > refusals.log`, ranger-base-6uq6 item 2). What
+	// mounts instead is this SESSION's own spool
+	// (state/cages/<persona>/<session>/refusals.log, CageSpoolPath): the
+	// rest of gates/<persona>/ is rendered INSIDE at CageGatesDir, against
+	// the image's own PATH and shell (cageinner.go), and the inner render
+	// writes refusals to the same filename there, backed by the spool. A
+	// host-side fold (refusalfold.go), never the cage, is what moves those
+	// lines into the canonical log the operator reads.
 	ms = append(ms, CageMount{
-		Src: a.RefusalsLogPath(ag.Name),
+		Src: a.CageSpoolPath(ag.Name, session),
 		Dst: filepath.Join(CageGatesDir(ag.Name), "refusals.log"),
-		Why: "gates/" + ag.Name + "/refusals.log — the inner L1/L3 append to the host's audit trail",
+		Why: "this session's refusals spool — folded into gates/" + ag.Name + "/refusals.log by the host, never mounted itself (ADR 0025 §4)",
 	})
 	ms = append(ms, a.CageSocketMounts(ag)...)
 	return cagePathScopedOverlays(ms, ag, dir)
@@ -904,11 +911,12 @@ func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string,
 	if err := CheckSockets(ag); err != nil {
 		return "", err
 	}
-	// The audit trail the inner gates mount and append to. Created here and
-	// not best-effort: a bind mount of a file that is not there makes a
-	// DIRECTORY, and the shims would then append refusals to a path that
-	// silently eats them.
-	if _, err := a.RefusalsLog(ag.Name); err != nil {
+	// This session's refusals spool — created here and not best-effort, for
+	// the same reason RefusalsLog always was: a bind mount of a file that is
+	// not there makes a DIRECTORY, and the inner shims would then append
+	// refusals to a path that silently eats them. Never the canonical log
+	// itself (ADR 0025 §4) — that mount is gone.
+	if _, err := a.EnsureCageSpool(ag.Name, session); err != nil {
 		return "", err
 	}
 	image := a.CageImage()
@@ -949,7 +957,7 @@ func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string,
 	if a.CageInnerGatesReady(e, image) {
 		innerArgv = append(GatesWrapArgv(ag.Name, rt), innerArgv...)
 	}
-	mounts := a.CageMounts(ag, e, dir)
+	mounts := a.CageMounts(ag, e, dir, session)
 	if promptFile != "" {
 		mounts = append(mounts, CageMount{Src: promptFile, Dst: promptFile, RO: true,
 			Why: "the dispatched work prompt the launch line reads (ADR 0013 §2)"})

@@ -97,10 +97,11 @@ func TestCageRenderMountsAndEnvNames(t *testing.T) {
 	ag := cageAgent(t, a, "skills: [dataviz]\n")
 	e, _ := a.LoadEngine("fake")
 	dir := t.TempDir()
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 	// The repo, the memory dir, the PID (read-only), the skills tree
-	// (read-only), the cage HOME, the refusals log the inner gates append
-	// to (rangerhq-6so) — and nothing else of the host.
+	// (read-only), the cage HOME, this session's refusals spool the inner
+	// gates append to (ADR 0025 §4, rangerhq-6so) — and nothing else of the
+	// host.
 	if len(ms) != 6 {
 		t.Fatalf("want exactly the six mounts, got %d: %+v", len(ms), ms)
 	}
@@ -118,13 +119,14 @@ func TestCageRenderMountsAndEnvNames(t *testing.T) {
 	if ms[4].Src != a.CageHome("p") || ms[4].Dst != "/root" {
 		t.Errorf("the cage HOME mounts at the image's HOME: %+v", ms[4])
 	}
-	// The one file of the gates that outlives the container: rendered
-	// inside, logged to the host's audit trail.
-	if ms[5].Src != a.RefusalsLogPath("p") || ms[5].Dst != CageGatesDir("p")+"/refusals.log" || ms[5].RO {
-		t.Errorf("refusals.log mounts out of the cage, writable: %+v", ms[5])
+	// The spool, never the canonical log (ADR 0025 §4): rendered inside,
+	// folded into the host's audit trail by a host process, never by the
+	// cage.
+	if ms[5].Src != a.CageSpoolPath("p", "s1") || ms[5].Dst != CageGatesDir("p")+"/refusals.log" || ms[5].RO {
+		t.Errorf("the refusals spool mounts out of the cage, writable, never the canonical log: %+v", ms[5])
 	}
 	// A PID that binds no skills gets no skills mount.
-	if got := a.CageMounts(cageAgent(t, a, ""), e, dir); len(got) != 5 {
+	if got := a.CageMounts(cageAgent(t, a, ""), e, dir, "s1"); len(got) != 5 {
 		t.Errorf("no skills bound → no skills mount: %+v", got)
 	}
 

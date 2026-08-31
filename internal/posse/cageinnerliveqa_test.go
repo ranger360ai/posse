@@ -323,12 +323,10 @@ echo "stripped=$(env -i /usr/bin/git push origin main 2>&1 | grep -ci refused)"
 echo "noverify=$(/usr/bin/git push --no-verify origin main 2>&1 | grep -ci refused)"
 echo "hookspath=$(/usr/bin/git -c core.hooksPath= push origin main 2>&1 | grep -ci refused)"
 echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | grep -ci refused)"
-before=$(wc -c < "$RHQ_GATES_DIR/refusals.log")
-if : > "$RHQ_GATES_DIR/refusals.log" 2>/dev/null; then echo "truncate=ok"; else echo "truncate=refused"; fi
-echo "shrank=$([ "$(wc -c < "$RHQ_GATES_DIR/refusals.log")" -lt "$before" ] && echo yes || echo no)"
 `
 	deny := []string{"Bash(git push:*)"}
-	got := qaRunCage(t, a, e, "cage: container\ndeny: ["+strings.Join(deny, ", ")+"]\n", dir, "qa-rw", deny, probe)
+	session := "qa-rw"
+	got := qaRunCage(t, a, e, "cage: container\ndeny: ["+strings.Join(deny, ", ")+"]\n", dir, session, deny, probe)
 
 	// The repo really is writable here — otherwise the escapes would be
 	// "blocked" by a boundary this case is meant to have removed.
@@ -389,13 +387,54 @@ echo "shrank=$([ "$(wc -c < "$RHQ_GATES_DIR/refusals.log")" -lt "$before" ] && e
 		t.Errorf("the combined escape-C probe did not run: %q", got["combined"])
 	}
 
-	// (2) The audit trail is mounted read-write because the shims append to
-	// it, so a caged persona can shorten it. The refusals it wrote before
-	// doing so are still gone.
-	if got["truncate"] == "ok" && got["shrank"] == "yes" {
-		t.Logf("MEASURED (rangerhq-pafo, 2026-08-27): the caged session can TRUNCATE gates/p/refusals.log on the host — the mount is read-write because the inner shims append to it, and nothing distinguishes an append from a rewrite")
-	} else {
-		t.Logf("MEASURED: the host audit trail resisted truncation from inside (truncate=%q shrank=%q)", got["truncate"], got["shrank"])
+	// (2) ADR 0025 §4's flip of the rangerhq-pafo finding: the canonical log
+	// is never mounted any more, so what a caged persona can truncate is
+	// only its own session's SPOOL — and truncating that no longer erases
+	// anything the operator reads. Fold once first, so the canonical log
+	// holds this session's git-push refusal and the cursor holds a non-zero
+	// offset; only then does a truncate have a fold-recorded state to lie
+	// about.
+	canonical := a.RefusalsLogPath("p")
+	if err := a.FoldRefusalsSpool("p", session); err != nil {
+		t.Fatalf("fold before truncate: %v", err)
+	}
+	before, err := os.ReadFile(canonical)
+	if err != nil {
+		t.Fatalf("canonical log must exist after a fold: %v", err)
+	}
+	if !strings.Contains(string(before), "session="+session) || !strings.Contains(string(before), "git push") {
+		t.Fatalf("the fold must have moved the git-push refusal into the canonical log, tagged with its session:\n%s", before)
+	}
+
+	// The same session's spool, attacked in a second run — a relaunch's own
+	// shape, since a caged process is never mid-session when the operator's
+	// host asks it anything.
+	trunc := qaRunCage(t, a, e, "cage: container\ndeny: ["+strings.Join(deny, ", ")+"]\n", dir, session, deny,
+		`if : > "$RHQ_GATES_DIR/refusals.log" 2>/dev/null; then echo "truncate=ok"; else echo "truncate=refused"; fi`+"\n")
+	if trunc["truncate"] != "ok" {
+		t.Errorf("truncating the SPOOL from inside must still succeed — it is a session-local file the persona owns, not the audit trail: %q", trunc["truncate"])
+	}
+	after, err := os.ReadFile(canonical)
+	if err != nil {
+		t.Fatalf("canonical log must survive the container: %v", err)
+	}
+	if len(after) < len(before) {
+		t.Errorf("the host canonical log must never SHRINK from inside the cage — it was never mounted (ADR 0025 §4); before=%d after=%d", len(before), len(after))
+	}
+
+	// The next fold is where the truncation becomes visible: the spool is
+	// now shorter than the cursor's own offset, so this is TAMPER, not "no
+	// new lines" — the erasure attempt becomes evidence (ADR 0025 §4
+	// verification 2).
+	if err := a.FoldRefusalsSpool("p", session); err != nil {
+		t.Fatalf("fold after truncate: %v", err)
+	}
+	final, err := os.ReadFile(canonical)
+	if err != nil {
+		t.Fatalf("canonical log must survive the second fold: %v", err)
+	}
+	if !strings.Contains(string(final), "refusals spool tampered [fold] session="+session) {
+		t.Errorf("a spool shorter than its cursor must fold as TAMPERED, naming the session:\n%s", final)
 	}
 
 	// Whatever the two above answer, the boundary the ADR actually promises

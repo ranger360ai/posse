@@ -94,16 +94,14 @@ touch "$0/.probe" 2>/dev/null && echo "root=writable" || echo "root=refused"`
 		if err := ag.EnsureMemoryDir(); err != nil {
 			t.Fatal(err)
 		}
-		// The refusals log is a FILE mount; a bind of a missing source is a
-		// directory the engine makes, which is a different fixture from the
-		// one a real launch has (WriteCageLaunch seeds it).
-		if err := os.MkdirAll(filepath.Dir(a.RefusalsLogPath(ag.Name)), 0o755); err != nil {
+		// The refusals spool is a FILE mount (ADR 0025 §4: never the
+		// canonical log); a bind of a missing source is a directory the
+		// engine makes, which is a different fixture from the one a real
+		// launch has (EnsureCageSpool seeds it).
+		if _, err := a.EnsureCageSpool(ag.Name, "s1"); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(a.RefusalsLogPath(ag.Name), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		ms := a.CageMounts(ag, e, dir)
+		ms := a.CageMounts(ag, e, dir, "s1")
 		argv := e.RenderArgv(CageRender{
 			Name: "posse-yu5-live", Image: "busybox", Workdir: dir, Mounts: ms,
 			Inner: []string{"sh", "-c", probe, dir},

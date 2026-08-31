@@ -1319,7 +1319,12 @@ func main() {
 		}
 		cwd, _ := os.Getwd()
 		fmt.Fprintf(out, "%s at cage container in %s — what crosses the boundary:\n", ag.Name, posse.AbbrevHome(cwd))
-		for _, m := range a.CageMounts(ag, e, cwd) {
+		// A preview, not a real launch, so there is no live session id to ask
+		// for — posse.SessionFor's deterministic key is the one an ordinary
+		// launch in this dir would get, and the refusals-spool mount it
+		// names (ADR 0025 §4) is illustrative on that basis, same as every
+		// other line here.
+		for _, m := range a.CageMounts(ag, e, cwd, posse.SessionFor(ag.Name, cwd)) {
 			mode := "rw"
 			if m.RO {
 				mode = "ro"

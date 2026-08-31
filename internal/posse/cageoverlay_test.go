@@ -89,7 +89,7 @@ func TestDenyListShapeOverlaysTheSubtreeReadOnly(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit(docs/adr/**), Write(docs/adr/**)]\n")
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 
 	wantMode(t, ms, dir, false, "deny-list")
 	wantMode(t, ms, filepath.Join(dir, "docs/adr"), true, "deny-list")
@@ -122,7 +122,7 @@ func TestAllowListShapeOverlaysWritableExtras(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: [docs/adr]\n")
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 
 	wantMode(t, ms, dir, true, "allow-list")
 	wantMode(t, ms, filepath.Join(dir, "docs/adr"), false, "allow-list")
@@ -152,7 +152,7 @@ func TestWritableExtraInsideADeniedSubtreeIsDropped(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit, Write, Edit(docs/**)]\nwritable: [docs/adr]\n")
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 
 	wantMode(t, ms, dir, true, "deny-wins")
 	wantNoMount(t, ms, filepath.Join(dir, "docs/adr"), "deny-wins")
@@ -161,7 +161,7 @@ func TestWritableExtraInsideADeniedSubtreeIsDropped(t *testing.T) {
 	// pass runs first: the extra is the region, the deny is inside it. The
 	// deeper mount wins, so `docs` is writable and `docs/adr` is not.
 	ag2 := cageAgent(t, a, "cage: container\ndeny: [Edit, Write, Edit(docs/adr/**)]\nwritable: [docs]\n")
-	ms2 := a.CageMounts(ag2, e, dir)
+	ms2 := a.CageMounts(ag2, e, dir, "s1")
 	wantMode(t, ms2, dir, true, "extra containing a deny")
 	wantMode(t, ms2, filepath.Join(dir, "docs"), false, "extra containing a deny")
 	wantMode(t, ms2, filepath.Join(dir, "docs/adr"), true, "extra containing a deny")
@@ -178,20 +178,20 @@ func TestBareAndFileFilterSpellingsMountNoOverlay(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
 
-	long := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(**), Write(**)]\n"), e, dir)
+	long := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(**), Write(**)]\n"), e, dir, "s1")
 	wantMode(t, long, dir, true, "Edit(**)")
-	if len(long) != len(a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir)) {
+	if len(long) != len(a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir, "s1")) {
 		t.Errorf("Edit(**) must mount exactly what Edit mounts:\n%s", showMounts(long))
 	}
 
-	filt := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(**/*.md), Write(docs/adr/**/*.md)]\n"), e, dir)
+	filt := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(**/*.md), Write(docs/adr/**/*.md)]\n"), e, dir, "s1")
 	wantMode(t, filt, dir, false, "file filter")
 	wantNoMount(t, filt, filepath.Join(dir, "docs/adr"), "file filter")
 	wantNoMount(t, filt, filepath.Join(dir, "docs"), "file filter")
 
 	// A PID with only the bare rule is unchanged (ADR 0014 verification 5):
 	// same `:ro` repo, plus the carve-outs, and no overlay invented for it.
-	bare := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir)
+	bare := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir, "s1")
 	wantMode(t, bare, dir, true, "bare")
 	wantMode(t, bare, filepath.Join(dir, ".beads"), false, "bare")
 	wantMode(t, bare, filepath.Join(dir, ".git"), false, "bare")
@@ -214,14 +214,14 @@ func TestDeniedSubtreeAbsentIsStillDeniedAndInvisibleIsNotMounted(t *testing.T) 
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
 
-	absent := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(docs/future/**)]\n"), e, dir)
+	absent := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit(docs/future/**)]\n"), e, dir, "s1")
 	wantMode(t, absent, filepath.Join(dir, "docs/future"), true, "absent subtree")
 	if _, err := os.Stat(filepath.Join(dir, "docs/future")); err == nil {
 		t.Errorf("rendering the mount list must not create anything on the host")
 	}
 
 	outside := absResolve(t.TempDir())
-	away := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit("+outside+"/**)]\n"), e, dir)
+	away := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit("+outside+"/**)]\n"), e, dir, "s1")
 	wantNoMount(t, away, outside, "subtree outside every mount")
 }
 
@@ -242,7 +242,7 @@ func TestOverlayOfAnExistingMountFlipsItRatherThanDuplicating(t *testing.T) {
 	if err := ag.EnsureMemoryDir(); err != nil {
 		t.Fatal(err)
 	}
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 
 	wantMode(t, ms, ag.MemoryDir, true, "memory denied")
 	seen := 0
@@ -276,9 +276,9 @@ func TestNoShapeRendersADuplicateMountDestination(t *testing.T) {
 			t.Fatal(err)
 		}
 		seen := map[string]bool{}
-		for _, m := range a.CageMounts(ag, e, dir) {
+		for _, m := range a.CageMounts(ag, e, dir, "s1") {
 			if seen[m.Dst] {
-				t.Errorf("%q renders %s twice:\n%s", front, m.Dst, showMounts(a.CageMounts(ag, e, dir)))
+				t.Errorf("%q renders %s twice:\n%s", front, m.Dst, showMounts(a.CageMounts(ag, e, dir, "s1")))
 			}
 			seen[m.Dst] = true
 		}
@@ -318,7 +318,7 @@ func TestWritableIsReadTheSameWayByBothWalls(t *testing.T) {
 		}
 	}
 	// ...and so does the mount list, for the extra that is a real directory.
-	wantMode(t, a.CageMounts(ag, e, dir), filepath.Join(dir, "docs/adr"), false, "writable at L4")
+	wantMode(t, a.CageMounts(ag, e, dir, "s1"), filepath.Join(dir, "docs/adr"), false, "writable at L4")
 	// A relative extra with no session dir to join is dropped rather than
 	// guessed at — the same answer Resolve gives a relative subtree glob.
 	if got := pidWritableExtras(ag, ""); len(got) != 1 || got[0] != want[1] {
@@ -338,7 +338,7 @@ func TestWritableExtraThatIsNotADirectoryIsNotMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: [docs/nope, NOTES]\n")
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 	wantNoMount(t, ms, filepath.Join(dir, "docs/nope"), "absent extra")
 	wantNoMount(t, ms, filepath.Join(dir, "NOTES"), "extra that is a file")
 	// And the repo is still `:ro`, so nothing was quietly opened instead.
@@ -353,7 +353,7 @@ func TestWritableExtraThatIsNotADirectoryIsNotMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: ["+
-		filepath.Join(away, "nope")+", "+filepath.Join(away, "file")+", "+away+"]\n"), e, dir)
+		filepath.Join(away, "nope")+", "+filepath.Join(away, "file")+", "+away+"]\n"), e, dir, "s1")
 	wantNoMount(t, out, filepath.Join(away, "nope"), "absent extra outside the repo")
 	wantNoMount(t, out, filepath.Join(away, "file"), "extra outside the repo that is a file")
 	wantMode(t, out, away, false, "extra outside the repo that is a directory")
@@ -378,7 +378,7 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, front := range []string{"cage: container\ndeny: [Edit, Write]\n", "cage: container\n"} {
-		ms := a.CageMounts(cageAgent(t, a, front), e, dir)
+		ms := a.CageMounts(cageAgent(t, a, front), e, dir, "s1")
 		wantMode(t, ms, target, false, "redirect target ("+front+")")
 		wantNoMount(t, ms, store, "the instance repo itself")
 		wantNoMount(t, ms, filepath.Join(store, ".git"), "the instance repo's git dir")
@@ -423,7 +423,7 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	common := filepath.Dir(hooks)
-	ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt)
+	ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt, "s1")
 	wantMode(t, ms, wt, true, "worktree repo")
 	wantMode(t, ms, common, false, "worktree git common dir")
 	// And `<wt>/.git` is a file, so nothing tried to overlay it — a bind of
@@ -451,7 +451,7 @@ func TestOverlayIsSpelledTheWayTheRepoMountIs(t *testing.T) {
 		t.Fatalf("the fixture must be a symlink the resolver actually moves: %s", link)
 	}
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit(docs/adr/**)]\n")
-	ms := a.CageMounts(ag, e, link)
+	ms := a.CageMounts(ag, e, link, "s1")
 
 	if ms[0].Dst != link {
 		t.Fatalf("the repo mounts at the path the session was given: %+v", ms[0])
@@ -473,7 +473,7 @@ func TestOverlayIsSpelledTheWayTheRepoMountIs(t *testing.T) {
 	}
 	// And an allow-direction overlay is spelled the same way.
 	ag2 := cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: [docs/adr]\n")
-	w, ok := mountAt(a.CageMounts(ag2, e, link), filepath.Join(link, "docs/adr"))
+	w, ok := mountAt(a.CageMounts(ag2, e, link, "s1"), filepath.Join(link, "docs/adr"))
 	if !ok || w.RO || w.Dst != filepath.Join(link, "docs/adr") {
 		t.Errorf("a writable: extra lands inside the repo mount too: %+v", w)
 	}

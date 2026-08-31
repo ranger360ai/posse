@@ -81,6 +81,14 @@ func (a *App) AutoReap() bool {
 // that dispatched real work does not fail because a reap sweep could not
 // list sessions.
 func (d *Dispatcher) autoReapPass() {
+	// The refusals-spool fold (ADR 0025 §4, refusalfold.go) rides this sweep
+	// for the same reason the reap itself does: it is a host loop that
+	// already runs at pass start, mid-pass and pass epilogue, and every one
+	// of those is a fold point the ADR names. Unconditional, ahead of the
+	// NoReap/AutoReap gate below: whether closed sessions get KILLED is a
+	// reap policy, and the audit trail's own integrity is not that policy's
+	// to hold hostage.
+	d.foldRefusalSpools()
 	if d.NoReap || !d.App.AutoReap() {
 		return
 	}
@@ -214,4 +222,28 @@ func (d *Dispatcher) settledForReap(s HerdrSession) bool {
 		return ok && time.Since(m.Launched) >= d.RelaunchGrace
 	}
 	return false // working, blocked: somebody is in there
+}
+
+// foldRefusalSpools folds every live session's refusals spool into its
+// persona's canonical log (ADR 0025 §4, refusalfold.go). Every session with
+// a name and a persona, not just the ones settledForReap would act on: a
+// long-lived session that is never reaped still needs its spool folded on a
+// bounded cadence, or the tamper window this design accepts (lines
+// appended and then truncated BETWEEN two folds) is unbounded instead of
+// "the sweep cadence". A fold failure is this sweep's own to swallow, the
+// same as a read failure above — a pass with real beads to dispatch does
+// not fail because one persona's spool could not be folded.
+func (d *Dispatcher) foldRefusalSpools() {
+	sessions, err := d.HB.Sessions()
+	if err != nil {
+		return
+	}
+	for _, s := range sessions {
+		if s.Agent == "" || s.Name == "" {
+			continue
+		}
+		if err := d.App.FoldRefusalsSpool(s.Agent, s.Name); err != nil {
+			fmt.Fprintf(d.errw(), "fold refusals spool for %s: %v\n", s.Name, err)
+		}
+	}
 }

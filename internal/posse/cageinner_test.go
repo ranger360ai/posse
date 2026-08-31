@@ -133,15 +133,15 @@ func TestMountBoundaryIsTheRepoAndOnlyTheRepo(t *testing.T) {
 	e, _ := a.LoadEngine("fake")
 	dir := t.TempDir()
 	ag := cageAgent(t, a, "cage: container\ndeny: [Write]\n")
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 	if !ms[0].RO || !strings.Contains(ms[0].Why, "READ-ONLY") {
 		t.Errorf("a PID denying Write gets the repo :ro: %+v", ms[0])
 	}
 	for _, m := range ms[1:] {
 		switch m.Src {
-		case ag.MemoryDir, a.CageHome("p"), a.RefusalsLogPath("p"):
+		case ag.MemoryDir, a.CageHome("p"), a.CageSpoolPath("p", "s1"):
 			if m.RO {
-				t.Errorf("memory, HOME and the refusals log stay writable: %+v", m)
+				t.Errorf("memory, HOME and the refusals spool stay writable: %+v", m)
 			}
 		}
 	}
@@ -152,7 +152,7 @@ func TestMountBoundaryIsTheRepoAndOnlyTheRepo(t *testing.T) {
 	}
 	// No such deny, no such boundary — and parity says so rather than the
 	// mount quietly appearing.
-	if plain := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir); plain[0].RO {
+	if plain := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir, "s1"); plain[0].RO {
 		t.Errorf("a PID with no Edit/Write deny keeps a writable repo: %+v", plain[0])
 	}
 }
@@ -191,16 +191,16 @@ func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
 	}
 	common = filepath.Dir(common)
 	found := false
-	for _, m := range a.CageMounts(ag, e, wt) {
+	for _, m := range a.CageMounts(ag, e, wt, "s1") {
 		if m.Src == common && m.Dst == common {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("the worktree's git common dir (%s) must be mounted — .git/hooks/pre-push lives there:\n%+v", common, a.CageMounts(ag, e, wt))
+		t.Errorf("the worktree's git common dir (%s) must be mounted — .git/hooks/pre-push lives there:\n%+v", common, a.CageMounts(ag, e, wt, "s1"))
 	}
 	// An ordinary repo keeps its .git under the repo mount: nothing extra.
-	for _, m := range a.CageMounts(ag, e, main) {
+	for _, m := range a.CageMounts(ag, e, main, "s1") {
 		if m.Src == filepath.Join(main, ".git") {
 			t.Errorf("an ordinary repo needs no second mount: %+v", m)
 		}
@@ -222,7 +222,7 @@ func TestSocketsAreOffUnlessThePIDNamesThem(t *testing.T) {
 	sock := SocketID()
 
 	plain := cageAgent(t, a, "cage: container\n")
-	for _, m := range a.CageMounts(plain, e, dir) {
+	for _, m := range a.CageMounts(plain, e, dir, "s1") {
 		if m.Src == sock {
 			t.Errorf("the herdr socket must not be mounted by default: %+v", m)
 		}
@@ -233,13 +233,13 @@ func TestSocketsAreOffUnlessThePIDNamesThem(t *testing.T) {
 
 	held := cageAgent(t, a, "cage: container\nsockets: [herdr]\n")
 	found := false
-	for _, m := range a.CageMounts(held, e, dir) {
+	for _, m := range a.CageMounts(held, e, dir, "s1") {
 		if m.Src == sock && m.Dst == sock && !m.RO {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("sockets: [herdr] mounts it, same path, writable (a socket is spoken to): %+v", a.CageMounts(held, e, dir))
+		t.Errorf("sockets: [herdr] mounts it, same path, writable (a socket is spoken to): %+v", a.CageMounts(held, e, dir, "s1"))
 	}
 	// HOME inside is the image's, so posse's own default resolution would look
 	// in /root and find nothing: the launch names it.
@@ -329,11 +329,12 @@ func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
 	if !strings.Contains(line, `"exec `+strings.Split(inner, " ")[0]) {
 		t.Errorf("the runtime keeps its own shell behind the wrap:\n%s", line)
 	}
-	// The audit trail the inner gates append to has to EXIST before the
-	// engine mounts it: a bind mount of a missing file makes a directory,
-	// and the shims would then append refusals into a path that eats them.
-	if st, err := os.Stat(a.RefusalsLogPath("p")); err != nil || st.IsDir() {
-		t.Errorf("refusals.log must be a file the launch created: %v", err)
+	// This session's spool — never the canonical log (ADR 0025 §4) — has to
+	// EXIST before the engine mounts it: a bind mount of a missing file
+	// makes a directory, and the shims would then append refusals into a
+	// path that eats them.
+	if st, err := os.Stat(a.CageSpoolPath("p", "s1")); err != nil || st.IsDir() {
+		t.Errorf("the refusals spool must be a file the launch created: %v", err)
 	}
 	// An image that cannot render leaves the runtime's line alone rather
 	// than putting a word on it that the container would die on — parity has
@@ -364,7 +365,7 @@ func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
 	// No store, no mount. A bind whose source does not exist is a mountpoint
 	// the engine has to CREATE on a read-only mount, which is the failure
 	// rangerhq-6so measured on `.beads/bd.sock`.
-	for _, m := range a.CageMounts(ag, e, dir) {
+	for _, m := range a.CageMounts(ag, e, dir, "s1") {
 		if m.Src == beads {
 			t.Errorf("no .beads directory → nothing to carve out: %+v", m)
 		}
@@ -372,7 +373,7 @@ func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
 	if err := os.MkdirAll(beads, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ms := a.CageMounts(ag, e, dir)
+	ms := a.CageMounts(ag, e, dir, "s1")
 	at := -1
 	for i, m := range ms {
 		if m.Src == beads {
@@ -398,7 +399,7 @@ func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
 	// A repo nobody made read-only has nothing to carve out of: the store is
 	// already writable on the repo mount and a second bind would only be a
 	// second thing to explain.
-	for _, m := range a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir) {
+	for _, m := range a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir, "s1") {
 		if m.Src == beads {
 			t.Errorf("a read-write repo needs no carve-out: %+v", m)
 		}

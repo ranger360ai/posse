@@ -1878,6 +1878,15 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	if _, err := b.AgentTarget(name); err == nil {
 		return false, nil // an agent is there after all
 	}
+	// A real relaunch from here down — one of ADR 0025 §4's fold points.
+	// The old container is gone (its CLI crashed or exited, which is why
+	// this path fired at all) but the spool it wrote to is a host file and
+	// outlives it; fold whatever it holds before a new container starts
+	// appending to the same path. Best effort, same as every other fold
+	// site: a fold failure must not block reviving a dead CLI.
+	if err := b.App.FoldRefusalsSpool(m.Agent, name); err != nil {
+		b.warn("fold refusals spool for %s: %v\n", name, err)
+	}
 	ag, err := b.App.LoadAgent(m.Agent)
 	if err != nil {
 		return false, err
@@ -2334,6 +2343,14 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	l := &KillLanding{}
 	if !hadMeta || s.Foreign {
 		return l, nil
+	}
+	// A session close is one of ADR 0025 §4's fold points: whatever the
+	// inner shims wrote to this session's spool after the last sweep, fold
+	// it in now rather than leave it for the next pass to find. Best
+	// effort, the same as the sweep's own — a fold failure is not a reason
+	// to fail a kill that has already closed the workspace.
+	if err := b.App.FoldRefusalsSpool(m.Agent, name); err != nil {
+		b.warn("fold refusals spool for %s: %v\n", name, err)
 	}
 	// The commit, after the workspace is closed and so after the last
 	// writer to that file is gone. It runs on every kill — --no-land, the

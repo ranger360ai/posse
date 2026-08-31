@@ -30,9 +30,13 @@ package posse
 //     to a mount. Two caged sessions of one persona are two containers, and
 //     a shared render dir would have each clearing the other's shims — the
 //     same reason the host's gates dir must not be mounted in. What *is*
-//     mounted is the single file that has to outlive the container:
-//     `refusals.log`, so an inner refusal lands in the same audit trail as
-//     an L1 refusal on the host and as the egress proxy's 403s.
+//     mounted at that same filename is this SESSION's own refusals SPOOL
+//     (CageSpoolPath, refusalfold.go) — never the canonical
+//     gates/<persona>/refusals.log, which a caged process could otherwise
+//     truncate through the mount (ADR 0025 §4, ranger-base-6uq6 item 2). A
+//     host-side fold moves an inner refusal from the spool into the same
+//     audit trail an L1 refusal on the host and the egress proxy's 403s
+//     already land in.
 //   - L3 rides in on its own. `.git/hooks/pre-push` is POSIX sh on the repo
 //     mount and reads only RHQ_TOOLS_DENY / RHQ_GATES_DIR / RHQ_PERSONA,
 //     all forwarded — except in a worktree, where `.git` is a *file*
@@ -73,8 +77,10 @@ func CageStateApp() *App { return &App{StateDir: CageStateRoot} }
 func CageGatesDir(persona string) string { return CageStateApp().GatesDir(persona) }
 
 // RefusalsLogPath is gates/<persona>/refusals.log on the host — L1's audit
-// trail, which the cage mounts so an inner refusal is not lost with the
-// container. RefusalsLog creates it; this only names it.
+// trail. Never mounted into a cage (ADR 0025 §4): a caged session's inner
+// refusals land in its own spool (CageSpoolPath) and reach this file only
+// through a host-side fold (refusalfold.go). RefusalsLog creates it; this
+// only names it.
 func (a *App) RefusalsLogPath(persona string) string {
 	return filepath.Join(a.GatesDir(persona), "refusals.log")
 }
