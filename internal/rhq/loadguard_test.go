@@ -6,6 +6,7 @@ package rhq
 // never do in a test is read the machine the suite is running on.
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -438,6 +439,9 @@ func TestParseEtime(t *testing.T) {
 // parser looks, which is the half that is platform code.
 func TestSysTopCPUReadsThisBox(t *testing.T) {
 	procs, err := SysTopCPU()
+	if errors.Is(err, os.ErrPermission) {
+		t.Skipf("SysTopCPU: %v — cage denies exec of ps, not a parser fault", err)
+	}
 	if err != nil {
 		t.Fatalf("SysTopCPU: %v", err)
 	}
