@@ -21,16 +21,16 @@ package rhq
 // crew-wide Bash allowlist grant (`Bash(<cmd>:*)` stated as granted to every
 // PID here). Neither has an OpsPatterns class and this pin cannot see them —
 // a clean run below is not clearance for those two. That gap is deliberate,
-// not unmeasured: hoover ruled the general case un-lintable on
+// not unmeasured: the general case was ruled un-lintable on
 // ranger-base-xsw5, because both shapes are ALSO the software's own public
 // vocabulary (seatbelt.go emits the same rule shape for everyone;
 // pidcheck.go:114's own doc comment uses Bash(posse:*) as its example), so
 // the only tell is deixis — "this machine", "here", "the crew's" — and a
 // source-wide grep on that hit ~20 legitimate uses to one violation. A
 // pattern here would be the same trade. What covers this class instead: the
-// human disclosure-scrub review that caught ranger-base-xsw5 (hoover's
-// process on ranger-base-5356), not an automated pin — read a changelog
-// entry for those two shapes by eye before it ships.
+// human disclosure-scrub review that caught ranger-base-xsw5 (the security
+// review process on ranger-base-5356), not an automated pin — read a
+// changelog entry for those two shapes by eye before it ships.
 
 import (
 	"os"
