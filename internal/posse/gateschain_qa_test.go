@@ -291,8 +291,8 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	for _, want := range []string{
 		"refused by posse gate",
 		"git prepared this commit itself (revert)",
-		"finish it:  git commit -F - -- b.txt",
-		"or undo it: git restore --source=HEAD --staged --worktree -- b.txt",
+		"finish it:  git commit -F - -- 'b.txt'",
+		"or undo it: git restore --source=HEAD --staged --worktree -- 'b.txt'",
 		"next time:  git revert --no-commit <sha>",
 	} {
 		if !strings.Contains(out, want) {

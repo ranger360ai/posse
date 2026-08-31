@@ -2020,6 +2020,20 @@ const sharedIndexBody = `
 # the operator's own included (rangerhq-lt2w). The tree is what makes the
 # commit unsafe, and the tree does not care who typed it.
 posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+# ranger-base-58to: the two prescribed lines below are commands, meant to be
+# pasted into a shell — so the paths in them have to survive that paste.
+# 'git diff --name-only' C-quotes any path with a non-ASCII byte
+# (core.quotePath is on by default) and leaves a path with a space bare;
+# neither is what a shell will accept back. core.quotePath=false turns the
+# quoting off, and each path is then wrapped in single quotes with any
+# embedded quote escaped the POSIX way ('\'') — round-trips through a shell
+# byte-for-byte. Newline-delimited, like the code it replaces: a path with a
+# literal newline in it is already outside what --name-only can round-trip.
+posse_qcached() {
+  git -c core.quotePath=false diff --cached --name-only HEAD 2>/dev/null | while IFS= read -r posse_p; do
+    printf "'%s' " "$(printf '%s' "$posse_p" | sed "s/'/'\\\\''/g")"
+  done
+}
 # THE EXEMPTION ASKS ONE QUESTION: is there a safe form to point at? "An
 # operation is in progress" is not that question (ranger-base-08a2). git
 # refuses a pathspec outright in exactly two states — MERGE_HEAD and
@@ -2185,7 +2199,7 @@ fi
   # costs a confusing sentence, never an opening in the wall, which is why
   # MERGE_MSG is trusted here and not above.
   if [ -f "$posse_gitdir/MERGE_MSG" ] && cmp -s "$1" "$posse_gitdir/MERGE_MSG"; then
-    posse_staged=$(git diff --cached --name-only HEAD 2>/dev/null | tr '\n' ' ')
+    posse_staged=$(posse_qcached)
     echo "git prepared this commit itself (revert): it staged the change into the"
     echo "shared index BEFORE this hook could refuse, so the change is sitting there"
     echo "now. It starts bounded — git revert only begins from an index matching"
@@ -2199,7 +2213,7 @@ fi
     # their own. REVERT_HEAD is no longer an exemption — a pathspec IS
     # accepted mid-revert — so it is free to word the refusal, which is all
     # it was ever safe for.
-    posse_staged=$(git diff --cached --name-only HEAD 2>/dev/null | tr '\n' ' ')
+    posse_staged=$(posse_qcached)
     echo "A revert is in progress (REVERT_HEAD) and its change is already staged in"
     echo "the shared index — along with anything else that is staged there, which is"
     echo "why this form is refused and not exempted: a pathspec works here."

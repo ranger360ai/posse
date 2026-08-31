@@ -22,11 +22,11 @@ import (
 // left the revert staged in the SHARED index, directly above the sentence
 // telling the persona not to reach for `git reset --hard`.
 //
-// SKIPPED until ranger-base-58to is fixed. Un-skip and it goes
-// red on the first assertion below.
+// Fixed by ranger-base-58to: gates.go now builds these lines from
+// posse_qcached, which turns core.quotePath off and single-quotes each path,
+// POSIX-escaping any embedded quote, instead of interpolating git's quoted,
+// space-delimited list raw.
 func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
-	t.Skip("ranger-base-58to: the refusal interpolates git's quoted path list unquoted — un-skip with the fix")
-
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
