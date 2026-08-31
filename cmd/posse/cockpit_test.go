@@ -546,11 +546,12 @@ func TestCockpitHolderColumnClips(t *testing.T) {
 }
 
 // ranger-base-g48p: the id column had the same pad-is-a-minimum defect the
-// holder column did (rangerhq-zag6) — pad 14 fits every rangerhq-* id
-// (12-13 cells) but not a ranger-base-* one (16), so that row alone pushed
-// its flex column right. Clipping is wrong here, unlike the holder: a
-// truncated id can't be copied, which is what the column is for. The fix
-// widens the whole section's id column to its widest id (idColPad) instead.
+// holder column did (rangerhq-zag6) — pad 14 fits an id shaped like
+// rangerhq-fei (12-13 cells) but not one shaped like ranger-base-2jl5 (16),
+// so that row alone pushed its flex column right. Clipping is wrong here,
+// unlike the holder: a truncated id can't be copied, which is what the
+// column is for. The fix widens the whole section's id column to its
+// widest id (idColPad) instead.
 func TestCockpitIDColumnWidensToSection(t *testing.T) {
 	const w = 140
 	c := fixture()

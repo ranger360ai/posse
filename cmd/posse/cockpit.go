@@ -2186,12 +2186,12 @@ func (c *cockpit) beadCount(n int) string {
 
 // idColPad is a section's id column width: the widest id it holds, floored
 // at 14 so a section whose ids all fit the old constant draws exactly as it
-// did before this section-wide pass existed (rangerhq's own ids run 12-13
-// cells). ranger-base-* ids run 16 and, before this, pushed every other
-// column in their row right by two cells — the same pad-is-a-minimum defect
-// rangerhq-zag6 fixed for the holder column, but clipping is the wrong fix
-// for an id: a truncated one can't be copied, which is what the column is
-// for (ranger-base-g48p).
+// did before this section-wide pass existed (an id shaped like rangerhq-fei
+// runs 12-13 cells). An id shaped like ranger-base-2jl5 runs 16 and, before
+// this, pushed every other column in their row right by two cells — the
+// same pad-is-a-minimum defect rangerhq-zag6 fixed for the holder column,
+// but clipping is the wrong fix for an id: a truncated one can't be copied,
+// which is what the column is for (ranger-base-g48p).
 func idColPad(issues []posse.RepoIssue) int {
 	pad := 14
 	for _, is := range issues {
