@@ -1997,6 +1997,23 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // else's — which is also why the hook must not "clean up" itself. A hook
 // that ran `git reset` behind the persona would be the destructive act the
 // wall exists to prevent.
+//
+// THE NOTES.md ARM (ADR 0022 §3, ranger-base-hokh) sits inside this same
+// body, ahead of the next-index-<pid> exemption below: everything above it
+// asks whether the commit's FORM is safe (a genuine path-limited commit
+// exempted, a sweep refused), and a path-limited commit on NOTES.md is the
+// one form that has to be refused anyway — that file has no single writer
+// in this tree (ranger-base-yuwy, 808da1b), so the very form the rest of
+// this wall treats as safe is the failure here. It reads the to-be-committed
+// set the same way the constitution arm does — `git diff --cached
+// --name-only HEAD` under the hook's inherited GIT_INDEX_FILE, which is
+// right for a path-limited commit's own next-index the same way it is
+// there. Unkeyed like the rest of this wall, for the same reason
+// (rangerhq-lt2w): the tree does not care who typed the commit. It runs
+// ahead of MERGE_HEAD/CHERRY_PICK_HEAD/rebase exiting 0 above, so those
+// three exemptions stand exactly as they did — this bead's Verification
+// list does not ask for more, and none of the three has a pathspec-based
+// way through to prefer instead.
 const sharedIndexBody = `
 # ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
 # No RHQ_PERSONA test: this wall covers every shell in the shared checkout,
@@ -2042,6 +2059,47 @@ posse_gd=$(CDPATH= cd -P -- "$posse_gitdir" 2>/dev/null && pwd -P)
 posse_cd=$(CDPATH= cd -P -- "$posse_common" 2>/dev/null && pwd -P)
 if [ -n "$posse_gd" ] && [ -n "$posse_cd" ] && [ "$posse_gd" != "$posse_cd" ]; then
   exit 0
+fi
+# ─── the NOTES.md guard (ADR 0022 §3, ranger-base-hokh) ───────────────────
+# NOTES.md has no single writer in this tree, so a genuine path-limited
+# commit on it — the very form the next-index exemption below waves through
+# — is exactly the failure ADR 0022 closes: two personas' same-afternoon
+# edits, first commit takes both, silently, under the wrong bead id
+# (ranger-base-yuwy, 808da1b). This arm runs BEFORE that exemption on
+# purpose: the exemption asks whether the commit's FORM is safe, and this
+# file needs refusing regardless of form. Unkeyed, like the rest of this
+# wall since the operator ruling on rangerhq-lt2w (ranger-base-5imp): the
+# tree is what makes the commit unsafe, not who typed it, and a per-arm
+# RHQ_PERSONA test would re-spell the carve-out the ruling retired.
+posse_notes_staged=$(git diff --cached --name-only HEAD 2>/dev/null)
+posse_notes_hit=0
+if [ -n "$posse_notes_staged" ]; then
+  posse_notes_ifs=$IFS
+  IFS='
+'
+  for posse_notes_p in $posse_notes_staged; do
+    if [ "$posse_notes_p" = "NOTES.md" ]; then posse_notes_hit=1; fi
+  done
+  IFS=$posse_notes_ifs
+fi
+if [ "$posse_notes_hit" = 1 ]; then
+  {
+    echo "refused by posse gate: a commit changing NOTES.md in the shared checkout — prepare-commit-msg hook, session ${RHQ_PERSONA:-operator}"
+    echo "ADR 0022: this tree has no single writer for NOTES.md, so a"
+    echo "path-limited commit here is the sweep, not the isolation — it takes"
+    echo "the file as it is ON DISK, another persona's half-written edit"
+    echo "included, under your message and your bead id (ranger-base-yuwy)."
+    echo "  write it instead: docs/notes.d/<bead-id>.md — sole writer by"
+    echo "  construction, commit it path-limited, fold it into NOTES.md later"
+    echo "  as ordinary work in a worktree."
+    echo "  or edit NOTES.md from a session worktree, where same-file"
+    echo "  divergence surfaces at land time as a reported conflict, never a"
+    echo "  silent sweep."
+  } >&2
+  if [ -n "$RHQ_GATES_DIR" ]; then
+    echo "$(posse_stamp) NOTES.md commit in the shared checkout [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+  fi
+  exit 1
 fi
 # Only a genuine path-limited commit gets a next-index-<pid> temporary index;
 # 'git commit -a' gets .git/index.lock, which is a temporary index too, and so
