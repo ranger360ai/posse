@@ -3030,6 +3030,16 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 		if s.Crew {
 			continue
 		}
+		// A workspace posse holds no meta for is not evidence this PERSONA
+		// is working, whatever name it happens to wear — it is a foreign
+		// row, and the ownership question about it belongs to crewHeld /
+		// foreignHeld, not to a liveness read. Counting it as busy let a
+		// foreign row sharing a persona's session-name pattern win the
+		// lane-busy line before LaunchBead's own foreign guard ever ran
+		// (ranger-base-p6no, TestQALaunchBeadRefusesAForeignHolderAboveTheStatusCheck).
+		if s.Foreign {
+			continue
+		}
 		// A pane this pass already gave up on is not the persona working
 		// (ADR 0013 §2). A session left sitting on a splash reads `blocked`
 		// to herdr, and reading that as "busy" would put the sterilise back
