@@ -159,16 +159,23 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 }
 
 // uncountedSkip is the brake: the line this bead gets instead of a launch,
-// or "" to launch. Called with the runtime the launch is actually going to,
-// so an ADR 0010 overflow move onto an uncounted pool is capped by the pool
-// it lands on and not by the one it came from.
+// plus the refill tally's grouping key for that line — "" for both to
+// launch. Called with the runtime the launch is actually going to, so an
+// ADR 0010 overflow move onto an uncounted pool is capped by the pool it
+// lands on and not by the one it came from.
+//
+// The kind is named after the runtime and the cap it hit, not the shared
+// "runtime cap" grokPoolSkip counts under: inside a refill only the kind
+// survives (refillreport.go's skipf discards the formatted line), and a
+// bare "N runtime cap" cannot tell an account brake from a pool guard, let
+// alone say which runtime or how close to its cap. ranger-base-0yiy.
 //
 // No cap set is no brake — unlimited, by design — and the report below is
 // what makes that state loud rather than silent.
-func (d *Dispatcher) uncountedSkip(name string) string {
+func (d *Dispatcher) uncountedSkip(name string) (line, kind string) {
 	p := d.uncountedFor(name)
 	if p == nil || p.Cap == 0 {
-		return ""
+		return "", ""
 	}
 	// The rule the overflow ledger and Dial E both already keep: an
 	// unreadable ledger is not a licence to spend. An armed cap over a
@@ -176,12 +183,14 @@ func (d *Dispatcher) uncountedSkip(name string) string {
 	// clothes, and this pool has no second meter to fall back to.
 	if p.Unreadable != nil {
 		return fmt.Sprintf("account-degraded: no dollars are counted for %s and %s is unreadable (%v) — a cap that counts nothing is not a brake; skipped",
-			name, AbbrevHome(d.App.UncountedLogPath()), p.Unreadable)
+				name, AbbrevHome(d.App.UncountedLogPath()), p.Unreadable),
+			fmt.Sprintf("uncounted_cap_%s: ledger unreadable", name)
 	}
 	if p.Used >= p.Cap {
-		return fmt.Sprintf("account-degraded: uncounted_cap_%s %d/%d in 7d — skipped", name, p.Used, p.Cap)
+		return fmt.Sprintf("account-degraded: uncounted_cap_%s %d/%d in 7d — skipped", name, p.Used, p.Cap),
+			fmt.Sprintf("uncounted_cap_%s %d/%d in 7d", name, p.Used, p.Cap)
 	}
-	return ""
+	return "", ""
 }
 
 // noteUncounted books one launch against the pool. Called AFTER the launch

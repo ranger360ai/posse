@@ -109,6 +109,48 @@ func TestQARefillNamesItsSeatAndSummarisesSkipsInOneLine(t *testing.T) {
 	}
 }
 
+// ranger-base-0yiy: inside a refill, an account-brake skip must still name
+// the runtime and the cap it hit — not collapse into the same "runtime cap"
+// tally grokPoolSkip counts under, which said neither.
+//
+// MUTATION: pass skipRuntimeCap (the shared kind) instead of uncountedSkip's
+// own kind at dispatch.go's uncountedSkip call site → the summary reads "2
+// runtime cap" again, red on the want-string below.
+func TestQARefillNamesTheAccountBrakesRuntimeAndCap(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d, _ := planDispatcher(t, b, nil)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(codexPID("ranger")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := planRepo(t,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","status":"closed"},{"id":"a-2","status":"closed"},{"id":"a-3","status":"open"}]`)
+	planConfig(t, b.App, repo, "uncounted_cap_codex: 1\n")
+	write(t, filepath.Join(repo, "fake-ready-next.json"),
+		`[{"id":"a-2","title":"u","labels":["go"]},{"id":"a-3","title":"v","labels":["go"]}]`)
+	idleClaude(t, fake)
+	agentPerLaunch(t, fake)
+	d.Refill = true
+	d.PromptGrace = 0
+
+	// a-1 launches on the codex cap's one slot, settles closed, and the
+	// refill it triggers re-offers a-2 and a-3 into the freed seat — both
+	// stopped by the same reached cap, not by a seat or a lane.
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	seat := SessionFor("ranger", repo)
+
+	if !strings.Contains(out, "↻ refill for settled seat "+seat+": 0 launched, 2 skipped (2 uncounted_cap_codex 1/1 in 7d)") {
+		t.Errorf("the refill's tally must name the runtime and the cap it hit, not the shared runtime-cap class:\n%s", out)
+	}
+	if strings.Contains(out, "2 runtime cap") {
+		t.Errorf("an account brake must not share its tally class with the pool guard:\n%s", out)
+	}
+}
+
 // The arm stamp is read off the call path, not off a string.
 //
 // Same instrument, same seat, two Runs' worth of windows: one closed by a

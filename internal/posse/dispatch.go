@@ -2321,8 +2321,8 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
 			continue
 		}
-		if skip := d.uncountedSkip(launchRT); skip != "" {
-			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
+		if skip, kind := d.uncountedSkip(launchRT); skip != "" {
+			d.skipf(kind, "– %-14s %s\n", is.ID, skip)
 			continue
 		}
 		if st.StepDown() {
