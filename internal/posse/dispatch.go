@@ -1693,12 +1693,27 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0028 §5 observable 1: so is what this pass measured (seatidle.go).
 	d.seatRefills = nil
 
-	// PAUSE (ADR 0029 §3, bead rangerhq-a2g6) comes first, ahead of even the
-	// load guard: a human meant this stop, and a paused shop that answered
-	// with the machine's reason instead of the human's would be the surface
-	// naming the wrong stopper. One stat of state/pause.yaml — it forks
-	// nothing, so it is as safe to take on a saturated box as the load
-	// reading below it.
+	// The REAL-line audit (ranger-base-urnj, cut from the 2026-08-27
+	// fleet-freeze RCA) runs before even PAUSE, because it gates nothing —
+	// it is a log, never a stop, so there is no "ahead of" question to
+	// settle for it the way there is between PAUSE and the load guard
+	// below. It costs no fork (gateaudit.go: a glob and a few file reads),
+	// so it is exactly as safe to take on a saturated or paused box as
+	// anywhere else, and running it unconditionally, every pass, is the
+	// whole point: the log names a chained gate wrapper the moment it
+	// exists, not hours into the wedge it would eventually cause. It never
+	// aborts the pass — see gateaudit.go for why a hit is named, not acted
+	// on.
+	if who := d.App.RealAuditWitness(d.errw()); who != "" {
+		d.printf("⚠ %s\n", who)
+	}
+
+	// PAUSE (ADR 0029 §3, bead rangerhq-a2g6) comes first of the readings
+	// that gate, ahead of even the load guard: a human meant this stop, and
+	// a paused shop that answered with the machine's reason instead of the
+	// human's would be the surface naming the wrong stopper. One stat of
+	// state/pause.yaml — it forks nothing, so it is as safe to take on a
+	// saturated box as the load reading below it.
 	//
 	// A pass IN FLIGHT is not this gate's business: it is taken at the fire
 	// loop's entry and never inside it, which is §3's "a pass in flight
