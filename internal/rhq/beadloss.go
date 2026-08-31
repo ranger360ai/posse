@@ -313,7 +313,7 @@ func exemptRange(home, id, from, to string) bool {
 // same bead state. Structural, not byte, equality: the ledger re-encodes its
 // embedded record through encoding/json, which escapes HTML-sensitive
 // characters on the way in and so can change bytes a plain string compare
-// would trip over even for the same state (rangerhq's own titles use `&`).
+// would trip over even for the same state (a bead title using `&` is enough).
 // Either side missing or unparsable answers no — the false-alarm direction,
 // never the silent one.
 func sameRecord(a, b json.RawMessage) bool {
