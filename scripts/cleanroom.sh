@@ -253,10 +253,15 @@ cmd_status() {
 # external command, this list must learn it too, or the probe goes quiet about
 # it. Override for a one-off with HOOK_DEPS='a b c'.
 #
+# `cmp` dropped from this list in the ranger-base-rmgz fix itself: gates.go no
+# longer calls it (the MERGE_MSG comparison at gates.go:2206 is now POSIX
+# shell — command substitution, not diffutils), so it is no longer a
+# dependency to probe for.
+#
 # Shell builtins count as present, because the hook invokes these from a shell
 # and a builtin serves it. `command -v` is used for exactly that reason, and it
 # is the same probe the runbook's numbers were taken with, so results compare.
-HOOK_DEPS="${HOOK_DEPS:-date tr rm printf head grep mv mktemp dirname sort env cmp chmod cat}"
+HOOK_DEPS="${HOOK_DEPS:-date tr rm printf head grep mv mktemp dirname sort env chmod cat}"
 
 cmd_hook_deps() {
   need_docker

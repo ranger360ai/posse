@@ -366,6 +366,95 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	}
 }
 
+// pathWithoutCmp builds a PATH offering every command PathOutsideGates("")
+// would, except one literally named cmp — the shape of a minimal
+// Fedora/RHEL/Arch box (ranger-base-rmgz: cmp ships in diffutils, measured
+// absent by default on three of the four clean-room distros, see
+// scripts/cleanroom.sh hook-deps). First hit for a given name wins, same as
+// real PATH resolution, so this does not change which "git" or "sh" a
+// symlink shadows relative to the ambient PATH.
+func pathWithoutCmp(t *testing.T) string {
+	t.Helper()
+	bin := t.TempDir()
+	seen := map[string]bool{}
+	for _, dir := range filepath.SplitList(PathOutsideGates("")) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if name == "cmp" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			if err := os.Symlink(filepath.Join(dir, name), filepath.Join(bin, name)); err != nil {
+				continue
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(bin, "cmp")); !os.IsNotExist(err) {
+		t.Fatalf("pathWithoutCmp must not offer cmp, stat err=%v", err)
+	}
+	return bin
+}
+
+// ranger-base-rmgz: with cmp missing from PATH, `cmp -s "$1" MERGE_MSG` used
+// to fail with sh's own "command not found" (exit 127), the guarding `&&`
+// short-circuited to false, and the whole revert-recovery paragraph vanished
+// — the refusal still happened (correctly), but silently, leaving a user
+// mid-`git revert` with nothing but "fatal: revert failed" and a tree git had
+// already changed under them. gates.go now compares MERGE_MSG with POSIX
+// shell (command substitution) instead of cmp, so this must pass on a PATH
+// that never had cmp on it at all. Red on the pre-fix cmp -s form (measured):
+// this is the pin the bead asked for, the wrong arm actually fails.
+func TestQAGuardRevertParagraphSurvivesAPathWithNoCmp(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	env := []string{"PATH=" + pathWithoutCmp(t), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(extra []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), env...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git(nil, "init", "-q", "-b", "main")
+	write("a.txt", "a")
+	git(nil, "add", "a.txt")
+	git(nil, "commit", "-qm", "add a", "--", "a.txt")
+	write("b.txt", "b")
+	git(nil, "add", "b.txt")
+	git(nil, "commit", "-qm", "add b", "--", "b.txt")
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+
+	out, err := git(persona, "revert", "--no-edit", "HEAD")
+	if err == nil {
+		t.Fatalf("a clean revert is refused (no marker exists to exempt it): %s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate",
+		"git prepared this commit itself (revert)",
+		"finish it:  git commit -F - -- 'b.txt'",
+		"or undo it: git restore --source=HEAD --staged --worktree -- 'b.txt'",
+		"next time:  git revert --no-commit <sha>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal must name the way through and the dirt it leaves even with no cmp on PATH, missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // qaGuardRepo builds a throwaway repo carrying the shared-index guard and
 // one commit on main, and returns a runner that drives git as a persona
 // (extra = the persona env) or, with nil, as the operator. HOME is the repo

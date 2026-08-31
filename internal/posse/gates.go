@@ -2203,7 +2203,12 @@ fi
   # typed (measured both ways). It only WORDS the refusal — a false positive
   # costs a confusing sentence, never an opening in the wall, which is why
   # MERGE_MSG is trusted here and not above.
-  if [ -f "$posse_gitdir/MERGE_MSG" ] && cmp -s "$1" "$posse_gitdir/MERGE_MSG"; then
+  # ranger-base-rmgz: 'cmp' is diffutils, missing by default on Fedora,
+  # AlmaLinux/RHEL and Arch (measured, three of four clean-room distros) — its
+  # absence made this whole paragraph vanish silently. Command substitution
+  # compares the same way cmp -s would: both sides have their trailing
+  # newlines stripped equally, so the comparison stays honest.
+  if [ -f "$posse_gitdir/MERGE_MSG" ] && [ "$(cat "$1")" = "$(cat "$posse_gitdir/MERGE_MSG")" ]; then
     posse_staged=$(posse_qcached)
     echo "git prepared this commit itself (revert): it staged the change into the"
     echo "shared index BEFORE this hook could refuse, so the change is sitting there"
