@@ -41,6 +41,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -82,29 +83,40 @@ func (grokCost) PriceFor(string) (Price, bool) { return Price{}, false }
 // has never run grok has nothing to count — while anything else (a
 // permission, a broken mount, a directory replaced by a file) is a read
 // failure and says so, because "no spend" and "cannot tell" are different
-// facts (ADR 0018 §3).
+// facts (ADR 0018 §3). It walks with WalkDir rather than filepath.Glob:
+// Glob discards every I/O error by design (path/filepath/match.go glob():
+// "ignore I/O error"), so an unreadable cwd or session directory simply
+// vanished from the result with errs empty (ranger-base-yljd). WalkDir
+// surfaces a directory it cannot read as a callback error even though its
+// entry was already seen in the parent listing, and it keeps walking past
+// one: an unreadable session hides an unknown pile of spend, and the rest
+// of the ledger is still the best floor available.
 func (grokCost) Transcripts(project string) ([]string, []error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, []error{err}
 	}
 	root := filepath.Join(home, ".grok", "sessions")
-	if _, err := os.Stat(root); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, []error{err}
-	}
-	files, _ := filepath.Glob(filepath.Join(root, "*", "*", "updates.jsonl"))
 	var out []string
-	for _, f := range files {
-		if project != "" && !strings.Contains(grokSessionDir(f), project) {
-			continue
+	var errs []error
+	filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			if !os.IsNotExist(err) { // never ran grok, or removed mid-walk
+				errs = append(errs, err)
+			}
+			return nil
 		}
-		out = append(out, f)
-	}
+		if e.IsDir() || e.Name() != "updates.jsonl" {
+			return nil
+		}
+		if project != "" && !strings.Contains(grokSessionDir(p), project) {
+			return nil
+		}
+		out = append(out, p)
+		return nil
+	})
 	sort.Strings(out)
-	return out, nil
+	return out, errs
 }
 
 // grokSessionDir decodes the working directory a session ran in from its

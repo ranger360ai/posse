@@ -163,6 +163,33 @@ func TestGrokTranscriptsFilterByDecodedCwd(t *testing.T) {
 	}
 }
 
+// The defect this bead fixes: filepath.Glob ignores every I/O error by
+// contract, so a session directory posse cannot read used to vanish from
+// the listing with errs empty — "cannot tell" read as "nothing was spent"
+// (ADR 0018 §3, ranger-base-yljd). A second, readable session is the floor
+// that must still come back.
+func TestGrokUnreadableSessionDirIsAReadFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything; this arm needs an unprivileged uid")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeGrokSession(t, home, "/Users/x/src/posse", grokUser("hi"))
+	sealed := filepath.Dir(writeGrokSession(t, home, "/Users/x/src/other", grokUser("hi")))
+	if err := os.Chmod(sealed, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(sealed, 0o755) })
+
+	files, errs := grokCost{}.Transcripts("")
+	if len(errs) == 0 {
+		t.Fatal("an unreadable session directory must not read as no spend")
+	}
+	if len(files) != 1 {
+		t.Fatalf("the readable session is still the floor: %v", files)
+	}
+}
+
 // A machine that has never run grok has nothing to count; that is not a read
 // failure and must not park a scan (ADR 0018 §3).
 func TestGrokMissingRootIsNoRecordsNotAnError(t *testing.T) {
