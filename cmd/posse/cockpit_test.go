@@ -465,7 +465,7 @@ func TestCockpitColumnKinds(t *testing.T) {
 			Title: "cockpit v2 (a): row model and render(w,h), width-aware columns, SIGWINCH"},
 		Dir: "/Users/x/src/posse",
 	}
-	wide := layout(issueCols(is), 140)
+	wide := layout(issueCols(is, 14), 140)
 	if !strings.Contains(stripANSI(wide), "src/posse") {
 		t.Errorf("140 cols must keep the droppable repo dir: %q", stripANSI(wide))
 	}
@@ -473,7 +473,7 @@ func TestCockpitColumnKinds(t *testing.T) {
 		t.Errorf("140 cols must not truncate the title: %q", stripANSI(wide))
 	}
 
-	narrow := stripANSI(layout(issueCols(is), 99))
+	narrow := stripANSI(layout(issueCols(is, 14), 99))
 	if strings.Contains(narrow, "src/posse") {
 		t.Errorf("droppables go under %d cols: %q", dropAt, narrow)
 	}
@@ -484,14 +484,14 @@ func TestCockpitColumnKinds(t *testing.T) {
 		t.Errorf("the flex title truncates with …: %q", narrow)
 	}
 
-	tiny := stripANSI(layout(issueCols(is), 69))
+	tiny := stripANSI(layout(issueCols(is, 14), 69))
 	if strings.Contains(tiny, "developer") {
 		t.Errorf("the holder column goes under %d cols: %q", dropHolderAt, tiny)
 	}
 	// Fixed columns are never truncated by the layout: the id and priority
 	// survive every width that can hold them.
 	for _, w := range []int{69, 99, 140} {
-		if got := stripANSI(layout(issueCols(is), w)); !strings.HasPrefix(got, "rangerhq-fei   p2") {
+		if got := stripANSI(layout(issueCols(is, 14), w)); !strings.HasPrefix(got, "rangerhq-fei   p2") {
 			t.Errorf("w=%d: fixed columns must print whole: %q", w, got)
 		}
 	}
@@ -516,8 +516,8 @@ func TestCockpitHolderColumnClips(t *testing.T) {
 		name string
 		cols func(posse.RepoIssue) []col
 	}{
-		{"ready", issueCols},
-		{"inprog", c.inprogCols},
+		{"ready", func(is posse.RepoIssue) []col { return issueCols(is, 14) }},
+		{"inprog", func(is posse.RepoIssue) []col { return c.inprogCols(is, 14) }},
 	} {
 		short := stripANSI(layout(tc.cols(issue("qa")), w))
 		long := stripANSI(layout(tc.cols(issue("business-manager")), w))
@@ -542,6 +542,80 @@ func TestCockpitHolderColumnClips(t *testing.T) {
 		if n := dispWidth(long); n != dispWidth(short) {
 			t.Errorf("%s: rows must be the same width: %d vs %d", tc.name, n, dispWidth(short))
 		}
+	}
+}
+
+// ranger-base-g48p: the id column had the same pad-is-a-minimum defect the
+// holder column did (rangerhq-zag6) — pad 14 fits every rangerhq-* id
+// (12-13 cells) but not a ranger-base-* one (16), so that row alone pushed
+// its flex column right. Clipping is wrong here, unlike the holder: a
+// truncated id can't be copied, which is what the column is for. The fix
+// widens the whole section's id column to its widest id (idColPad) instead.
+func TestCockpitIDColumnWidensToSection(t *testing.T) {
+	const w = 140
+	c := fixture()
+	issue := func(id string) posse.RepoIssue {
+		return posse.RepoIssue{BdIssue: posse.BdIssue{ID: id, Priority: 2,
+			Assignee: "qa", Title: "cockpit v2 (a): row model and render(w,h)"},
+			Dir: repoDir}
+	}
+	for _, tc := range []struct {
+		name string
+		cols func(posse.RepoIssue, int) []col
+	}{
+		{"ready", issueCols},
+		{"inprog", c.inprogCols},
+	} {
+		short, long := issue("rangerhq-fei"), issue("ranger-base-2jl5")
+		pad := idColPad([]posse.RepoIssue{short, long})
+		if want := dispWidth(long.ID); pad != want {
+			t.Fatalf("%s: idColPad = %d, want the widest id's %d cells", tc.name, pad, want)
+		}
+		shortRow := stripANSI(layout(tc.cols(short, pad), w))
+		longRow := stripANSI(layout(tc.cols(long, pad), w))
+		if !strings.Contains(longRow, "ranger-base-2jl5") {
+			t.Errorf("%s: the id must print whole, never clipped — it's what the column is for: %q", tc.name, longRow)
+		}
+		at := func(s string) int {
+			i := strings.Index(s, "cockpit v2")
+			if i < 0 {
+				return -1
+			}
+			return dispWidth(s[:i])
+		}
+		if a, b := at(shortRow), at(longRow); a != b || a < 0 {
+			t.Errorf("%s: every row's title must start in the same column: %d vs %d\n%q\n%q",
+				tc.name, a, b, shortRow, longRow)
+		}
+	}
+}
+
+// The section-wide pass is per section, not global: READY WORK and IN
+// PROGRESS each get an over-long id at a *different* width, so a pad shared
+// across sections (or hardcoded, or computed but not plumbed to one of
+// them) shows up as a mismatch here — not just as "still 14".
+func TestCockpitBuildRowsWidensIDColumnPerSection(t *testing.T) {
+	c := fixture()
+	const issueID, inprogID = "ranger-base-2jl5", "ranger-base-longid" // 16, 18 cells
+	c.issues[0].ID = issueID
+	c.inprog[0].ID = inprogID
+	c.buildRows()
+	wantPad := map[section]int{secIssues: dispWidth(issueID), secInProg: dispWidth(inprogID)}
+	if wantPad[secIssues] == wantPad[secInProg] {
+		t.Fatalf("fixture setup: the two ids must differ in width to tell the sections apart")
+	}
+	seen := map[section]bool{}
+	for _, r := range c.rows {
+		if r.kind != rowItem || (r.sec != secIssues && r.sec != secInProg) {
+			continue
+		}
+		if got, want := r.cols[0].pad, wantPad[r.sec]; got != want {
+			t.Errorf("sec=%d row (id %q): id column pad = %d, want %d", r.sec, r.cols[0].text, got, want)
+		}
+		seen[r.sec] = true
+	}
+	if !seen[secIssues] || !seen[secInProg] {
+		t.Fatalf("fixture setup: seen=%v", seen)
 	}
 }
 
@@ -850,17 +924,17 @@ func TestShortAge(t *testing.T) {
 func TestCockpitInProgressColumns(t *testing.T) {
 	c := fixture()
 	is := c.inprog[0] // devops, blocked, 1d old
-	wide := stripANSI(layout(c.inprogCols(is), 140))
+	wide := stripANSI(layout(c.inprogCols(is, 14), 140))
 	for _, want := range []string{"rangerhq-h3n", "p2", "devops", "blocked", "1d", "src/posse"} {
 		if !strings.Contains(wide, want) {
 			t.Errorf("140 cols must show %q: %q", want, wide)
 		}
 	}
-	narrow := stripANSI(layout(c.inprogCols(is), 99))
+	narrow := stripANSI(layout(c.inprogCols(is, 14), 99))
 	if strings.Contains(narrow, "src/posse") {
 		t.Errorf("droppables go under %d cols: %q", dropAt, narrow)
 	}
-	tiny := stripANSI(layout(c.inprogCols(is), 69))
+	tiny := stripANSI(layout(c.inprogCols(is, 14), 69))
 	if strings.Contains(tiny, "devops") {
 		t.Errorf("the holder name goes under %d cols: %q", dropHolderAt, tiny)
 	}
@@ -868,7 +942,7 @@ func TestCockpitInProgressColumns(t *testing.T) {
 		t.Errorf("the holder state stays — it is the stall signal: %q", tiny)
 	}
 	for _, w := range []int{40, 60, 69, 80, 99, 140} {
-		got := stripANSI(renderRow(row{kind: rowItem, sec: secInProg, cols: c.inprogCols(is)}, w, true))
+		got := stripANSI(renderRow(row{kind: rowItem, sec: secInProg, cols: c.inprogCols(is, 14)}, w, true))
 		if n := dispWidth(got); n > w {
 			t.Errorf("w=%d: in-progress row is %d cells wide: %q", w, n, got)
 		}

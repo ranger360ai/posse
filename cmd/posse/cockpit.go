@@ -2018,14 +2018,18 @@ func (c *cockpit) sessionCols(s posse.HerdrSession) []col {
 }
 
 // issueCols is a ready-work row: id · priority · holder · title (flex) ·
-// repo dir as droppable context.
-func issueCols(is posse.RepoIssue) []col {
+// repo dir as droppable context. idPad is the section-wide id column width
+// (idColPad) — a per-row pad here would have the same pad-is-a-minimum bug
+// the holder column had (rangerhq-zag6), and clipping is the wrong fix for
+// an id: a truncated one can't be copied, which is what the column is for
+// (ranger-base-g48p).
+func issueCols(is posse.RepoIssue, idPad int) []col {
 	who := is.Assignee
 	if who == "" {
 		who = "unassigned"
 	}
 	return []col{
-		{text: is.ID, pad: 14},
+		{text: is.ID, pad: idPad},
 		{text: fmt.Sprintf("p%d", is.Priority)},
 		{text: who, pad: 12, clip: true, ansi: aDim, drop: dropHolderAt},
 		{kind: colFlex, text: is.Title},
@@ -2074,15 +2078,16 @@ func shortAge(now, t time.Time) string {
 // holder-state · age · title (flex) · repo dir as droppable context. The
 // holder *name* drops with the sessions' holder column below dropHolderAt;
 // the state does not — it is the stall signal this whole section exists to
-// show, and it costs at most ten cells.
-func (c *cockpit) inprogCols(is posse.RepoIssue) []col {
+// show, and it costs at most ten cells. idPad is the section-wide id column
+// width (idColPad); see issueCols for why it isn't a per-row clip.
+func (c *cockpit) inprogCols(is posse.RepoIssue, idPad int) []col {
 	who := is.Assignee
 	if who == "" {
 		who = "unassigned"
 	}
 	state := c.holderState(is)
 	return []col{
-		{text: is.ID, pad: 14},
+		{text: is.ID, pad: idPad},
 		{text: fmt.Sprintf("p%d", is.Priority)},
 		{text: who, pad: 12, clip: true, ansi: aDim, drop: dropHolderAt},
 		{text: state, pad: 10, ansi: holderAnsi(state)},
@@ -2179,6 +2184,24 @@ func (c *cockpit) beadCount(n int) string {
 	return strconv.Itoa(n)
 }
 
+// idColPad is a section's id column width: the widest id it holds, floored
+// at 14 so a section whose ids all fit the old constant draws exactly as it
+// did before this section-wide pass existed (rangerhq's own ids run 12-13
+// cells). ranger-base-* ids run 16 and, before this, pushed every other
+// column in their row right by two cells — the same pad-is-a-minimum defect
+// rangerhq-zag6 fixed for the holder column, but clipping is the wrong fix
+// for an id: a truncated one can't be copied, which is what the column is
+// for (ranger-base-g48p).
+func idColPad(issues []posse.RepoIssue) int {
+	pad := 14
+	for _, is := range issues {
+		if n := dispWidth(is.ID); n > pad {
+			pad = n
+		}
+	}
+	return pad
+}
+
 // buildRows turns the three lists into the flat row model. Item rows carry
 // their index in cursor space, so the cursor keeps meaning what it always
 // meant (sessions, then issues) and reselect (rangerhq-5li) is untouched.
@@ -2217,18 +2240,20 @@ func (c *cockpit) buildRows() {
 	if len(c.inprog) == 0 {
 		rows = append(rows, none(secInProg))
 	}
+	inprogPad := idColPad(c.inprog)
 	for i, is := range c.inprog {
 		rows = append(rows, row{kind: rowItem, sec: secInProg,
-			item: len(c.sessions) + i, cols: c.inprogCols(is)})
+			item: len(c.sessions) + i, cols: c.inprogCols(is, inprogPad)})
 	}
 	rows = append(rows, row{kind: rowFiller, sec: secIssues})
 	rows = append(rows, heading(fmt.Sprintf("READY WORK (%s)", c.beadCount(len(c.issues))), secIssues))
 	if len(c.issues) == 0 {
 		rows = append(rows, none(secIssues))
 	}
+	issuePad := idColPad(c.issues)
 	for i, is := range c.issues {
 		rows = append(rows, row{kind: rowItem, sec: secIssues,
-			item: len(c.sessions) + len(c.inprog) + i, cols: issueCols(is)})
+			item: len(c.sessions) + len(c.inprog) + i, cols: issueCols(is, issuePad)})
 	}
 	c.rows = rows
 }

@@ -390,7 +390,7 @@ func TestCockpitDispWidthTableGaps(t *testing.T) {
 	// the next line and pushing the footer off a full pane.
 	is := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "rangerhq-yel", Priority: 1,
 		Title: "🟡 flaky suite " + strings.Repeat("x", 60)}, Dir: "/Users/x/src/posse"}
-	if got := dispWidth(qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is)}, 60, false))); got != 60 {
+	if got := dispWidth(qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is, 14)}, 60, false))); got != 60 {
 		t.Errorf("row rendered at 60 measures %d", got)
 	}
 	// ...and no title built from the newly-tabled glyphs may overflow its
@@ -399,7 +399,7 @@ func TestCockpitDispWidthTableGaps(t *testing.T) {
 		is := posse.RepoIssue{BdIssue: posse.BdIssue{ID: "rangerhq-yel", Priority: 1,
 			Title: title + strings.Repeat(" x", 40)}, Dir: "/Users/x/src/posse"}
 		for _, w := range []int{40, 60, 80, 100, 140} {
-			line := qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is)}, w, false))
+			line := qaPlain(renderRow(row{kind: rowItem, cols: issueCols(is, 14)}, w, false))
 			if n := dispWidth(line); n > w {
 				t.Errorf("title %q at w=%d: %d cells: %q", title, w, n, line)
 			}
