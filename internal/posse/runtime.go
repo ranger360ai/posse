@@ -1180,8 +1180,9 @@ var builtinRuntimes = []Runtime{
 // RuntimesDir holds template-only runtimes: RHQ_HOME/runtimes/<name>.yaml.
 func (a *App) RuntimesDir() string { return filepath.Join(a.Home, "runtimes") }
 
-// LoadRuntime returns a built-in by name, else a template-only runtime
-// from RHQ_HOME/runtimes/<name>.yaml.
+// LoadRuntime returns a built-in by name — per-key overlaid from
+// RHQ_HOME/runtimes/<name>.yaml if that file exists (ADR 0021) — else a
+// template-only runtime from the same file.
 func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	if name == "" {
 		name = DefaultRuntime
@@ -1189,7 +1190,7 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	for i := range builtinRuntimes {
 		if builtinRuntimes[i].Name == name {
 			rt := builtinRuntimes[i]
-			return &rt, nil
+			return a.overlayBuiltin(&rt, name)
 		}
 	}
 	p := filepath.Join(a.RuntimesDir(), name+".yaml")
@@ -1369,11 +1370,12 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		rt.StartupWait = d
 	}
 	if v := YamlGet(p, "record"); v != "" {
-		if !ValidRecord(v) {
-			return nil, Die("runtime %s: %s has record: %q (want %s or %s — ADR 0013 §4)", name, AbbrevHome(p), v, RecordTrusted, RecordUntrusted)
+		why := YamlGet(p, "record_why")
+		if err := validateRecordDecl(v, why); err != nil {
+			return nil, Die("runtime %s: %s %v", name, AbbrevHome(p), err)
 		}
 		rt.Record = v
-		rt.RecordWhy = YamlGet(p, "record_why")
+		rt.RecordWhy = why
 	}
 	// rules_precedence: which channel wins when a native rulebook collides
 	// with the PID. Absent is UNMEASURED, the loud default — a probe, not a
@@ -1443,6 +1445,124 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	return rt, nil
 }
 
+// builtinOverlayKeys are the ADR 0021 Decision 1 keys — the ONLY ones a
+// runtimes/<name>.yaml may overlay onto a built-in. Each names a MEASURED
+// instance fact (a model id, a wait, a promotion); nothing that changes the
+// launch MECHANISM is here (that split is Decision 2, refused below). Named
+// once so the refusal message and the overlay code cannot drift apart.
+var builtinOverlayKeys = []string{
+	"model_<tier>:", "model_flag:", "prompt:", "startup_wait:",
+	"record: (+ record_why:)", "native_rules:", "egress:", "cage_cred:", "gate_shell:",
+}
+
+// overlayBuiltin applies runtimes/<name>.yaml as a per-key overlay onto a
+// built-in (ADR 0021): absent file, today's behaviour exactly — rt comes
+// back untouched; present, the yaml wins for the keys in
+// builtinOverlayKeys, everything else stays the built-in's. List-valued
+// keys (native_rules:, egress:) REPLACE rather than merge, same as the
+// template-only path — a merge rule would be a hidden one.
+//
+// rt.Models is cloned before any per-tier write: rt is a value copy of the
+// shared builtinRuntimes[i] entry, but its Models field is still the SAME
+// map underneath, and every LoadRuntime call for a name with no overlay
+// file must keep reading the built-in's own values — an in-place write
+// here would corrupt every other session's copy of that built-in.
+func (a *App) overlayBuiltin(rt *Runtime, name string) (*Runtime, error) {
+	p := filepath.Join(a.RuntimesDir(), name+".yaml")
+	if _, err := os.Stat(p); err != nil {
+		return rt, nil
+	}
+	// command:/skills_flag: change the launch MECHANISM a built-in's
+	// measured realizer and verified skill surface already wear (ADR 0021
+	// Decision 2) — a hand-written template wearing a realizer it did not
+	// render, or a flag on a runtime whose skills are materialized by
+	// links, is a launch nobody measured. The per-persona PID's own
+	// command: hatch already covers a hand-written line, visibly (ADR 0002
+	// §1); this file is not a second one.
+	if YamlGet(p, "command") != "" {
+		return nil, Die("runtime %s: %s declares command: — a built-in's launch mechanism is not overlayable (ADR 0021 Decision 2); a runtimes/%s.yaml may only overlay: %s",
+			name, AbbrevHome(p), name, strings.Join(builtinOverlayKeys, ", "))
+	}
+	if YamlGet(p, "skills_flag") != "" {
+		return nil, Die("runtime %s: %s declares skills_flag: — %s's skill surface is a verified mechanism, not overlayable (ADR 0021 Decision 2); a runtimes/%s.yaml may only overlay: %s",
+			name, AbbrevHome(p), name, name, strings.Join(builtinOverlayKeys, ", "))
+	}
+	rt.Path = p
+	models := make(map[string]string, len(rt.Models))
+	for k, v := range rt.Models {
+		models[k] = v
+	}
+	rt.Models = models
+	for _, t := range Tiers {
+		if id := YamlGet(p, "model_"+t); id != "" {
+			rt.Models[t] = id
+		}
+	}
+	if f := YamlGet(p, "model_flag"); f != "" {
+		form, err := printfFlag("model_flag", f)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.ModelFlag = form
+	}
+	if v := YamlGet(p, "prompt"); v != "" {
+		if !ValidPrompt(v) {
+			return nil, Die("runtime %s: %s has prompt: %q (want %s or %s — ADR 0013 §2)", name, AbbrevHome(p), v, PromptArgv, PromptTyped)
+		}
+		rt.Prompt = v
+	}
+	if v := YamlGet(p, "startup_wait"); v != "" {
+		d, err := ParseInterval(v)
+		if err != nil {
+			return nil, Die("runtime %s: %s has startup_wait: %q — %v", name, AbbrevHome(p), v, err)
+		}
+		rt.StartupWait = d
+	}
+	if v := YamlGet(p, "record"); v != "" {
+		why := YamlGet(p, "record_why")
+		if err := validateRecordDecl(v, why); err != nil {
+			return nil, Die("runtime %s: %s %v", name, AbbrevHome(p), err)
+		}
+		rt.Record = v
+		rt.RecordWhy = why
+	}
+	// native_rules:/egress: REPLACE, and only when the key is actually
+	// present — yamlHasKey, not a length check, so `native_rules: []`
+	// (an operator declaring "this instance's CLI reads none") is told
+	// apart from the key being absent (keep the built-in's list).
+	if yamlHasKey(p, "native_rules") {
+		rt.NativeRules = YamlList(p, "native_rules")
+	}
+	if yamlHasKey(p, "egress") {
+		rt.Egress = YamlList(p, "egress")
+	}
+	if v := YamlGet(p, "cage_cred"); v != "" {
+		rt.CageCred = v
+	}
+	// gate_shell: false only — a misspelled or absent value leaves the gate
+	// shell ON, same as the template-only path (more wall, not less).
+	if YamlGet(p, "gate_shell") == "false" {
+		rt.NoGateShell = true
+	}
+	warnUnknownRuntimeKeys(runtimeNoticeWriter, name, p)
+	return rt, nil
+}
+
+// validateRecordDecl is the record:/record_why: rule shared by the overlay
+// and template-only paths (ADR 0021 Decision 4): record: trusted with no
+// record_why: refuses. Promotion follows a measurement (ADR 0013 §4); a
+// trusted with no measurement named is the silence the contract exists to
+// remove.
+func validateRecordDecl(record, why string) error {
+	if !ValidRecord(record) {
+		return fmt.Errorf("has record: %q (want %s or %s — ADR 0013 §4)", record, RecordTrusted, RecordUntrusted)
+	}
+	if record == RecordTrusted && why == "" {
+		return fmt.Errorf("has record: trusted with no record_why: — promotion follows a measurement (ADR 0013 §4), never a bare edit; name what you measured")
+	}
+	return nil
+}
+
 // ResolveTier applies the launch-site precedence available here: explicit
 // (CLI/recipe/dispatch) > PID tier: > config default_tier > strong. Bead
 // labels and tier_by_label are dispatch's business (ADR 0003 §2).
@@ -1460,13 +1580,20 @@ func (a *App) ResolveTier(explicit string, ag *AgentFile) string {
 // (built-ins first).
 func (a *App) ListRuntimes() []string {
 	var out []string
+	builtin := map[string]bool{}
 	for _, rt := range builtinRuntimes {
 		out = append(out, rt.Name)
+		builtin[rt.Name] = true
 	}
 	ents, _ := os.ReadDir(a.RuntimesDir())
 	for _, e := range ents {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
-			out = append(out, strings.TrimSuffix(e.Name(), ".yaml"))
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		// A yaml naming a built-in is that built-in's overlay (ADR 0021),
+		// not a second runtime — it lists once, from the loop above.
+		if n := strings.TrimSuffix(e.Name(), ".yaml"); !builtin[n] {
+			out = append(out, n)
 		}
 	}
 	return out
