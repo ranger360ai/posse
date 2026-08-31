@@ -462,6 +462,57 @@ func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
 	}
 }
 
+// A key that is PRESENT is not thereby a plausible percent (ranger-base-cb0s).
+// A negative utilization and one over 100 both decoded as a "successful"
+// reading below (or above) every plan_guard threshold — the shape check
+// ranger-base-65s added has nothing to say about either, because both
+// bodies have the right shape. 0 and 100 are the boundary and stay
+// legitimate: a fresh window and an exhausted one are both real readings.
+//
+// A value already inside 0..100 — the 0..1-rescale case ranger-base-cb0s
+// also names (a 93%-used account reported as 0.93) — is NOT decidable by
+// this check: 0.93 is also a syntactically legitimate small reading (a
+// window just after reset), and nothing in one HTTP response distinguishes
+// the two without guessing. ranger-base-cb0s's own suggested fix says as
+// much ("whether a 0..1 endpoint should instead be DETECTED and rescaled is
+// a design call, not mine") — so this stays a reading here too, on purpose;
+// see the last case below.
+func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string // the window named in the error, or "" for a reading
+	}{
+		{"negative", `{"five_hour":{"utilization":-5},"seven_day":{"utilization":-5}}`, "5h"},
+		{"seven_day negative, five_hour fine", `{"five_hour":{"utilization":12},"seven_day":{"utilization":-1}}`, "7d"},
+		{"over 100", `{"five_hour":{"utilization":140},"seven_day":{"utilization":12}}`, "5h"},
+		{"zero boundary", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, ""},
+		{"hundred boundary", `{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}`, ""},
+		{"0..1-scaled value stays a reading, undecidable from one response", `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := newPlanServer(t, 0, 0)
+			ps.body = tc.body
+			u, err := ps.reader().Read()
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("a plausible boundary value is a reading: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("an implausible value read as %+v — the blind clock never arms", u)
+			}
+			if u != nil {
+				t.Errorf("a failed read must hand back no windows, got %+v", u)
+			}
+			if !strings.Contains(err.Error(), "not the expected JSON") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to name %q and the expected-JSON failure", err, tc.want)
+			}
+		})
+	}
+}
+
 // The compiled-in endpoint is the one that is credentialed, and the one
 // whose answer the fleet may believe. Nothing here dials: the assertion is
 // about how NewPlanReader is configured with no override in the

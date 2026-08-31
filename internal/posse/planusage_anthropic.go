@@ -255,13 +255,19 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// The guard opened, and plan_guard_blind_max never armed because the
 	// reads kept "succeeding": fail-open in the one direction the interlock
 	// must never fail. Absent is now an error, so the blind clock runs.
-	five, ok := body.FiveHour.pct()
-	if !ok {
-		return nil, Die("usage response is not the expected JSON: no %s utilization", anthropicWindow5h)
+	//
+	// A key that IS present is not thereby plausible (ranger-base-cb0s): a
+	// negative utilization or a 0..1-scaled response (a 93%-used account
+	// reported as 0.93) both decode as a "successful" reading below every
+	// posse threshold, same as the absent case above and just as silent —
+	// the shape check has nothing to say about it. pct rejects both.
+	five, err := body.FiveHour.pct(anthropicWindow5h)
+	if err != nil {
+		return nil, err
 	}
-	seven, ok := body.SevenDay.pct()
-	if !ok {
-		return nil, Die("usage response is not the expected JSON: no %s utilization", anthropicWindow7d)
+	seven, err := body.SevenDay.pct(anthropicWindow7d)
+	if err != nil {
+		return nil, err
 	}
 	// Tightest first: the guard trips on the first window over its
 	// threshold, and the 5h window is the one the operator feels.
@@ -280,12 +286,23 @@ type anthropicWindowBody struct {
 	Utilization *float64 `json:"utilization"`
 }
 
-// pct is the window's utilization and whether the response actually
-// carried one. Nil-receiver safe: the absent window and the present-but-
-// empty one are the same answer.
-func (w *anthropicWindowBody) pct() (float64, bool) {
+// pct is the window's utilization, or the error naming why it is not one.
+// Nil-receiver safe: the absent window and the present-but-empty one are
+// the same answer. window names which one, for the error.
+//
+// 0..100 inclusive is the plausible range for a percent: 0 is a fresh
+// window and 100 an exhausted one, both legitimate readings. Outside that
+// window a value is not a percent at all — negative, or the same account
+// reported on a 0..1 scale — and reading it as one silently defeats every
+// plan_guard threshold, which is worse than the absent-key case this
+// guards alongside: there the shape check at least has a chance to fire.
+func (w *anthropicWindowBody) pct(window string) (float64, error) {
 	if w == nil || w.Utilization == nil {
-		return 0, false
+		return 0, Die("usage response is not the expected JSON: no %s utilization", window)
 	}
-	return *w.Utilization, true
+	v := *w.Utilization
+	if v < 0 || v > 100 {
+		return 0, Die("usage response is not the expected JSON: %s utilization %g is not a percent", window, v)
+	}
+	return v, nil
 }
