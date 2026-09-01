@@ -46,25 +46,31 @@ func TestPromptDeliveryColumnIsWhatTheLandingTurnMustAsk(t *testing.T) {
 	}
 }
 
-// ranger-base-ewq9, RE-SCOPED BY MEASUREMENT — read this before writing an
-// argv landing path, because the failure this test was filed against is not
-// there. landThePlane still consults no PromptMode where every other
-// AgentPrompt call site does, and that inconsistency is why the bead stays
-// open. What was PREDICTED — that the typed landing prompt does not reach a
-// codex or grok pane — was measured on real sessions (the QA lane's live
-// pass, 2026-08-29, ranger-base-i0qp) and REFUTED: four landings, both runtimes, including on
-// a pane that had never had a turn, and grok's landing turn did the durable
-// half in full (ORDERS.md lessons + a bead comment). ADR 0013 §2's "a pane
-// with no turn matches no rule" did not reproduce on manifest
-// 2026.07.16.105.
+// ranger-base-ewq9, RE-SCOPED BY MEASUREMENT AND NOW CLOSED — read this
+// before writing an argv landing path, because the failure this test was
+// filed against is not there. What was PREDICTED — that the typed landing
+// prompt does not reach a codex or grok pane — was measured on real
+// sessions (the QA lane's live pass, 2026-08-29, ranger-base-i0qp) and
+// REFUTED: four landings, both runtimes, including on a pane that had never
+// had a turn, and grok's landing turn did the durable half in full
+// (ORDERS.md lessons + a bead comment). ADR 0013 §2's "a pane with no turn
+// matches no rule" did not reproduce on manifest 2026.07.16.105.
 //
-// So this stays a SKIP rather than becoming a pin, in either direction: an
-// assertion that landThePlane branches on PromptMode is red today for a
-// defect nobody has been able to observe, and an assertion that it does NOT
-// branch is an inverted pin that would go red on the fix. What is pinned is
-// the column above — the input the decision would read.
+// The consistency half was then RESOLVED, 2026-08-31 (d3a3fed): landThePlane
+// stays branchless on purpose. Every other AgentPrompt caller consults
+// PromptMode() to place a CREATE's work prompt — argv line or typed — and
+// landThePlane never creates, so typed delivery is the only mechanism there
+// is on every runtime.
+//
+// So this stays a SKIP: the question it was parked for has an answer, and
+// the answer is pinned behaviourally rather than here —
+// TestQALandingTurnIsTypedOnEveryRuntimePromptArgvIncluded
+// (landingparity_qa_test.go) relaunches a session on claude, codex and grok
+// and asserts the typed `agent prompt` goes out on all three, so the branch
+// this test was going to demand is now the thing the suite refuses. What is
+// pinned here is the column that decision would have read.
 func TestLandingTurnAsksTheRuntimeHowToDeliverIt(t *testing.T) {
-	t.Skip("ranger-base-ewq9: landThePlane consults no PromptMode where every other AgentPrompt caller does — a CONSISTENCY bead since 2026-08-29, not a delivery failure: typed landing was measured working on real codex and grok (ranger-base-i0qp)")
+	t.Skip("ranger-base-ewq9: CLOSED 2026-08-31 — landThePlane is branchless by decision, not by oversight (d3a3fed); the delivery itself is pinned by TestQALandingTurnIsTypedOnEveryRuntimePromptArgvIncluded")
 }
 
 // THE REAP GUARD's message defect (ranger-base-8ogq, the bead's 4d9x).
