@@ -4,7 +4,12 @@
 (blind row) and ADR 0003 §4 (Dial E gains a duty) · ranger-base-kld4 ·
 scope note 2026-08-29 (ranger-base-qs0z): this ADR's blind state and
 clock belong to REMOTE meters, whose no-reading may be transient; a
-meter over local files is armed or off-loud, never blind — ADR 0010 §6*
+meter over local files is armed or off-loud, never blind — ADR 0010 §6 ·
+amended 2026-09-01 (ranger-base-bp224, from ranger-base-c3vqe): §1's
+degrade runs from HEADROOM, not from a cap — a last reading over a
+threshold or in the braking band parks with the caps armed; the
+exposure line in Consequences was the sentence the 2026-08-31 incident
+cashed in, and is rewritten*
 
 ## Context
 
@@ -32,6 +37,22 @@ own comment calls it a smell to delete. That knob had by then been
 changed three times in two days, each time on a wrong diagnosis. The
 coupling is real; it should be law, not a comment.
 
+**2026-08-31 measured what the floor is made of** *(amended,
+ranger-base-c3vqe)*. The meter credential went stale at 23:09 and every
+read after it was a 401 or a 429: nineteen hours blind. Dial E was armed
+and counted correctly the whole way, so every unattended pass took §1's
+degraded arm and kept hiring. The ledger counts dollars; the thing
+running out was the account's weekly window, which the ledger has never
+been able to see and does not know the ceiling of. The last reading the
+meter managed said 89% of that window — already in Dial E's braking band
+— and the fleet's own snapshot said 89% for nineteen hours while the
+account climbed to 96%. The operator caught it by hand with 4% left.
+This ADR's first premise held ("Dial E works exactly when the plan guard
+cannot"); its conclusion did not: a brake that measures a different
+quantity is not a floor under the one at risk. ADR 0011's diagnosis, one
+store further out — one store's momentary reading taken as evidence
+about another store's durable fact.
+
 ## Decision
 
 **1. Unattended blindness past `plan_guard_blind_max:` parks on-meter
@@ -57,6 +78,56 @@ it degrades instead:
   blindness within `blind_max` (quiet tolerance), off-meter beads
   (launch through anything, ADR 0013 §3), `blind_max: 0` (never park —
   still the escape hatch for the unarmed case, and only that case).
+
+**…and the degrade runs from headroom, not from a cap** *(amended
+2026-09-01, ranger-base-bp224, from ranger-base-c3vqe; code
+`internal/posse/blindheadroom.go`, one call site in dispatch.go
+`blindFork`)*. Armed is necessary for the degrade and is no longer
+sufficient. The licence is asked of the meter that went blind, from the
+last successful reading on this machine (`PlanCache.LastReading`, the
+same instance-wide snapshot G5's blind clock reads). Two refusals, both
+numbers already in force on a sighted pass — no new knob, no new number:
+
+- **Over a threshold**: the reading is strictly above one of the
+  operator's own `plan_guard_<window>:` thresholds. A sighted pass would
+  have skipped on it (`planGuard`, same comparison, same adapter order);
+  going blind is not a promotion from skipped to running.
+- **In the braking band**: the reading is at or past `BudgetStepDownPct`
+  (80%), the rung at which the plan windows — which join Dial E's
+  tightest-window comparison whenever the guard read them — had the
+  ledger already braking. Blind, those windows drop out of `resolve()`
+  silently and a pass that was braking becomes one that is not. Sighted
+  at 89% the shop *steps down* and watches for 100%; blind it cannot see
+  100% arrive, so the brake's first rung becomes its last: **park**.
+  Stricter than sighted in the band, deliberately.
+
+Thresholds are asked before the rung (the operator's own line is the
+stronger statement, and the refusal names the config key they would
+edit); both walk the adapter's order so the window named is the one
+whose exhaustion hurts most; the refusal is asked *before* the ledger
+scan, so a park costs no transcript walk. Under either refusal the
+on-meter beads park with the caps armed and counting, the park line
+names the window, its percentage, the reading's age and the sentence
+"a dollar cap is not a brake on the plan window", and the cockpit
+header gains a fourth blind clause — `no headroom at last reading,
+parked` — on the ranger-base-3nvt rule that a header must not name a
+brake that is not holding (it said "ledger brake" for nineteen hours).
+
+What the reading is NOT: a number about now. It is never aged forward,
+scaled by spend, or extrapolated — that is "estimate the plan window
+while blind", rejected below and still rejected. It is asked one
+question about the past that the past can answer: *when the lights went
+out, was there room?* A 429 moves only the cooldown and keeps the
+reading; a snapshot holding only a cooldown is not a reading.
+
+Unchanged: a reading with room degrades exactly as above; **no reading
+ever taken on this machine degrades too** — that is the 2026-08-26
+shape (a credential posse could not read from the first pass) and
+parking it cost a measured hour of zero dispatch. The fork is between
+evidence of a ceiling and no evidence, not between known-safe and
+unknown: park on evidence, never on ignorance. `blind_max: 0`, attended
+passes, off-meter beads, the first good reading clearing everything —
+all untouched.
 
 **2. No policy fork by failure class.** A shape mismatch, a gate
 refusal, a 401, a network error — for gating they are one state:
@@ -87,18 +158,38 @@ bead grain by 0013 §3 and its residue stays on its own beads
 - The shop can no longer be halted by the optional meter alone while
   the ledger caps are set — the 2026-08-26 outage shape becomes a
   degraded-loud day bounded at $30/pass, $250/day.
-- A blind week no longer risks the plan windows silently: the exposure
-  is capped in dollars, which is coarser than window-percent. That
-  trade is deliberate — a coarse honest brake over a precise invented
-  one.
+- *(amended 2026-09-01)* …only while its last reading left room. With
+  the caps set, a last reading over a threshold or in the braking band
+  halts the shop anyway; that halt is the point, and the header says
+  which halt it is.
+- *(rewritten 2026-09-01 — the sentence below as first written was the
+  one the 2026-08-31 incident cashed in.)* A blind window risks the plan
+  windows only from a reading that showed room, and there the exposure
+  is capped in dollars — coarser than window-percent, a coarse honest
+  brake over a precise invented one, still the trade. From a reading in
+  the braking band the exposure is zero dispatch. The residue is real
+  and named: a reading at 79% followed by a long blind window runs on
+  dollars all the way, because nothing here knows the dollar-to-percent
+  ratio and nothing will pretend to. That residue is bounded per day by
+  `budget_day:` and is cured only by a reading — the credential that
+  rots in hours is ranger-base-wkai3 / ADR 0019, and this rule makes the
+  fleet safe while blind, not less blind.
 - `plan_guard_blind_max:` recovers a single meaning: how long quiet
   tolerance lasts before the policy fork (park or declared-degraded).
   The 24h workaround should be deleted when this lands (its own
   comment already says so); the default returns. Operator's move, not
   the crew's.
-- Arming/disarming Dial E now also chooses the blind policy. That
-  coupling is the point, and it is stated where the caps are documented
-  (examples/config.yaml).
+- Arming/disarming Dial E now also chooses the blind policy — where the
+  meter's last reading left room. That coupling is the point, and it is
+  stated where the caps are documented (examples/config.yaml, which since
+  2026-09-01 also says what the caps do not buy; INSTALL.md and NOTES.md
+  carry the same fork).
+- *(amended 2026-09-01)* On re-arm after a blind stretch that ended in
+  the braking band, the unattended shop parks until the meter reads
+  live — no hiring on a frozen 97%. That is the catch that was missing.
+  The escape hatch if the operator must move anyway is `blind_max: 0`,
+  unchanged, and it is a decision they make, not one the caps make for
+  them.
 
 ## Alternatives rejected
 
@@ -120,7 +211,34 @@ bead grain by 0013 §3 and its residue stays on its own beads
   extrapolation. Rejected: the ratio is unmeasured, drifts with model
   mix and cache behaviour, and a wrong estimate wears the authority of
   the real meter. If it is ever wanted it is a display hint, never a
-  gate.
+  gate. *(2026-09-01: still rejected, and the headroom rule above is
+  not it — it reads the snapshot as a fact about the past and computes
+  nothing about now. The next reader should not mistake one for the
+  other.)*
+- **Park whenever blind and armed** (the incident's own ask: AND the
+  two conditions instead of OR-ing them). Rejected 2026-09-01. It
+  parks on ignorance: a fresh machine, a wiped state dir, or a
+  credential unreadable from the first pass has no evidence of a
+  ceiling, and that shape already cost a measured hour of zero dispatch
+  on 2026-08-26. It also makes arming Dial E irrelevant to the blind
+  policy, which reverts the coupling this ADR exists to make law.
+- **Expire the refusal at the window's own length** (a 5h reading is
+  surely healed after five hours; a 7d reading after a week). Rejected
+  2026-09-01. It is the first step of aging the snapshot: "healed"
+  assumes nothing else spent into the window meanwhile (the operator's
+  interactive use shares the account), and some providers' week has no
+  intra-week reset at all. The cost is named and paid: a reading in the
+  5h window's braking band parks the on-meter lanes for the whole blind
+  stretch, however long. The cure is a reading, the hatch is
+  `blind_max: 0`.
+- **A maximum age on the reading** (refuse the degrade once the
+  snapshot is older than N): wall-clock in a new coat, and this ADR's
+  own rule is that the degrade is never bounded by the clock. Age is
+  said out loud on the park line; it decides nothing.
+- **Teach the ledger the plan ceiling** (the incident's other ask:
+  convert `budget_day:` into window-percent). It needs the
+  dollar-to-percent ratio, which is the estimate alternative wearing
+  the ledger's clothes; rejected for the same reasons.
 
 ## Claims
 
@@ -131,3 +249,20 @@ and the `segs, _ :=` swallow (dispatch.go:276, cost.go:303). ASSUMED:
 local-FS transcript reads fail rarely (why §3 is a hardening, not a
 redesign); $30/$250 acceptable ceilings for a blind day — the
 operator's numbers, theirs to change.
+
+*Amendment claims (2026-09-01).* MEASURED: the 2026-08-31 timeline —
+last successful reading 23:09 at 89% of the weekly window, nineteen
+hours of 401/429 with the snapshot's `At` frozen at 23:09, the account
+at 96% when caught by hand (ranger-base-c3vqe, plan-usage.log); the
+2026-08-26 hour of zero dispatch that the no-reading arm protects; the
+rule's two boundaries pinned to the code that owns each (strictly-above
+matches `planGuard`, at-or-above matches `BudgetState.StepDown`); the
+incident replayed end to end under the fix parks (commit a98ed0e's
+tests, mutation-checked 8/8); a 429 keeps the last reading and a
+cooldown-only snapshot is not a reading (`plancache.go`, pinned).
+ASSUMED: that a reading under the rung followed by a long blind window
+cannot exhaust the weekly ceiling inside one `budget_day:` — unknowable
+without the ratio this ADR refuses to estimate, so it is stated as the
+residue, not as a bound; that a wiped `plan-usage.json` (which demotes a
+braking reading to no-reading) is the operator's own act on their own
+state dir and as rare as a fresh install.
