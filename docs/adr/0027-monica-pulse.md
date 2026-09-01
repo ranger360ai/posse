@@ -3,7 +3,34 @@
 *Status: accepted 2026-08-21 (design on rangerhq-wxd) · owner: architect ·
 amends 0008 §2 (crew carve-out) · implemented rangerhq-4ish (sensing,
 d9fa52f) + rangerhq-44w1 (delivery, 18cb114) · amended 2026-08-28
-(ranger-base-q3gp: the §3 default)*
+(ranger-base-q3gp: the §3 default) · §1 superseded by ADR 0029 §1–2,
+recorded 2026-09-01 (ranger-base-38xp9)*
+
+> **§1's store boundary, superseded 2026-09-01 (ranger-base-38xp9).** §1
+> said sensing touches herdr and local git only — never bd, never the plan
+> endpoint. ADR 0029 §1–2 (built as rangerhq-81y0, `govern.go`) widened the
+> condition set to the G-table and broke that boundary on purpose: G2/G3/G9
+> are bd facts and G5/G6 are meter facts, and a tick that cannot see them is
+> blind to most of what stops a shop. The tick is now one rendering of
+> `ShopCheck`; §1's three conditions survive as carry-overs in that set
+> (`no-live:` gated on the pulse being armed). What the boundary protected
+> — silence off a timer nobody watches, never a false alarm and never a
+> bill — survives as a rule: a store that cannot be read is logged and the
+> tick moves on, never fatal, never a prompt. The bill half is structural:
+> the plan reading goes through the shared `plan-usage.json` snapshot
+> (caller `pulse`, logged in `plan-usage.log`), so the tick makes a request
+> only when the snapshot is older than the guard's own max age, and an
+> unarmed guard reads nothing. What a tick costs, MEASURED in the same
+> scratch rig on the same box: ~32 ms (herdr + git, rangerhq-0l6t,
+> 2026-08-27) → 757 ms average, 610–844 ms, n=20, against the real-size
+> queue on 2026-09-01 (ranger-base-pv4f2; three `bd list` calls per beads
+> repo on a quiet shop, plus `bd blocked` and one `bd comments` per finding
+> — docs/notes.d/rangerhq-81y0.md). Inside this ADR's <1 s assumption at a
+> 2 m interval (~0.6 % duty), with the margin thin: a tick past the
+> interval is the number to watch when the queue grows, and the fix if it
+> arrives is a bounded bd read, not a return to abstinence. ADR 0040 row
+> 0027 ruled this KEEP · AMEND; the wider sweep (ranger-base-mqoid) lands
+> the rest of that row.
 
 > **The §3 default, amended 2026-08-28 (ranger-base-q3gp).** §3 named
 > `monica` as `pulse_persona:`'s default and the code compiled that string
@@ -54,9 +81,13 @@ behind it.
   `beads:` repo; no upstream reads as no condition, never an error
 - (c) `no-live:<persona>` — no live session for `pulse_persona`
 
-Sensing touches herdr and local git only — **never bd, never the plan
-endpoint**: this runs off a timer with no human watching it spend, so its
-failure mode must be silence, never a false alarm or a bill.
+*Superseded by ADR 0029 §1–2 — see the box above.* As designed, sensing
+touched herdr and local git only, never bd and never the plan endpoint;
+as shipped it computes ADR 0029's G-table (bd, the shared plan snapshot,
+the cost scan included) and (a)–(c) are three rows of it. The premise
+stands: this runs off a timer with no human watching it spend, so its
+failure mode must be silence, never a false alarm or a bill — kept now as
+an unreadable store logging and the tick moving on.
 
 **§2 — Ticker, fingerprint, arm switch.** The sorted condition set joins
 into a fingerprint persisted to `state/pulse.yaml` (machine-local,
