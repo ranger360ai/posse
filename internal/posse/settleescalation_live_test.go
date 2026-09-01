@@ -133,9 +133,24 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 		t.Errorf("unexpected stderr from a rung that worked: %s", errb)
 	}
 
-	// ─── the wrong arm: with the edge, real bd refuses the block ─────────
-	// This is the shape that shipped, and it MUST still fail, or the arm
-	// above proves nothing about why the edge was dropped.
+	// ─── the wrong arm: with the edge, the stop does not land ────────────
+	// This is the shape that shipped before ranger-base-23oo, and it MUST
+	// still fail, or the arm above proves nothing about why the edge was
+	// dropped. What it must fail AT is the observable — the trigger stays
+	// in `bd ready`, which is the loop --resume then re-prompts forever —
+	// and NOT the mechanism, which is a property of the bd on the box:
+	//
+	//   0.49.1 refuses the `dep add` outright ("would create a cycle").
+	//   0.50.3 ACCEPTS it and answers `bd ready` with the bead anyway —
+	//   MEASURED 2026-09-01 (laurie, ranger-base-coxn8, filed as
+	//   ranger-base-lpz0o): the same bead is in `bd ready` and in
+	//   `bd blocked` at once, over three consecutive reads.
+	//
+	// Pinning the refusal made this arm red the hour the box's bd moved,
+	// while the defect it guards was untouched — the same shape re-wired
+	// into escalateSettleOpen still leaves the trigger in ready on 0.50.3.
+	// So: assert the loop, log the mechanism, and fire if some future bd
+	// honors the block, because then the whole rung can be simpler.
 	other := create("PROBE stuck (control)")
 	qWithEdge, err := d.Bd.Create(repo, BdNew{
 		Title:       settleStuckTitle(other, "ranger", "in_progress"),
@@ -147,12 +162,15 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create with the discovered-from edge: %v", err)
 	}
-	if err := d.Bd.DepAdd(repo, other, qWithEdge, VerifyActor); err == nil {
-		t.Fatalf("bd ACCEPTED dep add %s %s against a discovered-from edge — this bead's whole premise is stale, re-measure before trusting the fix", other, qWithEdge)
-	} else if !strings.Contains(err.Error(), "would create a cycle") {
-		t.Errorf("bd refused the block for some other reason: %v", err)
+	switch addErr := d.Bd.DepAdd(repo, other, qWithEdge, VerifyActor); {
+	case addErr == nil:
+		t.Logf("this bd ACCEPTED dep add %s %s against a discovered-from edge (0.50.3 shape, ranger-base-lpz0o) — the block is silent, not refused", other, qWithEdge)
+	case strings.Contains(addErr.Error(), "would create a cycle"):
+		t.Logf("this bd refused the block outright (0.49.1 shape): %v", addErr)
+	default:
+		t.Errorf("bd refused the block for some other reason: %v", addErr)
 	}
 	if !inReady(other) {
-		t.Errorf("%s left bd ready without an edge — the ready set is not the stop this rung assumes", other)
+		t.Errorf("THE PRE-FIX SHAPE STOPPED THE LOOP: %s left bd ready even carrying the discovered-from edge — this bd honors the block through a cycle, so ranger-base-23oo's premise is stale and the rung can be re-decided rather than trusted", other)
 	}
 }
