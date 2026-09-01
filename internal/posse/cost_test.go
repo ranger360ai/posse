@@ -28,11 +28,13 @@ func TestPricesAndTiers(t *testing.T) {
 	if p, ok := PriceFor("mystery-model"); ok || p != (Price{}) {
 		t.Errorf("unknown must be unpriced, not assumed: %+v %v", p, ok)
 	}
-	if c := (Usage{In: 1e6, Out: 1e6, Model: "mystery-model"}).Cost(); c != 0 {
-		t.Errorf("unpriced model must not invent a cost: %v", c)
-	}
-	if (Usage{Model: "mystery-model"}).Priced() {
-		t.Error("mystery-model must report unpriced")
+	// And the segment that carries such a message reports it as UNCOUNTED,
+	// not as $0 — the same rule one level up, at the only path that prices
+	// (ranger-base-xqtgv: Usage.Cost/Usage.Priced used to hold this claim,
+	// and nothing in production called them).
+	s := &Segment{Msgs: map[string]*Usage{"m": {In: 1e6, Out: 1e6, Model: "mystery-model"}}}
+	if _, c := s.Total(); c != 0 || s.Unpriced != 1 {
+		t.Errorf("unpriced model must not invent a cost and must count as a gap: cost %v, Unpriced %d", c, s.Unpriced)
 	}
 	for m, want := range map[string]string{
 		"claude-fable-5": TierStrong, "claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?",
@@ -49,13 +51,24 @@ func TestPricesAndTiers(t *testing.T) {
 		}
 	}
 	// Pricing math: 1M in, 1M cache 5m, 1M cache 1h, 1M read, 1M out on fable.
-	u := Usage{In: 1e6, CacheW5m: 1e6, CacheW1h: 1e6, CacheR: 1e6, Out: 1e6, Model: "claude-fable-5"}
-	if got := u.Cost(); got != 10+12.5+20+1+50 {
+	// Priced through costAt against an explicitly resolved rate, which is how
+	// Segment.Total prices — the resolver picks the rate, costAt does the
+	// arithmetic, and this pins the arithmetic.
+	fable, ok := PriceFor("claude-fable-5")
+	if !ok {
+		t.Fatal("fable must have a rate")
+	}
+	u := Usage{In: 1e6, CacheW5m: 1e6, CacheW1h: 1e6, CacheR: 1e6, Out: 1e6}
+	if got := u.costAt(fable); got != 10+12.5+20+1+50 {
 		t.Errorf("fable cost: %v", got)
 	}
 	// Without the TTL breakdown, cache writes are priced flat 1.25× (the script's method).
-	u = Usage{CacheW: 1e6, Model: "claude-opus-5"}
-	if got := u.Cost(); got != 6.25 {
+	opus, ok := PriceFor("claude-opus-5")
+	if !ok {
+		t.Fatal("opus must have a rate")
+	}
+	u = Usage{CacheW: 1e6}
+	if got := u.costAt(opus); got != 6.25 {
 		t.Errorf("flat cache write: %v", got)
 	}
 }

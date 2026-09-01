@@ -148,26 +148,6 @@ func (u Usage) Tokens() int {
 	return u.In + u.CacheW + u.CacheW5m + u.CacheW1h + u.CacheR + u.Out
 }
 
-// Priced reports whether this message's model has a rate at all. False means
-// its spend is unknown — which Cost renders as 0 and the report must carry as
-// uncounted, never as "it was free".
-func (u Usage) Priced() bool {
-	_, ok := PriceFor(u.Model)
-	return ok
-}
-
-// Cost prices one message against the global claude table. An unpriced model
-// costs 0 here; Priced is how the caller tells that 0 apart from a message
-// that genuinely cost nothing. Segment.Total prices against the message's own
-// runtime adapter instead (costAt) — this method stays the claude reading.
-func (u Usage) Cost() float64 {
-	p, ok := PriceFor(u.Model)
-	if !ok {
-		return 0
-	}
-	return u.costAt(p)
-}
-
 // costAt prices one message at an already-resolved rate.
 func (u Usage) costAt(p Price) float64 {
 	w5, w1 := u.CacheW5m, u.CacheW1h

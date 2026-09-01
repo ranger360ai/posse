@@ -13,7 +13,9 @@ package posse
 // a test. Segment.Total() priced every segment that was not ProviderPriced
 // through Usage.Priced()/Usage.Cost(), and both called the package-level
 // PriceFor: claude's table, plus its substring family fallback, applied
-// regardless of Segment.Runtime.
+// regardless of Segment.Runtime. (Those two methods no longer exist: routing
+// Total() past them left them with no production caller and the same compile
+// proof, so ranger-base-xqtgv deleted them.)
 //
 // Fixed by routing Segment.Total() through Segment.priceFor(model), which
 // asks CostProviderFor(s.Runtime) first and falls back to the global table
