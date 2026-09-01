@@ -46,6 +46,7 @@ package posse
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -314,3 +315,54 @@ func codexWindowName(minutes int) string {
 		return "codex_" + strconv.Itoa(minutes) + "m"
 	}
 }
+
+// Segment is the hint as the cockpit header and `posse cost --plan` render
+// it (ADR 0034 D3): `codex 7d 62%, as of 3h ago`. Empty when there is no
+// reading — and a nil *PlanHint IS that case, so every caller can render
+// unconditionally and get the ADR's rule for free: no reading, no line.
+// Absence of codex use is not a header fact, and a "codex —" placeholder on
+// the ~all boxes that never run it would cost the flex column real bytes to
+// say nothing.
+//
+// The age is ALWAYS shown, which is where this parts company with the claude
+// line (PlanCache.Line prints one only once it is >= a minute old). There the
+// age is a caveat on a number fetched seconds ago; here it IS the reading's
+// load-bearing half — the file only moves when codex takes a turn ON THIS
+// BOX, so an hours-old hint is the normal state and a number shown without
+// its age is the one way this display can lie. BlindFor is the house's
+// renderer for exactly that, so an hour-old hint reads `as of 1h00m ago`.
+//
+// A window past its own resets_at renders as `reset`, never as its percent:
+// the number was true of a window that has since rolled over, and codex
+// itself will report the fresh one at its next turn. This is the one place
+// the display knows something the reading does not — the clock — and the
+// only honest use of it is to withhold a stale number, never to interpolate
+// a new one (Helland again: data outside its store of record is from the
+// past, and aging it forward would be inventing a reading). A window whose
+// resets_at is missing (epoch zero, never seen on this box's corpus) falls
+// in the same arm, which is the direction that shows no stale percent.
+func (h *PlanHint) Segment(now time.Time) string {
+	if h == nil || len(h.Windows) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(h.Windows))
+	for _, w := range h.Windows {
+		parts = append(parts, hintWindowShortName(w.Name)+" "+w.reading(now))
+	}
+	return "codex " + strings.Join(parts, " · ") + ", as of " + BlindFor(now.Sub(h.At)) + " ago"
+}
+
+// reading is one window's cell: its percent while the window is still the
+// one that was measured, `reset` once now is at or past its resets_at.
+func (w HintWindow) reading(now time.Time) string {
+	if !now.Before(w.ResetsAt) {
+		return "reset"
+	}
+	return fmt.Sprintf("%.0f%%", w.UsedPercent)
+}
+
+// hintWindowShortName drops the provider prefix the window names carry for
+// config keys (`plan_guard_codex_7d:`) — the segment already says `codex`
+// once, and `codex codex_7d 62%` is the same word twice. A name that is not
+// prefixed is printed whole rather than mangled.
+func hintWindowShortName(name string) string { return strings.TrimPrefix(name, "codex_") }

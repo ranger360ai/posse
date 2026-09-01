@@ -8,6 +8,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -242,5 +243,126 @@ func TestCostPlanFetchesThroughTheSeamAndNamesItselfInTheReadLog(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "state", "plan-usage.json")); err == nil {
 		t.Error("a reading fetched under an endpoint override is nobody's shared fact (credpin.go rule 5), but a snapshot was written")
+	}
+}
+
+// ─── the codex hint (ADR 0034 D3) ────────────────────────────────────────────
+
+// seedCodexHint writes one rollout under the sandbox HOME carrying a
+// rate_limits reading, the way codex itself appends it. planEnvAt puts HOME
+// at <home>/h, so this is the same directory the binary will look under —
+// and no test here can reach the operator's own ~/.codex.
+func seedCodexHint(t *testing.T, home string, at time.Time, pct float64, resets time.Time) {
+	t.Helper()
+	h := filepath.Join(home, "h")
+	dir := filepath.Join(h, ".codex", "sessions", at.Format("2006"), at.Format("01"), at.Format("02"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := fmt.Sprintf(`{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count",`+
+		`"rate_limits":{"primary":{"used_percent":%g,"window_minutes":10080,"resets_at":%d},`+
+		`"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"}}}}`+"\n",
+		at.Format(time.RFC3339Nano), pct, resets.Unix())
+	name := "rollout-" + at.Format("2006-01-02T15-04-05") + "-fixture.jsonl"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Both meters, in the order the header uses: the guard's reading, then the
+// hint — and the hint carries its age unconditionally, which is what makes
+// it readable as the snapshot it is. 3m30s sits in the middle of the "3m"
+// bucket so the run cannot straddle its edge.
+func TestCostPlanPrintsTheCodexHintWithItsAge(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	now := time.Now().UTC()
+	seedPlan(t, home, map[string]any{
+		"at":      now.Format(time.RFC3339Nano),
+		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
+	})
+	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 62, now.Add(24*time.Hour))
+
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if want := "plan windows: 5h 42% · 7d 61%\ncodex 7d 62%, as of 3m ago\n"; stdout != want {
+		t.Errorf("stdout = %q, want exactly %q", stdout, want)
+	}
+}
+
+// Past its own resets_at the percent is about a window that has rolled over,
+// and it is never printed — the one place this display knows something the
+// reading does not, used only to withhold a stale number.
+func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	now := time.Now().UTC()
+	seedPlan(t, home, map[string]any{
+		"at":      now.Format(time.RFC3339Nano),
+		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
+	})
+	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 96, now.Add(-time.Minute))
+
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if strings.Contains(stdout, "96%") {
+		t.Errorf("a window past its reset must not show its percent, got %q", stdout)
+	}
+	if want := "codex 7d reset, as of 3m ago\n"; !strings.HasSuffix(stdout, want) {
+		t.Errorf("stdout = %q, want it to end with %q", stdout, want)
+	}
+}
+
+// The two readings are independent in both directions. The hint is not
+// suppressed by the guard's read failing — it has its own store, and showing
+// an operator less than the box knows is the failure this line exists to
+// prevent — and it does not rescue the exit status either: --plan's contract
+// is the guard's reading, so unreadable is still a failed command.
+func TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	now := time.Now().UTC()
+	seedPlan(t, home, map[string]any{
+		"at":       now.Add(-time.Hour).Format(time.RFC3339Nano),
+		"windows":  []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
+		"retry_at": now.Add(30 * time.Minute).Format(time.RFC3339Nano),
+	})
+	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 62, now.Add(24*time.Hour))
+
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	if code != 1 {
+		t.Fatalf("an unreadable guard reading must still exit 1, got %d (stdout %q, stderr %q)", code, stdout, stderr)
+	}
+	if want := "codex 7d 62%, as of 3m ago\n"; stdout != want {
+		t.Errorf("stdout = %q, want exactly the hint %q", stdout, want)
+	}
+	if !strings.Contains(stderr, "rate-limited") {
+		t.Errorf("stderr must still say why the guard's reading failed: %q", stderr)
+	}
+}
+
+// The full report is unchanged: ADR 0034 D3 names the header and `--plan`,
+// and `posse cost` bare stays the dollars plus the guard's own footer. A
+// hint that leaked in here would also break the one-rendering pin above.
+func TestCostFooterDoesNotGrowTheCodexHint(t *testing.T) {
+	bin := buildRhq(t)
+	home := t.TempDir()
+	now := time.Now().UTC()
+	seedPlan(t, home, map[string]any{
+		"at":      now.Format(time.RFC3339Nano),
+		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
+	})
+	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 62, now.Add(24*time.Hour))
+
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if strings.Contains(stdout, "codex 7d") {
+		t.Errorf("the full report grew a codex line:\n%s", stdout)
 	}
 }

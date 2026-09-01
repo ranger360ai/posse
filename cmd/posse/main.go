@@ -1013,10 +1013,30 @@ func main() {
 			// command, not an empty line. The errors are generic by
 			// construction (planusage.go) — they never quote the token.
 			line, err := a.PlanCache("cost").Line(a.PlanUsageTTL(os.Stderr))
+			if err == nil {
+				fmt.Fprintln(out, line)
+			}
+			// codex's own on-disk meter, when this box has a reading of it
+			// (ADR 0034 D3) — always with its age, because the file only
+			// moves when codex takes a turn HERE and an hours-old hint is
+			// the normal state. No reading, no line: absence of codex use is
+			// not a fact worth a row.
+			//
+			// Printed independently of the guard's reading above, in both
+			// directions: it is not gated on that read succeeding (the hint
+			// has its own store and its own failure, and suppressing a fact
+			// this command HAS because of one it does not is the way to show
+			// an operator less than the box knows), and it does not rescue
+			// the exit status when that read failed. --plan's contract is
+			// the guard's reading, unchanged: unreadable is still a failed
+			// command, because a caller that greps this for the guard's
+			// number must not get a zero exit and a codex line instead.
+			if seg := posse.ReadCodexPlanHint().Segment(time.Now()); seg != "" {
+				fmt.Fprintln(out, seg)
+			}
 			if err != nil {
 				die(err)
 			}
-			fmt.Fprintln(out, line)
 			break
 		}
 		rep := posse.ScanCosts(o.project, o.since)

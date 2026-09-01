@@ -276,3 +276,135 @@ func TestReadCodexPlanHintSpendControlReached(t *testing.T) {
 		t.Errorf("Credits.Balance = %q, want empty — this reading's balance is null", hint.Credits.Balance)
 	}
 }
+
+// ─── the display half (ADR 0034 D3) ──────────────────────────────────────────
+
+// hintAt builds a reading taken at `at` with the windows given as
+// name/percent/reset triples, so the tests below read as the rendering rules
+// they are and not as JSON.
+func hintAt(at time.Time, w ...HintWindow) *PlanHint { return &PlanHint{Windows: w, At: at} }
+
+func hintWin(name string, pct float64, resets time.Time) HintWindow {
+	return HintWindow{Name: name, UsedPercent: pct, ResetsAt: resets}
+}
+
+// The shape ADR 0034 D3 names, end to end: the provider word once, the
+// window names without their config-key prefix, and the age — always.
+func TestPlanHintSegment(t *testing.T) {
+	now := time.Date(2026, 8, 31, 14, 0, 0, 0, time.UTC)
+	live := now.Add(2 * time.Hour)
+	for _, c := range []struct {
+		name string
+		hint *PlanHint
+		want string
+	}{{
+		name: "no reading draws nothing",
+		hint: nil,
+	}, {
+		name: "a reading with no windows is not a reading",
+		hint: hintAt(now.Add(-time.Hour)),
+	}, {
+		name: "the ADR's own example",
+		hint: hintAt(now.Add(-3*time.Hour), hintWin("codex_7d", 62, live)),
+		want: "codex 7d 62%, as of 3h00m ago",
+	}, {
+		name: "both windows, in the reader's order",
+		hint: hintAt(now.Add(-4*time.Minute), hintWin("codex_5h", 12, live), hintWin("codex_7d", 34, live)),
+		want: "codex 5h 12% · 7d 34%, as of 4m ago",
+	}, {
+		// The rule this segment does NOT share with the claude line, which
+		// prints an age only once it is a minute old (PlanCache.Line): here
+		// the age is the load-bearing half, so a seconds-old hint says so
+		// rather than presenting itself as timeless.
+		name: "a seconds-old reading still shows its age",
+		hint: hintAt(now.Add(-9*time.Second), hintWin("codex_7d", 62, live)),
+		want: "codex 7d 62%, as of 9s ago",
+	}, {
+		name: "a reading taken this instant still shows its age",
+		hint: hintAt(now, hintWin("codex_7d", 62, live)),
+		want: "codex 7d 62%, as of 0s ago",
+	}, {
+		// Past its own resets_at the percent is a number about a window
+		// that has since rolled over. It is never shown; the window says so.
+		name: "a window past its reset shows no percent",
+		hint: hintAt(now.Add(-9*time.Hour), hintWin("codex_7d", 96, now.Add(-time.Minute))),
+		want: "codex 7d reset, as of 9h00m ago",
+	}, {
+		name: "one window reset, the other still live",
+		hint: hintAt(now.Add(-90*time.Minute), hintWin("codex_5h", 88, now.Add(-time.Second)), hintWin("codex_7d", 34, live)),
+		want: "codex 5h reset · 7d 34%, as of 1h30m ago",
+	}, {
+		name: "every window reset is still a reading, and still a line",
+		hint: hintAt(now.Add(-time.Hour), hintWin("codex_5h", 88, now.Add(-time.Hour)), hintWin("codex_7d", 96, now.Add(-time.Minute))),
+		want: "codex 5h reset · 7d reset, as of 1h00m ago",
+	}, {
+		// The boundary belongs to the reset arm: at resets_at the window HAS
+		// rolled over, and the percent beside it is the previous window's.
+		name: "exactly at resets_at is reset",
+		hint: hintAt(now.Add(-time.Hour), hintWin("codex_7d", 62, now)),
+		want: "codex 7d reset, as of 1h00m ago",
+	}, {
+		// A missing resets_at decodes to the epoch, which is past every
+		// clock this will ever run under — the arm that shows no stale
+		// percent, which is the direction to fail in.
+		name: "a window with no resets_at shows no percent",
+		hint: hintAt(now.Add(-time.Hour), hintWin("codex_7d", 62, time.Unix(0, 0))),
+		want: "codex 7d reset, as of 1h00m ago",
+	}, {
+		// codexWindowName's fallback arm reaches the header intact: a window
+		// duration nobody has seen is named honestly rather than dropped.
+		name: "an unseen window duration renders under its own name",
+		hint: hintAt(now.Add(-time.Minute), hintWin("codex_90m", 5, live)),
+		want: "codex 90m 5%, as of 1m ago",
+	}, {
+		name: "percentages are whole, like the claude line's",
+		hint: hintAt(now.Add(-time.Minute), hintWin("codex_7d", 62.4, live)),
+		want: "codex 7d 62%, as of 1m ago",
+	}, {
+		// Nothing mangles a name the prefix rule does not match.
+		name: "an unprefixed name is printed whole",
+		hint: hintAt(now.Add(-time.Minute), hintWin("7d", 62, live)),
+		want: "codex 7d 62%, as of 1m ago",
+	}} {
+		if got := c.hint.Segment(now); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+}
+
+// The reading on disk, through the shipped reader, rendered. The table above
+// hand-builds its hints and would stay green if ReadCodexPlanHint and
+// Segment disagreed about the window names — this is the seam between them.
+func TestPlanHintSegmentRendersWhatTheReaderRead(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	at := time.Date(2026, 8, 5, 10, 0, 1, 0, time.UTC)
+	codexRollout(t, home, "05", "rollout-2026-08-05T10-00-00-a.jsonl",
+		codexMeta("/w"),
+		codexRateLimitsLine(at.Format(time.RFC3339Nano), janJunRateLimits(12, 34, "plus")),
+	)
+	// Before both of the fixture's resets_at values (1788136455 =
+	// 2026-08-31T00:34:15Z for the 5h window, 1788697627 =
+	// 2026-09-06T12:27:07Z for the 7d one), so both windows are still the
+	// ones that were measured.
+	now := at.Add(20 * time.Minute)
+	if got, want := ReadCodexPlanHint().Segment(now), "codex 5h 12% · 7d 34%, as of 20m ago"; got != want {
+		t.Errorf("Segment over the shipped reader:\n got %q\nwant %q", got, want)
+	}
+	// The same reading read past both of those: neither percent survives
+	// into the header, and the age says how far past.
+	past := time.Unix(1788697627, 0).Add(time.Second)
+	if got, want := ReadCodexPlanHint().Segment(past), "codex 5h reset · 7d reset, as of 770h27m ago"; got != want {
+		t.Errorf("Segment past both resets:\n got %q\nwant %q", got, want)
+	}
+}
+
+// A box that has never run codex has nothing to say, and says nothing: the
+// nil the reader returns renders as no bytes at all, which is what lets
+// every caller render unconditionally.
+func TestPlanHintSegmentIsEmptyWhereCodexNeverRan(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if got := ReadCodexPlanHint().Segment(time.Now()); got != "" {
+		t.Errorf("no reading must draw nothing, got %q", got)
+	}
+}

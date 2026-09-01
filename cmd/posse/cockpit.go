@@ -179,6 +179,21 @@ type cockpit struct {
 	// reads it.
 	planLast planRead
 
+	// planHint is codex's on-disk plan meter, the newest reading this box
+	// has (ADR 0034 D1/D3) — a HINT and never a guard: it is a different Go
+	// type from the reading above precisely so nothing here can promote it,
+	// it starts no blind clock, and it is absent from every state
+	// planSegment renders. Nil is the normal state on a box that has never
+	// run codex, and nil draws nothing.
+	//
+	// It rides the plan scan for the creds field's reason: same cadence,
+	// same off-the-event-loop goroutine, and the draw path does no I/O. What
+	// it does NOT do is get rendered at scan time — the segment is formatted
+	// at draw time from this value, because the age is the load-bearing half
+	// of the display and a string frozen at the tick would sit on the header
+	// claiming to be up to two minutes younger than it is.
+	planHint *posse.PlanHint
+
 	// The credential-expiry segment (ADR 0019 D5, bead ranger-base-k6ha):
 	// the posse-owned session mints that die inside the window, soonest
 	// first, or nil. It rides the plan scan because it is the same
@@ -463,6 +478,13 @@ type planRead struct {
 	// degrade the caps would otherwise buy (posse.PlanBlindRefusal): the
 	// pass parks, caps or no caps, so the header must not name a brake.
 	noHeadroom bool
+	// hint is codex's on-disk meter, read on this tick (ADR 0034 D3). It is
+	// deliberately the LAST field of a struct whose every other member is
+	// the guard's: none of them may be derived from it, and it must never
+	// reach line/at/guarded/noAdapter/noSource/class/noHeadroom — a hint has
+	// no clock, and blindness means "the meter that gates could not be
+	// read", which this file's absence is not.
+	hint *posse.PlanHint
 	// creds is the OTHER credential question this scan answers, and it is
 	// unrelated to the guard: which posse-owned session mints expire inside
 	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
@@ -527,6 +549,11 @@ func (c *cockpit) scanPlan() {
 		// snapshot for itself is how the two halves stop disagreeing.
 		r.noHeadroom = c.app.PlanBlindRefusal("cockpit", c.clock()) != ""
 	}
+	// codex's meter (ADR 0034 D3), read off the same tick and kept apart
+	// from every field above: a hint informs the header and gates nothing,
+	// so a missing reading is nil and not a failure state. Nothing here can
+	// error — see ReadCodexPlanHint on why it has no error to return.
+	r.hint = posse.ReadCodexPlanHint()
 	// Files under the posse home, read here for the same reason the plan
 	// reading is: the draw path does no I/O. Nothing about this depends on
 	// the guard being armed — a mint expires on a box with no meter guard
@@ -543,7 +570,7 @@ func (c *cockpit) scanPlan() {
 func (c *cockpit) applyPlan(r planRead) {
 	c.planBusy = false
 	c.planLast = r
-	c.planLine, c.creds = c.planSegment(r), r.creds
+	c.planLine, c.creds, c.planHint = c.planSegment(r), r.creds, r.hint
 }
 
 // ledgerUnreadable is ADR 0018 §3's condition as this screen can see it: the
@@ -2594,7 +2621,16 @@ func (c *cockpit) moveRows(n int) {
 func (c *cockpit) headerCols() []col {
 	cols := []col{
 		{text: "🤠 posse", ansi: aBold},
-		{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + posse.VersionString() + planSuffix(c.planLine), ansi: aDim},
+		// The codex hint goes at the TAIL of the flex column, and that
+		// placement is the rule (ADR 0034 D3): the flex column truncates
+		// from its tail, so on a narrow pane the first thing thrown away is
+		// the one segment here that gates nothing. The guard's own reading —
+		// and the blind clock beside it — must outlive it at every width.
+		// Formatted here rather than carried across from the scan so the age
+		// and the reset boundary are true of NOW, not of the last two-minute
+		// tick; the value is a struct in memory, so this is no I/O.
+		{kind: colFlex, text: c.clock().Format("15:04:05") + " · " + posse.VersionString() +
+			planSuffix(c.planLine) + planSuffix(c.planHint.Segment(c.clock())), ansi: aDim},
 	}
 	// The credential warning goes between them, fixed, and ONLY when there
 	// is one. Appended unconditionally it would spend a separator cell of
