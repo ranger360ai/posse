@@ -616,6 +616,17 @@ func TestHarnessRatios(t *testing.T) {
 		{ID: "rangerhq-3", Status: "open", Assignee: "dev"},                     // not closed at all
 		{ID: "other-3", Status: "closed", Assignee: "", ClosedAt: at(0)},        // unassigned: total only
 		{ID: "rangerhq-4", Status: "closed", Assignee: "dev", ClosedAt: at(-1)}, // closed after now: clock skew, counted nowhere
+		// Status and closed_at disagreeing: the STATUS decides, so a row
+		// carrying a close date but not the closed status counts nowhere.
+		// bd 0.49.1 cleared closed_at on reopen (MEASURED, ranger-base-yzcd1:
+		// close, then `bd update --status open`, in a scratch db left
+		// closed_at null) — which is why the status half of HarnessRatios'
+		// filter had no row that could see it, and dropping
+		// `is.Status != "closed"` left every other pin green. Whether the
+		// pinned bd still clears it is a per-version fact with a shelf life,
+		// and not one this pin should depend on: whatever any writer does,
+		// a row that is not closed must not read as an upkeep close.
+		{ID: "rangerhq-5", Status: "open", Assignee: "dev", ClosedAt: at(1)},
 	}
 	ratios := HarnessRatios(issues, now)
 
