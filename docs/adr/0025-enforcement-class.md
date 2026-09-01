@@ -1,7 +1,11 @@
 # ADR 0025 — Enforcement class: "realized" stops meaning two things, and the refusals trail gets one writer
 
 *Status: accepted 2026-08-27 · owner: richard · amends ADR 0002 §3/§4
-(bead ranger-base-6uq6, measured in rangerhq-pafo)*
+(bead ranger-base-6uq6, measured in rangerhq-pafo) · amended 2026-09-01:
+§4's second bullet, its residual and Verification 2/3 corrected — a spool
+cut back to its cursor, above it, or before its first fold is NOT
+detected; what the fold guarantees is that the canonical log only grows
+(ranger-base-j3r6z, measured under ranger-base-w7h58)*
 
 ## Context
 
@@ -92,21 +96,43 @@ the host **folds** spool → canonical:
   mounted. Fold = read from offset, append lines to the canonical log
   prefixed `session=<id>`, advance the cursor. At-least-once with an
   idempotent cursor: re-running a fold appends nothing twice.
-- Truncation or rewrite from inside shows as `size < offset` or a hash
-  mismatch; the fold then appends a tamper line to the canonical log
+- A truncation or rewrite of bytes the canonical log *already holds*
+  shows as `size < offset` or a hash mismatch over `bytes[0:offset]`; the
+  fold then appends a tamper line to the canonical log
   (`<ts> refusals spool tampered [fold] session=<id>`) and re-folds the
-  spool from zero, marked suspect. **The erasure attempt becomes
-  evidence** — the property that decides this design.
+  spool from zero, marked suspect. That is the whole reach of detection:
+  the cursor covers the folded prefix and nothing past it. A spool cut
+  back to exactly the cursor, to any length above it, or before its first
+  fold ever ran (no cursor, so no comparison at all) folds as "no new
+  lines" — no tamper line, no marker (MEASURED 2026-09-01 at 718ebf0,
+  ranger-base-j3r6z; pinned green as the documented residual in
+  `internal/posse/refusalfold_qa_test.go`, which goes red the day
+  detection grows so this paragraph gets rewritten with it). **What
+  decides this design is that the canonical log can only grow from inside
+  a cage** — held by the mount that is not there — and that everything
+  already folded is beyond the reach of the process it records. The
+  tamper line is a bonus against the clumsy erasure, not a promise that
+  erasure leaves evidence.
 - Folds run where a host loop already runs: dispatch pass start /
   auto-reap sweep, session close, relaunch. No new daemon.
 
 Residual, stated rather than wished away: lines appended and then
-truncated *between* two folds are unrecoverable — the truncation is
-detected, the content is not restored; the window is the sweep cadence.
-The host tier is unchanged: an unconfined persona can edit the canonical
+truncated *between* two folds are unrecoverable **and the loss is not
+detected**. An inside process cannot read the cursor and does not need
+to: it stats the spool, does the thing it does not want recorded, and
+truncates back to the size it read — the folded prefix is byte-identical
+and the fold sees nothing. That is the default arm; the detected arm is
+the race where a fold landed inside the window. The window is the sweep
+cadence. Closing it means one of the two mechanisms rejected below (an
+append-only mount the inside cannot shorten, a live tail) — re-open when
+the threat model does, not before (ranger-base-j3r6z: the trail is a
+single operator's record of operator-authored beads, ADR 0002; nothing
+scores a persona on it). The host tier is unchanged: an unconfined persona can edit the canonical
 file no matter who appends, so a spool buys nothing there. In class
 vocabulary: the trail is itself cooperative at `shims` and
-enforced-append at `container` once this lands.
+enforced-append at `container` once this lands — enforced that the
+canonical file only grows, cooperative that a given line reaches it
+before the next fold.
 
 ## Consequences
 
@@ -169,10 +195,14 @@ enforced-append at `container` once this lands.
    cooperative with the effect note.
 2. In the live cage QA: `: > "$RHQ_GATES_DIR/refusals.log"` inside no
    longer shrinks the host canonical; the next fold appends a tamper
-   line naming the session.
+   line naming the session — because the QA folded once before the
+   truncate. The same gesture before a spool's first fold folds as empty
+   and says nothing (ranger-base-j3r6z).
 3. Two folds over an unchanged spool append zero new lines; a spool
-   truncated and refilled to the same size folds as tampered (the hash,
-   not the offset, is what catches it).
+   truncated below its cursor and refilled to the same size folds as
+   tampered (the hash, not the offset, is what catches it). A spool
+   truncated to or above its cursor and refilled folds as new lines,
+   untampered — the hash covers only the folded prefix.
 4. `/usr/bin/git push --no-verify` and `git -c core.hooksPath= push`
    are measured and pinned either way in the same QA file.
 5. ADR 0002 §3's L3 row no longer claims `env -i`; a grep for the claim

@@ -3301,10 +3301,15 @@ shell verb that is **not refused**. Three consequences worth knowing:
   403s already land in: a cursor per spool (byte offset + SHA-256 of the
   bytes up to it, `state/gates/<p>/spool-cursors/<session>`, host-only)
   makes the fold idempotent, and a spool shorter than its own cursor, or
-  hashing different at the same length, folds as a `tampered` line naming
-  the session instead of silently losing the gap — the erasure attempt
-  becomes evidence. Folds ride host loops that already run — the dispatch
-  sweep, a session close, a relaunch — never a new daemon.
+  hashing different over the bytes the cursor covers, folds as a
+  `tampered` line naming the session. That is the reach of it and no
+  further: a spool cut back to its cursor or anywhere above it between two
+  folds, or before its first fold, folds as "nothing new" and leaves no
+  mark (measured, ranger-base-j3r6z) — what the fold guarantees is that
+  the canonical log only grows and everything already folded is out of the
+  cage's reach, not that an erasure leaves evidence (ADR 0025 §4 as
+  amended). Folds ride host loops that already run — the dispatch sweep, a
+  session close, a relaunch — never a new daemon.
 - `realShell` now **resolves a shell that exists** (`$SHELL` if it is a
   real bash/zsh, else zsh, else bash, else `/bin/sh`). Inside the image
   `$SHELL` is unset and `/bin/zsh` is not there; the old hard-coded
