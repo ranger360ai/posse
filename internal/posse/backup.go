@@ -409,9 +409,9 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	if err != nil {
 		return res, err
 	}
-	if min := a.BackupMinFree(out); v.FreeBytes < min {
+	if floor := a.BackupMinFree(out); v.FreeBytes < floor {
 		return res, Die("%s has %s free and the floor is %s (config backup_min_free_mb:) — refusing rather than filling the disk (ADR 0036 §3)",
-			AbbrevHome(dir), humanBytes(int64(v.FreeBytes)), humanBytes(int64(min)))
+			AbbrevHome(dir), humanBytes(int64(v.FreeBytes)), humanBytes(int64(floor)))
 	}
 
 	// Single-flight (ADR 0036 §3): one writer in this directory. Held is not
