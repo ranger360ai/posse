@@ -490,13 +490,20 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 		name string
 		body string
 		want string // the window named in the error, or "" for a reading
+		// wantPct is what both windows must read, for the "" rows. The
+		// value matters as much as the nil error: the source comments
+		// say a 0..1-scaled response is handed back AS GIVEN (0.93
+		// becomes 0.93%, not 93%) because pct is a range check and
+		// nothing more (ranger-base-0wemu). Asserting only err == nil
+		// would let a silent rescale in under the same green.
+		wantPct float64
 	}{
-		{"negative", `{"five_hour":{"utilization":-5},"seven_day":{"utilization":-5}}`, "5h"},
-		{"seven_day negative, five_hour fine", `{"five_hour":{"utilization":12},"seven_day":{"utilization":-1}}`, "7d"},
-		{"over 100", `{"five_hour":{"utilization":140},"seven_day":{"utilization":12}}`, "5h"},
-		{"zero boundary", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, ""},
-		{"hundred boundary", `{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}`, ""},
-		{"0..1-scaled value stays a reading, undecidable from one response", `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`, ""},
+		{"negative", `{"five_hour":{"utilization":-5},"seven_day":{"utilization":-5}}`, "5h", 0},
+		{"seven_day negative, five_hour fine", `{"five_hour":{"utilization":12},"seven_day":{"utilization":-1}}`, "7d", 0},
+		{"over 100", `{"five_hour":{"utilization":140},"seven_day":{"utilization":12}}`, "5h", 0},
+		{"zero boundary", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, "", 0},
+		{"hundred boundary", `{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}`, "", 100},
+		{"0..1-scaled value stays a reading, undecidable from one response", `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`, "", 0.93},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := newPlanServer(t, 0, 0)
@@ -505,6 +512,14 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("a plausible boundary value is a reading: %v", err)
+				}
+				if len(u) != 2 {
+					t.Fatalf("a reading is both windows, got %+v", u)
+				}
+				for _, w := range u {
+					if w.Pct != tc.wantPct {
+						t.Errorf("%s read as %g%%, want %g%% — the value is handed back as given, never rescaled", w.Name, w.Pct, tc.wantPct)
+					}
 				}
 				return
 			}
