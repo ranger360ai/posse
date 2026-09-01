@@ -1136,9 +1136,17 @@ func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
 // the move loop's `.[!.]*` arm on the way home.
 func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 	f := qcRolledBack(t)
-	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock"} {
+	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock", ".migration-hint-ts"} {
 		write(t, filepath.Join(f.queue, ".beads", name), "runtime\n")
 	}
+	// `export-state/` is the one of the four patterns ranger-base-6dygg
+	// measured that the store's own ignore does NOT carry and the runbook
+	// deliberately does not append: the constitution's ROOT `.gitignore`
+	// covers it, from a commit that pre-dates the one Rollback undoes. The
+	// live store holds 638 of these, so if that line ever leaves the root
+	// ignore the good path reports a rollback that worked as a broken one.
+	const exportState = "9ae9377c9f59b1fc.json"
+	write(t, filepath.Join(f.queue, ".beads", "export-state", exportState), "{}\n")
 	out := qcRollbackRun(t, qcRollbackBlock(t), f)
 
 	// The rollback itself must have worked, or this arm is measuring a
@@ -1146,12 +1154,21 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", ".gitignore")); err != nil {
 		t.Fatalf("the rig's rollback did not carry the ignore home, so nothing below is about the check: %v\n%s", err, out)
 	}
+	// The export-state file has to have COME HOME, or the absence of a `??`
+	// line for it below is the move failing rather than an ignore working.
+	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", "export-state", exportState)); err != nil {
+		t.Fatalf("the rollback did not carry .beads/export-state home, so the arm below measures nothing: %v\n%s", err, out)
+	}
 	status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
-	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock"} {
+	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock", ".migration-hint-ts"} {
 		if strings.Contains(status, "?? .beads/"+name) {
 			t.Errorf("a complete rollback still reports .beads/%s as untracked — the runbook's check "+
 				"still cries wolf on the good path.\nstatus:\n%s\n%s", name, status, out)
 		}
+	}
+	if strings.Contains(status, "?? .beads/export-state") {
+		t.Errorf("a complete rollback reports .beads/export-state as untracked — the constitution's root "+
+			".gitignore no longer covers it, and the runbook does not append it either.\nstatus:\n%s\n%s", status, out)
 	}
 	ignore := readFile(t, filepath.Join(f.constitution, ".beads", ".gitignore"))
 	for _, pat := range []string{"bd.sock.startlock", "daemon-error", ".migration-hint-ts", ".jsonl.lock"} {
