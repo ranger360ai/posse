@@ -234,11 +234,15 @@ costs seven sessions of churn.
   its checklist: one row per surviving rule, verdict per row.
 - The 41 dead `internal/rhq/` paths are fixed in one mechanical bead
   regardless of the ruling — they are wrong under every disposition.
-- Beads cut (ids on the bead's close comment): the ruling question; the
-  `internal/rhq/` sweep (unblocked); one merge bead per new record (0041,
-  0042, 0043, 0044) and one for the 0030→0008 fold; the 0015 trim; two
-  AMEND sweeps (personas group; the rest) — all but the sweep dep-blocked
-  on the ruling.
+- Beads cut 2026-09-01: the ruling question ranger-base-ay3dr; the
+  `internal/rhq/` sweep ranger-base-3ni7p (unblocked); the four merge
+  records — 0041 ranger-base-rkh3w, 0042 ranger-base-hn32r, 0043
+  ranger-base-yv9uo, 0044 ranger-base-vl294 — and the 0030→0008 fold
+  ranger-base-k9d7s; the 0015 trim ranger-base-rowut; the two AMEND
+  sweeps ranger-base-mppjc (personas group) and ranger-base-mqoid (the
+  rest, plus `docs/adr/README.md`). All but the sweep are dep-blocked on
+  the ruling; the second sweep also waits on the 0044 and 0030 beads,
+  which share files with it (one writer per file, ADR 0022).
 
 ## Verification (predicted observables)
 
