@@ -1793,6 +1793,13 @@ are what keep an unattended loop off your plan's rate windows; under
 default) with no successful reading, so passes park rather than run blind.
 Arming without the guard is arming a token loop nobody is watching.
 
+With `budget_pass:`/`budget_day:` armed a blind pass runs under the ledger
+instead of parking (ADR 0018) — but only while the meter's **last** reading
+still showed room. Once that reading is over one of your `plan_guard_*`
+thresholds or in the 80% braking band, blindness parks the on-meter lanes
+whatever the caps say: dollars are not a brake on your plan's weekly window.
+Do not read a spend cap as cover for a meter you cannot read.
+
 **If you dispatch onto grok, arm `grok_guard_week:` too.** The Claude 5h
 window heals in five hours; the SuperGrok week has no intra-week reset, so
 exhausting it is days of nothing and it takes your own Grok — Chat, Voice,

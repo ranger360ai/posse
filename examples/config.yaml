@@ -322,6 +322,19 @@ default_emoji: ⚙️
 #     clock — do not reach for a bigger number here to buy a degrade, that
 #     is what arming the caps is for. If the cost scan itself cannot be read
 #     the floor is gone and the pass parks exactly as the unset case does.
+#   caps SET, and the LAST READING left no room — the pass parks anyway,
+#     and this is the one the caps do not buy off. The ledger counts
+#     dollars; your plan's weekly window is not denominated in dollars and
+#     the ledger has never been able to see it. So the licence to run blind
+#     is asked of the meter, from the last reading it managed: over one of
+#     your `plan_guard_<window>:` thresholds (a sighted pass would have
+#     skipped) or at/past the 80% braking rung, and the on-meter lanes park
+#     until a reading succeeds. A reading with room, or no reading ever
+#     taken on this machine, is the caps-SET case above, unchanged.
+#     (2026-08-31, ranger-base-c3vqe: nineteen hours blind on a stale
+#     credential, the snapshot frozen at 89% of the weekly window while the
+#     account was really at 96% — and the dollar caps held perfectly the
+#     whole way down, because dollars were never the thing running out.)
 # Off-meter beads launch through all of it (ADR 0013 §3).
 #
 # Default 10m. The rationale, not a measurement: a fleet at full fan-out
@@ -421,6 +434,14 @@ default_emoji: ⚙️
 # alternative was tuning `plan_guard_blind_max:` by hand every time the caps
 # changed, which was measured failing (three changes in two days, each on a
 # wrong diagnosis) on 2026-08-26.
+#
+# What these caps do NOT buy is a blind pass with no headroom left on the
+# plan meter. They are a ceiling on SPEND and they cannot see your plan's
+# weekly window at all, so when the meter's last reading was already over a
+# `plan_guard_<window>:` threshold or in the 80% braking band, an unattended
+# blind pass parks with the caps armed and counting (2026-08-31, above
+# `plan_guard_blind_max:`). Set them as a spend ceiling; they are not a
+# substitute for the meter.
 # budget_pass: <dollars per epoch>
 # budget_day: <dollars per day>
 

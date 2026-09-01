@@ -852,6 +852,26 @@ then stops dispatch on API-equivalent spend.
   code, not in a comment: the alternative was hand-tuning
   `plan_guard_blind_max:` whenever the caps changed, measured failing on
   2026-08-26 (three changes in two days, each on a wrong diagnosis).
+- **…but the caps do not license a blind pass with no headroom left**
+  (`internal/posse/blindheadroom.go`, ranger-base-c3vqe). 2026-08-31: the
+  meter credential went stale at 23:09, every read after it was a 401 or a
+  429, and the fleet spent nineteen hours on the degraded arm because the
+  instance's Dial E caps were armed and counting correctly the whole way
+  down. They were counting DOLLARS. The account's weekly window climbed 89% → 96%
+  behind a frozen snapshot and the operator caught it by hand with 4% left.
+  A cap on one store is not a brake on another store's ceiling — ADR 0011's
+  own diagnosis, "one store's momentary reading taken as evidence about
+  another store's durable fact", one store further out. So the licence is
+  asked of the METER, from the last reading it managed: over a
+  `plan_guard_<window>:` threshold (a sighted pass would have skipped) or
+  at/past the 80% braking rung, the pass parks with the caps armed. It
+  invents nothing to do it — the reading is never aged, scaled by spend or
+  extrapolated, which is the alternative ADR 0018 rejected by name; it is
+  asked one question about the past ("was there room when the lights went
+  out?") and both numbers are ones already in force on a sighted pass. **No
+  reading at all is deliberately left on §1's arm**: that is the 2026-08-26
+  shape, and parking it cost a measured hour of zero dispatch. Park on
+  evidence, not on ignorance.
 - **Display** `posse cost` ends with the caps in force and the day spend
   against them (or "no caps set … dormant"); the cockpit footer shows
   `today $… of $… budget_day (NN%)`, and the header's blind segment names
@@ -862,8 +882,12 @@ then stops dispatch on API-equivalent spend.
   unarmed Dial E would (the footer hedges the same scan's dollars with `≥`
   and `a floor, not a total`). The clause is the SCAN's fact, not the
   config's — reading the third state as the second is a stopped shop whose
-  header says it is running under the ledger (ranger-base-3nvt). Both read;
-  only dispatch acts.
+  header says it is running under the ledger (ranger-base-3nvt). `guard
+  blind 19h00m — no headroom at last reading, parked` is the FOURTH, the
+  same rule once more: the ledger reads fine and the pass parks anyway,
+  because the meter's last reading was already braking (ranger-base-c3vqe —
+  this header said "ledger brake" for nineteen hours over a frozen 89%).
+  Both read; only dispatch acts.
 
 **verify-after** (ADR 0006 §3, `internal/posse/verifyafter.go`) is the one
 handoff the harness files rather than a persona. Every dispatch pass — right

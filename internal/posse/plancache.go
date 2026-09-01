@@ -218,11 +218,27 @@ func (c *PlanCache) share(r PlanReader, e planEntry) {
 // long have we been blind" has one answer on the machine rather than one per
 // process. A snapshot holding only a cooldown is not a reading and says so.
 func (c *PlanCache) LastReadAt() (time.Time, bool) {
+	_, at, ok := c.LastReading()
+	return at, ok
+}
+
+// LastReading is the whole of that snapshot — the WINDOWS as well as when
+// they were taken. Same rules as LastReadAt, which is now this function
+// answering half the question: no request, no fallback to now, and a
+// snapshot holding only a cooldown is not a reading.
+//
+// The windows are needed because the last reading is the only thing a blind
+// meter still has to say (blindheadroom.go). It is a snapshot and it is
+// treated as one — a hint about the past, never a number to render as the
+// present (Helland: data outside its store of record "is clearly from the
+// past and not now"). Nothing here interpolates, ages or extrapolates it;
+// the caller that acts on it says out loud how old it is.
+func (c *PlanCache) LastReading() (PlanUsage, time.Time, bool) {
 	e, have := c.load()
 	if !have || e.At.IsZero() || len(e.Windows) == 0 {
-		return time.Time{}, false
+		return nil, time.Time{}, false
 	}
-	return e.At, true
+	return e.Windows, e.At, true
 }
 
 // Line is the reading as a person reads it: `plan windows: ` and whatever

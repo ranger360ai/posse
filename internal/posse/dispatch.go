@@ -646,6 +646,15 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 // bounded by MONEY and never by wall-clock: run while something is still
 // counting, never because the clock ran out.
 //
+// …and never by a cap alone. 2026-08-31 (ranger-base-c3vqe) ran nineteen
+// hours on that arm while the weekly plan window climbed 89% → 96% behind a
+// stale credential, because the ledger counts spend and cannot see the
+// account ceiling at all. So the licence is asked of the METER first: the
+// last reading it managed is the only thing it still has to say, and a
+// reading that was already in the braking band left no headroom to degrade
+// into. That park the caps do not override (blindheadroom.go). A reading
+// with room, or no reading ever taken, is §1 unchanged.
+//
 // No fork by failure class (§2): a shape mismatch, a gate refusal, a 401 and
 // a dead socket are one state here — no reading. The classes are for the
 // diagnostic and the cooldown, never for park-vs-degrade, because policy
@@ -663,6 +672,17 @@ func (d *Dispatcher) blindFork(blind time.Duration, err error) {
 	}
 	if !d.ledgerArmed() {
 		park("")
+		return
+	}
+	// The meter's own last word, before the ledger's. §1 licensed this
+	// degrade on "there is a floor under the blind meter", and 2026-08-31
+	// measured that the floor is made of dollars while the thing at risk is
+	// the account's weekly window (blindheadroom.go, ranger-base-c3vqe). A
+	// reading that was already in the braking band when the lights went out
+	// left nothing to spend into, and no dollar cap knows that — so this
+	// park is one the caps do not override.
+	if why := d.App.PlanBlindRefusal("dispatch", d.now()); why != "" {
+		park(", " + why)
 		return
 	}
 	st := d.passBudget()

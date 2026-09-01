@@ -39,8 +39,7 @@ func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 	// are both pinned to it (credpin.go). Nothing listens on it: the fake
 	// transport below answers, so the port is decoration.
 	ps.URL = "https://127.0.0.1:9/usage"
-	ps.body = fmt.Sprintf(`{"five_hour":{"utilization":%g,"resets_at":"2026-08-18T12:00:00Z"},`+
-		`"seven_day":{"utilization":%g,"resets_at":"2026-08-24T12:00:00Z"}}`, fiveH, sevenD)
+	ps.setWindows(fiveH, sevenD)
 	ps.client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if ps.closed.Load() || r.URL.String() != ps.URL {
 			return nil, fmt.Errorf("fake usage endpoint down")
@@ -65,6 +64,15 @@ func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 }
 
 func (ps *planServer) Close() { ps.closed.Store(true) }
+
+// setWindows is what the endpoint answers, so a rig can move the reading
+// between passes the way a real week does. Split out of newPlanServer rather
+// than copied into a second test file: the body shape is the provider's, and
+// one copy of it is the only way a shape change fails in one place.
+func (ps *planServer) setWindows(fiveH, sevenD float64) {
+	ps.body = fmt.Sprintf(`{"five_hour":{"utilization":%g,"resets_at":"2026-08-18T12:00:00Z"},`+
+		`"seven_day":{"utilization":%g,"resets_at":"2026-08-24T12:00:00Z"}}`, fiveH, sevenD)
+}
 
 // reader is the fake endpoint as a PlanReader. Shared is set explicitly:
 // the field's zero value is "this reading is nobody's fact" (credpin.go

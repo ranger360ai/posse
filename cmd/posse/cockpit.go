@@ -459,6 +459,10 @@ type planRead struct {
 	// because blind alone is what those are.
 	class  string
 	ledger bool // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
+	// noHeadroom is set when the meter's last reading refuses to license the
+	// degrade the caps would otherwise buy (posse.PlanBlindRefusal): the
+	// pass parks, caps or no caps, so the header must not name a brake.
+	noHeadroom bool
 	// creds is the OTHER credential question this scan answers, and it is
 	// unrelated to the guard: which posse-owned session mints expire inside
 	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
@@ -518,6 +522,10 @@ func (c *cockpit) scanPlan() {
 		// 2026-08-22 and said nothing an operator could act on; the class
 		// is the half that names the next move (ADR 0019 D2).
 		r.class = string(posse.PlanFailureOf(err))
+		// And which arm of the fork this blindness is on. Same file, same
+		// rule, same answer as the dispatcher's — a header that reads the
+		// snapshot for itself is how the two halves stop disagreeing.
+		r.noHeadroom = c.app.PlanBlindRefusal("cockpit", c.clock()) != ""
 	}
 	// Files under the posse home, read here for the same reason the plan
 	// reading is: the draw path does no I/O. Nothing about this depends on
@@ -592,6 +600,12 @@ func (c *cockpit) ledgerUnreadable() bool { return c.costUnread > 0 }
 // same ambiguity inverted — a stopped shop whose header says it is running
 // under the ledger, which is the 2026-08-26 outage shape wearing the
 // degraded day's clothes — so it gets its own clause (ranger-base-3nvt).
+//
+// A FOURTH, on the same rule: caps armed, ledger perfectly readable, and the
+// pass parks anyway because the meter's last reading left no headroom to
+// degrade into (blindheadroom.go, ranger-base-c3vqe). It is the clause this
+// header most needed and did not have — on 2026-08-31 it said "ledger brake"
+// for nineteen hours over a frozen 89% while the account climbed to 96%.
 func (c *cockpit) planSegment(r planRead) string {
 	now := c.clock()
 	if c.planReadAt.IsZero() {
@@ -628,6 +642,15 @@ func (c *cockpit) planSegment(r planRead) string {
 		seg += " · " + r.class
 	}
 	switch {
+	case r.ledger && r.noHeadroom:
+		// The FOURTH outcome, and 3nvt's rule a second time: the caps are
+		// armed and counting, and the pass still parks, because the meter's
+		// last reading was already in the braking band and dollars are not a
+		// brake on the plan window (ranger-base-c3vqe). Rendering that as
+		// the degrade is the 19h blind day wearing the degraded day's
+		// clothes — the header said 89% for nineteen hours and the account
+		// was at 96%.
+		seg += " — no headroom at last reading, parked"
 	case r.ledger && c.ledgerUnreadable():
 		// §3, and not a brake: the caps are armed and counting nothing, so
 		// the pass stopped. The header must not name a brake that is not
