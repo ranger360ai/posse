@@ -1117,6 +1117,15 @@ func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
 // now; `daemon-error` is named in ranger-base-g1js's own repro. The block
 // now appends both patterns to `.beads/.gitignore` after the store comes
 // home, so a complete rollback reports neither as untracked.
+//
+// ranger-base-0dylx added the third: bd 0.50.3 drops `.migration-hint-ts`
+// (a unix timestamp that rate-limits its own migration notice) into any
+// store it touches, and the whole-store move carries it home. It is
+// per-machine generated state, the class bd already ignores as
+// `.local_version`, so it joins the list rather than being excluded from
+// the move — a growing exclusion list is how `.beads/.gitignore` itself got
+// left behind (ranger-base-g1js). Written by the binary, so it needs no
+// `write` below: the arm asserts it is covered wherever it came from.
 func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 	f := qcRolledBack(t)
 	for _, name := range []string{"bd.sock.startlock", "daemon-error"} {
@@ -1137,7 +1146,7 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 		}
 	}
 	ignore := readFile(t, filepath.Join(f.constitution, ".beads", ".gitignore"))
-	for _, pat := range []string{"bd.sock.startlock", "daemon-error"} {
+	for _, pat := range []string{"bd.sock.startlock", "daemon-error", ".migration-hint-ts"} {
 		if !strings.Contains(ignore, pat) {
 			t.Errorf("the restored .beads/.gitignore does not cover %q:\n%s", pat, ignore)
 		}
