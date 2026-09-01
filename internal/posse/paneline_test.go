@@ -206,10 +206,12 @@ func TestKillSessionDropsTheSpilledLine(t *testing.T) {
 	}
 }
 
-// Today's fleet is not near the limit and should stay legible: every real
-// PID's line is typed whole, so the pane's scrollback and herdr's log still
-// say what the session was launched with. Measured on this repo's crew:
-// 352-677 bytes rendered with gates.
+// A line under the limit is typed whole, so the pane's scrollback and
+// herdr's log say what the session was launched with. The fixture is a
+// minimal PID deliberately — that is what makes a short line, and it is all
+// this pins. It is NOT a claim about the crew: their lines were 352-677
+// bytes when this was written, and measured 2026-09-01 they are 1867-2058
+// against the 1023 limit and every one of them spills (ranger-base-q8ejb).
 func TestOrdinaryPersonaLinesAreStillTypedWhole(t *testing.T) {
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
