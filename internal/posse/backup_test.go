@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -499,43 +500,64 @@ func TestSameSecondArchivesOrderByTheirSequence(t *testing.T) {
 // runs the archive is published, so an error here would make a good backup
 // read as a failed one — and one undeletable candidate must not stop the
 // rest of the sweep.
+//
+// The undeletable candidate is REAL, not asserted: a rig where nothing can
+// fail proves nothing about a loop that keeps going past a failure. macOS
+// gives a non-root owner exactly one way to make unlink(2) fail on their own
+// file — the user-immutable flag — and this uses it; elsewhere the arm is
+// skipped rather than faked.
 func TestPruneReportsAndKeepsGoing(t *testing.T) {
 	dir := t.TempDir()
 	var names []string
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		n := backupPrefix + backupAt.Add(time.Duration(i)*time.Hour).UTC().Format(backupStamp) + backupSuffix
 		write(t, filepath.Join(dir, n), "x")
 		names = append(names, n)
 	}
-	// Make the oldest undeletable the only way a non-root process can: put
-	// it in a directory it cannot write. (chmod on the FILE would not stop
-	// the unlink — the directory is what owns the name.)
-	sub := filepath.Join(dir, "walled")
-	if err := os.MkdirAll(sub, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	// The OLDEST is the first candidate the loop reaches, so a loop that
+	// stops at a failure stops before it has pruned anything.
+	oldest := filepath.Join(dir, names[0])
+	immutable(t, oldest)
+
 	var say strings.Builder
 	pruned := pruneBackups(&say, dir, 2)
 	if len(pruned) != 2 {
-		t.Fatalf("pruned %v, want the two oldest", pruned)
+		t.Fatalf("pruned %v, want the two it COULD remove — the loop stopped at the one it could not", pruned)
 	}
-	for _, p := range pruned {
-		if fileExists(p) {
-			t.Errorf("%s is still there", p)
-		}
+	if !fileExists(oldest) {
+		t.Error("the immutable archive was removed; the rig is not testing what it claims")
 	}
-	for _, n := range names[2:] {
+	for _, n := range names[3:] {
 		if !fileExists(filepath.Join(dir, n)) {
-			t.Errorf("%s was pruned and should not have been", n)
+			t.Errorf("%s is inside the keep window and was pruned", n)
 		}
 	}
-	if !strings.Contains(say.String(), "pruned ") {
-		t.Errorf("retention said nothing: %q", say.String())
+	if !strings.Contains(say.String(), "left "+names[0]+" in place") {
+		t.Errorf("the failure was silent: %q", say.String())
+	}
+	if !strings.Contains(say.String(), "pruned "+names[1]) {
+		t.Errorf("the removals were silent: %q", say.String())
 	}
 	// An unreadable directory is a line, not a panic and not a verdict —
 	// pruneBackups has no error to return by construction.
 	var say2 strings.Builder
 	if got := pruneBackups(&say2, filepath.Join(dir, "nope"), 1); got != nil {
 		t.Errorf("pruned %v out of a directory that does not exist", got)
+	}
+}
+
+// immutable makes p undeletable by its own owner, and registers the undo —
+// without it t.TempDir's cleanup fails and takes an unrelated test with it.
+func immutable(t *testing.T, p string) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("the user-immutable flag is the darwin/BSD way to make unlink fail for the owner")
+	}
+	if out, err := exec.Command("chflags", "uchg", p).CombinedOutput(); err != nil {
+		t.Skipf("chflags uchg is not usable here: %s", strings.TrimSpace(string(out)))
+	}
+	t.Cleanup(func() { exec.Command("chflags", "nouchg", p).Run() })
+	if err := os.Remove(p); err == nil {
+		t.Fatal("the immutable file removed anyway — this rig cannot fail, so it measures nothing")
 	}
 }
