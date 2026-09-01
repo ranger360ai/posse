@@ -257,10 +257,18 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// must never fail. Absent is now an error, so the blind clock runs.
 	//
 	// A key that IS present is not thereby plausible (ranger-base-cb0s): a
-	// negative utilization or a 0..1-scaled response (a 93%-used account
-	// reported as 0.93) both decode as a "successful" reading below every
-	// posse threshold, same as the absent case above and just as silent —
-	// the shape check has nothing to say about it. pct rejects both.
+	// utilization outside 0..100 — negative, or over 100 — decodes as a
+	// "successful" reading, and a negative one sits below every posse
+	// threshold, same as the absent case above and just as silent; the
+	// shape check has nothing to say about it. pct refuses those.
+	//
+	// It does not refuse a 0..1-scaled response (a 93%-used account
+	// reported as 0.93): that value is inside 0..100 and is equally a
+	// legitimate small reading, so one response cannot tell the two apart
+	// and pct returns it as 0.93%. That half is deliberately open —
+	// whether such an endpoint should be detected and rescaled, or the
+	// scale pinned some other way, is a design call ranger-base-cb0s
+	// declined to make here.
 	five, err := body.FiveHour.pct(anthropicWindow5h)
 	if err != nil {
 		return nil, err
@@ -292,10 +300,15 @@ type anthropicWindowBody struct {
 //
 // 0..100 inclusive is the plausible range for a percent: 0 is a fresh
 // window and 100 an exhausted one, both legitimate readings. Outside that
-// window a value is not a percent at all — negative, or the same account
-// reported on a 0..1 scale — and reading it as one silently defeats every
-// plan_guard threshold, which is worse than the absent-key case this
-// guards alongside: there the shape check at least has a chance to fire.
+// window — negative, or over 100 — a value is not a percent at all, and
+// reading a negative one as usage silently defeats every plan_guard
+// threshold, which is worse than the absent-key case this guards
+// alongside: there the shape check at least has a chance to fire.
+//
+// This is a range check and nothing more. A value INSIDE 0..100 is
+// returned as given, including a 0..1-scaled utilization (0.93 for a
+// 93%-used account), which no range check can separate from a genuine
+// 0.93% reading — see Read's comment on the open half.
 func (w *anthropicWindowBody) pct(window string) (float64, error) {
 	if w == nil || w.Utilization == nil {
 		return 0, Die("usage response is not the expected JSON: no %s utilization", window)
