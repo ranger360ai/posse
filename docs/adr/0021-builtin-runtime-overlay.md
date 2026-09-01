@@ -1,8 +1,12 @@
 # ADR 0021 — Built-in runtimes take a per-key overlay from runtimes/<name>.yaml
 
-*Status: accepted 2026-08-27 · owner: architect · amends 0002 §1 (the
-exit-hatch sentence), 0013 §1 (declared-by column) · from
-ranger-base-qkmz (split out of ranger-base-arm)*
+*Status: accepted 2026-08-27 · owner: architect · amended 2026-09-01:
+`runtimes/` joins the promoted set — the overlay still lives at the home
+and is still the operator's own config root, but it gets there by `posse
+promote` and the launch verify attests it (ADR 0039 D2, built in
+ranger-base-ight8) · amends 0002 §1 (the exit-hatch sentence), 0013 §1
+(declared-by column) · from ranger-base-qkmz (split out of
+ranger-base-arm)*
 
 > `App.LoadRuntime` returns a built-in as soon as the name matches,
 > before it ever stats `RHQ_HOME/runtimes/<name>.yaml` (runtime.go).
@@ -37,7 +41,10 @@ here (or a yaml key)". The declared-by machinery is also already built:
 falling back to "built-in default" — it only needs `rt.Path` set.
 
 MEASURED on this instance: `~/.config/rhq/runtimes/` does not exist.
-No config anywhere depends on the current precedence.
+No config anywhere depends on the current precedence. *(That was true on
+2026-08-27; by 2026-09-01 the home carries `runtimes/claude.yaml` and
+the constitution repo carries it too — which is what ADR 0039 D2 makes
+the single source.)*
 
 ## Decision
 
@@ -95,7 +102,15 @@ not decided here.
   availability preflight off (`anthropicAPI` predicate, modelavail.go)
   — visible in the grid's account/tier rows, and the file is the
   operator's own config root, the same trust level as `config.yaml`
-  and the PIDs beside it.
+  and the PIDs beside it. *(Amended 2026-09-01, ADR 0039 D2: that
+  sentence is now literally true of the write path too. `runtimes/` is
+  in `PromotedPaths`, so the home copy is written only by `posse
+  promote`, hashed into `promoted.json`, in no session's writable set,
+  and walled from persona commits as `rhq/runtimes`. Editing the
+  overlay at the home is no longer a supported move: the edit goes to
+  the constitution repo and a promote puts it in force — and until it
+  does, the launch verify reads `unpromoted runtimes/<name>.yaml` and
+  dispatched sessions refuse.)*
 - A stale overlay pins a value across a posse upgrade that re-measures
   the built-in. That is what an override is *for*; the grid names the
   file per key, which is where staleness is found.

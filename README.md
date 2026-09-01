@@ -109,15 +109,15 @@ the install location. Outside a git repo the build refuses rather than produce
 an unidentifiable binary.
 
 **The prose has the same promotion step** (ADR 0015). `posse promote <dir>`
-copies the constitution — `agents/`, `config.yaml`, `recipes/`, `skills/` —
-out of a repo **at a commit** into `$RHQ_HOME`, and records `{source, sha,
-sha256 per file}` in `promoted.json` beside it. Every launch re-hashes the
-promoted set against that manifest: a dispatched session refuses on a
-mismatch, an interactive one warns DEGRADED, and re-promoting clears it. So an
-edited PID is a draft until somebody ratifies it, and what gets ratified is a
-diff — promote prints `git diff <last promoted>..HEAD` over those four paths
-before writing anything (`--dry-run` prints it and stops). Like `make
-install`, it is a human's: every shipped PID denies `Bash(posse promote:*)`
-and promote refuses under a persona env marker. It never touches `envs/`
-(gitignored secret values — no commit to promote from), `state/`, or
-`personas/`.
+copies the constitution — `agents/`, `config.yaml`, `recipes/`, `runtimes/`,
+`skills/` — out of a repo **at a commit** into `$RHQ_HOME`, and records
+`{source, sha, sha256 per file}` in `promoted.json` beside it. Every launch
+re-hashes the promoted set against that manifest: a dispatched session
+refuses on a mismatch, an interactive one warns DEGRADED, and re-promoting
+clears it. So an edited PID is a draft until somebody ratifies it, and what
+gets ratified is a diff — promote prints `git diff <last promoted>..HEAD`
+over those five paths before writing anything (`--dry-run` prints it and
+stops). Like `make install`, it is a human's: every shipped PID denies
+`Bash(posse promote:*)` and promote refuses under a persona env marker. It
+never touches `envs/` (gitignored secret values — no commit to promote
+from), `state/`, or `personas/`.

@@ -2878,8 +2878,8 @@ Three different things get called "permissions"; keep them apart
   sessions got no grant to their own state dir and one into the default
   instance's — rangerhq-qfzr), `$TMPDIR`/`/tmp`, `/dev`, and the PID's
   `writable:` extras (relative to the repo). **What it never grants is the
-  rest of the home** — `agents/`, `config.yaml`, `recipes/`, `skills/`,
-  `envs/`, `promoted.json`: after ADR 0015 §2 that is the promoted
+  rest of the home** — `agents/`, `config.yaml`, `recipes/`, `runtimes/`,
+  `skills/`, `envs/`, `promoted.json`: after ADR 0015 §2 that is the promoted
   constitution, and a promoted copy stays in force precisely because no
   session can write it. `posse gates <persona>` prints the writable set
   with that check over it, so the property is read rather than audited —
@@ -4450,7 +4450,9 @@ rather than there:
 ranger-base-o943). The runbook moved to the instance tree (ADR 0024 D4;
 one-deployment procedure). What is worth knowing here rather than there:
 
-- **The promoted set is four paths** — `agents/`, `config.yaml`, `recipes/`,
+- **The promoted set is five paths** — `agents/`, `config.yaml`, `recipes/`,
+  `runtimes/` (ADR 0039 D2, 2026-09-01: the per-key runtime overlay is read at
+  every launch and decides a tier's model, so it is promoted prose too),
   `skills/` — and the exclusions are a symbol, not a sentence: `PromotedPaths`
   and `NotPromoted` in promote.go, with a test that reads both. `envs/`,
   `state/` and `personas/` are never created, copied or touched by promote,

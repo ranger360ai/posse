@@ -504,14 +504,14 @@ boundary.
 
 **Or keep the two apart, which is what ADR 0015 recommends once the
 instance has personas editing their own prose.** Draft the constitution —
-`agents/`, `config.yaml`, `recipes/`, `skills/` — in a repo, and put it in
-force with `posse promote <that dir>`, which copies it into `$RHQ_HOME` from
-a **commit** and records `{source, sha, sha256 per file}` in
-`promoted.json` beside it. Every launch re-hashes the promoted set against
+`agents/`, `config.yaml`, `recipes/`, `runtimes/`, `skills/` — in a repo, and
+put it in force with `posse promote <that dir>`, which copies it into
+`$RHQ_HOME` from a **commit** and records `{source, sha, sha256 per file}`
+in `promoted.json` beside it. Every launch re-hashes the promoted set against
 that manifest: a dispatched session refuses on a mismatch, an interactive
 one warns DEGRADED, and `posse promote` clears it. Uncommitted prose is then
 never in force, and what you ratify is a diff — promote prints
-`git diff <last promoted>..HEAD` over those four paths before it writes
+`git diff <last promoted>..HEAD` over those five paths before it writes
 anything (`--dry-run` prints it and stops).
 
 Promote never creates, copies or touches `envs/` (gitignored secret values
@@ -1346,7 +1346,8 @@ commit made from a persona session — one carrying `RHQ_PERSONA`, which your
 own shell does not — is refused when it touches `.claude/settings.json` or
 `.claude/settings.local.json` in ANY hooked repo, and, in your constitution
 repo (the one whose top level has `rhq/agents`), when it touches `rhq/agents`,
-`rhq/config.yaml`, `rhq/recipes`, `rhq/skills` or `rhq/envs`. ADR 0015 §2/§3
+`rhq/config.yaml`, `rhq/recipes`, `rhq/runtimes`, `rhq/skills` or `rhq/envs`.
+ADR 0015 §2/§3
 is the rule: personas *draft* the constitution and you put it in force with
 `posse promote`, and the settings file is where the deny list fencing a
 persona's own destructive verbs lives (ranger-base-az93) — a session that can

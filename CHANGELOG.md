@@ -11,6 +11,35 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+### Upgrading
+
+**`runtimes/` is now part of the promoted set, so this release needs `make
+install` *and* `posse promote` — in that order.**
+
+The per-key runtime overlay (`runtimes/<name>.yaml`, the file that sets a
+tier's model) is read at every launch and decides which model a session
+actually runs on, but nothing attested to it: it was in no manifest entry
+and in no promoted path, so a hand edit at the config home changed every
+future launch and no check anywhere noticed. It is promoted prose now, on
+the same terms as `config.yaml` — written only by `posse promote`, hashed
+into `promoted.json`, in no session's writable set, and walled from persona
+commits in the constitution repo as `rhq/runtimes`.
+
+What that means the first time you run the new binary: a config home whose
+`promoted.json` predates this release names no `runtimes/` entry, so the
+launch verify reads `unpromoted runtimes/<name>.yaml` and **every dispatched
+launch refuses** until you promote. That is the fence working. The ritual is
+`make install` then `posse promote`; `posse promote` does not itself run the
+launch verify, so the two cannot deadlock.
+
+One thing to do before promoting: any `runtimes/*.yaml` you placed at the
+config home by hand must be committed to the constitution repo first (as
+`rhq/runtimes/<name>.yaml`). Promote copies out what the commit carries and
+removes what it does not, printing each removal — so an uncommitted overlay
+leaves, loudly, rather than quietly staying in force. `posse promote
+--dry-run` shows the whole ratification diff, including the arriving and
+departing overlay files, and writes nothing.
+
 ### Added
 
 **`posse backup` — one command that archives the work graph and the

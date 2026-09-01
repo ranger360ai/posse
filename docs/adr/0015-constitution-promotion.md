@@ -22,8 +22,11 @@ land (ranger-base-ak3e, from ranger-base-7pq0; recorded by
 ranger-base-ubtc) · amended 2026-08-31: §3's launch-verify claim
 tier-conditioned — an ABSENT or re-stamped anchor defeats detection at
 shims, accepted with reasons; anchor-state line added
-(ranger-base-zio33, from ranger-base-bejb) · informs 0002
-§3, 0012 D3-C, 0014 §3, 0025*
+(ranger-base-zio33, from ranger-base-bejb) · amended 2026-09-01: the
+promoted set gains `runtimes/` — the per-key runtime overlay of ADR 0021
+is read at every launch and was the one launch-read fact at the home no
+manifest attested to (ADR 0039 D2, built in ranger-base-ight8) · informs
+0002 §3, 0012 D3-C, 0014 §3, 0025*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -96,9 +99,12 @@ symlink (§2).
 **2. The home becomes the promoted copy.** `~/.config/posse` — the
 path the binary already prefers (**MEASURED**, `app.go`) — is created
 as a *real directory*, not a symlink. `agents/`, `config.yaml`,
-`recipes/`, `skills/` under it — the **promoted set** — are written
-**only** by `posse promote` (`envs/` is deliberately not in this set;
-§7). The `~/.config/rhq` symlink dies with the rhq
+`recipes/`, `runtimes/`, `skills/` under it — the **promoted set** — are
+written **only** by `posse promote` (`envs/` is deliberately not in this
+set; §7). *(`runtimes/` added 2026-09-01, ADR 0039 D2: it is read at
+every launch and is the only thing that makes a tier's model the current
+one, written by no code path and holding no secret — the same terms as
+`config.yaml`.)* The `~/.config/rhq` symlink dies with the rhq
 retirement; its replacement is the first promote. This is the "one
 path move" the ride-together ruling requires. `App` paths do not
 change shape — `AgentsDir` is still `home/agents`; what changes is
@@ -117,7 +123,8 @@ the same way twice:
 - **Preconditions** *(amended 2026-08-26, ranger-base-yb9j — as first
   ratified this read "the working tree is clean", whole-tree)*: the
   promoted ref is a commit, and the **promoted paths** — `agents/`,
-  `config.yaml`, `recipes/`, `skills/` — are clean: `git status
+  `config.yaml`, `recipes/`, `runtimes/` *(added 2026-09-01, ADR 0039
+  D2)*, `skills/` — are clean: `git status
   --porcelain --ignored=matching` over those pathspecs is empty, so a
   promoted path that is dirty *or gitignored* is a hard refusal (an
   ignored path has no commit to promote from — the h56a `envs/` shape,
