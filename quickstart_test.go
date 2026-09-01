@@ -917,7 +917,7 @@ func TestInstallMdStep2BrewRouteNamesTheTapAndTheSilentFailure(t *testing.T) {
 	}
 }
 
-// ranger-base-n5i: INSTALL.md §1 pinned bd 0.49.1 and named herdr, but typed
+// ranger-base-n5i: INSTALL.md §1 pinned bd (0.49.1 at the time) and named herdr, but typed
 // no install command for either — so its own Verify died command-not-found on
 // a clean machine, and the runbook's "do not continue" rule stopped the
 // install at step 1. The get-it trail was a URL for herdr and a bare
@@ -944,7 +944,7 @@ func TestInstallMdStep1TypesTheHerdrAndBdInstalls(t *testing.T) {
 	}
 	for _, want := range []string{
 		"curl -fsSL https://herdr.dev/install.sh | sh",
-		"https://github.com/gastownhall/beads/releases/download/v0.49.1/beads_0.49.1_${os}_${arch}.tar.gz",
+		"https://github.com/gastownhall/beads/releases/download/v0.50.3/beads_0.50.3_${os}_${arch}.tar.gz",
 		`export PATH="$HOME/.local/bin:$PATH"`,
 	} {
 		at := strings.Index(step1, want)
@@ -961,7 +961,7 @@ func TestInstallMdStep1TypesTheHerdrAndBdInstalls(t *testing.T) {
 // ranger-base-n5i: the beads repo moved — github.com/steveyegge/beads 301s to
 // github.com/gastownhall/beads. A public surface that routes a stranger
 // through the redirect is one upstream housecleaning away from a 404, and the
-// bead pin (0.49.1 exactly) makes these the only download trail we offer.
+// bead pin (0.50.3 exactly) makes these the only download trail we offer.
 func TestPublicSurfacesNameTheBeadsRepoPostRename(t *testing.T) {
 	for _, path := range []string{"README.md", "INSTALL.md", "www/index.html"} {
 		contents, err := os.ReadFile(path)

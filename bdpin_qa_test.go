@@ -3,7 +3,7 @@ package posse
 // QA pins for ranger-base-tdwy (the detector the 08-16/08-26 bd incidents
 // asked for, ranger-base-31md).
 //
-// Claim: the fleet's bd pin — 0.49.1 from ~/.local/bin/bd, homebrew's beads
+// Claim: the fleet's bd pin — 0.50.3 from ~/.local/bin/bd, homebrew's beads
 // keg unlinked — is declared in etc/bd/version-pin.toml and asserted by
 // scripts/verify-bd-pin.sh at BOTH layers. The command layer is version +
 // `command -v bd` + the keg; the PROCESS layer is every live `bd daemon`
@@ -35,6 +35,14 @@ import (
 	"testing"
 	"time"
 )
+
+// bpPinnedVer is what etc/bd/version-pin.toml declares. It is a literal on
+// purpose — reading the pin file back to check the pin file asserts nothing —
+// and every fixture below seeds it rather than its own copy, because bpRoot
+// hands the script the REAL pin file: a fixture binary reporting anything else
+// fails the version row for a reason the test is not about. 291523c moved the
+// pin 0.49.1 -> 0.50.3 and left three such copies behind (ranger-base-5xhmz).
+const bpPinnedVer = "0.50.3"
 
 const bpLstart = "Mon Jan _2 15:04:05 2006" // what `ps -o lstart=` prints
 
@@ -228,7 +236,7 @@ func bpFixture(t *testing.T, brew string, procs []bpProc) (root, home, stubs str
 	t.Helper()
 	root = bpRoot(t)
 	binMtime = time.Now().Add(-7 * 24 * time.Hour)
-	home = bpHome(t, "0.49.1", binMtime)
+	home = bpHome(t, bpPinnedVer, binMtime)
 	stubs = t.TempDir()
 	bpStubBrew(t, stubs, brew)
 	bpStubPS(t, stubs, procs)
@@ -317,7 +325,7 @@ func TestQABdPinDeclarationAndWiring(t *testing.T) {
 	}
 	body := string(pin)
 	for _, want := range []string{
-		`posse_pinned_version = "0.49.1"`,
+		`posse_pinned_version = "` + bpPinnedVer + `"`,
 		`pinned_binary = "~/.local/bin/bd"`,
 		`formula = "beads"`,
 	} {
@@ -374,7 +382,7 @@ func TestQABdPinHappyPathNoDaemons(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, want 0\n%s", code, out)
 	}
-	for _, want := range []string{"pin intact at 0.49.1", "none running", "unlinked 1.2.2"} {
+	for _, want := range []string{"pin intact at " + bpPinnedVer, "none running", "unlinked 1.2.2"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
@@ -792,12 +800,12 @@ func TestQABdPinFailsOnVersionDrift(t *testing.T) {
 }
 
 // /opt/homebrew/bin precedes ~/.local/bin on the fleet PATH, so "a bd is on
-// PATH and reports 0.49.1" is not the claim — "THE pinned bd is what resolves"
-// is.
+// PATH and reports the pinned version" is not the claim — "THE pinned bd is
+// what resolves" is.
 func TestQABdPinFailsWhenSomethingIsLinkedInFrontOfThePin(t *testing.T) {
 	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
 	shadow := t.TempDir()
-	bpStubBD(t, filepath.Join(shadow, "bd"), "0.49.1")
+	bpStubBD(t, filepath.Join(shadow, "bd"), bpPinnedVer)
 	out, code := bpRun(t, root, home, stubs, shadow)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1 — a shadowing bd of the SAME version still breaks the pin\n%s", code, out)
