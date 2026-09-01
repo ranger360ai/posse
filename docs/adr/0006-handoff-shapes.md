@@ -1,6 +1,6 @@
 # ADR 0006 — Handoff shapes: collaboration as beads, nothing else
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -48,7 +48,7 @@ them).
 | handoff | trigger | shape | closes when |
 |---|---|---|---|
 | **architect → developer** (design → build) | ADR committed | implementation beads `-l code -a <developer> --deps discovered-from:<design>`, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture -a <architect>` |
-| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa -a <config verify_assignee:> --deps discovered-from:<closed id>`, description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row for the bead's intent *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code -a <closer>` with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
+| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa -a <config verify_assignee:> --deps discovered-from:<closed id>`, description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code -a <closer>` with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
 | **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security -a <security persona> --deps discovered-from:<id>`, **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
 | **operator/product grooming** (cadence) | one `-l groom` bead per week assigned to the product persona, filed by the operator or their scheduling automation (posse does not schedule; `--watch` dispatches, it doesn't create) | the product persona re-prioritises, splits, labels (`tier:` per ADR 0003), files `-l architecture` beads where design precedes build, closes with `bd comments add` listing what moved | close = queue is honest for the week; the `queue-honesty` metric reads it |
 
@@ -129,6 +129,88 @@ any headcount; N=4 puts ρ at 0.875. The alternative rejected — dropping
 cutting the catch, and the 0-reopens record is what this gate pays for.
 §5 stands unchanged: batched or not, the verify bead never holds any
 close.
+
+*(Amended 2026-09-01 from ranger-base-ziy47; measured by
+ranger-base-kvecg.)* **The "done when" row is best-effort, and "the
+bead's intent" is a match, not a field.** §2 wrote *the closer's PID
+"done when" row for the bead's intent* as if a bead carried an intent.
+It does not: ADR 0001 rejected routing by intent — "`labels:` routes;
+`intents:` describes" — so no store holds an edge from a bead to an
+intent slug, and the row can only be recovered by matching words. The
+rule as implemented (`closerDoneWhen` → `IntentDoneWhen`): the
+candidates are the bead's labels plus its bd `issue_type`; a candidate
+matches a slug when it equals the slug or one of its hyphen-separated
+words, give or take a plural (`bug` → `fix-bugs`). The first row that
+matches is the row. Measured (live store, 1516 beads, 2026-09-01):
+before the issue-type candidate landed (ranger-base-wogo) 1 of 531
+per-close sections carried the row, because `verify_labels` is by
+design a persona's catch-all routing label and no slug in either crew
+contains `code` or `devops`; after it, bug closes carry the row 21 of
+21 and task closes 0 of 27. `task` is what `bd create` stamps when
+nobody passes `-t` — 1040 of the 1516 beads, and 307 of the 623 closed
+`code`/`devops` beads. A default type names no intent because it
+carries no information, so "no match" is the *correct* answer for a
+task close, and this section's requirement was unmeetable for the
+majority of closes from the day it was written.
+
+Decided:
+
+1. **The row is best-effort content, never required.** It is absent
+   when the closer is not a persona on this box, when its PID has no
+   `## Intents` table, or when no candidate matches. An absent row is
+   not an error and never holds the filing — the same rule §3 already
+   applies to the commit trail. The verifier's checklist is still the
+   closer's "done when" column (QA's PID says so); this amendment only
+   stops promising that the harness can always pick the row for them.
+2. **No match quotes the whole table, marked as such.** When the
+   closer's table exists and nothing matches, the section carries every
+   row, one indented line each under a header that says it is
+   unmatched — e.g. `- done when (developer · unmatched; every intent):`
+   then `    build-features: …` / `    fix-bugs: …` /
+   `    implement-designs: …`. The verifier picks the row by reading
+   the close, which is what they do today by opening the PID; the
+   fallback moves the text onto the bead so §2's promise — the
+   checklist without the PID — holds for every close a persona on this
+   box made. It interprets nothing: the table is quoted, not chosen.
+   Bounded: the largest table in either crew is five rows, so a batch
+   of four costs at most twenty lines. Every cell passes through the
+   one-line flattener like the rest of the section, and an indented
+   line cannot forge the per-close marker. Cut as a `-l code` bead for
+   the developer (named on ranger-base-ziy47).
+3. **What does not change.** No PID gains a slug to catch `task`; no
+   label/type → intent map exists anywhere; the word-loose match stays
+   word-loose. Hatch: the fallback is one branch in one function and
+   holds no state — deleting it returns to (1) exactly.
+
+Alternatives rejected here:
+
+- *A slug containing "task" in the developer's table* (cheap). A match
+  on the type that means "untyped" is a fabricated signal: every
+  default-typed close would quote the same row whatever was built, and
+  the verifier would judge against a checklist chosen by absence. It
+  also puts the routing vocabulary ADR 0001 rejected inside a document
+  about roles.
+- *A label/type → intent map*, in config or code. A second vocabulary
+  beside labels is triple-implementing the substrate (ADR 0001's own
+  words), and bd carries no data to be exact against; the wogo close
+  declined to guess it and this amendment agrees.
+- *Leave the text as written.* The record would keep requiring what the
+  code cannot produce for 56% of sections. A measured gap the record
+  denies is worse than an absent line.
+- *Infer the intent from the graph* — `discovered-from` a
+  `-l architecture` bead → implement-designs, type bug → fix-bugs, else
+  build-features. The clever one, and the wrong one: it is right often
+  enough to be trusted and wrong silently, and a verifier judging
+  against the wrong "done when" is an escape, where one who reads the
+  PID is a file read.
+- *Warn on stdout per section without a row.* Noise proportional to
+  the majority type, with nothing actionable behind it.
+
+Measured: every count above, and that the row's absence changed zero
+answers labels already gave (kvecg). Assumed: that the verifier opens
+the closer's PID when the row is absent — their PID says the column is
+their checklist, nobody has measured whether they read it — and that
+five rows is the ceiling any instance's table reaches.
 
 **4. PID `## Handoffs` sections say the shape, not just the name.** Each
 row becomes `who · label · what the bead must contain`, e.g. the
