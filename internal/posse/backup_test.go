@@ -1,0 +1,413 @@
+package posse
+
+// `posse backup` (ADR 0036, build bead ranger-base-a0ln0): the archive, the
+// verify that gates publication, the disk floor, single-flight, and prune.
+//
+// Every test here builds its own queue repo and its own home under
+// t.TempDir. None reads the operator's — a backup test that ran against the
+// live store would be slow, and would be writing 45MB archives into
+// somebody's state dir on every `go test ./...`.
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+var backupAt = time.Date(2026, 9, 1, 3, 15, 0, 0, time.UTC)
+
+// backupRig is an instance with a queue repo, a constitution home carrying
+// both the archived set and the two directories that must never be archived,
+// and a backup dir. It returns the app and the queue repo.
+func backupRig(t *testing.T) (*App, string) {
+	t.Helper()
+	root := t.TempDir()
+	queue := filepath.Join(root, "queue")
+	store := filepath.Join(queue, ".beads")
+	if err := os.MkdirAll(store, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, queue, "init", "-q", "-b", "main", ".")
+	mustGit(t, queue, "config", "user.email", "t@example.com")
+	mustGit(t, queue, "config", "user.name", "t")
+	write(t, filepath.Join(store, beadsJSONL), `{"id":"x-1","title":"one"}`+"\n")
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"x-0"}`+"\n")
+	mustSqlite(t, filepath.Join(store, "beads.db"), "create table issues(id text); insert into issues values('x-1');")
+	mustGit(t, queue, "add", "--", filepath.Join(".beads", beadsJSONL), filepath.Join(".beads", beadsDeleted))
+	mustGit(t, queue, "commit", "-q", "-m", "seed", "--", filepath.Join(".beads", beadsJSONL), filepath.Join(".beads", beadsDeleted))
+
+	home := filepath.Join(root, "home")
+	a := NewAppAt(home)
+	write(t, a.ConfigPath, "queue_repo: "+queue+"\n")
+	write(t, filepath.Join(home, "agents", "dev.md"), "name: dev\n")
+	write(t, filepath.Join(home, "recipes", "r.yaml"), "cmd: true\n")
+	write(t, filepath.Join(home, "runtimes", "claude.yaml"), "name: claude\n")
+	write(t, filepath.Join(home, PromoteManifestFile), `{"version":1,"files":{}}`+"\n")
+	// The two that must never appear in an archive.
+	write(t, filepath.Join(home, ConstitutionEnvsDir, "prod.env"), "ANTHROPIC_API_KEY=sk-live\n")
+	write(t, filepath.Join(home, "secrets", "anthropic.env"), "ANTHROPIC_API_KEY=sk-live\n")
+	write(t, filepath.Join(home, "personas", "dev", "ORDERS.md"), "orders\n")
+	return a, queue
+}
+
+// mustSqlite makes the rig's beads db. sqlite3 is a hard dependency of the
+// verb (ADR 0036 §2, preflighted with its own exit), so a box without it
+// SKIPS rather than reds: the test would be measuring the box.
+func mustSqlite(t *testing.T, db, sql string) {
+	t.Helper()
+	out, err := exec.Command("sqlite3", db, sql).CombinedOutput()
+	if err != nil {
+		t.Skipf("sqlite3 is not usable here: %s", strings.TrimSpace(string(out)))
+	}
+}
+
+// mustBackup runs one backup at a fixed clock and fails the test on any
+// refusal — the tests that WANT a refusal call RunBackup themselves.
+func mustBackup(t *testing.T, a *App, at time.Time) BackupResult {
+	t.Helper()
+	res, err := a.RunBackup(BackupOpts{Out: io.Discard, Now: func() time.Time { return at }})
+	if err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	return res
+}
+
+// tarNames is every member name in a published archive, in archive order.
+func tarNames(t *testing.T, archive string) []string {
+	t.Helper()
+	f, err := os.Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	var names []string
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, h.Name)
+	}
+	return names
+}
+
+// ─── the archive ─────────────────────────────────────────────────────────────
+
+// The archive holds both stores, and the manifest is the FIRST entry —
+// which is not cosmetic: VerifyBackup streams the tar once and needs the
+// hashes before the members arrive.
+func TestBackupArchivesBothStoresManifestFirst(t *testing.T) {
+	a, _ := backupRig(t)
+	res := mustBackup(t, a, backupAt)
+
+	names := tarNames(t, res.Archive)
+	if len(names) == 0 || names[0] != backupManifestName {
+		t.Fatalf("first entry is %q, want %s — a verifier streams and cannot seek back for it", names[0], backupManifestName)
+	}
+	for _, want := range []string{
+		"queue/queue.bundle", "queue/beads.db", "queue/issues.jsonl", "queue/deleted.jsonl",
+		"home/config.yaml", "home/agents/dev.md", "home/recipes/r.yaml",
+		"home/runtimes/claude.yaml", "home/" + PromoteManifestFile,
+	} {
+		if !containsPrefix(names, want) {
+			t.Errorf("the archive is missing %s:\n%s", want, strings.Join(names, "\n"))
+		}
+	}
+}
+
+// "envs NEVER — secrets stay out" (the 2026-09-01 sub-ruling). The archive
+// is a file an operator will reasonably copy around, and a token in it is a
+// token in every copy. personas/ and state/ are out too, and the manifest
+// says all four are out by name so a restore reads an absence as policy.
+func TestBackupNeverArchivesSecrets(t *testing.T) {
+	a, _ := backupRig(t)
+	res := mustBackup(t, a, backupAt)
+
+	for _, name := range tarNames(t, res.Archive) {
+		for _, banned := range []string{"envs", "secrets", "personas", "state"} {
+			if strings.HasPrefix(name, "home/"+banned) {
+				t.Errorf("the archive holds %s — %s/ may never be archived", name, banned)
+			}
+		}
+	}
+	// The control: the same walk DOES find something under home/, so an
+	// empty archive could not have passed the loop above.
+	if !containsPrefix(tarNames(t, res.Archive), "home/agents/") {
+		t.Fatal("no home/ member at all — the exclusion loop above proved nothing")
+	}
+	sort.Strings(res.Manifest.Excluded)
+	if got, want := strings.Join(res.Manifest.Excluded, ","), "envs,personas,secrets,state"; got != want {
+		t.Errorf("manifest excluded = %q, want %q", got, want)
+	}
+}
+
+// ADR 0036 verification observable 1: the sources are untouched. The db is
+// read through sqlite's backup API and the repo through `git bundle`, and
+// neither may check point, rewrite or restat anything.
+func TestBackupLeavesTheSourcesAlone(t *testing.T) {
+	a, queue := backupRig(t)
+	store := beadsHome(queue)
+	before := map[string][2]int64{}
+	ents, err := os.ReadDir(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		st, err := e.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[e.Name()] = [2]int64{st.Size(), st.ModTime().UnixNano()}
+	}
+	mustBackup(t, a, backupAt)
+	for name, want := range before {
+		st, err := os.Stat(filepath.Join(store, name))
+		if err != nil {
+			t.Errorf("%s went away: %v", name, err)
+			continue
+		}
+		if got := [2]int64{st.Size(), st.ModTime().UnixNano()}; got != want {
+			t.Errorf("%s changed: size/mtime %v, was %v", name, got, want)
+		}
+	}
+}
+
+// ─── the verify that gates publication ───────────────────────────────────────
+
+// The mutation arm ADR 0036 §7 asks for, on the arm this build kept: flip
+// one byte of a published archive and the verify must go red. A verify that
+// cannot go red measures nothing.
+func TestVerifyCatchesAFlippedByte(t *testing.T) {
+	a, _ := backupRig(t)
+	res := mustBackup(t, a, backupAt)
+	if _, err := VerifyBackup(res.Archive); err != nil {
+		t.Fatalf("the archive posse just published does not verify: %v", err)
+	}
+
+	body, err := os.ReadFile(res.Archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body[len(body)/2] ^= 0xff
+	corrupt := filepath.Join(t.TempDir(), filepath.Base(res.Archive))
+	if err := os.WriteFile(corrupt, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyBackup(corrupt); err == nil {
+		t.Fatal("a flipped byte verified green — the verify measures nothing")
+	}
+}
+
+// The same arm one level up: the sidecar. A copy whose bytes changed but
+// whose sidecar did not is caught before the tar is even opened.
+func TestVerifyCatchesASidecarMismatch(t *testing.T) {
+	a, _ := backupRig(t)
+	res := mustBackup(t, a, backupAt)
+	if err := os.WriteFile(res.Sidecar, []byte(strings.Repeat("0", 64)+"  x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := VerifyBackup(res.Archive)
+	if err == nil || !strings.Contains(err.Error(), "sidecar") {
+		t.Fatalf("a wrong sidecar verified as %v, want a sidecar refusal", err)
+	}
+}
+
+// Publication is gated on the verify, which is what makes the DIRECTORY the
+// freshness store (ADR 0036 §6 — one fact, one owner): a file that is there
+// verified, and there is no second stamp to disagree with it.
+//
+// Two halves. First: an archive whose manifest names a member the tar does
+// not carry is red — the shape a truncated write leaves behind, hand-built
+// here because a run that produced one would be the bug.
+func TestVerifyCatchesAMissingMember(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, backupPrefix+backupAt.Format(backupStamp)+backupSuffix)
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	man := BackupManifest{
+		Version:   backupManifestVersion,
+		CreatedAt: backupAt.Format(time.RFC3339),
+		Members:   []BackupMember{{Name: "queue/issues.jsonl", Bytes: 1, SHA256: strings.Repeat("0", 64)}},
+	}
+	body, err := json.MarshalIndent(man, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: backupManifestName, Mode: 0o600, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []io.Closer{tw, gz, f} {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := VerifyBackup(archive); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("an archive missing a member its manifest names verified as %v", err)
+	}
+}
+
+// Second: a run in flight is not a backup. The `.part` and the staging
+// directory carry no verdict, so listBackups must not count either — and a
+// finished run leaves neither behind.
+func TestARunInFlightIsNotABackup(t *testing.T) {
+	a, _ := backupRig(t)
+	dir := a.BackupDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	part := filepath.Join(dir, backupPrefix+backupAt.Format(backupStamp)+backupSuffix+backupPartSuffix)
+	write(t, part, "half an archive")
+	if err := os.MkdirAll(filepath.Join(dir, ".staging-x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if names, err := listBackups(dir); err != nil || len(names) != 0 {
+		t.Fatalf("listBackups = %v (err %v) over a .part and a staging dir, want none", names, err)
+	}
+	// The control: the same listing DOES see a real one, so the zero above
+	// is the filter and not an unreadable directory.
+	res := mustBackup(t, a, backupAt.Add(time.Hour))
+	names, err := listBackups(dir)
+	if err != nil || len(names) != 1 || names[0] != filepath.Base(res.Archive) {
+		t.Fatalf("listBackups = %v (err %v), want just %s", names, err, filepath.Base(res.Archive))
+	}
+	// And a finished run leaves nothing of its own behind.
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".staging-") || strings.HasSuffix(e.Name(), backupPartSuffix) {
+			if e.Name() == filepath.Base(part) || e.Name() == ".staging-x" {
+				continue // the two this test planted
+			}
+			t.Errorf("the run left %s behind", e.Name())
+		}
+	}
+}
+
+// ─── refusals ────────────────────────────────────────────────────────────────
+
+func TestBackupRefusesWithNoQueueRepo(t *testing.T) {
+	a, _ := backupRig(t)
+	write(t, a.ConfigPath, "")
+	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "queue_repo") {
+		t.Fatalf("err = %v, want a refusal naming queue_repo:", err)
+	}
+}
+
+// ADR 0036 §3 and verification observable 2: the 2c ruling enforced on the
+// SOURCE. A queue repo that grew a remote already has an off-box copy posse
+// did not sanction, and backup refuses over it rather than making a second.
+func TestBackupRefusesAQueueRepoWithARemote(t *testing.T) {
+	a, queue := backupRig(t)
+	mustGit(t, queue, "remote", "add", "origin", "https://example.com/queue.git")
+	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "remote") {
+		t.Fatalf("err = %v, want a refusal naming the remote", err)
+	}
+	// And it heals: the refusal is about the repo's state, not a latch.
+	mustGit(t, queue, "remote", "remove", "origin")
+	mustBackup(t, a, backupAt)
+}
+
+// The disk floor: refuse rather than fill the disk, and say the number.
+func TestBackupRefusesBelowTheDiskFloor(t *testing.T) {
+	a, _ := backupRig(t)
+	appendConfig(t, a, "backup_min_free_mb: 999999999\n")
+	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "backup_min_free_mb") {
+		t.Fatalf("err = %v, want a refusal naming the floor", err)
+	}
+}
+
+// Single-flight (ADR 0036 §3): two callers, one writer. The lock is held by
+// the open file description, so this test takes it the way another process
+// would and asserts the refusal names the directory.
+func TestBackupIsSingleFlight(t *testing.T) {
+	a, _ := backupRig(t)
+	dir := a.BackupDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	held, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := flock(held, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	_, err = a.RunBackup(BackupOpts{Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("err = %v, want the single-flight refusal", err)
+	}
+	// The control: released, the same call succeeds — so the refusal above
+	// was the lock and not the rig.
+	flock(held, syscall.LOCK_UN)
+	held.Close()
+	mustBackup(t, a, backupAt)
+}
+
+// ─── retention ───────────────────────────────────────────────────────────────
+
+// Prune keeps the newest `backup_keep:` and never runs before the new
+// archive has verified — which this asserts positionally: the archive from
+// the last run is always among the survivors.
+func TestBackupPrunesToKeepNewest(t *testing.T) {
+	a, _ := backupRig(t)
+	appendConfig(t, a, "backup_keep: 2\n")
+	var last BackupResult
+	for i := 0; i < 4; i++ {
+		last = mustBackup(t, a, backupAt.Add(time.Duration(i)*time.Hour))
+	}
+	names, err := listBackups(a.BackupDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("kept %d archives, want 2: %v", len(names), names)
+	}
+	if names[len(names)-1] != filepath.Base(last.Archive) {
+		t.Errorf("the newest kept is %s, want the one just written (%s)", names[len(names)-1], filepath.Base(last.Archive))
+	}
+	// Sidecars go with their archives; an orphan sidecar is a hash for a
+	// file nobody has.
+	ents, _ := os.ReadDir(a.BackupDir())
+	sidecars := 0
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), backupSidecarSuffix) {
+			sidecars++
+		}
+	}
+	if sidecars != 2 {
+		t.Errorf("%d sidecars for 2 archives", sidecars)
+	}
+	// keep: 0 would be "delete the copy you just made" and is refused into
+	// the default rather than honoured.
+	write(t, a.ConfigPath, "backup_keep: 0\n")
+	if got := a.BackupKeep(io.Discard); got != DefaultBackupKeep {
+		t.Errorf("backup_keep: 0 read as %d, want the default %d", got, DefaultBackupKeep)
+	}
+}

@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -828,9 +829,100 @@ func main() {
 		need(args, 0, "posse status")
 		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
 		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))
+		// The backup's age, always, on an instance that has asked for
+		// backups at all (ADR 0036 §6, bead ranger-base-a0ln0). The
+		// governance set below carries the LOUD half — a carry-over row
+		// when it is past `backup_max_age:` — and this line carries the
+		// quiet half, which the set by design does not: a shop check
+		// prints conditions, and "the backup is 3h old" is not one. An
+		// instance with no backup key and no archive prints nothing, the
+		// same inertness rule the credential column keeps.
+		if f := a.BackupFreshness(time.Now(), os.Stderr); f.Armed {
+			fmt.Fprintf(out, "%s\n", f.Line())
+		}
 		posse.GovReport(out, set, failed)
 		if len(set) > 0 || len(failed) > 0 {
 			os.Exit(1)
+		}
+
+	case "backup":
+		// `posse backup` — the store of record's backup is a harness verb
+		// (ADR 0036; build bead ranger-base-a0ln0, under the operator's
+		// 2026-09-01 sub-ruling on ranger-base-ay3dr).
+		//
+		// Three forms, and the bare one is the whole duty: build an archive,
+		// read it back, publish it only if it verified, then prune. There is
+		// no --no-verify: an archive nobody has opened is the predecessor's
+		// measured failure mode, and the verify is the cheap half.
+		//
+		// Every destination is on-box and there is no flag that changes
+		// that — `--to` picks WHICH on-box directory, and CheckBackupTarget
+		// refuses a URL, an scp-style host:path, a UNC path, and anything
+		// the kernel does not report as a local volume (ADR 0036 §3).
+		sub := ""
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			sub, args = args[0], args[1:]
+		}
+		switch sub {
+		case "", "status", "verify":
+		default:
+			die(posse.Die("posse backup [--to <dir>] | posse backup status | posse backup verify [--archive <path>]"))
+		}
+		to, archive := "", ""
+		rest := args
+		for len(rest) > 0 {
+			switch {
+			case rest[0] == "--to" && len(rest) > 1 && sub == "":
+				to, rest = rest[1], rest[2:]
+			case rest[0] == "--archive" && len(rest) > 1 && sub == "verify":
+				archive, rest = rest[1], rest[2:]
+			default:
+				die(posse.Die("posse backup [--to <dir>] | posse backup status | posse backup verify [--archive <path>]"))
+			}
+		}
+		switch sub {
+		case "status":
+			// Reads the archive directory and nothing else: the published
+			// files ARE the freshness store (ADR 0036 §6 — one fact, one
+			// owner), because an archive is only named after it verifies.
+			f := a.BackupFreshness(time.Now(), os.Stderr)
+			fmt.Fprintf(out, "%s\n", f.Line())
+			if !f.Armed {
+				fmt.Fprintf(out, "  no backup key in %s and no archive on box — nothing is armed\n", posse.AbbrevHome(a.ConfigPath))
+			}
+			// Non-zero for on-box staleness only, which is the one fact
+			// this verb enforces.
+			if f.Err != nil || f.Stale {
+				os.Exit(1)
+			}
+		case "verify":
+			p := archive
+			if p == "" {
+				f := a.BackupFreshness(time.Now(), os.Stderr)
+				if f.Newest == "" {
+					die(posse.Die("no archive to verify in %s", posse.AbbrevHome(f.Dir)))
+				}
+				p = filepath.Join(f.Dir, f.Newest)
+			}
+			man, err := posse.VerifyBackup(posse.ExpandTilde(p))
+			if err != nil {
+				die(err)
+			}
+			fmt.Fprintf(out, "%s · verified · %d files · taken %s from %s\n",
+				posse.AbbrevHome(p), len(man.Members), man.CreatedAt, man.QueueRepo)
+		default:
+			res, err := a.RunBackup(posse.BackupOpts{Dir: to, Out: out})
+			if errors.Is(err, posse.ErrBackupTool) {
+				// ADR 0036 §2 gives the missing-tool case its own exit: a
+				// backup that never started is not a backup that failed,
+				// and a caller looping over boxes needs to tell them apart.
+				fmt.Fprintf(os.Stderr, "posse: %v\n", err)
+				os.Exit(2)
+			}
+			if err != nil {
+				die(err)
+			}
+			_ = res
 		}
 
 	case "pause":
@@ -2066,6 +2158,40 @@ governance:
                                  guard may skip before a skip becomes a condition
                                  (the streak is the --watch loop's own; a fresh
                                  shell has none and reports no G4)
+  posse backup [--to <dir>]      archive the store of record (the queue repo's
+                                 git history as a bundle, its beads db staged
+                                 through sqlite's online backup API, and the
+                                 jsonl projections) plus the constitution home
+                                 (the promoted set, runtimes/, promoted.json).
+                                 envs/ and secrets/ are NEVER archived. The
+                                 archive is read back and verified BEFORE it is
+                                 named, so a published archive is a green one
+                                 ON-BOX ONLY: a URL, an scp-style host:path, a
+                                 UNC path, or any volume the kernel does not
+                                 report as local is refused, and there is no
+                                 flag that lifts that (ADR 0036 §3)
+      --to <dir>               write to this directory instead of backup_dir:
+  posse backup status            age of the newest on-box archive, how many
+                                 there are, and where. Non-zero when it is
+                                 older than backup_max_age: (or when backup is
+                                 armed and there is no archive at all)
+  posse backup verify [--archive <path>]
+                                 re-open an archive and check every member
+                                 against the manifest it carries (default: the
+                                 newest). Extracts nothing
+                               config backup_dir: (<home>/state/backup) where
+                                 archives go — refused unless it is on this box
+                               config backup_max_age: (48h) when the newest
+                                 archive becomes a governance condition. The
+                                 age is a line in "posse status"; past the max
+                                 it is a LANE carry-over row there and in the
+                                 cockpit's GOVERNANCE block. Not a G-row: ADR
+                                 0029's table is closed at nine
+                               config backup_keep: (3) archives kept on box;
+                                 pruning only ever runs after a NEWER archive
+                                 has verified
+                               config backup_min_free_mb: (384) refuse rather
+                                 than fill the disk
   posse pause "<why>"            stop dispatching until told otherwise. Writes
                                  state/pause.yaml (by:, at:, why: — the why is
                                  mandatory and is what every declining pass

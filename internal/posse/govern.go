@@ -288,6 +288,11 @@ func ReadPause(path string) Pause {
 // removing shipped oversight is not something a bead titled "widen" should
 // do quietly.
 //
+// And a third carry-over since ranger-base-a0ln0: the on-box backup is
+// stale, or armed and absent (ADR 0036 §6). It is a carry-over and not a
+// G10 for the reason spelled at its site below — 0029's table is closed at
+// nine, and 0036 asked for the fact on the surface, not for a number.
+//
 // A store that cannot be READ is not a store that says no. bd scan failures
 // come back as errors alongside whatever was computed: the set is then
 // PARTIAL, and every caller must say so rather than render it as an
@@ -464,6 +469,41 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	if in.Pulsing && in.PulsePersona != "" && !livePersona {
 		add("", GovLane, "no-live:"+in.PulsePersona,
 			fmt.Sprintf("no live session for %s — the pulse has nowhere to deliver", in.PulsePersona))
+	}
+
+	// ── carry-over · the on-box backup is stale (ADR 0036 §6) ────────────
+	//
+	// **The tenth row, resolved.** ADR 0036 §6 says on-box staleness
+	// "raises a ShopCheck condition (ADR 0029 G-table)", and ADR 0029 says
+	// the table is CLOSED AT NINE — twice, once in the section itself and
+	// once in its 2026-08-29 amendment, which kept two causes on one row
+	// rather than opening a tenth. **0029 wins**, and it costs 0036
+	// nothing: what 0036 asked for is that the fact be raised on the
+	// surface, not that it be numbered. So this is a CARRY-OVER, the shape
+	// 0029 already defines for a condition that is not a G-row — no id,
+	// Row() renders "—", and the closed enumeration stays closed. Ruled on
+	// ranger-base-a0ln0 per the operator's 2026-09-01 sub-ruling on
+	// ranger-base-ay3dr; both records carry the ruling.
+	//
+	// LANE, not URGENT, and the class is the honest one rather than the
+	// loud one: 0029 defines URGENT as "the shop is stopped", and a stale
+	// backup stops nothing. Making the one class that means stop-everything
+	// also mean "a duty is overdue" would cost the pulse the distinction it
+	// escalates on. LANE still exits `posse status` non-zero, still draws
+	// in the cockpit's GOVERNANCE block, and still counts in the header.
+	//
+	// Armed is the whole gate (BackupArmed): an instance that has never
+	// written a backup key and holds no archive says nothing, because
+	// installing posse arms nothing. Armed-with-no-archive DOES report —
+	// that is the predecessor's exact failure, an arrangement configured
+	// and never run.
+	if f := in.App.BackupFreshness(now, in.errw()); f.Armed {
+		switch {
+		case f.Err != nil:
+			failed = append(failed, fmt.Errorf("backup dir %s: %w — freshness unknown", AbbrevHome(f.Dir), f.Err))
+		case f.Stale:
+			add("", GovLane, "backup-stale", f.GovDetail())
+		}
 	}
 
 	// Key order, and stable: the fingerprint is the joined keys, so a set
