@@ -6,7 +6,8 @@ ranger-base-evva · §1–2 implemented here as rangerhq-81y0 (govern.go,
 `posse status`, the cockpit GOVERNANCE block, the pulse tick rewired);
 §3 is rangerhq-a2g6, G7's flock probe is rangerhq-mgvx · G6 epoch
 amendment 2026-08-27, bead ranger-base-jbmh · G7 arm-reading amendment
-2026-08-29, bead ranger-base-yznr*
+2026-08-29, bead ranger-base-yznr · ADR 0036 tenth-row question answered
+2026-09-01, bead ranger-base-a0ln0 (the table stays closed at nine)*
 
 > Restated from the private archive of the instance this harness was
 > developed in (its governance-surface ADR, bead rangerhq-e37c); incident
@@ -111,6 +112,29 @@ and dialE's day-only reading is the correct rendering of the caps that
 exist. The dialE change rides its own `-l code` bead, dep-blocked on
 the re-key slice, and replaces dialE's interim comment with a pointer
 here.
+
+*(amended 2026-09-01, bead ranger-base-a0ln0 — answering the tenth-row
+question ADR 0040 sent here)* **The table stays closed at nine; ADR
+0036's stale-backup condition ships as a third carry-over.** ADR 0036 §6
+says on-box backup staleness "raises a ShopCheck condition (ADR 0029
+G-table)", which reads as a request for a G10. It is not a conflict: 0036
+asked for the fact to reach the surface, not for it to be numbered — so
+this record's closed enumeration wins, and the condition takes the shape
+this section already defines for one that is not a G-row. Key
+`backup-stale`, no id, rendered `—`, beside `unpushed:` and `no-live:`.
+
+Its class is **LANE**. URGENT is defined above as "the shop is stopped",
+and a stale backup stops nothing; giving the one class that means
+stop-everything to an overdue duty is how a surface stops being read.
+LANE still makes `posse status` exit non-zero and still draws in the
+cockpit's GOVERNANCE block, which is what 0036 §6 asked for.
+
+Armed is the gate, and armed is generous: any `backup_*` key in config,
+or an archive already on disk from a hand-typed run. An instance with
+neither reports nothing, the inertness rule `queue_repo:` keeps (ADR
+0015 §4). An instance that is armed and holds NO archive reports the
+condition — that is 0036's own Context, the arrangement configured and
+never run, and it is the one state an age-only check would call clear.
 
 *(amended 2026-08-29, bead ranger-base-yznr — descriptive accuracy, not
 a design change)* **G7's "armed" is the startup hook's reading, not key

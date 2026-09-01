@@ -1,6 +1,40 @@
 # ADR 0036 — `posse backup`: the queue store's backup is a harness verb
 
-*Status: accepted 2026-08-29 · bead ranger-base-nbcf · richard*
+*Status: accepted 2026-08-29 · bead ranger-base-nbcf · richard · **partly
+BUILT 2026-09-01, bead ranger-base-a0ln0** (gilfoyle), under the operator's
+sub-ruling of that date on ranger-base-ay3dr · §1's `sweep`, §5's identity
+and §4's ticker are NOT built and the first two are CUT, not deferred — see
+the sub-ruling section immediately below, which is what a reader should
+believe wherever it and a later section disagree*
+
+## The 2026-09-01 sub-ruling — what is built, what is cut, what is deferred
+
+The operator's sub-ruling on ranger-base-ay3dr (the ADR 0040 consolidation
+ruling) cut a build bead for this record rather than retiring it, and in
+doing so narrowed it: **an on-box archive of the store of record plus the
+constitution, which REFUSES any remote target, with freshness surfaced in
+`posse status`.** The refusal is the design, not a flag.
+
+That single change — no off-box destination — is load-bearing, because
+three of this record's decisions were arguments ABOUT that destination and
+do not survive it. What follows is the state of every section, and it
+outranks the section it describes:
+
+| section | state | why |
+|---|---|---|
+| §1 `posse backup`, `status` | **BUILT** (`internal/posse/backup.go`, `cmd/posse/main.go`) | the two intents the sub-ruling names. `verify` ships as the re-openable form of the drill's cheap arms. |
+| §1 `sweep`, `backup_dest:`, `backup_keep_dest:` | **CUT** | there is no destination. Not deferred: the ruling removed it. |
+| §1 `init`, `drill`, `restore` | **CUT / folded** | `init` mints an identity that §5 no longer needs. The drill's transport, custody and completeness arms are folded into the publish path (below); its history/db/bd/census arms are cut with the encrypted-archive shape they were written against. `restore` is `tar -xzf`, which is the exit hatch the record already promised. |
+| §2 the engine in Go, git + sqlite3 | **BUILT** | including the preflight and its own exit for a missing tool. |
+| §2 `filippo.io/age` in go.mod | **CUT** | see §5. posse still has no dependency outside `golang.org/x`. |
+| §2 gzip | **BUILT** — stdlib `compress/gzip`, and the archive is a plain `tar.gz` any box can open. |
+| §3 no remote, disk floor, single-flight, publish-by-rename, prune | **BUILT**, all five | and the no-remote refusal is enforced on the SOURCE (a queue repo that grew a remote) as well as on the target. |
+| §4 the ticker | **UNBUILT**, and deliberately not half-built | scheduling was not in the sub-ruling's four items. No `backup_interval:` key is defined either: a key that reads like a schedule and schedules nothing is this record's own Context — the plist nobody installed — wearing a config key. The staleness threshold is its own key, `backup_max_age:`, and it says only what it means. |
+| §5 age identity and custody | **CUT** | §5's argument is, in its own words, that the asymmetry "protects the copies at the destination, which is where copies leave custody". Every copy is now on the box that already holds the plaintext store of record, so an identity stored beside its own ciphertext guards nothing and costs the first dependency outside `golang.org/x`. Archives are plaintext `tar.gz`, `0600` in a `0700` directory — the exposure the store already has, and no more. **If an off-box destination is ever ruled back in, §5 comes back with it**; that is the order the argument runs in, and it is not a licence to sweep an unencrypted archive anywhere. |
+| §6 on-box freshness | **BUILT** — see the tenth-row ruling in §6 below. |
+| §6 off-box recency, `state/backup/last-sweep.yaml` | **CUT** | no destination, no second clock. |
+| §7 archive contents | **BUILT**, with the constitution added | the sub-ruling names the constitution home as well as the store of record; §7 was written before that. |
+| §7 the 8-arm drill and `last-drill.yaml` | **FOLDED**, not shipped as a verb | arms 1 (sidecar hash), 2's role (an archive that cannot be read back), and the completeness check run on EVERY archive before it is published, and an archive that fails them is deleted rather than named. Arm 8's job — "a drill that cannot go red measures nothing" — is a QA pin (`TestVerifyCatchesAFlippedByte`), not a per-run byte flip. There is no `last-drill.yaml` for the reason §6 gives: the published files are the store, and a second stamp store could disagree with them. |
 
 ## Context
 
@@ -79,6 +113,18 @@ External surface after the fold:
   Price: archive grows from ~20MB toward ~25MB (ASSUMED — the bundle,
   the bulk, is already delta-compressed and near-incompressible either
   way; the implementation bead measures it and this line gets updated).
+
+*(amended 2026-09-01, ranger-base-a0ln0 — the implementation bead's
+measurements, replacing the ASSUMED line above)* **The bundle is the
+number that mattered and it is smaller than the loose store by a factor
+of 40.** MEASURED on this instance: the queue repo's `.git` holds 1.17GiB
+of loose objects over 573 commits — one ~570KB loose blob per commit of a
+9.5MB `issues.jsonl` — and `git bundle create --all` packs it to **30MB
+in 12s**. So the bundle is not a convenience over copying `.git`, it is
+the only shape of this journal that fits in a routine archive at all.
+Beside it: the db is 24MB (staged, not copied) and the jsonl 9.5MB. The
+`filippo.io/age` dependency in the bullet above is CUT with §5, so this
+build adds nothing to go.mod.
 
 ## §3 — Refusals, single-flight, publish, prune
 
@@ -180,6 +226,40 @@ single-writer-and-stores):
   or a red last-drill verdict, makes `status` exit nonzero and raises a
   ShopCheck condition (ADR 0029 G-table) so the pulse can say so —
   escalation by shop check, not by nightly log line.
+
+*(amended 2026-09-01, ranger-base-a0ln0 — the tenth-row question the ADR
+0040 ruling sent here, answered)* **ADR 0029 wins; there is no G10.** The
+sentence above asks for a ShopCheck condition, and ADR 0029 says twice
+that its table is CLOSED AT NINE — in §1's carry-over amendment ("which
+are not G-rows (the table is closed at nine)") and again in its
+2026-08-29 amendment, which kept two distinct causes on G7 rather than
+open a tenth row. The two records do not actually conflict: 0036 asked
+for the FACT to reach the surface, not for it to be numbered. So the
+stale-backup condition ships as a **carry-over** — the shape 0029
+already defines for exactly this, no id, rendered `—`, alongside
+`unpushed:` and `no-live:` — and the enumeration stays closed.
+
+Its class is **LANE**, not URGENT, and that is the same argument run
+once more: 0029 defines URGENT as "the shop is stopped", and a stale
+backup stops nothing. Spending the one class that means stop-everything
+on an overdue duty is how a surface stops being read. LANE still exits
+`posse status` non-zero, still draws in the cockpit's GOVERNANCE block,
+and still counts in the cockpit header.
+
+Two further decisions the build made inside this section:
+
+- **The threshold is its own key.** `backup_max_age:`, default **48h**.
+  §6 sets the threshold at 2x `backup_interval:`, and §4's interval is
+  unbuilt — so the default is 2x the cadence the predecessor actually
+  ran at (nightly, 03:15, hl2p). Defining `backup_interval:` as a
+  threshold that schedules nothing was refused: see the sub-ruling table.
+- **Armed and EMPTY is stale.** An instance that has written a backup
+  key and holds no archive reports the condition. That is not an edge
+  case, it is this record's own Context — the arrangement that was
+  configured and never ran — and it is the one state a freshness check
+  reading only ages would report as clear. An instance that has written
+  no backup key and holds no archive reports nothing at all: installing
+  posse arms nothing.
 - **Off-box recency** is owned by the on-box sweep stamp
   (`state/backup/last-sweep.yaml`: when, destination, archives, their
   hashes verified at the destination after copy). The sweep also drops
@@ -255,7 +335,8 @@ drill that cannot go red measures nothing.
 ## Consequences
 
 - go.mod gains filippo.io/age (first dep beyond golang.org/x — priced
-  in §2, exit hatch stated).
+  in §2, exit hatch stated). *(2026-09-01: CUT with §5 — go.mod is
+  unchanged and posse still has no dependency outside golang.org/x.)*
 - sqlite3 CLI joins the preflighted tool set for this verb only.
 - Every deployer gets the verb; this instance's destinations,
   interval, and identity stay in its home, out of this repo.
@@ -264,18 +345,41 @@ drill that cannot go red measures nothing.
   readable only by the predecessor identity — custody of that identity
   is an operator note on the ops bead, not posse's concern.
 
-## Verification observables (all unverified until built — the probes)
+## Verification observables
 
-1. `posse backup` against a scratch `queue_repo:` writes archive +
-   sidecar; every source file's mtime and size unchanged.
-2. Add a remote to the scratch repo → exit 1, line names the ruling.
-3. `posse backup drill` → 8/8 green; then corrupt a copy → arm 8 path
-   proves the red (run the mutation arm's failure, not just its pass).
-4. Watch loop with `backup_interval: 60s` on the scratch repo →
-   archive appears within 2 ticks; restart the loop → no second run
-   inside the interval (level-trigger holds).
-5. Sweep to a scratch dest → hashes re-verified there, stamp written
-   both sides; unmount (move the dest away) → `status` exit 0, off-box
-   line says "as of", nothing red.
+*(amended 2026-09-01, ranger-base-a0ln0)* Six were written; four are now
+MEASURED, and two went out with the destination. Each observable below
+carries its state. The probes live in `internal/posse/backup_test.go`,
+`backuprefusal_qa_test.go` and `backupfresh_qa_test.go`, and every pin
+named here was mutation-checked — the mutant that should have killed it
+was run, and did.
+
+1. **MEASURED.** `posse backup` against a scratch `queue_repo:` writes
+   archive + sidecar; every source file's mtime and size unchanged —
+   `TestBackupLeavesTheSourcesAlone`, which stats the whole `.beads`
+   directory before and after.
+2. **MEASURED.** Add a remote to the scratch repo → refused, and the
+   line names the ruling; remove it and the same call succeeds, so the
+   refusal is the repo's state and not a latch
+   (`TestBackupRefusesAQueueRepoWithARemote`).
+   *Widened by the sub-ruling:* the TARGET refusal is the one the
+   ruling turns on, and it is measured over seven remote spellings, five
+   faked remote filesystems, an unreadable volume reading, and this
+   box's one real non-local mount — with a local directory accepted as
+   the control, and the option surface itself pinned so a future
+   override flag reds before it ships
+   (`backuprefusal_qa_test.go`).
+3. **MEASURED, in the folded form.** Every archive is verified before it
+   is named, and the arm-8 job — a check that can go red — is
+   `TestVerifyCatchesAFlippedByte` plus its sidecar and missing-member
+   siblings. The 8-arm drill verb is not built (see the sub-ruling
+   table).
+4. **NOT BUILT.** §4's ticker; no `backup_interval:` exists to set.
+5. **CUT.** No sweep, no destination.
 6. `sqlite3` staging under a concurrent bd writer → restored db passes
-   arms 5–7 (the §7 swap's reason, exercised).
+   arms 5–7 (the §7 swap's reason, exercised). **PARTLY MEASURED:** the
+   staging path reuses `pairCheckReader` (beadpairs.go), the harness's
+   existing answer to reading this db safely — including the
+   WAL-with-no-live-writer case where `mode=ro` cannot open it at all —
+   and the round trip is measured on a quiet db. The concurrent-writer
+   arm is not: it needs a live bd writer in the rig.

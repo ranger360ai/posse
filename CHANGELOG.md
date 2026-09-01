@@ -11,6 +11,50 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+### Added
+
+**`posse backup` — one command that archives the work graph and the
+constitution, on this box, and refuses to write anywhere else.**
+
+The queue repo is the store of record for the whole work graph and it never
+grows a git remote, which makes one disk the whole graph and its journal.
+Until now the answer to that was whatever each deployment arranged for
+itself. It is a verb now.
+
+`posse backup` writes one archive holding the queue repo's history as a
+`git bundle --all`, its beads database staged through SQLite's online backup
+API against a source posse never writes to, the JSONL projections beside it,
+and the config home's promoted set, `runtimes/` and `promoted.json`. `envs/`
+and `secrets/` are never archived, and the archive's manifest says so by
+name, so a restore reads their absence as policy rather than as loss. The
+archive is a plain `tar.gz`: `tar -xzf` is the recovery path and it needs no
+posse binary.
+
+**The destination is on-box, and that is not a setting.** A URL, an
+scp-style `host:path`, a UNC path, or any directory on a volume the kernel
+does not report as local is refused — and so is a volume whose locality
+cannot be read at all, because a refusal that fails open is not a refusal.
+There is no flag that lifts it. The same rule runs on the source: a queue
+repo that has grown a git remote is refused rather than copied.
+
+Every archive is read back and checked against the manifest it carries
+BEFORE it is given its name, so an archive that is there is one that
+verified — which means the directory itself is the record, with no second
+status file that can disagree with it. `posse backup status` reads it;
+`posse backup verify` re-opens an archive on demand and extracts nothing.
+Retention (`backup_keep:`, default 3) only ever prunes after a newer archive
+has verified, so a run that produced garbage cannot destroy the last good
+copy on its way down, and a free-space floor (`backup_min_free_mb:`, default
+384) refuses rather than filling the disk.
+
+`posse status` grows a line with the age of the newest archive, and past
+`backup_max_age:` (default 48h) the shop check carries it as a condition —
+in the terminal and in the cockpit's governance block. An install that has
+never asked for backups says nothing at all; one that asked and has no
+archive says so loudly, which is the failure this is for.
+
+Scheduling is not included: the verb runs when it is run.
+
 ### Security
 
 **A persona session could commit your constitution — the PIDs every future
