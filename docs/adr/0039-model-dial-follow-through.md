@@ -1,0 +1,242 @@
+# ADR 0039 — Model dial follow-through: the built-in tracks the dial, `runtimes/` joins the promoted set, the catalog says its age and rules only inside its lease
+
+*Status: accepted 2026-09-01 (D1, D2, D3a, D3b) · D3c awaits the
+operator's ruling · D3d awaits a spike · owner: architect · amends 0003
+§1 (the claude strong cell), 0015 §2/§3 (the promoted set), 0021 (the
+overlay's home) · from ranger-base-1ykc1, discovered from
+ranger-base-c3vqe*
+
+> 2026-09-01: strong moved to `claude-fable-5-1` by the operator's
+> word, and "model bumps will be a frequent occurrence". The bump took
+> three writes: the ADR 0021 overlay key (the sanctioned dial), a
+> mirror commit in the constitution repo that promote does not carry,
+> and a HAND-EDIT of `state/model-catalog.json` because the availability
+> probe has answered 401 since 2026-08-31 and the retained snapshot did
+> not list the new id. This ADR makes the next bump one write.
+
+## Context
+
+Three facts, each read in code this session:
+
+- **The built-in trails the dial.** `claudeModels[strong]` is
+  `claude-fable-5` (runtime.go); `PriceTable` has no `claude-fable-5-1`
+  row (cost.go) and prices it by the `fable` family fallback. The
+  overlay (`runtimes/claude.yaml: model_strong:`) wins at every launch
+  that reads it, so the built-in only matters to an instance with no
+  overlay — a rebuilt home, a fresh instance, a test.
+- **The dial lives where promote cannot reach.** `PromotedPaths` is
+  `agents, config.yaml, recipes, skills` (promote.go). `runtimes/` is
+  read at every launch (`LoadRuntime`, `RuntimeMapsTier`), is written by
+  no code path (every reference to `RuntimesDir()` is a read — MEASURED,
+  grep), holds no secret (`cage_cred:` names a variable, not a value),
+  and is "the operator's own config root, the same trust level as
+  `config.yaml` and the PIDs beside it" (ADR 0021's own words). It is
+  the one launch-read fact at the home that no manifest attests to. The
+  constitution repo already carries it (ranger-base commit 55c5581,
+  `rhq/runtimes/claude.yaml`); the home copy was placed by hand.
+- **A stale reading rules as fact.** `ModelCache.Models` (modelavail.go)
+  returns a snapshot inside `model_probe_ttl` as known; past the TTL it
+  re-asks, and when the ask fails it returns the retained reading
+  *still as known* (`kept`). `TierPreflight` then demotes any tier whose
+  id that reading lacks. The reading ruling on today's launches was
+  taken before the id existed; the probe cannot refresh it because the
+  meter credential it reads (keychain, ADR 0019 D2) rots in hours
+  (ranger-base-wkai3). The file's own preamble — "only a list that was
+  actually read, and that does not contain the wanted id, demotes" —
+  was written for a reading whose age was bounded by the TTL; nothing
+  bounds it once the probe is down.
+
+## Decision
+
+**D1. The built-in tracks the dial; the price row is exact.**
+`claudeModels[TierStrong] = "claude-fable-5-1"`, `PriceTable` gains
+`"claude-fable-5-1": {10, 50}`, ADR 0003 §1's claude strong cell reads
+`fable-5-1`. The rate is MEASURED against the bundled claude-api skill's
+current-models table (cached 2026-06-24): Fable 5.1 lists at the Fable 5
+rate — the same `{10, 50}` in/out row — so the family fallback was
+already right and the row is what ADR 0003's "exact ids" comment asks
+for. Rule for every bump after this one: **the overlay moves first**
+(one line, no rebuild, no promote until D2 lands — after D2, one line
+plus `posse promote`) **and the built-in follows in the next posse
+release**. An overlay that matches the built-in is not stale, it is
+redundant, and the grid still names it per key (ADR 0021 §3); the
+operator may drop the key or keep it.
+
+**D2. `runtimes` joins `PromotedPaths`.** One token in one list
+(promote.go); every consequence below is a reader of that list and
+needs no new code, which is the point of the list. The home's
+`runtimes/` becomes prose in force on the same terms as `config.yaml`:
+written only by `posse promote`, hashed into `promoted.json`, refused
+to every session's writable set, and walled from persona commits in the
+constitution repo (`rhq/runtimes`). The versioned copy that 55c5581
+made by hand becomes the source, and the mirror ritual ends.
+
+Consequences, each derived from a named reader:
+
+- *promote (copyPromotedSet / promoteRemovals):* carries
+  `rhq/runtimes/*.yaml` to the home and **removes** any home
+  `runtimes/*.yaml` the commit does not carry, printing each removal. A
+  template-only runtime placed at the home by hand (ADR 0002; the
+  in-flight `runtimes/bob.yaml`, ranger-base-6wqe) must be committed to
+  the constitution before the next promote or it leaves, loudly. This
+  instance: the home holds only `claude.yaml`, and 55c5581 carries it —
+  MEASURED 2026-09-01, `ls ~/.config/posse/runtimes`.
+- *launch verify (VerifyPromoted, herdrback.go):* a home whose manifest
+  predates this change (this instance's is at a27973f and names no
+  `runtimes/` entry) reads `unpromoted runtimes/claude.yaml` the moment
+  the new binary is installed, and **every dispatched launch refuses
+  until `posse promote`**. That is the fence doing its job, and it is
+  free here: the reinstall the bead's item 4 already waits on is
+  operator-gated and promote is its second half. The ritual is `make
+  install && posse promote`, stated in CHANGELOG under Upgrading.
+  `posse promote` itself does not run the verify (MEASURED: its callers
+  are the launch and the first-run repair only), so the ritual cannot
+  deadlock.
+- *seatbelt (HomeConstitutionPaths):* `~/.config/posse/runtimes` in no
+  session's writable set; `posse gates` prints ConstitutionGrants, so
+  the observable is that the dir appears in no grant.
+- *commit wall (ConstitutionRepoPaths, constitutionClassSpec):* the
+  rendered hook names `rhq/runtimes`; the spec pin in
+  constitutionwall_qa_test.go says in its own comment that adding a
+  path reds it and the fix is to add it there "having decided it
+  belongs" — this ADR is that decision.
+- *first run (init.go promotedRel, HashPromotedSet):* the seed tree has
+  no `runtimes/`, so nothing is seeded; a home without the dir hashes
+  nothing for it (`os.IsNotExist → continue`), so a fresh instance is
+  not marked missing.
+- *docs:* README:112, INSTALL:507, ADR 0015 §2/§3 enumerate the set in
+  prose — one word each plus a dated amendment line in 0015 pointing
+  here. ADR 0021's "lives at the home, no promote needed" reading gains
+  the same line.
+
+**D3. The catalog says its age, can be re-read on demand, and (pending
+the operator) rules only inside its lease.**
+
+- *D3a — the age is in the sentence (decided).* Whenever the reading a
+  verdict rests on is older than `model_probe_ttl`, both the launch's
+  loud line and `posse gates`' PreflightReport say so, with the probe's
+  outcome: `richard: tier strong wants claude-fable-5-1 — unavailable
+  per the catalog read 2d ago (probe failing: 401 Unauthorized), falling
+  back to claude-opus-5`. `Models` already computes the age
+  (`catalogAge`) and holds the error it just logged; it returns them
+  beside the bool instead of dropping them. No new state, no new file.
+  An operator who reads that line knows to refresh a credential, not to
+  edit a state file.
+- *D3b — `posse runtimes` carries the availability line, and `--probe`
+  re-reads (decided).* Under each runtime posse can read a catalog for
+  (`anthropicAPI`, egress-keyed), `posse runtimes` prints
+  PreflightReport for each mapped tier (persona "", tier keys only —
+  the form the function already supports) — this is the bead's
+  acceptance surface, and it is where "is 5.1 there" gets answered
+  without a launch. `--probe` calls `Models(0)`: "fresh only" is what
+  `maxAge 0` already means in plancache.go, and a 429 cooldown is still
+  honoured on that path (Models checks `RetryAt` before asking), so a
+  forced read cannot become the rangerhq-tdy8 storm. No config edit,
+  no launch, no hand-edit.
+- *D3c — the lease rule (the operator's ruling, ranger-base question
+  bead named on 1ykc1; recommended).* A retained reading may **demote**
+  only while it is inside its lease: `now − at < model_probe_ttl`. Past
+  that, with the refresh failing, it is quoted (D3a) but the verdict is
+  UNKNOWN: the launch takes the tier as asked, and when the wanted id
+  is absent from the stale reading the line still prints —
+  `… not in the catalog read 2d ago and the probe is failing (401);
+  availability UNKNOWN, launching as asked`. This is the preamble's
+  rule with its bound written down, and the bound is the number the
+  operator already owns; the cooldown keeps governing *whether posse
+  re-asks*, never *whether it trusts* (a 429 storm can renew a cooldown
+  all day, c3vqe, and would otherwise renew trust in a day-old list).
+  What it gives up, honestly: an account that loses the strong model
+  *while the probe is down* launches on the id the CLI cannot serve,
+  and what the CLI does then is ASSUMED unmeasured (rangerhq-oay's
+  fear: it quietly serves a fallback). Bounded by the line above on
+  every such launch and by `posse cost`'s TierForModel, which reads the
+  transcript. The alternative — today's rule — demotes the whole shop
+  on every bump for as long as the probe is dead, which on this
+  instance is most hours (wkai3), and the only cure is a hand-edited
+  state file with a `.bak` beside it.
+- *D3d — the probe rides the credential the launch is about to hand the
+  session (spike-gated).* `MeterToken("claude")` reads the keychain
+  because the *usage* endpoint refuses a minted session token
+  (planusage.go: 403, "a setup-token never will be"). `/v1/models` is a
+  different endpoint and its answer to that token is unmeasured. If it
+  answers 200: `ModelLister.Token` prefers the session credential
+  (ADR 0019's `Read(runtime, session)`, read from the PID's env set as
+  the launch already does) and falls back to the meter store — the
+  probe then asks "can this account run the id" of exactly the
+  credential that will run it, and it rots on the same clock as the
+  sessions, which is the right clock. The exposure is unchanged: the
+  same pinned host the session egresses to (credpin.go). If it answers
+  401/403: D3d is dead and the credential question stays wkai3's.
+
+## Alternatives rejected
+
+- **Document `runtimes/` as deliberately unpromoted.** A rebuilt home
+  launches the trailing built-in with the grid saying "built-in
+  default" and nobody told; a launch-read fact with no manifest entry
+  is ADR 0015's 6ne hole one directory over; and the mirror commit
+  becomes a ritual with no mechanism behind it. Priced today: the
+  mirror was made by hand, uncommitted for a day. MEASURED.
+- **A "soft" promoted member — copied, not verified.** Two classes of
+  promoted path is a second list, and the verify's value is that a
+  byte at the home is either attested or refused.
+- **`model_strong:` in `config.yaml` instead** (already promoted). ADR
+  0021 rejected the second place to say the same thing; `declaredBy`
+  reads the runtimes file.
+- **Only a forced-refresh command (the bead's option a).** Forcing a
+  dead probe prints the same stale list; it helps the operator *see*
+  and cannot heal. Kept as D3b because seeing is worth having; not
+  enough alone.
+- **A second number — `model_probe_stale_max:` grace past the TTL.** A
+  dial nobody measured, on top of one the operator already set to say
+  how fresh a reading must be. If the TTL is too short for the lease,
+  lengthen the TTL.
+- **Lease extended by the cooldown** ("the endpoint told us to wait, so
+  the reading is still good"). Trust and re-ask are different
+  questions; c3vqe's day of renewed 429 cooldowns shows the coupling
+  renewing trust in a reading nobody could refresh.
+- **Keep the hand-edit runbook (the bead's option c).** A state file
+  edited by hand under a launcher that rules on it as fact — the shape
+  every other ADR here exists to remove, with a `.bak` sitting beside
+  it as the evidence.
+- **The clever one: the launch retries the probe with the session
+  credential AND treats its 401 as "the session will fail too, refuse
+  the launch".** Turns the preflight into a gate, which rule (3) of the
+  file forbids; a degraded launch is the operator's call, and this
+  would make one credential's freshness refuse the whole shop.
+
+## Verification (predicted observables)
+
+1. After `make install && posse promote`: `posse runtimes` prints
+   `strong: claude-fable-5-1` for claude attributed to
+   `runtimes/claude.yaml (model_strong:)`; `promoted.json` `files` has a
+   `runtimes/claude.yaml` entry; `posse gates` lists the runtimes dir in
+   no grant. A strong-tier launch's `state/launch/<session>.sh` carries
+   `--model claude-fable-5-1` and no `fallback:` line in the meta.
+2. Before that promote, on the new binary: a dispatched launch refuses
+   with `unpromoted runtimes/claude.yaml`; `posse promote --dry-run`
+   lists the file arriving.
+3. With the overlay key removed: the same `posse runtimes` line reads
+   `built-in default` (D1).
+4. With the snapshot's `at` set two days back and the lister faked to
+   401: `posse gates` prints the age clause (D3a); `posse runtimes
+   --probe` logs one `preflight failed` line and prints the same clause
+   (D3b); under D3c the verdict reads UNKNOWN and the launch script
+   carries the asked-for id.
+5. `go test ./internal/posse -run 'Constitution|Promote|Preflight|Model|Price|Tier'`
+   green, with the constitutionClassSpec pin reading `rhq/runtimes`.
+
+## Measured versus assumed
+
+| claim | status |
+|---|---|
+| Fable 5.1 lists at the Fable 5 rate ({10, 50} per MTok) | MEASURED — bundled claude-api skill, current-models table cached 2026-06-24 |
+| the built-in trails; the overlay wins per launch | MEASURED — runtime.go claudeModels, overlayBuiltin; live `~/.config/posse/runtimes/claude.yaml` |
+| the constitution repo already carries the overlay | MEASURED — ranger-base 55c5581 `rhq/runtimes/claude.yaml` |
+| nothing writes `RuntimesDir()` | MEASURED — grep, five readers, no writer |
+| the retained reading rules as fact past the TTL when the refresh fails | MEASURED — modelavail.go `Models` returns `e.Models, kept(e, have)` on error |
+| the probe has 401'd since 2026-08-31 and the catalog was hand-edited 2026-09-01 | MEASURED — `state/model-catalog.log` |
+| this home's manifest names no `runtimes/` entry and promote does not run the verify | MEASURED — `promoted.json` (sha a27973f); VerifyPromoted callers are herdrback.go:1351 and init.go:356 |
+| `Models(0)` honours a live cooldown before asking | MEASURED — the `RetryAt` branch precedes the ask |
+| what the claude CLI does with `--model <id the account cannot run>` | ASSUMED unmeasured — D3c's whole cost; one launch with a made-up id answers it (laurie's checklist) |
+| `/v1/models` accepts a minted session token | UNMEASURED — the spike; D3d is conditional on it |
+| no session on any instance needs to write `runtimes/` | ASSUMED — no code writer; a hand edit at the home is exactly what D2 ends |
