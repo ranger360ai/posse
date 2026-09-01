@@ -205,11 +205,13 @@ func TestQANotesGuardAllowsFragmentCommit(t *testing.T) {
 //
 // The fixture is seeded here rather than taken from notesGuardRepo on
 // purpose: git only PAIRS the removal with the add at 50% similarity or
-// better, so over the one-line fixture git reports the two halves separately
-// and even the pre-fix arm refused. A realistic file size is what makes the
-// blind spot reachable, and the two rig checks below assert exactly that —
-// without them this pin could go green over a move git never paired, having
-// measured nothing.
+// better, and the similarity that counts is the one in this commit's own
+// next-index — HEAD plus the named paths as they are on disk, persona A's
+// uncommitted line included. Measured on the rig below: 200 lines scores
+// R098 and only ARCHIVE.md is named, while at 3 lines and at 1 git reports
+// the add and the delete separately and NOTES.md is in the list with no flag
+// at all, so the pre-fix arm refused those and a small fixture measures
+// nothing. A realistic file size is what makes the blind spot reachable.
 func TestQANotesGuardRefusesAMoveOutOfNotes(t *testing.T) {
 	repo, git, persona := notesGuardRepo(t)
 
@@ -238,12 +240,31 @@ func TestQANotesGuardRefusesAMoveOutOfNotes(t *testing.T) {
 	if out, err := git(nil, "mv", "NOTES.md", "ARCHIVE.md"); err != nil {
 		t.Fatalf("git mv: %v %s", err, out)
 	}
-	if out, _ := git(nil, "diff", "--cached", "--name-only", "HEAD"); strings.Contains(out, "NOTES.md") {
-		t.Fatalf("rig check: git must be pairing this move as a rename, so the default "+
-			"--name-only names only the destination; a staged set already naming "+
-			"NOTES.md is the low-similarity case, which was never blind:\n%s", out)
+	// Rig check, and it has to read the index the HOOK reads. `git mv` alone
+	// stages an EXACT rename (R100: the blob it moves is the one already in
+	// the index, not the edited file on disk), so the shared index pairs the
+	// move at any fixture size and would answer this question with a yes it
+	// has not earned. The commit under test builds its own next-index — HEAD
+	// plus the named paths as they are ON DISK, persona A's line included —
+	// and that is where the similarity is scored. Built the same way here:
+	// measured, a 200-line fixture scores R098 and the default read names
+	// only ARCHIVE.md, while at 3 lines and at 1 git reports the add and the
+	// delete separately and NOTES.md is in the list even without the flag.
+	// Shrink the fixture and this fires rather than going quietly green over
+	// a move that was never blind.
+	probe := []string{"GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "next-index-probe")}
+	if out, err := git(probe, "read-tree", "HEAD"); err != nil {
+		t.Fatalf("rig check read-tree: %v %s", err, out)
 	}
-	if out, _ := git(nil, "diff", "--cached", "--name-only", "--no-renames", "HEAD"); !strings.Contains(out, "NOTES.md") {
+	if out, err := git(probe, "add", "--all", "--", "NOTES.md", "ARCHIVE.md"); err != nil {
+		t.Fatalf("rig check add: %v %s", err, out)
+	}
+	if out, _ := git(probe, "diff", "--cached", "--name-only", "HEAD"); strings.Contains(out, "NOTES.md") {
+		t.Fatalf("rig check: this commit's own to-be-committed set must PAIR the move, "+
+			"so the default --name-only names only the destination; a set already "+
+			"naming NOTES.md is the low-similarity case, which was never blind:\n%s", out)
+	}
+	if out, _ := git(probe, "diff", "--cached", "--name-only", "--no-renames", "HEAD"); !strings.Contains(out, "NOTES.md") {
 		t.Fatalf("rig check: --no-renames must report the removal separately:\n%s", out)
 	}
 
