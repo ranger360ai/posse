@@ -87,6 +87,12 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 		root := t.TempDir()
 		t.Setenv("HOME", root)
 		t.Setenv("RHQ_HOME", "")
+		// newApp reads POSSE_HOME too (the both-names window, 9c00e19), and
+		// a posse-launched session exports it — clearing only RHQ_HOME left
+		// this subtest reading the operator's live home and failing for
+		// every persona that ran the suite from a dispatched session
+		// (ranger-base-kvecg).
+		t.Setenv("POSSE_HOME", "")
 		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -107,6 +113,7 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 		root := t.TempDir()
 		t.Setenv("HOME", root)
 		t.Setenv("RHQ_HOME", "")
+		t.Setenv("POSSE_HOME", "") // as above (ranger-base-kvecg)
 		preferred := filepath.Join(root, ".config", "posse")
 		legacy := filepath.Join(root, ".config", "rhq")
 		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
