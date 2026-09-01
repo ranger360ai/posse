@@ -8,6 +8,7 @@ package posse
 // 1-5), each taken from the wall itself rather than from the source.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -191,5 +192,72 @@ func TestQANotesGuardAllowsFragmentCommit(t *testing.T) {
 	}
 	if out, _ := git(nil, "log", "--grep", "ranger-base-hokh", "--oneline"); !strings.Contains(out, "notes fragment") {
 		t.Errorf("git log --grep must find the fragment commit, got:\n%s", out)
+	}
+}
+
+// ranger-base-x9xbk: a MOVE of NOTES.md is a change to NOTES.md, and it has
+// to be refused like an edit or a removal. Rename detection is on by default
+// (git 2.9+ reads an unset diff.renames as true) and `--name-only` prints
+// only the DESTINATION for a detected move, so the arm's exact-string test
+// saw nothing and `git mv NOTES.md ARCHIVE.md` committed — carrying another
+// persona's uncommitted lines out of the shared checkout under the mover's
+// message, which is the ADR 0022 sweep itself.
+//
+// The fixture is seeded here rather than taken from notesGuardRepo on
+// purpose: git only PAIRS the removal with the add at 50% similarity or
+// better, so over the one-line fixture git reports the two halves separately
+// and even the pre-fix arm refused. A realistic file size is what makes the
+// blind spot reachable, and the two rig checks below assert exactly that —
+// without them this pin could go green over a move git never paired, having
+// measured nothing.
+func TestQANotesGuardRefusesAMoveOutOfNotes(t *testing.T) {
+	repo, git, persona := notesGuardRepo(t)
+
+	var body strings.Builder
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&body, "line %d\n", i)
+	}
+	notes := filepath.Join(repo, "NOTES.md")
+	if err := os.WriteFile(notes, []byte(body.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Past the wall, which refuses this commit on its own merits — the same
+	// way notesGuardRepo seeds NOTES.md before the guard exists.
+	if out, err := git(nil, "-c", "core.hooksPath=/dev/null", "commit", "-qam", "seed a realistic NOTES.md"); err != nil {
+		t.Fatalf("seed commit (hooks off): %v %s", err, out)
+	}
+
+	// Persona A's half-written edit, on disk and uncommitted: the thing a
+	// move must not carry away.
+	if err := os.WriteFile(notes, []byte(body.String()+"PERSONA-A-UNCOMMITTED\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Persona B moves it and commits path-limited — the one form the rest of
+	// this wall treats as safe.
+	if out, err := git(nil, "mv", "NOTES.md", "ARCHIVE.md"); err != nil {
+		t.Fatalf("git mv: %v %s", err, out)
+	}
+	if out, _ := git(nil, "diff", "--cached", "--name-only", "HEAD"); strings.Contains(out, "NOTES.md") {
+		t.Fatalf("rig check: git must be pairing this move as a rename, so the default "+
+			"--name-only names only the destination; a staged set already naming "+
+			"NOTES.md is the low-similarity case, which was never blind:\n%s", out)
+	}
+	if out, _ := git(nil, "diff", "--cached", "--name-only", "--no-renames", "HEAD"); !strings.Contains(out, "NOTES.md") {
+		t.Fatalf("rig check: --no-renames must report the removal separately:\n%s", out)
+	}
+
+	out, err := git(persona, "commit", "-m", "B: archive the notes", "--", "NOTES.md", "ARCHIVE.md")
+	if err == nil {
+		landed, _ := git(nil, "show", "HEAD:ARCHIVE.md")
+		t.Fatalf("a staged move of NOTES.md must be refused, the commit landed:\n%s\n"+
+			"swept persona A's uncommitted line: %v", out, strings.Contains(landed, "PERSONA-A-UNCOMMITTED"))
+	}
+	if !strings.Contains(out, "refused by posse gate: a commit changing NOTES.md in the shared checkout") {
+		t.Errorf("the refusal must fire on a move too, got:\n%s", out)
+	}
+	// The refusal changes nothing: NOTES.md is still what HEAD carries.
+	if names, _ := git(nil, "show", "--name-only", "--format=", "HEAD"); strings.Contains(names, "ARCHIVE.md") {
+		t.Errorf("HEAD must not carry the move after the refusal:\n%s", names)
 	}
 }

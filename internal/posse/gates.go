@@ -2010,15 +2010,21 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // one form that has to be refused anyway — that file has no single writer
 // in this tree (ranger-base-yuwy, 808da1b), so the very form the rest of
 // this wall treats as safe is the failure here. It reads the to-be-committed
-// set the same way the constitution arm does — `git diff --cached
-// --name-only HEAD` under the hook's inherited GIT_INDEX_FILE, which is
-// right for a path-limited commit's own next-index the same way it is
-// there. Unkeyed like the rest of this wall, for the same reason
+// set with `git diff --cached --name-only --no-renames HEAD` under the hook's
+// inherited GIT_INDEX_FILE, which is right for a path-limited commit's own
+// next-index the same way it is for the constitution arm. --no-renames is
+// load-bearing (ranger-base-x9xbk): with rename detection on — the default —
+// a detected move prints only its DESTINATION, so `git mv NOTES.md
+// ARCHIVE.md` walked straight through. That is why this reader and the
+// constitution arm's, which still reads without the flag and has the same
+// blind spot on its own class (ranger-base-qdxe), no longer spell the diff
+// identically. Unkeyed like the rest of this wall, for the same reason
 // (rangerhq-lt2w): the tree does not care who typed the commit. It runs
-// ahead of MERGE_HEAD/CHERRY_PICK_HEAD/rebase exiting 0 above, so those
-// three exemptions stand exactly as they did — this bead's Verification
-// list does not ask for more, and none of the three has a pathspec-based
-// way through to prefer instead.
+// AFTER MERGE_HEAD/CHERRY_PICK_HEAD/rebase exit 0 above, so those three
+// exemptions stand exactly as they did — a NOTES.md change reached by one of
+// them is exempt, deliberately: this bead's Verification list does not ask
+// for more, and none of the three has a pathspec-based way through to prefer
+// instead.
 const sharedIndexBody = `
 # ─── the shared-index guard (rangerhq-lmq9) ───────────────────────────────
 # No RHQ_PERSONA test: this wall covers every shell in the shared checkout,
@@ -2090,7 +2096,18 @@ fi
 # wall since the operator ruling on rangerhq-lt2w (ranger-base-5imp): the
 # tree is what makes the commit unsafe, not who typed it, and a per-arm
 # RHQ_PERSONA test would re-spell the carve-out the ruling retired.
-posse_notes_staged=$(git diff --cached --name-only HEAD 2>/dev/null)
+# --no-renames (ranger-base-x9xbk): rename detection is ON by default (git
+# 2.9+ treats an unset diff.renames as true), and for a detected move
+# --name-only prints ONLY the destination path. Without the flag a staged
+# 'git mv NOTES.md ARCHIVE.md' never puts the string NOTES.md in front of the
+# arm below and the commit lands — carrying away whatever another persona had
+# uncommitted in that file, under the mover's message and bead id, which is
+# the ADR 0022 sweep itself and not a spelling nit. A small fixture hides it:
+# git only pairs the removal with the add at 50% similarity or better, so it
+# is a realistic NOTES.md that makes it visible. With the flag git reports the
+# removal and the add separately and the exact-string arm sees NOTES.md again.
+# The land belt already reads its own diff this way (worktree.go).
+posse_notes_staged=$(git diff --cached --name-only --no-renames HEAD 2>/dev/null)
 posse_notes_hit=0
 if [ -n "$posse_notes_staged" ]; then
   posse_notes_ifs=$IFS
