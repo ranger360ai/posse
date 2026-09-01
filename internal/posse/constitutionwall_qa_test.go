@@ -50,6 +50,10 @@ var constitutionClassSpec = []string{
 	"rhq/agents",
 	"rhq/config.yaml",
 	"rhq/recipes",
+	// Added 2026-09-01 by ADR 0039 D2 (ranger-base-ight8), which is the
+	// "having decided it belongs" this comment block asks for: the runtime
+	// overlay is read at every launch and is now promoted prose.
+	"rhq/runtimes",
 	"rhq/skills",
 	"rhq/envs",
 	".claude/settings.json",

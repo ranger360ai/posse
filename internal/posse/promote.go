@@ -53,11 +53,21 @@ import (
 // PromotedPaths is the promoted set: what `posse promote` copies out of the
 // constitution and what the launch verify hashes, relative to both the
 // constitution source directory and the home. `config.yaml` is a file, the
-// other three are trees.
+// other four are trees.
+//
+// `runtimes` joined 2026-09-01 (ADR 0039 D2, ranger-base-ight8). The
+// per-key runtime overlay (ADR 0021) is read at every launch and is the
+// only thing that makes a tier's current model current — it was the one
+// launch-read fact at the home that no manifest attested to, written by no
+// code path and holding no secret, so it belongs here on the same terms as
+// `config.yaml`. Every consequence of the addition is a reader of this
+// list: the copy, the removal, the manifest, the launch verify, the
+// seatbelt's HomeConstitutionPaths and the commit wall's
+// ConstitutionRepoPaths. That is the point of the list.
 //
 // It is a var and not a const list so a test can prove the exclusions below
 // are not in it; nothing mutates it at runtime.
-var PromotedPaths = []string{"agents", "config.yaml", "recipes", "skills"}
+var PromotedPaths = []string{"agents", "config.yaml", "recipes", "runtimes", "skills"}
 
 // NotPromoted names what lives at the home and is never promoted — the
 // list exists so the exclusion is greppable and testable, not so anything
@@ -405,7 +415,7 @@ func (a *App) VerifyPromoted() PromoteVerdict {
 // PromoteOpts is what `posse promote` was asked for.
 type PromoteOpts struct {
 	// Source is the constitution directory — the one holding agents/,
-	// config.yaml, recipes/ and skills/. "" resolves it, in order: the
+	// config.yaml, recipes/, runtimes/ and skills/. "" resolves it, in order: the
 	// manifest's own record of where the last promote came from, then
 	// config `constitution:`. There is no cwd default: promoting the wrong
 	// tree writes the fleet's prose.

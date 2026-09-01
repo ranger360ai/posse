@@ -309,10 +309,11 @@ type BackupResult struct {
 }
 
 // BackupHomePaths is what the archive takes from the constitution home: the
-// promoted set, plus `runtimes/` (ADR 0039 D2's path, which is not in
-// PromotedPaths yet — the union is taken so that the day it joins, this list
-// does not double it), plus the promote manifest itself, which is the anchor
-// that makes the copied constitution attestable at all.
+// promoted set — which since ADR 0039 D2 (2026-09-01, ranger-base-ight8)
+// includes `runtimes/`, so the union below is now what keeps this list from
+// naming it twice rather than what adds it — plus the promote manifest
+// itself, which is the anchor that makes the copied constitution attestable
+// at all.
 //
 // What it never takes is spelled in BackupExcluded, and the two lists are
 // the same fact from both sides.
