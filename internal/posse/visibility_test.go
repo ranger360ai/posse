@@ -2,6 +2,7 @@ package posse
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1088,10 +1089,9 @@ func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T
 	if len(identity) == 0 {
 		t.Skip("this box derives no identity literals — nothing to measure")
 	}
-	// scripts/verify-bd-pin.sh: a real, already-committed hit (the
-	// operator's brew-tap username, hardcoded in generic advice text) this
-	// check exists to catch — filed rather than scrubbed silently here
-	// (adjacent to this bead's scope, ADR 0024 D2 check 3).
+	// Dispositioned by CLASS and PATH, not by path alone (ranger-base-d3fn1):
+	// a file on this list has one judged hit, and must not become a free pass
+	// for a DIFFERENT identity class landing in it later.
 	//
 	// NOTES.md, docs/adr/0015-constitution-promotion.md and
 	// internal/posse/queuecutover_qa_test.go all name, in full, the shared
@@ -1101,19 +1101,30 @@ func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T
 	// .beads/redirect, which after the queue cutover names that shared
 	// repo rather than a private one. (Spelled out here only in prose, on
 	// purpose — the literal value itself would be a fourth hit.)
+	//
+	// scripts/verify-bd-pin.sh carried the username hit this check was
+	// written to catch; ranger-base-r00pq scrubbed it, and re-measuring at
+	// ranger-base-d3fn1 found zero username hits, so it is off the list
+	// rather than kept as a standing licence.
 	known := map[string]bool{
-		"scripts/verify-bd-pin.sh": true,
-		"NOTES.md":                 true,
-		"docs/adr/0015-constitution-promotion.md": true,
-		"internal/posse/queuecutover_qa_test.go":  true,
+		"instance-path\x00NOTES.md":                                true,
+		"instance-path\x00docs/adr/0015-constitution-promotion.md": true,
+		"instance-path\x00internal/posse/queuecutover_qa_test.go":  true,
 	}
 	for _, lit := range identity {
 		out, err := exec.Command("git", "-C", repo, "grep", "-lF", "--", lit.Value).Output()
 		if err != nil {
-			continue // grep exits 1 on no match, which is the property holding
+			// grep exits 1 on no match, which is the property holding. Any
+			// other exit is the census failing to run, and a census that did
+			// not run must not read as a clean one (ranger-base-d3fn1).
+			var ee *exec.ExitError
+			if errors.As(err, &ee) && ee.ExitCode() == 1 {
+				continue
+			}
+			t.Fatalf("git grep for the %s literal did not run: %v", lit.Class, err)
 		}
 		for _, file := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if file == "" || known[file] {
+			if file == "" || known[lit.Class+"\x00"+file] {
 				continue
 			}
 			t.Errorf("identity literal (%s = %q) appears in tracked %s — undispositioned hit; either scrub it or disposition it here", lit.Class, lit.Value, file)
