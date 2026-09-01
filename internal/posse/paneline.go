@@ -63,11 +63,19 @@ func (a *App) LaunchScript(session string) string {
 }
 
 // PaneLine returns the line to type for cmd: cmd itself when it fits, else
-// a `. <script>` that runs it. A line that fits is typed verbatim — the
-// pane's scrollback and herdr's log are where an operator reads what a
-// session was launched with, and today every persona line fits with room
-// (591-691 bytes rendered with gates as of 2026-08-27, against a
-// 1023-byte limit).
+// a `. <script>` that runs it. A line that fits is typed verbatim, because
+// the pane's scrollback and herdr's log are where an operator reads what a
+// session was launched with — so the typed line is the one worth keeping,
+// and the spill is what the limit costs.
+//
+// Typing is the exceptional path now, not the usual one. The headroom a
+// crew line once had is spent: measured 2026-09-01, every persona's line
+// rendered to 1867-2058 bytes against the 1023 limit, so all seven spilled.
+// A populated state/launch/ is therefore the expected state, not a symptom
+// — it is this fallback working. That is one host on one day, not an
+// invariant; NOTES.md ("The launch line is typed, so it has a limit") keeps
+// the accounting of what spent the headroom, and is the copy to correct
+// when it moves again.
 //
 // The script is rewritten at every launch and removed the moment a line
 // fits again: a rendering left behind that nothing runs is how the next
