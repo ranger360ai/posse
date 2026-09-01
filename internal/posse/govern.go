@@ -550,7 +550,14 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			// same call bd's own queue already made. Once the date is
 			// past, the park has expired and nobody revisited it: that is
 			// unanswered again.
-			if is.Status == "deferred" && is.DeferUntil != nil && is.DeferUntil.After(now) {
+			//
+			// The date alone decides, whatever the status says
+			// (ranger-base-03ada). `bd defer` writes defer_until and
+			// leaves status alone: measured on 0.50.3, every deferred
+			// question bead in this store is status "open", and the one
+			// bead that is status "deferred" carries a null date. bd's own
+			// queue keys `bd ready` on the date, so this reader does too.
+			if is.DeferUntil != nil && is.DeferUntil.After(now) {
 				continue
 			}
 			age := now.Sub(is.Created)

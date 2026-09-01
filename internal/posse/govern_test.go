@@ -324,19 +324,30 @@ func TestGovG3NonOpenBlockedBeadDoesNotPromote(t *testing.T) {
 	}
 }
 
+// deferStatuses are the two status strings a deferred bead is seen with.
+// "open" is the live one — `bd defer` writes defer_until and leaves status
+// alone, so on 0.50.3 every deferred question bead in the real store reads
+// back "open" (ranger-base-03ada). "deferred" is kept beside it so the
+// guard is pinned status-blind in both directions.
+var deferStatuses = []string{"open", "deferred"}
+
 // A defer with a future date is an answer — the answer is a date
 // (ranger-base-5aln). `bd list` still returns a deferred bead (unlike `bd
 // ready`), so without this the row nags a question the operator already
 // parked on purpose.
 func TestGovG3DeferredUntilFutureIsNotACondition(t *testing.T) {
-	b, _ := newTestBackend(t)
-	dir := govRepo(t, b)
-	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
-		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
-			"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(48 * time.Hour)},
-	})
-	if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
-		t.Errorf("a defer-until-future is answered, not open: %+v", *g)
+	for _, status := range deferStatuses {
+		t.Run(status, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			dir := govRepo(t, b)
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+				{"id": "bd-q", "status": status, "title": "ask", "labels": []string{"question"},
+					"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(48 * time.Hour)},
+			})
+			if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
+				t.Errorf("a defer-until-future is answered, not open: %+v", *g)
+			}
+		})
 	}
 }
 
@@ -344,15 +355,40 @@ func TestGovG3DeferredUntilFutureIsNotACondition(t *testing.T) {
 // revisited it — that is unanswered again, same as any other aging
 // question.
 func TestGovG3DeferredUntilPastStillNags(t *testing.T) {
-	b, _ := newTestBackend(t)
-	dir := govRepo(t, b)
-	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
-		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
-			"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(-1 * time.Hour)},
-	})
-	g := find(shopSet(t, govIn(t, b)), "G3")
-	if g == nil || g.Key != "question:bd-q" {
-		t.Fatalf("G3 = %+v, want question:bd-q once the defer date has passed", g)
+	for _, status := range deferStatuses {
+		t.Run(status, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			dir := govRepo(t, b)
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+				{"id": "bd-q", "status": status, "title": "ask", "labels": []string{"question"},
+					"created_at": govNow.Add(-9 * time.Hour), "defer_until": govNow.Add(-1 * time.Hour)},
+			})
+			g := find(shopSet(t, govIn(t, b)), "G3")
+			if g == nil || g.Key != "question:bd-q" {
+				t.Fatalf("G3 = %+v, want question:bd-q once the defer date has passed", g)
+			}
+		})
+	}
+}
+
+// No date at all is silence, not a park: the aging question still nags
+// whatever its status. This is the arm that keeps the nil check honest —
+// without it, a guard that skipped every question bead would pass the two
+// above.
+func TestGovG3NoDeferUntilStillNags(t *testing.T) {
+	for _, status := range deferStatuses {
+		t.Run(status, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			dir := govRepo(t, b)
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+				{"id": "bd-q", "status": status, "title": "ask", "labels": []string{"question"},
+					"created_at": govNow.Add(-9 * time.Hour)},
+			})
+			g := find(shopSet(t, govIn(t, b)), "G3")
+			if g == nil || g.Key != "question:bd-q" {
+				t.Fatalf("G3 = %+v, want question:bd-q with no defer date at all", g)
+			}
+		})
 	}
 }
 

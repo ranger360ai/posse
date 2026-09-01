@@ -170,9 +170,14 @@ type BdIssue struct {
 	Owner       string     `json:"owner"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	CloseReason string     `json:"close_reason"`
-	// DeferUntil is set when Status is "deferred" via `bd defer --until`
+	// DeferUntil is the date `bd defer --until` parks a bead until
 	// (ranger-base-5aln): a defer with a future date is an answer someone
 	// already gave — the answer is a date — not silence.
+	//
+	// It is orthogonal to Status, which `bd defer` does not touch
+	// (ranger-base-03ada): on 0.50.3 a deferred bead reads back status
+	// "open" with a date, and a status "deferred" bead can carry no date
+	// at all. Read this field alone; never gate it on the status string.
 	DeferUntil *time.Time `json:"defer_until"`
 }
 
