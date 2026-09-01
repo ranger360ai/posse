@@ -109,17 +109,21 @@ func TestQAFoldSilentlyDropsEveryLineAfterAnOverlongOne(t *testing.T) {
 	}
 }
 
-// LIVE DEFECT, pinned GREEN: ADR 0025 §4's residual says "lines appended
-// and then truncated BETWEEN two folds are unrecoverable — the truncation
-// is detected". Detection fires on `size < cur.Offset` or a hash mismatch
-// over the folded prefix, so it only ever sees a truncation BELOW what is
-// already safe in the canonical log. A truncation back to the cursor — or
-// to any point above it — erases un-folded refusals and leaves the prefix
-// hash intact, so no tamper line is written and nothing records the gap.
+// The documented residual of ADR 0025 §4, pinned GREEN — and the ADR now
+// cites this test by name for it (amended 2026-09-01, ranger-base-j3r6z,
+// raised under ranger-base-w7h58; the §4 text said "the truncation is
+// detected" until then).
 //
-// The mechanism matches the ADR; the ADR's claim about its own residual
-// does not match the mechanism. Filed as a spec bead from ranger-base-w7h58.
-// When the trail learns to notice this, THIS TEST GOES RED — delete it.
+// Detection fires on `size < cur.Offset` or a hash mismatch over the folded
+// prefix, so it only ever sees a truncation BELOW what the canonical log
+// already holds — the case where nothing is lost. A truncation back to the
+// cursor, to any point above it, or before the first fold ever ran erases
+// un-folded refusals and leaves the compared prefix byte-identical: no
+// tamper line, no marker. What the design does hold is that the canonical
+// log only grows from inside a cage.
+//
+// When detection grows to reach past the cursor, THIS TEST GOES RED — that
+// is the signal to delete it and rewrite the ADR paragraph with it.
 func TestQAFoldDoesNotDetectATruncationBackToItsOwnCursor(t *testing.T) {
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
