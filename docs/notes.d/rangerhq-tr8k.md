@@ -54,6 +54,15 @@ refuses above the claim, every other bead-carrying path refuses from
 `interstitial` gap below is BLOCKING for a `Danger` entry. The grid says
 "LAUNCH REFUSE" again, and means it. See ADR 0013 §2's amendment.
 
+**Amended 2026-08-30 by `ranger-base-vbp3`**: 9r33 excluded a probe-less
+entry from the refuse, which is every entry declared here — so the grid
+went on promising LAUNCH REFUSE for a declared `danger:` screen that
+dispatch typed a session onto. A declared screen with `danger:` now refuses
+too. The no-probe paragraph above is unchanged and is the reason: posse can
+never read that key as silenced, so the refusal lifts by dropping `danger:`
+from the profile, not by silencing the screen. Without `danger:` a
+declaration still walls nothing.
+
 ### `posse runtime check <name>` exits 1 on a blocking gap
 
 The grid still prints whole. Under it, the preflight — each gap **by name**

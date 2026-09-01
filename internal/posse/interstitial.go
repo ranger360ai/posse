@@ -219,39 +219,68 @@ var ClaudeInterstitials = []Interstitial{{
 // and which this box cannot show to be silenced — empty when a launch here
 // meets no such screen.
 //
-// Three exclusions, and each is a different kind of "not this rule":
+// Two exclusions, and each is a different kind of "not this rule":
 //
 //   - Danger == "" — the default action is safe. grok's consent banner is
 //     the case: answering it wrong is a visibility decision, which is why
 //     posse still never answers it, but arriving at it mutates nothing.
 //   - Seeded — the launch writes this key itself (claude's directory
 //     trust), so there is nothing for the operator to have done first.
-//   - the reading is UNKNOWN — either Probe == nil, because posse cannot
-//     read this CLI's config format at all (every interstitial declared in
-//     a runtimes/<name>.yaml is here, so an operator who declares a screen
-//     documents it and does not thereby wall their own launches), or the
-//     probe ran and could not read the file (Silence.Unknown).
 //
-// That last exclusion is the one worth arguing with, because "REFUSE until
-// that config silences it" reads like silence must be SHOWN. Two things
-// answer it. A refusal whose own words are "cannot tell whether the update
-// menu is silenced" walls a box for something nobody measured — and the
-// screen is not unguarded meanwhile: herdr names it `blocked` by its own
-// rule (etc/herdr/agent-detection/codex.toml, update_menu), so a launch
+// Everything else with Danger set yields a line, and the two readings that
+// yield one are not the same sentence:
+//
+//   - the probe RAN and read "not silenced" — the codex case, and the line
+//     carries the probe's own words (for codex, the two version numbers,
+//     because the dismissal expires) beside the operator's action.
+//   - there is NO probe, which is every screen declared in a
+//     runtimes/<name>.yaml: posse cannot read an unknown CLI's config
+//     format, so it can never read that key as silenced and the refusal
+//     does not lift by silencing alone. The line says so, and names the
+//     one thing that does lift it — dropping `danger:` from the profile.
+//
+// That second one reverses ranger-base-9r33, which excluded Probe == nil
+// with "declaring a screen documents it and never walls the declarer's own
+// launches", and it is worth saying why rather than just doing it
+// (ranger-base-vbp3, ADR 0013 §2 amended). The exclusion made the rule
+// unreachable for the only runtimes that can newly meet it: the built-ins
+// are all measured, claude's screen is Seeded and codex/grok deliver by
+// argv, so the FIRST typed-delivery runtime with a machine-mutating dialog
+// is by construction a declared one — probe-less, and dispatched onto the
+// menu while `runtime check` printed LAUNCH REFUSE about it. And it is
+// still a reading rather than ignorance: `danger:` is not posse guessing
+// at a config it cannot parse, it is the OPERATOR's own written statement
+// that this screen's default action mutates their machine. Declaring it is
+// choosing the wall; a declared screen without `danger:` still walls
+// nothing.
+//
+// The UNKNOWN reading stays excluded, and that is the one worth arguing
+// with, because "REFUSE until that config silences it" reads like silence
+// must be SHOWN. A refusal whose own words are "cannot tell whether the
+// update menu is silenced" walls a box for something nobody measured — and
+// the screen is not unguarded meanwhile: herdr names it `blocked` by its
+// own rule (etc/herdr/agent-detection/codex.toml, update_menu), so a launch
 // that does meet it fails by name instead of being typed into. So this
 // refuses on a reading, never on ignorance (ranger-base-9r33).
 //
-// The line carries the probe's own words (which for codex are the two
-// version numbers, because the dismissal expires) and the operator's
-// action, since a refusal an operator cannot clear from the line is a dead
-// end.
+// Every line carries the operator's action, since a refusal an operator
+// cannot clear from the line is a dead end.
 func DangerUnsilenced(rt *Runtime) []string {
 	if rt == nil {
 		return nil
 	}
 	var lines []string
 	for _, in := range rt.Interstitials {
-		if in.Danger == "" || in.Seeded || in.Probe == nil {
+		if in.Danger == "" || in.Seeded {
+			continue
+		}
+		if in.Probe == nil {
+			lines = append(lines, in.Key+" in "+in.Where+" CANNOT BE SHOWN SILENCED — "+
+				declaredIn(rt)+" declares this screen and posse has no probe for "+rt.Name+
+				", so nothing here ever reads that key"+
+				". Its DEFAULT ACTION MUTATES THE MACHINE: "+in.Danger+
+				". To silence it: "+in.Silence+
+				" — and then drop danger: from that declaration, which is the whole of what this refusal is made of")
 			continue
 		}
 		sil := in.Probe()
@@ -263,6 +292,18 @@ func DangerUnsilenced(rt *Runtime) []string {
 			". To silence it: "+in.Silence)
 	}
 	return lines
+}
+
+// declaredIn names the file a probe-less screen was declared in, for the
+// refusal line. Empty Path is a built-in, which has no yaml — unreachable
+// today, since all three built-ins carry measured Go probes, and worded so
+// that a built-in that ever grows a probe-less Danger entry still prints a
+// sentence rather than a bare " declares this screen".
+func declaredIn(rt *Runtime) string {
+	if rt.Path == "" {
+		return "this runtime"
+	}
+	return AbbrevHome(rt.Path)
 }
 
 // DangerLine is DangerUnsilenced as the one sentence a refusal or a warning

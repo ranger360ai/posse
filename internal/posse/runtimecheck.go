@@ -333,6 +333,17 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 			// kept, and one that printed only the rule NOW would hide the
 			// asymmetry an operator meets the moment they type `posse new`.
 			r.note = append(r.note, "  LAUNCH REFUSE until the operator's own config silences it (ADR 0013 §2): anything dispatched — a pass, the cockpit's `d`, a recipe — refuses before it claims. An INTERACTIVE launch warns DEGRADED and proceeds, because answering this screen is what you would open a session to do.")
+			// And for a DECLARED screen, what "until silenced" can and
+			// cannot mean here, because posse has no probe for this CLI and
+			// so can never read the key as silenced: the refusal is the
+			// profile's own danger: line, and that is what lifts it
+			// (ranger-base-vbp3). Printed under the refuse rather than
+			// instead of it — the refusal is real, and an operator who
+			// silences the screen and watches dispatch keep refusing is
+			// owed the reason on the same screen that promised the refuse.
+			if in.Probe == nil {
+				r.note = append(r.note, "  posse has no probe for this key here, so it can never READ it as silenced: silence the screen for your own sessions, then drop danger: from this profile — that declaration is the whole of the refusal.")
+			}
 			r.note = append(r.note, "  posse never answers this: nothing blind-sends Enter, and the launcher's one keystroke table was retired in rangerhq-6723 (ADR 0013 §2).")
 		}
 	}

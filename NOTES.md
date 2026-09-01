@@ -4726,9 +4726,23 @@ checked for a release on, and a refusal whose own words are "cannot tell
 whether the update menu is silenced" walls a box for something nobody
 measured. The screen is not unguarded meanwhile: herdr names it `blocked`
 by its own `update_menu` rule, so a launch that *does* meet it fails by name
-instead of being typed into. An interstitial declared in a
-`runtimes/<name>.yaml` has no probe at all, so declaring a screen documents
-it and never walls the declarer's own launches.
+instead of being typed into.
+
+**A declared screen with `danger:` refuses too** (ranger-base-vbp3). An
+interstitial declared in a `runtimes/<name>.yaml` has no probe at all, and
+9r33 read that as "declaring a screen documents it and never walls the
+declarer's own launches" — which made the whole rule unreachable for the
+only runtimes that can newly meet it. The built-ins are measured, claude's
+screen is `Seeded` and codex/grok deliver by argv, so the **first
+typed-delivery runtime with a machine-mutating dialog is by construction a
+declared one**, and it was dispatched onto that dialog while the grid
+printed LAUNCH REFUSE about it. `danger:` is not posse guessing at a config
+it cannot parse — it is the operator's own written statement that the
+default action mutates their machine, so refusing on it is still a reading.
+Declaring it is choosing the wall; a declared screen **without** `danger:`
+walls nothing. The refusal does not lift by silencing the screen, because
+posse cannot read the key: what lifts it is dropping `danger:` from the
+profile, and the refusal line and the grid both say so.
 
 **The keys, per runtime.** `posse runtime check <name>` prints each with
 its file and whether it is silenced on this box — read-only probes, which

@@ -179,9 +179,7 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 	}
 
 	// interstitials — a declared first-run screen whose probe says the
-	// operator has not silenced it yet. A probe that answers "unknown" —
-	// which is every DECLARED interstitial, since posse cannot read an
-	// unknown CLI's config format — is not a finding at all.
+	// operator has not silenced it yet.
 	//
 	// BLOCKING exactly when the launcher refuses on it (ranger-base-9r33):
 	// a screen whose default action mutates the machine is a launch refuse
@@ -196,7 +194,20 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 	// either — it is still worth a line, since the onboarder is the one who
 	// can go and look at the file posse could not read.
 	for _, in := range rt.Interstitials {
-		if in.Probe == nil || in.Seeded {
+		if in.Seeded {
+			continue
+		}
+		// A screen posse has no probe for is not a finding — it is every
+		// DECLARED interstitial, and posse cannot read an unknown CLI's
+		// config format. Unless the declaration itself says the default
+		// action mutates the machine, which the launcher refuses on and
+		// no reading here can lift (DangerUnsilenced, ranger-base-vbp3):
+		// blocking, because this runtime cannot take dispatched work until
+		// the profile stops saying that.
+		if in.Probe == nil {
+			if in.Danger != "" {
+				add("interstitial", fmt.Sprintf("%s in %s cannot be shown silenced here — posse has no probe for %s, and this profile's danger: makes the screen a dispatch refuse. %s", in.Key, in.Where, rt.Name, in.Silence), true)
+			}
 			continue
 		}
 		sil := in.Probe()
