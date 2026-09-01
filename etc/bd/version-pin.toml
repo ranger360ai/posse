@@ -18,14 +18,34 @@
 # process" (ranger-base-31md / ranger-base-tdwy).
 #
 # WHY 0.50.3. 0.50.x removed the daemon class entirely (no `bd daemon` command
-# exists), which is the whole failure class above — so the process-layer check
-# that guarded 0.49.1 has nothing to check and was dropped (ranger-base-yeg1:
-# scripts/verify-bd-pin.sh, bdpin_qa_test.go); the flush-discipline invariant
-# 0.50.x relies on is pinned instead (internal/rhq/bdflushdiscipline_qa_test.go).
+# exists), which is the whole failure class above.
+#
+# The process layer that would have caught it is STILL HERE and still runs:
+# rows 4 and 5 of scripts/verify-bd-pin.sh, and the daemon-shaped cases in
+# bdpin_qa_test.go. On 0.50.x it has nothing to find, so it passes vacuously —
+# measured 2026-09-01, `make verify-bd-pin` prints "none running" and the
+# result rests on the command layer. Deleting a layer that can no longer fire
+# is a decision and not a cleanup, so it is left standing until someone rules
+# (ranger-base-5xhmz, ranger-base-fyzqf). An earlier draft of this paragraph
+# said ranger-base-yeg1 had dropped it. It never did.
+#
+# What 0.50.x DID add is flush discipline: it no longer auto-flushes
+# issues.jsonl after a write, so JSONL-as-truth rests on two carriers and no
+# third — the launcher's own writer, which flushes explicitly (Bd.Flush in
+# internal/posse/beads.go, called from queuejsonl.go:127, held by
+# TestQueueCommitFlushesBeforeItCommits), and bd's pre-commit hook, for every
+# commit taken by hand. The hook half is pinned at
+# internal/posse/bdflushdiscipline_qa_test.go (ranger-base-yeg1 step 2, written
+# then stranded uncommitted, landed by ranger-base-fyzqf).
+#
 # 0.50.x still reads .beads/beads.db (SQLite). The Dolt-default-init hazard
-# landed one minor early (0.50.0, not 0.51.0) — see NOTES.md, "OPERATOR RULING
-# 2026-08-30"; the `dep add` cycle-check CTE is byte-identical on 0.50.3
-# (ranger-base-pkqn tooling stays valid).
+# landed one minor early (0.50.0, not 0.51.0) and leaves existing SQLite stores
+# alone — measured in NOTES.md, "the ~5.3s daemon dial is fixed upstream — by
+# deletion, at 0.50.0". That section is the only part of NOTES.md that has
+# caught up with this bump: the "beads (bd) substrate" section still reads
+# "pinned at 0.49.1" and still carries "HOLD at 0.49.1 stands"
+# (ranger-base-dep6x). The `dep add` cycle-check CTE is byte-identical on
+# 0.50.3 (ranger-base-pkqn tooling stays valid).
 #
 # LIFTING THE PIN is the operator's, and 1.x is a migration, not a version
 # bump: 0.51.0 Phase 2 replaced the SQLite backend with embedded Dolt and does
