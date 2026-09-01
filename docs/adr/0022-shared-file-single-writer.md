@@ -4,7 +4,9 @@
 commit guard · re-scopes the provenance promise in AGENTS.md and the
 work-prompt blueprints (ADR 0005) · from ranger-base-yuwy · amended
 2026-08-29: §3 and Verification 2 rewritten for the unkeyed wall, operator
-ruling rangerhq-lt2w (ranger-base-5imp)*
+ruling rangerhq-lt2w (ranger-base-5imp) · amended 2026-09-01: §3 and
+Verification correct the staged-set read to `--no-renames`, a move of
+NOTES.md was unrefused (ranger-base-x9xbk)*
 
 > Two personas held edits in NOTES.md on the same afternoon. One declined
 > to sweep and paid a deferred bead and two days; the other's *blessed*
@@ -82,10 +84,15 @@ carve-out the ruling retired, and the operator's routes are the same two
 (fragments, or the worktree a curation bead runs in anyway). Feasible and measured (2026-08-27, git 2.39.3): during
 `git commit -- <paths>` the hook runs with `GIT_INDEX_FILE` set to the
 `next-index-<pid>.lock` temp index and `git diff --cached --name-only
-HEAD` lists exactly the pathspec'd changed paths. The arm must run
-*before* the existing next-index exemption `exit 0`s. Files join this
-list by a **measured cross-sweep**, never by guess; today the list is
-root NOTES.md.
+HEAD` lists exactly the pathspec'd changed paths — **except a move**
+(corrected 2026-09-01, ranger-base-x9xbk): rename detection is on by
+default, and for a pair git scores at 50% similarity or better
+`--name-only` prints only the DESTINATION, so `git mv NOTES.md
+ARCHIVE.md` shows the arm nothing and the sweep lands under a new name.
+The read carries `--no-renames`, which reports the removal and the add
+separately. The arm must run *before* the existing next-index exemption
+`exit 0`s. Files join this list by a **measured cross-sweep**, never by
+guess; today the list is root NOTES.md.
 
 **4. What does not move.** The `--` requirement stays (it still closes
 the cross-file sweep). The private-index refusal stays (rangerhq-8rtf).
@@ -164,6 +171,6 @@ the verify trail already looks.
 | `git commit -- <path>` takes working-tree content, ignores the index | **MEASURED** (rangerhq-2f5r; worktree.go header) |
 | Both sweep directions live in NOTES.md, one afternoon | **MEASURED** 2026-08-27 (ranger-base-yuwy; 808da1b) |
 | Private-index commits leave the shared index stale → silent reverts | **MEASURED** (rangerhq-8rtf; audit-silent-reverts.sh) |
-| prepare-commit-msg sees the pathspec'd changed paths via the temp index (`git diff --cached --name-only HEAD`) | **MEASURED** 2026-08-27, git 2.39.3, scratch repo, this bead |
+| prepare-commit-msg sees the pathspec'd changed paths via the temp index (`git diff --cached --name-only --no-renames HEAD`) | **MEASURED** 2026-08-27, git 2.39.3, scratch repo, this bead. The `--no-renames` is a **correction** (2026-09-01, git 2.50.1, ranger-base-x9xbk): without it a detected move names only its destination and a `git mv` of NOTES.md was unrefused |
 | The existing exemption `exit 0`s before any per-path check would run | **MEASURED** (gates.go `sharedIndexBody`, read this session) |
 | Worktree landing surfaces same-file divergence as a reported conflict, never a sweep | **MEASURED** for the mechanism (worktree.go ff-only/rebase/abort, rangerhq-jbyr); the specific NOTES.md-conflict path is **ASSUMED** from rebase semantics — QA item for the docs bead if doubted |
