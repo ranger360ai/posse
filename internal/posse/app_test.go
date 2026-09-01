@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+// clearHomeEnv unsets every environment name newApp reads ahead of HOME, so
+// a test that means to exercise the HOME fallback actually reaches it.
+// newApp (app.go) reads RHQ_HOME first and falls back to POSSE_HOME for the
+// one-release both-names window of ranger-base-mlc Q2, and every
+// posse-dispatched session exports POSSE_HOME — so a test clearing only
+// RHQ_HOME is green on a bare shell, red under dispatch, and asserts nothing
+// about the HOME branch either way. That red was filed twice independently
+// (ranger-base-rajsj, ranger-base-kvecg), which is the argument for one list
+// rather than a clear per subtest: when the POSSE_HOME fallback read is
+// dropped from newApp, drop its line here too; when a further name is added
+// there, add it here once.
+func clearHomeEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("RHQ_HOME", "")
+	t.Setenv("POSSE_HOME", "")
+}
+
 func TestNewAppHomeSelection(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -42,7 +59,7 @@ func TestNewAppHomeSelection(t *testing.T) {
 				}
 			}
 			t.Setenv("HOME", root)
-			t.Setenv("POSSE_HOME", "")
+			clearHomeEnv(t)
 			switch {
 			case tc.bothExplicit:
 				t.Setenv("RHQ_HOME", explicit)
@@ -86,13 +103,7 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 	t.Run("legacy file is not a home", func(t *testing.T) {
 		root := t.TempDir()
 		t.Setenv("HOME", root)
-		t.Setenv("RHQ_HOME", "")
-		// newApp reads POSSE_HOME too (the both-names window, 9c00e19), and
-		// a posse-launched session exports it — clearing only RHQ_HOME left
-		// this subtest reading the operator's live home and failing for
-		// every persona that ran the suite from a dispatched session
-		// (ranger-base-kvecg).
-		t.Setenv("POSSE_HOME", "")
+		clearHomeEnv(t)
 		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -112,8 +123,7 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 	t.Run("dangling preferred symlink falls back", func(t *testing.T) {
 		root := t.TempDir()
 		t.Setenv("HOME", root)
-		t.Setenv("RHQ_HOME", "")
-		t.Setenv("POSSE_HOME", "") // as above (ranger-base-kvecg)
+		clearHomeEnv(t)
 		preferred := filepath.Join(root, ".config", "posse")
 		legacy := filepath.Join(root, ".config", "rhq")
 		if err := os.MkdirAll(filepath.Join(root, ".config"), 0o755); err != nil {
