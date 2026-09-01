@@ -411,3 +411,131 @@ func TestBackupPrunesToKeepNewest(t *testing.T) {
 		t.Errorf("backup_keep: 0 read as %d, want the default %d", got, DefaultBackupKeep)
 	}
 }
+
+// A queue repo with no commits yet is not a reason to refuse: `git bundle`
+// will not write an empty bundle, and a freshly cut queue is exactly the
+// state an operator most wants a first archive of. The store still travels;
+// the missing journal is said out loud.
+func TestBackupOfAQueueWithNoCommits(t *testing.T) {
+	a, queue := backupRig(t)
+	fresh := filepath.Join(t.TempDir(), "fresh")
+	if err := os.MkdirAll(filepath.Join(fresh, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, fresh, "init", "-q", "-b", "main", ".")
+	write(t, filepath.Join(fresh, ".beads", beadsJSONL), `{"id":"y-1"}`+"\n")
+	mustSqlite(t, filepath.Join(fresh, ".beads", "beads.db"), "create table issues(id text);")
+	write(t, a.ConfigPath, "queue_repo: "+fresh+"\n")
+	_ = queue
+
+	var say strings.Builder
+	res, err := a.RunBackup(BackupOpts{Out: &say, Now: func() time.Time { return backupAt }})
+	if err != nil {
+		t.Fatalf("a queue with no commits refused the whole backup: %v", err)
+	}
+	names := tarNames(t, res.Archive)
+	if !containsPrefix(names, "queue/issues.jsonl") || !containsPrefix(names, "queue/beads.db") {
+		t.Errorf("the store did not travel: %v", names)
+	}
+	if containsPrefix(names, "queue/queue.bundle") {
+		t.Errorf("a repo with no commits produced a bundle: %v", names)
+	}
+	if !strings.Contains(say.String(), "no commits") {
+		t.Errorf("the missing journal was silent: %q", say.String())
+	}
+	// The control: the rig's real repo, one commit, DOES carry a bundle —
+	// so the assertion above is about the commits and not about the code
+	// having quietly stopped bundling.
+	write(t, a.ConfigPath, "queue_repo: "+queue+"\n")
+	res = mustBackup(t, a, backupAt.Add(time.Hour))
+	if !containsPrefix(tarNames(t, res.Archive), "queue/queue.bundle") {
+		t.Error("a repo with a commit produced no bundle")
+	}
+}
+
+// A directory that is not a git repository is refused by name, rather than
+// failing later inside a git call nobody can read.
+func TestBackupRefusesAQueueThatIsNotARepo(t *testing.T) {
+	a, _ := backupRig(t)
+	plain := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(plain, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, a.ConfigPath, "queue_repo: "+plain+"\n")
+	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("err = %v, want a refusal naming the repository", err)
+	}
+}
+
+// Two archives in one second: the second gets a disambiguator, and the
+// ordering must still call it the newer one. A plain string sort does not —
+// '-' sorts before '.', so `…Z-2.tar.gz` would read as older than
+// `…Z.tar.gz` and prune would reach the wrong one of the pair.
+func TestSameSecondArchivesOrderByTheirSequence(t *testing.T) {
+	dir := t.TempDir()
+	stamp := backupAt.UTC().Format(backupStamp)
+	base := backupPrefix + stamp + backupSuffix
+	second := backupPrefix + stamp + "-2" + backupSuffix
+	write(t, filepath.Join(dir, base), "x")
+	write(t, filepath.Join(dir, second), "x")
+	names, err := listBackups(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 || names[1] != second {
+		t.Fatalf("listBackups = %v, want the -2 archive last (it is the later one)", names)
+	}
+	// And a name that does not carry the stamp at all is not an archive:
+	// the reader dates archives by their NAME, so a file it cannot date is
+	// one it must not count.
+	write(t, filepath.Join(dir, backupPrefix+"nonsense"+backupSuffix), "x")
+	if names, _ := listBackups(dir); len(names) != 2 {
+		t.Errorf("an undatable name was counted as an archive: %v", names)
+	}
+}
+
+// Retention reports; it never becomes the run's verdict. By the time it
+// runs the archive is published, so an error here would make a good backup
+// read as a failed one — and one undeletable candidate must not stop the
+// rest of the sweep.
+func TestPruneReportsAndKeepsGoing(t *testing.T) {
+	dir := t.TempDir()
+	var names []string
+	for i := 0; i < 4; i++ {
+		n := backupPrefix + backupAt.Add(time.Duration(i)*time.Hour).UTC().Format(backupStamp) + backupSuffix
+		write(t, filepath.Join(dir, n), "x")
+		names = append(names, n)
+	}
+	// Make the oldest undeletable the only way a non-root process can: put
+	// it in a directory it cannot write. (chmod on the FILE would not stop
+	// the unlink — the directory is what owns the name.)
+	sub := filepath.Join(dir, "walled")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var say strings.Builder
+	pruned := pruneBackups(&say, dir, 2)
+	if len(pruned) != 2 {
+		t.Fatalf("pruned %v, want the two oldest", pruned)
+	}
+	for _, p := range pruned {
+		if fileExists(p) {
+			t.Errorf("%s is still there", p)
+		}
+	}
+	for _, n := range names[2:] {
+		if !fileExists(filepath.Join(dir, n)) {
+			t.Errorf("%s was pruned and should not have been", n)
+		}
+	}
+	if !strings.Contains(say.String(), "pruned ") {
+		t.Errorf("retention said nothing: %q", say.String())
+	}
+	// An unreadable directory is a line, not a panic and not a verdict —
+	// pruneBackups has no error to return by construction.
+	var say2 strings.Builder
+	if got := pruneBackups(&say2, filepath.Join(dir, "nope"), 1); got != nil {
+		t.Errorf("pruned %v out of a directory that does not exist", got)
+	}
+}

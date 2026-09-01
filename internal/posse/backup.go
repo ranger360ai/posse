@@ -372,6 +372,9 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	if st, err := os.Stat(store); err != nil || !st.IsDir() {
 		return res, Die("%s has no beads store at %s", AbbrevHome(queue), AbbrevHome(store))
 	}
+	if _, err := git(queue, "rev-parse", "--git-dir"); err != nil {
+		return res, Die("%s is not a git repository — queue_repo: must name a checkout (ADR 0015 §4)", AbbrevHome(queue))
+	}
 	// The 2c ruling, enforced rather than obeyed (ADR 0036 §3). A queue repo
 	// that has grown a remote is a store of record with an off-box copy
 	// posse did not sanction, and the backup refuses to run over it rather
@@ -471,12 +474,8 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	// Prune last, and only now: the archive just written is verified and is
 	// the newest, so every candidate below is a copy with a newer green one
 	// above it (ADR 0036 §3). A run that built garbage never reaches here.
-	pruned, err := pruneBackups(dir, a.BackupKeep(out))
-	res.Pruned = pruned
-	for _, p := range pruned {
-		fmt.Fprintf(out, "  pruned %s\n", filepath.Base(p))
-	}
-	return res, err
+	res.Pruned = pruneBackups(out, dir, a.BackupKeep(out))
+	return res, nil
 }
 
 // stageBackup lays the two stores out under stage and returns the manifest
@@ -503,11 +502,18 @@ func (a *App) stageBackup(out io.Writer, stage, queue, store string, at time.Tim
 	// 2026-09-01: 1.17GiB of loose objects over 573 commits bundles to 30MB
 	// in 12s, which is the number ADR 0036 §2 asked the implementation bead
 	// to take.
-	if _, err := git(queue, "bundle", "create", filepath.Join(qstage, "queue.bundle"), "--all"); err != nil {
-		return man, err
-	}
-	if head, err := git(queue, "rev-parse", "HEAD"); err == nil {
+	// A repo with no commits has no bundle to make — `git bundle` refuses to
+	// write an empty one — and that is not a reason to refuse the whole
+	// backup: the db and the projections are still the store of record, and
+	// a freshly cut queue is exactly the state an operator most wants a
+	// first archive of. Said out loud, never silent.
+	if head, err := git(queue, "rev-parse", "HEAD"); err != nil {
+		fmt.Fprintf(out, "  no commits in %s yet — the archive carries the store without a journal\n", AbbrevHome(queue))
+	} else {
 		man.QueueHead = strings.TrimSpace(head)
+		if _, err := git(queue, "bundle", "create", filepath.Join(qstage, "queue.bundle"), "--all"); err != nil {
+			return man, err
+		}
 	}
 
 	// The database, through sqlite's online backup API against a source
@@ -928,8 +934,34 @@ func listBackups(dir string) ([]string, error) {
 		}
 		out = append(out, n)
 	}
-	sort.Strings(out)
+	// By STAMP, then by the same-second sequence — not by the raw name.
+	// The disambiguator a second run inside one second gets is `-2` before
+	// `.tar.gz`, and '-' sorts BEFORE '.', so a plain string sort would call
+	// the later archive the older one. The ages tie either way; what it
+	// would get wrong is which of the pair prune reaches first.
+	sort.Slice(out, func(i, j int) bool {
+		ti, tj := backupTimeOf(out[i]), backupTimeOf(out[j])
+		if !ti.Equal(tj) {
+			return ti.Before(tj)
+		}
+		return backupSeqOf(out[i]) < backupSeqOf(out[j])
+	})
 	return out, nil
+}
+
+// backupSeqOf is the same-second disambiguator in an archive's name: 1 for
+// the plain form, n for `-n`.
+func backupSeqOf(name string) int {
+	s := strings.TrimSuffix(strings.TrimPrefix(name, backupPrefix), backupSuffix)
+	i := strings.IndexByte(s, '-')
+	if i < 0 {
+		return 1
+	}
+	n, err := strconv.Atoi(s[i+1:])
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 // backupTimeOf reads the stamp out of an archive's name. The name IS the
@@ -968,24 +1000,38 @@ func sidecarFor(archive string) string { return archive + backupSidecarSuffix }
 // it runs after a freshly verified archive has been published, so every
 // candidate it can reach has a newer green copy above it (ADR 0036 §3). It
 // is not exported, so there is no second caller to lose that property.
-func pruneBackups(dir string, keep int) ([]string, error) {
+//
+// It REPORTS rather than returning an error, and that is the design and not
+// a swallow: by the time it runs the archive is written, verified and
+// published, so handing a caller an error here would make a good backup
+// report as a failed one. Reclamation that could not finish is a line; a
+// backup that did not happen is a verdict. It also keeps going past a
+// candidate it could not remove — one undeletable file must not stop the
+// rest of the retention.
+func pruneBackups(w io.Writer, dir string, keep int) []string {
 	if keep < 1 {
-		return nil, nil
+		return nil
 	}
 	names, err := listBackups(dir)
-	if err != nil || len(names) <= keep {
-		return nil, err
+	if err != nil {
+		fmt.Fprintf(w, "  warning: retention could not read %s: %v\n", AbbrevHome(dir), err)
+		return nil
+	}
+	if len(names) <= keep {
+		return nil
 	}
 	var pruned []string
 	for _, n := range names[:len(names)-keep] {
 		p := filepath.Join(dir, n)
 		if err := os.Remove(p); err != nil {
-			return pruned, err
+			fmt.Fprintf(w, "  warning: retention left %s in place: %v\n", n, err)
+			continue
 		}
 		os.Remove(sidecarFor(p))
 		pruned = append(pruned, p)
+		fmt.Fprintf(w, "  pruned %s\n", n)
 	}
-	return pruned, nil
+	return pruned
 }
 
 // lockBackupDir is the single-flight lock (ADR 0011 §1's answer, as ADR 0036
