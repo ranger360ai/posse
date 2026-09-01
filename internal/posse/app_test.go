@@ -13,11 +13,11 @@ import (
 // one-release both-names window of ranger-base-mlc Q2, and every
 // posse-dispatched session exports POSSE_HOME — so a test clearing only
 // RHQ_HOME is green on a bare shell, red under dispatch, and asserts nothing
-// about the HOME branch either way. That red was filed twice independently
-// (ranger-base-rajsj, ranger-base-kvecg), which is the argument for one list
-// rather than a clear per subtest: when the POSSE_HOME fallback read is
-// dropped from newApp, drop its line here too; when a further name is added
-// there, add it here once.
+// about the HOME branch either way. That red was filed three times
+// independently (ranger-base-kvecg, ranger-base-rajsj, ranger-base-hpocz),
+// which is the argument for one list rather than a clear per subtest: when
+// the POSSE_HOME fallback read is dropped from newApp, drop its line here
+// too; when a further name is added there, add it here once.
 func clearHomeEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("RHQ_HOME", "")
