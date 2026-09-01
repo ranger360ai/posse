@@ -599,7 +599,16 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 
 // qcRollbackBlock is the first fenced shell block under the runbook's
 // "## Rollback" — the thing the operator pastes.
-func qcRollbackBlock(t *testing.T) string {
+func qcRollbackBlock(t *testing.T) string { return qcRollbackFence(t, 0) }
+
+// qcRollbackCheck is the second — the verification the operator reads to
+// decide the rollback worked. It is a block the pins RUN for the same reason
+// the one above is: it is the only instrument in the window, and its failure
+// mode is silence (ranger-base-4lks, reached again by ranger-base-jg26e).
+func qcRollbackCheck(t *testing.T) string { return qcRollbackFence(t, 1) }
+
+// qcRollbackFence returns the nth fenced shell block under "## Rollback".
+func qcRollbackFence(t *testing.T, n int) string {
 	t.Helper()
 	body := qcRunbook(t)
 	i := strings.Index(body, "## Rollback")
@@ -608,16 +617,23 @@ func qcRollbackBlock(t *testing.T) string {
 	}
 	rest := body[i:]
 	const fence = "```sh\n"
-	open := strings.Index(rest, fence)
-	if open < 0 {
-		t.Fatal("the rollback section has no shell block to run")
+	for ; n >= 0; n-- {
+		open := strings.Index(rest, fence)
+		if open < 0 {
+			t.Fatal("the rollback section has no shell block to run")
+		}
+		rest = rest[open+len(fence):]
+		end := strings.Index(rest, "```")
+		if end < 0 {
+			t.Fatal("the rollback section's shell block is unterminated")
+		}
+		if n == 0 {
+			return rest[:end]
+		}
+		rest = rest[end:]
 	}
-	rest = rest[open+len(fence):]
-	end := strings.Index(rest, "```")
-	if end < 0 {
-		t.Fatal("the rollback section's shell block is unterminated")
-	}
-	return rest[:end]
+	t.Fatal("the rollback section has fewer shell blocks than the pins read")
+	return ""
 }
 
 // qcRollbackBefore is that block as it read before this bead (posse 43f0ec5),
@@ -1181,12 +1197,108 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 // Rollback used to open with "the constitution repo's .beads deletion is
 // staged, not committed" as if that always held — but step 8 of the same
 // runbook commits it, and the live window did. Once the untracking is
-// committed, HEAD holds no `.beads/.gitignore`, so the block now reverts
-// step 8's commit instead of trying to `checkout` a path HEAD no longer has,
+// committed, HEAD holds no `.beads/.gitignore`, so the block reverts step
+// 8's commit instead of trying to `checkout` a path HEAD no longer has,
 // which restores both ignores and tracking in one move — before the store
 // itself goes home, so the incoming files land as modifications rather than
 // colliding with what the revert recreates.
+//
+// That commit is NOT reliably HEAD, and this pin used to say it was: the
+// fixture committed step 8 LAST, which made the runbook's "this runbook
+// makes its commit the last one touching the constitution" true instead of
+// testing it. On the live constitution at 2026-09-01 the window's commit
+// (f46c766, 08-28) was 157 commits back, none of them touching `.beads` or
+// `.gitignore` — so `git revert --no-edit HEAD` would have undone an
+// unrelated commit and left `.beads/` in the root ignore, after which the
+// runbook's own check prints nothing and reads as clean (ranger-base-jg26e).
+// The fixture now puts unrelated commits on top, and the control arm drives
+// the pre-fix line through the same rig to prove the wreckage is visible.
 func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
+	t.Run("step 8 is the last commit", func(t *testing.T) {
+		f := qcSteppedEight(t, 0)
+		qcAssertRolledBackToTracking(t, f, qcRollbackRun(t, qcRollbackBlock(t), f))
+	})
+
+	// The bead: the same state, reached the way the live window reached it.
+	t.Run("unrelated commits landed on top of step 8", func(t *testing.T) {
+		f := qcSteppedEight(t, 2)
+		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		qcAssertRolledBackToTracking(t, f, out)
+		if body := readFile(t, filepath.Join(f.constitution, qcLaterFile)); !strings.Contains(body, qcLaterLast) {
+			t.Errorf("the rollback undid an unrelated commit instead of step 8's: %s is %q, not %q\n%s",
+				qcLaterFile, body, qcLaterLast, out)
+		}
+		// And the operator's instrument says so out loud.
+		if check := qcRollbackRun(t, qcRollbackCheck(t), f); !strings.Contains(check, qcCheckRan) {
+			t.Errorf("the verification step does not certify a rollback that worked:\n%s\n%s", check, out)
+		}
+	})
+
+	// The commit the block finds is the one it reverts, so it has to refuse
+	// a commit that carries more than the store. An operator who typed
+	// `git commit -a` at step 8 — or squashed it — has one, and undoing it
+	// would take unrelated work with it. Refusing is the cheap half; the
+	// half that matters is that a refusal cannot then read as clean.
+	t.Run("step 8's commit carries unrelated files", func(t *testing.T) {
+		f := qcRolledBack(t)
+		write(t, filepath.Join(f.constitution, qcLaterFile), "window work 0\n")
+		mustGit(t, f.constitution, "add", "--", qcLaterFile)
+		mustGit(t, f.constitution, "commit", "-q", "-m",
+			"beads: the queue moves to its own repo, and a stray file (ADR 0015 §4)",
+			"--", ".beads", ".gitignore", qcLaterFile)
+
+		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		if !strings.Contains(out, "ROLLBACK STOPPED") {
+			t.Errorf("the rollback reverted a commit that also holds %s instead of stopping:\n%s", qcLaterFile, out)
+		}
+		if _, err := os.Stat(filepath.Join(f.constitution, qcLaterFile)); err != nil {
+			t.Errorf("%s went with the revert after all: %v\n%s", qcLaterFile, err, out)
+		}
+		if check := qcRollbackRun(t, qcRollbackCheck(t), f); strings.Contains(check, qcCheckRan) {
+			t.Errorf("a rollback that stopped still certifies itself:\n%s\n%s", check, out)
+		}
+	})
+
+	// The control. Same rig, same fixture, the committed arm as it read
+	// before this bead: it has to undo the wrong commit AND leave a check
+	// that reads clean, or the two arms above measure nothing.
+	t.Run("the control: reverting HEAD undoes the wrong commit and still reads clean", func(t *testing.T) {
+		f := qcSteppedEight(t, 2)
+		out := qcRollbackRun(t, qcRollbackHeadRevert(t), f)
+		if body := readFile(t, filepath.Join(f.constitution, qcLaterFile)); strings.Contains(body, qcLaterLast) {
+			t.Errorf("the rig cannot see the wrong commit being reverted, so the arms above prove nothing: %s is %q\n%s",
+				qcLaterFile, body, out)
+		}
+		if status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore"); strings.TrimSpace(status) != "" {
+			t.Errorf("the rig cannot see a store that came home untracked and ignored:\nstatus:\n%s\n%s", status, out)
+		}
+		if check := qcRollbackRun(t, qcRollbackCheck(t), f); strings.Contains(check, qcCheckRan) {
+			t.Errorf("the verification step certifies a rollback that never restored tracking — "+
+				"an empty status still reads as a checked one:\n%s\n%s", check, out)
+		}
+	})
+}
+
+// qcCheckRan is the sentinel the runbook's verification block prints when it
+// reaches the end. Its absence is the signal the runbook tells the operator
+// to read, so the pins read it too.
+const qcCheckRan = "rollback check:"
+
+// qcLaterFile is a file in the constitution that has nothing to do with the
+// store, and qcLaterLast is what the LAST unrelated commit leaves in it —
+// the one `git revert --no-edit HEAD` would undo.
+const (
+	qcLaterFile = "NOTES.md"
+	qcLaterLast = "window work 1"
+)
+
+// qcSteppedEight is qcRolledBack with step 8 itself run — the untracking
+// committed — and then `later` unrelated commits on top, touching neither
+// `.beads` nor `.gitignore`. That last number is the whole point: at 0 the
+// fixture makes the runbook's "step 8's commit is HEAD" assumption true
+// rather than testing it (ranger-base-jg26e).
+func qcSteppedEight(t *testing.T, later int) qcFixture {
+	t.Helper()
 	f := qcRolledBack(t)
 	// Step 8, verbatim in effect: commit the staged untracking.
 	mustGit(t, f.constitution, "commit", "-q", "-m",
@@ -1194,11 +1306,34 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 	if tree := mustGit(t, f.constitution, "ls-tree", "HEAD", "--name-only", ".beads/"); strings.TrimSpace(tree) != "" {
 		t.Fatalf("step 8 did not untrack .beads in the fixture, so this arm is not about the live state:\n%s", tree)
 	}
+	step8 := strings.TrimSpace(mustGit(t, f.constitution, "rev-parse", "HEAD"))
+	for i := 0; i < later; i++ {
+		write(t, filepath.Join(f.constitution, qcLaterFile), "window work "+strconv.Itoa(i)+"\n")
+		mustGit(t, f.constitution, "add", "--", qcLaterFile)
+		mustGit(t, f.constitution, "commit", "-q", "-m", "unrelated work "+strconv.Itoa(i), "--", qcLaterFile)
+	}
+	if later > 0 {
+		if head := strings.TrimSpace(mustGit(t, f.constitution, "rev-parse", "HEAD")); head == step8 {
+			t.Fatalf("the unrelated commits did not land, so step 8 is still HEAD and the fixture is the old one")
+		}
+		if n := strings.TrimSpace(mustGit(t, f.constitution, "rev-list", "--count", step8+"..HEAD", "--", ".beads", ".gitignore")); n != "0" {
+			t.Fatalf("the unrelated commits touch the store or the root ignore (%s of them), "+
+				"which makes the assumption visibly false — the live 157 were not (ranger-base-jg26e)", n)
+		}
+	}
+	return f
+}
 
-	out := qcRollbackRun(t, qcRollbackBlock(t), f)
-
+// qcAssertRolledBackToTracking is the state a post-step-8 rollback has to
+// leave whichever commit step 8 turned out to be: both ignores back, the
+// store tracked again, and a check with something to say.
+func qcAssertRolledBackToTracking(t *testing.T, f qcFixture, out string) {
+	t.Helper()
 	if strings.Contains(out, "did not match any file(s) known to git") {
 		t.Errorf("the rollback's checkout still fails after step 8 instead of reverting its commit:\n%s", out)
+	}
+	if strings.Contains(out, "ROLLBACK STOPPED") {
+		t.Errorf("the rollback refused to identify step 8's commit:\n%s", out)
 	}
 	status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
 	if strings.TrimSpace(status) == "" {
@@ -1220,4 +1355,23 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 	if !strings.Contains(tracked, ".gitignore") {
 		t.Errorf("the constitution does not track .beads/.gitignore again after a post-step-8 rollback.\ntracked:\n%s\n%s", tracked, out)
 	}
+}
+
+// qcRollbackHeadRevert is the runbook's own block with its committed arm put
+// back the way it read before this bead — `git revert --no-edit HEAD`, and
+// nothing else changed. A mutation of the one line under test is a sharper
+// control than a frozen copy of the whole block: everything around it stays
+// current, so the arms above cannot pass because the rig drifted.
+func qcRollbackHeadRevert(t *testing.T) string {
+	t.Helper()
+	block := qcRollbackBlock(t)
+	i := strings.Index(block, "\nelse\n")
+	if i < 0 {
+		t.Fatal("the rollback block no longer branches on whether step 8 has run — the control cannot be built")
+	}
+	j := strings.Index(block[i:], "\nfi\n")
+	if j < 0 {
+		t.Fatal("the rollback block's staged/committed branch is unterminated — the control cannot be built")
+	}
+	return block[:i] + "\nelse\n  git revert --no-edit HEAD" + block[i+j:]
 }
