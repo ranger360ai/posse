@@ -1126,9 +1126,17 @@ func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
 // the move — a growing exclusion list is how `.beads/.gitignore` itself got
 // left behind (ranger-base-g1js). Written by the binary, so it needs no
 // `write` below: the arm asserts it is covered wherever it came from.
+//
+// ranger-base-puqvd added the fourth, `.jsonl.lock`: bd takes it around the
+// JSONL export and leaves it behind, empty. Same class again — 0.50.3's own
+// shipped ignore template lists it under "Sync state (local-only,
+// per-machine)" beside `.sync.lock`; the live store's copy is just an older
+// one, written at init, that predates the entry. Unlike `.migration-hint-ts`
+// it IS written below, because a dotfile in the queue store also exercises
+// the move loop's `.[!.]*` arm on the way home.
 func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 	f := qcRolledBack(t)
-	for _, name := range []string{"bd.sock.startlock", "daemon-error"} {
+	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock"} {
 		write(t, filepath.Join(f.queue, ".beads", name), "runtime\n")
 	}
 	out := qcRollbackRun(t, qcRollbackBlock(t), f)
@@ -1139,14 +1147,14 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 		t.Fatalf("the rig's rollback did not carry the ignore home, so nothing below is about the check: %v\n%s", err, out)
 	}
 	status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore")
-	for _, name := range []string{"bd.sock.startlock", "daemon-error"} {
+	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock"} {
 		if strings.Contains(status, "?? .beads/"+name) {
 			t.Errorf("a complete rollback still reports .beads/%s as untracked — the runbook's check "+
 				"still cries wolf on the good path.\nstatus:\n%s\n%s", name, status, out)
 		}
 	}
 	ignore := readFile(t, filepath.Join(f.constitution, ".beads", ".gitignore"))
-	for _, pat := range []string{"bd.sock.startlock", "daemon-error", ".migration-hint-ts"} {
+	for _, pat := range []string{"bd.sock.startlock", "daemon-error", ".migration-hint-ts", ".jsonl.lock"} {
 		if !strings.Contains(ignore, pat) {
 			t.Errorf("the restored .beads/.gitignore does not cover %q:\n%s", pat, ignore)
 		}
