@@ -1,26 +1,38 @@
-# The fleet's bd version pin — the operator's HOLD of 2026-08-17 (rangerhq-f49).
+# The fleet's bd version pin — the operator's HOLD of 2026-08-17 (rangerhq-f49),
+# bumped 0.49.1 -> 0.50.3 on 2026-09-01 (ruling ranger-base-qrh1, prerequisites
+# ranger-base-yeg1, execution ranger-base-8ufhn).
 #
 # These keys, and only these keys, are what posse requires of the live box.
 # Nothing here is installed over anything: the pinned binary is hand-placed and
 # homebrew's keg is the operator's. `make verify-bd-pin` asserts that the live
 # machine still matches what is here.
 #
-# WHY. bd 0.49.1 auto-spawns a per-repo daemon on any call, and that daemon
-# outlives the binary it was exec'd from. `brew upgrade beads` on 2026-08-16
-# deleted /opt/homebrew/bin/bd underneath a running daemon; the orphan held FDs
-# on the deleted inode for 12d21h and then degraded every bd write on the box
-# for ~40 minutes on 08-26. The 08-16 rollback was verified at the COMMAND
-# layer only — `bd version`, `bd ready`, `dispatch --dry-run`, all green — and
-# the orphan sailed straight through it. *A rollback that leaves a live process
-# from the reverted artifact is not a rollback.* So this pin is asserted at the
-# process layer too; see NOTES.md, "The pin is not enforced, and the 08-16
-# rollback left a live process" (ranger-base-31md / ranger-base-tdwy).
+# WHY A PIN. bd 0.49.1 auto-spawned a per-repo daemon on any call, and that
+# daemon outlived the binary it was exec'd from. `brew upgrade beads` on
+# 2026-08-16 deleted /opt/homebrew/bin/bd underneath a running daemon; the
+# orphan held FDs on the deleted inode for 12d21h and then degraded every bd
+# write on the box for ~40 minutes on 08-26. The 08-16 rollback was verified at
+# the COMMAND layer only and the orphan sailed straight through it. *A rollback
+# that leaves a live process from the reverted artifact is not a rollback.*
+# See NOTES.md, "The pin is not enforced, and the 08-16 rollback left a live
+# process" (ranger-base-31md / ranger-base-tdwy).
+#
+# WHY 0.50.3. 0.50.x removed the daemon class entirely (no `bd daemon` command
+# exists), which is the whole failure class above — so the process-layer check
+# that guarded 0.49.1 has nothing to check and was dropped (ranger-base-yeg1:
+# scripts/verify-bd-pin.sh, bdpin_qa_test.go); the flush-discipline invariant
+# 0.50.x relies on is pinned instead (internal/rhq/bdflushdiscipline_qa_test.go).
+# 0.50.x still reads .beads/beads.db (SQLite). The Dolt-default-init hazard
+# landed one minor early (0.50.0, not 0.51.0) — see NOTES.md, "OPERATOR RULING
+# 2026-08-30"; the `dep add` cycle-check CTE is byte-identical on 0.50.3
+# (ranger-base-pkqn tooling stays valid).
 #
 # LIFTING THE PIN is the operator's, and 1.x is a migration, not a version
-# bump: 0.51.0 Phase 2 deleted the daemon outright. HOLD at 0.49.1 stands.
+# bump: 0.51.0 Phase 2 replaced the SQLite backend with embedded Dolt and does
+# not read .beads/beads.db at all. HOLD at 0.50.3 stands.
 # Runbook: NOTES.md, "beads (bd) substrate".
 
-posse_pinned_version = "0.49.1"   # `bd version` at the time of the pin
+posse_pinned_version = "0.50.3"   # `bd version` at the time of the pin
 
 # The hand-placed binary the pin lives in. /opt/homebrew/bin precedes this
 # directory in the fleet PATH, so `command -v bd` resolving anywhere else means

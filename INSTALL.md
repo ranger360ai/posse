@@ -37,7 +37,7 @@ Install these first. Versions matter; two of them are pinned on purpose.
 |---|---|---|---|
 | **Go** | ≥ 1.26 | builds `posse` | `brew install go` / your distro |
 | **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | typed below |
-| **bd** (beads) | **0.49.1 exactly** | v0.51.0 replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — anything ≥ 0.51 silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
+| **bd** (beads) | **0.50.3 exactly** | v0.51.0 replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — anything ≥ 0.51 silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, or `grok`. | vendor |
 
@@ -68,7 +68,7 @@ page if you want to verify the download):
 ```sh
 $ os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 $ mkdir -p ~/.local/bin
-$ curl -fsSL "https://github.com/gastownhall/beads/releases/download/v0.49.1/beads_0.49.1_${os}_${arch}.tar.gz" | tar xzf - -C ~/.local/bin bd
+$ curl -fsSL "https://github.com/gastownhall/beads/releases/download/v0.50.3/beads_0.50.3_${os}_${arch}.tar.gz" | tar xzf - -C ~/.local/bin bd
 ```
 
 Both land in `~/.local/bin`, which is on no default PATH — the herdr
@@ -91,8 +91,8 @@ docs/runbooks/macos-install-routes.md §1.
 ```sh
 $ go version && herdr --version && bd version && git --version
 ```
-**Verify:** Go ≥ 1.26, herdr ≥ 0.8.0, `bd version 0.49.1`. If `bd version`
-says 1.2.x, stop and install 0.49.1 before going further — the rest of this
+**Verify:** Go ≥ 1.26, herdr ≥ 0.8.0, `bd version 0.50.3`. If `bd version`
+says 1.2.x, stop and install 0.50.3 before going further — the rest of this
 runbook will appear to work and will not.
 
 Order matters in that `PATH` line. If Homebrew ever installs `beads` — on its
@@ -1911,7 +1911,7 @@ one budget and the caps become conservative, not wrong.
 | `-c model= 'x'` in the launch line | `model_flag:` was written as a bare flag, which renders separated | write the printf form: `model_flag: -c model=%s` (step 8, caveat 4) |
 | a yaml key you set changed nothing | posse warned `declares <key>:` on load and dropped it — it is a typo or a key this posse does not know | `posse runtimes` prints the warning and the known-key list |
 | `sandbox_apply: Operation not permitted` under `cage: seatbelt` | the CLI sandboxes its own children and seatbelts do not nest | `self_sandbox: true` in the profile, then launch at `cage: shims` |
-| `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.49.1; 0.51+ does not read `.beads/beads.db` |
+| `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.50.3; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a workspace with that name is live — possibly another instance's | `posse list`; see §13 |
 | every dispatched launch refuses with `a constitution nobody promoted` right after an ordinary `config.yaml` or PID edit, on a home you never promoted | a `posse init` from a posse older than `ranger-base-h7cd` stamped `promoted.json` over the constitution it found, arming ADR 0015 §3 on files nobody ratified — the edit is the trigger, not the cause | `posse promote <your constitution repo>` makes the anchor true. If this home has no constitution repo yet, `rm $RHQ_HOME/promoted.json` puts it back to unwatched, which is where it was; today's `init` will not re-stamp it |

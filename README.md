@@ -35,7 +35,7 @@ implementation.
 
 - [herdr](https://herdr.dev) ≥ 0.8 with its server running
 - [beads](https://github.com/gastownhall/beads) (`bd`) for the work graph —
-  **0.49.1 exactly**; anything from 0.51 up — brew's `beads` included —
+  **0.50.3 exactly**; anything from 0.51 up — brew's `beads` included —
   does not read `.beads/beads.db` at all
 - Go ≥ 1.26 to build (`make build`); one Go dependency (`golang.org/x/term`)
 
