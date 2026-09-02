@@ -26,7 +26,7 @@ package posse
 //
 // The second arm is what makes the first one mean something. It files the
 // same escalation WITH the `discovered-from` edge, the way the code did
-// before this bead, and requires bd to refuse the block. A pin whose wrong
+// before this bead, and requires the stop not to land. A pin whose wrong
 // arm also passes has measured nothing.
 //
 // Env-gated and skipped by default, like the other live pins: it shells out
@@ -144,19 +144,22 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 	// still fail, or the arm above proves nothing about why the edge was
 	// dropped. What it must fail AT is the observable — the trigger stays
 	// in `bd ready`, which is the loop --resume then re-prompts forever —
-	// and NOT the mechanism, which is a property of the bd on the box:
+	// and NOT the mechanism, which is a property of the STORE this test
+	// just built, not of the bd binary running it (ranger-base-lpz0o,
+	// measured 2026-09-01 with ONE 0.50.3 binary against two stores):
 	//
-	//   0.49.1 refuses the `dep add` outright ("would create a cycle").
-	//   0.50.3 ACCEPTS it and answers `bd ready` with the bead anyway —
-	//   MEASURED 2026-09-01 (ranger-base-coxn8, filed as
-	//   ranger-base-lpz0o): the same bead is in `bd ready` and in
-	//   `bd blocked` at once, over three consecutive reads.
+	//   a SQLite beads.db refuses the `dep add` outright ("would create a
+	//   cycle", exit 1) — the operator's queue, and what 0.49.1 made.
+	//   the store `bd init` writes today (`no-db: true`, JSONL only, no
+	//   beads.db at all — which is the store the line above just made)
+	//   ACCEPTS it and answers `bd ready` with the bead anyway, while
+	//   `bd blocked` lists it too, over three consecutive reads.
 	//
 	// Pinning the refusal made this arm red the hour the box's bd moved,
 	// while the defect it guards was untouched — the same shape re-wired
-	// into escalateSettleOpen still leaves the trigger in ready on 0.50.3.
-	// So: assert the loop, log the mechanism, and fire if some future bd
-	// honors the block, because then the whole rung can be simpler.
+	// into escalateSettleOpen still leaves the trigger in ready. So: assert
+	// the loop, log the mechanism, and fire if some future bd honors the
+	// block, because then the whole rung can be simpler.
 	other := create("PROBE stuck (control)")
 	qWithEdge, err := d.Bd.Create(repo, BdNew{
 		Title:       settleStuckTitle(other, "ranger", "in_progress"),
