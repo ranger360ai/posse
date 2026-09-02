@@ -118,7 +118,10 @@ A    re-land + re-marked filter (1428 t.Parallel)      875  FAIL*     87 52 32 �
 C    + the five helpers off the env (1630)             700  FAIL†     40 52 44 → 58 66 54
 ```
 
-`*` three failures, `†` four; both arms carry the same two — see §5.
+`*` three failures, `†` four; both arms carry the same two — see §5. Every
+failure in every run below is one of: the two digest pins main owns, or one
+of the three defects §6 found and fixed. The last two runs are green apart
+from the two.
 C is **0.80 of A** with more load on it, not less.
 
 ### The reading the bead actually asked for: `make test`, three times
@@ -133,18 +136,24 @@ run  internal/posse  share of the 1500s budget  load at start  other packages
 1           476.952s                       32%     43 59 53     150.3s + 117.9s
 2           415.553s                       28%     20 27 37     both cached
 3           446.896s                       30%     10 14 21     152.0s + 115.7s
+4           506.291s                       34%     10 11 16     170.2s + 125.1s
 ```
+
+Run 4 is at the tip after the last rebase, three tests further on than run 3
+and on the quietest box of the four — which is the honest reading of how the
+number grows: the package takes 30 seconds a day even now.
 
 **Against the bead's own reading of the same command on `main`: 1500.984s,
 expired, exit 1, no `--- FAIL` line.** And against the standalone 1483.4s it
 recorded immediately after.
 
-So the package now finishes in **28-30% of its budget**, and the spread
-across a box carrying load 10 to 59 is 61 seconds — 4% of the ceiling. That
-is the difference between headroom and a coin flip: the worst of these three
-readings would have to more than triple before the clock came into it again.
-The three runs also bracket the box: run 1 is a machine with another
-session's suite on it, run 3 is a quiet one, and they differ by 30 seconds.
+So the package now finishes in **28-34% of its budget**, and the spread
+across a box carrying load 10 to 59 is 91 seconds — 6% of the ceiling. That
+is the difference between headroom and a coin flip: the worst of these four
+readings would have to nearly triple before the clock came into it again.
+The runs also bracket the box: run 1 is a machine with another session's
+suite on it, runs 3 and 4 are quiet ones, and the spread between them is
+smaller than the spread the package's own growth produced in one hour.
 
 What is NOT claimed: that this is the change's doing alone. Runs 1-3 are on a
 quieter box than arms A and C, and the honest attribution is the controlled
