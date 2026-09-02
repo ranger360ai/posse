@@ -416,3 +416,87 @@ func TestQA7vpModelPreflightOffIsExactlyTheWordFalse(t *testing.T) {
 		}
 	}
 }
+
+// ─── the lease boundary itself (ADR 0039 D3c) ────────────────────────────────
+
+// The one instant nothing pinned. D3c and ranger-base-ksmmz's own text put
+// the boundary at "AT or past" the lease — age == lease is OUTSIDE, the
+// reading no longer rules, and the launch is UNKNOWN. Every other pin in
+// this package seeds an age far from the boundary (30 days against an hour,
+// 48h against a default), so `age < lease` widened to `age <= lease` is
+// green across all of ./internal/posse AND ./cmd/posse — MEASURED as a
+// surviving mutant while verifying that close (ranger-base-9ztcy). It moves
+// the rule by one instant in the FAIL-OPEN direction: a reading exactly at
+// the end of its lease goes on demoting launches, which is the whole class
+// the ruling on ranger-base-v1p66 exists to bound.
+//
+// Pinned at ModelsRead with a fixed clock rather than through a launch,
+// because a boundary measured against time.Now() is a flake at any
+// resolution, and withinLease answers BOTH of ModelsRead's questions off
+// this one comparison — the maxAge row below is what keeps a `<=` from
+// hiding in the freshness half.
+func TestQAALeaseBoundaryIsExclusiveSoAReadingAtItsLeaseNoLongerRules(t *testing.T) {
+	t.Parallel()
+	const lease = time.Hour
+	at := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		want bool // may the retained reading still RULE?
+	}{
+		{"one instant inside the lease", lease - time.Nanosecond, true},
+		{"exactly at the lease", lease, false},
+		{"one instant past it", lease + time.Nanosecond, false},
+		// The wrong arm this whole test needs: an age nowhere near the
+		// boundary must still answer, or the three rows above would be
+		// measuring a cache that had stopped reading the snapshot at all.
+		{"a day past it (the control)", 24 * time.Hour, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := preflightApp(t) // unconfigured lister: every re-read fails
+			seedCatalogEntry(t, a, modelEntry{At: at, Models: []string{"claude-opus-5"}})
+			c := a.ModelCache()
+			c.Now = func() time.Time { return at.Add(tc.age) }
+			ids, rules, read := c.ModelsRead(lease, lease)
+			if rules != tc.want {
+				t.Errorf("age %v against a lease of %v: rules=%v, want %v — D3c reads \"at or past\", so the boundary is exclusive",
+					tc.age, lease, rules, tc.want)
+			}
+			// Past its lease the reading is quoted and obeyed by nothing:
+			// the ids go back either way so the UNKNOWN line can name them
+			// (D3a). A pin on the bool alone would let them be dropped.
+			if len(ids) != 1 || ids[0] != "claude-opus-5" {
+				t.Errorf("the retained ids go back whatever the bool says: %v", ids)
+			}
+			if got := read.Age; got != tc.age {
+				t.Errorf("the age the line quotes is the age measured: %v, want %v", got, tc.age)
+			}
+		})
+	}
+
+	// The same comparison in its OTHER role. maxAge is "fresh enough not to
+	// re-ask": at exactly maxAge the snapshot is stale, so ModelsRead must
+	// go to the lister — and with an unconfigured one that is a failed
+	// read, which is visible as a non-nil Err. Inside maxAge it returns on
+	// the snapshot alone and asks nobody, so Err stays nil. Without this
+	// row a `<=` could hide in the freshness half of withinLease.
+	for _, tc := range []struct {
+		name    string
+		age     time.Duration
+		wantErr bool // did it fall through and ASK?
+	}{
+		{"inside maxAge: answered off the snapshot, nobody asked", lease - time.Nanosecond, false},
+		{"exactly at maxAge: stale, so it re-asks", lease, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := preflightApp(t)
+			seedCatalogEntry(t, a, modelEntry{At: at, Models: []string{"claude-opus-5"}})
+			c := a.ModelCache()
+			c.Now = func() time.Time { return at.Add(tc.age) }
+			_, _, read := c.ModelsRead(lease, lease)
+			if got := read.Err != nil; got != tc.wantErr {
+				t.Errorf("age %v against a maxAge of %v: re-asked=%v, want %v (err=%v)", tc.age, lease, got, tc.wantErr, read.Err)
+			}
+		})
+	}
+}
