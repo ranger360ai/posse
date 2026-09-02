@@ -97,10 +97,17 @@ monica's standing watch from the kb7 interim, which retires when §2
 ships.
 
 **5. A drift alarm, mechanical and advisory.** The parity check warns
-when a PID's `allow:` grants `Bash(git push:*)` — the coordinator's
-defining permission — and that persona is not the named `coordinator:`,
-or when such a PID exists and no coordinator is named. This is the
-guardrail expressed twice (prose in the record, rule in the checker),
+when a PID's `allow:` grants `git push` — the coordinator's defining
+permission — and that persona is not the named `coordinator:`, or when
+such a PID exists and no coordinator is named. By ANY spelling that
+grants it, not just the `Bash(git push:*)` the coordinator's own PID
+carries: bare `Bash`, `Bash(*)`, `Bash(git * push)` and `Bash(git -C
+<repo> push)` all hand a persona push, and all four were silent while
+the check keyed on the L1 shim's rule parser (ranger-base-b2os, from
+ranger-base-telz). The alarm over-approximates on purpose — an
+unrecognized grant is silence, and silence is the failure mode. This
+is the guardrail expressed twice (prose in the record, rule in the
+checker),
 never the enforcement: authorization is §2's refusal, keyed on config
 alone. Inferring *authority* from permission strings would be a parse
 in costume; inferring a *warning* is lint.
