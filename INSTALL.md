@@ -462,6 +462,7 @@ $RHQ_HOME/
                     seeded here because a PID in agents/ is a live lane
   recipes/        ← three example recipes
   envs/           ← two example env sets (0700/0600); never commit it
+  secrets/        ← EMPTY; harness credentials (0700/0600); never commit it
   skills/         ← empty; the skills registry
   state/          ← empty; machine-local, never commit it
   promoted.json   ← the manifest: sha256 per promoted file, marked `seeded`
@@ -477,14 +478,16 @@ Not created, and you make them yourself when you need them:
 missing; it will not undo your edits.
 
 If your instance home is inside a git repo, commit everything except
-`state/` and `envs/`:
+`state/`, `envs/` and `secrets/`:
 
 ```sh
 $ cd ~/src/<your-instance-repo>
 $ cat >> .gitignore <<'EOF'
-# Secrets never enter git, even in a private repo — env-set values live
-# only as 600 files on this machine (or come from a secret manager).
+# Secrets never enter git, even in a private repo — env-set values and
+# harness credentials live only as 600 files on this machine (or come
+# from a secret manager).
 posse/envs/
+posse/secrets/
 
 # Runtime state: herdr session meta, slot registries — machine-local.
 posse/state/
@@ -492,13 +495,15 @@ EOF
 $ git add -A && git commit -m 'posse: seed instance from posse examples'
 ```
 
-Those two paths are relative to the repo root, so they name the directory
+Those three paths are relative to the repo root, so they name the directory
 `RHQ_HOME` points at — `posse/` above. Name yours whatever you named it.
 
-Nothing is lost by leaving `envs/` untracked. A fresh clone of the instance
-repo has no `envs/`; `posse init` re-seeds the two examples with their modes,
-and because init never overwrites and only fills in what is missing, running
-it on a clone costs nothing. The values themselves were never git's to hold:
+Nothing is lost by leaving either store untracked. A fresh clone of the
+instance repo has no `envs/`; `posse init` re-seeds the two examples with
+their modes, and re-creates `secrets/` empty at 0700 — empty is its shipped
+state, so a clone is missing nothing git could have carried. Because init
+never overwrites and only fills in what is missing, running it on a clone
+costs nothing. The values themselves were never git's to hold:
 the 0700/0600 modes do not survive a commit, so the gitignore is the actual
 boundary.
 
@@ -595,10 +600,12 @@ values. That masking is the point; check it holds for anything you add.
 Rules:
 
 - `envs/` is `0700` and its files `0600`. Keep it that way.
-- **`envs/` is never committed**, not even to a private instance repo (§4
-  gitignores it). The 0700/0600 modes do not survive a commit, so the gitignore
-  is the boundary; a clone gets its values back from `posse init`'s examples
-  or from your secret manager, never from history.
+- **Neither `envs/` nor `secrets/` is ever committed**, not even to a
+  private instance repo (§4 gitignores both). `secrets/` is the same surface
+  one class up — the harness-credential store of ADR 0019 D1, `0700` with
+  `0600` files, seeded empty. The 0700/0600 modes do not survive a commit, so
+  the gitignore is the boundary; a clone gets its values back from `posse
+  init`'s examples or from your secret manager, never from history.
 - Plain `KEY=VALUE` lines, passed verbatim. No shell expansion, no quotes
   stripped.
 - **Secrets live here or in a secret manager — never in `config.yaml`,

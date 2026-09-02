@@ -1378,8 +1378,9 @@ refresh` with no arguments.
   (INSTALL.md §4), `envs/` is gitignored: 0700/0600 do not survive a commit,
   so the ignore *is* the control and a fresh clone gets its sets back from
   `posse init` rather than from git (rangerhq-lti6). `secrets/` is the same
-  surface one class up and is not in that block yet — empty on every box
-  today, so the gap is prospective, and it is filed (ranger-base-13h3).
+  surface one class up and is in that block too, ahead of the first resident:
+  the store is empty on every box today, so the ignore was written against a
+  prospective leak rather than a live one (ranger-base-13h3).
 - **Integrity is honest, not absolute.** The seatbelt grants `envs/` and
   `secrets/` to **no** session's writable set (`HomeConstitutionPaths`, ADR
   0015 §7 plus 0019 D1: a store a session may not be handed is not a store a

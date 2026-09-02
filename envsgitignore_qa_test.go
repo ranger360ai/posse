@@ -7,6 +7,12 @@ package posse
 // future instance to git-track its own secrets. The operator's live instance
 // repo has always ignored `envs/`; the runbook now says so too.
 //
+// ranger-base-13h3 extends the same pin to `secrets/` (ADR 0019 D1's
+// harness-credential store: 0700/0600, seeded empty by `posse init`). That
+// store is empty on every box today, so the leak is prospective — the pin
+// plants the first resident credential a next instance would put there and
+// requires §4's own recipe to keep it out of the seed commit.
+//
 // The pin that matters is not that the words appear. It is that the recipe
 // §4 hands the reader, run verbatim against the layout §4 tells the reader to
 // create, actually keeps `envs/` out of git. That is an agreement pin: the
@@ -109,6 +115,7 @@ func untrackedAfterRecipe(t *testing.T, recipe, leaf string) []string {
 		leaf + "/config.yaml",
 		leaf + "/agents/developer.md",
 		leaf + "/envs/default.env",
+		leaf + "/secrets/harness.env",
 		leaf + "/state/dispatch-watch.log",
 	} {
 		p := filepath.Join(repo, filepath.FromSlash(f))
@@ -140,9 +147,9 @@ func untrackedAfterRecipe(t *testing.T, recipe, leaf string) []string {
 	return paths
 }
 
-// TestInstallSection4SeedCommitLeavesEnvsOutOfGit is the pin that runs rather
-// than reads.
-func TestInstallSection4SeedCommitLeavesEnvsOutOfGit(t *testing.T) {
+// TestInstallSection4SeedCommitLeavesSecretStoresOutOfGit is the pin that runs
+// rather than reads.
+func TestInstallSection4SeedCommitLeavesSecretStoresOutOfGit(t *testing.T) {
 	leaf := section4HomeLeaf(t)
 	paths := untrackedAfterRecipe(t, section4GitignoreRecipe(t), leaf)
 
@@ -155,6 +162,8 @@ func TestInstallSection4SeedCommitLeavesEnvsOutOfGit(t *testing.T) {
 		switch {
 		case strings.HasPrefix(p, leaf+"/envs/"):
 			t.Errorf("INSTALL.md §4's seed commit still tracks the secret surface: %s (rangerhq-lti6)", p)
+		case strings.HasPrefix(p, leaf+"/secrets/"):
+			t.Errorf("INSTALL.md §4's seed commit still tracks the harness-credential store: %s (ranger-base-13h3)", p)
 		case strings.HasPrefix(p, leaf+"/state/"):
 			t.Errorf("INSTALL.md §4's seed commit still tracks machine-local state: %s", p)
 		case p == leaf+"/config.yaml", p == leaf+"/agents/developer.md":
@@ -182,14 +191,19 @@ func TestInstallSection4GitignorePinDiscriminates(t *testing.T) {
 			leaked: leaf + "/envs/default.env",
 		},
 		{
+			name:   "the shape that shipped: envs/ and state/ ignored, secrets/ not (ranger-base-13h3)",
+			recipe: "printf '%s\\n' '" + leaf + "/envs/' '" + leaf + "/state/' >> .gitignore\n",
+			leaked: leaf + "/secrets/harness.env",
+		},
+		{
 			name:   "the stale pre-rename prefix ignores a directory §4 never creates",
-			recipe: "printf '%s\\n' 'rhq/envs/' 'rhq/state/' >> .gitignore\n",
-			leaked: leaf + "/envs/default.env",
+			recipe: "printf '%s\\n' 'rhq/envs/' 'rhq/secrets/' 'rhq/state/' >> .gitignore\n",
+			leaked: leaf + "/secrets/harness.env",
 		},
 		{
 			name:   "an ignore anchored at the repo root misses the home one level down",
-			recipe: "printf '%s\\n' '/envs/' '/state/' >> .gitignore\n",
-			leaked: leaf + "/envs/default.env",
+			recipe: "printf '%s\\n' '/envs/' '/secrets/' '/state/' >> .gitignore\n",
+			leaked: leaf + "/secrets/harness.env",
 		},
 		{
 			name:   "no .gitignore at all",
@@ -212,13 +226,13 @@ func TestInstallSection4GitignorePinDiscriminates(t *testing.T) {
 	}
 }
 
-// TestInstallStatesTheEnvsRuleWhereTheSecretsAre: §4 is where the reader
+// TestInstallStatesTheNeverCommitRuleWhereTheSecretsAre: §4 is where the reader
 // types the ignore, §6 is where they are told secrets live. The rule has to
 // hold in both places or the second one re-opens the hole.
-func TestInstallStatesTheEnvsRuleWhereTheSecretsAre(t *testing.T) {
+func TestInstallStatesTheNeverCommitRuleWhereTheSecretsAre(t *testing.T) {
 	sec4 := installSection4(t)
 	for _, want := range []string{
-		"commit everything except\n`state/` and `envs/`", // the prose the code block realizes
+		"commit everything except\n`state/`, `envs/` and `secrets/`", // the prose the code block realizes
 		"never commit it", // the file-tree marking
 	} {
 		if !strings.Contains(sec4, want) {
@@ -226,7 +240,7 @@ func TestInstallStatesTheEnvsRuleWhereTheSecretsAre(t *testing.T) {
 		}
 	}
 	// The tree marks state/ this way; envs/ has to carry the same mark.
-	for _, dir := range []string{"envs/", "state/"} {
+	for _, dir := range []string{"envs/", "secrets/", "state/"} {
 		var marked bool
 		for _, l := range strings.Split(sec4, "\n") {
 			if strings.HasPrefix(strings.TrimSpace(l), dir) && strings.Contains(l, "never commit it") {
@@ -250,12 +264,12 @@ func TestInstallStatesTheEnvsRuleWhereTheSecretsAre(t *testing.T) {
 	}
 	sec6 := doc[i:j]
 	for _, want := range []string{
-		"`envs/` is never committed",
-		"do not survive a commit", // why the gitignore, not the modes, is the boundary
+		"Neither `envs/` nor `secrets/` is ever committed", // ranger-base-13h3: both stores, not envs/ alone
+		"do not survive a commit",                          // why the gitignore, not the modes, is the boundary
 		"gitignore",
 	} {
 		if !strings.Contains(sec6, want) {
-			t.Errorf("INSTALL.md §6 no longer carries the never-commit rule: missing %q (rangerhq-lti6)", want)
+			t.Errorf("INSTALL.md §6 no longer carries the never-commit rule: missing %q (rangerhq-lti6, ranger-base-13h3)", want)
 		}
 	}
 }
