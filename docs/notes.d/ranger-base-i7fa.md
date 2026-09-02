@@ -151,3 +151,87 @@ contention and not the change.
 box.** That is worth knowing independently of this bead: the same load makes
 `make test` itself unrepresentative, and ranger-base-0uth is the run where
 it took the package past the 25m budget at 1981s.
+
+## 6. The remaining 63%: what the `newTestBackend` change actually is
+
+Priced in §2 at 1431 tests / 743.2s / 75% of the wall, and left undone. It
+is written out here because it is not a sketch — every unknown in it was
+resolved while measuring §2, and the edit inventory below is complete.
+
+`newTestBackend` reaches for the process environment four times where it
+wants per-test state:
+
+```go
+t.Setenv("HOME", t.TempDir())     // defensive: keep ~/.posse, ~/.claude, ~/.grok, ~/.codex off the operator's real home
+t.Setenv("RHQ_FAKE_HERDR", "1")   // constant — read by the CHILD at startup, never by the parent
+t.Setenv("RHQ_FAKE_DIR", fake)    // per-test — read by the CHILD, and by 9 parent-side assertions
+t.Setenv(EnvPersona, "")          // constant — hermetic against the operator fence (ADR 0031 §2)
+```
+
+Three of the four are constants across all 698 call sites and belong in
+`TestMain`, once, before `m.Run()`. Only `RHQ_FAKE_DIR` is genuinely
+per-test, and only the child needs it.
+
+**The child can be told without the environment: link, don't export.**
+`fakeDir()` becomes `filepath.Dir(os.Args[0])` (with the `$RHQ_FAKE_DIR`
+read kept as an override, which is what the 6 tests that redirect the fake's
+state deliberately use). `newTestBackend` links the test binary into the
+test's own fake dir as `herdr`, and points `Herdr{Bin: …}` at the link; a
+child exec'd through it finds its state directory from argv[0]. Nothing
+process-global is touched, and no product struct grows a test-only field.
+
+A per-test registry (`sync.Map` keyed on `t.Name()`, written by
+`newTestBackend`) gives the parent side the same value back, for the call
+sites that discarded the returned `fake`.
+
+### Edit inventory (counted, not estimated)
+
+```
+herdr_test.go  TestMain            set HOME (one temp dir for the binary), RHQ_FAKE_HERDR, EnvPersona
+herdr_test.go  fakeDir()           argv[0] dir, $RHQ_FAKE_DIR still overriding
+herdr_test.go  newTestBackend      drop the four t.Setenv; link + register
+~30 sites      Bd{Bin: exe}        -> Bd{Bin: fakeBinFor(t, "bd")}; t is in scope at every one
+  9 sites      fakeDir()           parent-side reads -> fakeDirOf(t)
+  4 sites      exec.Command(exe, "-test.run=…")  must clear RHQ_FAKE_HERDR in the child's env
+```
+
+That last row is the one trap worth naming: those four tests re-exec the
+binary to run a NAMED test in a child. With `RHQ_FAKE_HERDR=1` process-wide,
+`TestMain` would dispatch that child to `fakeBd` on its `-test.run=…` argv
+and exit before the test ran. They are `cagehomelock_qa_test.go:182`,
+`launchlock_qa_test.go:105`, `trustlock_qa_test.go:172` and `:261`.
+
+### The one open design question: a shared $HOME
+
+Moving `HOME` to `TestMain` gives the whole binary one temp home instead of
+one per test. That keeps the property `ranger-base-gvrh` bought — no test
+cuts a worktree in the operator's live `~/.posse` — but it does NOT keep
+per-test isolation of `$HOME/.posse/worktrees`, which is what
+`DefaultWorktreeRoot()` returns and where `EnsureSessionTree` writes. Two
+parallel tests that pick the same session name would collide.
+
+`App.WorktreeRoot()` already reads config `worktrees:` first and only
+enforces that the root be under `$HOME`, so a per-test root under the shared
+home satisfies both. Whether that arrives as a config write in
+`newTestBackend` or as an `App` field beside `ModelLister`/`Load1`/`TopCPU`
+— which `hermetic()` documents as exactly the place for a fake-by-
+construction default — is the call to make, and it is the reason this half
+was not just typed in behind the first.
+
+### Verify it against the second filter, not just the first
+
+§4's lesson generalises: run the package-level-var filter again over the
+newly-clean tests before adding `t.Parallel` to them. Both filters are
+scripted and cheap; neither is a substitute for the other.
+
+## 7. Sequencing note for whoever measures this
+
+Top-level tests that call `t.Parallel` never overlap the serial ones — go
+runs the sequential pass to completion first, then resumes the paused set
+together. Two consequences worth having in hand:
+
+  - the parallel set only ever races against ITSELF, which is why the two
+    filters above are aimed there and not at the serial remainder; and
+  - `t.Setenv` values are restored before the parallel phase begins, so the
+    environment is stable while it runs — which is what makes the
+    `$RHQ_FAKE_DIR` override in §6 safe to keep.
