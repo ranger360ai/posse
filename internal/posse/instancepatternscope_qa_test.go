@@ -271,6 +271,7 @@ func TestQAShippedPatternsStayMarkdownOnly(t *testing.T) {
 // reds this pin ALONE — every other pin in this file runs on a box that
 // derives literals, so this is the only one that measures the guard.
 func TestQAInstancePatternRendersWithoutAnyIdentity(t *testing.T) {
+	t.Parallel() // renders and reads strings; no repo, no env (ranger-base-pj87l)
 	extra := []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}}
 
 	block := identityGuardCheck(nil, extra)
