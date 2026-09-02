@@ -344,7 +344,30 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	// The generic caches every CLI on this box writes through. These are
 	// NOT runtime state and stay a literal: they belong to npm, to macOS and
 	// to the XDG layout, not to any engine.
-	for _, d := range []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share"} {
+	//
+	// The Go toolchain's local telemetry counters are that class too, and
+	// they were 18% of one day's denial volume before this line: `go`,
+	// `compile`, `link` and `asm` each mmap a counter file under
+	// `local/` on every invocation and each denied write is logged
+	// (~2,300/day across two caged sessions, ranger-base-gr3ow). The
+	// build succeeds either way — the counters are local-only and nothing
+	// reads them — so this buys quiet, not function.
+	//
+	// `local` and NOT its parent, deliberately: `telemetry/mode` sits
+	// beside it and is the only thing that decides whether the toolchain
+	// UPLOADS those counters to telemetry.go.dev. Granting the parent
+	// would let a session flip the operator's box from "local" to "on" —
+	// an egress the operator never chose (crew guardrail 4). Granted this
+	// way the counters are writable and the switch is not.
+	//
+	// The env route the bead proposed does not exist: GOTELEMETRY is a
+	// derived, non-settable `go env` value read from that mode file, and
+	// `go env -w GOTELEMETRY=off` is refused by name. Measured — a build
+	// with GOTELEMETRY=off in the environment writes exactly the four
+	// counter files a build without it does. The only lever that stops
+	// the writes is the mode file, which is account-global and hand-
+	// applied; this is the versioned one.
+	for _, d := range []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share", "Library/Application Support/go/telemetry/local"} {
 		if home != "" {
 			add(filepath.Join(home, d))
 		}
