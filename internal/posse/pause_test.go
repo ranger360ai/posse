@@ -232,10 +232,17 @@ func TestDispatchDeclinesThePassWhilePaused(t *testing.T) {
 	if log := calls(t, fake); strings.Contains(log, "workspace create") {
 		t.Errorf("a paused shop launches nothing:\n%s", log)
 	}
-	// The gate is ahead of every reading the pass forks for — the ready
-	// scan, verify-after and the bead-loss census all run bd.
-	if log, err := os.ReadFile(filepath.Join(fake, "bd-calls.log")); err == nil {
-		t.Errorf("a declined pass must not fork bd:\n%s", log)
+	// The decline is at the fire loop's entry, not ahead of the whole pass
+	// (ranger-base-171f). This assertion used to require that a declined
+	// pass fork bd ZERO times, which is what made a seven-mutation sweep
+	// blind to the epilogue never running: the bead-loss census is above the
+	// decline and runs, the ready scan is below it and does not.
+	log := bdCalls(t, fake)
+	if !strings.Contains(log, "list --all") {
+		t.Errorf("the bead-loss census is oversight, not spend, and must run under a pause:\n%s", log)
+	}
+	if strings.Contains(log, "ready --json") {
+		t.Errorf("the ready scan feeds the fire loop and must not run under a pause:\n%s", log)
 	}
 }
 
@@ -326,6 +333,73 @@ func TestNoMechanismEverWritesThePauseFile(t *testing.T) {
 }
 
 // ─── pause stops spend, not oversight ────────────────────────────────────────
+
+// The other half of that sentence, and what ranger-base-171f was filed for:
+// the gate READS at the top of the pass and DECLINES at the fire loop's
+// entry, so everything between the two — the reap, the land sweep, the guard
+// readings, verify-after, the bead-loss census — runs under a pause exactly
+// as it runs without one. It used to sit below the gate in SOURCE ORDER
+// while the gate returned from the whole pass, so a pause held for hours
+// starved the reap (ranger-base-v674's regrowing session graveyard), left
+// closed beads' trees unlanded, and filed no verify beads at all.
+//
+// One rig, run twice, differing in nothing but the pause file: a closed
+// bead's idle session for the reap, and a closed `code` bead behind the
+// verify watermark for verify-after to file. The unpaused arm is the
+// witness — without it both assertions would be green over a rig that could
+// neither reap nor file. The decline's own boundary is the last two checks:
+// the ready scan sits below it and must not run.
+func TestAPausedPassStillRunsTheEpilogue(t *testing.T) {
+	for _, paused := range []bool{false, true} {
+		name := "unpaused (the witness)"
+		if paused {
+			name = "paused"
+		}
+		t.Run(name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			writePersona(t, b.App, "ranger", "[go]")
+			// A closed `code` bead nothing has verified yet, and an empty
+			// ready queue so the two arms differ only in the epilogue.
+			repo := vaRepo(t, b.App, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
+			os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte("[]"), 0o644)
+			writeVerifyWatermark(b.App.verifyWatermarkPath(repo), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+			// And a session whose bead is closed, with an idle agent: the
+			// reap's own candidate.
+			reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
+			idleClaude(t, fake)
+			if paused {
+				pausedShop(t, b.App, "coordinator", "waiting on the operator")
+			}
+
+			n, err := d.Run("", "", 0)
+			out, log := dispatcherOut(d), bdCalls(t, fake)
+			if err != nil || n != 0 {
+				t.Fatalf("n=%d err=%v\n%s", n, err, out)
+			}
+
+			// The epilogue, both arms.
+			if _, alive := b.readMeta("ranger-repo-a-1"); alive {
+				t.Errorf("the closed bead's idle session was not reaped — a pause is not an instruction to abandon what the shop is holding:\n%s", out)
+			}
+			if !strings.Contains(out, "verify filed: q-1") || !strings.Contains(log, "create verify:") {
+				t.Errorf("verify-after did not file (ADR 0006 §3: oversight, not spend):\n%s\n%s", out, log)
+			}
+			if !strings.Contains(log, "list --all") {
+				t.Errorf("the bead-loss census did not run (rangerhq-fuom):\n%s", log)
+			}
+
+			// And the boundary: the ready scan is the fire loop's, and it is
+			// the first thing below the decline.
+			if paused == strings.Contains(log, "ready --json") {
+				t.Errorf("the ready scan must run unpaused and not paused; paused=%v:\n%s", paused, log)
+			}
+			if paused == strings.Contains(out, "no ready work") {
+				t.Errorf("only an undeclined pass gets as far as reporting its queue; paused=%v:\n%s", paused, out)
+			}
+		})
+	}
+}
 
 // The design's other predicted observable, and the whole reason the
 // coordinator reaches for pause instead of `kill`: a paused shop with a

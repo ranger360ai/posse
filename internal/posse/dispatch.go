@@ -1736,35 +1736,49 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		d.printf("⚠ %s\n", who)
 	}
 
-	// PAUSE (ADR 0029 §3, bead rangerhq-a2g6) comes first of the readings
-	// that gate, ahead of even the load guard: a human meant this stop, and
-	// a paused shop that answered with the machine's reason instead of the
-	// human's would be the surface naming the wrong stopper. One stat of
-	// state/pause.yaml — it forks nothing, so it is as safe to take on a
-	// saturated box as the load reading below it.
+	// PAUSE (ADR 0029 §3, bead rangerhq-a2g6; the decline split off from
+	// the read by ranger-base-171f).
 	//
-	// A pass IN FLIGHT is not this gate's business: it is taken at the fire
-	// loop's entry and never inside it, which is §3's "a pass in flight
-	// finishes first" — the same contract ctrl-c already keeps.
+	// The READ comes first of the readings that gate, ahead of even the load
+	// guard: a human meant this stop, and a paused shop that answered with
+	// the machine's reason instead of the human's would be the surface
+	// naming the wrong stopper. One stat of state/pause.yaml — it forks
+	// nothing, so it is as safe to take on a saturated box as the load
+	// reading below it. The line is printed here, where the reading is
+	// taken, so a box that is BOTH paused and saturated still names the
+	// human ahead of the machine.
 	//
-	// Nothing else is stopped. autoReapPass, landClosedTrees and
-	// verify-after all sit below this line on purpose: they reap, land and
-	// file for work that ALREADY ran, and a pause is a stop on spending, not
-	// an instruction to abandon what the shop is holding. The pulse
-	// goroutine (watch.go) is started outside Run entirely and keeps
-	// ticking, so a paused shop still escalates — pause stops spend, not
-	// oversight.
+	// The DECLINE is NOT here — it is the `return` at the fire loop's entry,
+	// below the epilogue. Source order is not control flow, and this comment
+	// used to claim an epilogue that the early return above it never reached
+	// (ranger-base-171f). autoReapPass, landClosedTrees, the guard readings,
+	// credentialExpiry, verify-after and the bead-loss census now genuinely
+	// run under a pause: they reap, land, read and file for work that
+	// ALREADY ran, and a pause is a stop on spending, not an instruction to
+	// abandon what the shop is holding. The pulse goroutine (watch.go) is
+	// started outside Run entirely and keeps ticking. Pause stops spend, not
+	// oversight — and now the control flow says so too.
+	//
+	// The load guard below is the one reading that still returns from the
+	// WHOLE pass, epilogue included, and it keeps that power for the reason
+	// pause never had: on a box where fork() is starved, the epilogue's own
+	// readings fork and may hang. A shop that is paused on a saturated box
+	// prints both lines and stops at the load guard.
+	//
+	// A pass IN FLIGHT is not this gate's business: the decline is taken at
+	// the fire loop's entry and never inside it, which is §3's "a pass in
+	// flight finishes first" — the same contract ctrl-c already keeps.
 	//
 	// --dry-run reports and gets out of the way, for the load guard's own
 	// reason: the diagnostic launches nothing, so hiding the routing behind
 	// the gate would make the one command someone runs to ask "what would
 	// happen if I resumed" the one command that goes quiet.
-	if p := ReadPause(PausePath(d.App)); p.Present {
+	paused := ReadPause(PausePath(d.App))
+	if paused.Present {
 		if d.DryRun {
-			d.printf("◷ %s — a real pass would decline here; --dry-run launches nothing, so routing follows\n", PauseLine(p))
+			d.printf("◷ %s — a real pass would decline here; --dry-run launches nothing, so routing follows\n", PauseLine(paused))
 		} else {
-			d.printf("◷ %s — nothing dispatched (`posse resume` lifts it; the pulse keeps ticking)\n", PauseLine(p))
-			return 0, nil
+			d.printf("◷ %s — nothing dispatched (`posse resume` lifts it; the reap, the land sweep and verify-after still run, and the pulse keeps ticking)\n", PauseLine(paused))
 		}
 	}
 
@@ -1849,6 +1863,16 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			dirs = []string{dirFilter}
 		}
 		d.App.WarnLostBeads(d.Bd, dirs, d.errw())
+	}
+
+	// The pause decline itself (ADR 0029 §3: "one read under the fire-loop's
+	// entry"), read at the top of the pass and acted on here — the fire
+	// loop's entry, which is where the epilogue above ends and spending
+	// begins. Not an error and not a failed pass: --watch keeps its cadence
+	// and the next pass reads the file again. --dry-run has already said
+	// what a real pass would do here, and goes on to show the routing.
+	if paused.Present && !d.DryRun {
+		return 0, nil
 	}
 
 	var beads []RepoIssue

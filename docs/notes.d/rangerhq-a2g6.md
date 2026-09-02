@@ -26,23 +26,43 @@ stay distinct:
   through `Run`).
 - **cmd/posse/main.go** — the two commands, and the help entry.
 
-### Four decisions taken in code
+### Five decisions taken in code
 
 **The gate goes ahead of the load guard, not beside the plan guard.**
 §3 says "checks it first (alongside planGuard, one read under the fire
 loop's entry)". Both readings cost one syscall and neither forks, so
 ordering is about which stop gets NAMED: a paused shop that answered with
 "load guard: loadavg 112" would be the surface crediting the machine for a
-human's decision. Pause reads first, and a paused pass says so and stops.
+human's decision. Pause reads first, and a paused pass says so.
 
-**Below the gate: the reap, the land sweep, verify-after.** They are the
-pass's epilogue for work that ALREADY ran, and a pause is a stop on
-spending, not an instruction to abandon what the shop is holding. Above
-the gate: nothing. The pulse goroutine never enters `Run` at all — it is
-started by `Watch` and ticks on its own clock — so *pause stops spend, not
-oversight* falls out of the structure rather than out of a rule someone
-has to keep. `TestAPausedShopStillPulses` is the pin, and gating
-`pulseOnce` on the pause file is the mutation that kills it.
+**The read is not the decline** (corrected by ranger-base-171f). The pause
+file is read at the top of `Run` for the reason above; the pass declines
+where §3 puts it, at the fire loop's entry, below the epilogue. As first
+shipped these were one statement — the read returned from the whole pass —
+so *below the gate* was true of the source order and false of the control
+flow, and everything named in the next paragraph silently stopped for the
+length of the pause. Two statements now: `paused := ReadPause(...)` and its
+line at the top, `if paused.Present && !d.DryRun { return 0, nil }` just
+above the ready scan.
+
+**Between the read and the decline: the reap, the land sweep, the guard
+readings, `credentialExpiry`, verify-after, the bead-loss census.** They
+are the pass's epilogue for work that ALREADY ran, and a pause is a stop on
+spending, not an instruction to abandon what the shop is holding. A pause
+is meant to be the safe alternative to `kill` and gets held for hours, and
+for those hours a paused shop that stopped reaping regrew exactly the
+per-bead session graveyard ranger-base-v674 was cut to drain, left closed
+beads' trees unlanded, filed no verify beads (ADR 0006 §3 — oversight, not
+spend), and froze G4's streak clock at whatever it read when the pause
+landed. The load guard below the read is the one reading that still returns
+from the whole pass, epilogue included, because on a fork-starved box the
+epilogue's own readings hang — pause never had that reason. The pulse
+goroutine never enters `Run` at all — it is started by `Watch` and ticks on
+its own clock. `TestAPausedShopStillPulses` pins the pulse (gating
+`pulseOnce` on the pause file is the mutation that kills it) and
+`TestAPausedPassStillRunsTheEpilogue` pins the epilogue: one rig run twice,
+differing in nothing but the pause file, asserting the reap and the filed
+verify bead directly in both arms.
 
 The autostart hook is deliberately not gated either: a paused shop that
 refused to *start* its watch loop would be a paused shop with no pulse,
@@ -86,7 +106,10 @@ would have made state/pause.yaml a file only posse can read.
 ### Observables (for the verify bead)
 
 - `posse pause "x"` then a hand-typed `posse dispatch`: zero sessions
-  launched, one line naming pauser and reason, and no `bd` forked.
+  launched, one line naming pauser and reason, and no ready scan — but the
+  epilogue's own `bd` reads still happen (ranger-base-171f: this line first
+  read "and no `bd` forked", which is how the pass came to skip its
+  epilogue and how a seven-mutation sweep failed to notice).
 - The cockpit's `d` on a paused shop: refused, same words.
 - `posse status`: G8, URGENT, the same line.
 - A paused shop with a blocked session still pulses the coordinator.

@@ -956,7 +956,7 @@ func main() {
 			die(err)
 		}
 		fmt.Fprintf(out, "%s\n", posse.PauseLine(p))
-		fmt.Fprintf(out, "dispatch declines every pass until `posse resume`; the pulse keeps ticking — a paused shop still escalates\n")
+		fmt.Fprintf(out, "dispatch declines every pass until `posse resume`; the pulse keeps ticking and each pass still reaps, lands and files verify beads — a paused shop still escalates\n")
 
 	case "resume":
 		// The other half. Idempotent: resuming a shop that is not paused is
@@ -2214,7 +2214,9 @@ governance:
                                  and a pass in flight finishes first.
                                  PAUSE STOPS SPEND, NOT OVERSIGHT: the pulse
                                  keeps ticking, so a paused shop still escalates
-                                 blocked sessions and aging questions. Nothing
+                                 blocked sessions and aging questions, and each
+                                 declining pass still runs its epilogue — the
+                                 reap, the land sweep and verify-after. Nothing
                                  mechanical ever writes this file — the guard,
                                  the blind window and Dial E SKIP a pass and
                                  heal; only a human pauses. The operator, and

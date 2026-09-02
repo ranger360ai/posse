@@ -26,10 +26,19 @@ package posse
 //
 // **Pause stops spend, not oversight.** The gate sits at the fire loop's
 // entry (Dispatcher.Run) and on the cockpit's single-bead launcher
-// (LaunchBead) — the two places a bead becomes a running agent. The pulse
-// goroutine is deliberately untouched: a paused shop still escalates
-// blocked sessions and aging questions, which is what distinguishes a pause
-// from killing the loop and why the coordinator reaches for it instead of
+// (LaunchBead) — the two places a bead becomes a running agent. In Run the
+// read and the decline are deliberately two statements: the file is READ at
+// the top of the pass, ahead of even the load guard, so a box that is both
+// paused and saturated names the human and not the machine; the pass
+// DECLINES further down, at the fire loop's entry. What sits between them —
+// the reap, the land sweep, the guard readings, credentialExpiry,
+// verify-after, the bead-loss census — runs under a pause exactly as it runs
+// without one. That is not decoration: until ranger-base-171f the read
+// returned from the whole pass, so a pause held for hours starved every one
+// of them while three documents said it did not. The pulse goroutine is
+// untouched for the same reason: a paused shop still escalates blocked
+// sessions and aging questions, which is what distinguishes a pause from
+// killing the loop and why the coordinator reaches for it instead of
 // `kill`. By the same line, a hand-run `posse new`/`relaunch`/`recipe` is
 // the operator's own hand on a session, not dispatch spending, and is not
 // gated here.
