@@ -1877,6 +1877,17 @@ func PrePushHookInstalled(dir string) bool {
 
 // deniesGitPush reports whether the PID's deny list carries a rule the
 // pre-push hook would act on.
+//
+// It keys on ParseShimRules, so it reads only the two rule shapes that
+// parser returns and is blind to the other push-granting spellings
+// grantsGitPush below now covers (bare `Bash`, `Bash(*)`, `Bash(git *
+// push)`, `Bash(git -C <repo> push)`). Deliberately left narrow: a deny
+// rule this misses is a hook we do not install and a wall we therefore do
+// not claim — blindness here fails SAFE, where the same blindness in the
+// allow: alarm failed open, which is the whole asymmetry ranger-base-b2os
+// was filed on. Widening it would change which repos get a pre-push hook
+// and what parity claims realized; that is a separate change with a
+// separate blast radius.
 func deniesGitPush(deny []string) bool {
 	for cmd, rules := range ParseShimRules(deny) {
 		if cmd != "git" {
@@ -1892,21 +1903,102 @@ func deniesGitPush(deny []string) bool {
 }
 
 // grantsGitPush returns the PID's allow: rule (verbatim) that grants git
-// push, or "" if none — ADR 0033 §2's coordinator's defining permission. It
-// reuses deniesGitPush's rule-shape parser: the same Bash(git push...) shape
-// means the same thing whether it appears in allow: or deny:.
+// push, or "" if none — ADR 0033 §2's coordinator's defining permission,
+// and the whole trigger of §5's drift alarm.
+//
+// It used to key on ParseShimRules, the L1 shim's parser. That parser
+// answers a narrower question than this one: it returns only rules of the
+// shape Bash(<plain command name> …), because a rule it cannot render into
+// a shim is not its business. Four spellings that DO grant push therefore
+// came back "" and raised no warning (**MEASURED** on posse 0.3.0+53c8cb6,
+// ranger-base-b2os): bare `Bash` — the broadest grant a PID can carry —
+// `Bash(*)`, `Bash(git * push)`, which is a spelling L0Spellings itself
+// GENERATES, and `Bash(git -C /repo push)`. A hand-edit granting a persona
+// bare `Bash` landed in exactly the state §5 exists to make visible, and
+// the alarm stayed quiet.
+//
+// So the question is asked directly instead: can this rule permit a `git
+// push` invocation, by any of the three forms claude matches a Bash rule
+// (exact, `:*` prefix, `*` wildcard — see L0Spellings)? The alarm is
+// advisory, so it over-approximates on purpose: an unrecognized grant is
+// silence, and silence is the defect being fixed.
 func grantsGitPush(allow []string) string {
-	for cmd, rules := range ParseShimRules(allow) {
-		if cmd != "git" {
-			continue
-		}
-		for _, r := range rules {
-			if len(r.Words) == 0 || r.Words[0] == "push" {
-				return r.Rule
-			}
+	for _, rule := range allow {
+		if grantsGitPushRule(rule) {
+			return rule
 		}
 	}
 	return ""
+}
+
+// grantsGitPushRule is grantsGitPush for one rule.
+func grantsGitPushRule(rule string) bool {
+	if rule == "Bash" {
+		return true // every Bash command, push with them
+	}
+	if !strings.HasPrefix(rule, "Bash(") || !strings.HasSuffix(rule, ")") {
+		return false // Edit, Write, WebFetch, mcp__* — other layers'
+	}
+	body := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
+	prefix := strings.HasSuffix(body, ":*")
+	words := strings.Fields(strings.TrimSuffix(body, ":*"))
+	if len(words) == 0 {
+		return false // Bash() grants nothing
+	}
+	if !canBegin(words[0], "git") {
+		return false
+	}
+	if strings.Contains(words[0], "*") {
+		// The wildcard sits in front of the subcommand, so it can absorb
+		// it: `Bash(* log)` is `^.* log$`, which matches `git push origin
+		// log`. Whatever is written behind it cannot make that not a push.
+		return true
+	}
+	rest := words[1:]
+	if len(rest) == 0 {
+		return true // the whole verb: Bash(git), Bash(git:*), Bash(*)
+	}
+	// Walk to the word standing where the SUBCOMMAND stands, consuming
+	// git's global options on the way — and consuming in PAIRS the ones
+	// that take a separate value, or `Bash(git -C /repo push)` reads
+	// `/repo` as the subcommand and the rule looks like `git /repo`. Same
+	// table, and the same reason, as the L1 shim's own walk.
+	for i := 0; i < len(rest); i++ {
+		w := rest[i]
+		if strings.HasPrefix(w, "-") {
+			if strings.Contains(w, "*") {
+				return true // again in front of the subcommand slot
+			}
+			for _, o := range globalValueOpts["git"] {
+				if w == o {
+					i++ // its value is the next word, not the subcommand
+					break
+				}
+			}
+			continue
+		}
+		// The subcommand slot. Only one subcommand is a push — which is
+		// what keeps `Bash(git stash push:*)` and `Bash(git log
+		// --grep=push)` quiet — but a token carrying a wildcard reaches
+		// push whenever its literal head does.
+		return canBegin(w, "push")
+	}
+	// Every word was a global option. A prefix rule leaves the subcommand
+	// open (`git -C x push` starts with `git -C x`); an exact one matches
+	// that command line and nothing longer.
+	return prefix
+}
+
+// canBegin reports whether a claude Bash-rule token can stand at the head
+// of the command word want. `*` is `.*` over the WHOLE command string
+// (L0Spellings documents the dialect), so a token carrying one is bounded
+// only by the literal text in front of the wildcard: `p*s` matches `push
+// origin refs`, `l*g` reaches no push at all.
+func canBegin(tok, want string) bool {
+	if i := strings.Index(tok, "*"); i >= 0 {
+		return strings.HasPrefix(want, tok[:i])
+	}
+	return tok == want
 }
 
 // ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────

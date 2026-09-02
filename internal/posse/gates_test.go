@@ -60,11 +60,14 @@ func TestParseShimRulesSecurityStarIsWholeVerb(t *testing.T) {
 // rewriting `len(r.Words) == 0 || …` to `len(r.Words) > 0 && …` left all
 // three packages green (measured, ranger-base-telz).
 //
-// The spellings this table does NOT list are the alarm's measured blind
-// spots, not settled behavior: bare `Bash`, `Bash(*)`, and the wildcard and
-// option-bearing forms (`Bash(git * push)`, `Bash(git -C x push)`) all grant
-// push and all return "" today — ranger-base-b2os. Widening grantsGitPush to
-// catch them must keep every row below firing.
+// The second block of firing rows is ranger-base-b2os: four spellings that
+// grant push and returned "" while the function keyed on ParseShimRules,
+// which only recognizes Bash(<plain command name> …). They are measured
+// blind spots, not settled behavior — bare `Bash` is the broadest grant a
+// PID can carry, and `Bash(git * push)` is a spelling L0Spellings itself
+// GENERATES. The quiet rows below them are what keeps the widening from
+// paying for its reach in false positives: a push-shaped word that is not
+// the subcommand (`git stash push`, `git log --grep=push`) is not a grant.
 func TestGrantsGitPushRuleShapes(t *testing.T) {
 	for _, fires := range []string{
 		"Bash(git push:*)",           // the coordinator's own spelling
@@ -72,12 +75,38 @@ func TestGrantsGitPushRuleShapes(t *testing.T) {
 		"Bash(git push origin main)", // a narrower push is still a push
 		"Bash(git:*)",                // whole verb — push included
 		"Bash(git)",                  // whole verb, bare
+
+		"Bash",                      // every Bash command; no parens at all
+		"Bash(*)",                   // every Bash command by wildcard
+		"Bash(*:*)",                 // …and its prefix spelling
+		"Bash(git * push)",          // claude's third matching form
+		"Bash(git -C /repo push)",   // a global option TAKING A VALUE in front
+		"Bash(git --no-pager push)", // a boolean global option in front
+		"Bash(git *)",               // wildcard in the subcommand slot
+		"Bash(git p*)",              // …and a partial one that reaches push
+		"Bash(git p*s)",             // `^git p.*s$` is `git push origin refs`
+		"Bash(* log)",               // a wildcard IN FRONT of the subcommand
+		"Bash(git -* log)",          // …and one in the option run
+		"Bash(git -C /repo:*)",      // prefix rule: the subcommand is still open
 	} {
 		if got := grantsGitPush([]string{"Edit", fires, "Bash(bd:*)"}); got != fires {
 			t.Errorf("%s grants push; grantsGitPush returned %q", fires, got)
 		}
 	}
-	for _, quiet := range []string{"Bash(git log:*)", "Bash(bd:*)", "Edit", "Bash(pushd:*)"} {
+	for _, quiet := range []string{
+		"Bash(git log:*)",
+		"Bash(bd:*)",
+		"Edit",
+		"Bash(pushd:*)",
+		"Bash()",                    // grants nothing
+		"Bash(gitk:*)",              // a different command that starts with git
+		"Bash(git stash push:*)",    // push-shaped, but the subcommand is stash
+		"Bash(git log --grep=push)", // push as an option value
+		"Bash(git l*g:*)",           // a wildcard that cannot reach push
+		"Bash(git -C /repo log)",    // exact, and the subcommand is log
+		"Bash(git --no-pager)",      // exact, and it ends before a subcommand
+		"Bash(git commit unless --)",
+	} {
 		if got := grantsGitPush([]string{quiet}); got != "" {
 			t.Errorf("%s grants no push; grantsGitPush returned %q", quiet, got)
 		}

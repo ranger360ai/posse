@@ -259,6 +259,31 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 	if strings.Contains(strings.Join(ws, "\n"), want) {
 		t.Errorf("a PID that grants no push must not get the ADR 0033 §5 warning: %v", ws)
 	}
+
+	// ranger-base-b2os: the false NEGATIVES. Four allow: spellings that DO
+	// grant push were silent here — measured against the installed posse
+	// 0.3.0+53c8cb6 with a scratch RHQ_HOME, all four `grep -c "defining
+	// permission"` == 0 where Bash(git push:*) gave 1. Driven on the arm
+	// the bead calls the important one: no coordinator: configured at all,
+	// the state a hand-edit granting bare `Bash` lands in.
+	os.WriteFile(a.ConfigPath, []byte("default_dir: /tmp\n"), 0o644)
+	for _, allow := range []string{
+		"[Bash]",                    // the broadest grant a PID can carry
+		"[Bash(*)]",                 // every Bash command by wildcard
+		"[Bash(git * push)]",        // a spelling L0Spellings itself generates
+		"[Bash(git -C /repo push)]", // push behind a global option taking a value
+	} {
+		md := "---\nname: drifter\ndescription: t\nallow: " + allow + "\n---\nYou are drifter, the role of the crew.\n"
+		os.WriteFile(filepath.Join(a.AgentsDir, "drifter.md"), []byte(md), 0o644)
+		_, ws, err := a.CheckAgent("drifter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(ws, "\n")
+		if !strings.Contains(joined, want) || !strings.Contains(joined, "no coordinator: is configured") {
+			t.Errorf("allow: %s grants git push and must warn; got:\n%s", allow, joined)
+		}
+	}
 }
 
 func TestBalancedParens(t *testing.T) {
