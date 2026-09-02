@@ -1,6 +1,6 @@
 package posse
 
-// THE SHAPES THE L3 HOOK CLUSTER'S OWN PINS DO NOT REACH (laurie, verify
+// THE SHAPES THE L3 HOOK CLUSTER'S OWN PINS DO NOT REACH (QA, verify
 // bead ranger-base-bki3i, verifying the four closes folded into
 // ranger-base-dmsbu: ranger-base-60azj, ranger-base-4b1z4,
 // ranger-base-qdxe, ranger-base-jex3).
