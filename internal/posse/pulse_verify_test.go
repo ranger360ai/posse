@@ -76,6 +76,20 @@ func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 // arrangement in which pulseTarget's "first match by agent" can pick wrong.
 func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) {
 	b, fake := newTestBackend(t)
+	// beads: must name a scratch dir — without it BeadsDirs answers [""] and
+	// pulseOnce below reads whatever directory the process started in, which
+	// for `go test ./internal/posse` is this checkout and resolves to the
+	// operator's live fleet queue (ranger-base-vcj8j, same class as uk0v).
+	// The dispatcher's Bd is the test binary here, so today the only cost is
+	// the resolution itself; the pin is for the day it is not.
+	scratch := t.TempDir()
+	writeBeadsDirs(b.App, []string{scratch})
+	// Assert the write took rather than trusting it: a missing or misspelled
+	// key is not an error and not a red, and the only symptom is that the
+	// unit test reads the operator's queue.
+	if got := b.App.BeadsDirs(); len(got) != 1 || got[0] != scratch {
+		t.Fatalf("fixture is not hermetic: BeadsDirs() = %q, want [%q]", got, scratch)
+	}
 	writePersona(t, b.App, "developer", "code")
 	writePersona(t, b.App, "coordinator", "code")
 	mustCreate(t, b, NewSessionOpts{Name: "developer-work", Agent: "developer"})
