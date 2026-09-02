@@ -776,6 +776,18 @@ func sessionRefDirs(cwd string) []string {
 //     its prepare-commit-msg slot is what stamps the beads visibility
 //     guard.
 //
+//     ADR 0038 adds the rest of that one rule — the persistent state that
+//     tells a LATER, unsandboxed git which code to run is no session's to
+//     write. `.git/config` and its `config.lock` sibling
+//     (sessionGitConfigFiles), because `core.hooksPath` in it moves the
+//     slot the line above denies and `fsmonitor`/`filter.*.clean`/an alias
+//     are commands in their own right; and a linked worktree's identity
+//     chain (sessionWorktreeIdentityFiles), because those files select
+//     WHICH config and hooks that git reads. Not the transient
+//     `git -c core.hooksPath=` form: no file is written, so no file deny
+//     reaches it, and ADR 0038 item 3 names it a residual rather than
+//     letting anyone read this block as "the redirect is closed".
+//
 //  4. ADR 0014 §3 — the PID's OWN path-scoped denies. `deny:
 //     [Edit(docs/adr/**)]` is a subtree file-write deny (ADR 0014 §1), and
 //     this block is the only place L2 can say it: the rule names a
@@ -823,6 +835,14 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	}
 	for _, h := range sessionHooksDirs(cwd) {
 		add(&c.Deny, h)
+	}
+	// ADR 0038: the file that can move that hooks dir, and the chain that
+	// selects which config file a later git reads at all.
+	for _, p := range sessionGitConfigFiles(cwd) {
+		add(&c.Deny, p)
+	}
+	for _, p := range sessionWorktreeIdentityFiles(cwd) {
+		add(&c.Deny, p)
 	}
 	for _, d := range pidDeniedSubtrees(ag, cwd) {
 		add(&c.Deny, d.Path)
@@ -907,6 +927,137 @@ func sessionHooksDirs(cwd string) []string {
 		}
 	}
 	return dedupeStrings(out)
+}
+
+// sessionGitConfigFiles is the other half of that deny (ADR 0038 decision
+// 1). The hooks deny alone was UNSOUND — ADR 0023 non-goal 3 said so and
+// left it open — because `core.hooksPath` moves the slot: plant a value in
+// `.git/config` pointing at a directory the session may write, and the
+// denied slot is simply not the one git dispatches from any more. And
+// hooksPath is only the nearest spelling; `core.fsmonitor`, a
+// `filter.*.clean`, an alias — each is a command a LATER, UNSANDBOXED git
+// runs, whether that is the operator's daily git in the checkout, the next
+// launch's L3 probe, or the launcher's own `git -C <worktree> rebase` at
+// land time (worktree.go). Plain `git config core.hooksPath …` is not a bd
+// verb, so no PID denies that spelling: where `.git` is writable today, any
+// session can plant the persistent redirect.
+//
+// So: the same two repos sessionHooksDirs walks — cwd's, and the store of
+// record's when a redirect puts it in another repo whose `.git` is granted
+// too — and the same doctrine, asked of git (`gitPath`) rather than joined
+// onto a git dir, because in a linked worktree the config git reads is the
+// COMMON one and a derived path would have said otherwise.
+//
+// `config.lock` joins it as the SIBLING of the answered path, not as
+// another question put to git: the lock git takes is the lockfile beside
+// whatever config file it resolved, so the sibling is right by construction
+// at any git version. Denying it is what makes the refusal land at lock
+// creation — `git config` fails before it has written anything, so there is
+// no half-written config and no stray `config.lock` left in shared state
+// for the operator's next `git config` to trip over. That is the
+// packed-refs.lock discipline (ranger-base-msex) applied before the fact
+// rather than after.
+//
+// The measured cost of all of it is nothing (ranger-base-j5s0's table): the
+// only in-cage-reachable config writers are bd verbs already denied at L1
+// crew-wide, and posse's own `recordBead` stamping of `branch.*.posseBase`
+// runs in the UNSANDBOXED launcher, which no profile touches.
+func sessionGitConfigFiles(cwd string) []string {
+	if cwd == "" {
+		return nil
+	}
+	var out []string
+	add := func(dir string) {
+		c, err := gitPath(dir, "config")
+		if err != nil {
+			return
+		}
+		out = append(out, c, c+".lock")
+	}
+	add(cwd)
+	if home := beadsHome(cwd); home != "" && !underDir(cwd, home) {
+		add(filepath.Dir(home))
+	}
+	return dedupeStrings(out)
+}
+
+// sessionWorktreeIdentityFiles names the files that select WHICH config and
+// hooks a later git reads for this session's tree (ADR 0038 decision 2).
+// Denying the config file above is only worth what the chain pointing at it
+// is worth: `<worktree>/.git` is a one-line pointer at the per-worktree git
+// dir, and `gitdir`, `commondir` and `config.worktree` inside that dir say
+// where the tree is, which common dir it belongs to, and what extra config
+// applies. The per-worktree git dir is granted WHOLE (sessionGitGrants — it
+// holds the index and HEAD a commit writes), so all three are writable
+// today, and `<worktree>/.git` sits in cwd, which is granted whole too.
+//
+// The reachable escape is not hypothetical: worktree.go runs
+// `git -C <worktree> rebase` at land time, UNSANDBOXED, inside the tree the
+// session just had. Point `commondir` at a directory the session may write
+// and that git reads a config and a hooks dir of the session's choosing —
+// the config deny walked around for exactly the git that matters most.
+//
+// Cost was ASSUMED zero rather than measured (these are written once, by
+// `git worktree add`, and rewritten only by `git worktree move`/`repair`,
+// which no session legitimately runs), so ADR 0038 item 2 asks for
+// measurement by execution and for any literal a legitimate writer turns
+// out to need to be dropped and RECORDED. MEASURED in
+// seatbeltgitidentity_qa_test.go, and measured without a sandbox so the
+// reading holds in a caged session too: a whole session's life — add,
+// commit, checkout, status, rev-parse, the store of record's commit, and
+// the launcher's own land-time rebase in the tree — leaves all four files
+// byte-, inode- and mtime-identical, with a wrong arm showing the
+// instrument does see a write. Nothing was dropped. The sandbox arms that
+// grade the WALL are a separate question and skip inside a caged session
+// (ranger-base-xjw9), which is why the cost half does not depend on them.
+//
+// Only a linked worktree has any of this. A main checkout's `.git` is a
+// directory inside cwd with no pointer file and no `gitdir`/`commondir`,
+// and its `config.worktree` is inert unless `extensions.worktreeConfig` is
+// set — which is a write to the config file this same carve-out denies.
+//
+// The store of record's own identity chain is NOT here, deliberately: ADR
+// 0038 item 2 is about the tree the session was dispatched into, and posse
+// only ever makes the store a main checkout (`bd worktree create` writes
+// the redirect from the worktree INTO the store, never the other way). A
+// store that was itself a linked worktree would need this treatment too;
+// that shape does not exist, and inventing a grant-shaped answer for it
+// here would be a wall nobody has measured.
+func sessionWorktreeIdentityFiles(cwd string) []string {
+	dirs := LinkedGitDirs(cwd)
+	if len(dirs) != 2 {
+		return nil
+	}
+	var out []string
+	// The pointer FILE lives at the worktree top level, which is cwd for a
+	// dispatched session but need not be for `posse gates <persona>` run
+	// from a subdirectory — so ask git rather than joining onto cwd, the
+	// same reason gitPath exists.
+	if top := worktreeTop(cwd); top != "" {
+		out = append(out, filepath.Join(top, ".git"))
+	}
+	for _, n := range []string{"gitdir", "commondir", "config.worktree"} {
+		out = append(out, filepath.Join(dirs[0], n))
+	}
+	return dedupeStrings(out)
+}
+
+// worktreeTop is the working tree's root as git reports it. "" when git
+// cannot answer — a bare repo, or no repo at all — and the caller then
+// names no pointer file rather than guessing at one.
+func worktreeTop(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	top := strings.TrimSpace(string(out))
+	if top == "" {
+		return ""
+	}
+	if !filepath.IsAbs(top) {
+		top = filepath.Join(dir, top)
+	}
+	return top
 }
 
 // pidDeniedSubtrees resolves the PID's path-scoped write denies for a

@@ -1520,19 +1520,34 @@ exit 0
 //     from a subdirectory), so joining it onto `dir` is right at any depth.
 //     git resolves relative hooksPath against the worktree top-level, and this
 //     is what saves us from having to know that.
-func hooksDir(dir string) (string, error) {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "hooks").Output()
+func hooksDir(dir string) (string, error) { return gitPath(dir, "hooks") }
+
+// gitPath is that doctrine with the name as a parameter, because ADR 0038
+// asks the same question about a second file: `--git-path config` is the
+// lookup git's own `git_path()` performs, and it knows things a join does
+// not. MEASURED on this host (git 2.50.1, darwin 25.4.0) from a linked
+// worktree: `config` comes back as the COMMON dir's — `<main>/.git/config`,
+// never the per-worktree `worktrees/<n>/config` — which is the file every
+// git in that repo actually reads, while `config.worktree`, `gitdir` and
+// `commondir` come back per-worktree. Deriving either would have been a
+// coin flip dressed as a path.
+//
+// A relative answer joins against `dir` exactly as it did for hooks: git
+// rewrites a relative value against the CWD it was asked from, so the join
+// is right at any depth.
+func gitPath(dir, name string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", name).Output()
 	if err != nil {
 		return "", Die("%s is not a git repository", dir)
 	}
-	hooks := strings.TrimSpace(string(out))
-	if hooks == "" {
+	p := strings.TrimSpace(string(out))
+	if p == "" {
 		return "", Die("%s is not a git repository", dir)
 	}
-	if !filepath.IsAbs(hooks) {
-		hooks = filepath.Join(dir, hooks)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
 	}
-	return hooks, nil
+	return p, nil
 }
 
 // chainHookDispatcher is the dispatcher chainDispatcher tells the operator

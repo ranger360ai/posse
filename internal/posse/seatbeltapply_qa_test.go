@@ -174,9 +174,22 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	var scanned []string
 	for _, f := range files {
 		src := mustRead(t, f)
-		// The two ways a test file reaches the kernel's sandbox: its own
-		// exec, or the production reach probe, which is one underneath.
-		if !strings.Contains(src, `exec.Command("sandbox-exec"`) && !strings.Contains(src, "seatbeltReachRow(") {
+		// The ways a test file reaches the kernel's sandbox: its own exec,
+		// the production reach probe (which is one underneath), or a
+		// neighbour's runner — `sbRun`/`wgRun` shell out to sandbox-exec
+		// on the caller's behalf, so a file that borrows one is as exposed
+		// as a file that spells the exec itself, and this scan was blind
+		// to that class until seatbeltgitidentity_qa_test.go borrowed
+		// wgRun (ranger-base-vqyxl). Each runner calls the gate itself,
+		// so a borrower is not broken — but a corpus that does not name it
+		// is a corpus that would not notice a runner losing its own gate.
+		borrows := false
+		for _, r := range []string{"sbRun(t,", "wgRun(t,"} {
+			if strings.Contains(src, r) {
+				borrows = true
+			}
+		}
+		if !borrows && !strings.Contains(src, `exec.Command("sandbox-exec"`) && !strings.Contains(src, "seatbeltReachRow(") {
 			continue
 		}
 		scanned = append(scanned, f)
@@ -186,7 +199,13 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	}
 	// A corpus assertion that scanned nothing is satisfied by an empty
 	// corpus: name what it actually read.
-	if len(scanned) != 6 {
-		t.Errorf("expected the six sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	// Eleven, not the six this counted before ranger-base-vqyxl widened the
+	// detector: five of them reached the kernel only through a neighbour's
+	// runner and were never in the corpus at all. All five were already
+	// gated — the runners call the gate themselves — so the widening moved
+	// no test from red to green; what it moved is what this assertion is
+	// able to notice.
+	if len(scanned) != 11 {
+		t.Errorf("expected the eleven sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }
