@@ -88,6 +88,8 @@ func TestGrantsGitPushRuleShapes(t *testing.T) {
 		"Bash(* log)",               // a wildcard IN FRONT of the subcommand
 		"Bash(git -* log)",          // …and one in the option run
 		"Bash(git -C /repo:*)",      // prefix rule: the subcommand is still open
+		"Bash(git pus:*)",           // a `:*` rule's last word is a string prefix
+		"Bash(gi:*)",                // …at the command slot too
 	} {
 		if got := grantsGitPush([]string{"Edit", fires, "Bash(bd:*)"}); got != fires {
 			t.Errorf("%s grants push; grantsGitPush returned %q", fires, got)
@@ -105,6 +107,8 @@ func TestGrantsGitPushRuleShapes(t *testing.T) {
 		"Bash(git l*g:*)",           // a wildcard that cannot reach push
 		"Bash(git -C /repo log)",    // exact, and the subcommand is log
 		"Bash(git --no-pager)",      // exact, and it ends before a subcommand
+		"Bash(git pu)",              // EXACT: a partial word matches nothing longer
+		"Bash(gi)",                  // …at the command slot too
 		"Bash(git commit unless --)",
 	} {
 		if got := grantsGitPush([]string{quiet}); got != "" {

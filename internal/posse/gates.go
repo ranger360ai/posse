@@ -1945,7 +1945,10 @@ func grantsGitPushRule(rule string) bool {
 	if len(words) == 0 {
 		return false // Bash() grants nothing
 	}
-	if !canBegin(words[0], "git") {
+	// The LAST word of a `:*` rule is a string prefix, not a whole word:
+	// `Bash(git pus:*)` matches `git push` and `Bash(gi:*)` matches all of
+	// git. Anywhere else a word is a word.
+	if !reachesWord(words[0], "git", prefix && len(words) == 1) {
 		return false
 	}
 	if strings.Contains(words[0], "*") {
@@ -1980,8 +1983,9 @@ func grantsGitPushRule(rule string) bool {
 		// The subcommand slot. Only one subcommand is a push — which is
 		// what keeps `Bash(git stash push:*)` and `Bash(git log
 		// --grep=push)` quiet — but a token carrying a wildcard reaches
-		// push whenever its literal head does.
-		return canBegin(w, "push")
+		// push whenever its literal head does, and so does a trailing
+		// partial word.
+		return reachesWord(w, "push", prefix && i == len(rest)-1)
 	}
 	// Every word was a global option. A prefix rule leaves the subcommand
 	// open (`git -C x push` starts with `git -C x`); an exact one matches
@@ -1989,14 +1993,18 @@ func grantsGitPushRule(rule string) bool {
 	return prefix
 }
 
-// canBegin reports whether a claude Bash-rule token can stand at the head
-// of the command word want. `*` is `.*` over the WHOLE command string
+// reachesWord reports whether a claude Bash-rule token can stand where the
+// command word want stands. `*` is `.*` over the WHOLE command string
 // (L0Spellings documents the dialect), so a token carrying one is bounded
 // only by the literal text in front of the wildcard: `p*s` matches `push
-// origin refs`, `l*g` reaches no push at all.
-func canBegin(tok, want string) bool {
+// origin refs`, `l*g` reaches no push at all. partial is the last word of a
+// `:*` rule, which is a string prefix rather than a whole word.
+func reachesWord(tok, want string, partial bool) bool {
 	if i := strings.Index(tok, "*"); i >= 0 {
 		return strings.HasPrefix(want, tok[:i])
+	}
+	if partial {
+		return strings.HasPrefix(want, tok)
 	}
 	return tok == want
 }
