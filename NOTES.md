@@ -3784,10 +3784,34 @@ owner's content out of a public repo is the routing rule plus repo
 visibility; a confidential name nobody thought to add is exactly the case a
 pattern list cannot see.
 
-## beads (bd) substrate: pinned at 0.49.1, 0.51+ is a migration (rangerhq-f49)
+## beads (bd) substrate: pinned at 0.50.3, 0.51+ is a migration (rangerhq-f49)
 
-The fleet runs `bd` **0.49.1** on purpose. beads removed the SQLite backend
-for embedded Dolt at **v0.51.0** — not at 1.2.x, as this section said until
+**What is running, 2026-09-01.** `bd` **0.50.3**, SQLite, no daemon. Bumped
+from 0.49.1 that afternoon (ruling ranger-base-qrh1, executed
+ranger-base-8ufhn, commit 291523c) — see *"OPERATOR RULING 2026-08-30: bump to
+0.50.3"* below for the reasoning, what landed with it and what did not.
+Measured here from `make verify-bd-pin`, not from the pin file, since the
+whole point of the check is that the two can disagree:
+
+```
+  bd version               0.50.3                             ok
+  command -v bd            …/state/gates/<persona>/bin/bd     GATED (execs ~/.local/bin/bd)
+  homebrew beads           pinned 1.2.2                       ok
+live bd daemons — the layer the 08-16 rollback never checked
+  none running
+verify-bd-pin: pin intact at 0.50.3 — command layer and process layer agree
+```
+
+Everything from here to that ruling subsection is the history that produced
+it, left as it was written; corrections are appended in place rather than
+rewritten, per this file's convention. Where a paragraph below made a
+present-tense claim that the bump falsified, the correction is on the
+paragraph itself.
+
+The fleet ran `bd` **0.49.1** on purpose from 2026-08-16 to 2026-09-01 and runs
+a pinned **0.50.3** on the same purpose today; the pin is the point, not the
+number. beads removed the SQLite backend for embedded Dolt at **v0.51.0** —
+not at 1.2.x, as this section said until
 ranger-base-pkqn measured it: any binary ≥ 0.51 does not read
 `.beads/beads.db` at all (`bd list` → "no beads database found") and, on first
 invocation, silently
@@ -3796,18 +3820,35 @@ whatever `issues.jsonl` says — i.e. a stale fork of the fleet's state, at the
 last flush. `brew upgrade beads` on 2026-08-16 broke `bd` for every persona
 session for ~3 minutes; rolled back to the upstream v0.49.1 release binary
 (sha256-verified) at `~/.local/bin/bd`, with Homebrew's 1.2.2 left installed
-but unlinked. Both this repo and the instance repo are on 0.49.1 SQLite.
+but unlinked. Both this repo and the instance repo were on 0.49.1 SQLite and
+are on 0.50.3 SQLite since 2026-09-01 — the same `.beads/beads.db`, untouched
+by the swap; 0.50.x reads it unchanged.
 
 `make verify-bd-pin` asserts that pin against the live box — version, which
-binary `bd` actually resolves to, homebrew's keg still unlinked, and every live
-`bd daemon` running the pinned binary and younger than it. Read-only: it never
-kills, links or installs anything. See *"The pin is not enforced"* below for
-why the process-layer half exists.
+binary `bd` actually resolves to, homebrew's keg unlinked **or** brew-pinned,
+and every live `bd daemon` running the pinned binary and younger than it.
+Read-only: it never kills, links or installs anything. See *"The pin is not
+enforced"* below for why the process-layer half exists.
+
+Two of those rows read differently on 0.50.3 than the paragraphs below
+describe, and both are current as of 2026-09-01. **The process layer passes
+vacuously**: 0.50.x has no `bd daemon` command, so there is nothing to
+enumerate and the run prints "none running". It is left standing rather than
+deleted — a layer that can no longer fire is a decision, not a cleanup, and
+nobody has ruled (ranger-base-5xhmz, ranger-base-fyzqf). Read every
+process-layer paragraph below as the check's history and its shape on 0.49.x.
+**And the resolution row now accepts a posse gate shim** that `exec`s the
+pinned binary (`GATED`, ranger-base-43v1); under `RHQ_PERSONA` that shim is
+what `command -v bd` finds, and a row that FAILed on it was failing the
+harness, not the pin.
 
 Also present as a brew-managed pin: a local tap formula `beads@0.49.1`
 (operator-side), which installs the same release tarball; `brew install`
 of it currently fails only because the Command Line Tools are older than
-brew wants.
+brew wants. **It still names 0.49.1 after the bump** — it is a never-installed
+formula for the superseded version, so it pins nothing today; the belt that is
+actually set is `brew pin beads` on the 1.2.2 keg (see *"What it still does not
+do"* below, corrected).
 
 **What 1.2 changes for this harness (decide before migrating):**
 - Storage is Dolt (git-like DB with its own history and remotes). The
@@ -3835,7 +3876,9 @@ bd config set export.auto true                # keep issues.jsonl alive for git/
 bd doctor --fix
 ```
 Then re-audit `.claude/settings.json` (allow/deny) against `bd help`.
-Rollback: `brew unlink beads && install -m 0755 <v0.49.1 bd> ~/.local/bin/bd`;
+Rollback: `brew unlink beads && install -m 0755 <the pinned bd> ~/.local/bin/bd`
+— **v0.50.3 since 2026-09-01, not v0.49.1**, and the rollback target is
+whatever `etc/bd/version-pin.toml` declares, never a number typed from memory;
 the SQLite `beads.db` is untouched by 1.2 and still valid.
 The flush line lost a `git add` it never needed (ranger-base-nor): a
 path-limited commit takes the WORKING TREE version of the paths it names and
@@ -3908,13 +3951,18 @@ a subsystem the vendor deleted; build the `verify-grok-pin`-shaped target
 whose keg must stay unlinked); the assertion is `scripts/verify-bd-pin.sh`.
 Four rows, all read-only, exit 1 on any failure and exit 2 when it cannot
 check at all:
-- `bd version` == 0.49.1 exactly. Asked as `bd --no-daemon version`, so the
-  check never spawns the thing it is checking; a 1.x on PATH rejects that flag
-  (0.50.0 deleted the daemon, 0.51.0 the flag — ranger-base-db04) and the row
-  fails anyway.
-- `command -v bd` == the pinned binary. Not "a bd reporting 0.49.1" — *the*
-  pinned one. A shadowing 0.49.1 in front of it still fails, because the claim
-  is about which inode the fleet runs.
+- `bd version` == the declared version, exactly — **0.50.3 as of 2026-09-01**,
+  0.49.1 when this was written. The script reads it out of
+  `etc/bd/version-pin.toml`; there is no version literal in the check. Asked as
+  `bd --no-daemon version`, so the check never spawns the thing it is checking;
+  a 1.x on PATH rejects that flag (0.50.0 deleted the daemon, 0.51.0 the flag —
+  ranger-base-db04) and the row fails anyway. On 0.50.x the flag survives as a
+  deprecated no-op, so the same argv keeps working across the bump.
+- `command -v bd` == the pinned binary, **or a posse gate shim that `exec`s
+  it** (`GATED`, ranger-base-43v1 — under `RHQ_PERSONA` the shim is what PATH
+  finds). Not "a bd reporting the pinned version" — *the* pinned inode. A
+  shadowing binary of the right version in front of it still fails, because the
+  claim is about which inode the fleet runs.
 - homebrew's `beads` keg is **unlinked or brew-pinned**. LINKED fails. Parsed
   from `brew info --json=v2` with python3, not sed — `verify-grok-pin`'s sed
   cannot survive pretty-printed JSON (ranger-base-ocfh) and that defect was
@@ -3958,6 +4006,15 @@ check says so on every clean run ("NOT BELT-AND-BRACES") and names the command
 without running it, because installing or pinning a formula is the operator's
 hand. Today the pin holds by the absence of a symlink, not by policy.
 
+**Corrected 2026-09-01 — the belt is on.** `brew pin beads` was run on
+2026-08-28 22:28 (`/opt/homebrew/var/homebrew/pinned/beads ->
+../../../Cellar/beads/1.2.2`, and `brew list --pinned` names it). `brew info
+--json=v2 beads` now reads `linked_keg: None, pinned: True`, so the keg is
+unlinked **and** pinned, the check's row prints `pinned 1.2.2 ok`, and the
+"NOT BELT-AND-BRACES" advisory has stopped firing. The paragraph above stands
+as the state it described; the pin no longer rests on the absence of a symlink
+alone. Verified by running `make verify-bd-pin`, not by reading this file.
+
 
 **The version question, answered — and the money column is a tie at $0.**
 beads is MIT, Dolt is Apache-2.0, both already installed here; no vendor, no
@@ -3994,8 +4051,13 @@ plan, no renewal, nothing expires. Cost is never the argument on this chain.
   throttled to 60s). The runbook's `bd config set export.auto true` is
   load-bearing, not a nicety.
 - **HOLD at 0.49.1 stands** — the operator's call of 2026-08-17 (rangerhq-f49,
-  recorded by monica 08-18). Nothing since moves the arithmetic toward
-  migrating and the vendor's August moves it away. The uncomfortable half,
+  recorded by monica 08-18). **Superseded 2026-08-30, executed 2026-09-01: the
+  pin is 0.50.3.** See *"OPERATOR RULING 2026-08-30"* below. The bullet is left
+  as written because its reasoning is what the ruling had to answer, and
+  because its last sentence is the one that fired: the re-open condition was
+  never "the next release announcement", and what re-opened it was a measured
+  defect class the HOLD had not priced. Nothing since moves the arithmetic
+  toward migrating and the vendor's August moves it away. The uncomfortable half,
   plainly: 0.49.1 is **permanently unsupported** — the SQLite line ends at
   0.50.3 with the `dep add` landmine byte-identical — so we are choosing to
   carry known defects with known workarounds over an untested migration. That
@@ -4079,6 +4141,88 @@ the first cost is load-bearing:
 **No upstream report was filed and none is owed** — the bead asked for one only
 if the defect was still live upstream. Whether to bump the pin is the
 operator's call, not this bead's: filed separately with these numbers.
+
+### OPERATOR RULING 2026-08-30: bump to 0.50.3 (ranger-base-qrh1, executed 2026-09-01 ranger-base-8ufhn)
+
+The numbers in the section above went to the operator as ranger-base-qrh1.
+Ruling, monica 2026-08-30: **bump approved, 0.49.1 → 0.50.3**, prerequisites
+first, and the swap itself — `etc/bd/version-pin.toml` plus `~/.local/bin/bd`,
+one bundled step — stays the operator's hand. It supersedes the *"HOLD at
+0.49.1 stands"* bullet above and rescopes the *"not worth taking"* line below.
+
+**What actually landed, and it is not what the prerequisites list said.**
+ranger-base-yeg1 was to land three things ahead of the swap; its session
+reported all three and committed none (ranger-base-k77sk). Where they stand
+today:
+
+- *`verify-bd-pin`'s process layer, to be dropped:* **not dropped, still
+  standing.** Rows 4 and 5 of `scripts/verify-bd-pin.sh` and the daemon-shaped
+  cases in `bdpin_qa_test.go` are unchanged. On 0.50.x they pass vacuously —
+  there is no `bd daemon` command to enumerate, so the run prints "none
+  running" and the verdict rests on the command layer. Deleting a layer that
+  can no longer fire is a decision, not a cleanup, and ranger-base-5xhmz and
+  ranger-base-fyzqf both left it standing on purpose. If someone rules "drop
+  it", the verify-contract rows above move with it.
+- *The flush-discipline pin:* written in that worktree, stranded, and landed
+  for real by ranger-base-fyzqf as `internal/posse/bdflushdiscipline_qa_test.go`
+  (commit b175e28).
+- *This subsection:* never written until ranger-base-dep6x, four days after the
+  bump, which is why the section above it read "pinned at 0.49.1" the whole
+  time.
+
+**The swap, 2026-09-01 16:51** (ranger-base-8ufhn, monica, operator present and
+ruling "stick with 50.3, do the swap now"; commit 291523c covers
+`etc/bd/version-pin.toml`, README.md and INSTALL.md). The pre-check earned its
+place: **one live 0.49.1 daemon was still running** — pid 2584, `bd daemon
+start`, cwd the queue repo's own `.beads/`, two days old, reparented to init —
+and was `TERM`ed cleanly before the binary underneath it was replaced. That is the
+08-16 incident's exact shape, caught this time because the runbook said to look.
+The binary came from the sha256-verified v0.50.3 `darwin_arm64` release tarball
+(`26c15b93…d3d3a`, matching the release's own `checksums.txt`); the 0.49.1 it
+replaced was copied aside to a scratch path, which is a convenience and not the
+rollback source — that is the upstream release tarball, re-fetched and
+re-verified. Verified in order: `bd version` 0.50.3; `make verify-bd-pin`
+exit 0; `bd list` clean in the constitution repo and in a persona worktree; no
+daemon respawned.
+
+**What the bump cost, measured rather than predicted.** Ten tests went red on
+`main` for the rest of that afternoon (ranger-base-5xhmz): `bdpin_qa_test.go`
+asserted `posse_pinned_version = "0.49.1"` and `quickstart_test.go` asserted
+INSTALL.md's v0.49.1 download URL, so the declaration moved and the pins that
+assert the declaration did not. The lesson is the general one and it is cheap
+to state: **a version literal that is a coupling to the pin file is not a
+claim, and bumping the pin means bumping every literal coupled to it in the
+same commit** — the check's own code has no version literal in it (it reads
+`posse_pinned_version`), which is exactly why its tests did.
+
+**Re-measured on the installed binary, 2026-09-01, not read from the vendor:**
+
+- No `daemon` command exists — `bd --help`'s command list has none, and
+  `--no-daemon` is there as `(deprecated) All operations use direct mode`, so
+  every posse argv keeps working verbatim across the bump.
+- A git repo holding a bare `.beads/issues.jsonl` and no database materialises
+  **SQLite** (`beads.db`, `metadata.json`), not Dolt. The Dolt-default-init
+  hazard is real and lands at 0.50.0 rather than 0.51.0, but it is a hazard for
+  `bd init` on a repo with no `.beads/` at all — an uncommitted draft of this
+  subsection claimed the bare-JSONL "fresh clone" shape produced Dolt too, and
+  that claim is wrong on this binary. `bd init`, `bd import` and `bd migrate`
+  stay in every persona's deny block, so the verb is fenced off from personas
+  either way.
+- **No auto-flush after a write, confirmed on a copy of the live queue db**
+  (25MB, `.beads/` copied into a scratch git repo, never written back): `bd
+  create` lands the issue in `beads.db` and leaves `issues.jsonl` at 1573 rows;
+  `bd sync --flush-only` then exports it. Note that `bd --help` advertises a
+  `--no-auto-flush` flag whose name implies the opposite — the flag is
+  vestigial, the behaviour is what is measured here. JSONL-as-truth now rests
+  on two carriers and no third: the launcher's own writer (`Bd.Flush`, held by
+  `TestQueueCommitFlushesBeforeItCommits`) and bd's pre-commit hook, pinned at
+  `internal/posse/bdflushdiscipline_qa_test.go`. A repo where that hook was
+  never installed commits whatever the jsonl held at the last flush — named,
+  not closed.
+
+**HOLD at 0.50.3 now stands**, on the same terms the 0.49.1 hold had: 0.51+ is
+a migration, not a version bump, and re-opens on a measured defect with no
+workaround rather than on a release announcement.
 
 ### `bd dep add` never terminates when the target can reach a `relates-to` pair (ranger-base-pkqn)
 
@@ -4228,6 +4372,15 @@ INSTALL.md: the SQLite backend goes away at v0.51.0, not at 1.2.x.** Every
 release ≥ 0.51 silently forks the queue, twelve minors earlier than this file
 used to claim; 0.50.x still reads `beads.db` but is not worth taking, because
 it fixes nothing here.
+
+**Corrected 2026-08-30, and the fleet moved on it 2026-09-01.** Read "not worth
+taking" as scoped to the Dolt question this paragraph is about: 0.50.x buys
+none of the 1.2 feature set, and on that question it is still worth nothing.
+It was separately worth taking for what it *removes* — the whole daemon class,
+with no Dolt migration attached — which is not "fixes nothing here". The pin is
+0.50.3; see *"OPERATOR RULING 2026-08-30: bump to 0.50.3"* above. The v0.51.0
+cliff in this paragraph is unchanged and is still where an existing SQLite
+store stops being readable at all.
 
 **`bd` exit codes do not carry the claim result (rangerhq-kux).** 0.49.1
 refuses a claim it cannot grant by printing to STDERR and **exiting 0** with
