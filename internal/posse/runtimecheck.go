@@ -599,24 +599,39 @@ func egressRow(rt *Runtime) stageRow {
 	return r
 }
 
-// cageCredRow: the env var an authenticated CAGED session needs. A container
-// has no keychain and posse never reads an on-disk credential file there
+// cageCredRow: the env var an authenticated session needs. A container has
+// no keychain and posse never reads an on-disk credential file there
 // either, so an undecided one refuses `cage: container` with the reason
 // instead of spending the launch on a session that cannot reach its API.
+//
+// Since ADR 0042 D2 the same key is a precondition one tier down for a
+// runtime that declares a CredBin: at `shims` a PID denying that binary
+// puts a refusal shim in front of the runtime's OWN credential read, so
+// such a launch needs this mint too. The row says which of the two it is,
+// because "container only" was the whole of the answer until that page and
+// a reader who stops at the old sentence reads a shims refusal as a bug.
 func cageCredRow(rt *Runtime) stageRow {
-	r := stageRow{
-		stage:   "cage_cred",
-		by:      rt.declaredBy("cage_cred"),
-		missing: "`cage: container` REFUSES on this runtime, naming the reason (cage.go CheckCageCredential). Every other cage tier is unaffected — this is the container's credential, not the runtime's",
+	shimmed := rt.CredBin != ""
+	missing := "`cage: container` REFUSES on this runtime, naming the reason (cage.go CheckCageCredential). Every other cage tier is unaffected — this is the container's credential, not the runtime's"
+	if shimmed {
+		missing = "`cage: container` REFUSES on this runtime, naming the reason (cage.go CheckCageCredential) — and so does ANY launch whose PID denies `" + rt.CredBin + "`, this runtime's own credential binary, at every tier (gates.go CheckCredGate, ADR 0042 D2)"
 	}
+	r := stageRow{stage: "cage_cred", by: rt.declaredBy("cage_cred"), missing: missing}
 	if name := CageCredential(rt); name != "" {
 		r.value = name + " — the env NAME a containerised session authenticates with, checked by name at launch; posse never reads what it holds"
+		if shimmed {
+			r.value = name + " — the env NAME this runtime's sessions authenticate with, checked by name at launch; posse never reads what it holds. Not the container's alone: a PID that shims `" + rt.CredBin + "` needs it at `shims` too (ADR 0042 D2)"
+		}
 		if rt.CageCred == "" {
 			r.by = "built-in table (cage.go cageCredential) — the operator's decision of 2026-08-20, rangerhq-kiz"
 		}
 	} else {
 		r.value = "UNDECIDED — cage: container refuses on this runtime: a container has no keychain, and any on-disk credential file there is not the store of record and posse never reads it (ADR 0002 §4, rangerhq-kiz)"
-		r.note = append(r.note, "cage_cred: in the yaml names it once the operator has minted one; every cage tier below container needs nothing here.")
+		note := "cage_cred: in the yaml names it once the operator has minted one; every cage tier below container needs nothing here."
+		if shimmed {
+			note = "cage_cred: in the yaml names it once the operator has minted one. Needed below container too on this runtime: it declares `" + rt.CredBin + "` as its own credential binary, so a PID denying that binary refuses at `shims` as well (ADR 0042 D2)."
+		}
+		r.note = append(r.note, note)
 	}
 	r.note = append(r.note, "a METERED api key is not accepted as this credential — that is spending, and a persona is never the one who decides to spend. Mint it by hand, keep it in an env set (mode 600, never in the repo), and name that set in the PID's envs:.")
 	return r

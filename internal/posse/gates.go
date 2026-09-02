@@ -854,7 +854,7 @@ func shQuote(s string) string { return shellQuote(s) }
 // entry, deliberately: each entry is a judgment someone made.
 var whereHints = map[string]bool{"security": true}
 
-// ─── The runtime's own credential binary (ranger-base-eupf) ─────────────────
+// ─── The runtime's own credential binary (ranger-base-eupf, ADR 0042) ──────
 
 // CredGateCollision reports the PID deny rule that renders an L1 shim over
 // the RUNTIME's own credential binary, or "" when there is none.
@@ -877,17 +877,20 @@ var whereHints = map[string]bool{"security": true}
 // in front of the refresh's write-back, which is the one moment this
 // matters and the one nobody has watched.
 //
-// Why a warning and not a carve-out. The obvious narrowing — let the
-// read-only forms through, refuse the rest — does not survive measurement
-// of what the runtime actually runs (see Runtime.CredBin): the credential
-// WRITE goes primarily through that binary's stdin batch mode, which takes
-// its commands on stdin. An argv matcher cannot see them. A shim that let
-// the batch mode through to keep refresh working would not be a narrowed
-// deny, it would be no deny at all — and one that let only the reads
-// through would fix the logged-out symptom while leaving expiry exactly
-// where it is. Whether the deny should stop covering this binary at all is
-// a decision about the wall, not a matcher detail, so this layer's job is
-// to make it a decision instead of a silent couple-an-hour.
+// Why not a carve-out. The obvious narrowing — let the read-only forms
+// through, refuse the rest — does not survive measurement of what the
+// runtime actually runs (see Runtime.CredBin): the credential WRITE goes
+// primarily through that binary's stdin batch mode, which takes its
+// commands on stdin. An argv matcher cannot see them. A shim that let the
+// batch mode through to keep refresh working would not be a narrowed deny,
+// it would be no deny at all — and one that let only the reads through
+// would fix the logged-out symptom while leaving expiry exactly where it
+// is. ADR 0042 D1 settled the question this detector was built to raise:
+// the deny stands, because the shim in front of the runtime's read is what
+// keeps the operator's rotating pair single-writer. So the collision is no
+// longer something a launch announces — it is a PRECONDITION on the launch
+// (CheckCredGate below, ADR 0042 D2), and this function is unchanged: it
+// still answers only "does this PID shim this runtime's credential binary".
 //
 // binDir is the persona's shim dir, used only to resolve the real binary
 // the way the shim would: a `security` deny on a box that has no such
@@ -911,14 +914,57 @@ func CredGateCollision(rt *Runtime, deny []string, binDir string) string {
 	return rules[0].Rule
 }
 
-// CredGateWarning is the line a launch prints for that collision. It names
-// the runtime, the rule, and BOTH consequences: a reader who only hears
-// about the logged-out one will read a working session as the all-clear.
-func CredGateWarning(persona string, rt *Runtime, rule string) string {
-	return fmt.Sprintf("posse: %s launches on %s under %s, which shims `%s` — the binary %s reads AND WRITES its own credential with (ADR 0017 §3 CLI-own-state, ranger-base-eupf).\n"+
-		"  The wall is real and it is aimed at the runtime too: a nested `%s` in this session reports itself logged out, and at token expiry the refresh cannot write back either.\n"+
-		"  Drop %s from this PID, or accept that this session's runtime credential is frozen at whatever it started with.\n",
-		persona, rt.Name, rule, rt.CredBin, rt.Name, rt.Name, rule)
+// CheckCredGate is the launch precondition ADR 0042 D2 puts in the
+// warning's place, at every renderer of a persona line: a launch whose PID
+// shims the runtime's own credential binary launches only with that
+// runtime's session mint among the env-set names it is about to inject,
+// and REFUSES otherwise.
+//
+// Why a refusal now, where ranger-base-eupf shipped a warning. The warning
+// said the session's credential was "frozen at whatever it started with"
+// and offered dropping the rule from the PID; ADR 0042 measured both
+// sentences false. Nothing is frozen — a crew runtime never held the
+// operator's rotating pair in the first place, it runs on the session mint
+// posse injects (D1), and the shim in front of its read is what keeps that
+// pair single-writer. And dropping the rule is the one move D1 forbids. So
+// the collision is not a cost to be announced: with the mint present it is
+// the design and the launch says NOTHING, and without the mint the session
+// cannot authenticate at all (MEASURED: "Not logged in") — which is a
+// launch worth refusing rather than spending.
+//
+// Not waivable by --allow-degraded, and it is a plain error for exactly
+// that reason: `degraded` is for a gate the wall could not realize, and a
+// session that cannot authenticate is not a weaker session.
+//
+// names is what the session's env sets carry, asked the same way the caged
+// precondition asks it (CheckCageCredential, cage.go) — same question, same
+// key, one tier down.
+func CheckCredGate(persona string, rt *Runtime, deny []string, binDir string, names []string) error {
+	rule := CredGateCollision(rt, deny, binDir)
+	if rule == "" {
+		return nil
+	}
+	if CheckCageCredential(rt, names) == nil {
+		return nil
+	}
+	return CredGateRefusal(persona, rt, rule)
+}
+
+// CredGateRefusal is the sentence that refusal says. It names the four
+// things a reader needs to act: the rule in the PID's own spelling, the
+// binary it shims, the key that is missing, and how the key is minted.
+func CredGateRefusal(persona string, rt *Runtime, rule string) error {
+	key := CageCredential(rt)
+	if key == "" {
+		return Die("posse: %s launches on %s under %s, which shims `%s` — the binary %s reads its own credential with — and no session credential is decided for %s (ADR 0042 D1/D2, rangerhq-kiz).\n"+
+			"  The rule stays: the operator's store of record keeps ONE writer and it is not a crew process. Decide this runtime's session credential (`cage_cred:` for a template-only runtime) before launching a persona that carries the rule.\n",
+			persona, rt.Name, rule, rt.CredBin, rt.Name, rt.Name)
+	}
+	return Die("posse: %s launches on %s under %s, which shims `%s` — the binary %s reads AND WRITES its own credential with — and %s is in none of this session's env sets (ADR 0042 D2).\n"+
+		"  That shim is the design, not an accident: a crew runtime authenticates with the session mint posse injects and never with the operator's store of record, which keeps one writer (ADR 0042 D1). Without the mint this session opens logged out and cannot refresh at expiry, so posse refuses the launch rather than spending it.\n"+
+		"  Mint it once by hand (on claude: `claude setup-token`), put it in an env set (mode 600, never in the repo), and name that set in this PID's envs: or pass --env-file. ANTHROPIC_API_KEY is metered spending and is not the session credential.\n"+
+		"  Not waivable by --allow-degraded: this is not a gate the wall could not realize, it is a session that cannot authenticate.\n",
+		persona, rt.Name, rule, rt.CredBin, rt.Name, key)
 }
 
 // whereHint is that line, or "" when cmd is not one a human types himself.

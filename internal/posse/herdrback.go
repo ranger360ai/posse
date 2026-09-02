@@ -1684,17 +1684,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			}
 			// The one shim that is aimed at the RUNTIME as well as at the
 			// persona: the gates dir leads the PATH of the runtime process
-			// itself, so a deny over the binary this CLI reads and writes its
-			// own credential with gates its login and its refresh
-			// (ranger-base-eupf). Said out loud at every launch that carries
-			// it, so it is a decision rather than a couple of silent refusals
-			// an hour. A warning and not a refusal: every crew PID carries
-			// this deny today, and a launch that dies on it is a bigger
-			// outage than the one being named.
-			binDir := filepath.Join(gatesDir, "bin")
-			if rule := CredGateCollision(rt, ag.Deny, binDir); rule != "" {
-				b.warn("%s", CredGateWarning(o.Name, rt, rule))
-			}
+			// itself, so a deny over the binary this CLI reads and writes
+			// its own credential with gates its login and its refresh
+			// (ranger-base-eupf). ADR 0042 D1 keeps that deny — it is what
+			// holds the operator's rotating pair to one writer — and D2 puts
+			// a precondition where ranger-base-eupf's warning stood: the
+			// session runs on the mint posse injects, so the launch needs it
+			// among the names it is about to inject and refuses without it.
+			// Applied below, at the first point the env sets are resolved;
+			// with the mint present nothing is said at all.
 		} else {
 			// The cage renders its own inside, so the var the session's tools
 			// read — the pre-push hook above all, which appends its refusal to
@@ -1758,6 +1756,20 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// only — nothing on this path reads a value.
 	if missing := MissingEnv(rt, vars); len(missing) > 0 {
 		return nil, EnvRequiredError(rt, missing)
+	}
+
+	// The credential precondition of the gates block above (ADR 0042 D2),
+	// asked here because this is the first line at which the answer exists:
+	// the question is which env-set names this launch injects. Same key and
+	// same question as the caged precondition one tier up (CheckCageCredential
+	// via WrapInCage, below) — a shimmed runtime and a caged one both
+	// authenticate with the mint and nothing else. Not under `degraded`: a
+	// session that cannot authenticate is not a weaker session, so this is
+	// an error --allow-degraded cannot waive.
+	if ag != nil && !caged {
+		if err := CheckCredGate(o.Agent, rt, ag.Deny, filepath.Join(gatesDir, "bin"), CageEnvNames(vars)); err != nil {
+			return nil, err
+		}
 	}
 
 	// RHQ_HOME rides every session, persona or crew, because any rhq/bd
@@ -2066,27 +2078,50 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// the engine's `-e NAME` forwards find the same values they did then;
 	// the env sets are re-read for their names (and for the credential
 	// check, which must refuse a relaunch exactly as it refused the launch).
+	//
+	// The names are re-read on BOTH arms now (ranger-base-az23f): the
+	// container forwards them with `-e NAME`, and the shims arm asks the
+	// same list ADR 0042 D2's credential precondition asks. A set that has
+	// gone missing since the launch refuses here for the same reason it
+	// refuses there — a revived session whose env the meta no longer
+	// describes is the thing this whole function re-renders to avoid.
+	var vars []EnvVar
+	for _, n := range strings.Split(m.Envs, "+") {
+		if n == "" {
+			continue
+		}
+		vs, err := b.App.EnvSetVars(n)
+		if err != nil {
+			return false, err
+		}
+		vars = append(vars, vs...)
+	}
 	cmd := inner
 	if m.Cage == CageContainer && b.App.ContainerAvailable() {
-		var vars []EnvVar
-		for _, n := range strings.Split(m.Envs, "+") {
-			if n == "" {
-				continue
-			}
-			vs, err := b.App.EnvSetVars(n)
-			if err != nil {
-				return false, err
-			}
-			vars = append(vars, vs...)
-		}
 		// No prompt file: a relaunch restarts a persona whose CLI died, it
 		// does not re-dispatch the bead (ADR 0013 §2 — resume is a typed
 		// prompt into a live session, never a second argv delivery).
 		if cmd, err = b.App.WrapInCage(ag, rt, m.Name, m.Dir, inner, CageEnvNames(vars), ""); err != nil {
 			return false, err
 		}
-	} else if cmd, _, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {
-		return false, err
+	} else {
+		var gatesDir string
+		if cmd, gatesDir, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {
+			return false, err
+		}
+		// Same precondition as planLaunch's, on the one other path that
+		// renders a persona line (ranger-base-az23f, the shape
+		// ranger-base-64qx set for this exact pair). This is the UNATTENDED
+		// path — dispatch.launchSession — so it is the one where nobody is
+		// present to read a refusal that never came. Reachable even though
+		// the create was refused: the PID is re-read from disk, so a deny
+		// added to it after the session opened arrives here first, and the
+		// env SETS are re-read by name, so a mint edited or rotated out of
+		// one since the launch does too. Either way the alternative is a
+		// crashed CLI coming back as a session that cannot authenticate.
+		if err := CheckCredGate(m.Agent, rt, ag.Deny, filepath.Join(gatesDir, "bin"), CageEnvNames(vars)); err != nil {
+			return false, err
+		}
 	}
 	// Same limit as the launch: this pane's shell has long since started, so
 	// canonical mode is not the wall here — but the tty is still one, and a
