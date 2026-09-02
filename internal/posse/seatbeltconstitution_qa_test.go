@@ -14,6 +14,7 @@ package posse
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,7 +32,9 @@ import (
 // been the same thing said less carefully.
 func sbRoot(t *testing.T) string {
 	t.Helper()
-	wtqaHome(t)         // HOME elsewhere too — .claude, .cache and friends
+	before := os.Getenv("HOME")
+	wtqaHome(t) // HOME elsewhere too — .claude, .cache and friends
+	sbAssertHomeIsAFixture(t, before)
 	tmp := t.TempDir()  // what TMPDIR will name
 	root := t.TempDir() // a sibling of it: granted by nothing
 	if underDir("/tmp", root) {
@@ -39,6 +42,48 @@ func sbRoot(t *testing.T) string {
 	}
 	t.Setenv("TMPDIR", tmp)
 	return root
+}
+
+// sbAssertHomeIsAFixture is the line that makes the one above load-bearing
+// rather than decorative. Every sandbox pin downstream of sbRoot spells real
+// operator-owned paths off the home it finds — `~/Library/Application
+// Support/go/telemetry/mode`, which is exactly what `go telemetry off`
+// writes; `~/.claude.json`, which the atomic-siblings fixture OVERWRITES with
+// `{}` — and then mkdirs, writes and removes them. Every one of those is a
+// fixture for exactly one reason: wtqaHome pointed HOME at a t.TempDir()
+// first. Nothing checked that it had.
+//
+// ranger-base-g8ezm read the telemetry pin's trailing os.Remove as an
+// unconditional delete of the operator's `go telemetry off` setting and filed
+// it P2. It does not reproduce at HEAD — measured uncaged 2026-09-02 on
+// darwin 25.4.0 / go1.26.5, the bead's own repro leaves the file intact and
+// `go env GOTELEMETRY` still reads `off`. But it is one deleted line away
+// from true: with the wtqaHome call above commented out, that same repro was
+// re-run here and the pin passed GREEN while the operator's real mode file
+// was deleted, and the atomic-siblings fixture would have truncated the real
+// `~/.claude.json` on the way past. A bug report that is only wrong because
+// of a coupling nothing states is a bug report worth making impossible.
+//
+// The HOME comparison is the hard arm: it needs no cgo, no passwd database
+// and no privileges, so the guard cannot quietly become a no-op. The passwd
+// read is the second arm and is skipped when unreadable — it catches the case
+// the first cannot, a HOME that moved but moved to the operator's own home.
+func sbAssertHomeIsAFixture(t *testing.T, before string) {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if home == before {
+		t.Fatalf("REFUSING TO RUN: HOME was not swapped for a fixture and still reads %s.\n"+
+			"  every sandbox pin below this spells operator-owned paths off that home and then creates, overwrites and removes them —\n"+
+			"  ~/Library/Application Support/go/telemetry/mode is the `go telemetry off` setting, ~/.claude.json is the runtime's config —\n"+
+			"  so running on with the real home destroys the operator's files instead of measuring a wall (ranger-base-g8ezm)", home)
+	}
+	if u, err := user.Current(); err == nil && absResolve(home) == absResolve(u.HomeDir) {
+		t.Fatalf("REFUSING TO RUN: HOME moved to %s, but that is still the operator's real home (passwd says %s).\n"+
+			"  the pins below would create, overwrite and remove real files there rather than fixtures (ranger-base-g8ezm)", home, u.HomeDir)
+	}
 }
 
 // sbCovers reports whether a writable set reaches p — the question the

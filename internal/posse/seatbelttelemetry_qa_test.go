@@ -42,6 +42,9 @@ func goTelemetryLocal(home string) string {
 // set arithmetic, no sandbox: this is the half that fails on any box.
 func TestSeatbeltWritableReachesGoTelemetryCountersAndNotTheModeSwitch(t *testing.T) {
 	root := sbRoot(t)
+	// The real home would make every path below an operator-owned file, not
+	// a fixture — sbRoot swaps HOME and now refuses to continue if the swap
+	// did not take (sbAssertHomeIsAFixture, ranger-base-g8ezm).
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +84,9 @@ func TestSeatbeltWritableReachesGoTelemetryCountersAndNotTheModeSwitch(t *testin
 func TestQAGoTelemetryCounterWriteIsAllowedAndTheModeSwitchIsRefused(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	root := sbRoot(t)
+	// The real home would make every path below an operator-owned file, not
+	// a fixture — sbRoot swaps HOME and now refuses to continue if the swap
+	// did not take (sbAssertHomeIsAFixture, ranger-base-g8ezm).
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
@@ -121,8 +127,32 @@ func TestQAGoTelemetryCounterWriteIsAllowedAndTheModeSwitchIsRefused(t *testing.
 		t.Errorf("the toolchain's counter write at %s is still refused under the rendered profile — the ~2,300/day denials ranger-base-gr3ow measured are not silenced", countFile)
 	}
 	os.Remove(countFile)
+	// A sentinel at the mode path, for two reasons. It makes the probe the
+	// faithful one: on the box this pin is about — one that ran `go
+	// telemetry off`, which is what gr3ow's close comment offers the
+	// operator — the file EXISTS, and overwriting a file is a different
+	// operation from creating one. And it gives the next assertion
+	// something to be about. The probed VALUE stays `on`, the dangerous
+	// one, deliberately: a probe that wrote some inert string would go
+	// green on a wall that only refused the word.
+	const sentinel = "off 2026-09-02\n"
+	sbWrite(t, modeFile, sentinel)
+
 	if sbRun(t, prof, "echo on > "+shellQuote(modeFile)) {
 		t.Errorf("a session can write %s — that is the switch that turns Go telemetry UPLOADS on for the operator's box; the grant must stop at local/ (crew guardrail 4)", modeFile)
 	}
-	os.Remove(modeFile)
+
+	// ranger-base-g8ezm: the pin leaves the mode file exactly as it found
+	// it. This line used to be `os.Remove(modeFile)` — an unconditional
+	// delete, in the test process, outside the sandbox, on the passing
+	// path. Against the fixture home sbRoot guarantees, that deleted
+	// nothing anyone owned — which is why the bug report filed against it
+	// does not reproduce at HEAD. It is a pin rather than a deletion
+	// because the two halves are what make it stay that way:
+	// sbAssertHomeIsAFixture says the file is never the operator's, and
+	// this says the pin does not destroy the file it was handed either.
+	got, err := os.ReadFile(modeFile)
+	if err != nil || string(got) != sentinel {
+		t.Errorf("this pin did not leave %s as it found it: read %q, %v — want the sentinel %q back untouched.\n  on an uncaged box with a real home that file is the operator's `go telemetry off` setting, and losing it silently returns the toolchain to `local`", modeFile, got, err, sentinel)
+	}
 }
