@@ -1832,3 +1832,58 @@ func TestDispatchOrdersByPriorityAcrossSources(t *testing.T) {
 		t.Errorf("-n 1 must take the top-priority bead of the merged queue:\n%s", out)
 	}
 }
+
+// joinPrompts waits out the `agent prompt` legs a bare fireLoop left in
+// flight, so the test's own t.TempDir cleanup is the LAST writer to its tree
+// (ranger-base-nqtvs, the sibling of ranger-base-06bvw).
+//
+// A launch hands its wait to a goroutine and returns (dispatch.go): the pass
+// is not what joins it, gather is, and a test that calls fireLoop directly
+// has no gather. That goroutine forks a fake herdr child whose RHQ_FAKE_DIR
+// is a t.TempDir being removed right about then, and every write the child
+// makes lands in the middle of that RemoveAll. Two outcomes, one producer:
+// the child recreates 002/calls.log between the unlink of it and the rmdir
+// of 002, so cleanup reds with "directory not empty" and the test that was
+// green fails anyway; or the child gets far enough to MkdirAll and the whole
+// tree is silently rebuilt behind a green test, which is what fills the
+// operator's $TMPDIR.
+//
+// MEASURED 2026-09-02, isolated GOTMPDIR, with the binary held open so the
+// goroutine reaches cmd.Start() at all (standalone, os.Exit beats it — which
+// is why this is invisible outside a full-package run):
+//
+//	HEAD   `agent prompt` still absent from calls.log when cleanup began,
+//	       every run, both tests; and with the leg held on prompt-delay-ms,
+//	       one stale tree per run holding only 002/prompt-windows/<ns>-<pid>
+//	joined the line is always already there; no stale tree, immediately or
+//	       after a settle
+//
+// Mode reads the outer `Test*` directory ONLY: testing.TempDir makes that one
+// 0700 (MkdirTemp) and every numbered child 0777&^umask = 0755
+// (testing.go:1481), so a 0755 `002` is ordinary and proves nothing — it is a
+// 0755 OUTER dir that means something MkdirAll'd the tree back.
+//
+// The result channel IS the join, and nothing weaker would be: the goroutine
+// sends only after Herdr.Run's cmd.Run() has waited the child out, so a
+// receive means that child is exited and reaped. An `unseen` pending has no
+// goroutine behind it at all (dispatch.go says so where it makes one) and
+// therefore nothing to receive.
+//
+// Register it in a t.Cleanup taken AFTER every t.TempDir the fixture takes —
+// newTestBackend's three and qaRepo's — so LIFO runs the join FIRST.
+func joinPrompts(t *testing.T, pending []*pendingBead) {
+	t.Helper()
+	for _, p := range pending {
+		if p.unseen {
+			continue
+		}
+		select {
+		case r := <-p.result:
+			// Put it back: an arm that gathers after the join still gets to
+			// read its own result out of the buffered channel.
+			p.result <- r
+		case <-time.After(joinWait):
+			t.Errorf("the %s prompt leg never returned in %s — its fake herdr child outlives this test and rebuilds the tree t.TempDir is removing", p.session, joinWait)
+		}
+	}
+}

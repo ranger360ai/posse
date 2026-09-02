@@ -54,14 +54,23 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	// the load this suite runs under, not to change what either gate does.
 	d.StartupWait = 15 * time.Second
 
+	// The first pass below really launches, and a launch leaves an `agent
+	// prompt` leg in flight that only gather joins — and there is no gather
+	// here. joinPrompts is the join, registered after the last t.TempDir
+	// above so LIFO runs it before any removal (ranger-base-nqtvs).
+	var inFlight []*pendingBead
+	t.Cleanup(func() { joinPrompts(t, inFlight) })
+
 	slot := SessionFor("hopper", repo)
 	busy := map[string]bool{}
 	sessFail := map[string]int{}
 	first := []RepoIssue{{BdIssue: BdIssue{ID: "b-1", Title: "first", Labels: []string{"rust"}}, Dir: repo}}
 	second := []RepoIssue{{BdIssue: BdIssue{ID: "b-2", Title: "second", Labels: []string{"rust"}}, Dir: repo}}
 
-	if _, _, _, err := d.fireLoop(first, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(first, "", 0, busy, sessFail); err != nil {
 		t.Fatal(err)
+	} else {
+		inFlight = append(inFlight, p...)
 	}
 	// The witness: this fire pass really did put a bead on the seat. An
 	// assertion that the next pass launches nothing is otherwise satisfied
@@ -79,8 +88,10 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	// The seat is NOT free: b-1 has not settled. Only the Run map knows.
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 
-	if _, _, _, err := d.fireLoop(second, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(second, "", 0, busy, sessFail); err != nil {
 		t.Fatal(err)
+	} else {
+		inFlight = append(inFlight, p...)
 	}
 	if log := calls(t, fake); strings.Contains(log, "workspace create --label "+SessionForBead("hopper", repo, "b-2")) {
 		t.Errorf("a second bead went onto a seat this Run already fired into and whose bead has not settled:\n%s\n%s", dispatcherOut(d), log)

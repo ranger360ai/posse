@@ -109,13 +109,23 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	}
 	workingClaude(t, fake)
 
+	// Every launch this test makes leaves an `agent prompt` leg in flight,
+	// and nothing here gathers: joinPrompts is what waits them out, taken
+	// after the last t.TempDir above so LIFO runs it before any removal
+	// (ranger-base-nqtvs). Left alone, the leg's fake herdr child rebuilds
+	// this fixture's tree at 0755 while t.TempDir is removing it.
+	var inFlight []*pendingBead
+	t.Cleanup(func() { joinPrompts(t, inFlight) })
+
 	beads := []RepoIssue{{BdIssue: BdIssue{ID: "b-1", Title: "t", Labels: []string{"rust"}}, Dir: repo}}
 	busy := map[string]bool{}
 	sessFail := map[string]int{}
 	bead := SessionForBead("hopper", repo, "b-1")
 
-	if _, _, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
 		t.Fatal(err)
+	} else {
+		inFlight = append(inFlight, p...)
 	}
 	if strings.Contains(calls(t, fake), "workspace create --label "+bead) {
 		t.Fatalf("a working seat must not be fired into:\n%s", dispatcherOut(d))
@@ -131,8 +141,10 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 	agentPerLaunch(t, fake)
 
-	if _, _, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
 		t.Fatal(err)
+	} else {
+		inFlight = append(inFlight, p...)
 	}
 	if log := calls(t, fake); !strings.Contains(log, "workspace create --label "+bead) {
 		t.Errorf("hopper is free now — the next fire pass must re-read the seat and launch, not replay the last pass's reading:\n%s\n%s", dispatcherOut(d), log)
