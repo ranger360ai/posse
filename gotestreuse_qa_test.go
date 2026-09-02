@@ -35,6 +35,13 @@ package posse
 //     point the crew's only re-measuring artifact is gone. Arm 1 pins the
 //     recipe.
 //
+// And a third arm, because arms 1 and 2 together are still green over a
+// self-test whose failure path prints `ok`. That mutation SURVIVED the first
+// mutation pass — every label was present, the exit status was zero, and both
+// arms passed over a guard that could no longer fail. Arm 3 breaks a COPY of
+// the script on purpose and requires the self-test to notice, which is the
+// only way to know the other two arms are reading a live instrument.
+//
 // What this does NOT claim, and no close should: that it moves this box's
 // Gatekeeper load. Three packages here have tests, against 1644 DISTINCT
 // executables assessed in a ten-minute window, and 590 of 613 assessments in a
@@ -45,6 +52,7 @@ package posse
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -115,5 +123,46 @@ func TestQATheWrapperStillProvesItReusesTheBinary(t *testing.T) {
 			t.Errorf("%s --self-test no longer proves %q — the arm is gone, failing, or renamed\n%s",
 				testBinWrapper, want, got)
 		}
+	}
+}
+
+// Arm 3: the self-test can actually fail. A guard is worth nothing until it has
+// been shown to refuse — a `--self-test` that prints its arm labels and exits 0
+// no matter what satisfies arms 1 and 2 exactly as well as a working one does,
+// and that is not a hypothetical: it is the one mutant that survived the first
+// pass over this file.
+//
+// So: take the real script, disable the one branch that makes reuse reuse, and
+// require the self-test to go red AND to name the reuse arm while doing it.
+func TestQATheWrapperSelfTestCanFail(t *testing.T) {
+	src, err := os.ReadFile(testBinWrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The branch that hands back an already-assessed file instead of the
+	// one just built. If this string is gone the mutation lands nowhere and
+	// the arm measures nothing, so say so rather than passing.
+	const reuseBranch = "\tif [ -f \"$target\" ]; then"
+	if !strings.Contains(string(src), reuseBranch) {
+		t.Fatalf("%s no longer contains the reuse branch this arm mutates (%q) — "+
+			"the arm cannot fail and is therefore not evidence", testBinWrapper, reuseBranch)
+	}
+	broken := strings.Replace(string(src), reuseBranch, "\tif false; then", 1)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gotest-broken.sh")
+	if err := os.WriteFile(path, []byte(broken), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command("bash", path, "--self-test").CombinedOutput()
+	if err == nil {
+		t.Fatalf("%s --self-test passed with reuse disabled: the self-test cannot fail, "+
+			"so the other arms in this file prove nothing\n%s", testBinWrapper, out)
+	}
+	if !strings.Contains(string(out), "FAIL  reuse: unchanged package keeps one inode") {
+		t.Errorf("the self-test failed, but not on the arm that was broken — "+
+			"it is refusing for some other reason and is not measuring reuse\n%s", out)
 	}
 }
