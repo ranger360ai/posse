@@ -85,7 +85,7 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"RulesPrecedence":    {fcDisplay, []string{"runtimecheck.go"}, nil, "which channel wins a NativeRules/PID collision — a probe's answer for the onboarder and the record-trust decision, never a code branch (ADR 0017 §5)"},
 	"RulesPrecedenceWhy": {fcDisplay, []string{"runtimecheck.go"}, nil, "the measurement behind a non-zero RulesPrecedence — a probe bead id and date, so a reader tells a measurement from a guess"},
 	"Interstitials":      {fcConsumed, []string{"interstitial.go", "runtimepreflight.go"}, nil, "DangerUnsilenced/DangerLine on both launch paths; the grid probes each key"},
-	"StateDirs":          {fcConsumed, []string{"seatbelt.go"}, nil, "joins the L2 writable set, or the CLI re-runs its first-run flow every launch"},
+	"StateDirs":          {fcConsumed, []string{"herdrback.go", "reachability.go", "seatbelt.go"}, []string{"stateDirs"}, "the LAUNCHING runtime's declaration: the launch paths and the reach probe spell rt.StateDirs, seatbelt.go receives it as the stateDirs argument and adds it to the L2 writable set. It is now the ONLY runtime state a launch grants — the built-in union beside it was every runtime's auth store, writable by every persona (ranger-base-9fl) — and without it the CLI re-runs its first-run flow every launch"},
 	"EnvRequired":        {fcConsumed, []string{"runtimepreflight.go"}, nil, "checked by NAME at launch preflight; a missing one refuses"},
 	"TurnOutcomeAdapter": {fcConsumed, []string{"turnfailure.go"}, nil, "which reader sees what this CLI's own first turn did — an exhausted account vs an agent that skipped its bead"},
 }
