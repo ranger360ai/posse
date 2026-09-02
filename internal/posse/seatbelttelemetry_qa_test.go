@@ -4,10 +4,10 @@ package posse
 // one day's sandbox-denial volume — `go`, `compile`, `link` and `asm` each
 // mmap a counter file under ~/Library/Application Support/go/telemetry/local
 // on every invocation, and under `cage: seatbelt` every one of those writes
-// was refused (~2,300/day across two caged sessions, measured by monica
-// 2026-09-01). The build succeeds either way, so this is noise and not
-// breakage — but it is noise that triples as personas join the cage, and it
-// is the kind that hides a denial anyone would want to see.
+// was refused: ~2,300/day across two caged sessions, measured 2026-09-01 off
+// an uncaged `log show`. The build succeeds either way, so this is noise and
+// not breakage — but it is noise that triples as personas join the cage, and
+// it is the kind that hides a denial anyone would want to see.
 //
 // The bead proposed exporting GOTELEMETRY=off in the caged launch env
 // instead. That variable does not exist as an input: it is a DERIVED,
