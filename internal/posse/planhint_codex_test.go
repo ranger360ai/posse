@@ -192,8 +192,10 @@ func TestReadCodexPlanHintNewestEventWithinFile(t *testing.T) {
 	}
 }
 
-// Across files the reading must come from the newest DAY and, within a
-// day, the newest FILE — never the oldest.
+// Across files the reading must come from the newest DAY. The within-a-day
+// half of that ordering is a separate claim and cannot be seen here — this
+// test's answer comes from 08-30, so the 08-15 pair below is fixture, not
+// measurement; the test after this one measures it.
 func TestReadCodexPlanHintNewestFileAcrossDays(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -209,6 +211,26 @@ func TestReadCodexPlanHintNewestFileAcrossDays(t *testing.T) {
 	hint := ReadCodexPlanHint()
 	if hint == nil || hint.Windows[0].UsedPercent != 4 {
 		t.Fatalf("hint = %+v, want the newest day's (08-30) 4%%", hint)
+	}
+}
+
+// Within one day the reading comes from the newest FILE — rolloutsInDayDesc's
+// own ordering, which no test above reaches: every one of them is answered by
+// a different day, so dropping that reverse sort left the whole suite green.
+// The rollout filename embeds the session's ISO-8601 start time, which is why
+// a lexical reverse sort is a chronological one, and codex opens several
+// sessions on a working day, so this is the ordinary case rather than an edge.
+func TestReadCodexPlanHintNewestFileWithinOneDay(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexRollout(t, home, "15", "rollout-2026-08-15T09-00-00-a.jsonl",
+		codexMeta("/w"), codexRateLimitsLine("2026-08-15T09:00:01.000Z", janJunRateLimits(2, 2, "plus")))
+	codexRollout(t, home, "15", "rollout-2026-08-15T18-00-00-b.jsonl",
+		codexMeta("/w"), codexRateLimitsLine("2026-08-15T18:00:01.000Z", janJunRateLimits(3, 3, "plus")))
+
+	hint := ReadCodexPlanHint()
+	if hint == nil || hint.Windows[0].UsedPercent != 3 {
+		t.Fatalf("hint = %+v, want the newest FILE in the day (18:00's 3%%), not 09:00's 2%%", hint)
 	}
 }
 
