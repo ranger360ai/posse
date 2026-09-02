@@ -273,9 +273,33 @@ func (l *MemoryLanding) Line() string {
 // everywhere in it — a scan keyed on "password" or "Bearer" would hold the
 // commit on a sentence, and a hold that fires on prose is the original
 // defect wearing a safety label. Measured against all fifteen live ORDERS
-// files (20,200 lines): zero matches, save one deliberate leak canary
-// recorded verbatim in a persona's own notes, which is a true positive by
-// shape and exactly what the added-lines rule below stops re-firing on.
+// files (6,107 lines on 2026-09-02, after the 08-30 compaction), and over
+// every other file in those persona dirs beside them (7,109 lines in all,
+// which is what this scan actually reads): zero matches for every shape
+// below, the widened ones included. The earlier 20,200-line figure and the
+// one leak canary it counted are both gone with that compaction; the
+// added-lines rule below is what stops a canary a persona keeps from
+// re-firing on every future commit.
+//
+// TWO SPELLINGS AND SIX VENDORS (ranger-base-vd1bo). The assigned-secret
+// shape carried a \b on each side of the key word. Underscore is a word
+// character, so neither ever fires inside an env-var name: GH_TOKEN=,
+// AWS_SECRET_ACCESS_KEY=, client_secret= and refresh_token= — the last
+// being the field name in the claude credential file itself — all read as
+// prose. Both \b are therefore gone and a [A-Za-z0-9_-]* run absorbs
+// whatever the name wraps the key word in. The optional quote before the
+// separator is the JSON and quoted-YAML form, `"api_key": "…"`, where a
+// quote sits between the key and its colon.
+//
+// The vendor shapes below are the runtimes and services this fleet actually
+// reaches — codex, grok, GitHub, Slack, AWS, Linear — none of which spell a
+// key sk-ant. Each catches a value pasted BARE, with no key word beside it
+// to hang the assigned-secret shape on; that is the shape an env dump takes
+// once it has been through a terminal. The sk- shape is deliberately the
+// generic one rather than sk-proj-: the same prefix is what Mistral,
+// DeepSeek, Together and OpenAI-compatible gateways all use, and it costs
+// nothing, measured — the whole widening matches zero lines of the live
+// corpus above and zero of the 32,108 lines of markdown in this repo.
 var memoryCredShapes = []struct {
 	What string
 	Re   *regexp.Regexp
@@ -286,8 +310,23 @@ var memoryCredShapes = []struct {
 	// base64 and would fire on any pasted blob.
 	{"a JWT", regexp.MustCompile(`eyJ[A-Za-z0-9_=-]{8,}\.eyJ[A-Za-z0-9_=-]{8,}\.`)},
 	{"a bearer token", regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}`)},
-	{"an assigned secret", regexp.MustCompile(`(?i)\b(access_?token|api_?key|secret|token|password|passwd)\b\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{20,}`)},
+	{"an assigned secret", regexp.MustCompile(`(?i)(access[_-]?token|api[_-]?key|secret|token|password|passwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{20,}`)},
 	{"a private key", regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)},
+	// Bare values, in table order after the shapes above so a line that
+	// carries both a key word and a vendor value keeps reporting the
+	// assigned secret it always did.
+	{"a vendor API key", regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}`)},
+	{"an xAI key", regexp.MustCompile(`\bxai-[A-Za-z0-9]{20,}`)},
+	// github_pat_ carries no \b on purpose: the character before it is
+	// usually the `_` of GITHUB_TOKEN=, and \b does not fire between two
+	// word characters — the same defect this bead fixed one line up.
+	{"a GitHub token", regexp.MustCompile(`\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}`)},
+	{"a GitHub token", regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`)},
+	{"a Slack token", regexp.MustCompile(`\bxox[abeprs]-[A-Za-z0-9-]{20,}`)},
+	// ASIA beside AKIA: the STS twin is what a temporary-credential env
+	// dump carries, and it is the one a persona is likelier to have.
+	{"an AWS access key id", regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`)},
+	{"a Linear key", regexp.MustCompile(`\blin_api_[A-Za-z0-9]{20,}`)},
 }
 
 // memoryDiff is a `git diff` argv with the FORMAT stated on it rather than
