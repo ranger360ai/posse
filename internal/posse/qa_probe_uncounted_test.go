@@ -5,9 +5,11 @@ package posse
 // readable-but-unwritable ledger is a cap of zero that reads as room
 // forever. uncounted.log is the same shape — a rolling-7d count that
 // `uncounted_cap_<runtime>:` is compared against, appended to after the
-// launch — and uncountedSkip asks only whether it is READABLE
-// (ranger-base-ws09). Kept in their own file so they survive whatever the
-// next persona does to uncounted_test.go.
+// launch — and uncountedSkip asked only whether it was READABLE. Fixed on
+// ranger-base-ws09: uncountedFor probes UncountedAppendable whenever a cap is
+// set and uncountedSkip refuses on it, so the probe below runs. Kept in their
+// own file so they survive whatever the next persona does to
+// uncounted_test.go.
 
 import (
 	"os"
@@ -18,9 +20,9 @@ import (
 // OVERFLOW ledger that an unwritable ledger is a cap of zero that reads as
 // room. uncounted.log is the same shape — a rolling-7d count that
 // `uncounted_cap_<rt>:` is compared against, appended to after the launch —
-// and uncountedSkip only asks whether it is READABLE.
+// and uncountedSkip only asked whether it is READABLE. Un-skipped unchanged
+// by the fix (ranger-base-ws09).
 func TestQAProbeUncountedUnwritableLedger(t *testing.T) {
-	t.Skip("ranger-base-ws09: fails at HEAD — un-skip UNCHANGED when the appendability half reaches uncounted.log")
 	const cfg = "uncounted_cap_codex: 1\n"
 	f1 := oneCodexBead(t, cfg)
 	f2 := oneCodexBead(t, cfg)

@@ -549,6 +549,20 @@ class doing exactly what that register predicts.
 No autonomous spending: the cap is a count of beads posse itself
 launched, not a bill.
 
+*(2026-09-02, ranger-base-ws09)* The ledger's WRITABILITY is half of the
+cap's reading, the rule ADR 0010 §3 already took for `overflow.log`
+(ranger-base-2y96). `uncounted.log` asked only whether it could be READ,
+so a readable-but-unwritable one counted every pass at whatever it
+already said — cap 1 over an empty `0444` ledger admitted one launch per
+pass forever, recorded none, and warned about each only after the launch.
+With a cap set, `uncountedFor` now probes `UncountedAppendable()` and
+`uncountedSkip` fails closed on it beside the unreadable case; an append
+that fails anyway (a full disk, which no open can see in advance) arms
+the same brake for the rest of the pass and the account line names how
+many of the pass's launches the file will never hold. An UNSET cap is
+untouched: unlimited stays unlimited, loud by the report.
+`docs/notes.d/ranger-base-ws09.md`.
+
 ### 6. Tier — the name is intent; the mapping is declared
 
 Amends ADR 0003 §1 display, not the three names. `strong` / `standard` /

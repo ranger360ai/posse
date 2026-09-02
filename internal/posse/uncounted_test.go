@@ -295,6 +295,126 @@ func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
 	}
 }
 
+// The other half of that rule (ranger-base-ws09). A ledger that can be READ
+// but not appended to is worse than an unreadable one: it counts, so the cap
+// looks armed, but it counts the same number every pass because nothing this
+// pass launches ever reaches it. Cap 1 over an empty unwritable ledger admits
+// one launch per pass forever and records none of them, so the appendability
+// is checked before the count is spent, not warned about after the launch.
+func TestUncountedCapUnwritableLedgerSkips(t *testing.T) {
+	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
+	os.MkdirAll(f.b.App.StateDir, 0o755)
+	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	// 0444 is a promise about a uid, not about the process: root keeps its
+	// write and would turn a zero-launch pass into a false pass.
+	if err := f.b.App.AppendUncounted(LedgerEntry{Runtime: "codex"}); err == nil {
+		t.Skip("test process can append to a 0444 ledger")
+	}
+
+	n, _ := f.d.Run("", "", 0)
+	out := dispatcherOut(f.d)
+	if n != 0 || !strings.Contains(out, "a cap whose launches cannot be recorded is a cap of zero that reads as room; skipped") {
+		t.Fatalf("an unwritable ledger under an armed cap must park, got n=%d:\n%s", n, out)
+	}
+	if calls := bdCalls(t, f.fake); strings.Contains(calls, "--claim") {
+		t.Errorf("nothing may be claimed: %s", calls)
+	}
+	if b, err := os.ReadFile(f.b.App.UncountedLogPath()); err != nil || len(b) != 0 {
+		t.Errorf("the ledger must be left exactly as found: %q err=%v", b, err)
+	}
+}
+
+// The refill tally's grouping key for that skip is its own, not the
+// unreadable one's: inside a refill only the kind survives, and an operator
+// reading "N uncounted_cap_codex: ledger unwritable" has to be sent to a
+// different fix than "unreadable" would send them to.
+func TestUncountedUnwritableSkipKindIsItsOwn(t *testing.T) {
+	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
+	os.MkdirAll(f.b.App.StateDir, 0o755)
+	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b.App.AppendUncounted(LedgerEntry{Runtime: "codex"}); err == nil {
+		t.Skip("test process can append to a 0444 ledger")
+	}
+	line, kind := f.d.uncountedSkip("codex")
+	if want := "uncounted_cap_codex: ledger unwritable"; kind != want {
+		t.Errorf("kind = %q, want %q (line: %s)", kind, want, line)
+	}
+}
+
+// An UNSET cap is unlimited, and unlimited does not become a brake because
+// the ledger is unwritable: there is no cap to spend, so there is nothing to
+// fail closed on and the launch happens. What it must not do is go quiet —
+// the failed append is named on stderr, and the pass's account line says the
+// 7d count is short from now on, because that number is this pass's memory
+// and the file the next pass reads does not have it.
+func TestUncountedUnsetCapLaunchesAndNamesTheShortfall(t *testing.T) {
+	f := oneCodexBead(t, "")
+	os.MkdirAll(f.b.App.StateDir, 0o755)
+	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b.App.AppendUncounted(LedgerEntry{Runtime: "codex"}); err == nil {
+		t.Skip("test process can append to a 0444 ledger")
+	}
+
+	n, err := f.d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(f.d)
+	if n != 1 {
+		t.Fatalf("an unset cap is unlimited whatever the ledger can do, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "1 of them never reached") || !strings.Contains(out, "short by that many from now on") {
+		t.Errorf("the account line must name the shortfall:\n%s", out)
+	}
+	if e := f.errb.String(); !strings.Contains(e, "uncounted ledger not written for a-1") {
+		t.Errorf("the failed append must still be named on stderr: %q", e)
+	}
+}
+
+// overflowUnlogged's twin. The probe cannot see a write that fails for a
+// reason an open does not — a full disk is the obvious one — so when the
+// append itself fails the pass treats the ledger as unwritable from that
+// moment: the rest of the pass parks on this runtime rather than spending a
+// cap against a file that has just proved it cannot record the spending, and
+// the report carries the shortfall into the operator's reading.
+func TestUncountedFailedAppendArmsTheBrake(t *testing.T) {
+	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
+	os.MkdirAll(f.b.App.StateDir, 0o755)
+	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b.App.AppendUncounted(LedgerEntry{Runtime: "codex"}); err == nil {
+		t.Skip("test process can append to a 0444 ledger")
+	}
+	// The pool exactly as a passing probe would have left it — readable,
+	// appendable as far as any open could tell — so the only thing under
+	// test here is what the failing append itself does.
+	p := &uncountedPool{Cap: 5, Raw: "5", Why: accountDegrade(&Runtime{Name: "codex"})}
+	f.d.uncounted = map[string]*uncountedPool{"codex": p}
+
+	f.d.noteUncounted(RepoIssue{BdIssue: BdIssue{ID: "a-1"}}, "ranger", "codex")
+	if p.Unlogged != 1 || p.Unappendable == nil {
+		t.Fatalf("a failed append must be carried: Unlogged=%d Unappendable=%v", p.Unlogged, p.Unappendable)
+	}
+	if p.Used != 1 || p.Sent != 1 {
+		t.Errorf("the launch still happened and is still booked: Used=%d Sent=%d", p.Used, p.Sent)
+	}
+	line, kind := f.d.uncountedSkip("codex")
+	if !strings.Contains(line, "cannot be appended to") || kind != "uncounted_cap_codex: ledger unwritable" {
+		t.Errorf("the rest of the pass must park on this runtime: %q / %q", line, kind)
+	}
+	f.d.uncountedReport()
+	if out := dispatcherOut(f.d); !strings.Contains(out, "1/5 in 7d (uncounted_cap_codex:), 1 of them never reached") {
+		t.Errorf("the account line must name the shortfall:\n%s", out)
+	}
+}
+
 // --dry-run acts on nothing: no ledger line, and the report says what the
 // pass WOULD have sent rather than what it did.
 func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {

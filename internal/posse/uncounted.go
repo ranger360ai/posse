@@ -83,6 +83,16 @@ func (a *App) AppendUncounted(e LedgerEntry) error {
 	return a.appendLedger(a.UncountedLogPath(), e)
 }
 
+// UncountedAppendable is the other half of the cap's reading: whether the
+// line a launch would owe can be written at all. Same rule as
+// OverflowAppendable, and for the same reason (ranger-base-2y96) — a count
+// off a file nothing can be added to stays at whatever it already says, so a
+// cap of 1 over an empty unwritable ledger admits one launch per pass
+// forever and records none of them.
+func (a *App) UncountedAppendable() error {
+	return a.ledgerAppendable(a.UncountedLogPath())
+}
+
 // UncountedCount is how many beads went to this runtime inside the window
 // ending at now — the number `uncounted_cap_<runtime>:` is compared against.
 func (a *App) UncountedCount(runtime string, now time.Time) (int, error) {
@@ -127,6 +137,18 @@ type uncountedPool struct {
 	// Unreadable is the ledger read failure, when there was one: Used is
 	// then not a count and no cap can be judged against it.
 	Unreadable error
+	// Unappendable is the ledger WRITE failure, when there was one: Used is
+	// a count of a file this pass's launches cannot be added to, so it is
+	// the same number next pass and the pass after (ranger-base-ws09).
+	// PROBED only when a cap is set (uncountedFor); a failed append sets it
+	// either way, and with no cap there is nothing for it to brake.
+	Unappendable error
+	// Unlogged is how many of THIS pass's launches were made and then not
+	// recorded, because the append failed for a reason the probe above
+	// could not see (a full disk is the obvious one). The ledger is short
+	// by that many from now on, so the report names it rather than letting
+	// a warning on stderr be the only trace.
+	Unlogged int
 }
 
 // uncountedFor is the pass's memoized account state for a runtime it is
@@ -163,6 +185,18 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 		p.Unreadable = err
 	} else {
 		p.Used = used
+	}
+	// The count first, then the appendability, so a ledger that is both
+	// corrupt and unwritable is named by the fault an operator has to fix
+	// first — readOverflowCount's order, for its reason.
+	//
+	// Only with a cap set: the brake is the only thing that acts on this,
+	// an unlimited runtime is loud by the report and not by the ledger, and
+	// the probe touches the StateDir (it creates and removes a file when
+	// there is no ledger yet) which a pass that has nothing to gate on it
+	// has no business doing.
+	if p.Cap > 0 {
+		p.Unappendable = d.App.UncountedAppendable()
 	}
 	d.uncounted[name] = p
 	return p
@@ -242,6 +276,18 @@ func (d *Dispatcher) uncountedSkip(name string) (line, kind string) {
 				name, AbbrevHome(d.App.UncountedLogPath()), p.Unreadable),
 			fmt.Sprintf("uncounted_cap_%s: ledger unreadable", name)
 	}
+	// The other half of that same rule (ranger-base-ws09). Reading the
+	// ledger is only half of what the cap needs; the rest is the line the
+	// launch owes once it succeeds. A ledger that can be read but not
+	// appended to counts every pass at whatever it already says — zero, for
+	// an empty one — so the cap is spent again every pass and records none
+	// of it. Unbounded, and it never heals, which is why this refuses
+	// before the count is compared rather than warning after the launch.
+	if p.Unappendable != nil {
+		return fmt.Sprintf("account-degraded: no dollars are counted for %s and %s cannot be appended to (%v) — a cap whose launches cannot be recorded is a cap of zero that reads as room; skipped",
+				name, AbbrevHome(d.App.UncountedLogPath()), p.Unappendable),
+			fmt.Sprintf("uncounted_cap_%s: ledger unwritable", name)
+	}
 	if p.Used >= p.Cap {
 		return fmt.Sprintf("account-degraded: uncounted_cap_%s %d/%d in 7d — skipped", name, p.Used, p.Cap),
 			fmt.Sprintf("uncounted_cap_%s %d/%d in 7d", name, p.Used, p.Cap)
@@ -267,6 +313,18 @@ func (d *Dispatcher) noteUncounted(is RepoIssue, persona, runtime string) {
 		return
 	}
 	if err := d.App.AppendUncounted(LedgerEntry{At: d.now(), Runtime: runtime, Bead: is.ID, Persona: persona}); err != nil {
+		// overflowUnlogged's twin (ranger-base-ws09). p.Used already carries
+		// this launch for the rest of the pass, so the cap still bites here;
+		// what was missing is that the file is short by one for good and
+		// nothing said so past this one line on stderr. Two things now do:
+		// the pass's account line names the shortfall, and the write failure
+		// arms the same brake the probe arms, so the rest of the pass parks
+		// on this runtime instead of spending a cap against a ledger that
+		// has just proved it cannot record the spending.
+		p.Unlogged++
+		if p.Unappendable == nil {
+			p.Unappendable = err
+		}
 		d.eprintf("account: uncounted ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
 	}
 }
@@ -300,6 +358,13 @@ func (d *Dispatcher) uncountedReport() {
 			window = fmt.Sprintf("7d count unreadable (%v)", p.Unreadable)
 		case p.Cap > 0:
 			window = fmt.Sprintf("%d/%d in 7d (uncounted_cap_%s:)", p.Used, p.Cap, name)
+		}
+		if p.Unlogged > 0 {
+			// The count above is this pass's memory; the file is not. Say so
+			// here, because the next pass reads the file and its number will
+			// be lower by exactly this much, for good.
+			window += fmt.Sprintf(", %d of them never reached %s so the 7d count is short by that many from now on",
+				p.Unlogged, AbbrevHome(d.App.UncountedLogPath()))
 		}
 		brake := fmt.Sprintf("uncounted_cap_%s: is unset — unlimited and loud", name)
 		switch {

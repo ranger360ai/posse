@@ -481,7 +481,11 @@ default_emoji: ⚙️
 # one line each until the window rolls; the count includes the current pass,
 # so the cap bites inside a pass and not only between them. An unreadable
 # ledger under a set cap parks too — a cap that counts nothing is not a
-# brake.
+# brake — and so does one that reads clean but cannot be APPENDED to: it
+# would count the same number every pass, so the cap would be spent again
+# every pass and record none of it (ranger-base-ws09). Both heal themselves
+# the moment the file does; neither touches an unset cap, which stays
+# unlimited whatever the ledger can do.
 #
 # UNSET IS UNLIMITED AND LOUD — the `budget_*` dormancy pattern: nothing is
 # braked, and every pass still names the spend. A value that is not a
