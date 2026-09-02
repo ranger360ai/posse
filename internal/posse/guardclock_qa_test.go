@@ -153,6 +153,7 @@ func TestGuardTickOverTheLineNamesTheWitnessAndTheCulprits(t *testing.T) {
 // and the guard evaluated anyway — repeatedly, at the interval, with no
 // second pass anywhere in the log.
 func TestQAGuardClockEvaluatesWhileAPassIsStuckInTheGather(t *testing.T) {
+	t.Parallel()
 	// The 19445 shape: the box goes over the line AFTER the pass is already
 	// gathering. Raised then, not at the start, because a pass that read a
 	// high load at its own top would have skipped and looped — which is a
