@@ -361,6 +361,24 @@ default_emoji: ⚙️
 # file is the evidence for whether a 429 storm is your own polling.
 # plan_usage_ttl: 5m         # 30s, 5m, bare seconds, or 0 to disable
 #
+# How old that snapshot may get before every surface says so, LOUDLY. The
+# park above is measured in minutes; this is the other question, measured in
+# hours — the guard has stopped the on-meter lanes and the headroom rule
+# (ADR 0018) is deciding park-vs-degrade off the last reading anybody got,
+# and nothing used to print how old that reading was. On 2026-09-02 it was
+# ten hours old, every hourly re-ask had 429'd, and the whole visible trace
+# was one log line per hour (ranger-base-lpoui). Past this age `posse
+# status`, every `--watch` pass preamble and the cockpit print the same
+# line: `plan meter BLIND 10h09m: last reading 2026-09-02T03:23Z (5h 41% ·
+# 7d 89%) — ruling on it under the headroom rule; 10 consecutive 429`, and
+# the pulse's governance key gains the hour and the class
+# (`guard-blind:10h:429`), so a stretch that keeps growing re-reaches the
+# coordinator hourly instead of being deduped once and forgotten. It changes
+# NOTHING the guard does — observability only. Read only where a
+# `plan_guard_<window>:` above is set: with no meter guard, no headroom rule
+# is ruling on anything. Default 2h; **0 = never say it**.
+# plan_usage_stale_after: 2h # 2h, 90m, bare seconds, or 0 to disable
+#
 # Overflow (ADR 0010) — instead of skipping the whole pass when the guard
 # trips, run it and send the beads that can move to a SECOND pool at equal
 # posture and tier. Unset = the whole-pass skip above, unchanged. A bead

@@ -465,8 +465,12 @@ func TestGovG5GuardBlindPastItsBudget(t *testing.T) {
 	in := govIn(t, b)
 	in.Plan = &fakePlanReader{err: Die("usage endpoint: 429")}
 	g := find(shopSet(t, in), "G5")
-	if g == nil || g.Key != "guard-blind" || g.Class != GovUrgent {
-		t.Fatalf("G5 = %+v, want guard-blind URGENT", g)
+	// The hour bucket is part of the key since ranger-base-lpoui, and 45m
+	// blind is the zeroth hour of it. An error with no CLASS appends
+	// nothing — this one is Die(), not a *RateLimit, so it is a socket-shaped
+	// failure however its sentence reads.
+	if g == nil || g.Key != "guard-blind:0h" || g.Class != GovUrgent {
+		t.Fatalf("G5 = %+v, want guard-blind:0h URGENT", g)
 	}
 }
 

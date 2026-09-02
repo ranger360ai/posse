@@ -860,6 +860,20 @@ func main() {
 		if f := a.BackupFreshness(time.Now(), os.Stderr); f.Armed {
 			fmt.Fprintf(out, "%s\n", f.Line())
 		}
+		// How old the reading the shop is ruling on is, when that is past
+		// `plan_usage_stale_after:` (ranger-base-lpoui). The governance set
+		// below carries the PARK — G5, once the blind clock is past
+		// `plan_guard_blind_max:` — and it says how long the guard has been
+		// blind; what it has never said is what the last reading WAS and
+		// when it was taken, which is the number the headroom rule is
+		// deciding park-vs-degrade on. Its own line for the backup line's
+		// reason: a shop check prints conditions, and this is a fact about
+		// the one the conditions are computed from. Files only — no
+		// request, so `posse status` never adds to a 429 storm it is
+		// reporting.
+		if st := a.PlanStaleness("status", time.Now(), os.Stderr); st.Stale {
+			fmt.Fprintf(out, "%s\n", st.Line())
+		}
 		posse.GovReport(out, set, failed)
 		if len(set) > 0 || len(failed) > 0 {
 			os.Exit(1)

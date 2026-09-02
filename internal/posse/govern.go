@@ -792,13 +792,31 @@ func (in GovInputs) planReading(now time.Time) (PlanUsage, error) {
 // its own token on the next launch, so the quiet tolerance a blind stretch
 // gets is earned here too. Policy still reads no diagnosis string at all
 // (ADR 0018 §2) — this is the diagnostic, delivered.
+//
+// The key then gained the AGE and the CLASS (ranger-base-lpoui):
+// `guard-blind:10h:429`. On 2026-09-02 a bare `guard-blind` was delivered
+// once and then deduped for ten hours while the shop went on ruling on a
+// reading taken at 03:23Z — the fingerprint was doing exactly its job, and
+// its job was wrong for this row, because a blind stretch that is still
+// growing is not the same condition it was an hour ago. The bucket is whole
+// hours (blindHours), so the escalation is hourly and not per tick: the key
+// changes, the pulse re-prompts and the renag backoff restarts, once an
+// hour, for as long as the lights are out.
 func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
 	if af := AuthFailureReason(err); af != nil {
 		return fmt.Sprintf("guard-credential:%d", af.Code),
 			fmt.Sprintf("plan guard blind %s — %v: a credential condition, not weather, and no retry clears it",
 				BlindFor(blindFor), af)
 	}
-	return "guard-blind",
+	key = "guard-blind:" + blindHours(blindFor)
+	// The class only when there is one. An unclassed failure — a dead
+	// socket, a 500, a body of the wrong shape — appends nothing rather
+	// than a word nobody can act on; `guard-blind:10h` is the whole of what
+	// is known about it and the key says exactly that much.
+	if tok := PlanFailToken(err); tok != "" {
+		key += ":" + tok
+	}
+	return key,
 		fmt.Sprintf("plan guard blind %s (%v) — monitoring itself is broken", BlindFor(blindFor), err)
 }
 

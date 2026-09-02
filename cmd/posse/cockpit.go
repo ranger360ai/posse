@@ -178,6 +178,19 @@ type cockpit struct {
 	// ticks after the footer started hedging the same dollars. Nothing else
 	// reads it.
 	planLast planRead
+	// planStale is the loud line, or "" — the reading's age, its value and
+	// the failure streak behind it, once the snapshot is past
+	// `plan_usage_stale_after:` (ranger-base-lpoui). It gets a ROW of its
+	// own above GOVERNANCE and is deliberately not a header column. The
+	// header's flex column already carries the clock, the version, the
+	// guard's reading and the codex hint, and it truncates from its tail: a
+	// hundred-and-thirty-character sentence appended there is either
+	// everything else thrown away or itself thrown away, depending on the
+	// width. On a row of its own the same 80-column pane keeps the age, the
+	// timestamp and the reading and clips only the streak clause — the
+	// three things this bead was filed for survive the narrow pane, which
+	// in a header they would not.
+	planStale string
 
 	// planHint is codex's on-disk plan meter, the newest reading this box
 	// has (ADR 0034 D1/D3) — a HINT and never a guard: it is a different Go
@@ -488,6 +501,14 @@ type planRead struct {
 	// no clock, and blindness means "the meter that gates could not be
 	// read", which this file's absence is not.
 	hint *posse.PlanHint
+	// stale is the loud line, or "" — how old the reading the headroom rule
+	// is ruling on is, once it is past `plan_usage_stale_after:`
+	// (posse.PlanStaleness, ranger-base-lpoui). Read on this tick because
+	// it is two file reads and the draw path does no I/O; carried as the
+	// finished LINE and not as its parts, because the whole point of the
+	// bead is that `posse status`, the watch log and this screen print the
+	// same bytes.
+	stale string
 	// creds is the OTHER credential question this scan answers, and it is
 	// unrelated to the guard: which posse-owned session mints expire inside
 	// the window (ADR 0019 D5). It is here rather than on a fourth ticker
@@ -552,6 +573,15 @@ func (c *cockpit) scanPlan() {
 		// snapshot for itself is how the two halves stop disagreeing.
 		r.noHeadroom = c.app.PlanBlindRefusal("cockpit", c.clock()) != ""
 	}
+	// The reading's AGE, asked of the files whether this tick's read
+	// succeeded or failed (ranger-base-lpoui). Outside the else above for
+	// exactly that reason: a success moves the snapshot's own timestamp, so
+	// a healthy tick answers "not stale" from the same store rather than by
+	// this line not running — which is what makes the row heal on its own
+	// the moment a reading lands.
+	if st := c.app.PlanStaleness("cockpit", c.clock(), io.Discard); st.Stale {
+		r.stale = st.Line()
+	}
 	// codex's meter (ADR 0034 D3), read off the same tick and kept apart
 	// from every field above: a hint informs the header and gates nothing,
 	// so a missing reading is nil and not a failure state. Nothing here can
@@ -574,6 +604,7 @@ func (c *cockpit) applyPlan(r planRead) {
 	c.planBusy = false
 	c.planLast = r
 	c.planLine, c.creds, c.planHint = c.planSegment(r), r.creds, r.hint
+	c.planStale = r.stale
 }
 
 // ledgerUnreadable is ADR 0018 §3's condition as this screen can see it: the
@@ -2459,6 +2490,17 @@ func (c *cockpit) buildRows() {
 	// and the header already carries the shop's other standing numbers.
 	// These rows are filler: they are not in cursor space (see the field's
 	// comment), so tab, reselect and every key below are untouched.
+	// The meter's own age, above even that (ranger-base-lpoui). It is not a
+	// governance condition — the shop may well be dispatching — so it is
+	// its own row rather than a tenth G-row in a set ADR 0029 closed at
+	// nine, and it is red because ten hours of a dim lower-case "guard
+	// blind" in the header read as furniture. Filler, like the rows below:
+	// not in cursor space, so tab and reselect are untouched.
+	if c.planStale != "" {
+		rows = append(rows, row{kind: rowFiller, sec: secSessions,
+			cols: []col{{kind: colFlex, text: c.planStale, ansi: aRed}}})
+		rows = append(rows, row{kind: rowFiller, sec: secSessions})
+	}
 	if len(c.gov) > 0 || c.govFailed > 0 {
 		rows = append(rows, heading(fmt.Sprintf("GOVERNANCE (%s)", c.govHeading()), secSessions))
 		for _, g := range posse.GovOrdered(c.gov) {

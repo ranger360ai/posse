@@ -358,6 +358,17 @@ func (c *PlanCache) logRead(now time.Time, err error) {
 			// planusage.go's errors are written to be quotable: generic by
 			// construction, never the token and never a header.
 			outcome = "failed: " + err.Error()
+			// …and the class as a TOKEN after it, when the failure has one
+			// (ranger-base-lpoui). The sentence is for a person; this is
+			// for the reader that counts a failure streak hours later and
+			// must say what kind it was (planstale.go planLogClass) without
+			// matching on the sentence — the rule AuthFailure, RateLimit
+			// and GateRefusal each got a type to keep. Appended rather than
+			// prefixed so `<caller> failed: ` stays the bytes the 08-24
+			// misdiagnosis pin greps for.
+			if tok := PlanFailToken(err); tok != "" {
+				outcome += " [" + tok + "]"
+			}
 		}
 	}
 	line := fmt.Sprintf("%s %s %s\n", now.UTC().Format(time.RFC3339), caller, outcome)

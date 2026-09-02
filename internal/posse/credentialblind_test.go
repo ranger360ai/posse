@@ -144,8 +144,13 @@ func TestGovG5CredentialBlindGetsItsOwnKey(t *testing.T) {
 			"credential stale — run `claude` once to refresh"},
 		{"403", &AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden}, "guard-credential:403",
 			"not entitled to plan windows"},
-		{"429", &RateLimit{Status: "429 Too Many Requests"}, "guard-blind", "monitoring itself is broken"},
-		{"unreachable", Die("usage endpoint unreachable"), "guard-blind", "monitoring itself is broken"},
+		// Not a credential condition, so still the guard-blind key — which
+		// since ranger-base-lpoui carries the blind stretch's hour bucket
+		// (45m is its zeroth hour) and, where the failure has one, its
+		// class. The last row is the control for the class half: an
+		// unclassed error appends no token rather than inventing one.
+		{"429", &RateLimit{Status: "429 Too Many Requests"}, "guard-blind:0h:429", "monitoring itself is broken"},
+		{"unreachable", Die("usage endpoint unreachable"), "guard-blind:0h", "monitoring itself is broken"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b, _ := newTestBackend(t)

@@ -42,6 +42,41 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**A blind plan meter now says how OLD the reading it is still ruling on
+is — loudly, in `posse status`, in every `--watch` pass, and in the
+cockpit.**
+
+The plan guard has had a clock ("guard blind 40m") and a failure class
+("credential stale (401)") for a while. Neither said what the last reading
+was or when it was taken, and the headroom rule that decides whether a
+blind pass parks or degrades rules on exactly that number. On 2026-09-02
+it was ten hours old, every hourly re-ask had come back 429, and the only
+trace anywhere was one log line per hour.
+
+Past `plan_usage_stale_after:` (new, default `2h`, `0` disables) all three
+surfaces print the same line:
+
+```
+plan meter BLIND 10h09m: last reading 2026-09-02T03:23Z (5h 41% · 7d 89%)
+— ruling on it under the headroom rule; 10 consecutive 429
+```
+
+The streak and its class come from `state/plan-usage.log`, which now marks
+each failed read with its class token, so "10 consecutive 429" and "3
+consecutive 401" are different sentences. Read only where a
+`plan_guard_<window>:` is set — with no meter guard, no headroom rule is
+ruling on anything.
+
+The pulse's governance key gains the same two facts:
+`guard-blind` is now `guard-blind:10h:429`. The hour bucket is the point —
+a blind stretch that keeps growing re-reaches the coordinator once an hour
+instead of being fingerprint-deduped after the first delivery, and an hour
+is coarse enough that it is an escalation and not a storm. A credential
+condition keeps its own `guard-credential:401` key, unchanged.
+
+Nothing about what the guard DOES changed: same thresholds, same blind
+budget, same park-vs-degrade rule (ADR 0018).
+
 **`posse runtimes` now says whether the account can actually run each
 tier's model, and `--probe` re-asks.**
 

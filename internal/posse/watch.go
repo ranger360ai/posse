@@ -23,6 +23,7 @@ package posse
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -205,11 +206,33 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// moved. Read-only, like the launch probe it reuses; findings name the
 	// repo and the command, and this loop dispatches either way.
 	d.App.ReportHookWall(d.Out, "watch")
+	// `plan_usage_stale_after:`, read once for its TYPO line and nothing
+	// else (ranger-base-lpoui). The per-pass read below discards that
+	// writer: a malformed threshold must be visible, and a loop that
+	// reprinted the same complaint every pass for a week is how a visible
+	// line becomes an invisible one. Once per loop is the rule the launch
+	// ration and the hook wall above already keep, and a loop IS a binary
+	// somebody just started.
+	d.App.PlanUsageStaleAfter(d.errw())
 	passes := 0
 	wait := base
 	for {
 		passes++
 		fmt.Fprintf(d.Out, "── pass %d · %s\n", passes, time.Now().Format("15:04:05"))
+		// How old the reading this pass will rule on actually is, when that
+		// is past `plan_usage_stale_after:` (ranger-base-lpoui). In the
+		// pass preamble and not inside the guard on purpose: the guard's
+		// own blind line prints once per pass too, but only on a pass that
+		// REACHED the guard, and it names the outage rather than the number
+		// the headroom rule is deciding on. This is the log line an
+		// operator reading back over ten hours needs — the same bytes
+		// `posse status` and the cockpit print, so one grep finds all
+		// three. Files only, so it costs no request and cannot be the
+		// reason a pass is slow. io.Discard: the typo line is the preamble's
+		// above, said once.
+		if st := d.App.PlanStaleness("watch", d.now(), io.Discard); st.Stale {
+			fmt.Fprintln(d.Out, st.Line())
+		}
 		n, err := d.Run(dirFilter, personaFilter, max)
 		if err != nil {
 			fmt.Fprintf(d.Out, "✗ pass failed: %v\n", err)
