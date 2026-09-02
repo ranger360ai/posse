@@ -35,6 +35,7 @@ import (
 // arms and use the same call, so a blocked verdict is the file type and not
 // the harness.
 func TestQAAFifoAtTheProjectConfigPathMustNotWedgeTheLaunch(t *testing.T) {
+	t.Parallel()
 
 	claude := &Runtime{Name: "claude",
 		ProjectConfig:     []string{ClaudeProjectConfig, ClaudeProjectConfigLocal},

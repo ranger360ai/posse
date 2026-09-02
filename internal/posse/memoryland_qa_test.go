@@ -871,6 +871,7 @@ func TestTheCredentialScanReadsGitsDiffWhateverTheConfigurationSays(t *testing.T
 // stat fails, the modification is read as a deletion, and a binary file
 // carrying a credential lands with nothing scanned.
 func TestTheBinaryHoldSurvivesDiffRelative(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -915,6 +916,7 @@ func TestTheBinaryHoldSurvivesDiffRelative(t *testing.T) {
 // live ORDERS files starts that way, which is why it is a note and not an
 // incident, but it is git's own format ambiguity and the fix is a boolean.
 func TestTheDiffScanReadsAnAddedLineThatLooksLikeAFileHeader(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -958,6 +960,7 @@ func TestTheDiffScanReadsAnAddedLineThatLooksLikeAFileHeader(t *testing.T) {
 // `+++ b/` stopped resolving, every refusal would name the wrong path or
 // none, which is a refusal an operator cannot act on.
 func TestTheDiffScanStillAttributesAHitToItsOwnFile(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)

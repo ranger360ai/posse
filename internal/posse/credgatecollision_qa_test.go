@@ -78,6 +78,7 @@ func cgcRealBin(t *testing.T) string {
 // The positive arm: a PID denying the runtime's credential binary collides,
 // and the collision names the PID's own rule verbatim.
 func TestQACredGateCollisionNamesTheRuleThatShimsTheRuntimesCredentialBinary(t *testing.T) {
+	t.Parallel()
 	bin := cgcRealBin(t)
 	rt := cgcRuntime("testcli", bin)
 
@@ -92,6 +93,7 @@ func TestQACredGateCollisionNamesTheRuleThatShimsTheRuntimesCredentialBinary(t *
 // launch warning that quoted `Bash(sh -c:*)` while `Bash(sh)` was what
 // refused the runtime would send the reader to the wrong line of the PID.
 func TestQACredGateCollisionPrefersTheWholeBinaryRule(t *testing.T) {
+	t.Parallel()
 	bin := cgcRealBin(t)
 	rt := cgcRuntime("testcli", bin)
 
@@ -107,6 +109,7 @@ func TestQACredGateCollisionPrefersTheWholeBinaryRule(t *testing.T) {
 // have — the platform arm, which is what keeps a `security` rule from
 // warning on a host whose runtime reads a file instead.
 func TestQACredGateCollisionIsSilentWhenThereIsNothingToCollide(t *testing.T) {
+	t.Parallel()
 	bin := cgcRealBin(t)
 	binDir := cgcBinDir(t)
 	deny := []string{"Bash(" + bin + ":*)"}
@@ -133,6 +136,7 @@ func TestQACredGateCollisionIsSilentWhenThereIsNothingToCollide(t *testing.T) {
 // the env set) and the recipe (how to get one). A refusal that named only
 // the runtime would send its reader back to the wall it must not take down.
 func TestQACredGateRefusalNamesTheRuleTheBinaryTheKeyAndTheRecipe(t *testing.T) {
+	t.Parallel()
 	rt := &Runtime{Name: "claude", CredBin: "keybin"}
 	err := CredGateRefusal("ranger", rt, "Bash(keybin:*)")
 	if err == nil {
@@ -152,6 +156,7 @@ func TestQACredGateRefusalNamesTheRuleTheBinaryTheKeyAndTheRecipe(t *testing.T) 
 // than as the undecided runtime it is (the CheckCageCredential branch this
 // borrows from, cage.go).
 func TestQACredGateRefusalSaysSoWhenNoSessionCredentialIsDecided(t *testing.T) {
+	t.Parallel()
 	err := CredGateRefusal("ranger", &Runtime{Name: "nocred", CredBin: "keybin"}, "Bash(keybin:*)")
 	if err == nil {
 		t.Fatal("an undecided runtime under the shim must still refuse")
@@ -165,6 +170,7 @@ func TestQACredGateRefusalSaysSoWhenNoSessionCredentialIsDecided(t *testing.T) {
 // collision decides whether the question is asked at all, and the env-set
 // names decide the answer.
 func TestQACheckCredGateIsTheMintQuestionAndOnlyUnderTheShim(t *testing.T) {
+	t.Parallel()
 	bin := cgcRealBin(t)
 	binDir := cgcBinDir(t)
 	rt := &Runtime{Name: "claude", CredBin: bin}
@@ -240,6 +246,7 @@ func cgcEnvBody(rt *Runtime, mint bool) []byte {
 // NOTHING about it — the polarity ranger-base-eupf's launch pin had, flipped
 // by ADR 0042 D2. The arm that fails if a refusal fires unconditionally.
 func TestQALaunchIsSilentWhenTheShimmedPIDCarriesTheMint(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	rt := cgcCrew(t, b, true)
 
@@ -257,6 +264,7 @@ func TestQALaunchIsSilentWhenTheShimmedPIDCarriesTheMint(t *testing.T) {
 // no session is created. Two things a warning could never do, which is why
 // this is the arm that goes red if the refusal is dropped.
 func TestQALaunchRefusesTheShimmedPIDWithNoMintAndCreatesNoSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	rt := cgcCrew(t, b, false)
@@ -289,6 +297,7 @@ func TestQALaunchRefusesTheShimmedPIDWithNoMintAndCreatesNoSession(t *testing.T)
 // the shape of every non-crew session on this box — and must not be dragged
 // into the precondition by a check that forgot to ask the collision first.
 func TestQALaunchIsQuietWhenThePIDDoesNotShimTheCredentialBinary(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	rt, err := a.LoadRuntime(DefaultRuntime)
@@ -327,6 +336,7 @@ func TestQALaunchIsQuietWhenThePIDDoesNotShimTheCredentialBinary(t *testing.T) {
 // re-type, so the refusal below is the missing key's doing and not a
 // relaunch that was never going to happen.
 func TestQARelaunchRefusesTheShimmedPIDWhenTheMintIsGone(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	rt := cgcCrew(t, b, true)
@@ -383,6 +393,7 @@ func rt0(t *testing.T, b *HerdrBackend) *Runtime {
 // A row still saying "every other cage tier is unaffected" is how the
 // refusal below reads as a posse bug to the one person who went looking.
 func TestQACageCredRowSaysTheShimsTierNeedsTheMintToo(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	rt := rt0(t, b)
 	if rt.CredBin == "" {
@@ -411,6 +422,7 @@ func TestQACageCredRowSaysTheShimsTierNeedsTheMintToo(t *testing.T) {
 // credential path execs. A build that drops it turns every launch quiet
 // again with nothing failing.
 func TestQADefaultRuntimeDeclaresItsCredentialBinary(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	rt, err := b.App.LoadRuntime(DefaultRuntime)
 	if err != nil {

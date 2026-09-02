@@ -9,6 +9,15 @@ package posse
 // process that dies: the kernel drops the lock, which is the whole reason
 // this replaced a pidfile nobody could tell from a stale one.
 
+// The tests in this file assert on flock ACQUISITION — who holds the lock,
+// and whether a released one reads as free — and they are SERIAL on purpose,
+// which is why none of them carries t.Parallel. Two of them side by side read
+// a released lock as still held, on lock files that are per test: 3-6 failures
+// in 60 at -parallel 8 over this file alone (ranger-base-9l77f, filed off
+// ranger-base-aupee, product cause not yet found). cmd/testparallel names them
+// so that re-running it cannot put t.Parallel back. The hundreds of tests that
+// merely TAKE the launcher lock on their way through a pass are unaffected.
+
 import (
 	"context"
 	"os"
@@ -27,7 +36,6 @@ func watchApp(t *testing.T) *App {
 
 // The two states, and nothing between them.
 func TestWatchLoopRunningTracksTheLock(t *testing.T) {
-	t.Parallel()
 	a := watchApp(t)
 
 	if running, err := WatchLoopRunning(a); err != nil || running {
@@ -58,7 +66,6 @@ func TestWatchLoopRunningTracksTheLock(t *testing.T) {
 // One loop per queue, proved rather than guessed: the second one cannot
 // take the lock and must not run.
 func TestLockWatchRefusesASecondHolder(t *testing.T) {
-	t.Parallel()
 	a := watchApp(t)
 	first, held, err := lockWatch(a)
 	if err != nil || held {
@@ -76,7 +83,6 @@ func TestLockWatchRefusesASecondHolder(t *testing.T) {
 // does. A killed holder leaves the lock free with nothing to reap — no
 // staleness window, no `kill -0`, no argv to match.
 func TestWatchLockDiesWithItsProcess(t *testing.T) {
-	t.Parallel()
 	a := watchApp(t)
 	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -146,7 +152,6 @@ func TestWatchLockDiesWithItsProcess(t *testing.T) {
 // The child half of TestWatchLockDiesWithItsProcess. Inert unless the env
 // var selects it, so a plain `go test` never runs it.
 func TestWatchLockHolderChild(t *testing.T) {
-	t.Parallel()
 	dir := os.Getenv("POSSE_WATCHLOCK_HOLD")
 	if dir == "" {
 		t.Skip("child of TestWatchLockDiesWithItsProcess")
@@ -163,7 +168,6 @@ func TestWatchLockHolderChild(t *testing.T) {
 // The status line: liveness from the lock, identity from the pidfile, and a
 // missing record costs a name and not the answer.
 func TestWatchStatusReadsLockThenPidfile(t *testing.T) {
-	t.Parallel()
 	a := watchApp(t)
 
 	line, err := WatchStatus(a)
@@ -324,7 +328,6 @@ func TestWatchRefusesWhenAnotherLoopHoldsTheLock(t *testing.T) {
 // one line, the exact shape of the argv probe's old silence-reads-as-death
 // bug — left ., ./cmd/posse and ./internal/rhq all green.
 func TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone(t *testing.T) {
-	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root reads through the mode bits, so this fixture cannot block the probe")
 	}

@@ -82,6 +82,7 @@ func settleWaitingPass(t *testing.T, footer, box string) (string, string) {
 // going must not judge the bead, must not count a settle-open, and must say
 // what it is waiting on.
 func TestQASettleBehindLiveBackgroundWorkIsNotASettleOpen(t *testing.T) {
+	t.Parallel()
 	out, repo := settleWaitingPass(t, busyFooter, emptyBox)
 	if !strings.Contains(out, "1 shell still running") {
 		t.Fatalf("the pass did not name the work it is waiting on:\n%s", out)
@@ -101,6 +102,7 @@ func TestQASettleBehindLiveBackgroundWorkIsNotASettleOpen(t *testing.T) {
 // monitor: the re-prompt was typed and never submitted, so the agent has
 // nothing to settle FROM.
 func TestQASettleWithAnUnsentPromptInTheBoxIsNotASettleOpen(t *testing.T) {
+	t.Parallel()
 	out, repo := settleWaitingPass(t, idleFooter, unsentBox)
 	if !strings.Contains(out, "UNSENT") || !strings.Contains(out, "commit and close the bead") {
 		t.Fatalf("the pass did not show the operator the prompt that never landed:\n%s", out)
@@ -114,6 +116,7 @@ func TestQASettleWithAnUnsentPromptInTheBoxIsNotASettleOpen(t *testing.T) {
 // coincidences: the same pass over the same bead with an idle footer and an
 // empty box still counts the settle-open it always counted (ranger-base-9hm).
 func TestQASettleWithAnEmptyScreenStillCounts(t *testing.T) {
+	t.Parallel()
 	out, repo := settleWaitingPass(t, idleFooter, emptyBox)
 	if !strings.Contains(out, `settled "idle" but issue is "in_progress"`) {
 		t.Fatalf("the control arm did not reach a settle-without-close:\n%s", out)
@@ -128,6 +131,7 @@ func TestQASettleWithAnEmptyScreenStillCounts(t *testing.T) {
 // Ignorance must never be read as a wait, or a genuinely stuck bead would
 // be held claimed forever.
 func TestQAAScreenPosseCannotReadStillCounts(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -151,6 +155,7 @@ func TestQAAScreenPosseCannotReadStillCounts(t *testing.T) {
 // bead finds a live holder herdr calls idle, and must not type a second
 // prompt into a session that is waiting on its own work.
 func TestQAResumeDoesNotRePromptAHolderThatIsWaiting(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -230,6 +235,7 @@ func TestQAGovG2KeepsAHolderWithAnUnsentPrompt(t *testing.T) {
 // the return value is not evidence the turn started. ConfirmSubmitted is
 // what `posse prompt` asks afterwards.
 func TestQAConfirmSubmittedReportsAPromptThatNeverLeftTheBox(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	armScreen(t, fake, idleFooter, unsentBox)
 	if left := b.ConfirmSubmitted("w1:p1"); !strings.Contains(left, "commit and close the bead") {
@@ -248,6 +254,7 @@ func TestQAConfirmSubmittedReportsAPromptThatNeverLeftTheBox(t *testing.T) {
 // the pulse's readiness gate has already paid for. The tick comes round
 // again; the stale text is the operator's to clear.
 func TestQAPulseDoesNotTypeAfterAnUnsentPrompt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pulseFastRuntime(t, b, "coordinator-work", "400ms")

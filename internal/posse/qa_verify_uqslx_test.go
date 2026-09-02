@@ -24,6 +24,7 @@ import (
 // E1: fresh install — cap set, StateDir does not exist yet. The probe must
 // not brake: it creates the dir and a temp file and removes it.
 func TestQAVerifyE1FreshStateDirUnderACapStillLaunches(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
 	if _, err := os.Stat(f.b.App.StateDir); err == nil {
 		os.RemoveAll(f.b.App.StateDir)
@@ -63,6 +64,7 @@ func TestQAVerifyE1FreshStateDirUnderACapStillLaunches(t *testing.T) {
 // stderr. Zero launches, nothing claimed, and the refusal is named — which is
 // the property ws09 is about, kept by an earlier guard.
 func TestQAVerifyE2UnwritableStateDirRefusesThePass(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
 	if err := os.MkdirAll(f.b.App.StateDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -90,6 +92,7 @@ func TestQAVerifyE2UnwritableStateDirRefusesThePass(t *testing.T) {
 // E3: unreadable AND unwritable at once must be named unreadable — the fault
 // an operator fixes first (readOverflowCount's order, the closer's second claim).
 func TestQAVerifyE3UnreadableBeatsUnwritable(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.MkdirAll(f.b.App.UncountedLogPath(), 0o755); err != nil {
@@ -120,6 +123,7 @@ func TestQAVerifyE3UnreadableBeatsUnwritable(t *testing.T) {
 // one rename record; the small one is an add and a delete, which the ordinary
 // arm catches and which therefore measures nothing about this walk.
 func TestQAVerifyH1RenamedBinaryWithACredentialHolds(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -164,6 +168,7 @@ func TestQAVerifyH1RenamedBinaryWithACredentialHolds(t *testing.T) {
 // `-` too and is skipped by design; the arm must go on to the record after it
 // rather than answering on the first `-` `-` it meets.
 func TestQAVerifyH2DeletionBeforeAModifiedBinaryStillHolds(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -198,6 +203,7 @@ func TestQAVerifyH2DeletionBeforeAModifiedBinaryStillHolds(t *testing.T) {
 // binary. If the rename's two extra records are not consumed, the walk is off
 // by two and the modified file behind it is never reached.
 func TestQAVerifyH3RenameThenModifiedBinaryBothReached(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -233,6 +239,7 @@ func TestQAVerifyH3RenameThenModifiedBinaryBothReached(t *testing.T) {
 // mark on a dispatch-made session whose bead is still OPEN is the operator in
 // a conversation about live work, and no grace makes that residue.
 func TestQAVerifyR1CrewArmNeverTakesAnOpenBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -256,6 +263,7 @@ func TestQAVerifyR1CrewArmNeverTakesAnOpenBead(t *testing.T) {
 // today; this is what goes red the day they stop sharing it, and the crew arm
 // is the one whose session had an operator in it.
 func TestQAVerifyR2CrewArmNeverTakesADirtyTree(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

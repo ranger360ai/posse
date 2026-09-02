@@ -40,6 +40,7 @@ func detectionWith(state, footer, box string) AgentDetection {
 // The bead itself: an agent that went idle behind its own suite run reads
 // idle in every store posse has, and its footer says what it is waiting on.
 func TestBackgroundWorkReadsClaudesOwnFooterSummary(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		what, footer, want string
 	}{
@@ -101,6 +102,7 @@ func TestBackgroundWorkReadsClaudesOwnFooterSummary(t *testing.T) {
 // submitted. The capture is the third occurrence's, taken at 13:37:16 while
 // herdr's listing reported the agent `done`.
 func TestComposerReadsTextLeftUnsentInThePromptBox(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		what, box, want string
 	}{
@@ -128,6 +130,7 @@ func TestComposerReadsTextLeftUnsentInThePromptBox(t *testing.T) {
 // occurrences had a monitor and an empty box, the third had an unsent
 // prompt and no monitor at all.
 func TestHoldAnswersEitherHalfAlone(t *testing.T) {
+	t.Parallel()
 	work := detectionWith("idle", "  ⏵⏵ auto mode on · 1 shell, 1 monitor · ↓ to manage\n", "❯\n").Hold()
 	if !work.Waiting() || work.Typed != "" {
 		t.Errorf("a monitor alone is not read as a wait: %+v", work)
@@ -156,6 +159,7 @@ func TestHoldAnswersEitherHalfAlone(t *testing.T) {
 // answer the empty hold, or every settle in the shop would be held forever
 // by a reading nobody could take.
 func TestAnUnreadableScreenHoldsNothing(t *testing.T) {
+	t.Parallel()
 	var blind AgentDetection
 	blind.State = "idle"
 	if h := blind.Hold(); h.Waiting() {

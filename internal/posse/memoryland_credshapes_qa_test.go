@@ -21,6 +21,7 @@ import (
 // published EXAMPLE key — which is the point: the scan is keyed on SHAPE,
 // so a real value is never needed to pin it and never belongs in a test.
 func TestMemoryCredShapesCatchTheFormsACredentialArrivesIn(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		line string
 		want string
@@ -79,6 +80,7 @@ func TestMemoryCredShapesCatchTheFormsACredentialArrivesIn(t *testing.T) {
 // so the assigned-secret shape answers first and these patterns are never
 // reached; delete any one of them and that table stays green.
 func TestMemoryCredShapesCatchAVendorValueStandingAlone(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		line string
 		want string
@@ -114,6 +116,7 @@ func TestMemoryCredShapesCatchAVendorValueStandingAlone(t *testing.T) {
 // happen, the refusal names the file and the line, and it does not repeat
 // the value it is refusing to publish.
 func TestKillHoldsAnEnvironmentDumpPastedIntoMemory(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)

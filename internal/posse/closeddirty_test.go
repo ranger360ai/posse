@@ -252,6 +252,7 @@ func TestACleanCloseWritesNothingOnTheBead(t *testing.T) {
 // must not so much as ASK bd a question — the read is what a dedupe costs,
 // and the ordinary close is clean.
 func TestNoteClosedDirtyAsksBdNothingOnACleanTree(t *testing.T) {
+	t.Parallel()
 	_, fake := newTestBackend(t)
 	exe, err := os.Executable()
 	if err != nil {
