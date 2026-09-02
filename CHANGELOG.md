@@ -42,6 +42,28 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**`posse runtimes` now says whether the account can actually run each
+tier's model, and `--probe` re-asks.**
+
+Under every launch profile whose `egress:` names the model catalog host,
+the listing prints one availability verdict per mapped tier — the same
+sentence a launch would print, without launching anything. Profiles posse
+knows no catalog for (codex, grok, a template pointed elsewhere) print no
+such line. `posse runtimes --probe` re-reads the catalog instead of ruling
+off the shared snapshot; a live rate-limit cooldown is still honoured
+first, so a forced read cannot extend a 429.
+
+Every verdict — a launch's loud line, `posse gates`, and this listing —
+also names the age of the reading it rests on whenever that reading is
+older than `model_probe_ttl`, with the probe's outcome beside it: `tier
+strong wants claude-fable-5-1 — unavailable per the catalog read 48h00m
+ago (probe failing: 401 Unauthorized), falling back to claude-opus-5`. The
+sentence that used to end at "unavailable" was true and taught the wrong
+lesson — it read as "the account lost the model" when what had happened
+was that the probe had been failing for two days and the retained list
+predated the id. An operator reading the new one knows to refresh a
+credential rather than to hand-edit `state/model-catalog.json`.
+
 **`posse backup` — one command that archives the work graph and the
 constitution, on this box, and refuses to write anywhere else.**
 

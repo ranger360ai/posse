@@ -270,20 +270,47 @@ func (c *ModelCache) now() time.Time {
 	return time.Now()
 }
 
+// CatalogRead is what the reading a caller is being handed knows about
+// itself: how old it is, and what the refresh said when it failed. Models
+// computes both already — the age for the gate-refusal notice, the error
+// for the log — and used to drop them at the return, which left a verdict
+// reading "unavailable" off a list taken before the wanted id existed with
+// nothing on the line saying so (ADR 0039 D3a).
+//
+// Age is of the reading RETURNED, so 0 means "read just now" and never
+// "old beyond measure": catalogAge is the one place that judgement is made.
+// Err is ModelLister's own generic string — never a header, never the
+// credential — so it is safe to put in front of an operator.
+type CatalogRead struct {
+	Age time.Duration
+	Err error
+}
+
 // Models returns the catalog, no older than maxAge. The bool is the only
 // thing callers may act on: false means "posse does not know", and nothing
 // downstream may read that as "unavailable".
 func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
+	ids, ok, _ := c.ModelsRead(maxAge)
+	return ids, ok
+}
+
+// ModelsRead is Models plus the reading's own age and the failed refresh
+// behind it — the same two values `kept` and `catalogAge` already answer
+// the notice with, so the sentence an operator reads and the bool a launch
+// acts on cannot come from different facts.
+func (c *ModelCache) ModelsRead(maxAge time.Duration) ([]string, bool, CatalogRead) {
 	now := c.now()
 	e, have := c.load()
 	if have && maxAge > 0 && !e.At.IsZero() && now.Sub(e.At) >= 0 && now.Sub(e.At) < maxAge && len(e.Models) > 0 {
-		return e.Models, true
+		return e.Models, true, CatalogRead{Age: catalogAge(e, now)}
 	}
 	if have && now.Before(e.RetryAt) {
 		// Re-asking a rate limiter on every launch is how a fleet extends a
 		// 429 (rangerhq-tdy8). The last reading, if there is one, is still
-		// the newest fact anyone has.
-		return e.Models, len(e.Models) > 0
+		// the newest fact anyone has. Nothing was asked, so there is no
+		// refresh error to report: the age says the reading is old and
+		// state/model-catalog.log holds the 429 that stopped the ask.
+		return e.Models, len(e.Models) > 0, CatalogRead{Age: catalogAge(e, now)}
 	}
 	l := c.Lister
 	if l == nil {
@@ -301,15 +328,15 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 			e.RetryAt = now.Add(modelCooldown(rl.RetryAfter))
 			c.store(e)
 		}
-		return e.Models, kept(e, have)
+		return e.Models, kept(e, have), CatalogRead{Age: catalogAge(e, now), Err: err}
 	}
 	if len(ids) == 0 {
 		// An empty catalog is not an account with no models; it is an
 		// answer posse does not understand. Never cached as fact.
-		return nil, false
+		return nil, false, CatalogRead{Age: catalogAge(e, now)}
 	}
 	c.store(modelEntry{At: now, Models: ids})
-	return ids, true
+	return ids, true, CatalogRead{}
 }
 
 // gateRefusalNotices keeps the line below to once per process per rule —
@@ -595,6 +622,13 @@ func (p Preflight) Fell() bool { return p.Line != "" }
 // was decided when it started, and re-deciding it under a running CLI would
 // be a claim posse cannot make good on.
 func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Preflight {
+	return a.TierPreflightOn(a.ReadCatalog(errw), persona, runtime, tier)
+}
+
+// TierPreflightOn is the same check over a catalog reading the caller
+// already holds — the seam a report that rules on many pairs needs, so one
+// reading answers all of them (ModelCatalog).
+func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) Preflight {
 	p := Preflight{Runtime: runtime, Tier: tier}
 	rt, err := a.LoadRuntime(runtime)
 	if err != nil {
@@ -605,13 +639,12 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 	// today — {model} renders empty and the CLI picks its own), the
 	// operator turned the preflight off, or posse knows no catalog for this
 	// runtime's ids (codex maps gpt-5.6-* since ranger-base-arm, and this
-	// catalog is Anthropic's — anthropicAPI below is what keeps those ids
+	// catalog is Anthropic's — OnModelCatalog below is what keeps those ids
 	// from being checked against a list that will never hold them).
-	if p.Wanted == "" || !a.ModelPreflight() || !anthropicAPI(rt) {
+	if p.Wanted == "" || !a.ModelPreflight() || !rt.OnModelCatalog() {
 		return p
 	}
-	have, known := a.availableModels(errw)
-	if !known || have[p.Wanted] {
+	if !cat.known() || cat.has(p.Wanted) {
 		return p
 	}
 
@@ -639,12 +672,12 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 		curRT, curTier = nextRT, nextTier
 		p.Runtime, p.Tier, p.Got = curRT, curTier, got
 		switch {
-		case got == "" || !anthropicAPI(rt2):
+		case got == "" || !rt2.OnModelCatalog():
 			// Off the catalog posse can read: the hop is taken and stated,
 			// and what that runtime serves is its own business.
 			clauses = append(clauses, "falling back to "+hopDesc(runtime, curRT, curTier, got))
 			landed = true
-		case have[got]:
+		case cat.has(got):
 			clauses = append(clauses, "falling back to "+hopDesc(runtime, curRT, curTier, got))
 			landed = true
 		default:
@@ -660,7 +693,10 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 	if who == "" {
 		who = "session"
 	}
-	p.Line = fmt.Sprintf("%s: tier %s wants %s — unavailable, %s", who, tier, p.Wanted, strings.Join(clauses, ", "))
+	// The age clause sits on the verdict, before the hops: what is being
+	// said is "unavailable ACCORDING TO a reading this old", and the
+	// fallbacks that follow are what posse did about it (ADR 0039 D3a).
+	p.Line = fmt.Sprintf("%s: tier %s wants %s — unavailable%s, %s", who, tier, p.Wanted, cat.clause(), strings.Join(clauses, ", "))
 	return p
 }
 
@@ -674,6 +710,15 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 // "the probe never answers here". Reading it costs whatever the cached
 // snapshot costs, which is usually nothing.
 func (a *App) PreflightReport(persona, runtime, tier string, errw io.Writer) string {
+	return a.PreflightReportOn(a.ReadCatalog(errw), persona, runtime, tier)
+}
+
+// PreflightReportOn is the same report over a catalog reading the caller
+// already holds. `posse runtimes` prints a line per mapped tier per
+// runtime and `posse gates` one per runtime: one reading answers them all,
+// and on a home whose probe is down that is the difference between one
+// request and one per line.
+func (a *App) PreflightReportOn(cat *ModelCatalog, persona, runtime, tier string) string {
 	rt, err := a.LoadRuntime(runtime)
 	if err != nil {
 		return ""
@@ -683,22 +728,34 @@ func (a *App) PreflightReport(persona, runtime, tier string, errw io.Writer) str
 	// describe. The fallback branch does not: it returns the LAUNCH's line
 	// verbatim, persona and all, so the operator reads here the same bytes
 	// a launch would print — one rendering, no drift.
+	//
+	// Every branch above the catalog is answered without touching it: the
+	// reading is lazy, so a report on a runtime posse knows no catalog for
+	// asks nobody.
 	switch {
 	case want == "":
 		return fmt.Sprintf("%s: tier %s → this runtime maps no model; the CLI picks its own", runtime, tier)
 	case !a.ModelPreflight():
 		return fmt.Sprintf("%s: tier %s → %s (preflight off: config model_preflight: false)", runtime, tier, want)
-	case !anthropicAPI(rt):
+	case !rt.OnModelCatalog():
 		return fmt.Sprintf("%s: tier %s → %s (no model catalog posse can read for this runtime)", runtime, tier, want)
 	}
-	have, known := a.availableModels(errw)
-	if !known {
+	if !cat.known() {
+		// UNKNOWN has no reading to be old, so it carries no age clause.
+		// The read's own outcome stays where it was — state/model-catalog.log,
+		// and stderr for the one failure that is posse's own doing
+		// (noteGateRefusal) — because this line is printed once per mapped
+		// TIER and the outcome belongs to the reading: `posse runtimes` on
+		// a home with no snapshot would print the same sentence three
+		// times under one runtime.
 		return fmt.Sprintf("%s: tier %s → %s (availability UNKNOWN — the catalog could not be read; the launch takes the tier as asked)", runtime, tier, want)
 	}
-	if have[want] {
-		return fmt.Sprintf("%s: tier %s → %s (available)", runtime, tier, want)
+	if cat.has(want) {
+		// Available is a verdict too, and it rests on the same reading: a
+		// day-old list saying the id is there is worth reading as such.
+		return fmt.Sprintf("%s: tier %s → %s (available%s)", runtime, tier, want, cat.clause())
 	}
-	return a.TierPreflight(persona, runtime, tier, errw).Line
+	return a.TierPreflightOn(cat, persona, runtime, tier).Line
 }
 
 // hopDesc names where a hop landed, the way a person would say it: the
@@ -714,27 +771,96 @@ func hopDesc(fromRT, toRT, toTier, model string) string {
 	return model
 }
 
-// availableModels is the catalog as a set, plus whether posse actually
-// knows it. Nothing may treat a false here as "unavailable".
-func (a *App) availableModels(errw io.Writer) (map[string]bool, bool) {
-	mc := a.ModelCache()
-	mc.Errw = errw
-	ids, ok := mc.Models(a.ModelProbeTTL(errw))
-	if !ok {
-		return nil, false
-	}
-	set := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		set[id] = true
-	}
-	return set, true
+// ModelCatalog is ONE reading of the account's catalog, ruled on as many
+// times as a report needs. `posse runtimes` and `posse gates` ask about
+// every mapped tier of every runtime on this API; taking the reading per
+// pair asks the endpoint per pair the moment the snapshot cannot be
+// refreshed — a failed read stores nothing, so nothing shares it — and
+// writes a state/model-catalog.log line for each. The snapshot file shares
+// a SUCCESSFUL reading between processes; this shares any reading, failure
+// included, inside one command.
+//
+// Lazy on purpose: a report over runtimes that are none of them on this
+// API (or with the preflight off) must ask nobody, and the branch that
+// decides that is per runtime, downstream of here.
+type ModelCatalog struct {
+	a     *App
+	fresh bool // --probe: maxAge 0, "fresh only"
+	errw  io.Writer
+
+	once  sync.Once
+	set   map[string]bool
+	ok    bool
+	read  CatalogRead
+	lease time.Duration // model_probe_ttl: how long one reading rules unremarked
 }
 
-// anthropicAPI: are this runtime's model ids ids the catalog above lists?
+// ReadCatalog is the ordinary reading: whatever the shared snapshot holds
+// inside `model_probe_ttl`, else a request.
+func (a *App) ReadCatalog(errw io.Writer) *ModelCatalog {
+	return &ModelCatalog{a: a, errw: errw}
+}
+
+// ProbeCatalog is `posse runtimes --probe`: read it NOW. maxAge 0 is
+// "fresh only", the meaning plancache.go already gives it — and Models
+// checks the RetryAt cooldown before asking, so a forced read cannot
+// become the rangerhq-tdy8 storm (ADR 0039 D3b).
+func (a *App) ProbeCatalog(errw io.Writer) *ModelCatalog {
+	return &ModelCatalog{a: a, errw: errw, fresh: true}
+}
+
+func (c *ModelCatalog) load() {
+	c.once.Do(func() {
+		c.lease = c.a.ModelProbeTTL(c.errw)
+		maxAge := c.lease
+		if c.fresh {
+			maxAge = 0
+		}
+		mc := c.a.ModelCache()
+		mc.Errw = c.errw
+		ids, ok, r := mc.ModelsRead(maxAge)
+		c.ok, c.read = ok, r
+		c.set = make(map[string]bool, len(ids))
+		for _, id := range ids {
+			c.set[id] = true
+		}
+	})
+}
+
+// known: does posse know this account's catalog at all? Nothing may treat
+// a false here as "unavailable".
+func (c *ModelCatalog) known() bool { c.load(); return c.ok }
+
+// has: is this id on the reading? Only meaningful when known().
+func (c *ModelCatalog) has(id string) bool { c.load(); return c.set[id] }
+
+// stale: is the reading a verdict would rest on past its lease? Age 0 is a
+// reading taken now, which `model_probe_ttl: 0` would otherwise make stale
+// on arrival.
+func (c *ModelCatalog) stale() bool { c.load(); return c.read.Age > 0 && c.read.Age >= c.lease }
+
+// clause is what a verdict says about the reading under it when that
+// reading is past its lease: the age always, and the probe's outcome when
+// the refresh that would have replaced it failed (ADR 0039 D3a). An
+// operator reading `unavailable per the catalog read 2d ago (probe
+// failing: 401 Unauthorized)` knows to refresh a credential; one reading
+// `unavailable` learns the wrong thing from a true sentence.
+func (c *ModelCatalog) clause() string {
+	if !c.stale() {
+		return ""
+	}
+	s := " per " + catalogRead(c.read.Age)
+	if c.read.Err != nil {
+		s += " (probe failing: " + c.read.Err.Error() + ")"
+	}
+	return s
+}
+
+// OnModelCatalog: are this runtime's model ids ids the catalog above lists?
 // Asked of the runtime's own `egress:` (ADR 0002 §4) rather than of its
 // name, so a template-only runtime pointed at the same API is covered and a
 // built-in that moves is not miscategorised by a stale name check.
-func anthropicAPI(rt *Runtime) bool {
+func (rt *Runtime) OnModelCatalog() bool {
 	for _, h := range rt.Egress {
 		if h == ModelListHost {
 			return true

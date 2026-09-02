@@ -294,7 +294,7 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	// The fixture declares api.anthropic.com and NO model_<tier>:, so
 	// `p.Wanted == ""` is the only thing standing between it and the
 	// catalog — the arm this test is about. It used to be grok, which stops
-	// short one line later on `!anthropicAPI` and since rangerhq-jp6 maps
+	// short one line later on `!OnModelCatalog` and since rangerhq-jp6 maps
 	// every tier; keeping grok here would have left the empty-map arm
 	// covered by nothing while the test stayed green off the other branch.
 	os.MkdirAll(a.RuntimesDir(), 0o755)
@@ -304,7 +304,7 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !anthropicAPI(rt) || rt.Model(TierStrong) != "" {
+	if !rt.OnModelCatalog() || rt.Model(TierStrong) != "" {
 		t.Fatalf("fixture must be on the catalog and map nothing: egress %v model %q", rt.Egress, rt.Model(TierStrong))
 	}
 	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); pf.Fell() {
@@ -323,7 +323,7 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 // codex maps gpt-5.6-* since ranger-base-arm, and this catalog is
 // Anthropic's: a mapped id off that API must NOT be reported missing just
 // because a list that will never hold it does not hold it. The predicate
-// is the runtime's egress: (anthropicAPI), not whether Models is empty.
+// is the runtime's egress: (Runtime.OnModelCatalog), not whether Models is empty.
 func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *testing.T) {
 	t.Parallel()
 	a := preflightApp(t)
@@ -643,4 +643,190 @@ func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
 			t.Errorf("got %q", got)
 		}
 	})
+}
+
+// ─── the age of the reading a verdict rests on (ADR 0039 D3a) ────────────────
+
+// seedCatalogEntry writes the snapshot verbatim, for the two facts
+// seedCatalog cannot express: a cooldown, and a reading that is retained
+// but past its lease.
+func seedCatalogEntry(t *testing.T, a *App, e modelEntry) {
+	t.Helper()
+	os.MkdirAll(a.StateDir, 0o755)
+	b, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.StateDir, "model-catalog.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// failingLister is the probe this instance has actually had since
+// 2026-08-31: a 401 that leaves the retained reading ruling on every
+// launch. It counts its calls, because "how many times was the endpoint
+// asked" is half of what D3b is about.
+func failingLister(hits *atomic.Int64) *ModelLister {
+	return &ModelLister{
+		URL:   "https://127.0.0.1:9/v1/models",
+		Token: func() (string, error) { return fakeToken, nil },
+		HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			hits.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Status:     "401 Unauthorized",
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		})},
+	}
+}
+
+// The bead that produced D3a: strong moved to an id the retained reading
+// was taken before, the probe cannot refresh it, and "unavailable" was a
+// true sentence that taught the operator the wrong thing — they edited a
+// state file by hand. The verdict must carry the reading's age and the
+// probe's outcome, so what it teaches is "refresh a credential".
+func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int64
+	a := preflightApp(t)
+	a.ModelLister = failingLister(&hits)
+	seedCatalogEntry(t, a, modelEntry{At: time.Now().Add(-48 * time.Hour), Models: []string{"claude-opus-5", "claude-sonnet-5"}})
+
+	// The launch's own loud line, in the ADR's shape: the clause sits on
+	// the verdict, before what posse did about it.
+	line := a.TierPreflight("architect", "claude", TierStrong, nil).Line
+	for _, want := range []string{
+		"architect: tier strong wants claude-fable-5-1 — unavailable per the catalog read 48h00m ago",
+		"(probe failing: model list endpoint returned 401 Unauthorized)",
+		", falling back to claude-opus-5",
+	} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line\n  %q\nmissing %q", line, want)
+		}
+	}
+	// The error is ModelLister's own generic string and nothing else: a
+	// clause printed in front of an operator is one more place the
+	// credential must not appear.
+	if strings.Contains(line, fakeToken) {
+		t.Errorf("the age clause quotes the credential: %q", line)
+	}
+
+	// AVAILABLE rests on the same reading, so it says so too — a day-old
+	// list saying the id is there is worth reading as a day-old list.
+	got := a.PreflightReport("", "claude", TierStandard, nil)
+	if !strings.Contains(got, "(available per the catalog read 48h00m ago (probe failing: model list endpoint returned 401 Unauthorized))") {
+		t.Errorf("available verdict does not name its reading: %q", got)
+	}
+}
+
+// The control on the clause: inside model_probe_ttl there is nothing to
+// say, and the line is the byte-for-byte one the shop has been reading
+// since rangerhq-oay.
+func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int64
+	a := preflightApp(t)
+	a.ModelLister = failingLister(&hits)
+	seedCatalog(t, a, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone, read a minute ago
+
+	const want = "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5"
+	if got := a.TierPreflight("architect", "claude", TierStrong, nil).Line; got != want {
+		t.Errorf("line =\n  %q\nwant\n  %q", got, want)
+	}
+	if got := a.PreflightReport("", "claude", TierStandard, nil); got != "claude: tier standard → claude-opus-5 (available)" {
+		t.Errorf("got %q", got)
+	}
+	if hits.Load() != 0 {
+		t.Errorf("a reading inside its lease must ask nobody, %d requests", hits.Load())
+	}
+	// The same fixture, aged past the lease, DOES carry the clause — the
+	// arm that proves the assertions above are measuring the age and not
+	// something that never prints.
+	seedCatalog(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5")
+	if got := a.TierPreflight("architect", "claude", TierStrong, nil).Line; !strings.Contains(got, "per the catalog read") {
+		t.Errorf("control: past the lease the clause must appear: %q", got)
+	}
+}
+
+// ─── one reading per report (ADR 0039 D3b) ───────────────────────────────────
+
+// `posse runtimes` prints a line per mapped tier per runtime on this API.
+// A reading taken per line is a request per line the moment the snapshot
+// cannot be refreshed — a failed read stores nothing, so nothing shares
+// it — and one state/model-catalog.log line for each.
+func TestOneCatalogReadingServesEveryLineOfAReport(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int64
+	a := preflightApp(t)
+	a.ModelLister = failingLister(&hits)
+	seedCatalogEntry(t, a, modelEntry{At: time.Now().Add(-48 * time.Hour), Models: []string{"claude-opus-5", "claude-sonnet-5"}})
+
+	cat := a.ProbeCatalog(nil)
+	for _, tier := range Tiers {
+		if line := a.PreflightReportOn(cat, "", "claude", tier); line == "" {
+			t.Fatalf("no line for tier %s", tier)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Errorf("--probe over 3 tiers made %d requests, want 1", hits.Load())
+	}
+	log, err := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.log"))
+	if err != nil {
+		t.Fatalf("the forced read left no log line: %v", err)
+	}
+	if got := strings.Count(string(log), "\n"); got != 1 {
+		t.Errorf("--probe wrote %d model-catalog.log lines, want 1:\n%s", got, log)
+	}
+
+	// The arm that proves the count above is measuring the sharing: the
+	// per-call form, which is what every one of these lines used to be,
+	// asks once per line over the same fixture.
+	before := hits.Load()
+	for _, tier := range Tiers {
+		a.PreflightReport("", "claude", tier, nil)
+	}
+	if n := hits.Load() - before; n < 3 {
+		t.Errorf("control: a reading per line must cost a request per line, got %d for 3 lines", n)
+	}
+}
+
+// A forced read is still not allowed to become the rangerhq-tdy8 storm:
+// Models checks RetryAt before it asks, and --probe goes through Models.
+func TestProbeHonoursALiveCooldown(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int64
+	a := preflightApp(t)
+	a.ModelLister = failingLister(&hits)
+	seedCatalogEntry(t, a, modelEntry{
+		At:      time.Now().Add(-48 * time.Hour),
+		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
+		RetryAt: time.Now().Add(10 * time.Minute),
+	})
+
+	cat := a.ProbeCatalog(nil)
+	line := a.PreflightReportOn(cat, "architect", "claude", TierStrong)
+	if hits.Load() != 0 {
+		t.Errorf("--probe asked a cooling-down endpoint %d times", hits.Load())
+	}
+	// The retained reading is still the newest fact anyone has, so it
+	// still rules — and still says how old it is.
+	if !strings.Contains(line, "unavailable per the catalog read 48h00m ago") {
+		t.Errorf("the cooldown's retained reading must rule and date itself: %q", line)
+	}
+	// Nothing was asked, so there is no probe outcome to report: the age
+	// is the whole clause, and the 429 that set the cooldown is in the log.
+	if strings.Contains(line, "probe failing") {
+		t.Errorf("a read that never happened must not be reported as a failing probe: %q", line)
+	}
+	// The control: with the cooldown expired, the same fixture DOES ask.
+	seedCatalogEntry(t, a, modelEntry{
+		At:      time.Now().Add(-48 * time.Hour),
+		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
+		RetryAt: time.Now().Add(-time.Minute),
+	})
+	a.ProbeCatalog(nil).known()
+	if hits.Load() != 1 {
+		t.Errorf("control: past the cooldown --probe must ask, %d requests", hits.Load())
+	}
 }

@@ -1302,6 +1302,10 @@ func main() {
 		// reads the session dir's own config) is invisible otherwise.
 		cwd, _ := os.Getwd()
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, posse.AbbrevHome(cwd))
+		// One reading for the whole report: a reading per runtime is a
+		// request per runtime on a home whose probe is down, because a
+		// failed read stores nothing for the next one to share.
+		cat := a.ReadCatalog(os.Stderr)
 		for _, rn := range a.ListRuntimes() {
 			if rt, err := a.LoadRuntime(rn); err == nil {
 				// Every other input to a launch is on this machine; this one
@@ -1310,7 +1314,7 @@ func main() {
 				// cage tier — and it is here so the operator can tell "the
 				// strong model is gone" from "the probe never answers on this
 				// box" without launching anything.
-				if line := a.PreflightReport(ag.Name, rn, tier, os.Stderr); line != "" {
+				if line := a.PreflightReportOn(cat, ag.Name, rn, tier); line != "" {
 					fmt.Fprintf(out, "  %s\n", line)
 				}
 				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd).String())
@@ -1526,6 +1530,22 @@ func main() {
 		}
 
 	case "runtimes":
+		// --probe re-reads the account's catalog NOW instead of ruling off
+		// whatever the shared snapshot holds (ADR 0039 D3b). One reading
+		// serves every line below, probe or not: a failed read stores
+		// nothing, so a reading taken per line would be a request per line
+		// on exactly the home where the probe is down.
+		probe := false
+		for _, f := range args {
+			if f != "--probe" {
+				die(posse.Die("usage: posse runtimes [--probe]"))
+			}
+			probe = true
+		}
+		cat := a.ReadCatalog(os.Stderr)
+		if probe {
+			cat = a.ProbeCatalog(os.Stderr)
+		}
 		for _, n := range a.ListRuntimes() {
 			rt, err := a.LoadRuntime(n)
 			if err != nil {
@@ -1549,6 +1569,26 @@ func main() {
 				tiers += " · UNMAPPED: " + strings.Join(unmapped, ",")
 			}
 			fmt.Fprintf(out, "%s %-8s %s · %s\n    %s\n", a.EmojiExact(n), n, kind, tiers, rt.Command)
+			// Every other fact on the line above is on this machine; this
+			// one is the ACCOUNT's, and this is where "is the new strong
+			// model there" gets answered without launching anything
+			// (rangerhq-oay, ADR 0039 D3b). Only for a runtime whose own
+			// egress: names the catalog host — for any other, posse knows
+			// no list its ids could be on and saying so per tier here
+			// would be noise, not news.
+			if !rt.OnModelCatalog() {
+				continue
+			}
+			for _, t := range posse.Tiers {
+				if rt.Model(t) == "" {
+					continue
+				}
+				// persona "": the catalog is per account, not per PID, and
+				// tier keys are the form the report already supports.
+				if line := a.PreflightReportOn(cat, "", n, t); line != "" {
+					fmt.Fprintf(out, "    %s\n", line)
+				}
+			}
 		}
 		// The catalog says what exists; the contract grid says whether a
 		// profile can take work (ADR 0013 §1). Nothing else points at it.
@@ -2094,7 +2134,11 @@ catalog:
                                  OAuth token's only writer is the runtime's own login
                                  loop, and it prints where that store is instead.
   posse agents                   list personas
-  posse runtimes                 list launch profiles (claude/codex/grok + runtimes/*.yaml)
+  posse runtimes [--probe]       list launch profiles (claude/codex/grok + runtimes/*.yaml),
+                                 with per-tier model availability under each profile whose
+                                 egress: names the model catalog host (ADR 0039 D3b).
+                                 --probe re-reads that catalog now instead of ruling off
+                                 the shared snapshot; a live 429 cooldown is still honoured.
   posse runtime check <name>     the ADR 0013 dispatch-contract grid for one launch profile,
                                  then the ADR 0012 D4 preflight (exit 1 on a blocking gap):
                                  launch/promptable/work/record/settle/account, who declared each,
