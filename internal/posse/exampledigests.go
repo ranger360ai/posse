@@ -63,6 +63,7 @@ var shippedExampleDigests = map[string][]string{
 		"00a402f48c63cd2ca274187bea2e888990434b9d59dea480f3183efe6a803b43", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write + writable: [docs/adr], cage: seatbelt (ADR 0014 §1)
 		"8e2ecc2dd31c7dae27750768083e97e6de63490be998a5977270b3813ff750f0", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"9708659bdbb628ba778179151a88cb1f10071c82914cae282d0e8d917e2f3fd6", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"36d66cdf6f9c321d2bd937588be4f0e3aaf6cde13a3bcd42f9e1f04083a228a2", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -73,6 +74,7 @@ var shippedExampleDigests = map[string][]string{
 		"6322ec2e8598e3c7299d10f52eb9189cf1808e462333a0806ff94a00e7f4efbe", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"c5ae0a1c7c495ed89ea128ccc3c4b2eef3bb8a00728b8462831507ec45dfe5a6", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"0831371db1919700c8f0094927d86198db5103fb96e287b2d22fa69fd550d11a", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"6535e3d9cdbde33d80c0b16e118cfcee6eff7057ef46bf58396d8e1a1df08c52", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/developer.md": {
 		"17e0db0cf3780cb6ba6e0ecd0b13d300f1b45d05b470be6df4d43575b43348de", // 5668b76
@@ -86,6 +88,7 @@ var shippedExampleDigests = map[string][]string{
 		"53a6bc6d4096165a750034b45d7e99e8d928245babefcd7046680aa5e88d7301", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"4ac8677547bb71ea1f5bab2523a3059dac45c554dcd670cb0b1701b3c7c63a7b", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
 		"a0815bed7cc6617578b7ed711aaff360f502acba189745d3f85f242a768cb020", // ranger-base-8zhr 2026-08-31 re-scope the git log --grep provenance promise (ADR 0022)
+		"170484e9f4c102f68baf2d14d0ae1a2e96566e6245cc4b3df08910716893856a", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76
@@ -96,6 +99,7 @@ var shippedExampleDigests = map[string][]string{
 		"f9cafe8aa22275a06f29b134836c5dd96d40190bf9366a5ab57d8d5035abf6e4", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"0d0ca8e12729fc4713a558c1474e2eb7e80efb0057ecfa503991183e7f547891", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"76cafa40ee36604d7f86029d28fb5c9f340e88d1608a88c2c653decfc879ace3", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"721cd9bb378719769520a96cc6c10e79bf532633eb842a1158796fc909b1aee3", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/ops.md": {
 		"7f0b4779b63fac5b004f2855b72d6f58c65e7b4819765b8c5ed5a4a1874d5a47", // rangerhq-o7y4 2026-08-29 ranger.md renamed to a role (ADR 0012 D2)
@@ -103,6 +107,7 @@ var shippedExampleDigests = map[string][]string{
 		"da9eb21e3ff59ce41b5ea38b56ef8dfe192be82fc0515e539ffd2da9f50311ec", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"7d85475d65f5059e3c0342ffba9b3fe2241f4505eb92e64f3b9d3c1a7ab4d9cd", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"a556a7ad1031f59806863e50cb3b2d77edf761c22df3149d3a485f6d8b7398b4", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"978afa246a4d436471eefaf2e4e747dae7c2891c48b621ccf06471d911e45510", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/product.md": {
 		"c9ce6781c6f3b0d3049ff424815993983fb04419272a17ec6ca8328877f426d6", // 5668b76
@@ -113,6 +118,7 @@ var shippedExampleDigests = map[string][]string{
 		"4989ecdf6c358017c3e8030bb239808f2a4f7ec64fba457decfb05d652f7d779", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"25b9a63f4b12c2a8fd6eaec9d32ad8032d82a80e86282daf4283c659b65aa20c", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"aabed0242f85ddd0a0bcaceb4ce4bafd25362b258cb8d0e0e82ac19e190412d5", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"610f68c6e72987fc7fd1e7e57a08e19fd5bcd3d4c1174f20de627ea4f85c139d", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/qa.md": {
 		"65eeb0b68cda30bb9ed944c9789c4bd26d5e75f3b69a7d85f5c8eab7e4da832a", // 5668b76
@@ -124,6 +130,7 @@ var shippedExampleDigests = map[string][]string{
 		"05d05ec74110283e95ce149ca0164e36ded4f38d2dc9048c675557d32d26eeae", // ranger-base-ccd 2026-08-29 path-scoped writes: deny Edit/Write(docs/adr/**), cage: seatbelt (ADR 0014 §1)
 		"663275a4df0e5c05799e35c00c44456f5a827630d5f5fb4122a6c05464b206ec", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"95931b990ef8ad1e77e8efad0c4aed9fdf5edac702addf9af1b74e532609ffd8", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"c6cac35b3fb132bd937b0863aca7e5f3425531082c26a9dbea5da27de815f8c3", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay
@@ -145,6 +152,7 @@ var shippedExampleDigests = map[string][]string{
 		"eb12135f07bf29736afddb1524b449388c17763a73a5a639965e327366f28abd", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"1771e96bd8a49b4daaa4760832a5ab5de6d506da17aec6b8cc75236b19643dd6", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"a49bf606c5231c73d458b1907ef6996c778495beca20ea212d2f42434f73291f", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"5e543fcc549b4d8a7ac9c1466ae3db2c72b4051dfe26a3a1085c6772cd6a10fe", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 	"agents/security.md": {
 		"d3d07f404ab3099e93525374c8ae94dbfb12f21ef20434d3777a295c050ad8be", // 5668b76
@@ -155,6 +163,7 @@ var shippedExampleDigests = map[string][]string{
 		"f2b37fc94f4e06244287c591369c76a3e1a484e549c68610642938bc5382fdad", // ranger-base-09b7 2026-08-29 deny Bash(git commit unless --) — the L1 commit wall reaches the seed
 		"f6f828f96bbe03f346b905ecd7755f4601a6100be088cf4f3f2e6c0b1261087a", // ranger-base-t2v2 2026-08-29 narrow the bd hook/hooks deny to install/uninstall (y5g7)
 		"260b11e629fea09b363bec067e40e9cdb9e60b71016c90948fce7786788953fd", // 9c00e192 2026-08-31 rename internal/rhq -> internal/posse ($RHQ_PERSONA_DIR -> $POSSE_PERSONA_DIR)
+		"80d0aec4270ebd7e3bc93308425e7fdbb067f5e06af4877d4f60a3ea2fa99e7c", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 	},
 }
 
