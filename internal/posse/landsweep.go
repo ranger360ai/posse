@@ -45,6 +45,17 @@ package posse
 // happens once; this runs every pass, and a bead per pass over a permanently
 // conflicted branch is spam, not a handoff. The ⚠ line repeats instead — on
 // every pass, which is what "the shop can see it" means here.
+//
+// THE ONE BEAD IT DOES FILE, and why that is not the same objection (ADR
+// 0041 §2). A closed bead whose tree holds uncommitted paths is routed back
+// to its closer from here as well as from the judged close, because the
+// sweep exists precisely for the closes nobody watched and a close nobody
+// watched is exactly the one whose dirt nobody is going to notice. The spam
+// objection above is answered by the key, not by the site: closeddirty.go's
+// handoff dedupes on its OPEN title the way the merge-back handoff already
+// does, and its comment dedupes on the `closed dirty [` marker, so N passes
+// over one dirty tree still leave one bead and one comment. What the
+// paragraph above rules out is a bead per pass, and neither of these is one.
 
 import (
 	"strconv"
@@ -137,6 +148,14 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		if len(o.Dirty) > 0 {
 			d.printf("◑ %-14s %d uncommitted path(s) left in %s — closed, and this part did not land\n",
 				id, len(o.Dirty), AbbrevHome(t.Path))
+			// The bead is where that has to be written, or the pass line is
+			// the only record again and this sweep repeats it forever with
+			// nobody reading it (ADR 0041 §1–§2, closeddirty.go). The marker
+			// dedupes across all three sites, so the sweep's every-pass
+			// cadence costs at most the one comment mergeBack may already
+			// have left. The closer is the bead's assignee, then whoever
+			// filed it — bd records no close actor (verifyCloser).
+			noteClosedDirty(d.Bd, t.Repo, id, verifyCloser(is), t, o, d.printf, d.eprintf)
 		}
 	}
 }

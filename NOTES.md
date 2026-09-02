@@ -402,7 +402,13 @@ of the harness core:
    (`internal/posse/seatidle.go`, `docs/notes.d/ranger-base-59jd.md`).
 6. Judge by the **bead**, not the agent: issue closed → ✓; agent settled
    `blocked` → ⛔ flagged (herdr's sidebar already shows it); settled but
-   issue still open → ◑ review the session.
+   issue still open → ◑ review the session. **A close that leaves
+   uncommitted paths in its session tree is written on the bead** —
+   `closed dirty [N path(s)]: … — nothing carries these`, once, whichever of
+   the judged close, the landing sweep or the kill's landing reads that tree
+   first, plus one P1 back at the closer (ADR 0041, `closeddirty.go`). The
+   pass line beside it is retrospective; the comment sits under the close
+   comment, which is where the next reader copies a false claim from.
 7. A `--wait` **timeout is a check-in, not a verdict** (rangerhq-1z0).
    herdr's error code (`timeout`, typed as `HerdrAPIError`) says the wait
    ran out, not that the prompt failed, so gather asks herdr what the

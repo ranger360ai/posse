@@ -4122,6 +4122,12 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 		// the bead done and this is the part of "done" that did not land.
 		d.printf("◑ %-14s %d uncommitted path(s) left in %s (%s) — not merged, still in the tree\n",
 			is.ID, len(o.Dirty), AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
+		// …and written where the false claim lives: on the bead, under the
+		// close comment the next reader copies from (ADR 0041 §1–§2,
+		// closeddirty.go). The pass line above is retrospective; this is the
+		// record. Only this branch is closed by construction — mergeBack is
+		// called from the one arm where bd answered "closed".
+		noteClosedDirty(d.Bd, is.Dir, is.ID, persona, t, o, d.printf, d.eprintf)
 	}
 	switch {
 	case len(o.Equivalent) > 0:
@@ -4283,14 +4289,5 @@ func mergeBlockedTitle(branch, base string) string {
 // this branch, or "" for none. Closed does not count: a persona that
 // resolved one and the merge that is blocked again are two handoffs.
 func (d *Dispatcher) openMergeBlocked(dir, title string) (string, error) {
-	open, err := d.Bd.OpenLabeledAny(dir, MergeBlockedLabel)
-	if err != nil {
-		return "", err
-	}
-	for _, b := range open {
-		if b.Title == title {
-			return b.ID, nil
-		}
-	}
-	return "", nil
+	return openTitledBead(d.Bd, dir, MergeBlockedLabel, title)
 }
