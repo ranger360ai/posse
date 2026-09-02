@@ -38,7 +38,8 @@ import (
 
 // shellCommandWords returns the words appearing in a command position in POSIX
 // shell text — the name the shell would look up to run that command — in the
-// order first seen.
+// order first seen, and a second list of BLIND SITES: places in shell code
+// where a command runs that this scanner cannot name.
 //
 // It is a scanner, not a parser: it tracks quoting, comments, command
 // substitution and `case` pattern lists, which is exactly what a substring grep
@@ -47,23 +48,60 @@ import (
 // (the rest are "tree", "instance", "restate"), and "rm" occurs 30 times and
 // none of them are the command ("form", "performed").
 //
-// The one thing it cannot see is a command invoked through a variable. Both
-// hooks do that once, in posse_stamp, and shellExecProbeNames below reads that
-// idiom's literal name off the `[ -x "$dir/name" ]` test that finds it.
+// COMPLETENESS — this paragraph is the contract, and ranger-base-h6k2r is what
+// it costs to get it wrong. It used to name two blind spots when there were
+// ten: `env -i awk`, `! awk`, `xargs awk`, `nice awk`, `timeout 5 awk`,
+// `exec awk`, `command awk`, `>out awk`, `eval "awk"` and `VAR=v awk` all
+// returned no `awk`, the last of them past an arm whose own comment said it
+// kept the command position open. Nothing was missing from HOOK_DEPS at the
+// time, so the file was green while telling the next reader it was complete.
 //
-// The other thing it cannot see is the OTHER command substitution: `cmd` in
-// backticks. Rather than guess at it, the scanner reports every backtick it
-// meets while reading SHELL CODE as the second return, and the caller fails on
-// one. That is a report from the same lexer state as the words, which is the
-// whole point (ranger-base-cx2ok): a backtick inside a comment or inside single
-// quotes runs nothing, and the rendered commit guard quotes three commands for
-// a reader that way. A whole-body `strings.Contains(body, "`")` cannot tell the
-// two apart and failed on the prose for a day.
-func shellCommandWords(src string) (words, backticks []shellCall) {
+// The rule now is that every construct which runs a command this scanner cannot
+// name falls in exactly one of three buckets, and there is no fourth:
+//
+// TAUGHT — grammar alone, no knowledge of any command's own options:
+//   - the command prefixes that ARE shell syntax: `VAR=v cmd`, `! cmd`,
+//     `time cmd`, a redirection written before the command (`>out cmd`,
+//     `2>&1 cmd`), and the `exec` and `command` builtins.
+//   - an option word: a word starting with `-` is never a command name, so it
+//     is skipped without closing the command position (`time -p cmd`,
+//     `command -v cmd`). An option that takes a VALUE is the limit of that —
+//     `exec -a nm awk` derives "nm" and not "awk" — but it derives a name no
+//     HOOK_DEPS holds, so it fails the census out loud instead of going quiet.
+//   - the ordinary grammar: pipelines, `&&`, `;`, newlines, subshells, brace
+//     groups, `if`/`while`/`until`/`for`/`case`, and `$( )`.
+//
+// COMPENSATED by a second reader:
+//   - a command invoked through a VARIABLE. Both hooks do that once, in
+//     posse_stamp, and shellExecProbeNames below reads that idiom's literal
+//     name off the `[ -x "$dir/name" ]` test that finds it.
+//
+// REPORTED as a blind site, which the caller fails on:
+//   - `cmd` in BACKTICKS, the other command substitution. Rather than guess at
+//     it the scanner reports every backtick it meets while reading SHELL CODE.
+//     That is a report from the same lexer state as the words, which is the
+//     whole point (ranger-base-cx2ok): a backtick inside a comment or inside
+//     single quotes runs nothing, and the rendered commit guard quotes three
+//     commands for a reader that way. A whole-body strings.Contains(body, "`")
+//     cannot tell the two apart and failed on the prose for a day.
+//   - a wrapper whose command argument sits behind its OWN option grammar:
+//     runsAnotherCommand below. `env -u NAME awk` and `nice -n 5 awk` cannot be
+//     walked past without knowing that -u and -n each take an argument, and
+//     holding a table of other commands' options is the one thing this scanner
+//     will not do — that table is the hand-maintained list this whole file
+//     exists to replace.
+//   - find's inline command: `-exec`, `-ok` and their -dir forms.
+//   - a HEREDOC operator. Its body is data, not code, so reading it as code
+//     both invents command words and can desync the lexer for everything after
+//     it — silence, not noise, which is the failure mode that matters here.
+//
+// A report is not a bug in the hook. It is this file saying the census stopped
+// being derivable there, which is the finding ranger-base-lxkdi asked for.
+func shellCommandWords(src string) (words, blind []shellCall) {
 	var out []shellCall
 	seen := map[string]bool{}
-	backtick := func(off int) {
-		backticks = append(backticks, shellCall{Name: "`", Line: 1 + strings.Count(src[:off], "\n")})
+	report := func(name string, off int) {
+		blind = append(blind, shellCall{Name: name, Line: 1 + strings.Count(src[:off], "\n")})
 	}
 	emit := func(w string, off int) {
 		if !seen[w] {
@@ -107,9 +145,25 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 		}
 	}
 
-	var doubleStack []bool // saved inDouble across `$(`
+	var substStack []substFrame // scanner state saved across `$( )`
 	inDouble, inSingle := false, false
 	cmdPos := true
+	// assignVal is "the scanner is inside the VALUE of a `VAR=` prefix". Every
+	// arm that would otherwise close the command position consults it, because
+	// the whole point of the prefix is that the command comes after the value:
+	// `AWKPATH=/x awk` and `PATH=/a:/b sh -c ...`. Before ranger-base-h6k2r the
+	// word arm set out to do this and the very next byte — the `=` itself —
+	// fell to the default arm and undid it.
+	assignVal := false
+	// endWord closes the command position unless we are mid-assignment-value.
+	// Every arm that ends a word goes through it, the `=` of the prefix itself
+	// included — that character has no arm of its own because it does not need
+	// one, and a mutation run proved the one it used to have was dead.
+	endWord := func() {
+		if !assignVal {
+			cmdPos = false
+		}
+	}
 
 	for i := 0; i < len(src); {
 		c := src[i]
@@ -125,31 +179,30 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 				i += 2
 			case c == '"':
 				inDouble = false
-				cmdPos = false
+				endWord()
 				i++
 			case c == '$' && i+2 < len(src) && src[i+1] == '(' && src[i+2] == '(':
 				i = skipArith(src, i)
 			case c == '$' && i+1 < len(src) && src[i+1] == '(':
-				doubleStack = append(doubleStack, true)
-				inDouble = false
-				cmdPos = true
+				substStack = append(substStack, substFrame{inDouble: true, assignVal: assignVal})
+				inDouble, assignVal, cmdPos = false, false, true
 				i += 2
 			case c == '$' && i+1 < len(src) && src[i+1] == '{':
 				i = skipBraceExpansion(src, i)
 			case c == '`':
 				// Substitution inside double quotes too, and here the scanner
 				// does not even open a command position for it.
-				backtick(i)
+				report("`", i)
 				i++
 			default:
 				i++
 			}
 		case c == '\\' && i+1 < len(src):
 			i += 2
-			cmdPos = false
+			endWord()
 		case c == '\'':
 			inSingle = true
-			cmdPos = false
+			endWord()
 			i++
 		case c == '"':
 			inDouble = true
@@ -161,16 +214,27 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 			}
 		case c == '$' && i+2 < len(src) && src[i+1] == '(' && src[i+2] == '(':
 			i = skipArith(src, i)
-			cmdPos = false
+			endWord()
 		case c == '$' && i+1 < len(src) && src[i+1] == '(':
-			doubleStack = append(doubleStack, false)
-			cmdPos = true
+			substStack = append(substStack, substFrame{assignVal: assignVal})
+			assignVal, cmdPos = false, true
 			i += 2
 		case c == '$' && i+1 < len(src) && src[i+1] == '{':
 			i = skipBraceExpansion(src, i)
-			cmdPos = false
-		case (c == '&' || c == '>' || c == '<') && i > 0 && (src[i-1] == '>' || src[i-1] == '<'):
-			// A redirection operator, not a separator: `2>&1`, `>>file`.
+			endWord()
+		case c == '>' || c == '<':
+			// A redirection and its target, wherever it appears in the simple
+			// command. Written BEFORE the command name (`>out awk`, `2>&1 awk`)
+			// it must not close the command position, and its target must not
+			// be read as the command: both were misses before h6k2r, the second
+			// one loudly — `2>/dev/null awk` emitted `2`.
+			var heredoc bool
+			i, heredoc = skipRedirect(src, i)
+			if heredoc {
+				report("<<", i)
+			}
+		case c == '!' && cmdPos:
+			// `! cmd` — a reserved word, and the command follows it.
 			i++
 		case c == ')':
 			// A `)` closing a command substitution we opened is unambiguous, so
@@ -178,10 +242,13 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 			// occurs inside case bodies, and reading its `)` as the end of a
 			// pattern list left the rest of the double-quoted message being
 			// scanned as commands.
-			if n := len(doubleStack); n > 0 {
-				inDouble = doubleStack[n-1]
-				doubleStack = doubleStack[:n-1]
-				cmdPos = false
+			if n := len(substStack); n > 0 {
+				f := substStack[n-1]
+				substStack = substStack[:n-1]
+				inDouble, assignVal = f.inDouble, f.assignVal
+				// `x=$(date) awk` is still a command prefix; `$(date) awk` is
+				// not — there the substitution WAS the command.
+				cmdPos = assignVal
 			} else if topCase() == casePattern {
 				setCase(caseBody)
 				cmdPos = true
@@ -193,20 +260,21 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 			if topCase() == caseBody {
 				setCase(casePattern)
 			}
-			cmdPos = false
+			cmdPos, assignVal = false, false
 			i += 2
 		case c == '`':
 			// Read as a separator so the word after it is at least scanned as a
 			// command; the report is what the caller acts on, because the
 			// CLOSING backtick opens a command position too and the word after
 			// THAT is a false positive.
-			backtick(i)
-			cmdPos = true
+			report("`", i)
+			cmdPos, assignVal = true, false
 			i++
 		case c == '\n' || c == ';' || c == '|' || c == '&' || c == '(' || c == '{':
-			cmdPos = true
+			cmdPos, assignVal = true, false
 			i++
 		case c == ' ' || c == '\t':
+			assignVal = false
 			i++
 		case isWord(c):
 			j := i
@@ -218,7 +286,12 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 			i = j
 			switch {
 			case assignment:
-				// A VAR=value prefix leaves the next word still a command.
+				// A VAR=value prefix leaves the next word still a command; the
+				// value is walked with assignVal set so nothing in it emits and
+				// nothing in it closes the position.
+				assignVal = true
+			case assignVal:
+				// A bare word inside an assignment's value.
 			// `esac` is read BEFORE the pattern-list arm: `;;` returns the
 			// scanner to pattern state, so the closing `esac` of a one-line
 			// `case ... in p) cmd ;; esac` arrives in it. Swallowing it there
@@ -229,6 +302,14 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 					caseState = caseState[:len(caseState)-1]
 				}
 				cmdPos = false
+			case findInlineCommand[w]:
+				// find's own command argument, and it is an OPTION word, so it
+				// arrives with the command position already closed by `find`.
+				report(w, j-len(w))
+			case allDigits(w) && j < len(src) && (src[j] == '>' || src[j] == '<'):
+				// The fd of a redirection, not a command: `2>&1`. Written
+				// before the command name it used to be EMITTED as one —
+				// `2>/dev/null awk` derived a dependency called "2".
 			case topCase() == casePattern:
 				cmdPos = false
 			case w == "case" && cmdPos:
@@ -238,25 +319,123 @@ func shellCommandWords(src string) (words, backticks []shellCall) {
 				setCase(casePattern)
 				cmdPos = false
 			case !cmdPos:
+			case w[0] == '-':
+				// An option word is never a command name, and the command can
+				// still follow it: `time -p cmd`, `command -v cmd`. An option
+				// that takes a VALUE is where this stops — `exec -a nm awk`
+				// derives "nm" — and it stops LOUDLY, with a name no HOOK_DEPS
+				// holds, which is the direction this file can survive.
 			case w == "if" || w == "then" || w == "else" || w == "elif" ||
-				w == "while" || w == "until" || w == "do" || w == "time":
-				// A command follows these; stay in a command position.
+				w == "while" || w == "until" || w == "do" || w == "time" ||
+				w == "exec" || w == "command":
+				// A command follows these; stay in a command position. exec and
+				// command are builtins that RUN their argument, so unlike the
+				// wrappers below there is no option table to walk past.
 			case w == "for" || w == "select":
 				cmdPos = false // name, `in`, and a word list — not commands
 			case w == "fi" || w == "done":
 				cmdPos = false
 			default:
+				if runsAnotherCommand[w] {
+					report(w, j-len(w))
+				}
 				if !noBinary[w] {
 					emit(w, j-len(w))
 				}
 				cmdPos = false
 			}
 		default:
-			cmdPos = false
+			endWord()
 			i++
 		}
 	}
-	return out, backticks
+	return out, blind
+}
+
+// substFrame is the scanner state a `$( )` saves and its `)` restores.
+type substFrame struct {
+	inDouble  bool
+	assignVal bool
+}
+
+// runsAnotherCommand are the wrappers that take a command as an argument and
+// put their OWN options in front of it. Walking past `env -u NAME awk` or
+// `nice -n 5 awk` to reach `awk` needs a table of which of those options take a
+// value — a hand-maintained list of other commands' interfaces, which is the
+// species of thing this file exists to delete. So they are reported instead: a
+// hook that grows one is a finding, not a silence. Several of them are real
+// binaries and are emitted as commands too; being a dependency and hiding a
+// dependency are not the same claim.
+var runsAnotherCommand = map[string]bool{
+	"env": true, "xargs": true, "nice": true, "ionice": true, "timeout": true,
+	"nohup": true, "setsid": true, "chroot": true, "stdbuf": true, "flock": true,
+	"watch": true, "sudo": true, "doas": true, "su": true, "eval": true,
+	"sh": true, "bash": true, "dash": true, "ksh": true, "zsh": true,
+}
+
+// allDigits reports whether w is a file-descriptor number.
+func allDigits(w string) bool {
+	for i := 0; i < len(w); i++ {
+		if w[i] < '0' || w[i] > '9' {
+			return false
+		}
+	}
+	return w != ""
+}
+
+// findInlineCommand are find's option words whose argument is a command line.
+var findInlineCommand = map[string]bool{
+	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
+}
+
+// blindSiteDescription turns a reported site into the sentence a reader needs,
+// because "`" and "env" and "<<" fail for three different reasons.
+func blindSiteDescription(name string) string {
+	switch {
+	case name == "`":
+		return "a backtick command substitution in shell code"
+	case name == "<<":
+		return "a heredoc: its body is data, and this scanner is reading it as code"
+	case findInlineCommand[name]:
+		return "find's " + name + ", whose argument is a command line"
+	default:
+		return name + " runs the command that follows its own options"
+	}
+}
+
+// skipRedirect steps over one redirection operator and its target, starting at
+// the `>` or `<`, and reports whether the operator was a heredoc. It leaves the
+// command position exactly as it found it: a redirection can be written before
+// the command name, and POSIX says the command is still what follows.
+func skipRedirect(src string, i int) (int, bool) {
+	start := i
+	for i < len(src) && (src[i] == '>' || src[i] == '<' || src[i] == '&') {
+		i++
+	}
+	if strings.HasPrefix(src[start:i], "<<") {
+		return i, true // the body is data; the caller is told, not guessed at
+	}
+	for i < len(src) && (src[i] == ' ' || src[i] == '\t') {
+		i++
+	}
+	// The target word, quoted or not. Stopping at the operators keeps a bare
+	// `>&1` or a `>out;cmd` from swallowing what follows.
+	for i < len(src) {
+		switch c := src[i]; {
+		case c == '\'' || c == '"':
+			for i++; i < len(src) && src[i] != c; i++ {
+			}
+			if i < len(src) {
+				i++
+			}
+		case c == ' ' || c == '\t' || c == '\n' || c == ';' || c == '|' ||
+			c == '&' || c == '(' || c == ')' || c == '<' || c == '>':
+			return i, false
+		default:
+			i++
+		}
+	}
+	return i, false
 }
 
 // shellCall is one command word and the 1-based line of the rendered hook it
@@ -320,6 +499,40 @@ func shellExecProbeNames(src string) []shellCall {
 	return out
 }
 
+// hookCensus derives the commands a set of rendered hooks calls, and the blind
+// sites where one runs that shellCommandWords could not name. It is a function
+// and not a paragraph inside the test so that the REPORTING path is reachable
+// from a pin: a guard whose failure branch no test has ever entered is a guard
+// nobody has measured (ranger-base-h6k2r).
+func hookCensus(rendered map[string]string, notPathLookups map[string]bool) (called map[string]string, blind []string) {
+	called = map[string]string{} // command -> which hook calls it
+	for _, name := range sortedKeys(rendered) {
+		body := rendered[name]
+		words, sites := shellCommandWords(body)
+		for _, b := range sites {
+			blind = append(blind, fmt.Sprintf("%s:%d: %s", name, b.Line, blindSiteDescription(b.Name)))
+		}
+		for _, c := range append(words, shellExecProbeNames(body)...) {
+			if notPathLookups[c.Name] || strings.HasPrefix(c.Name, "posse_") {
+				continue // posse_* are the hooks' own shell functions
+			}
+			if _, ok := called[c.Name]; !ok {
+				called[c.Name] = fmt.Sprintf("%s:%d", name, c.Line)
+			}
+		}
+	}
+	return called, blind
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 var hookDepsLine = regexp.MustCompile(`HOOK_DEPS="\$\{HOOK_DEPS:-([^}"]*)\}"`)
 
 func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
@@ -358,21 +571,12 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 		neighbour: true, "posse-prepare-commit-msg": true,
 	}
 
-	called := map[string]string{} // command -> which hook calls it
-	for name, body := range rendered {
-		words, backticks := shellCommandWords(body)
-		for _, bt := range backticks {
-			t.Errorf("%s:%d: backtick substitution in shell code — shellCommandWords does not scan it, "+
-				"so any command inside it is missing from this census", name, bt.Line)
-		}
-		for _, c := range append(words, shellExecProbeNames(body)...) {
-			if notPathLookups[c.Name] || strings.HasPrefix(c.Name, "posse_") {
-				continue // posse_* are the hooks' own shell functions
-			}
-			if _, ok := called[c.Name]; !ok {
-				called[c.Name] = fmt.Sprintf("%s:%d", name, c.Line)
-			}
-		}
+	called, blind := hookCensus(rendered, notPathLookups)
+	for _, b := range blind {
+		t.Errorf("%s — shellCommandWords cannot name the command that runs there, so it is missing "+
+			"from this census and the clean-room probe reports every distro clean for it. Add the "+
+			"command to HOOK_DEPS and say here why the scanner cannot see the call, or rewrite the "+
+			"hook line in a shape it can. See the COMPLETENESS paragraph above.", b)
 	}
 
 	b, err := os.ReadFile("../../scripts/cleanroom.sh")
@@ -502,5 +706,150 @@ func TestShellCommandWordsReportsBackticksInCodeNotInProse(t *testing.T) {
 	if _, backticks := shellCommandWords(body + "\nposse_x=" + bt + "date" + bt + "\n"); len(backticks) != 2 {
 		t.Errorf("a real substitution spliced into the rendered hook was reported at %d site(s), want 2 — "+
 			"the guard would not catch the thing it exists for", len(backticks))
+	}
+}
+
+// ranger-base-h6k2r: the paragraph on shellCommandWords named two blind spots
+// when there were ten, and a reader takes that paragraph as the completeness
+// statement for the census — which is the one property this file exists to give
+// back (ranger-base-lxkdi). None of the ten was a live miss, so nothing was red
+// while the claim was false; that is exactly the silence this pin ends.
+//
+// The standard the two named blind spots were already held to, now applied to
+// all of them: a command-prefix shape is either SEEN — the command word comes
+// out of the census — or REPORTED, which the caller above fails on. Nothing is
+// allowed to be quiet. The wrong arm is what makes this a measurement: every
+// "reported" row returned no report before the fix, and every "seen" row
+// returned no `awk`.
+func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
+	const seen, reported, loud = "seen", "reported", "loud"
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		// Shapes the scanner already read, kept here so a rewrite of the
+		// command-prefix arms cannot quietly cost one of them.
+		{"plain", "awk '{print}' f", seen},
+		{"pipeline", "cat f | awk '{print}'", seen},
+		{"and-and", "true && awk '{print}'", seen},
+		{"command substitution", "x=$(awk '{print}' f)", seen},
+		{"case body", "case $x in a) awk '{print}' ;; esac", seen},
+		{"brace group", "{ awk '{print}' f; }", seen},
+		{"subshell", "( awk '{print}' f )", seen},
+		{"while condition", "while awk '{print}' f; do :; done", seen},
+		{"time prefix", "time awk '{print}' f", seen},
+
+		// Taught by h6k2r. Each returned no `awk` before it.
+		{"assignment prefix", "AWKPATH=/x awk '{print}'", seen},
+		{"assignment with a colon in the value", "PATH=/a:/b awk '{print}'", seen},
+		{"assignment with a quoted value", "X=\"a b\" awk '{print}'", seen},
+		{"two assignment prefixes", "A=1 B=2 awk '{print}'", seen},
+		{"assignment from a substitution", "X=$(date) awk '{print}'", seen},
+		{"negation", "! awk '{print}' f", seen},
+		{"negation inside if", "if ! awk '{print}' f; then :; fi", seen},
+		{"leading redirection", ">out awk '{print}'", seen},
+		{"leading fd redirection", "2>/dev/null awk '{print}'", seen},
+		{"exec", "exec awk '{print}'", seen},
+		{"command builtin", "command awk '{print}'", seen},
+		{"valueless option before the command", "command -v awk", seen},
+		{"option taking a value", "exec -a nm awk '{print}'", loud},
+
+		// Reported by h6k2r: reaching the command needs a table of ANOTHER
+		// command's options, which is the hand-maintained list this file exists
+		// to delete. Each was silent before.
+		{"env with an assignment", "env AWKPATH=/x awk '{print}'", reported},
+		{"env -i", "env -i awk '{print}'", reported},
+		{"xargs", "cat f | xargs awk '{print}'", reported},
+		{"nice", "nice awk '{print}'", reported},
+		{"timeout", "timeout 5 awk '{print}'", reported},
+		{"nohup", "nohup awk '{print}' f", reported},
+		{"stdbuf", "stdbuf -oL awk '{print}' f", reported},
+		{"sudo", "sudo awk '{print}' f", reported},
+		{"eval", "eval \"awk '{print}'\"", reported},
+		{"sh -c", "sh -c 'awk 1'", reported},
+		{"find -exec", "find . -exec awk {} ;", reported},
+		{"heredoc", "cat <<EOF\nawk\nEOF\n", reported},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			words, blind := shellCommandWords(tc.src)
+			var got []string
+			sees := false
+			for _, w := range words {
+				got = append(got, w.Name)
+				if w.Name == "awk" {
+					sees = true
+				}
+			}
+			switch tc.want {
+			case seen:
+				if !sees {
+					t.Errorf("shellCommandWords(%q) derived %v — `awk` runs there and the census "+
+						"does not name it, so HOOK_DEPS can go short of it in silence", tc.src, got)
+				}
+				if len(blind) > 0 {
+					t.Errorf("shellCommandWords(%q) reported %q as a blind site but the command "+
+						"IS derivable here; a report the reader cannot act on trains them to ignore reports",
+						tc.src, blind[0].Name)
+				}
+			case loud:
+				// The limit of the option-word arm. Not silence: the census
+				// derives a name nothing can satisfy, so it FAILS rather than
+				// under-reporting, which is the direction that is survivable.
+				if sees || len(got) == 0 {
+					t.Errorf("shellCommandWords(%q) derived %v — this row exists to hold the "+
+						"failure DIRECTION at the option-word arm's limit: a spurious name the "+
+						"census reds on, never a quiet miss", tc.src, got)
+				}
+			case reported:
+				if len(blind) == 0 {
+					t.Errorf("shellCommandWords(%q) derived %v and reported nothing — the command "+
+						"behind that prefix is invisible to the census AND to the reader", tc.src, got)
+				}
+			}
+		})
+	}
+
+	// The report tables are not decoration: every name in them has to actually
+	// produce a report from a command position. A name added to the map and
+	// never reached is a blind spot wearing a fix.
+	for w := range runsAnotherCommand {
+		if _, blind := shellCommandWords(w + " awk 1"); len(blind) == 0 {
+			t.Errorf("runsAnotherCommand names %q but %q reported nothing", w, w+" awk 1")
+		}
+	}
+	for w := range findInlineCommand {
+		if _, blind := shellCommandWords("find . " + w + " awk {} ;"); len(blind) == 0 {
+			t.Errorf("findInlineCommand names %q but `find . %s awk {} ;` reported nothing", w, w)
+		}
+	}
+
+	// The live witness, and it goes through hookCensus rather than the scanner
+	// alone: a table over string literals is a scanner unit test no rendered
+	// hook has to keep satisfying, and a report the census does not act on is
+	// no better than a silence. Both arms are the rendered pre-push; the only
+	// difference is one line of the shape the bead says this hook cluster is
+	// one commit from growing.
+	clean, blind := hookCensus(map[string]string{"pre-push": PrePushHook}, nil)
+	if len(blind) > 0 {
+		t.Errorf("rendered pre-push already reports a blind site (%s) — the splices below then "+
+			"witness nothing", blind[0])
+	}
+	if _, ok := clean["awk"]; ok {
+		t.Fatalf("the rendered pre-push already calls awk; pick another command for this witness")
+	}
+	for _, line := range []string{
+		"env -i awk '{print}' \"$f\"", // constitutionGuardBody's own residual paragraph names env -i
+		"timeout 5 awk '{print}' \"$f\"",
+		"! awk '{print}' \"$f\"",
+	} {
+		called, blind := hookCensus(map[string]string{"pre-push": PrePushHook + "\n" + line + "\n"}, nil)
+		_, named := called["awk"]
+		if !named && len(blind) == 0 {
+			t.Errorf("%q spliced into the rendered pre-push: the census neither named awk nor "+
+				"reported a blind site. A hook growing that line leaves HOOK_DEPS short of awk and "+
+				"the clean-room probe calling every distro clean for it — the silence lxkdi was "+
+				"filed to end, now with a green test over it", line)
+		}
 	}
 }
