@@ -331,6 +331,19 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 		{"rewrite an existing PID in place", func(f sbFixture) string { return "sed -i '' s/x/y/ " + home(f, "agents", "developer.md") }, false},
 		{"append to config.yaml", func(f sbFixture) string { return "echo x >> " + home(f, "config.yaml") }, false},
 		{"truncate the promote manifest", func(f sbFixture) string { return ": > " + home(f, PromoteManifestFile) }, false},
+		// ranger-base-bejb / ranger-base-zio33: the truncate above is the
+		// MODIFY half. ADR 0015 §3's amended anchor bullet claims the other
+		// half too — at seatbelt a caged session can neither modify the
+		// promoted copy "nor remove the thing that would notice" — and
+		// removal is the half that matters there: a TRUNCATED manifest fails
+		// loud (DEGRADED), an ABSENT one reads as "never promoted — OK" and
+		// silences the detector with no output on any surface. Both spellings
+		// an operator would reach for, executed, because a deny read off
+		// profile text is a deny nobody has watched refuse anything.
+		{"delete the promote manifest", func(f sbFixture) string { return "rm " + home(f, PromoteManifestFile) }, false},
+		{"move the promote manifest aside", func(f sbFixture) string {
+			return "mv " + home(f, PromoteManifestFile) + " " + home(f, PromoteManifestFile+".bak")
+		}, false},
 		{"write an env secret", func(f sbFixture) string { return "echo K=v >> " + home(f, "envs", "default.env") }, false},
 		{"delete a promoted directory", func(f sbFixture) string { return "rm -rf " + home(f, "recipes") }, false},
 		{"rewrite ANOTHER persona's L1 shim", func(f sbFixture) string {
