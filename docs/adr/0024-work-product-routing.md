@@ -165,6 +165,37 @@ DIRECTION, AGENTS with the D1 content classes:
   is spend figures and a username, not credentials. Accepting that is
   recorded instance-side, not here.
 
+**Amendment 2026-09-02 (ranger-base-imiif → ranger-base-lm22v): the bar
+over the residue.** The migration above scrubbed the sites it named; what it
+leaves behind is *residue*, and this is what the residue is held to.
+RE-MEASURED 2026-09-02 over the standing tree with the four shipped EREs: 78
+hits on 67 lines in 180 tracked markdown files, every class represented, and
+every one of them inside the SOFTWARE's own vocabulary — a vendor's public
+list price, a vendor's window mechanic, the sentinel and default values
+`examples/config.yaml` documents, and the credential-store paths ADR 0019 is
+about. Each is now dispositioned by a ruled SHAPE, in a pin that fails
+naming path, line, class and matched text
+(`internal/posse/opsresidue_qa_test.go`). The two dollar ceilings blessed on
+ranger-base-axft got their public anchor in the same landing: they are
+restated in `examples/config.yaml` as suggested example values, so the ADR
+0018 worked example quotes a shipped default rather than what is set here.
+
+So the D2 check-2 bar over the standing tree is **zero hits OUTSIDE the shape
+table, never zero**: ranger-base-99ps's DONE WHEN said zero and was
+unmeetable by construction, since the credential class exists to name the
+mechanism ADR 0019 documents and the ADR documenting it can therefore never
+be clean. Adding a shape is a reviewed edit, the same class as
+`PublicDocsGenres` — a table anyone may widen is not a bar.
+
+That bar is MARKDOWN-ONLY by construction, the same scope D2 check 2 states
+and not over code, because in source the fixture shape is the target shape
+(MEASURED at 53170e9 with the four shipped EREs over every tracked
+non-markdown file: 434 line-hits in 93 files, nearly all fixtures and
+detector vocabulary), so source is held by check 3's derived identity
+literals and by a value-equality sweep at verify time rather than by this
+shape table — read a green pin as a tree-wide property and you will report a
+clean tree having measured a quarter of it (ranger-base-4v7f9).
+
 ## Consequences
 
 - The near-miss class becomes a refusal: a session cannot land an RCA,

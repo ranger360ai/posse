@@ -451,11 +451,16 @@ default_emoji: ⚙️
 # the comparison as a third and fourth window — the soft landing before the
 # guard's hard skip.
 #
-# There is no recommended number: set these from a week of your own `posse
-# cost` output, at the point where a pass costs more than you would have
-# spent on the same work by hand. Unlike the plan guard these need no
-# provider adapter beyond the cost one, so they are the ceiling to reach for
-# when your runtime has no usage endpoint.
+# The pair at the bottom of this block is a SUGGESTED STARTING POINT and the
+# shipped example default — not a number tuned to your shop. What carries over
+# from one shop to the next is the RATIO, not the dollars: the day cap sits
+# several epochs above the epoch cap, so one busy hour brakes on `budget_pass:`
+# without closing the whole day, and both sit at the point where a pass costs
+# more than you would have spent on the same work by hand. Replace them from a
+# week of your own `posse cost` output; the shipped pair is there so the
+# worked example in ADR 0018 has a public anchor rather than a placeholder.
+# Unlike the plan guard these need no provider adapter beyond the cost one, so
+# they are the ceiling to reach for when your runtime has no usage endpoint.
 #
 # ARMING THESE ALSO CHOOSES THE BLIND POLICY (ADR 0018). Dial E computes from
 # posse's own transcripts and needs no credential, so it works exactly when
@@ -473,8 +478,8 @@ default_emoji: ⚙️
 # blind pass parks with the caps armed and counting (2026-08-31, above
 # `plan_guard_blind_max:`). Set them as a spend ceiling; they are not a
 # substitute for the meter.
-# budget_pass: <dollars per epoch>
-# budget_day: <dollars per day>
+# budget_pass: 30             # suggested: one dispatch epoch's spend ceiling
+# budget_day: 250             # suggested: the local calendar day's ceiling
 
 # ─── account-degraded: runtimes posse cannot price (ADR 0013 §5) ─────────────
 # A runtime whose DOLLARS posse cannot read is account-degraded: `posse cost`
