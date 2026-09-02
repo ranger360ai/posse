@@ -53,16 +53,44 @@ such line. `posse runtimes --probe` re-reads the catalog instead of ruling
 off the shared snapshot; a live rate-limit cooldown is still honoured
 first, so a forced read cannot extend a 429.
 
-Every verdict — a launch's loud line, `posse gates`, and this listing —
-also names the age of the reading it rests on whenever that reading is
-older than `model_probe_ttl`, with the probe's outcome beside it: `tier
-strong wants claude-fable-5-1 — unavailable per the catalog read 48h00m
-ago (probe failing: 401 Unauthorized), falling back to claude-opus-5`. The
-sentence that used to end at "unavailable" was true and taught the wrong
-lesson — it read as "the account lost the model" when what had happened
-was that the probe had been failing for two days and the retained list
-predated the id. An operator reading the new one knows to refresh a
-credential rather than to hand-edit `state/model-catalog.json`.
+**A catalog reading now demotes a tier only while it is fresh, and says
+so when it is not.**
+
+The availability check rules off a shared snapshot of the account's model
+list. When the probe cannot refresh that snapshot — an expired credential
+answers 401, and that can last days — the snapshot used to go on ruling as
+fact for as long as the outage lasted: bump a tier to a model id the old
+list predates, and every launch in the shop was demoted until somebody
+hand-edited `state/model-catalog.json`.
+
+`model_probe_ttl:` (default 1h) is that reading's lease now. Inside it,
+nothing changes: a list that does not name the wanted model still demotes,
+loudly, per `tier_fallback:`. Past it, with the refresh failing, the
+reading is quoted but obeyed by nothing — the launch takes the tier it was
+asked for, and when the wanted id is absent from that stale list it says
+so, once per launch:
+
+```
+architect: tier strong wants claude-fable-5-1 — not in the catalog read
+48h00m ago and the probe is failing (401 Unauthorized); availability
+UNKNOWN, launching as asked
+```
+
+`posse runtimes` and `posse gates` print the same verdict without
+launching anything. A rate-limit cooldown still governs whether posse
+re-asks the endpoint, and never whether it trusts what it last heard — a
+429 renewed all day cannot renew trust in a day-old list. If the default
+lease is too short for your account, lengthen `model_probe_ttl:`; there is
+no second dial. The sentence that used to end at "unavailable" was true
+and taught the wrong lesson — it read as "the account lost the model" when
+what had happened was that the probe had been failing for two days. An
+operator reading the new one knows to refresh a credential rather than to
+edit a state file.
+
+What it gives up, stated plainly: an account that really does lose a model
+while its probe is down will launch on an id the CLI cannot serve, bounded
+by the line above on every such launch and by `posse cost`, which groups by
+the model that did the work rather than by the tier that was asked for.
 
 **`posse backup` — one command that archives the work graph and the
 constitution, on this box, and refuses to write anywhere else.**

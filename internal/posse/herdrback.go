@@ -1485,9 +1485,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// own (rule 3). It runs BEFORE the parity check on purpose: what
 		// the wall and the PID's tier_floor: must rule on is the pair that
 		// would really launch, not the one that was asked for.
-		if pf := a.TierPreflight(o.Agent, runtime, tier, b.warnWriter()); pf.Fell() {
-			fallback = pf.Line
+		pf := a.TierPreflight(o.Agent, runtime, tier, b.warnWriter())
+		if pf.Line != "" {
+			// Printed whether or not anything fell: an UNKNOWN verdict over
+			// a reading past its lease launches the asked-for id and says so
+			// (ADR 0039 D3c), and that line is the whole bound on the risk.
 			b.warn("posse: %s\n", pf.Line)
+		}
+		if pf.Fell() {
+			fallback = pf.Line
 			runtime, tier = pf.Runtime, pf.Tier
 			if rt, err = a.LoadRuntime(runtime); err != nil {
 				return nil, err

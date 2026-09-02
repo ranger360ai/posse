@@ -1,7 +1,8 @@
 # ADR 0039 — Model dial follow-through: the built-in tracks the dial, `runtimes/` joins the promoted set, the catalog says its age and rules only inside its lease
 
-*Status: accepted 2026-09-01 (D1, D2, D3a, D3b) · D3c awaits the
-operator's ruling · D3d awaits a spike · owner: architect · amends 0003
+*Status: accepted 2026-09-01 (D1, D2, D3a, D3b, and D3c per the
+operator's ruling on ranger-base-v1p66) · D3d awaits a spike · owner:
+architect · amends 0003
 §1 (the claude strong cell), 0015 §2/§3 (the promoted set), 0021 (the
 overlay's home) · from ranger-base-1ykc1, discovered from
 ranger-base-c3vqe*
@@ -34,7 +35,9 @@ Three facts, each read in code this session:
   the one launch-read fact at the home that no manifest attests to. The
   constitution repo already carries it (ranger-base commit 55c5581,
   `rhq/runtimes/claude.yaml`); the home copy was placed by hand.
-- **A stale reading rules as fact.** `ModelCache.Models` (modelavail.go)
+- **A stale reading rules as fact** (ended by D3c, ranger-base-ksmmz;
+  what follows is the state this ADR was written against).
+  `ModelCache.Models` (modelavail.go)
   returns a snapshot inside `model_probe_ttl` as known; past the TTL it
   re-asks, and when the ask fails it returns the retained reading
   *still as known* (`kept`). `TierPreflight` then demotes any tier whose
@@ -109,19 +112,22 @@ Consequences, each derived from a named reader:
   here. ADR 0021's "lives at the home, no promote needed" reading gains
   the same line.
 
-**D3. The catalog says its age, can be re-read on demand, and (pending
-the operator) rules only inside its lease.**
+**D3. The catalog says its age, can be re-read on demand, and rules
+only inside its lease.**
 
 - *D3a — the age is in the sentence (decided).* Whenever the reading a
   verdict rests on is older than `model_probe_ttl`, both the launch's
   loud line and `posse gates`' PreflightReport say so, with the probe's
-  outcome: `richard: tier strong wants claude-fable-5-1 — unavailable
-  per the catalog read 2d ago (probe failing: 401 Unauthorized), falling
-  back to claude-opus-5`. `Models` already computes the age
-  (`catalogAge`) and holds the error it just logged; it returns them
-  beside the bool instead of dropping them. No new state, no new file.
-  An operator who reads that line knows to refresh a credential, not to
-  edit a state file.
+  outcome. `Models` already computes the age (`catalogAge`) and holds
+  the error it just logged; it returns them beside the bool instead of
+  dropping them. No new state, no new file. An operator who reads that
+  line knows to refresh a credential, not to edit a state file.
+  *Amended by D3c (ranger-base-ksmmz):* a verdict now only ever rests on
+  a reading INSIDE its lease, which has no age worth reporting — the
+  operator set that number — so the age moved onto the UNKNOWN line the
+  lease rule prints, and the `unavailable per the catalog read 2d ago`
+  form this bullet first specified never renders. Same two facts, said
+  where they are now true.
 - *D3b — `posse runtimes` carries the availability line, and `--probe`
   re-reads (decided).* Under each runtime posse can read a catalog for
   (`anthropicAPI`, egress-keyed), `posse runtimes` prints
@@ -133,8 +139,8 @@ the operator) rules only inside its lease.**
   honoured on that path (Models checks `RetryAt` before asking), so a
   forced read cannot become the rangerhq-tdy8 storm. No config edit,
   no launch, no hand-edit.
-- *D3c — the lease rule (the operator's ruling, ranger-base question
-  bead named on 1ykc1; recommended).* A retained reading may **demote**
+- *D3c — the lease rule (RULED 2026-09-01, option 2 on
+  ranger-base-v1p66; built in ranger-base-ksmmz).* A retained reading may **demote**
   only while it is inside its lease: `now − at < model_probe_ttl`. Past
   that, with the refresh failing, it is quoted (D3a) but the verdict is
   UNKNOWN: the launch takes the tier as asked, and when the wanted id
@@ -220,8 +226,10 @@ the operator) rules only inside its lease.**
 4. With the snapshot's `at` set two days back and the lister faked to
    401: `posse gates` prints the age clause (D3a); `posse runtimes
    --probe` logs one `preflight failed` line and prints the same clause
-   (D3b); under D3c the verdict reads UNKNOWN and the launch script
-   carries the asked-for id.
+   (D3b); under D3c the verdict reads UNKNOWN — `not in the catalog read
+   48h00m ago and the probe is failing (…); availability UNKNOWN,
+   launching as asked` — the launch script carries the asked-for id and
+   the session meta gets no `fallback:` mark.
 5. `go test ./internal/posse -run 'Constitution|Promote|Preflight|Model|Price|Tier'`
    green, with the constitutionClassSpec pin reading `rhq/runtimes`.
 
@@ -233,7 +241,7 @@ the operator) rules only inside its lease.**
 | the built-in trails; the overlay wins per launch | MEASURED — runtime.go claudeModels, overlayBuiltin; live `~/.config/posse/runtimes/claude.yaml` |
 | the constitution repo already carries the overlay | MEASURED — ranger-base 55c5581 `rhq/runtimes/claude.yaml` |
 | nothing writes `RuntimesDir()` | MEASURED — grep, five readers, no writer |
-| the retained reading rules as fact past the TTL when the refresh fails | MEASURED — modelavail.go `Models` returns `e.Models, kept(e, have)` on error |
+| the retained reading rules as fact past the TTL when the refresh fails | WAS MEASURED — modelavail.go `Models` returned `e.Models, kept(e, have)` on error; ENDED by D3c (ranger-base-ksmmz): the bool is now `kept && withinLease`, the ids still go back to be quoted |
 | the probe has 401'd since 2026-08-31 and the catalog was hand-edited 2026-09-01 | MEASURED — `state/model-catalog.log` |
 | this home's manifest names no `runtimes/` entry and promote does not run the verify | MEASURED — `promoted.json` (sha a27973f); VerifyPromoted callers are herdrback.go:1351 and init.go:356 |
 | `Models(0)` honours a live cooldown before asking | MEASURED — the `RetryAt` branch precedes the ask |

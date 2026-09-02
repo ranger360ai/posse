@@ -103,25 +103,42 @@ func TestRuntimesCarriesTheAvailabilityVerdictPerMappedTier(t *testing.T) {
 }
 
 // --probe means maxAge 0 — but Models checks the RetryAt cooldown before it
-// asks, so a forced read still cannot become the rangerhq-tdy8 storm. The
-// cooldown branch returns the retained reading, which still rules and now
-// says how old it is.
+// asks, so a forced read still cannot become the rangerhq-tdy8 storm. What
+// the cooldown does NOT do is renew trust (ADR 0039 D3c): the reading it
+// falls back to is two days old, so every verdict on it reads UNKNOWN and
+// names the reading it could not replace.
 func TestRuntimesProbeHonoursALiveCooldownAndDatesTheReading(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
 	seedRuntimeCatalog(t, home, 48*time.Hour, time.Now().Add(10*time.Minute), "claude-opus-5", "claude-sonnet-5")
 
 	got := runtimesOut(t, bin, home, "--probe")
-	if !strings.Contains(got, "unavailable per the catalog read 48h00m ago, falling back to claude-opus-5") {
-		t.Errorf("--probe over a stale reading must date its verdict:\n%s", got)
+	for _, want := range []string{
+		"session: tier strong wants claude-fable-5-1 — not in the catalog read 48h00m ago; availability UNKNOWN, launching as asked",
+		"claude: tier standard → claude-opus-5 (availability UNKNOWN — the catalog read 48h00m ago is past model_probe_ttl; the launch takes the tier as asked)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("--probe over a stale reading missing %q in:\n%s", want, got)
+		}
 	}
-	if !strings.Contains(got, "(available per the catalog read 48h00m ago)") {
-		t.Errorf("available rests on the same reading and must date it too:\n%s", got)
+	// Nothing was ASKED, so nothing may be reported as a failing probe —
+	// and nothing was logged, because the cooldown ran first.
+	if strings.Contains(got, "the probe is failing") {
+		t.Errorf("a read that never happened reported as a failing probe:\n%s", got)
 	}
-	// Nothing was asked, so nothing was logged: the cooldown ran first.
 	if _, err := os.Stat(filepath.Join(home, "state", "model-catalog.log")); !os.IsNotExist(err) {
 		log, _ := os.ReadFile(filepath.Join(home, "state", "model-catalog.log"))
 		t.Errorf("--probe asked a cooling-down endpoint:\n%s", log)
+	}
+
+	// The control, and the reason the lease is the operator's number and not
+	// the caller's: the same forced read over a reading INSIDE
+	// model_probe_ttl still rules, so `posse runtimes --probe` goes on
+	// printing the bytes a launch would print.
+	fresh := t.TempDir()
+	seedRuntimeCatalog(t, fresh, 30*time.Minute, time.Now().Add(10*time.Minute), "claude-opus-5", "claude-sonnet-5")
+	if got := runtimesOut(t, bin, fresh, "--probe"); !strings.Contains(got, "session: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5") {
+		t.Errorf("a cooled-down reading inside its lease must still rule:\n%s", got)
 	}
 }
 

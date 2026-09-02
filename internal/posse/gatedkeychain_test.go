@@ -186,10 +186,17 @@ func TestPreflightUNKNOWNSaysOurGateRefusedUsOnce(t *testing.T) {
 	}
 }
 
-// A failed refresh does not make a retained catalog UNKNOWN. Models returns
-// that prior reading as known, so the refusal notice must not contradict the
-// bool on which TierPreflight acts — and must say how old the reading it
-// hands on is, which is the fact the operator decides on (ranger-base-co5n).
+// A failed refresh does not make a retained catalog that still RULES
+// UNKNOWN. Models returns such a reading as known, so the refusal notice
+// must not contradict the bool on which TierPreflight acts — and must say
+// how old the reading it hands on is, which is the fact the operator decides
+// on (ranger-base-co5n).
+//
+// The fixture is `posse runtimes --probe`, because after the lease rule
+// (ADR 0039 D3c) that is where the two questions come apart: maxAge 0 asks
+// again, and the reading it falls back to may still be inside
+// model_probe_ttl and still rule. A launch's own read cannot reach this
+// branch — inside the lease it never asks at all.
 func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
 	shim := gatedSecurityShim(t)
 	gateRefusalNotices.Delete("security\x00Bash(security:*)")
@@ -203,9 +210,9 @@ func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
 		Errw:   &errb,
 		Now:    func() time.Time { return now },
 	}
-	c.store(modelEntry{At: now.Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
+	c.store(modelEntry{At: now.Add(-30 * time.Minute), Models: []string{"claude-fable-5"}})
 
-	ids, ok := c.Models(time.Hour)
+	ids, ok, _ := c.ModelsRead(0, time.Hour)
 	if !ok || len(ids) != 1 || ids[0] != "claude-fable-5" {
 		t.Fatalf("failed refresh must retain the last known catalog: %v %v", ids, ok)
 	}
@@ -216,16 +223,34 @@ func TestQAGateRefusalDoesNotCallRetainedCatalogUnknown(t *testing.T) {
 	// Positive witness: silence, or the UNKNOWN sentence with the word
 	// filed off, would both satisfy the line above. The notice has to name
 	// the reading the launch is about to rule on, and its age.
-	if !strings.Contains(got, "the catalog read 2h00m ago") {
+	if !strings.Contains(got, "the catalog read 30m ago") {
 		t.Errorf("notice must name the retained reading and how old it is: %q", got)
+	}
+
+	// The other side of the same seam: the same refusal over a reading PAST
+	// its lease hands on no verdict, so the notice is the UNKNOWN one again.
+	// Saying "launches rule on that reading" there would describe a launch
+	// that no longer happens.
+	gateRefusalNotices.Delete("security\x00Bash(security:*)")
+	var stale strings.Builder
+	c.Errw = &stale
+	c.store(modelEntry{At: now.Add(-2 * time.Hour), Models: []string{"claude-fable-5"}})
+	if ids, ok, _ := c.ModelsRead(0, time.Hour); ok {
+		t.Errorf("a reading past its lease may not be handed on as known: %v", ids)
+	}
+	if s := stale.String(); !strings.Contains(s, "deny: Bash(security:*)") || !strings.Contains(s, "UNKNOWN") {
+		t.Errorf("past the lease the notice must be the UNKNOWN one: %q", s)
 	}
 }
 
 // The two halves of the notice are one decision, so pin the seam rather
-// than only the two sentences: kept() is what Models returns its bool from,
-// and a retained-but-empty snapshot is UNKNOWN like any other no-snapshot.
+// than only the two sentences: the bool is the one Models returns — a
+// reading that is kept AND inside its lease — and everything else, a
+// retained-but-empty snapshot, an undatable one, one past its lease, is
+// UNKNOWN like any other no-snapshot.
 func TestQAGateRefusalNoticeFollowsTheBoolItReports(t *testing.T) {
 	const key = "security\x00Bash(security:*)"
+	const lease = 2 * time.Hour
 	err := &GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}
 	now := time.Now()
 	for _, tc := range []struct {
@@ -238,14 +263,18 @@ func TestQAGateRefusalNoticeFollowsTheBoolItReports(t *testing.T) {
 		{"no snapshot", modelEntry{}, false, "UNKNOWN", "catalog read"},
 		{"snapshot with no models", modelEntry{At: now.Add(-time.Hour)}, true, "UNKNOWN", "catalog read"},
 		{"retained", modelEntry{At: now.Add(-90 * time.Minute), Models: []string{"claude-fable-5"}}, true, "the catalog read 1h30m ago", "UNKNOWN"},
-		{"retained, undatable", modelEntry{Models: []string{"claude-fable-5"}}, true, "the last catalog reading", "UNKNOWN"},
+		// Past the lease and undatable both hand on nothing to rule with,
+		// so both are UNKNOWN — the first by the operator's number, the
+		// second because a reading with no `at` has no lease to be inside.
+		{"retained, past its lease", modelEntry{At: now.Add(-3 * time.Hour), Models: []string{"claude-fable-5"}}, true, "UNKNOWN", "rule on that reading"},
+		{"retained, undatable", modelEntry{Models: []string{"claude-fable-5"}}, true, "UNKNOWN", "rule on that reading"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gateRefusalNotices.Delete(key)
 			t.Cleanup(func() { gateRefusalNotices.Delete(key) })
 			var errb strings.Builder
 			c := &ModelCache{Errw: &errb}
-			c.noteGateRefusal(err, kept(tc.e, tc.have), catalogAge(tc.e, now))
+			c.noteGateRefusal(err, kept(tc.e, tc.have) && withinLease(tc.e, now, lease), catalogAge(tc.e, now))
 			got := errb.String()
 			if !strings.Contains(got, "deny: Bash(security:*)") {
 				t.Fatalf("every arm names the rule that refused us: %q", got)

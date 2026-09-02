@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -293,28 +294,71 @@ func TestQA7vpTierFloorStillRefusesTheSubstitutedPair(t *testing.T) {
 
 // ─── how old is "read" ───────────────────────────────────────────────────────
 
-// Characterization, and it holds: a snapshot older than model_probe_ttl:
-// whose re-read fails is still answered as KNOWN, and it still demotes. The
-// file header's rule is "only a list that was actually read, and that does
-// not contain the wanted id" — this is the measurement of how loosely
-// "actually read" is bounded, which is not at all. The demotion is loud, so
-// rule (2) holds and this is not the silent downgrade the design is written
-// against; it is the arm to look at first if a launch is ever demoted
-// against a catalog nobody recognises.
-func TestQA7vpAnExpiredSnapshotStillDemotesWhenTheEndpointCannotBeReread(t *testing.T) {
+// This test measured, and pinned, the rule the operator overturned: a
+// snapshot older than model_probe_ttl: whose re-read fails was answered as
+// KNOWN and demoted every launch, for as long as the probe stayed down —
+// which on this instance is most hours (ranger-base-wkai3), curable only by
+// hand-editing state/model-catalog.json. The ruling on ranger-base-v1p66
+// (2026-09-01, option 2) bounds it: past its lease the reading is quoted
+// and obeyed by nothing. Rewritten rather than skipped, because a parked
+// skip would leave the rejected alternative encoded in the suite.
+func TestQA7vpAnExpiredSnapshotIsQuotedAndObeyedByNothing(t *testing.T) {
 	t.Parallel()
 	a := preflightApp(t) // unconfigured lister: every re-read fails
 	seedCatalog(t, a, 30*24*time.Hour, "claude-opus-5", "claude-sonnet-5")
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if !pf.Fell() || pf.Tier != TierStandard {
-		t.Errorf("a month-old snapshot is the newest fact anyone has and is used as one: %+v", pf)
+	if pf.Fell() || pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
+		t.Errorf("a month-old snapshot may not move a launch: %+v", pf)
+	}
+	if !strings.Contains(pf.Line, "not in the catalog read 720h00m ago") || !strings.Contains(pf.Line, "availability UNKNOWN, launching as asked") {
+		t.Errorf("it is still the newest fact anyone has, and the line must quote it: %q", pf.Line)
+	}
+	// The other half of the ruling: the same expired reading, when it DOES
+	// list the wanted id, says nothing at all. UNKNOWN is not news per
+	// launch; an id the newest reading does not name is.
+	b := preflightApp(t)
+	seedCatalog(t, b, 30*24*time.Hour, "claude-fable-5-1", "claude-opus-5")
+	if pf := b.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() || pf.Line != "" {
+		t.Errorf("an expired reading that lists the id has nothing to report: %+v", pf)
 	}
 	// The wrong arm: with NO snapshot at all the same failing re-read is
-	// UNKNOWN, and UNKNOWN launches what it was asked to. If this stopped
-	// failing, the test above would be measuring nothing.
-	b := preflightApp(t)
-	if pf := b.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() || pf.Tier != TierStrong {
-		t.Errorf("no snapshot must be UNKNOWN, not unavailable: %+v", pf)
+	// UNKNOWN and silent, which is what it has always been. If this stopped
+	// holding, the assertions above would be measuring nothing.
+	c := preflightApp(t)
+	if pf := c.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() || pf.Tier != TierStrong || pf.Line != "" {
+		t.Errorf("no snapshot must be UNKNOWN, not unavailable, and silent: %+v", pf)
+	}
+}
+
+// The launch itself, not the function that advises it: the shape of the
+// 2026-09-01 incident — strong bumped to an id the retained reading was
+// taken before, the probe 401ing since 08-31 — must now render the
+// asked-for id, say so once, and leave no `fallback:` mark behind.
+func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
+	b, _ := newTestBackend(t)
+	var hits atomic.Int64
+	b.App.ModelLister = failingLister(&hits)
+	qaPID(t, b, "architect", TierStrong)
+	seedCatalog(t, b.App, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // fable gone, read two days ago
+
+	if err := b.CreateSession(NewSessionOpts{Name: "st", Agent: "architect", Dir: t.TempDir()}); err != nil {
+		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)
+	}
+	sh, err := os.ReadFile(filepath.Join(b.App.StateDir, "launch", "st.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sh), "--model 'claude-fable-5-1'") {
+		t.Errorf("the launch must carry the id it was asked for:\n%s", sh)
+	}
+	m, ok := b.readMeta("st")
+	if !ok || m.Tier != TierStrong || m.Fallback != "" {
+		t.Errorf("nothing fell, so the meta records no fall: %+v", m)
+	}
+	said := warnBuf(t, b).String()
+	if !strings.Contains(said, "architect: tier strong wants claude-fable-5-1 — not in the catalog read 48h00m ago") ||
+		!strings.Contains(said, "availability UNKNOWN, launching as asked") {
+		t.Errorf("launching on an unlisted id must not be silent:\n%s", said)
 	}
 }
 

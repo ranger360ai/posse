@@ -39,15 +39,29 @@ package posse
 //     there. No new vocabulary for either.
 //
 // EVERYTHING HERE FAILS OPEN, and the asymmetry is the whole design: only a
-// list that was actually read, and that does not contain the wanted id,
-// demotes anything. An unreadable credential, an unreachable endpoint, a
-// rate limit, an empty answer, a runtime whose models posse cannot name —
-// all of those are UNKNOWN, and unknown launches exactly what it was asked
-// to launch. The request outcome is recorded in state/model-catalog.log so
-// UNKNOWN is diagnosable without changing that launch. A preflight that
-// guesses "unavailable" would
+// list that was actually read, INSIDE ITS LEASE, and that does not contain
+// the wanted id, demotes anything. An unreadable credential, an unreachable
+// endpoint, a rate limit, an empty answer, a runtime whose models posse
+// cannot name — all of those are UNKNOWN, and unknown launches exactly what
+// it was asked to launch. The request outcome is recorded in
+// state/model-catalog.log so UNKNOWN is diagnosable without changing that
+// launch. A preflight that guesses "unavailable" would
 // silently downgrade the whole shop, which is the failure it exists to
 // prevent, one level up.
+//
+// The LEASE is `model_probe_ttl` — the number the operator already owns to
+// say how fresh a reading must be — and it bounds the sentence above (ADR
+// 0039 D3c, the operator's ruling 2026-09-01 on ranger-base-v1p66). A
+// retained reading past it, with the refresh failing, is QUOTED and obeyed
+// by nothing: the verdict is UNKNOWN, the launch takes the tier as asked,
+// and when the wanted id is absent from that reading the line still prints
+// so nobody is launched on an unlisted id in silence. Before this, a
+// reading ruled forever whenever the probe was down — and on this instance
+// the probe's credential rots in hours (ranger-base-wkai3), so a model bump
+// demoted the whole shop until somebody hand-edited a state file. A
+// rate-limit cooldown governs whether posse RE-ASKS, never whether it
+// trusts: a 429 renewed all day would otherwise renew trust in a day-old
+// list (rangerhq-tdy8, ranger-base-c3vqe).
 
 import (
 	"encoding/json"
@@ -290,7 +304,7 @@ type CatalogRead struct {
 // thing callers may act on: false means "posse does not know", and nothing
 // downstream may read that as "unavailable".
 func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
-	ids, ok, _ := c.ModelsRead(maxAge)
+	ids, ok, _ := c.ModelsRead(maxAge, maxAge)
 	return ids, ok
 }
 
@@ -298,19 +312,35 @@ func (c *ModelCache) Models(maxAge time.Duration) ([]string, bool) {
 // behind it — the same two values `kept` and `catalogAge` already answer
 // the notice with, so the sentence an operator reads and the bool a launch
 // acts on cannot come from different facts.
-func (c *ModelCache) ModelsRead(maxAge time.Duration) ([]string, bool, CatalogRead) {
+//
+// Two durations, because they are two questions (ADR 0039 D3c). maxAge is
+// how fresh this CALLER wants it before posse re-asks — `--probe` passes 0,
+// "fresh only". lease is how long a retained reading may still RULE when
+// that ask fails, which is `model_probe_ttl` and is the operator's number,
+// not the caller's: were --probe to lease by its own maxAge, a forced read
+// over a five-minute-old snapshot would report UNKNOWN for a launch that
+// would demote on it, and `posse runtimes` would stop printing the bytes a
+// launch prints. Models(maxAge) is the launch's form, where the two are one
+// number.
+func (c *ModelCache) ModelsRead(maxAge, lease time.Duration) ([]string, bool, CatalogRead) {
 	now := c.now()
 	e, have := c.load()
-	if have && maxAge > 0 && !e.At.IsZero() && now.Sub(e.At) >= 0 && now.Sub(e.At) < maxAge && len(e.Models) > 0 {
+	if have && withinLease(e, now, maxAge) && len(e.Models) > 0 {
 		return e.Models, true, CatalogRead{Age: catalogAge(e, now)}
 	}
+	// May the retained reading still rule? Asked once, here, so the
+	// cooldown branch and the failed-read branch cannot answer differently.
+	rules := kept(e, have) && withinLease(e, now, lease)
 	if have && now.Before(e.RetryAt) {
 		// Re-asking a rate limiter on every launch is how a fleet extends a
 		// 429 (rangerhq-tdy8). The last reading, if there is one, is still
-		// the newest fact anyone has. Nothing was asked, so there is no
-		// refresh error to report: the age says the reading is old and
+		// the newest fact anyone has — and past its lease that is not
+		// enough to rule on: trust and re-ask are different questions, and
+		// coupling them lets a cooldown renewed all day renew trust in a
+		// day-old list (ranger-base-c3vqe). Nothing was asked, so there is
+		// no refresh error to report: the age says the reading is old and
 		// state/model-catalog.log holds the 429 that stopped the ask.
-		return e.Models, len(e.Models) > 0, CatalogRead{Age: catalogAge(e, now)}
+		return e.Models, rules, CatalogRead{Age: catalogAge(e, now)}
 	}
 	l := c.Lister
 	if l == nil {
@@ -320,15 +350,17 @@ func (c *ModelCache) ModelsRead(maxAge time.Duration) ([]string, bool, CatalogRe
 	c.logRead(now, ids, err)
 	// The notice below has to say what Models is about to RETURN, so it is
 	// told what a failed read falls back to: the prior reading, when there
-	// is one (ranger-base-co5n).
-	c.noteGateRefusal(err, kept(e, have), catalogAge(e, now))
+	// is one and it may still rule (ranger-base-co5n, bounded by D3c).
+	c.noteGateRefusal(err, rules, catalogAge(e, now))
 	if err != nil {
 		var rl *RateLimit
 		if errors.As(err, &rl) {
 			e.RetryAt = now.Add(modelCooldown(rl.RetryAfter))
 			c.store(e)
 		}
-		return e.Models, kept(e, have), CatalogRead{Age: catalogAge(e, now), Err: err}
+		// The ids go back whatever the bool says: past its lease the
+		// reading no longer rules, but the line that says so quotes it.
+		return e.Models, rules, CatalogRead{Age: catalogAge(e, now), Err: err}
 	}
 	if len(ids) == 0 {
 		// An empty catalog is not an account with no models; it is an
@@ -354,12 +386,14 @@ var gateRefusalNotices sync.Map
 // Which sentence depends on what the caller is about to be handed, because
 // that bool is the only thing TierPreflight acts on (ranger-base-co5n). With
 // no snapshot the answer really is UNKNOWN and the launch takes the tier as
-// asked. Over a RETAINED catalog the refused refresh changes nothing:
-// Models returns that prior reading as known, TierPreflight rules on it, and
-// a launch may still be demoted by it — so calling it UNKNOWN there
-// describes a launch that does not happen, and hides the fact the operator
-// needs, which is that the reading being ruled on is as old as it is.
-func (c *ModelCache) noteGateRefusal(err error, retained bool, age time.Duration) {
+// asked. Over a retained reading that STILL RULES — inside its lease — the
+// refused refresh changes nothing: Models returns it as known, TierPreflight
+// rules on it, and a launch may still be demoted by it, so calling it
+// UNKNOWN there describes a launch that does not happen and hides the fact
+// the operator needs, which is that the reading being ruled on is as old as
+// it is. Past the lease the bool is false (D3c) and so is that sentence:
+// nothing is demoted, and UNKNOWN is the truth again.
+func (c *ModelCache) noteGateRefusal(err error, rules bool, age time.Duration) {
 	var g *GateRefusal
 	if c.Errw == nil || !errors.As(err, &g) {
 		return
@@ -367,17 +401,36 @@ func (c *ModelCache) noteGateRefusal(err error, retained bool, age time.Duration
 	if _, loaded := gateRefusalNotices.LoadOrStore(g.Cmd+"\x00"+g.Rule, struct{}{}); loaded {
 		return
 	}
-	if retained {
+	if rules {
 		fmt.Fprintf(c.Errw, "posse: %v; tier availability is still %s, launches rule on that reading\n", g, catalogRead(age))
 		return
 	}
 	fmt.Fprintf(c.Errw, "posse: %v; tier availability UNKNOWN, launches take the tier as asked\n", g)
 }
 
-// kept: what a failed read falls back to — the same expression Models
-// returns its bool from, named once so the notice and the return cannot
+// kept: what a failed read falls back to — a reading to hand on, whether or
+// not it may still rule. Named once so the notice and the return cannot
 // drift apart.
 func kept(e modelEntry, have bool) bool { return have && len(e.Models) > 0 }
+
+// withinLease: is this reading inside a window of `lease`? It answers both
+// of ModelsRead's questions — "fresh enough not to re-ask" against maxAge,
+// and "may it still RULE when the re-ask fails" against model_probe_ttl
+// (ADR 0039 D3c) — because they are the same measurement of the same `at`,
+// and two spellings of it would be two places to fix.
+//
+// A lease of 0 leases nothing: `model_probe_ttl: 0` is "every launch asks
+// for itself", so a reading it did not take may not rule for it. An
+// UNDATABLE reading (no `at`, or an `at` in our future) has no lease to be
+// inside either — the same judgement catalogAge makes about its age, and
+// the safe direction: it launches what it was asked to launch.
+func withinLease(e modelEntry, now time.Time, lease time.Duration) bool {
+	if e.At.IsZero() || lease <= 0 {
+		return false
+	}
+	age := now.Sub(e.At)
+	return age >= 0 && age < lease
+}
 
 // catalogAge is how old the retained reading is, or 0 when there is nothing
 // datable to be old: a snapshot with no `at` is not a snapshot from the
@@ -606,11 +659,19 @@ type Preflight struct {
 	Tier    string // at this
 	Wanted  string // the model the asked-for pair named ("" = the runtime's own default)
 	Got     string // the model the returned pair names
-	Line    string // the loud line, "" = nothing happened
+	Line    string // the loud line, "" = nothing to say
+	// Unknown: the line states an UNKNOWN verdict rather than a
+	// substitution (ADR 0039 D3c). It prints — the operator has to hear
+	// that the launch is going ahead on an id the newest reading does not
+	// list — but NOTHING FELL, so the pair is unmoved and the session meta
+	// gets no `fallback:` mark to carry into relaunches.
+	Unknown bool
 }
 
-// Fell reports whether the pair moved.
-func (p Preflight) Fell() bool { return p.Line != "" }
+// Fell reports whether the pair moved. An UNKNOWN line is not a fall: it
+// says posse could not check, which is the one thing that never moves a
+// launch.
+func (p Preflight) Fell() bool { return p.Line != "" && !p.Unknown }
 
 // TierPreflight checks that the model a resolved tier names is one this
 // account can run, and substitutes per `tier_fallback:` when it is not.
@@ -644,7 +705,23 @@ func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) 
 	if p.Wanted == "" || !a.ModelPreflight() || !rt.OnModelCatalog() {
 		return p
 	}
-	if !cat.known() || cat.has(p.Wanted) {
+	if cat.has(p.Wanted) {
+		return p
+	}
+	if !cat.known() {
+		// The lease rule (ADR 0039 D3c). posse does not know, so nothing is
+		// substituted — that is rule (3) and the fail-open asymmetry at the
+		// top of the file. With no reading at all there is nothing to say
+		// and this branch stays as silent as it has always been. With a
+		// reading past its LEASE there is: it is the newest fact anyone has,
+		// it does not list the wanted id, and the operator has to hear that
+		// the launch is going ahead anyway — that line is the whole price of
+		// the ruling, paid once per launch until the probe comes back.
+		if cat.retained() {
+			p.Unknown = true
+			p.Line = fmt.Sprintf("%s: tier %s wants %s — not in %s%s; availability UNKNOWN, launching as asked",
+				preflightWho(persona), tier, p.Wanted, catalogRead(cat.age()), cat.probeTail())
+		}
 		return p
 	}
 
@@ -689,15 +766,21 @@ func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) 
 		// best this map could do, and saying so is the whole job.
 		clauses = append(clauses, "launching on "+hopDesc(runtime, p.Runtime, p.Tier, p.Got)+" anyway")
 	}
-	who := persona
-	if who == "" {
-		who = "session"
-	}
-	// The age clause sits on the verdict, before the hops: what is being
-	// said is "unavailable ACCORDING TO a reading this old", and the
-	// fallbacks that follow are what posse did about it (ADR 0039 D3a).
-	p.Line = fmt.Sprintf("%s: tier %s wants %s — unavailable%s, %s", who, tier, p.Wanted, cat.clause(), strings.Join(clauses, ", "))
+	// No age clause on this verdict: an "unavailable" only ever rests on a
+	// reading inside its lease now (D3c), which is the operator's own
+	// freshness number, and the reading that would have needed dating no
+	// longer reaches a verdict at all — it prints the UNKNOWN line above.
+	p.Line = fmt.Sprintf("%s: tier %s wants %s — unavailable, %s", preflightWho(persona), tier, p.Wanted, strings.Join(clauses, ", "))
 	return p
+}
+
+// preflightWho names the launch a line is about: a persona, or the session
+// itself when there is no PID (`posse runtimes` asks with "").
+func preflightWho(persona string) string {
+	if persona == "" {
+		return "session"
+	}
+	return persona
 }
 
 // PreflightReport is the same question `posse gates` asks out loud: for
@@ -741,19 +824,31 @@ func (a *App) PreflightReportOn(cat *ModelCatalog, persona, runtime, tier string
 		return fmt.Sprintf("%s: tier %s → %s (no model catalog posse can read for this runtime)", runtime, tier, want)
 	}
 	if !cat.known() {
-		// UNKNOWN has no reading to be old, so it carries no age clause.
-		// The read's own outcome stays where it was — state/model-catalog.log,
-		// and stderr for the one failure that is posse's own doing
-		// (noteGateRefusal) — because this line is printed once per mapped
-		// TIER and the outcome belongs to the reading: `posse runtimes` on
-		// a home with no snapshot would print the same sentence three
-		// times under one runtime.
-		return fmt.Sprintf("%s: tier %s → %s (availability UNKNOWN — the catalog could not be read; the launch takes the tier as asked)", runtime, tier, want)
+		switch {
+		case !cat.retained():
+			// Nothing was read, so there is no reading to date. The read's
+			// own outcome stays where it was — state/model-catalog.log, and
+			// stderr for the one failure that is posse's own doing
+			// (noteGateRefusal) — because this line is printed once per
+			// mapped TIER and the outcome belongs to the reading: `posse
+			// runtimes` on a home with no snapshot would print the same
+			// sentence three times under one runtime.
+			return fmt.Sprintf("%s: tier %s → %s (availability UNKNOWN — the catalog could not be read; the launch takes the tier as asked)", runtime, tier, want)
+		case !cat.has(want):
+			// Past its lease AND missing the id: the launch's own line,
+			// verbatim, for the same reason the fallback branch below
+			// returns it — one rendering of the sentence that matters most.
+			return a.TierPreflightOn(cat, persona, runtime, tier).Line
+		}
+		// Past its lease and the id IS on it. That is not "available": it is
+		// the reason the operator is reading this command, so the line dates
+		// the reading and names the probe rather than quietly reporting a
+		// verdict posse is no longer entitled to.
+		return fmt.Sprintf("%s: tier %s → %s (availability UNKNOWN — %s is past model_probe_ttl%s; the launch takes the tier as asked)",
+			runtime, tier, want, catalogRead(cat.age()), cat.probeTail())
 	}
 	if cat.has(want) {
-		// Available is a verdict too, and it rests on the same reading: a
-		// day-old list saying the id is there is worth reading as such.
-		return fmt.Sprintf("%s: tier %s → %s (available%s)", runtime, tier, want, cat.clause())
+		return fmt.Sprintf("%s: tier %s → %s (available)", runtime, tier, want)
 	}
 	return a.TierPreflightOn(cat, persona, runtime, tier).Line
 }
@@ -818,7 +913,7 @@ func (c *ModelCatalog) load() {
 		}
 		mc := c.a.ModelCache()
 		mc.Errw = c.errw
-		ids, ok, r := mc.ModelsRead(maxAge)
+		ids, ok, r := mc.ModelsRead(maxAge, c.lease)
 		c.ok, c.read = ok, r
 		c.set = make(map[string]bool, len(ids))
 		for _, id := range ids {
@@ -827,33 +922,38 @@ func (c *ModelCatalog) load() {
 	})
 }
 
-// known: does posse know this account's catalog at all? Nothing may treat
-// a false here as "unavailable".
+// known: may a verdict rest on this reading? False is "posse does not
+// know" — either nothing was read at all, or what was read is past its
+// lease (D3c) — and nothing may treat it as "unavailable".
 func (c *ModelCatalog) known() bool { c.load(); return c.ok }
 
-// has: is this id on the reading? Only meaningful when known().
+// retained: is there a reading to QUOTE, whether or not it may rule? Past
+// its lease a reading is still the newest fact anyone has, and the UNKNOWN
+// line names it and its age rather than saying nothing (ADR 0039 D3a/D3c).
+func (c *ModelCatalog) retained() bool { c.load(); return len(c.set) > 0 }
+
+// has: is this id on the reading? What it means depends on known(): a
+// verdict inside the lease, and only a quotation past it.
 func (c *ModelCatalog) has(id string) bool { c.load(); return c.set[id] }
 
-// stale: is the reading a verdict would rest on past its lease? Age 0 is a
-// reading taken now, which `model_probe_ttl: 0` would otherwise make stale
-// on arrival.
-func (c *ModelCatalog) stale() bool { c.load(); return c.read.Age > 0 && c.read.Age >= c.lease }
+// age of the reading being quoted; 0 when there is nothing datable to be
+// old (catalogRead says it in words).
+func (c *ModelCatalog) age() time.Duration { c.load(); return c.read.Age }
 
-// clause is what a verdict says about the reading under it when that
-// reading is past its lease: the age always, and the probe's outcome when
-// the refresh that would have replaced it failed (ADR 0039 D3a). An
-// operator reading `unavailable per the catalog read 2d ago (probe
-// failing: 401 Unauthorized)` knows to refresh a credential; one reading
-// `unavailable` learns the wrong thing from a true sentence.
-func (c *ModelCatalog) clause() string {
-	if !c.stale() {
+// probeTail is what the refresh that would have replaced this reading said,
+// as a clause to hang off the reading's own name (ADR 0039 D3a). "" when
+// nothing was asked — a cooldown, say — because a read that never happened
+// must not be reported as a failing probe; the 429 that stopped it is in
+// state/model-catalog.log. An operator reading `not in the catalog read 2d
+// ago and the probe is failing (401 Unauthorized)` knows to refresh a
+// credential; one reading `unavailable` learns the wrong thing from a true
+// sentence, which is the incident this whole clause comes from.
+func (c *ModelCatalog) probeTail() string {
+	c.load()
+	if c.read.Err == nil {
 		return ""
 	}
-	s := " per " + catalogRead(c.read.Age)
-	if c.read.Err != nil {
-		s += " (probe failing: " + c.read.Err.Error() + ")"
-	}
-	return s
+	return " and the probe is failing (" + c.read.Err.Error() + ")"
 }
 
 // OnModelCatalog: are this runtime's model ids ids the catalog above lists?

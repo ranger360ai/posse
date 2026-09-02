@@ -681,11 +681,13 @@ func failingLister(hits *atomic.Int64) *ModelLister {
 	}
 }
 
-// The bead that produced D3a: strong moved to an id the retained reading
-// was taken before, the probe cannot refresh it, and "unavailable" was a
-// true sentence that taught the operator the wrong thing — they edited a
-// state file by hand. The verdict must carry the reading's age and the
-// probe's outcome, so what it teaches is "refresh a credential".
+// The bead that produced D3a and the ruling that produced D3c: strong moved
+// to an id the retained reading was taken before, the probe cannot refresh
+// it, and "unavailable" was a true sentence that taught the operator the
+// wrong thing — they edited a state file by hand. Past its lease that
+// reading no longer reaches a verdict at all: it is QUOTED, with its age and
+// the probe's outcome, so what the line teaches is "refresh a credential",
+// and the launch takes the tier it was asked for.
 func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
 	t.Parallel()
 	var hits atomic.Int64
@@ -693,36 +695,40 @@ func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
 	a.ModelLister = failingLister(&hits)
 	seedCatalogEntry(t, a, modelEntry{At: time.Now().Add(-48 * time.Hour), Models: []string{"claude-opus-5", "claude-sonnet-5"}})
 
-	// The launch's own loud line, in the ADR's shape: the clause sits on
-	// the verdict, before what posse did about it.
-	line := a.TierPreflight("architect", "claude", TierStrong, nil).Line
-	for _, want := range []string{
-		"architect: tier strong wants claude-fable-5-1 — unavailable per the catalog read 48h00m ago",
-		"(probe failing: model list endpoint returned 401 Unauthorized)",
-		", falling back to claude-opus-5",
-	} {
-		if !strings.Contains(line, want) {
-			t.Errorf("line\n  %q\nmissing %q", line, want)
-		}
+	// The launch's own loud line, in the ADR's shape (0039 D3c): what is
+	// absent, from a reading named and dated, then the verdict.
+	const want = "architect: tier strong wants claude-fable-5-1 — not in the catalog read 48h00m ago " +
+		"and the probe is failing (model list endpoint returned 401 Unauthorized); availability UNKNOWN, launching as asked"
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
+	if pf.Line != want {
+		t.Errorf("line =\n  %q\nwant\n  %q", pf.Line, want)
+	}
+	// It prints, and nothing fell: the pair is the one that was asked for,
+	// so the launch renders --model claude-fable-5-1 and the session meta
+	// gets no `fallback:` mark to carry into a relaunch.
+	if pf.Fell() || !pf.Unknown || pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
+		t.Errorf("an UNKNOWN verdict must move nothing: %+v", pf)
 	}
 	// The error is ModelLister's own generic string and nothing else: a
 	// clause printed in front of an operator is one more place the
 	// credential must not appear.
-	if strings.Contains(line, fakeToken) {
-		t.Errorf("the age clause quotes the credential: %q", line)
+	if strings.Contains(pf.Line, fakeToken) {
+		t.Errorf("the age clause quotes the credential: %q", pf.Line)
 	}
 
-	// AVAILABLE rests on the same reading, so it says so too — a day-old
-	// list saying the id is there is worth reading as a day-old list.
+	// The id the reading DOES list is not "available" either — the same
+	// reading is past the same lease, and the report says so rather than
+	// reporting a verdict posse is no longer entitled to.
 	got := a.PreflightReport("", "claude", TierStandard, nil)
-	if !strings.Contains(got, "(available per the catalog read 48h00m ago (probe failing: model list endpoint returned 401 Unauthorized))") {
-		t.Errorf("available verdict does not name its reading: %q", got)
+	if !strings.Contains(got, "(availability UNKNOWN — the catalog read 48h00m ago is past model_probe_ttl and the probe is failing (model list endpoint returned 401 Unauthorized); the launch takes the tier as asked)") {
+		t.Errorf("a listed id on an expired reading is not available: %q", got)
 	}
 }
 
-// The control on the clause: inside model_probe_ttl there is nothing to
-// say, and the line is the byte-for-byte one the shop has been reading
-// since rangerhq-oay.
+// The control on the clause, and the rangerhq-oay case D3c had to preserve:
+// inside model_probe_ttl a reading still RULES, an absent id still demotes,
+// and the line is the byte-for-byte one the shop has been reading since that
+// bead. The lease bounds the old rule; it does not replace it.
 func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	t.Parallel()
 	var hits atomic.Int64
@@ -740,12 +746,16 @@ func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	if hits.Load() != 0 {
 		t.Errorf("a reading inside its lease must ask nobody, %d requests", hits.Load())
 	}
-	// The same fixture, aged past the lease, DOES carry the clause — the
-	// arm that proves the assertions above are measuring the age and not
-	// something that never prints.
+	// The same fixture, aged past the lease, stops demoting and starts
+	// dating itself — the arm that proves the assertions above are
+	// measuring the age of the reading and not something that never moves.
 	seedCatalog(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5")
-	if got := a.TierPreflight("architect", "claude", TierStrong, nil).Line; !strings.Contains(got, "per the catalog read") {
-		t.Errorf("control: past the lease the clause must appear: %q", got)
+	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
+	if pf.Fell() || pf.Tier != TierStrong {
+		t.Errorf("control: past the lease nothing may be substituted: %+v", pf)
+	}
+	if !strings.Contains(pf.Line, "not in the catalog read 48h00m ago") || !strings.Contains(pf.Line, "availability UNKNOWN") {
+		t.Errorf("control: past the lease the reading must be quoted and dated: %q", pf.Line)
 	}
 }
 
@@ -809,15 +819,29 @@ func TestProbeHonoursALiveCooldown(t *testing.T) {
 	if hits.Load() != 0 {
 		t.Errorf("--probe asked a cooling-down endpoint %d times", hits.Load())
 	}
-	// The retained reading is still the newest fact anyone has, so it
-	// still rules — and still says how old it is.
-	if !strings.Contains(line, "unavailable per the catalog read 48h00m ago") {
-		t.Errorf("the cooldown's retained reading must rule and date itself: %q", line)
+	// A cooldown says "do not ask again yet", never "the answer is still
+	// good" (ADR 0039 D3c, and the alternative it rejects by name): the
+	// reading is 48h old, so it is quoted and dated and rules on nothing.
+	if !strings.Contains(line, "not in the catalog read 48h00m ago") || !strings.Contains(line, "availability UNKNOWN") {
+		t.Errorf("a cooldown must not renew trust in a reading past its lease: %q", line)
 	}
 	// Nothing was asked, so there is no probe outcome to report: the age
 	// is the whole clause, and the 429 that set the cooldown is in the log.
-	if strings.Contains(line, "probe failing") {
+	if strings.Contains(line, "the probe is failing") {
 		t.Errorf("a read that never happened must not be reported as a failing probe: %q", line)
+	}
+	// The arm that proves the line above is measuring the LEASE and not the
+	// cooldown: the same cooldown over a reading INSIDE model_probe_ttl
+	// still rules, and still demotes. --probe asked for maxAge 0 and was
+	// refused; how long a reading may rule is the operator's number, not
+	// the caller's, so the report keeps printing what a launch would do.
+	seedCatalogEntry(t, a, modelEntry{
+		At:      time.Now().Add(-30 * time.Minute),
+		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
+		RetryAt: time.Now().Add(10 * time.Minute),
+	})
+	if got := a.PreflightReportOn(a.ProbeCatalog(nil), "architect", "claude", TierStrong); got != "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5" {
+		t.Errorf("a cooled-down reading inside its lease must still rule: %q", got)
 	}
 	// The control: with the cooldown expired, the same fixture DOES ask.
 	seedCatalogEntry(t, a, modelEntry{
