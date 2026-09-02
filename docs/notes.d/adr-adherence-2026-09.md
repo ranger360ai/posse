@@ -42,7 +42,7 @@ One row per survivor clause (ADR 0040 §1, fourth column). Where a reader
 split a clause further, the worst sub-verdict is shown and the appendix
 carries the rest. Paths are `internal/posse/` unless prefixed.
 
-#### Runtime and gates → ADR 0041 The wall (0002, 0009, 0023, 0025, 0035)
+#### Runtime and gates → ADR 0042 The wall (0002, 0009, 0023, 0025, 0035)
 
 | rule | class | verdict | evidence |
 |---|---|---|---|
@@ -64,7 +64,7 @@ carries the rest. Paths are `internal/posse/` unless prefixed.
 | 0035 §2 codex line carries the second spelling of never-ask | wall (L0) | UNREALIZED — bead: ranger-base-6tj5r (ruled BUILD) | `runtime.go:983,1171` carry `-a never` only; ranger-base-hxez was the same edit filed twice, closed onto 6tj5r by this audit |
 | 0035 §3 grok's compensating control: pane mode surfaced in list/gates | guard | UNREALIZED — silently dropped | only reader is a test helper (`permissionmodepane_qa_test.go:195`); `posse list` has no mode column; ranger-base-0emp is closed |
 
-#### What a runtime is → ADR 0042 (0017, 0021, 0032, 0037)
+#### What a runtime is → ADR 0043 (0017, 0021, 0032, 0037)
 
 | rule | class | verdict | evidence |
 |---|---|---|---|
@@ -95,7 +95,7 @@ carries the rest. Paths are `internal/posse/` unless prefixed.
 | 0038 D4 L4 `:ro` binds of common config and hooks | wall | UNREALIZED — beads: ranger-base-mugt2, ranger-base-t4f1 | `cage.go:397-398` mounts the common dir rw whole, stated |
 | 0038 D3 transient `-c core.hooksPath=` stays cooperative | convention | ADHERES-UNPINNED | nothing cites 0038 as closed |
 
-#### The pass → ADR 0043 (0011, 0020, 0028) and 0008 + 0030, 0033
+#### The pass → ADR 0044 (0011, 0020, 0028) and 0008 + 0030, 0033
 
 | rule | class | verdict | evidence |
 |---|---|---|---|
@@ -107,7 +107,7 @@ carries the rest. Paths are `internal/posse/` unless prefixed.
 | 0011 foreign row fails closed at both launchers | guard | ADHERES | `dispatch.go:3167,2216,3602`; `TestQALaunchBeadRefusesAForeignHolderAboveTheStatusCheck` (a Consequences aside, not a decision line, see ungoverned) |
 | 0011 `dispatch.go` header narrative | convention | DRIFTED, CODE-RIGHT | `dispatch.go:13-23` still narrates the pre-Dial-F loop and a gather barrier |
 | 0020 lane = label set, seat = persona; assignee never falls through; availability-first | guard | ADHERES | `dispatch.go:1097-1148,1259-1287`; `TestQARouteOrderDoesNotTouchAnAssignedBead`, `TestQASeatSelectionMissingSoAFreeSeatIsNeverOffered` |
-| 0020 §2 tiebreak is persona-name order | guard | DRIFTED, CODE-RIGHT | `dispatch.go:1136-1148` orders by `route_order:` then name; `TestQARouteOrderTieBreaksOnPersonaName`; 0040 already routes `route_order` to 0043 |
+| 0020 §2 tiebreak is persona-name order | guard | DRIFTED, CODE-RIGHT | `dispatch.go:1136-1148` orders by `route_order:` then name; `TestQARouteOrderTieBreaksOnPersonaName`; 0040 already routes `route_order` to 0044 |
 | 0020 §3 verify-after unassigned by default | guard | ADHERES | `verifyafter.go:93,198`; the "live config pins laurie" sentence is history |
 | 0020 §4 one serial seat per persona | guard | ADHERES | `dispatch.go:1223,3050-3096`; `TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses` |
 | 0020 §5 width law per epoch | convention + guard | ADHERES-UNPINNED | `epoch.go:151-164` counts attempts; the min() formula is prose; `TestLaunchCapIsSpentPerEpochNotPerPass` pins the epoch half |
@@ -153,7 +153,7 @@ carries the rest. Paths are `internal/posse/` unless prefixed.
 | 0029 §3 pause is a human speech act; every launcher declines; nothing auto-pauses | wall | ADHERES | `pause.go:57-86`, `dispatch.go:1754,3481`; `TestNoMechanismEverWritesThePauseFile` |
 | 0029 §4 coordinator SLA and the `blocked-time-to-intervention` metric | convention | UNREALIZED — by its own condition (the pulse is not armed); the metric has no code | |
 
-#### Money and meters (0003, → ADR 0044: 0010, 0018, 0034; 0039)
+#### Money and meters (0003, → ADR 0045: 0010, 0018, 0034; 0039)
 
 | rule | class | verdict | evidence |
 |---|---|---|---|
@@ -276,7 +276,7 @@ the bead.
    overlay; the rest are mechanism and should refuse with D2's message.
    This is the silence class 0017 exists to kill, and the overlay is in
    service today. Correctness, then observability. New bead for dinesh;
-   0021's key list amends to "declarable minus the mechanism set" in 0042.
+   0021's key list amends to "declarable minus the mechanism set" in 0043.
 5. **0034 D3 shipped the day it was ruled dropped** (governance). The
    ruling on ranger-base-ay3dr says D3–D5 DROP; HEAD 088ddeb landed D3
    (display only, gates nothing; ranger-base-ormb). The order of the two
@@ -340,7 +340,7 @@ the bead.
     ADHERES; instrument). MEASURED in the live watch log: per-Run
     treatment-arm medians of seconds to a few minutes, maxima of tens of
     minutes to hours, about half the windows per Run refill-closed. Not a
-    breach; 0043 should say "median" and the report should print per
+    breach; 0044 should say "median" and the report should print per
     refill, not when Run returns.
 
 **The seeds, answered.** 0003 tiering trails the dial: confirmed, both the
@@ -382,20 +382,20 @@ Ranked by what depends on it.
    load and the holders. Cites a bead and 0009's preamble; no record.
 4. **The `-n` attempt ration is per process** (`epoch.go:31-40`) while
    spend is per epoch; a supervised restart restores the ration. One
-   sentence in 0043 §2.
+   sentence in 0044 §2.
 5. **The guarded runtime cannot be its own overflow target**
    (`overflow.go:102-106`, pinned); **attended vs unattended is the fork
    for every blind rule** and "attended" is defined only in code; **blind
    max set to zero bypasses the headroom park** (code-only). Three lines
-   in 0044.
+   in 0045.
 6. **Overlay keys are a closed list distinct from the declarable list**
    (folded into finding 4); **probe currency semantics**: an empty
    recorded version counts as current forever (`runtimeprobe.go:242`). One
-   paragraph in 0042.
+   paragraph in 0043.
 7. **Pre-install L3 drift report** (`herdrback.go:1511-1528`, probe then
    install then probe), **the legacy marker one-way door**
    (`gates.go:1305-1320`), and **the chain dispatcher as the default L3
-   shape beside bd's hooks**. Three sentences in 0041's L3 section.
+   shape beside bd's hooks**. Three sentences in 0042's L3 section.
 8. **init's manifest stamp semantics** (`promote.go:163`,
    `init.go:280-362`): Seeded only when it hashed everything it wrote;
    never arms the verify over a home that had a constitution. Three
@@ -403,10 +403,10 @@ Ranked by what depends on it.
    section in 0015's trim.
 9. **The hand-copied argv gate** at the home, wired into the runtime's
    settings, refreshed by nobody, in no manifest. Where it lives and that it
-   goes stale silently. One line in 0041 or 0015.
-10. **`route_order:`** (built unrecorded, 0040 routes it to 0043);
+   goes stale silently. One line in 0042 or 0015.
+10. **`route_order:`** (built unrecorded, 0040 routes it to 0044);
     **foreign-row fail-closed** as a rule line not a Consequences aside
-    (0043); **the cockpit's one-scan-in-flight guard** (0004);
+    (0044); **the cockpit's one-scan-in-flight guard** (0004);
     **`posse status` exits non-zero on non-empty OR unread** (0029 §2);
     **both persona-dir env names exported** during the rename window
     (`herdrback.go:1710-1717`); **the instance label rule**

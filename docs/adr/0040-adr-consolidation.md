@@ -4,7 +4,11 @@
 the disposition table (§1) is a PROPOSAL until the operator rules on it
 (question bead named in Consequences) · the convention (§3) and the
 pricing (§4) stand on their own · the adherence audit
-(ranger-base-4wxko) audits against the surviving-rule column of §1*
+(ranger-base-4wxko) audits against the surviving-rule column of §1 ·
+amended 2026-09-01 (ranger-base-8uz2t): the four new records are
+0042–0045, not 0041–0044 — 0041 was claimed by the closed-dirty record
+(dd3c98e) before any of the four landed; §3.1 now says when a number is
+claimed*
 
 > The operator, 2026-09-01: "review the ADRs top to bottom … we are up to
 > 39 now, for simplification and consolidation." This is review 1 of 2:
@@ -65,7 +69,7 @@ this ADR executes. Every "overlaps" claim behind a MERGE names two
 passages; they are in the reader briefs cited on the bead, and the merge
 bead quotes them.
 
-Legend for *Disposition*: **R-gates** = new ADR 0041 (the wall) · **R-runtime** = new ADR 0042 (what a runtime is) · **R-dispatch** = new ADR 0043 (the pass) · **R-planguard** = new ADR 0044 (the plan guard). Cite counts are non-test / test files in `internal`+`cmd`+`examples`+`etc`; "strings" are runtime-visible literals; "pins" are test assertions on the number.
+Legend for *Disposition*: **R-gates** = new ADR 0042 (the wall) · **R-runtime** = new ADR 0043 (what a runtime is) · **R-dispatch** = new ADR 0044 (the pass) · **R-planguard** = new ADR 0045 (the plan guard). Cite counts are non-test / test files in `internal`+`cmd`+`examples`+`etc`; "strings" are runtime-visible literals; "pins" are test assertions on the number.
 
 | ADR (words) | governs today (path) | disposition | survivor: the rule the audit checks → home |
 |---|---|---|---|
@@ -117,27 +121,34 @@ After this ADR executes, 27 records are in force (23 kept, 4 new), 16 are supers
 
 | new record | absorbs | strings to move | pins |
 |---|---|---|---|
-| **ADR 0041 — The wall** (layers L0–L4, parity, gate shell, L3 probe, enforcement class, foreign config homes) | 0002, 0009, 0023, 0025, 0035 | 29 (0002:10 · 0009:13 · 0023:2 · 0025:4), plus the two installed hook bodies and the gate-shell header that re-render on the next install | 0 |
-| **ADR 0042 — What a runtime is** (contract checklist and verdicts, per-key overlay, onboarding probe, venue rule) | 0017, 0021, 0032, 0037 | 9 (0017:5 · 0021:3 · 0032:1) | 0 |
-| **ADR 0043 — The pass** (bd is the queue, one launcher, prune, run record, lanes and seats, rolling refill, epoch) | 0011, 0020, 0028 | 19 (0011:6 · 0028:13) | 7 Errorf/assert sites (0011:2 · 0028:5) |
-| **ADR 0044 — The plan guard** (ladder, overflow cap and ledger, blind and headroom, local meters, hints) | 0010, 0018, 0034 | 2 (0018) | 2 (0018) |
+| **ADR 0042 — The wall** (layers L0–L4, parity, gate shell, L3 probe, enforcement class, foreign config homes) | 0002, 0009, 0023, 0025, 0035 | 29 (0002:10 · 0009:13 · 0023:2 · 0025:4), plus the two installed hook bodies and the gate-shell header that re-render on the next install | 0 |
+| **ADR 0043 — What a runtime is** (contract checklist and verdicts, per-key overlay, onboarding probe, venue rule) | 0017, 0021, 0032, 0037 | 9 (0017:5 · 0021:3 · 0032:1) | 0 |
+| **ADR 0044 — The pass** (bd is the queue, one launcher, prune, run record, lanes and seats, rolling refill, epoch) | 0011, 0020, 0028 | 19 (0011:6 · 0028:13) | 7 Errorf/assert sites (0011:2 · 0028:5) |
+| **ADR 0045 — The plan guard** (ladder, overflow cap and ledger, blind and headroom, local meters, hints) | 0010, 0018, 0034 | 2 (0018) | 2 (0018) |
 
 Grouped by concern, the set in force (the index a `docs/adr/README.md` will carry once the merges land):
 
-- **runtime & gates** (5): 0041 the wall · 0042 what a runtime is · 0014 path-scoped writes · 0022 single writer · 0038 git identity (unbuilt)
-- **dispatch, seats & oversight** (8): 0043 the pass · 0013 runtime dispatch contract · 0008 crew sessions (with 0030) · 0004 cockpit · 0016 herdr hints · 0027 pulse delivery · 0029 governance surface · 0033 coordinator not a lane
-- **money & meters** (3): 0003 model tiering · 0044 the plan guard · 0039 model dial follow-through
+- **runtime & gates** (5): 0042 the wall · 0043 what a runtime is · 0014 path-scoped writes · 0022 single writer · 0038 git identity (unbuilt)
+- **dispatch, seats & oversight** (9): 0044 the pass · 0013 runtime dispatch contract · 0008 crew sessions (with 0030) · 0004 cockpit · 0016 herdr hints · 0027 pulse delivery · 0029 governance surface · 0033 coordinator not a lane · 0041 closed dirty tree on the bead (landed 2026-09-01, after the table above; not in its 27)
+- **money & meters** (3): 0003 model tiering · 0045 the plan guard · 0039 model dial follow-through
 - **constitution & promotion** (5): 0012 harness/instance boundary · 0015 constitution promotion · 0024 work-product routing · 0031 init operator fence · 0036 backup (unbuilt)
 - **credentials** (1): 0019 credential seam
 - **personas & handoffs** (5): 0001 PIDs · 0005 work prompt and rungs · 0006 handoff shapes · 0007 skills · 0026 research spikes
 
-Two calls the operator may want to make differently, priced: keeping 0018 out of 0044 (it is fresh and fully built) leaves the blind rule in two records, which is the assembly this ADR exists to end, at a saving of two strings and two pins; keeping 0002 as the root and merging only 0009/0023/0025/0035 into it saves nothing, because the root's eight appended amendments are the cost.
+Two calls the operator may want to make differently, priced: keeping 0018 out of 0045 (it is fresh and fully built) leaves the blind rule in two records, which is the assembly this ADR exists to end, at a saving of two strings and two pins; keeping 0002 as the root and merging only 0009/0023/0025/0035 into it saves nothing, because the root's eight appended amendments are the cost.
 
 ## §3 Numbering and supersession convention (forward-binding)
 
 1. **Append-only.** No numbered record is ever deleted or renumbered.
    A consolidation mints the next free number and carries a *Lineage*
-   table: one row per decision it absorbs, `was: ADR 0002 §3 L2 → here
+   table. **A number is claimed by the file landing on the branch,
+   never by a design that names it** (amended 2026-09-01,
+   ranger-base-8uz2t: this record pre-named 0041–0044 in §2 and lost
+   0041 to the closed-dirty record within the day). A bead specced to
+   write an unwritten record carries its number as provisional; at commit
+   the writer checks `docs/adr/` and, if the number is taken, takes the
+   next free one and re-points the design's table in the same commit.
+   The Lineage table: one row per decision it absorbs, `was: ADR 0002 §3 L2 → here
    §1 L2`. The absorbed record gets ONE edit: its status line gains
    `· superseded by ADR 004n (date)` and a one-line pointer under the
    title. The body is untouched — it is history, and 0012's App.A rule
@@ -236,12 +247,12 @@ costs seven sessions of churn.
   regardless of the ruling — they are wrong under every disposition.
 - Beads cut 2026-09-01: the ruling question ranger-base-ay3dr; the
   `internal/rhq/` sweep ranger-base-3ni7p (unblocked); the four merge
-  records — 0041 ranger-base-rkh3w, 0042 ranger-base-hn32r, 0043
-  ranger-base-yv9uo, 0044 ranger-base-vl294 — and the 0030→0008 fold
+  records — 0042 ranger-base-rkh3w, 0043 ranger-base-hn32r, 0044
+  ranger-base-yv9uo, 0045 ranger-base-vl294 — and the 0030→0008 fold
   ranger-base-k9d7s; the 0015 trim ranger-base-rowut; the two AMEND
   sweeps ranger-base-mppjc (personas group) and ranger-base-mqoid (the
   rest, plus `docs/adr/README.md`). All but the sweep are dep-blocked on
-  the ruling; the second sweep also waits on the 0044 and 0030 beads,
+  the ruling; the second sweep also waits on the 0045 and 0030 beads,
   which share files with it (one writer per file, ADR 0022).
 
 ## Verification (predicted observables)
