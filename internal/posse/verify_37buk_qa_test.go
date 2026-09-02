@@ -30,7 +30,6 @@ import (
 // control in the same rig, so a BLOCKED verdict is the file type and not the
 // harness — and the controls hold on both sides of the fix.
 func TestQAAFifoAtTheDispatchPathMustNotWedgeTheLaunch(t *testing.T) {
-	t.Skip("ranger-base-92n5p: installHook and hookInstalled read <hooks>/<slot> before any type check — the launch blocks forever on a FIFO")
 	for _, mode := range []os.FileMode{0o644, 0o755} {
 		a, repo := fifoLaunchRig(t)
 		if !returnsWithin(t, 30*time.Second, func() { a.probeL3Hooks(repo, true) }) {

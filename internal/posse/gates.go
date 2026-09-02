@@ -1764,6 +1764,9 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		return "", err
 	}
 	p := filepath.Join(hooks, slot)
+	if err := refuseNonRegularHook(p); err != nil {
+		return "", err
+	}
 	if b, err := os.ReadFile(p); err == nil && !ownsHook(string(b), marker, legacy) {
 		// A chain made from our printed prescription is deliberately foreign
 		// at the slot: overwriting it would discard the other tool's hook. Its
@@ -1773,6 +1776,12 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		// refreshed and a MISSING one is restored; only a member that is there
 		// and foreign stops us, and it stops us with its own words.
 		chained := filepath.Join(hooks, "posse-"+slot)
+		// Both branches below read that member, and one of them writes it.
+		// Same rule as the slot itself: a special file there is foreign and
+		// opening it can never return (ranger-base-92n5p).
+		if err := refuseNonRegularHook(chained); err != nil {
+			return "", err
+		}
 		if neighbour, isChain := chainDispatcherNeighbour(string(b), slot); isChain {
 			owned, readErr := os.ReadFile(chained)
 			switch {
@@ -1878,7 +1887,16 @@ func hookInstalled(dir, slot, marker, legacy string) bool {
 	if err != nil {
 		return false
 	}
-	b, err := os.ReadFile(filepath.Join(hooks, slot))
+	// Nothing but a regular file can be our hook, and asking by reading is
+	// not free: open(2) on a FIFO with no writer never returns, so this
+	// question used to hang the launcher rather than answer it
+	// (ranger-base-92n5p). A special file at either path is "not installed",
+	// which is the same answer an absent one gets.
+	top := filepath.Join(hooks, slot)
+	if !isRegularFile(top) {
+		return false
+	}
+	b, err := os.ReadFile(top)
 	if err != nil {
 		return false
 	}
@@ -1887,7 +1905,11 @@ func hookInstalled(dir, slot, marker, legacy string) bool {
 		return true
 	}
 	if isChainHookDispatcher(body, slot) {
-		owned, err := os.ReadFile(filepath.Join(hooks, "posse-"+slot))
+		chained := filepath.Join(hooks, "posse-"+slot)
+		if !isRegularFile(chained) {
+			return false
+		}
+		owned, err := os.ReadFile(chained)
 		return err == nil && ownsHook(string(owned), marker, legacy)
 	}
 	return false
@@ -3319,6 +3341,49 @@ func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale boo
 func isRegularFile(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Mode().IsRegular()
+}
+
+// refuseNonRegularHook stops installHook before it opens a hook path that is
+// not a regular file. os.ReadFile on a FIFO with no writer never returns —
+// and neither does the WriteFile a failed read would fall through to — so one
+// mkfifo in a checkout's hooks dir hung every launch into it, silently and
+// with no deadline anywhere above (ranger-base-92n5p; ranger-base-gs9r taught
+// the probe the same lesson two functions up). A special file is never our
+// render and never the chain dispatcher, so it is a foreign hook, and ADR
+// 0002 §3 says foreign hooks are refused rather than overwritten: name it,
+// name what it is, and print the move the operator can act on. The chain
+// prescription is not that move — its verify step runs the slot, which a FIFO
+// cannot be. os.Stat follows symlinks, so a link to a regular file installs
+// as it always has; a missing path (a dangling symlink included) is not this
+// case at all and is left to the reads below, which have always answered it.
+func refuseNonRegularHook(p string) error {
+	fi, err := os.Stat(p)
+	if err != nil || fi.Mode().IsRegular() {
+		return nil
+	}
+	return Die("%s exists and is %s, not a posse hook — not overwriting.\nA git hook is a regular file: move that one aside (or delete it), then re-run install-hooks.", AbbrevHome(p), fileTypeName(fi.Mode()))
+}
+
+// fileTypeName names what is at a path when it is not a regular file, in
+// words a refusal can print. os.FileMode.String() would render "p---------",
+// which tells an operator holding a hung launcher nothing.
+func fileTypeName(m os.FileMode) string {
+	switch {
+	case m.IsDir():
+		return "a directory"
+	case m&os.ModeNamedPipe != 0:
+		return "a named pipe"
+	case m&os.ModeSocket != 0:
+		return "a socket"
+	case m&os.ModeCharDevice != 0:
+		return "a character device"
+	case m&os.ModeDevice != 0:
+		return "a device"
+	case m&os.ModeSymlink != 0:
+		return "a symlink"
+	default:
+		return "not a regular file"
+	}
 }
 
 // identityMatch is byte-exact content plus the execute bit — the degenerate

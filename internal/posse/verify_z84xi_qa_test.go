@@ -35,7 +35,6 @@ import (
 // arms and use the same call, so a blocked verdict is the file type and not
 // the harness.
 func TestQAAFifoAtTheProjectConfigPathMustNotWedgeTheLaunch(t *testing.T) {
-	t.Skip("ranger-base-92n5p (folded ranger-base-92rt): projectConfigTrustFile reads .claude/settings.json before any type check — the launch blocks forever on a FIFO")
 
 	claude := &Runtime{Name: "claude",
 		ProjectConfig:     []string{ClaudeProjectConfig, ClaudeProjectConfigLocal},

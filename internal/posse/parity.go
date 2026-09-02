@@ -429,6 +429,19 @@ func projectConfigTrustFile(rt *Runtime, p string) string {
 		}
 		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+err.Error())
 	}
+	// An existing path that is not a regular file can never be proved to be a
+	// readable top-level JSON object, and asking by reading is not free:
+	// open(2) on a FIFO with no writer never returns, so the launch used to
+	// block here forever instead of degrading (ranger-base-92rt, folded into
+	// ranger-base-92n5p). ADR 0002 amendment 2026-08-26 §4 wants an existing
+	// file the launch cannot prove safe to DEGRADE, so this is the unreadable
+	// classification the directory arm already gives, reached without the
+	// open. os.Stat follows symlinks: a link to a regular file is read as
+	// before, and a dangling one fails the Stat and falls through to the
+	// ReadFile below, which names it unreadable as it always has.
+	if fi, err := os.Stat(p); err == nil && !fi.Mode().IsRegular() {
+		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+fileTypeName(fi.Mode())+", not a regular file")
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+err.Error())
