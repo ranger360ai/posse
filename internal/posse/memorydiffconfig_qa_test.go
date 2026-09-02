@@ -81,3 +81,74 @@ func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
 		t.Errorf("the refusal echoed the credential: %q", line)
 	}
 }
+
+// ─── ranger-base-y7i7k ───────────────────────────────────────────────────────
+
+// The sibling of the pin above, and the one that needs no configuration at
+// all: git C-quotes a path carrying a non-ASCII byte, a quote or a
+// backslash, so the header is spelled `+++ "b/…"` and misses the literal
+// `+++ b/` firstCredShapeInDiff matches on. It falls into the OTHER header
+// case, `cur` is never updated — and because the fix deliberately does not
+// reset `cur` on `diff --git`, it still holds the PREVIOUS file's name. The
+// hold then points at a file that does not contain the credential.
+//
+// core.quotePath defaults to TRUE, and setting it false still quotes a name
+// containing a quote or a backslash, so nothing has to be misconfigured for
+// this. Fail-CLOSED — the commit is held — but the refusal is the product,
+// and one naming an innocent file is one an operator will override.
+//
+// This is also the fixture the close said could not exist: "every file whose
+// diff carries a `+` line also carries the `+++ b/` and `@@` that set them,
+// so a reset would be a line no fixture can reach" (memoryland.go:521-524).
+// A quoted path is a file whose diff carries a `+` line and no matching
+// `+++ b/`. Restoring that reset is half the fix, and this pin reaches it.
+//
+// Un-skip when ranger-base-y7i7k lands.
+func TestTheDiffScanAttributesAHitInAQuotedPath(t *testing.T) {
+	t.Skip("ranger-base-y7i7k: a C-quoted header is missed and the hold names the previous file")
+
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	dev := filepath.Join(repo, "rhq", "personas", "dev")
+	const odd = "no\u00ebl.md" // ordinary prose under a non-ASCII name
+	write(t, filepath.Join(dev, odd), "# b\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/"+odd)
+	mustGit(t, repo, "commit", "-q", "-m", "a memory file with a non-ASCII name", "--", "rhq/personas/dev/"+odd)
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	// ORDERS.md sorts first and stays clean; the credential is in the other
+	// file, so a parser that never updated `cur` names ORDERS.md.
+	appendOrders(t, repo, "dev", "- an ordinary lesson.\n")
+	const leaked = "sk-ant-api03-QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"
+	write(t, filepath.Join(dev, odd), "# b\n- the key that worked: "+leaked+"\n")
+
+	// Fixture guard: this git must actually C-quote the header, else the
+	// assertions below pass for the wrong reason.
+	raw, err := gitRaw(dev, memoryDiff("HEAD", "--unified=0", "--", ".")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "+++ \"b/") {
+		t.Fatalf("this git does not C-quote the header here, so nothing is pinned:\n%s", raw)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a credential shape was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if strings.Contains(line, "ORDERS.md") {
+		t.Errorf("the hold named an innocent file — the credential is in %s: %q", odd, line)
+	}
+	if !strings.Contains(line, "l.md:2") {
+		t.Errorf("the hold must name the file the credential is IN, at its new line: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+}
