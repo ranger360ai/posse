@@ -479,8 +479,9 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	// 30s to 90s and blamed the ~24-31s it was seeing on the ONE real
 	// hook-wall sweep the preamble forks git and sh for; that diagnosis was
 	// wrong. The cost was the cwd fallback above, and once ranger-base-uk0v
-	// gave the fixture its own beads: the whole test runs in ~1.4s (measured
-	// 2026-09-02). The sweep itself is worth single-digit hundreds of ms.
+	// gave the fixture its own beads: the whole test — fixture, git init,
+	// two hook installs, sweep and three passes — runs in ~1.2-1.4s
+	// (measured 2026-09-02), so the sweep is a fraction of that.
 	// Left at 90s deliberately: a ceiling ~60x the real cost is no longer a
 	// number a slow box can reach, so it cannot be the flake it was, and it
 	// still turns a wedged Watch into the tap dump below instead of a
