@@ -427,10 +427,21 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	repo := hwsRepo(t, t.TempDir(), "declared")
 	// beads: must point at a scratch dir — without it the dispatcher falls
-	// back to the process cwd, which for `go test ./internal/rhq` is inside
+	// back to the process cwd, which for `go test ./internal/posse` is inside
 	// this worktree and resolves to the live fleet queue (ranger-base-uk0v).
-	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+t.TempDir()+"\nbeads_visibility:\n  "+repo+": private\n"), 0o644); err != nil {
+	scratch := t.TempDir()
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+scratch+"\nbeads_visibility:\n  "+repo+": private\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	// ranger-base-isq3: assert the line above took, rather than trusting the
+	// write. An absent or misspelled `beads:` key is not an error and not a
+	// red — BeadsDirs answers [""], the loop reads the operator's live queue
+	// once per pass, and the only symptom is wall clock. That surfaces as a
+	// flake on whoever happens to be running the suite, scaling with the
+	// operator's unlanded worktree count rather than with anything in this
+	// file. One equality check makes the regression deterministic and local.
+	if got := b.App.BeadsDirs(); len(got) != 1 || got[0] != scratch {
+		t.Fatalf("fixture is not hermetic: BeadsDirs() = %q, want [%q] — the loop below would read the live fleet queue", got, scratch)
 	}
 	if _, _, _, err := b.App.InstallCommitGuardHook(repo); err != nil {
 		t.Fatal(err)
@@ -463,14 +474,18 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	go func() { p, _ := d.Watch(ctx, "", "", 0, 10*time.Millisecond, 20*time.Millisecond); done <- p }()
 	select {
 	case <-done:
-	// ranger-base-fa55: this deadline is not bounding the loop (3 passes at
-	// a 10ms base interval finish in well under a second) — it is bounding
-	// the ONE real hook-wall sweep the loop preamble runs, which forks git
-	// and sh against a real repo. That cost is ~24s alone and grows with
-	// box load (31s observed at load ~35), so a 30s ceiling chosen for an
-	// idle machine reds under load without the loop ever actually hanging.
-	// 90s matches the margin launchlock_qa_test.go gives its own real
-	// cross-process work.
+	// This deadline is a hang guard, not a budget, and the distinction is
+	// the second half of ranger-base-isq3. ranger-base-fa55 raised it from
+	// 30s to 90s and blamed the ~24-31s it was seeing on the ONE real
+	// hook-wall sweep the preamble forks git and sh for; that diagnosis was
+	// wrong. The cost was the cwd fallback above, and once ranger-base-uk0v
+	// gave the fixture its own beads: the whole test runs in ~1.4s (measured
+	// 2026-09-02). The sweep itself is worth single-digit hundreds of ms.
+	// Left at 90s deliberately: a ceiling ~60x the real cost is no longer a
+	// number a slow box can reach, so it cannot be the flake it was, and it
+	// still turns a wedged Watch into the tap dump below instead of a
+	// package-wide `go test -timeout` panic. The pass count, not this
+	// timer, is what ends the loop — tap.reached cancels ctx above.
 	case <-time.After(90 * time.Second):
 		t.Fatalf("watch never returned:\n%s", tap.String())
 	}
