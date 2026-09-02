@@ -709,15 +709,24 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	}
 
 	// Public + configured pattern: refused, naming the instance's class and
-	// the text it tripped on.
+	// a hit count — and NOT the text it tripped on. Check 0 prints its
+	// $posse_bad to a terminal like every other arm, so an instance entry is
+	// class-only here too (ADR 0048 D2, ranger-base-8114t); the shipped
+	// entries in the same list keep their matched text, which is what makes
+	// this a per-entry switch and not a muted check.
 	stage(pub)
 	out, err := git(pub, persona, "commit", "-m", "bd sync", "--", ".beads/issues.jsonl")
 	if err == nil {
 		t.Fatalf("an instance pattern must refuse in a public repo:\n%s", out)
 	}
-	for _, want := range []string{"ops-class content in a public repo's beads db", "client-acme:", secret + " Holdings"} {
+	for _, want := range []string{"ops-class content in a public repo's beads db", "client-acme:", "hit(s)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("refusal must carry %q:\n%s", want, out)
+		}
+	}
+	for _, never := range []string{secret, "(Corp|Holdings)"} {
+		if strings.Contains(out, never) {
+			t.Errorf("the refusal printed the instance pattern's vocabulary %q — that is the thing config keeps out of a public tree:\n%s", never, out)
 		}
 	}
 	// The REFUSED config entry guards nothing — that is what being refused

@@ -364,12 +364,21 @@ code included, and over the ADDED staged paths.`
 // in what they matched, not in what the writer should do about it — and it
 // names the operator's config as the one place the pattern itself can
 // change, because a persona cannot edit it and should not try.
+//
+// It also says where the matched text went (ranger-base-8114t): the refusal
+// gives a class and a count and stops, because the text is what must not
+// travel, and a writer who knows the class can find it in their own staged
+// diff — which is the one place it is already sitting.
 const OpsInstanceWayThrough = `the way through: the class named above is this instance's vocabulary, not
 this repo's — generalize whatever carries it, or write the content in the
 instance tree and have the public artifact restate the mechanism and cite it
-(ADR 0024 D3, restate-and-cite). For a PATH: name the file without it. If the
-pattern itself is wrong, only the operator can change it (config ` + OpsPatternsConfigKey + `:)
-and re-run posse gates install-hooks.`
+(ADR 0024 D3, restate-and-cite). For a PATH: name the file without it. The
+refusal gives the class and a hit count and never the text it matched (ADR
+0048 D2) — that text is the thing being kept out of a public tree, and a
+refusal is read in a terminal and pasted onto beads; grep your own staged
+diff for what the class names. If the pattern itself is wrong, only the
+operator can change it (config ` + OpsPatternsConfigKey + `:) and re-run
+posse gates install-hooks.`
 
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so

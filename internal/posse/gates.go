@@ -2600,6 +2600,27 @@ func markdownPathspecArgs() string {
 	return strings.Join(out, " ")
 }
 
+// opsClassOnlyArg is posse_check's third argument, the disclosure switch
+// (ADR 0048 D2, ranger-base-8114t). It is a word rather than a flag because
+// the rendered hook is read by people: `posse_check 'client-acme' '<ere>'
+// class-only` says in the file itself what the refusal will and will not
+// print. Only an instance pattern gets it.
+const opsClassOnlyArg = "class-only"
+
+// opsCheckCall renders one posse_check call. classOnly is true for a pattern
+// that came from config beads_visibility_patterns:, whose value is one
+// deployment's confidential vocabulary: the refusal then names the class and
+// a hit count and never the ERE or the text it matched. A shipped
+// OpsPattern and a derived identity literal keep ADR 0024 D2's shape, where
+// the matched string is what makes the refusal actionable.
+func opsCheckCall(indent, class, ere string, classOnly bool) string {
+	line := indent + "posse_check " + shQuote(class) + " " + shQuote(ere)
+	if classOnly {
+		line += " " + opsClassOnlyArg
+	}
+	return line + "\n"
+}
+
 // visibilityGuardBody renders the first wall against a repo whose beads db
 // carries the given visibility. THE VERDICT IS STAMPED AT INSTALL TIME
 // rather than read at commit time, and that is a deliberate trade: the hook
@@ -2654,12 +2675,18 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 	// instance pattern moved to check 3's scope, which already covers every
 	// staged text file including markdown, so leaving it here too would only
 	// scan the same line twice and refuse it with the wrong remedy.
+	//
+	// The instance entries in check 0's list are rendered CLASS-ONLY
+	// (ranger-base-8114t): check 0 prints its $posse_bad to a terminal
+	// exactly as check 3 does, so the same rule applies — the class and a
+	// count, never the pattern and never the text it matched.
 	var checks, shippedChecks strings.Builder
-	for _, p := range set.All() {
-		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
-	}
 	for _, p := range OpsPatterns {
-		fmt.Fprintf(&shippedChecks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
+		shippedChecks.WriteString(opsCheckCall("    ", p.Class, p.ERE, false))
+	}
+	checks.WriteString(shippedChecks.String())
+	for _, p := range set.Extra {
+		checks.WriteString(opsCheckCall("    ", p.Class, p.ERE, true))
 	}
 	// A config pattern this instance asked for and did not get is recorded
 	// HERE, in the file, for the same reason the stamp is: a human reading
@@ -2698,10 +2725,28 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 
   # A function, not a 'while read' over a pipeline: the right side of a
   # pipeline is a subshell and the assignment would not survive it — the
-  # rangerhq-kk6e lesson, which cost a push. Shared by check 0 (below) and
-  # check 2 (ADR 0024 D2): each sets $posse_added and $posse_bad, then calls
-  # this over the SAME OpsPatterns list — one Go slice, one shell function.
+  # rangerhq-kk6e lesson, which cost a push. Shared by every check below:
+  # each sets $posse_added and $posse_bad, then calls this over whichever
+  # list its scope gets — one Go slice per scope, one shell function.
+  #
+  # $3 IS THE DISCLOSURE SWITCH (ADR 0048 D2, ranger-base-8114t), and an
+  # instance pattern is the only thing that sets it. A shipped OpsPattern
+  # carries public text — it is in this repo's own source — so showing a
+  # writer the string they tripped on costs nothing, and a refusal that
+  # names only a class is a puzzle. An instance pattern is the opposite:
+  # the value IS one deployment's confidential vocabulary, kept out of the
+  # public tree on purpose, and a refusal is read in a terminal, pasted onto
+  # a bead and quoted in a transcript. So for those the wall says WHICH
+  # class was hit and HOW OFTEN and nothing else; the words that tripped it
+  # stay in the staged tree of whoever wrote them, where they already are.
   posse_check() {
+    if [ -n "$3" ]; then
+      posse_n=$(printf '%s\n' "$posse_added" | grep -cE "$2" 2>/dev/null)
+      [ "${posse_n:-0}" -gt 0 ] || return 0
+      posse_bad="$posse_bad  $1: $posse_n hit(s) — pattern and matched text withheld: an instance class is this deployment's own vocabulary (ADR 0048 D2)
+"
+      return 0
+    fi
     posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
     [ -n "$posse_m" ] || return 0
     posse_bad="$posse_bad  $1: $2
@@ -2873,9 +2918,17 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // WHAT NEVER GOES IN: a pattern's VALUE. The header line and both
 // refusals.log lines name the CLASS only — an instance pattern IS this
 // deployment's confidential vocabulary (visibility.go, OpsPatternsConfigKey),
-// and refusals.log is a file that outlives the terminal it printed to. The
-// matched text still rides $posse_bad, which is what tells a writer WHICH
-// line to fix; that is the existing behaviour of every arm of this hook.
+// and refusals.log is a file that outlives the terminal it printed to.
+//
+// Nor does the value ride $posse_bad, which is printed to the same terminal
+// and gets pasted onto beads the same way (ranger-base-8114t, measured on
+// this instance's own pattern): posse_check renders an instance pattern
+// class-only, so the two INSTANCE refusals here carry a class, a hit count
+// and — on the path arm — the staged path, which is the writer's own
+// artifact and the only thing that says WHICH file. The two IDENTITY
+// refusals keep ADR 0024 D2's shape, matched text included: a derived
+// literal is the operator's own username or email, and the box it names is
+// the box reading the refusal.
 type visGuardRefusal struct {
 	badVar       string // the shell variable this arm accumulated its hits in
 	label        string // what refusals.log calls this scan
@@ -2985,14 +3038,14 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 	idChecks := func(indent string) string {
 		var b strings.Builder
 		for _, lit := range identity {
-			fmt.Fprintf(&b, "%sposse_check %s %s\n", indent, shQuote(lit.Class), shQuote(identityLiteralERE(lit.Value)))
+			b.WriteString(opsCheckCall(indent, lit.Class, identityLiteralERE(lit.Value), false))
 		}
 		return b.String()
 	}
 	exChecks := func(indent string) string {
 		var b strings.Builder
 		for _, p := range extra {
-			fmt.Fprintf(&b, "%sposse_check %s %s\n", indent, shQuote(p.Class), shQuote(p.ERE))
+			b.WriteString(opsCheckCall(indent, p.Class, p.ERE, true))
 		}
 		return b.String()
 	}

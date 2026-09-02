@@ -4090,7 +4090,14 @@ named**, in the hook file itself and in `posse gates install-hooks` output,
 rather than dropped silently — a pattern the operator believes in and that
 is not there is worse than no pattern. Rejection reasons never echo the
 value, only the class name, so keep the class name something you are willing
-to read in a terminal. The patterns live in the operator's config and get
+to read in a terminal. Neither does a REFUSAL: an instance class is refused
+by class and hit count alone — never the pattern, never the text it matched
+— wherever it is scanned, because a refusal is read in a terminal, written
+to `refusals.log` and pasted onto beads, and the text is the one thing the
+key exists to keep out of a public tree (the shipped list keeps showing what
+it matched; its text is in this repo's source already). The one thing a
+refusal does print is the offending staged PATH, which is the writer's own
+artifact and the only thing that says which file. The patterns live in the operator's config and get
 stamped into `.git/hooks/`, both untracked: the vocabulary never enters the
 public repo, which is the point of the key. Their SCOPE is wider than the
 shipped list's since ADR 0048: an instance pattern is scanned over the added
