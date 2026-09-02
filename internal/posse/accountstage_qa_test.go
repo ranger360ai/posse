@@ -203,10 +203,18 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 				t.Errorf("uncounted ledger written = %v, want %v", ledgered == nil, c.degraded)
 			}
 			// The cap key is only a brake where the degrade is. A set cap on
-			// a counted runtime must not silently stop a launch — the ADR
-			// 0010 §3 dead-key line that says so out loud is ranger-base-2eeb.
+			// a counted runtime must not stop a launch, and since
+			// ranger-base-2eeb it must not go quiet either: the pass's own
+			// output stays clean of the key (this is not an outcome of the
+			// pass) and stderr carries ADR 0010 §3's dead-key line instead.
+			// Both halves, because either alone is a state the amendment
+			// refuses — a silent dead key, or a brake that came back.
 			if !c.degraded && strings.Contains(out, "uncounted_cap_"+c.runtime) {
 				t.Errorf("a counted runtime's cap key must not brake it:\n%s", out)
+			}
+			deadKey := strings.Contains(f.errb.String(), "config uncounted_cap_"+c.runtime+": \"1\" does not apply")
+			if deadKey == c.degraded {
+				t.Errorf("dead-key line = %v, want %v (ADR 0010 §3):\n%s", deadKey, !c.degraded, f.errb.String())
 			}
 			// The sentence the bug printed, from the pass's side.
 			if strings.Contains(out, "no cost adapter reads "+c.runtime) {

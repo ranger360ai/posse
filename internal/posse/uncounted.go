@@ -38,7 +38,9 @@ package posse
 // **unlimited and loud** — the `budget_*` dormancy pattern, where an unset
 // dial changes no behaviour at all and the degrade is still named every
 // pass. Filling the ADR 0012 D4 cost-adapter seam is how a runtime leaves
-// this column; setting a cap is not.
+// this column; setting a cap is not. When a runtime does leave — grok did,
+// ranger-base-0lg6 — a cap key left behind it stops braking, and
+// countedCapDead names that once a pass rather than letting it go quiet.
 
 import (
 	"fmt"
@@ -135,6 +137,9 @@ type uncountedPool struct {
 // A runtime that will not load is nil too. It cannot launch either, and the
 // launch is where that gets reported; guessing at the account stage of a
 // runtime posse cannot read would put a brake on a name and not on a pool.
+//
+// The priced case is where a still-set `uncounted_cap_<runtime>:` goes dead,
+// so it is where countedCapDead says so — once, because this is memoized.
 func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 	if p, ok := d.uncounted[name]; ok {
 		return p
@@ -143,7 +148,12 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 		d.uncounted = map[string]*uncountedPool{}
 	}
 	rt, err := d.App.LoadRuntime(name)
-	if err != nil || rt.CostPriced() {
+	if err != nil {
+		d.uncounted[name] = nil
+		return nil
+	}
+	if rt.CostPriced() {
+		d.countedCapDead(rt)
 		d.uncounted[name] = nil
 		return nil
 	}
@@ -156,6 +166,52 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 	}
 	d.uncounted[name] = p
 	return p
+}
+
+// countedCapDead is ADR 0010 §3's third amendment rule: a set
+// `uncounted_cap_<runtime>:` on a runtime whose dollars DO reach `posse
+// cost` is named once per pass as not applying, pointing at the brake that
+// does. It does not keep the cap alive — ADR 0013 §5's law stands, a runtime
+// leaves this column by having its dollars priced and nothing else — it
+// makes the key's death audible.
+//
+// The failure this closes is the one the header is written against, arriving
+// by the other door: not a cap that stopped capping because its value was a
+// typo, but a cap that stopped capping because the RUNTIME moved out from
+// under it. grok did exactly that (ranger-base-0lg6) and nothing said a word.
+//
+// On errw, not d.Out: this is a warning about the operator's config, not an
+// outcome of the pass, and it is the same writer UncountedCap's typo line
+// already uses for the same kind of fact. Unset is silent — the key nobody
+// set is not news.
+func (d *Dispatcher) countedCapDead(rt *Runtime) {
+	raw := strings.TrimSpace(d.App.CfgGet("uncounted_cap_"+rt.Name, ""))
+	if raw == "" {
+		return
+	}
+	d.eprintf("account: config uncounted_cap_%s: %q does not apply — the %s adapter prices %s's spend, so its dollars are in `posse cost` and the account brake is off; %s (ADR 0010 §3)\n",
+		rt.Name, raw, rt.CostReading(), rt.Name, d.countedBrake(rt))
+}
+
+// countedBrake names what still holds a priced runtime back, so the line
+// above sends the operator somewhere rather than merely taking a dial away.
+//
+// Every priced runtime has Dial E: its dollars are in the totals
+// `budget_pass:`/`budget_day:` are compared against, which is the whole
+// reason the bead-count stand-in is gone. grok has a second one where it is
+// armed — `grok_guard_week:` meters the pool the dollars come out of, and an
+// operator whose dead key was a pool brake wants that one, not the wallet.
+//
+// Read with io.Discard: grokPoolGuard names a malformed grok_guard_week: on
+// its own errw once a pass, and this peek must not say it a second time.
+func (d *Dispatcher) countedBrake(rt *Runtime) string {
+	if rt.Name == GrokPoolRuntime {
+		if pct := d.App.GrokGuardWeek(io.Discard); pct > 0 {
+			return fmt.Sprintf("the brakes on %s are grok_guard_week: %.0f%% over the pool and budget_pass:/budget_day: over the dollars", rt.Name, pct)
+		}
+		return fmt.Sprintf("the brake on %s is budget_pass:/budget_day: over those dollars, and grok_guard_week: if you want the pool metered too", rt.Name)
+	}
+	return fmt.Sprintf("the brake on %s is budget_pass:/budget_day: over those dollars", rt.Name)
 }
 
 // uncountedSkip is the brake: the line this bead gets instead of a launch,

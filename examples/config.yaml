@@ -462,7 +462,10 @@ default_emoji: ⚙️
 # grok is NEITHER since 2026-08-29: it reports its own per-turn cost and
 # `posse cost` totals it, so grok is COUNTED. An `uncounted_cap_grok:` left
 # over from before that brakes nothing — `grok_guard_week:` below is grok's
-# meter now.
+# meter now. Left set, it is not left quiet: every pass that considers a
+# launch there names the key once on stderr as not applying and points at
+# the brake that does (ADR 0010 §3). A cap that stopped capping because the
+# runtime moved out from under it is still a cap that stopped capping.
 #
 # Such a runtime is still dispatchable — refusing it would be refusing half
 # the fleet over a missing reading — but never quiet. Every dispatch pass

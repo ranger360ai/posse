@@ -349,3 +349,147 @@ func TestUncountedCountsAnOverflowMove(t *testing.T) {
 		t.Errorf("uncounted ledger: want 1 line, got %d (%q)", got, b)
 	}
 }
+
+// ── the dead key on a counted runtime (ADR 0010 §3, ranger-base-2eeb) ───────
+//
+// grok left the account-degraded column (ranger-base-0lg6): its adapter
+// prices what it reads, so uncountedFor returns nil for it before the cap
+// key is ever read and `uncounted_cap_grok:` brakes nothing. That much is
+// ADR 0013 §5's law and stays. What must not happen is it happening
+// QUIETLY — a key the operator set and still believes in is exactly the
+// cap-that-stopped-capping failure uncounted.go is written against.
+
+// pidOnRuntime is codexPID retargeted at another runtime — the account
+// stage keys on the runtime a launch resolves to, and nothing else in the
+// PID matters here.
+func pidOnRuntime(name, runtime string) string {
+	return strings.Replace(codexPID(name), "runtime: codex", "runtime: "+runtime, 1)
+}
+
+// uncountedPassOn is uncountedPass with every seat pinned to `runtime`
+// instead of codex. uncountedPass writes the codex PIDs itself, so this
+// overwrites them before the pass reads them.
+func uncountedPassOn(t *testing.T, runtime, cfg, ready string, personas ...string) *uncountedFixture {
+	t.Helper()
+	f := uncountedPass(t, cfg, ready, personas...)
+	for _, p := range personas {
+		if err := os.WriteFile(filepath.Join(f.b.App.AgentsDir, p+".md"), []byte(pidOnRuntime(p, runtime)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f
+}
+
+// A set cap on a counted runtime is named ONCE for the pass — not once per
+// bead, and not once per seat — and it brakes nothing: two beads over two
+// seats both launch under a cap of 1, which is what "the key is dead" means.
+func TestCountedCapKeyIsNamedDeadOncePerPass(t *testing.T) {
+	f := uncountedPassOn(t, "grok", "uncounted_cap_grok: 1\n",
+		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
+		"ranger", "scout")
+
+	n, err := f.d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, errs := dispatcherOut(f.d), f.errb.String()
+	if n != 2 {
+		t.Fatalf("a dead cap of 1 must brake neither bead, got n=%d:\n%s\n%s", n, out, errs)
+	}
+	// Positive witness that the launches really went to grok: without it a
+	// PID that failed to retarget leaves this measuring codex, where the
+	// key is alive and the silence would be correct. Both lines, because
+	// one bead on grok and one on codex would also read as two launches.
+	if got := strings.Count(out, "creating session "); got != 2 || strings.Count(out, "grok/") != 2 {
+		t.Fatalf("want two create lines, both on grok, got %d create lines:\n%s", got, out)
+	}
+	if got := strings.Count(errs, "uncounted_cap_grok:"); got != 1 {
+		t.Errorf("want the dead key named exactly once a pass, got %d:\n%s", got, errs)
+	}
+	for _, want := range []string{
+		`config uncounted_cap_grok: "1" does not apply`,
+		"prices grok's spend",
+		"the brake on grok is budget_pass:/budget_day: over those dollars",
+		"(ADR 0010 §3)",
+	} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("the line must carry %q:\n%s", want, errs)
+		}
+	}
+	// Unarmed is not "armed at 0%": the pool guard is only offered here,
+	// never reported as a threshold nobody set.
+	if strings.Contains(errs, "grok_guard_week: 0%") {
+		t.Errorf("an unset pool guard must not be printed as a threshold:\n%s", errs)
+	}
+	// Dead means dead in both directions: no brake, no report, no ledger.
+	if strings.Contains(out, "account-degraded") {
+		t.Errorf("grok is counted; the pass must not degrade it:\n%s", out)
+	}
+	if got := len(f.uncountedLedger(t)); got != 0 {
+		t.Errorf("nothing may be ledgered for a counted runtime, got %d lines", got)
+	}
+}
+
+// The line points at the brake that DOES apply, and for grok that is the
+// pool guard wherever it is armed — an operator whose dead key was standing
+// in for a pool brake wants grok_guard_week:, not the wallet caps.
+func TestDeadCapKeyPointsAtTheArmedPoolGuard(t *testing.T) {
+	f := uncountedPassOn(t, "grok", "uncounted_cap_grok: 1\ngrok_guard_week: 70\n"+grokPoolCfg,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`, "ranger")
+
+	if _, err := f.d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	errs := f.errb.String()
+	if got := strings.Count(errs, "uncounted_cap_grok:"); got != 1 {
+		t.Fatalf("want the dead key named exactly once a pass, got %d:\n%s", got, errs)
+	}
+	want := "the brakes on grok are grok_guard_week: 70% over the pool and budget_pass:/budget_day: over the dollars"
+	if !strings.Contains(errs, want) {
+		t.Errorf("want the armed pool guard named as the brake (%q):\n%s", want, errs)
+	}
+}
+
+// No key, no line. The runtime is counted and the operator set nothing —
+// there is no news, and a standing line per counted runtime per pass is the
+// noise the report above already refuses to make.
+func TestCountedRuntimeWithNoCapKeyIsSilent(t *testing.T) {
+	f := uncountedPassOn(t, "grok", "", `[{"id":"a-1","title":"t","labels":["go"]}]`, "ranger")
+
+	n, err := f.d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(f.d)
+	if n != 1 {
+		t.Fatalf("the bead must launch, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(createLineOf(t, out), "grok/") {
+		t.Fatalf("the create line must name grok:\n%s", out)
+	}
+	if strings.Contains(f.errb.String(), "uncounted_cap") {
+		t.Errorf("an unset key is not news:\n%s", f.errb.String())
+	}
+}
+
+// The mirror, and the reason the warning keys on CostPriced() and not on
+// "an adapter exists": codex's adapter reads it and prices nothing, so
+// codex KEEPS the column and keeps its cap. Its key brakes and is never
+// called dead.
+func TestUncountedRuntimeCapKeyIsNotCalledDead(t *testing.T) {
+	f := uncountedPass(t, "uncounted_cap_codex: 1\n",
+		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
+		"ranger", "scout")
+
+	n, _ := f.d.Run("", "", 0)
+	out := dispatcherOut(f.d)
+	if n != 1 {
+		t.Fatalf("the cap must still brake the second bead, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "account-degraded: uncounted_cap_codex 1/1 in 7d — skipped") {
+		t.Errorf("codex's cap is alive; it must brake:\n%s", out)
+	}
+	if strings.Contains(f.errb.String(), "does not apply") {
+		t.Errorf("a live cap must not be called dead:\n%s", f.errb.String())
+	}
+}
