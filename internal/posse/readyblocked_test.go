@@ -71,11 +71,10 @@ func TestReadyDropsWhatBdBlockedAlsoLists(t *testing.T) {
 	}
 }
 
-// CONTROL 1, and the arm that keeps the pin above from passing over a
-// filter that drops everything: with nothing blocked, the whole ready set
-// survives. `bd blocked` answering `[]` is the ordinary case — it is what
-// every repo with no dep edges says — so this is also the shape almost
-// every other test in this package runs through.
+// CONTROL 1: the `bd blocked` answering `[]` path, which is what every repo
+// with no dep edges says and what almost every other test in this package
+// runs through. It takes a short circuit of its own, so it is pinned
+// separately from the control below rather than standing in for it.
 func TestReadyKeepsEverythingWhenNothingIsBlocked(t *testing.T) {
 	newTestBackend(t)
 	dir := readyBlockedRepo(t, []string{"a-1", "a-2"}, nil)
@@ -84,15 +83,23 @@ func TestReadyKeepsEverythingWhenNothingIsBlocked(t *testing.T) {
 	}
 }
 
-// CONTROL 2: the subtraction is a filter, not a join. `bd blocked` lists
-// the whole graph's stuck beads, most of which `bd ready` never offered —
-// none of them may appear in the answer, and the order of what is left is
-// bd's own (OrderBeads is the pass's, not this method's).
+// CONTROL 2, and the one that keeps the pin above from passing over a filter
+// that drops everything: the subtraction is a filter, not a join. `bd
+// blocked` lists the whole graph's stuck beads, most of which `bd ready`
+// never offered — none of them may appear in the answer, and every bead that
+// was offered and is not stuck survives, in bd's own order (OrderBeads is the
+// pass's job, not this method's).
+//
+// The blocked set here is deliberately non-empty and disjoint from the ready
+// set, because that is the only shape that runs the filter loop at all: with
+// `bd blocked` empty the method returns before reaching it, and a control
+// that never executes the code it guards is decoration (my own ORDERS, and
+// M4 below caught this file doing it).
 func TestReadyDoesNotInventBeadsBdBlockedNames(t *testing.T) {
 	newTestBackend(t)
-	dir := readyBlockedRepo(t, []string{"a-2"}, map[string]string{"a-1": "q-1", "a-9": "q-2"})
-	if got := readyIDs(t, dir); len(got) != 1 || got[0] != "a-2" {
-		t.Fatalf("Ready = %v, want [a-2]", got)
+	dir := readyBlockedRepo(t, []string{"a-2", "a-3"}, map[string]string{"a-1": "q-1", "a-9": "q-2"})
+	if got := readyIDs(t, dir); len(got) != 2 || got[0] != "a-2" || got[1] != "a-3" {
+		t.Fatalf("Ready = %v, want [a-2 a-3]", got)
 	}
 }
 
@@ -147,15 +154,17 @@ func TestDispatchDoesNotFireABeadBdBlockedLists(t *testing.T) {
 }
 
 // The wrong arm of the one above, and the reason it means anything: the same
-// fixture with nothing blocked DOES dispatch a-1. Without this, a pass that
-// stopped firing for any other reason — no persona, no idle agent, a repo it
-// could not read — would pass the pin above having measured nothing.
+// fixture DOES dispatch a-1 when the row `bd blocked` carries is somebody
+// else's. Without this, a pass that stopped firing for any other reason — no
+// persona, no idle agent, a repo it could not read — would pass the pin above
+// having measured nothing. The blocked set stays non-empty for the reason
+// CONTROL 2 gives: an empty one never reaches the filter.
 func TestDispatchFiresTheSameBeadWhenBdBlockedIsEmpty(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
 	idleClaude(t, fake)
-	dir := readyBlockedRepo(t, []string{"a-1"}, nil)
+	dir := readyBlockedRepo(t, []string{"a-1"}, map[string]string{"a-9": "q-1"})
 	write(t, filepath.Join(dir, "fake-show.json"), `[{"id":"a-1","title":"a-1 title","status":"open"}]`)
 	write(t, b.App.ConfigPath, "beads:\n  - "+dir+"\n")
 
