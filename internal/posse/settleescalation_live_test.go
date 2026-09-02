@@ -142,7 +142,7 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 	//
 	//   0.49.1 refuses the `dep add` outright ("would create a cycle").
 	//   0.50.3 ACCEPTS it and answers `bd ready` with the bead anyway —
-	//   MEASURED 2026-09-01 (laurie, ranger-base-coxn8, filed as
+	//   MEASURED 2026-09-01 (ranger-base-coxn8, filed as
 	//   ranger-base-lpz0o): the same bead is in `bd ready` and in
 	//   `bd blocked` at once, over three consecutive reads.
 	//

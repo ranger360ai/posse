@@ -1,6 +1,6 @@
 package posse
 
-// Verifying ranger-base-hgzv's close (laurie, ranger-base-coxn8).
+// Verifying ranger-base-hgzv's close (ranger-base-coxn8).
 //
 // hgzv swept the dead "stale leftover of a keychain login" characterization
 // out of the code strings that lagged ADR 0019 as amended (ranger-base-1lza:
@@ -100,9 +100,9 @@ func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T)
 // CageCred doc still carries the pre-amendment claim in the container's
 // words — "the on-disk credential files are stale there or unrefreshable
 // read-only" — which is verbatim what 26b21af reworded one file over, at
-// runtimecheck.go:557. Skipped rather than red: the fix is dinesh's, not
-// QA's, and a red suite for a doc comment helps nobody. Un-skip with the
-// fix.
+// runtimecheck.go:557. Skipped rather than red: the fix belongs to the
+// code lane, not QA's, and a red suite for a doc comment helps nobody.
+// Un-skip with the fix.
 func TestQACageCredDocDoesNotCallTheOnDiskCredentialStale(t *testing.T) {
 	t.Skip("ranger-base-d14ie: runtime.go's CageCred doc still says the on-disk credential files are 'stale there or unrefreshable read-only' — the framing 26b21af swept out of its twin")
 	b, err := os.ReadFile(filepath.Join(qspRepoRoot(t), "internal", "posse", "runtime.go"))
