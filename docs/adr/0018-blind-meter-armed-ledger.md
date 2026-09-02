@@ -9,7 +9,10 @@ amended 2026-09-01 (ranger-base-bp224, from ranger-base-c3vqe): §1's
 degrade runs from HEADROOM, not from a cap — a last reading over a
 threshold or in the braking band parks with the caps armed; the
 exposure line in Consequences was the sentence the 2026-08-31 incident
-cashed in, and is rewritten*
+cashed in, and is rewritten · amended 2026-09-02 (ranger-base-jwcxu,
+folding ranger-base-ch6re): §1's rendered brake line carries the same
+placeholders NOTES.md's copy of it does, and Consequences names the
+blind-day pair actually in force (ranger-base-vi67)*
 
 ## Context
 
@@ -71,7 +74,7 @@ it degrades instead:
   a degraded pass is never quiet, extending rangerhq-llse) naming the
   blind duration, the read error, and the ledger state, e.g.
   `plan guard: blind 4h (…) — degraded, running under ledger brake
-  (pass $8.20/$30, day $146/$250)`. The cockpit header must render
+  (pass $X.XX/$Y.YY, day $X.XX/$Y.YY)`. The cockpit header must render
   degraded distinguishably from parked (today's `guard blind 14m`
   gains the ledger clause).
 - Unchanged everywhere: attended passes (fail-open, stderr witness),
@@ -162,6 +165,17 @@ bead grain by 0013 §3 and its residue stays on its own beads
   the caps set, a last reading over a threshold or in the braking band
   halts the shop anyway; that halt is the point, and the header says
   which halt it is.
+- *(amended 2026-09-02, ranger-base-ch6re, from ranger-base-vi67)* …and
+  the pair the first bullet names is the pair armed on 2026-08-26, not
+  the pair in force. What bounds a degraded-loud day today is
+  `budget_pass` 150 / `budget_day` 3000, and on ranger-base-vi67 the
+  operator re-affirmed those rather than lowering them to the 2026-08-26
+  figures: the caps are anomaly stops, and the brake on a blind day is
+  §1's headroom refusal (amended into §1 above, ranger-base-bp224), not
+  the cap. Read the first bullet for the SHAPE of the bound — a blind
+  day is bounded in dollars, never in clock — and this line for the
+  bound itself. Both pairs are the operator's numbers to state in
+  public and theirs to change (ranger-base-axft).
 - *(rewritten 2026-09-01 — the sentence below as first written was the
   one the 2026-08-31 incident cashed in.)* A blind window risks the plan
   windows only from a reading that showed room, and there the exposure
@@ -266,3 +280,18 @@ without the ratio this ADR refuses to estimate, so it is stated as the
 residue, not as a bound; that a wiped `plan-usage.json` (which demotes a
 braking reading to no-reading) is the operator's own act on their own
 state dir and as rare as a fresh install.
+
+*Amendment claims (2026-09-02, ranger-base-jwcxu, folding
+ranger-base-ch6re).* MEASURED: §1's rendered brake line quoted this
+instance's own pass and day spend — the two halves before the slashes —
+and the shipped ops-pattern cost class saw them, which is why the same
+line in NOTES.md has always rendered placeholders instead; both copies
+of that render now agree, pinned at the repo root by
+`adr0018scrub_qa_test.go`. RULED, not measured: the pair Consequences
+now names is the operator's re-affirmation on ranger-base-vi67, read
+out of this instance's config at that time. This ADR does not read the
+config and cannot notice the pair moving; the citation is what dates
+the claim. LEFT UNDONE, deliberately: the ASSUMED line above still
+quotes the 2026-08-26 pair as the acceptable ceiling for a blind day.
+ranger-base-ch6re names the Consequences section only, so restating it
+there too is the operator's call and not this amendment's licence.
