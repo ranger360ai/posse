@@ -22,6 +22,7 @@ package posse
 // every shared claim has to be readable in BOTH files.
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -192,5 +193,221 @@ func TestInstallSection9AndAgentsMdAgreeOnTheLandingClaims(t *testing.T) {
 	// And the recipe still cut what it exists to cut.
 	if left := readerDirectedPushOrders(installed); len(left) > 0 {
 		t.Errorf("§9's appended section carries the push mandate: %v", left)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Bullet parity (ranger-base-69nqp, verifying ranger-base-wnsf).
+//
+// sharedLandingClaims above is a hand-maintained list of phrases, so it catches
+// a REWORDING of a claim it already names and nothing else. The drift that
+// produced this bead was an ADDITION: AGENTS.md gained the "Know which tree you
+// are in" bullet under ranger-base-8zhr, §9's copy did not, and no arm was red
+// — MEASURED here by inserting a twelfth bullet into AGENTS.md at a bullet
+// boundary and re-running the package: green. The next such addition would go
+// the same way, because adding a bullet without adding a claim string is one
+// edit and nobody is reminded to make the second.
+//
+// So this pass compares the two copies by BULLET rather than by phrase: every
+// top-level bullet of AGENTS.md's section is either present in the section §9
+// leaves a cold installer, or registered below as a deliberate drop with a why.
+// The register's stale half is as loud as an unregistered bullet: a row that
+// matches no bullet, or that pardons a bullet §9 actually carries, is a fault.
+
+// landingKeyLen is how much of a flattened bullet is compared. Long enough to
+// separate every bullet in either file, short enough that the two copies'
+// documented divergences (a bead cite, this repo's own checkout path) fall
+// outside it.
+const landingKeyLen = 40
+
+// landingBeadCite matches this shop's bead ids together with the space in front
+// of them, so stripping one closes the gap it leaves: AGENTS.md's
+// "two steps** (<id>): `git add" and §9's "two steps**: `git add" become the
+// same key. The instance name is assembled, not spelled — a bare one in a root
+// *_test.go is what internal/posse's seed-surface count rejects.
+var landingBeadCite = regexp.MustCompile(`\s*\((?:ranger-base|ranger` + `hq)-[a-z0-9]+\)`)
+
+// landingBullet is one top-level bullet: Full is its whole flattened text, Key
+// the leading landingKeyLen bytes of it. The register below matches on Full — a
+// row has to be able to name a bullet by something further in than the key —
+// while presence in the other copy is compared on Key.
+type landingBullet struct {
+	Full string
+	Key  string
+}
+
+// landingBullets splits a "Landing the plane" section body into its top-level
+// bullets, in order. A bullet runs from a `- ` line to the next `- ` line, blank
+// line, or end of section; continuation lines are folded in. It takes the
+// section text rather than a path, so the same scanner grades the live files and
+// the hand-typed fixtures below.
+func landingBullets(section string) []landingBullet {
+	var out []landingBullet
+	var cur []string
+	flush := func() {
+		if len(cur) == 0 {
+			return
+		}
+		full := flattenLanding(landingBeadCite.ReplaceAllString(strings.Join(cur, " "), ""))
+		k := full
+		if len(k) > landingKeyLen {
+			k = k[:landingKeyLen]
+		}
+		out = append(out, landingBullet{Full: full, Key: k})
+		cur = nil
+	}
+	for _, line := range strings.Split(section, "\n") {
+		switch {
+		case strings.HasPrefix(line, "- "):
+			flush()
+			cur = []string{strings.TrimPrefix(line, "- ")}
+		case len(cur) > 0 && strings.HasPrefix(line, "  ") && strings.TrimSpace(line) != "":
+			cur = append(cur, strings.TrimSpace(line))
+		default:
+			flush()
+		}
+	}
+	flush()
+	return out
+}
+
+// landingDrop is one registered divergence: a bullet AGENTS.md carries that §9's
+// copy deliberately does not. match is a distinctive substring of the bullet —
+// it must name exactly one, and that one must really be absent from §9.
+type landingDrop struct {
+	match string
+	why   string
+}
+
+// landingDropRegister is INSTALL.md's own stated exclusion list, in code. The
+// prose after §9's recipe says the copy drops "this repo's bead ids, and its own
+// checkout path" plus "the bullets that are only about this repo — bd's
+// `pre-commit` flush, the `docs/notes.d/` convention, `cmd/checkorphans`". These
+// are those three bullets.
+var landingDropRegister = []landingDrop{
+	{
+		match: "after a clean commit is not work",
+		why:   "the pre-commit flush of the queue database: a fresh work repo has no such hook and no beads file to read MM over",
+	},
+	{
+		match: "is this shop's provenance",
+		why:   "the docs/notes.d convention and this repo's own commit census — neither exists in a fresh work repo",
+	},
+	{
+		match: "background process actually died",
+		why:   "ends in `go run ./cmd/checkorphans`, a command that lives only in this repo",
+	},
+}
+
+// landingParityFaults reports, for one pair of sections, the AGENTS.md bullets
+// §9's copy does not carry and is not registered as dropping, and separately the
+// register rows that have gone stale. Both halves are returned so a caller can
+// say which happened.
+func landingParityFaults(agentsSec, installSec string, register []landingDrop) (unregistered, registerFaults []string) {
+	agents := landingBullets(agentsSec)
+	installFlat := flattenLanding(landingBeadCite.ReplaceAllString(installSec, ""))
+	carried := func(key string) bool { return strings.Contains(installFlat, key) }
+
+	dropped := make(map[string]string) // key -> why
+	for _, d := range register {
+		var hits []string
+		for _, b := range agents {
+			if strings.Contains(b.Full, d.match) {
+				hits = append(hits, b.Key)
+			}
+		}
+		switch {
+		case len(hits) == 0:
+			registerFaults = append(registerFaults, fmt.Sprintf("register row %q pardons no bullet — the bullet left or was reworded, so the row now hides whatever takes its place", d.match))
+		case len(hits) > 1:
+			registerFaults = append(registerFaults, fmt.Sprintf("register row %q matches %d bullets %q — it must name exactly one", d.match, len(hits), hits))
+		case carried(hits[0]):
+			registerFaults = append(registerFaults, fmt.Sprintf("register row %q says the copy drops %q, but the copy carries it", d.match, hits[0]))
+		default:
+			dropped[hits[0]] = d.why
+		}
+	}
+	for _, b := range agents {
+		if _, ok := dropped[b.Key]; ok {
+			continue
+		}
+		if !carried(b.Key) {
+			unregistered = append(unregistered, b.Key)
+		}
+	}
+	return unregistered, registerFaults
+}
+
+// TestLandingBulletParityScannerDiscriminates is the control: the scanner has to
+// report an added bullet, and has to stay quiet on a pair that agrees. Without
+// it the pin below is a green function nobody has seen refuse anything.
+func TestLandingBulletParityScannerDiscriminates(t *testing.T) {
+	const agreeing = "" +
+		"- **One.** The first claim, wrapped\n  over two lines (ranger-base-aaaa).\n" +
+		"- **Two.** The second claim.\n" +
+		"- **A bullet whose first forty bytes say nothing\n  distinctive at all:** run `cmd/checkorphans`.\n"
+	const copyOf = "" +
+		"- **One.** The first claim, wrapped over\n  two lines.\n" +
+		"- **Two.** The second claim.\n"
+	// The row matches past landingKeyLen on purpose: a register keyed on the
+	// truncated key instead of the whole bullet is red here.
+	register := []landingDrop{{match: "run `cmd/checkorphans`", why: "names a command only this repo has"}}
+
+	if un, rf := landingParityFaults(agreeing, copyOf, register); len(un) > 0 || len(rf) > 0 {
+		t.Errorf("scanner fires on a pair that agrees — it would be red forever: unregistered=%q registerFaults=%q", un, rf)
+	}
+
+	// (a) A bullet added to the original and not to the copy is the shape that
+	// produced this bead. It must be reported.
+	added := agreeing + "- **Three.** A claim the copy never got.\n"
+	un, _ := landingParityFaults(added, copyOf, register)
+	if len(un) != 1 || !strings.Contains(un[0], "**Three.**") {
+		t.Errorf("scanner does not report a bullet added to the original only: %q", un)
+	}
+
+	// (b) The register's stale half. A row that pardons nothing is a row that
+	// will silently pardon the next bullet worded like it.
+	_, rf := landingParityFaults(agreeing, copyOf, []landingDrop{{match: "no such bullet", why: "x"}})
+	if len(rf) != 1 || !strings.Contains(rf[0], "pardons no bullet") {
+		t.Errorf("scanner does not report a register row matching no bullet: %q", rf)
+	}
+
+	// (c) And a row that pardons a bullet the copy does carry.
+	_, rf = landingParityFaults(agreeing, copyOf, []landingDrop{{match: "**Two.**", why: "x"}})
+	if len(rf) != 1 || !strings.Contains(rf[0], "but the copy carries it") {
+		t.Errorf("scanner does not report a register row that pardons a carried bullet: %q", rf)
+	}
+
+	// (d) The key really is a key: two bullets must not collapse into one.
+	if got := landingBullets(agreeing); len(got) != 3 {
+		t.Errorf("scanner read %d bullets from a 3-bullet section: %q", len(got), got)
+	}
+}
+
+// TestInstallSection9CarriesEveryAgentsMdLandingBullet is the addition pin.
+// sharedLandingClaims catches a claim being reworded; this catches one being
+// ADDED to AGENTS.md and never reaching §9 — which is how the copy went stale
+// the first time (ranger-base-wnsf). A new bullet is either copied into §9's
+// heredoc or registered above with the reason a fresh work repo cannot resolve
+// it.
+func TestInstallSection9CarriesEveryAgentsMdLandingBullet(t *testing.T) {
+	agentsSec := landingSection(t, "AGENTS.md", readRepoFile(t, "AGENTS.md"))
+	installSec := landingSection(t, "INSTALL.md §9's result", runSection9Recipe(t, bdPlantedAgentsMd))
+
+	// Floors: an emptied or unparsed section must red rather than pass at zero.
+	if n := len(landingBullets(agentsSec)); n < 8 {
+		t.Fatalf("AGENTS.md's Landing section parsed as %d bullets — the scanner has stopped reading its subject", n)
+	}
+	if n := len(landingBullets(installSec)); n < 5 {
+		t.Fatalf("§9's appended section parsed as %d bullets — the scanner has stopped reading its subject", n)
+	}
+
+	unregistered, registerFaults := landingParityFaults(agentsSec, installSec, landingDropRegister)
+	for _, k := range unregistered {
+		t.Errorf("AGENTS.md's Landing section has a bullet §9's copy does not carry (ranger-base-69nqp): %q\n"+
+			"    copy it into INSTALL.md §9's heredoc, or add it to landingDropRegister with the reason a fresh work repo cannot resolve it", k)
+	}
+	for _, f := range registerFaults {
+		t.Errorf("landingDropRegister has gone stale (ranger-base-69nqp): %s", f)
 	}
 }
