@@ -1804,6 +1804,47 @@ work with no other copy). `--force` on either command stands the guard
 down and nothing else — the landing still refuses to *remove* a tree that
 holds work. (`internal/posse/reapguard.go`, `reapguard_qa_test.go`.)
 
+### What the auto-reap takes, and what it will never take (ranger-base-f6lk)
+
+The end-of-pass sweep (`internal/posse/autoreap.go`) has three arms. All three
+first ask the same two questions — herdr says nobody is working in there
+(`idle`/`done`, or no agent at all past `RelaunchGrace`), and no launcher
+prompted it inside `PromptGrace` — and then differ in what evidence they need
+that the session is *finished*:
+
+| arm | population | needs |
+|---|---|---|
+| pointer | dispatch's own per-bead session | its bead reads **closed** |
+| crew | a crew mark on a session **dispatch made** | closed bead + `reap_crew_after:` (4h) + a tree holding nothing |
+| unpointed | a per-bead-named session with **no** `bead:` pointer | `reap_unpointed_after:` (1h) + a tree holding nothing |
+
+Never taken, at any age: a conversation the operator MADE (`posse new` — the
+crew arm takes only the name `SessionForBead` renders from the session's own
+`agent:`/`dir:`/`bead:` record, so an operator-chosen name is out of reach);
+`pulse_persona:`'s session (ADR 0027 has nowhere else to deliver); the
+persona's reusable `<persona>-<repo>` slot; a foreign row. `off` / `never` on
+either grace restores the permanent skip those two arms used to be.
+
+**"A tree holding nothing" is `RemoveSessionTree`'s refusal asked as a
+question** (`residueHolds`): no uncommitted paths in the session's cwd, and —
+for a worktree session whose branch still exists — no commits the base does
+not hold, measured by patch-id AND by content (ranger-base-as19/x8jp; git's
+`-x` trailer is somebody's decision, not a measurement). Every unanswerable
+question fails closed. It is stricter than the kill that follows needs to be:
+a crew-arm session's bead is closed, so the kill would land the branch itself,
+but a reap that lands is a reap that decides. Deferring costs one pass —
+`landClosedTrees` lands it at the head of the next — and the refusal prints
+`◑ <session> idle <d> over <why> and NOT reaped: <what it holds>` **every
+pass**, because the silence is what read as a broken reaper and cost the
+hand-reaps in the first place (ranger-base-kftx).
+
+The two graces are policy dials, not measurements of anything: nothing posse
+records says how long a conversation's gaps are (typing in a pane leaves no
+stamp — ADR 0008 §1 accepted that when it refused a timer), so the crew grace
+is set long and the unpointed one, which protects much less, short. The age
+itself is the later of `launched:` and `prompted:`; a record with neither has
+no age, and no age is not old enough.
+
 ### The ownership refusal: a foreign row is not this home's to kill
 
 The kill's second refusal, and a different question from the first

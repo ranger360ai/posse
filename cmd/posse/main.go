@@ -1979,9 +1979,16 @@ dispatch (beads):
                                  standing switch; --dry-run only lists what
                                  the reaper would kill — a per-bead session
                                  whose bead is closed and whose agent herdr
-                                 calls idle/done; never a crew session, the
-                                 persona's own reusable slot, or a session any
-                                 launcher prompted within the prompt grace)
+                                 calls idle/done; never the persona's own
+                                 reusable slot, a session any launcher
+                                 prompted within the prompt grace, or a
+                                 conversation the operator made. A crew mark
+                                 on a session DISPATCH made goes after
+                                 reap_crew_after: (4h), and a per-bead-named
+                                 session with no bead pointer after
+                                 reap_unpointed_after: (1h) — both only over
+                                 a tree holding nothing, and "off" on either
+                                 restores the permanent skip)
       --resume                 re-prompt in_progress beads whose persona
                                  session is alive and idle, and take them
                                  before fresh work (default: only interrupted

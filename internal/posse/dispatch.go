@@ -32,8 +32,12 @@ package posse
 //       (herdr's sidebar already shows it) · settled-but-open → review
 //     → end of pass: the auto-reap sweep (autoreap.go, rangerhq-us8) kills
 //       every per-bead session whose bead now reads closed and whose agent
-//       herdr calls idle/done — never a crew session, the persona's own
-//       reusable slot, or a bead this same pass just prompted
+//       herdr calls idle/done — never the persona's own reusable slot, a
+//       session any launcher prompted within the prompt grace, or a
+//       conversation the operator made. Two narrower populations join it
+//       past a grace and only over a tree that holds nothing
+//       (ranger-base-f6lk): a crew mark on a session DISPATCH made, and a
+//       per-bead-named session carrying no bead pointer at all
 //
 // One bead per session per pass; personas busy (working/blocked) are
 // skipped. Sessions are launched serially (create → await → claim →

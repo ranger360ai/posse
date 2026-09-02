@@ -93,6 +93,36 @@ check`-prefixed, harness-originated via the §1 `RHQ_PERSONA` seam so it
 sets no crew mark. Every other session keeps the full shield; the
 bead-prompting path is unchanged.
 
+*Amended 2026-09-02 (ranger-base-f6lk):* **the mark is worn by two shapes,
+and only one of them is a session the operator owns.** §1's table makes a
+crew session two ways — `posse new` MAKES a conversation, while cockpit `p`
+/ `posse prompt` mark a session **dispatch** made for one bead that the
+operator merely stepped into. The shield above did not distinguish them, so
+the second sat outside every sweep forever: measured on the fleet 2026-08-29,
+`holden-posse-ranger-base-3j3t` and `gilfoyle-posse-ranger-base-teau` skipped
+on hundreds of consecutive passes, and the operator reaping such sessions by
+hand — the mechanism the auto-reap exists to replace.
+
+So the auto-reap (autoreap.go) may now take a crew-marked session, and only
+this one: its name is the name `SessionForBead(persona, dir, bead)` renders
+from the session's **own record**, its bead the store of record calls closed,
+its agent has settled, no launcher prompted it inside `PromptGrace`, its tree
+holds nothing a kill would take (dirty paths, or commits the base does not
+hold by measured patch-id **and** content — ranger-base-as19/x8jp), its
+persona is not `pulse_persona:`, and it has been untouched for
+`reap_crew_after:` (default 4h; `off` restores the permanent skip). Rendering
+the name from the record is the only inference here, and it goes from record
+to name, never the reverse — a name is a lossy encoding of a bead id
+(ranger-base-kftx) and is never read back into one.
+
+What is unchanged is the part §1 argued for: a session the operator MADE is
+never swept, at any age, whatever pointer it later carries. That is stronger
+than the "longer grace" the bead asked for, and it is why this is not the
+timer §1 rejected — the failure mode of a timer was splicing into a
+conversation, and nothing here prompts anything. Typing straight into a pane
+still stamps no record, and still does not need to: herdr reports it as
+`working`, which the sweep refuses one guard earlier.
+
 **3. What shows.** Cockpit rows and `posse list` carry a `crew` tag (`👤`)
 after the persona; crew sessions keep their status sort (a blocked crew
 session is still blocked-first — the operator wants to see it). Cockpit

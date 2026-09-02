@@ -1766,10 +1766,16 @@ wrote. A persona closed a real bead in a fresh instance; the install works.
 Sessions of finished beads are swept automatically: the end-of-pass auto-reap
 kills a per-bead session whose bead the store calls closed and in which
 nobody is working any more (config `auto_reap:`, default on; `--no-reap`
-skips it for one pass). You can still reap by hand — `posse kill`, or `x` in
-the cockpit — and `posse list` tags a session the sweep can never claim
-(`🏷️no-bead`) so you can see why it is still sitting there. Either way they
-cost nothing and do not block the next pass.
+skips it for one pass). Two quieter kinds of leftover are swept too, each past
+its own grace and only when the session's tree holds nothing a kill would
+take: a session **dispatch made** that you later stepped into and so
+crew-marked (`reap_crew_after:`, default `4h`), and a per-bead-named session
+carrying no bead pointer at all (`reap_unpointed_after:`, default `1h`, tagged
+`🏷️no-bead` in `posse list` so you can see which rule is judging it). `off` on
+either restores the permanent skip. A conversation *you* made with `posse new`
+is never swept at any age, and neither is your `pulse_persona:`. You can still
+reap by hand — `posse kill`, or `x` in the cockpit. Either way they cost
+nothing and do not block the next pass.
 
 A reap is also when a persona's memory is made durable. Personas append what
 they learn to `$POSSE_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so

@@ -55,3 +55,13 @@ those keep appearing until the operator promotes. `posse ls` now tags them
 `🏷️no-bead` (`NoBeadTag`, `UnpointedBeadSession`) so a session outside the
 sweep is visible rather than silent — the silence is what read as a broken
 reaper and cost the hand-reaps.
+
+---
+
+**Superseded in part by ranger-base-f6lk (2026-09-02).** Option (b) — tag the
+boundary and leave the reap to the operator — was not enough: one such session
+sat idle 12h+ and was hand-reaped. The sweep now has an *unpointed arm* that
+takes these on age (`reap_unpointed_after:`, default 1h) and a provably empty
+tree, with no bead read at all. Everything above still holds: the pointer is
+still never inferred from the name, and the crew mark still fires one arm
+earlier — for a session the OPERATOR made. See `ranger-base-f6lk.md`.

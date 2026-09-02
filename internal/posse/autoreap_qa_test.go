@@ -453,7 +453,7 @@ func TestListMarksAPerBeadSessionTheSweepCannotReap(t *testing.T) {
 		t.Fatalf("expected all four sessions listed, saw %v in:\n%s", tagged, out.String())
 	}
 	if !tagged["ranger-alpha-zzz1"] {
-		t.Errorf("a per-bead-shaped session with no pointer is outside the sweep forever and must say so:\n%s", out.String())
+		t.Errorf("a per-bead-shaped session with no pointer can never be asked about a bead and must say so:\n%s", out.String())
 	}
 	if tagged["ranger-bravo-zzz2"] {
 		t.Errorf("a session the sweep CAN ask about must not wear the tag:\n%s", out.String())
