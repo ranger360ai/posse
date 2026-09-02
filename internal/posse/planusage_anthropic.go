@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"time"
@@ -262,13 +263,30 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// threshold, same as the absent case above and just as silent; the
 	// shape check has nothing to say about it. pct refuses those.
 	//
-	// It does not refuse a 0..1-scaled response (a 93%-used account
-	// reported as 0.93): that value is inside 0..100 and is equally a
-	// legitimate small reading, so one response cannot tell the two apart
-	// and pct returns it as 0.93%. That half is deliberately open —
-	// whether such an endpoint should be detected and rescaled, or the
-	// scale pinned some other way, is a design call ranger-base-cb0s
-	// declined to make here.
+	// Nor is a value inside 0..100 thereby a reading (ranger-base-959m6,
+	// the half ranger-base-cb0s left open): an endpoint that starts
+	// reporting on a 0..1 scale sends a 93%-used account as 0.93, which
+	// lands 100x under every plan_guard threshold — and, because the read
+	// SUCCEEDS, never arms the blind clock either. That is fail-open in the
+	// one direction the interlock exists to hold. So this adapter knows one
+	// more fact of its provider's grammar, in the same class as the shape
+	// check above: THIS ENDPOINT REPORTS UTILIZATION AS A WHOLE PERCENT
+	// (evidence, 2026-09-01: this box's own state/plan-usage.json at 15/3,
+	// and every published capture of the endpoint — 35.0/14.0/39.0,
+	// 33.0/13.0/1.0 alongside the sentence "utilization = percentage used
+	// (0-100)", raw `"utilization": 2` — whole in every one). A fractional
+	// value is not the expected JSON, so the read fails and the ADR 0018
+	// blind machine does what it already does: quiet tolerance, then park
+	// or degrade from the last good reading, naming the value every pass.
+	// Never a rescale (a guess wearing the meter's authority is ADR 0018's
+	// rejected "estimate"), never a floor (it would blind the guard at
+	// every window reset), never a knob.
+	//
+	// The residue is named and accepted: a rescaled endpoint's 0 and 1 are
+	// whole numbers and stay readings. 0 means 0% either way; 1 reads as 1%
+	// on an exhausted account, so the guard runs one pass at the exact top
+	// — every value between arrived fractional and was refused first, so
+	// the blind machine was already in force by then.
 	five, err := body.FiveHour.pct(anthropicWindow5h)
 	if err != nil {
 		return nil, err
@@ -305,10 +323,15 @@ type anthropicWindowBody struct {
 // threshold, which is worse than the absent-key case this guards
 // alongside: there the shape check at least has a chance to fire.
 //
-// This is a range check and nothing more. A value INSIDE 0..100 is
-// returned as given, including a 0..1-scaled utilization (0.93 for a
-// 93%-used account), which no range check can separate from a genuine
-// 0.93% reading — see Read's comment on the open half.
+// Inside that range, the second check is the provider's grammar rather
+// than arithmetic: this endpoint reports utilization as a WHOLE percent
+// (ranger-base-959m6, with the dated evidence in Read's comment above), so
+// a value with a fractional part is not this endpoint's utilization at all
+// — it is the 0..1-scaled response ranger-base-cb0s named, where 0.93
+// means a 93%-used account and reads as 0.93% under every threshold. It is
+// refused as shape drift, which arms the blind clock, rather than rescaled,
+// which would be a guess. The value is never adjusted, only believed or
+// refused.
 func (w *anthropicWindowBody) pct(window string) (float64, error) {
 	if w == nil || w.Utilization == nil {
 		return 0, Die("usage response is not the expected JSON: no %s utilization", window)
@@ -316,6 +339,9 @@ func (w *anthropicWindowBody) pct(window string) (float64, error) {
 	v := *w.Utilization
 	if v < 0 || v > 100 {
 		return 0, Die("usage response is not the expected JSON: %s utilization %g is not a percent", window, v)
+	}
+	if v != math.Trunc(v) {
+		return 0, Die("usage response is not the expected JSON: %s utilization %g is not a whole percent", window, v)
 	}
 	return v, nil
 }

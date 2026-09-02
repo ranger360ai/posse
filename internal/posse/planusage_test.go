@@ -323,6 +323,16 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 		// below the discriminating assertion here.
 		{"shape-drifted 200", func(ps *planServer, r *AnthropicPlanReader) { ps.body = "{}" },
 			"not the expected JSON"},
+		// The same, one endpoint change further along: a 200 whose windows
+		// are on a 0..1 scale (ranger-base-959m6). 0.93 is a 93%-used
+		// account, and before the whole-percent check it read as 0.93% —
+		// under every threshold, with the read SUCCEEDING, so no stderr
+		// line and no blind clock. It must reach the guard exactly as the
+		// row above does: no reading, one line, and the pass still runs
+		// because fail-open is what an unreadable meter has always meant.
+		{"0..1-scaled 200", func(ps *planServer, r *AnthropicPlanReader) {
+			ps.body = `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`
+		}, "not the expected JSON"},
 		{"keychain locked", func(ps *planServer, r *AnthropicPlanReader) {
 			keychainOnly(r, func() (string, error) {
 				return "", Die("keychain item %q unreadable", KeychainService)
@@ -391,7 +401,12 @@ func TestPlanGuardBadThreshold(t *testing.T) {
 // is not read at all (credpin.go rule 4, ranger-base-dr6u). The token
 // below is a fake and it still must not arrive.
 func TestPlanReaderRequest(t *testing.T) {
-	ps := newPlanServer(t, 42.4, 61.4)
+	// Whole percents: this endpoint's grammar since ranger-base-959m6, so a
+	// fractional fixture here would be refused as shape drift and this test
+	// would be measuring the wrong thing. Line's rounding, which the 42.4
+	// this row used to carry was pinning, is asserted directly below —
+	// Line belongs to the seam and is adapter-agnostic.
+	ps := newPlanServer(t, 42, 61)
 	t.Setenv("RHQ_PLAN_USAGE_URL", ps.URL)
 	r := NewAnthropicPlanReader()
 	if r.URL != ps.URL {
@@ -407,8 +422,8 @@ func TestPlanReaderRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if win(u, "5h") != 42.4 || win(u, "7d") != 61.4 {
-		t.Errorf("parsed %+v, want 42.4/61.4", u)
+	if win(u, "5h") != 42 || win(u, "7d") != 61 {
+		t.Errorf("parsed %+v, want 42/61", u)
 	}
 	if ps.auth != "" {
 		t.Errorf("an override was handed a credential: Authorization = %q", ps.auth)
@@ -419,6 +434,14 @@ func TestPlanReaderRequest(t *testing.T) {
 	// The cockpit header / posse cost line: percentages, no history.
 	if got := u.Line(); got != "5h 42% · 7d 61%" {
 		t.Errorf("Line() = %q, want %q", got, "5h 42% · 7d 61%")
+	}
+	// And it rounds a fractional percent rather than printing it. No
+	// adapter in the tree can hand it one today — this provider refuses
+	// fractional utilization outright (ranger-base-959m6) — but Line is the
+	// seam's rendering for every adapter, so the format stays pinned here
+	// rather than travelling on a fixture that is no longer legal.
+	if got := (PlanUsage{{Name: "5h", Pct: 42.4}}).Line(); got != "5h 42%" {
+		t.Errorf("Line() of a fractional percent = %q, want %q", got, "5h 42%")
 	}
 }
 
@@ -478,14 +501,18 @@ func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
 // bodies have the right shape. 0 and 100 are the boundary and stay
 // legitimate: a fresh window and an exhausted one are both real readings.
 //
-// A value already inside 0..100 — the 0..1-rescale case ranger-base-cb0s
-// also names (a 93%-used account reported as 0.93) — is NOT decidable by
-// this check: 0.93 is also a syntactically legitimate small reading (a
-// window just after reset), and nothing in one HTTP response distinguishes
-// the two without guessing. ranger-base-cb0s's own suggested fix says as
-// much ("whether a 0..1 endpoint should instead be DETECTED and rescaled is
-// a design call, not mine") — so this stays a reading here too, on purpose;
-// see the last case below.
+// A value inside 0..100 is not thereby a reading either (ranger-base-959m6,
+// deciding the half cb0s left open). An endpoint that starts reporting on a
+// 0..1 scale sends a 93%-used account as 0.93: 100x under every threshold,
+// under the braking rung, and — because the read SUCCEEDED — with the blind
+// clock never arming. The range check cannot separate 0.93 from a genuine
+// small reading, and no rescale may: guessing the scale is ADR 0018's
+// rejected "estimate" wearing the meter's authority. What decides it is the
+// provider's GRAMMAR, which is this file's business: the endpoint reports
+// utilization as a WHOLE percent, so a fractional value is not the expected
+// JSON and the blind machine takes it from there. The rows below are both
+// halves of that: fractional is refused, whole stays a reading — including
+// 35.0, which is whole however the JSON spells it.
 func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -493,19 +520,36 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 		body string
 		want string // the window named in the error, or "" for a reading
 		// wantPct is what both windows must read, for the "" rows. The
-		// value matters as much as the nil error: the source comments
-		// say a 0..1-scaled response is handed back AS GIVEN (0.93
-		// becomes 0.93%, not 93%) because pct is a range check and
-		// nothing more (ranger-base-0wemu). Asserting only err == nil
-		// would let a silent rescale in under the same green.
+		// value matters as much as the nil error: pct believes or
+		// refuses, and never adjusts (ranger-base-0wemu). Asserting only
+		// err == nil would let a silent rescale in under the same green
+		// — which is exactly the fix ranger-base-959m6 refused.
 		wantPct float64
+		// wantValue is the offending value as the error must quote it, so
+		// the operator reading the guard-blind line every pass can see
+		// WHICH number the endpoint sent (ranger-base-959m6). "" = not
+		// asserted.
+		wantValue string
 	}{
-		{"negative", `{"five_hour":{"utilization":-5},"seven_day":{"utilization":-5}}`, "5h", 0},
-		{"seven_day negative, five_hour fine", `{"five_hour":{"utilization":12},"seven_day":{"utilization":-1}}`, "7d", 0},
-		{"over 100", `{"five_hour":{"utilization":140},"seven_day":{"utilization":12}}`, "5h", 0},
-		{"zero boundary", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, "", 0},
-		{"hundred boundary", `{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}`, "", 100},
-		{"0..1-scaled value stays a reading, undecidable from one response", `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`, "", 0.93},
+		{"negative", `{"five_hour":{"utilization":-5},"seven_day":{"utilization":-5}}`, "5h", 0, "-5"},
+		{"seven_day negative, five_hour fine", `{"five_hour":{"utilization":12},"seven_day":{"utilization":-1}}`, "7d", 0, "-1"},
+		{"over 100", `{"five_hour":{"utilization":140},"seven_day":{"utilization":12}}`, "5h", 0, "140"},
+		{"0..1-scaled value is refused, not a reading", `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`, "5h", 0, "0.93"},
+		{"seven_day fractional, five_hour whole", `{"five_hour":{"utilization":12},"seven_day":{"utilization":0.5}}`, "7d", 0, "0.5"},
+		{"zero boundary", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, "", 0, ""},
+		// The residue ranger-base-959m6 named and accepted: on a rescaled
+		// endpoint 1 means EXHAUSTED, and 1 is a whole number, so it
+		// arrives as a 1% reading and the guard runs one pass at the very
+		// top. Everything between 0 and 1 arrived fractional and was
+		// refused first, so by then the blind machine was already in
+		// force. Pinned here so the cost of the decision is visible in the
+		// suite and not only in a bead.
+		{"one boundary", `{"five_hour":{"utilization":1},"seven_day":{"utilization":1}}`, "", 1, ""},
+		{"hundred boundary", `{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}`, "", 100, ""},
+		// Whole is about the VALUE, not its spelling: the published
+		// captures of this endpoint print 35.0 / 14.0 / 39.0, and JSON
+		// 35.0 decodes to the same float64 as 35.
+		{"whole percent spelled with a decimal point", `{"five_hour":{"utilization":35.0},"seven_day":{"utilization":35.0}}`, "", 35, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := newPlanServer(t, 0, 0)
@@ -533,6 +577,17 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "not the expected JSON") || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %q, want it to name %q and the expected-JSON failure", err, tc.want)
+			}
+			if tc.wantValue != "" && !strings.Contains(err.Error(), tc.wantValue) {
+				t.Errorf("error = %q, want it to quote the offending value %s", err, tc.wantValue)
+			}
+			// Blind and nothing more: no policy fork by class (ADR 0018
+			// section 2). An implausible value is not a rate limit, not an
+			// auth failure and not a gated credential, so the harness
+			// tolerates then parks on it exactly as it does an unreachable
+			// endpoint.
+			if got := PlanFailureOf(err); got != "" {
+				t.Errorf("PlanFailureOf(%q) = %q, want \"\" — an implausible value is blind, not a class", err, got)
 			}
 		})
 	}
