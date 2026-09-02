@@ -285,10 +285,20 @@ func SeedClaudeTrust(cfg string, rt *Runtime, dir string) (string, error) {
 				AbbrevHome(p), err, dir)
 		}
 	}
-	if ClaudeTrusted(state, dir) {
+	// Two questions now, and a launch has to answer BOTH or it has answered
+	// neither: a trusted dir whose config has never seen the outside-read
+	// notice is a session that opens on a composer and stops on a dialog at
+	// its first read past the worktree (ranger-base-d3fwo). So the
+	// nothing-to-do return is the conjunction, and each key is written only
+	// when it is the one missing.
+	trusted, seen := ClaudeTrusted(state, dir), claudeOutsideReadSeen(state)
+	if trusted && seen {
 		return "", nil
 	}
-	claudeSeedProject(state, ClaudeTrustKey(dir))
+	if !trusted {
+		claudeSeedProject(state, ClaudeTrustKey(dir))
+	}
+	state[ClaudeOutsideReadSeenKey] = true
 	return p, writeJSONInPlace(p, state)
 }
 
@@ -415,4 +425,88 @@ func claudeTrustProbe() Silence {
 		return Silence{Silenced: true, Why: key + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"}
 	}
 	return Silence{Why: key + " is not trusted in " + AbbrevHome(p) + " — the launch seeds it (a dir the operator has never run claude in draws the modal)"}
+}
+
+// ClaudeOutsideReadSeenKey is claude's record that the operator has already
+// been shown the one-time "Allow reads outside the working directories?"
+// notice. It is a TOP-LEVEL key of the same config file directory trust
+// lives in — not a per-project one — because the question it settles is
+// asked once per config dir, not once per repo.
+//
+// ranger-base-d3fwo. MEASURED on claude 2.1.258, by reading the installed
+// binary (the arming condition is one expression; a live pane arm would
+// have cost a turn and an unanswered config dir, and could not have said
+// anything this does not):
+//
+//	function Fon(e,n,r,o){ … if(!hy(d.mode)||d.shouldAvoidPermissionPrompts
+//	  ||d.blockReadsOutsideWorkingDirectories===!0)return!1; …
+//	  return !o.session.outsideReadPrompt.isOpenElsewhere(o.toolUseId)
+//	    && !o.session.outsideReadPrompt.answered
+//	    && !ie().hasSeenAutoModeOutsideReadPrompt }
+//
+// and the dialog's own accept arm calls `Aqn`, whose whole body is
+// `hasSeenAutoModeOutsideReadPrompt: true`. So "1. Yes, keep allowing" —
+// what monica typed by hand into gilfoyle's pane at 07:02Z — writes this
+// key and nothing else. Seeding it is therefore not a permission decision
+// at all: it reproduces, per launch, the answer the operator already gave,
+// and an outside read behaves exactly as it does on this box today.
+//
+// WHY NOT --settings, which is what the bead asked for. The key the dialog
+// names is `permissions.blockReadsOutsideWorkingDirectories`, and neither
+// value settles the question:
+//
+//   - `false` does NOTHING. The guard above tests `===!0` — strictly true —
+//     so a false, or the absence the CLI already has, leaves the prompt
+//     armed. Shipping it would have looked like a fix in the launch line
+//     and changed no behaviour at all, which is worse than shipping
+//     nothing: the next session to sit blocked would have a settled-looking
+//     flag to disbelieve.
+//   - `true` does suppress the prompt, by REFUSING the read it was asking
+//     about — "the file tools refuse reads outside the working directories
+//     in every project", claude's own words. gilfoyle would not have been
+//     blocked on the runbook; gilfoyle would have been unable to read it.
+//     It is also restrictive-wins across every settings source, so a
+//     session cannot take it back.
+//
+// The third lever is working directories (`--add-dir`, or
+// `permissions.additionalDirectories`): a read inside one is not an outside
+// read, so the prompt never arms for those paths. That fixes the paths a
+// launch can enumerate and no others, and it widens what the file tools may
+// touch — it is a permission decision, and this is not. Left to whoever
+// prices it; the seed is what makes the session survive the general case.
+//
+// WHAT SEEDING WIDENS, said plainly: on the host path this is the first
+// GLOBAL key posse writes into the operator's config (directory trust is
+// per project). The operator's own next interactive session skips the
+// notice too. That is the state this box has been in since 07:02Z anyway,
+// and the alternative — a per-persona CLAUDE_CONFIG_DIR — is a much larger
+// change to dodge a one-line notice.
+const ClaudeOutsideReadSeenKey = "hasSeenAutoModeOutsideReadPrompt"
+
+// claudeOutsideReadSeen reads the key the way claude does: strictly true.
+// Anything else — absent, false, a string — is a config that still arms the
+// prompt, so it is one the launch has something to write.
+func claudeOutsideReadSeen(state map[string]any) bool {
+	v, _ := state[ClaudeOutsideReadSeenKey].(bool)
+	return v
+}
+
+// claudeOutsideReadProbe backs the second interstitial row in `posse
+// runtime check`: would a claude launched here today draw the outside-read
+// notice? Like every probe there it reads the operator's config and
+// nothing else.
+func claudeOutsideReadProbe() Silence {
+	p := ClaudeConfigFile()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the outside-read notice has been seen"}
+	}
+	state := map[string]any{}
+	if err := json.Unmarshal(b, &state); err != nil {
+		return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether the outside-read notice has been seen"}
+	}
+	if claudeOutsideReadSeen(state) {
+		return Silence{Silenced: true, Why: ClaudeOutsideReadSeenKey + " is already set in " + AbbrevHome(p) + " — this launch writes nothing"}
+	}
+	return Silence{Why: ClaudeOutsideReadSeenKey + " is not set in " + AbbrevHome(p) + " — the launch seeds it (an auto-mode session reading outside its worktree would otherwise stop on the notice)"}
 }

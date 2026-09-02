@@ -69,6 +69,17 @@ import (
 // default, which is exactly the risk unattended_live_test.go's file
 // comment names: that default has moved once already and does not error
 // when it does.
+//
+// WHAT IS DELIBERATELY NOT HERE (ranger-base-d3fwo):
+// `permissions.blockReadsOutsideWorkingDirectories`. The bead asked for it
+// — the auto-mode outside-read notice names that key, and a persona that
+// stops on the notice is a blocked session. It belongs on this line in
+// neither value: `false` leaves the notice armed, because claude's guard
+// tests strictly true, and `true` silences it by refusing every read
+// outside the working directories. The launch answers that question where
+// claude records the answer instead (ClaudeOutsideReadSeenKey, trust.go).
+// A future launch that wants it here is welcome to it; it should read that
+// measurement first.
 const ClaudeFleetSettings = `{"permissions":{"defaultMode":"auto"},"skillOverrides":{"auto-mode-setup":"off"}}`
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with

@@ -336,14 +336,17 @@ var CodexInterstitials = []Interstitial{{
 	Probe:   codexUpdateProbe,
 }}
 
-// ClaudeInterstitials — measured on claude 2.1.241 (rangerhq-w4uf; four
-// herdr scratch panes, no API turn). The one entry is the table's declared
-// exception: posse WRITES this key at launch, because it has no once-per-
-// machine spelling — trust is per session directory, so every new repo,
-// worktree and scratch dir the fleet starts in draws the modal again, and
-// there is no flag, no settings key and no `claude project` subcommand to
-// answer it on the line. See trust.go for the measurement and for what the
-// grant hands the session dir.
+// ClaudeInterstitials — the trust modal measured on claude 2.1.241
+// (rangerhq-w4uf; four herdr scratch panes, no API turn), the outside-read
+// notice on 2.1.258 (ranger-base-d3fwo, read out of the installed binary
+// after the coordinator answered a live one by hand). Both entries are the
+// table's declared exception: posse WRITES these keys at launch rather than
+// naming them and refusing, because neither has a spelling a launch can
+// type. Trust is per session directory, so every new repo, worktree and
+// scratch dir the fleet starts in draws the modal again; the outside-read
+// notice is per config dir, and the only settings key it names silences it
+// by refusing the read it was asking about. See trust.go for both
+// measurements and for what the trust grant hands the session dir.
 var ClaudeInterstitials = []Interstitial{{
 	Screen:  `"Quick safety check: Is this a project you created or one you trust?" — full-screen, "1. Yes, I trust this folder / 2. No, exit", footed "Enter to confirm · Esc to cancel". herdr reads it blocked (live_blocked_form), so dispatch waits it out rather than typing into it.`,
 	Where:   "~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json, or the config dir's .config.json when it exists)",
@@ -351,6 +354,13 @@ var ClaudeInterstitials = []Interstitial{{
 	Silence: "the LAUNCH seeds it, per session dir, merged into the operator's file and only when the dir is not already trusted (SeedClaudeTrust) — the same grant posse types on codex's line, and the CLI's own documented alternative to answering the dialog by hand.",
 	Seeded:  true,
 	Probe:   claudeTrustProbe,
+}, {
+	Screen:  `"Read outside the working directories … Allow reads outside the working directories? 1. Yes, keep allowing / 2. No, block … / 3. No, ask again next time" — an auto-mode session's FIRST file-tool read of a path outside its working directories, so it lands mid-turn on a session that already looked healthy. herdr reads it blocked; a persona cannot answer it, and gilfoyle-87qki sat on it until the coordinator sent the keystroke by hand (ranger-base-d3fwo).`,
+	Where:   "~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json) — top level, not per project",
+	Key:     `hasSeenAutoModeOutsideReadPrompt`,
+	Silence: "the LAUNCH seeds it (SeedClaudeTrust on the host, SeedCageHome in a cage), which is exactly what picking \"1. Yes, keep allowing\" writes and all it writes. The key the SCREEN names — permissions.blockReadsOutsideWorkingDirectories — is not the silence: false leaves the notice armed (the CLI's guard tests strictly true) and true silences it by refusing the read. See trust.go for the measurement.",
+	Seeded:  true,
+	Probe:   claudeOutsideReadProbe,
 }}
 
 // DangerUnsilenced is ADR 0013 §2's launch rule, in one place because three

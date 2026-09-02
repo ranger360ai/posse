@@ -726,8 +726,12 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 	state["autoUpdates"] = false
 	// Same keys the host launch seeds into the operator's config
 	// (trust.go), because it is the same dialog on the same build — the
-	// only difference is which HOME's file it lands in.
+	// only difference is which HOME's file it lands in. The outside-read
+	// notice bites this tier hardest: a cage HOME is fresh by construction,
+	// so it is a config dir that has never answered anything
+	// (ranger-base-d3fwo).
 	claudeSeedProject(state, dir)
+	state[ClaudeOutsideReadSeenKey] = true
 	return home, writeJSONInPlace(p, state)
 }
 

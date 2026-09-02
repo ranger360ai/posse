@@ -193,7 +193,12 @@ func TestSeedTrustWritesNothingWhenTheDirIsAlreadyTrusted(t *testing.T) {
 	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
 	dir := t.TempDir()
+	// Both of the launch's questions already answered — trust for this dir,
+	// and the outside-read notice for the config dir (ranger-base-d3fwo).
+	// Either one missing is a write, and the next test is the half of that
+	// pair this one used to hide.
 	writeConfig(t, cfg, map[string]any{
+		ClaudeOutsideReadSeenKey: true,
 		"projects": map[string]any{
 			ClaudeTrustKey(dir): map[string]any{"hasTrustDialogAccepted": true},
 		},
