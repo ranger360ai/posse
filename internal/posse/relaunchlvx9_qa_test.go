@@ -142,6 +142,7 @@ func TestQA9jk1NoLandStillRefusesAWornName(t *testing.T) {
 }
 
 func TestQA9jk1EmptyLabelIsNotAWornName(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	mustCreate(t, b, NewSessionOpts{Name: "mine"})
@@ -163,6 +164,7 @@ func TestQA9jk1EmptyLabelIsNotAWornName(t *testing.T) {
 }
 
 func TestQA9jk1TwoStrangersStillRefuse(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	mustCreate(t, b, NewSessionOpts{Name: "mine"})
@@ -192,6 +194,7 @@ func TestQA9jk1TwoStrangersStillRefuse(t *testing.T) {
 // A kept recipe (workspace blank) still refuses if a stranger wears the name:
 // the retry the ordinary rollback advertises must not walk into v52t.
 func TestQAKeptRecipeRefusesWhileAStrangerWearsTheName(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	mustCreate(t, b, NewSessionOpts{Name: "mine"})

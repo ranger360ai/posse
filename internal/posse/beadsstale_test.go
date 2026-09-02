@@ -23,9 +23,9 @@ import (
 // case clears its marker, so a bug that skipped the import straight to a
 // blind retry would still read the marker and fail the same way twice.
 func TestRunSelfHealsAStaleDB(t *testing.T) {
+	t.Parallel()
 	_, fake := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	dir := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
 	os.WriteFile(filepath.Join(dir, "fake-ready-stale"), nil, 0o644)
 	os.Remove(filepath.Join(fake, "bd-calls.log"))
@@ -63,9 +63,9 @@ func TestRunSelfHealsAStaleDB(t *testing.T) {
 // repo must not need healing (no second bd-calls.log entry for it), and the
 // stale one must come back in the same result rather than as a ScanError.
 func TestReadyAllSelfHealsPerRepo(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	healthy := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
 	stale := scanRepo(t, `[{"id":"b-1","title":"two"}]`)
@@ -91,9 +91,9 @@ func TestReadyAllSelfHealsPerRepo(t *testing.T) {
 // reports the bd error it actually got back rather than retrying forever or
 // inventing a different one.
 func TestRunDoesNotLoopOnAPersistentStaleDB(t *testing.T) {
+	t.Parallel()
 	_, fake := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	dir := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
 	os.WriteFile(filepath.Join(dir, "fake-ready-stale"), []byte("keep"), 0o644)
 	os.Remove(filepath.Join(fake, "bd-calls.log"))

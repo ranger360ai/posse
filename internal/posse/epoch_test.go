@@ -80,6 +80,7 @@ func TestEpochStartIsTheSameAcrossARestart(t *testing.T) {
 // ─── the config key ──────────────────────────────────────────────────────────
 
 func TestDispatchEpochConfig(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, raw string
 		want      time.Duration
@@ -116,6 +117,7 @@ func TestDispatchEpochConfig(t *testing.T) {
 // --watch loop must not write the same configuration fact into its log
 // twelve times an hour (blindWarned's rule).
 func TestMalformedEpochIsNamedOncePerProcess(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	errb := dispatcherErr(t, d)
@@ -198,6 +200,7 @@ func TestEpochSpendSurvivesARunRestart(t *testing.T) {
 // coincide": spend from BEFORE this epoch is not charged to it. A window
 // that never turned would hold yesterday's dollars against today's beads.
 func TestEpochSpendExcludesTheEpochBefore(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := planRepo(t, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","title":"t","status":"closed"}]`)
@@ -231,6 +234,7 @@ func TestEpochSpendExcludesTheEpochBefore(t *testing.T) {
 // attempt that reached a launch, so counting it counts attempts without
 // reading the private tally.
 func TestLaunchCapIsSpentPerEpochNotPerPass(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 100 * time.Millisecond
@@ -271,6 +275,7 @@ func TestLaunchCapIsSpentPerEpochNotPerPass(t *testing.T) {
 // is the one thing `--dry-run` promises it will not do (ADR 0028's
 // consequences: semantics unchanged).
 func TestDryRunSpendsNoEpochAttempts(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -293,6 +298,7 @@ func TestDryRunSpendsNoEpochAttempts(t *testing.T) {
 // The cap line names the epoch's end, and it has to be the END and not the
 // start: "nothing until 14:00" is actionable, "nothing since 13:00" is not.
 func TestLaunchCapLineNamesWhenTheEpochTurns(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	os.WriteFile(b.App.ConfigPath, []byte("dispatch_epoch: 1h\n"), 0o644)
@@ -315,6 +321,7 @@ func TestLaunchCapLineNamesWhenTheEpochTurns(t *testing.T) {
 // A cap with room left is silent and returns exactly the room: the pass
 // fires as it always did, and `-n 0` is no cap at all.
 func TestEpochRoomIsQuietWhileItHasRoom(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.rollEpoch(time.Now())
@@ -334,6 +341,7 @@ func TestEpochRoomIsQuietWhileItHasRoom(t *testing.T) {
 // The reset is the EPOCH's, not the pass's: a pass inside the epoch that
 // rolls nothing must not hand the cap back.
 func TestRollEpochResetsOnlyWhenTheEpochTurns(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	now := time.Now()
@@ -363,6 +371,7 @@ func TestRollEpochResetsOnlyWhenTheEpochTurns(t *testing.T) {
 // the field being right in rollEpoch is not the claim; the claim is that
 // Dial E's window is that field.
 func TestRunMeasuresAgainstTheEpochNotTheRun(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := planRepo(t, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","title":"t","status":"closed"}]`)

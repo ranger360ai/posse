@@ -22,6 +22,7 @@ import (
 // to whichever built-in happened to be blank that week is how a rule stops
 // being tested the day somebody fills that map in.
 func TestDisplayTierIsDefaultOnlyWhereTheRuntimeMapsNothing(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.RuntimesDir(), 0o755)
@@ -78,6 +79,7 @@ func TestDisplayTierIsDefaultOnlyWhereTheRuntimeMapsNothing(t *testing.T) {
 // "" suppression is keyed on the DISPLAYED tier — so an unmapped default
 // tier surfaces as a tag instead of vanishing.
 func TestRuntimeTierTagShowsTheDisplayTier(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.RuntimesDir(), 0o755)
 	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),
@@ -105,6 +107,7 @@ func TestRuntimeTierTagShowsTheDisplayTier(t *testing.T) {
 // lists as claude/fast. Both panes in one listing, so the rendering — not
 // the fixture — is what separates them.
 func TestListShowsDefaultForAnUnmappedRuntime(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -132,10 +135,10 @@ func TestListShowsDefaultForAnUnmappedRuntime(t *testing.T) {
 // tier too — and PromptContext keeps the resolved tier out of the struct
 // entirely, so nothing downstream can mistake `default` for a resolution.
 func TestWorkPromptHeaderShowsTheDisplayTier(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	is := RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "t"}, Dir: t.TempDir()}
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	os.MkdirAll(b.App.RuntimesDir(), 0o755)
 	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),

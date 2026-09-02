@@ -119,6 +119,7 @@ func TestCheckParity(t *testing.T) {
 // Dispatch never allows degradation on its own; with --allow-degraded the
 // session launches marked.
 func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
@@ -353,6 +354,7 @@ func TestFastNeedsFullParityAndTierFloor(t *testing.T) {
 // refusal like a degraded launch and skips that bead only — the persona's
 // next bead may resolve to a tier it can honestly run.
 func TestDispatchRefusesFastBelowFloorPerBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "business-manager.md"),
@@ -400,6 +402,7 @@ func TestDispatchRefusesFastBelowFloorPerBead(t *testing.T) {
 // notify entries are spawned by codex outside its own sandbox with the
 // whole session env. The launch must find the file and refuse.
 func TestCodexProjectConfigTrustGatesTheLaunch(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -478,6 +481,7 @@ func TestCodexProjectConfigTrustGatesTheLaunch(t *testing.T) {
 // key presence, regardless of the key's value, and classification fails
 // closed whenever an existing file cannot be proved safe.
 func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -602,6 +606,7 @@ func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
 // can write the repo can write that path, where `git status` will not show
 // it.
 func TestClaudeLocalProjectSettingsAreTheSameSurface(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -747,6 +752,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 }
 
 func TestLaunchInstallsHooksBeforeProbe(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -769,6 +775,7 @@ func TestLaunchInstallsHooksBeforeProbe(t *testing.T) {
 }
 
 func TestLaunchReportsForeignHookFailure(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

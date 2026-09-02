@@ -18,7 +18,6 @@ package posse
 // live half is settleescalation_live_test.go.
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,11 +45,7 @@ func readyBlockedRepo(t *testing.T, ready []string, blocked map[string]string) s
 
 func readyIDs(t *testing.T, dir string) []string {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	issues, err := Bd{Bin: exe}.Ready(dir, "")
+	issues, err := Bd{Bin: fakeBinFor(t, "bd")}.Ready(dir, "")
 	if err != nil {
 		t.Fatalf("Ready: %v", err)
 	}
@@ -64,6 +59,7 @@ func readyIDs(t *testing.T, dir string) []string {
 // THE PIN: a bead both verbs claim is not ready work. Without the
 // subtraction this returns both ids and the pass dispatches a-1 forever.
 func TestReadyDropsWhatBdBlockedAlsoLists(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	dir := readyBlockedRepo(t, []string{"a-1", "a-2"}, map[string]string{"a-1": "q-1"})
 	if got := readyIDs(t, dir); len(got) != 1 || got[0] != "a-2" {
@@ -76,6 +72,7 @@ func TestReadyDropsWhatBdBlockedAlsoLists(t *testing.T) {
 // runs through. It takes a short circuit of its own, so it is pinned
 // separately from the control below rather than standing in for it.
 func TestReadyKeepsEverythingWhenNothingIsBlocked(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	dir := readyBlockedRepo(t, []string{"a-1", "a-2"}, nil)
 	if got := readyIDs(t, dir); len(got) != 2 || got[0] != "a-1" || got[1] != "a-2" {
@@ -96,6 +93,7 @@ func TestReadyKeepsEverythingWhenNothingIsBlocked(t *testing.T) {
 // that never executes the code it guards is decoration (my own ORDERS, and
 // M4 below caught this file doing it).
 func TestReadyDoesNotInventBeadsBdBlockedNames(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	dir := readyBlockedRepo(t, []string{"a-2", "a-3"}, map[string]string{"a-1": "q-1", "a-9": "q-2"})
 	if got := readyIDs(t, dir); len(got) != 2 || got[0] != "a-2" || got[1] != "a-3" {
@@ -109,14 +107,11 @@ func TestReadyDoesNotInventBeadsBdBlockedNames(t *testing.T) {
 // already knows what to do with a scan error: name the repo, and fail the
 // pass only when every repo failed.
 func TestReadyFailsWhenBlockedCannotBeRead(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	dir := readyBlockedRepo(t, []string{"a-1"}, nil)
 	write(t, filepath.Join(dir, "fake-blocked-fail"), "")
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	issues, err := Bd{Bin: exe}.Ready(dir, "")
+	issues, err := Bd{Bin: fakeBinFor(t, "bd")}.Ready(dir, "")
 	if err == nil {
 		t.Fatalf("Ready returned %v with no error — an unreadable blocked set is not an empty one", issues)
 	}
@@ -133,6 +128,7 @@ func TestReadyFailsWhenBlockedCannotBeRead(t *testing.T) {
 // SPIKE rung and ASK on a store that accepts the cycle instead of refusing
 // it.
 func TestDispatchDoesNotFireABeadBdBlockedLists(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -160,6 +156,7 @@ func TestDispatchDoesNotFireABeadBdBlockedLists(t *testing.T) {
 // having measured nothing. The blocked set stays non-empty for the reason
 // CONTROL 2 gives: an empty one never reaches the filter.
 func TestDispatchFiresTheSameBeadWhenBdBlockedIsEmpty(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

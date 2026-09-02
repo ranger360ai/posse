@@ -35,6 +35,7 @@ import (
 // MUTATION B: make skipNf always count → the control arm loses its per-bead
 // lines → red. MUTATION C: delete beginRefill's printf → red on the header.
 func TestQARefillNamesItsSeatAndSummarisesSkipsInOneLine(t *testing.T) {
+	t.Parallel()
 	// The refill arm: one rolling Run. a-1 fires from the head of the pass,
 	// settles closed, and the settle refills the seat it freed.
 	b, fake := newTestBackend(t)
@@ -117,6 +118,7 @@ func TestQARefillNamesItsSeatAndSummarisesSkipsInOneLine(t *testing.T) {
 // own kind at dispatch.go's uncountedSkip call site → the summary reads "2
 // runtime cap" again, red on the want-string below.
 func TestQARefillNamesTheAccountBrakesRuntimeAndCap(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := planDispatcher(t, b, nil)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
@@ -161,6 +163,7 @@ func TestQARefillNamesTheAccountBrakesRuntimeAndCap(t *testing.T) {
 // MUTATION: `r.Rolling = d.refilling != nil` → `r.Rolling = false` (or back
 // to a constant arm string in seatIdleArm) → the rolling arm reds.
 func TestQASeatIdleArmFollowsTheRefillPath(t *testing.T) {
+	t.Parallel()
 	t.Run("closed by a refill", func(t *testing.T) {
 		b, fake := newTestBackend(t)
 		d := newTestDispatcher(t, b)

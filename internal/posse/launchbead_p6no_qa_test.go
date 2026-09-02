@@ -44,6 +44,7 @@ func fakeAgentStatuses(t *testing.T, fake string, statuses map[string]string) {
 
 // "unassigned bead, lane head working → seats the next free seat."
 func TestLaunchBeadOverflowsToTheNextFreeSeatWhenTheLaneHeadIsBusy(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "developer", "[code]")
 	writePersona(t, b.App, "developer-2", "[code]")
@@ -72,6 +73,7 @@ func TestLaunchBeadOverflowsToTheNextFreeSeatWhenTheLaneHeadIsBusy(t *testing.T)
 
 // "lane fully busy → refusal names the lane, not one persona."
 func TestLaunchBeadRefusesByLaneWhenEverySeatIsBusy(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "developer", "[code]")
 	writePersona(t, b.App, "developer-2", "[code]")
@@ -109,6 +111,7 @@ func TestLaunchBeadRefusesByLaneWhenEverySeatIsBusy(t *testing.T) {
 // TARGET session, so a persona busy on another bead in this repo went
 // unnoticed and got fanned two-wide.
 func TestLaunchBeadRefusesAnAssignedBeadWhenTheAssigneeIsBusyElsewhere(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "developer", "[code]")
 	repo := t.TempDir()
@@ -135,6 +138,7 @@ func TestLaunchBeadRefusesAnAssignedBeadWhenTheAssigneeIsBusyElsewhere(t *testin
 // is a lane of one and `d` there is resume, not a seat question (§2): the
 // persona's OTHER sessions never enter it.
 func TestLaunchBeadResumesAnIdleHolderEvenWhenThePersonaIsBusyElsewhere(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "developer", "[code]")
 	repo := t.TempDir()
@@ -175,6 +179,7 @@ func TestLaunchBeadResumesAnIdleHolderEvenWhenThePersonaIsBusyElsewhere(t *testi
 // holder, not the first free seat." An unclaim erased the assignee under a
 // live run; the run record answers before availability does.
 func TestLaunchBeadSeatsUnassignedInProgressBeadOnItsRunRecordHolder(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")

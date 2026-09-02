@@ -43,6 +43,7 @@ func pulseFastRuntime(t *testing.T, b *HerdrBackend, session, wait string) {
 // is untouched so the next tick tries again — a pulse that never went out
 // must not be gated behind the renag window.
 func TestPulseDoesNotPromptAPaneHerdrOnlyGuessesAt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pulseFastRuntime(t, b, "coordinator-work", "400ms")
@@ -76,6 +77,7 @@ func TestPulseDoesNotPromptAPaneHerdrOnlyGuessesAt(t *testing.T) {
 // pulse off: with no lever the fake answers the shape a settled pane really
 // has — a named rule — and the pulse delivers exactly as it did before.
 func TestPulseStillPromptsAPaneHerdrHasSeen(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pane := id + ":p1"
@@ -104,6 +106,7 @@ func TestPulseStillPromptsAPaneHerdrHasSeen(t *testing.T) {
 // here a listing that says idle over a screen herdr can see is working,
 // which is the state the listing lags behind on every real turn.
 func TestPulseSkipsAWorkingScreenTheListingCalledIdle(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pulseFastRuntime(t, b, "coordinator-work", "400ms")
@@ -134,6 +137,7 @@ func TestPulseSkipsAWorkingScreenTheListingCalledIdle(t *testing.T) {
 // silent against an older herdr would be a worse regression than the race.
 // The listing's idle is all there is, and it is used.
 func TestPulseStillPromptsWhenHerdrCannotExplain(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pulseFastRuntime(t, b, "coordinator-work", "400ms")

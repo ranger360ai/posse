@@ -30,6 +30,7 @@ func argvPersona(t *testing.T, a *App, name, labels string) {
 // argument to the CLI, so the screen is never the delivery channel. Nothing
 // is typed at the pane, and herdr is never asked to recognize a composer.
 func TestArgvDeliversTheWorkPromptOnTheLaunchLine(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	argvPersona(t, b.App, "ranger", "[go]")
@@ -68,6 +69,7 @@ func TestArgvDeliversTheWorkPromptOnTheLaunchLine(t *testing.T) {
 // Asserted by absence rather than by ordering two logs: if the create ran
 // first there would be a workspace to find.
 func TestArgvClaimsBeforeCreatingTheSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	argvPersona(t, b.App, "ranger", "[go]")
@@ -100,6 +102,7 @@ func TestArgvClaimsBeforeCreatingTheSession(t *testing.T) {
 // loses cleanly, and the price of that is handing the bead back when the
 // session it was claimed for never came into being.
 func TestArgvCreateFailureAfterTheClaimUnclaims(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	argvPersona(t, b.App, "ranger", "[go]")
@@ -131,6 +134,7 @@ func TestArgvCreateFailureAfterTheClaimUnclaims(t *testing.T) {
 // (which would return instantly and read a session that never worked as one
 // that settled).
 func TestArgvUnrecognizedScreenKeepsTheClaimAndJudgesNothing(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 150 * time.Millisecond
@@ -165,6 +169,7 @@ func TestArgvUnrecognizedScreenKeepsTheClaimAndJudgesNothing(t *testing.T) {
 // line has already been typed; the only way into a running CLI is its
 // composer, argv runtime or not.
 func TestArgvResumeIntoALiveSessionStaysTyped(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -195,6 +200,7 @@ func TestArgvResumeIntoALiveSessionStaysTyped(t *testing.T) {
 // claude is untouched: it declares `prompt: typed`, and a typed dispatch
 // still creates, waits for a screen it can see, claims, and types.
 func TestTypedRuntimeIsUnchangedByArgvDelivery(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -223,6 +229,7 @@ func TestTypedRuntimeIsUnchangedByArgvDelivery(t *testing.T) {
 // it: the CLI would take the page of text as a subcommand or a path. The
 // refusal is at the render, where the pair is known.
 func TestPromptFileRefusedOnATypedRuntime(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "ranger", PromptFile: "/tmp/nope.txt"})
@@ -236,6 +243,7 @@ func TestPromptFileRefusedOnATypedRuntime(t *testing.T) {
 // passed as its prompt (rangerhq-5oi). Nothing assembles such a prompt
 // today; this is what keeps that true.
 func TestWorkPromptStartingWithADashIsRefused(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if _, err := b.App.WriteWorkPrompt("s1", "--help\nrest of it\n"); err == nil {
 		t.Error("a prompt starting with a dash must refuse, not be written")

@@ -31,6 +31,7 @@ func devSession(t *testing.T, b *HerdrBackend, name string) string {
 }
 
 func TestRelaunchLandsKillsAndRecreates(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := devSession(t, b, "s1")
@@ -87,6 +88,7 @@ func TestRelaunchLandsKillsAndRecreates(t *testing.T) {
 // A session still mid-turn is not killed: the operator is told to wait, and
 // nothing is closed. Refreshing a session must never cost work in flight.
 func TestRelaunchRefusesWhileWorking(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
@@ -122,6 +124,7 @@ func TestRelaunchRefusesWhileWorking(t *testing.T) {
 // A blocked agent cannot take a prompt, and a session with no agent has
 // nothing to land — both refresh anyway.
 func TestRelaunchSkipsLandingWhenNothingCanLand(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
@@ -149,6 +152,7 @@ func TestRelaunchSkipsLandingWhenNothingCanLand(t *testing.T) {
 // A plain session's --cmd exists nowhere but the meta, so the meta records
 // it — otherwise a relaunch would hand back an empty shell.
 func TestRelaunchReplaysPlainCommand(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	repo := t.TempDir()
 	if err := b.CreateSession(NewSessionOpts{Name: "p1", Dir: repo, Cmd: "run-me --flag"}); err != nil {
@@ -170,6 +174,7 @@ func TestRelaunchReplaysPlainCommand(t *testing.T) {
 // relaunching a session is not a new decision — and a session posse did not
 // create has no recipe to recreate from.
 func TestRelaunchCarriesDegradedConsentAndRefusesForeign(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
@@ -207,6 +212,7 @@ func TestRelaunchCarriesDegradedConsentAndRefusesForeign(t *testing.T) {
 // no longer loads — arrived with the original already destroyed. Preflight
 // moves those refusals in front of the kill, where they cost nothing.
 func TestRelaunchRefusesBeforeTheKillWhenTheRecreateCannotSucceed(t *testing.T) {
+	t.Parallel()
 	check := func(t *testing.T, breakIt func(b *HerdrBackend, repo string), want string) {
 		t.Helper()
 		b, fake := newTestBackend(t)
@@ -257,6 +263,7 @@ func TestRelaunchRefusesBeforeTheKillWhenTheRecreateCannotSucceed(t *testing.T) 
 // session's identity — the recipe is written back, the error carries both
 // ways out, and `posse relaunch` is itself the retry.
 func TestRelaunchKeepsTheRecipeWhenTheRecreateFailsAfterTheKill(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := devSession(t, b, "s1")
@@ -322,6 +329,7 @@ func TestRelaunchKeepsTheRecipeWhenTheRecreateFailsAfterTheKill(t *testing.T) {
 // Preflight prints what it resolved before anything is destroyed: a relaunch
 // that goes wrong later leaves a scrollback saying what it was building.
 func TestRelaunchPrintsWhatItCheckedBeforeKilling(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := devSession(t, b, "s1")
@@ -346,6 +354,7 @@ func TestRelaunchPrintsWhatItCheckedBeforeKilling(t *testing.T) {
 // blanking the meta of a live workspace orphans it, which is the cpeh harm
 // self-inflicted by the cleanup. Name the workspace and leave the record.
 func TestRelaunchDoesNotOrphanAReplacementThatCameUp(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
@@ -561,6 +570,7 @@ func TestRelaunchProvesDeathBeforeClearingAMeta(t *testing.T) {
 // would send the operator to `posse attach s1`, which resolves to that very
 // stranger.
 func TestRelaunchRefusesAWorkspaceAlreadyWearingTheName(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	mustCreate(t, b, NewSessionOpts{Name: "mine"})
@@ -620,6 +630,7 @@ func TestRelaunchRefusesAWorkspaceAlreadyWearingTheName(t *testing.T) {
 // erased the record that refusal had just declined to overwrite. So it asks
 // the same guard the other three sites ask.
 func TestKeepRecipeWillNotBlankARecordItCannotProveDead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	mustCreate(t, b, NewSessionOpts{Name: "mine"}) // a non-empty listing (rangerhq-8fq)

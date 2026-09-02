@@ -68,6 +68,7 @@ func ageResidue(t *testing.T, b *HerdrBackend, session string, by time.Duration)
 // settled, its tree holds nothing, and it is not a conversation the operator
 // ever made: it is Dial F's own per-bead session wearing a 👤.
 func TestAutoReapTakesACrewMarkedSessionDispatchMadePastItsGrace(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -92,6 +93,7 @@ func TestAutoReapTakesACrewMarkedSessionDispatchMadePastItsGrace(t *testing.T) {
 // a conversation has no timeout, so the only honest thing a clock can buy is
 // a long one. Inside it the shield holds exactly as it always did.
 func TestAutoReapKeepsACrewMarkedSessionInsideItsGrace(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -117,6 +119,7 @@ func TestAutoReapKeepsACrewMarkedSessionInsideItsGrace(t *testing.T) {
 // the name dispatch WOULD have given this session can be re-rendered from the
 // session's own record and compared.
 func TestAutoReapNeverTakesACrewSessionTheOperatorMade(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -141,6 +144,7 @@ func TestAutoReapNeverTakesACrewSessionTheOperatorMade(t *testing.T) {
 // exclusion is asked of the PERSONA, so it holds even for a session shaped
 // exactly like the one the crew arm takes.
 func TestAutoReapNeverTakesThePulsePersonasSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "coordinator", "[go]")
@@ -167,6 +171,7 @@ func TestAutoReapNeverTakesThePulsePersonasSession(t *testing.T) {
 // idle twelve hours and the operator reaped it by hand, which is the
 // mechanism this file exists to replace.
 func TestAutoReapTakesAStamplessSessionPastItsGrace(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -186,6 +191,7 @@ func TestAutoReapTakesAStamplessSessionPastItsGrace(t *testing.T) {
 }
 
 func TestAutoReapKeepsAStamplessSessionInsideItsGrace(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -205,6 +211,7 @@ func TestAutoReapKeepsAStamplessSessionInsideItsGrace(t *testing.T) {
 // and must never be taken by the arm that reaps sessions for not having one
 // (rangerhq-v330's join depends on it surviving).
 func TestAutoReapNeverTakesTheSlotForHavingNoPointer(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -227,6 +234,7 @@ func TestAutoReapNeverTakesTheSlotForHavingNoPointer(t *testing.T) {
 // And the refusal SPEAKS — a session left standing with no line said about it
 // is exactly what read as a broken reaper and cost the hand-reaps (kftx).
 func TestAutoReapWillNotTakeResidueOverAnUncommittedTree(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -308,6 +316,7 @@ func TestAutoReapTakesResidueOnceItsBranchHasLanded(t *testing.T) {
 // rest on separate evidence and an operator may well want one and not the
 // other.
 func TestReapGracesOffRestoreThePermanentSkip(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -333,6 +342,7 @@ func TestReapGracesOffRestoreThePermanentSkip(t *testing.T) {
 // as zero would turn one bad config line into a sweep with no grace at all,
 // which is why `off` is spelled and not numeric.
 func TestUnreadableReapGraceIsNamedAndTheDefaultStands(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	e := dispatcherErr(t, d)
@@ -361,6 +371,7 @@ func TestUnreadableReapGraceIsNamedAndTheDefaultStands(t *testing.T) {
 // pane is invisible to posse's own stamps (ADR 0008 §1 accepted that) but
 // herdr reports it as `working`.
 func TestAutoReapKeepsWorkingResidueHoweverOld(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -391,6 +402,7 @@ func TestAutoReapKeepsWorkingResidueHoweverOld(t *testing.T) {
 // same fail-closed the unreadable bead gets. Reachable for a record written
 // before `launched:` existed.
 func TestUndatedResidueIsNotOldEnough(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -414,6 +426,7 @@ func TestUndatedResidueIsNotOldEnough(t *testing.T) {
 // --dry-run says what it would take on the widened arms too, and takes
 // nothing. The flag's promise is that a diagnostic pass changes no state.
 func TestReapResidueDryRunOnlyLists(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -444,6 +457,7 @@ func TestReapResidueDryRunOnlyLists(t *testing.T) {
 // has either been prompted (promptedRecently) or been stamped with a pointer
 // by NoteBead and left this population.
 func TestUnpointedArmHoldsUntilThePassHasRouted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -471,6 +485,7 @@ func TestUnpointedArmHoldsUntilThePassHasRouted(t *testing.T) {
 // any point. Making the two arms share one rule would cost the crew arm the
 // starvation fix ranger-base-v674 added the pass-start sweep for.
 func TestCrewArmSweepsBeforeRoutingToo(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

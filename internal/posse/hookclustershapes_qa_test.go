@@ -221,6 +221,7 @@ func TestQAMarkdownScanSeesAnOpsLineAddedOnAMove(t *testing.T) {
 // directory move, the LOCAL settings file, a move INTO the class, and paths
 // whose bytes the -z reader and the IFS loop have to survive.
 func TestQAConstitutionWallRefusesEveryMoveOutShape(t *testing.T) {
+	t.Parallel()
 	body := strings.Repeat("deny rules\n", 40)
 
 	t.Run("a pure deletion of a class path", func(t *testing.T) {
@@ -339,6 +340,7 @@ func TestQAConstitutionWallRefusesEveryMoveOutShape(t *testing.T) {
 // answering true. It survives the base-arm mutant on purpose — a defeat of
 // the worktree test would have to beat this too.
 func TestQAConstitutionMarkerSurvivesAStagedRemoval(t *testing.T) {
+	t.Parallel()
 	plantLaw := func(t *testing.T, repo string, git func(env []string, args ...string) (string, error)) {
 		t.Helper()
 		rel := ConstitutionRepoMarker + "/developer.md"
@@ -392,6 +394,7 @@ func TestQAConstitutionMarkerSurvivesAStagedRemoval(t *testing.T) {
 // prepare-commit-msg hook, and the whole L3 tier rests on that not being the
 // same list — stated everywhere, measured nowhere until here.
 func TestQACommitWallIsNotSkippedByNoVerify(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
 	stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
 	out, err := git(persona, "commit", "--no-verify", "-m", "edit the law", "--", ConstitutionSourceDir+"/config.yaml")

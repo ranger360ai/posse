@@ -133,7 +133,6 @@ func TestQASeedTrustManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
 // of the dirs into the config it is handed, as a separate process holding no
 // launcher lock — a hand-run `posse new` while a pass is mid-launch.
 func TestQASeedTrustChildSeeder(t *testing.T) {
-	t.Parallel()
 	cfg := os.Getenv("RHQ_QA_TRUST_CFG")
 	if cfg == "" {
 		t.Skip("child of TestQASeedTrustHoldsAcrossProcesses")
@@ -234,7 +233,6 @@ func TestQASeedTrustLockFailsLoudlyWhenHeld(t *testing.T) {
 
 // The child half of TestQASeedTrustLockFreesOnProcessDeath.
 func TestQASeedTrustChildHoldLock(t *testing.T) {
-	t.Parallel()
 	cfg := os.Getenv("RHQ_QA_TRUST_HOLD")
 	if cfg == "" {
 		t.Skip("child of TestQASeedTrustLockFreesOnProcessDeath")

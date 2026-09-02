@@ -156,9 +156,9 @@ func TestReopensFromGit(t *testing.T) {
 }
 
 func TestScorecardOutput(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	writePersona(t, b.App, "dev", "[code]")
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\nlabels: [code]\nmetrics: [closed-no-reopen, findings-surviving-triage, suite-green-on-close]\n---\nYou are dev.\n"), 0o644)
@@ -257,9 +257,9 @@ func TestReopensFromGitReadsBlobsRelativeToTheBeadsDir(t *testing.T) {
 // trailer are driven by reopensKnown (scorecard.go), one nil away from
 // each other, so pin the two states of that flag end to end.
 func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\nlabels: [code]\nmetrics: [closed-no-reopen]\n---\nYou are dev.\n"), 0o644)
@@ -311,8 +311,7 @@ func TestScorecardCountsReopensThroughTheBeadsRedirect(t *testing.T) {
 func scorecardRig(t *testing.T, dirs ...string) func() (string, error) {
 	t.Helper()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\nlabels: [code]\nmetrics: [closed-no-reopen]\n---\nYou are dev.\n"), 0o644)
@@ -355,6 +354,7 @@ func scorecardRepo(t *testing.T, n int, fail bool) string {
 // queue scan's version of this (rangerhq-llse), because a queue that comes
 // back empty at least looks like nothing happened.
 func TestScorecardNamesTheReposItCouldNotRead(t *testing.T) {
+	t.Parallel()
 	good, bad := scorecardRepo(t, 2, false), scorecardRepo(t, 5, true)
 	card, err := scorecardRig(t, good, bad)()
 	if err != nil {
@@ -382,6 +382,7 @@ func TestScorecardNamesTheReposItCouldNotRead(t *testing.T) {
 // The silence half. A caveat that fires on a healthy card is a caveat the
 // operator learns to skip, and this one has to survive being read.
 func TestScorecardSaysNothingWhenEveryRepoReads(t *testing.T) {
+	t.Parallel()
 	card, err := scorecardRig(t, scorecardRepo(t, 2, false), scorecardRepo(t, 3, false))()
 	if err != nil {
 		t.Fatal(err)
@@ -399,6 +400,7 @@ func TestScorecardSaysNothingWhenEveryRepoReads(t *testing.T) {
 // repos == 0 already died; what it did not do was say WHICH repos, which
 // is the whole of what an operator needs to act on the refusal.
 func TestScorecardRefusalNamesEveryUnreadRepo(t *testing.T) {
+	t.Parallel()
 	a, b := scorecardRepo(t, 1, true), scorecardRepo(t, 1, true)
 	card, err := scorecardRig(t, a, b)()
 	if err == nil {
@@ -492,6 +494,7 @@ func scorecardHistoryRepo(t *testing.T, n int) string {
 // renderings of one fact, so pin all three across the three states — none
 // read, some read, all read.
 func TestScorecardSaysWhenOnlySomeReposHaveReopenHistory(t *testing.T) {
+	t.Parallel()
 	row := func(card string) string {
 		t.Helper()
 		for _, ln := range strings.Split(card, "\n") {
@@ -671,9 +674,9 @@ func TestHarnessRatios(t *testing.T) {
 // the bead says is the only one this ratio means anything for — and the
 // card must sum both, not just the one bd happened to read first.
 func TestScorecardHarnessRatioAcrossRepos(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\nlabels: [code]\n---\nYou are dev.\n"), 0o644)

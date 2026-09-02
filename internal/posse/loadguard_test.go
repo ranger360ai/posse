@@ -124,6 +124,7 @@ func TestSysLoad1ReadsThisBox(t *testing.T) {
 // box that is running this test can show: the stub's 0 clears it, a live
 // reading does not.
 func TestTestBackendLaunchesDoNotReadThisBox(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if err := os.WriteFile(b.App.ConfigPath, []byte("load_guard: 0.01\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -143,6 +144,7 @@ func TestTestBackendLaunchesDoNotReadThisBox(t *testing.T) {
 // The pass half of the ask: one witness line, nothing launched, no error —
 // --watch keeps its cadence and the next pass reads fresh.
 func TestDispatchSkipsThePassOverTheLoadGuard(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -181,6 +183,7 @@ func TestDispatchSkipsThePassOverTheLoadGuard(t *testing.T) {
 }
 
 func TestDispatchRunsThePassUnderTheLoadGuard(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -208,6 +211,7 @@ func TestDispatchRunsThePassUnderTheLoadGuard(t *testing.T) {
 // the one command an operator runs on a sick box must not be the one that
 // goes quiet.
 func TestDryRunSaysTheGuardWouldFireAndShowsRoutingAnyway(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -236,6 +240,7 @@ func TestDryRunSaysTheGuardWouldFireAndShowsRoutingAnyway(t *testing.T) {
 
 // The launch half: every path into planLaunch, which is all of them.
 func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	b.App.Load1 = func() (float64, error) { return 263, nil }
 
@@ -258,6 +263,7 @@ func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
 // a box that could not start its replacement is the one way this guard could
 // cost more than it saves.
 func TestRelaunchRefusesOverTheLoadGuardWithoutKilling(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
@@ -495,6 +501,7 @@ func TestSysTopCPUReadsThisBox(t *testing.T) {
 // The whole point, end to end: the operator reading dispatch-watch.log gets
 // the load AND who is holding it, on the pass that was skipped.
 func TestASkippedPassNamesTheCulprits(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	b.App.Load1 = func() (float64, error) { return 149.08, nil }
@@ -529,6 +536,7 @@ func TestASkippedPassNamesTheCulprits(t *testing.T) {
 // operator reading dispatch-watch.log on the skipped pass gets the leaks by
 // name, on the pass itself, in one write (ranger-base-apwr).
 func TestASkippedPassNamesTheLeakedGateShellChildren(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	b.App.Load1 = func() (float64, error) { return 149.08, nil }
@@ -565,6 +573,7 @@ func TestASkippedPassNamesTheLeakedGateShellChildren(t *testing.T) {
 // fleet pass must not fork `ps` — that is the cost this feature promised
 // never to charge.
 func TestAHealthyPassNeverReadsTheProcessTable(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

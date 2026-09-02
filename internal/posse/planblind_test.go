@@ -594,6 +594,7 @@ func TestBlindOverBudgetDryRunStillSkips(t *testing.T) {
 }
 
 func TestPlanGuardBlindMaxParse(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	var errb strings.Builder

@@ -108,6 +108,7 @@ func TestChainedGateWrappersSkipsWhatItDoesNotRecognize(t *testing.T) {
 // The witness must never gate the pass — see dispatch.go's call site, which
 // logs and continues whatever ChainedGateWrappers returns.
 func TestDispatchLogsTheAuditButDoesNotDecline(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	pauseRepo(t, b, fake)

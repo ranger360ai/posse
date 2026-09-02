@@ -15,6 +15,7 @@ import (
 )
 
 func TestSlotHeldBeadIsNotDoublePrompted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -98,6 +99,7 @@ func slotHolder(t *testing.T, b *HerdrBackend, fake, repo, status string, crew b
 // `d` re-prompts THAT session (ADR 0004 §3, "re-prompt the holder") — it
 // does not open a per-bead session alongside it.
 func TestSlotHeldBeadResumesInTheHolderSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -126,6 +128,7 @@ func TestSlotHeldBeadResumesInTheHolderSession(t *testing.T) {
 // acts on the holder, a crew holder must be refused rather than prompted —
 // the same line a pass prints, and --resume does not override it.
 func TestCrewSlotHolderIsNotResumed(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -149,6 +152,7 @@ func TestCrewSlotHolderIsNotResumed(t *testing.T) {
 // the assignee is not a loadable persona, which would launch a stranger onto
 // a bead someone else holds. `d` acts on the holder the row named or not at all.
 func TestHeldByNonPersonaIsNotDispatched(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -174,6 +178,7 @@ func TestHeldByNonPersonaIsNotDispatched(t *testing.T) {
 // work and gets its own per-bead session even when the persona's slot
 // session is alive and idle.
 func TestReadyBeadStillGetsItsOwnSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -231,6 +236,7 @@ func bothHolders(t *testing.T, b *HerdrBackend, fake, repo, dialStatus, slotStat
 // The working/blocked guard is one condition. rangerhq-lwx pinned working;
 // a blocked slot holder is the other half of the same refusal.
 func TestSlotHeldBeadBlockedIsNotDoublePrompted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -253,6 +259,7 @@ func TestSlotHeldBeadBlockedIsNotDoublePrompted(t *testing.T) {
 // Cockpit display prefers Dial F when both names are live (TestQAHolderJoinPrecision).
 // `d` must act on that same session, not the slot sitting beside it.
 func TestDialFHolderWinsWhenBothExist(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -278,6 +285,7 @@ func TestDialFHolderWinsWhenBothExist(t *testing.T) {
 
 // Same join order: a working Dial F is refused and no third session is born.
 func TestDialFWorkingHolderIsRefusedWhenSlotAlsoExists(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -299,6 +307,7 @@ func TestDialFWorkingHolderIsRefusedWhenSlotAlsoExists(t *testing.T) {
 // live holder, is the shape that did (rangerhq-2um2); the guards now ask
 // about the join's holder and the names ahead of it (namesThrough).
 func TestCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -328,6 +337,7 @@ func TestCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
 // holder — the shield freezing the fleet on a session that is not the
 // operator's.
 func TestDispatchResumeCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -373,6 +383,7 @@ func TestDispatchResumeCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
 // herdr can see an agent in the pane (ranger-base-adb7's shape, one agent
 // further out).
 func TestDispatchSkipsAgentlessCrewHolderUnderResume(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -409,6 +420,7 @@ func TestDispatchSkipsAgentlessCrewHolderUnderResume(t *testing.T) {
 // SessionForBead, so an idle slot holder got a twin (rangerhq-v330). Live
 // regression test now — the pass fires into the holder the join names.
 func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -467,6 +479,7 @@ func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
 // paths is what ADR 0004 §2's "the same two names" already claims; the leg
 // below is what holds the pass to it.
 func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name   string
 		resume bool
@@ -533,6 +546,7 @@ func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
 // and it did so silently, because a dry pass creates nothing for the
 // no-twin assertion above to catch (ranger-base-vw6).
 func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -570,6 +584,7 @@ func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
 // bead as unheld and builds a twin beside a live holder, which is the
 // rangerhq-v330 class one naming scheme further out.
 func TestRunRecordHolderIsJoinedUnderAnyName(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name   string
 		resume bool

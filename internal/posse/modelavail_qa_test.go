@@ -57,6 +57,7 @@ func qaFellSession(t *testing.T, name string) (*HerdrBackend, string) {
 // here because it is the contrast that makes the next one a finding rather
 // than a preference: nothing about a refresh makes the fact less true.
 func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
+	t.Parallel()
 	b, fake := qaFellSession(t, "ra")
 
 	m, _ := b.readMeta("ra")
@@ -93,6 +94,7 @@ func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
 // one is the sentence dispatch.go calls "the exact lie this preflight exists
 // to kill".
 func TestQA7vpFallbackMarkSurvivesPosseRelaunch(t *testing.T) {
+	t.Parallel()
 	b, _ := qaFellSession(t, "pr")
 
 	var out strings.Builder
@@ -130,6 +132,7 @@ func TestQA7vpFallbackMarkSurvivesPosseRelaunch(t *testing.T) {
 // carry's condition to the tier half alone would silently un-mark every
 // hopped session.
 func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	b.Warn = &strings.Builder{}
 	qaPID(t, b, "security", TierStrong)
@@ -168,6 +171,7 @@ func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
 // TestQA7vpFallbackMarkSurvivesPosseRelaunch is the control: the same
 // fixture, the same refresh, no PID edit, and the mark stays.
 func TestQA7vpTheCarriedMarkIsDroppedOnceThePIDAsksForWhatIsRunning(t *testing.T) {
+	t.Parallel()
 	b, _ := qaFellSession(t, "cu") // architect: tier strong, fell to standard
 
 	qaPID(t, b, "architect", TierStandard) // the operator settles for what it got
@@ -202,6 +206,7 @@ func TestQA7vpTheCarriedMarkIsDroppedOnceThePIDAsksForWhatIsRunning(t *testing.T
 // launch across, types that runtime's own line, and records the pair it
 // really got. Rule (3) holds through the hop — nothing refuses.
 func TestQA7vpARuntimeHopLaunchesAndIsRecordedAsTheRuntimeItGot(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
@@ -262,6 +267,7 @@ func TestQA7vpARuntimeHopLaunchesAndIsRecordedAsTheRuntimeItGot(t *testing.T) {
 // that board refused on codex only because the PID's WebFetch/WebSearch deny
 // refuses on claude too — the control had not been run.
 func TestQA7vpTierFloorStillRefusesTheSubstitutedPair(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
@@ -335,6 +341,7 @@ func TestQA7vpAnExpiredSnapshotIsQuotedAndObeyedByNothing(t *testing.T) {
 // taken before, the probe 401ing since 08-31 — must now render the
 // asked-for id, say so once, and leave no `fallback:` mark behind.
 func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	var hits atomic.Int64
 	b.App.ModelLister = failingLister(&hits)

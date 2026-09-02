@@ -424,6 +424,7 @@ func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 // path verbatim, THIS TEST GOES RED — delete it and fold these arms into the
 // pin above.
 func TestQAGuardRefusalManglesABackslashEscapeInAPath(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

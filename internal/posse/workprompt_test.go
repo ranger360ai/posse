@@ -76,9 +76,9 @@ func TestWorkPromptAssembly(t *testing.T) {
 // promptContext assembles from bd (dep list with relation types, comment
 // count), the repo (orientation files) and config (operator, orientation).
 func TestPromptContext(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "NOTES.md"), []byte("n"), 0o644)
 	os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("a"), 0o644)
@@ -131,6 +131,7 @@ func TestPromptContext(t *testing.T) {
 // End to end: the assembled prompt (with the persona hook) is what herdr
 // receives; question beads are never dispatched.
 func TestDispatchPromptAndQuestionBeads(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	os.MkdirAll(b.App.AgentsDir, 0o755)

@@ -128,11 +128,7 @@ func pulseIn(t *testing.T, b *HerdrBackend, dirs []string, persona string) GovIn
 	// empty rather than unknown, so these tests assert on the carry-overs
 	// alone. Without it BeadsDirs falls back to the process cwd and the
 	// real bd answers from the operator's own queue.
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RHQ_BD_BIN", exe)
+	t.Setenv("RHQ_BD_BIN", fakeBinFor(t, "bd"))
 	return GovInputs{App: b.App, HB: b, Bd: NewBd(), PulsePersona: persona, Pulsing: true}
 }
 
@@ -227,6 +223,7 @@ func containsPrefix(ss []string, prefix string) bool {
 // unarmed starts no ticker at all. rangerhq-4ish's "done when": an armed
 // watch logs conditions on a fake-herdr blocked session.
 func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
@@ -271,6 +268,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 }
 
 func TestWatchPulseUnarmedNoTicker(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
@@ -366,6 +364,7 @@ func (p *parkTap) String() string {
 // Watch is still in Watch. It cannot go red on a slow box: with the join,
 // Watch cannot return until the release below, whatever the load.
 func TestWatchWaitsForAPulseTickInFlight(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	blockedSession(t, b, fake, "coordinator-shop", "coordinator")

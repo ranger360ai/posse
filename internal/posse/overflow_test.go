@@ -65,6 +65,7 @@ func (f *overflowFixture) ledger(t *testing.T) []string {
 // With no overflow runtime configured, an on-meter bead parks on the trip
 // reason. The pass still gathers work so an off-meter bead could run.
 func TestOverflowUnsetSkipsOnMeterBead(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "", overflowPID, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
@@ -92,6 +93,7 @@ func TestOverflowUnsetSkipsOnMeterBead(t *testing.T) {
 // a pool that quietly never engages. (The meter as the other way to arm it:
 // overflowarming_test.go.)
 func TestOverflowWithoutCapIsOff(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\n", overflowPID, `["go","tier:standard"]`)
 
 	n, _ := f.d.Run("", "", 0)
@@ -116,6 +118,7 @@ func TestOverflowWithoutCapIsOff(t *testing.T) {
 // overflow runtime, the session is created for it, the prompt header says
 // so, and one ledger line is written.
 func TestOverflowLaunchesEligibleBead(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 
@@ -167,6 +170,7 @@ func TestOverflowLaunchesEligibleBead(t *testing.T) {
 // §2(b): judged work never moves. A strong bead gets the guard's line, per
 // bead, and the pool is not touched.
 func TestOverflowStrongBeadSkipped(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:strong"]`)
 
@@ -182,6 +186,7 @@ func TestOverflowStrongBeadSkipped(t *testing.T) {
 
 // §2(c): the PID's own opt-out, for what a parity check cannot see.
 func TestOverflowPIDOptOut(t *testing.T) {
+	t.Parallel()
 	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\noverflow: false\n---\nYou are ranger.\n"
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		pid, `["go","tier:standard"]`)
@@ -247,6 +252,7 @@ func TestOverflowParityDecidesPerTarget(t *testing.T) {
 // and entries older than it do not, and a reached cap is named in the skip
 // line so the operator can see which number stopped the bead.
 func TestOverflowCapRolling7d(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 2\n",
 		overflowPID, `["go","tier:standard"]`)
 	now := time.Now()
@@ -288,6 +294,7 @@ func TestOverflowCapRolling7d(t *testing.T) {
 // guarded meter is launched, tripped guard or not — and it is not an
 // overflow launch, so no overflow configuration or cap is required.
 func TestOverflowUngatedRuntimeLaunches(t *testing.T) {
+	t.Parallel()
 	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: grok\n---\nYou are ranger.\n"
 	f := overflowPass(t, "", pid, `["go","tier:standard"]`)
 
@@ -313,6 +320,7 @@ func TestOverflowUngatedRuntimeLaunches(t *testing.T) {
 // The guard does not trip: nothing about overflow happens at all — no
 // ledger read, no extra line, and the bead launches on its own runtime.
 func TestOverflowUntrippedGuardReadsNothing(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 42, 40) // under the threshold
 	d, errb := planDispatcher(t, b, ps)
@@ -354,6 +362,7 @@ func TestOverflowUntrippedGuardReadsNothing(t *testing.T) {
 // --dry-run acts on nothing: the move is shown, the ledger is not written,
 // and no session is created.
 func TestOverflowDryRun(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 	f.d.DryRun = true
@@ -375,6 +384,7 @@ func TestOverflowDryRun(t *testing.T) {
 // about where these sessions run, and dispatch's own step-over never
 // overrides one. On the guarded runtime that means the guard's skip line.
 func TestOverflowExplicitRuntimePins(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 	f.d.Runtime = "claude"
@@ -503,6 +513,7 @@ func TestOverflowBlindGuardNeverOverflows(t *testing.T) {
 // happened", which is the one thing a torn write does not tell you, and both
 // callers already fail closed on an error.
 func TestLedgerCorruptLineIsUnknownNotZero(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	now := time.Now()
 	good := LedgerEntry{At: now.Add(-time.Hour), Runtime: "grok", Bead: "a-1", Persona: "ranger"}.line()
@@ -565,6 +576,7 @@ func (f *overflowFixture) seedLedger(t *testing.T, es ...LedgerEntry) {
 // closes is only reachable through two processes and the arithmetic under it
 // deserves to be pinned without one.
 func TestOverflowRefreshUnderTheLock(t *testing.T) {
+	t.Parallel()
 	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
 
 	// The race itself: this pass read 0/1 before the lock, another launcher
@@ -655,6 +667,7 @@ func TestOverflowRefreshUnderTheLock(t *testing.T) {
 // one changed: a pass that overflows nothing writes no ledger, and the tests
 // above pin that.
 func TestLedgerAppendable(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if err := os.MkdirAll(b.App.StateDir, 0o755); err != nil {
 		t.Fatal(err)

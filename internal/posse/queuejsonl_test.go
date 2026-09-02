@@ -255,6 +255,7 @@ func TestQueueCommitFlushesBeforeItCommits(t *testing.T) {
 // ADR's verification item 6 is about what a pass actually did, not about
 // what a function does when someone remembers to call it.
 func TestDispatchPassCommitsTheQueueJSONLOnAClose(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -292,6 +293,7 @@ func TestDispatchPassCommitsTheQueueJSONLOnAClose(t *testing.T) {
 // close saying "no queue repo configured" would be noise on every pass of
 // every instance that never moves its store.
 func TestDispatchPassSaysNothingAboutTheQueueBeforeTheCutover(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

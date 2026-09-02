@@ -308,6 +308,7 @@ func TestQAMarkdownScanOwnsEveryMarkdownSpelling(t *testing.T) {
 // The rendered hook must carry the Go list and nothing hand-spelled beside
 // it: one place the way OpsPatterns is (ranger-base-4b1z4's own ask).
 func TestQAMarkdownPathspecsAreRenderedFromTheGoList(t *testing.T) {
+	t.Parallel()
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	for _, p := range MarkdownPathspecs {
 		if !strings.Contains(render, "'"+p+"'") {
@@ -544,6 +545,7 @@ func TestQAIdentityPathArmMatchesANonASCIILiteralRaw(t *testing.T) {
 // conventional path in three files. There is no such list here, and there
 // should never need to be one: a path is renameable.
 func TestQAIdentityLiteralsNeverAppearInATrackedPath(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -592,6 +594,7 @@ func TestQAIdentityLiteralsNeverAppearInATrackedPath(t *testing.T) {
 // constitutionwall_qa_test.go stays green — which is exactly the gap: the
 // class was fully pinned and the READER was not.
 func TestQAConstitutionWallRefusesAMoveOutOfTheClass(t *testing.T) {
+	t.Parallel()
 	t.Run("a promoted path in the constitution repo", func(t *testing.T) {
 		repo, git, persona := constitutionWallRepo(t, true)
 		rel := ConstitutionRepoMarker + "/developer.md"
@@ -669,6 +672,7 @@ func TestQAConstitutionWallRefusesAMoveOutOfTheClass(t *testing.T) {
 // subtests go red (the commits land) and the genesis subtest stays green —
 // so the pin measures the new arm and not the marker rule.
 func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
+	t.Parallel()
 	// The class member the attack is after: config.yaml, which az93 is
 	// about and which is in the class only when the marker says so.
 	plantMarker := func(t *testing.T, repo string, git func(env []string, args ...string) (string, error)) {
@@ -759,6 +763,7 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 // MUTATION-CHECKED: removing --no-renames from any one of the four name
 // readers reds this pin naming that line.
 func TestQAHookReadersAllDisableMoveDetection(t *testing.T) {
+	t.Parallel()
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{},
 		IdentityLiteral{Class: "username", Value: "someone"})
 	var names, content int

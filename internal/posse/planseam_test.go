@@ -74,6 +74,7 @@ func seamRig(t *testing.T, r PlanReader, cfg string) (*Dispatcher, *strings.Buil
 // line, and says nothing about 5h or 7d — because with this adapter
 // installed neither exists.
 func TestPlanGuardTripsOnAnotherProvidersWindow(t *testing.T) {
+	t.Parallel()
 	f := &fakePlanReader{windows: fakeWindows(78, 40)}
 	d, errb, fake := seamRig(t, f, "plan_guard_burst: 70\nplan_guard_month: 85")
 
@@ -102,6 +103,7 @@ func TestPlanGuardTripsOnAnotherProvidersWindow(t *testing.T) {
 // Under both of that provider's thresholds the pass runs, and it costs one
 // reading — the guard's cadence does not change with its vocabulary.
 func TestPlanGuardBelowAnotherProvidersThresholdsRuns(t *testing.T) {
+	t.Parallel()
 	f := &fakePlanReader{windows: fakeWindows(12, 40)}
 	d, errb, _ := seamRig(t, f, "plan_guard_burst: 70\nplan_guard_month: 85")
 
@@ -124,6 +126,7 @@ func TestPlanGuardBelowAnotherProvidersThresholdsRuns(t *testing.T) {
 // window is the tightest, so a standard bead steps down to fast without any
 // dollar cap being near.
 func TestBudgetStepsDownOnAnotherProvidersWindow(t *testing.T) {
+	t.Parallel()
 	f := &fakePlanReader{windows: fakeWindows(84, 30)}
 	d, _, _ := seamRig(t, f, "plan_guard_burst: 95\nbudget_day: 100")
 	d.Spend = func(time.Time) *CostReport { return &CostReport{} }
@@ -144,6 +147,7 @@ func TestBudgetStepsDownOnAnotherProvidersWindow(t *testing.T) {
 // nothing. That is the malformed-threshold failure wearing a different hat,
 // so it is said out loud — once — rather than silently ignored.
 func TestPlanGuardNamesAThresholdWithNoWindow(t *testing.T) {
+	t.Parallel()
 	f := &fakePlanReader{windows: fakeWindows(12, 40)}
 	d, errb, _ := seamRig(t, f, "plan_guard_burst: 70\nplan_guard_5h: 70")
 
@@ -164,6 +168,7 @@ func TestPlanGuardNamesAThresholdWithNoWindow(t *testing.T) {
 // read as one — a guard armed by `plan_guard_overflow:` alone would fetch a
 // reading nobody asked for.
 func TestPlanGuardReservedKeysAreNotWindows(t *testing.T) {
+	t.Parallel()
 	f := &fakePlanReader{windows: fakeWindows(99, 99)}
 	d, errb, _ := seamRig(t, f, "plan_guard_blind_max: 10m\nplan_guard_overflow: grok\nplan_guard_overflow_cap: 5")
 

@@ -118,6 +118,7 @@ func TestSeatIdleClockSkewIsNamedNotNegative(t *testing.T) {
 // settle is not a free seat and must never open an idle window: the wait
 // that follows it is a human's, not dispatch's.
 func TestSeatBlockedSettleDoesNotFreeTheSeat(t *testing.T) {
+	t.Parallel()
 	for _, st := range []string{"idle", "done"} {
 		if !SeatFreeing(st) {
 			t.Errorf("%s frees the seat", st)
@@ -158,6 +159,7 @@ func TestSeatBlockedSettleDoesNotFreeTheSeat(t *testing.T) {
 // column, so a blocked settle that reached this file WOULD be measured.
 // Nothing downstream would catch it.
 func TestSeatBlockedSettleLeavesTheNextRefillUnmeasured(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	dir := "/tmp/posse"
@@ -202,6 +204,7 @@ func TestSeatBlockedSettleLeavesTheNextRefillUnmeasured(t *testing.T) {
 // The pass wiring, end to end: pass 1 has no window to measure, pass 2
 // measures the one pass 1 opened, and the account line names the seat.
 func TestDispatchPassEmitsSeatIdleFigures(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -254,6 +257,7 @@ func TestDispatchPassEmitsSeatIdleFigures(t *testing.T) {
 // The guards are what keeps that an accident of the call graph rather than
 // the only thing standing between a dry pass and a poisoned ledger.
 func TestSeatCadenceDryRunWritesNothing(t *testing.T) {
+	t.Parallel()
 	{
 		b, _ := newTestBackend(t)
 		d := newTestDispatcher(t, b)

@@ -23,6 +23,7 @@ import (
 // A launch on a runtime with no declared startup_wait: still gets the
 // pass's own default — the field is a fallback, not dead weight.
 func TestDispatchUndeclaredStartupWaitUsesThePassDefault(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 90 * time.Millisecond
@@ -47,6 +48,7 @@ func TestDispatchUndeclaredStartupWaitUsesThePassDefault(t *testing.T) {
 // be what dispatch actually waits, not the pass's default — a pass mixing
 // personas on different runtimes is wrong for whichever one this ignores.
 func TestDispatchUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	// The pass default is deliberately large and round so it cannot be
@@ -150,6 +152,7 @@ func countCalls(t *testing.T, fake, prefix string) int {
 // instance CAN put a startup_wait: on an argv profile, so dispatch had
 // better honour it there too.
 func TestDispatchArgvPathUsesTheLaunchedRuntimesDeclaredStartupWait(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 3 * time.Second

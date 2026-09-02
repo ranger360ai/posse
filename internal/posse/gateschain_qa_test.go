@@ -1069,6 +1069,7 @@ func bdShimBody(slot string) string {
 //     degrades naming both slots, and the launch refuses unless the operator
 //     passes --allow-degraded.
 func TestQADispatchIntoABdHookedRepoInstallsNothingAndRefuses(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -1159,6 +1160,7 @@ exit 0
 // planted chain first, so a hook that silently failed to be "working" is a
 // red test rather than a refusal credited to the wrong cause.
 func TestQAWorkingForeignChainIsRefusedOnIdentityNotBehavior(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

@@ -51,6 +51,7 @@ func plantBackup(t *testing.T, a *App, at time.Time) string {
 // One archive from the future must not stop the schedule, and it must not do
 // it quietly either.
 func TestBackupLoopRunsPastAFutureStampedArchive(t *testing.T) {
+	t.Parallel()
 	d, a, at := backupLoopRig(t, "1h")
 	var errs strings.Builder
 	d.Err = &errs
@@ -110,6 +111,7 @@ func TestBackupLoopRunsPastAFutureStampedArchive(t *testing.T) {
 // named while it declines, because a level trigger reports a level for as
 // long as it stands.
 func TestBackupLoopStillDeclinesBehindAUsableArchive(t *testing.T) {
+	t.Parallel()
 	d, a, at := backupLoopRig(t, "1h")
 	var errs strings.Builder
 	d.Err = &errs

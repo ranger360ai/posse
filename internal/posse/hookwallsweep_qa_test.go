@@ -423,6 +423,7 @@ func TestPromoteEpilogueSweepsTheHookWall(t *testing.T) {
 // and sh for every configured repo forever to re-derive an answer that cannot
 // have moved.
 func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := hwsRepo(t, t.TempDir(), "declared")

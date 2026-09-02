@@ -60,6 +60,24 @@ func grokPoolUser(ts time.Time, text string) string {
 	return string(b) + "\n"
 }
 
+// grokPoolHome gives the caller its own $HOME and returns it. Anything that
+// plants a grok session must take one: the pool reading is the SUM over
+// every session under $HOME/.grok, and after ADR 0047 D1 the home is one
+// temp directory for the whole test binary — so a fixture that plants into
+// it reads back whatever every other test planted too. Measured on the run
+// that first shared the home: five of these read 100%, 180% and 200% of a
+// pool their own fixtures spend a fraction of.
+//
+// Setting the environment is also what keeps the caller SERIAL, by the
+// runtime's own rule and with no list to maintain — which is the answer ADR
+// 0047 D3 names for a test that writes into the shared home.
+func grokPoolHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	return home
+}
+
 // grokPoolSession plants one session transcript. The session id is a
 // parameter because the pool is the sum over MANY sessions, which is the
 // thing being measured.
@@ -123,11 +141,8 @@ func grokPoolPassOn(t *testing.T, cfg, runtimeLine string) *grokPoolFixture {
 // a tier on them: ADR 0010 will not move `strong` work to a second pool.
 func grokPoolPassFull(t *testing.T, cfg, runtimeLine, beadLabels string) *grokPoolFixture {
 	t.Helper()
+	home := grokPoolHome(t)
 	b, fake := newTestBackend(t)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
 	d, errb := planDispatcher(t, b, nil)
 	d.Now = func() time.Time { return grokPoolNow }
 	os.MkdirAll(b.App.AgentsDir, 0o755)

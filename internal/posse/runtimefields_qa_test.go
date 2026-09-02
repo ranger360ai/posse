@@ -174,6 +174,7 @@ func mentionsOutsideComments(src, name string, via ...string) bool {
 // The unknown-key warning keeps runtimeYamlKeys() honest about what LOADS.
 // This keeps the footer honest about what an operator can FIND.
 func TestOnboardingFooterNamesEveryDeclarableKey(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "footercli", "command: footercli --sys {file}\n")
 	var b strings.Builder

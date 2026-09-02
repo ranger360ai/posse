@@ -17,6 +17,7 @@ import (
 // memoryScanMax arm names the file and refuses). A binary tracked file
 // reaches no such arm: it is silently treated as containing no added lines.
 func TestQAProbeMemoryScanReadsATrackedBinaryFile(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)

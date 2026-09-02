@@ -23,6 +23,7 @@ import (
 )
 
 func TestQAEveryCreateLineNamesTheRuntime(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		runtime string
 		// path is the create line this runtime's prompt mode reaches, named

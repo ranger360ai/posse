@@ -16,6 +16,7 @@ import (
 // `posse new` hands a session over, dispatch's own create does not, the
 // toggle goes both ways, and a refresh is not a change of hands.
 func TestCrewMarkerLifecycle(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "mine", Crew: true})
 	mustCreate(t, b, NewSessionOpts{Name: "fleet"})
@@ -175,6 +176,7 @@ func TestCrewMarkMissedIsReported(t *testing.T) {
 // it itself when the text is dispatch's own work-prompt shape; a bare chat
 // prompt leaves the pointer alone rather than stamping garbage.
 func TestNoteBeadFromPromptStampsOnlyAWorkPrompt(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "handset"})
 
@@ -197,6 +199,7 @@ func TestNoteBeadFromPromptStampsOnlyAWorkPrompt(t *testing.T) {
 // no prompt, no claim, no fleet twin — in --dry-run and in a real pass
 // alike. There is no timer: --resume does not override, releasing does.
 func TestDispatchSkipsCrewSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
@@ -246,6 +249,7 @@ func TestDispatchSkipsCrewSession(t *testing.T) {
 // personaActive does not see a crew session, so this repo's other beads
 // dispatch normally into their own per-bead sessions.
 func TestCrewSessionDoesNotStallTheFleet(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
@@ -280,6 +284,7 @@ func TestCrewSessionDoesNotStallTheFleet(t *testing.T) {
 // to close out from under the operator's conversation. The run record (ADR 0011 §3)
 // is what LaunchBead already joins on — the pass must ask the same question.
 func TestDispatchSkipsCrewSessionHoldingTheBeadUnderAnyName(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name   string
 		ready  string

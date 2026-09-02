@@ -36,6 +36,7 @@ func devSessionOn(t *testing.T, b *HerdrBackend, name, runtime string) {
 }
 
 func TestQALandingTurnIsTypedOnEveryRuntimePromptArgvIncluded(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		runtime string
 		mode    string

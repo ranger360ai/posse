@@ -31,6 +31,7 @@ import (
 )
 
 func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "hopper", "[rust]")

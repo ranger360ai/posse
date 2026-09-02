@@ -44,9 +44,9 @@ func scanConfig(t *testing.T, a *App, dirs ...string) {
 // ReadyAll hands its failures back rather than swallowing them, and the
 // repos it could read still come through.
 func TestReadyAllReportsFailedRepos(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	good := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
 	bad := scanRepo(t, "")
@@ -71,6 +71,7 @@ func TestReadyAllReportsFailedRepos(t *testing.T) {
 // One repo down out of two: the pass says which, and dispatches the work it
 // could actually see. A partial scan is degraded, not fatal.
 func TestPassNamesAPartiallyFailedScan(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -96,6 +97,7 @@ func TestPassNamesAPartiallyFailedScan(t *testing.T) {
 // work" over a scan that never happened. --watch reports the pass error and
 // keeps looping — the honest version of what it did silently before.
 func TestPassRefusesToCallAFailedScanAnEmptyQueue(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -120,6 +122,7 @@ func TestPassRefusesToCallAFailedScanAnEmptyQueue(t *testing.T) {
 // before ReadyAll sees them used to turn an all-missing list into the empty
 // string sentinel, which made bd inherit the caller's unrelated cwd.
 func TestPassRefusesMissingConfiguredReposInsteadOfScanningCWD(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -149,9 +152,9 @@ func TestPassRefusesMissingConfiguredReposInsteadOfScanningCWD(t *testing.T) {
 // A missing entry beside a readable repo must stay visible. Filtering it out
 // made a partial queue look complete even though work in one repo was unknown.
 func TestReadyAllReportsMissingRepoBesideReadableOne(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	good := scanRepo(t, `[{"id":"a-1","title":"one"}]`)
 	missing := filepath.Join(t.TempDir(), "missing")
@@ -174,6 +177,7 @@ func TestReadyAllReportsMissingRepoBesideReadableOne(t *testing.T) {
 // the queue in the failed repo is unknown, so the pass fails instead of
 // reporting the one repo it could see as the whole picture.
 func TestPassEmptyReadableRepoBesideFailedScanIsUnknown(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -195,6 +199,7 @@ func TestPassEmptyReadableRepoBesideFailedScanIsUnknown(t *testing.T) {
 // and keep looping. The pre-llse behaviour was to print "no ready work"
 // and look idle.
 func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -238,6 +243,7 @@ func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
 }
 
 func TestBeadsDirsUsesCWDOnlyWhenKeyIsAbsent(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if err := os.WriteFile(b.App.ConfigPath, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -290,9 +296,9 @@ func TestUnresolvedDirsNamesOnlyWhatIsNotThere(t *testing.T) {
 // repo's P1 sat below the first repo's P3s — priority looked connected and
 // was not.
 func TestReadyAllOrdersByPriorityAcrossRepos(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	first := scanRepo(t, `[{"id":"one-p1","title":"first p1","priority":1},
 	                       {"id":"one-p3","title":"first p3","priority":3}]`)

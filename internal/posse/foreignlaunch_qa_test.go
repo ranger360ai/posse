@@ -30,6 +30,7 @@ func foreignHolder(t *testing.T, fake, name string) {
 // persona. Every launch route says no instead, in every leg, and neither the
 // claim nor the prompt happens.
 func TestDispatchRefusesAForeignHolder(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name string
 		set  func(*Dispatcher)
@@ -82,6 +83,7 @@ func TestDispatchRefusesAForeignHolder(t *testing.T) {
 // refusal — it was the shortest route to the splice: an idle foreign row
 // passed the crew, working/blocked and PromptGrace checks in one pass.
 func TestLaunchBeadRefusesAForeignHolder(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -113,6 +115,7 @@ func TestLaunchBeadRefusesAForeignHolder(t *testing.T) {
 // and on a `prompt: argv` runtime it would put the work prompt on a fresh
 // launch line beside the workspace already wearing the name.
 func TestLaunchSessionRefusesAForeignRowRatherThanCreating(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -139,6 +142,7 @@ func TestLaunchSessionRefusesAForeignRowRatherThanCreating(t *testing.T) {
 // row by label on purpose — the operator naming a workspace they can see —
 // and taking that away would leave a squatting label with no way to clear it.
 func TestResolveStillAnswersForeignRowsForTheOperator(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	foreignHolder(t, fake, "handmade")
 

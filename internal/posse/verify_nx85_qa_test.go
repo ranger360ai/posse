@@ -116,6 +116,7 @@ import (
 // available here and the margin above stands in for it. Numbers, and the
 // class screen the bead also asked for, in docs/notes.d/ranger-base-ci9e.md.
 func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 4 * time.Second
@@ -186,6 +187,7 @@ func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 // and TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError both stay
 // green. The 300ms-timer version of this test stayed green under it too.
 func TestQAAnEarlyExplainErrorDoesNotOutliveALaterGuess(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 4 * time.Second
@@ -322,6 +324,7 @@ func TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath(t *testing.T) {
 // the one that already carries the flag. Asserted on the typed line, not on
 // the function.
 func TestQANoPersonaRelaunchTypesTheModeExactlyOnce(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
 	if !strings.Contains(calls(t, fake), "claude "+ClaudeFleetFlags) {

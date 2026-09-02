@@ -184,6 +184,7 @@ func backupLoopRig(t *testing.T, interval string) (*Dispatcher, *App, *time.Time
 // The first tick of an armed loop, on a directory with nothing in it, writes
 // an archive: an empty level is the oldest level there is.
 func TestBackupLoopWritesTheFirstArchive(t *testing.T) {
+	t.Parallel()
 	d, a, _ := backupLoopRig(t, "50ms")
 	cfg, err := LoadBackupConfig(a)
 	if err != nil {
@@ -204,6 +205,7 @@ func TestBackupLoopWritesTheFirstArchive(t *testing.T) {
 // The level, not the edge. Ten ticks inside one interval make ONE archive —
 // the trigger reads the directory, and the directory has not aged.
 func TestBackupLoopIsLevelTriggeredNotEdgeTriggered(t *testing.T) {
+	t.Parallel()
 	d, a, _ := backupLoopRig(t, "1h")
 	cfg, _ := LoadBackupConfig(a)
 	for i := 0; i < 10; i++ {
@@ -217,6 +219,7 @@ func TestBackupLoopIsLevelTriggeredNotEdgeTriggered(t *testing.T) {
 // ...and it does age. Move the clock past the interval and the next tick
 // runs: a level trigger that can never fire twice is a latch, not a clock.
 func TestBackupLoopRunsAgainOnceTheIntervalHasPassed(t *testing.T) {
+	t.Parallel()
 	d, a, at := backupLoopRig(t, "1h")
 	cfg, _ := LoadBackupConfig(a)
 	d.backupTick(cfg)
@@ -271,6 +274,7 @@ func runBackupLoop(t *testing.T, d *Dispatcher, a *App, cfg BackupConfig, want i
 // same poll — so the silence in the third arm is a loop that DECLINED rather
 // than a loop nobody waited for.
 func TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval(t *testing.T) {
+	t.Parallel()
 	d, a, at := backupLoopRig(t, "1h")
 	cfg, _ := LoadBackupConfig(a)
 
@@ -311,6 +315,7 @@ func TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval(t *testing.T) {
 // timer, and a store that could not be read at 03:15 is not a reason to
 // stop the fleet.
 func TestBackupLoopSurvivesARefusal(t *testing.T) {
+	t.Parallel()
 	d, a, _ := backupLoopRig(t, "1h")
 	cfg, _ := LoadBackupConfig(a)
 	say := dispatcherErr(t, d)
@@ -344,6 +349,7 @@ func TestBackupLoopSurvivesARefusal(t *testing.T) {
 // stamps a sub-second interval makes every tick due, and the test would be
 // measuring how many archives a burst can write rather than that one does.
 func TestWatchBackupClockWritesAnArchive(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()
@@ -378,6 +384,7 @@ func TestWatchBackupClockWritesAnArchive(t *testing.T) {
 // installing posse arms nothing, and that rule is the same one queue_repo:
 // keeps.
 func TestWatchBackupUnarmedStartsNoClock(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()
@@ -419,6 +426,7 @@ func TestWatchBackupUnarmedStartsNoClock(t *testing.T) {
 // does not wedge the watch, and it does not stop dispatching: a broken
 // backup cadence is not a reason to stop the fleet.
 func TestWatchBackupBadIntervalDisarmsRatherThanWedges(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()
@@ -456,6 +464,7 @@ func TestWatchBackupBadIntervalDisarmsRatherThanWedges(t *testing.T) {
 // stops DISPATCHING, and the queue still mutates in a paused shop. A paused
 // fleet whose store went unbacked-up is the failure this verb exists for.
 func TestBackupLoopRunsWhileThePassIsPaused(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()

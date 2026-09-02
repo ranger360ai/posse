@@ -154,6 +154,7 @@ func TestQAWalkBlamesOnlyTheDaemonsItStarted(t *testing.T) {
 // to be in the same function and would each be a separate way to lose the
 // guard.
 func TestQARuntimeWalkNeverRunsUnasked(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("runtimewalk_live_test.go")
 	if err != nil {
 		t.Fatal(err)

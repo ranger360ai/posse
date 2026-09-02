@@ -48,6 +48,7 @@ import (
 const drainLegMS = "120000"
 
 func TestQADrainEndsAWatchLoopWaitingOnASession(t *testing.T) {
+	t.Parallel()
 	// Cancelled: the operator's SIGTERM, which is all signal.NotifyContext
 	// hands the loop (cmd/posse/main.go).
 	t.Run("cancelled while a leg is in flight", func(t *testing.T) {

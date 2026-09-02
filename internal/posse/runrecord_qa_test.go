@@ -43,6 +43,7 @@ func qaRunRecordPass(t *testing.T, b *HerdrBackend, fake string) (string, string
 // the two fields ADR 0011 §3 adds, and the reason anything below can read
 // what another launcher did.
 func TestRunRecordPersistsBeadAndPrompted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	_, session, _ := qaRunRecordPass(t, b, fake)
 
@@ -81,6 +82,7 @@ func TestRunRecordPersistsBeadAndPrompted(t *testing.T) {
 // at herdr, saw the freshly launched agent reported idle, and prompted the
 // same bead into the same session a second time.
 func TestCockpitResumeRefusesAPassesFreshPrompt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	_, session, is := qaRunRecordPass(t, b, fake)
 
@@ -103,6 +105,7 @@ func TestCockpitResumeRefusesAPassesFreshPrompt(t *testing.T) {
 // the stale row — so the record is the only store that can answer, and the
 // second pass must skip rather than claim and prompt a bead already running.
 func TestSecondPassSkipsABeadAnotherLauncherJustPrompted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	repo, session, _ := qaRunRecordPass(t, b, fake)
 
@@ -148,6 +151,7 @@ func TestSecondPassSkipsABeadAnotherLauncherJustPrompted(t *testing.T) {
 // bead and launches a twin beside a working agent, which is the lwx/v330
 // class. Its record says `bead: a-1`, and that is what dispatch wrote.
 func TestHolderJoinReadsTheRecordNotTheName(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

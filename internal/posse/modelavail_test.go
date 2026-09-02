@@ -485,6 +485,7 @@ func pfPersona(t *testing.T, b *HerdrBackend, name, tier string) {
 // meta records both the tier that ran and the line saying it was not the
 // one asked for, and `posse list` wears the mark.
 func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
@@ -532,6 +533,7 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 }
 
 func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	pfPersona(t, b, "architect", TierStrong)
 	seedCatalog(t, b.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
@@ -550,6 +552,7 @@ func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
 // A launch through the test backend reaches no catalog at all — the
 // hermetic default. It must still launch, at the tier it was asked for.
 func TestLaunchWithNoCatalogIsUnchanged(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	pfPersona(t, b, "architect", TierStrong)
 	if err := b.CreateSession(NewSessionOpts{Name: "r3", Agent: "architect", Dir: t.TempDir()}); err != nil {

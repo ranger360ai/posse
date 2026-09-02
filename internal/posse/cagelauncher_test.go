@@ -323,6 +323,7 @@ func TestLiveCageLauncherExecsDockerAsClaude(t *testing.T) {
 // gone — there is no shell left holding the pane. A relaunch has to put
 // the same short line back (rangerhq-1k1's note on RelaunchAgent).
 func TestCagedRelaunchRetypesTheLauncher(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.CagesDir(), 0o755)

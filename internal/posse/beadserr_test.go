@@ -26,12 +26,9 @@ func errRepo(t *testing.T, marker, body string) string {
 }
 
 func TestBdRunKeepsTheReasonBdPrintsOnStdout(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t) // RHQ_FAKE_HERDR, a temp HOME
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	const reason = `resolving rangerhq-zzzz: no issue found matching "rangerhq-zzzz"`
 

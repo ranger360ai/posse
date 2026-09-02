@@ -15,6 +15,7 @@ import (
 )
 
 func TestQAACarriedMarkNamesThePIDAsItIsNow(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-cplx: the carried mark keeps the tier it fell FROM, so a PID edited to a third tier is described by a sentence that is false of it")
 	b, _ := qaFellSession(t, "cu") // architect: tier strong, fell to standard
 	qaPID(t, b, "architect", TierFast)

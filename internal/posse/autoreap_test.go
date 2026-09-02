@@ -29,6 +29,7 @@ func reapCandidate(t *testing.T, b *HerdrBackend, name, bead, beadStatus string)
 }
 
 func TestAutoReapKillsAClosedIdleSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -48,6 +49,7 @@ func TestAutoReapKillsAClosedIdleSession(t *testing.T) {
 // "done" is the other settled state the fire loop itself treats as
 // finished (AgentWait's own idle/done/blocked triad) — it must reap too.
 func TestAutoReapKillsAClosedDoneSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -63,6 +65,7 @@ func TestAutoReapKillsAClosedDoneSession(t *testing.T) {
 }
 
 func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -77,6 +80,7 @@ func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
 }
 
 func TestAutoReapKeepsAnOpenIdleSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -97,6 +101,7 @@ func TestAutoReapKeepsAnOpenIdleSession(t *testing.T) {
 // session dispatch itself created (reapresidue_test.go pins that arm and
 // this boundary from the other side).
 func TestAutoReapKeepsACrewSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -121,6 +126,7 @@ func TestAutoReapKeepsACrewSession(t *testing.T) {
 // (NoteBead) but carries no bead suffix of its own — it is the persona's
 // reusable session, and never Dial F's to reap.
 func TestAutoReapKeepsTheNonPerBeadSlot(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -140,6 +146,7 @@ func TestAutoReapKeepsTheNonPerBeadSlot(t *testing.T) {
 }
 
 func TestAutoReapDryRunOnlyLists(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -158,6 +165,7 @@ func TestAutoReapDryRunOnlyLists(t *testing.T) {
 }
 
 func TestAutoReapOffByConfig(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -173,6 +181,7 @@ func TestAutoReapOffByConfig(t *testing.T) {
 }
 
 func TestAutoReapOffByFlag(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.NoReap = true
@@ -215,6 +224,7 @@ func agePrompt(t *testing.T, b *HerdrBackend, session string, by time.Duration) 
 // this dispatcher never shared memory with (the second pass below runs on a
 // fresh Dispatcher and still sees it).
 func TestAutoReapSkipsASessionJustPrompted(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -261,6 +271,7 @@ func TestAutoReapSkipsASessionJustPrompted(t *testing.T) {
 // The steady state is zero ready beads — that pass must sweep too, not
 // only the passes that happen to dispatch something.
 func TestAutoReapRunsOnAQuietPass(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -288,6 +299,7 @@ func TestAutoReapRunsOnAQuietPass(t *testing.T) {
 // forces) is the cheapest way — and checking that a session a PREVIOUS pass
 // left closed-idle was still reaped despite this pass's own failure.
 func TestAutoReapSweepsAtPassStartEvenWhenThePassLaterFails(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	qaOneBeadRepo(t, b.App)
 	writePersona(t, b.App, "ranger", "[go]")

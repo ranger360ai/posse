@@ -35,6 +35,7 @@ func workingForeignHolder(t *testing.T, fake, name string) {
 // retry later; the foreign line says the name belongs to someone else and
 // names the two ways to get it back.
 func TestQALaunchBeadRefusesAForeignHolderAboveTheStatusCheck(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

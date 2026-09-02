@@ -26,6 +26,7 @@ import (
 // persona takes exactly ONE of them, so a seat walk that fell through into
 // fanning one persona N-wide fails here rather than in review.
 func TestQASeatSelectionMissingSoAFreeSeatIsNeverOffered(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")
@@ -68,6 +69,7 @@ func TestQASeatSelectionMissingSoAFreeSeatIsNeverOffered(t *testing.T) {
 // 0020 §4 turns on: lane concurrency is seat count, so an operator who sees
 // the whole lane spent knows the answer is a PID, not a longer wait.
 func TestQALaneBusySkipStillNamesOnePersonaNotTheLane(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")
@@ -104,6 +106,7 @@ func TestQALaneBusySkipStillNamesOnePersonaNotTheLane(t *testing.T) {
 // clause, which is the honest answer to a question asked with no pass
 // running (the cockpit's `d`, `--dry-run` before the loop starts).
 func TestQARouteWhyNamesTheRaceNotTheSeat(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")
@@ -141,6 +144,7 @@ func TestQARouteWhyNamesTheRaceNotTheSeat(t *testing.T) {
 // dispatch --persona developer-2` reported NOTHING while developer-2 sat idle beside
 // ready work in developer-2's own lane.
 func TestQAPersonaFilterSilentlyDropsABeadInThatPersonasLane(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")
@@ -168,6 +172,7 @@ func TestQAPersonaFilterSilentlyDropsABeadInThatPersonasLane(t *testing.T) {
 // says at the end how many there were, so a filtered pass that dispatches
 // nothing can still be told from an empty queue.
 func TestQAPersonaFilterSkipsBeadsOutsideTheLane(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")

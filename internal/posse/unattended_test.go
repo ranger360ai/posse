@@ -111,6 +111,7 @@ func TestTemplateOnlyRuntimeGetsNoGuessedFlag(t *testing.T) {
 // (CreateSession, which dispatch and the cockpit go through too) and by the
 // relaunch that re-types the line. Both were the paths that landed manual.
 func TestEveryLaunchPathTypesTheMode(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -224,6 +225,7 @@ func TestNoPersonaModeIsIdempotent(t *testing.T) {
 // recipe with no `agent:` — the two spellings of the hole, both measured
 // live on argv before this landed.
 func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 

@@ -15,6 +15,7 @@ import (
 )
 
 func TestQAOverflowFoundSessionKeepsItsRuntime(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 	session := SessionForBead("ranger", f.repo, "a-1")
@@ -38,6 +39,7 @@ func TestQAOverflowFoundSessionKeepsItsRuntime(t *testing.T) {
 }
 
 func TestQAOverflowCapStopsALaterBeadInTheSamePass(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 	writePersona(t, f.b.App, "other", "[js]")
@@ -69,6 +71,7 @@ func TestQAOverflowCapStopsALaterBeadInTheSamePass(t *testing.T) {
 }
 
 func TestQAOverflowExplicitOffMeterRuntimeIsUngated(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "", overflowPID, `["go","tier:standard"]`)
 	f.d.Runtime = "grok"
 
@@ -86,6 +89,7 @@ func TestQAOverflowExplicitOffMeterRuntimeIsUngated(t *testing.T) {
 }
 
 func TestQAOverflowMissingTargetSkipsWithoutClaim(t *testing.T) {
+	t.Parallel()
 	const target = "no-such-overflow-runtime"
 	f := overflowPass(t, "plan_guard_overflow: "+target+"\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
@@ -104,6 +108,7 @@ func TestQAOverflowMissingTargetSkipsWithoutClaim(t *testing.T) {
 }
 
 func TestQAOverflowUnreadableLedgerDisablesThePass(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 	// Opening a directory succeeds, but scanning it returns an I/O error.
@@ -126,6 +131,7 @@ func TestQAOverflowUnreadableLedgerDisablesThePass(t *testing.T) {
 }
 
 func TestQAOverflowTargetCannotBeTheGuardedRuntime(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: claude\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 
@@ -152,6 +158,7 @@ func TestQAOverflowTargetCannotBeTheGuardedRuntime(t *testing.T) {
 // checked the reading launches, warns, and leaves the file at zero for the
 // next pass to read as room again, forever (ranger-base-2y96).
 func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
+	t.Parallel()
 	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
 	f1 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
 	f2 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
@@ -207,6 +214,7 @@ func TestQAOverflowRefusesAReadableButUnwritableLedger(t *testing.T) {
 }
 
 func TestQAOverflowCorruptTargetLedgerLineFailsClosed(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n",
 		overflowPID, `["go","tier:standard"]`)
 	if err := os.MkdirAll(f.b.App.StateDir, 0o755); err != nil {
@@ -243,6 +251,7 @@ func TestQAOverflowCorruptTargetLedgerLineFailsClosed(t *testing.T) {
 }
 
 func TestQAOverflowCapReadIsSerializedWithLaunch(t *testing.T) {
+	t.Parallel()
 	const cfg = "plan_guard_overflow: grok\nplan_guard_overflow_cap: 1\n"
 	f1 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)
 	f2 := overflowPass(t, cfg, overflowPID, `["go","tier:standard"]`)

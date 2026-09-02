@@ -1,3 +1,12 @@
+// The tests in this file assert on flock ACQUISITION — who holds the lock,
+// and whether a released one reads as free — and they are SERIAL on purpose,
+// which is why none of them carries t.Parallel. Two of them side by side read
+// a released lock as still held, on lock files that are per test: 3-6 failures
+// in 60 at -parallel 8 over this file alone (ranger-base-9l77f, filed off
+// ranger-base-aupee, product cause not yet found). cmd/testparallel names them
+// so that re-running it cannot put t.Parallel back. The hundreds of tests that
+// merely TAKE the launcher lock on their way through a pass are unaffected.
+
 package posse
 
 // The launcher lock (ADR 0011 §1, rangerhq-tzdf). Real flock in a temp
@@ -149,6 +158,7 @@ func TestLaunchLockFreeAfterRelease(t *testing.T) {
 // lock file with no readable pid still serializes, it just cannot name a
 // number, and a number that names nobody is worse than none.
 func TestLaunchLockHolderUnknown(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	path := LaunchLockPath(b.App)
 	os.MkdirAll(filepath.Dir(path), 0o755)

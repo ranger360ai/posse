@@ -1015,6 +1015,7 @@ func TestCodexUpdateProbeAsksCodexOnlyWhenItHasTo(t *testing.T) {
 // naive read: a version is not its version LINE, and dotted numbers do not
 // order as strings.
 func TestVersionNumberAndCompare(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		line string
 		want string

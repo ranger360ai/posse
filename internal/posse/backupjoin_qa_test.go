@@ -74,6 +74,7 @@ func (p *backupParkTap) String() string {
 }
 
 func TestWatchWaitsForABackupTickInFlight(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()

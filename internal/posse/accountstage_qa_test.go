@@ -149,6 +149,7 @@ func TestQAPricesMatchesWhatTheDecoderProduces(t *testing.T) {
 // runtime whose dollars ARE counted loses it. Before ranger-base-0lg6 grok
 // was in the first group with the second group's meter.
 func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		runtime  string
 		degraded bool
@@ -229,6 +230,7 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 // spend: `posse cost` has the dollars, so the bead-count stand-in must not
 // be written. The mirror of TestUncountedCountsAnOverflowMove.
 func TestQAOverflowOntoACountedPoolIsNotDegradedSpend(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 

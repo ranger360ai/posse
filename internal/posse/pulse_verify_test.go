@@ -19,6 +19,7 @@ import (
 )
 
 func TestWatchSurvivesABadPulseInterval(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
@@ -75,6 +76,7 @@ func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 // it. Two live sessions with two different herdr statuses is also the only
 // arrangement in which pulseTarget's "first match by agent" can pick wrong.
 func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	// beads: must name a scratch dir — without it BeadsDirs answers [""] and
 	// pulseOnce below reads whatever directory the process started in, which

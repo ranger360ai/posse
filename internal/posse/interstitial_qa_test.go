@@ -209,6 +209,7 @@ func TestQAUnreadableCodexVersionIsUnknownAndRefusesNothing(t *testing.T) {
 // first, and TestQADangerousCodexInterstitialRefusesDispatchUntilSilenced is
 // the test that reds when it moves.
 func TestQATypedDispatchRefusesADeclaredDangerScreenAndLaunchesWithoutOne(t *testing.T) {
+	t.Parallel()
 	const screen = `interstitial_update:
   screen: "Update available!  1. Update now  2. Skip"
   where: ~/.mycli/version.json
@@ -456,6 +457,7 @@ interstitial_update:
 // that wrapped launch errors as sessionFailure would turn this into two
 // refusals per pass, and every other assertion in this file would stay green.
 func TestQADeclaredDangerScreenBenchesTheSlotNotTheBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {

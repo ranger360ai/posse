@@ -50,6 +50,7 @@ func refusedWithNoLeak(t *testing.T, what string, vars []EnvVar, err error) {
 // credential file. A dev+ino comparison against the sibling store would
 // certify this entry as contained; the link count is what refuses it.
 func TestEnvSetVarsRefusesAHardLinkToAFileOutsideBothStores(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	outside := filepath.Join(t.TempDir(), "cloud-credentials")
 	if err := os.WriteFile(outside, []byte("CLOUD_SECRET=sk-outside\n"), 0o600); err != nil {
@@ -68,6 +69,7 @@ func TestEnvSetVarsRefusesAHardLinkToAFileOutsideBothStores(t *testing.T) {
 // The same, one store over: secrets/ is posse's own store and a name of its
 // own outside it is the same escape.
 func TestSecretVarsRefusesAHardLinkToAFileOutsideBothStores(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	outside := filepath.Join(t.TempDir(), "id_ed25519")
 	if err := os.WriteFile(outside, []byte("KEY=sk-key\n"), 0o600); err != nil {
@@ -84,6 +86,7 @@ func TestSecretVarsRefusesAHardLinkToAFileOutsideBothStores(t *testing.T) {
 // and each spelling reaches storeContained on its own line. The bead's repro
 // only ever runs the first.
 func TestEnvSetVarsRefusesAHardLinkNamedWithoutTheExtension(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "bare")); err != nil {
 		t.Fatal(err)
@@ -96,6 +99,7 @@ func TestEnvSetVarsRefusesAHardLinkNamedWithoutTheExtension(t *testing.T) {
 // (TestEnvSetVarsAllowsASymlinkWithinTheStore pins that), so the count has
 // to be read through it or the two guards compose into a hole.
 func TestEnvSetVarsRefusesASymlinkToAHardLinkedFileInTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "inner.env")); err != nil {
 		t.Fatal(err)
@@ -111,6 +115,7 @@ func TestEnvSetVarsRefusesASymlinkToAHardLinkedFileInTheStore(t *testing.T) {
 // symlink, so underDir's resolution has already moved once before the count
 // is read.
 func TestEnvSetVarsRefusesAHardLinkUnderASymlinkedStoreDir(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	real := filepath.Join(t.TempDir(), "realenvs")
 	if err := os.MkdirAll(real, 0o700); err != nil {
@@ -140,6 +145,7 @@ func TestEnvSetVarsRefusesAHardLinkUnderASymlinkedStoreDir(t *testing.T) {
 // listed. Without this the four tests above pass over a fixture that could
 // not have leaked anything in the first place.
 func TestEnvStoresStillResolveACopiedCredential(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	b, err := os.ReadFile(filepath.Join(a.SecretsDir, "harness.env"))
 	if err != nil {

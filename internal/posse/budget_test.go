@@ -50,6 +50,7 @@ func spendStub(d *Dispatcher, usd float64, scans *int) {
 }
 
 func TestBudgetCapsConfig(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	var errs strings.Builder
@@ -164,6 +165,7 @@ func TestPassAndDayWindows(t *testing.T) {
 
 // Dormant is free: with no cap set nothing is scanned at all.
 func TestBudgetDormantNeverScans(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -186,6 +188,7 @@ func TestBudgetDormantNeverScans(t *testing.T) {
 
 // ≥80% of a window: a standard-by-default session runs at fast, strong holds.
 func TestBudgetStepDownAt80(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -210,6 +213,7 @@ func TestBudgetStepDownAt80(t *testing.T) {
 // The step-down yields to every rule that outranks a budget: a pinned tier,
 // the PID's floor, and the wall's inability to realize a gate at fast.
 func TestBudgetStepDownYields(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, persona, extra, bead, want string
 	}{
@@ -246,6 +250,7 @@ func TestBudgetStepDownYields(t *testing.T) {
 // --tier is the operator's own decision; a budget is not an argument
 // against it.
 func TestBudgetStepDownYieldsToTierFlag(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -266,6 +271,7 @@ func TestBudgetStepDownYieldsToTierFlag(t *testing.T) {
 // ≥100%: nothing launches, every skipped bead gets a line, and the reading
 // is taken once for the pass — not once per bead.
 func TestBudgetStopAt100(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	scans := 0
@@ -305,6 +311,7 @@ func TestBudgetStopAt100(t *testing.T) {
 // The cockpit's one-off dispatch is fleet work spending fleet money: the
 // same cap holds there.
 func TestBudgetStopHoldsLaunchBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	spendStub(d, 120, nil)

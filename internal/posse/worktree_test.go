@@ -119,12 +119,17 @@ func TestWorktreeRootHonoursConfig(t *testing.T) {
 // operator's live ~/.posse (ranger-base-gvrh — a stray tree was found
 // there). The root check runs before anything writes, so this test cannot
 // itself litter the operator's home when it fails.
-func TestNewTestBackendGetsATempHome(t *testing.T) {
-	real := os.Getenv("HOME")
+func TestTheTestBinaryGetsATempHome(t *testing.T) {
+	t.Parallel()
+	// The guarantee moved from newTestBackend to TestMain with ADR 0047 D1
+	// — one temp home for the binary rather than one per test — but it is
+	// the same guarantee and this is still the test that measures it, by
+	// running the call that made the stray tree.
+	real := operatorHome
 	b, _ := newTestBackend(t)
 	home := os.Getenv("HOME")
-	if home == real {
-		t.Fatalf("newTestBackend left $HOME at the operator's own %s — every write under it is real", real)
+	if real != "" && home == real {
+		t.Fatalf("the test binary left $HOME at the operator's own %s — every write under it is real", real)
 	}
 	// The write itself: this is the call that made the stray tree. It runs
 	// only after the $HOME check above, so a regression fails before it can

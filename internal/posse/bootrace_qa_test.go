@@ -77,6 +77,7 @@ func TestQASeenDemandsPositiveEvidenceNotTheAbsenceOfAFallback(t *testing.T) {
 // bootrace_test.go's case takes the default; this is the same case with
 // error-on-stderr armed (the rangerhq-gnd / rangerhq-625 class).
 func TestQAExplainErrorOnStderrStillPromptsOutLoud(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 300 * time.Millisecond
@@ -130,6 +131,7 @@ func TestQAExplainErrorOnStderrStillPromptsOutLoud(t *testing.T) {
 // error was still planted by a timer — that race was the ordering, this one
 // is only the margin.
 func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 4 * time.Second

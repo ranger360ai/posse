@@ -37,6 +37,7 @@ func cfg(t *testing.T, a *App, body string) {
 // engine carries no crew name (rangerhq-gk4k); nothing is refused until the
 // instance names someone.
 func TestCoordinatorAbsentKeepsOldRouting(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -62,6 +63,7 @@ func TestCoordinatorAbsentKeepsOldRouting(t *testing.T) {
 
 // §2: every path Route has, refused — and the why says what to do instead.
 func TestRouteRefusesCoordinatorOnEveryPath(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -128,6 +130,7 @@ func TestRouteRefusesCoordinatorOnEveryPath(t *testing.T) {
 // no readable PID is still refused — otherwise the assignee branch falls
 // through and label routing hands her bead to a lane.
 func TestRouteRefusesCoordinatorWithNoLoadablePID(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "developer", "[code]")
@@ -147,6 +150,7 @@ func TestRouteRefusesCoordinatorWithNoLoadablePID(t *testing.T) {
 // clone ran at a tier nobody chose — so the pass is run at every tier the
 // operator can force, and each must launch nothing.
 func TestDispatchNeverHiresCoordinatorAtAnyTier(t *testing.T) {
+	t.Parallel()
 	for _, tier := range []string{"", TierFast, TierStandard, TierStrong} {
 		name := tier
 		if name == "" {
@@ -187,6 +191,7 @@ func TestDispatchNeverHiresCoordinatorAtAnyTier(t *testing.T) {
 // --persona is a filter over Route's answer, not a way past it (§2: no flag
 // overrides — not --persona, not --tier, not --resume).
 func TestDispatchPersonaFlagCannotHireCoordinator(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -211,6 +216,7 @@ func TestDispatchPersonaFlagCannotHireCoordinator(t *testing.T) {
 // --resume does not re-prompt it. The Consequences say it is left alone —
 // today's interim behavior made permanent, until G9 names it on the board.
 func TestDispatchResumeLeavesCoordinatorHeldBeadAlone(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.Resume = true
@@ -238,6 +244,7 @@ func TestDispatchResumeLeavesCoordinatorHeldBeadAlone(t *testing.T) {
 // The cockpit's `d` is a launcher too: same Route, so the same refusal, as
 // an error the operator reads instead of a pass line.
 func TestLaunchBeadRefusesCoordinator(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")

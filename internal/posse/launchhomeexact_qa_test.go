@@ -48,6 +48,7 @@ func assertLaunchHomeExact(t *testing.T, log, want, path string) {
 // The crew path. A crew session runs rhq/bd tools too and `posse init` from
 // one is fenced by the same comparison, so the record rides here as well.
 func TestQALaunchHomeValueIsExactOnTheCrewPath(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	dir := t.TempDir()
 	mustCreate(t, b, NewSessionOpts{Name: "proj", Dir: dir, Cmd: "npm run dev"})
@@ -63,6 +64,7 @@ func TestQALaunchHomeValueIsExactOnTheCrewPath(t *testing.T) {
 // The persona path, which is the one the leak (ranger-base-x26u) was
 // measured on.
 func TestQALaunchHomeValueIsExactOnThePersonaPath(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	dir := t.TempDir()

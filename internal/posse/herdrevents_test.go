@@ -671,6 +671,7 @@ func TestHerdrHintsWithNoSocket(t *testing.T) {
 // leaves the lifecycle ones: degraded, never fatal, and never a subscription
 // this server would refuse.
 func TestAgentPanesDegradesToNone(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.WriteFile(filepath.Join(fake, "agents.json"),
 		[]byte(`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"},`+

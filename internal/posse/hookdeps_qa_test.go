@@ -731,6 +731,7 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 // reported where a substitution would RUN, silent where the shell would read a
 // literal.
 func TestShellCommandWordsReportsBackticksInCodeNotInProse(t *testing.T) {
+	t.Parallel()
 	const bt = "`"
 	for _, tc := range []struct {
 		name string
@@ -816,6 +817,7 @@ func TestShellCommandWordsReportsBackticksInCodeNotInProse(t *testing.T) {
 // "reported" row returned no report before the fix, and every "seen" row
 // returned no `awk`.
 func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
+	t.Parallel()
 	const seen, reported, loud = "seen", "reported", "loud"
 	for _, tc := range []struct {
 		name string

@@ -34,6 +34,7 @@ func codexPersona(t *testing.T, a *App, name, labels string) {
 // an untrusted runtime it is a hint that has been wrong three times out of
 // three.
 func TestUntrustedSettleWithoutCloseIsReviewedNotDone(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	codexPersona(t, b.App, "ranger", "[go]")
@@ -71,6 +72,7 @@ func TestUntrustedSettleWithoutCloseIsReviewedNotDone(t *testing.T) {
 // the next pass finds a holder to re-prompt rather than a free bead to
 // re-route (at-least-once + claim-as-fence).
 func TestUntrustedSettleWithoutCloseKeepsTheClaim(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	codexPersona(t, b.App, "ranger", "[go]")
@@ -92,6 +94,7 @@ func TestUntrustedSettleWithoutCloseKeepsTheClaim(t *testing.T) {
 // behind a live idle session until a human re-prompts it by hand — which is
 // what happened, three times in one evening.
 func TestResumeRePromptsAnUntrustedSettleWithoutClose(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	codexPersona(t, b.App, "ranger", "[go]")
@@ -141,6 +144,7 @@ func TestResumeRePromptsAnUntrustedSettleWithoutClose(t *testing.T) {
 // signal record-skip-rate exists to catch; a reassuring parenthesis beside
 // it would be the harness explaining away its own evidence.
 func TestTrustedSettleWithoutCloseGetsNoUntrustedClause(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]") // claude: record: trusted

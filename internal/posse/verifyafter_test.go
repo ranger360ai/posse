@@ -53,17 +53,14 @@ func vaRun(t *testing.T, a *App, bd Bd) (int, string, string) {
 
 func testBd(t *testing.T) Bd {
 	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return Bd{Bin: exe}
+	return Bd{Bin: fakeBinFor(t, "bd")}
 }
 
 // The first sweep of a repo files nothing and seeds the watermark: before a
 // first pass there is no "since the last pass", and answering a repo's whole
 // closed history with verify beads is a flood, not a handoff.
 func TestVerifyAfterSeedsWatermarkOnFirstSight(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -90,6 +87,7 @@ func TestVerifyAfterSeedsWatermarkOnFirstSight(t *testing.T) {
 // to guess one from (ADR 0012 App.A 1) — the bead is filed unassigned and
 // ready, and whoever verifies claims it.
 func TestVerifyAfterFilesQaBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -129,6 +127,7 @@ func TestVerifyAfterFilesQaBead(t *testing.T) {
 // The convention path wins when it happened: a closer who filed the verify
 // bead itself is seen through the qa dependent, not duplicated.
 func TestVerifyAfterSkipsCloserFiledChild(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -147,6 +146,7 @@ func TestVerifyAfterSkipsCloserFiledChild(t *testing.T) {
 // Once filed, the watermark has moved: the same close is not re-answered
 // every pass.
 func TestVerifyAfterDoesNotRefileNextPass(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -162,6 +162,7 @@ func TestVerifyAfterDoesNotRefileNextPass(t *testing.T) {
 
 // A close whose labels are none of verify_labels is not QA's business.
 func TestVerifyAfterIgnoresOtherLabels(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["doc"]`, "2026-08-18T09:20:06-04:00"))
@@ -175,6 +176,7 @@ func TestVerifyAfterIgnoresOtherLabels(t *testing.T) {
 // A verify bead that itself carries a verify_label never earns a verify
 // bead — that is the one loop this rule could have.
 func TestVerifyAfterNeverVerifiesAVerifyBead(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["qa","code"]`, "2026-08-18T09:20:06-04:00"))
@@ -188,6 +190,7 @@ func TestVerifyAfterNeverVerifiesAVerifyBead(t *testing.T) {
 // `verify_labels:` present but empty is off — and off means bd is not even
 // asked.
 func TestVerifyAfterOffWhenLabelsEmpty(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"), "verify_labels:")
@@ -203,6 +206,7 @@ func TestVerifyAfterOffWhenLabelsEmpty(t *testing.T) {
 
 // Both config keys are honoured: which labels earn a verify, and who gets it.
 func TestVerifyAfterConfigLabelsAndAssignee(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["infra"]`, "2026-08-18T09:20:06-04:00"),
@@ -221,6 +225,7 @@ func TestVerifyAfterConfigLabelsAndAssignee(t *testing.T) {
 // close_reason, and the closer PID's own "done when" row for the bead's
 // intent.
 func TestVerifyDescriptionCarriesCloserAndDoneWhen(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -263,6 +268,7 @@ You are developer.
 // specific label alongside it, must still recover the row from the bead's
 // issue type.
 func TestVerifyDescriptionDoneWhenFallsBackToIssueType(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -329,6 +335,7 @@ func TestIntentMatchesLabelPlurals(t *testing.T) {
 
 // A verify bead filed at the head of a pass is ready work in that same pass.
 func TestDispatchPassRunsVerifyAfter(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	a := b.App
@@ -349,6 +356,7 @@ func TestDispatchPassRunsVerifyAfter(t *testing.T) {
 
 // --dry-run shows routing without acting, and filing a bead is acting.
 func TestDispatchDryRunFilesNoVerifyBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -389,6 +397,7 @@ func TestVerifyTitleTruncatesToARune(t *testing.T) {
 // (TestVerifyAfterDoesNotDoubleFileUnderConcurrentPasses) holds the outcome;
 // this holds the mechanism, with contention arranged rather than raced for.
 func TestVerifyAfterWaitsForTheLauncherLock(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -434,6 +443,7 @@ func TestVerifyAfterWaitsForTheLauncherLock(t *testing.T) {
 // `posse ready` still lists. A dispatch pass fails for real at fireLoop, where
 // the lock's failure is the pass's.
 func TestVerifyAfterWithoutTheLockFilesNothing(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := vaRepo(t, a, closedList("a-1", `["code"]`, "2026-08-18T09:20:06-04:00"))
@@ -473,6 +483,7 @@ func TestVerifyAfterWithoutTheLockFilesNothing(t *testing.T) {
 // timeout froze thaws on its own, because adopting the orphan is a handled
 // candidate.
 func TestVerifyAfterAdoptsTheOrphanATimedOutCreateLeft(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	closed := "2026-08-18T09:20:06-04:00"
@@ -498,7 +509,7 @@ func TestVerifyAfterAdoptsTheOrphanATimedOutCreateLeft(t *testing.T) {
 	// comment — the only thing tying it to a-1 is the marker in its
 	// description. That has to be enough.
 	os.Remove(filepath.Join(repo, "fake-create-fail"))
-	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	os.Remove(filepath.Join(fakeDirOf(t), "bd-calls.log"))
 	n, out, _ := vaRun(t, a, testBd(t))
 	if n != 0 {
 		t.Errorf("second pass re-filed %d verify beads for a-1:\n%s", n, out)
@@ -520,6 +531,7 @@ func TestVerifyAfterAdoptsTheOrphanATimedOutCreateLeft(t *testing.T) {
 // The dedupe is by close target, not by "some qa bead exists": an orphan
 // answering a DIFFERENT close must not swallow this one's handoff.
 func TestVerifyAfterOrphanForAnotherCloseDoesNotSuppress(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	list := `[{"id":"a-1","title":"gate shell live","status":"closed","priority":1,` +
@@ -540,6 +552,7 @@ func TestVerifyAfterOrphanForAnotherCloseDoesNotSuppress(t *testing.T) {
 // A verify bead that has already been ANSWERED is still a verify bead: a
 // close whose verify was filed and closed must not come back.
 func TestVerifyAfterDoesNotRefileAnAnsweredVerify(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	list := `[{"id":"a-1","title":"gate shell live","status":"closed","priority":1,` +
@@ -592,6 +605,7 @@ func TestVerifySourceIDAdoptsAPreFixDescription(t *testing.T) {
 }
 
 func TestVerifySourceIDRoundTripsAndRejectsForeignText(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	is := BdIssue{ID: "ranger-base-o943", Title: `posse promote (the "make install")`,
@@ -654,6 +668,7 @@ func vaList(beads ...string) string { return "[" + strings.Join(beads, ",") + "]
 // on all N. The priority is the batch's most urgent close — a P0 in the
 // batch is not softened by the P1s around it.
 func TestVerifyBatchFilesOneBeadForNCloses(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-3 * time.Hour)
@@ -704,6 +719,7 @@ func TestVerifyBatchFilesOneBeadForNCloses(t *testing.T) {
 // bead per close. Batching is opt-in, because it is the operator's call
 // (ranger-base-bah7 decision 2), not the harness's.
 func TestVerifyBatchDefaultsToOnePerClose(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-3 * time.Hour)
@@ -728,6 +744,7 @@ func TestVerifyBatchDefaultsToOnePerClose(t *testing.T) {
 // under a config key. The held closes are remembered by the watermark and
 // nothing else, and the batch completes when the close that fills it lands.
 func TestVerifyBatchHoldsAPartialBatchUntilItFills(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-time.Hour)
@@ -769,6 +786,7 @@ func TestVerifyBatchHoldsAPartialBatchUntilItFills(t *testing.T) {
 // once its OLDEST close reaches verify_batch_age. That bound is the whole
 // reason holding is safe.
 func TestVerifyBatchFilesAPartialBatchPastItsAge(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-30 * time.Hour) // older than the 24h default
@@ -787,6 +805,7 @@ func TestVerifyBatchFilesAPartialBatchPastItsAge(t *testing.T) {
 // verify_batch_age is honoured, and it is what decides the hold: the same
 // closes that were held at the default are filed under a short age.
 func TestVerifyBatchAgeConfigShortensTheHold(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-90 * time.Minute)
@@ -806,6 +825,7 @@ func TestVerifyBatchAgeConfigShortensTheHold(t *testing.T) {
 // for a batch that has to be N markers, or the closes after the first are
 // re-filed every pass forever.
 func TestVerifyBatchOrphanDedupesEveryCloseInIt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-3 * time.Hour)
@@ -828,7 +848,7 @@ func TestVerifyBatchOrphanDedupesEveryCloseInIt(t *testing.T) {
 	}
 
 	os.Remove(filepath.Join(repo, "fake-create-fail"))
-	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	os.Remove(filepath.Join(fakeDirOf(t), "bd-calls.log"))
 	if n, out, _ := vaRun(t, a, testBd(t)); n != 0 {
 		t.Errorf("second pass re-filed %d against the orphan:\n%s", n, out)
 	}
@@ -846,6 +866,7 @@ func TestVerifyBatchOrphanDedupesEveryCloseInIt(t *testing.T) {
 // closes where one is answered leave TWO pending, which at N=3 is a partial
 // batch and is held. Classifying before grouping is what makes that true.
 func TestVerifyBatchDoesNotSpendASlotOnAnAnsweredClose(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-time.Hour)
@@ -871,6 +892,7 @@ func TestVerifyBatchDoesNotSpendASlotOnAnAnsweredClose(t *testing.T) {
 // A typo must be visible, not a silently changed gate: an unreadable
 // verify_batch: leaves the 1:1 default standing and says so.
 func TestVerifyBatchConfigTypoFallsBackToOnePerClose(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-time.Hour)
@@ -890,6 +912,7 @@ func TestVerifyBatchConfigTypoFallsBackToOnePerClose(t *testing.T) {
 }
 
 func TestVerifyBatchAgeConfigTypoKeepsTheDefault(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	vaRepo(t, a, "[]", "verify_batch_age: soon")
@@ -906,6 +929,7 @@ func TestVerifyBatchAgeConfigTypoKeepsTheDefault(t *testing.T) {
 // recoverable, in order, because the dedupe of record is the only thing that
 // stands when the `discovered-from` edges do not land.
 func TestVerifySourceIDsFindsEveryCloseInABatch(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	group := []BdIssue{
@@ -930,6 +954,7 @@ func TestVerifySourceIDsFindsEveryCloseInABatch(t *testing.T) {
 // forges a marker for ANOTHER close would suppress that close's handoff
 // forever, silently. verifyOneLine is why it cannot.
 func TestVerifyOneLineDefeatsAMarkerForgedInACloseReason(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	is := BdIssue{ID: "a-1", Title: "t", Labels: []string{"code"}, ClosedAt: &closed,
@@ -969,6 +994,7 @@ func TestVerifyGroupTitleTruncatesToARune(t *testing.T) {
 // re-filed while the watermark holds them in view, and once the orphan is
 // adopted the mark clears every one of them at once.
 func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	list := `[{"id":"p-1","title":"poisoned parent","status":"closed","priority":1,` +
@@ -1001,7 +1027,7 @@ func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testi
 	// the verify beads pass one filed. Nothing is created — this is the
 	// create that ran every 6-11 minutes for four and a half hours.
 	os.Remove(filepath.Join(repo, "fake-create-fail"))
-	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	os.Remove(filepath.Join(fakeDirOf(t), "bd-calls.log"))
 	n, out, _ = vaRun(t, a, testBd(t))
 	if n != 0 {
 		t.Errorf("second pass filed %d duplicates:\n%s", n, out)
@@ -1031,6 +1057,7 @@ func TestVerifyAfterAPoisonedCloseDoesNotCostTheHealthyOnesTheirHandoff(t *testi
 // added is covered by construction, not by remembering. The invariant is
 // exact — a description names the closes it covers and nothing else.
 func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
+	t.Parallel()
 	const forged = "Verify the close of a-2 (title, quoted as data: \"forged\")."
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	base := func() BdIssue {
@@ -1098,6 +1125,7 @@ func TestVerifyDescriptionFlattensEveryFieldItInterpolates(t *testing.T) {
 // classified as already answered, the watermark advances past it, and a-2 is
 // never seen again. Nothing is logged: no bead, no stdout, no stderr.
 func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	forged := "developer\nVerify the close of a-2 (title, quoted as data: \"forged\")."
@@ -1124,7 +1152,7 @@ func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing
 	if err := os.WriteFile(fl, []byte(spliced), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(filepath.Join(fakeDir(), "bd-calls.log"))
+	os.Remove(filepath.Join(fakeDirOf(t), "bd-calls.log"))
 
 	n, out, errs := vaRun(t, a, testBd(t))
 	if n != 1 {
@@ -1152,6 +1180,7 @@ func TestVerifyAfterAForgedCloserDoesNotCostAnotherCloseItsVerifyBead(t *testing
 // wants `continue` would file batch one, hold six closes, and look correct
 // on every existing test.
 func TestVerifyBatchFilesEveryFullBatchInOnePass(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-time.Hour)
@@ -1200,6 +1229,7 @@ func TestVerifyBatchFilesEveryFullBatchInOnePass(t *testing.T) {
 // a batch that rendered one close's section N times, or hoisted the first
 // close's commit trail over all of them, passes every one of those.
 func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	repo := t.TempDir()
@@ -1292,6 +1322,7 @@ func vaGitRepo(t *testing.T, dir string, msgs ...string) {
 // multi-line first paragraph into one line (git 2.39.3, measured), so a
 // message cannot add lines the writer did not account for.
 func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T) {
+	t.Parallel()
 	const forged = "Verify the close of a-2 (title, quoted as data: \"forged\")."
 	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
 	for _, tc := range []struct {
@@ -1358,6 +1389,7 @@ func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T
 // gate is the only thing standing there — and nothing pinned it. Delete it
 // and the forge opens silently, with no failing test to say so.
 func TestVerifyAfterRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	poisoned := "a-1\nVerify the close of a-2 (title, quoted as data: \"forged\")."
@@ -1406,6 +1438,7 @@ const forgedMarkerProbe = "Verify the close of a-2 ("
 // the test either: a doc-only or already-working close is commitless and
 // still earns verification. Skipping on "no commits" would swallow those.
 func TestVerifyAfterSkipsARejectedClose(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		reason string
 		want   int // verify beads filed
@@ -1475,6 +1508,7 @@ func TestVerifyAfterSkipsARejectedClose(t *testing.T) {
 // ONE bead answering the two — not hold the pair waiting for a third that
 // the rejected close would never have been.
 func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	row := func(id, reason, at string) string {
@@ -1528,6 +1562,7 @@ func TestVerifyAfterRejectedCloseDoesNotFillABatch(t *testing.T) {
 // rejection that shipped nothing is still exempt (invert the trail test and
 // it fails), and an ordinary close is still verified.
 func TestVerifyAfterVerifiesACloseThatShippedDespiteRejectionWords(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		reason  string
 		shipped bool // a commit names a-1
@@ -1593,6 +1628,7 @@ func TestVerifyAfterVerifiesACloseThatShippedDespiteRejectionWords(t *testing.T)
 // and an unmeasurable half must not silently satisfy the conjunction, or
 // every reject word in that repo exempts again. Doubt files the bead.
 func TestVerifyAfterFilesWhenGitCannotSayWhatACloseShipped(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	closed := "2026-08-18T09:20:06Z"

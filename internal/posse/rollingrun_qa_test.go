@@ -49,6 +49,7 @@ import (
 // production pile-up was hours old, and a test that waited out 30s of grace
 // would be pinning the clock instead of the call site.
 func TestQAReapSweepsAtEverySettleUnderARollingRun(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -98,6 +99,7 @@ func TestQAReapSweepsAtEverySettleUnderARollingRun(t *testing.T) {
 // (`seats.note` → `busy[slot] = true` in seatFor) → the second call still
 // believes the first call's reading → no launch → red.
 func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "hopper", "[rust]")
@@ -173,6 +175,7 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 // b-1 legitimately waits for a later pass, and the arm is what keeps the
 // Refill arm's launch from reading as something every Run always did.
 func TestQARefillOffersTheQueueToASeatThisRunNeverFired(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		refill  bool
@@ -242,6 +245,7 @@ func TestQARefillOffersTheQueueToASeatThisRunNeverFired(t *testing.T) {
 //
 // MUTATION: drop the LaunchCapLine call from Watch → red.
 func TestQAWatchNamesTheLaunchCapsDenomination(t *testing.T) {
+	t.Parallel()
 	if got := LaunchCapLine(6, time.Hour); !strings.Contains(got, "-n 6") ||
 		!strings.Contains(got, "per 1h0m0s EPOCH") || !strings.Contains(got, "not per pass") {
 		t.Errorf("the cap line must name the number AND the unit it is spent in, got:\n%s", got)

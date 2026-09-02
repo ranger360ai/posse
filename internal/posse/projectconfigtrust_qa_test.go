@@ -40,6 +40,7 @@ func projectConfigVerdict(t *testing.T, why string) string {
 }
 
 func TestQAProjectConfigTrustClassifiesHostileBodies(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -156,6 +157,7 @@ func TestQAProjectConfigTrustSymlinkedSettingsAreNotMissing(t *testing.T) {
 // top-level JSON object with neither claude key, which the keyed path calls
 // clean and the whole-file path calls present.
 func TestQACodexProjectConfigStaysWholeFileNotKeyed(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
@@ -188,6 +190,7 @@ func TestQACodexProjectConfigStaysWholeFileNotKeyed(t *testing.T) {
 // while the session was running refuses the refresh with the session still
 // alive, rather than killing it and discovering the refusal afterwards.
 func TestQAProjectConfigTrustIsRecheckedOnRelaunch(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	os.MkdirAll(b.App.AgentsDir, 0o755)

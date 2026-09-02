@@ -127,7 +127,11 @@ func DefaultWorktreeRoot() string {
 // error and refuses, rather than quietly putting a persona's only copy of
 // its work somewhere a reaper walks.
 func (a *App) WorktreeRoot() (string, error) {
-	root := ExpandTilde(a.CfgGet("worktrees", DefaultWorktreeRoot()))
+	def := a.WorktreeRootDefault
+	if def == "" {
+		def = DefaultWorktreeRoot()
+	}
+	root := ExpandTilde(a.CfgGet("worktrees", def))
 	if !filepath.IsAbs(root) {
 		return "", Die("worktrees: %s is not an absolute path", root)
 	}

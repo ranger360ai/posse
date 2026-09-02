@@ -21,6 +21,7 @@ import (
 // stamped a run record — a fresh pass and `--resume` must both park it,
 // and `--dry-run` must say the same line a real pass would.
 func TestDispatchParksOrphanedClaimUnderTheTypedRoute(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name string
 		set  func(*Dispatcher)
@@ -78,6 +79,7 @@ func TestDispatchParksOrphanedClaimUnderTheTypedRoute(t *testing.T) {
 // (`posse crew <name> --off`, or `posse prompt` it) to release; the
 // alternative is the twin ADR 0030 exists to prevent.
 func TestDispatchParksACrashedRunWhileAssigneesCrewSessionIsLive(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
@@ -114,6 +116,7 @@ func TestDispatchParksACrashedRunWhileAssigneesCrewSessionIsLive(t *testing.T) {
 // 0008 §2 already exists to prevent, and this decision moves that line by
 // one notch, not one section.
 func TestReadyBeadDispatchesDuringCrewChatUnderADR0030(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
@@ -142,6 +145,7 @@ func TestReadyBeadDispatchesDuringCrewChatUnderADR0030(t *testing.T) {
 // refuses with the same reason — the pass and the cockpit are the two
 // launchers ADR 0030 names, and neither creates anything.
 func TestLaunchBeadRefusesAnOrphanedClaimWhileAssigneesCrewSessionIsLive(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

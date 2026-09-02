@@ -40,6 +40,7 @@ func paneRunLines(t *testing.T, fake string) []string {
 }
 
 func TestPaneLineTypesWhatFitsVerbatim(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	cmd := "echo " + strings.Repeat("x", PaneLineMax-len("echo "))
 	if len(cmd) != PaneLineMax {
@@ -60,6 +61,7 @@ func TestPaneLineTypesWhatFitsVerbatim(t *testing.T) {
 // One byte past the cliff is the whole bug: 1023 ran 3/3 live and 1024 ran
 // 0/3, so the boundary is where the behaviour changes, not near it.
 func TestPaneLineSpillsTheFirstLineThatWouldBeLost(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	cmd := "echo " + strings.Repeat("x", PaneLineMax+1-len("echo "))
 	line, err := b.App.PaneLine("s", cmd)
@@ -96,6 +98,7 @@ func TestPaneLineSpillsTheFirstLineThatWouldBeLost(t *testing.T) {
 // used to need goes, because a rendering nothing runs is what misleads the
 // next person to open state/.
 func TestPaneLineRemovesASupersededScript(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	long := "echo " + strings.Repeat("x", PaneLineMax*2)
 	if _, err := b.App.PaneLine("s", long); err != nil {
@@ -132,6 +135,7 @@ func bigPersona(t *testing.T, b *HerdrBackend, name string) string {
 }
 
 func TestCreateSessionNeverTypesMoreThanAFreshPaneTakes(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	marker := bigPersona(t, b, "big")
 	if err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "big", Dir: t.TempDir()}); err != nil {
@@ -162,6 +166,7 @@ func TestCreateSessionNeverTypesMoreThanAFreshPaneTakes(t *testing.T) {
 // canonical mode is not the wall there — but a line long enough is lost on a
 // settled pane too, and one rule for both sites is one thing to keep true.
 func TestRelaunchAgentSpillsTheLineToo(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	bigPersona(t, b, "big")
 	if err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "big", Dir: t.TempDir()}); err != nil {
@@ -190,6 +195,7 @@ func TestRelaunchAgentSpillsTheLineToo(t *testing.T) {
 
 // The script dies with the session it launched, like the meta beside it.
 func TestKillSessionDropsTheSpilledLine(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	bigPersona(t, b, "big")
 	if err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "big", Dir: t.TempDir()}); err != nil {
@@ -213,6 +219,7 @@ func TestKillSessionDropsTheSpilledLine(t *testing.T) {
 // bytes when this was written, and measured 2026-09-01 they are 1867-2058
 // against the 1023 limit and every one of them spills (ranger-base-q8ejb).
 func TestOrdinaryPersonaLinesAreStillTypedWhole(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	if err := b.CreateSession(NewSessionOpts{Name: "s1", Agent: "ranger", Dir: t.TempDir()}); err != nil {

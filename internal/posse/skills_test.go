@@ -223,6 +223,7 @@ func TestSkillsPlaceholderRendering(t *testing.T) {
 // binding (claude by flag, codex/grok by the session cwd) or degrades the
 // launch, and the refusal names the skills and the runtime.
 func TestSkillsParity(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -361,6 +362,7 @@ func TestRenderAgentsSkills(t *testing.T) {
 // Acceptance: a PID with skills: on claude launches with --plugin-dir at a
 // tree whose skills/<name>/SKILL.md is the installed one; relaunch keeps it.
 func TestSkillsLaunchAndRelaunch(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -519,6 +521,7 @@ func TestCheckAgentSkillNeedsDescription(t *testing.T) {
 // the session dir, nothing about them typed on the line, and a crash
 // restart re-materializes them.
 func TestSkillsOnCodexAcceptance(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)

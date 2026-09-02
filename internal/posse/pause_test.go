@@ -212,6 +212,7 @@ func pauseRepo(t *testing.T, b *HerdrBackend, fake string) string {
 // The design's first predicted observable: `posse pause` then a hand-typed
 // `posse dispatch` launches zero sessions and names the pauser.
 func TestDispatchDeclinesThePassWhilePaused(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	pauseRepo(t, b, fake)
@@ -254,6 +255,7 @@ func TestDispatchDeclinesThePassWhilePaused(t *testing.T) {
 // reason: the one command someone runs to ask "what would happen if I
 // resumed" must not be the one that goes quiet.
 func TestDryRunSaysThePassWouldDeclineAndShowsRoutingAnyway(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -276,6 +278,7 @@ func TestDryRunSaysThePassWouldDeclineAndShowsRoutingAnyway(t *testing.T) {
 }
 
 func TestDispatchFiresAgainAfterResume(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	pauseRepo(t, b, fake)
@@ -295,6 +298,7 @@ func TestDispatchFiresAgainAfterResume(t *testing.T) {
 // The cockpit's `d` is a launcher too, and a stop the operator can walk
 // around by pressing a key is not a stop.
 func TestLaunchBeadRefusesWhilePaused(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := pauseRepo(t, b, fake)
@@ -320,6 +324,7 @@ func TestLaunchBeadRefusesWhilePaused(t *testing.T) {
 // load guard, whose skip is the loudest one a pass can take — and the file
 // stays a human's to write.
 func TestNoMechanismEverWritesThePauseFile(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	pauseRepo(t, b, fake)
@@ -354,6 +359,7 @@ func TestNoMechanismEverWritesThePauseFile(t *testing.T) {
 // neither reap nor file. The decline's own boundary is the last two checks:
 // the ready scan sits below it and must not run.
 func TestAPausedPassStillRunsTheEpilogue(t *testing.T) {
+	t.Parallel()
 	for _, paused := range []bool{false, true} {
 		name := "unpaused (the witness)"
 		if paused {
@@ -437,6 +443,7 @@ func TestAPausedPassStillLandsAClosedBeadsTree(t *testing.T) {
 // shop answering "loadavg 263" would be the surface crediting the machine
 // for a human's decision (rangerhq-a2g6's first decision, kept).
 func TestAPausedAndSaturatedBoxNamesTheHumanFirstAndStopsAtTheGuard(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

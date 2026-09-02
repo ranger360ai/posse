@@ -62,6 +62,7 @@ const orphanPark = "no session posse started"
 // a rig that CAN produce the park line (rig-must-be-shown-able-to-fail): if
 // this one ever stops parking, every "must not park" arm below is vacuous.
 func TestQANarrowControlStillParksTheOrphanedClaim(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`,
@@ -75,6 +76,7 @@ func TestQANarrowControlStillParksTheOrphanedClaim(t *testing.T) {
 // nothing about this bead; parking on it would stop a persona's whole queue
 // for a chat in an unrelated tree.
 func TestQAOrphanedClaimIgnoresACrewSessionInAnotherRepo(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`,
@@ -87,6 +89,7 @@ func TestQAOrphanedClaimIgnoresACrewSessionInAnotherRepo(t *testing.T) {
 // s.Crew. Crew marking is what makes a session "the operator's" (ADR 0008
 // §1); an unmarked fleet session is posse's own and is no reason to park.
 func TestQAOrphanedClaimIgnoresANonCrewSessionInTheSameRepo(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`,
@@ -99,6 +102,7 @@ func TestQAOrphanedClaimIgnoresANonCrewSessionInTheSameRepo(t *testing.T) {
 // s.Agent == persona. ADR 0030 asks whether THIS persona's assignee is at
 // the keyboard; another persona's conversation is not an answer to it.
 func TestQAOrphanedClaimIgnoresAnotherPersonasCrewSession(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`,
@@ -113,6 +117,7 @@ func TestQAOrphanedClaimIgnoresAnotherPersonasCrewSession(t *testing.T) {
 // the status test alone leaves the assignee test to refuse the gate and the
 // mutant lives. This bead is ready AND assigned to the persona.
 func TestQAOrphanedClaimDoesNotParkAReadyBeadAssignedToThePersona(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger"}]`,
 		`[{"id":"a-1","title":"t","status":"open","assignee":"ranger"}]`,
@@ -126,6 +131,7 @@ func TestQAOrphanedClaimDoesNotParkAReadyBeadAssignedToThePersona(t *testing.T) 
 // persona's orphaned claim, and their live conversation is no reason to
 // leave it standing.
 func TestQAOrphanedClaimDoesNotParkAClaimThisPersonaDoesNotHold(t *testing.T) {
+	t.Parallel()
 	out, n, _ := narrowFixture(t,
 		`[{"id":"a-1","title":"t","labels":["go"],"status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress"}]`,
@@ -140,6 +146,7 @@ func TestQAOrphanedClaimDoesNotParkAClaimThisPersonaDoesNotHold(t *testing.T) {
 // session is live has already been answered, and the crew session must not
 // get a second, contradicting vote.
 func TestQAOrphanedClaimNeverOverridesAnEvidencedHolder(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,

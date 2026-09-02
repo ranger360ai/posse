@@ -57,6 +57,7 @@ const qaAllotmentRefusal = "You've reached your Fable 5 limit. Run /usage-credit
 // runtime declarations: what changes across the arms is the DECLARATION, and
 // the pass must key on that and nothing else.
 func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		runtime  string
 		template bool // template-only yaml this test writes, not a built-in
@@ -151,6 +152,7 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 // retries), the other is a fact posse does not have. The line carries both,
 // in one parenthesis, and neither swallows the other.
 func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	runtimePersona(t, b.App, "ranger", "[go]", "codex")
@@ -203,6 +205,7 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 // A runtime WITH a reader gets no blindness clause on an ordinary settle: the
 // pass looked, the turn was answered, and the disagreement is the bead's.
 func TestQAReadableRuntimeSettleCarriesNoBlindnessClause(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -229,6 +232,7 @@ func TestQAReadableRuntimeSettleCarriesNoBlindnessClause(t *testing.T) {
 // turn was healthy") must not print byte-identical to the readable-and-
 // healthy arm above. Before this fix neither arm carried a clause.
 func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

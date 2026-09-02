@@ -162,6 +162,7 @@ func planDispatcher(t *testing.T, b *HerdrBackend, ps *planServer) (*Dispatcher,
 
 // Below both thresholds: the pass runs exactly as it does today.
 func TestPlanGuardBelowThresholdsRunsPass(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 42, 61)
 	d, errb := planDispatcher(t, b, ps)
@@ -196,6 +197,7 @@ func TestPlanGuardBelowThresholdsRunsPass(t *testing.T) {
 // Above the 5h threshold: the on-meter bead parks with the exact reason.
 // Zero dispatched still makes --watch read it as a quiet pass.
 func TestPlanGuardSkipsAbove5h(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 78, 40)
 	d, errb := planDispatcher(t, b, ps)
@@ -231,6 +233,7 @@ func TestPlanGuardSkipsAbove5h(t *testing.T) {
 // Above the 7d threshold with the 5h window fine: same skip, other window
 // named.
 func TestPlanGuardSkipsAbove7d(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 12, 88)
 	d, _ := planDispatcher(t, b, ps)
@@ -248,6 +251,7 @@ func TestPlanGuardSkipsAbove7d(t *testing.T) {
 
 // One threshold set, the other unset: only the set one gates.
 func TestPlanGuardOneWindowOnly(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 40, 99)
 	d, _ := planDispatcher(t, b, ps)
@@ -264,6 +268,7 @@ func TestPlanGuardOneWindowOnly(t *testing.T) {
 
 // Exactly at the threshold is not above it.
 func TestPlanGuardAtThresholdRuns(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 70, 0)
 	d, _ := planDispatcher(t, b, ps)
@@ -280,6 +285,7 @@ func TestPlanGuardAtThresholdRuns(t *testing.T) {
 
 // Guard off (no thresholds in config): not one request is made.
 func TestPlanGuardOffMakesNoRequest(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 99, 99) // would skip every pass if it were read
 	d, errb := planDispatcher(t, b, ps)
@@ -307,6 +313,7 @@ func TestPlanGuardOffMakesNoRequest(t *testing.T) {
 // The endpoint (or the keychain) is unreadable: fail open — the pass runs,
 // with one line on stderr, and nothing about it on the pass output.
 func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		mut   func(*planServer, *AnthropicPlanReader)
@@ -374,6 +381,7 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 // A threshold that is not a percent is a typo, not a guard: say so once and
 // treat that window as unset (rather than silently gating nothing).
 func TestPlanGuardBadThreshold(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 99, 10)
 	d, errb := planDispatcher(t, b, ps)

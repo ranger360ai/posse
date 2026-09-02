@@ -58,9 +58,13 @@ func qcScript(t *testing.T) string {
 // any box that has no such tree (CI, a fresh clone, another operator).
 func qcRunbook(t *testing.T) string {
 	t.Helper()
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("no home dir: %v", err)
+	// The OPERATOR's home, not the binary's: this reads a tree that lives
+	// outside the checkout, and after ADR 0047 D1 $HOME is a temp directory
+	// with nothing in it — which would turn this into a skip on every box
+	// rather than only on the ones with no instance tree.
+	home := operatorHome
+	if home == "" {
+		t.Skip("no home dir")
 	}
 	p := filepath.Join(home, "src", "ranger-base", "docs", "runbooks", "queue-cutover.md")
 	b, err := os.ReadFile(p)

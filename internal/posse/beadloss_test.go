@@ -86,6 +86,7 @@ func blSetLive(t *testing.T, repo string, ids ...string) {
 // so the finding has to carry the commit and the bead's own line, which is
 // all the provenance left anywhere (rangerhq-fuom).
 func TestLostBeadsNamesWhatGitCarriedAndBdLost(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := blRepo(t)
 	blCommit(t, repo, "three beads", blLine("q-1", "open"), blLine("q-2", "closed"), blLine("q-3", "open"))
@@ -115,6 +116,7 @@ func TestLostBeadsNamesWhatGitCarriedAndBdLost(t *testing.T) {
 // bd is the store of record, so a bead bd still resolves is not lost, however
 // the file behaved in between.
 func TestLostBeadsIgnoresWhatBdStillResolves(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := blRepo(t)
 	blCommit(t, repo, "two", blLine("q-1", "open"), blLine("q-2", "open"))
@@ -135,6 +137,7 @@ func TestLostBeadsIgnoresWhatBdStillResolves(t *testing.T) {
 // deletion owes; once it is written the check goes quiet about that id, so
 // the alarm stays about the *silent* ones.
 func TestRecordedDeletionSilencesTheCheck(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := blRepo(t)
 	blCommit(t, repo, "two", blLine("q-1", "open"), blLine("q-2", "open"))
@@ -187,6 +190,7 @@ func TestRecordedDeletionSilencesTheCheck(t *testing.T) {
 // an audit trail, and an audit trail that a later write can shorten is not
 // one.
 func TestRecordDeletionsAppends(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := blRepo(t)
 	now := time.Now()
@@ -211,6 +215,7 @@ func TestRecordDeletionsAppends(t *testing.T) {
 // repo at the head of a dispatch pass; a repo it cannot look into must not
 // stop the fleet or say so every pass.
 func TestLostBeadsQuietWithoutACensus(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	bare := t.TempDir()
 	blSetLive(t, bare)
@@ -232,6 +237,7 @@ func TestLostBeadsQuietWithoutACensus(t *testing.T) {
 // loss found in an afternoon and a loss found never — but a lost bead is
 // already lost, so it is a line on stderr and never a gate.
 func TestWarnLostBeadsNamesEachOnErrw(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := blRepo(t)
 	blCommit(t, repo, "two", blLine("q-1", "open"), blLine("q-2", "open"))
@@ -269,6 +275,7 @@ func blRedirect(t *testing.T, repo, target string) {
 // does track the jsonl, and the ledger has to land there too, because that
 // is where git can keep it.
 func TestLostBeadsFollowsTheBeadsRedirect(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	store := blRepo(t) // the instance repo: the database and the census
 	blCommit(t, store, "two", blLine("q-1", "open"), blLine("q-2", "open"))
@@ -321,6 +328,7 @@ func TestLostBeadsFollowsTheBeadsRedirect(t *testing.T) {
 // .beads, so the census must read the local one too — censusing a directory
 // bd is not using is the same blindness by a different route.
 func TestBeadsRedirectFormsAndFallback(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	store := blRepo(t)
 	blCommit(t, store, "two", blLine("q-1", "open"), blLine("q-2", "open"))
@@ -364,6 +372,7 @@ func TestBeadsRedirectFormsAndFallback(t *testing.T) {
 // commit" keeps exactly this case and drops the one where a commit-less line
 // rides alongside modern records and re-exempts the id.
 func TestACommitlessLedgerStillExempts(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := blRepo(t)
 	blCommit(t, repo, "two", blLine("q-1", "open"), blLine("q-2", "open"))

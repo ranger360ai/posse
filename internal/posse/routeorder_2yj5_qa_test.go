@@ -47,6 +47,7 @@ func routeCode(t *testing.T, d *Dispatcher) (string, string) {
 // the why — the line now says who else matched, which is the whole audit
 // this bead came out of.
 func TestQARouteOrderAbsentKeepsTodaysWinnerAndNamesTheRace(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "developer", "[code, feature]", "")
@@ -66,6 +67,7 @@ func TestQARouteOrderAbsentKeepsTodaysWinnerAndNamesTheRace(t *testing.T) {
 // One persona matching is the common case and must stay a short line: no
 // roster, because there was no race.
 func TestQARouteWhyStaysBareWhenOnlyOneMatches(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "hopper", "[code]", "")
@@ -80,6 +82,7 @@ func TestQARouteWhyStaysBareWhenOnlyOneMatches(t *testing.T) {
 // The fix, both directions: promote the working lane, or demote the
 // generic. Either edit is one line in one PID and no code change.
 func TestQARouteOrderPromotesAndDemotes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, devOrder, hopOrder string }{
 		{"promote the named lane", "", "10"},
 		{"demote the generic", "90", ""},
@@ -108,6 +111,7 @@ func TestQARouteOrderPromotesAndDemotes(t *testing.T) {
 // the old readdir accident, said out loud, so the next PID someone adds
 // cannot jump the queue by being named `aaa` without also saying so.
 func TestQARouteOrderTieBreaksOnPersonaName(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	// Written youngest-name-first: nothing about creation order may leak in.
@@ -127,6 +131,7 @@ func TestQARouteOrderTieBreaksOnPersonaName(t *testing.T) {
 // The roster is capped so a pass line stays a line — and the cap is never
 // silent: the count is the true count and the remainder is named.
 func TestQARouteWhyCapsTheRosterWithoutHidingTheCount(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	for _, n := range []string{"p1", "p2", "p3", "p4", "p5", "p6"} {
@@ -145,6 +150,7 @@ func TestQARouteWhyCapsTheRosterWithoutHidingTheCount(t *testing.T) {
 // not as the winner, and not in the count either: a roster that included
 // her would read as "she was considered".
 func TestQARouteRosterExcludesTheCoordinator(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "coordinator", "[code]", "1")
@@ -163,6 +169,7 @@ func TestQARouteRosterExcludesTheCoordinator(t *testing.T) {
 
 // An assignee is an explicit choice and route_order has no business in it.
 func TestQARouteOrderDoesNotTouchAnAssignedBead(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "developer", "[code]", "1")
@@ -177,6 +184,7 @@ func TestQARouteOrderDoesNotTouchAnAssignedBead(t *testing.T) {
 // A mistyped ordering hint must not take a lane off the board: it loads at
 // the default. It must not be silent either — `posse agent check` says so.
 func TestQARouteOrderMalformedTakesTheDefaultAndIsReported(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "developer", "[code]", "high")
@@ -211,6 +219,7 @@ func TestQARouteOrderMalformedTakesTheDefaultAndIsReported(t *testing.T) {
 // Negative values work — an instance that would rather promote below zero
 // than renumber its crew is not wrong, it is just using ints.
 func TestQARouteOrderAcceptsNegative(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeOrderedPersona(t, b.App, "developer", "[code]", "")

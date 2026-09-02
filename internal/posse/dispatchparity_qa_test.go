@@ -60,6 +60,7 @@ func parityPersona(t *testing.T, a *App, name, labels, runtime string) {
 // runtime leaves a work-prompt file and types nothing at the pane; a typed
 // runtime leaves no file and its prompt is a herdr `agent prompt` call.
 func TestQAParityDeliveryFollowsEachRuntimesDeclaration(t *testing.T) {
+	t.Parallel()
 	for _, rt := range parityRuntimes {
 		t.Run(rt.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)
@@ -137,6 +138,7 @@ func TestQAParityDeliveryFollowsEachRuntimesDeclaration(t *testing.T) {
 // own declaration, and "the same function" is the thing a parity table is
 // for saying out loud rather than assuming.
 func TestQAParityClaimIsTheFenceOnEveryArgvRuntime(t *testing.T) {
+	t.Parallel()
 	for _, rt := range parityRuntimes {
 		if !rt.argv {
 			continue // the typed path claims AFTER the session is promptable — the ADR's own order
@@ -182,6 +184,7 @@ func TestQAParityClaimIsTheFenceOnEveryArgvRuntime(t *testing.T) {
 // ranger-base-3j8 sterilise, which cost an evening's queue and was measured
 // on grok, the runtime whose arm nothing pinned.
 func TestQAParitySessionFailureSplitHoldsOnEveryRuntime(t *testing.T) {
+	t.Parallel()
 	for _, rt := range parityRuntimes {
 		t.Run(rt.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)
@@ -232,6 +235,7 @@ func TestQAParitySessionFailureSplitHoldsOnEveryRuntime(t *testing.T) {
 // construction — which is worth a pin, because "runtime-blind" is exactly
 // what the account stage was also assumed to be.
 func TestQAParitySettleOpenEscalationBoundsTheLoopOnEveryRuntime(t *testing.T) {
+	t.Parallel()
 	for _, rt := range parityRuntimes {
 		t.Run(rt.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)

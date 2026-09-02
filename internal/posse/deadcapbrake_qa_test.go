@@ -21,6 +21,7 @@ import (
 )
 
 func TestQADeadCapOnAPricedNonPoolRuntimeNamesTheWalletBrake(t *testing.T) {
+	t.Parallel()
 	f := uncountedPassOn(t, "claude", "uncounted_cap_claude: 1\n",
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
 		"ranger", "scout")

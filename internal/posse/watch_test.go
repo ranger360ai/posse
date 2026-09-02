@@ -60,6 +60,7 @@ func TestParseInterval(t *testing.T) {
 // window on pass 1 then failed a test about looping with a message about
 // counting. Nothing here asserts how long a pass takes.
 func TestWatchStopsOnContext(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	repo := t.TempDir()

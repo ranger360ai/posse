@@ -315,7 +315,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	// was busy — which is exactly when someone runs the full suite, the
 	// suite being its own load source. hermetic re-arms them; the check is
 	// here so that dropping it fails on any box, not only a loaded one.
-	b.App = hermetic(a)
+	b.App = hermetic(t, a)
 	if b.App.Load1 == nil || b.App.ModelLister == nil {
 		t.Fatal("the swapped-in App is not hermetic: these launches would read the operator's live box")
 	}

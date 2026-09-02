@@ -58,6 +58,7 @@ var qhsLifecycle = []string{
 const qhsPane = "pane.agent_status_changed"
 
 func TestHerdrSelectorsAreTheADRsLiterals(t *testing.T) {
+	t.Parallel()
 	if got := strings.Join(HerdrLifecycleSubscriptions, ","); got != strings.Join(qhsLifecycle, ",") {
 		t.Errorf("HerdrLifecycleSubscriptions = %v, want ADR 0016 §1's three: %v", HerdrLifecycleSubscriptions, qhsLifecycle)
 	}
@@ -71,6 +72,7 @@ func TestHerdrSelectorsAreTheADRsLiterals(t *testing.T) {
 // drop, reorder or rewrite an entry on its way to the wire without the
 // variable moving at all.
 func TestHerdrSubscribeRequestCarriesTheLiteralSelectors(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,6 +109,7 @@ func TestHerdrSubscribeRequestCarriesTheLiteralSelectors(t *testing.T) {
 // moves the code and leaves the page saying something else, the page is the
 // one an operator reads before believing what posse subscribes to.
 func TestHerdrSelectorsAreNamedByADR0016(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(qibRepoRoot(t), "docs", "adr", "0016-herdr-event-hints.md")
 	body, err := os.ReadFile(path)
 	if err != nil {

@@ -30,11 +30,7 @@ func reapRepo(t *testing.T, b *HerdrBackend, show string) string {
 	}
 	// The guard reads the store of record with the backend's own bd, which
 	// the fleet's NewHerdrBackend fills in; a test backend is built bare.
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	b.Bd = Bd{Bin: exe}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	return repo
 }
 

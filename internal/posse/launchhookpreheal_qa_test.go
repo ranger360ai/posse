@@ -49,6 +49,7 @@ func lhpFixture(t *testing.T, visibility string) (*HerdrBackend, string) {
 // toward disclosure, ranger-base-qxwd) is reported as a finding naming the
 // disagreement BEFORE the launch's own install call silently repairs it.
 func TestQALaunchReportsPreHealHookDriftBeforeSilentlyRepairingIt(t *testing.T) {
+	t.Parallel()
 	b, repo := lhpFixture(t, VisibilityPrivate)
 	a := b.App
 
@@ -92,6 +93,7 @@ func TestQALaunchReportsPreHealHookDriftBeforeSilentlyRepairingIt(t *testing.T) 
 // prints the pre-heal line would pass the positive pin above for the wrong
 // reason.
 func TestQALaunchIsQuietWhenTheWallAlreadyCarriesTheCurrentRender(t *testing.T) {
+	t.Parallel()
 	b, repo := lhpFixture(t, VisibilityPrivate)
 	a := b.App
 	if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {

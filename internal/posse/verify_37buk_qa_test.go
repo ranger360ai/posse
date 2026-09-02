@@ -167,6 +167,7 @@ func returnsWithin(t *testing.T, d time.Duration, f func()) bool {
 // two arms part company — the availability walk sees the persona working
 // another bead and refuses lane-busy — and that is the row here.
 func TestQALaunchBeadResumesAnAssignedHolderWithNoRunRecord(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "developer", "[code]")
 	repo := t.TempDir()

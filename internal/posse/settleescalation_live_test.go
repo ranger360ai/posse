@@ -43,6 +43,7 @@ import (
 )
 
 func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_BD") == "" {
 		t.Skip("set RHQ_LIVE_BD=1 (shells out to the real bd)")
 	}

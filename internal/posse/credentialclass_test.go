@@ -341,6 +341,7 @@ func TestBlindSkipOn403NeverSaysRefresh(t *testing.T) {
 // bead the surfaces went back to saying "blind" alone for the whole of it.
 // The sentence is still the cooldown's own; only the CLASS is shared.
 func TestPlanCacheCooldownKeepsTheRateLimitClass(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
 	b, _ := newTestBackend(t)
 	ps := newPlanServer(t, 12, 40)

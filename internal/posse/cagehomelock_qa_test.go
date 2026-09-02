@@ -117,7 +117,6 @@ func TestQASeedCageHomeManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
 // dispatch pass, which is the one shape dispatch's launcher lock does not
 // already serialize (the bead's own SCOPE OF EXPOSURE).
 func TestQASeedCageHomeChildSeeder(t *testing.T) {
-	t.Parallel()
 	home := os.Getenv("RHQ_QA_CAGEHOME_HOME")
 	if home == "" {
 		t.Skip("child of TestQASeedCageHomeHoldsAcrossProcesses")

@@ -20,6 +20,7 @@ import (
 // TestEveryEmbeddedExamplePIDIsInTheShippedTable is the pin the next change
 // to examples/agents trips. ranger-base-8zhr will change them.
 func TestEveryEmbeddedExamplePIDIsInTheShippedTable(t *testing.T) {
+	t.Parallel()
 	names := exampleAgentNames(posse.Seed)
 	if len(names) == 0 {
 		t.Fatal("the seed ships no example PIDs — this table has nothing to describe")
@@ -53,6 +54,7 @@ file as the operator's and keeps it (ranger-base-rgx0, ranger-base-8ehw).`,
 // seeded from. Skipped where there is no checkout to ask (a release tarball,
 // a vendored build) — the table is still the thing that ships.
 func TestShippedExampleTableCoversEveryVersionInGitHistory(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
 	}

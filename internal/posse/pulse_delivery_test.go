@@ -74,6 +74,7 @@ func deliveryDispatcher(t *testing.T, b *HerdrBackend, clock *time.Time) *Dispat
 }
 
 func TestPulsePromptsOnNewFingerprint(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pane := id + ":p1"
@@ -107,6 +108,7 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 }
 
 func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pane := id + ":p1"
@@ -131,6 +133,7 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 }
 
 func TestPulseRenagDoublesUpToMax(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pane := id + ":p1"
@@ -164,6 +167,7 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 }
 
 func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "working", false)
 	pane := id + ":p1"
@@ -199,6 +203,7 @@ func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 }
 
 func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	unpushedRepo(t, b)
 
@@ -225,6 +230,7 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 // crew mark doing it, unlike every other prompt path (personaActive,
 // crewHeld) which treats a crew session as if it did not exist.
 func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", true)
 	pane := id + ":p1"
@@ -252,6 +258,7 @@ func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 }
 
 func TestPulseClearedSetResetsRenagClock(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	pane := id + ":p1"
@@ -289,6 +296,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 // empty string, delivering a shop check into whatever session happened to
 // be agentless.
 func TestPulseWithNoPersonaDeliversToNobody(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "agentless"})
 	ws := fakeLoadWSFrom(t, fake)

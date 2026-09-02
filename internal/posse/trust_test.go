@@ -315,6 +315,7 @@ func TestSeedTrustOnlySeedsClaudeAndOnlyWhereItWasPointed(t *testing.T) {
 // restart through RelaunchAgent. Same shape as
 // TestEveryLaunchPathTypesTheMode, and for the same reason.
 func TestEveryLaunchPathSeedsDirectoryTrust(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
@@ -350,6 +351,7 @@ func TestEveryLaunchPathSeedsDirectoryTrust(t *testing.T) {
 // operator's real claude config. Pinned because the seam is invisible —
 // the field is empty in a struct literal and nothing else says so.
 func TestATestBackendSeedsNothing(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if b.ClaudeConfig != "" {
 		t.Errorf("a test backend must not name a claude config, got %q", b.ClaudeConfig)

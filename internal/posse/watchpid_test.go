@@ -115,6 +115,7 @@ func TestRemoveWatchPidKeepsAnotherLoopsRecord(t *testing.T) {
 
 // The loop stamps itself while it runs and clears the stamp when it ends.
 func TestWatchStampsAndClearsPidfile(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	var errs strings.Builder

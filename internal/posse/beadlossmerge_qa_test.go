@@ -42,6 +42,7 @@ func qblCommitAt(t *testing.T, repo, when, msg string, lines ...string) {
 // `rec.Commit == lb.Commit`) and this reds, alongside
 // TestLedgerRecordSurvivesAMergeOfTheDroppingCommit.
 func TestLedgerRecordSurvivesAMergeOfAMerge(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommitAt(t, repo, "2026-08-01T10:00:00", "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -82,6 +83,7 @@ func TestLedgerRecordSurvivesAMergeOfAMerge(t *testing.T) {
 // Mutation-checked: remove the re-addition guard (sameRemoval returning true
 // on ancestry alone) and this reds.
 func TestLedgerDoesNotExemptASecondLossThatArrivesThroughAMerge(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommitAt(t, repo, "2026-08-01T10:00:00", "two", qblLine("q-1", "open"), qblLine("q-2", "open"))

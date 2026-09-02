@@ -77,11 +77,7 @@ func govRepo(t *testing.T, b *HerdrBackend) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeBeadsDirs(b.App, []string{dir})
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("RHQ_BD_BIN", exe)
+	t.Setenv("RHQ_BD_BIN", fakeBinFor(t, "bd"))
 	return dir
 }
 

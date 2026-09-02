@@ -158,6 +158,7 @@ func TestCodexRendersAWritableRootThatDoesNotExistYet(t *testing.T) {
 // replaced by a symlink, so pin the launch line rendered over exactly that
 // shape.
 func TestCodexLaunchLineResolvesASymlinkedPersonasDir(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -209,6 +210,7 @@ func TestCodexLaunchLineResolvesASymlinkedPersonasDir(t *testing.T) {
 // really launches it: a session worktree (rangerhq-09o2) of a repo whose
 // .beads is an ADR 0012 D3-C redirect.
 func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t) // its own temp $HOME
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -311,6 +313,7 @@ func resolvedTypedLine(t *testing.T, ln string) string {
 // per launch — an assertion over either whole would have been green against
 // the bug it is here to catch.
 func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)

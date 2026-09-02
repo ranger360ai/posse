@@ -371,6 +371,7 @@ func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
 // command is inside it, and the host's gate prefix — whose shims exec host
 // paths and whose gate shell is the host's zsh — is not on it.
 func TestCagedLaunchTypesTheEngineLine(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.CagesDir(), 0o755)

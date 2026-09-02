@@ -115,6 +115,7 @@ var qmSurfaces = []qmSurface{
 // one day (rangerhq-74c6), and one skill cannot see an ordering or a
 // truncation bug.
 func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {

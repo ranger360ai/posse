@@ -35,7 +35,7 @@ func TestQAMergeBlockedDedupeIsPerBranchNotPerLabel(t *testing.T) {
 	if strings.Contains(out, "m-8 already filed") {
 		t.Errorf("another branch's merge-back bead is not this branch's handoff:\n%s", out)
 	}
-	if bd := bdCalls(t, fakeDir()); !strings.Contains(bd, "create merge-back blocked") {
+	if bd := bdCalls(t, fakeDirOf(t)); !strings.Contains(bd, "create merge-back blocked") {
 		t.Fatalf("this branch got no handoff at all:\n%s", bd)
 	}
 	// And what landed is about THIS branch, not the planted one.

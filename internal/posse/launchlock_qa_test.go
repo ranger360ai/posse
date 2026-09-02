@@ -77,7 +77,6 @@ func qaOneBeadRepo(t *testing.T, a *App) string {
 // The child half of TestLaunchLockHoldsAcrossProcesses: take the launcher
 // lock of the RHQ_HOME handed to it, say so, and hold until killed.
 func TestLaunchLockChildHolder(t *testing.T) {
-	t.Parallel()
 	home := os.Getenv("RHQ_QA_HOLD_HOME")
 	if home == "" {
 		t.Skip("child of TestLaunchLockHoldsAcrossProcesses")
@@ -174,6 +173,7 @@ func TestLaunchLockHoldsAcrossProcesses(t *testing.T) {
 // A launcher that cannot take the lock must not launch unserialized: the
 // lock's failure is the pass's failure, never a warning line it walks past.
 func TestLaunchLockFailureFailsThePass(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	qaOneBeadRepo(t, b.App)
@@ -253,6 +253,7 @@ func TestWatchReleasesLockBetweenPasses(t *testing.T) {
 // ADR 0011 §3 owns the fix (persisted `prompted:` in the meta, read by
 // PromptGrace across processes); repro on that bead.
 func TestTwoPassesDoNotDoubleClaimOneBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	qaOneBeadRepo(t, b.App)
@@ -302,6 +303,7 @@ func TestTwoPassesDoNotDoubleClaimOneBead(t *testing.T) {
 // rather than through Run on purpose — `posse ready` files by the same rule and
 // reaches the same code with no fire loop behind it.
 func TestVerifyAfterDoesNotDoubleFileUnderConcurrentPasses(t *testing.T) {
+	t.Parallel()
 	seed := closedList("c-0", `["code"]`, time.Now().Add(-time.Hour).Format(time.RFC3339))
 	fresh := closedList("c-1", `["code"]`, time.Now().Add(-time.Minute).Format(time.RFC3339))
 
@@ -346,6 +348,7 @@ func TestVerifyAfterDoesNotDoubleFileUnderConcurrentPasses(t *testing.T) {
 // yet — its guards have not run, so there is no reading for another launcher
 // to invalidate before it acts.
 func TestLaunchBeadLocksBeforeItsGuardsRead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	var out qaBuf

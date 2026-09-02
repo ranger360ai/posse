@@ -79,6 +79,7 @@ func writeVoidPID(t *testing.T, a *App, name, runtime, command string) {
 // gate no wall layer could realize; a persona that is not in the session at
 // all is not a weaker persona.
 func TestLaunchRefusesAGrokLineThatVoidsThePID(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 
@@ -119,6 +120,7 @@ func TestLaunchRefusesAGrokLineThatVoidsThePID(t *testing.T) {
 // arrives here first — and a crashed CLI would come back as a session with
 // the persona's name and none of its identity.
 func TestRelaunchRefusesALineThatVoidsThePID(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	b.Warn = &strings.Builder{}
 	agentPerLaunch(t, fake)

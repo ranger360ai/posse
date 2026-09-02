@@ -78,6 +78,7 @@ func headFiles(t *testing.T, repo string) string {
 // git afterwards, and the memory dir is clean — which before this bead it
 // never was, because nothing on any path committed it.
 func TestKillCommitsThePersonaMemoryNothingElseWould(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -117,6 +118,7 @@ func TestKillCommitsThePersonaMemoryNothingElseWould(t *testing.T) {
 // from the memory this commits, which is exactly why a path-limited commit
 // and not a repo-wide one.
 func TestKillNeverCommitsTheConstitutionBesideTheMemory(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -147,6 +149,7 @@ func TestKillNeverCommitsTheConstitutionBesideTheMemory(t *testing.T) {
 // an unrelated session's context detaches the write from the only actor that
 // could explain it, and is the shared-index shape ADR 0022 is about.
 func TestKillCommitsOnlyTheKilledSessionsPersona(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -171,6 +174,7 @@ func TestKillCommitsOnlyTheKilledSessionsPersona(t *testing.T) {
 // quoted by accident. The human who landed that batch grepped it first, and
 // that check is part of the mechanism or it is not a check at all.
 func TestKillHoldsMemoryThatLooksLikeACredential(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -220,6 +224,7 @@ func TestKillHoldsMemoryThatLooksLikeACredential(t *testing.T) {
 // that persona's every future commit forever on prose git has held for
 // weeks, which is this bead's own defect wearing a safety label.
 func TestTheCredentialScanReadsOnlyWhatTheCommitAdds(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -247,6 +252,7 @@ func TestTheCredentialScanReadsOnlyWhatTheCommitAdds(t *testing.T) {
 // seen has no HEAD side to diff against — so the scan reads it whole. Its
 // first line is line 1, which is what the refusal must say.
 func TestTheCredentialScanReadsWholeUntrackedFiles(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -272,6 +278,7 @@ func TestTheCredentialScanReadsWholeUntrackedFiles(t *testing.T) {
 // thousands of lines of exactly this, so a scan keyed on the WORDS would
 // hold every commit and rebuild the backlog it was added to prevent.
 func TestTheCredentialScanDoesNotFireOnProseAboutCredentials(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -303,6 +310,7 @@ func TestTheCredentialScanDoesNotFireOnProseAboutCredentials(t *testing.T) {
 // files: a persona pasting raw terminal capture into its own ORDERS.md is
 // one NUL byte from it, and from that commit on that file is never scanned.
 func TestKillHoldsATrackedFileTheScanCannotRead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -356,6 +364,7 @@ func TestKillHoldsATrackedFileTheScanCannotRead(t *testing.T) {
 // landing memory at every future kill until an operator intervened — which
 // is the backlog this whole feature exists to end, wearing a safety label.
 func TestRemovingABinaryMemoryFileDoesNotHoldTheCommit(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -395,6 +404,7 @@ func TestRemovingABinaryMemoryFileDoesNotHoldTheCommit(t *testing.T) {
 // off for the one file the scan exists for. Asking git (`--numstat`) rather
 // than reading the bytes here is what covers both routes with one arm.
 func TestKillHoldsAMemoryFileGitAttributesCallBinary(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -436,6 +446,7 @@ func TestKillHoldsAMemoryFileGitAttributesCallBinary(t *testing.T) {
 // Two-way on purpose. A test that only asserted the `.out` stayed out would
 // be just as green over a sweep that had quietly stopped taking anything.
 func TestTheSweepHonorsThePersonasOwnIgnore(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -508,6 +519,7 @@ func TestEnsureMemoryDirSeedsTheIgnoreOnceAndLeavesItAlone(t *testing.T) {
 // that gate every reap costs a real turn — the ~30-session sweeps this
 // instance does in a day included — for a session with nothing to say.
 func TestKillSpendsNoTurnOnAPersonaWithNothingToLand(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	memoryRepo(t, b)
@@ -526,6 +538,7 @@ func TestKillSpendsNoTurnOnAPersonaWithNothingToLand(t *testing.T) {
 // this session is ENDING, and that the persona must not try to commit its
 // own orders (in its own worktree it cannot; the launcher does it).
 func TestKillLandsThePlaneWhenThereIsMemoryToLand(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -571,6 +584,7 @@ func TestKillLandsThePlaneWhenThereIsMemoryToLand(t *testing.T) {
 // the loss this path exists to prevent. And it says so loudly, because a
 // kill that silently became a no-op is its own surprise.
 func TestKillRefusesWhileTheLandingTurnIsUnsettled(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
@@ -616,6 +630,7 @@ func TestKillRefusesWhileTheLandingTurnIsUnsettled(t *testing.T) {
 // require the operator to have made one a checkout. A kill there is exactly
 // the kill that shipped before this bead: no commit, no line, no error.
 func TestKillSaysNothingWhenTheHomeKeepsMemoryOutsideGit(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
@@ -672,8 +687,7 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	exe, _ := os.Executable()
-	b.Bd = Bd{Bin: exe}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	con := memoryRepo(t, b, "ranger")
 	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)

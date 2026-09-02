@@ -44,6 +44,7 @@ func raceRepo(t *testing.T, b *HerdrBackend, fake string) *Dispatcher {
 // first state herdr can actually see. Nothing is typed in between — the race
 // is lost by typing, not by waiting.
 func TestDispatchWaitsThroughHerdrsIdleGuess(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	os.WriteFile(filepath.Join(fake, "explain-fallback"), []byte("3"), 0o644)
@@ -70,6 +71,7 @@ func TestDispatchWaitsThroughHerdrsIdleGuess(t *testing.T) {
 // the screen is unrecognized, so nobody knows what the prompt would be typed
 // into. It fails loudly, and it says which pane and why.
 func TestDispatchRefusesAPaneHerdrOnlyGuessesIdleFor(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 300 * time.Millisecond
@@ -96,6 +98,7 @@ func TestDispatchRefusesAPaneHerdrOnlyGuessesIdleFor(t *testing.T) {
 // that refuses to launch because a diagnostic call failed is worse than the
 // race it guards, so the prompt goes out — out loud, naming the error.
 func TestDispatchPromptsOutLoudWhenExplainCannotBeRead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 300 * time.Millisecond
@@ -119,6 +122,7 @@ func TestDispatchPromptsOutLoudWhenExplainCannotBeRead(t *testing.T) {
 // wins — typing a work prompt into a dialog is the failure the gate exists to
 // prevent, not a launch worth saving.
 func TestDispatchTakesExplainOverTheWaitWhenTheyDisagree(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 300 * time.Millisecond

@@ -23,6 +23,7 @@ import (
 // and uncountedSkip only asked whether it is READABLE. Un-skipped unchanged
 // by the fix (ranger-base-ws09).
 func TestQAProbeUncountedUnwritableLedger(t *testing.T) {
+	t.Parallel()
 	const cfg = "uncounted_cap_codex: 1\n"
 	f1 := oneCodexBead(t, cfg)
 	f2 := oneCodexBead(t, cfg)
@@ -75,6 +76,7 @@ func qaProbeLedgerBytes(t *testing.T, path string) int {
 // probe's "2 under cap 1" is the ledger's writability and nothing else about
 // the rig.
 func TestQAProbeUncountedWritableLedgerControl(t *testing.T) {
+	t.Parallel()
 	const cfg = "uncounted_cap_codex: 1\n"
 	f1 := oneCodexBead(t, cfg)
 	f2 := oneCodexBead(t, cfg)

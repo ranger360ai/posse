@@ -13,10 +13,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
+
+// operatorHome is the $HOME this binary was started with, kept because
+// TestMain replaces it: the property ranger-base-gvrh bought — no test cuts
+// a worktree in the operator's live ~/.posse — is only checkable against
+// the home the check is about, and after D1 nothing else can name it.
+var operatorHome string
 
 func TestMain(m *testing.M) {
 	// It also doubles as the two binaries the container tier execs
@@ -64,7 +71,41 @@ func TestMain(m *testing.M) {
 	// (rangerhq-8sd). Step out from behind our own wall for the whole test
 	// binary; tests that want a shim on PATH render one and prepend it.
 	os.Setenv("PATH", PathOutsideGates(""))
-	os.Exit(m.Run())
+	// The three process-wide constants newTestBackend used to set per test
+	// (ADR 0047 D1, ranger-base-aupee). t.Setenv makes a test ineligible for
+	// t.Parallel, and these four calls in one helper held 1431 of this
+	// package's 1975 tests — 75% of its wall clock — out of any concurrency
+	// (docs/notes.d/ranger-base-i7fa.md §2). Three of them were the same
+	// value at all 728 call sites, so they belong here, once:
+	//
+	//   - HOME: one temp home for the whole binary. Nothing under it is
+	//     shared state a test can see — what IS shared, ~/.posse/worktrees,
+	//     is given back per test by hermetic's WorktreeRootDefault. The
+	//     point of the temp home is unchanged from ranger-base-gvrh: a test
+	//     reaching EnsureSessionTree must not cut a git worktree in the
+	//     operator's live ~/.posse.
+	//   - RHQ_FAKE_HERDR: the switch the CHILD reads at startup, above.
+	//     Never read by the parent, so per-test was always a constant.
+	//   - EnvPersona: hermetic against the operator fence (ADR 0031 §2) —
+	//     this backend defaults to an operator session, and a test process
+	//     running inside a real persona session otherwise inherits
+	//     RHQ_PERSONA from the ambient env. A test that means to drive init
+	//     as a persona sets it back.
+	//
+	// The fourth, RHQ_FAKE_DIR, is genuinely per test and is now told to
+	// the child through argv[0] instead — see fakeDir and fakeBinFor.
+	operatorHome = os.Getenv("HOME")
+	home, err := os.MkdirTemp("", "posse-testhome-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: temp HOME: %v\n", err)
+		os.Exit(1)
+	}
+	os.Setenv("HOME", home)
+	os.Setenv("RHQ_FAKE_HERDR", "1")
+	os.Setenv(EnvPersona, "")
+	code := m.Run()
+	os.RemoveAll(home)
+	os.Exit(code)
 }
 
 // ─── the fake bd ─────────────────────────────────────────────────────────────
@@ -755,7 +796,25 @@ type fakeWS struct {
 	AgentStatus string `json:"agent_status"`
 }
 
-func fakeDir() string { return os.Getenv("RHQ_FAKE_DIR") }
+// fakeDir is where the fake substrates keep their state. Read in the CHILD,
+// which finds it from its own argv[0]: the parent links this test binary
+// into the test's own directory and execs it through that link (fakeBinFor),
+// so the per-test value travels by path and not through a process-wide
+// environment variable that would make its setter serial (ADR 0047 D1).
+// $RHQ_FAKE_DIR still overrides, which is what the handful of tests that
+// deliberately redirect the fake's state — queuejsonl, createcpeh — use.
+//
+// A parent that wants the same directory asks fakeDirOf(t), not this.
+func fakeDir() string {
+	if d := os.Getenv("RHQ_FAKE_DIR"); d != "" {
+		return d
+	}
+	d, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		return filepath.Dir(os.Args[0])
+	}
+	return d
+}
 
 func fakeLoadWS() []fakeWS {
 	var ws []fakeWS
@@ -1392,29 +1451,59 @@ func fakeNextWSID() int {
 
 // ─── harness ─────────────────────────────────────────────────────────────────
 
-func newTestBackend(t *testing.T) (*HerdrBackend, string) {
+// fakeDirs is the per-test fake-substrate state directory, keyed on
+// t.Name(). It replaces the $RHQ_FAKE_DIR the parent used to read back out
+// of its own environment: nothing process-global, so the setter keeps
+// t.Parallel. A test that builds two backends gets the second one's
+// directory from fakeDirOf, which is what reading $RHQ_FAKE_DIR gave too.
+var fakeDirs sync.Map
+
+func setFakeDir(t *testing.T, dir string) {
 	t.Helper()
-	home := t.TempDir()
-	fake := t.TempDir()
-	// $HOME is the operator's real one unless a test says otherwise, and
-	// plenty of what this package reads hangs off it — ~/.claude, ~/.grok,
-	// ~/.codex, and DefaultWorktreeRoot's ~/.posse/worktrees. That last one
-	// is not a read: a test reaching EnsureSessionTree cut a real git
-	// worktree in the operator's live ~/.posse (ranger-base-gvrh). Every
-	// backend test gets a temp HOME, the way wtApp already does.
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("RHQ_FAKE_HERDR", "1")
-	t.Setenv("RHQ_FAKE_DIR", fake)
-	// Hermetic against the operator fence (ADR 0031 §2): this backend
-	// defaults to an operator session, and a test process running inside a
-	// real persona session otherwise inherits RHQ_PERSONA from the ambient
-	// env. A test that means to drive init as a persona sets it back.
-	t.Setenv(EnvPersona, "")
+	fakeDirs.Store(t.Name(), dir)
+	t.Cleanup(func() { fakeDirs.Delete(t.Name()) })
+}
+
+// fakeDirOf is this test's fake-substrate state directory — the one
+// newTestBackend made, or a fresh one for a test that drives a fake without
+// building a backend.
+func fakeDirOf(t *testing.T) string {
+	t.Helper()
+	if v, ok := fakeDirs.Load(t.Name()); ok {
+		return v.(string)
+	}
+	dir := t.TempDir()
+	setFakeDir(t, dir)
+	return dir
+}
+
+// fakeBinFor links this test binary into the test's own fake dir under name
+// and returns the link. Exec'd through it, the child's argv[0] is inside
+// that directory, which is how fakeDir finds per-test state with nothing
+// exported (ADR 0047 D1). The name is for the reader and for `ps`: TestMain
+// dispatches on the verb, not on argv[0].
+func fakeBinFor(t *testing.T, name string) string {
+	t.Helper()
+	bin := filepath.Join(fakeDirOf(t), name)
+	if _, err := os.Lstat(bin); err == nil {
+		return bin
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &HerdrBackend{App: hermetic(NewAppAt(home)), H: Herdr{Bin: exe}}
+	if err := os.Symlink(exe, bin); err != nil && !os.IsExist(err) {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func newTestBackend(t *testing.T) (*HerdrBackend, string) {
+	t.Helper()
+	home := t.TempDir()
+	fake := t.TempDir()
+	setFakeDir(t, fake)
+	b := &HerdrBackend{App: hermetic(t, NewAppAt(home)), H: Herdr{Bin: fakeBinFor(t, "herdr")}}
 	captureWarn(t, b)
 	return b, fake
 }
@@ -1437,16 +1526,29 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 //     whatever the suite's own machine is running. An empty table renders
 //     nothing, so a refusal in a test says only what the test set up; the
 //     tests that want culprits named supply rows.
+//   - WorktreeRootDefault: nil is ~/.posse/worktrees, ONE directory for the
+//     whole binary now that $HOME is per binary (TestMain). SessionTreePath
+//     is <root>/<repo basename>/<session>, every test repo is a t.TempDir
+//     whose first basename is 001, and three tests launch a session named
+//     `crew` — so one shared root is one worktree path for three different
+//     repos (ADR 0047 §1). Per test it is per path. It stays UNDER $HOME so
+//     WorktreeRoot's one placement rule still runs on it for real.
 //
 // It is a named function rather than four lines inside newTestBackend
 // because a test that builds its OWN App and swaps it behind the backend
 // silently drops every default installed here — which is what left the
 // promote/launch rehearsal reading the live loadavg (ranger-base-w4fb).
 // Adopt an App with this, and adding the next default covers both sites.
-func hermetic(a *App) *App {
+func hermetic(t *testing.T, a *App) *App {
+	t.Helper()
 	a.ModelLister = &ModelLister{}
 	a.Load1 = func() (float64, error) { return 0, nil }
 	a.TopCPU = func() ([]Proc, error) { return nil, nil }
+	// Under whatever $HOME is current: the binary's temp home for almost
+	// every test, and a test that set its own (wtqaHome, wtApp) gets one
+	// under that instead — either way the under-$HOME rule holds by
+	// construction rather than by waiver.
+	a.WorktreeRootDefault = filepath.Join(os.Getenv("HOME"), "worktrees", t.Name())
 	return a
 }
 
@@ -1642,6 +1744,7 @@ func mustCreate(t *testing.T, b *HerdrBackend, o NewSessionOpts) {
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 func TestHerdrCreateSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.EnvsDir, 0o700)
 	os.WriteFile(filepath.Join(b.App.EnvsDir, "test.env"), []byte("FOO=bar\n"), 0o600)
@@ -1735,6 +1838,7 @@ func TestHerdrSessionsForeignAndStale(t *testing.T) {
 }
 
 func TestHerdrKillAndFocus(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "victim"})
 
@@ -1759,6 +1863,7 @@ func TestHerdrKillAndFocus(t *testing.T) {
 }
 
 func TestHerdrAgentTarget(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "crew"})
 
@@ -1777,6 +1882,7 @@ func TestHerdrAgentTarget(t *testing.T) {
 }
 
 func TestHerdrPaneReadTail(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	// Full read trims the padded blank rows the terminal buffer carries.
 	text, err := b.H.PaneRead("w1:p1", 0)
@@ -1797,6 +1903,7 @@ func TestHerdrPaneReadTail(t *testing.T) {
 }
 
 func TestHerdrRunErrorEnvelope(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	err := b.H.FocusWorkspace("w404")
 	if err == nil || !strings.Contains(err.Error(), "workspace_not_found") {
@@ -1805,6 +1912,7 @@ func TestHerdrRunErrorEnvelope(t *testing.T) {
 }
 
 func TestPersonaLaunch(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	persona := "---\nname: ranger\ndescription: test\ncommand: claude --append-system-prompt \"$(cat {file})\" --add-dir {memory}\n---\nYou are ranger.\n"
@@ -1830,6 +1938,7 @@ func TestPersonaLaunch(t *testing.T) {
 }
 
 func TestPersonaToolEnv(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	persona := "---\nname: ranger\ndescription: test\ncommand: claude {allow} {deny}\n" +
@@ -1856,9 +1965,9 @@ func TestPersonaToolEnv(t *testing.T) {
 }
 
 func TestBdClaimClose(t *testing.T) {
+	t.Parallel()
 	_, fake := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	if resumed, err := bd.Claim("", "x-1", "ranger"); err != nil || resumed {
 		t.Fatalf("fresh claim: resumed=%v err=%v", resumed, err)
@@ -1878,9 +1987,9 @@ func TestBdClaimClose(t *testing.T) {
 }
 
 func TestReadyAll(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 
 	repo1, repo2 := t.TempDir(), t.TempDir()
 	os.WriteFile(filepath.Join(repo1, "fake-ready.json"),
@@ -1904,10 +2013,9 @@ func TestReadyAll(t *testing.T) {
 
 func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	t.Helper()
-	exe, _ := os.Executable()
 	var out strings.Builder
 	d := NewDispatcher(b.App, b, &out)
-	d.Bd = Bd{Bin: exe}
+	d.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	d.StartupWait = 2 * time.Second
 	d.StatusGrace = 50 * time.Millisecond
 	d.Poll = 10 * time.Millisecond
@@ -1932,6 +2040,7 @@ func writePersona(t *testing.T, a *App, name, labels string) {
 }
 
 func TestDispatchRun(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -1973,6 +2082,7 @@ func TestDispatchRun(t *testing.T) {
 }
 
 func TestDispatchResume(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -2016,6 +2126,7 @@ func TestDispatchResume(t *testing.T) {
 }
 
 func TestDispatchAwaitsIdleBeforePrompt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -2051,6 +2162,7 @@ func TestDispatchAwaitsIdleBeforePrompt(t *testing.T) {
 }
 
 func TestDispatchWaitNeverSettles(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -2077,6 +2189,7 @@ func TestDispatchWaitNeverSettles(t *testing.T) {
 }
 
 func TestLaunchBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -2128,6 +2241,7 @@ func TestLaunchBead(t *testing.T) {
 }
 
 func TestDispatchRouting(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -2153,6 +2267,7 @@ func TestDispatchRouting(t *testing.T) {
 }
 
 func TestDispatchDryRun(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -2213,6 +2328,7 @@ func saveWSTo(t *testing.T, dir string, ws []fakeWS) {
 // persona never receives config default_env implicitly — only its own
 // `envs:` plus explicit sets. Plain sessions keep the default.
 func TestPersonaSessionsSkipDefaultEnv(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.EnvsDir, 0o700)
 	os.WriteFile(filepath.Join(b.App.EnvsDir, "default.env"), []byte("DEFAULT_TOKEN=x\n"), 0o600)
@@ -2259,6 +2375,7 @@ func TestPersonaSessionsSkipDefaultEnv(t *testing.T) {
 // rangerhq-f2b: envs/ drifted to 755/644 in the wild; every read/launch
 // re-asserts 700/600 and names what it fixed (never contents).
 func TestTightenEnvPerms(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	os.MkdirAll(b.App.EnvsDir, 0o755)
 	f := filepath.Join(b.App.EnvsDir, "leaky.env")
@@ -2297,6 +2414,7 @@ func TestTightenEnvPerms(t *testing.T) {
 // meta (runtime:), and the emoji; --runtime overrides the PID; relaunch
 // re-renders for the same runtime.
 func TestPersonaLaunchRuntime(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "security.md"),

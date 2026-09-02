@@ -177,6 +177,7 @@ func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
 // content is refused on the way into a public-marked repo's db, commits
 // clean in a private-marked one, and an unmarked repo behaves as public.
 func TestBeadsVisibilityGuardHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

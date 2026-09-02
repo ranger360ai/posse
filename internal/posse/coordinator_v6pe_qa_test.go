@@ -40,6 +40,7 @@ func coordinatorLoadSpellings() []string {
 // Every spelling that actually loads the coordinator PID is refused on the
 // assignee path, with the ADR's why — not silently rerouted to a lane.
 func TestRouteRefusesEveryLoadAgentAcceptedCoordinatorSpelling(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -66,6 +67,7 @@ func TestRouteRefusesEveryLoadAgentAcceptedCoordinatorSpelling(t *testing.T) {
 }
 
 func TestDispatchNeverHiresCoordinatorByPathSpelling(t *testing.T) {
+	t.Parallel()
 	for _, spelling := range []string{"./coordinator", "coordinator/../coordinator", "/coordinator"} {
 		t.Run(spelling, func(t *testing.T) {
 			b, fake := newTestBackend(t)
@@ -99,6 +101,7 @@ func TestDispatchNeverHiresCoordinatorByPathSpelling(t *testing.T) {
 }
 
 func TestLaunchBeadRefusesCoordinatorPathSpelling(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -127,6 +130,7 @@ func TestLaunchBeadRefusesCoordinatorPathSpelling(t *testing.T) {
 
 // Live config names business-manager, not coordinator. Same identity rule.
 func TestRouteRefusesConfiguredCoordinatorNameVariants(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "business-manager")
@@ -150,6 +154,7 @@ func TestRouteRefusesConfiguredCoordinatorNameVariants(t *testing.T) {
 }
 
 func TestRouteRefusesCoordinatorDefaultPersonaPathSpelling(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -189,6 +194,7 @@ func TestCoordinatorKeyAndCanonAgentAgreeOnASCII(t *testing.T) {
 }
 
 func TestCoordinatorPrefixNameIsStillALane(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")

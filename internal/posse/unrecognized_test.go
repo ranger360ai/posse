@@ -197,6 +197,7 @@ func TestQAWhatHerdrSawOnARealFallbackCapture(t *testing.T) {
 
 // Typed path (awaitSettled): the loud refusal carries herdr's working.
 func TestPromptableFailureSaysWhatHerdrWasLookingAt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	d.StartupWait = 200 * time.Millisecond
@@ -220,6 +221,7 @@ func TestPromptableFailureSaysWhatHerdrWasLookingAt(t *testing.T) {
 // Argv path (awaitDelivered): same working, on the line that reports a
 // delivered prompt whose screen was never recognized.
 func TestArgvUnrecognizedScreenSaysWhatHerdrWasLookingAt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 150 * time.Millisecond
@@ -246,6 +248,7 @@ func TestArgvUnrecognizedScreenSaysWhatHerdrWasLookingAt(t *testing.T) {
 // A launch that FAILS for any other reason must not grow the block: the
 // working is only meaningful when nothing matched.
 func TestSeenScreenAddsNoDiagnosticBlock(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
 	os.WriteFile(filepath.Join(fake, "explain-rules"), []byte(fakeEvaluatedRules), 0o644)

@@ -73,6 +73,15 @@ type App struct {
 	// a process it did not start, and no unit pin may be able to reach the
 	// machine the suite is running on.
 	ReapOrphans func(targets []Proc) map[int]string
+	// WorktreeRootDefault is what WorktreeRoot resolves to when config says
+	// nothing. Empty = DefaultWorktreeRoot(), which is what every real App
+	// has and every real launch takes; config still wins over it and the
+	// under-$HOME rule still runs on the result (worktree.go). It is a
+	// field for the reason ModelLister and Load1 are fields — a default
+	// that otherwise names one process-wide directory, here
+	// ~/.posse/worktrees, which two concurrent tests cutting a session tree
+	// land in together (ADR 0047 D2). Nothing product-facing reads it.
+	WorktreeRootDefault string
 }
 
 var legacyHomeNotices sync.Map

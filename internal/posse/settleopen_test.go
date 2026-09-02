@@ -126,6 +126,7 @@ func TestSettleMarkersRoundTripAndRefuseForeignText(t *testing.T) {
 // one re-prompt cleared all three). It records the fact and escalates
 // nothing.
 func TestFirstSettleOpenRecordsAndDoesNotEscalate(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -155,6 +156,7 @@ func TestFirstSettleOpenRecordsAndDoesNotEscalate(t *testing.T) {
 // question bead for the operator, and the stuck bead blocked on it so
 // `bd ready` — which is what a pass selects from — stops offering it.
 func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -210,6 +212,7 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 // answers `bd ready` with the bead anyway — so this pins the absence, never
 // the refusal.
 func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -266,10 +269,10 @@ func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *tes
 // file asserts the refusal, and why Bd.Ready subtracts `bd blocked` instead
 // of trusting either store to have excluded it.
 func TestFakeBdRefusesTheDepAddCycleRealBdRefuses(t *testing.T) {
+	t.Parallel()
 	_, fake := newTestBackend(t)
 	_ = fake
-	exe, _ := os.Executable()
-	bd := Bd{Bin: exe}
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	repo := t.TempDir()
 
 	qid, err := bd.Create(repo, BdNew{Title: "q", Deps: []string{"discovered-from:a-1"}})
@@ -314,6 +317,7 @@ func TestFakeBdRefusesTheDepAddCycleRealBdRefuses(t *testing.T) {
 // create commits and then times out, so the id is lost while the bead is
 // not).
 func TestSettleEscalationIsOncePerBeadNotOncePerPass(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -338,6 +342,7 @@ func TestSettleEscalationIsOncePerBeadNotOncePerPass(t *testing.T) {
 // spinning. A later pass retries the edge instead of filing a second
 // question — and reads the graph back rather than trusting the exit code.
 func TestSettleEscalationRetriesTheMissingBlock(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -368,6 +373,7 @@ func TestSettleEscalationRetriesTheMissingBlock(t *testing.T) {
 // that out loud rather than reporting a stop it did not make. The read is
 // what decides: `bd dep add` exits 0 here and the graph still has no edge.
 func TestSettleBlockThatDidNotLandIsNamedOnStderr(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -388,6 +394,7 @@ func TestSettleBlockThatDidNotLandIsNamedOnStderr(t *testing.T) {
 // states, so a bead the operator reopened (or a persona blocked) starts its
 // own count rather than escalating on its first settle under the new one.
 func TestSettleOpenCountIsPerBeadStatus(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	repo := settleRepo(t)
@@ -413,6 +420,7 @@ func TestSettleOpenCountIsPerBeadStatus(t *testing.T) {
 // there would file question beads for a loop that is not running. --dry-run
 // acted on nothing and must leave no state a later pass counts.
 func TestSettleOpenWritesNothingWithoutResumeOrUnderDryRun(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name        string
 		resume, dry bool
@@ -443,6 +451,7 @@ func TestSettleOpenWritesNothingWithoutResumeOrUnderDryRun(t *testing.T) {
 // the open bead — is what made this urgent rather than untidy. It is the
 // first fact a human deciding whether to kill the session needs.
 func TestSettleEscalationNamesUncommittedWorkInTheTree(t *testing.T) {
+	t.Parallel()
 	// The session tree below is cut under $HOME (DefaultWorktreeRoot), which
 	// newTestBackend makes a temp one — without that it lands in the
 	// OPERATOR's live ~/.posse/worktrees (ranger-base-9hm, -gvrh).
@@ -483,6 +492,7 @@ func TestSettleEscalationNamesUncommittedWorkInTheTree(t *testing.T) {
 // rung. Without this the unit pins above are all about a function nothing
 // calls (ranger-base-71ki).
 func TestDispatchPassCountsASettleOpen(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, _ := settleDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

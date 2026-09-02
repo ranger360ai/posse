@@ -34,6 +34,7 @@ func qblTouch(t *testing.T, repo, when, msg, name, content string) {
 // new sha. Mutation-checked: revert sameRemoval to the ntsz-only ancestor
 // check and this reds.
 func TestLedgerRecordSurvivesARebaseOfTheDroppingCommit(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommitAt(t, repo, "2026-08-01T10:00:00", "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -68,6 +69,7 @@ func TestLedgerRecordSurvivesARebaseOfTheDroppingCommit(t *testing.T) {
 // same drop instead. Mutation-checked: revert sameRemoval to the ntsz-only
 // ancestor check and this reds.
 func TestLedgerRecordSurvivesASquashOfTheDroppingCommit(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommitAt(t, repo, "2026-08-01T10:00:00", "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -102,6 +104,7 @@ func TestLedgerRecordSurvivesASquashOfTheDroppingCommit(t *testing.T) {
 // back with different content before main drops it again, so the replayed
 // line does not read back identical and the id must still alarm.
 func TestARebaseShapedSecondLossWithDifferentContentStillAlarms(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommitAt(t, repo, "2026-08-01T10:00:00", "two", qblLine("q-1", "open"), qblLine("q-2", "open"))

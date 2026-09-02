@@ -27,6 +27,7 @@ import (
 )
 
 func TestQAPulseAddressesAgentExplainByPaneNotSessionLabel(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	name := "coordinator-work"
 	id := personaSession(t, b, fake, name, "coordinator", "idle", false)

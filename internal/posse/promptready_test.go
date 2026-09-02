@@ -40,6 +40,7 @@ func promptReadySession(t *testing.T, b *HerdrBackend, name, wait string) {
 // gate says so with nothing typed — the opposite of the incident, where the
 // text went in and the call returned success.
 func TestPromptGateRefusesAPaneHerdrOnlyGuessesAt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	promptReadySession(t, b, "fresh", "400ms")
 	// Guess forever: the CLI never draws a screen posse knows.
@@ -80,6 +81,7 @@ func TestPromptGateRefusesAPaneHerdrOnlyGuessesAt(t *testing.T) {
 // refused here would break every ordinary prompt, so this is what says the
 // test above measured the guess and not the mechanism.
 func TestPromptGatePassesAPaneHerdrHasSeen(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	promptReadySession(t, b, "live", "400ms")
 
@@ -101,6 +103,7 @@ func TestPromptGatePassesAPaneHerdrHasSeen(t *testing.T) {
 // text until the turn ended would be a behaviour nobody asked for: a
 // working pane herdr recognizes is a pane whose CLI has the keyboard.
 func TestPromptGateDoesNotWaitForIdle(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	promptReadySession(t, b, "busy", "400ms")
 	if err := os.WriteFile(filepath.Join(fake, "explain-state"), []byte("working"), 0o644); err != nil {
@@ -120,6 +123,7 @@ func TestPromptGateDoesNotWaitForIdle(t *testing.T) {
 // and herdr recognizes it. The prompt goes in, late and out loud — the
 // second `posse prompt` the operator had to make by hand on the incident.
 func TestPromptGateWaitsOutABootThenPrompts(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	promptReadySession(t, b, "booting", "5s")
 	if err := os.WriteFile(filepath.Join(fake, "explain-fallback"), []byte("2"), 0o644); err != nil {
@@ -144,6 +148,7 @@ func TestPromptGateWaitsOutABootThenPrompts(t *testing.T) {
 // measurement in progress. 30s of silence per hand prompt against an older
 // herdr would be a worse regression than the bug.
 func TestPromptGateProceedsWhenHerdrCannotExplain(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	promptReadySession(t, b, "opaque", "30s")
 	if err := os.WriteFile(filepath.Join(fake, "explain-error"),
@@ -170,6 +175,7 @@ func TestPromptGateProceedsWhenHerdrCannotExplain(t *testing.T) {
 // got (Runtime.Wait). Unknown falls back to the ordinary patience, never to
 // none: a session with no meta must not be gated to zero and refused.
 func TestPromptGateWaitIsTheSessionsRuntimePatience(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	promptReadySession(t, b, "declared", "400ms")
 

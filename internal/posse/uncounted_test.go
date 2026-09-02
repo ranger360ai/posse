@@ -93,6 +93,7 @@ func (f *uncountedFixture) seedUncounted(t *testing.T, es ...LedgerEntry) {
 // unlimited, not off — and the pass says out loud how many beads it sent to
 // a runtime nothing meters, naming the key that would brake it.
 func TestUncountedUnsetIsUnlimitedAndLoud(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "")
 
 	n, err := f.d.Run("", "", 0)
@@ -134,6 +135,7 @@ func TestUncountedUnsetIsUnlimitedAndLoud(t *testing.T) {
 // A counted runtime is silent: no account line, no ledger, nothing. The
 // degrade is a property of the missing adapter, not of dispatch.
 func TestUncountedCountedRuntimeSaysNothing(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d, errb := planDispatcher(t, b, nil)
 	writePersona(t, b.App, "ranger", "[go]") // no runtime: → claude, which is counted
@@ -162,6 +164,7 @@ func TestUncountedCountedRuntimeSaysNothing(t *testing.T) {
 // launches to that runtime, and the skip line names the numbers that stopped
 // it. Nothing is claimed and nothing is appended.
 func TestUncountedCapSkipsFurtherLaunches(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 2\n")
 	now := time.Now()
 	f.seedUncounted(t,
@@ -192,6 +195,7 @@ func TestUncountedCapSkipsFurtherLaunches(t *testing.T) {
 // one's. With room left the bead launches and the report carries both
 // numbers.
 func TestUncountedCapRolling7d(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 3\n")
 	now := time.Now()
 	f.seedUncounted(t,
@@ -229,6 +233,7 @@ func TestUncountedCapRolling7d(t *testing.T) {
 // second bead. Without this a --watch loop with a long gather could spend a
 // whole week's cap in one pass and only notice next pass.
 func TestUncountedCapBitesInsideOnePass(t *testing.T) {
+	t.Parallel()
 	f := uncountedPass(t, "uncounted_cap_codex: 1\n",
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
 		"ranger", "scout")
@@ -254,6 +259,7 @@ func TestUncountedCapBitesInsideOnePass(t *testing.T) {
 // already keep, because a cap that silently stopped capping looks exactly
 // like one nobody set.
 func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{"lots", "0", "-3"} {
 		t.Run(raw, func(t *testing.T) {
 			f := oneCodexBead(t, "uncounted_cap_codex: "+raw+"\n")
@@ -279,6 +285,7 @@ func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 // armed case's clothes. The same rule the overflow ledger and Dial E keep:
 // an unreadable ledger is not a licence to spend.
 func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.MkdirAll(f.b.App.UncountedLogPath(), 0o755); err != nil {
@@ -302,6 +309,7 @@ func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
 // one launch per pass forever and records none of them, so the appendability
 // is checked before the count is spent, not warned about after the launch.
 func TestUncountedCapUnwritableLedgerSkips(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
@@ -331,6 +339,7 @@ func TestUncountedCapUnwritableLedgerSkips(t *testing.T) {
 // reading "N uncounted_cap_codex: ledger unwritable" has to be sent to a
 // different fix than "unreadable" would send them to.
 func TestUncountedUnwritableSkipKindIsItsOwn(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
@@ -352,6 +361,7 @@ func TestUncountedUnwritableSkipKindIsItsOwn(t *testing.T) {
 // 7d count is short from now on, because that number is this pass's memory
 // and the file the next pass reads does not have it.
 func TestUncountedUnsetCapLaunchesAndNamesTheShortfall(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
@@ -384,6 +394,7 @@ func TestUncountedUnsetCapLaunchesAndNamesTheShortfall(t *testing.T) {
 // cap against a file that has just proved it cannot record the spending, and
 // the report carries the shortfall into the operator's reading.
 func TestUncountedFailedAppendArmsTheBrake(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
 	os.MkdirAll(f.b.App.StateDir, 0o755)
 	if err := os.WriteFile(f.b.App.UncountedLogPath(), nil, 0o444); err != nil {
@@ -418,6 +429,7 @@ func TestUncountedFailedAppendArmsTheBrake(t *testing.T) {
 // --dry-run acts on nothing: no ledger line, and the report says what the
 // pass WOULD have sent rather than what it did.
 func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
+	t.Parallel()
 	f := oneCodexBead(t, "")
 	f.d.DryRun = true
 
@@ -444,6 +456,7 @@ func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
 // onto grok lands on a COUNTED pool and this ledger correctly stays empty
 // (TestOverflowOntoACountedPoolIsNotUncountedSpend below).
 func TestUncountedCountsAnOverflowMove(t *testing.T) {
+	t.Parallel()
 	f := overflowPass(t, "plan_guard_overflow: codex\nplan_guard_overflow_cap: 5\n",
 		overflowPID, `["go","tier:standard"]`)
 
@@ -504,6 +517,7 @@ func uncountedPassOn(t *testing.T, runtime, cfg, ready string, personas ...strin
 // bead, and not once per seat — and it brakes nothing: two beads over two
 // seats both launch under a cap of 1, which is what "the key is dead" means.
 func TestCountedCapKeyIsNamedDeadOncePerPass(t *testing.T) {
+	t.Parallel()
 	f := uncountedPassOn(t, "grok", "uncounted_cap_grok: 1\n",
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
 		"ranger", "scout")
@@ -554,6 +568,7 @@ func TestCountedCapKeyIsNamedDeadOncePerPass(t *testing.T) {
 // pool guard wherever it is armed — an operator whose dead key was standing
 // in for a pool brake wants grok_guard_week:, not the wallet caps.
 func TestDeadCapKeyPointsAtTheArmedPoolGuard(t *testing.T) {
+	t.Parallel()
 	f := uncountedPassOn(t, "grok", "uncounted_cap_grok: 1\ngrok_guard_week: 70\n"+grokPoolCfg,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`, "ranger")
 
@@ -574,6 +589,7 @@ func TestDeadCapKeyPointsAtTheArmedPoolGuard(t *testing.T) {
 // there is no news, and a standing line per counted runtime per pass is the
 // noise the report above already refuses to make.
 func TestCountedRuntimeWithNoCapKeyIsSilent(t *testing.T) {
+	t.Parallel()
 	f := uncountedPassOn(t, "grok", "", `[{"id":"a-1","title":"t","labels":["go"]}]`, "ranger")
 
 	n, err := f.d.Run("", "", 0)
@@ -597,6 +613,7 @@ func TestCountedRuntimeWithNoCapKeyIsSilent(t *testing.T) {
 // codex KEEPS the column and keeps its cap. Its key brakes and is never
 // called dead.
 func TestUncountedRuntimeCapKeyIsNotCalledDead(t *testing.T) {
+	t.Parallel()
 	f := uncountedPass(t, "uncounted_cap_codex: 1\n",
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
 		"ranger", "scout")

@@ -255,7 +255,7 @@ func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
 	}
 	// The bead it filed is the persona's, carries the label that routes it
 	// back to a code lane, and hangs off the bead whose close exposed it.
-	bd, _ := os.ReadFile(filepath.Join(os.Getenv("RHQ_FAKE_DIR"), "bd-calls.log"))
+	bd, _ := os.ReadFile(filepath.Join(fakeDirOf(t), "bd-calls.log"))
 	// The argv is logged space-joined and the description is multi-line, so
 	// the call spans lines in the log; read from the create onwards.
 	i := strings.Index(string(bd), "create merge-back blocked")
@@ -295,7 +295,7 @@ func TestMergeBlockedBeadNamesWhatGitSaidWhenNothingConflicted(t *testing.T) {
 	if !strings.Contains(out, "did NOT reach main") {
 		t.Fatalf("the replay was refused and the pass did not report a blocked merge:\n%s", out)
 	}
-	bd := bdCalls(t, fakeDir())
+	bd := bdCalls(t, fakeDirOf(t))
 	i := strings.Index(bd, "create merge-back blocked")
 	if i < 0 {
 		t.Fatalf("no create call for the merge-back bead:\n%s", bd)
@@ -337,7 +337,7 @@ func TestMergeBlockedCreateThatCommittedTheIssueIsReportedFiledEdgeless(t *testi
 	}
 	// And the provenance the edge did not carry: in the description, and
 	// commented back onto the close it came out of.
-	bd := bdCalls(t, fakeDir())
+	bd := bdCalls(t, fakeDirOf(t))
 	if !strings.Contains(bd, discoveredFromMarkerPrefix+"a-1") {
 		t.Errorf("the filed bead's description does not name the close it came from:\n%s", bd)
 	}
@@ -366,7 +366,7 @@ func TestMergeBlockedCreateThatLandedNothingStillSaysSo(t *testing.T) {
 	// was attempted, and the store really holds no merge-back bead — an
 	// assertion of pure absence is otherwise satisfied by a pass that never
 	// got as far as filing.
-	if bd := bdCalls(t, fakeDir()); !strings.Contains(bd, "create merge-back blocked") {
+	if bd := bdCalls(t, fakeDirOf(t)); !strings.Contains(bd, "create merge-back blocked") {
 		t.Fatalf("the pass never tried to file the merge-back bead:\n%s", bd)
 	}
 	if b, err := os.ReadFile(filepath.Join(repo, "fake-list-labeled.json")); err == nil && strings.Contains(string(b), "merge-back blocked") {
@@ -395,7 +395,7 @@ func TestMergeBlockedDoesNotFileASecondBeadForTheSameBranch(t *testing.T) {
 	if !strings.Contains(out, "m-9 already filed for ranger") {
 		t.Errorf("the open merge-back bead was not recognised:\n%s", out)
 	}
-	if bd := bdCalls(t, fakeDir()); strings.Contains(bd, "create merge-back blocked") {
+	if bd := bdCalls(t, fakeDirOf(t)); strings.Contains(bd, "create merge-back blocked") {
 		t.Errorf("a second merge-back bead was filed:\n%s", bd)
 	}
 }
@@ -666,9 +666,8 @@ func TestWorkPromptNamesTheSessionTree(t *testing.T) {
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
-	exe, _ := os.Executable()
 
-	ctx := b.App.promptContext(Bd{Bin: exe}, is, "claude", "standard", "ranger-x-a-1", nil)
+	ctx := b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", "ranger-x-a-1", nil)
 	if ctx.Tree == nil {
 		t.Fatal("the prompt context did not resolve the session's tree")
 	}
@@ -685,7 +684,7 @@ func TestWorkPromptNamesTheSessionTree(t *testing.T) {
 	// A dir with no worktree says nothing about one, rather than promising a
 	// tree the launch will not make.
 	plain := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: t.TempDir()}
-	if strings.Contains(workPrompt(plain, b.App.promptContext(Bd{Bin: exe}, plain, "claude", "standard", "s", nil)), "your own worktree") {
+	if strings.Contains(workPrompt(plain, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, plain, "claude", "standard", "s", nil)), "your own worktree") {
 		t.Error("a session with no tree was told it had one")
 	}
 }
@@ -1010,8 +1009,7 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
 
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
-	exe, _ := os.Executable()
-	p := workPrompt(is, b.App.promptContext(Bd{Bin: exe}, is, "claude", "standard", session, nil))
+	p := workPrompt(is, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", session, nil))
 	i := strings.Index(p, "your own worktree")
 	if i < 0 {
 		t.Fatal("the session was not told about the tree it is working in")

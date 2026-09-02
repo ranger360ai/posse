@@ -55,6 +55,7 @@ func splashRepo(t *testing.T, b *HerdrBackend, fake, rule string) *Dispatcher {
 // keyboard. Answering a dialog on the operator's behalf is the failure this
 // code must not grow back into (rangerhq-4mzt).
 func TestDispatchAnswersNoBlockedScreen(t *testing.T) {
+	t.Parallel()
 	for _, rule := range []string{
 		"permission_scope_selector",
 		"live_blocked_form",

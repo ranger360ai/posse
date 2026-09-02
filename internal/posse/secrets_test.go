@@ -221,6 +221,7 @@ func TestSecretsAreInNoSessionsWritableSet(t *testing.T) {
 // invisible to a test that only calls TightenSecretPerms itself — the belt
 // existing and the belt being worn are two different claims.
 func TestEveryLaunchReAssertsBothCredentialStores(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	writeVoidPID(t, a, "dev", "claude", "")

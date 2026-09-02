@@ -28,6 +28,7 @@ var coordinatorSpellings = []string{
 
 // Route refuses on identity, not on spelling.
 func TestRouteRefusesCoordinatorNameVariants(t *testing.T) {
+	t.Parallel()
 	for _, spelling := range coordinatorSpellings {
 		t.Run(spelling, func(t *testing.T) {
 			b, _ := newTestBackend(t)
@@ -54,6 +55,7 @@ func TestRouteRefusesCoordinatorNameVariants(t *testing.T) {
 // The whole point, stated the way the operator can check it: the g9md repro
 // with one letter capitalized still creates no session and takes no claim.
 func TestDispatchNeverHiresCoordinatorByNameVariant(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -80,6 +82,7 @@ func TestDispatchNeverHiresCoordinatorByNameVariant(t *testing.T) {
 // default_persona shares the compare, so it shares the hole — and fails
 // quietly: no config-error line, just the coordinator as the fallback lane.
 func TestRouteRefusesCoordinatorAsDefaultPersonaVariant(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator")
@@ -98,6 +101,7 @@ func TestRouteRefusesCoordinatorAsDefaultPersonaVariant(t *testing.T) {
 // Capitalizing a name is how people write names — and it disables all three
 // refusals at once while the instance looks correctly configured.
 func TestCoordinatorKeySpellingDriftStillRefuses(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writeCoordinatorPID(t, b.App, "coordinator") // file: coordinator.md

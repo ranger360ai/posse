@@ -44,6 +44,7 @@ import (
 // SHELL/GROK_SHELL half only); swap RelaunchAgent's `WrapWithGates` arm for a
 // bare `cmd = inner`.
 func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -207,6 +208,7 @@ func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
 // same seat, same settle. Without it a Run that launched nothing for an
 // unrelated reason would read as the throttle working.
 func TestQAOneThrottleADeadWatchLoopRefillsNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		dead  bool
@@ -475,10 +477,7 @@ func TestQABothGrokBrakesOnOnePoolReadTheMeterThenTheCap(t *testing.T) {
 				"plan_guard_overflow: grok\nplan_guard_overflow_cap: 2\ngrok_guard_week: 70\n"+grokPoolCfg,
 				overflowPID, `["go","tier:standard"]`)
 			f.d.Now = func() time.Time { return grokPoolNow }
-			home, err := os.UserHomeDir()
-			if err != nil {
-				t.Fatal(err)
-			}
+			home := grokPoolHome(t)
 			at := grokPoolLastReset.Add(time.Hour)
 			grokPoolSession(t, home, "s1",
 				grokPoolUser(at, "Work beads issue ranger-base-esa0j (t)")+
@@ -593,10 +592,7 @@ func TestQATheOrderedBrakePairCannotBothFire(t *testing.T) {
 		overflowPID, `["go","tier:standard"]`)
 	d := f.d
 	d.Now = func() time.Time { return grokPoolNow }
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	home := grokPoolHome(t)
 	at := grokPoolLastReset.Add(time.Hour)
 	grokPoolSession(t, home, "s1",
 		grokPoolUser(at, "Work beads issue ranger-base-esa0j (t)")+

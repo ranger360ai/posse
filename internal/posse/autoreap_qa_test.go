@@ -31,8 +31,7 @@ func reapCandidateIn(t *testing.T, b *HerdrBackend, dir, name, bead, show string
 	// The kill's own reap guard (reapguard.go) reads the bead through the
 	// BACKEND's runner, not the dispatcher's; without this it shells out to
 	// the ambient bd and refuses every dirty tree it cannot ask about.
-	exe, _ := os.Executable()
-	b.Bd = Bd{Bin: exe}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	if show != "" {
 		os.WriteFile(filepath.Join(dir, "fake-show.json"), []byte(show), 0o644)
 	}
@@ -73,8 +72,7 @@ func TestAutoReapRetiresAWorktreeSessionsTreeAndBranch(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	exe, _ := os.Executable()
-	b.Bd = Bd{Bin: exe}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)
 
@@ -130,8 +128,7 @@ func TestAutoReapNamesAWorktreeItCouldNotRetire(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	exe, _ := os.Executable()
-	b.Bd = Bd{Bin: exe}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)
 
@@ -173,6 +170,7 @@ func TestAutoReapNamesAWorktreeItCouldNotRetire(t *testing.T) {
 // matrix, whose candidates all sit in bare temp dirs where `git status`
 // simply errors.
 func TestAutoReapWarnsBeforeSweepingADirtySharedCheckout(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	errs := dispatcherErr(t, d)
@@ -201,6 +199,7 @@ func TestAutoReapWarnsBeforeSweepingADirtySharedCheckout(t *testing.T) {
 // --dry-run acts on nothing, and warning about a tree nothing is going to
 // touch is a false alarm.
 func TestAutoReapDryRunDoesNotWarnAboutADirtyCheckout(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -224,6 +223,7 @@ func TestAutoReapDryRunDoesNotWarnAboutADirtyCheckout(t *testing.T) {
 // closed". The condition is live in this repo — an out-of-sync beads
 // database answers every `bd show` with an error until it is re-imported.
 func TestAutoReapKeepsASessionWhoseBeadBdCannotRead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -267,6 +267,7 @@ func ageLaunch(t *testing.T, b *HerdrBackend, session string, by time.Duration) 
 // have a bunch of dead shells"). Past the launch grace it is a dead shell,
 // and the sweep now claims it.
 func TestAutoReapSweepsASessionWithNoAgentLeftInIt(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -292,6 +293,7 @@ func TestAutoReapSweepsASessionWithNoAgentLeftInIt(t *testing.T) {
 // launch (rangerhq-vk2, and RelaunchAgent's own refusal). A session launched
 // moments ago is not a dead shell however its bead reads.
 func TestAutoReapKeepsASessionWhoseAgentMayStillBeStarting(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -313,6 +315,7 @@ func TestAutoReapKeepsASessionWhoseAgentMayStillBeStarting(t *testing.T) {
 // `blocked` is the one that would hurt: it is a persona WAITING on
 // something, and it sits in the fire loop's own settled triad.
 func TestAutoReapKeepsABlockedSessionOverAClosedBead(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -332,6 +335,7 @@ func TestAutoReapKeepsABlockedSessionOverAClosedBead(t *testing.T) {
 // session, and the reasons to skip one are per-session. `a-1` sorts first
 // and is the one bd cannot answer for.
 func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -391,6 +395,7 @@ func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
 // nothing has changed, and that is what this pins — the fixture is a
 // freshly-created session and stays one deliberately.
 func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -421,6 +426,7 @@ func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) 
 // nothing. The persona's reusable slot legitimately carries no pointer until
 // a bead resumes into it, and a crew session is not MISSING one.
 func TestListMarksAPerBeadSessionTheSweepCannotReap(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	unpointed := filepath.Join(t.TempDir(), "alpha")
@@ -476,6 +482,7 @@ func TestListMarksAPerBeadSessionTheSweepCannotReap(t *testing.T) {
 // way to hand one to dispatch, and dispatch's own NoteBead stamps the
 // pointer the moment it resumes a bead into it.
 func TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

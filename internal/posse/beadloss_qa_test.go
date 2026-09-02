@@ -92,6 +92,7 @@ func qblLost(t *testing.T, repo string) []LostBead {
 // ids already recorded here — restore one and lose it again and the alarm
 // that exists to catch exactly this never rings (rangerhq-6he5).
 func TestLedgerDoesNotExemptALaterLoss(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -128,6 +129,7 @@ func TestLedgerDoesNotExemptALaterLoss(t *testing.T) {
 // once — taking one side wholesale is how a bead leaves in a merge commit
 // (rangerhq-boco).
 func TestCensusSeesABeadDroppedByAMergeCommit(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "base", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -155,6 +157,7 @@ func TestCensusSeesABeadDroppedByAMergeCommit(t *testing.T) {
 // today (the longest line this repo ever committed is ~27KB) but it is a
 // silent path inside the alarm (rangerhq-boco).
 func TestCensusDoesNotTruncateSilentlyOnAnOversizedLine(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	huge := `{"id":"q-big","title":"` + strings.Repeat("x", 9*1024*1024) + `","status":"open"}`
@@ -184,6 +187,7 @@ func TestCensusDoesNotTruncateSilentlyOnAnOversizedLine(t *testing.T) {
 // the three properties the block claims: it runs, it runs under --dry-run
 // (where verify-after deliberately does not), and it does not gate the pass.
 func TestDispatchPassRingsTheBeadLossAlarmUnderDryRun(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -268,6 +272,7 @@ func qblRedirect(t *testing.T, repo, target string) {
 // owned, that one is not" — which a reader that collapses the file to one
 // answer per id can only do while the newest answer happens to be last.
 func TestLedgerOwnsEachLossNotTheID(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -314,6 +319,7 @@ func TestLedgerOwnsEachLossNotTheID(t *testing.T) {
 // information from an audit trail; it must not turn an owned deletion into a
 // finding (rangerhq-fknq).
 func TestLedgerLineOrderDoesNotDecideTheVerdict(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -347,6 +353,7 @@ func TestLedgerLineOrderDoesNotDecideTheVerdict(t *testing.T) {
 // of modern ones, and a real unaccounted loss is silent again. That is 6he5
 // itself, reached through the file its fix already writes (rangerhq-fknq).
 func TestACommitlessRecordDoesNotReExemptTheID(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -390,6 +397,7 @@ func TestACommitlessRecordDoesNotReExemptTheID(t *testing.T) {
 // repo — the D3-C shape is production (rangerhq-92bv), so pin the whole cycle
 // through the hop, not just the first silence.
 func TestLedgerOwnsALaterLossThroughARedirect(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	store := qblRepo(t) // the instance repo: database, census and ledger
 	work := qblRepo(t)  // the `beads:` entry: a redirect and nothing else
@@ -423,6 +431,7 @@ func TestLedgerOwnsALaterLossThroughARedirect(t *testing.T) {
 // Dispatcher.Run walks dir/.beads itself. This is the cut-over shape:
 // beads: names a working copy whose .beads holds only a redirect.
 func TestDispatchPassRingsBeadLossThroughRedirect(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	d.DryRun = true
@@ -461,6 +470,7 @@ func TestDispatchPassRingsBeadLossThroughRedirect(t *testing.T) {
 // its repo root still has a cwd-relative pathspec. The unit tests all put
 // .beads at the root; this is the case that justified the cwd choice.
 func TestLostBeadsFollowsRedirectIntoNestedBeadsDir(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	store := qblRepo(t)
 	nested := filepath.Join(store, "extra", beadsDirName)
@@ -558,6 +568,7 @@ func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
 // mechanism may never do. Ancestry is what makes the ledger's record a claim
 // about THIS history (ranger-base-ntsz).
 func TestALedgerRecordOffThisHistoryOwnsNothing(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))
@@ -582,6 +593,7 @@ func TestALedgerRecordOffThisHistoryOwnsNothing(t *testing.T) {
 }
 
 func TestLedgerRecordSurvivesAMergeOfTheDroppingCommit(t *testing.T) {
+	t.Parallel()
 	newTestBackend(t)
 	repo := qblRepo(t)
 	qblCommit(t, repo, "two", qblLine("q-1", "open"), qblLine("q-2", "open"))

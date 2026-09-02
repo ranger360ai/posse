@@ -41,6 +41,7 @@ func uncountedRuntime(t *testing.T, a *App) string {
 }
 
 func TestQACountUncountedAsksTheAdapterNotTheName(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	none := uncountedRuntime(t, b.App)
@@ -105,6 +106,7 @@ func TestQACountUncountedAsksTheAdapterNotTheName(t *testing.T) {
 // a named runtime would separate them, and nothing in the real backend
 // produces one.
 func TestQACountUncountedSkipsForeignSessions(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
 	none := uncountedRuntime(t, b.App)
