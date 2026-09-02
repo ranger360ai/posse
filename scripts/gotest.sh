@@ -236,6 +236,12 @@ self_test() {
 	# The rig has to be shown able to FAIL before either arm is believed, so
 	# every arm below has a control that must come out the other way.
 	local rc=0 pkg
+	# Read back through helpers that cannot abort the run: an arm that finds
+	# NO cached binary has to print its own FAIL, or a mutant that guts run()
+	# entirely takes the whole self-test down silently and reads as a
+	# survivor (it did, the first time this was mutation-checked).
+	cachedinode() { find "${SELFTEST_TMP}/cache" -name '*.test' -exec stat -f '%i' {} \; 2>/dev/null | head -1 || true; }
+	cachedcount() { find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null | wc -l | tr -d ' '; }
 	SELFTEST_TMP=$(mktemp -d)
 	trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
 	local tmp=$SELFTEST_TMP
@@ -256,23 +262,25 @@ self_test() {
 		func TestAlpha(t *testing.T) {}
 	EOF
 
-	say() { printf '  %-46s %s\n' "$1" "$2"; }
-	fail() { say "$1" "FAIL: $2"; rc=1; }
+	# House form, the same one scripts/test-times.sh prints and the same one
+	# the QA pin requires by arm name: `ok    <arm>` / `FAIL  <arm>: <why>`.
+	say() { printf 'ok    %s\n' "$1"; }
+	fail() { printf 'FAIL  %s: %s\n' "$1" "$2"; rc=1; }
 
 	# ARM 1: two runs of an unchanged package reuse ONE inode. This is the
 	# property the whole script exists for.
 	local i1 i2 out
 	out=$( cd "$pkg" && "$SELF" . -run TestAlpha 2>&1 ) || { echo "$out"; fail "arm1 first run" "run failed"; }
-	i1=$(find "$tmp/cache" -name '*.test' -exec stat -f '%i' {} \; | head -1)
+	i1=$(cachedinode)
 	out=$( cd "$pkg" && "$SELF" . -run TestAlpha 2>&1 ) || { echo "$out"; fail "arm1 second run" "run failed"; }
-	i2=$(find "$tmp/cache" -name '*.test' -exec stat -f '%i' {} \; | head -1)
+	i2=$(cachedinode)
 	if [ -n "$i1" ] && [ "$i1" = "$i2" ]; then
-		say "reuse: unchanged package keeps one inode" "ok ($i1)"
+		say "reuse: unchanged package keeps one inode"
 	else
 		fail "reuse: unchanged package keeps one inode" "$i1 vs $i2"
 	fi
-	if [ "$(find "$tmp/cache" -name '*.test' | wc -l | tr -d ' ')" = 1 ]; then
-		say "reuse: no second binary was written" "ok"
+	if [ "$(cachedcount)" = 1 ]; then
+		say "reuse: no second binary was written"
 	else
 		fail "reuse: no second binary was written" "cache grew"
 	fi
@@ -286,13 +294,13 @@ self_test() {
 		func TestBeta(t *testing.T) {}
 	EOF
 	out=$( cd "$pkg" && "$SELF" . -run TestBeta -v 2>&1 ) || { echo "$out"; fail "arm2 run" "run failed"; }
-	if [ "$(find "$tmp/cache" -name '*.test' | wc -l | tr -d ' ')" = 2 ]; then
-		say "control: a changed test file rebuilds" "ok"
+	if [ "$(cachedcount)" = 2 ]; then
+		say "control: a changed test file rebuilds"
 	else
 		fail "control: a changed test file rebuilds" "cache did not grow"
 	fi
 	if printf '%s' "$out" | grep -q 'TestBeta'; then
-		say "control: the new test actually ran" "ok"
+		say "control: the new test actually ran"
 	else
 		fail "control: the new test actually ran" "TestBeta not in output"
 	fi
@@ -307,21 +315,21 @@ self_test() {
 	if ( cd "$pkg" && "$SELF" . -run TestRed >/dev/null 2>&1 ); then
 		fail "exit status: a red test reds the wrapper" "wrapper exited 0"
 	else
-		say "exit status: a red test reds the wrapper" "ok"
+		say "exit status: a red test reds the wrapper"
 	fi
 	# ...and its control: the same wrapper is green when the test passes.
 	if ( cd "$pkg" && "$SELF" . -run TestAlpha >/dev/null 2>&1 ); then
-		say "exit status: a green test greens the wrapper" "ok"
+		say "exit status: a green test greens the wrapper"
 	else
 		fail "exit status: a green test greens the wrapper" "wrapper exited non-zero"
 	fi
 
 	# ARM 4: --prune keeps POSSE_TESTBIN_KEEP per package and no more.
 	POSSE_TESTBIN_KEEP=1 "$SELF" --prune >/dev/null 2>&1
-	if [ "$(find "$tmp/cache" -name '*.test' | wc -l | tr -d ' ')" = 1 ]; then
-		say "prune: keeps POSSE_TESTBIN_KEEP per package" "ok"
+	if [ "$(cachedcount)" = 1 ]; then
+		say "prune: keeps POSSE_TESTBIN_KEEP per package"
 	else
-		fail "prune: keeps POSSE_TESTBIN_KEEP per package" "$(find "$tmp/cache" -name '*.test' | wc -l | tr -d ' ') left"
+		fail "prune: keeps POSSE_TESTBIN_KEEP per package" "$(cachedcount) left"
 	fi
 
 	if [ "$rc" = 0 ]; then
