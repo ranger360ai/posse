@@ -62,9 +62,9 @@ func ageResidue(t *testing.T, b *HerdrBackend, session string, by time.Duration)
 // ─── the crew arm: a mark on a session dispatch made ─────────────────────────
 
 // The measured shape (dispatch-watch.log, 2026-08-29):
-// `holden-posse-ranger-base-3j3t` — a session dispatch created for one bead,
-// then crew-marked by cockpit `p` or `posse prompt`, and skipped by the ADR
-// 0008 shield on every pass thereafter. Its bead is closed, its agent is
+// `<persona>-<repo>-ranger-base-3j3t` — a session dispatch created for one
+// bead, then crew-marked by cockpit `p` or `posse prompt`, and skipped by the
+// ADR 0008 shield on every pass thereafter. Its bead is closed, its agent is
 // settled, its tree holds nothing, and it is not a conversation the operator
 // ever made: it is Dial F's own per-bead session wearing a 👤.
 func TestAutoReapTakesACrewMarkedSessionDispatchMadePastItsGrace(t *testing.T) {
@@ -121,7 +121,7 @@ func TestAutoReapNeverTakesACrewSessionTheOperatorMade(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
 	dir := t.TempDir()
-	// An operator-chosen name — what `posse new jared-staffing` builds —
+	// An operator-chosen name — what `posse new ranger-staffing` builds —
 	// plus the pointer a later `posse prompt` stamps, plus a closed bead and
 	// a month of idleness. Still not the sweep's.
 	residueSession(t, b, NewSessionOpts{Name: "ranger-staffing", Dir: dir, Bead: "a-1", Crew: true},
@@ -135,7 +135,7 @@ func TestAutoReapNeverTakesACrewSessionTheOperatorMade(t *testing.T) {
 	}
 }
 
-// The bead's "or monica", by name and not by shape: ADR 0027's carve-out
+// The bead's "or the coordinator", by name and not by shape: ADR 0027's carve-out
 // delivers the shop check into pulse_persona:'s live session, and reaping it
 // turns every later tick into "undeliverable (no live session for X)". The
 // exclusion is asked of the PERSONA, so it holds even for a session shaped

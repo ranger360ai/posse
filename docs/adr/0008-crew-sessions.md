@@ -99,9 +99,9 @@ crew session two ways — `posse new` MAKES a conversation, while cockpit `p`
 / `posse prompt` mark a session **dispatch** made for one bead that the
 operator merely stepped into. The shield above did not distinguish them, so
 the second sat outside every sweep forever: measured on the fleet 2026-08-29,
-`holden-posse-ranger-base-3j3t` and `gilfoyle-posse-ranger-base-teau` skipped
-on hundreds of consecutive passes, and the operator reaping such sessions by
-hand — the mechanism the auto-reap exists to replace.
+two of them (`<persona>-<repo>-ranger-base-3j3t`, `<persona>-<repo>-ranger-base-teau`)
+skipped on hundreds of consecutive passes, and the operator reaping such
+sessions by hand — the mechanism the auto-reap exists to replace.
 
 So the auto-reap (autoreap.go) may now take a crew-marked session, and only
 this one: its name is the name `SessionForBead(persona, dir, bead)` renders

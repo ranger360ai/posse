@@ -134,9 +134,9 @@ func (d *Dispatcher) autoReapPass() {
 		// A worktree session gets the same warning for free below, from the
 		// landing's own "KEPT" line.
 		//
-		// Only reapFleetClosed reaches it: the two widened arms below
-		// require that a kill take nothing at all, and a dirty tree is the
-		// first thing residueHolds refuses over.
+		// Only reapFleetClosed reaches it: the two widened arms require
+		// that a kill take nothing at all, and a dirty tree is the first
+		// thing residueHolds refuses over.
 		if m, ok := d.HB.readMeta(s.Name); ok && SessionTreeOf(m) == nil {
 			if len(dirtyPaths(s.Dir)) > 0 {
 				fmt.Fprintf(d.errw(), "reap: %s (bead %s, closed) leaves %s dirty — no session branch to land it on\n",
@@ -264,9 +264,9 @@ func (d *Dispatcher) foldRefusalSpools() {
 //     (§1's third row) that the operator merely stepped into. The second was
 //     never theirs to keep — it is Dial F's per-bead session, its bead
 //     closes, and what is left is a dead shell wearing a 👤. MEASURED in
-//     dispatch-watch.log: `holden-posse-ranger-base-3j3t` and
-//     `gilfoyle-posse-ranger-base-teau`, both skipped by the crew shield
-//     over hundreds of passes.
+//     dispatch-watch.log: two of them — `<persona>-<repo>-ranger-base-3j3t`
+//     and `<persona>-<repo>-ranger-base-teau` — each skipped by the crew
+//     shield on hundreds of consecutive passes.
 //   - STAMPLESS (ranger-base-kftx). A per-bead-NAMED session carrying no
 //     `bead:` pointer — a meta written by a binary from before the pointer
 //     landed, or a `posse new` session later released with `posse crew
@@ -296,7 +296,7 @@ func (d *Dispatcher) foldRefusalSpools() {
 // the shop check into `pulse_persona:`'s live session; a sweep that reaps it
 // turns every later tick into "undeliverable (no live session for X)". That
 // persona is excluded by NAME in both widened arms — the bead's "not the
-// operator's own or monica", second half. (First half: the previous
+// operator's own or the coordinator", second half. (First half: the previous
 // paragraph.)
 //
 // WHAT A KILL MUST TAKE FROM THEM: NOTHING. The narrow sweep proceeds over a

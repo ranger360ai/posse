@@ -481,7 +481,7 @@ func TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer(t *testing.
 	writePersona(t, b.App, "ranger", "[go]")
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "fake-show.json"), []byte(`[{"id":"a-1","status":"closed"}]`), 0o644)
-	// Exactly what `posse new ranger-staffing --agent ranger` builds, plus
+	// Exactly what `posse new <name> --agent ranger` builds, plus
 	// the pointer option (a) would add: still not reaped, and the pointer is
 	// why we know the crew mark is the arm that fires.
 	//

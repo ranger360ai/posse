@@ -34,10 +34,10 @@ own name.
 **The residual, stated rather than hidden:** an operator who types dispatch's
 exact name into `posse new` and is then hand-dispatched that same bead is
 indistinguishable from dispatch's own session. It pays the 4h grace, the
-settled test, and the empty-tree test for it. `TestAutoReapSkipsAHandLaunched
-SessionOnTheCrewMarkNotThePointer` used to construct exactly that shape as its
-fixture; it now constructs what `posse new` actually produces, with the
-residual written into its comment.
+settled test, and the empty-tree test for it.
+`TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer` used to
+construct exactly that shape as its fixture; it now constructs what `posse
+new` actually produces, with the residual written into its comment.
 
 ### A kill must take nothing (`residueHolds`)
 
