@@ -100,7 +100,8 @@ Persona-specific:
 
 ## Handoffs
 A handoff is a bead — `bd create "<title>" -l <label> --deps
-discovered-from:<id>` — never a comment on someone else's bead and never a
+discovered-from:<id>`, carrying its class (`-t feature` / `-t bug` /
+`-l debt`; ADR 0006 §1) — never a comment on someone else's bead and never a
 chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
 work needs that person (their own session tree, their own close, their own
 ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
@@ -116,8 +117,18 @@ Take from
   to check against.
 
 Hand to
-- the code lane · `-l code` · one bead per escape: minimal repro, expected vs
-  actual, environment, and the verify bead's id — then close yours `escape`.
+- the code lane (the devops lane when the close was `-l devops`) ·
+  `-l code -l debt` · ONE findings bead per verify close (ADR 0006 §1):
+  title opens with the verify bead's id and the count; one line per
+  finding — file:line, what fails, the bead it escaped from, the repro or
+  failing test; `--deps discovered-from:<verify id>` — then close yours
+  `escape`. No findings, no bead.
+- the same lane · `-t bug`, P1/P2 · its own bead only for a LIVE defect in
+  money, constitution, or dispatch correctness (ADR 0006 §1 names the
+  three): the domain in the title, the repro attached, and the bundle
+  names it by id.
+- the security lane · `-l security` · a break that smells like exposure,
+  not just breakage, with what it reaches.
 - the product lane · `-l product` · an escape that is really a spec gap.
 
 You never reopen the bead you were verifying: a persona does not reopen
@@ -125,8 +136,8 @@ another's close (ADR 0006 §2) — that is the operator's call.
 
 ## Done
 Verified or refuted with evidence — `bd comments add <id> VERIFIED: <how>`
-and `bd close <id>`, or the refuting bug beads filed and linked and this one
-closed `escape` (ADR 0006 §2).
+and `bd close <id>`, or the one findings bead (and any live-defect bead)
+filed and linked and this one closed `escape` (ADR 0006 §1/§2).
 
 ## Blocked
 Can't run the system, missing test data or access: say exactly what you

@@ -1,6 +1,6 @@
 # ADR 0006 — Handoff shapes: collaboration as beads, nothing else
 
-*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47) · amended 2026-09-01 (§1: hand to the lane, not the person — `-a` only for the five-item allowlist; §2 rows and ADR 0005's HANDOFF rung follow, ranger-base-tpc41)*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47) · amended 2026-09-01 (§1: hand to the lane, not the person — `-a` only for the five-item allowlist; §2 rows and ADR 0005's HANDOFF rung follow, ranger-base-tpc41) · amended 2026-09-02 (§1–§4: every bead carries a class — feature / bug / debt — and a verify close files ONE findings bead; operator ruling, ranger-base-zbd51)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -151,12 +151,149 @@ that the five cases are the whole list — the operator confirmed the
 wording, not a census of beads that needed a person; and the reading of
 "their own close" as the persona's own bead, not a bug found in it.
 
+*(Amended 2026-09-02 from ranger-base-zbd51; operator ruling of
+2026-09-02, recorded by the coordinator, after a day that filed 111
+beads against 86 closes with QA's per-finding filing the largest line.
+Two rules, one field.)* **Every bead carries a class, and a verify close
+files one bead.**
+
+**The class.** Every bead is one of three — *feature*, *bug*, *debt* —
+and the operator tracks them separately (the raw open count rose when
+the crew worked well, because reviews the operator commissioned
+*discover* debt, and the number moved the wrong way):
+
+| class | means | the field |
+|---|---|---|
+| **feature** | new capability or behaviour the operator asked for | bd `issue_type` = `feature` (`-t feature`) |
+| **bug** | a live defect against a stated rule, or an observed failure | bd `issue_type` = `bug` (`-t bug`) |
+| **debt** | pins, comment/doc rot, audit findings, renames, hygiene, records work | the label `debt` (`-l debt`); type stays whatever it is (usually `task`) |
+
+**Which field is authoritative:** the type, then the label, in that order.
+A bead whose `issue_type` is `feature` or `bug` *is* that class, whatever
+labels it carries; a `debt` label on such a bead is a filing error the
+groom clears. A bead whose type is anything else — `task` (what `bd
+create` stamps when nobody passes `-t`: 1040 of 1516 beads on 2026-09-01),
+`chore`, `epic`, `decision` — is classed by the `debt` label alone, and
+without it is **unclassified**. Unclassified is a visible bucket the
+scorecard reports beside the three, never an error and never inferred:
+a guess here would make the operator's numbers lie in exactly the
+direction they were lying before. One reader for the rule, in code,
+shared by every surface that reports it (the class helper cut with
+ranger-base-dwlb1's scorecard work); no second spelling.
+
+**Who sets it:** the filer that knows, at filing — a class recovered
+later is the groom's work, and the groom is a person reading beads.
+
+| filer | sets the class how |
+|---|---|
+| a persona filing by hand — the HANDOFF rung, a spec, a design, a finding | names it: `-t feature`, `-t bug`, or `-l debt`. The class of *what the bead is*, not of the bead it came from |
+| the SPIKE and ASK rungs | inherit the bead they hang off: the ladder renders the parent's own flag (`-t feature` / `-t bug` / `-t task -l debt`; nothing when unclassified) in place of today's `-t task`. A spike or a question is a sub-deliverable of its parent's class, and the persona typing it has nothing more to know |
+| the verify-after filer (§3) | inherits the close it verifies; a batch takes its most urgent class in the order bug › feature › debt › unclassified — the same rule that already picks the batch's priority. An unverified feature is still open feature work; a fourth "verify" bucket would hide that |
+| design → build beads (§2, first row) | inherit the design bead's class — a design is nearly always `feature`; the architect names `-t bug` when the design fixes a rule the code breaks |
+| QA's findings bundle (below) | `-l debt`; the exception bead `-t bug` |
+| an audit's findings (the ADR-adherence audit's shapes: DRIFTED / UNREALIZED / UNGOVERNED / adheres-unpinned) | `-l debt` — "audit findings" is in the definition — except a DRIFTED rule whose defect is *live* in one of the three domains below, which is `-t bug` |
+| the coordinator recording a ruling | `-t feature`: a ruling is behaviour the operator asked for |
+| the groom | applies the field to the existing open set (the product persona's groom bead of 2026-09-02, ranger-base-ppc85, is the backfill); reclassifies with `bd update -t <type>` / `--add-label debt` / `--remove-label debt` |
+
+**One bead per verify close.** The ruling, which the operator believed
+was already the rule:
+
+> A verify close files ONE bead carrying all its findings — file:line
+> and the bead each escaped from, for every finding — labelled `debt`.
+> Only a LIVE defect in money, constitution, or dispatch correctness
+> gets its own bead, at P1/P2, named as such. Everything else rides the
+> bundle.
+
+The shape, so it can be checked without the ruling in hand:
+
+- **Trigger:** a verify bead (§3) closes with one or more findings. No
+  findings → `VERIFIED: <how>` and no bead at all.
+- **One bead:** title opens with the verify bead's id and the finding
+  count; label = the verified close's lane (`code`, or `devops` when
+  the close was `-l devops`; a batch spanning both is `-l code`) plus
+  `debt`; `--deps discovered-from:<verify id>`; priority = the most
+  urgent finding's (P3 unless one earns more). Description: one line
+  per finding — `file:line` · what fails · the bead it escaped from ·
+  the repro or the failing test. "No repro, no bug" holds per line: a
+  finding without one is a comment, not a line. A bundle that spans a
+  second lane is fixed by its lane and the stray line is HANDOFFed by
+  the fixer — one hop, and rarer than a second bead per close.
+- **Then** QA closes the verify bead `escape`, as today.
+- **The exception, whole:** a finding that is a *live* defect — reproduced
+  on the installed binary or the promoted constitution now, not a pin
+  gap, not a comment — in **money** (spend, caps, the blind-meter park,
+  credentials, egress that bills; ADR 0018/0019/0042), **the
+  constitution** (the promoted set of ADR 0015 §1 and the gates that
+  fence it), or **dispatch correctness** (a bead seated on the wrong
+  actor, seated twice, or never seated — dispatch, lanes, verify-after,
+  the watermark; ADR 0013/0020, §3 here) files its own `-t bug` bead at
+  P1 or P2 with the domain in the title, and is *named* in the bundle
+  by id, not restated. Three domains is the whole list; widening it is
+  the operator's ruling, not the filer's judgement — "is this one
+  serious enough for its own bead?" is the question the ruling removed.
+
+What this changes downstream: §2's build→verify row and §3's filer
+trailer now say the bundle, not "a bug bead per close" (the trailer had
+also kept `-a <closer>` after the 2026-09-01 amendment struck it — the
+code bead cut here retires both); the QA PIDs' Hand-to rows read the
+bundle (§4, the instance's to promote); `escapes-caught` still counts
+`escape` closes and is unchanged, while `bugs-with-repros` now counts
+bundles a developer could reproduce, so its denominator falls — say so
+where it is read, do not re-inflate it.
+
+Alternatives rejected:
+
+- *`-t chore` for debt* (bd has the type). It would replace `task` on
+  every debt bead rather than add to it, so "untyped" and "debt" would
+  compete for one slot, and `chore` reads as small hygiene where the
+  definition includes audit findings and records work. The label is
+  additive, greppable (`bd list -l debt`), and the word the operator
+  used.
+- *A label for all three* (`-l feature`, `-l bug`, `-l debt`). One
+  vocabulary, but 71 of 153 open beads already carry `-t bug` and the
+  type is what `bd create -t` and `--validate` know; a second spelling
+  of the same fact is triple-implementing the substrate (ADR 0001).
+- *A parent epic per verify close, one child per finding.* The count
+  the operator measures is beads created; an epic adds one and removes
+  none. The bundle's lines are the children, at zero beads each.
+- *Let the harness bundle* — verify-after reads QA's escape beads and
+  folds them. The harness files exactly one shape (the verify bead) and
+  never closes or re-files a persona's beads (ADR 0013 §4's absence
+  rule, pinned by ranger-base-q8dhm); the rule belongs at the filer, and
+  the filer is a person reading their own findings.
+- *One bundle per lane per verify close.* Honest, but mixed-lane
+  verifies are the rare case (assumed, not measured) and the second
+  bead is the amplification being cut; the HANDOFF hop covers it.
+- *"Any live defect gets its own bead."* The definition of "live and
+  serious" is the judgement that produced 1.3 beads per close; three
+  named domains make the exception a lookup.
+- *Infer the class from the graph or the title* (`discovered-from` a
+  `-l qa` bead → debt; "pin" in the title → debt). Right often, wrong
+  silently; the same rejection as §3's intent inference, for the same
+  reason.
+
+Measured (live store, 2026-09-02, 1701 beads, `--limit 3000`): 153 open
+— 71 typed `bug`, 1 `feature`, 3 `chore`, 78 `task`; **0 carry `debt`**,
+so every reader of the class is reading the groom's backfill until
+ranger-base-ppc85 closes. Today's inflow at the time of writing: 120
+created, 88 closed, 10 `escape` closes; the two QA seats created 26 of
+the 120. The `bug` type is over-broad as filed — a stale model id in
+NOTES.md and a doc's wrong count are typed `bug` today — which is what
+the type-wins rule and the groom's `-t task --add-label debt` are for.
+Assumed: that mixed-lane verify closes are rare; that a verifier can
+tell "live in three domains" from "a pin gap" without a second ruling
+(the domains are named by ADR, and a wrong call costs one bead, not a
+missed defect — the bundle still carries the line); that inheriting the
+close's class onto the verify bead is what the operator's "open by
+class" wants to see (a verify bead is transient, and the alternative
+was a fourth bucket he did not ask for).
+
 **2. The four shapes.**
 
 | handoff | trigger | shape | closes when |
 |---|---|---|---|
 | **architect → developer** (design → build) | ADR committed | implementation beads `-l code --deps discovered-from:<design>` *(no `-a`: §1 amendment of 2026-09-01)*, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture` (`-a` the ADR's owner only when their ruling is the deliverable — §1 case 4) |
-| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa --deps discovered-from:<closed id>` (unassigned unless config `verify_assignee:` pins a seat — ADR 0020 §3; §1 amendment of 2026-09-01), description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code` (no `-a`; the closed bead's id in the description — §1 amendment of 2026-09-01) with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
+| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa --deps discovered-from:<closed id>` (unassigned unless config `verify_assignee:` pins a seat — ADR 0020 §3; §1 amendment of 2026-09-01), description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files **one** findings bead — `-l <the close's lane> -l debt --deps discovered-from:<verify id>`, one line per finding with file:line, the escaped-from id and the repro; a live money / constitution / dispatch-correctness defect alone gets its own `-t bug` P1/P2 bead (§1 amendment of 2026-09-02, ranger-base-zbd51; the row read "a bug bead `-l code` per close" before) — and closes theirs `escape`; the closed bead is never reopened by a persona (operator's call) |
 | **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security --deps discovered-from:<id>` (no `-a` — §1 amendment of 2026-09-01), **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
 | **operator/product grooming** (cadence) | one `-l groom` bead per week assigned to the product persona, filed by the operator or their scheduling automation (posse does not schedule; `--watch` dispatches, it doesn't create) | the product persona re-prioritises, splits, labels (`tier:` per ADR 0003), files `-l architecture` beads where design precedes build, closes with `bd comments add` listing what moved | close = queue is honest for the week; the `queue-honesty` metric reads it |
 
@@ -320,6 +457,38 @@ the closer's PID when the row is absent — their PID says the column is
 their checklist, nobody has measured whether they read it — and that
 five rows is the ceiling any instance's table reaches.
 
+*(Amended 2026-09-02 from ranger-base-zbd51.)* **The filer's trailer says
+the bundle, and the verify bead carries its close's class.** Two changes
+to the bead this rule mints, both cut as one `-l code` bead
+(`verifyafter.go`; pins in `verifyafter_test.go`):
+
+1. **The trailer.** The verify bead's closing instruction read *"file a
+   bug bead `-l code -a <closer>` with a repro and close this one
+   `escape`"* — per close, and still `-a` the closer after the
+   2026-09-01 amendment struck it (MEASURED: `verifyDescription` and
+   `verifyGroupDescription`, with the pin at `verifyafter_test.go`
+   asserting `-l code -a developer`). It now reads the §1 shape: *for
+   any close that does not verify, file ONE findings bead `-l <the
+   close's lane> -l debt --deps discovered-from:<this id>`, one line per
+   finding (file:line · what fails · the bead it escaped from · the
+   repro); a live money / constitution / dispatch-correctness defect
+   alone gets its own `-t bug` P1/P2 bead, named in the bundle by id;
+   then close this one `escape`.* The batch form says it once for all N
+   closes, since the bundle is per verify close, not per close verified.
+   The closer's name leaves the trailer entirely — the fix is lane work
+   and the closer is not on §1's list.
+2. **The class.** `BdNew` gains a `Type` (`-t`) and the filer sets it,
+   or adds `debt` to the labels, from the close it verifies through the
+   one class helper; a batch takes the most urgent class in the order
+   bug › feature › debt › unclassified, chosen in the same loop that
+   picks the batch's priority. Unclassified in → unclassified out: the
+   filer never manufactures a class the close did not carry.
+
+Hatch: both are text and one field on a bead the harness already
+files; nothing new is read, and no state is added. The `-t` flag is
+`bd create`'s own (`bug|feature|task|epic|chore|decision`), measured
+on bd 0.50.3's `--help`.
+
 **4. PID `## Handoffs` sections say the shape, not just the name.** Each
 row becomes `who · label · what the bead must contain` — *who* is a lane
 (`the code lane`), a person only for the §1 allowlist *(amended
@@ -327,6 +496,35 @@ row becomes `who · label · what the bead must contain` — *who* is a lane
 hand to security `-l security` P≤1 when a change touches secrets, auth,
 or egress.* Recommended rows for the whole example crew ship in
 `examples/agents/*`; an instance's own PIDs are the operator's to update.
+
+*(Amended 2026-09-02 from ranger-base-zbd51.)* The recommended QA rows,
+as shipped in `examples/agents/qa.md` by this amendment's commit and as
+proposed for this instance's two QA PIDs (a staged diff under the
+constitution repo's `docs/rca/`, applied and promoted by the operator —
+ADR 0015 §2/§3; the operator's bead is named on ranger-base-zbd51):
+
+> Hand to
+> - the code lane (the devops lane when the close was `-l devops`) ·
+>   `-l code -l debt` · ONE findings bead per verify close (ADR 0006
+>   §1): title opens with the verify bead's id and the count; one line
+>   per finding — file:line, what fails, the bead it escaped from, the
+>   repro or failing test; `--deps discovered-from:<verify id>` — then
+>   close yours `escape`. No findings, no bead.
+> - the same lane · `-t bug`, P1/P2 · its own bead only for a LIVE
+>   defect in money, constitution, or dispatch correctness (ADR 0006
+>   §1 names the three): the domain in the title, the repro attached,
+>   and the bundle names it by id.
+> - the security lane · `-l security` · a break that smells like
+>   exposure, not just breakage, with what it reaches.
+> - the product lane · `-l product` · an escape that is really a spec
+>   gap.
+
+and every PID's `## Handoffs` opening line gains the class: *`bd create
+"<title>" -l <label> --deps discovered-from:<id>`, carrying its class
+(`-t feature` / `-t bug` / `-l debt`)*. The examples carry it from this
+commit; the instance's eleven PIDs carry it when the operator promotes
+— nine of them also still carry the `-a <persona>` template line the
+2026-09-01 amendment retired, which the same promote can take.
 
 **5. Out of scope, named.** Persona-to-persona chat; approvals or sign-off
 gates beyond "closed" (the verify is a bead, not a gate that holds the
@@ -351,6 +549,11 @@ list aggregates them already).
 - Instance PIDs need their `## Handoffs` and `## Done` rows updated by
   the operator (the developer's stops saying "hand to QA" — it's
   automatic).
+- *(2026-09-02)* The scorecard and pulse line report closes/day, open
+  by class and P1/P2 per class through the one class helper
+  (ranger-base-dwlb1); the class helper, the filer's trailer and the
+  ladder's rendered class flag are the code beads cut from
+  ranger-base-zbd51.
 
 ## Alternatives rejected
 

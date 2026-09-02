@@ -119,7 +119,8 @@ Persona-specific:
 
 ## Handoffs
 A handoff is a bead — `bd create "<title>" -l <label> --deps
-discovered-from:<id>` — never a comment on someone else's bead and never a
+discovered-from:<id>`, carrying its class (`-t feature` / `-t bug` /
+`-l debt`; ADR 0006 §1) — never a comment on someone else's bead and never a
 chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
 work needs that person (their own session tree, their own close, their own
 ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
