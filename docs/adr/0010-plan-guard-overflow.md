@@ -132,9 +132,13 @@ floor, per-bead beside the account stage. Three rules follow:
   because that adapter prices nothing it reads (read-but-unpriced keeps
   the column). The dead key must still die **loudly**: a set
   `uncounted_cap_<runtime>:` on a priced runtime is named once per pass
-  as not applying, pointing at the brake that does — unbuilt as of
-  2026-08-29, cut as ranger-base-ql08. A silently dead key is the
-  cap-that-stopped-capping failure `uncounted.go` is written against.
+  as not applying, pointing at the brake that does — built 2026-09-01
+  (ranger-base-2eeb, `uncounted.go` countedCapDead; cut twice, the other
+  id is ranger-base-ql08): one stderr line per pass naming the key and
+  the brake that holds the runtime instead (`grok_guard_week:` where
+  armed, else `budget_pass:`/`budget_day:` over the dollars `posse cost`
+  can now see). A silently dead key is the cap-that-stopped-capping
+  failure `uncounted.go` is written against.
 
 **4. Pool exhausted underneath us: skip, as today — plus the cap.** There
 is no reading to take; a launch that the runtime rate-limits shows up as
