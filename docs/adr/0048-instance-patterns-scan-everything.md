@@ -26,7 +26,7 @@ takes the next number no bead has claimed.*
   vocabulary to the list — and today that list is rendered into check 0
   (the beads jsonl) and check 2, so a config pattern inherits check 2's
   markdown-only scope (`visibilityGuardBody`, gates.go).
-- **Where the seven landed.** Four in `internal/rhq/queuecutoverspelling_qa_test.go`
+- **Where the seven landed.** Four in `internal/posse/queuecutoverspelling_qa_test.go`
   prose, one across `scorecard.go` and `scorecard_test.go`, two in
   `NOTES.md`, one in ADR 0046 line 88. Five of seven are Go files. A
   config pattern under today's scope would have caught two.
