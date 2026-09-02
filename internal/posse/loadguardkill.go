@@ -61,10 +61,10 @@ package posse
 //
 // So: TERM, one bounded grace, then KILL for whatever ignored it. TERM
 // first is not politeness — a shell that traps TERM is a shell with cleanup
-// to run, and this arm has no reason to deny it the chance. monica's
-// 08-31 kill needing KILL after TERM was an argv-splitting bug rather than
-// an unkillable process, and this re-measure says so: nothing here needed
-// KILL unless it had explicitly refused TERM.
+// to run, and this arm has no reason to deny it the chance. The
+// 08-31 hand kill that needed KILL after TERM was an argv-splitting bug
+// rather than an unkillable process, and this re-measure says so: nothing
+// here needed KILL unless it had explicitly refused TERM.
 //
 // FAIL OPEN, exactly like the reading above it. Every wait is bounded and
 // SHARED across the whole batch — one TERM round, one grace, one KILL
