@@ -848,6 +848,57 @@ func fakeRecordPromptWindow(start time.Time, release string) {
 		[]byte(fmt.Sprintf("%d %d %s", start.UnixNano(), time.Now().UnixNano(), release)), 0o644)
 }
 
+// ─── the held leg's register ─────────────────────────────────────────────────
+//
+// Ending the LOOP does not end the leg (ranger-base-06bvw). The drain
+// abandons an in-flight `agent prompt` on purpose — that is the whole point
+// of it — but the abandoned child here is a forked posse.test whose
+// RHQ_FAKE_DIR is the subtest's own t.TempDir. Left to itself it sleeps out
+// the full delay, long after the subtest returned and t.TempDir removed the
+// tree, and then MkdirAlls it BACK to write its window: same path, mode 0755
+// instead of t.TempDir's 0700, one tree per abandoned leg per run. Cleanup
+// was never failing; it was being undone afterwards, and half the 769 stale
+// `Test*` trees in the operator's $TMPDIR (measured 2026-09-02, oldest Aug
+// 30) were this one test's two subtests.
+//
+// So the fake keeps a register of the legs it is holding — one file per pid,
+// created before the hold and removed only after the LAST write that leg
+// makes into fakeDir — and takes a prompt-release file as "you may stop
+// now". Together they let a subtest join its abandoned child instead of
+// guessing at it: joinHeldPrompts.
+
+func fakeHoldersDir() string { return filepath.Join(fakeDir(), "prompt-holders") }
+
+// fakeHoldingPrompt runs one held leg — the hold and the window record —
+// with this pid registered for the whole of it. The entry outlives the
+// window write deliberately: an empty register has to mean "no fake is still
+// writing into fakeDir", or the join it anchors is a sleep with extra steps.
+func fakeHoldingPrompt(hold func() string) {
+	os.MkdirAll(fakeHoldersDir(), 0o755)
+	mine := filepath.Join(fakeHoldersDir(), strconv.Itoa(os.Getpid()))
+	os.WriteFile(mine, nil, 0o644)
+	defer os.Remove(mine)
+	start := time.Now()
+	fakeRecordPromptWindow(start, hold())
+}
+
+// fakeHeldDelay is prompt-delay-ms's hold: the whole delay, unless a joining
+// test drops prompt-release first, in which case the leg ends now and says
+// so. Polled rather than slept in one go purely so that lever exists — a
+// real abandoned agent keeps running, and a fixture that copies that
+// literally outlives the directory it writes into.
+func fakeHeldDelay(d time.Duration) string {
+	release := filepath.Join(fakeDir(), "prompt-release")
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(release); err == nil {
+			return "released"
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return "delay"
+}
+
 func fakeHerdr(args []string) int {
 	f, _ := os.OpenFile(filepath.Join(fakeDir(), "calls.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if f != nil {
@@ -1039,16 +1090,19 @@ func fakeHerdr(args []string) int {
 		// The barrier counts every prompt this fake dir has seen, so it
 		// releases one group of N and every later prompt walks through:
 		// arm it only where the test also pins the prompt count.
+		//
+		// Both holds run under fakeHoldingPrompt, which registers this pid
+		// for as long as the leg can still write into fakeDir — see the
+		// register above. Barrier legs are registered too even though only
+		// the delay one has a release lever: a joining test must be able to
+		// see everything the fake is holding, not only what it can end.
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "prompt-barrier")); err == nil {
 			if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n > 0 {
-				start := time.Now()
-				fakeRecordPromptWindow(start, fakeAwaitPrompts(n))
+				fakeHoldingPrompt(func() string { return fakeAwaitPrompts(n) })
 			}
 		} else if b, err := os.ReadFile(filepath.Join(fakeDir(), "prompt-delay-ms")); err == nil {
 			if ms, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
-				start := time.Now()
-				time.Sleep(time.Duration(ms) * time.Millisecond)
-				fakeRecordPromptWindow(start, "delay")
+				fakeHoldingPrompt(func() string { return fakeHeldDelay(time.Duration(ms) * time.Millisecond) })
 			}
 		}
 		return fakeOK(`{"type":"agent_prompted","agent":{"agent_status":"idle"}}`)
@@ -1477,6 +1531,90 @@ func promptWindows(t *testing.T, fake string) []promptWindow {
 		out = append(out, w)
 	}
 	return out
+}
+
+// joinWait bounds every leg of joinHeldPrompts. Generous for the same
+// reason waitForOut's is: each held leg is a forked test binary, and under
+// -race that fork is tens of seconds slow before it reaches the register.
+const joinWait = 60 * time.Second
+
+// joinHeldPrompts ends the `agent prompt` legs the fake is holding and waits
+// until they are gone, so the subtest's own t.TempDir cleanup is the LAST
+// writer to its tree (ranger-base-06bvw). want is how many legs the fixture
+// put in flight.
+//
+// Waiting for them to REGISTER is half the join and not optional: the parent
+// prints its "prompted" line before `go AgentPrompt` has forked anything, so
+// a register read at cancel time can be empty for a leg that is merely still
+// starting — and an empty register is exactly what "all done" looks like.
+// Only after `want` of them have been seen is emptiness worth anything.
+//
+// It joins in three steps, and each one answers a different half of "a green
+// test leaves neither a process nor a directory behind":
+//
+//  1. every leg has registered;
+//  2. the register is empty again — no fake is still writing into fake;
+//  3. every pid seen is actually gone. The register entry goes first and the
+//     exit follows within a syscall or two (TestMain os.Exits on fakeHerdr's
+//     return), and os/exec's abandoned Wait is still blocked on the child, so
+//     it reaps: ESRCH here is a real exit and not a zombie reading as one.
+func joinHeldPrompts(t *testing.T, fake string, want int) {
+	t.Helper()
+	held := func() []int {
+		ents, _ := os.ReadDir(filepath.Join(fake, "prompt-holders"))
+		pids := []int{}
+		for _, e := range ents {
+			if pid, err := strconv.Atoi(e.Name()); err == nil {
+				pids = append(pids, pid)
+			}
+		}
+		return pids
+	}
+	deadline := time.Now().Add(joinWait)
+	// An arm that has already failed has no leg worth waiting on — it may
+	// never have got one in flight at all — so it does not pay the budget,
+	// and it does not get a second, derived failure below either.
+	seen := map[int]bool{}
+	for len(seen) < want && !t.Failed() && time.Now().Before(deadline) {
+		for _, pid := range held() {
+			seen[pid] = true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// Steps 2 and 3 get the budget fresh. A register that was slow to fill
+	// must not starve the join it exists to anchor — and if step 1 timed
+	// out, the legs that DID register still deserve ending.
+	os.WriteFile(filepath.Join(fake, "prompt-release"), nil, 0o644)
+	deadline = time.Now().Add(joinWait)
+	for len(held()) > 0 && time.Now().Before(deadline) {
+		// Late arrivals count too: a leg that registered after step 1 was
+		// satisfied is still a process this subtest has to outlive.
+		for _, pid := range held() {
+			seen[pid] = true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	alive := []int{}
+	for pid := range seen {
+		for syscall.Kill(pid, 0) == nil && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if syscall.Kill(pid, 0) == nil {
+			alive = append(alive, pid)
+		}
+	}
+	if t.Failed() {
+		return
+	}
+	if len(seen) < want {
+		t.Errorf("the fixture claimed %d prompt leg(s) in flight; the fake registered %d in %s", want, len(seen), joinWait)
+	}
+	if left := held(); len(left) > 0 {
+		t.Errorf("held prompt(s) %v never let go of %s — the tree is removed under a live writer, which is what recreates it at 0755", left, fake)
+	}
+	if len(alive) > 0 {
+		t.Errorf("fake herdr child(ren) %v outlived the subtest that forked them", alive)
+	}
 }
 
 func mustCreate(t *testing.T, b *HerdrBackend, o NewSessionOpts) {

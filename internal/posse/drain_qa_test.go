@@ -51,11 +51,7 @@ func TestQADrainEndsAWatchLoopWaitingOnASession(t *testing.T) {
 	// Cancelled: the operator's SIGTERM, which is all signal.NotifyContext
 	// hands the loop (cmd/posse/main.go).
 	t.Run("cancelled while a leg is in flight", func(t *testing.T) {
-		d, out := drainFixture(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := make(chan int, 1)
-		go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
+		out, done, cancel := drainFixture(t)
 
 		waitForOut(t, out, "in flight, gathering")
 		cancel()
@@ -86,11 +82,7 @@ func TestQADrainEndsAWatchLoopWaitingOnASession(t *testing.T) {
 	// that the arm above measured the cancel and not the fixture running out
 	// of work. A false failure here needs the leg to end 60x early.
 	t.Run("left alone, the loop stays in the pass", func(t *testing.T) {
-		d, out := drainFixture(t)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := make(chan int, 1)
-		go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
+		out, done, _ := drainFixture(t)
 
 		waitForOut(t, out, "in flight, gathering")
 		select {
@@ -108,17 +100,57 @@ func TestQADrainEndsAWatchLoopWaitingOnASession(t *testing.T) {
 	})
 }
 
-// drainFixture is one persona, one ready bead, and a prompt leg that will not
-// come back inside this test's lifetime.
-func drainFixture(t *testing.T) (*Dispatcher, *syncBuf) {
+// drainFixture is one persona, one ready bead, a prompt leg that will not
+// come back inside this test's lifetime — and the loop running over it.
+//
+// It owns the loop because it owns the JOIN, and the join is the part that
+// was missing (ranger-base-06bvw). Cancelling the context ends the loop and
+// nothing else: by design the drain abandons the in-flight `agent prompt`,
+// and that leg is a forked posse.test still sleeping out drainLegMS with
+// this subtest's t.TempDir as its RHQ_FAKE_DIR. Nothing waited for it, so
+// t.TempDir removed the tree minutes before the child MkdirAll'd it back to
+// write its window — 385 of the 769 stale `Test*` trees in the operator's
+// $TMPDIR on 2026-09-02 were these two subtests, at 0755 rather than
+// t.TempDir's 0700, which is what proves they were recreated and not merely
+// left. The claims above are unchanged: the leg is still abandoned where
+// each arm measures it, and only afterwards is it joined.
+//
+// Cleanup order is the whole trick. This t.Cleanup is registered after every
+// t.TempDir newTestBackend took, so LIFO runs it FIRST — cancel, join the
+// loop, join the child, and only then does anything get removed.
+func drainFixture(t *testing.T) (out *syncBuf, done <-chan int, cancel context.CancelFunc) {
 	t.Helper()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	out := &syncBuf{}
+	out = &syncBuf{}
 	d.Out = out
 	writePersona(t, b.App, "ranger", "[go]")
 	agentPerLaunch(t, fake)
 	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
 	os.WriteFile(filepath.Join(fake, "prompt-delay-ms"), []byte(drainLegMS), 0o644)
-	return d, out
+
+	ctx, cancel := context.WithCancel(context.Background())
+	passes := make(chan int, 1)
+	// Two signals, not one: an arm may or may not read the pass count, and
+	// the cleanup must be able to wait for the loop either way.
+	loop := make(chan struct{})
+	go func() {
+		p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond)
+		passes <- p
+		close(loop)
+	}()
+	t.Cleanup(func() {
+		cancel() // idempotent: the cancelled arm has already called it
+		select {
+		case <-loop:
+		case <-time.After(30 * time.Second):
+			t.Errorf("the watch loop never returned after cancel:\n%s", out.String())
+		}
+		// One persona, one ready bead: exactly one leg is in flight, and
+		// the abandoned prompt goroutine does nothing after the child but
+		// send into a buffered channel nobody reads (dispatch.go), so the
+		// child is the last writer left to join.
+		joinHeldPrompts(t, fake, 1)
+	})
+	return out, passes, cancel
 }
