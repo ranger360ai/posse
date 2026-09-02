@@ -343,3 +343,63 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 		t.Errorf("SPIKE must interpolate the bead id:\n%s", o)
 	}
 }
+
+// ranger-base-uzw11: HANDOFF files to the LANE. ADR 0006 §1's amendment of
+// 2026-09-01 (ranger-base-tpc41) says a handoff names a label and not a
+// person, because ADR 0020 §2 makes an explicit assignee "a lane of one that
+// never falls through" — a rung rendering `-a <persona>` made every handoff
+// one, so the lane's other seats could receive only what the harness filed
+// unassigned. The record changed in b23d686; this pins the text the persona
+// actually reads.
+//
+// The assertion is the rendered flag, not the word "persona": the rung's own
+// clause has to say WHEN `-a` is right (the five cases), so a bare "no -a
+// anywhere" check would fail the fix. Reverting the rung's string to the
+// pre-uzw11 form fails the first two checks below.
+func TestEscalationLadderHandoffFilesToTheLane(t *testing.T) {
+	t.Parallel()
+	handoff, ask, spike := "", "", ""
+	for _, ln := range strings.Split(EscalationLadder("b-1", "opuser"), "\n") {
+		switch {
+		case strings.HasPrefix(ln, "- HANDOFF — "):
+			handoff = ln
+		case strings.HasPrefix(ln, "- ASK — "):
+			ask = ln
+		case strings.HasPrefix(ln, "- SPIKE — "):
+			spike = ln
+		}
+	}
+	if handoff == "" || ask == "" || spike == "" {
+		t.Fatalf("ladder lost a rung:\n%s", EscalationLadder("b-1", "opuser"))
+	}
+
+	// The defect, as the string that must not be there.
+	if strings.Contains(handoff, "-a <persona>") {
+		t.Errorf("HANDOFF must not file `-a <persona>` — hand to the lane (ADR 0006 §1):\n%s", handoff)
+	}
+	// What it files instead.
+	if !strings.Contains(handoff, "`bd create \"<title>\" -l <their label> --deps discovered-from:b-1`") {
+		t.Errorf("HANDOFF must file the lane's label with the provenance edge:\n%s", handoff)
+	}
+	// A rung that only drops the flag loses the five cases with it, and the
+	// next handoff that genuinely needs a person has nowhere to read that.
+	for _, want := range []string{
+		"no `-a` unless the work needs that person",
+		"ADR 0006 §1",
+		"first line of the description says which",
+	} {
+		if !strings.Contains(handoff, want) {
+			t.Errorf("HANDOFF missing %q:\n%s", want, handoff)
+		}
+	}
+
+	// Controls: the two rungs the amendment leaves alone. ASK keeps its
+	// operator (case 4 — the operator is not a seat) and SPIKE already
+	// named a lane.
+	if !strings.Contains(ask, "-a opuser") {
+		t.Errorf("ASK keeps the operator assignee (ADR 0006 §1 case 4):\n%s", ask)
+	}
+	if !strings.Contains(spike, "-l <runner's lane>") {
+		t.Errorf("SPIKE keeps the runner's lane:\n%s", spike)
+	}
+}

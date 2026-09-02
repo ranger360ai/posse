@@ -1527,6 +1527,17 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // same text in every work prompt. operator fills the ASK assignee; ""
 // leaves the question unassigned.
 //
+// HANDOFF hands to the LANE: it files `-l <their label>` with no `-a`
+// (ADR 0006 §1 amendment of 2026-09-01, ranger-base-tpc41). The rung read
+// `-a <persona>` until ranger-base-uzw11, which made every handoff "a lane
+// of one that never falls through" (ADR 0020 §2) — the lane's second and
+// third seats could receive only what the harness filed unassigned, and a
+// named persona's backlog waited on that persona while peers sat idle. The
+// clause naming the five cases where `-a` is still right stays on the rung
+// rather than in the ADR alone, because the rung is the only text the
+// persona is holding when it files. ASK keeps its `-a <operator>` (case 4:
+// the operator is not a seat), and SPIKE already filed `-l <runner's lane>`.
+//
 // SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
 // not permission: nobody has to be asked for it, so it belongs below the
 // rungs that spend the operator's attention. It is the mechanism behind the
@@ -1597,7 +1608,7 @@ func EscalationLadder(id, operator string) string {
 		"- ASSUME — a gap you can bridge without changing the deliverable's shape: comment `ASSUMED: <x> — <why>`; do the rest in full; continue.\n" +
 		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Check the skills you carry first; if they do not cover it, `bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`, bd refuses the `dep add` below against a spike that carries one — then `bd dep add " + id + " <sid>` so deciding waits on reading, and `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
 		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
-		"- HANDOFF — part of the work belongs to another persona: `bd create \"<title>\" -a <persona> -l <their label> --deps discovered-from:" + id + "`; comment it; continue with your part, and if nothing is left, close yours.\n" +
+		"- HANDOFF — part of the work belongs to another lane: `bd create \"<title>\" -l <their label> --deps discovered-from:" + id + "`; no `-a` unless the work needs that person (ADR 0006 §1 lists the five cases) and the first line of the description says which; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n" +
 		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. SPIKE never files that edge, deliberately: bd will not carry a `discovered-from` edge and a block between the same pair, so a spike carrying one makes `bd dep add " + id + " <sid>` a cycle in either order — refused outright by some stores and silently accepted by others, which leaves " + id + " in `bd ready` and dispatched anyway, so never read a zero exit as the stop. Check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
 }
