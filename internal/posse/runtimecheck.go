@@ -202,7 +202,7 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 	// see that the key is UNSET, which is the state that costs them the
 	// evening.
 	if len(rt.StateDirs) > 0 {
-		wrapGrid(w, "state_dir", strings.Join(rt.StateDirs, " ")+" — joins the seatbelt writable set, so `cage: seatbelt` leaves this CLI's own config writable, and is the ONLY runtime state a launch here grants: another runtime's is not this session's to write (ranger-base-9fl)")
+		wrapGrid(w, "state_dir", strings.Join(rt.StateDirs, " ")+" — joins the seatbelt writable set, so `cage: seatbelt` leaves this CLI's own config writable, and is the ONLY runtime state a launch here grants: another runtime's is not this session's to write (ranger-base-9fl). An entry naming a FILE also grants its atomic-write siblings <p>.lock and <p>.tmp.* — a CLI that replaces its config by rename writes those, not the file (ranger-base-cypy1)")
 	} else {
 		wrapGrid(w, "state_dir", "none declared. A CLI that keeps state under the home gets a READ-ONLY one under `cage: seatbelt` — it then re-runs its first-run flow every launch, or dies on a config write, and neither says why")
 	}
