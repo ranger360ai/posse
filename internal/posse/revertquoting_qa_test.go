@@ -378,3 +378,142 @@ func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 		t.Errorf("after the named finish the tree is clean, got %q", st)
 	}
 }
+
+// LIVE DEFECT, pinned GREEN: filed as its own bead from ranger-base-2d4f4,
+// the verify of ranger-base-qg0k8's close.
+//
+// qg0k8 fixed the READER and not the WRITER. posse_qcached now reads
+// `--name-only -z` and emits the raw path bytes for every byte class, POSIX
+// single-quoted — measured correct in isolation. The refusal then prints
+// that list with `echo "  finish it:  git commit -F - -- $posse_staged"`
+// (gates.go, the MERGE_MSG revert arm and the REVERT_HEAD arm), and echo
+// EXPANDS BACKSLASH ESCAPES in its operand on the shells that run this hook:
+// macOS /bin/sh is bash 3.2 with xpg_echo on when invoked as sh, and a Linux
+// /bin/sh is usually dash, whose echo does the same by spec. So a path
+// holding a backslash followed by one of echo's escape letters is corrupted
+// on its way to the persona's eyes, after the reader got it right.
+//
+// MEASURED, git 2.50.1, darwin 25.4.0, one file per arm plus plain.md:
+//
+//	back\nslash.md   the printed line BREAKS IN TWO mid-quote → sh exits 2
+//	                 ("unexpected EOF while looking for matching `'")
+//	back\tslash.md   printed as 'back<TAB>slash.md' → pathspec did not match
+//	back\rslash.md   printed as 'back<CR>slash.md'  → pathspec did not match
+//	back\\slash.md   printed as 'back\slash.md'     → pathspec did not match
+//	back\cslash.md   \c stops that echo where it stands, so `finish it:`,
+//	                 `or undo it:` and `next time:` run together on ONE
+//	                 broken line → sh exits 2
+//	back\slash.md    correct — \s is not one of echo's escapes, and it is the
+//	                 only backslash spelling the close's own pin uses
+//
+// Every failing arm leaves the whole line dead: git validates pathspecs
+// all-or-nothing, so plain.md is not restored or committed either, and the
+// persona keeps a dirty SHARED index and two commands that do not work,
+// directly above the sentence telling them not to reach for a hard reset.
+// That is qg0k8's own symptom, unchanged, over a byte class its title names.
+//
+// The fix is `printf '%s\n'`, which is what the constitution arm and the
+// identity arm in the same file already use for their path lists — measured:
+// with the three echo lines turned into printf, this pin goes red on its
+// FIXED: message and TestQAGuardRefusalNamesEveryPathGitQuotes stays green.
+//
+// This asserts the hole, deliberately. When the refusal learns to print a
+// path verbatim, THIS TEST GOES RED — delete it and fold these arms into the
+// pin above.
+func TestQAGuardRefusalManglesABackslashEscapeInAPath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	// \s is deliberately absent: it is the one spelling that works, and it
+	// is the control below.
+	for _, name := range []string{`back\nslash.md`, `back\tslash.md`, `back\rslash.md`, `back\\slash.md`} {
+		t.Run(name, func(t *testing.T) {
+			undo, finish, cleanAfterUndo := revertRefusalOver(t, name)
+			want := "'" + name + "'"
+			if strings.Contains(undo, want) && strings.Contains(finish, want) {
+				t.Errorf("FIXED: the refusal now prints %s verbatim. Delete this pin and add this byte class to TestQAGuardRefusalNamesEveryPathGitQuotes:\n  undo:   %s\n  finish: %s", want, undo, finish)
+			}
+			if cleanAfterUndo {
+				t.Errorf("FIXED: the undo the refusal names now leaves the tree clean over %s. Delete this pin:\n  undo: %s", name, undo)
+			}
+		})
+	}
+	// THE CONTROL, and the evidence the close's pin never reached the class:
+	// the one backslash spelling echo leaves alone still round-trips. Without
+	// this arm a refusal that printed nothing at all would pass every arm
+	// above.
+	t.Run(`back\slash.md (control: works)`, func(t *testing.T) {
+		undo, finish, cleanAfterUndo := revertRefusalOver(t, `back\slash.md`)
+		want := `'back\slash.md'`
+		if !strings.Contains(undo, want) || !strings.Contains(finish, want) {
+			t.Errorf("control: the refusal must name %s\n  undo:   %s\n  finish: %s", want, undo, finish)
+		}
+		if !cleanAfterUndo {
+			t.Errorf("control: the undo must leave the tree clean over %s\n  undo: %s", want, undo)
+		}
+	})
+}
+
+// revertRefusalOver seeds one repo holding `name` and plain.md, installs the
+// commit guard, takes the refusal from a clean revert, and returns its two
+// prescribed lines AS PRINTED (one printed line each — a path that breaks
+// the line in two is exactly what this measures) plus whether running the
+// undo left the tree clean.
+func revertRefusalOver(t *testing.T, name string) (undo, finish string, cleanAfterUndo bool) {
+	t.Helper()
+	repo := t.TempDir()
+	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(extra []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), env...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	paths := []string{name, "plain.md"}
+	git(nil, "init", "-q", "-b", "main")
+	for _, n := range paths {
+		if err := os.WriteFile(filepath.Join(repo, n), []byte("x"), 0o644); err != nil {
+			t.Skipf("this filesystem will not hold %q: %v", n, err)
+		}
+	}
+	if out, err := git(nil, append([]string{"add", "--"}, paths...)...); err != nil {
+		t.Fatalf("seed add: %v\n%s", err, out)
+	}
+	if out, err := git(nil, append([]string{"commit", "-qm", "seed", "--"}, paths...)...); err != nil {
+		t.Fatalf("seed commit: %v\n%s", err, out)
+	}
+	git(nil, "commit", "--allow-empty", "-qm", "base")
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	out, err := git(persona, "revert", "--no-edit", "HEAD~1")
+	if err == nil {
+		t.Fatalf("a clean revert is refused: %s", out)
+	}
+	// Split on printed LINES, not with a regex over the whole message: a
+	// path carrying a \n splits the prescribed line, and reading it any
+	// other way would hide the defect this measures.
+	for _, ln := range strings.Split(out, "\n") {
+		if i := strings.Index(ln, "finish it:  "); i >= 0 {
+			finish = strings.TrimSpace(ln[i+len("finish it:  "):])
+		}
+		if i := strings.Index(ln, "or undo it: "); i >= 0 {
+			undo = strings.TrimSpace(ln[i+len("or undo it: "):])
+		}
+	}
+	if undo == "" || finish == "" {
+		t.Fatalf("the refusal must print both prescribed lines:\n%s", out)
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	cmd := exec.Command("sh", "-c", "cd \"$1\" && "+undo, "sh", repo)
+	cmd.Env = append(append([]string(nil), env...), persona...)
+	shOut, shErr := cmd.CombinedOutput()
+	st, _ := git(nil, "status", "--porcelain")
+	cleanAfterUndo = shErr == nil && strings.TrimSpace(st) == ""
+	t.Logf("undo=%q\n  sh err=%v tree-after=%q\n%s", undo, shErr, strings.TrimSpace(st), shOut)
+	return undo, finish, cleanAfterUndo
+}
