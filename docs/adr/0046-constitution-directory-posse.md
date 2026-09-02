@@ -5,7 +5,11 @@
 unbuilt: ranger-base-woox9's code, runbook and cutover beads (ids in the
 bead's close comment) · number: 0043–0045 are pre-named by ADR 0040 §2 with
 live build beads (hn32r, yv9uo, vl294); per 0040 §3.1 this file takes the
-next number no bead has claimed rather than shifting three.*
+next number no bead has claimed rather than shifting three · amended
+2026-09-02 (ranger-base-qpsis): item 3 corrected by the runbook's dry run
+(ranger-base-4pjnm, ranger-base `docs/runbooks/constitution-dir-cutover.md`
+@ fc7f13c) — the window opens at the `mv`, the `constitution:` key moves in
+the repo not the home, and two numbers were wrong.*
 
 ## Context
 
@@ -59,23 +63,43 @@ refusal at all. What it does do is listed under Decision, item 3.
    `dispatch --watch` running and no session dispatched into ranger-base.**
    The order is forced by two facts: the hook marker is read from disk or
    the base tree, and promote's source comes from the manifest before the
-   config.
+   config. **Steps 2 and 3 are one paste**: the wall is down from the
+   first line of step 2 to the last line of step 3, and the runbook is the
+   record of how — this record only says what and why.
 
    1. install the posse build carrying `"posse"` (the binary's land belt and
       hook render now name `posse/agents`; nothing is live until step 3);
    2. `mv rhq posse` in ranger-base (plain `mv`, not `git mv`, so the
       untracked `envs/` and `state/` ride along), fix the two `.gitignore`
-      lines, one operator commit — a persona commit here would be refused
-      by the old hook and is not wanted;
+      lines, `README.md:19`, and the `constitution:` key **in
+      `posse/config.yaml`, in the repo** — one operator commit naming
+      `rhq` in its pathspec so the deletions land with the adds. A persona
+      commit here would be refused by the old hook and is not wanted.
+      `rhq/.DS_Store` is untracked and not ignored on this box, so it is
+      removed before the `add -A`, not committed;
    3. `posse gates install-hooks ~/src/ranger-base` — the wall is closed
-      again the moment this writes. Between step 2's commit and this line
-      the constitution arm guards nothing in that repo, which is why the
-      loop is stopped;
+      again the moment this writes. **The window opens at the `mv`, not at
+      the commit** — MEASURED: with the directory moved and nothing yet
+      committed, a persona commit of `posse/config.yaml` landed at exit 0,
+      because HEAD still carries `rhq/agents` (the marker's base-tree arm
+      answers yes) while the class is still spelled `rhq/…`, which no
+      staged path matches. Between the `mv` and this line the constitution
+      arm guards nothing in that repo, which is why the loop is stopped.
+      The other three repos `beads_visibility:` declares (rangerhq,
+      ranger-queue, posse) carry a rendered wall too and re-render the
+      same way; only ranger-base has members in the class, and step 6's
+      hook-wall report names any that were missed;
    4. `ln -sfn ~/src/ranger-base/posse/personas ~/.config/posse/personas`
       — from the instant of step 2 until this line every launch would find
       no `ORDERS.md` and the seatbelt's personas grant would resolve
       nowhere;
-   5. `constitution: ~/src/ranger-base/posse` in `~/.config/posse/config.yaml`;
+   5. nothing to type: the `constitution:` key was edited in step 2, in
+      the constitution repo's own `config.yaml`. The first draft of this
+      item said to edit the home's copy; that edit does not survive step 6
+      — `config.yaml` is one of the five `PromotedPaths`, the home's copy
+      is byte-for-byte the constitution's, and the promote overwrites it.
+      MEASURED: edited only at the home, the key reverted to the old path
+      the moment step 6 ran;
    6. `posse promote ~/src/ranger-base/posse` — the argument is
       mandatory this once: a bare promote reads the manifest's old
       `source` and dies "constitution not found" (loud, harmless, and the
@@ -96,9 +120,14 @@ refusal at all. What it does do is listed under Decision, item 3.
 - Every seatbelt profile and every refusal now spells one name for the
   tree and its home. The doc sweep of `rhq` elsewhere no longer leaves an
   island the seatbelt profile prints on line 14 of every session.
-- `rhq/state` in ranger-base is a 6.7MB untracked relic of the pre-0015
-  symlinked home; it moves to `posse/state` under step 3.2 and is a
-  deletion candidate for the runbook, not this record.
+- `rhq/state` in ranger-base is a **66 MB** untracked relic of the
+  pre-0015 symlinked home (MEASURED: 67 344 KiB in 125 files, 61 MB of it
+  under `state/cages`, last written 2026-08-28 23:18; the first draft said
+  6.7 MB). The `mv` is a `rename(2)`, so it rides along at no cost, and it
+  is a deletion candidate for the operator after the sitting, not this
+  record. `rhq/envs` is EMPTY on this box (the live env sets are under the
+  home), so nothing secret moves in the sitting; the plain-`mv` reason
+  stands for `state/` today and for `envs/` the day anything is put back.
 - ADR 0015 §2 item 1–2 and §3's constitution-arm paragraph are stamped in
   place in the same commit as this record (0040 §3.3); the 0040 trim of
   0015 (ranger-base-mqoid) carries the new spelling and moves the cutover
@@ -130,7 +159,8 @@ refusal at all. What it does do is listed under Decision, item 3.
   in every runbook, and `posse/` needs no explaining.
 - **A hook that accepts both spellings through the window.** A
   two-spelling class is the rule assembly ADR 0040 §3.4 exists to end,
-  for a window that is minutes long when the loop is stopped.
+  for a window that is half a second long when steps 2 and 3 are pasted
+  as one block and the loop is stopped.
 - **Prefer config `constitution:` over the manifest's `source` in
   promote, or refuse when they disagree.** The disagreement fires exactly
   once, at step 3.6, and already dies loudly with the old path in the
@@ -150,4 +180,7 @@ refusal at all. What it does do is listed under Decision, item 3.
 | hook marker read from disk OR base tree; only `install-hooks` re-renders | MEASURED, `gates.go:3031–3032`, `hookfresh.go` header |
 | 17 test files / ~165 literal sites; `examples/config.yaml` is outside the digest table | MEASURED, `grep -c`; `exampledigests.go` names no config.yaml |
 | a pre-rename session branch cannot ff-land after the rename | ASSUMED (git ff-only semantics) |
-| the guarded window is minutes with the loop stopped | ASSUMED; the runbook bead times it |
+| the unguarded window opens at the `mv`, before the operator commit | MEASURED 2026-09-02, runbook experiment E1: persona commit landed at exit 0 with `rhq/agents` still in HEAD; refused before the `mv` and after `install-hooks` |
+| the window is 0.48–0.67 s (median 0.51 s), `mv` → wall re-rendered | MEASURED, seven runs of the runbook's own step 2+3 block against a size-faithful stand-in; the first draft assumed minutes, wrong by two orders |
+| the `constitution:` key edited at the home is reverted by step 6 | MEASURED, `cmp` on the live home/constitution pair, and the promote in the dry run put the old value back |
+| `rhq/state` 66 MB, `rhq/envs` empty, four hooked repos in `beads_visibility:` | MEASURED, `du -sk`, `ls -A`, the home `config.yaml` |
