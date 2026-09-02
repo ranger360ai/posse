@@ -2944,7 +2944,14 @@ Three different things get called "permissions"; keep them apart
   a claude launch grants `~/.claude`/`~/.claude.json` and NOT `~/.codex`
   /`~/.grok`; it was the union of all three until ranger-base-9fl, which
   is a cross-runtime auth-store WRITE and so an exfil channel no read
-  deny can close), the generic caches,
+  deny can close) — plus, where a `state_dir:` names a FILE, its
+  atomic-write siblings as a dot-anchored `regex` (`<p>.lock`,
+  `<p>.tmp.*` and nothing else): `subpath` is component-aware, so the
+  grant on `~/.claude.json` alone covered neither of the two paths claude
+  actually writes and EVERY caged write to it was dropped while the CLI
+  printed success and exited 0, for as long as the tier existed
+  (ranger-base-cypy1; 185 of one day's denials on this box) — the
+  generic caches,
   posse's own `state/` **derived from the App's home** (it was the literal
   `~/.config/rhq/state` until ranger-base-cpyb, so a second `RHQ_HOME`'s
   sessions got no grant to their own state dir and one into the default
