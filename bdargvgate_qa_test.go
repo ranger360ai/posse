@@ -712,25 +712,28 @@ func parserGate(t *testing.T, command string) gateResult {
 // ranger-base-1lvm, found verifying ranger-base-hthx's close (ranger-base-nn0n).
 // The fast path above is fixed and I could not break it. This is the OTHER
 // half of that close — the fail-closed fallback, the arm taken when the parser
-// did not run at all — and it is still open, so this pin is SKIPPED. Remove
-// the skip when 1lvm is fixed; it is red until then.
+// did not run at all. 1lvm is FIXED and this pin is live: it was parked while
+// the defect was open, and the skip outlived the fix by four days
+// (ranger-base-x3pmq lifted it).
 //
-// The fallback reasons about the JSON payload's TEXT while the parser reasons
-// about the DECODED command, and the two disagree about a newline. A newline
-// in a command arrives as the two characters backslash + n, so in
-// `hi\nbd daemon stop` the character before `bd` is the `n` of the escape —
-// which is in the excluded class, so the raw grep misses it; and stripping the
-// backslash JOINS that n to bd, giving `hinbd`, so the stripped grep misses it
-// too. Both forms are there precisely to cover each other and neither covers
-// this. A bd call that is not on the FIRST LINE of the command is waved
-// through whenever the parser is unavailable, which is the state the fallback
-// exists for.
+// The defect it holds down: the fallback reasoned about the JSON payload's
+// TEXT while the parser reasons about the DECODED command, and the two
+// disagreed about a newline. A newline in a command arrives as the two
+// characters backslash + n, so in `hi\nbd daemon stop` the character before
+// `bd` is the `n` of the escape — which is in the excluded class, so the raw
+// grep missed it; and stripping the backslash JOINS that n to bd, giving
+// `hinbd`, so the stripped grep missed it too. Both forms were there precisely
+// to cover each other and neither covered this. A bd call that is not on the
+// FIRST LINE of the command was waved through whenever the parser is
+// unavailable, which is the state the fallback exists for. The decoding arms
+// above bd_word in scripts/bd-argv-gate.sh are the fix; restore that `if` to
+// its two pre-fix text greps and all nine rows below go red (MEASURED under
+// x3pmq, control still green).
 //
 // The control arm is the whole finding and must stay: the SAME verb on line
 // one is refused today, so a green run of this test can only mean the newline
 // case was fixed, not that the fallback started refusing everything.
 func TestQABdArgvGateFallbackSeesBdPastTheFirstLine(t *testing.T) {
-	t.Skip("ranger-base-1lvm: the fail-closed fallback greps the payload text, which a JSON-escaped newline hides bd behind")
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("no python3")
 	}
