@@ -50,9 +50,21 @@ import (
 // The one thing it cannot see is a command invoked through a variable. Both
 // hooks do that once, in posse_stamp, and shellExecProbeNames below reads that
 // idiom's literal name off the `[ -x "$dir/name" ]` test that finds it.
-func shellCommandWords(src string) []shellCall {
+//
+// The other thing it cannot see is the OTHER command substitution: `cmd` in
+// backticks. Rather than guess at it, the scanner reports every backtick it
+// meets while reading SHELL CODE as the second return, and the caller fails on
+// one. That is a report from the same lexer state as the words, which is the
+// whole point (ranger-base-cx2ok): a backtick inside a comment or inside single
+// quotes runs nothing, and the rendered commit guard quotes three commands for
+// a reader that way. A whole-body `strings.Contains(body, "`")` cannot tell the
+// two apart and failed on the prose for a day.
+func shellCommandWords(src string) (words, backticks []shellCall) {
 	var out []shellCall
 	seen := map[string]bool{}
+	backtick := func(off int) {
+		backticks = append(backticks, shellCall{Name: "`", Line: 1 + strings.Count(src[:off], "\n")})
+	}
 	emit := func(w string, off int) {
 		if !seen[w] {
 			seen[w] = true
@@ -124,6 +136,11 @@ func shellCommandWords(src string) []shellCall {
 				i += 2
 			case c == '$' && i+1 < len(src) && src[i+1] == '{':
 				i = skipBraceExpansion(src, i)
+			case c == '`':
+				// Substitution inside double quotes too, and here the scanner
+				// does not even open a command position for it.
+				backtick(i)
+				i++
 			default:
 				i++
 			}
@@ -178,7 +195,15 @@ func shellCommandWords(src string) []shellCall {
 			}
 			cmdPos = false
 			i += 2
-		case c == '\n' || c == ';' || c == '|' || c == '&' || c == '(' || c == '{' || c == '`':
+		case c == '`':
+			// Read as a separator so the word after it is at least scanned as a
+			// command; the report is what the caller acts on, because the
+			// CLOSING backtick opens a command position too and the word after
+			// THAT is a false positive.
+			backtick(i)
+			cmdPos = true
+			i++
+		case c == '\n' || c == ';' || c == '|' || c == '&' || c == '(' || c == '{':
 			cmdPos = true
 			i++
 		case c == ' ' || c == '\t':
@@ -231,7 +256,7 @@ func shellCommandWords(src string) []shellCall {
 			i++
 		}
 	}
-	return out
+	return out, backticks
 }
 
 // shellCall is one command word and the 1-based line of the rendered hook it
@@ -334,10 +359,12 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 
 	called := map[string]string{} // command -> which hook calls it
 	for name, body := range rendered {
-		if strings.Contains(body, "`") {
-			t.Errorf("%s: backtick substitution — shellCommandWords does not scan it", name)
+		words, backticks := shellCommandWords(body)
+		for _, bt := range backticks {
+			t.Errorf("%s:%d: backtick substitution in shell code — shellCommandWords does not scan it, "+
+				"so any command inside it is missing from this census", name, bt.Line)
 		}
-		for _, c := range append(shellCommandWords(body), shellExecProbeNames(body)...) {
+		for _, c := range append(words, shellExecProbeNames(body)...) {
 			if notPathLookups[c.Name] || strings.HasPrefix(c.Name, "posse_") {
 				continue // posse_* are the hooks' own shell functions
 			}
@@ -389,5 +416,90 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 		t.Errorf("scripts/cleanroom.sh HOOK_DEPS names %d command(s) no rendered hook calls: %s\n"+
 			"A name in that list is a claim the hooks need it. Remove them, or say here why the scanner cannot see the call.",
 			len(spurious), strings.Join(spurious, ", "))
+	}
+}
+
+// ranger-base-cx2ok: the guard above used to be a whole-body
+// strings.Contains(body, "`"), which reds on a backtick ANYWHERE in the
+// rendered hook. Three of them are prose in comments — the commit guard quotes
+// `rm -rf <marker>` and two `git mv` lines for a reader, from the marker and
+// --no-renames paragraphs — and the whole internal/posse package was red on
+// them, so nobody could honestly claim a green suite.
+//
+// A backtick is only a command substitution where the shell is reading CODE.
+// The scanner already knows where that is: it tracks comments and single
+// quotes to find command words at all. This pin is that discrimination —
+// reported where a substitution would RUN, silent where the shell would read a
+// literal.
+func TestShellCommandWordsReportsBackticksInCodeNotInProse(t *testing.T) {
+	const bt = "`"
+	for _, tc := range []struct {
+		name string
+		src  string
+		want bool // a backtick is reported
+	}{
+		// Reported: the shell would substitute here, and the scan of what is
+		// inside is exactly what shellCommandWords cannot do.
+		{"bare command substitution", "x=" + bt + "date" + bt, true},
+		{"inside double quotes", "x=\"" + bt + "date" + bt + "\"", true},
+		{"in a command position", bt + "hostname" + bt + " -f", true},
+		{"after a code line's trailing comment", "ls # note\ny=" + bt + "date" + bt, true},
+		// Silent: nothing runs, so the census is not missing anything.
+		{"whole-line comment", "# quotes " + bt + "rm -rf rhq/agents" + bt + " for a reader", false},
+		{"trailing comment", "ls -l  # see " + bt + "git mv a b" + bt + " above", false},
+		{"single quotes", "echo '" + bt + "date" + bt + "'", false},
+		{"escaped, unquoted", "echo \\" + bt, false},
+		{"escaped inside double quotes", "echo \"\\" + bt + "\"", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, backticks := shellCommandWords(tc.src)
+			if got := len(backticks) > 0; got != tc.want {
+				t.Errorf("shellCommandWords(%q) reported %d backtick(s), want reported=%v",
+					tc.src, len(backticks), tc.want)
+			}
+		})
+	}
+
+	// The live witness. The rendered commit guard carries backticks today and
+	// they are all prose; splicing ONE into shell code is the only difference
+	// between silence and a finding. Without this arm the table above is a
+	// scanner unit test that no rendered hook has to keep satisfying.
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	cmd := exec.Command("git", "-C", repo, "init", "-q", "-b", "main")
+	cmd.Env = []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo}
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, b)
+	}
+	hookPath, err := installCommitGuard(repo)
+	if err != nil {
+		t.Fatalf("install prepare-commit-msg: %v", err)
+	}
+	b, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(b)
+	if !strings.Contains(body, bt) {
+		t.Errorf("the rendered prepare-commit-msg no longer contains a backtick at all: " +
+			"this arm witnesses that the guard tolerates PROSE backticks, and it now witnesses nothing. " +
+			"If the template deliberately dropped them, delete this paragraph and say so.")
+	}
+	if _, backticks := shellCommandWords(body); len(backticks) > 0 {
+		var where []string
+		for _, c := range backticks {
+			where = append(where, fmt.Sprintf("line %d", c.Line))
+		}
+		t.Errorf("rendered prepare-commit-msg: %d backtick(s) read as shell code (%s)",
+			len(backticks), strings.Join(where, ", "))
+	}
+	// Two, not one: the scanner reports SITES, and a substitution opens and
+	// closes with one each. Both are worth naming — the closing backtick is
+	// where the scan resumes reading words as commands.
+	if _, backticks := shellCommandWords(body + "\nposse_x=" + bt + "date" + bt + "\n"); len(backticks) != 2 {
+		t.Errorf("a real substitution spliced into the rendered hook was reported at %d site(s), want 2 — "+
+			"the guard would not catch the thing it exists for", len(backticks))
 	}
 }
