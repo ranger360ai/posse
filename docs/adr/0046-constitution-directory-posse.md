@@ -85,10 +85,11 @@ refusal at all. What it does do is listed under Decision, item 3.
       answers yes) while the class is still spelled `rhq/…`, which no
       staged path matches. Between the `mv` and this line the constitution
       arm guards nothing in that repo, which is why the loop is stopped.
-      The other three repos `beads_visibility:` declares (rangerhq,
-      ranger-queue, posse) carry a rendered wall too and re-render the
-      same way; only ranger-base has members in the class, and step 6's
-      hook-wall report names any that were missed;
+      The other three repos `beads_visibility:` declares (ranger-queue,
+      posse, and the pre-publication-named home repo ADR 0048 describes)
+      carry a rendered wall too and re-render the same way; only
+      ranger-base has members in the class, and step 6's hook-wall report
+      names any that were missed;
    4. `ln -sfn ~/src/ranger-base/posse/personas ~/.config/posse/personas`
       — from the instant of step 2 until this line every launch would find
       no `ORDERS.md` and the seatbelt's personas grant would resolve
