@@ -168,11 +168,26 @@ against this distro's userland, and exits non-zero on any `MISSING`.
 away** — that would hide exactly what the image exists to surface. File it;
 `ranger-base-rmgz` is the shape.
 
-The command list is a **contract that can drift**. It was enumerated from the
-rendered hooks on 2026-08-28. If `gates.go` learns to call a new external
-command, the `HOOK_DEPS` default in `scripts/cleanroom.sh` must learn it too,
-or the probe goes quiet about it. Override for a one-off with
+The command list is a **contract that could drift, and did**. It was
+hand-enumerated by reading `gates.go` on 2026-08-28, and by 2026-09-01 it had
+drifted both ways at once (`ranger-base-lxkdi`): `cut` and `sed` were called
+and never probed, and six names the hooks never call sat in the list looking
+probed.
+
+It is no longer maintained by hand.
+`TestHookDepsNamesEveryCommandTheRenderedHooksCall`
+(`internal/posse/hookdeps_qa_test.go`) renders the three generated hooks —
+`prepare-commit-msg`, `pre-push`, and the chain dispatcher — scans the shell
+text for command words, and fails when the `HOOK_DEPS` default in
+`scripts/cleanroom.sh` and that scan disagree in **either** direction. So a new
+external call in `gates.go` reds the Go suite rather than going quiet here.
+Edit the list only in answer to that test; override for a one-off with
 `HOOK_DEPS='a b c'`.
+
+The list names what the hooks resolve **through PATH**. `git` is absent because
+git is what runs them, and shell builtins are absent — `command -v` answers a
+builtin as present, so a builtin named here could never come back `MISSING`,
+and this list exists to produce findings.
 
 ## Rules for a test pass
 

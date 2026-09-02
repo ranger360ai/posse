@@ -248,26 +248,41 @@ cmd_status() {
 # without it the prepare-commit-msg wall still refuses but silently drops the
 # paragraph telling a user mid-`git revert` how to get out.
 #
-# THE LIST IS A CONTRACT AND IT CAN DRIFT. It was enumerated from the rendered
-# hooks for ranger-base-rmgz on 2026-08-28. If gates.go learns to call a new
-# external command, this list must learn it too, or the probe goes quiet about
-# it. Override for a one-off with HOOK_DEPS='a b c'.
+# THE LIST IS A CONTRACT AND IT CAN DRIFT, so it is no longer maintained by
+# hand. It was hand-enumerated by READING internal/posse/gates.go for
+# ranger-base-rmgz on 2026-08-28, and by 2026-09-01 it had drifted in both
+# directions at once (ranger-base-lxkdi): `cut` and `sed` were called and never
+# probed, and six names the hooks never call sat here looking probed. Reading
+# the Go source is what drifted — the rendered bytes are what runs on the box.
+#
+# TestHookDepsNamesEveryCommandTheRenderedHooksCall
+# (internal/posse/hookdeps_qa_test.go) now renders the three generated hooks,
+# scans the shell text for command words, and fails when this line and that
+# scan disagree in EITHER direction. Edit the list only in answer to that test;
+# override for a one-off with HOOK_DEPS='a b c'.
 #
 # `cmp` dropped from this list in the ranger-base-rmgz fix itself: gates.go no
-# longer calls it (the MERGE_MSG comparison at gates.go:2206 is now POSIX
-# shell — command substitution, not diffutils), so it is no longer a
-# dependency to probe for.
+# longer calls it (the MERGE_MSG comparison is now POSIX shell — command
+# substitution, not diffutils), so it is no longer a dependency to probe for.
 #
-# Shell builtins count as present, because the hook invokes these from a shell
-# and a builtin serves it. `command -v` is used for exactly that reason, and it
-# is the same probe the runbook's numbers were taken with, so results compare.
-HOOK_DEPS="${HOOK_DEPS:-date tr rm printf head grep mv mktemp dirname sort env chmod cat}"
+# The list names what the hooks resolve THROUGH PATH, and nothing else.
+#  - `git` is absent on purpose: git is what runs the hooks.
+#  - Shell builtins are absent too, `printf` and `echo` included. `command -v`
+#    is still the probe, and it answers a builtin as present — which is the
+#    point: a builtin can never come back MISSING, so naming one here is an
+#    assertion that cannot fail. This list exists to produce findings.
+#  - `date` is here even though the hooks never spell it as a bare command:
+#    posse_stamp walks PATH itself and runs the first non-gates `date` it
+#    finds (ranger-base-l97n), which `command -v date` answers faithfully.
+#  - `dirname` is the chain dispatcher's, not the two walls' — the third
+#    generated hook, written when another tool already owns the slot.
+HOOK_DEPS="${HOOK_DEPS:-cat cut date dirname grep head sed tr}"
 
 cmd_hook_deps() {
   need_docker
   container_running || cmd_start
   echo "cleanroom: commands the generated hooks call, on $DISTRO ($IMAGE)"
-  echo "cleanroom: source of the list — internal/posse/gates.go, enumerated for ranger-base-rmgz"
+  echo "cleanroom: source of the list — the RENDERED hooks, pinned by TestHookDepsNamesEveryCommandTheRenderedHooksCall"
   echo
   local out
   out=$(as_tester "for c in $HOOK_DEPS; do

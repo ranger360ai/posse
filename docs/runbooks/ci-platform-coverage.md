@@ -265,9 +265,11 @@ pretending a container is a distro.
   check while measuring a distro nobody asked for.
 - `scripts/cleanroom.sh hook-deps` — the probe that pays for the route. It
   reports the external commands the generated hooks call against the selected
-  distro's userland and exits non-zero on any `MISSING`. Its command list is a
-  contract that can drift from `gates.go`; that risk is written down in
-  `etc/cleanroom/README.md`.
+  distro's userland and exits non-zero on any `MISSING`. Its command list was a
+  contract that could drift from `gates.go`, and did (`ranger-base-lxkdi`); it
+  is now derived from the rendered hooks and pinned both ways by
+  `TestHookDepsNamesEveryCommandTheRenderedHooksCall`, and the contract is
+  written down in `etc/cleanroom/README.md`.
 - `make cleanroom-distros`, `make cleanroom-hook-deps`, `make
   cleanroom-verify-all` (all four, keeps going after a red one).
 
