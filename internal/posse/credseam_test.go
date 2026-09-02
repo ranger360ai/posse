@@ -37,10 +37,18 @@ func envelope(tok string, expiresAt int64) string {
 // credentialsHome points $HOME at a scratch dir and optionally writes the
 // runtime's credentials file into it. The returned path is where the
 // non-darwin adapter will look.
+//
+// Both config-dir variables are cleared, and that is not tidiness: since
+// ranger-base-wd4be the adapter FOLLOWS them, so a box whose operator has
+// set one would move every path below out of the scratch home and into the
+// operator's own directory — a suite that reads a live credential store and
+// passes or fails on what it finds there.
 func credentialsHome(t *testing.T, blob string) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	p := filepath.Join(home, ".claude", ".credentials.json")
 	if blob != "" {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -51,6 +59,136 @@ func credentialsHome(t *testing.T, blob string) string {
 		}
 	}
 	return p
+}
+
+// unsetenvForTest removes a variable for the duration of one test and puts
+// the ambient value back after it. t.Setenv first, because it is what
+// registers the restore — os.Unsetenv on its own leaks the absence into
+// every test that runs later (the idiom initoperatorfence_qa_test.go spells
+// out). Unset and present-but-empty are DIFFERENT inputs to the resolver
+// under test, so this cannot be a t.Setenv("") and stop there.
+func unsetenvForTest(t *testing.T, k string) {
+	t.Helper()
+	t.Setenv(k, "")
+	os.Unsetenv(k)
+}
+
+// ─── where the credentials file is, ranger-base-wd4be ────────────────────────
+
+// The resolution the shipped runtime performs, one arm per input. MEASURED
+// off the 2.1.258 bundle (darwin-arm64 byte 158045445, and the linux-x64
+// build on ranger-base-ydjz); credentialDir's doc carries the source.
+//
+// This is a table and not four tests because the arms only mean anything
+// against each other: the same directory named by two variables at once has
+// a winner, and "CLAUDE_CONFIG_DIR is followed" is a claim about the arm
+// where CLAUDE_SECURESTORAGE_CONFIG_DIR is not there to shadow it.
+func TestCredentialsFileFollowsTheRuntimesOwnDirectoryResolution(t *testing.T) {
+	home := t.TempDir()
+	sec := t.TempDir()
+	cfg := t.TempDir()
+
+	for _, tc := range []struct {
+		name string
+		// nil = the variable is not in the environment at all, which is a
+		// different input from a pointer to "" (see the empty arm).
+		secureStorage, configDir *string
+		want                     string
+		why                      string
+	}{
+		{
+			name: "neither set",
+			want: filepath.Join(home, ".claude", ".credentials.json"),
+			why:  "the home is the FALLBACK, and it is the only arm the old hardcoded path got right",
+		},
+		{
+			name:      "CLAUDE_CONFIG_DIR alone",
+			configDir: &cfg,
+			want:      filepath.Join(cfg, ".credentials.json"),
+			why:       "the configuration directory, the same rule trust.go follows for the trust file — posse used to hold two answers here (ranger-base-wd4be gap 1)",
+		},
+		{
+			name:          "CLAUDE_SECURESTORAGE_CONFIG_DIR alone",
+			secureStorage: &sec,
+			want:          filepath.Join(sec, ".credentials.json"),
+			why:           "the secure-storage override, which appeared nowhere in the tree before this bead",
+		},
+		{
+			name:          "both set",
+			secureStorage: &sec,
+			configDir:     &cfg,
+			want:          filepath.Join(sec, ".credentials.json"),
+			why:           "secure storage WINS: the runtime tests it first and returns without ever reading the config dir",
+		},
+		{
+			name:          "CLAUDE_SECURESTORAGE_CONFIG_DIR present but EMPTY, with a config dir set",
+			secureStorage: strPtr(""),
+			configDir:     &cfg,
+			want:          filepath.Join(home, ".claude", ".credentials.json"),
+			why:           "the arm nobody guesses. `n!==void 0` is presence and `n||join(homedir(),'.claude')` is truthiness, so an empty value ENTERS the branch and falls to the home — setting the variable to nothing shadows CLAUDE_CONFIG_DIR rather than deferring to it, and it is not the empty string either",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", home)
+			for k, v := range map[string]*string{
+				"CLAUDE_SECURESTORAGE_CONFIG_DIR": tc.secureStorage,
+				"CLAUDE_CONFIG_DIR":               tc.configDir,
+			} {
+				if v == nil {
+					unsetenvForTest(t, k)
+					continue
+				}
+				t.Setenv(k, *v)
+			}
+			got, err := CredentialsFile()
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %s, want %s — %s", got, tc.want, tc.why)
+			}
+		})
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+// The store the adapter actually reads follows the same resolution, which is
+// the bead's BITE and not its mechanism: with the directory moved, a file
+// that is there must be found. Before ranger-base-wd4be this answered
+// NoSource — "log in once with `claude`" — on a box where claude was logged
+// in and rotating a token one directory over, and ADR 0019 D3 reserves
+// NoSource for a structural absence.
+func TestTheMeterStoreReadsTheFileTheRuntimeWouldHaveWritten(t *testing.T) {
+	for _, v := range []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"} {
+		t.Run(v, func(t *testing.T) {
+			credentialsHome(t, envelope("home-token", 0)) // the path the old code assumed
+			dir := t.TempDir()
+			t.Setenv(v, dir)
+			p := filepath.Join(dir, ".credentials.json")
+			if err := os.WriteFile(p, []byte(envelope("moved-token", 0)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			store, ns := meterStore("claude", "linux")
+			if ns != nil {
+				t.Fatalf("a file that is there is not a structural absence: %v", ns)
+			}
+			if !strings.Contains(store.Name, p) {
+				t.Errorf("the store must name the file it will open (%s): %q", p, store.Name)
+			}
+			tok, _, err := readStore(store)
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+			// The home file is the control: it holds a DIFFERENT token, so
+			// reading the wrong one is a wrong value here and not merely a
+			// missing error. Nothing quotes a credential in production, but
+			// these are fixtures and the whole finding is which file spoke.
+			if tok != "moved-token" {
+				t.Errorf("read %q — the adapter is still reading $HOME/.claude, which is the defect", tok)
+			}
+		})
+	}
 }
 
 // The switch is total and it is a switch: every platform that is not darwin

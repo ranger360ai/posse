@@ -91,10 +91,7 @@ import (
 // not a fleet shape, and a session that sets CLAUDE_CODE_CUSTOM_OAUTH_URL
 // gets the dialog rather than a guess.
 func ClaudeConfigFile() string {
-	cfgDir := os.Getenv("CLAUDE_CONFIG_DIR")
-	if cfgDir == "" {
-		cfgDir = filepath.Join(os.Getenv("HOME"), ".claude")
-	}
+	cfgDir := ClaudeConfigDirIn(os.Getenv("HOME"))
 	if p := filepath.Join(cfgDir, ".config.json"); fileExists(p) {
 		return p
 	}
@@ -103,6 +100,39 @@ func ClaudeConfigFile() string {
 		base = os.Getenv("HOME")
 	}
 	return filepath.Join(base, ".claude.json")
+}
+
+// ClaudeConfigDirIn is claude's CONFIGURATION directory, the one rule read
+// off the shipped binary rather than guessed: `CLAUDE_CONFIG_DIR`, else
+// `<home>/.claude`. It takes the home rather than reading one so each caller
+// keeps its own spelling of it — trust.go's `$HOME` (the path printed has to
+// be the path read) and credential.go's `os.UserHomeDir()`, which has an
+// error to report when there is none.
+//
+// It exists as one function because posse used to hold two answers: this
+// rule here, and a hardcoded `$HOME/.claude` in credential.go, so the trust
+// file followed an operator's `CLAUDE_CONFIG_DIR` and the credential file
+// did not (ranger-base-wd4be).
+//
+// MEASURED, 2.1.258 darwin-arm64, the shipped bundle's own source:
+//
+//	function s(){return process.env.CLAUDE_CONFIG_DIR}
+//	var Se=Zo(()=>(s()??i(R(),".claude")).normalize("NFC"),s)
+//
+// Two literal divergences, both deliberate and neither reachable on a
+// configured box. `??` means an EMPTY `CLAUDE_CONFIG_DIR` gives the runtime
+// the empty string — a relative `.credentials.json` under whatever cwd it
+// launched in — where this treats empty as unset; mirroring that would have
+// posse stat a relative path, which is a worse answer than ~/.claude to a
+// misconfiguration neither of us should have. And `.normalize("NFC")` is
+// Unicode normalization posse does not do: a config dir spelled with
+// decomposed codepoints is one posse and the runtime could disagree about
+// on a filesystem that preserves the difference.
+func ClaudeConfigDirIn(home string) string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(home, ".claude")
 }
 
 func fileExists(p string) bool {

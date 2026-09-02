@@ -300,11 +300,11 @@ type Runtime struct {
 	PIDVoid []string
 	// CageCred names the env var an authenticated *caged* session of this
 	// runtime needs (`cage_cred:` in a template-only runtime's yaml). A
-	// container has no keychain, and the on-disk credential files are
-	// stale there or unrefreshable read-only, so the operator mints one
-	// and the launch refuses without it (ADR 0002 §4, rangerhq-kiz) —
-	// cage.go. Empty falls back to the built-in table; a runtime in
-	// neither is one whose container credential nobody has decided yet.
+	// container has no keychain and posse never reads an on-disk credential
+	// file there either, so the operator mints one and the launch refuses
+	// without it (ADR 0002 §4, rangerhq-kiz) — cage.go. Empty falls back to
+	// the built-in table; a runtime in neither is one whose container
+	// credential nobody has decided yet.
 	CageCred string
 	// CredBin names the binary this runtime's OWN credential path execs BY
 	// BARE NAME — so an L1 shim over it stands in front of the RUNTIME, not

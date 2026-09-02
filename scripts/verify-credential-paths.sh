@@ -16,7 +16,10 @@
 # is walled: the rendered profile now carries a file-read* deny on this exact
 # literal (ranger-base-hw18), so a caged session cannot read it — but that
 # deny stops a READ, not the regeneration, and this script is still the only
-# thing that notices the file coming back. The keychain OAuth item is the
+# thing that notices the file coming back. The deny is spelled
+# `~/.claude/.credentials.json` and only that, so on a box that sets either
+# config-dir variable below the wall is behind the file; that is a wall
+# question and not this script's (ranger-base-7pf1h). The keychain OAuth item is the
 # credential the fleet actually uses; a file here is a second copy of a live
 # grant, outside the store ADR 0019 counts.
 #
@@ -50,13 +53,31 @@ esac
 
 [ -n "${HOME:-}" ] || { echo "verify-credential-paths: HOME is unset — nothing to scan"; exit 2; }
 
-# The lookup dir claude actually uses: $CLAUDE_CONFIG_DIR when set, else
-# ~/.claude (internal/posse/trust.go:92). Scan both when they differ, so setting
-# the variable cannot turn a finding into a silent pass.
+# The directories claude can write a credential file into. MEASURED off the
+# shipped 2.1.258 bundle and spelled the same way in Go by
+# internal/posse/credential.go credentialDir(), which has the source: the
+# secure-storage override $CLAUDE_SECURESTORAGE_CONFIG_DIR, else the config dir
+# $CLAUDE_CONFIG_DIR, else ~/.claude.
+#
+# This scans the UNION, not the winner, and that is the difference between a
+# resolver and a sweep. The runtime reads one directory; a file left in a loser
+# is still a second copy of a live grant sitting in a directory every persona
+# session can read, and the whole point of this control is that setting a
+# variable must not be able to turn a finding into a silent pass. So ~/.claude
+# is always scanned — which also covers the one arm of the resolution nobody
+# guesses, a PRESENT-BUT-EMPTY $CLAUDE_SECURESTORAGE_CONFIG_DIR, where the
+# runtime falls to ~/.claude and shadows $CLAUDE_CONFIG_DIR entirely.
 dirs=("$HOME/.claude")
-if [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ "$CLAUDE_CONFIG_DIR" != "$HOME/.claude" ]; then
-  dirs+=("$CLAUDE_CONFIG_DIR")
-fi
+add_dir() {
+  local cand=$1 d
+  [ -n "$cand" ] || return 0
+  for d in "${dirs[@]}"; do
+    [ "$d" = "$cand" ] && return 0
+  done
+  dirs+=("$cand")
+}
+add_dir "${CLAUDE_CONFIG_DIR:-}"
+add_dir "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}"
 
 present=0
 findings=0

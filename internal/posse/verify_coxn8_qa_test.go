@@ -98,24 +98,21 @@ func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T)
 }
 
 // The site the sweep missed, filed as ranger-base-d14ie: runtime.go's
-// CageCred doc still carries the pre-amendment claim in the container's
-// words — "the on-disk credential files are stale there or unrefreshable
-// read-only" — which is verbatim what 26b21af reworded one file over, at
-// runtimecheck.go:557. Skipped rather than red: the fix belongs to the
-// code lane, not QA's, and a red suite for a doc comment helps nobody.
+// CageCred doc carried the pre-amendment claim in the container's words —
+// "the on-disk credential files are stale there or unrefreshable read-only"
+// — which is verbatim what 26b21af reworded one file over, at
+// runtimecheck.go:557. It was parked rather than red while the fix belonged
+// to the code lane; d14ie was closed as folded into ranger-base-wd4be and
+// wd4be's commit reworded the site to its twin's sentence, so the park is
+// lifted and this is a live guard against the framing coming back to the
+// one file the "stale leftover" scan above cannot see it in — the phrase
+// here is the container's, not that one.
 //
-// The park now names ranger-base-wd4be, not d14ie. The ranger-base-kcnc6
-// groom CLOSED d14ie as folded into wd4be — "one stale doc comment from the
-// same credential-file sweep; rides wd4be's commit" — while the defect
-// stayed live: measured 2026-09-02 at 13db95e with the skip lifted, this
-// test FAILS, runtime.go:304 unchanged. A reader who sees the parked id
-// closed and follows "un-skip with the fix" literally reds the suite; one
-// who tidies the pin away instead deletes the only witness. wd4be is the
-// OPEN bead that owes the fix. d14ie stays in the prose above, where the
-// site was found (ranger-base-i9dbb).
+// The sibling above scans every shipped source for the dead phrase; this
+// one names a file, because the wording it wants is a rewording of a
+// SPECIFIC doc and its absence anywhere else proves nothing.
 func TestQACageCredDocDoesNotCallTheOnDiskCredentialStale(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-wd4be (carries closed ranger-base-d14ie): runtime.go's CageCred doc still says the on-disk credential files are 'stale there or unrefreshable read-only' — the framing 26b21af swept out of its twin")
 	b, err := os.ReadFile(filepath.Join(qspRepoRoot(t), "internal", "posse", "runtime.go"))
 	if err != nil {
 		t.Fatal(err)

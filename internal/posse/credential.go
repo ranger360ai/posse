@@ -25,11 +25,13 @@ package posse
 //     ABSOLUTELY (ranger-base-ypf5) — a PATH lookup here resolved to the
 //     calling persona's own Bash(security:*) shim and refused posse's own
 //     monitoring read.
-//   - anything else: ~/.claude/.credentials.json, Claude Code's own store of
-//     record where there is no keychain, fed through the SAME envelope
-//     parser. One fixture, two paths, one diagnosis (ADR 0019 V7): the shape
-//     diagnostics ranger-base-okbr bought with an hour of stopped shop apply
-//     to both, because there is only one of them.
+//   - anything else: `.credentials.json` under the directory the runtime's
+//     own secure storage writes it to (CredentialsFile, and it is NOT the
+//     home by definition), Claude Code's own store of record where there is
+//     no keychain, fed through the SAME envelope parser. One fixture, two
+//     paths, one diagnosis (ADR 0019 V7): the shape diagnostics
+//     ranger-base-okbr bought with an hour of stopped shop apply to both,
+//     because there is only one of them.
 //
 // Nothing here quotes a credential. The errors name stores, key NAMES and
 // shapes; the values never appear — that rule is inherited from the code
@@ -541,12 +543,59 @@ func keychainCmd(bin string) *exec.Cmd {
 // sits frozen for days while the keychain keeps rotating (ADR 0019 D2 store
 // 3 / amended rejected-alternatives entry) — so reading it would invert the
 // store of record on the one platform whose record lives elsewhere.
+//
+// The DIRECTORY is credentialDir's, not `$HOME/.claude`: this function
+// assumed the home for as long as it existed, which made posse blind to a
+// live credential file on any box whose operator sets either config-dir
+// variable — a false NoSource ("log in once with `claude`") while claude is
+// logged in and rotating a token one directory over (ranger-base-wd4be).
 func CredentialsFile() (string, error) {
+	dir, err := credentialDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, ".credentials.json"), nil
+}
+
+// credentialDir is the directory the runtime's secure storage writes into,
+// MEASURED off the shipped 2.1.258 bundle rather than assumed. Verbatim, the
+// darwin-arm64 binary at byte 158045445 (the linux-x64 one measured the same
+// on ranger-base-ydjz; the two bundles DO differ elsewhere, so both were
+// read):
+//
+//	function TS(){let n=process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR
+//	if(n!==void 0)return(n||l(o(),".claude")).normalize("NFC")
+//	return Se()}
+//
+// So, in order:
+//
+//   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and non-empty — that directory.
+//   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and EMPTY — `~/.claude`, and NOT
+//     the configuration directory. `n!==void 0` is a presence test and
+//     `n||…` is a truthiness test, so an empty value enters the branch and
+//     then falls to the home: setting the variable to nothing SHADOWS
+//     CLAUDE_CONFIG_DIR rather than deferring to it. That is the one arm of
+//     this resolution nobody would guess, which is why it has its own pin.
+//   - otherwise the configuration directory — ClaudeConfigDirIn, the same
+//     rule trust.go follows for the trust file.
+//
+// The home is resolved once, only when it is needed: a set, non-empty
+// CLAUDE_SECURESTORAGE_CONFIG_DIR is an answer on a box with no home at all,
+// and reporting "no home directory" there would be a diagnosis of the wrong
+// thing.
+func credentialDir() (string, error) {
+	sec, set := os.LookupEnv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	if set && sec != "" {
+		return sec, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return "", Die("no home directory for this user, so the runtime's credentials file cannot be located")
 	}
-	return filepath.Join(home, ".claude", ".credentials.json"), nil
+	if set {
+		return filepath.Join(home, ".claude"), nil
+	}
+	return ClaudeConfigDirIn(home), nil
 }
 
 // credentialsFileStore is the non-darwin adapter. A file that is not there
@@ -558,7 +607,7 @@ func credentialsFileStore(goos string) runtimeStore {
 	p, perr := CredentialsFile()
 	name := "the Claude Code credentials file " + p
 	if perr != nil {
-		name = "the Claude Code credentials file under $HOME/.claude"
+		name = "the Claude Code credentials file under the runtime's config directory"
 	}
 	// Not the keychain's sentence: there is no per-binary ACL on a plain
 	// file, and telling an operator to re-grant one would send them looking

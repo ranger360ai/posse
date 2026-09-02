@@ -1323,9 +1323,17 @@ MEASURED on linux-x64 2.1.258 (`704f1334ac65d3e8…`, verified):
   present (present-but-empty means `~/.claude`), else the config dir —
   `$CLAUDE_CONFIG_DIR`, else `~/.claude`; the basename is the one path (3)
   already names. So the directory is **not** `$HOME/.claude` by definition,
-  which `CredentialsFile()` in `internal/posse/credential.go` currently assumes
-  (ranger-base-wd4be; `trust.go` already resolves the config dir the runtime's
-  way, so posse disagrees with itself).
+  which `CredentialsFile()` in `internal/posse/credential.go` assumed until
+  ranger-base-wd4be, where it became `credentialDir()` — the shipped source is
+  quoted in that function's doc comment, and the same resolution is now spelled
+  in `scripts/verify-credential-paths.sh`, which scans the union of the three
+  candidate directories rather than the resolver's winner. Both spellings of
+  the config-dir half go through one function (`ClaudeConfigDirIn`, trust.go),
+  because posse used to hold two answers and only the trust file's was right.
+  Re-measured on darwin-arm64 2.1.258 at byte 158045445 while landing that
+  bead: the darwin bundle resolves it identically, and the same statement
+  builds the KEYCHAIN item's name, which is not the constant posse hardcodes
+  once either variable is set (ranger-base-ig4op).
 - The writer does `mkdir(dir)`, writes mode `384` (= 0600), then `chmod` 0600.
 - The envelope the login/refresh loop writes is
   `{claudeAiOauth:{accessToken, refreshToken, expiresAt, refreshTokenExpiresAt,

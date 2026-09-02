@@ -178,9 +178,21 @@ Run it at every rotation, and after any `/login`, `claude setup-token`,
 `make install`, or keychain prompt. Exit 0 is clean, **1 is a finding**, 2 means
 no config directory was present so nothing was measured — a 2 is not a pass.
 
-It scans `$CLAUDE_CONFIG_DIR` (when set) and `~/.claude`, depth 1, for anything
+It scans the directories named just below, depth 1, for anything
 matching `.credentials.json*`, and prints mode, size, birth time and content
 mtime. It reads no content, deletes nothing, and never runs `security`.
+
+The directories it scans are the UNION of the three the runtime can write
+into: `~/.claude` always, plus `$CLAUDE_CONFIG_DIR` and
+`$CLAUDE_SECURESTORAGE_CONFIG_DIR` when either names a directory. The runtime
+picks ONE of those — the secure-storage variable when it is present at all
+(present-but-empty means `~/.claude` and shadows `$CLAUDE_CONFIG_DIR`), else
+the config dir, else the home; posse spells that resolution in
+`internal/posse/credential.go` `credentialDir()`, which quotes the shipped
+source it was measured from. The sweep takes the union rather than the winner
+because a file left behind in a loser is still a second copy of a live grant,
+and because setting a variable must not be able to turn a finding into a
+silent pass (`ranger-base-wd4be`).
 
 **Anything printed is a finding.** The harness ADR counts the keychain and the
 env-set mints as darwin's owned stores; a file here is a third one nobody
@@ -189,7 +201,10 @@ owns. `~/.claude` is in every runtime's writable set
 container tier can still WRITE whatever sits there — this check is still the
 whole control for that half. The read half is closed: the rendered seatbelt
 profile now carries a `file-read*` deny on `~/.claude/.credentials.json`
-itself — always, on darwin, even for a claude-launched session, because the
+itself — that literal and only that, so on a box that sets either config-dir
+variable the file the runtime writes is outside the deny (`ranger-base-7pf1h`;
+this sweep sees it either way) — always, on darwin, even for a claude-launched
+session, because the
 keychain (not this file) is claude's store of record there and a caged
 session authenticates with `CLAUDE_CODE_OAUTH_TOKEN` instead of reading it.
 (`~/.codex/auth.json` and `~/.grok/auth.json` are denied the same way, minus

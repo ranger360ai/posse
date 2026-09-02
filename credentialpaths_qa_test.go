@@ -156,6 +156,96 @@ func TestQACredentialPathsEnvOverrideCannotHideTheHomeFinding(t *testing.T) {
 	}
 }
 
+// ranger-base-wd4be: the sweep scanned $CLAUDE_CONFIG_DIR and ~/.claude and
+// had never heard of the variable that beats both. MEASURED off the shipped
+// 2.1.258 bundle (internal/posse/credential.go credentialDir carries the
+// source): CLAUDE_SECURESTORAGE_CONFIG_DIR when the variable is PRESENT,
+// else CLAUDE_CONFIG_DIR, else ~/.claude. A file the runtime writes into a
+// directory the sweep does not scan is exactly the condition this control
+// exists to make impossible.
+func TestQACredentialPathsScansTheSecureStorageDir(t *testing.T) {
+	sec := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sec, ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code := cpRun(t, cpHome(t), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+sec)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — the directory the runtime actually writes was not scanned\n%s", code, out)
+	}
+	if !strings.Contains(out, sec) {
+		t.Errorf("must name the file it found under the secure-storage dir:\n%s", out)
+	}
+}
+
+// Same rule as the CLAUDE_CONFIG_DIR arm above, and the reason the script
+// scans the UNION rather than the resolver's winner: the variable moves
+// where the runtime writes NEXT, not what is already sitting in the home.
+func TestQACredentialPathsSecureStorageCannotHideTheHomeFinding(t *testing.T) {
+	home := cpHome(t, ".credentials.json")
+	out, code := cpRun(t, home, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+t.TempDir())
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — CLAUDE_SECURESTORAGE_CONFIG_DIR hid the ~/.claude file\n%s", code, out)
+	}
+	if !strings.Contains(out, "2 scanned") {
+		t.Errorf("both directories must be scanned:\n%s", out)
+	}
+}
+
+// The present-but-empty arm. The runtime treats it as ~/.claude and it
+// SHADOWS CLAUDE_CONFIG_DIR, so an empty value must not add a scanned
+// directory — and must certainly not add the empty string, which would scan
+// the cwd and report findings that are not path 3.
+func TestQACredentialPathsEmptySecureStorageAddsNoDirectory(t *testing.T) {
+	home := cpHome(t, ".credentials.json")
+	out, code := cpRun(t, home, "CLAUDE_SECURESTORAGE_CONFIG_DIR=")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — the home finding is still the finding\n%s", code, out)
+	}
+	if !strings.Contains(out, "1 scanned") {
+		t.Errorf("an empty value means ~/.claude, which is already the list — want 1 scanned:\n%s", out)
+	}
+	// The scanned COUNT alone does not witness this: an empty entry is a
+	// directory that does not exist, so it never reaches the count and only
+	// shows up as a line about a path with no name. The absent line is the
+	// witness — with the home present, a well-behaved run has none.
+	if strings.Contains(out, "absent") {
+		t.Errorf("an empty value was added to the scan list as a directory:\n%s", out)
+	}
+}
+
+// Two variables naming the SAME directory is one directory. Without the
+// dedup the run reports "3 scanned" and prints the same file twice, and a
+// control whose count and finding list are inflated is one an operator
+// learns to read past.
+func TestQACredentialPathsDoesNotScanADirectoryTwice(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code := cpRun(t, cpHome(t), "CLAUDE_CONFIG_DIR="+dir, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+dir)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	if !strings.Contains(out, "2 scanned") {
+		t.Errorf("the same directory named twice is one directory:\n%s", out)
+	}
+	if n := strings.Count(out, "FINDING"); n != 1 {
+		t.Errorf("one file, %d findings printed:\n%s", n, out)
+	}
+}
+
+// All three, all different: the union is what gets scanned.
+func TestQACredentialPathsScansAllThreeWhenTheyDiffer(t *testing.T) {
+	home := cpHome(t)
+	out, code := cpRun(t, home, "CLAUDE_CONFIG_DIR="+t.TempDir(), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+t.TempDir())
+	if code != 0 {
+		t.Fatalf("exit %d, want 0\n%s", code, out)
+	}
+	if !strings.Contains(out, "0 findings in 3 scanned") {
+		t.Errorf("want all three directories scanned:\n%s", out)
+	}
+}
+
 // [ -d "$d" ] follows a symlink; find's starting point must too, or a
 // symlinked config dir scans as empty (ranger-base-dpuf).
 func TestQACredentialPathsFollowsASymlinkedConfigDir(t *testing.T) {
