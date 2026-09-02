@@ -36,17 +36,20 @@ func TestStateDirJoinsTheSeatbeltWritableSet(t *testing.T) {
 	if !strings.Contains(w, ExpandTilde("~/.mycli")) {
 		t.Errorf("declared state_dir is not writable under seatbelt:\n%s", w)
 	}
-	// The built-ins' own dirs are in the same set, and they are declarations
-	// now rather than a literal in the profile builder — so a caller that
-	// passes no runtime still gets exactly what the literal granted.
+	// A runtime that was not launched contributes nothing — and after
+	// ranger-base-9fl that holds for the BUILT-INS too, which is the
+	// reversal: this block used to require ~/.claude ~/.claude.json
+	// ~/.codex ~/.grok in a no-runtime caller's set, on the ground that it
+	// should get "exactly what the literal granted". The literal granted
+	// every runtime's auth store to every persona, and a write to another
+	// runtime's auth store is an exfil channel (ADR 0019 posture review).
+	// The set is now exactly the launching runtime's declaration.
+	// TestQASeatbeltGrantsOnlyTheLaunchingRuntimesStateDir is the pin.
 	base := strings.Join(a.SeatbeltWritable(ag, work, t.TempDir()), "\n")
-	for _, want := range []string{"~/.claude", "~/.claude.json", "~/.codex", "~/.grok"} {
-		if !strings.Contains(base, ExpandTilde(want)) {
-			t.Errorf("built-in state dir %s dropped from the writable set:\n%s", want, base)
+	for _, unwanted := range []string{"~/.mycli", "~/.claude", "~/.claude.json", "~/.codex", "~/.grok"} {
+		if strings.Contains(base, ExpandTilde(unwanted)) {
+			t.Errorf("a runtime that was not launched contributed its state dir %s:\n%s", unwanted, base)
 		}
-	}
-	if strings.Contains(base, ExpandTilde("~/.mycli")) {
-		t.Error("a runtime that was not launched must not contribute its state dir")
 	}
 }
 

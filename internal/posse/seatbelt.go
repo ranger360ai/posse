@@ -4,10 +4,11 @@ package posse
 // under `sandbox-exec -f RHQ_HOME/state/gates/<persona>/seatbelt.sb`, a
 // profile that denies file-write* everywhere except what a persona
 // session legitimately writes: the repo (unless the PID denies Edit/
-// Write — then only its .beads/), the persona's memory dir, the runtime's
-// own state (~/.claude, ~/.codex, ~/.grok), posse's own state dir under the
-// home it resolved, TMPDIR, the gates dir (for refusals.log), /dev, and the
-// PID's `writable:` extras. What it never grants is the rest of the home:
+// Write — then only its .beads/), the persona's memory dir, the LAUNCHING
+// runtime's own state and no other runtime's (state_dir:, ADR 0012 D4 —
+// narrowed from the union of all three built-ins by ranger-base-9fl),
+// posse's own state dir under the home it resolved, TMPDIR, the gates dir
+// (for refusals.log), /dev, and the PID's `writable:` extras. What it never grants is the rest of the home:
 // after ADR 0015 §2 that is the promoted constitution, and a promoted copy
 // stays in force because no session can write it. This is the only
 // runtime-proof file gate: it realizes Edit/Write-class denies on any
@@ -266,9 +267,10 @@ func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, 
 // SeatbeltWritable computes the writable set for a persona session:
 // cwd unless the PID denies Edit or Write (then only cwd/.beads so bd can
 // still claim/comment/close), the store of record when a redirect puts it
-// in another repo, memory dir, the runtime state dirs, posse's own state
-// dir, TMPDIR, the gates dir, plus the PID's writable: extras (relative to
-// cwd).
+// in another repo, memory dir, the LAUNCHING runtime's state dirs (the
+// stateDirs argument, and no other runtime's — ranger-base-9fl), posse's
+// own state dir, TMPDIR, the gates dir, plus the PID's writable: extras
+// (relative to cwd).
 //
 // It hangs off App because one of those paths is under the home, and after
 // ADR 0015 §2 the home is a real directory holding the promoted
@@ -347,23 +349,34 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 			add(filepath.Join(home, d))
 		}
 	}
-	// The runtimes' own state dirs. `~/.claude ~/.claude.json ~/.codex
-	// ~/.grok` were spelled here as a literal until ADR 0012 D4, which is
-	// why a third-party CLI declared in runtimes/<name>.yaml got a READ-ONLY
-	// state dir under `cage: seatbelt` and no line anywhere said so: it
-	// re-ran its first-run flow every launch, or died on a config write.
+	// The LAUNCHING runtime's own state dirs, and no other runtime's.
+	// `~/.claude ~/.claude.json ~/.codex ~/.grok` were spelled here as a
+	// literal until ADR 0012 D4, which is why a third-party CLI declared in
+	// runtimes/<name>.yaml got a READ-ONLY state dir under `cage: seatbelt`
+	// and no line anywhere said so: it re-ran its first-run flow every
+	// launch, or died on a config write.
 	//
-	// The union of the built-ins, not just the launching runtime's: that is
-	// what the literal granted, and narrowing it is a separate decision with
-	// its own blast radius (a persona on one engine that shells out to
-	// another). stateDirs is the LAUNCHING runtime's declaration on top —
-	// a caller with no runtime in hand passes none and gets exactly today's
-	// set.
-	for _, rt := range builtinRuntimes {
-		for _, d := range rt.StateDirs {
-			add(ExpandTilde(d))
-		}
-	}
+	// D4 made the key declarable but kept granting the UNION of the
+	// built-ins on top, so a claude session could write ~/.codex and
+	// ~/.grok. That is not a config inconvenience, it is an integrity
+	// vector (ranger-base-9fl, from the ADR 0019 posture review): swap
+	// ~/.grok/auth.json for a token on an attacker-controlled account and
+	// the NEXT grok session on this box sends its transcripts there — an
+	// exfil channel that outlives the session that planted it, and one no
+	// read deny can close because the planting is a WRITE. The read half is
+	// already narrowed the same way (credentialReadDenyLiterals): a runtime
+	// is denied every credential store but its own. This is that rule on
+	// the write side, and the two now agree on which runtime the session is.
+	//
+	// So: stateDirs, nothing else. A caller with no runtime in hand grants
+	// no runtime state at all — the fail-closed direction, and visible as
+	// the first-run flow D4 already named rather than as a silent grant.
+	// Every production caller resolves the launch's runtime and passes
+	// rt.StateDirs (planLaunch and RelaunchAgent in herdrback.go, the reach
+	// probe in reachability.go, `posse gates` in cmd/posse/main.go); a
+	// built-in's declaration is not overlayable from runtimes/<name>.yaml
+	// (builtinOverlayKeys), so ~/.claude cannot go missing from a claude
+	// launch by configuration.
 	for _, d := range stateDirs {
 		add(ExpandTilde(d))
 	}

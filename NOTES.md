@@ -2939,8 +2939,12 @@ Three different things get called "permissions"; keep them apart
   file-write*)` plus an allow-list rendered from the PID at every launch
   and relaunch: the repo — **unless the PID denies Edit/Write, then only
   `.beads/` and `.git/`** so bd can still claim/comment/close — the
-  persona's memory dir, the gates dir (refusals.log), the runtimes' own
-  state (`~/.claude`, `~/.claude.json`, `~/.codex`, `~/.grok`, caches),
+  persona's memory dir, the gates dir (refusals.log), the **launching**
+  runtime's own state and no other runtime's (`state_dir:`, ADR 0012 D4 —
+  a claude launch grants `~/.claude`/`~/.claude.json` and NOT `~/.codex`
+  /`~/.grok`; it was the union of all three until ranger-base-9fl, which
+  is a cross-runtime auth-store WRITE and so an exfil channel no read
+  deny can close), the generic caches,
   posse's own `state/` **derived from the App's home** (it was the literal
   `~/.config/rhq/state` until ranger-base-cpyb, so a second `RHQ_HOME`'s
   sessions got no grant to their own state dir and one into the default
