@@ -85,7 +85,13 @@ one seam:
 Two purposes today: `session` (what an authenticated caged session
 needs injected — env-set lookup, `CageCredential` unchanged in
 behaviour) and `meter` (what posse presents to the provider's usage and
-models endpoints — replaces both `KeychainToken` callers). The seam is
+models endpoints — replaces both `KeychainToken` callers). Since ADR 0042 the `session`
+purpose is every crew runtime's credential at every tier, not the cage's
+alone: a crew runtime holds the mint and never the operator's rotating
+pair, whose one writer stays the operator's own claude — at `shims` the
+L1 shim in front of the runtime's own keychain read enforces it (measured
+2026-09-02: the session runtime carries the mint, its every keychain read
+is refused, and it is authenticated). The seam is
 the vault insertion point (ranger-base-epz8): a vault is a third
 provider answering the same `Read`, not a second migration. Nothing
 else in posse may acquire a credential except through this seam. Where

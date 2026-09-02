@@ -3,7 +3,7 @@
 *Status: accepted 2026-08-18 · owner: architect · amends ADR 0002 §3–4 ·
 amended 2026-08-18 (§1 guard form, §4 rc files), 2026-08-27 (§1 REAL
 must resolve outside every gates dir — ranger-base-f0ay; §1 the guard
-drops every OTHER persona's gates dir — rangerhq-v553)*
+drops every OTHER persona's gates dir — rangerhq-v553) · amended 2026-09-02 (ADR 0042, ranger-base-eje6d: §3 names the SHELL-only typed line as a per-runtime exit hatch, not built; §4 gains a third reader distinction — the runtime's own credential read)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -131,6 +131,17 @@ that prepends a dir holding a denied verb *after* our guard could still
 win — `shell.log` stays silent then, and QA's live check is the
 detector. Grok's `login_shell_capture` overlay, `GROK_LOGIN_ENV`, and an
 upstream `allow_login_shell` are no longer needed.
+
+**Named, not built (ADR 0042 D6):** a runtime that can only authenticate by
+reading a host store may declare, in the shape of `NoGateShell`, a
+SHELL-only typed line — `SHELL=<gate shell>` with no PATH prepend — so the
+guard walls every command the runtime runs through a shell and the
+runtime's own execs walk free. It holds only for a runtime that honours
+`SHELL` for every command it runs on the persona's behalf (claude's Bash
+tool does, measured 2026-09-02), and the runtime's non-shell execs —
+hooks, MCP servers — leave the wall. No runtime in the table needs it:
+claude runs on the session mint (0042 D1), and the typed-line prepend is
+what keeps its own credential read inside the wall on purpose.
 
 **4. The persona's own rc files run gated — intended, no carve-out.** A
 consequence §1 did not name: the guard is prepended *ahead of* the login
