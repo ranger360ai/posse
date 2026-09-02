@@ -244,3 +244,131 @@ func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 		t.Error("a filename's $(...) executed: the prescribed lines are not single-quoting")
 	}
 }
+
+// ranger-base-pp7k1: the same claim once more — the refusal's prescribed
+// lines are commands, verified by running them — over a STAGED RENAME, the
+// one shape where the reader names half the paths and still exits 0.
+//
+// posse_qcached read `git diff --cached --name-only -z HEAD` with rename
+// detection left on (the default since git 2.9). For a detected rename
+// --name-only prints ONE side of the pair, so both prescribed lines were
+// built from half the set. Measured on git 2.50.1 over a 200-line file moved
+// with `git mv` and then reverted: the reader printed `old.md` alone, and the
+// undo it prescribed exited 0 — no error at all — leaving `D  new.md` staged
+// in the SHARED index. That is worse than the quoting defect above it: that
+// one exited 1 and said so, this one reports success and leaves the persona
+// believing the tree is clean, directly above the sentence telling them not
+// to reach for a hard reset. The finish line had the matching hole: it
+// committed one side of a rename.
+//
+// Fixed by passing --no-renames, the same flag and the same reason as the
+// NOTES.md arm four lines up in gates.go (ranger-base-x9xbk).
+//
+// The fixture is a realistic 200-line file on purpose: git only pairs a
+// removal with an add at 50% similarity or better, so a one-byte file never
+// collapses into a rename and the pin would be green over the defect.
+func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	const before, after = "old.md", "new.md"
+	var body strings.Builder
+	for i := 0; i < 200; i++ {
+		body.WriteString("a line of a realistic notes file\n")
+	}
+
+	repo := t.TempDir()
+	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(extra []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), env...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	// The persona's copy-paste: the printed line goes to a shell verbatim.
+	sh := func(extra []string, line string) (string, error) {
+		cmd := exec.Command("sh", "-c", "cd \"$1\" && "+line, "sh", repo)
+		cmd.Env = append(append([]string(nil), env...), extra...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	status := func() string {
+		out, _ := git(nil, "status", "--porcelain")
+		return strings.TrimSpace(out)
+	}
+
+	git(nil, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repo, before), []byte(body.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := git(nil, "add", "--", before); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if out, err := git(nil, "commit", "-qm", "seed", "--", before); err != nil {
+		t.Fatalf("seed: %v\n%s", err, out)
+	}
+	if out, err := git(nil, "mv", before, after); err != nil {
+		t.Fatalf("mv: %v\n%s", err, out)
+	}
+	if out, err := git(nil, "commit", "-qm", "move", "--", before, after); err != nil {
+		t.Fatalf("move: %v\n%s", err, out)
+	}
+	// The rename has to be one git actually DETECTS, or this pin measures
+	// nothing: with a small fixture the pair falls below the 50% similarity
+	// threshold, --name-only prints both sides anyway, and the defect is
+	// invisible. Assert the collapse is real before asserting the fix.
+	if out, _ := git(nil, "show", "--name-status", "--format=", "HEAD"); !strings.Contains(out, "R100") {
+		t.Fatalf("fixture must stage a DETECTED rename, git reports:\n%s", out)
+	}
+	if _, err := installCommitGuard(repo); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+
+	out, err := git(persona, "revert", "--no-edit", "HEAD")
+	if err == nil {
+		t.Fatalf("a clean revert is refused: %s", out)
+	}
+	line := func(prefix string) string {
+		re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(prefix) + `\s*(.*?)\s*$`)
+		m := re.FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("the refusal must print a %q line:\n%s", prefix, out)
+		}
+		return m[1]
+	}
+	undo, finish := line("or undo it:"), line("finish it:")
+
+	// Both sides of the pair have to be NAMED. Pre-fix only `old.md` was,
+	// and because the missing side is a staged DELETION the lines below
+	// still exit 0 — so without this assertion the failure would read as a
+	// dirty tree with no cause attached.
+	for _, p := range []string{before, after} {
+		want := "'" + p + "'"
+		if !strings.Contains(undo, want) || !strings.Contains(finish, want) {
+			t.Errorf("both prescribed lines must name %s\n  undo:   %s\n  finish: %s", want, undo, finish)
+		}
+	}
+
+	// The undo the refusal names must actually undo it. Pre-fix it exited 0
+	// and left `D  new.md` staged in the shared index.
+	if o, err := sh(persona, undo); err != nil {
+		t.Errorf("the undo the refusal names does not run: %v\n  line: %s\n%s", err, undo, o)
+	}
+	if st := status(); st != "" {
+		t.Errorf("after the named undo the tree is clean, got %q", st)
+	}
+
+	// And so must the finish, from the same dirty state the refusal left:
+	// pre-fix it committed one side of the rename and left the other staged.
+	if o, err := git(persona, "revert", "--no-edit", "HEAD"); err == nil {
+		t.Fatalf("re-refused revert expected: %s", o)
+	}
+	if o, err := sh(persona, "printf 'r\\n' | "+finish); err != nil {
+		t.Errorf("the finish the refusal names does not run: %v\n  line: %s\n%s", err, finish, o)
+	}
+	if st := status(); st != "" {
+		t.Errorf("after the named finish the tree is clean, got %q", st)
+	}
+}

@@ -2049,6 +2049,20 @@ posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # either. --name-only -z emits the raw path bytes with no quoting at all, for
 # every byte class, and needs no quotePath override at all.
 #
+# --no-renames (ranger-base-pp7k1) for the same reason the NOTES.md arm
+# below passes it (ranger-base-x9xbk): rename detection is ON by default, and
+# for a detected rename --name-only prints only ONE side of the pair, so both
+# prescribed lines get built from half the staged set. Measured on git 2.50.1
+# over a 200-line file moved with 'git mv' and reverted, the reader printed
+# old.md alone and the undo it prescribed exited 0 — no error at all — leaving
+# a staged deletion of new.md in the SHARED index. That is worse than the
+# quoting defect above: that one exited 1 and said so, this one reports
+# success and leaves the persona believing the tree is clean, three lines
+# above the sentence telling them not to reach for a hard reset. The finish
+# line had the matching hole, committing one side of a rename. A small
+# fixture hides it — git only pairs a removal with an add at 50% similarity
+# or better — so the pin uses a realistic file.
+#
 # tr '\0' '\n' turns the NUL-delimited list back into lines because POSIX sh
 # has no NUL-delimited read (-d is a bashism) and command substitution eats
 # NULs anyway. That is not a step backwards: newline-delimited is what the
@@ -2057,7 +2071,7 @@ posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # on every box, the same tier as the sed below — not the diffutils tier that
 # made 'cmp' vanish silently (ranger-base-rmgz).
 posse_qcached() {
-  git diff --cached --name-only -z HEAD 2>/dev/null | tr '\0' '\n' | while IFS= read -r posse_p; do
+  git diff --cached --name-only --no-renames -z HEAD 2>/dev/null | tr '\0' '\n' | while IFS= read -r posse_p; do
     printf "'%s' " "$(printf '%s' "$posse_p" | sed "s/'/'\\\\''/g")"
   done
 }
