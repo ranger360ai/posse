@@ -1908,9 +1908,15 @@ designed work:
 - **`RHQ_HOME` rides every session** (rangerhq-ysly) — persona and crew
   alike, and into cages, so `posse`/`bd` run inside a session address the
   home that launched it.
-- **`instance:` tags the herdr label** (rangerhq-ouf9) — `<instance>/<session>`
-  at create, session names untouched. Foreign rows keep their full label,
-  so a row you cannot account for says which home to go ask.
+- **`instance:` tags the herdr label** (rangerhq-ouf9, ranger-base-rcwx) —
+  `<instance>/<session>` at create, session names untouched. Foreign rows
+  keep their full label, so a row you cannot account for says which home to
+  go ask. The tag frees the name in **both** orderings: a tagged home
+  creates and relaunches over an UNTAGGED home's bare `smoke` too, which is
+  the ordering you actually have if the older home never set the key. What
+  still collides is a workspace already wearing the label *this* home would
+  write — two homes sharing one tag, or two untagged homes. Give the second
+  home a tag and that is gone.
 - **`BeadsDirs()` fails loud** (rangerhq-wmrb) rather than falling back to
   `[""]` and running bd in the caller's cwd.
 - **The seatbelt derives its state grant from the App's home**
@@ -1946,7 +1952,7 @@ one budget and the caps become conservative, not wrong.
 | `sandbox_apply: Operation not permitted` under `cage: seatbelt` | the CLI sandboxes its own children and seatbelts do not nest | `self_sandbox: true` in the profile, then launch at `cage: shims` |
 | `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.50.3; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
-| `posse new <name>` → "already exists" | a workspace with that name is live — possibly another instance's | `posse list`; see §13 |
+| `posse new <name>` → "already exists" | a herdr workspace already wears the label this home would create under. Between instances that only happens when neither sets `instance:`, or when both set the same one — a *differently* tagged home's row is no longer in the way (ranger-base-rcwx). The refusal names the row by the name `posse list` prints, which under a tag is `<instance>/<session>` | `posse list`; if the row is another home's, give one of them a distinct `instance:` (§13) |
 | every dispatched launch refuses with `a constitution nobody promoted` right after an ordinary `config.yaml` or PID edit, on a home you never promoted | a `posse init` from a posse older than `ranger-base-h7cd` stamped `promoted.json` over the constitution it found, arming ADR 0015 §3 on files nobody ratified — the edit is the trigger, not the cause | `posse promote <your constitution repo>` makes the anchor true. If this home has no constitution repo yet, `rm $RHQ_HOME/promoted.json` puts it back to unwatched, which is where it was; today's `init` will not re-stamp it |
 
 ---

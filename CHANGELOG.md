@@ -178,6 +178,33 @@ nothing.
 
 ### Fixed
 
+**`instance:` freed a session name only from an instance that also set it.**
+
+*Affected: any machine running two posse homes on one herdr server where only
+the newer one sets `instance:` — which is the ordering you get by adding a
+second home to a machine that has been running one for a while.*
+
+The tag prefixes this home's herdr labels, so the second home's `posse new
+smoke` should go out as `work/smoke` and coexist with the first home's
+`smoke`. It did — but only if the *other* home was tagged too. Against an
+untagged home's bare `smoke` the create still died on `session 'smoke'
+already exists`, the exact sentence the key exists to remove, and the
+asymmetry ran the wrong way: the untagged home met `work/smoke` and created
+happily, so the only home that lost was the one that had been configured.
+Worse, a tagged home could not `posse relaunch` its *own* session while an
+untagged home held a bare row of that name — and the refusal told the
+operator to rename or close that other home's workspace, which every
+destructive posse path otherwise refuses to touch.
+
+Both checks asked predicates that read a bare label as this home's own. They
+now compare against the label this home would actually write, so a
+differently-labelled row — anyone else's — is no longer in the way of either
+a create or a relaunch. One thing got stricter with it: a workspace already
+wearing this home's *own* rendered label (two homes sharing one tag, or a row
+of yours whose session record is gone) used to slip past the create
+altogether and leave herdr holding two workspaces under one label. That
+refuses now, naming the row by the name `posse list` prints.
+
 **The bd argv gate read your prose as commands, and refused it.**
 
 *Affected: every build before this one, on any box that installed the gate as
