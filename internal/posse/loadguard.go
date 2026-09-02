@@ -124,10 +124,16 @@ func (a *App) LoadHigh(errw io.Writer) string {
 //
 // It obeys the first paragraph of this file. A box that cannot fork cannot
 // be asked to fork much, so this is at most ONE `ps`, bounded by a context
-// timeout, taken ONLY on a pass the guard is already skipping, and it
-// degrades to printing NOTHING at all — on a missing `ps`, a timeout, an
-// unparseable table, an idle one. It can neither delay nor fail a pass.
-// Fail-open, exactly like the load reading above it.
+// timeout, and it degrades to printing NOTHING at all — on a missing `ps`, a
+// timeout, an unparseable table, an idle one. It can neither delay nor fail
+// a pass. Fail-open, exactly like the load reading above it.
+//
+// It used to be taken ONLY on a pass the guard was already skipping. Since
+// ranger-base-fxs60 the guard clock (guardclock.go) also takes it, once per
+// watch interval, whether or not the box is over the line — because the pass
+// it rode on stopped recurring under a rolling Run, and because an orphan is
+// a leak at load 44 exactly as it is at load 85. The cost is still one `ps`
+// per reading, on a goroutine that launches nothing.
 //
 // ppid 1 is the high-signal field and the reason this pays for itself. An
 // orphan burning CPU is always a leak and is always safe to name; a busy
@@ -159,9 +165,9 @@ const (
 	// that forked it tears down, and the teau RCA measured a last-forked
 	// pid outliving its own fork/exec window by about a second. A minute
 	// clears both by a wide margin, and it is far under the age of
-	// anything this report can be about — the guard only reads on a pass
-	// it is already skipping, and teau's sixteen were 2h30m old when a
-	// human finally found them.
+	// anything this report can be about — the readings that reach it are
+	// minutes apart at best (a pass, or a guard-clock tick), and teau's
+	// sixteen were 2h30m old when a human finally found them.
 	LoadOrphanMinAge = time.Minute
 	// loadOrphanTop is how many orphans the report names outright, for the
 	// reason loadCulpritTop exists: sixteen leaks are sixteen lines of the
@@ -421,16 +427,27 @@ func parseEtime(s string) time.Duration {
 // It carries its own leading newline and indent, and it is "" whenever it
 // has nothing honest to say, so a caller appends it unconditionally and
 // silence costs an empty string. Callers append it INSIDE a refusal — where
-// LoadHigh returned a witness — because that is the only place its fork is
-// paid for by a pass that is being skipped anyway.
-func (a *App) LoadCulpritLine() string {
+// LoadHigh returned a witness — because that is the only place a PASS pays
+// for its fork. The guard clock (guardclock.go) pays for it on its own tick
+// instead, which is why the census and the render below are two functions
+// and not one.
+func (a *App) LoadCulpritLine() string { return a.culpritLineFrom(a.loadCensus()) }
+
+// loadCensus is the one `ps` a guard reading is built from: the top-CPU
+// witness below and the orphan report under it are two renderings of it,
+// never two reads of the process table (which would be two different
+// tables). Busy rows only, ordered by CPU.
+//
+// nil both when the read failed and when nothing on the box is burning
+// anything — every render below takes that to "".
+func (a *App) loadCensus() []Proc {
 	read := a.TopCPU
 	if read == nil {
 		read = SysTopCPU
 	}
 	procs, err := read()
 	if err != nil {
-		return ""
+		return nil
 	}
 	busy := make([]Proc, 0, len(procs))
 	for _, p := range procs {
@@ -439,7 +456,7 @@ func (a *App) LoadCulpritLine() string {
 		}
 	}
 	if len(busy) == 0 {
-		return ""
+		return nil
 	}
 	sort.SliceStable(busy, func(i, j int) bool {
 		if busy[i].CPU != busy[j].CPU {
@@ -447,6 +464,14 @@ func (a *App) LoadCulpritLine() string {
 		}
 		return busy[i].PID < busy[j].PID // ties render the same way twice
 	})
+	return busy
+}
+
+// culpritLineFrom is LoadCulpritLine's render over a census already taken.
+func (a *App) culpritLineFrom(busy []Proc) string {
+	if len(busy) == 0 {
+		return ""
+	}
 	named := busy
 	if len(named) > loadCulpritTop {
 		named = named[:loadCulpritTop]
@@ -576,11 +601,12 @@ func leakWhat(l leakRow) string {
 
 // ─── did *I* just leak (ranger-base-6mhxw) ──────────────────────────────────
 //
-// Arm 1 above only reads the process table on a pass the load guard is
-// already skipping — a box already over the limit. That leaves the ordinary
-// case unanswered: a persona backgrounds something, the Bash call returns,
-// and it wants to know whether that leaked, on a box whose load never went
-// anywhere near the guard. The incident this closes (ranger-base-k6csq) was
+// Arm 1 above reads the process table on a pass the load guard is skipping
+// and, since ranger-base-fxs60, on the guard clock's own tick — but both are
+// the WATCH LOOP's readings, minutes apart and about the box. That leaves the
+// ordinary case unanswered: a persona backgrounds something, the Bash call
+// returns, and it wants to know whether that leaked, right now, from inside
+// its own turn. The incident this closes (ranger-base-k6csq) was
 // exactly that: the session's own cleanup check read clean while forty
 // spinners it had started kept running for two hours, and it failed for two
 // structural reasons neither of which the guard above has:
@@ -602,9 +628,9 @@ func leakWhat(l leakRow) string {
 // process is briefly ppid 1 in while the shell that forked it exits, which
 // the teau RCA measured at about a second — and it is far shorter because
 // the two checks run at a different distance from the fork: the load guard
-// only reads on a pass it was already skipping, minutes into a stuck box,
-// while a self-check runs seconds after the Bash call that might have
-// leaked and should not have to wait a full minute to find out.
+// reads on a pass or a guard-clock tick, minutes apart either way, while a
+// self-check runs seconds after the Bash call that might have leaked and
+// should not have to wait a full minute to find out.
 const SelfCheckMinAge = 3 * time.Second
 
 // SysSelfOrphans is the reusable half of arm 1, without the load-spike

@@ -14,6 +14,12 @@ package posse
 // and nothing is killed — a persona mid-turn keeps working, and the next
 // loop finds its bead held, not free.
 //
+// The loop is also where the readings that must not depend on a pass live.
+// Three clocks start with it and are joined by it — the pulse (ADR 0027), the
+// backup clock (ADR 0036 §4) and the guard clock (ranger-base-fxs60) — each a
+// goroutine on its own ticker, because a rolling Run that does not return
+// takes every reading taken inside a pass down with it.
+//
 // The loop is also where "unattended" is defined: Watch is the only thing
 // that sets Dispatcher.Unattended, which is what lets the plan guard fail
 // closed after a bounded blind window (rangerhq-6h1). Not a TTY check — the
@@ -214,6 +220,33 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// ration and the hook wall above already keep, and a loop IS a binary
 	// somebody just started.
 	d.App.PlanUsageStaleAfter(d.errw())
+	// The guard clock (ranger-base-fxs60, guardclock.go): the load guard and
+	// the orphan census on a clock of their own, because the pass they used
+	// to ride on stopped recurring the day a Run went rolling. Same shape as
+	// the two above, same interval as the loop's base — a backed-off pass
+	// must not back off the reading that says the box is on fire.
+	//
+	// Started here, after the header lines above, rather than beside them:
+	// those two write d.Out directly and a tick writes it under outMu, and
+	// the cheap way to keep a first tick from splitting the launch-cap line
+	// is to start the ticker after it is written.
+	//
+	// Registered AFTER both defers above so it runs BEFORE them (LIFO), for
+	// the reason the pulse's comment gives: a tick inside a kill round is
+	// signalling processes, and every signal it sends must land before the
+	// pid record and the lock say this loop is gone. The join is cheap — a
+	// tick is one `ps` and, at most, one bounded TERM/grace/KILL round whose
+	// every wait is shared across the batch (loadguardkill.go).
+	guardCtx, guardCancel := context.WithCancel(ctx)
+	guardDone := make(chan struct{})
+	defer func() {
+		guardCancel()
+		<-guardDone
+	}()
+	go func() {
+		defer close(guardDone)
+		d.guardLoop(guardCtx, base)
+	}()
 	passes := 0
 	wait := base
 	for {

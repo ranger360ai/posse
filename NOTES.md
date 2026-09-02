@@ -3017,10 +3017,18 @@ some other process's text about ours, and calling that a leak is the teau
 misreading in a new costume.
 
 **Arm 1 (shipped) names them and kills nothing.** It rides under the load
-guard's culprit line, off the same single `ps`, only on a pass the guard is
-already skipping. `go run ./cmd/checkorphans` is the same predicate without
-the CPU floor and without the load-spike framing, for a persona asking "did
-the thing I just backgrounded leak".
+guard's culprit line, off the same single `ps`. Two readings reach it: a pass
+the guard is skipping, and — since ranger-base-fxs60 — the **guard clock**,
+one tick per `--watch` interval, on its own goroutine, **whether or not the
+box is over the line**. Both of those are why: under ADR 0028 §1 a rolling
+`Run` does not return while a bead is in flight, so on 2026-09-02 one loop
+ran 1h40m on a single pass while eight orphans burned ~50% of a core each and
+nothing evaluated the guard at all; and when that loop was restarted the load
+at pass start had dipped to 44 under `load_guard: 60`, so the pass was not
+skipped and the same eight went unreported again. **Load is not the
+predicate. The leak is.** `go run ./cmd/checkorphans` is the same predicate
+without the CPU floor and without the load-spike framing, for a persona
+asking "did the thing I just backgrounded leak".
 
 **Arm 2 (shipped OFF) ends them, and `POSSE_KEEP=` is how you keep one.**
 Exactly one false positive exists and nothing in the process table separates
@@ -3064,8 +3072,10 @@ Three properties worth knowing before you rely on any of it:
   reads those as process *groups*.
 
 `load_guard_kill:` in `config.yaml` arms it (`true`/`false`; absent is
-false, and a typo is named in the report and leaves it off). It ships
-**off**: the ruling's first bar for the live flip is arm-1 field data
+false, and a typo is named in the report and leaves it off) — and since the
+guard clock, that key is the ONLY thing gating the kill: `load_guard: 0`
+turns off the launch gate and no longer turns off the census with it. It
+ships **off**: the ruling's first bar for the live flip is arm-1 field data
 showing real leaks and no deliberate process, and reading that is the
 operator's, not the guard's.
 

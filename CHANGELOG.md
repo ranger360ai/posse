@@ -263,6 +263,35 @@ nothing.
 
 ### Fixed
 
+**The load guard stopped being read at all while a `dispatch --watch` pass
+waited on its sessions, so nothing ended the leaked processes that were
+saturating the box.**
+
+*Affected: any `--watch` loop with a bead in flight — which, since seats
+became rolling, is most of the day.* The guard's reading (and, under it, the
+orphan report and its kill arm) was taken at the top of a pass. A pass no
+longer returns while a bead is in flight, so on one measured loop the reading
+happened once and then not again for 1h40m, while the box climbed to load 85
+and eight orphaned gate-shell children burned about half a core each for
+thirty-seven minutes. Nothing evaluated, nothing was reported, nothing was
+ended; the operator killed them by hand.
+
+The reading has its own clock now — one tick per `--interval`, on its own
+goroutine beside the pulse and the backup clock, launching nothing and joined
+before the loop says it has stopped. It prints only when it has something
+true to say, so a healthy box adds no lines to the watch log.
+
+**The orphan census now runs whether or not the box is over `load_guard:`.**
+
+The kill arm rode inside the guard's refusal, so it only ever looked on a
+pass the guard was already skipping. On the same incident, a restarted loop
+sampled load 44 against `load_guard: 60`, did not skip, and therefore never
+looked at the same eight orphans — which had matched the predicate the whole
+time. Load was never the predicate: an orphaned, CPU-burning gate-shell child
+with no `POSSE_KEEP=` marker is a leak at any load. `load_guard_kill:` is now
+the only key gating the kill; `load_guard: 0` turns off the launch gate and no
+longer turns off the census with it.
+
 **An agent idle behind its own suite run was read as a persona that
 stopped — re-prompted, reported to the coordinator, and on the second pass
 escalated to a human.**

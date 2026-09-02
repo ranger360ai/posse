@@ -104,8 +104,10 @@ bd sync               # Sync with git
   assignment, so it is inert in every shell and lands in the argv either
   way, which is all the load guard can read about a process it did not
   start. **Undeclared is a leak**: the guard's kill arm ends an orphaned,
-  CPU-burning, gate-shell child that carries no marker, and it cannot tell
-  your deliberate process from teau's sixteen spinners by any other means
+  CPU-burning, gate-shell child that carries no marker — on any tick of a
+  `--watch` loop, not only when the box is already saturated
+  (ranger-base-fxs60) — and it cannot tell your deliberate process from
+  teau's sixteen spinners by any other means
   (NOTES.md, "Leaked gate-shell children"). A deliberate long-lived CPU
   process on this box is meant to be rare and loud — the standing ruling is
   still no load testing here.

@@ -356,6 +356,19 @@ func (d *Dispatcher) println(a ...any) {
 	fmt.Fprintln(d.Out, a...)
 }
 
+// errWriter is errw() as an io.Writer, serialized by outMu like the three
+// above. It is for the callee that takes a writer instead of printing —
+// App.LoadHigh — whose reading the guard clock (guardclock.go) now takes on
+// its own goroutine while a gather is writing this same stream.
+type dispatcherErrw struct{ d *Dispatcher }
+
+func (w dispatcherErrw) Write(p []byte) (int, error) {
+	w.d.eprintf("%s", p)
+	return len(p), nil
+}
+
+func (d *Dispatcher) errWriter() io.Writer { return dispatcherErrw{d} }
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set, no request is
