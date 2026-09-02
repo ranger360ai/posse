@@ -2177,7 +2177,8 @@ governance:
                                  flag that lifts that (ADR 0036 §3)
       --to <dir>               write to this directory instead of backup_dir:
   posse backup status            age of the newest on-box archive, how many
-                                 there are, and where. Non-zero when it is
+                                 there are, where, and whether anything is
+                                 scheduled to write one. Non-zero when it is
                                  older than backup_max_age: (or when backup is
                                  armed and there is no archive at all)
   posse backup verify [--archive <path>]
@@ -2186,8 +2187,16 @@ governance:
                                  newest). Extracts nothing
                                config backup_dir: (<home>/state/backup) where
                                  archives go — refused unless it is on this box
-                               config backup_max_age: (48h) when the newest
-                                 archive becomes a governance condition. The
+                               config backup_interval: (unset) arm a ticker
+                                 inside the "dispatch --watch" loop: every
+                                 interval it asks how old the newest archive
+                                 is, and backs up only if it is older than
+                                 that. Level-triggered, so restarting the loop
+                                 never double-runs; "posse pause" does not stop
+                                 it. Unset schedules nothing (ADR 0036 §4)
+                               config backup_max_age: (2x backup_interval:, or
+                                 48h with no schedule) when the newest archive
+                                 becomes a governance condition. The
                                  age is a line in "posse status"; past the max
                                  it is a LANE carry-over row there and in the
                                  cockpit's GOVERNANCE block. Not a G-row: ADR
