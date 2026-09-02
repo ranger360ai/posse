@@ -161,6 +161,22 @@ stream chained scans with no gap. The hint path therefore re-reads the sessions
 kicks the bead scan **on the floor**, exactly as the two-second tick does. That
 is this section's own next sentence, not a new decision.
 
+*(Reviewed 2026-09-02, ranger-base-v4923: accepted as a clarification; the code
+in 189719e matches on both loops.)* What the bead lists pay for it, stated so
+nobody rediscovers it: after a settle they lag by at most the floor — the larger
+of `beadsEvery` and the last scan's own cost, counted from when it landed — plus
+one tick, the bound every beads-only change already carries, while the session
+row moves at event latency. The middle path, forcing the scan on `idle`/`done`
+alone because those settles are so often a persona's own `bd close`, was priced
+and refused: a settle is herdr's fact about a pane, not a bead write — seats end
+without closing a bead, and beads close without a settle — and the floor's
+guarantee is denominated in `bd`'s share of the wall clock, so a hole that opens
+only on settles is still a hole, and a fleet finishing together chains through
+it. The timer sweeps the gap inside one floor. The pin in
+`cmd/posse/cockpithint_qa_test.go` exercises no settle, so the refusal is
+remembered here and not yet enforced; ranger-base-zx1kz adds the `idle`/`done`
+arm.
+
 Subscriber failure is non-fatal. Watch writes one `events unavailable — polling`
 line per outage and one recovery line; the cockpit uses its status area. Neither
 command exits, skips a scheduled pass, clears a list, or lengthens its current
