@@ -43,6 +43,7 @@ func notInVocabulary(out, want string) bool {
 }
 
 func TestCLIStillKnowsTheMode(t *testing.T) {
+	t.Parallel()
 	for _, rt := range builtinRuntimes {
 		if rt.Unattended == "" {
 			continue // TestEveryBuiltinTemplateIsUnattended owns that failure

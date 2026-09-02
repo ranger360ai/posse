@@ -43,6 +43,7 @@ func seatAt(t *testing.T, s string) time.Time {
 // settle in between is not this seat's idle, and neither is an older settle
 // of its own.
 func TestSeatIdleMeasuresLastSettleOfThisSeat(t *testing.T) {
+	t.Parallel()
 	p := seatLedger(t,
 		"2026-08-27T18:00:00Z launch ranger-posse a-1 claude",
 		"2026-08-27T18:20:00Z settle ranger-posse a-1 idle",
@@ -67,6 +68,7 @@ func TestSeatIdleMeasuresLastSettleOfThisSeat(t *testing.T) {
 // Zero would read as an instant refill — the exact number the ADR's target
 // claims — off a seat that was never measured at all.
 func TestSeatIdleFirstLaunchIsNamedNotZero(t *testing.T) {
+	t.Parallel()
 	p := seatLedger(t, "2026-08-27T18:00:00Z launch hopper-posse b-1 claude")
 	r := SeatIdleAt(p, "ranger-posse", "a-1", seatAt(t, "2026-08-27T18:50:00Z"))
 	if r.Measured() {
@@ -85,6 +87,7 @@ func TestSeatIdleFirstLaunchIsNamedNotZero(t *testing.T) {
 // on-file settle that is a whole bead old. Subtracting across it would
 // charge that bead's runtime to idle.
 func TestSeatIdleUnobservedSettleIsRefused(t *testing.T) {
+	t.Parallel()
 	p := seatLedger(t,
 		"2026-08-27T10:00:00Z settle ranger-posse a-1 idle",
 		"2026-08-27T10:05:00Z launch ranger-posse a-2 claude",
@@ -100,6 +103,7 @@ func TestSeatIdleUnobservedSettleIsRefused(t *testing.T) {
 
 // A settle stamped after the launch it precedes is a clock, not a seat.
 func TestSeatIdleClockSkewIsNamedNotNegative(t *testing.T) {
+	t.Parallel()
 	p := seatLedger(t, "2026-08-27T19:00:00Z settle ranger-posse a-1 idle")
 	r := SeatIdleAt(p, "ranger-posse", "a-2", seatAt(t, "2026-08-27T18:00:00Z"))
 	if r.Idle < 0 {
@@ -289,6 +293,7 @@ func TestSeatCadenceDryRunWritesNothing(t *testing.T) {
 // The median is the low middle of an even set: one seat waiting on a
 // 75-minute bead is the distribution, not an outlier to average away.
 func TestSeatIdleMedianIsTheLowMiddle(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   []time.Duration
 		want time.Duration

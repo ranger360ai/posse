@@ -76,6 +76,7 @@ func liveRan(t *testing.T, b *HerdrBackend, want string, line func(pane string) 
 }
 
 func TestLivePaneLineLimitAndTheSpillThatClearsIt(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_PANE_LINE") == "" {
 		t.Skip("set RHQ_LIVE_PANE_LINE=1 (+ HERDR_SOCKET_PATH, RHQ_HERDR_BIN) — see the file comment")
 	}

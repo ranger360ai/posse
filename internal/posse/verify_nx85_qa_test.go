@@ -230,6 +230,7 @@ func TestQAAnEarlyExplainErrorDoesNotOutliveALaterGuess(t *testing.T) {
 // render refuses" has to still mean "git refuses". Real git, real hook
 // dispatch, a persona's own environment: the unqualified commit must die.
 func TestQAAnIdentityCertifiedSlotIsRefusedByRealGit(t *testing.T) {
+	t.Parallel()
 	repo, _ := qaHookRepo(t)
 	qaGit(t, repo, "config", "user.email", "qa@example.invalid")
 	qaGit(t, repo, "config", "user.name", "qa")
@@ -261,6 +262,7 @@ func TestQAAnIdentityCertifiedSlotIsRefusedByRealGit(t *testing.T) {
 // nothing. If chainRender ever stops running ours first, identity would still
 // certify and this is what would say so.
 func TestQAAChainCertifiedByIdentityRefusesThroughAHostileNeighbour(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	qaGit(t, repo, "config", "user.email", "qa@example.invalid")
 	qaGit(t, repo, "config", "user.name", "qa")
@@ -293,6 +295,7 @@ func TestQAAChainCertifiedByIdentityRefusesThroughAHostileNeighbour(t *testing.T
 // fast); at 88a7726 both modes block. The executable case predates the ADR;
 // the widening to any mode does not.
 func TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	slot := filepath.Join(hooks, "prepare-commit-msg")
 	if err := syscall.Mkfifo(slot, 0o644); err != nil {

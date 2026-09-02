@@ -23,6 +23,7 @@ func writeOverlay(t *testing.T, a *App, name, body string) {
 
 // Absent file: today's behaviour exactly.
 func TestOverlayAbsentIsTheBuiltinExactly(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt, err := a.LoadRuntime("claude")
 	if err != nil {
@@ -40,6 +41,7 @@ func TestOverlayAbsentIsTheBuiltinExactly(t *testing.T) {
 // the realizer, the skill surface, Egress it did not name — stays the
 // built-in's.
 func TestOverlayPerKeyOnABuiltin(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", strings.Join([]string{
 		"model_fast: claude-instance-fast",
@@ -85,6 +87,7 @@ func TestOverlayPerKeyOnABuiltin(t *testing.T) {
 // entry — every other LoadRuntime("claude") call, overlaid or not, must
 // keep reading the built-in's own values.
 func TestOverlayDoesNotMutateTheBuiltinTable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", "model_fast: overlaid-only\n")
 
@@ -112,6 +115,7 @@ func TestOverlayDoesNotMutateTheBuiltinTable(t *testing.T) {
 // command:/skills_flag: change the launch mechanism, not a measured fact —
 // ADR 0021 Decision 2. Both refuse, naming the fact/mechanism split.
 func TestOverlayRefusesMechanismKeys(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, c := range []struct{ name, body, want string }{
 		{"command", "command: claude --evil {file}\n", "launch mechanism is not overlayable"},
@@ -129,6 +133,7 @@ func TestOverlayRefusesMechanismKeys(t *testing.T) {
 // alike (ADR 0021 Decision 4). Nothing promotes a runtime's own contract
 // without naming the measurement behind it.
 func TestOverlayAndTemplateRequireRecordWhy(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", "record: trusted\n")
 	if _, err := a.LoadRuntime("claude"); err == nil || !strings.Contains(err.Error(), "no record_why:") {
@@ -146,6 +151,7 @@ func TestOverlayAndTemplateRequireRecordWhy(t *testing.T) {
 // clears it — told apart from the key being absent by yamlHasKey, not by
 // length.
 func TestOverlayListKeysReplace(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", "native_rules: [ONLY.md]\negress: [instance.example.com]\n")
 	rt, err := a.LoadRuntime("claude")
@@ -174,6 +180,7 @@ func TestOverlayListKeysReplace(t *testing.T) {
 // overlaid built-in: an overlaid key names the file, an untouched one
 // still names "built-in default".
 func TestOverlayDeclaredBy(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", "prompt: argv\n")
 	rt, err := a.LoadRuntime("claude")
@@ -190,6 +197,7 @@ func TestOverlayDeclaredBy(t *testing.T) {
 
 // ListRuntimes: an overlaid built-in lists once, not twice.
 func TestOverlaidBuiltinListsOnce(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	writeOverlay(t, a, "claude", "prompt: argv\n")
 	writeRuntime(t, a, "extra", "command: extra --sys {file}\n")

@@ -94,6 +94,7 @@ init must recognise them as its own. Append, never replace (exampledigests.go).`
 // operator changed by one byte is theirs, which is the rule the whole
 // retirement turns on (ranger-base-qajs).
 func TestIsShippedExampleRejectsAnEditedExample(t *testing.T) {
+	t.Parallel()
 	rel := "agents/qa.md"
 	b, err := fs.ReadFile(posse.Seed, rel)
 	if err != nil {

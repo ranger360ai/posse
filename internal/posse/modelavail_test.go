@@ -130,6 +130,7 @@ func writeCfg(t *testing.T, a *App, body string) {
 // ─── the catalog reader ──────────────────────────────────────────────────────
 
 func TestModelListerReadsTheCatalogAndPages(t *testing.T) {
+	t.Parallel()
 	cs := newCatalogServer(t, []string{"claude-fable-5", "claude-opus-5"}, []string{"claude-sonnet-5"})
 	ids, err := cs.lister().List()
 	if err != nil {
@@ -153,6 +154,7 @@ func TestModelListerReadsTheCatalogAndPages(t *testing.T) {
 }
 
 func TestModelListerErrorsNeverQuoteTheCredential(t *testing.T) {
+	t.Parallel()
 	cs := newCatalogServer(t, []string{"claude-opus-5"})
 	cs.status = http.StatusUnauthorized
 	_, err := cs.lister().List()
@@ -165,6 +167,7 @@ func TestModelListerErrorsNeverQuoteTheCredential(t *testing.T) {
 }
 
 func TestModelCacheSharesOneReading(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	cs := newCatalogServer(t, []string{"claude-opus-5"})
 	a.ModelLister = cs.lister()
@@ -195,6 +198,7 @@ func TestModelCacheSharesOneReading(t *testing.T) {
 }
 
 func TestModelCacheLogsAnUnreadableCatalogWithoutTheCredential(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	a.ModelLister = &ModelLister{
 		// Loopback: the credentialed request is pinned to this machine or
@@ -228,6 +232,7 @@ func TestModelCacheLogsAnUnreadableCatalogWithoutTheCredential(t *testing.T) {
 }
 
 func TestModelCacheHonoursRetryAfterAcrossProcesses(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	cs := newCatalogServer(t, []string{"claude-opus-5"})
 	cs.status, cs.retry = http.StatusTooManyRequests, "600"
@@ -251,6 +256,7 @@ func TestModelCacheHonoursRetryAfterAcrossProcesses(t *testing.T) {
 // The rule the whole file turns on: posse not knowing is not the same fact
 // as the model being gone, and only the second one may move a launch.
 func TestUnknownCatalogNeverDemotesAnything(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t) // no snapshot, unconfigured lister
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Fell() {
@@ -262,6 +268,7 @@ func TestUnknownCatalogNeverDemotesAnything(t *testing.T) {
 }
 
 func TestEmptyCatalogIsUnknownNotAnAccountWithNoModels(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	cs := newCatalogServer(t) // 200, zero entries
 	a.ModelLister = cs.lister()
@@ -271,6 +278,7 @@ func TestEmptyCatalogIsUnknownNotAnAccountWithNoModels(t *testing.T) {
 }
 
 func TestPreflightOffSwitch(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "model_preflight: false\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5") // fable absent
@@ -280,6 +288,7 @@ func TestPreflightOffSwitch(t *testing.T) {
 }
 
 func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
 	// The fixture declares api.anthropic.com and NO model_<tier>:, so
@@ -316,6 +325,7 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 // because a list that will never hold it does not hold it. The predicate
 // is the runtime's egress: (anthropicAPI), not whether Models is empty.
 func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
 	for _, tier := range Tiers {
@@ -332,6 +342,7 @@ func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *test
 // ─── the three cases the bead named ──────────────────────────────────────────
 
 func TestPreflightAvailableSaysNothing(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5")
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
@@ -345,6 +356,7 @@ func TestPreflightAvailableSaysNothing(t *testing.T) {
 
 // The operator's own example line, verbatim in shape.
 func TestPreflightFallsBackToOpusAndSaysSo(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
@@ -360,6 +372,7 @@ func TestPreflightFallsBackToOpusAndSaysSo(t *testing.T) {
 // Rule (3): the launch is never refused over availability, so a fallback
 // that is also gone still launches — loudly, on the best the map reached.
 func TestPreflightFallbackAlsoUnavailableIsLoudAndStillLaunches(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-sonnet-5") // neither fable nor opus
 	pf := a.TierPreflight("developer", "claude", TierStrong, nil)
@@ -382,6 +395,7 @@ func TestPreflightFallbackAlsoUnavailableIsLoudAndStillLaunches(t *testing.T) {
 // rangerhq-u2p's requirement: the security lane's fallback may be a
 // different RUNTIME, not a cheaper model on the same one.
 func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
@@ -402,6 +416,7 @@ func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
 // must not silently switch the rest of the shop off — unlike tier_by_label,
 // where a present key replaces the ADR default wholesale.
 func TestNamingOnePersonaKeepsTheDefaultForEveryoneElse(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
@@ -412,6 +427,7 @@ func TestNamingOnePersonaKeepsTheDefaultForEveryoneElse(t *testing.T) {
 }
 
 func TestFallbackNoneMeansNoSubstitute(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: none\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
@@ -425,6 +441,7 @@ func TestFallbackNoneMeansNoSubstitute(t *testing.T) {
 }
 
 func TestFallbackValueThatIsNeitherATierNorARuntimeIsReportedNotObeyed(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: gpt-9\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
@@ -438,6 +455,7 @@ func TestFallbackValueThatIsNeitherATierNorARuntimeIsReportedNotObeyed(t *testin
 }
 
 func TestFallbackCycleStops(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	writeCfg(t, a, "tier_fallback:\n  strong: standard\n  standard: strong\n")
 	seedCatalog(t, a, time.Minute, "claude-sonnet-5")
@@ -553,6 +571,7 @@ func TestLaunchWithNoCatalogIsUnchanged(t *testing.T) {
 // tier from THAT, never from the PID or the session meta. A regression
 // here would put a fallback session's spend back in the strong row.
 func TestCostNamesTheTierOfTheModelThatActuallyRan(t *testing.T) {
+	t.Parallel()
 	for model, want := range map[string]string{
 		"claude-fable-5":  TierStrong,
 		"claude-opus-5":   TierStandard,
@@ -575,6 +594,7 @@ func TestCostNamesTheTierOfTheModelThatActuallyRan(t *testing.T) {
 // `posse gates <persona>` is the only place the operator can see this
 // without launching, so what it says matters as much as what it does.
 func TestPreflightReportSaysWhichOfTheThreeItIs(t *testing.T) {
+	t.Parallel()
 	t.Run("available", func(t *testing.T) {
 		a := preflightApp(t)
 		seedCatalog(t, a, time.Minute, "claude-fable-5-1")

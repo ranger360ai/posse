@@ -39,6 +39,7 @@ func writeRuntime(t *testing.T, a *App, name, body string) *Runtime {
 // A template-only yaml with nothing but command: is dispatchable and noisy.
 // Every default it lands on is the expensive-to-be-wrong-about direction.
 func TestUnknownRuntimeIsNoisyNotSilent(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")
 
@@ -89,6 +90,7 @@ func TestUnknownRuntimeIsNoisyNotSilent(t *testing.T) {
 // to the default. `record: trused` silently reading as untrusted is exactly
 // the silence ADR 0013 exists to remove.
 func TestDeclaredContractKeys(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "declared", strings.Join([]string{
 		"command: declared --sys {file}",
@@ -143,6 +145,7 @@ func TestDeclaredContractKeys(t *testing.T) {
 // measured to close a bead and three dispatched codex sessions were
 // measured not to. If this test ever has to change, a measurement changed.
 func TestBuiltinContractDeclarations(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, c := range []struct {
 		name, prompt, record string
@@ -321,6 +324,7 @@ func TestInterstitialProbesReadRealShapes(t *testing.T) {
 // interactive grok and the shared leader unpinned. The config pin covers
 // every entry point; the launch line must not pretend it does.
 func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
+	t.Parallel()
 	if strings.Contains(GrokFleetFlags, "--no-auto-update") {
 		t.Fatal("GrokFleetFlags must not carry --no-auto-update; it is per-session and would leave the shared leader unpinned (rangerhq-y7jr)")
 	}
@@ -348,6 +352,7 @@ func TestGrokFleetFlagsDoNotCarryPerSessionUpdateKill(t *testing.T) {
 //   - PARTIAL: the mapped tiers AND the unmapped ones. A partial map shown
 //     as a list of what is mapped reads as complete, which is the silence.
 func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	h := Herdr{Bin: "no-such-herdr-binary"}
 
@@ -431,6 +436,7 @@ func TestTierLineNamesWhatTheRuntimeIgnores(t *testing.T) {
 // name the source PER TIER — a single "by" for the whole row would credit
 // the yaml for two tiers it never touched (ranger-base-4jig).
 func TestTierRowAttributesEachTierSeparately(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	h := Herdr{Bin: "no-such-herdr-binary"}
 
@@ -532,6 +538,7 @@ var dimensionRows = []string{"skills", "egress", "cage_cred", "project_cfg", "sa
 // Drawn as ROWS — not as a sentence inside somebody else's row — on a
 // template-only yaml and on all three built-ins, after the six stages.
 func TestGridDrawsTheDeclaredDimensionRows(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	h := Herdr{Bin: "no-such-herdr-binary"}
 	runtimes := []*Runtime{writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")}
@@ -581,6 +588,7 @@ func TestGridDrawsTheDeclaredDimensionRows(t *testing.T) {
 // UNDECIDED / none, and DECLARED DIFFERENCE may not appear anywhere, because
 // nothing here was measured to differ.
 func TestUndeclaredDimensionsAreLoudNotBlank(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")
 	var b bytes.Buffer
@@ -629,6 +637,7 @@ func TestUndeclaredDimensionsAreLoudNotBlank(t *testing.T) {
 // after the colon is empty there, so a provenance line built on YamlGet
 // credits a built-in default the yaml had in fact overridden (declaredByList).
 func TestDeclaredDimensionsAreReadAndCredited(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "fullcli", strings.Join([]string{
 		"command: fullcli --sys {file} {skills}",
@@ -702,6 +711,7 @@ func TestDeclaredDimensionsAreReadAndCredited(t *testing.T) {
 // that would have to get this wrong is the one that also carries the word
 // UNDECLARED for the runtime next door.
 func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	h := Herdr{Bin: "no-such-herdr-binary"}
 	grid := func(name string) string {

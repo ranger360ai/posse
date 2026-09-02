@@ -323,6 +323,7 @@ func shellExecProbeNames(src string) []shellCall {
 var hookDepsLine = regexp.MustCompile(`HOOK_DEPS="\$\{HOOK_DEPS:-([^}"]*)\}"`)
 
 func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

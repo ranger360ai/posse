@@ -77,6 +77,7 @@ func qaOneBeadRepo(t *testing.T, a *App) string {
 // The child half of TestLaunchLockHoldsAcrossProcesses: take the launcher
 // lock of the RHQ_HOME handed to it, say so, and hold until killed.
 func TestLaunchLockChildHolder(t *testing.T) {
+	t.Parallel()
 	home := os.Getenv("RHQ_QA_HOLD_HOME")
 	if home == "" {
 		t.Skip("child of TestLaunchLockHoldsAcrossProcesses")

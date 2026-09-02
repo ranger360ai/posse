@@ -46,6 +46,7 @@ func TestOpsPatternsArePortable(t *testing.T) {
 // of commits is a lint that gets uninstalled, so the misses are pinned as
 // hard as the hits.
 func TestScanOps(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		text  string
 		class string // "" = must not match anything
@@ -110,6 +111,7 @@ func contains(ss []string, s string) bool {
 
 // Every way of being unsure has to fail the same way: closed.
 func TestBeadsVisibilityFailsClosed(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	pub, priv, other := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "other")
 	for _, d := range []string{pub, priv, other} {
@@ -145,6 +147,7 @@ func TestBeadsVisibilityFailsClosed(t *testing.T) {
 // session's environment may carry it, or dispatch would be handing every
 // persona the way past the wall.
 func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
+	t.Parallel()
 	roots := []string{"..", "../../cmd"}
 	for _, root := range roots {
 		filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
@@ -301,6 +304,7 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 // *.md, any path. Both run only in a public-stamped repo, fail closed, and
 // share the beads visibility guard's override and refusals.log shape.
 func TestDocsGenreAndProseGuardHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -449,6 +453,7 @@ func TestCommitGuardHookCarriesBothWalls(t *testing.T) {
 // The in-session warn: fast feedback where the harness files a bead itself,
 // and silent everywhere the answer is private.
 func TestWarnOpsContent(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
 	cfg := filepath.Join(home, "config.yaml")
@@ -483,6 +488,7 @@ func TestWarnOpsContent(t *testing.T) {
 // comment in both files — a prose quotation of the phrase is the same
 // leak as a constant, which is the mistake this test caught first.
 func TestPlanBrandsAreNotShippedVerbatim(t *testing.T) {
+	t.Parallel()
 	needles := []string{"claude" + " max", "max" + " plan"}
 	for _, f := range []string{"visibility.go", "visibility_test.go"} {
 		b, err := os.ReadFile(f)
@@ -522,6 +528,7 @@ func classesOf(ps []OpsPattern) []string {
 // The script lives in docs/runbooks/, which does not ship, so this skips in
 // the published tree and guards in the one where the fix has to land.
 func TestGuardFilesCarryNoCrewNames(t *testing.T) {
+	t.Parallel()
 	const script = "../../docs/runbooks/0012-seed-publication.sh"
 	b, err := os.ReadFile(script)
 	if err != nil {
@@ -877,6 +884,7 @@ func TestDeriveIdentityLiteralsSkipsAbsentSourcesSilently(t *testing.T) {
 // the whole install rather than shipping a hook that would break its own
 // quoting.
 func TestIdentityLiteralSingleQuoteRefusesInstall(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -908,6 +916,7 @@ func TestIdentityLiteralSingleQuoteRefusesInstall(t *testing.T) {
 // itself (Go's regexp, the same dialect the shell reads) and the rendered
 // hook run for real.
 func TestIdentityLiteralDoesNotTripOnABareBeadID(t *testing.T) {
+	t.Parallel()
 	const path = "/Users/t/src/ranger-base-gk6e" // a path whose LAST segment IS a bead id
 	ere := identityLiteralERE(path)
 	re, err := regexp.Compile(ere)
@@ -1081,6 +1090,7 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 // carries the full measurement and disposition of each). Anything past
 // that set is a hit nobody has judged, which is worth failing loud over.
 func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

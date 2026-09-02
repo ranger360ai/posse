@@ -68,6 +68,7 @@ func qceHidden(t *testing.T, path string, lines []string) []string {
 }
 
 func TestTestCorpusHidesNoCrewNameBehindAnEscape(t *testing.T) {
+	t.Parallel()
 	root := qibRepoRoot(t)
 	var hits []string
 	scanned := 0
@@ -122,6 +123,7 @@ func TestTestCorpusHidesNoCrewNameBehindAnEscape(t *testing.T) {
 // is the whole reason this pin exists rather than being a duplicate of
 // TestShippedTreeNamesRolesNotThisCrew.
 func TestCrewNameEscapePinSeesWhatTheRawWalkCannot(t *testing.T) {
+	t.Parallel()
 	// Assembled, never spelled: this file is inside the walk above and is
 	// not on its exception list. Same trick qibCrewPattern uses.
 	name := strings.ToUpper("mon" + "ica")

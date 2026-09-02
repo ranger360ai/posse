@@ -39,6 +39,7 @@ import (
 const spinner = `(while :; do :; done) >/dev/null 2>&1 & echo $!`
 
 func TestOrphanReportControlNamesAPlantedLeak(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_ORPHAN_CONTROL") != "1" {
 		t.Skip("planted-leak control: it burns a core and strands orphans on purpose, so it runs only under scripts/verify-orphan-report.sh, in a throwaway CPU-limited container (operator ruling, ranger-base-teau)")
 	}

@@ -2030,6 +2030,7 @@ func TestDispatchDryRun(t *testing.T) {
 }
 
 func TestParseBdIssues(t *testing.T) {
+	t.Parallel()
 	issues, err := parseBdIssues([]byte(`[{"id":"x-1","title":"t","status":"open","priority":1,"issue_type":"task","assignee":"ranger"}]`))
 	if err != nil || len(issues) != 1 || issues[0].ID != "x-1" || issues[0].Assignee != "ranger" {
 		t.Errorf("bad parse: %+v err=%v", issues, err)

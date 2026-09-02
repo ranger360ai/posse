@@ -39,6 +39,7 @@ func governHonestyScript(t *testing.T) string {
 }
 
 func TestQAGovernHonestyScriptKeepsItsSafeDirection(t *testing.T) {
+	t.Parallel()
 	s := governHonestyScript(t)
 	// The rangerhq-snd wipe was a real RHQ_HOME against a scratch socket.
 	// Scratch on BOTH sides, and the fleet socket compared against, never
@@ -59,6 +60,7 @@ func TestQAGovernHonestyScriptKeepsItsSafeDirection(t *testing.T) {
 }
 
 func TestQAGovernHonestyScriptPinsEveryArm(t *testing.T) {
+	t.Parallel()
 	s := governHonestyScript(t)
 	for _, needle := range []string{
 		// The control arm. Without it the rest is a sticker.
@@ -96,6 +98,7 @@ func TestQAGovernHonestyScriptPinsEveryArm(t *testing.T) {
 }
 
 func TestQAGovernHonestyScriptPassesAgainstAScratchServer(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_GOVERN_HONESTY") == "" {
 		t.Skip("set RHQ_LIVE_GOVERN_HONESTY=1 to run scripts/verify-govern-honesty.sh against a scratch herdr session")
 	}

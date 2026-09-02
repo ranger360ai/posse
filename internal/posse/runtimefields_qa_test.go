@@ -92,6 +92,7 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 }
 
 func TestEveryRuntimeFieldIsClassified(t *testing.T) {
+	t.Parallel()
 	rtype := reflect.TypeOf(Runtime{})
 	seen := map[string]bool{}
 	for i := 0; i < rtype.NumField(); i++ {

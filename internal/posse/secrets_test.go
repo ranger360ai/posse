@@ -39,6 +39,7 @@ func secretsApp(t *testing.T) *App {
 // structural — the lister and the loader share no directory. Both directions
 // are pinned, because a fallback added to either resolver breaks the rule.
 func TestSecretsAndEnvSetsShareNoDirectory(t *testing.T) {
+	t.Parallel()
 	a := secretsApp(t)
 
 	if got := a.ListEnvSets(); len(got) != 1 || got[0] != "default" {
@@ -65,6 +66,7 @@ func TestSecretsAndEnvSetsShareNoDirectory(t *testing.T) {
 // The injection risk the rule is actually about: a PID's `envs:` is prose,
 // and prose can spell a path. A name is a file stem in both stores.
 func TestNoNameCanCrossBetweenTheTwoStores(t *testing.T) {
+	t.Parallel()
 	a := secretsApp(t)
 	for _, name := range []string{"../secrets/meter", "../secrets/meter.env", "..", ".", "", "sub/meter"} {
 		if _, err := a.EnvSetVars(name); err == nil {
@@ -126,6 +128,7 @@ func TestInitSeedsAnEmptySecretsDir(t *testing.T) {
 // TightenEnvPerms parity: same belt, same silence, same names-never-contents
 // notice — and a store that is not there is not a drift (P6).
 func TestTightenSecretPermsIsEnvParity(t *testing.T) {
+	t.Parallel()
 	a := secretsApp(t)
 	f := filepath.Join(a.SecretsDir, "meter.env")
 	os.Chmod(f, 0o644)
@@ -168,6 +171,7 @@ func TestTightenSecretPermsIsEnvParity(t *testing.T) {
 // P6: absent or empty secrets/ is the shipped state. Nothing crashes and
 // nothing is said.
 func TestAbsentSecretsDirIsNotAnError(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	var notes strings.Builder
 	a.TightenSecretPerms(&notes)
@@ -190,6 +194,7 @@ func TestAbsentSecretsDirIsNotAnError(t *testing.T) {
 // secrets/ joins envs/ in the constitution area no writable set may reach
 // (ADR 0015 §2/§7, ADR 0019 D1).
 func TestSecretsAreInNoSessionsWritableSet(t *testing.T) {
+	t.Parallel()
 	a := secretsApp(t)
 	var named bool
 	for _, p := range a.HomeConstitutionPaths() {

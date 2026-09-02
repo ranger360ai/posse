@@ -60,6 +60,7 @@ func cageAgeGate(t *testing.T, g CageAge) {
 // ─── the classification ──────────────────────────────────────────────────────
 
 func TestCageAgeIsThreeStatesAndUnclearIsNotStale(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, has, want, state string
 	}{
@@ -148,6 +149,7 @@ func cageStaleApp(t *testing.T) *App {
 }
 
 func TestAStaleImageSkipsTheLivePinAndACurrentOneRunsIt(t *testing.T) {
+	t.Parallel()
 	src := tempGitTree(t)
 	want := SourceBuildVersion(src)
 	if want == "" {
@@ -218,6 +220,7 @@ func tempGitTree(t *testing.T) string {
 // ─── the source side ─────────────────────────────────────────────────────────
 
 func TestSourceBuildStampNamesTheCommitEvenFromAWorktree(t *testing.T) {
+	t.Parallel()
 	src := tempGitTree(t)
 	git := func(dir string, args ...string) string {
 		t.Helper()
@@ -287,6 +290,7 @@ func TestSourceBuildStampNamesTheCommitEvenFromAWorktree(t *testing.T) {
 // then reports "+dev". So this builds cmd/posse the way BuildCageImage
 // does and asks the binary what it thinks it is.
 func TestTheCageBuildStampReachesTheBinary(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("builds cmd/posse")
 	}
@@ -329,6 +333,7 @@ func TestTheCageBuildStampReachesTheBinary(t *testing.T) {
 // posseVersionWord is what the host reads back out of the image; it must
 // not invent a version out of a line that is not one.
 func TestPosseVersionWordReadsOnlyAVersionLine(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ out, want string }{
 		{"posse 0.4.0+0c0607b (herdr-native)\n", "0.4.0+0c0607b"},
 		{"warning: something\nposse 0.4.0+dev (herdr-native)\n", "0.4.0+dev"},
@@ -348,6 +353,7 @@ func TestPosseVersionWordReadsOnlyAVersionLine(t *testing.T) {
 // in the image, and outside one the running binary is the only thing there
 // is to be behind.
 func TestCageAgeHereComparesAgainstTheCheckoutWhenThereIsOne(t *testing.T) {
+	t.Parallel()
 	a := cageStaleApp(t)
 	e := fakeCageEngine(t, a, "fake", "posse 0.0.1+aaaaaaa (herdr-native)")
 	const image = "posse-cage:latest"

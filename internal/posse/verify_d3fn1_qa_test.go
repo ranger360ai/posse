@@ -41,6 +41,7 @@ import (
 // match: a pin that only asserted self-match would pass with the escaping
 // half-done.
 func TestQAIdentityLiteralEREEscapesEveryMetacharacter(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, lit, decoy string }{
 		{"plus-addressed email", "a+b@example.com", "aab@exampleXcom"},
 		{"a dot is not any character", "user@x.org", "user@xYorg"},
@@ -153,6 +154,7 @@ func TestQAIdentityGuardCatchesAnEmailCarryingAMetacharacter(t *testing.T) {
 // lost its Class, or a Stringer that stopped rendering one, was green.
 // Verification 1's own two examples, at the two tiers `posse gates` renders.
 func TestQAParityPrintsTheEnforcementClass(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	claude, err := a.LoadRuntime("claude")

@@ -148,6 +148,7 @@ func qcSameDir(t *testing.T, spelled, tree, store string) {
 // A forgotten tree whose redirect names the constitution in any spelling bd
 // accepts must be brought along by the fan-out.
 func TestQueueCutoverFindsAForgottenTreeWhateverTheSpelling(t *testing.T) {
+	t.Parallel()
 	for _, sp := range qcSloppySpellings {
 		t.Run(sp.name, func(t *testing.T) {
 			constitution, _ := qcConstitution(t)
@@ -191,6 +192,7 @@ func TestQueueCutoverFindsAForgottenTreeWhateverTheSpelling(t *testing.T) {
 // the fan-out must not touch. A compare loosened by normalising strings until
 // something matches would pass the pin above and fail this one.
 func TestQueueCutoverLeavesAStrangerStoreAloneHoweverItIsSpelled(t *testing.T) {
+	t.Parallel()
 	for _, sp := range qcSloppySpellings {
 		t.Run(sp.name, func(t *testing.T) {
 			constitution, _ := qcConstitution(t)
@@ -248,6 +250,7 @@ func TestQueueCutoverLeavesAStrangerStoreAloneHoweverItIsSpelled(t *testing.T) {
 // too, so `--redirect <queue>/` with one trailing slash walked straight past
 // it and wrote the cycle (ranger-base-4myz).
 func TestQueueCutoverWritesNoSelfRedirectWhenTheQueueIsNamedSloppily(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	store := filepath.Join(constitution, ".beads")
 	queue := filepath.Join(t.TempDir(), "queue")
@@ -281,6 +284,7 @@ func TestQueueCutoverWritesNoSelfRedirectWhenTheQueueIsNamedSloppily(t *testing.
 // missing everything), the sloppily-spelled one must come home (the bead), and
 // one pointed at a third store must be left alone (no over-match).
 func TestQueueRollbackSendsHomeATreeSpelledAHandsWay(t *testing.T) {
+	t.Parallel()
 	f := qcRolledBack(t)
 	root := filepath.Dir(f.constitution)
 	queueStore := filepath.Join(f.queue, ".beads")
@@ -348,6 +352,7 @@ func qcRedirectRaw(t *testing.T, dir string) string {
 // retyped here — a pin over a retyped copy goes green the day the heredoc's
 // escaping breaks.
 func TestQueueCutoverFanoutRecoveryListingFindsAStragglerSpelledAHandsWay(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes through the 0444 this fixture blocks the fan-out with")
 	}

@@ -88,6 +88,7 @@ func TestPlanCacheOneReadingManyCallers(t *testing.T) {
 // Past the age the caller asked for, somebody fetches — the cache never
 // serves a reading older than what was requested.
 func TestPlanCacheRefetchesPastTheAgeAsked(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	if _, _, err := r.caller("dispatch").Read(5 * time.Minute); err != nil {
 		t.Fatal(err)
@@ -107,6 +108,7 @@ func TestPlanCacheRefetchesPastTheAgeAsked(t *testing.T) {
 
 // maxAge 0 is the escape hatch: no sharing, every caller asks.
 func TestPlanCacheZeroAgeAlwaysAsks(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	for i := 0; i < 3; i++ {
 		if _, _, err := r.caller("cost").Read(0); err != nil {
@@ -122,6 +124,7 @@ func TestPlanCacheZeroAgeAlwaysAsks(t *testing.T) {
 // the whole (c) of the bead: a 429 must not be answered by asking again in
 // two minutes from a different pid.
 func TestPlanCacheHonoursRetryAfterAcrossCallers(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	r.ps.status, r.ps.retry = http.StatusTooManyRequests, "120"
 
@@ -158,6 +161,7 @@ func TestPlanCacheHonoursRetryAfterAcrossCallers(t *testing.T) {
 // A 429 that names no Retry-After still buys a cooldown — the endpoint did
 // not say, so the policy does.
 func TestPlanCache429WithoutRetryAfter(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	r.ps.status = http.StatusTooManyRequests
 	if _, _, err := r.caller("dispatch").Read(time.Minute); err == nil {
@@ -180,6 +184,7 @@ func TestPlanCache429WithoutRetryAfter(t *testing.T) {
 // A Retry-After longer than an hour is capped: past that the blind window
 // (rangerhq-6h1) is what decides, not a silent hour-long mute.
 func TestPlanCacheCapsALongRetryAfter(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	r.ps.status, r.ps.retry = http.StatusTooManyRequests, "86400"
 	r.caller("dispatch").Read(time.Minute)
@@ -199,6 +204,7 @@ func TestPlanCacheCapsALongRetryAfter(t *testing.T) {
 // A success is proof the endpoint answers, so it clears the cooldown — no
 // operator action, no sticky state (the plan guard's own rule).
 func TestPlanCacheSuccessClearsTheCooldown(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	r.ps.status, r.ps.retry = http.StatusTooManyRequests, "60"
 	r.caller("dispatch").Read(time.Minute)
@@ -246,6 +252,7 @@ func TestPlanCacheKeepsTheReadingThroughA429(t *testing.T) {
 // A truncated or hand-edited snapshot is a cache miss, never a crash and
 // never a wrong number.
 func TestPlanCacheCorruptSnapshotRefetches(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	path := filepath.Join(r.dir, "plan-usage.json")
 	if err := os.WriteFile(path, []byte(`{"at":"nope","five_`), 0o644); err != nil {
@@ -268,6 +275,7 @@ func TestPlanCacheCorruptSnapshotRefetches(t *testing.T) {
 // No state dir to share through: still a reading, never a failure. The
 // cache is an optimization and fails quiet, like the rest of the guard.
 func TestPlanCacheWithoutAStateDirStillReads(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	c := r.caller("cost")
 	c.Path, c.Log = "", ""
@@ -310,6 +318,7 @@ func TestPlanCacheLogsRequestsNotHits(t *testing.T) {
 // A failed read is logged too, in the generic terms planusage.go returns —
 // the log is a cadence record, not a credential leak.
 func TestPlanCacheLogsAFailedRead(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	c := r.caller("dispatch")
 	c.Reader.(*AnthropicPlanReader).URL = deadURL(t)
@@ -351,6 +360,7 @@ func TestPlanCacheTrimsTheLog(t *testing.T) {
 // plan_usage_ttl: the house's duration grammar, an escape hatch at 0, and a
 // typo that is visible rather than a setting that quietly changed.
 func TestPlanUsageTTLConfig(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		raw  string
 		want time.Duration
@@ -388,6 +398,7 @@ func TestPlanUsageTTLConfig(t *testing.T) {
 // rest is reserved for a real outage, so a shared reading can never be the
 // thing that fails a pass closed.
 func TestPlanGuardMaxAge(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		ttl, blindMax, want time.Duration
 	}{
@@ -446,6 +457,7 @@ func TestPlanReaderRateLimited(t *testing.T) {
 // caller accepted as stale says how stale — the number must never be
 // presented as newer than it is.
 func TestPlanCacheLineSaysHowOldTheReadingIs(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 
 	line, err := r.caller("cost").Line(5 * time.Minute)
@@ -473,6 +485,7 @@ func TestPlanCacheLineSaysHowOldTheReadingIs(t *testing.T) {
 // silence or an exit code is the right answer, and there is no half line
 // with a missing number in it.
 func TestPlanCacheLineRendersNothingOnAFailedRead(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	c := r.caller("cost")
 	c.Reader = &AnthropicPlanReader{URL: deadURL(t), Token: func() (string, error) { return fakeToken, nil }}

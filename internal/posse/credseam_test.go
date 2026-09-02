@@ -243,6 +243,7 @@ func TestOneEnvelopeReadsIdenticallyThroughBothStores(t *testing.T) {
 // a guess. A wrong date warns forever or never, and both are worse than the
 // honest zero the callers render as "cannot tell".
 func TestExpiryIsReadOrUnknownNeverGuessed(t *testing.T) {
+	t.Parallel()
 	want := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name string
@@ -271,6 +272,7 @@ func TestExpiryIsReadOrUnknownNeverGuessed(t *testing.T) {
 // for has no meter credential to want. That is guard-OFF with a witness, not
 // a credential outage — and it is the same answer on every platform.
 func TestARuntimeWithNoMeterAdapterIsNoSource(t *testing.T) {
+	t.Parallel()
 	for _, rt := range []string{"codex", "grok", "own"} {
 		for _, goos := range []string{"darwin", "linux"} {
 			_, ns := meterStore(rt, goos)
@@ -366,6 +368,7 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 // Nothing the seam returns quotes a credential — the rule this code was
 // collected under, restated across both stores and every failure class.
 func TestNoSeamErrorEverCarriesTheCredential(t *testing.T) {
+	t.Parallel()
 	// Longer than maxKeyName on purpose: below that bound a key IS a name and
 	// is printed as schema, which is the documented behaviour and not a leak.
 	const secret = "sk-ant-oat01-NEVER-IN-AN-ERROR-AND-LONGER-THAN-A-KEY-NAME"

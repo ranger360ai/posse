@@ -243,6 +243,7 @@ func TestCodexAndGrokMeterReadsAreNoSourceAndRenderGuardOff(t *testing.T) {
 // where its rule is stated: structural absence is the answer only when it is
 // the WHOLE answer.
 func TestNoSourceReasonReadsBothArrivalsAndRefusesTheMixedOne(t *testing.T) {
+	t.Parallel()
 	ns := linuxNoSource()
 	other := Die("its endpoint is not reachable from this network")
 	cases := []struct {
@@ -276,6 +277,7 @@ func TestNoSourceReasonReadsBothArrivalsAndRefusesTheMixedOne(t *testing.T) {
 // substring of Why. Without that, the availability arrival is unreadable and
 // the guard's answer depends on which code path noticed the absence.
 func TestPlanAdapterKeepsTheTypedReason(t *testing.T) {
+	t.Parallel()
 	ns := linuxNoSource()
 	noSourceAdapter(t, ns)
 

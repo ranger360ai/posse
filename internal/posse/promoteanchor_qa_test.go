@@ -134,6 +134,7 @@ func TestQASeededManifestNeverBlessesWhatItCouldNotHash(t *testing.T) {
 // with real sessions. It counts what it found, so a sweep that matches
 // nothing fails instead of passing.
 func TestQAEveryDispatchedLaunchDeclaresItsBead(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("dispatch.go")
 	if err != nil {
 		t.Fatal(err)

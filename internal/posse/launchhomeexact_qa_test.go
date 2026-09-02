@@ -74,6 +74,7 @@ func TestQALaunchHomeValueIsExactOnThePersonaPath(t *testing.T) {
 // value from the pane's own environment — so the name is the whole claim at
 // that tier, and it must be there exactly once.
 func TestQALaunchHomeCrossesTheCageBoundaryByName(t *testing.T) {
+	t.Parallel()
 	names := CageEnvNames(nil)
 	n := 0
 	for _, s := range names {

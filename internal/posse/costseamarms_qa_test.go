@@ -47,6 +47,7 @@ const qaClaudePricedNonClaudeID = "gpt-5.6-opus-preview"
 // claude's table WOULD price must come out unpriced — not priced at claude
 // list rates.
 func TestQACostAdapterMissDoesNotFallBackToClaudesTable(t *testing.T) {
+	t.Parallel()
 	// The wrong arm must be able to fail first: if claude's table did not
 	// price this id, the zero below would prove nothing.
 	p, ok := PriceFor(qaClaudePricedNonClaudeID)
@@ -78,6 +79,7 @@ func TestQACostAdapterMissDoesNotFallBackToClaudesTable(t *testing.T) {
 // The stamp arm: each decoder names its own runtime when it builds the
 // segment, because it prices that segment before anything else labels it.
 func TestQADecodersStampRuntimeAtConstruction(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
 
 	if got := newCodexSegment("a-1", "s.jsonl", now, "gpt-5.6-sol").Runtime; got != "codex" {

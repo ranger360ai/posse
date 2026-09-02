@@ -38,6 +38,7 @@ import (
 )
 
 func TestLiveEgressBoundaryIsTheRouteNotTheEnvVar(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_DOCKER") == "" {
 		t.Skip("set RHQ_LIVE_DOCKER=1 (needs docker and `posse cage build`)")
 	}

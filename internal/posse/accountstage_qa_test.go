@@ -28,6 +28,7 @@ import (
 // is spelled as a literal rather than derived, so re-declaring a runtime's
 // account state has to change this table too.
 func TestQAAccountStageReadersGiveOneAnswer(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, c := range []struct {
 		name string

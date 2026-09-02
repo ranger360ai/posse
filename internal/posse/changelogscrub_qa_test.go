@@ -80,6 +80,7 @@ func TestChangelogCarriesNoInstanceOpsContent(t *testing.T) {
 // one only asserts the file is here and is not empty, so a scrub that deleted
 // it cannot pass as "no ops content found".
 func TestChangelogIsNotEmpty(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("../../CHANGELOG.md")
 	if err != nil {
 		t.Fatal(err)

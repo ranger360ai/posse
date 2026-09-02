@@ -133,6 +133,7 @@ func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
 // `d.refillCtx != nil && d.refillCtx.Err() != nil` continue in Run's gather
 // loop → the behavioural arm reds.
 func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
+	t.Parallel()
 	// Every non-test .go file in this package, as bytes. `go test` runs
 	// with the package dir as cwd, so "." is internal/posse.
 	var src []struct{ name, body string }
@@ -296,6 +297,7 @@ func skillsApp(t *testing.T) *App {
 // with a filepath.Rel; drop the prefix from the pattern entirely; drop the
 // leading "/" anchor; `--git-common-dir` → `--git-dir`.
 func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T) {
+	t.Parallel()
 	a := skillsApp(t)
 
 	// ── a session started below the repo root ──

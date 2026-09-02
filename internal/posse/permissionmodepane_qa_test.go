@@ -243,6 +243,7 @@ func paneMode(runtime, pane string) (mode string, ok bool) {
 // ─── what the corpus pins ───────────────────────────────────────────────────
 
 func TestQAClaudePaneNamesAllSixModes(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, pane, want string }{
 		{"auto", claudePaneAuto, "auto"},
 		{"manual", claudePaneManual, "manual"},
@@ -263,6 +264,7 @@ func TestQAClaudePaneNamesAllSixModes(t *testing.T) {
 // "unknown" exactly where the risk is. This is that regression, stated as a
 // property of the corpus rather than of the reader.
 func TestQAClaudeFooterDropsTheWordModeOnTheApprovingOnes(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, pane string }{
 		{"acceptEdits", claudePaneAcceptEdits},
 		{"bypassPermissions", claudePaneBypass},
@@ -277,6 +279,7 @@ func TestQAClaudeFooterDropsTheWordModeOnTheApprovingOnes(t *testing.T) {
 // A pane sitting on a dialog proves nothing, and the launch command in its
 // own scrollback must not be mistaken for a reading.
 func TestQAClaudeDialogHidesTheModeFooter(t *testing.T) {
+	t.Parallel()
 	if _, ok := paneMode("claude", claudePaneDialog); ok {
 		t.Fatal("a dialog-covered pane reported a mode; the only mode text on that screen is the argv in the scrollback")
 	}
@@ -287,6 +290,7 @@ func TestQAClaudeDialogHidesTheModeFooter(t *testing.T) {
 
 // codex renders no mode: the two arms differ only in the echoed argv.
 func TestQACodexPaneCarriesNoPermissionMode(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, pane string }{
 		{"-a never", codexPaneNever},
 		{"-a on-request", codexPaneOnRequest},
@@ -308,6 +312,7 @@ func TestQACodexPaneCarriesNoPermissionMode(t *testing.T) {
 }
 
 func TestQAGrokPaneNamesOnlyTwoOfSixModes(t *testing.T) {
+	t.Parallel()
 	if got, ok := paneMode("grok", grokPaneAuto); !ok || got != "auto" {
 		t.Errorf("grok auto: paneMode = %q,%v; want \"auto\",true", got, ok)
 	}
@@ -344,6 +349,7 @@ func TestQAGrokPaneNamesOnlyTwoOfSixModes(t *testing.T) {
 // and deleted first (the splash), and a claude pane in a fresh directory
 // answers its trust dialog before any footer exists.
 func TestQALivePermissionModeInPane(t *testing.T) {
+	t.Parallel()
 	pane, runtime := os.Getenv("RHQ_LIVE_PANE"), os.Getenv("RHQ_LIVE_RUNTIME")
 	if pane == "" || runtime == "" {
 		t.Skip("set RHQ_LIVE_PANE=<ws:pane> RHQ_LIVE_RUNTIME=claude|codex|grok (+ HERDR_SOCKET_PATH) — see the comment above")

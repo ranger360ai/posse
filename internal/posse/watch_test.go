@@ -13,6 +13,7 @@ import (
 // rangerhq-bh8: quiet passes back off (double, capped), a busy pass snaps
 // back to the base interval.
 func TestNextIntervalSchedule(t *testing.T) {
+	t.Parallel()
 	base, max := 10*time.Second, 60*time.Second
 	cur := base
 	var got []time.Duration
@@ -38,6 +39,7 @@ func TestNextIntervalSchedule(t *testing.T) {
 }
 
 func TestParseInterval(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]time.Duration{"30": 30 * time.Second, "30s": 30 * time.Second, "2m": 2 * time.Minute} {
 		if got, err := ParseInterval(in); err != nil || got != want {
 			t.Errorf("ParseInterval(%q) = %s, %v", in, got, err)

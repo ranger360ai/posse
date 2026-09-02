@@ -65,6 +65,7 @@ var constitutionClassSpec = []string{
 // member dropped from ConstitutionRepoPaths is the wall narrowing, and a
 // member added is a widening nobody wrote down.
 func TestQAConstitutionClassIsTheSpecifiedSet(t *testing.T) {
+	t.Parallel()
 	got := append(ConstitutionRepoPaths(), ClaudeProjectConfig, ClaudeProjectConfigLocal)
 	if strings.Join(got, " ") != strings.Join(constitutionClassSpec, " ") {
 		t.Errorf("the commit wall's class is\n  %v\nand ranger-base-ak3e specifies\n  %v\n"+
@@ -172,6 +173,7 @@ func gatesDirOf(env []string) string {
 // is the constitution, so in a repo where the class applies at all it cannot
 // also be a file. Its tree shape is pinned like everyone else's.
 func TestQAConstitutionWallRefusesEveryClassMemberUnderAPersona(t *testing.T) {
+	t.Parallel()
 	for _, member := range constitutionClassSpec {
 		shapes := []struct{ name, rel string }{{"a file under it", member + "/probe.md"}}
 		if member != ConstitutionRepoMarker {
@@ -193,6 +195,7 @@ func TestQAConstitutionWallRefusesEveryClassMemberUnderAPersona(t *testing.T) {
 // splits drafting from ratification BY ACTOR, and the operator is the
 // ratifying actor. Same repo, same paths, same form — no marker, it lands.
 func TestQAConstitutionWallPassesTheIdenticalCommitUnmarked(t *testing.T) {
+	t.Parallel()
 	for _, member := range constitutionClassSpec {
 		t.Run(member, func(t *testing.T) {
 			repo, git, _ := constitutionWallRepo(t, true)
@@ -214,6 +217,7 @@ func TestQAConstitutionWallPassesTheIdenticalCommitUnmarked(t *testing.T) {
 // class, not a session ban, and a wall that refused ordinary work in the
 // constitution repo would be routed around within a day.
 func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
+	t.Parallel()
 	for _, rel := range []string{
 		"docs/notes.d/az93-settings.json", // the prescribed route itself has to work
 		"rhq/personas/developer/ORDERS.md",
@@ -244,6 +248,7 @@ func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
 // directory, while the other reading would let a repo be walked out of the
 // class by choosing what to write first.
 func TestQAConstitutionWallScopesThePromotedSetToTheConstitutionRepo(t *testing.T) {
+	t.Parallel()
 	t.Run("no marker: rhq/recipes is ordinary work", func(t *testing.T) {
 		repo, git, persona := constitutionWallRepo(t, false)
 		rel := "rhq/recipes/thing.yaml"
@@ -272,6 +277,7 @@ func TestQAConstitutionWallScopesThePromotedSetToTheConstitutionRepo(t *testing.
 // tree. A first commit is exactly when a constitution arrives whole, which
 // makes this the one commit where getting it wrong loses the most.
 func TestQAConstitutionWallRefusesOnTheRootCommit(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, ConstitutionRepoMarker), 0o755); err != nil {
 		t.Fatal(err)
@@ -288,6 +294,7 @@ func TestQAConstitutionWallRefusesOnTheRootCommit(t *testing.T) {
 // terms as rewriting it — which is what it should be, since a deleted PID is
 // a persona with no fence at the next launch.
 func TestQAConstitutionWallRefusesADeletion(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
 	rel := "rhq/agents/developer.md"
 	stageAt(t, repo, git, nil, rel, "the law\n")
@@ -310,6 +317,7 @@ func TestQAConstitutionWallRefusesADeletion(t *testing.T) {
 // widens the wall in the same commit — and an edit that REMOVES one from the
 // render without removing it from the promoted set is caught here.
 func TestQAConstitutionWallRenderNamesEveryPromotedPath(t *testing.T) {
+	t.Parallel()
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	for _, p := range PromotedPaths {
 		want := ConstitutionSourceDir + "/" + p
@@ -335,6 +343,7 @@ func TestQAConstitutionWallRenderNamesEveryPromotedPath(t *testing.T) {
 // persona's commits come from, so an arm placed below it would stand down in
 // exactly the case ranger-base-7pq0 measured.
 func TestQAConstitutionWallSitsAboveTheSharedIndexArm(t *testing.T) {
+	t.Parallel()
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	con := strings.Index(render, "the constitution-path guard")
 	shared := strings.Index(render, "the shared-index guard")
@@ -351,6 +360,7 @@ func TestQAConstitutionWallSitsAboveTheSharedIndexArm(t *testing.T) {
 // dispatched session's own worktree, which is where every persona commit in
 // the fleet is actually typed.
 func TestQAConstitutionWallRefusesInALinkedWorktree(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
 	tree := filepath.Join(t.TempDir(), "wt")
 	if out, err := git(nil, "worktree", "add", "-q", "-b", "posse/probe", tree); err != nil {
@@ -372,6 +382,7 @@ func TestQAConstitutionWallRefusesInALinkedWorktree(t *testing.T) {
 // promote.go gets for free does not reach a paragraph. So the paragraph is
 // read back and measured against the same spec the walls are.
 func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -430,6 +441,7 @@ func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
 // the code — but nothing here proves them, and a later reader must not take
 // a green run as if it did.
 func TestQAConstitutionWallHoldsOverHostilePathShapes(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
 	for _, name := range []string{
 		"rhq/agents/a b.md",

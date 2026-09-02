@@ -387,6 +387,7 @@ func TestOverflowExplicitRuntimePins(t *testing.T) {
 // such a bead faces the ladder like any claude one rather than being waved
 // through as "not on the meter".
 func TestOnGuardedMeter(t *testing.T) {
+	t.Parallel()
 	for name, want := range map[string]bool{
 		"":       true,
 		"claude": true,
@@ -402,6 +403,7 @@ func TestOnGuardedMeter(t *testing.T) {
 
 // The config reader's own edges, without a pass around them.
 func TestPlanGuardOverflowConfig(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		cfg  string
 		want Overflow
@@ -440,6 +442,7 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 // Overflow built any other way cannot move a bead either: no cap is off, and
 // the guarded runtime as target is off (ranger-base-ay0h).
 func TestOverflowOn(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		ov   Overflow
 		want bool

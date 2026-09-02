@@ -18,6 +18,7 @@ import (
 )
 
 func TestQASeedTrustConcurrentLaunchesKeepBothDirs(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir() + "/.claude.json"
 	rt := claudeRuntime(t)
 	dirA, dirB := t.TempDir(), t.TempDir()
@@ -56,6 +57,7 @@ func TestQASeedTrustConcurrentLaunchesKeepBothDirs(t *testing.T) {
 // second-and-later seeds are the already-trusted no-op. A merge that
 // duplicated or dropped the entry would be a different hole than 5qnt.
 func TestQASeedTrustSameDirConcurrentIsIdempotent(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir() + "/.claude.json"
 	rt := claudeRuntime(t)
 	dir := t.TempDir()

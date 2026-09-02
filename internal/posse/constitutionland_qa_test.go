@@ -191,6 +191,7 @@ func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
 // misses: a sibling whose name merely starts with a class member's is not in
 // the class, and a wall that used plain string prefixing would take it.
 func TestQAConstitutionClassMatchesExactlyOrAsAPrefix(t *testing.T) {
+	t.Parallel()
 	class := []string{"rhq/agents", "rhq/config.yaml", ClaudeProjectConfig}
 	for _, c := range []struct {
 		path string
@@ -217,6 +218,7 @@ func TestQAConstitutionClassMatchesExactlyOrAsAPrefix(t *testing.T) {
 // the belt's class and the hook's are answering the same question about the
 // same tree.
 func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
+	t.Parallel()
 	plain := t.TempDir()
 	if got := strings.Join(ConstitutionClassIn(plain), " "); got != ClaudeProjectConfig+" "+ClaudeProjectConfigLocal {
 		t.Errorf("a repo with no constitution gets the settings files only, got %q", got)

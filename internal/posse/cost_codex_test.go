@@ -252,6 +252,7 @@ func TestCodexSinceStillAdvancesTheBaseline(t *testing.T) {
 // A counter that restarts mid-session is the delta, not a negative: clamping
 // to zero there would silently drop everything after the restart.
 func TestCodexSnapshotResetIsCountedNotDropped(t *testing.T) {
+	t.Parallel()
 	prev := codexTokens{In: 3000, Cached: 800, Out: 250, Total: 3250}
 	cur := codexTokens{In: 400, Cached: 100, Out: 30, Total: 430}
 	if d := cur.since(prev); d != cur {
@@ -428,6 +429,7 @@ func TestCodexTranscriptsLocator(t *testing.T) {
 // codex is a counted runtime now: registered, named by CountedRuntimes, and
 // no longer counted as an uncounted live session.
 func TestCodexIsARegisteredProvider(t *testing.T) {
+	t.Parallel()
 	p, ok := CostProviderFor("codex")
 	if !ok || p.Runtime() != "codex" {
 		t.Fatalf("codex adapter: %v %v", p, ok)

@@ -49,6 +49,7 @@ func bigNotesWithAnUncommittedLine(t *testing.T, repo string, git func(env []str
 }
 
 func TestQANotesGuardRefusesEveryShapeOfMove(t *testing.T) {
+	t.Parallel()
 	const notesArm = "refused by posse gate: a commit changing NOTES.md in the shared checkout"
 	for _, tc := range []struct {
 		name string

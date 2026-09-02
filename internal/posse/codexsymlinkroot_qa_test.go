@@ -34,6 +34,7 @@ import (
 // whose PID says `cage: seatbelt` is not — macOS refuses to nest sandbox_apply
 // — so the preflight below skips the whole test there (ranger-base-ejva).
 func TestQACodexAcceptsOnlyAResolvedWritableRoot(t *testing.T) {
+	t.Parallel()
 	bin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex not on PATH")
@@ -123,6 +124,7 @@ func codexSandboxUnappliable(out string, err error) bool {
 // a guess: a skip that fires on codex's genuine refusal would swallow the bug
 // the live test exists for.
 func TestCodexSandboxUnappliableSkipsOnlyANestedCage(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		out  string

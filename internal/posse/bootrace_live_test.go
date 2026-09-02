@@ -41,6 +41,7 @@ import (
 )
 
 func TestLiveAwaitAgentHoldsThroughTheBootRace(t *testing.T) {
+	t.Parallel()
 	pane := os.Getenv("RHQ_LIVE_SHELL_PANE")
 	if pane == "" {
 		t.Skip("set RHQ_LIVE_SHELL_PANE=<ws:pane> at a shell (+ HERDR_SOCKET_PATH, RHQ_HERDR_BIN) — see the file comment")

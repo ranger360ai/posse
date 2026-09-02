@@ -20,6 +20,7 @@ import (
 // flag) and the launch (that anything actually asks).
 
 func TestPIDVoidedMatchesTheFlagsOwnToken(t *testing.T) {
+	t.Parallel()
 	grok, err := (&App{}).LoadRuntime("grok")
 	if err != nil {
 		t.Fatal(err)

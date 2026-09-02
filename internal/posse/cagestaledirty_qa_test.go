@@ -17,6 +17,7 @@ import (
 )
 
 func TestQACageStaleIsBlindToWhichDirtyEditIsThere(t *testing.T) {
+	t.Parallel()
 	src := tempGitTree(t)
 	f := filepath.Join(src, "f")
 

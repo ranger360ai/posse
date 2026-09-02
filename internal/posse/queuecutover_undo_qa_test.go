@@ -121,6 +121,7 @@ func qcUndoBlock(t *testing.T, out string) string {
 }
 
 func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
+	t.Parallel()
 	// unskipped by ranger-base-iycc
 	if os.Geteuid() == 0 {
 		t.Skip("root")
@@ -181,6 +182,7 @@ func TestQAQueueCutoverMoveUndoDoesNotOverwriteTheLiveStore(t *testing.T) {
 }
 
 func TestQAQueueCutoverTrackedSubdirDoesNotNestSilently(t *testing.T) {
+	t.Parallel()
 	// unskipped by ranger-base-8izk: FIXED as a side effect of ranger-base-iycc
 	// (326a8dc) — see the FIXED block above.
 	constitution, _ := qcConstitution(t)

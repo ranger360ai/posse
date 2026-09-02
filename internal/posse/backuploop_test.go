@@ -65,6 +65,7 @@ func archives(t *testing.T, a *App) []string {
 // No key is disarmed, and it is not an error: installing a posse that knows
 // how to back up must not start a clock nobody asked for.
 func TestLoadBackupConfigUnarmedWithoutTheKey(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	write(t, a.ConfigPath, "queue_repo: /tmp/nope\n")
 	cfg, err := LoadBackupConfig(a)
@@ -77,6 +78,7 @@ func TestLoadBackupConfigUnarmedWithoutTheKey(t *testing.T) {
 }
 
 func TestLoadBackupConfigArmedAndBad(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	write(t, a.ConfigPath, "backup_interval: 6h\n")
 	cfg, err := LoadBackupConfig(a)
@@ -105,6 +107,7 @@ func TestLoadBackupConfigArmedAndBad(t *testing.T) {
 // failure — configured, never ran — and must not read as an instance that
 // never asked (ADR 0036 §6, "armed and EMPTY is stale").
 func TestBackupIntervalArmsTheFreshnessReading(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	write(t, a.ConfigPath, "backup_interval: 6h\n")
 	if !a.BackupConfigured() {
@@ -120,6 +123,7 @@ func TestBackupIntervalArmsTheFreshnessReading(t *testing.T) {
 // no-schedule instance falls back to 48h. An explicit backup_max_age: still
 // wins over both — it is its own key and says only what it means.
 func TestBackupMaxAgeDefaultsToTwiceTheInterval(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	for _, tc := range []struct {
 		cfg  string
@@ -145,6 +149,7 @@ func TestBackupMaxAgeDefaultsToTwiceTheInterval(t *testing.T) {
 // The status line names the key either way. A stale age the operator cannot
 // explain is a stale age plus a question; this is the answer.
 func TestBackupScheduleLineNamesTheKey(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	write(t, a.ConfigPath, "queue_repo: /tmp/q\n")
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "backup_interval:") || !strings.Contains(got, "none") {

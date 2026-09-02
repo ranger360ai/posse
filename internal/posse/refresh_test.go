@@ -556,6 +556,7 @@ func TestTheEnvSetIsResolvedOrRefusedByName(t *testing.T) {
 // A stamp belongs to the variable it sits directly above. One read off the
 // wrong variable is a date reported about a credential it is not true of.
 func TestAStampBelongsToTheVariableItSitsAbove(t *testing.T) {
+	t.Parallel()
 	body := "# minted=2020-01-01\n# expires=2020-02-01\nOTHER=x\n\nCLAUDE_CODE_OAUTH_TOKEN=y\n"
 	st, ok := readStamps(body, "CLAUDE_CODE_OAUTH_TOKEN")
 	if !ok {
@@ -663,6 +664,7 @@ func treeOf(t *testing.T, root string) string {
 // (ranger-base-kryn). Same shape as TestShippedPIDsDenyPromote, and for the
 // same reason: politeness against a determined session.
 func TestShippedPIDsDenyRefresh(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join("..", "..", "examples", "agents")
 	ents, err := os.ReadDir(dir)
 	if err != nil {

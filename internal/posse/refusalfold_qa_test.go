@@ -33,6 +33,7 @@ import (
 // a `slice bounds out of range [:1600] with capacity 512` panic in the
 // dispatch sweep that calls the fold.
 func TestQAFoldDetectsTruncationOfASpoolLargerThanReadFilesBuffer(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -77,6 +78,7 @@ func TestQAFoldDetectsTruncationOfASpoolLargerThanReadFilesBuffer(t *testing.T) 
 // When detection grows to reach past the cursor, THIS TEST GOES RED — that
 // is the signal to delete it and rewrite the ADR paragraph with it.
 func TestQAFoldDoesNotDetectATruncationBackToItsOwnCursor(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)

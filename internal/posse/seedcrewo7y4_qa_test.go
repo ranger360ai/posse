@@ -42,6 +42,7 @@ var personalNameRe = regexp.MustCompile(`^You are [^,]+, the `)
 // example ships the no-name form, which is the form pidcheck.go's own worked
 // example uses.
 func TestNoShippedExamplePIDCarriesAPersonalName(t *testing.T) {
+	t.Parallel()
 	names := exampleAgentNames(posse.Seed)
 	if len(names) < 9 {
 		t.Fatalf("the seed ships %d example PID(s) — this pin has nothing to read", len(names))

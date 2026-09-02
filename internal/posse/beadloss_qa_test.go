@@ -493,6 +493,7 @@ func TestLostBeadsFollowsRedirectIntoNestedBeadsDir(t *testing.T) {
 }
 
 func TestBeadsHomeDoesNotHangOnARedirectCycle(t *testing.T) {
+	t.Parallel()
 	a := qblRepo(t)
 	b := qblRepo(t)
 	qblRedirect(t, a, filepath.Join(b, beadsDirName))
@@ -507,6 +508,7 @@ func TestBeadsHomeDoesNotHangOnARedirectCycle(t *testing.T) {
 }
 
 func TestBeadsHomeDoesNotExpandTildeInRedirect(t *testing.T) {
+	t.Parallel()
 	repo := qblRepo(t)
 	qblRedirect(t, repo, "~/no-such-beads")
 	got := beadsHome(repo)
@@ -525,6 +527,7 @@ func TestBeadsHomeDoesNotExpandTildeInRedirect(t *testing.T) {
 // walked a store bd is not using and ListAll against real bd errored. D3-C
 // is one hop and is not this.
 func TestBeadsHomeDoesNotFollowARedirectChain(t *testing.T) {
+	t.Parallel()
 	store := qblRepo(t)
 	mid := qblRepo(t)
 	work := qblRepo(t)

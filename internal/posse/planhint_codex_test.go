@@ -313,6 +313,7 @@ func hintWin(name string, pct float64, resets time.Time) HintWindow {
 // The shape ADR 0034 D3 names, end to end: the provider word once, the
 // window names without their config-key prefix, and the age — always.
 func TestPlanHintSegment(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 31, 14, 0, 0, 0, time.UTC)
 	live := now.Add(2 * time.Hour)
 	for _, c := range []struct {

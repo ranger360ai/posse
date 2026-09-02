@@ -28,6 +28,7 @@ import (
 )
 
 func TestLiveHerdrKeepsASlashInALabel(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_HERDR") == "" {
 		t.Skip("set RHQ_LIVE_HERDR=1 (creates and closes one workspace on the real herdr)")
 	}

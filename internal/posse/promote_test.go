@@ -646,6 +646,7 @@ func mustManifest(t *testing.T, a *App) *PromoteManifest {
 // determined session, and the thing that makes a promote from a persona a
 // refused turn rather than a discovered fact.
 func TestShippedPIDsDenyPromote(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join("..", "..", "examples", "agents")
 	ents, err := os.ReadDir(dir)
 	if err != nil {

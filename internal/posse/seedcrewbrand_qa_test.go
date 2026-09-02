@@ -83,6 +83,7 @@ func seedIdentityLine(body string) string {
 // TestNoShippedExamplePIDNamesACrew is dh5g itself: the identity line ends
 // in the no-brand form, for every example, in the bytes that ship.
 func TestNoShippedExamplePIDNamesACrew(t *testing.T) {
+	t.Parallel()
 	for path, body := range seedExamplePIDs(t) {
 		line := seedIdentityLine(body)
 		if line == "" {
@@ -106,6 +107,7 @@ this pin is the only thing that notices, and the digest table will not.`,
 // the whole file rather than the one line. The closer swept for this by hand
 // at close time and the sweep was clean; a hand sweep runs once.
 func TestNoShippedExamplePIDCarriesThisInstancesCrewBrand(t *testing.T) {
+	t.Parallel()
 	for path, body := range seedExamplePIDs(t) {
 		if strings.Contains(strings.ToLower(body), thisInstancesCrew) {
 			t.Errorf(`%s carries %q.

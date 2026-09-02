@@ -115,6 +115,7 @@ func qibCrewPattern() *regexp.Regexp {
 // this walk should recurse into (that would re-read cmd/, internal/, etc/
 // and examples/ a second time and double-count their hits).
 func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
+	t.Parallel()
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
 	var hits []string
@@ -285,6 +286,7 @@ func qibShippedStrings(t *testing.T, path string) []struct {
 }
 
 func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
+	t.Parallel()
 	root := qibRepoRoot(t)
 	re := qibCrewPattern()
 	var hits []string

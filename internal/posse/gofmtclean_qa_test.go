@@ -29,6 +29,7 @@ import (
 var qgfRoots = []string{"cmd", "internal", "."}
 
 func TestTreeIsGofmtClean(t *testing.T) {
+	t.Parallel()
 	root := qibRepoRoot(t)
 	var drifted []string
 	scanned := 0
@@ -93,6 +94,7 @@ func TestTreeIsGofmtClean(t *testing.T) {
 // already consistent and is left alone, so a control built on "a blank line
 // is missing" would have passed over the bug.
 func TestGofmtCleanPinDetectsDrift(t *testing.T) {
+	t.Parallel()
 	clean := "package p\n\n// A doc.\n//\n//   - one, with a body that\n//     wraps a line.\n//\n//   - two follows, separated the same way.\nfunc f() {}\n"
 	got, err := format.Source([]byte(clean))
 	if err != nil {

@@ -30,6 +30,7 @@ func yamlV2Agent(t *testing.T, extra string) *AgentFile {
 // Checked through ModelText AND through the renderer: the ORDERS lesson is
 // that a token which parses is not a token that renders.
 func TestModelFlagTakesAPrintfForm(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	ag := yamlV2Agent(t, "")
 
@@ -63,6 +64,7 @@ func TestModelFlagTakesAPrintfForm(t *testing.T) {
 // The same printf rule on skills_flag:, which was built from the identical
 // f+" %s" construction and had the identical gap.
 func TestSkillsFlagTakesAPrintfForm(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	ag := yamlV2Agent(t, "skills: [s1]\n")
 
@@ -87,6 +89,7 @@ func TestSkillsFlagTakesAPrintfForm(t *testing.T) {
 // discovers skills from its working directory could only be declared as one
 // that binds nothing, which refuses every PID with skills:.
 func TestSkillsCwdIsDeclarable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	if err := os.MkdirAll(filepath.Join(a.Home, "skills", "s1"), 0o755); err != nil {
 		t.Fatal(err)
@@ -136,6 +139,7 @@ func TestSkillsCwdIsDeclarable(t *testing.T) {
 // runtime was broken in a way nothing could say: the launch wrapped it and
 // the matrix claimed an L2 that could not exist.
 func TestSelfSandboxIsDeclarable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	ag := yamlV2Agent(t, "deny: [Edit, Write]\n")
 
@@ -167,6 +171,7 @@ func TestSelfSandboxIsDeclarable(t *testing.T) {
 // nothing to look for, so a repo→box executable channel reads as a clean
 // launch. Declared, the launch degrades unless the PID opts in.
 func TestProjectConfigIsDeclarable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "trustcli", "command: trustcli --sys {file}\nproject_config: .trustcli/config.toml\n")
 	if len(rt.ProjectConfig) != 1 || rt.ProjectConfig[0] != filepath.FromSlash(".trustcli/config.toml") {
@@ -212,6 +217,7 @@ func TestProjectConfigIsDeclarable(t *testing.T) {
 // line with %!d(string=…) in it, a skills binding that quietly binds
 // nothing, or a trust check scoped outside the session dir.
 func TestRuntimeYamlV2Refusals(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, c := range []struct{ name, body, want string }{
 		{"model_flag wrong verb", "command: e {model}\nmodel_flag: -c model=%d\n", "exactly one %s"},
@@ -287,6 +293,7 @@ func TestUnknownRuntimeKeysAreWarned(t *testing.T) {
 // The bead's done-when, in one place: a scratch profile declaring all five,
 // read back through the surfaces an operator actually looks at.
 func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "test", strings.Join([]string{
 		"command: testcli {model} {skills} -a never --rules=\"$(cat {file})\"",
@@ -350,6 +357,7 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 // Tested at the CONSUMER: the rendered launch line, which is the only place
 // the flag does anything.
 func TestUnattendedIsDeclarable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	ag := yamlV2Agent(t, "")
 
@@ -403,6 +411,7 @@ func TestUnattendedIsDeclarable(t *testing.T) {
 // survives it (a matching body still degrades), and the floor (a body that
 // cannot be classified still fails closed).
 func TestProjectConfigKeysAreDeclarable(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	ag := yamlV2Agent(t, "")
 	keyed := writeRuntime(t, a, "kcli", "command: kcli --sys {file}\nproject_config: .kcli/settings.json\nproject_config_keys: [hooks, mcpServers]\n")

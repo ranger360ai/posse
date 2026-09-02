@@ -146,6 +146,7 @@ func TestDispatchTakesExplainOverTheWaitWhenTheyDisagree(t *testing.T) {
 // timeline, the seen one is a settled claude pane. `matched_rule: null` is
 // the shape that must not read as readiness.
 func TestAgentDetectionSeenVersusGuess(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		json string

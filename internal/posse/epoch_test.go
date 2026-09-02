@@ -22,6 +22,7 @@ import (
 // is a function of the CLOCK and of nothing else — not of when a Run
 // started, which is the whole property §2 asks for.
 func TestEpochStartIsWallClockAligned(t *testing.T) {
+	t.Parallel()
 	// A day with no DST transition in any zone this can run in, at a time
 	// nobody's midnight is near.
 	base := time.Date(2026, 8, 27, 0, 0, 0, 0, time.Local)
@@ -59,6 +60,7 @@ func TestEpochStartIsWallClockAligned(t *testing.T) {
 // instants really are different — so the equality below cannot be trivially
 // true, which is exactly how a per-Run window would have passed this.
 func TestEpochStartIsTheSameAcrossARestart(t *testing.T) {
+	t.Parallel()
 	first := time.Date(2026, 8, 27, 13, 2, 0, 0, time.Local)
 	restart := time.Date(2026, 8, 27, 13, 49, 30, 0, time.Local)
 	next := time.Date(2026, 8, 27, 14, 0, 1, 0, time.Local)
@@ -394,6 +396,7 @@ func TestRunMeasuresAgainstTheEpochNotTheRun(t *testing.T) {
 // a public config key is not this ADR's business — so the two must not be
 // confused for each other in the output.
 func TestBudgetOutputNamesTheEpochWindow(t *testing.T) {
+	t.Parallel()
 	st := BudgetState{PassCap: 30, PassSpend: 40, DayCap: 250, DaySpend: 40}
 	st.resolve()
 	if st.Window != "epoch" {
@@ -416,6 +419,7 @@ func TestBudgetOutputNamesTheEpochWindow(t *testing.T) {
 // documented there is a key nobody can find. (seedconfig_test.go pins the
 // other half: the seed must ship it unset.)
 func TestDispatchEpochIsDocumented(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile(seedConfigPath(t))
 	if err != nil {
 		t.Fatal(err)

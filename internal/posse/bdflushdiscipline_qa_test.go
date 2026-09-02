@@ -102,6 +102,7 @@ func bfdWrite(t *testing.T, repo, row string) {
 // about the CONTENT, because on 0.50.x the content is the whole claim: there
 // is no auto-flush underneath it to fall back on.
 func TestQABdFlushDisciplineHookCarriesTheWriteIntoTheCommit(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -131,6 +132,7 @@ func TestQABdFlushDisciplineHookCarriesTheWriteIntoTheCommit(t *testing.T) {
 // is not: this is the cost NOTES.md prices as "JSONL-as-truth would then rest
 // entirely on the pre-commit flush hook."
 func TestQABdFlushDisciplineNoHookCommitsStaleJSONL(t *testing.T) {
+	t.Parallel()
 	repo := bfdRepo(t, false)
 	bfdWrite(t, repo, "row-2")
 	siMust(t, repo, "add", "db.txt")

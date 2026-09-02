@@ -76,6 +76,7 @@ func TestPauseActorAuthority(t *testing.T) {
 // ─── the file ────────────────────────────────────────────────────────────────
 
 func TestWritePauseRoundTrips(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	p := pausedShop(t, a, "coordinator", "the security lane found a live key")
 	if !p.Present || p.By != "coordinator" || p.Why != "the security lane found a live key" {
@@ -94,6 +95,7 @@ func TestWritePauseRoundTrips(t *testing.T) {
 // The why is mandatory: it is what every declining pass prints, and the
 // file shape is what makes "pauses with a recorded why: 100%" a metric.
 func TestWritePauseRefusesAReasonlessStop(t *testing.T) {
+	t.Parallel()
 	for _, why := range []string{"", "   ", "\n\t "} {
 		a := NewAppAt(t.TempDir())
 		if _, err := WritePause(a, PauseOperator, why, pauseAt, os.Stderr); err == nil {
@@ -111,6 +113,7 @@ func TestWritePauseRefusesAReasonlessStop(t *testing.T) {
 // it says out loud, because a why that comes back shorter than it was typed
 // is the surface quietly editing the reason the shop stopped.
 func TestWritePauseFlattensAndReportsWhatItStored(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	var warn strings.Builder
 	p, err := WritePause(a, PauseOperator, "key rotation\nby: someone-else\n  spans lines", pauseAt, &warn)
@@ -149,6 +152,7 @@ func TestWritePauseFlattensAndReportsWhatItStored(t *testing.T) {
 // Resume is an off switch, and an off switch that can fail is one more
 // thing to get right while the shop is stopped.
 func TestClearPauseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	if p, err := ClearPause(a); err != nil || p.Present {
 		t.Fatalf("resuming an unpaused shop = (%+v, %v), want no pause and no error", p, err)

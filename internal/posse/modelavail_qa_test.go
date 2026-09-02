@@ -302,6 +302,7 @@ func TestQA7vpTierFloorStillRefusesTheSubstitutedPair(t *testing.T) {
 // against; it is the arm to look at first if a launch is ever demoted
 // against a catalog nobody recognises.
 func TestQA7vpAnExpiredSnapshotStillDemotesWhenTheEndpointCannotBeReread(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t) // unconfigured lister: every re-read fails
 	seedCatalog(t, a, 30*24*time.Hour, "claude-opus-5", "claude-sonnet-5")
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
@@ -324,6 +325,7 @@ func TestQA7vpAnExpiredSnapshotStillDemotesWhenTheEndpointCannotBeReread(t *test
 // is NAMED and does not become a silent zero — a zero read out of a typo
 // would put an HTTP request in front of every launch on this box.
 func TestQA7vpModelProbeTTLForms(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		raw  string
 		want time.Duration
@@ -358,6 +360,7 @@ func TestQA7vpModelProbeTTLForms(t *testing.T) {
 // — leaves it ON, which is the fail-safe direction but is not what they
 // typed. Pinned so the reading is deliberate rather than incidental.
 func TestQA7vpModelPreflightOffIsExactlyTheWordFalse(t *testing.T) {
+	t.Parallel()
 	for raw, want := range map[string]bool{
 		"false": false, " false ": false,
 		"no": true, "0": true, "off": true, "False": true, "true": true, "": true,

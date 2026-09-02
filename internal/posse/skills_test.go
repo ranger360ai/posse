@@ -61,6 +61,7 @@ func mkSkill(t *testing.T, dir, name string) string {
 // no index, no copy. A symlinked entry counts, which is the whole point of
 // the dir (it points at ~/.claude/skills, a plugin, a repo).
 func TestResolveAndListSkills(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
@@ -95,6 +96,7 @@ func TestResolveAndListSkills(t *testing.T) {
 // §2: the rendered tree is claude's plugin shape, written fresh at every
 // launch — stale names go, unknown names refuse.
 func TestRenderClaudeSkills(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
@@ -158,6 +160,7 @@ func TestRenderClaudeSkills(t *testing.T) {
 // §2 again: {skills} renders through the runtime's realizer — claude's
 // --plugin-dir, nothing (and no gap) elsewhere or when the list is empty.
 func TestSkillsPlaceholderRendering(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents")}
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -280,6 +283,7 @@ func TestSkillsParity(t *testing.T) {
 // symlinks in the session dir, never overwrites what posse did not write,
 // leaves another persona's links alone, and sweeps its own dead ones.
 func TestRenderAgentsSkills(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
@@ -406,6 +410,7 @@ func TestSkillsLaunchAndRelaunch(t *testing.T) {
 // §5: the linter findings for a name that resolves to nothing and a PID
 // whose own command: forgot {skills}.
 func TestCheckAgentSkills(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -454,6 +459,7 @@ func TestCheckAgentSkills(t *testing.T) {
 // — a check that read the whole file instead of the frontmatter block
 // would call that PID clean and drop the finding.
 func TestCheckAgentSkillNeedsDescription(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)

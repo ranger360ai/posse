@@ -24,6 +24,7 @@ import (
 // Every built-in runtime's own template names its unattended flag — the
 // first line of defence, and the only one for a PID that writes no command:.
 func TestEveryBuiltinTemplateIsUnattended(t *testing.T) {
+	t.Parallel()
 	for _, rt := range builtinRuntimes {
 		if rt.Unattended == "" {
 			t.Errorf("%s: no unattended flag — a persona session on it can start asking for approvals", rt.Name)
@@ -41,6 +42,7 @@ func TestEveryBuiltinTemplateIsUnattended(t *testing.T) {
 // A PID with no command: — the whole fleet — renders the mode on every
 // runtime it can be launched on, at every tier.
 func TestRenderedPersonaCommandIsUnattended(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	ag := loadTestAgent(t, "---\nname: p\ndeny: [Bash(git push:*)]\n---\nYou are p.\n")
@@ -67,6 +69,7 @@ func TestRenderedPersonaCommandIsUnattended(t *testing.T) {
 // knows no dialect there and a flag typed at the wrong program is a launch
 // that does not start at all.
 func TestOwnCommandStillLaunchesUnattended(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, command, want string }{
 		{"appended", `claude --append-system-prompt "$(cat {file})"`,
 			`claude --append-system-prompt "$(cat FILE)" --permission-mode auto`},
@@ -89,6 +92,7 @@ func TestOwnCommandStillLaunchesUnattended(t *testing.T) {
 // nothing appended — the gap is honest, a guessed flag would be a session
 // that never starts.
 func TestTemplateOnlyRuntimeGetsNoGuessedFlag(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.RuntimesDir(), 0o755)
@@ -144,6 +148,7 @@ func TestEveryLaunchPathTypesTheMode(t *testing.T) {
 // variadic list does end at the next option token. TestCLIStillKnowsTheMode
 // keeps that measured; this pins the shape posse renders into it.
 func TestModeIsAppendedAfterAVariadicToolList(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, command, wantList string }{
 		{"after deny", `claude --append-system-prompt "$(cat {file})" {deny}`, "--disallowedTools"},
 		{"after allow", `claude --append-system-prompt "$(cat {file})" {allow}`, "--allowedTools"},
@@ -177,6 +182,7 @@ func TestModeIsAppendedAfterAVariadicToolList(t *testing.T) {
 // reading "auto mode on" for the wrong reason. What the line may and may
 // not be guessed from is the whole content of the fix.
 func TestNoPersonaLineTypesTheMode(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, cmd, want string }{
 		{"bare claude", `claude`, `claude --permission-mode auto`},
 		{"bare grok", `grok`, `grok --permission-mode auto`},
@@ -207,6 +213,7 @@ func TestNoPersonaLineTypesTheMode(t *testing.T) {
 // session whose meta already carries the appended flag must not collect a
 // second one on every refresh.
 func TestNoPersonaModeIsIdempotent(t *testing.T) {
+	t.Parallel()
 	got := EnsureUnattendedLine(EnsureUnattendedLine("claude"))
 	if strings.Count(got, ClaudeFleetFlags) != 1 {
 		t.Errorf("re-planning the recorded line said the mode twice: %q", got)

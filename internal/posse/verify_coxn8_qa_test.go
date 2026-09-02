@@ -69,6 +69,7 @@ func coxnGoSources(t *testing.T) map[string]string {
 }
 
 func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T) {
+	t.Parallel()
 	srcs := coxnGoSources(t)
 	if len(srcs) < 50 {
 		t.Fatalf("the walk found %d shipped .go files — too few to be the tree, so the absence below measures nothing", len(srcs))
@@ -104,6 +105,7 @@ func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T)
 // code lane, not QA's, and a red suite for a doc comment helps nobody.
 // Un-skip with the fix.
 func TestQACageCredDocDoesNotCallTheOnDiskCredentialStale(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-d14ie: runtime.go's CageCred doc still says the on-disk credential files are 'stale there or unrefreshable read-only' — the framing 26b21af swept out of its twin")
 	b, err := os.ReadFile(filepath.Join(qspRepoRoot(t), "internal", "posse", "runtime.go"))
 	if err != nil {

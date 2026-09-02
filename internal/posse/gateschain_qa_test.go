@@ -118,6 +118,7 @@ func runHook(t *testing.T, repo, slot, stdin string, env ...string) (string, int
 // is never reached), and when the gate passes, bd's hook gets its argv and —
 // on pre-push, where git feeds a ref list — the stdin the gate did not eat.
 func TestQADocChainRefusesFirstAndOtherwiseReachesBdsHook(t *testing.T) {
+	t.Parallel()
 	repo, witness := qaChainRepo(t)
 	refs := "refs/heads/main a1 refs/heads/main b1\nrefs/tags/v1 a2 refs/tags/v1 b2\n"
 	read := func() string { b, _ := os.ReadFile(witness); return string(b) }
@@ -175,6 +176,7 @@ func TestQADocChainRefusesFirstAndOtherwiseReachesBdsHook(t *testing.T) {
 // no commit path at all — the failure hits the operator, whom the gate is
 // careful to exempt.
 func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
+	t.Parallel()
 	repo, _ := qaChainRepo(t)
 	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
 		t.Fatal(err)
@@ -214,6 +216,7 @@ func TestQADocChainSurvivesAMissingNeighbourHook(t *testing.T) {
 // which is exactly why this arm matters: an exec failure would take the one
 // form left with it.
 func TestQAOperatorCanCommitThroughAChainMissingItsNeighbour(t *testing.T) {
+	t.Parallel()
 	repo, _ := qaChainRepo(t)
 	if err := os.Remove(filepath.Join(repo, ".git", "hooks", "bd-prepare-commit-msg")); err != nil {
 		t.Fatal(err)
@@ -249,6 +252,7 @@ func TestQAOperatorCanCommitThroughAChainMissingItsNeighbour(t *testing.T) {
 // way through and the bounded dirt it is leaving behind. All of it is run,
 // not read.
 func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -409,6 +413,7 @@ func pathWithoutCmp(t *testing.T) string {
 // that never had cmp on it at all. Red on the pre-fix cmp -s form (measured):
 // this is the pin the bead asked for, the wrong arm actually fails.
 func TestQAGuardRevertParagraphSurvivesAPathWithNoCmp(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -494,6 +499,7 @@ func qaGuardRepo(t *testing.T) (string, func(extra []string, args ...string) (st
 // The subtests each get their own repo: these are git *states*, and one
 // probe's cleanup is the next probe's fixture otherwise.
 func TestQAGuardExemptsOnlyWhereGitRefusesAPathspec(t *testing.T) {
+	t.Parallel()
 	personaEnv := func(t *testing.T) []string {
 		return []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
 	}
@@ -738,6 +744,7 @@ func TestQAGuardExemptsOnlyWhereGitRefusesAPathspec(t *testing.T) {
 // seen from the probe's side: hooksDir() now asks `git rev-parse --git-path
 // hooks`, so install and probe address the one directory git dispatches from.
 func TestQAInstallHooksHonoursCoreHooksPath(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -766,6 +773,7 @@ func TestQAInstallHooksHonoursCoreHooksPath(t *testing.T) {
 // exit-0 body: installHook keys only on the ABSENCE of our own marker, and a
 // stand-in keeps the real `exec bd hooks run` off a throwaway repo.
 func TestQASessionCreateInstallsNothingIntoABdHookedRepo(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -826,6 +834,7 @@ func TestQASessionCreateInstallsNothingIntoABdHookedRepo(t *testing.T) {
 // must see through the result, since neither slot carries our marker
 // directly once chained.
 func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -889,6 +898,7 @@ func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
 // semantics is exactly the risk the manual prescription exists to make an
 // operator, not rhq, decide.
 func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -918,6 +928,7 @@ func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
 // pin it byte for byte, with bd's names filled in, so drift is a red test
 // rather than a repo that cannot commit.
 func TestQADocChainMatchesTheRenderedDispatcher(t *testing.T) {
+	t.Parallel()
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		want := chainHookDispatcherWith(slot, "bd-"+slot)
 		if got := docChainDispatcher(t, slot); got != want {
@@ -943,6 +954,7 @@ func TestQADocChainMatchesTheRenderedDispatcher(t *testing.T) {
 // render byte for byte: we know what it is, and we write back the same shape
 // and the same neighbour.
 func TestQALegacyChainIsUpgradedInPlace(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -1000,6 +1012,7 @@ func TestQALegacyChainIsUpgradedInPlace(t *testing.T) {
 // renders. A foreign hook that merely looks chain-shaped is still refused,
 // untouched — ADR 0002 §3.
 func TestQALegacyUpgradeLeavesForeignHooksAlone(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

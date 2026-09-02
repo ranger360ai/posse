@@ -11,6 +11,7 @@ import (
 )
 
 func TestScoreIssues(t *testing.T) {
+	t.Parallel()
 	t0 := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	at := func(h int) *time.Time { x := t0.Add(time.Duration(h) * time.Hour); return &x }
 	issues := []BdIssue{
@@ -87,6 +88,7 @@ func TestScoreIssues(t *testing.T) {
 // posse scorecard --catalog: the derived catalog, computable or not, and who
 // declares each id. No bd involved.
 func TestMetricCatalogReport(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	var out strings.Builder
@@ -119,6 +121,7 @@ func TestMetricCatalogReport(t *testing.T) {
 // Reopens come from the git history of .beads/issues.jsonl: a closed→open
 // transition between two commits.
 func TestReopensFromGit(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
@@ -190,6 +193,7 @@ func TestScorecardOutput(t *testing.T) {
 // and it stops being measurable at cut-over — so this walk has to follow
 // .beads/redirect into the repo that actually holds the census.
 func TestReopensFromGitFollowsTheBeadsRedirect(t *testing.T) {
+	t.Parallel()
 	store := blRepo(t)
 	blCommit(t, store, "sync", blLine("x-1", "open"), blLine("x-2", "open"))
 	blCommit(t, store, "sync", blLine("x-1", "closed"), blLine("x-2", "closed"))
@@ -216,6 +220,7 @@ func TestReopensFromGitFollowsTheBeadsRedirect(t *testing.T) {
 // root would resolve to nothing and go quietly back to "?". The blob read
 // has to name the path relative to the .beads dir it is standing in.
 func TestReopensFromGitReadsBlobsRelativeToTheBeadsDir(t *testing.T) {
+	t.Parallel()
 	store := blRepo(t)
 	beads := filepath.Join(store, "instance", beadsDirName)
 	if err := os.MkdirAll(beads, 0o755); err != nil {
@@ -416,6 +421,7 @@ func TestScorecardRefusalNamesEveryUnreadRepo(t *testing.T) {
 // it were the whole count. Same class of overstatement ranger-base-0tc
 // fixed for the none case: a number that is short must not render as exact.
 func TestPartialReopenHistoryScoresAsAFloor(t *testing.T) {
+	t.Parallel()
 	closed := func(ids ...string) []BdIssue {
 		var out []BdIssue
 		for _, id := range ids {
@@ -545,6 +551,7 @@ func TestScorecardSaysWhenOnlySomeReposHaveReopenHistory(t *testing.T) {
 // rows are what the word list is FOR, and without them a regex that matched
 // nothing at all would pass this test.
 func TestIsRejectedCloseMatchesWordsNotSubstrings(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		reason string
 		want   bool
@@ -587,6 +594,7 @@ func TestIsRejectedCloseMatchesWordsNotSubstrings(t *testing.T) {
 // store. This pins IsHarnessBead and the window bucketing in isolation,
 // against a fixed clock, before the end-to-end aggregation test below.
 func TestHarnessRatios(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		id   string
 		want bool

@@ -85,6 +85,7 @@ func showMounts(ms []CageMount) string {
 // the repo is still writable, which is why the bare rule's `:ro` repo is
 // not an answer to it (a wall bigger than the gate is a different gate).
 func TestDenyListShapeOverlaysTheSubtreeReadOnly(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -118,6 +119,7 @@ func TestDenyListShapeOverlaysTheSubtreeReadOnly(t *testing.T) {
 // not at all — the key was honoured at L2 and silently dropped one tier up,
 // which is a grant the matrix printed and the mount never made.
 func TestAllowListShapeOverlaysWritableExtras(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -148,6 +150,7 @@ func TestAllowListShapeOverlaysWritableExtras(t *testing.T) {
 // instead, and the pair `posse agent check` warns about is a pair that
 // really grants nothing.
 func TestWritableExtraInsideADeniedSubtreeIsDropped(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -174,6 +177,7 @@ func TestWritableExtraInsideADeniedSubtreeIsDropped(t *testing.T) {
 // of `docs/adr` for it would be the mount enforcing a rule the matrix says
 // nobody holds.
 func TestBareAndFileFilterSpellingsMountNoOverlay(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -210,6 +214,7 @@ func TestBareAndFileFilterSpellingsMountNoOverlay(t *testing.T) {
 // unwritable — the cage cannot see it — and binding it `:ro` to look
 // thorough would hand over read access the boundary had refused.
 func TestDeniedSubtreeAbsentIsStillDeniedAndInvisibleIsNotMounted(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -230,6 +235,7 @@ func TestDeniedSubtreeAbsentIsStillDeniedAndInvisibleIsNotMounted(t *testing.T) 
 // an engine error, so an overlay of a path already mounted has to be an
 // edit. The memory dir is the one a PID can plausibly name.
 func TestOverlayOfAnExistingMountFlipsItRatherThanDuplicating(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -260,6 +266,7 @@ func TestOverlayOfAnExistingMountFlipsItRatherThanDuplicating(t *testing.T) {
 // no destination twice, ever. `docker run` refuses a duplicate mount point,
 // so a list that carries one is a launch that does not happen.
 func TestNoShapeRendersADuplicateMountDestination(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -291,6 +298,7 @@ func TestNoShapeRendersADuplicateMountDestination(t *testing.T) {
 // and dropped at the other. The `~` and the relative form are both here
 // because both are what a PID actually writes.
 func TestWritableIsReadTheSameWayByBothWalls(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -331,6 +339,7 @@ func TestWritableIsReadTheSameWayByBothWalls(t *testing.T) {
 // mountpoint-creation failure rangerhq-6so measured inside a `:ro` one —
 // and either way it is a grant of a path the operator did not make.
 func TestWritableExtraThatIsNotADirectoryIsNotMounted(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -366,6 +375,7 @@ func TestWritableExtraThatIsNotADirectoryIsNotMounted(t *testing.T) {
 // target is mounted read-write and its repo is NOT: the inner wrapper
 // appends JSONL and never commits.
 func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := overlayRepo(t)
@@ -392,6 +402,7 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 // common dir is a session that cannot `git status` — extra rather than the
 // gate, which is the same reason ADR 0014 §4 gives for carving out `.beads`.
 func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
@@ -440,6 +451,7 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 // matrix would say `L4 :ro overlay`, and the denied subtree would be
 // writable at the only path the persona can reach it by.
 func TestOverlayIsSpelledTheWayTheRepoMountIs(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	real := overlayRepo(t)

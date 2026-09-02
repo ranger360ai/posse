@@ -73,6 +73,7 @@ func dirtyNotesFixture(t *testing.T, repo string, git func(env []string, args ..
 // file dirty — `git commit -- NOTES.md` is refused, naming both routes;
 // `git commit -- <other>` lands, NOTES.md untouched and still dirty.
 func TestQANotesGuardRefusesPathLimitedCommitInSharedCheckout(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := notesGuardRepo(t)
 	dirtyNotesFixture(t, repo, git)
 
@@ -105,6 +106,7 @@ func TestQANotesGuardRefusesPathLimitedCommitInSharedCheckout(t *testing.T) {
 // Verification 2: the wall is unkeyed since rangerhq-lt2w — the operator's
 // own shared-checkout commit is refused identically.
 func TestQANotesGuardUnkeyedRefusesOperatorToo(t *testing.T) {
+	t.Parallel()
 	repo, git, _ := notesGuardRepo(t)
 	dirtyNotesFixture(t, repo, git)
 
@@ -126,6 +128,7 @@ func TestQANotesGuardUnkeyedRefusesOperatorToo(t *testing.T) {
 // git-common-dir exits the guard before the NOTES.md arm ever runs, so the
 // same commit lands there.
 func TestQANotesGuardStandsDownInSessionWorktree(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := notesGuardRepo(t)
 	wt := filepath.Join(t.TempDir(), "session")
 	if out, err := git(nil, "worktree", "add", "-q", "-b", "posse/session", wt); err != nil {
@@ -151,6 +154,7 @@ func TestQANotesGuardStandsDownInSessionWorktree(t *testing.T) {
 // a persona is refused — amend takes a pathspec, and the arm reads the
 // commit's own to-be-committed set, not its form.
 func TestQANotesGuardRefusesAmend(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := notesGuardRepo(t)
 	// A prior commit unrelated to NOTES.md to amend against.
 	if err := os.WriteFile(filepath.Join(repo, "other.txt"), []byte("base\nmine\n"), 0o644); err != nil {
@@ -175,6 +179,7 @@ func TestQANotesGuardRefusesAmend(t *testing.T) {
 // — is the route the refusal names, and it lands: `git log --grep <id>`
 // finds it, the provenance promise ADR 0022 re-scopes rather than breaks.
 func TestQANotesGuardAllowsFragmentCommit(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := notesGuardRepo(t)
 	fragDir := filepath.Join(repo, "docs", "notes.d")
 	if err := os.MkdirAll(fragDir, 0o755); err != nil {
@@ -213,6 +218,7 @@ func TestQANotesGuardAllowsFragmentCommit(t *testing.T) {
 // at all, so the pre-fix arm refused those and a small fixture measures
 // nothing. A realistic file size is what makes the blind spot reachable.
 func TestQANotesGuardRefusesAMoveOutOfNotes(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := notesGuardRepo(t)
 
 	var body strings.Builder

@@ -17,6 +17,7 @@ import (
 )
 
 func TestQAGrokWideBoxedSplashIsNamedIdle(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}

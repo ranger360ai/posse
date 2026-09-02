@@ -90,6 +90,7 @@ func TestDispatchAnswersNoBlockedScreen(t *testing.T) {
 // in the launch path without them is the regression this pins: `AgentSendKeys`
 // stays a herdr binding with no caller in dispatch.
 func TestDispatchPathPressesNoKeys(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("dispatch.go")
 	if err != nil {
 		t.Fatal(err)

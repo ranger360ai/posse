@@ -32,6 +32,7 @@ const runtimeTrailer = "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 // TestQACommitWallPreservesTheRuntimeTrailer is ranger-base-5aks's DONE WHEN:
 // one commit through the safe form with a trailer, observe survival.
 func TestQACommitWallPreservesTheRuntimeTrailer(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 
 	write := func(name, body string) {
@@ -122,6 +123,7 @@ func TestQACommitWallPreservesTheRuntimeTrailer(t *testing.T) {
 // the next reader of a trailer-less commit will find it. The claim it makes
 // is the one the cell above measures, so the two go stale together.
 func TestQAAgentsMDNamesTheTrailerAsUnenforced(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("../../AGENTS.md")
 	if err != nil {
 		t.Skipf("AGENTS.md not present: %v", err)

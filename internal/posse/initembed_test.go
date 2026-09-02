@@ -32,6 +32,7 @@ func initTestApp(t *testing.T) *App {
 // can be pointed at the wrong root, or lose a subtree to an exclusion rule.
 // Byte-for-byte against the checkout is the cheap total assertion.
 func TestEmbeddedSeedMatchesExamplesDir(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..", "examples")
 	n := 0
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
@@ -70,6 +71,7 @@ func TestEmbeddedSeedMatchesExamplesDir(t *testing.T) {
 // merely NAMED examples/ no longer does (ranger-base-e6y). Pinning the dev
 // case against a one-file directory was pinning the bug.
 func TestSeedSourcePrefersExamplesBesideBinary(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
 	for _, d := range []string{bin, filepath.Join(tmp, "examples", "agents"), filepath.Join(tmp, "examples", "recipes"), filepath.Join(tmp, "examples", "envs")} {

@@ -57,6 +57,7 @@ func TestStateDirJoinsTheSeatbeltWritableSet(t *testing.T) {
 // the only thing a relative path can do here is grant a directory under the
 // tree and leave the real state dir read-only — the bug with an extra step.
 func TestStateDirRefusesARelativePath(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "bad.yaml"),
 		[]byte("command: bad {file}\nstate_dir: .bad\n"), 0o644); err != nil {
@@ -72,6 +73,7 @@ func TestStateDirRefusesARelativePath(t *testing.T) {
 // list an operator can put a value in is a list whose contents end up in a
 // terminal, which is the one thing envs: guarantees never happens.
 func TestEnvRequiredTakesNamesNeverValues(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "bedrock", "command: claude {file}\nenv_required: [AWS_REGION, AWS_PROFILE]\n")
 	if got := rt.EnvRequired; len(got) != 2 || got[0] != "AWS_REGION" || got[1] != "AWS_PROFILE" {
@@ -124,6 +126,7 @@ func TestMissingEnvLooksInBothPlaces(t *testing.T) {
 // party can declare is the screen and the operator-owned key that silences
 // it — with no probe, because posse cannot read an unknown CLI's config.
 func TestDeclaredInterstitialsAreNamedNotPressed(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "mycli", `command: mycli {file}
 interstitial_update:
@@ -164,6 +167,7 @@ interstitial_update:
 // A half-declared screen refuses rather than printing a blank: an entry with
 // no key silences nothing, and one with no file is not a place.
 func TestIncompleteInterstitialRefuses(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, body := range []string{
 		"command: c {file}\ninterstitial_x:\n  screen: \"S\"\n",
@@ -182,6 +186,7 @@ func TestIncompleteInterstitialRefuses(t *testing.T) {
 // The whole point of the command: every gap by name, and the split between
 // what blocks a launch and what is a named degrade.
 func TestRuntimeGapsReportEachGapByName(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "fake", `command: posse-tr8k-no-such-exe {file}
 env_required: [POSSE_TR8K_ABSENT]
@@ -226,6 +231,7 @@ skils_flag: --oops
 // profile's author knows the slug — so it must not warn as an unknown key,
 // while a typo outside the family still does.
 func TestInterstitialFamilyIsNotAnUnknownKey(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	rt := writeRuntime(t, a, "mycli", `command: mycli {file}
 interstitial_consent:
@@ -246,6 +252,7 @@ interstitial_consent:
 // gaps they can ever have are environmental (the CLI not installed, herdr
 // not running). Hermetic half: nothing structural is missing.
 func TestBuiltinsDeclareTheirPreflight(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	for _, name := range []string{"claude", "codex", "grok"} {
 		rt, err := a.LoadRuntime(name)

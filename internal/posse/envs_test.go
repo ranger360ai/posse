@@ -35,6 +35,7 @@ func symlinkApp(t *testing.T) *App {
 // resolves into secrets/ must not hand a harness credential back through
 // EnvSetVars — the reader herdrback.go uses to build a launch's env.
 func TestEnvSetVarsRefusesASymlinkOutOfTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	target := filepath.Join(a.SecretsDir, "harness.env")
 
@@ -64,6 +65,7 @@ func TestEnvSetVarsRefusesASymlinkOutOfTheStore(t *testing.T) {
 // envs:, but the resolver that reads it must equally refuse a symlink
 // pointed elsewhere outside secrets/ — same guard, same reason.
 func TestSecretVarsRefusesASymlinkOutOfTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	link := filepath.Join(a.SecretsDir, "escape.env")
 	if err := os.Symlink(filepath.Join(a.EnvsDir, "default.env"), link); err != nil {
@@ -81,6 +83,7 @@ func TestSecretVarsRefusesASymlinkOutOfTheStore(t *testing.T) {
 // ListEnvSets() must not name the symlink as a set `posse envs` can offer
 // the operator — the same containment question one directory up.
 func TestListEnvSetsSkipsASymlink(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Symlink(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "leak.env")); err != nil {
 		t.Fatal(err)
@@ -95,6 +98,7 @@ func TestListEnvSetsSkipsASymlink(t *testing.T) {
 // envs/default.env) is not the injection case ADR 0019 D1 is about — it
 // never crosses stores — so it must keep resolving.
 func TestEnvSetVarsAllowsASymlinkWithinTheStore(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks")
 	}
@@ -114,6 +118,7 @@ func TestEnvSetVarsAllowsASymlinkWithinTheStore(t *testing.T) {
 // link was made, not when the name was resolved. Same repro as the symlink
 // above, same reader, and it must refuse the same way.
 func TestEnvSetVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "hard.env")); err != nil {
 		t.Fatal(err)
@@ -132,6 +137,7 @@ func TestEnvSetVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
 // pinned both ways: secrets/ is read by posse's own processes, and a second
 // name for a file outside it is the same escape whichever store it is in.
 func TestSecretVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.EnvsDir, "default.env"), filepath.Join(a.SecretsDir, "escape.env")); err != nil {
 		t.Fatal(err)
@@ -149,6 +155,7 @@ func TestSecretVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
 // hard link is a regular file, so ReadDir's type bits say yes and `posse
 // envs` would name it a set the operator wrote.
 func TestListEnvSetsSkipsAHardLink(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "hard.env")); err != nil {
 		t.Fatal(err)
@@ -166,6 +173,7 @@ func TestListEnvSetsSkipsAHardLink(t *testing.T) {
 // the sibling store, the only cheaper alternative, would leave every other
 // file on the box linkable into a set a session is handed.
 func TestEnvSetVarsRefusesAHardLinkWithinTheStore(t *testing.T) {
+	t.Parallel()
 	a := symlinkApp(t)
 	if err := os.Link(filepath.Join(a.EnvsDir, "default.env"), filepath.Join(a.EnvsDir, "alias.env")); err != nil {
 		t.Fatal(err)

@@ -87,6 +87,7 @@ var seedWriteShapes = map[string]seedWriteShape{
 // posse.Seed is what a release binary ships and `posse init` copies, which
 // is the surface ADR 0014's Consequences bullet is about.
 func TestSeededPIDsCarryTheADR0014Shapes(t *testing.T) {
+	t.Parallel()
 	names := exampleAgentNames(posse.Seed)
 	if len(names) < 9 {
 		t.Fatalf("the seed ships %d example PIDs (%v) — a corpus pin over a corpus this small is measuring nothing", len(names), names)
@@ -174,6 +175,7 @@ func TestSeededPIDsCarryTheADR0014Shapes(t *testing.T) {
 // a rule that parses, passes the table, and names a path the profile never
 // mentions.
 func TestSeededPIDShapesReachTheRenderedProfile(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents")}
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {

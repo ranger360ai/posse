@@ -56,6 +56,7 @@ func cageAgent(t *testing.T, a *App, front string) *AgentFile {
 }
 
 func TestEngineIsATemplateNotDockerRun(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	// The built-in is still docker, and it is still reachable by name.
 	if d, err := a.LoadEngine("docker"); err != nil || !d.Builtin || !strings.HasPrefix(d.Command, "docker run ") || d.Binary() != "docker" {
@@ -93,6 +94,7 @@ func TestEngineIsATemplateNotDockerRun(t *testing.T) {
 }
 
 func TestCageRenderMountsAndEnvNames(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	ag := cageAgent(t, a, "skills: [dataviz]\n")
 	e, _ := a.LoadEngine("fake")
@@ -197,6 +199,7 @@ func argvHas(argv []string, want ...string) bool {
 // mints the credential (rangerhq-kiz) and the launch refuses without it
 // rather than spending a session that cannot reach its API.
 func TestCageCredentialPrecondition(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	if got := CageCredential(claude); got != "CLAUDE_CODE_OAUTH_TOKEN" {
@@ -238,6 +241,7 @@ func TestCageCredentialPrecondition(t *testing.T) {
 // theme/onboarding wizard and treats the workdir as untrusted — the same
 // dialog-nobody-is-watching failure ADR 0002 seeds codex's trust against.
 func TestSeedCageHome(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	ag := cageAgent(t, a, "")
 	claude, _ := a.LoadRuntime("claude")
@@ -296,6 +300,7 @@ func TestSeedCageHome(t *testing.T) {
 // realizes (a stdio MCP server, which never leaves the cage) is still
 // refused however strong the tier's name is.
 func TestContainerParityClaimsOnlyWhatItHolds(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit, Write, Bash(git push:*), WebFetch, mcp__probe__x]\negress: [api.example.com]\n")

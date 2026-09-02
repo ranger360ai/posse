@@ -82,6 +82,7 @@ func liveSocket(t *testing.T) string {
 }
 
 func TestLiveHerdrEventSelectors(t *testing.T) {
+	t.Parallel()
 	sock := liveSocket(t)
 
 	// The refusal ADR 0016 §1 did not have: this is why the settle
@@ -129,6 +130,7 @@ func TestLiveHerdrEventSelectors(t *testing.T) {
 // decodes into a hint. Needs a seat to finish its turn, so it waits — run it
 // while the fleet is turning over.
 func TestLiveHerdrEventSettleArrives(t *testing.T) {
+	t.Parallel()
 	sock := liveSocket(t)
 	b := &HerdrBackend{App: NewAppAt(t.TempDir()), H: NewHerdr()}
 	panes := b.AgentPanes()

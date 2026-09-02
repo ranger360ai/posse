@@ -311,6 +311,7 @@ func TestARunInFlightIsNotABackup(t *testing.T) {
 // ─── refusals ────────────────────────────────────────────────────────────────
 
 func TestBackupRefusesWithNoQueueRepo(t *testing.T) {
+	t.Parallel()
 	a, _ := backupRig(t)
 	write(t, a.ConfigPath, "")
 	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
@@ -336,6 +337,7 @@ func TestBackupRefusesAQueueRepoWithARemote(t *testing.T) {
 
 // The disk floor: refuse rather than fill the disk, and say the number.
 func TestBackupRefusesBelowTheDiskFloor(t *testing.T) {
+	t.Parallel()
 	a, _ := backupRig(t)
 	appendConfig(t, a, "backup_min_free_mb: 999999999\n")
 	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
@@ -457,6 +459,7 @@ func TestBackupOfAQueueWithNoCommits(t *testing.T) {
 // A directory that is not a git repository is refused by name, rather than
 // failing later inside a git call nobody can read.
 func TestBackupRefusesAQueueThatIsNotARepo(t *testing.T) {
+	t.Parallel()
 	a, _ := backupRig(t)
 	plain := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(plain, ".beads"), 0o700); err != nil {

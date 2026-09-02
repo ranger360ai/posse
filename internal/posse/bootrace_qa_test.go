@@ -42,6 +42,7 @@ import (
 // the wire shape (a seen state carries null), so this is a shape herdr can
 // spell, not an invented one.
 func TestQASeenDemandsPositiveEvidenceNotTheAbsenceOfAFallback(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		json string
@@ -184,6 +185,7 @@ func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
 // screen already grok's. Under old-gate semantics the same pane opened at
 // 0.50s with no rule at all.
 func TestQALiveGateOpensOnAScreenNotAShellPrompt(t *testing.T) {
+	t.Parallel()
 	pane := os.Getenv("RHQ_LIVE_SHELL_PANE")
 	if pane == "" {
 		t.Skip("set RHQ_LIVE_SHELL_PANE=<ws:pane> at a shell (+ HERDR_SOCKET_PATH, RHQ_HERDR_BIN) — see the file comment")

@@ -36,6 +36,7 @@ CREATE TABLE dependencies (
 }
 
 func TestPairCheckNoDatabaseIsNilNotAFinding(t *testing.T) {
+	t.Parallel()
 	pairs, err := PairCheck(t.TempDir())
 	if err != nil || pairs != nil {
 		t.Fatalf("a dir with no beads.db yet must read as no-finding, not a failure: pairs=%v err=%v", pairs, err)
@@ -43,6 +44,7 @@ func TestPairCheckNoDatabaseIsNilNotAFinding(t *testing.T) {
 }
 
 func TestPairCheckFindsASymmetricPairAndIgnoresAMereReacher(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pairSeed(t, dir, `
 INSERT INTO dependencies VALUES ('a','b','relates-to'), ('b','a','relates-to');
@@ -62,6 +64,7 @@ INSERT INTO dependencies VALUES ('c','a','blocks'), ('d','e','blocks');
 }
 
 func TestPairCheckCleanWithOnlyAReacher(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pairSeed(t, dir, `INSERT INTO dependencies VALUES ('c','a','blocks');`)
 	pairs, err := PairCheck(dir)
@@ -74,6 +77,7 @@ func TestPairCheckCleanWithOnlyAReacher(t *testing.T) {
 }
 
 func TestPairCheckDifferentTypesDoNotPair(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// Same two nodes, opposite directions, but NOT the same type — the gate
 	// query requires a.type = b.type, so this must not read as a pair.
@@ -94,6 +98,7 @@ func TestPairCheckDifferentTypesDoNotPair(t *testing.T) {
 // "clean" over a store it never actually read (ranger-base-z3s3's own
 // requirement, "what it must not do").
 func TestPairCheckReadsAWALDBWithNoShm(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pairSeed(t, dir, `
 INSERT INTO dependencies VALUES ('a','b','relates-to'), ('b','a','relates-to');

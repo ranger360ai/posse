@@ -19,6 +19,7 @@ import (
 )
 
 func TestInstallSection9QuotesThePushPrecedenceLineVerbatim(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
 	if err != nil {
 		t.Fatalf("read INSTALL.md: %v", err)
@@ -59,6 +60,7 @@ func TestInstallSection9QuotesThePushPrecedenceLineVerbatim(t *testing.T) {
 // "in repo docs", which by its own terms did not cover `bd prime`'s
 // session-start checklist — and a persona pushed into the gate under it.
 func TestPushPrecedenceNamesNoSourceAsItsBoundary(t *testing.T) {
+	t.Parallel()
 	if strings.Contains(pushPrecedence, "in repo docs") {
 		t.Errorf("pushPrecedence bounded itself to repo docs again — bd prime's checklist is not one (rangerhq-gmnm): %q", pushPrecedence)
 	}

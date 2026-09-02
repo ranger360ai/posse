@@ -101,6 +101,7 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 // then the blessed path-limited form still lands AND still reaches bd's hook,
 // which is the control that makes the refusals mean something.
 func TestQAPrivateIndexRefusedThroughTheChain(t *testing.T) {
+	t.Parallel()
 	repo, witness, git, persona := qaPrivateIndexChainRepo(t)
 	head, _ := git(nil, "rev-parse", "HEAD")
 	head = strings.TrimSpace(head)
@@ -180,6 +181,7 @@ func TestQAPrivateIndexRefusedThroughTheChain(t *testing.T) {
 // if a later change closes the making half too, this test goes red and the
 // doc sentence it guards can finally be written without a caveat.
 func TestQAPrivateIndexInsideTheGitDirIsTheMeasuredResidual(t *testing.T) {
+	t.Parallel()
 	repo, _, git, persona := qaPrivateIndexChainRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "fix.go"), []byte("v2-THE-FIX\n"), 0o644); err != nil {
 		t.Fatal(err)

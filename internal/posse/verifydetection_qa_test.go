@@ -118,6 +118,7 @@ func runDetection(t *testing.T, root, installed string, args ...string) (out str
 }
 
 func TestQAVerifyDetectionFailsACommittedRuleDeletion(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
@@ -188,6 +189,7 @@ func TestQAVerifyDetectionFailsACommittedRuleDeletion(t *testing.T) {
 // Without a mode like this, an install that lands somewhere herdr does not
 // read is invisible — the fixtures pass, because they no longer touch it.
 func TestQAVerifyDetectionCheckInstallFailsAStaleInstall(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}

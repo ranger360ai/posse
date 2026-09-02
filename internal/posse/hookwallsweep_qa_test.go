@@ -331,6 +331,7 @@ func TestHookWallSweepSeparatesAbsentReposFromFindings(t *testing.T) {
 // check. A line about it in every promote and every watch loop is noise about
 // nothing.
 func TestHookWallSweepIsSilentWhenConfigDeclaresNoRepo(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("default_env: default\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -60,6 +60,7 @@ func writeProbe(t *testing.T, a *App, pass bool) {
 }
 
 func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	dev := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(rm -rf /)\n---\nYou are dev.\n")
 
@@ -110,6 +111,7 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 // is a sentence in the ADR and a property of the code only as long as the
 // degrade goes through p.Degraded rather than through a bespoke field.
 func TestAssumedProbeIsNotWaivableAtTierFast(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	dev := loadTestAgent(t, "---\nname: dev\ndeny: [Bash(rm -rf /)]\n---\nYou are dev.\n")
 	if p := a.CheckParity(dev, bob, CageShims, TierFast); !p.NoDegrade {
@@ -126,6 +128,7 @@ func TestAssumedProbeIsNotWaivableAtTierFast(t *testing.T) {
 // author a probe for. The arm matters: if the clause keyed on "has a Path"
 // or on "is not claude" instead, this is where it would show.
 func TestBuiltinRuntimesDoNotWaitOnAProbe(t *testing.T) {
+	t.Parallel()
 	a, _ := probeParityApp(t)
 	dev := loadTestAgent(t, "---\nname: dev\ndeny: [Bash(rm -rf /)]\n---\nYou are dev.\n")
 	for _, name := range []string{"claude", "codex", "grok"} {
@@ -145,6 +148,7 @@ func TestBuiltinRuntimesDoNotWaitOnAProbe(t *testing.T) {
 // an operator sent to `posse runtime probe` for a runtime whose wrapper is
 // switched off would probe, pass three observables, and still have no wall.
 func TestGateShellFalseKeepsItsOwnDiagnosis(t *testing.T) {
+	t.Parallel()
 	a, _ := probeParityApp(t)
 	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "odd.yaml"), []byte("command: odd --pid {file}\ngate_shell: false\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -168,6 +172,7 @@ func TestGateShellFalseKeepsItsOwnDiagnosis(t *testing.T) {
 // conditional, so the probe row prints whether or not it is a gap, and it
 // prints the OPPOSITE word once a record lands.
 func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	var out bytes.Buffer
 	a.RuntimeCheck(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
@@ -215,6 +220,7 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 // would make `runtime check` exit 1 for every freshly authored profile,
 // which turns ADR 0032's goal into a requirement by accident of exit status.
 func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	h := Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}
 	var found *RuntimeGap
@@ -246,6 +252,7 @@ func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
 // persona's wall from a canary deny — disarming the operator's own gates for
 // as long as the session lives.
 func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	persona := probeAgentName("bob")
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
@@ -265,6 +272,7 @@ func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 // probe cannot fake, and a probe that reported PASS on three would put a
 // realized mark on a runtime dispatch is blind on.
 func TestProbeRefusesWithoutHerdr(t *testing.T) {
+	t.Parallel()
 	a, bob := probeParityApp(t)
 	rec, err := a.RuntimeProbe(bob, Herdr{Bin: filepath.Join(t.TempDir(), "definitely-not-herdr")}, ProbeOpts{})
 	if err == nil || !strings.Contains(err.Error(), "herdr") {
@@ -285,6 +293,7 @@ func TestProbeRefusesWithoutHerdr(t *testing.T) {
 // did: that sends the operator to a key their yaml does not set instead of
 // to the probe that would actually fix it.
 func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

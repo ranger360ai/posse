@@ -232,6 +232,7 @@ func TestQAHomeConstitutionPathsIncludesTheRuntimesDir(t *testing.T) {
 // ADR 0039 D2 decides on, end to end from PromotedPaths through
 // ConstitutionRepoPaths into the rendered sh.
 func TestQAConstitutionWallNamesRhqRuntimes(t *testing.T) {
+	t.Parallel()
 	const want = "rhq/runtimes"
 	if !containsString(ConstitutionRepoPaths(), want) {
 		t.Errorf("ConstitutionRepoPaths() = %v, want it to name %s (ADR 0039 D2)", ConstitutionRepoPaths(), want)

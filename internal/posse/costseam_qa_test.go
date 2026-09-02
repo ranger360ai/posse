@@ -58,6 +58,7 @@ func (tablePricedCost) Decode(string, time.Time) ([]*Segment, error) { return ni
 // Segment.priceFor, which asks CostProviderFor(s.Runtime) before falling
 // back to claude's global table).
 func TestQACostAdapterPriceTableIsConsulted(t *testing.T) {
+	t.Parallel()
 	p := tablePricedCost{}
 	RegisterCostProvider(p)
 	t.Cleanup(func() { delete(costProviders, p.Runtime()) })

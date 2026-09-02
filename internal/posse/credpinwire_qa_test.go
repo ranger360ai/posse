@@ -171,6 +171,7 @@ func TestNonLoopbackOverrideReachesNoSocketAndNoKeychain(t *testing.T) {
 // did not happen would show up as a dial error rather than as a quiet pass:
 // what is asserted is that the error is the REFUSAL, not the timeout.
 func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
+	t.Parallel()
 	w := &wireServer{}
 	w.Server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		w.hits++

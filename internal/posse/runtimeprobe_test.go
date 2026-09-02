@@ -52,6 +52,7 @@ func obs(t *testing.T, r probeReading, n int) ProbeObservable {
 }
 
 func TestProbeObservablesHoldOnAPassingReading(t *testing.T) {
+	t.Parallel()
 	bin := "/tmp/gates/bin"
 	for _, o := range evalProbe(passingReading(bin)) {
 		if !o.OK {
@@ -70,6 +71,7 @@ func TestProbeObservablesHoldOnAPassingReading(t *testing.T) {
 // path in it — an operator who cannot see WHERE the lookup landed cannot
 // tell this from "the gates dir is missing".
 func TestProbeShimPrecedenceFailsWhenTheRealBinaryWins(t *testing.T) {
+	t.Parallel()
 	bin := "/tmp/gates/bin"
 	r := passingReading(bin)
 	r.Where = "/usr/bin/uname\n"
@@ -103,6 +105,7 @@ func TestProbeShimPrecedenceFailsWhenTheRealBinaryWins(t *testing.T) {
 // also what one shape firing three times looks like, and the shapes are the
 // whole point of ADR 0009's argv table.
 func TestProbeRefusalIsPinnedPerSubprocessShape(t *testing.T) {
+	t.Parallel()
 	bin := "/tmp/gates/bin"
 	for _, tc := range []struct{ drop, want string }{
 		{ProbeShapeDirect, "direct"},
@@ -130,6 +133,7 @@ func TestProbeRefusalIsPinnedPerSubprocessShape(t *testing.T) {
 // Observable 3 has two halves and needs both: a pane that settles having run
 // nothing is a CLI that answered in prose, or a dialog nobody is watching.
 func TestProbeUnattendedTurnNeedsBothSettleAndAction(t *testing.T) {
+	t.Parallel()
 	bin := "/tmp/gates/bin"
 	r := passingReading(bin)
 	r.Settled, r.SettleWhy = "", "herdr never saw a screen it recognizes"
@@ -158,6 +162,7 @@ func TestProbeUnattendedTurnNeedsBothSettleAndAction(t *testing.T) {
 // runtime that only ever produces that, because every settled state is a
 // guess. Seen() is the repo's positive-evidence predicate.
 func TestProbeHerdrDetectionRejectsTheIdleFallback(t *testing.T) {
+	t.Parallel()
 	bin := "/tmp/gates/bin"
 	r := passingReading(bin)
 	r.Detection = AgentDetection{State: "idle", FallbackReason: "default_known_agent_idle_fallback"}
@@ -189,6 +194,7 @@ func TestProbeHerdrDetectionRejectsTheIdleFallback(t *testing.T) {
 }
 
 func TestProbeRecordPassedNeedsEveryObservable(t *testing.T) {
+	t.Parallel()
 	full := evalProbe(passingReading("/tmp/gates/bin"))
 	if r := (&ProbeRecord{Observables: full}); !r.Passed() {
 		t.Error("four green observables is a pass")
@@ -226,6 +232,7 @@ func probeApp(t *testing.T) *App {
 }
 
 func TestProbeRecordRoundTrips(t *testing.T) {
+	t.Parallel()
 	a := probeApp(t)
 	want := &ProbeRecord{
 		Runtime: "bob", CLIPath: "/usr/local/bin/bob", Version: "bob 1.2.3",
@@ -263,6 +270,7 @@ func TestProbeRecordRoundTrips(t *testing.T) {
 // the injected reader seam, never through the real PATH — the seam is the
 // READER, not the permission to read (ranger-base-02zr).
 func TestProbeStateDriftAndCurrency(t *testing.T) {
+	t.Parallel()
 	a := probeApp(t)
 	rt := &Runtime{Name: "bob", Command: "bob --pid {file}"}
 	at := func(path, version string) (func(string) string, func(string) string) {
@@ -342,6 +350,7 @@ func TestProbeStateDriftAndCurrency(t *testing.T) {
 // resolves there whatever PATH says, which is exactly the runtime the probe
 // exists to catch.
 func TestProbeCanaryResolvesOutsideTheGates(t *testing.T) {
+	t.Parallel()
 	name, path := probeCanary()
 	if name == "" {
 		t.Skip("no probe canary on this host — the probe would refuse here too")
@@ -361,6 +370,7 @@ func TestProbeCanaryResolvesOutsideTheGates(t *testing.T) {
 // that observable 1 reads. A prompt that dropped one would make its
 // observable fail on a runtime that is fine.
 func TestProbePromptCarriesEveryShapeAndTheLookup(t *testing.T) {
+	t.Parallel()
 	p := probePrompt("uname", "/tmp/w/where.txt", "/tmp/w/probe.sh")
 	for _, want := range []string{
 		"command -v uname > /tmp/w/where.txt",
@@ -380,6 +390,7 @@ func TestProbePromptCarriesEveryShapeAndTheLookup(t *testing.T) {
 }
 
 func TestReadFromReturnsOnlyTheDelta(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join(t.TempDir(), "refusals.log")
 	if err := os.WriteFile(p, []byte("old line\n"), 0o644); err != nil {
 		t.Fatal(err)

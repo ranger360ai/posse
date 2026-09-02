@@ -36,6 +36,7 @@ import (
 
 // TestSeededPIDsCarryTheL1CommitWall is the corpus pin.
 func TestSeededPIDsCarryTheL1CommitWall(t *testing.T) {
+	t.Parallel()
 	names := exampleAgentNames(posse.Seed)
 	if len(names) < 9 {
 		t.Fatalf("the seed ships %d example PIDs (%v) — a corpus pin over a corpus this small is measuring nothing", len(names), names)

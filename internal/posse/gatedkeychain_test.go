@@ -83,6 +83,7 @@ func keychainTokenAt(bin string) func() (string, error) {
 // The read names our own gate and the rule that refused it — and does NOT
 // say "unreadable", which is the sentence a real outage says.
 func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
+	t.Parallel()
 	shim := gatedSecurityShim(t)
 
 	tok, err := keychainTokenAt(shim)()
@@ -107,6 +108,7 @@ func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 // An ordinary exec failure is still the ordinary error: nothing about a
 // missing or broken `security` may be reported as our gate.
 func TestMeterTokenNonRefusalStaysUnreadable(t *testing.T) {
+	t.Parallel()
 	bin := keychainStub(t, "#!/bin/sh\necho boom >&2\nexit 44\n")
 
 	_, err := keychainTokenAt(bin)()
@@ -313,6 +315,7 @@ func TestQAUnattendedBlindParkNamesOurGateNotAnOutage(t *testing.T) {
 // err.Error() and nothing tests it, so pin it here — the log is the
 // operator's record after the process that printed the blind line is gone.
 func TestQAPlanUsageLogNamesTheGateRefusal(t *testing.T) {
+	t.Parallel()
 	shim := gatedSecurityShim(t)
 	home := t.TempDir()
 	c := &PlanCache{
@@ -397,6 +400,7 @@ func TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH(t *testing.T) {
 // keychain prompt on their screen), and it is how
 // TestVisibilityOverrideIsNeverDispatched asks its own never-question.
 func TestQAKeychainStoreIsWiredToTheAbsoluteBinary(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile("credential.go")
 	if err != nil {
 		t.Fatal(err)

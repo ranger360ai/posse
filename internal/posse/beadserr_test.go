@@ -105,6 +105,7 @@ func TestBdRunKeepsTheReasonBdPrintsOnStdout(t *testing.T) {
 
 // The parse itself, over the shapes a half-broken bd can hand back.
 func TestBdStdoutErrorReadsOnlyTheErrorObject(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, stdout, want string
 	}{

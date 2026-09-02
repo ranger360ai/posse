@@ -55,6 +55,7 @@ func qaCommitRepo(t *testing.T) (repo string, git func(env []string, args ...str
 // hook refuses it through its `-a` arm. This test asserts both halves —
 // that the form really does sweep, and that the hook stops it.
 func TestQACommitWallIncludeFormSweepsAndIsRefused(t *testing.T) {
+	t.Parallel()
 	// Half one: without the guard, -i takes the other persona's staged file.
 	_, git, write := qaCommitRepo(t)
 	write("a.txt", "theirs") // another persona's staged work
@@ -103,6 +104,7 @@ func TestQACommitWallIncludeFormSweepsAndIsRefused(t *testing.T) {
 // next-index-* left behind. A wall that wedges the shared index for the
 // whole crew would be worse than the sweep it prevents.
 func TestQACommitWallRefusalLeavesSharedTreeIntact(t *testing.T) {
+	t.Parallel()
 	repo, git, write := qaCommitRepo(t)
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
@@ -297,6 +299,7 @@ func TestQACommitWallL1IncludeAbbreviations(t *testing.T) {
 // git commit -F msg` captures B's staged file. If git stops sweeping, this
 // pin dies and the wall is guarding a ghost. Half two is the wall.
 func TestQA2f5rIncidentFourForms(t *testing.T) {
+	t.Parallel()
 	msg := filepath.Join(t.TempDir(), "msg")
 	if err := os.WriteFile(msg, []byte("incident\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -397,6 +400,7 @@ func TestQA2f5rIncidentFourForms(t *testing.T) {
 // closed the shared-index half of the incident; this half rides through
 // because the form is correct. Isolation (rangerhq-09o2) is the real fix.
 func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
+	t.Parallel()
 	repo, git, write := qaCommitRepo(t)
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
@@ -421,6 +425,7 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 // it, and one character shorter git refuses to resolve. A stale number is
 // a hole (too long) or noise (too short), and both fail here.
 func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
+	t.Parallel()
 	for key, sp := range qualifierSpoilers {
 		if !strings.HasPrefix(key, "git ") {
 			continue // another command's parser, another set of rules
@@ -494,6 +499,7 @@ func qaRenderCommitShim(t *testing.T) func(argv ...string) (string, int) {
 // moved. Half one is the premise, unguarded, so the pin dies loudly if git
 // ever stops sweeping instead of quietly guarding a ghost.
 func TestQACommitWallL1AbbreviationDoesNotSweepRealIndex(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}
@@ -563,6 +569,7 @@ func TestQACommitWallL1AbbreviationDoesNotSweepRealIndex(t *testing.T) {
 // instead (measured: none of them sweeps, they commit the named path), so
 // what this pins for those is that spelling and not `--opt=<value>`.
 func TestQASpoilerTableCoversEveryCommitOption(t *testing.T) {
+	t.Parallel()
 	_, git, write := qaCommitRepo(t)
 	// A second commit, so `--amend` has a parent and its `show --name-only`
 	// is a diff rather than a root listing.
@@ -676,6 +683,7 @@ func qaCommitOptions(t *testing.T, git func(env []string, args ...string) (strin
 // one is the premise, unguarded, so the pin dies loudly if git ever stops
 // doing that rather than quietly guarding a ghost (ranger-base-myai).
 func TestQACommitWallL1PatchDoesNotSweepRealIndex(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
 	}

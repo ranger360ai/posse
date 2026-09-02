@@ -78,6 +78,7 @@ func qaGit(t *testing.T, repo string, args ...string) {
 // <git-common-dir>/hooks stays inert. Everything below rests on this, so it is
 // pinned on its own: if a future git changes it, this fails first and names why.
 func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	qaGit(t, repo, "config", "user.email", "qa@example.invalid")
 	qaGit(t, repo, "config", "user.name", "qa")
@@ -134,6 +135,7 @@ func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
 // must now follow the redirect: an armed .git/hooks and an EMPTY core.hooksPath
 // is a repo with no wall, and it has to read as one.
 func TestL3ProbeFollowsCoreHooksPath(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	a := &App{}
 	InstallPrePushHook(repo)
@@ -168,6 +170,7 @@ func TestL3ProbeFollowsCoreHooksPath(t *testing.T) {
 // (a foreign hook already sitting at the redirect), the operator must be told
 // in a line that names the redirected directory, not the git dir.
 func TestParityFollowsCoreHooksPath(t *testing.T) {
+	t.Parallel()
 	newLaunch := func(t *testing.T, repo string) (*App, *Runtime, *AgentFile) {
 		t.Helper()
 		home := t.TempDir()
@@ -258,6 +261,7 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 // that carries no marker of ours (ranger-base-3c3) is untouched by this fix
 // and still holds — the probe's answer changed, not install's refusal rule.
 func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	body := "#!/bin/sh\n[ \"$RHQ_PERSONA\" = probe ] && exit 1\nexit 0\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
@@ -288,6 +292,7 @@ func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
 // probe, whatever it would have done. A canary the hook body would drop
 // proves it — after the probe, the canary must not exist.
 func TestL3ProbeNeverExecsForeignBytes(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	canary := filepath.Join(repo, "canary")
 	body := "#!/bin/sh\n: > " + canary + "\nexit 1\n"
@@ -307,6 +312,7 @@ func TestL3ProbeNeverExecsForeignBytes(t *testing.T) {
 // and it degrades, naming the member (the dispatch-path file, not the
 // dispatcher).
 func TestL3ProbeCertifiesThePrescribedChain(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	a := &App{}
 	os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(chainHookDispatcherWith("pre-push", "theirs-pre-push")), 0o755)
@@ -341,6 +347,7 @@ func TestL3ProbeCertifiesThePrescribedChain(t *testing.T) {
 // used to certify now degrades, because a black-box probe cannot tell it
 // apart from ranger-base-vqvl's liar.
 func TestL3ProbeDegradesAForeignRefuser(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	qaArm(t, hooks, "pre-push", "prepare-commit-msg")
 	a := &App{}
@@ -365,6 +372,7 @@ func TestL3ProbeDegradesAForeignRefuser(t *testing.T) {
 // on its own: git silently skips a non-executable hook, so 0644 is a wall that
 // is present on disk and absent in practice.
 func TestL3ProbeCatchesTamperingAtTheKnownPath(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		break_ func(hooks string)
@@ -413,6 +421,7 @@ func TestL3ProbeCatchesTamperingAtTheKnownPath(t *testing.T) {
 // has to say "beads visibility" out loud, because that is the half of the slot
 // that fails toward disclosure rather than toward a loud refusal.
 func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
+	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755)
@@ -456,6 +465,7 @@ func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
 //	        pre-fix spelling still does. That is the bead's false green,
 //	        reproduced: four green probes over a wall git will never run.
 func TestQADocSection9VerifyProbesFollowGitsDispatchDir(t *testing.T) {
+	t.Parallel()
 	block := qaSection9VerifyBlock(t)
 	if !strings.Contains(block, `"$h"/pre-push`) || !strings.Contains(block, `"$h"/prepare-commit-msg`) {
 		t.Fatalf("INSTALL.md §9's Verify block no longer runs the slot at git's dispatch dir:\n%s", block)

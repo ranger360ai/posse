@@ -95,6 +95,7 @@ const sbLenientOuter = "(version 1)\n(allow default)\n"
 // The whole grid, run. This is the table in the header, and it is what
 // licenses both the guard and the shape of its profile.
 func TestQASandboxApplyProbeGrid(t *testing.T) {
+	t.Parallel()
 	sbSkipUnlessSandboxable(t)
 	for _, tc := range []struct {
 		what        string
@@ -126,6 +127,7 @@ func TestQASandboxApplyProbeGrid(t *testing.T) {
 // real thing is the property; the probe is a stand-in for it, not a proxy
 // for the word "sandbox-exec".
 func TestQASandboxApplyProbeAgreesWithARenderedProfile(t *testing.T) {
+	t.Parallel()
 	sbSkipUnlessSandboxable(t)
 	rendered := SeatbeltProfile("developer", []string{t.TempDir()}, nil, SeatbeltCarveOut{})
 	if !strings.Contains(rendered, "(deny file-write*)") {
@@ -148,6 +150,7 @@ func TestQASandboxApplyProbeAgreesWithARenderedProfile(t *testing.T) {
 // six reds straight through. Pinned because reverting to it is the shape
 // this bug comes back in.
 func TestQASandboxExecStaysOnPathInsideTheCage(t *testing.T) {
+	t.Parallel()
 	sbSkipUnlessSandboxable(t)
 	prof := sbRenderProfile(t, "outer.sb", sbCagedOuter(t))
 	out, err := exec.Command("sandbox-exec", "-f", prof, "/bin/sh", "-c", "command -v sandbox-exec").CombinedOutput()
@@ -163,6 +166,7 @@ func TestQASandboxExecStaysOnPathInsideTheCage(t *testing.T) {
 // shells out to sandbox-exec and forgets it is how this comes back, and it
 // comes back as a red nobody can reproduce off the box.
 func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("*_test.go")
 	if err != nil {
 		t.Fatal(err)

@@ -180,6 +180,7 @@ func TestUnarmedInstanceSaysNothingAboutBackups(t *testing.T) {
 // which is 2x the cadence the predecessor actually ran at (ADR 0036 §6 sets
 // the threshold at 2x the interval; §4's interval is unbuilt).
 func TestBackupMaxAgeDefaultAndTypo(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	write(t, a.ConfigPath, "")
 	if got := a.BackupMaxAge(os.Stderr); got != DefaultBackupMaxAge {

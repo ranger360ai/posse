@@ -296,6 +296,7 @@ func TestPlanAdapterRefusalNamesTheAdapterAndTheReason(t *testing.T) {
 // reading it is a plan with no limits, which is the one wrong number this
 // file could produce.
 func TestPlanSnapshotFromBeforeTheSeamIsAMiss(t *testing.T) {
+	t.Parallel()
 	r := newCacheRig(t)
 	c := r.caller("dispatch")
 	c.store(planEntry{At: r.clock})
@@ -312,6 +313,7 @@ func TestPlanSnapshotFromBeforeTheSeamIsAMiss(t *testing.T) {
 // the endpoint and the header knows how many windows there are, or what a
 // provider calls them.
 func TestPlanUsageLineRendersWhateverTheAdapterNames(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		u    PlanUsage
 		want string

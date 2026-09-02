@@ -15,6 +15,7 @@ import (
 )
 
 func TestQABuiltinDockerEngineSpellsTheInternalRoute(t *testing.T) {
+	t.Parallel()
 	a := &App{Home: t.TempDir()}
 	d, err := a.LoadEngine("docker")
 	if err != nil {
@@ -45,6 +46,7 @@ func TestQABuiltinDockerEngineSpellsTheInternalRoute(t *testing.T) {
 // exit 6 is DNS, not the route); the proxy half is the same hole if the
 // matcher is only exercised on names the allowlist already mentions.
 func TestQAEgressProxyDeniesRawIPAndSubdomainsOfExactHosts(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("no node on this host; the proxy runs on the cage image's own")

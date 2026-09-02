@@ -48,6 +48,7 @@ func liveArgv(t *testing.T, argv0 string) int {
 }
 
 func TestWatchPidRoundTrip(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "state", "dispatch-watch.pid")
 	started := time.Date(2026, 8, 20, 9, 30, 0, 0, time.UTC)
 	if err := WriteWatchPid(path, WatchPid{Pid: os.Getpid(), Started: started, Cmd: "posse dispatch --watch 5m"}); err != nil {
@@ -71,6 +72,7 @@ func TestWatchPidRoundTrip(t *testing.T) {
 // is what makes that harmless. What this pins is that reading it never
 // silently invents a record where there is none.
 func TestWatchPidIsARecordNotALiveness(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dispatch-watch.pid")
 
@@ -98,6 +100,7 @@ func TestWatchPidIsARecordNotALiveness(t *testing.T) {
 }
 
 func TestRemoveWatchPidKeepsAnotherLoopsRecord(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "dispatch-watch.pid")
 	WriteWatchPid(path, WatchPid{Pid: 424242})
 	RemoveWatchPid(path, os.Getpid())

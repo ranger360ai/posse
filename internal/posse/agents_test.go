@@ -26,6 +26,7 @@ func loadTestAgent(t *testing.T, content string) *AgentFile {
 }
 
 func TestPIDListsParsed(t *testing.T) {
+	t.Parallel()
 	ag := loadTestAgent(t, `---
 name: p
 description: test
@@ -54,6 +55,7 @@ You are p.
 }
 
 func TestRenderAllowDeny(t *testing.T) {
+	t.Parallel()
 	// Rules carry parens, colons, spaces, and globs — all must reach the
 	// shell as single quoted words.
 	ag := loadTestAgent(t, `---
@@ -81,6 +83,7 @@ deny:
 }
 
 func TestRenderEmptyListsVanish(t *testing.T) {
+	t.Parallel()
 	// No command: → DefaultAgentCommand, whose {allow} {deny} must vanish
 	// cleanly (no flags, no leftover placeholder, no stray spacing).
 	ag := loadTestAgent(t, `---
@@ -103,6 +106,7 @@ You are p.
 }
 
 func TestLegacyAgentUnchanged(t *testing.T) {
+	t.Parallel()
 	// A pre-PID file (no new keys, own command without the placeholders)
 	// must render exactly as it always has — including the old default
 	// command, which ends in a double quote (rangerhq-nvq) — except for the
@@ -125,6 +129,7 @@ You are p.
 }
 
 func TestFleetSettingsSurviveRendering(t *testing.T) {
+	t.Parallel()
 	// The default command carries --settings with a JSON blob (rangerhq-4e5:
 	// suppresses the auto-mode setup dialog in unattended sessions). The
 	// flat-YAML reader and the placeholder renderer must pass it through
@@ -149,6 +154,7 @@ func TestFleetSettingsSurviveRendering(t *testing.T) {
 }
 
 func TestFleetSettingsCarryPermissionModeAuto(t *testing.T) {
+	t.Parallel()
 	// Layer 2 of the OPERATOR DIRECTIVE (rangerhq-slq6): a claude launch
 	// that loses --permission-mode auto (rangerhq-qs5r, layer 1) must still
 	// land auto from the --settings payload. Parsed, not string-matched —
@@ -168,6 +174,7 @@ func TestFleetSettingsCarryPermissionModeAuto(t *testing.T) {
 }
 
 func TestScaffoldAgentIsPID(t *testing.T) {
+	t.Parallel()
 	// posse agent new must produce a PID (ADR 0001): every frontmatter key
 	// present, lists empty, body headings in contract order, and the whole
 	// thing loadable by LoadAgent without edits.
@@ -275,6 +282,7 @@ func TestScaffoldAgentIsPID(t *testing.T) {
 }
 
 func TestExampleAgentsArePIDs(t *testing.T) {
+	t.Parallel()
 	// examples/agents/*.md are the reference PIDs (ADR 0001, rangerhq-cd3):
 	// every one carries the full frontmatter, the four hard risk lines
 	// verbatim, the headings in contract order, and a push deny.
@@ -367,6 +375,7 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 // each runtime's native realizer; a PID's command: is the template for its
 // own runtime only.
 func TestRuntimeRealizers(t *testing.T) {
+	t.Parallel()
 	ag := loadTestAgent(t, "---\nname: p\nallow: [Bash(bd:*)]\ndeny:\n  - Edit\n  - Write\n  - Bash(git push:*)\n---\nYou are p.\n")
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
@@ -440,6 +449,7 @@ func TestRuntimeRealizers(t *testing.T) {
 // for the measurement. Weakening the const is a decision, not a refactor;
 // this test is what makes it say so out loud.
 func TestGrokLaunchLineTypesPermissionModeAutoLiterally(t *testing.T) {
+	t.Parallel()
 	ag := loadTestAgent(t, "---\nname: p\ndeny: [Bash(git push:*)]\n---\nYou are p.\n")
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
@@ -455,6 +465,7 @@ func TestGrokLaunchLineTypesPermissionModeAutoLiterally(t *testing.T) {
 }
 
 func TestRuntimeOverrideIgnoresPIDCommand(t *testing.T) {
+	t.Parallel()
 	// A PID with its own claude-shaped command: uses it on claude only; an
 	// override to codex takes codex's built-in template.
 	ag := loadTestAgent(t, "---\nname: p\ncommand: mywrap --file {file} {allow} {deny}\ndeny: [Edit, Write]\n---\nYou are p.\n")
@@ -495,6 +506,7 @@ func TestRuntimeOverrideIgnoresPIDCommand(t *testing.T) {
 }
 
 func TestTemplateOnlyRuntime(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.RuntimesDir(), 0o755)
@@ -522,6 +534,7 @@ func TestTemplateOnlyRuntime(t *testing.T) {
 // ADR 0003 §1–2: tiers map to models per runtime; {model} renders the
 // runtime's flag or nothing; precedence explicit > PID > config > strong.
 func TestTiers(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	claude, _ := a.LoadRuntime("claude")
@@ -657,6 +670,7 @@ func TestTiers(t *testing.T) {
 // who · label · what the bead must contain. The greppable part is the
 // label; the rest is prose a reviewer reads.
 func TestExampleAgentsHandoffsAreShapes(t *testing.T) {
+	t.Parallel()
 	shelf := shelfPIDs(t)
 	a := &App{Home: t.TempDir(), AgentsDir: filepath.Dir(shelf[0])}
 	names := a.ListAgents()
@@ -689,6 +703,7 @@ func TestExampleAgentsHandoffsAreShapes(t *testing.T) {
 // their close (ADR 0006 §3), and saying otherwise teaches a habit the
 // harness contradicts.
 func TestBuilderPIDsDoNotHandVerifyOff(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join("..", "..", "examples", "agents")
 	a := &App{Home: t.TempDir(), AgentsDir: dir}
 	for _, name := range []string{"developer", "devops"} {

@@ -89,6 +89,7 @@ func settleEscalations(t *testing.T, repo string) []map[string]any {
 // a settle-open, and a persona's own question bead must never dedupe an
 // escalation away.
 func TestSettleMarkersRoundTripAndRefuseForeignText(t *testing.T) {
+	t.Parallel()
 	if got := settleOpenStatus(settleOpenComment("in_progress", "ranger-posse-a-1", "idle")); got != "in_progress" {
 		t.Errorf("settle-open status round-trip = %q, want in_progress", got)
 	}

@@ -661,6 +661,7 @@ func TestClaudeLocalProjectSettingsAreTheSameSurface(t *testing.T) {
 }
 
 func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

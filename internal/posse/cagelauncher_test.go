@@ -37,6 +37,7 @@ func cageLaunchArgs(t *testing.T, line string) (launcher, plan string) {
 // the runtime's canonical name — which is the whole of what herdr reads to
 // decide there is a claude in this pane.
 func TestCageLauncherExecsTheEngineAsTheRuntime(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	self, err := os.Executable()
 	if err != nil {
@@ -87,6 +88,7 @@ func TestCageLauncherExecsTheEngineAsTheRuntime(t *testing.T) {
 
 // The two constraints the spike named, and the plan's own shape.
 func TestCageLauncherIsABinaryOutsideTheGates(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	ag := cageAgent(t, a, "")
 	rt, _ := a.LoadRuntime("claude")
@@ -188,6 +190,7 @@ func TestCageLauncherIsABinaryOutsideTheGates(t *testing.T) {
 // would otherwise hand herdr argv0=env and disappear from agent list
 // (rangerhq-1k1).
 func TestCageLauncherNameComesFromRuntimeNotInnerCommand(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	ag := cageAgent(t, a, "command: env FOO=1 claude --model x\n")
 	rt, err := a.LoadRuntime("claude")
@@ -222,6 +225,7 @@ func TestCageLauncherNameComesFromRuntimeNotInnerCommand(t *testing.T) {
 }
 
 func TestCageLauncherFollowsEveryBuiltinRuntime(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	for _, name := range []string{"claude", "codex", "grok"} {
 		rt, err := a.LoadRuntime(name)
@@ -242,6 +246,7 @@ func TestCageLauncherFollowsEveryBuiltinRuntime(t *testing.T) {
 }
 
 func TestCageLauncherRejectsHostileExeNames(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	for _, name := range []string{
 		"", ".", "..", "-claude", "foo/bar", "../claude",
@@ -259,6 +264,7 @@ func TestCageLauncherRejectsHostileExeNames(t *testing.T) {
 //
 //	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveCageLauncherExecsDockerAsClaude -v
 func TestLiveCageLauncherExecsDockerAsClaude(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_DOCKER") == "" {
 		t.Skip("set RHQ_LIVE_DOCKER=1 (needs docker; asserts argv0=claude on a real docker client)")
 	}

@@ -34,6 +34,7 @@ import (
 )
 
 func TestLiveBdRunKeepsTheReasonRealBdPrintsOnStdout(t *testing.T) {
+	t.Parallel()
 	bd := liveBd(t)
 	repo := liveBeadsRepo(t, bd, "a row, so the fixture is a real graph")
 	// bd's own pre-commit hook rewrites the jsonl during that commit, so the

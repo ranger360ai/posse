@@ -11,6 +11,7 @@ import (
 // check. The order is fixed now: deny rules by rule text, then egress:,
 // then skills:, then the record gate.
 func TestParityStringOrdersTheRealizedLines(t *testing.T) {
+	t.Parallel()
 	p := Parity{
 		Runtime: "claude", Cage: CageShims, Tier: TierStrong,
 		Realized: map[string]RealizedGate{
@@ -74,6 +75,7 @@ func TestParityStringOrdersTheRealizedLines(t *testing.T) {
 // guard; drop the `deniesGitPush` filter so every deny gets the note; delete
 // the assignment; drop the ` — ` join in RealizedGate.String.
 func TestQAPushEffectNoteRidesTheContainerPushDenyOnly(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {

@@ -83,6 +83,7 @@ func TestBudgetCapsConfig(t *testing.T) {
 // The tightest window drives both rungs, and plan utilization competes with
 // the dollar windows on equal terms.
 func TestBudgetStateResolve(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		st     BudgetState
@@ -138,6 +139,7 @@ func TestBudgetStateResolve(t *testing.T) {
 // relative to each other instead — min(startOfDay+1m, passStart-1m) — moves
 // earlier-today into yesterday and breaks DayTotal, so: a fixed noon.
 func TestPassAndDayWindows(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.Local)
 	passStart := now.Add(-10 * time.Minute)
 	rep := &CostReport{Beads: []*Segment{

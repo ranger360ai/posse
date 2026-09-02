@@ -485,6 +485,7 @@ func TestWatchSeedsTheBlindClock(t *testing.T) {
 }
 
 func TestBlindFor(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[time.Duration]string{
 		-time.Second:                    "0s",
 		0:                               "0s",

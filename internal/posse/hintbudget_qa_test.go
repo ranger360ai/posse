@@ -29,6 +29,7 @@ import (
 )
 
 func TestQAHintBudgetClearsTheAdapterRetry(t *testing.T) {
+	t.Parallel()
 	if hintWait < 5*herdrHintRetry {
 		t.Errorf("hintWait is %s and the adapter redials after %s: a test budget "+
 			"under 5x the retry it may have to wait out is the ranger-base-fsil "+
@@ -45,6 +46,7 @@ func TestQAHintBudgetClearsTheAdapterRetry(t *testing.T) {
 // here is how the flake got in: four separate 5s deadlines, none of them
 // reading as a decision.
 func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("herdrevents_test.go")
 	if err != nil {
 		t.Fatal(err)

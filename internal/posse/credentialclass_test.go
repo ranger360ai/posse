@@ -64,6 +64,7 @@ func wrongShapeKeychain(t *testing.T) error {
 // the distinctness assertions below (class, and the pairwise message
 // comparison) are what makes that impossible.
 func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		err   func(*testing.T) error
@@ -161,6 +162,7 @@ func statusRead(status int) func(*testing.T) error {
 // sentence. It is the mutation check on PlanFailureOf — delete any arm of
 // that switch and two rows here become one.
 func TestTheFourCredentialClassesAreDistinct(t *testing.T) {
+	t.Parallel()
 	got := map[PlanFailure]string{}
 	for name, mk := range map[string]func(*testing.T) error{
 		"unreadable": unreadableKeychain,
@@ -196,6 +198,7 @@ func TestTheFourCredentialClassesAreDistinct(t *testing.T) {
 // credential's, and calling it a credential outage is exactly the reading
 // that switched the shop's brake off on 2026-08-24.
 func TestPlanFailureOfLeavesNonCredentialFailuresAlone(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		err   error
@@ -231,6 +234,7 @@ func TestPlanFailureOfLeavesNonCredentialFailuresAlone(t *testing.T) {
 // not reach it. Without this arm, CredUnreadable swallows the one error
 // whose whole purpose is not being mistaken for it.
 func TestGateRefusalIsNotWrappedAsUnreadable(t *testing.T) {
+	t.Parallel()
 	shim := gatedSecurityShim(t)
 	_, _, err := readStore(keychainStoreAt(shim))
 	if err == nil {
@@ -255,6 +259,7 @@ func TestGateRefusalIsNotWrappedAsUnreadable(t *testing.T) {
 // stay one sentence with one store name substituted, and this is the pin on
 // the half of that rule this bead could have broken.
 func TestTheStoreFixRidesOnTheReadNotTheShape(t *testing.T) {
+	t.Parallel()
 	read := unreadableKeychain(t)
 	if !strings.Contains(read.Error(), "make install") {
 		t.Errorf("a failed read carries the store's move: %q", read)

@@ -59,6 +59,7 @@ func recordingBd(t *testing.T) (Bd, func() [][]string) {
 }
 
 func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
+	t.Parallel()
 	b, calls := recordingBd(t)
 	dir := t.TempDir()
 
@@ -133,6 +134,7 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 // bdGlobalFlags and both arms become the same arm, the gap collapses, and
 // this goes red.
 func TestLiveBdRunSkipsTheDialTheDaemonArmPays(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_BD") == "" {
 		t.Skip("set RHQ_LIVE_BD=1 (shells out to the real bd)")
 	}

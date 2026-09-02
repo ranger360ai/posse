@@ -17,6 +17,7 @@ func buildInfo(mod string, settings ...string) func() (*debug.BuildInfo, bool) {
 // ranger-base-bzu: every binary the Makefile did not build reported the
 // literal "dev", even with its commit sitting in its own build info.
 func TestVersionStringNamesTheBuildWithoutTheLdflag(t *testing.T) {
+	t.Parallel()
 	noInfo := func() (*debug.BuildInfo, bool) { return nil, false }
 
 	// The table spells every expectation from Version, so a release bump does

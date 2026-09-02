@@ -113,6 +113,7 @@ func srAudit(t *testing.T, script, dir string, args ...string) (string, int) {
 // script ran; this proves the detector still flags the rangerhq-8rtf mechanism
 // when it is planted in front of it.
 func TestSilentRevertSelfTestStillFires(t *testing.T) {
+	t.Parallel()
 	script := srScript(t)
 	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
 		t.Skipf("not a git checkout: %v", err)
@@ -176,6 +177,7 @@ func srPlantAddOnlyRevert(t *testing.T) string {
 // rationale: nobody reviewed dcca7b5. Unskipped when ypn1 closed; it fails
 // again the moment the deletion rule is weakened.
 func TestAuditFlagsAddOnlySilentRevert(t *testing.T) {
+	t.Parallel()
 	script := srScript(t)
 	repo := srPlantAddOnlyRevert(t)
 	out, code := srAudit(t, script, repo, "HEAD")
@@ -189,6 +191,7 @@ func TestAuditFlagsAddOnlySilentRevert(t *testing.T) {
 // reproducing: if the plant ever stops building the three commits it means to
 // build, the pin above would pass for the wrong reason and this one fails.
 func TestAuditFlagsAddOnlySilentRevertIsStillTheMechanism(t *testing.T) {
+	t.Parallel()
 	script := srScript(t)
 	repo := srPlantAddOnlyRevert(t)
 	out, _ := srAudit(t, script, repo, "HEAD")
@@ -247,6 +250,7 @@ func srDeadMoveRig(t *testing.T, inject string) (mutant, dir string) {
 // persona whose gate refuses `git commit` without `--` sees all three rigs
 // build nothing.
 func TestSilentRevertSelfTestRigFailureIsNotAPass(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srDeadMoveRig(t, "  return 2   # ranger-base-z4vx: this rig builds nothing\n")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
@@ -268,6 +272,7 @@ func TestSilentRevertSelfTestRigFailureIsNotAPass(t *testing.T) {
 // PASS with exit 0 before that witness and a FAIL with exit 1 after — measured
 // both directions.
 func TestSilentRevertNegativeControlHasAPositiveWitness(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srDeadMoveRig(t, "  return 0   # ranger-base-z4vx: reports success, plants nothing\n")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
@@ -324,6 +329,7 @@ func srMutateScript(t *testing.T, old, new string) (mutant, dir string) {
 // leaves every other test in this file green, because they all read an exit
 // status the deleted arm no longer contributes to.
 func TestSilentRevertSelfTestHasTheStrnumArm(t *testing.T) {
+	t.Parallel()
 	script := srScript(t)
 	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
 		t.Skipf("not a git checkout: %v", err)
@@ -352,6 +358,7 @@ func TestSilentRevertSelfTestHasTheStrnumArm(t *testing.T) {
 // under gawk. Fed the fixture's real ids instead, this mutation is invisible on
 // darwin, mawk and busybox — the blind spot that let the defect ship.
 func TestAuditStringComparisonHasItsOwnPin(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t,
 		`esrc[ne]=m[3] ""; edst[ne]=m[4] ""; est[ne]=m[5]`,
 		`esrc[ne]=m[3]; edst[ne]=m[4]; est[ne]=m[5]`)
@@ -369,6 +376,7 @@ func TestAuditStringComparisonHasItsOwnPin(t *testing.T) {
 // about once in 270; at 40 hex the whole id has to cooperate. Dropping
 // --no-abbrev must red the self-test on its own.
 func TestAuditFullBlobIdsHaveTheirOwnPin(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t, "--raw --no-abbrev \\", "--raw \\")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
@@ -411,6 +419,7 @@ func TestAuditFullBlobIdsHaveTheirOwnPin(t *testing.T) {
 // Deleting any of them leaves every other test in this file green, because they
 // all read an exit status a deleted arm no longer contributes to.
 func TestSilentRevertSelfTestHasTheRenameArms(t *testing.T) {
+	t.Parallel()
 	script := srScript(t)
 	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
 		t.Skipf("not a git checkout: %v", err)
@@ -435,6 +444,7 @@ func TestSilentRevertSelfTestHasTheRenameArms(t *testing.T) {
 // it must red the rename-that-edits arm rather than quietly cost another triage
 // line.
 func TestAuditRenameDetectionHasItsOwnPin(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t,
 		"--find-renames=50% -l0 --raw --no-abbrev",
 		"--no-renames --raw --no-abbrev")
@@ -455,6 +465,7 @@ func TestAuditRenameDetectionHasItsOwnPin(t *testing.T) {
 // R097 one, so raising the threshold to 75% reds it. If somebody wants a
 // different number they get to change this pin, which is the point.
 func TestAuditRenameThresholdIsLoadBearing(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t,
 		"--find-renames=50% -l0 --raw --no-abbrev",
 		"--find-renames=75% -l0 --raw --no-abbrev")
@@ -472,6 +483,7 @@ func TestAuditRenameThresholdIsLoadBearing(t *testing.T) {
 // the parse sets rather than deciding for itself from the blob ids — which is
 // what the exact-blob rule did, and what could not see an edited rename.
 func TestAuditRenameSourceSuppressionHasItsOwnPin(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t, "moved=emoved[i]", "moved=0")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
@@ -490,6 +502,7 @@ func TestAuditRenameSourceSuppressionHasItsOwnPin(t *testing.T) {
 // asserts that a path returning to an older blob VIA a rename destination is
 // still flagged, can tell excused from invisible. Measured both directions.
 func TestAuditRenameDestinationIsStillCompared(t *testing.T) {
+	t.Parallel()
 	mutant, dir := srMutateScript(t, "if (m[5] ~ /^[RC]/) {", "if (0) {")
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {

@@ -40,6 +40,7 @@ func unreadableVolume(string) (volume, error) { return volume{}, Die("statfs: pe
 // wrong reason is a refusal that will stop matching the day the shape it was
 // actually caught by changes.
 func TestBackupRefusesEveryRemoteSpelling(t *testing.T) {
+	t.Parallel()
 	local := t.TempDir()
 	for _, tc := range []struct {
 		target string
@@ -81,6 +82,7 @@ func TestBackupRefusesEveryRemoteSpelling(t *testing.T) {
 // is not this box's. Nothing in the string gives it away — only the kernel
 // does — which is why the check does not stop at parsing.
 func TestBackupRefusesAMountedRemoteVolume(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, fs := range []string{"nfs", "smbfs", "afpfs", "webdav", "fuse"} {
 		err := checkBackupTarget(dir, remoteVolume(fs))
@@ -110,6 +112,7 @@ func TestBackupRefusesAMountedRemoteVolume(t *testing.T) {
 // mount is the fake arm above, and this one exists to prove the real
 // statfs reading and the fake agree.
 func TestBackupRefusesTheBoxesOwnNonLocalMount(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "darwin" {
 		t.Skip("the autofs mount this arm reads is a darwin path")
 	}
@@ -134,6 +137,7 @@ func TestBackupRefusesTheBoxesOwnNonLocalMount(t *testing.T) {
 // ask for, and a field added to lift the refusal reds here before it can
 // ship.
 func TestBackupHasNoOverride(t *testing.T) {
+	t.Parallel()
 	var got []string
 	rt := reflect.TypeOf(BackupOpts{})
 	for i := 0; i < rt.NumField(); i++ {

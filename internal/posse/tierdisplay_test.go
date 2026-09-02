@@ -158,6 +158,7 @@ func TestWorkPromptHeaderShowsTheDisplayTier(t *testing.T) {
 // quality guarantee. It must not become a finding (that would refuse work a
 // lane legitimately wants), and it must not fire where the mapping exists.
 func TestCheckAgentWarnsAStrongPidOnAnUnmappedRuntime(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)

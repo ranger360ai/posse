@@ -38,6 +38,7 @@ func writeSeedDir(t *testing.T, dir string) string {
 }
 
 func TestSeedOverrideIsTakenOnlyWhenTheDirectoryIsASeedTree(t *testing.T) {
+	t.Parallel()
 	// Each case is a real shape somebody has on disk, not a permutation for
 	// its own sake: an empty examples/ (the loud half of the bug — exit 1
 	// with a half-made home), a project's own examples/ holding anything at

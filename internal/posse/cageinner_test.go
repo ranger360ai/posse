@@ -24,6 +24,7 @@ func envOf(t *testing.T, env []string, key string) string {
 // this side's PATH and this side's shell — and become the runtime behind
 // the same typed prefix the host types.
 func TestGatesWrapRendersInsideAndTypesTheHostsPrefix(t *testing.T) {
+	t.Parallel()
 	a := &App{StateDir: t.TempDir()}
 	deny := []string{"Bash(git push:*)", "Edit"}
 	env := []string{"PATH=/usr/bin:/bin", "RHQ_PERSONA=p", "RHQ_GATES_DIR=/host/gates/p"}
@@ -129,6 +130,7 @@ func TestGateShellResolvesAShellThatIsReallyThere(t *testing.T) {
 // container. The repo alone goes read-only: a persona that may not edit the
 // work still keeps its own notes and the runtime still keeps its state.
 func TestMountBoundaryIsTheRepoAndOnlyTheRepo(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := t.TempDir()
@@ -161,6 +163,7 @@ func TestMountBoundaryIsTheRepoAndOnlyTheRepo(t *testing.T) {
 // FILE pointing at the main repo's common dir somewhere else on the host.
 // A hook the container cannot see is a `git push` this tier lost.
 func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
@@ -264,6 +267,7 @@ func TestSocketsAreOffUnlessThePIDNamesThem(t *testing.T) {
 // and the ADR's rule is that the strongest cage is never the one that
 // silently loses `git push`.
 func TestInnerGatesAreClaimedOnlyWhenTheImageCanRender(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\ndeny: [Edit, Bash(git push:*)]\n")
@@ -308,6 +312,7 @@ func TestInnerGatesAreClaimedOnlyWhenTheImageCanRender(t *testing.T) {
 // The line the pane runs, end to end: the runtime keeps its shell inside
 // the container, and the image's own posse goes in front of it.
 func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	os.WriteFile(filepath.Join(a.CagesDir(), "fake.yaml"), []byte(
 		"command: env {mounts} {env} -w {workdir} {image} {cmd}\nprobe: true {image}\ninner: true {image} {cmd}\n"), 0o644)
@@ -356,6 +361,7 @@ func TestWrapInCagePutsTheGatesInFrontOfTheRuntime(t *testing.T) {
 // — the reviewer, the auditor — are exactly the ones who have to be able to
 // report what they found.
 func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
 	dir := t.TempDir()
@@ -411,6 +417,7 @@ func TestBeadsCarveOutIsMountedBackOverTheReadOnlyRepo(t *testing.T) {
 // own — because the socket does not cross (ENOTSUP, rangerhq-6so) and SQLite
 // through a mount spends ~5s a command failing to start a daemon.
 func TestInnerBdWrapperRunsNoDbOnTheGatesPath(t *testing.T) {
+	t.Parallel()
 	real := resolveOutside("bd", "")
 	if real == "" {
 		t.Skip("needs bd on PATH (in the cage it is the image's)")

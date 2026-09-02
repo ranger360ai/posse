@@ -29,6 +29,7 @@ import (
 // classes THIS pin names; ranger-base-qg0k8 replaced the reader with -z and
 // covers the rest, in the test below.
 func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -132,6 +133,7 @@ func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
 // Fixed by reading `--name-only -z`, whose output is the raw path bytes for
 // every byte class, with no quotePath override.
 func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -274,6 +276,7 @@ func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 // assertion below: if a future edit ever stops git detecting the rename, the
 // pin stops rather than going green over a defect it is no longer reaching.
 func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

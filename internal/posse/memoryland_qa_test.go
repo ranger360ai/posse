@@ -425,6 +425,7 @@ func TestKillSaysNothingWhenTheHomeKeepsMemoryOutsideGit(t *testing.T) {
 // a record whose first four bytes are a path's, and the scan is then aimed
 // at a filename made of somebody's directory name.
 func TestPorcelainZKeepsRenamesAndOddPathsWhole(t *testing.T) {
+	t.Parallel()
 	in := []byte("R  rhq/personas/dev/NEW.md\x00rhq/personas/dev/OLD.md\x00 M rhq/personas/dev/two words.md\x00?? rhq/personas/dev/plain.md\x00")
 	got := porcelainZChanges(in)
 	want := []memoryChange{
@@ -516,6 +517,7 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 // a real sibling of rhq/personas inside one checkout — where `../agents`
 // resolves to the constitution and the guard is the only thing in the way.
 func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
+	t.Parallel()
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
 	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n")

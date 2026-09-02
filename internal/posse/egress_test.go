@@ -25,6 +25,7 @@ import (
 // offline one. Everything else comes from the PID, and a host that is not
 // a host refuses the launch rather than being dropped in silence.
 func TestEgressAllowlistIsThePIDPlusTheRuntimesOwnHosts(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [\"https://GitHub.com/\", proxy.golang.org:443, api.anthropic.com]\n")
@@ -64,6 +65,7 @@ func TestEgressAllowlistIsThePIDPlusTheRuntimesOwnHosts(t *testing.T) {
 // gates: nothing hand-edited there survives, and a host dropped from the
 // PID stops being reachable on the next launch.
 func TestEgressAllowlistIsRenderedFreshAtEveryLaunch(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	rt, _ := a.LoadRuntime("claude")
 	dir := t.TempDir()
@@ -103,6 +105,7 @@ func TestEgressAllowlistIsRenderedFreshAtEveryLaunch(t *testing.T) {
 // with a way out, the agent joined to it by the engine's own flag, and a
 // proxy that carries none of the session's environment.
 func TestEgressPlanIsTheRouteAndTheProxyHoldsNothing(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
@@ -290,6 +293,7 @@ func TestEgressWatcherOutlivesTheExecAndThenTakesTheRouteDown(t *testing.T) {
 // unfenced watcher's `rm -f` would land on the new cage's proxy and leave
 // a live session with no route out.
 func TestEgressWatcherWillNotReclaimANewerLaunchsRoute(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [github.com]\n")
@@ -337,6 +341,7 @@ func TestEgressWatcherWillNotReclaimANewerLaunchsRoute(t *testing.T) {
 // plain-HTTP proxy request — which would carry a URL and a body through
 // this process — is refused and named.
 func TestEgressProxyRefusesUnknownHostsAndLogsThemLikeL1(t *testing.T) {
+	t.Parallel()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("no node on this host; the proxy runs on the cage image's own")

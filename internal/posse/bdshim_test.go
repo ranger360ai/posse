@@ -100,6 +100,7 @@ func TestBdShimResolvesTheVerbBehindGlobalOptions(t *testing.T) {
 // rule, not something the first one covers, and the hidden-verb class needs
 // the allow-list gate (scripts/bd-argv-gate.py), not this.
 func TestBdRuleIsOptionAwareForParity(t *testing.T) {
+	t.Parallel()
 	rules := ParseShimRules([]string{"Bash(bd daemon:*)"})["bd"]
 	if len(rules) != 1 {
 		t.Fatalf("want one bd rule, got %+v", rules)
@@ -256,6 +257,7 @@ func TestBdRuleOnAValueTakingFlagStillRefuses(t *testing.T) {
 // reason that names the cluster, not the canned global-option one, which
 // would send the reader to the wrong table (shimRule.Lead, matcherWhy).
 func TestBdFlagRuleParityClaim(t *testing.T) {
+	t.Parallel()
 	long := ParseShimRules([]string{"Bash(bd sync --full:*)"})["bd"][0]
 	kind, faithful := matcherFor("bd", long)
 	if kind != "subcommand, option-aware, flag anywhere in the segment" || !faithful {

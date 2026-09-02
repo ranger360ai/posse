@@ -100,6 +100,7 @@ func TestSeedOverrideThatIsNotASeedDoesNotHalfSeedSilently(t *testing.T) {
 // (ADR 0012 D5), and the error string that row names cannot be printed by any
 // build since 49e287f. README.md carried the twin of this until 83c3c10.
 func TestInstallDocsDoNotPrescribeARepoCheckoutToSeed(t *testing.T) {
+	t.Parallel()
 	dead := []string{
 		"not found next to this binary", // an error no build can emit
 		"must be the repo build",        // the claim the embed falsified
@@ -125,6 +126,7 @@ func TestInstallDocsDoNotPrescribeARepoCheckoutToSeed(t *testing.T) {
 // body legitimately names `./bin/posse-go init` when it explains which seed a
 // dev build chooses.
 func TestTroubleshootingFixesDoNotSendTheReaderToACheckout(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "INSTALL.md"))
 	if err != nil {
 		t.Fatalf("read INSTALL.md: %v", err)

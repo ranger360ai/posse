@@ -403,6 +403,7 @@ func TestQARecordReachStillReportsAFailureThatIsNotAnApplyRefusal(t *testing.T) 
 // nothing was measured, and reading the second as the first is the whole
 // bug — so the discriminating word is pinned rather than the phrase.
 func TestQAAnApplyRefusalIsNotAWriteRefusal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		what string
 		out  string
@@ -523,6 +524,7 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 // by. Uses the hermetic `env` engine (cageApp/cageAgent, cage_test.go) —
 // this asks CageMounts to render, not a real container runtime.
 func TestContainerReachRowCatchesADenyThatCoversTheStore(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {
@@ -571,6 +573,7 @@ func TestContainerReachRowCatchesADenyThatCoversTheStore(t *testing.T) {
 // `--no-db --no-daemon` at this tier and never commits (unlike codex, tested
 // in TestRecordReachOnASelfSandboxingRuntime, where the git dir IS required).
 func TestContainerReachRowOnTheRedirectShape(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {
@@ -599,6 +602,7 @@ func TestContainerReachRowOnTheRedirectShape(t *testing.T) {
 // shellTokens reads flag VALUES, so it has to survive what shellQuote
 // writes — a path with a space, and an apostrophe in a persona's own name.
 func TestShellTokensUnquotesLikeTheShellThatTypesIt(t *testing.T) {
+	t.Parallel()
 	line := "codex -s workspace-write --add-dir " + shellQuote("/a b/.beads") + " --add-dir " + shellQuote("/o'brien/.git")
 	got := shellTokens(line)
 	want := []string{"codex", "-s", "workspace-write", "--add-dir", "/a b/.beads", "--add-dir", "/o'brien/.git"}

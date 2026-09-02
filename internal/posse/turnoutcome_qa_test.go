@@ -276,6 +276,7 @@ func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
 // no reader implements REFUSES at load rather than degrading quietly — the
 // same rule `record: trused` gets (ADR 0013 §1).
 func TestQATurnOutcomeDeclarationIsRegistryKeyed(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 
 	if rt := writeRuntime(t, a, "bare", "command: bare {file}\n"); rt.ReadsTurnOutcome() {
@@ -308,6 +309,7 @@ func TestQATurnOutcomeDeclarationIsRegistryKeyed(t *testing.T) {
 // reads its own transcript, codex and grok declare no reader (both reachable
 // in principle — ranger-base-xaev — neither built).
 func TestQABuiltinTurnOutcomeDeclarations(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	want := map[string]bool{"claude": true, "codex": false, "grok": false}
 	for name, readable := range want {
@@ -324,6 +326,7 @@ func TestQABuiltinTurnOutcomeDeclarations(t *testing.T) {
 // `posse runtime check` is how a runtime is onboarded, so the blindness is a
 // row there too — with the key that changes it.
 func TestQARuntimeCheckSettleRowNamesTheTurnOutcomeReader(t *testing.T) {
+	t.Parallel()
 	a := checkApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {

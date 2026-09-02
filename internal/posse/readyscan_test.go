@@ -260,6 +260,7 @@ func TestBeadsDirsUsesCWDOnlyWhenKeyIsAbsent(t *testing.T) {
 // resolves, and a file where a repo should be is just as unresolvable as a
 // path that does not exist.
 func TestUnresolvedDirsNamesOnlyWhatIsNotThere(t *testing.T) {
+	t.Parallel()
 	good := t.TempDir()
 	gone := filepath.Join(t.TempDir(), "projA")
 	file := filepath.Join(t.TempDir(), "notarepo")
@@ -326,6 +327,7 @@ func TestReadyAllOrdersByPriorityAcrossRepos(t *testing.T) {
 // nothing — the operator could not tell that bd had run in whatever directory
 // the process happened to be in.
 func TestScanErrorNamesTheCWDFallback(t *testing.T) {
+	t.Parallel()
 	err := ScanError{Dir: "", Err: Die("boom")}.Error()
 	if strings.HasPrefix(err, ":") {
 		t.Fatalf("the cwd source must be named, got %q", err)
@@ -352,6 +354,7 @@ func TestScanErrorNamesTheCWDFallback(t *testing.T) {
 // one unless it says so (rangerhq-wmrb). Said once per config, because
 // BeadsDirs is called several times per command.
 func TestCWDFallbackAnnouncesItselfOnceAndOnlyWhenItHappens(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	cfg := filepath.Join(t.TempDir(), "config.yaml")
 

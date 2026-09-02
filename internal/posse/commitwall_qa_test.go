@@ -80,6 +80,7 @@ func unwalledRepo(t *testing.T) (string, func(env []string, args ...string) (str
 // persona actually sees must say that a named path commits the file as it
 // is on disk, and that another persona's edit rides in with it.
 func TestQACommitWallRefusalNamesTheInFlightEdit(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -123,6 +124,7 @@ func TestQACommitWallRefusalNamesTheInFlightEdit(t *testing.T) {
 // (rangerhq-09o2's isolation is the only answer). It is the fact any
 // wording in the refusal is measured against.
 func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	shared := filepath.Join(repo, "shared.txt")
 	if err := os.WriteFile(shared, []byte("base\n"), 0o644); err != nil {
@@ -174,6 +176,7 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 // `git diff HEAD -- <paths>`, which does see a staged edit, and claims only
 // what NOTES.md measures — the form bounds the paths, not the content.
 func TestQACommitWallPrescribesADiffThatCatchesStagedWork(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -217,6 +220,7 @@ func TestQACommitWallPrescribesADiffThatCatchesStagedWork(t *testing.T) {
 // not to use, stages another persona's file, so "scoped, never bare" is a
 // measurement and not manners.
 func TestQACommitWallSafeFormCannotIntroduceANewFile(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	write := func(name, body string) {
 		t.Helper()
@@ -287,6 +291,7 @@ func TestQACommitWallSafeFormCannotIntroduceANewFile(t *testing.T) {
 // names the safe form must also name what that form presumes and the two
 // steps that get a new file in, with the add scoped.
 func TestQACommitWallRefusalNamesTheNewFileRoute(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -326,6 +331,7 @@ func TestQACommitWallRefusalNamesTheNewFileRoute(t *testing.T) {
 // the only layer that speaks, and a persona adding a file there hits the
 // identical dead end. Read from the rendered shim, not from the table.
 func TestQAL1CommitRefusalNamesTheNewFileRoute(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -375,6 +381,7 @@ func TestQAL1CommitRefusalNamesTheNewFileRoute(t *testing.T) {
 // `-a` and `.` would skip outright into one they take. A less-known flag
 // that buys nothing under the wall is not the form to teach.
 func TestQANewFileStagingFormsAgainstEverySweeper(t *testing.T) {
+	t.Parallel()
 	sweeps := map[string][]string{
 		"unqualified": {"commit", "-m", "sweep"},
 		"-i":          {"commit", "-i", "-m", "sweep", "--", "theirs.txt"},

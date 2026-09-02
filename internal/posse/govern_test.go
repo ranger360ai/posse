@@ -869,6 +869,7 @@ func TestGuardStreakStartsAndClears(t *testing.T) {
 // One computation, three renderings — and the fingerprint is the KEYS, so a
 // condition changing class or wording never re-prompts the coordinator.
 func TestGovFingerprintIsKeysOnly(t *testing.T) {
+	t.Parallel()
 	a := GovSet{{ID: "G1", Class: GovLane, Key: "blocked:x", Detail: "one wording"}}
 	c := GovSet{{ID: "G1", Class: GovUrgent, Key: "blocked:x", Detail: "another wording entirely"}}
 	if a.Fingerprint() != c.Fingerprint() {
@@ -883,6 +884,7 @@ func TestGovFingerprintIsKeysOnly(t *testing.T) {
 // reading the top three lines must be reading the three that stopped the
 // shop.
 func TestGovReportUrgentFirst(t *testing.T) {
+	t.Parallel()
 	set := GovSet{
 		{ID: "G1", Class: GovLane, Key: "blocked:a", Detail: "lane a"},
 		{ID: "G7", Class: GovUrgent, Key: "loop-dead", Detail: "urgent one"},
@@ -900,6 +902,7 @@ func TestGovReportUrgentFirst(t *testing.T) {
 
 // An empty set with an unread store must not print the all-clear.
 func TestGovReportEmptyButPartial(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	GovReport(&buf, nil, []error{Die("bd: database is locked")})
 	if strings.Contains(buf.String(), "nothing needs a human") {
@@ -915,6 +918,7 @@ func TestGovReportEmptyButPartial(t *testing.T) {
 // A carry-over has no G-row and must not be given one: inventing G10 would
 // make the design's "closed, enumerated set" not closed.
 func TestGovCarryOverHasNoRowName(t *testing.T) {
+	t.Parallel()
 	if got := (GovCondition{Key: "no-live:coordinator"}).Row(); got != "—" {
 		t.Errorf("Row() = %q, want the em dash", got)
 	}

@@ -20,6 +20,7 @@ const fixtureSecret = "sk-ant-oat01-FIXTURE-SECRET-VALUE"
 
 // The shape that works still works, and says which shape answered.
 func TestCredentialTokenReadsTheOAuthEnvelope(t *testing.T) {
+	t.Parallel()
 	blob := `{"claudeAiOauth":{"accessToken":"` + fixtureSecret + `","refreshToken":"r","expiresAt":123}}` + "\n"
 	tok, meta, err := credentialToken(keychainStore().Name, []byte(blob))
 	if err != nil {
@@ -45,6 +46,7 @@ func TestCredentialTokenReadsTheOAuthEnvelope(t *testing.T) {
 // not. The error must distinguish that from "no envelope at all", because
 // the two have different fixes.
 func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		blob  string
@@ -139,6 +141,7 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 // top level and never opened, because its keys are per-server URLs and not
 // ours.
 func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
+	t.Parallel()
 	const mcp = `"mcpOAuth":{"https://example.test/sse":{"accessToken":"` + fixtureSecret + `"}},`
 	// The measured key set. Values are invented — only the names were read.
 	const measured = `"expiresAt":1756224000000,"rateLimitTier":"tier","refreshToken":"r",` +
@@ -211,6 +214,7 @@ func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 // object keyed BY a value — so a name that is not name-shaped is reported by
 // its size, never its bytes.
 func TestKeyNamesNeverCarryAValue(t *testing.T) {
+	t.Parallel()
 	// This test only means something while the fixture is longer than the
 	// bound. maxKeyName has been raised once already (ranger-base-okbr, when a
 	// 21-byte schema name showed up); raise it past this and the assertion
@@ -234,6 +238,7 @@ func TestKeyNamesNeverCarryAValue(t *testing.T) {
 
 // A hundred keys is not a credential; the count says so better than the list.
 func TestKeyListIsBounded(t *testing.T) {
+	t.Parallel()
 	obj := map[string]json.RawMessage{}
 	for _, k := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"} {
 		obj[k] = json.RawMessage(`1`)
@@ -247,6 +252,7 @@ func TestKeyListIsBounded(t *testing.T) {
 // Valid JSON that is not an object is its own diagnosis, and it names the
 // kind — not the content.
 func TestNonObjectJSONNamesItsKind(t *testing.T) {
+	t.Parallel()
 	for blob, want := range map[string]string{
 		`["` + fixtureSecret + `"]`: "a JSON array",
 		`"` + fixtureSecret + `"`:   "a JSON string",
@@ -305,6 +311,7 @@ func TestPlanGuardBlindLineNamesTheShapeItFound(t *testing.T) {
 // field carries the credential one level deeper than any case pinned above,
 // inside a RawMessage the diagnostic holds and must not print.
 func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, inner string }{
 		{"an object", `{"accessToken":{"token":"` + fixtureSecret + `","type":"oauth"},"refreshToken":"r"}`},
 		{"an array", `{"accessToken":["` + fixtureSecret + `"]}`},
@@ -341,6 +348,7 @@ func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
 // The kind is named because it is what credShapes has to learn; no byte of
 // the value is, including the one nested inside it.
 func TestNonStringAccessTokenSaysTheShapeChanged(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, inner, kind string }{
 		{"an object", `{"accessToken":{"token":"` + fixtureSecret + `","type":"oauth"},"refreshToken":"r"}`, "a JSON object"},
 		{"an array", `{"accessToken":["` + fixtureSecret + `"]}`, "a JSON array"},
@@ -379,6 +387,7 @@ func TestNonStringAccessTokenSaysTheShapeChanged(t *testing.T) {
 // into "" without error, which is exactly what the shape's Token func saw. It
 // stays on the login side of the fork.
 func TestNullAccessTokenIsTheIncompleteCredential(t *testing.T) {
+	t.Parallel()
 	_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":{"accessToken":null,"refreshToken":"r"}}`))
 	if err == nil {
 		t.Fatal("want a shape failure")
@@ -402,6 +411,7 @@ func TestNullAccessTokenIsTheIncompleteCredential(t *testing.T) {
 // folding, this one goes red first and the verdicts below become wrong rather
 // than merely unexplained.
 func TestAccessTokenIsMatchedTheWayTheParserMatchesIt(t *testing.T) {
+	t.Parallel()
 	t.Run("a capitalized name still yields the token", func(t *testing.T) {
 		tok, meta, err := credentialToken(keychainStore().Name,
 			[]byte(`{"claudeAiOauth":{"AccessToken":"`+fixtureSecret+`","refreshToken":"r"}}`))
@@ -454,6 +464,7 @@ func TestAccessTokenIsMatchedTheWayTheParserMatchesIt(t *testing.T) {
 // The note only appears when the spelling actually differs — an envelope that
 // spells the field the way posse does gets no aside about casing.
 func TestExactSpellingGetsNoCasingAside(t *testing.T) {
+	t.Parallel()
 	_, _, err := credentialToken(keychainStore().Name, []byte(`{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}`))
 	if err == nil {
 		t.Fatal("want a shape failure")

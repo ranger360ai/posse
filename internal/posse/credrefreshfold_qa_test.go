@@ -18,6 +18,7 @@ import (
 )
 
 func TestQARefreshTokenHintFoldsTheWayTheParserDoes(t *testing.T) {
+	t.Parallel()
 	for _, spelling := range []string{"refreshToken", "RefreshToken", "REFRESHTOKEN"} {
 		t.Run(spelling, func(t *testing.T) {
 			_, _, err := credentialToken(keychainStore().Name,

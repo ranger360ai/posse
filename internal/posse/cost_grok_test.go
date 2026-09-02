@@ -132,6 +132,7 @@ func TestGrokPerTurnCostsSumRatherThanMax(t *testing.T) {
 // NoteCumulative is still the right call for a provider that genuinely
 // restates a running total — max, never sum (ADR 0012 D4).
 func TestNoteCumulativeTakesMaxNotSum(t *testing.T) {
+	t.Parallel()
 	s := &Segment{Msgs: map[string]*Usage{}}
 	for _, v := range []float64{1, 3, 7, 7, 2} { // a restated running total
 		s.NoteCumulative(v)
@@ -206,6 +207,7 @@ func TestGrokMissingRootIsNoRecordsNotAnError(t *testing.T) {
 
 // grok is registered, so it is counted rather than reported uncounted.
 func TestGrokIsARegisteredProvider(t *testing.T) {
+	t.Parallel()
 	if _, ok := CostProviderFor("grok"); !ok {
 		t.Fatal("grok must have an adapter")
 	}
@@ -227,6 +229,7 @@ func TestGrokIsARegisteredProvider(t *testing.T) {
 // Claude Code's `<synthetic>` notices are all of this shape, and counting
 // them as "unpriced" would print a floor warning on every report forever.
 func TestZeroTokenRecordIsAKnownZeroNotAnUnpricedGap(t *testing.T) {
+	t.Parallel()
 	s := &Segment{Msgs: map[string]*Usage{
 		"syn":  {Model: "<synthetic>"},
 		"real": {Model: "claude-opus-5", In: 1e6},

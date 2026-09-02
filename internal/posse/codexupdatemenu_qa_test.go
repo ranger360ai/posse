@@ -29,6 +29,7 @@ import (
 )
 
 func TestQACodexUpdateMenuIsBlockedByItsOwnRule(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
@@ -163,6 +164,7 @@ func codexExplain(t *testing.T, fixture, toml string) (state, rule, fallback str
 // away is exactly "the banner without the menu", and it cannot drift from the
 // real screen the way a hand-typed second fixture would.
 func TestQACodexUpdateBannerWithoutTheMenuMustNotBlock(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}

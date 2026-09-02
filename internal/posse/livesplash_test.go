@@ -72,6 +72,7 @@ func liveBackend(t *testing.T, pane string) *HerdrBackend {
 }
 
 func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
+	t.Parallel()
 	pane := os.Getenv("RHQ_LIVE_PANE")
 	if pane == "" {
 		t.Skip("set RHQ_LIVE_PANE=<ws:pane> (+ HERDR_SOCKET_PATH, RHQ_HERDR_BIN) — see the file comment")

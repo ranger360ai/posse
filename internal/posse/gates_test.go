@@ -12,6 +12,7 @@ import (
 )
 
 func TestParseShimRules(t *testing.T) {
+	t.Parallel()
 	rules := ParseShimRules([]string{
 		"Bash(git push:*)", "Bash(git push --force:*)", "Bash(rm -rf /)", "Bash(bd)",
 		"Edit", "Write", "WebFetch", "mcp__x__y", "Bash(../evil:*)",
@@ -34,6 +35,7 @@ func TestParseShimRules(t *testing.T) {
 // The PID spelling is `:*` with no extra words; that must parse as the whole
 // verb (same as Bash(bd)), or the rendered shim is not an unconditional refuse.
 func TestParseShimRulesSecurityStarIsWholeVerb(t *testing.T) {
+	t.Parallel()
 	rules := ParseShimRules([]string{"Bash(git push:*)", "Bash(security:*)"})
 	r, ok := rules["security"]
 	if !ok || len(r) != 1 {
@@ -69,6 +71,7 @@ func TestParseShimRulesSecurityStarIsWholeVerb(t *testing.T) {
 // paying for its reach in false positives: a push-shaped word that is not
 // the subcommand (`git stash push`, `git log --grep=push`) is not a grant.
 func TestGrantsGitPushRuleShapes(t *testing.T) {
+	t.Parallel()
 	for _, fires := range []string{
 		"Bash(git push:*)",           // the coordinator's own spelling
 		"Bash(git push)",             // exact
@@ -245,6 +248,7 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 // the form that is not refused is the answer for whoever typed it, and where
 // to run it is the answer only if that was the operator.
 func TestRuleHintComposesSafeFormAndWhere(t *testing.T) {
+	t.Parallel()
 	got := ruleHint("developer", "security", shimRule{Words: []string{"unlock-keychain"}, Unless: "--"})
 	lines := strings.Split(got, "\n")
 	if len(lines) != 4 {
@@ -739,6 +743,7 @@ func grokDeniedByAny(rules []string, command string) bool {
 // straight into the shim's hard refusal with no polite one first
 // (rangerhq-3mc, adjacent to rangerhq-2zm).
 func TestL0SpellingsCoverTheOptionSpellings(t *testing.T) {
+	t.Parallel()
 	rules := L0Spellings([]string{"Bash(git push:*)"})
 	if rules[0] != "Bash(git push:*)" {
 		t.Fatalf("the PID's own rule must come first and unchanged: %q", rules)
@@ -815,6 +820,7 @@ func TestL0SpellingsCoverTheOptionSpellings(t *testing.T) {
 // literal argv prefix in both matchers, and non-Bash rules are other
 // layers' business.
 func TestL0SpellingsShapes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		deny []string
 		want []string
@@ -851,6 +857,7 @@ func TestL0SpellingsShapes(t *testing.T) {
 // `Bash(git -* push*)` on — so grok types the PID's own rules and L1 (which
 // holds there since ADR 0009) stays the wall.
 func TestGrokDialectIsWhyGrokIsNotWidened(t *testing.T) {
+	t.Parallel()
 	rules := L0Spellings([]string{"Bash(git push:*)"})
 	// The wildcard really does reach the option spellings on grok.
 	for _, cmd := range []string{
@@ -982,6 +989,7 @@ func TestGrokDialectIsWhyGrokIsNotWidened(t *testing.T) {
 // A command not on PATH at render time still gets a shim that refuses
 // matches and searches PATH at run time (skipping its own dir).
 func TestShimForMissingBinary(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	_, binDir, _, err := a.RenderGates("p", []string{"Bash(nosuchtool danger:*)"})
@@ -1000,6 +1008,7 @@ func TestShimForMissingBinary(t *testing.T) {
 // L3: the pre-push hook refuses under a matching RHQ_TOOLS_DENY and passes
 // otherwise; install-hooks never overwrites a foreign hook, replaces ours.
 func TestPrePushHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -1095,6 +1104,7 @@ func TestPrePushHook(t *testing.T) {
 // Runs the shipped template with text appended, rather than asserting on
 // its shape: the executed artifact is the wall (rangerhq-bju2).
 func TestPrePushHookExitsForReal(t *testing.T) {
+	t.Parallel()
 	gates := t.TempDir()
 	// tail is appended after the whole template, exactly as chaining by
 	// hand would; whatever the verdict, the template must have exited
@@ -1153,6 +1163,7 @@ func TestPrePushHookExitsForReal(t *testing.T) {
 // hand", which read as "append ours to theirs" — the form that fails open
 // (rangerhq-0g1c).
 func TestForeignHookRefusalPrescribesTheChain(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -1884,6 +1895,7 @@ func installCommitGuard(dir string) (string, error) {
 // this bug was found in actually has on disk. Matching one spelling refreshed
 // neither in practice — the chain is a shape, not a filename.
 func TestInstallCommitGuardRefreshesItsChainedHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2172,6 +2184,7 @@ func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
 // prescribed chain, and refreshing a sibling behind it would claim a wall that
 // nothing calls.
 func TestIsChainHookDispatcher(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		body string
@@ -2211,6 +2224,7 @@ func TestIsChainHookDispatcher(t *testing.T) {
 // the whole guard turns on what git puts in GIT_INDEX_FILE per commit form
 // and no fixture can assert that honestly.
 func TestSharedIndexCommitHook(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2348,6 +2362,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 // refusing it as a stranger's, and parity reporting the L3 wall missing on
 // a repo that has it.
 func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
@@ -2402,6 +2417,7 @@ func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
 // and git's own temp index still passes — including in a linked worktree,
 // where it lives in the per-worktree git dir, not the common one.
 func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2532,6 +2548,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 // refuses only the probe — does not count either: the launcher never runs
 // it to find out.
 func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2742,6 +2759,7 @@ func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
 // pre-push executed, prepare-commit-msg through a real `git commit` — with
 // the persona's own gates dir at the head of PATH.
 func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2853,6 +2871,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 // actually carries (rangerhq-v553), and the verb the launched session gets
 // refused by is one only the OTHER PID denies.
 func TestGateShellNoteNeverLooksUpDateOnThePath(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("date"); err != nil {
 		t.Skip("no date")
 	}
@@ -2936,6 +2955,7 @@ func TestGateShellNoteNeverLooksUpDateOnThePath(t *testing.T) {
 // visibility guard's two (an override and a refusal) and the constitution
 // arm.
 func TestL3HooksStampWithoutABareDate(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, body string }{
 		{"pre-push", PrePushHook},
 		// An empty pattern set, not the operator's live one: the block
@@ -2977,6 +2997,7 @@ func TestL3HooksStampWithoutABareDate(t *testing.T) {
 // double-quoted assignment, so `\"` is a quote and `\$` is a dollar, and
 // what is left is what a child's argv carries.
 func TestGateShellPreambleEndsMatchTheScript(t *testing.T) {
+	t.Parallel()
 	var line string
 	for _, l := range strings.Split(gateShellScript, "\n") {
 		if strings.HasPrefix(l, "PRE=") {

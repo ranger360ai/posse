@@ -278,6 +278,7 @@ exec '`+gitBin+`' "$@"
 // that has lost one, forever, and says nothing about it — so the
 // counterfactual is asserted in the same test, or the pin proves nothing.
 func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
+	t.Parallel()
 	constitution, dropped := qcConstitution(t)
 	queue := filepath.Join(t.TempDir(), "queue")
 	worktrees := t.TempDir()
@@ -340,6 +341,7 @@ func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 // to; a remote added later is a decision somebody has to make out loud
 // (ranger-base-xhsb is the operator's open question about exactly that).
 func TestQueueCutoverLeavesARedirectAndARepoWithNoRemote(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	queue := filepath.Join(t.TempDir(), "queue")
 	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
@@ -381,6 +383,7 @@ func TestQueueCutoverLeavesARedirectAndARepoWithNoRemote(t *testing.T) {
 // that resolves to the directory it is already in. It looks fine until
 // something follows the chain twice.
 func TestQueueCutoverNeverPointsTheStoreAtItself(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	queue := filepath.Join(t.TempDir(), "queue")
 	worktrees := t.TempDir()
@@ -430,6 +433,7 @@ func TestQueueCutoverNeverPointsTheStoreAtItself(t *testing.T) {
 // checkout was dead in exactly this way for a day because the fan-out took a
 // list and a list can be short.
 func TestQueueCutoverFindsTheTreesTheListForgets(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	store := filepath.Join(constitution, ".beads")
 	queue := filepath.Join(t.TempDir(), "queue")
@@ -469,6 +473,7 @@ func TestQueueCutoverFindsTheTreesTheListForgets(t *testing.T) {
 // `.beads` it could reach — including trees pointed at other stores — would
 // pass the pin above just as well.
 func TestQueueCutoverScanCanBeSwitchedOffAndThenTheChainSurvives(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	store := filepath.Join(constitution, ".beads")
 	queue := filepath.Join(t.TempDir(), "queue")
@@ -497,6 +502,7 @@ func TestQueueCutoverScanCanBeSwitchedOffAndThenTheChainSurvives(t *testing.T) {
 // Every preflight refusal is a statement that the window is not open yet,
 // and each one fails CLOSED — the script writes nothing before it refuses.
 func TestQueueCutoverRefusesGroundItDoesNotExpect(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, constitution, queue string)
@@ -546,6 +552,7 @@ func TestQueueCutoverRefusesGroundItDoesNotExpect(t *testing.T) {
 // this costs a window rather than a database — but the script's last four
 // lines are what an operator is looking at when they run step 3.
 func TestQueueCutoverInstructionsNameTheRepoIdMigrate(t *testing.T) {
+	t.Parallel()
 	body, err := os.ReadFile(qcScript(t))
 	if err != nil {
 		t.Fatal(err)
@@ -563,6 +570,7 @@ func TestQueueCutoverInstructionsNameTheRepoIdMigrate(t *testing.T) {
 // 44 export-state files, each naming a worktree path, a persona and a bead
 // id, version-controlled in the store of record.
 func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	write(t, filepath.Join(constitution, ".beads", "export-state", "abc.json"),
 		`{"worktree_root":"/Users/someone/.posse/worktrees/posse/developer-x"}`+"\n")
@@ -730,6 +738,7 @@ func qcRolledBack(t *testing.T) qcFixture {
 // The bead's headline, asserted where it bites: not "does the block mention
 // dotfiles" but "is the database ignored again when the block has run".
 func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
+	t.Parallel()
 	block := qcRollbackBlock(t)
 
 	t.Run("the store comes home whole", func(t *testing.T) {
@@ -785,6 +794,7 @@ func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
 // redirect was ever written. A bare `rm` on a path that is not there prints
 // an error into the middle of a window nobody is calm in.
 func TestQueueRollbackRunsCleanWhenNoRedirectWasEverWritten(t *testing.T) {
+	t.Parallel()
 	const missing = "No such file"
 	t.Run("the block says nothing about a redirect that was never written", func(t *testing.T) {
 		f := qcRolledBack(t)
@@ -814,6 +824,7 @@ func TestQueueRollbackRunsCleanWhenNoRedirectWasEverWritten(t *testing.T) {
 // runbook's last line (`rm -rf ~/src/ranger-queue`) has to do. By then the
 // ignore file is on no disk anywhere and git is the only copy left.
 func TestQueueRollbackRestoresTheIgnoreThatHidesTheDatabase(t *testing.T) {
+	t.Parallel()
 	f := qcRolledBack(t)
 	qcRollbackRun(t, qcRollbackBefore, f) // the half-rollback that left it behind
 	if err := os.RemoveAll(f.queue); err != nil {
@@ -861,6 +872,7 @@ func readFile(t *testing.T, path string) string {
 // exactly like the two-hop chain that started this: no database, and a hint
 // offering to make a new one.
 func TestQueueRollbackBringsHomeTheTreesTheListForgets(t *testing.T) {
+	t.Parallel()
 	f := qcRolledBack(t)
 	store := filepath.Join(f.constitution, ".beads")
 
@@ -888,6 +900,7 @@ func TestQueueRollbackBringsHomeTheTreesTheListForgets(t *testing.T) {
 }
 
 func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
+	t.Parallel()
 	shimDir := qcCageShim(t)
 	// The witness that the fixture blocks anything at all: the shim refuses
 	// the unqualified form in a repo of its own. Without it this pin is
@@ -929,6 +942,7 @@ func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 // change — so the queue's first commit RESURRECTED a file the store had
 // deleted. Measured both ways before and after the fix.
 func TestQueueCutoverDoesNotResurrectAFileTheLiveStoreDeleted(t *testing.T) {
+	t.Parallel()
 	constitution, _ := qcConstitution(t)
 	src := filepath.Join(constitution, ".beads")
 	write(t, filepath.Join(src, "stale.txt"), "committed, then deleted live\n")
@@ -963,6 +977,7 @@ func TestQueueCutoverDoesNotResurrectAFileTheLiveStoreDeleted(t *testing.T) {
 // and said nothing, because `set -eu` exits silently. Whatever aborts it, it
 // must name the half-state and how to undo it.
 func TestQueueCutoverAbortInTheMoveWindowNamesTheHalfStateAndItsUndo(t *testing.T) {
+	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the directory mode this fixture blocks the mv with")
 	}
@@ -1018,6 +1033,7 @@ func TestQueueCutoverAbortInTheMoveWindowNamesTheHalfStateAndItsUndo(t *testing.
 // trigger here is a pre-commit hook (a full disk and a gate refusal land in
 // the same place); GIT_TEMPLATE_DIR gets it into the repo the script clones.
 func TestQueueCutoverAbortAtTheCommitLeavesTheFleetResolving(t *testing.T) {
+	t.Parallel()
 	tmpl := t.TempDir()
 	hook := filepath.Join(tmpl, "hooks", "pre-commit")
 	write(t, hook, "#!/bin/sh\necho 'pre-commit refuses' >&2\nexit 1\n")
@@ -1080,6 +1096,7 @@ func TestQueueCutoverAbortAtTheCommitLeavesTheFleetResolving(t *testing.T) {
 // FIXTURE's identity, and with that identity taken away it must not be able
 // to commit at all — no hostname on any box may rescue it.
 func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
+	t.Parallel()
 	// A store with drift is what makes the script reach its commit at all.
 	drift := func(t *testing.T) (constitution, queue, project string) {
 		t.Helper()
@@ -1151,6 +1168,7 @@ func TestQueueCutoverCommitsUnderTheFixturesOwnIdentity(t *testing.T) {
 // it IS written below, because a dotfile in the queue store also exercises
 // the move loop's `.[!.]*` arm on the way home.
 func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
+	t.Parallel()
 	f := qcRolledBack(t)
 	for _, name := range []string{"bd.sock.startlock", "daemon-error", ".jsonl.lock", ".migration-hint-ts"} {
 		write(t, filepath.Join(f.queue, ".beads", name), "runtime\n")
@@ -1214,6 +1232,7 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 // The fixture now puts unrelated commits on top, and the control arm drives
 // the pre-fix line through the same rig to prove the wreckage is visible.
 func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
+	t.Parallel()
 	t.Run("step 8 is the last commit", func(t *testing.T) {
 		f := qcSteppedEight(t, 0)
 		qcAssertRolledBackToTracking(t, f, qcRollbackRun(t, qcRollbackBlock(t), f))

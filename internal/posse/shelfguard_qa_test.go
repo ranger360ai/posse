@@ -83,6 +83,7 @@ func shelfPIDs(t *testing.T) []string {
 // a failure, not a skip — and require a wholly absent directory to still
 // classify as a skip, which is the case the guard exists to keep quiet.
 func TestShelfPIDsGuardFailsRatherThanSkipsWhenShort(t *testing.T) {
+	t.Parallel()
 	shelf := shelfPIDs(t)
 	tmp := t.TempDir()
 	for _, p := range shelf[1:] {

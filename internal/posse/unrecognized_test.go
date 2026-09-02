@@ -24,6 +24,7 @@ import (
 )
 
 func TestWhatHerdrSawGroupsByRegionAndNamesTheRules(t *testing.T) {
+	t.Parallel()
 	const raw = `{"state":"idle","matched_rule":null,"visible_idle":false,
 	  "fallback_reason":"default_known_agent_idle_fallback","evaluated_rules":[
 	   {"id":"osc_title_blocked","matched":false,"region":"osc_title","state":"blocked",
@@ -77,6 +78,7 @@ func TestWhatHerdrSawGroupsByRegionAndNamesTheRules(t *testing.T) {
 // An older herdr does not emit `evaluated_rules`. The failure message must
 // stand on its own then — the block is an addition, never the sentence.
 func TestWhatHerdrSawIsEmptyWithoutHerdrsWorking(t *testing.T) {
+	t.Parallel()
 	var det AgentDetection
 	if err := json.Unmarshal([]byte(`{"state":"idle","matched_rule":null,"visible_idle":false,
 	  "fallback_reason":"default_known_agent_idle_fallback"}`), &det); err != nil {
@@ -90,6 +92,7 @@ func TestWhatHerdrSawIsEmptyWithoutHerdrsWorking(t *testing.T) {
 // A row is truncated by runes, not bytes: grok's chrome is box-drawing
 // characters and a byte cut mid-rune prints a replacement glyph.
 func TestWhatHerdrSawTruncatesOnRuneBoundaries(t *testing.T) {
+	t.Parallel()
 	var det AgentDetection
 	det.EvaluatedRules = []EvaluatedRule{{ID: "r", Region: "whole_recent"}}
 	det.EvaluatedRules[0].Evidence.RegionBytes = 4000
@@ -109,6 +112,7 @@ func TestWhatHerdrSawTruncatesOnRuneBoundaries(t *testing.T) {
 // — which on that capture is `╰── Grok 4.6 (high) ─╯`, this bead's own tell
 // (a session that never shows `· auto` is never recognized).
 func TestWhatHerdrSawSpendsThePreviewOnTextNotBorders(t *testing.T) {
+	t.Parallel()
 	var det AgentDetection
 	det.EvaluatedRules = []EvaluatedRule{{ID: "prompt_hints_idle", Region: "bottom_non_empty_lines(2)"}}
 	det.EvaluatedRules[0].Evidence.RegionBytes = 601
@@ -132,6 +136,7 @@ func TestWhatHerdrSawSpendsThePreviewOnTextNotBorders(t *testing.T) {
 // resolves to fallback idle with no matched rule (ranger-base-z6n) — and
 // checks that the block posse would have printed names its regions.
 func TestQAWhatHerdrSawOnARealFallbackCapture(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}

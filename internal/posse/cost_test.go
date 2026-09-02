@@ -11,6 +11,7 @@ import (
 )
 
 func TestPricesAndTiers(t *testing.T) {
+	t.Parallel()
 	if p, ok := PriceFor("claude-fable-5"); !ok || p != (Price{10, 50}) {
 		t.Errorf("fable: %+v %v", p, ok)
 	}
@@ -103,6 +104,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // Segmenting by the dispatcher's prompt, dedupe by message id (max per
 // field), per-message model pricing, interactive fallback.
 func TestScanTranscript(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := writeTranscript(t, dir, "s.jsonl",
 		`{"type":"user","timestamp":"2026-08-17T10:00:00Z","message":{"content":"hello, just chatting"}}`,
@@ -196,6 +198,7 @@ func TestScanClaudeTurnOutcomeReadsOnlyTheSyntheticAssistantOutcome(t *testing.T
 }
 
 func TestCostReportGroupsAndPrint(t *testing.T) {
+	t.Parallel()
 	rep := &CostReport{}
 	mk := func(bead, persona, model string, start time.Time, cost float64) *Segment {
 		s := &Segment{Bead: bead, Persona: persona, Model: model, Start: start, Msgs: map[string]*Usage{"a": {Model: model}}}

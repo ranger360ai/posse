@@ -71,6 +71,7 @@ var detectionCount = regexp.MustCompile(`verify-detection: (\d+)/(\d+) fixtures 
 // moving etc/herdr/agent-detection/grok.toml aside, which takes the run to
 // 4/4 and this assertion to "5 fixtures shipped but were not replayed".
 func TestQAVerifyDetectionReplaysEveryFixtureItShips(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
@@ -140,6 +141,7 @@ func TestQAVerifyDetectionReplaysEveryFixtureItShips(t *testing.T) {
 // verify-detection` actually reports. Before ranger-base-j66o's fix, deleting
 // grok.toml took the run to 4/4, exit 0, and named nothing.
 func TestQAVerifyDetectionFailsAnOverrideDeletion(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
@@ -188,6 +190,7 @@ func TestQAVerifyDetectionFailsAnOverrideDeletion(t *testing.T) {
 // manifest, so herdr answers from the bundled one instead. The run must name
 // what answered, not just disagree about a state.
 func TestQAVerifyDetectionNamesTheManifestThatAnswered(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}

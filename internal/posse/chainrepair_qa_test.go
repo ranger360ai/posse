@@ -177,6 +177,7 @@ func q32oNoSelfExec(t *testing.T, hooks string) {
 // dispatcher already runs, not refuse and print a prescription that destroys
 // the neighbour.
 func TestQARemovedGateBehindAChainIsRestoredNotReChained(t *testing.T) {
+	t.Parallel()
 	repo, hooks := q32oChainedRepo(t)
 	dispatcher, err := os.ReadFile(filepath.Join(hooks, "pre-push"))
 	if err != nil {
@@ -225,6 +226,7 @@ func TestQARemovedGateBehindAChainIsRestoredNotReChained(t *testing.T) {
 // tool has retaken the slot of an already-chained repo, so `theirs-pre-push`
 // is occupied and the printed block is still the way through.
 func TestQAPrescriptionAtAChainedSlotMovesNothingOntoAnotherHook(t *testing.T) {
+	t.Parallel()
 	repo, hooks := q32oChainedRepo(t)
 	const retaken = "#!/bin/sh\necho \"the new tool ran\" >&2\nexit 0\n"
 	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(retaken), 0o755); err != nil {
@@ -262,6 +264,7 @@ func TestQAPrescriptionAtAChainedSlotMovesNothingOntoAnotherHook(t *testing.T) {
 // again: nothing there is safe to overwrite, and re-chaining would bury it.
 // Refuse, name the file, and do not print a prescription that moves anything.
 func TestQAChainOverAForeignPosseSlotRefusesWithoutPrescribingARechain(t *testing.T) {
+	t.Parallel()
 	repo, hooks := q32oChainedRepo(t)
 	const foreign = "#!/bin/sh\necho not-ours\nexit 0\n"
 	posse := filepath.Join(hooks, "posse-pre-push")

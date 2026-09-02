@@ -152,6 +152,7 @@ func qspSeed(t *testing.T, script, old, dest string, extra ...string) (stdout, s
 // --- published-tree pins (skip in the private archive) ---
 
 func TestPublicationRootCommitOmitsExcludedPaths(t *testing.T) {
+	t.Parallel()
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the root commit is not a publication seed")
 	}
@@ -189,6 +190,7 @@ func TestPublicationRootCommitOmitsExcludedPaths(t *testing.T) {
 }
 
 func TestPublicationRootCommitADRsCarryProvenance(t *testing.T) {
+	t.Parallel()
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the root commit is not a publication seed")
 	}
@@ -217,6 +219,7 @@ func TestPublicationRootCommitADRsCarryProvenance(t *testing.T) {
 }
 
 func TestPublicationHistoryNeverCarriesTheSeedScript(t *testing.T) {
+	t.Parallel()
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the seed script lives here on purpose")
 	}
@@ -230,6 +233,7 @@ func TestPublicationHistoryNeverCarriesTheSeedScript(t *testing.T) {
 // --- script pins (skip in the published tree) ---
 
 func TestSeedScriptDryRunCreatesNothing(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -252,6 +256,7 @@ func TestSeedScriptDryRunCreatesNothing(t *testing.T) {
 }
 
 func TestSeedScriptAllowlistSkipsUntrackedDirtyAndExcluded(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -328,6 +333,7 @@ func TestSeedScriptAllowlistSkipsUntrackedDirtyAndExcluded(t *testing.T) {
 }
 
 func TestSeedScriptRefusesNonEmptyDest(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -354,6 +360,7 @@ func TestSeedScriptRefusesNonEmptyDest(t *testing.T) {
 }
 
 func TestSeedScriptForceLeavesExtrasForCheck6(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -379,6 +386,7 @@ func TestSeedScriptForceLeavesExtrasForCheck6(t *testing.T) {
 }
 
 func TestSeedScriptRefusesToRunInsideNew(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -402,6 +410,7 @@ func TestSeedScriptRefusesToRunInsideNew(t *testing.T) {
 }
 
 func TestSeedScriptPreflightIsolatedPrivateRepoProseIsRed(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -431,6 +440,7 @@ func TestSeedScriptPreflightIsolatedPrivateRepoProseIsRed(t *testing.T) {
 }
 
 func TestSeedScriptPreflightCheck3SameLineDoesNotHide(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -460,6 +470,7 @@ func TestSeedScriptPreflightCheck3SameLineDoesNotHide(t *testing.T) {
 }
 
 func TestSeedScriptPreflightCheck4SameLineDoesNotHideProse(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -501,6 +512,7 @@ func TestSeedScriptPreflightCheck4SameLineDoesNotHideProse(t *testing.T) {
 }
 
 func TestSeedScriptPreflightCheck5SameLineDoesNotHide(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -528,6 +540,7 @@ func TestSeedScriptPreflightCheck5SameLineDoesNotHide(t *testing.T) {
 }
 
 func TestSeedScriptPreflightMissingLicenseIsRed(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -550,6 +563,7 @@ func TestSeedScriptPreflightMissingLicenseIsRed(t *testing.T) {
 }
 
 func TestSeedScriptPreflightPlantedBeadsIsRed(t *testing.T) {
+	t.Parallel()
 	script := qspSeedScript(t)
 	if script == "" {
 		t.Skip("no seed runbook here (published tree)")
@@ -579,6 +593,7 @@ func TestSeedScriptPreflightPlantedBeadsIsRed(t *testing.T) {
 // commit can put the name back and still print PREFLIGHT GREEN. This pin
 // is the check. Needle is assembled so this file is not itself a hit.
 func TestSeedSurfaceNameCountIsZero(t *testing.T) {
+	t.Parallel()
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the surface this counts is $NEW's, not $OLD's")
 	}

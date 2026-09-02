@@ -31,6 +31,7 @@ func sbHas(w []string, p string) bool {
 // `bd sync`, `bd export`, the commit of the jsonl — is denied by the
 // profile.
 func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
+	t.Parallel()
 	store := blRepo(t)
 	work := blRepo(t)
 	blRedirect(t, work, filepath.Join(store, beadsDirName))
@@ -71,6 +72,7 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 // The pre-cut-over shape is untouched: with no redirect the beads dir is
 // under cwd already, so nothing new is granted and nothing is granted twice.
 func TestSeatbeltWithoutARedirectGrantsNothingExtra(t *testing.T) {
+	t.Parallel()
 	work := blRepo(t)
 	gates := t.TempDir()
 	ag := &AgentFile{Name: "security", Deny: []string{"Edit", "Write"}, MemoryDir: t.TempDir()}
@@ -90,6 +92,7 @@ func TestSeatbeltWithoutARedirectGrantsNothingExtra(t *testing.T) {
 // A redirect that resolves nowhere leaves bd reading the local .beads, so
 // the profile must not grant a directory bd is not using either.
 func TestSeatbeltIgnoresADanglingRedirect(t *testing.T) {
+	t.Parallel()
 	work := blRepo(t)
 	gone := filepath.Join(t.TempDir(), "gone", beadsDirName)
 	blRedirect(t, work, gone)
@@ -104,6 +107,7 @@ func TestSeatbeltIgnoresADanglingRedirect(t *testing.T) {
 // worktree create` writes exactly this shape, so the redirect can land in
 // one.
 func TestBeadsGitDirsNamesBothWorktreeGitDirs(t *testing.T) {
+	t.Parallel()
 	store := blRepo(t)
 	blCommit(t, store, "seed", blLine("q-1", "open"))
 	wt := filepath.Join(t.TempDir(), "wt")
@@ -125,6 +129,7 @@ func TestBeadsGitDirsNamesBothWorktreeGitDirs(t *testing.T) {
 // A target git cannot answer for still gets the plain grant — a beads dir
 // restored from a backup, or one whose repo is not initialized yet.
 func TestBeadsGitDirsFallsBackToRepoDotGit(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	home := filepath.Join(root, beadsDirName)
 	os.MkdirAll(home, 0o755)
@@ -152,6 +157,7 @@ func TestBeadsGitDirsFallsBackToRepoDotGit(t *testing.T) {
 // and bd will not read. The same resolver backs the beadloss census, which
 // would walk a repo bd is not using — the alarm disarmed without a word.
 func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-f5dg: beadsHome follows chains bd refuses; grant is the wrong hop")
 	work, mid, store := blRepo(t), blRepo(t), blRepo(t)
 	blRedirect(t, work, filepath.Join(mid, beadsDirName))
@@ -182,6 +188,7 @@ func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 // The open-repo persona is fine here — cwd whole covers it — which is the
 // mirror image of the bug this file's first test pins.
 func TestSeatbeltGrantsARedirectThatStaysUnderCwd(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-f5dg: underDir(cwd) is the wrong boundary when only cwd/.beads is granted")
 	work := blRepo(t)
 	inner := filepath.Join(work, "inner")

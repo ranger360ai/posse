@@ -51,6 +51,7 @@ func qaExtractTest(t *testing.T, src, name string) string {
 // clock pinned at local noon so earlier-today (00:01) is before passStart
 // (11:50) on the same calendar day.
 func TestQAPassAndDayWindowsAtFabricatedNoon(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.Local)
 	passStart := now.Add(-10 * time.Minute)
 	rep := &CostReport{Beads: []*Segment{
@@ -74,6 +75,7 @@ func TestQAPassAndDayWindowsAtFabricatedNoon(t *testing.T) {
 // night, which is worse than a plain bug — it makes "suite green" mean "and
 // it was not just after midnight", which nobody writes down.
 func TestQAPassAndDayWindowsDoesNotUseWallClock(t *testing.T) {
+	t.Parallel()
 	body := qaExtractTest(t, qaBudgetTestSource(t), "TestPassAndDayWindows")
 	if strings.Contains(body, "time.Now()") {
 		t.Fatal("TestPassAndDayWindows calls time.Now() again; fails local 00:00–00:11 inclusive (pass total 8, want 5). Pin the fixture clock (noon), do not min(startOfDay+1m, passStart-1m) — that drops DayTotal to 5 at 00:05")

@@ -109,6 +109,7 @@ func qaSeederEnv(extra ...string) []string {
 // lock landed (ranger-base-5qnt); every one of those is a session that opens
 // on the modal.
 func TestQASeedTrustManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
+	t.Parallel()
 	const n = 8
 	root := t.TempDir()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
@@ -132,6 +133,7 @@ func TestQASeedTrustManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
 // of the dirs into the config it is handed, as a separate process holding no
 // launcher lock — a hand-run `posse new` while a pass is mid-launch.
 func TestQASeedTrustChildSeeder(t *testing.T) {
+	t.Parallel()
 	cfg := os.Getenv("RHQ_QA_TRUST_CFG")
 	if cfg == "" {
 		t.Skip("child of TestQASeedTrustHoldsAcrossProcesses")
@@ -152,6 +154,7 @@ func TestQASeedTrustChildSeeder(t *testing.T) {
 // that survives. Locked, all eighty entries and the operator's own state are
 // in the file when the last child exits.
 func TestQASeedTrustHoldsAcrossProcesses(t *testing.T) {
+	t.Parallel()
 	const children, each = 4, 20
 	exe, err := os.Executable()
 	if err != nil {
@@ -207,6 +210,7 @@ func TestQASeedTrustHoldsAcrossProcesses(t *testing.T) {
 // instead of blocking forever (flock is per OFD; nested SeedClaudeTrust
 // would otherwise wait on itself until the test deadline).
 func TestQASeedTrustLockFailsLoudlyWhenHeld(t *testing.T) {
+	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
 	unlock, err := lockClaudeConfig(cfg)
 	if err != nil {
@@ -230,6 +234,7 @@ func TestQASeedTrustLockFailsLoudlyWhenHeld(t *testing.T) {
 
 // The child half of TestQASeedTrustLockFreesOnProcessDeath.
 func TestQASeedTrustChildHoldLock(t *testing.T) {
+	t.Parallel()
 	cfg := os.Getenv("RHQ_QA_TRUST_HOLD")
 	if cfg == "" {
 		t.Skip("child of TestQASeedTrustLockFreesOnProcessDeath")
@@ -247,6 +252,7 @@ func TestQASeedTrustChildHoldLock(t *testing.T) {
 // applied to the config sidecar. A killed `posse new` must not strand the
 // next launch behind a 10s refusal.
 func TestQASeedTrustLockFreesOnProcessDeath(t *testing.T) {
+	t.Parallel()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

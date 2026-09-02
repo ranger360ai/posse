@@ -39,6 +39,7 @@ Error: Internal error: {
 }`
 
 func TestQAWalkAccountProbeSeparatesAnUnpaidBillFromABrokenRuntime(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name             string
 		out              string
@@ -79,6 +80,7 @@ const claudeExpiredPane = `⏺ Please run /login · API Error: 401 OAuth
   to continue.`
 
 func TestQAWalkReadsAnUnauthenticatedSessionAsTheAccountNotTheRuntime(t *testing.T) {
+	t.Parallel()
 	if got := walkAuthFailure(claudeExpiredPane); got == "" {
 		t.Error("a pane that says the token expired must not be scored as the runtime failing to record")
 	}
@@ -95,6 +97,7 @@ func TestQAWalkReadsAnUnauthenticatedSessionAsTheAccountNotTheRuntime(t *testing
 // The launching persona's own environment must not reach the session under
 // test. Each name below cost a live run before it was stripped.
 func TestQAWalkSessionDoesNotInheritTheLaunchingPersona(t *testing.T) {
+	t.Parallel()
 	for _, kv := range []string{
 		"HERDR_PANE_ID=w1:p1", "CLAUDECODE=1", "CLAUDE_CODE_SESSION_ID=abc",
 		"RHQ_PERSONA=some-persona", "RHQ_TOOLS_DENY=Bash(git push:*)", "RHQ_GATES_DIR=/x/gates",
@@ -120,6 +123,7 @@ func TestQAWalkSessionDoesNotInheritTheLaunchingPersona(t *testing.T) {
 // a cell that blamed the walk for it would be ignored by the third run.
 // Classification is by cwd and by cwd alone (ranger-base-42mv's rule).
 func TestQAWalkBlamesOnlyTheDaemonsItStarted(t *testing.T) {
+	t.Parallel()
 	store := "/tmp/fixture/beads"
 	cwds := map[string]string{
 		"11": "/Users/x/src/ranger-base/.beads", // the canonical queue's

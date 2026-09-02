@@ -15,6 +15,7 @@ import (
 )
 
 func TestFoldNoSpoolIsANoOpNotAnError(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if err := a.FoldRefusalsSpool("p", "s1"); err != nil {
 		t.Fatalf("no spool ever written: %v", err)
@@ -25,6 +26,7 @@ func TestFoldNoSpoolIsANoOpNotAnError(t *testing.T) {
 }
 
 func TestFoldMovesCompleteLinesAndTagsTheSession(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -60,6 +62,7 @@ func TestFoldMovesCompleteLinesAndTagsTheSession(t *testing.T) {
 }
 
 func TestFoldLeavesAPartialTrailingLineForTheNextFold(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -98,6 +101,7 @@ func TestFoldLeavesAPartialTrailingLineForTheNextFold(t *testing.T) {
 // every refusal recorded after it vanished from the canonical log —
 // silently, and permanently, because the cursor advanced past them anyway.
 func TestFoldCarriesEveryLinePastAnOverlongOne(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -143,6 +147,7 @@ func tail(s string) string {
 }
 
 func TestFoldDetectsTruncationByOffset(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -177,6 +182,7 @@ func TestFoldDetectsTruncationByOffset(t *testing.T) {
 }
 
 func TestFoldDetectsATruncateAndRefillToTheSameSizeByHash(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
 		t.Fatal(err)
@@ -217,6 +223,7 @@ func TestFoldDetectsATruncateAndRefillToTheSameSizeByHash(t *testing.T) {
 }
 
 func TestFoldKeepsTwoSessionsOfOnePersonaSeparate(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	for _, s := range []string{"s1", "s2"} {
 		if _, err := a.EnsureCageSpool("p", s); err != nil {

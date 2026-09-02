@@ -202,6 +202,7 @@ func panesAre(ids ...string) func() []string {
 // real server and takes the connection with it, so a request that grew one
 // would deliver nothing at all.
 func TestHerdrHintsSubscribeRequest(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -252,6 +253,7 @@ func TestHerdrHintsSubscribeRequest(t *testing.T) {
 // edge detection for the pane events, so this is a filter and not a state
 // machine — but it is a filter with opinions: `blocked` still holds a bead.
 func TestHerdrSettleHintsFilter(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -294,6 +296,7 @@ func TestHerdrSettleHintsFilter(t *testing.T) {
 // dropped; that filtering happens in envelope decoding (h.Kind == ""),
 // before this consumer's want function ever runs.
 func TestHerdrAllHintsFilter(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -321,6 +324,7 @@ func TestHerdrAllHintsFilter(t *testing.T) {
 // subscribe per connection — so a newly detected agent pane is answered by
 // redialling with the pane set as it now stands. Silently: nothing failed.
 func TestHerdrHintsResubscribesWhenThePaneSetMoves(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -368,6 +372,7 @@ func TestHerdrHintsResubscribesWhenThePaneSetMoves(t *testing.T) {
 // settle missed, and no lifecycle event arrived to say the set had moved, so
 // the poke is what makes the set eventually right.
 func TestHerdrHintsRefreshPokeRedials(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -413,6 +418,7 @@ func TestHerdrHintsRefreshPokeRedials(t *testing.T) {
 // there routinely, and reporting it as an outage would put a false
 // "events unavailable" line in the loop's output on every pass.
 func TestHerdrHintsPokeDuringHandshakeIsNotAnOutage(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	s.mu.Lock()
 	s.ackDelay = 300 * time.Millisecond
@@ -446,6 +452,7 @@ func TestHerdrHintsPokeDuringHandshakeIsNotAnOutage(t *testing.T) {
 // "look again", not "look again N times" — and the socket reader keeps
 // draining while nobody is receiving.
 func TestHerdrHintsBurstNeverBlocksTheReader(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -493,6 +500,7 @@ func TestHerdrHintsBurstNeverBlocksTheReader(t *testing.T) {
 // Every way the stream can die is one outage line and a redial, and the
 // recovery is one line. Nothing here is fatal to the caller.
 func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		kill func(s *hintServer, c net.Conn)
@@ -546,6 +554,7 @@ func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
 // that is NOT an outage is a pane that went away between the listing and the
 // subscribe — the next dial re-reads the list, and that is the whole fix.
 func TestHerdrHintsRejectsBadAcknowledgements(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		ack   func(id string) string
@@ -609,6 +618,7 @@ func TestHerdrHintsRejectsBadAcknowledgements(t *testing.T) {
 // Cancellation closes the socket under a blocking read and closes the
 // channel; it does not wait out the retry delay.
 func TestHerdrHintsCancelClosesPromptly(t *testing.T) {
+	t.Parallel()
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	var mu sync.Mutex
@@ -632,6 +642,7 @@ func TestHerdrHintsCancelClosesPromptly(t *testing.T) {
 // No socket at all is the degraded arm, and it is not an error anyone sees
 // twice: one line, then quiet retrying.
 func TestHerdrHintsWithNoSocket(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var mu sync.Mutex

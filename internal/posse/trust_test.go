@@ -95,6 +95,7 @@ func TestClaudeConfigFileFollowsClaudesOwnResolution(t *testing.T) {
 // (herdr scratch panes) that this key is what decides the modal, so this is
 // what a launch has to have written by the time the line is typed.
 func TestSeedTrustAnswersTheDialogForAFreshDir(t *testing.T) {
+	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json") // a HOME that never ran claude
 	dir := t.TempDir()
 
@@ -130,6 +131,7 @@ func TestSeedTrustAnswersTheDialogForAFreshDir(t *testing.T) {
 // cwd claude reads is the kernel's, so /tmp is /private/tmp on macOS and a
 // key under the symlinked spelling grants nothing.
 func TestSeedTrustKeysTheResolvedPath(t *testing.T) {
+	t.Parallel()
 	real := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(real, link); err != nil {
@@ -156,6 +158,7 @@ func keysOf(m map[string]any) []string {
 // This file is the operator's, not posse's: everything already in it has to
 // survive, including projects posse never launched in.
 func TestSeedTrustMergesTheOperatorsConfig(t *testing.T) {
+	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
 	other := t.TempDir()
 	writeConfig(t, cfg, map[string]any{
@@ -187,6 +190,7 @@ func TestSeedTrustMergesTheOperatorsConfig(t *testing.T) {
 // 100KB config it has nothing to add to — the write is the risk here, not
 // the read.
 func TestSeedTrustWritesNothingWhenTheDirIsAlreadyTrusted(t *testing.T) {
+	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
 	dir := t.TempDir()
 	writeConfig(t, cfg, map[string]any{
@@ -219,6 +223,7 @@ func TestSeedTrustWritesNothingWhenTheDirIsAlreadyTrusted(t *testing.T) {
 // underneath it. Read it wrong in the permissive direction and the launch
 // skips a seed it needed, which is the dialog coming back.
 func TestTrustWalkStopsAtTheRepoRoot(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	repo := filepath.Join(parent, "repo")
 	inner := filepath.Join(repo, "pkg", "sub")
@@ -256,6 +261,7 @@ func TestTrustWalkStopsAtTheRepoRoot(t *testing.T) {
 // about to launch would have opened on the dialog. Refuse, name both ways
 // out, leave the bytes alone.
 func TestSeedTrustRefusesAnUnparseableConfigWithoutTouchingIt(t *testing.T) {
+	t.Parallel()
 	cfg := filepath.Join(t.TempDir(), ".claude.json")
 	junk := "{ this is not json"
 	if err := os.WriteFile(cfg, []byte(junk), 0o600); err != nil {
@@ -278,6 +284,7 @@ func TestSeedTrustRefusesAnUnparseableConfigWithoutTouchingIt(t *testing.T) {
 // empty-path one is what keeps every test backend out of the operator's
 // real ~/.claude.json.
 func TestSeedTrustOnlySeedsClaudeAndOnlyWhereItWasPointed(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"codex", "grok"} {
 		rt, err := (&App{}).LoadRuntime(name)
@@ -351,6 +358,7 @@ func TestATestBackendSeedsNothing(t *testing.T) {
 // cage's HOME seed — the dialog is the same dialog on both sides of the
 // boundary, and a key that drifted on one would be a modal nobody sees.
 func TestOneStatementOfWhatPosseSeeds(t *testing.T) {
+	t.Parallel()
 	state := map[string]any{"projects": map[string]any{
 		"/other": map[string]any{"hasTrustDialogAccepted": false},
 	}}
@@ -372,6 +380,7 @@ func TestOneStatementOfWhatPosseSeeds(t *testing.T) {
 // now has one posse does write, and the check has to say so — an
 // undeclared exception is the kind of thing this table exists to prevent.
 func TestClaudeDeclaresTheTrustDialogItSeeds(t *testing.T) {
+	t.Parallel()
 	rt := claudeRuntime(t)
 	if len(rt.Interstitials) == 0 {
 		t.Fatal("claude declares no interstitial, so `runtime check` still claims posse writes no such key")

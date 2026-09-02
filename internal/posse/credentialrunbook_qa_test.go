@@ -73,6 +73,7 @@ type crQuote struct {
 // the sentence, rather than failing on the page and inviting someone to
 // "fix" the page to match a fragment that is itself now stale.
 func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
+	t.Parallel()
 	page := crRunbook(t)
 
 	// The keychain-unreadable sentence, taken from the adapter rather than
@@ -172,6 +173,7 @@ func (discard) Write(p []byte) (int, error) { return len(p), nil }
 // pressure. The script's own behaviour is pinned by credentialpaths_qa_test.go
 // at the repo root; this is only that the door the page points at exists.
 func TestTheRunbookOnlyNamesMakeTargetsThatExist(t *testing.T) {
+	t.Parallel()
 	page := crRunbook(t)
 	const target = "make verify-credential-paths"
 	if !strings.Contains(page, target) {
@@ -194,6 +196,7 @@ func TestTheRunbookOnlyNamesMakeTargetsThatExist(t *testing.T) {
 // revert of the deny, or a runbook that reverts to the old wording, trips
 // it either way.
 func TestTheSeatbeltClaimInTheRunbookIsStillTrue(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "posse", "seatbelt.go"))
 	if err != nil {
 		b, err = os.ReadFile("seatbelt.go")

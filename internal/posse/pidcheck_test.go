@@ -8,6 +8,7 @@ import (
 )
 
 func TestCheckAgent(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -103,6 +104,7 @@ no risk lines
 // metric_ids:, with two spellings of one metric flagged as a near-duplicate
 // (ADR 0001 amendment 2026-08-18).
 func TestMetricCatalogAndNearDuplicates(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -167,6 +169,7 @@ func mustCheck(t *testing.T, a *App, name string) []string {
 }
 
 func TestMetricKey(t *testing.T) {
+	t.Parallel()
 	same := [][2]string{
 		{"findings-survive-triage", "findings-surviving-triage"},
 		{"bugs-with-repros", "bug-with-repro"},
@@ -197,6 +200,7 @@ func TestMetricKey(t *testing.T) {
 // not the named coordinator, and a push-granting PID when no coordinator is
 // named at all.
 func TestCheckAgentCoordinatorParity(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)
@@ -287,6 +291,7 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 }
 
 func TestBalancedParens(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{"Edit", "Bash(git push:*)", "Bash(posse:*)", "a(b(c))"} {
 		if !balancedParens(ok) {
 			t.Errorf("%q should be balanced", ok)
@@ -310,6 +315,7 @@ func TestBalancedParens(t *testing.T) {
 // (TestExampleAgentsArePIDs) cannot see anything the linter checks that is
 // not a heading.
 func TestShelfPIDsLintCleanAsASet(t *testing.T) {
+	t.Parallel()
 	shelf := shelfPIDs(t)
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}

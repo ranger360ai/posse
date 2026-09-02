@@ -165,6 +165,7 @@ func TestRouteRefusesCoordinatorDefaultPersonaPathSpelling(t *testing.T) {
 }
 
 func TestCoordinatorKeyAndCanonAgentAgreeOnASCII(t *testing.T) {
+	t.Parallel()
 	// CanonAgent uses EqualFold; isCoordinator uses ToLower. For ValidName
 	// ASCII they must agree, or the assignee branch can return a canonical
 	// coordinator the raw-string check missed. Non-ASCII never reaches

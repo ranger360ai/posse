@@ -10,6 +10,7 @@ import (
 // ADR 0005 §1: skeleton + Context (only non-empty lines) + ladder + Done +
 // persona hook, verbatim; everything bead-sourced fenced.
 func TestWorkPromptAssembly(t *testing.T) {
+	t.Parallel()
 	is := RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "build the thing"}, Dir: "/r/proj"}
 
 	// Bare context: the fixed parts, plus the one Context line that is not
@@ -164,6 +165,7 @@ func TestDispatchPromptAndQuestionBeads(t *testing.T) {
 }
 
 func TestBodySectionAndOptionalHeading(t *testing.T) {
+	t.Parallel()
 	body := "You are x.\n\n## Who you are\nrole text\nmore\n\n## Work prompt\n  hook line 1\nhook line 2\n\n## Metrics\n- m\n"
 	if got := BodySection(body, "## Work prompt"); got != "hook line 1\nhook line 2" {
 		t.Errorf("BodySection: %q", got)
@@ -203,6 +205,7 @@ func TestBodySectionAndOptionalHeading(t *testing.T) {
 // only rung rendering that command, so it is the one needing the check-after;
 // ASK and SPIKE dep-add onto the bead they just created (ranger-base-rs8j).
 func TestEscalationLadderProvenanceCaveat(t *testing.T) {
+	t.Parallel()
 	l := EscalationLadder("b-1", "")
 
 	// It is a caveat, not a seventh rung: ADR 0005 §2 is six rungs, and the
@@ -284,6 +287,7 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 // than the whole ladder: a `--deps` assertion over the ladder would pass on
 // HANDOFF's, which is legitimate and must stay.
 func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
+	t.Parallel()
 	spike, handoff, ask := "", "", ""
 	for _, ln := range strings.Split(EscalationLadder("b-1", ""), "\n") {
 		switch {

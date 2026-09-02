@@ -325,6 +325,7 @@ func TestPulseWithNoPersonaDeliversToNobody(t *testing.T) {
 // is also "" (mutate either guard away on its own and one of the two tests
 // goes red).
 func TestPulseTargetEmptyPersonaMatchesNothing(t *testing.T) {
+	t.Parallel()
 	sessions := []HerdrSession{
 		{Name: "agentless", Agent: "", Status: "idle"},
 		{Name: "qa-work", Agent: "qa", PaneID: "w1:p1", Status: "idle"},

@@ -742,6 +742,7 @@ func TestDispatchWaitTimeoutStderrEnvelopeKeepsClaim(t *testing.T) {
 // stderr is not a single JSON blob. herdr 0.8.0's contract is compact one-line
 // JSON (logs go to files); the closer still claimed leading noise is skipped.
 func TestErrEnvelopeFindsTimeoutBehindLogNoise(t *testing.T) {
+	t.Parallel()
 	line := `{"error":{"code":"timeout","message":"timed out waiting for agent status"},"id":"cli:agent:prompt"}`
 	for _, stderr := range []string{
 		"herdr: connecting\n" + line,
@@ -1139,6 +1140,7 @@ func TestLaunchBeadNoAgent(t *testing.T) {
 
 // Session names must be safe for herdr labels whatever the repo is called.
 func TestSessionForSanitizes(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"/x/my repo":      "ranger-my-repo",
 		"/x/a.b/c d":      "ranger-c-d",
@@ -1327,6 +1329,7 @@ func dispatchParallelPass(t *testing.T, createDelayMS string) {
 // tier_by_label (config, else the Dial B default) > PID tier: >
 // default_tier > strong — and says which rule decided.
 func TestBeadTierResolution(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, ConfigPath: filepath.Join(home, "config.yaml")}
 	pid := &AgentFile{Tier: TierStandard}

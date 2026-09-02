@@ -12,6 +12,7 @@ import (
 // record — which ADR 0012 D3-C puts behind a .beads redirect, outside the
 // session dir — has to be named or every bd write is denied (ranger-base-0fb).
 func TestCodexAddsTheBeadsRedirectTargetAsWritable(t *testing.T) {
+	t.Parallel()
 	r := realizeCodex(nil, nil, "/m/personas/developer", "/elsewhere/ranger-base/.beads")
 	want := "-s workspace-write --add-dir '/m/personas/developer' --add-dir '/elsewhere/ranger-base/.beads'"
 	if r.Deny != want {
@@ -21,6 +22,7 @@ func TestCodexAddsTheBeadsRedirectTargetAsWritable(t *testing.T) {
 
 // read-only never takes --add-dir: codex exits on it (rangerhq-5oi).
 func TestCodexReadOnlyStillRefusesAddDir(t *testing.T) {
+	t.Parallel()
 	r := realizeCodex(nil, []string{"Edit", "Write"}, "/m", "/elsewhere/.beads")
 	if r.Deny != "-s read-only" {
 		t.Fatalf("read-only must carry no --add-dir, got %q", r.Deny)
@@ -29,6 +31,7 @@ func TestCodexReadOnlyStillRefusesAddDir(t *testing.T) {
 
 // The same path named twice must not produce two flags.
 func TestCodexWritableDedupes(t *testing.T) {
+	t.Parallel()
 	r := realizeCodex(nil, nil, "/same", "/same")
 	if r.Deny != "-s workspace-write --add-dir '/same'" {
 		t.Fatalf("dedupe failed: %q", r.Deny)
@@ -37,6 +40,7 @@ func TestCodexWritableDedupes(t *testing.T) {
 
 // Runtimes posse cages itself must be untouched by the new parameter.
 func TestClaudeAndGrokIgnoreWritable(t *testing.T) {
+	t.Parallel()
 	c := realizeClaude(nil, nil, "/m", "/elsewhere/.beads")
 	g := realizeGrok(nil, nil, "/m", "/elsewhere/.beads")
 	for n, got := range map[string]string{"claude": c.Deny, "grok": g.Deny} {
@@ -60,6 +64,7 @@ func containsAddDir(s string) bool { return strings.Contains(s, "--add-dir") }
 // Linux the wrong arm would render the literal path and the pin would be
 // green over the bug.
 func TestCodexResolvesASymlinkedWritableRoot(t *testing.T) {
+	t.Parallel()
 	real := t.TempDir()
 	developer := filepath.Join(real, "personas", "developer")
 	if err := os.MkdirAll(developer, 0o755); err != nil {
@@ -118,6 +123,7 @@ func TestCodexResolvesASymlinkedWritableRoot(t *testing.T) {
 //	a symlinked parent that exists  → the parent resolves, the tail rides along
 //	nothing on the path exists      → the path renders as itself
 func TestCodexRendersAWritableRootThatDoesNotExistYet(t *testing.T) {
+	t.Parallel()
 	real := t.TempDir()
 	link := filepath.Join(t.TempDir(), "personas")
 	if err := os.Symlink(real, link); err != nil {
@@ -388,6 +394,7 @@ func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
 // shape, so both keep passing over the over-grant — an inverted arm nothing
 // held. This is that arm.
 func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *testing.T) {
+	t.Parallel()
 	repo := wtRepo(t)
 	tree := filepath.Join(t.TempDir(), "wt")
 	mustGit(t, repo, "worktree", "add", "-q", "-b", "sess", tree)

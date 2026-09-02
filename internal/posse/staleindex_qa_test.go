@@ -144,6 +144,7 @@ func siEdit(t *testing.T, repo, body string) {
 // TestQAStaleIndexAfterPathLimitedCommit is rangerhq-be7k's three measurements,
 // taken as the bead took them, plus the control that makes them mean something.
 func TestQAStaleIndexAfterPathLimitedCommit(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		hook  bool
@@ -206,6 +207,7 @@ func TestQAStaleIndexAfterPathLimitedCommit(t *testing.T) {
 // This is why the fix is not in bd and not in the wall: the only form that
 // produces the stale entry is the only form the wall permits.
 func TestQAStaleIndexIsUniqueToThePathLimitedForm(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		args  []string
@@ -250,6 +252,7 @@ func TestQAStaleIndexIsUniqueToThePathLimitedForm(t *testing.T) {
 // matters. That is the whole of the harm's reachability, and it is the reason
 // this is a status-line bug and not a data-loss one.
 func TestQAStaleIndexRevertCarriers(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		args     []string
@@ -323,6 +326,7 @@ func TestQAStaleIndexRevertCarriers(t *testing.T) {
 // carrier, and this is the pin that says the slot choice is load-bearing rather
 // than incidental.
 func TestQAStaleIndexNoVerifyCarrierIsStillWalled(t *testing.T) {
+	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "f.txt"), []byte("v1\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
@@ -359,6 +363,7 @@ func TestQAStaleIndexNoVerifyCarrierIsStillWalled(t *testing.T) {
 // Pinned as SHAPE, not as prose (ranger-base-tff): the check command, the
 // recovery command, and the precondition that makes the recovery safe.
 func TestQAAgentsMdNamesTheStaleIndexCheck(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("../../AGENTS.md")
 	if err != nil {
 		t.Skipf("AGENTS.md not present: %v", err)

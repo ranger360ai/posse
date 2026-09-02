@@ -122,6 +122,7 @@ func TestServerGenFencesOneServerProcess(t *testing.T) {
 // fence was only ever exercised where its assumption happened to hold. So
 // the token is asked the question directly.
 func TestGenTokenSeparatesAGenerationThatRecycledTheInode(t *testing.T) {
+	t.Parallel()
 	// Both sides measured in a golang:1.26 container, unlink and recreate:
 	// the inode came back, and the coarse clock stamped both files alike.
 	const recycled = "66:587500"
@@ -150,6 +151,7 @@ func TestGenTokenSeparatesAGenerationThatRecycledTheInode(t *testing.T) {
 // rangerhq-u4f7: ranger-base-fjj changed the token to three fields and left
 // the promote gate asserting two. The success path must be N:N:N.
 func TestVerifyPruneGuardScriptPinsThreeFieldGen(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "scripts", "verify-prune-guard.sh"))
 	if err != nil {
 		t.Fatal(err)

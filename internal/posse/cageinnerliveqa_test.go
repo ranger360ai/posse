@@ -155,6 +155,7 @@ func qaLiveGuard(t *testing.T, a *App, e *Engine) string {
 // in name; one that also took the persona's notebook would be a tier no
 // persona could work in.
 func TestQALiveCageMountBoundaryIsDeepAndTheNotebookSurvives(t *testing.T) {
+	t.Parallel()
 	a, e := qaLiveCageApp(t)
 	qaLiveGuard(t, a, e)
 	dir := liveCageRepo(t, "")
@@ -227,6 +228,7 @@ try refusals  'test -w "$RHQ_GATES_DIR/refusals.log"'
 // Linux posse in it must be CAUGHT, and the tier must then claim nothing it
 // does not hold. Asked of a real image that really has no posse.
 func TestQALiveParityCatchesARealImageWithNoInnerPosse(t *testing.T) {
+	t.Parallel()
 	a, e := qaLiveCageApp(t)
 	qaLiveGuard(t, a, e)
 	claude, _ := a.LoadRuntime("claude")
@@ -308,6 +310,7 @@ func TestQALiveUnknownSocketRefusesTheLaunchItself(t *testing.T) {
 // This test asserts what the tier DOES hold: it does not assert the escapes
 // fail, it pins the answer either way so the day one closes is noticed.
 func TestQALiveCageEscapeAttemptsOnAWritableRepo(t *testing.T) {
+	t.Parallel()
 	a, e := qaLiveCageApp(t)
 	// The one QA pin here whose clauses read the INNER RENDER (the shim's
 	// refusal and gates/<persona>/refusals.log), so the one that needs the
@@ -454,6 +457,7 @@ echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | gre
 // ADR 0002 §4, and root with CAP_SYS_ADMIN can remount. If docker's default
 // capability set left that reachable, item 4 would be a suggestion.
 func TestQALiveRootInsideCannotRemountTheBoundaryWritable(t *testing.T) {
+	t.Parallel()
 	a, e := qaLiveCageApp(t)
 	qaLiveGuard(t, a, e)
 	dir := liveCageRepo(t, "")

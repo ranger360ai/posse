@@ -137,6 +137,7 @@ func TestQAExpiryWindowEdgeToTheSecond(t *testing.T) {
 // expiryIn's own edges. It truncates rather than rounds, and it switches
 // units at exactly two days.
 func TestQAExpiryInEdges(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ in, want string }{
 		{"48h", "in 2d"},
 		{"47h59m", "in 47h"},

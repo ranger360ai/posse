@@ -31,6 +31,7 @@ func idRecycleScript(t *testing.T) string {
 }
 
 func TestQAIdRecycleScriptPinsAllocatorTable(t *testing.T) {
+	t.Parallel()
 	s := idRecycleScript(t)
 	// Safety: the script must refuse the fleet socket, not just prefer a name.
 	for _, needle := range []string{
@@ -68,6 +69,7 @@ func TestQAIdRecycleScriptPinsAllocatorTable(t *testing.T) {
 }
 
 func TestQAIdRecycleScriptPassesAgainstAScratchServer(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_LIVE_IDRECYCLE") == "" {
 		t.Skip("set RHQ_LIVE_IDRECYCLE=1 to run scripts/verify-id-recycle.sh against a scratch herdr session")
 	}

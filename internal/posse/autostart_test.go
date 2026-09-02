@@ -185,6 +185,7 @@ const armed = "autostart_interval: 30s\n"
 // fleet RHQ_HOME must never become a second writer for the fleet queue or its
 // dispatch-watch.pid (ranger-base-87q).
 func TestAutostartNamedSocketNeverArmsTheFleet(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.socket = filepath.Join(w.home, ".config", "herdr", "sessions", "ug9b-qa", "herdr.sock")
 
@@ -204,6 +205,7 @@ func TestAutostartNamedSocketNeverArmsTheFleet(t *testing.T) {
 // normally injects the exact socket, but an absent socket must not turn a
 // named session into the default by accident.
 func TestAutostartNamedSessionNeverArmsTheFleet(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.herdrSession = "ug9b-qa"
 
@@ -219,6 +221,7 @@ func TestAutostartNamedSessionNeverArmsTheFleet(t *testing.T) {
 // An explicit path to herdr's default socket is still the fleet server. This
 // is the positive control for the non-default socket fence above.
 func TestAutostartExplicitDefaultSocketStillArms(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.socket = filepath.Join(w.home, ".config", "herdr", "herdr.sock")
 
@@ -235,6 +238,7 @@ func TestAutostartExplicitDefaultSocketStillArms(t *testing.T) {
 // hand is an explicit act and keeps its existing ability to target whatever
 // herdr socket the operator selected.
 func TestAutostartByHandCanTargetNamedServer(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.socket = filepath.Join(w.home, ".config", "herdr", "sessions", "staging", "herdr.sock")
 
@@ -252,6 +256,7 @@ func TestAutostartByHandCanTargetNamedServer(t *testing.T) {
 // it alone — killing it drops a claimed bead and a prompt in flight, and
 // starts a second loop on the same queue (rangerhq-ct9).
 func TestAutostartLeavesACarriedOverLoopAlone(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.loopRunning(t)
@@ -285,6 +290,7 @@ func TestAutostartLeavesACarriedOverLoopAlone(t *testing.T) {
 // it is still a running loop — the hook stands down, and says it cannot name
 // the holder rather than deciding it therefore has none.
 func TestAutostartLeavesACarriedOverLoopAloneWithNoRecord(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.loopRunning(t)
@@ -302,6 +308,7 @@ func TestAutostartLeavesACarriedOverLoopAloneWithNoRecord(t *testing.T) {
 // by hand in another workspace still owns the pidfile, so --startup must
 // not create a second loop under autostart_session.
 func TestAutostartStandsDownWhenLoopLivesUnderAnotherName(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	// no sessionExists: autostart_session is a name that is not running
 	w.loopRunning(t)
@@ -318,6 +325,7 @@ func TestAutostartStandsDownWhenLoopLivesUnderAnotherName(t *testing.T) {
 // The case the hook was written for still works: a cold server start, where
 // herdr restored the workspace without re-running the command.
 func TestAutostartReplacesAHusk(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t) // restored by herdr, no pidfile: nothing posse launched survived
 
@@ -342,6 +350,7 @@ func TestAutostartReplacesAHusk(t *testing.T) {
 // the evidence — the lock it left behind is free the instant it died, so
 // the stale file must not keep the fleet unarmed.
 func TestAutostartReplacesAHuskWithAStaleRecord(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	done := exec.Command("sh", "-c", "exit 0")
@@ -361,6 +370,7 @@ func TestAutostartReplacesAHuskWithAStaleRecord(t *testing.T) {
 // leaked (below). Under the lock there is nothing to refute — the recorded
 // pid is never asked.
 func TestAutostartIgnoresARecycledPid(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: liveProcess(t, "somebody-elses-sleeper")})
@@ -378,6 +388,7 @@ func TestAutostartIgnoresARecycledPid(t *testing.T) {
 // argv is now nobody's evidence: this process holds no watch lock, so it is
 // not the watch loop, whatever it calls itself.
 func TestAutostartIgnoresARecycledOneShotDispatch(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	if err := WriteWatchPid(WatchPidPath(w.app()), WatchPid{Pid: liveArgv(t, "posse dispatch --persona qa -n 1")}); err != nil {
@@ -399,6 +410,7 @@ func TestAutostartIgnoresARecycledOneShotDispatch(t *testing.T) {
 // stand down, and say which fact you stood down on (rangerhq-llse).
 // Unarmed is visible and recoverable; double dispatch is neither.
 func TestAutostartStandsDownWhenTheProbeCannotAnswer(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.loopRunning(t)
@@ -427,6 +439,7 @@ func TestAutostartStandsDownWhenTheProbeCannotAnswer(t *testing.T) {
 // too, and the fleet stays unarmed until somebody looks. That cost is the
 // one this direction accepts on purpose.
 func TestAutostartStandsDownOnADeafProbeEvenWithNoLoop(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.deafProbe(t)
@@ -449,6 +462,7 @@ func TestAutostartStandsDownOnADeafProbeEvenWithNoLoop(t *testing.T) {
 // every start of an instance that has not migrated its config home —
 // permanently unarmed, for a reason nothing in the message would name.
 func TestAutostartReadsTheAnswerPastAnUnrelatedStderrNotice(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.loopRunning(t)
@@ -469,6 +483,7 @@ func TestAutostartReadsTheAnswerPastAnUnrelatedStderrNotice(t *testing.T) {
 // Same notice, no loop: the husk is still replaced. The noise must not push
 // the hook into either standing decision.
 func TestAutostartReplacesAHuskPastAnUnrelatedStderrNotice(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.noisyProbe(t)
@@ -482,6 +497,7 @@ func TestAutostartReplacesAHuskPastAnUnrelatedStderrNotice(t *testing.T) {
 // By hand, with no --startup, nothing is ever killed: the name may be worn by
 // a workspace the operator is sitting in.
 func TestAutostartByHandNeverKills(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 
@@ -499,6 +515,7 @@ func TestAutostartByHandNeverKills(t *testing.T) {
 // nor the lever. A report that armed nothing must not say a loop is running,
 // must name `posse kill`, and must not exit 0.
 func TestAutostartByHandNameTakenWithNoLoopIsNotAlreadyRunning(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t) // a husk: the workspace came back, the command did not
 
@@ -528,6 +545,7 @@ func TestAutostartByHandNameTakenWithNoLoopIsNotAlreadyRunning(t *testing.T) {
 // The positive control for the case above: by hand, over a loop that really is
 // running, "already running — left alone" is the truth and exit 0 is right.
 func TestAutostartByHandOverALiveLoopStillReportsSuccess(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.loopRunning(t)
@@ -548,6 +566,7 @@ func TestAutostartByHandOverALiveLoopStillReportsSuccess(t *testing.T) {
 // the foreign-workspace refusal — and the hook used to send that reason to
 // /dev/null, leaving "still present after kill — not started" naming no lever.
 func TestAutostartHuskReplacementQuotesARefusingKill(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 	w.sessionExists(t)
 	w.killRefuses(t)
@@ -573,6 +592,7 @@ func TestAutostartHuskReplacementQuotesARefusingKill(t *testing.T) {
 // Disarmed is disarmed: no autostart_interval:, no posse call at all — not
 // even the liveness probe's kill(2).
 func TestAutostartDisarmed(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, "beads:\n  - /nowhere\n")
 	w.sessionExists(t)
 
@@ -598,6 +618,7 @@ func TestAutostartDisarmed(t *testing.T) {
 // whitespace strip — including the operator who commented out the VALUE and
 // left the key, which is the likeliest way to reach this by hand.
 func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
+	t.Parallel()
 	for name, line := range map[string]string{
 		"bare":       "autostart_interval:\n",
 		"whitespace": "autostart_interval:   \n",
@@ -644,6 +665,7 @@ func TestAutostartBareIntervalIsRefusedNotDisarmed(t *testing.T) {
 // ParseInterval is asked about every fixture, so this table cannot quietly
 // drift into pinning shapes posse would have accepted.
 func TestAutostartMalformedIntervalIsRefusedNotArmed(t *testing.T) {
+	t.Parallel()
 	for name, value := range map[string]string{
 		"word":       "banana",
 		"zero":       "0",
@@ -682,6 +704,7 @@ func TestAutostartMalformedIntervalIsRefusedNotArmed(t *testing.T) {
 // accepted is a disarmed fleet, which is the worse failure of the two. Every
 // shape posse takes must still arm, and must reach the loop verbatim.
 func TestAutostartArmsEveryIntervalPosseAccepts(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"30s", "5m", "45", "1h30m", "2m30s", "500ms", "1.5m", ".5s", "007", "2h45m30s500ms"} {
 		t.Run(value, func(t *testing.T) {
 			if _, err := ParseInterval(value); err != nil {
@@ -714,6 +737,7 @@ func TestAutostartArmsEveryIntervalPosseAccepts(t *testing.T) {
 // and the key is not the arm switch.
 
 func TestAutostartMalformedMaxIntervalIsDroppedNotArmed(t *testing.T) {
+	t.Parallel()
 	// Same fixtures as the interval table, asked of ParseInterval the same
 	// way, so the two answers to one grammar cannot drift apart.
 	for name, value := range map[string]string{
@@ -762,6 +786,7 @@ func TestAutostartMalformedMaxIntervalIsDroppedNotArmed(t *testing.T) {
 // backing off to 8x when the operator asked for 40m. Every shape posse takes
 // must reach the loop verbatim, and quietly.
 func TestAutostartArmsEveryMaxIntervalPosseAccepts(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"30s", "5m", "45", "1h30m", "2m30s", "500ms", "1.5m", ".5s", "007", "2h45m30s500ms"} {
 		t.Run(value, func(t *testing.T) {
 			if _, err := ParseInterval(value); err != nil {
@@ -789,6 +814,7 @@ func TestAutostartArmsEveryMaxIntervalPosseAccepts(t *testing.T) {
 // a value that says something posse cannot read earns a line, or every
 // deployer who left the key as a placeholder gets a warning about nothing.
 func TestAutostartEmptyMaxIntervalIsSilentlyTheDefault(t *testing.T) {
+	t.Parallel()
 	for name, line := range map[string]string{
 		"absent":     "",
 		"bare":       "autostart_max_interval:\n",
@@ -820,6 +846,7 @@ func TestAutostartEmptyMaxIntervalIsSilentlyTheDefault(t *testing.T) {
 // first and nothing is armed, so the cap's fallback never runs and never
 // says anything — one diagnostic, naming the key that actually stopped it.
 func TestAutostartMalformedIntervalWinsOverMalformedMax(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, "autostart_interval: banana\nautostart_max_interval: kumquat\n")
 
 	r := w.run(t, "--startup")
@@ -847,6 +874,7 @@ func TestAutostartMalformedIntervalWinsOverMalformedMax(t *testing.T) {
 // wants pinning rather than remembering.
 
 func TestAutostartArmsResumeByDefault(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed)
 
 	r := w.run(t, "--startup")
@@ -861,6 +889,7 @@ func TestAutostartArmsResumeByDefault(t *testing.T) {
 // Off is available, and only by saying so. An operator who wants the warning
 // and nothing else says false; nothing else in the file turns it off.
 func TestAutostartResumeFalseDisarmsResume(t *testing.T) {
+	t.Parallel()
 	for _, off := range []string{"false", "no", "0"} {
 		t.Run(off, func(t *testing.T) {
 			w := newHookWorld(t, armed+"autostart_resume: "+off+"\n")
@@ -885,6 +914,7 @@ func TestAutostartResumeFalseDisarmsResume(t *testing.T) {
 // so the one thing a misspelling must not do is put the loop back in the
 // broken shape while looking configured.
 func TestAutostartResumeGarbageKeepsResumeAndSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed+"autostart_resume: flase\n")
 
 	r := w.run(t, "--startup")
@@ -902,6 +932,7 @@ func TestAutostartResumeGarbageKeepsResumeAndSaysSo(t *testing.T) {
 // Both switches at once, in the shape an operator actually arms first: dry
 // passes that also resume. The two are independent flags on one command line.
 func TestAutostartResumeAndDryRunCompose(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed+"autostart_dry_run: true\nautostart_resume: true\n")
 
 	r := w.run(t, "--startup")
@@ -919,6 +950,7 @@ func TestAutostartResumeAndDryRunCompose(t *testing.T) {
 // default has to survive that shape or the observation loop is the old
 // warn-and-sit loop with a dry-run flag on it.
 func TestAutostartDryRunStillResumesByDefault(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, armed+"autostart_dry_run: true\n")
 
 	r := w.run(t, "--startup")
@@ -938,6 +970,7 @@ func TestAutostartDryRunStillResumesByDefault(t *testing.T) {
 // switch it on. 0 is still unbounded, and only by saying so.
 
 func TestAutostartMaxBeadsAlwaysPresent(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, config, wantN string
 		warn                bool
@@ -974,6 +1007,7 @@ func TestAutostartMaxBeadsAlwaysPresent(t *testing.T) {
 // explicit 3, dry-run. The cap has to survive composition, not only the
 // absent-key default.
 func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
+	t.Parallel()
 	w := newHookWorld(t, ""+
 		"autostart_interval: 5m\n"+
 		"autostart_max_interval: 40m\n"+
@@ -1003,6 +1037,7 @@ func TestAutostartFirstArmBlockCarriesTheCap(t *testing.T) {
 // bare line must produce the SAME argv. A shared miscount reds it as loudly
 // as the split did, which a substring check on one run would not.
 func TestAutostartQuotedValuesReadLikeBareOnes(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		key, value, want, notWant string
 	}{
@@ -1082,6 +1117,7 @@ func runArgv(t *testing.T, config string) string {
 // Stripping quotes greedily would make the hook the disagreeing reader again,
 // pointing the other way.
 func TestAutostartLoneQuotesAreNotStripped(t *testing.T) {
+	t.Parallel()
 	for name, value := range map[string]string{
 		"leading only":  `"5m`,
 		"trailing only": `5m"`,
@@ -1129,6 +1165,7 @@ func TestAutostartLoneQuotesAreNotStripped(t *testing.T) {
 // autostart_interval: is not here because for the arm switch unset-by-value
 // is still not absent — that pairing is the test below.
 func TestAutostartNullValuesReadLikeAnAbsentKey(t *testing.T) {
+	t.Parallel()
 	absent := runArgv(t, armed)
 	for _, key := range []string{
 		"autostart_max_interval",
@@ -1173,6 +1210,7 @@ func TestAutostartNullValuesReadLikeAnAbsentKey(t *testing.T) {
 // the same thing, which is the disagreement the seed config's "posse status
 // reads both the same way" paragraph is about.
 func TestAutostartNullIntervalIsTheSameBrokenArmAsABareKey(t *testing.T) {
+	t.Parallel()
 	bare := runStandDown(t, "autostart_interval:\n")
 	if bare.code != 1 || !strings.Contains(bare.out, "present but empty") {
 		t.Fatalf("the bare key is not the broken arm this compares against: exit %d\n%s", bare.code, bare.out)
@@ -1211,6 +1249,7 @@ func TestAutostartNullIntervalIsTheSameBrokenArmAsABareKey(t *testing.T) {
 // are the do-not-overreach half: a hash that IS preceded by whitespace is
 // still a comment, tab as well as space, and unquoting cannot resurrect one.
 func TestAutostartHashWithNothingBeforeItIsData(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, line, same, want string }{
 		{"hash heads a dir", "autostart_dir:#tmp\n", "autostart_dir: \"#tmp\"\n", "--dir #tmp "},
 		{"hash heads a session name", "autostart_session:#qa\n", "autostart_session: \"#qa\"\n", "new #qa "},
@@ -1245,6 +1284,7 @@ func TestAutostartHashWithNothingBeforeItIsData(t *testing.T) {
 // the malformed sentence about this config; a hook saying "present but empty"
 // beside it is the split (internal/posse/govern.go, ranger-base-7rt5).
 func TestAutostartHashHeadedIntervalIsMalformedNotEmpty(t *testing.T) {
+	t.Parallel()
 	for _, line := range []string{"autostart_interval:#5m\n", "autostart_interval: \"#5m\"\n"} {
 		t.Run(strings.TrimSpace(line), func(t *testing.T) {
 			probe := filepath.Join(t.TempDir(), "config.yaml")
@@ -1403,6 +1443,7 @@ func childHome(t *testing.T, calls string) string {
 // halves are asserted every time — which config armed it, and which home the
 // session it started will run out of.
 func TestAutostartDefaultHomeMatchesNewApp(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		homes  map[string]string
@@ -1461,6 +1502,7 @@ func TestAutostartDefaultHomeMatchesNewApp(t *testing.T) {
 // RHQ_HOME still wins over both directories, and is still what the children
 // get — the case the whole suite above depends on.
 func TestAutostartExplicitHomeWinsOverBoth(t *testing.T) {
+	t.Parallel()
 	w := newHomeWorld(t, map[string]string{"posse": "", "rhq": ""})
 	elsewhere := filepath.Join(w.user, "instances", "fleet")
 	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
@@ -1487,6 +1529,7 @@ func TestAutostartExplicitHomeWinsOverBoth(t *testing.T) {
 // it says nothing was moved — an operator who sees the fleet arm out of the
 // old home has to be able to tell that from a migration.
 func TestAutostartLegacyFallbackSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newHomeWorld(t, map[string]string{"rhq": armed})
 
 	r := w.run(t)
@@ -1505,6 +1548,7 @@ func TestAutostartLegacyFallbackSaysSo(t *testing.T) {
 // file is not, so it does not — newApp keeps it and `posse init` fails there
 // loudly, which is the outcome an operator can act on.
 func TestAutostartHomeStatEdgesMatchNewApp(t *testing.T) {
+	t.Parallel()
 	t.Run("dangling-symlink-falls-back", func(t *testing.T) {
 		w := newHomeWorld(t, map[string]string{"rhq": armed})
 		if err := os.Symlink(filepath.Join(w.user, "gone"), w.path("posse")); err != nil {

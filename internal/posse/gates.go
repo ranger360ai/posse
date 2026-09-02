@@ -799,10 +799,34 @@ func PathOutsideGates(binDir string) string {
 // gates bin) — the real binary the shim execs. "" when not found: the shim
 // then searches PATH itself at run time, still skipping its own dir.
 func resolveOutside(cmd, binDir string) string {
-	old := os.Getenv("PATH")
-	os.Setenv("PATH", PathOutsideGates(binDir))
-	defer os.Setenv("PATH", old)
-	real, err := exec.LookPath(cmd)
+	// Searched by hand rather than by swapping $PATH around an
+	// exec.LookPath. The process environment is one variable shared by
+	// every goroutine, so that swap was a window in which any concurrent
+	// caller resolved against a PATH it never asked for — harmless while
+	// this package's tests ran strictly one at a time, a race the moment
+	// any of them calls t.Parallel (ranger-base-i7fa). Same answer, no
+	// global touched: PathOutsideGates is a read.
+	if strings.ContainsRune(cmd, filepath.Separator) {
+		return absLookPath(cmd)
+	}
+	for _, dir := range filepath.SplitList(PathOutsideGates(binDir)) {
+		cand := filepath.Join(dir, cmd)
+		if !strings.ContainsRune(cand, filepath.Separator) {
+			// A "." entry on PATH: keep the candidate a path, or
+			// LookPath reads it as a bare name and searches $PATH.
+			cand = "." + string(filepath.Separator) + cand
+		}
+		if abs := absLookPath(cand); abs != "" {
+			return abs
+		}
+	}
+	return ""
+}
+
+// absLookPath is exec.LookPath on a path that already names a directory,
+// resolved to an absolute one. "" when it is not an executable file.
+func absLookPath(path string) string {
+	real, err := exec.LookPath(path)
 	if err != nil {
 		return ""
 	}

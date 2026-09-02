@@ -430,6 +430,7 @@ func TestPlanReaderRequest(t *testing.T) {
 // The last row is the line this must not cross: a window present and 0.0 is
 // a fresh window, and stays a legitimate reading.
 func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		body string
@@ -486,6 +487,7 @@ func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
 // a design call, not mine") — so this stays a reading here too, on purpose;
 // see the last case below.
 func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		body string
@@ -541,6 +543,7 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 // about how NewPlanReader is configured with no override in the
 // environment.
 func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
+	t.Parallel()
 	os.Unsetenv("RHQ_PLAN_USAGE_URL")
 	r := NewAnthropicPlanReader()
 	if r.URL != PlanUsageURL {
@@ -556,6 +559,7 @@ func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
 
 // Default construction points at the real endpoint (no env override).
 func TestPlanReaderDefaultURL(t *testing.T) {
+	t.Parallel()
 	os.Unsetenv("RHQ_PLAN_USAGE_URL")
 	if r := NewAnthropicPlanReader(); r.URL != PlanUsageURL {
 		t.Errorf("default URL = %s, want %s", r.URL, PlanUsageURL)

@@ -3,6 +3,7 @@ package posse
 import "testing"
 
 func TestYamlCleanQuotes(t *testing.T) {
+	t.Parallel()
 	// A wrapping pair of double quotes is syntax; a lone leading or
 	// trailing quote is data (rangerhq-nvq).
 	cases := map[string]string{

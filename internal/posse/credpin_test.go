@@ -119,6 +119,7 @@ func TestPlanUsageURLOverrideHonoursLoopback(t *testing.T) {
 // A field set in code, a test, or a caller who forgot the rule: the
 // Authorization header is never put in front of a host we do not credential.
 func TestReadersRefuseAnUncredentialedHostWhateverSetTheURL(t *testing.T) {
+	t.Parallel()
 	t.Run("plan", func(t *testing.T) {
 		r := &AnthropicPlanReader{URL: "https://listener.example/usage", Token: refusingToken(t), HTTP: refusingTransport(t)}
 		_, err := r.Read()
@@ -179,6 +180,7 @@ func newRedirectTransport(to, body string) *redirectTransport {
 // above all it never becomes the cached fact: the override was a
 // cache-poisoning primitive as well as an exfil one.
 func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
+	t.Parallel()
 	a := preflightApp(t)
 	rt := newRedirectTransport("listener.example", `{"data":[{"id":"probe-model"}],"has_more":false}`)
 	a.ModelLister = &ModelLister{
@@ -205,6 +207,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 
 // The plan reader's half of the same thing.
 func TestARedirectedUsageResponseIsRefused(t *testing.T) {
+	t.Parallel()
 	rt := newRedirectTransport("listener.example", `{"five_hour":{"utilization":1}}`)
 	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, error) { return fakeToken, nil }, HTTP: rt.client}
 	_, err := r.Read()
@@ -220,6 +223,7 @@ func TestARedirectedUsageResponseIsRefused(t *testing.T) {
 // The client the readers build for themselves does not even follow the
 // redirect — pinnedResponse above is the second line, for an injected one.
 func TestThePinnedClientWillNotFollowARedirectOffTheHost(t *testing.T) {
+	t.Parallel()
 	rt := newRedirectTransport("listener.example", "{}")
 	cl := pinnedClient(time.Second, "model list endpoint", ModelListHost)
 	cl.Transport = rt.client.Transport
@@ -342,6 +346,7 @@ func TestALoopbackOverrideIsAskedWithoutTheCredential(t *testing.T) {
 // HALF A, whatever set the URL: a struct field is not a better provenance
 // than an env var. Only the compiled-in url is credentialed.
 func TestOnlyTheCompiledInURLIsCredentialed(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{
 		"http://127.0.0.1:9/usage",
 		"http://localhost:9/usage",

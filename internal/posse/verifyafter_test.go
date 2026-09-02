@@ -297,6 +297,7 @@ You are developer.
 
 // A label that matches no intent row costs a line, not an error.
 func TestIntentDoneWhenNoMatch(t *testing.T) {
+	t.Parallel()
 	ag := &AgentFile{Body: "## Intents\n| intent | mode | done when |\n|---|---|---|\n| design | crew | an ADR is committed |\n"}
 	if intent, done := ag.IntentDoneWhen([]string{"code"}); intent != "" || done != "" {
 		t.Errorf("matched %q/%q on a label no intent names", intent, done)
@@ -307,6 +308,7 @@ func TestIntentDoneWhenNoMatch(t *testing.T) {
 }
 
 func TestIntentMatchesLabelPlurals(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		slug, label string
 		want        bool
@@ -364,6 +366,7 @@ func TestDispatchDryRunFilesNoVerifyBead(t *testing.T) {
 }
 
 func TestVerifyTitleTruncatesToARune(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("é", 400)
 	got := verifyTitle(long)
 	if !strings.HasPrefix(got, "verify: ") || !strings.HasSuffix(got, "…") {
@@ -572,6 +575,7 @@ func TestVerifyAfterDoesNotRefileAnAnsweredVerify(t *testing.T) {
 // The em dash and the embedded quotes are load-bearing: they are what the real
 // title carried, and they are what a naive parser trips on.
 func TestVerifySourceIDAdoptsAPreFixDescription(t *testing.T) {
+	t.Parallel()
 	const preFix = `Verify the close of ranger-base-okbr (title, quoted as data: "plan guard reads a keychain item with no claudeAiOauth.accessToken — two logins did not change it, and the shop is stopped").`
 
 	if got := verifySourceID(preFix); got != "ranger-base-okbr" {
@@ -611,6 +615,7 @@ func TestVerifySourceIDRoundTripsAndRejectsForeignText(t *testing.T) {
 
 // verifiedSources reads only qa beads, and only the marker.
 func TestVerifiedSourcesIndexesQaBeadsOnly(t *testing.T) {
+	t.Parallel()
 	marker := func(id string) string { return "Verify the close of " + id + " (title, quoted as data: \"x\").\n" }
 	got := verifiedSources([]BdIssue{
 		{ID: "q-1", Labels: []string{"qa"}, Description: marker("a-1")},
@@ -936,6 +941,7 @@ func TestVerifyOneLineDefeatsAMarkerForgedInACloseReason(t *testing.T) {
 }
 
 func TestVerifyGroupTitleTruncatesToARune(t *testing.T) {
+	t.Parallel()
 	var group []BdIssue
 	for i := 0; i < 40; i++ {
 		group = append(group, BdIssue{ID: fmt.Sprintf("ranger-base-%04d", i)})

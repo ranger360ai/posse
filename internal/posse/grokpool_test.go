@@ -163,6 +163,7 @@ func (f *grokPoolFixture) run(t *testing.T) (int, string) {
 // ─── the reset arithmetic ────────────────────────────────────────────────
 
 func TestParseWeeklyReset(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		raw  string
 		want WeeklyReset
@@ -198,6 +199,7 @@ func TestParseWeeklyReset(t *testing.T) {
 // worth of dollars are both on reset day: before the reset time the week is
 // still the old one, at it and after it the week is fresh.
 func TestWeeklyResetLast(t *testing.T) {
+	t.Parallel()
 	r := WeeklyReset{Day: time.Monday, Hour: 9}
 	for _, tc := range []struct {
 		name string

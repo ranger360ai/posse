@@ -67,6 +67,7 @@ func hd56Intact(t *testing.T, path, want string) {
 // `mv pre-push posse-pre-push`, which destroys that file. Refuse instead,
 // name it, and print nothing to paste.
 func TestQAForeignPosseSlotUnderAForeignHookRefusesWithoutAPasteBlock(t *testing.T) {
+	t.Parallel()
 	repo, hooks := hd56Repo(t, hd56Foreign)
 
 	_, err := InstallPrePushHook(repo)
@@ -106,6 +107,7 @@ func TestQAForeignPosseSlotUnderAForeignHookRefusesWithoutAPasteBlock(t *testing
 // moves the shim to bd-<slot> and writes posse-<slot> unconditionally. The
 // operator sees an install that succeeded and a file that is gone.
 func TestQAChainedInstallOverBdShimDoesNotOverwriteAForeignPosseSlot(t *testing.T) {
+	t.Parallel()
 	repo, hooks := hd56Repo(t, "#!/bin/sh\n# bd-shim v1\nexec bd hooks run pre-push \"$@\"\n")
 
 	if _, err := InstallPrePushHookChained(repo); err == nil {
@@ -121,6 +123,7 @@ func TestQAChainedInstallOverBdShimDoesNotOverwriteAForeignPosseSlot(t *testing.
 // prescription is still the way through. Refusing here would strand every
 // operator whose repo posse itself chained.
 func TestQAOurOwnPosseSlotStillGetsThePrescription(t *testing.T) {
+	t.Parallel()
 	repo, hooks := hd56Repo(t, hd56Foreign)
 	if err := os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755); err != nil {
 		t.Fatal(err)

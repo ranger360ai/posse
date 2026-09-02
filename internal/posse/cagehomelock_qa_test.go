@@ -76,6 +76,7 @@ func qaAssertCageAllTrusted(t *testing.T, cfg, root string, n int) {
 // TestQASeedTrustManyConcurrentLaunchesKeepEveryDir pins for the host config,
 // applied to a cage HOME's.
 func TestQASeedCageHomeManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
+	t.Parallel()
 	const n = 8
 	a := cageApp(t)
 	ag := cageAgent(t, a, "")
@@ -116,6 +117,7 @@ func TestQASeedCageHomeManyConcurrentLaunchesKeepEveryDir(t *testing.T) {
 // dispatch pass, which is the one shape dispatch's launcher lock does not
 // already serialize (the bead's own SCOPE OF EXPOSURE).
 func TestQASeedCageHomeChildSeeder(t *testing.T) {
+	t.Parallel()
 	home := os.Getenv("RHQ_QA_CAGEHOME_HOME")
 	if home == "" {
 		t.Skip("child of TestQASeedCageHomeHoldsAcrossProcesses")
@@ -150,6 +152,7 @@ func TestQASeedCageHomeChildSeeder(t *testing.T) {
 // two renames-free writes interleave. Locked and rename-backed, all eighty
 // entries and the pre-existing state are there when the last child exits.
 func TestQASeedCageHomeHoldsAcrossProcesses(t *testing.T) {
+	t.Parallel()
 	const children, each = 4, 20
 	exe, err := os.Executable()
 	if err != nil {

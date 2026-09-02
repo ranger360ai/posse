@@ -57,6 +57,7 @@ func gridStages(out string) []string {
 // the failure this exists to catch — the grid is how a runtime is onboarded,
 // and a stage nobody drew is a stage nobody fills.
 func TestGridDrawsAllSixStagesAsRows(t *testing.T) {
+	t.Parallel()
 	want := []string{"launch", "promptable", "work", "record", "settle", "account"}
 	a := checkApp(t)
 	h := Herdr{Bin: "no-such-herdr-binary"}
@@ -100,6 +101,7 @@ func TestGridDrawsAllSixStagesAsRows(t *testing.T) {
 // negative would be answering about the wrong key. The output is flattened
 // first because the cap line wraps.
 func TestGridCapLineIsParsedNotEchoed(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, cfg      string
 		want, unwanted []string

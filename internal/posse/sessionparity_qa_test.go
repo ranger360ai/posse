@@ -70,6 +70,7 @@ func TestPromptDeliveryColumnIsWhatTheLandingTurnMustAsk(t *testing.T) {
 // this test was going to demand is now the thing the suite refuses. What is
 // pinned here is the column that decision would have read.
 func TestLandingTurnAsksTheRuntimeHowToDeliverIt(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-ewq9: CLOSED 2026-08-31 — landThePlane is branchless by decision, not by oversight (d3a3fed); the delivery itself is pinned by TestQALandingTurnIsTypedOnEveryRuntimePromptArgvIncluded")
 }
 
@@ -86,6 +87,7 @@ func TestLandingTurnAsksTheRuntimeHowToDeliverIt(t *testing.T) {
 // operator reads to recognize it. The next test is where it stops being
 // cosmetic.
 func TestDirtyPathsKeepsEveryPathWhole(t *testing.T) {
+	t.Parallel()
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "alpha.txt"), "seed\n")
 	write(t, filepath.Join(repo, "beta.txt"), "seed\n")
@@ -117,6 +119,7 @@ func TestDirtyPathsKeepsEveryPathWhole(t *testing.T) {
 // `len(ln) > 3` dropped outright. That is not a misnamed path, it is a dirty
 // file reported CLEAN, and the reap guard would have removed the tree.
 func TestDirtyPathsSeesTheShortestPossiblePath(t *testing.T) {
+	t.Parallel()
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "a"), "seed\n")
 	mustGit(t, repo, "add", "a")
@@ -137,6 +140,7 @@ func TestDirtyPathsSeesTheShortestPossiblePath(t *testing.T) {
 // --porcelain=v2, to -z records — has the forms the other two tests do not
 // cover written down.
 func TestDirtyPathsKeepsStagedAndUntrackedPathsWhole(t *testing.T) {
+	t.Parallel()
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "alpha.txt"), "seed\n")
 	mustGit(t, repo, "add", "alpha.txt")

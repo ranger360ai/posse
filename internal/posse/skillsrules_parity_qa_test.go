@@ -234,6 +234,7 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 // the tree a NON-claude runtime is handed is the universal Agent-Skills
 // layout, so reading it is not a coincidence.
 func TestQARenderedTreeIsUniversalAgentSkills(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	if err := os.MkdirAll(a.SkillsDir(), 0o755); err != nil {
@@ -411,6 +412,7 @@ func qmFoldCase(s string) string { return strings.ToLower(s) }
 // here it would be a shared fixture whose CONTENTS make two declared rows
 // mutually unobservable.
 func TestQALiveNativeRulesDiscovery(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_PARITY_LIVE") != "1" {
 		t.Skip("set RHQ_PARITY_LIVE=1 with codex and grok installed (claude's arm is a billed turn and stays manual)")
 	}
@@ -558,6 +560,7 @@ func qmDiscovered(t *testing.T, runtime, repo string) ([]string, string) {
 // is asked what it sees. rangerhq-74c6's evidence was one skill; this is
 // two, plus a registry entry the PID does not name.
 func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_PARITY_LIVE") != "1" {
 		t.Skip("set RHQ_PARITY_LIVE=1 with codex, grok and claude installed")
 	}

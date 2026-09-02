@@ -229,6 +229,7 @@ func TestHeadroomParkClearsOnTheFirstGoodReading(t *testing.T) {
 // dispatcher is how it stops being re-checked when the plumbing moves
 // (cockpit.go planOffState's rule, applied here).
 func TestPlanHeadroomRefusal(t *testing.T) {
+	t.Parallel()
 	th := map[string]float64{"5h": 70, "7d": 90}
 	for _, tc := range []struct {
 		name string
@@ -279,6 +280,7 @@ func TestPlanHeadroomRefusal(t *testing.T) {
 // The blind park reads this — a "reading" conjured out of a 429 entry would
 // park the fleet on windows nobody ever measured.
 func TestLastReadingIsAReadingOrNothing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	c := &PlanCache{Path: dir + "/plan-usage.json"}
 

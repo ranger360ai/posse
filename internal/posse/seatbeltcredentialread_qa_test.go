@@ -75,6 +75,7 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 // it. A pure struct literal, deliberately no fixture: what is under test is
 // SeatbeltProfile's own gating, not SeatbeltCarveOut's construction.
 func TestEmptyCarveOutIsNotEmptyWithOnlyDenyRead(t *testing.T) {
+	t.Parallel()
 	c := SeatbeltCarveOut{DenyRead: []string{"/some/credential/file"}}
 	if c.Empty() {
 		t.Fatal("Empty() reports true with a non-empty DenyRead — SeatbeltProfile would then render nothing and the deny would silently vanish")
@@ -203,6 +204,7 @@ func TestQACredentialReadDenyRefusesUnderSandboxExecAndTheControlDoesNot(t *test
 // cageCredential, or claude's entry removed) the deny's safety argument no
 // longer holds and this is where that would be caught.
 func TestQAClaudeCagedCredentialIsEnvNotFileRead(t *testing.T) {
+	t.Parallel()
 	rt := &Runtime{Name: "claude"}
 	if got := CageCredential(rt); got != "CLAUDE_CODE_OAUTH_TOKEN" {
 		t.Fatalf("CageCredential(claude) = %q, want CLAUDE_CODE_OAUTH_TOKEN — ranger-base-hw18's darwin exception for ~/.claude/.credentials.json assumes a caged claude session authenticates by this env var, not by reading the file", got)

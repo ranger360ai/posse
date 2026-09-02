@@ -21,6 +21,7 @@ import (
 // 500 and the 429 arms are the control: a fork that swallowed every
 // non-200 into the credential class would pass the first two rows alone.
 func TestPlanReaderAuthFailureClasses(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		status int

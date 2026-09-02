@@ -431,6 +431,7 @@ func TestScanCostsUnreadableRootIsNotAQuietDay(t *testing.T) {
 // Ledger is the degraded pass's receipt: both windows, whichever are armed,
 // never the tightest-window summary Line gives the skip report.
 func TestBudgetStateLedger(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		st   BudgetState
 		want string

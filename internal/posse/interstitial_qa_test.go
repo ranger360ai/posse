@@ -301,6 +301,7 @@ func TestQATypedDispatchRefusesADeclaredDangerScreenAndLaunchesWithoutOne(t *tes
 // through LoadRuntime: a probe is Go code, and the three runtimes that carry
 // one are all built-ins.
 func TestQADangerUnsilencedReadsEveryInterstitialState(t *testing.T) {
+	t.Parallel()
 	probe := func(s Silence) func() Silence { return func() Silence { return s } }
 	base := Interstitial{
 		Screen: "S", Where: "~/.mycli/f", Key: "k",
@@ -398,6 +399,7 @@ func TestQASilencedDangerInterstitialDispatchesNormally(t *testing.T) {
 // So it is written as an equivalence over one fixture, both directions,
 // rather than three separate expectations that could drift apart again.
 func TestQADeclaredDangerScreenAgreesAcrossAllThreeSurfaces(t *testing.T) {
+	t.Parallel()
 	const screen = `command: mycli {file}
 interstitial_update:
   screen: "Update available!"

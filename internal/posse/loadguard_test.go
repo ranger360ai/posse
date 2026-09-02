@@ -19,6 +19,7 @@ import (
 )
 
 func TestLoadGuardConfig(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		cfg  string
 		want float64
@@ -50,6 +51,7 @@ func TestLoadGuardConfig(t *testing.T) {
 }
 
 func TestLoadHighComparesTheReadingToTheLimit(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		cfg  string
@@ -83,6 +85,7 @@ func TestLoadHighComparesTheReadingToTheLimit(t *testing.T) {
 // A guard that cannot take its reading is a monitoring failure, and a
 // monitoring failure must not be able to stop the shop.
 func TestLoadHighFailsOpenAndSaysSo(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	a.Load1 = func() (float64, error) { return 0, Die("no /proc/loadavg here") }
 	var errb strings.Builder
@@ -98,6 +101,7 @@ func TestLoadHighFailsOpenAndSaysSo(t *testing.T) {
 // the box's load at test time is whatever it is — only that the number
 // arrives, which is the half that is platform code.
 func TestSysLoad1ReadsThisBox(t *testing.T) {
+	t.Parallel()
 	load, err := SysLoad1()
 	if err != nil {
 		t.Fatalf("SysLoad1: %v", err)
@@ -304,6 +308,7 @@ func procRows() []Proc {
 }
 
 func TestCulpritLineNamesTheBurnersAndCountsTheRest(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	a.TopCPU = func() ([]Proc, error) { return procRows(), nil }
 	got := a.LoadCulpritLine()
@@ -337,6 +342,7 @@ func TestCulpritLineNamesTheBurnersAndCountsTheRest(t *testing.T) {
 // The tail counts orphans, not busy processes: a fleet at full tilt with no
 // leak at all must not be told it has three.
 func TestCulpritTailCountsOnlyOrphansOverTheFloor(t *testing.T) {
+	t.Parallel()
 	rows := []Proc{
 		{PID: 11, PPID: 900, CPU: 99, Comm: "go"},
 		{PID: 12, PPID: 900, CPU: 98, Comm: "go"},
@@ -358,6 +364,7 @@ func TestCulpritTailCountsOnlyOrphansOverTheFloor(t *testing.T) {
 // §1: it must never be able to delay or fail a pass. Every way the reading
 // can go wrong renders nothing at all, and the witness above it stands.
 func TestCulpritLineDegradesToSilence(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		read func() ([]Proc, error)
@@ -389,6 +396,7 @@ func TestCulpritLineDegradesToSilence(t *testing.T) {
 // §4: the columns are read from the FRONT, because only the last one may
 // hold spaces. Both platforms' shapes go through the same parser.
 func TestParseProcTableReadsTheColumnsFromTheFront(t *testing.T) {
+	t.Parallel()
 	// darwin's comm is a full path; procps' is a bare truncated name.
 	out := "" +
 		"49235     1  36.9    02:30:15 /bin/zsh\n" +
@@ -414,6 +422,7 @@ func TestParseProcTableReadsTheColumnsFromTheFront(t *testing.T) {
 }
 
 func TestParseEtime(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		in   string
 		want time.Duration
@@ -438,6 +447,7 @@ func TestParseEtime(t *testing.T) {
 // whatever it is — only that `ps` answers and the columns land where the
 // parser looks, which is the half that is platform code.
 func TestSysTopCPUReadsThisBox(t *testing.T) {
+	t.Parallel()
 	procs, err := SysTopCPU()
 	if errors.Is(err, os.ErrPermission) {
 		t.Skipf("SysTopCPU: %v — cage denies exec of ps, not a parser fault", err)
@@ -614,6 +624,7 @@ func leakRows(n int) []Proc {
 }
 
 func TestOrphanReportNamesTheLeakedGateShellChildren(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	a.TopCPU = func() ([]Proc, error) { return leakRows(16), nil }
 	got := a.LoadCulpritLine()
@@ -658,6 +669,7 @@ func TestOrphanReportNamesTheLeakedGateShellChildren(t *testing.T) {
 // Everything the predicate must NOT fire on. Each row here is a top CPU
 // burner, so each one reaches the culprit line and none may reach the report.
 func TestOrphanReportSkipsWhatIsNotALeak(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		row  Proc
@@ -693,6 +705,7 @@ func TestOrphanReportSkipsWhatIsNotALeak(t *testing.T) {
 }
 
 func TestGateShellForkPayloadOpensWithThePreamble(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		args string
@@ -723,6 +736,7 @@ func TestGateShellForkPayloadOpensWithThePreamble(t *testing.T) {
 // reason it costs nothing: on a box that is loaded but not leaking there is
 // no second fork at all.
 func TestOrphanSuspectPIDsScopeTheSecondRead(t *testing.T) {
+	t.Parallel()
 	// A loaded box with nothing reparented takes no second read at all,
 	// which is what keeps the extra fork off every healthy box.
 	var busy []Proc
@@ -746,6 +760,7 @@ func TestOrphanSuspectPIDsScopeTheSecondRead(t *testing.T) {
 }
 
 func TestParseArgsTable(t *testing.T) {
+	t.Parallel()
 	got := parseArgsTable("" +
 		"49235 /bin/zsh -c echo  hi   there\n" +
 		"  812 node /x/server.js\n" +
@@ -781,6 +796,7 @@ func TestParseArgsTable(t *testing.T) {
 // arm that shows it CAN fail is right below: the same shell, the same fork,
 // the same `ps` read, with the wrapper taken out of the line.
 func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ps"); err != nil {
 		t.Skipf("no ps: %v", err)
 	}
@@ -864,6 +880,7 @@ func TestGateShellForkArgvIsRecognisedForReal(t *testing.T) {
 // that a CPU threshold would miss one by one, and jobs -l cannot see at all
 // because it is scoped to a shell instance a later Bash call does not share.
 func TestSelfOrphansFromNamesThinWideLeaksACPUFloorMisses(t *testing.T) {
+	t.Parallel()
 	var procs []Proc
 	for i := 0; i < 40; i++ {
 		procs = append(procs, Proc{
@@ -890,6 +907,7 @@ func TestSelfOrphansFromNamesThinWideLeaksACPUFloorMisses(t *testing.T) {
 // report, minus the CPU floor case (there is none here) and plus the age
 // floor at self-check's own, much shorter, value.
 func TestSelfOrphansFromSkipsWhatIsNotALeak(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		row  Proc
@@ -923,6 +941,7 @@ func TestSelfOrphansFromSkipsWhatIsNotALeak(t *testing.T) {
 // The second read is scoped to orphaned-and-old-enough, with no CPU term at
 // all — the reason a self-check on a healthy box still costs only one fork.
 func TestSelfCheckSuspectPIDsScopeTheSecondReadWithNoCPUFloor(t *testing.T) {
+	t.Parallel()
 	var busy []Proc
 	for i := 0; i < 8; i++ {
 		busy = append(busy, Proc{PID: 900 + i, PPID: 4021, CPU: 99, Age: time.Hour, Comm: "go"})
@@ -941,6 +960,7 @@ func TestSelfCheckSuspectPIDsScopeTheSecondReadWithNoCPUFloor(t *testing.T) {
 }
 
 func TestFormatSelfOrphans(t *testing.T) {
+	t.Parallel()
 	if got := FormatSelfOrphans(nil); got != "" {
 		t.Errorf("nothing to report must render \"\", got %q", got)
 	}
@@ -969,6 +989,7 @@ func TestFormatSelfOrphans(t *testing.T) {
 // where the parser looks. What this box is running is whatever it is — a
 // clean dev box is expected to come back empty.
 func TestSysSelfOrphansReadsThisBox(t *testing.T) {
+	t.Parallel()
 	leaks, err := SysSelfOrphans()
 	if errors.Is(err, os.ErrPermission) {
 		t.Skipf("SysSelfOrphans: %v — cage denies exec of ps, not a parser fault", err)

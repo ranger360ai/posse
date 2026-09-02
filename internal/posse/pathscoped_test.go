@@ -88,6 +88,7 @@ func TestPathScopedWriteGrammar(t *testing.T) {
 // this, a parametrized rule fell to parity's default arm and was classified
 // as a tool-name deny (at container, as a stdio MCP server).
 func TestCheckParityPathScopedWrites(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	codex, _ := a.LoadRuntime("codex")
@@ -186,6 +187,7 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 // The one thing this bead must not move: a PID with only bare Edit/Write
 // reads exactly as it did before path-scoping existed.
 func TestBareFileWriteRowUnchangedByPathScoping(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	codex, _ := a.LoadRuntime("codex")
@@ -242,6 +244,7 @@ func seatbeltForTest(t *testing.T) {
 // ADR 0014 §1/§2 through `posse agent check`: the four things the launch
 // would otherwise say, said where the PID is being written.
 func TestCheckAgentNamesPathScopedWriteMistakes(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	os.MkdirAll(a.AgentsDir, 0o755)

@@ -40,6 +40,7 @@ func seedConfigPath(t *testing.T) string {
 // cosmetics. Everything with teeth — routing, tiering, ceilings, the arm
 // switch — is documented in comments and unset.
 func TestSeedConfigArmsNothing(t *testing.T) {
+	t.Parallel()
 	cfg := seedConfigPath(t)
 
 	for _, key := range []string{
@@ -92,6 +93,7 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 // The emoji map is the seed's live content; it must still work, and still
 // name nobody's machine.
 func TestSeedConfigNamesNoMachine(t *testing.T) {
+	t.Parallel()
 	cfg := seedConfigPath(t)
 
 	if len(YamlMapPairs(cfg, "emoji")) == 0 {
@@ -128,6 +130,7 @@ var seedLiveKeys = map[string]bool{
 // default. A new key then has exactly two ways past this test: ship it
 // commented out, or say here, on purpose, that a fresh instance sets it.
 func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
+	t.Parallel()
 	cfg := seedConfigPath(t)
 
 	b, err := os.ReadFile(cfg)
@@ -171,6 +174,7 @@ func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
 // Test files are excluded on purpose: a key whose only reader is the test
 // asserting it has one would satisfy a scan that included them.
 func TestSeedConfigLiveKeysAreRead(t *testing.T) {
+	t.Parallel()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

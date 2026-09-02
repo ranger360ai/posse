@@ -17,6 +17,7 @@ import (
 )
 
 func TestE2ESkillSurfaces(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("RHQ_E2E") != "1" {
 		t.Skip("set RHQ_E2E=1 with codex and grok installed")
 	}

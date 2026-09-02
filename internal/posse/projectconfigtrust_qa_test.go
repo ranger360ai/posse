@@ -111,6 +111,7 @@ func TestQAProjectConfigTrustClassifiesHostileBodies(t *testing.T) {
 // is never confused with a missing one — and a symlink is an existing path
 // whatever its target. os.Stat here would call a dangling link "missing".
 func TestQAProjectConfigTrustSymlinkedSettingsAreNotMissing(t *testing.T) {
+	t.Parallel()
 	claude := &Runtime{Name: "claude",
 		ProjectConfig:     []string{ClaudeProjectConfig, ClaudeProjectConfigLocal},
 		ProjectConfigKeys: []string{"hooks", "mcpServers"}}

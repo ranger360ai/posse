@@ -32,6 +32,7 @@ func plantWrapper(t *testing.T, a *App, persona, base, real string) string {
 }
 
 func TestChainedGateWrappersCleanAuditIsEmpty(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	// No gates dir at all yet.
 	bad, err := a.ChainedGateWrappers()
@@ -52,6 +53,7 @@ func TestChainedGateWrappersCleanAuditIsEmpty(t *testing.T) {
 // The defect itself (ranger-base-f0ay): a wrapper whose REAL is another gate
 // wrapper. The audit must name persona, path and REAL — not just say "bad".
 func TestChainedGateWrappersFindsAChain(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	alpha := plantWrapper(t, a, "alpha", "zsh", filepath.Join(a.GatesDir("bravo"), "shell", "zsh"))
 	bravo := plantWrapper(t, a, "bravo", "zsh", filepath.Join(a.GatesDir("alpha"), "shell", "zsh"))
@@ -88,6 +90,7 @@ func TestChainedGateWrappersFindsAChain(t *testing.T) {
 // must be skipped rather than mistaken for a hit — the audit only knows the
 // one defect, not every future wrapper shape.
 func TestChainedGateWrappersSkipsWhatItDoesNotRecognize(t *testing.T) {
+	t.Parallel()
 	a := NewAppAt(t.TempDir())
 	dir := filepath.Join(a.GatesDir("coordinator"), "shell")
 	os.MkdirAll(dir, 0o755)

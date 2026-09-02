@@ -71,6 +71,7 @@ func assertWholeOldFile(t *testing.T, what string, before, got []byte) {
 // into the operator's whole claude state while claude itself may have the
 // file open.
 func TestQASeedTrustReplacesByRenameNotTruncate(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, ".claude.json")
 	rt := claudeRuntime(t)
@@ -112,6 +113,7 @@ func TestQASeedTrustReplacesByRenameNotTruncate(t *testing.T) {
 // The cage HOME's config (ranger-base-5cv7): same shape, the file the
 // container tier seeds instead.
 func TestQASeedCageHomeReplacesByRenameNotTruncate(t *testing.T) {
+	t.Parallel()
 	a := cageApp(t)
 	ag := cageAgent(t, a, "")
 	rt, err := a.LoadRuntime("claude")

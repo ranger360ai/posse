@@ -13,6 +13,7 @@ import (
 )
 
 func TestQAShippedDistributedSystemsSkillHasDescription(t *testing.T) {
+	t.Parallel()
 	p := filepath.Join("..", "..", "examples", "skills", "distributed-systems", "SKILL.md")
 	b, err := os.ReadFile(p)
 	if err != nil {
@@ -25,6 +26,7 @@ func TestQAShippedDistributedSystemsSkillHasDescription(t *testing.T) {
 }
 
 func TestQAFrontmatterDescriptionIgnoresBody(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		md, want string
 	}{
