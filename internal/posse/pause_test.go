@@ -401,6 +401,39 @@ func TestAPausedPassStillRunsTheEpilogue(t *testing.T) {
 	}
 }
 
+// The one reading that still returns from the WHOLE pass, epilogue and all,
+// and the ordering that decides which stop gets named. The load guard keeps
+// that power for the reason pause never had — on a fork-starved box the
+// epilogue's own readings fork and may hang — so a shop that is both paused
+// and saturated reaps nothing. It still names the human first: the pause
+// line is printed where the file is read, above the guard, because a paused
+// shop answering "loadavg 263" would be the surface crediting the machine
+// for a human's decision (rangerhq-a2g6's first decision, kept).
+func TestAPausedAndSaturatedBoxNamesTheHumanFirstAndStopsAtTheGuard(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
+	idleClaude(t, fake)
+	pausedShop(t, b.App, "coordinator", "waiting on the operator")
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+
+	if n, err := d.Run("", "", 0); n != 0 || err != nil {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	out := dispatcherOut(d)
+	human, machine := strings.Index(out, "paused"), strings.Index(out, "pass skipped")
+	if human < 0 || machine < 0 {
+		t.Fatalf("both stops must be named:\n%s", out)
+	}
+	if human > machine {
+		t.Errorf("the human's stop is named first, then the machine's:\n%s", out)
+	}
+	if _, alive := b.readMeta("ranger-repo-a-1"); !alive {
+		t.Errorf("the load guard returns from the whole pass, epilogue included — nothing below it may run:\n%s", out)
+	}
+}
+
 // The design's other predicted observable, and the whole reason the
 // coordinator reaches for pause instead of `kill`: a paused shop with a
 // blocked session still pulses her. The gate is in Run; the pulse goroutine
