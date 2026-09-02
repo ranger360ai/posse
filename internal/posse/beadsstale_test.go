@@ -43,11 +43,18 @@ func TestRunSelfHealsAStaleDB(t *testing.T) {
 		t.Fatalf("the fake bd was never called: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("want ready (fails), sync --import-only (heals), ready (retry) — got %v", lines)
+	// The healing sequence is the first three; the fourth is Bd.Ready's own
+	// cross-check, which every Ready pays now that `bd ready` is not the
+	// definition of unblocked (ranger-base-lpz0o). What is pinned here is
+	// still the healing — one import, one retry, never a blind second read
+	// of the same refusal — and the tail is named so a Ready that stopped
+	// cross-checking fails here too.
+	if len(lines) != 4 {
+		t.Fatalf("want ready (fails), sync --import-only (heals), ready (retry), blocked (the cross-check) — got %v", lines)
 	}
-	if !strings.Contains(lines[0], "ready") || !strings.Contains(lines[1], "sync --import-only") || !strings.Contains(lines[2], "ready") {
-		t.Errorf("want [ready, sync --import-only, ready], got %v", lines)
+	if !strings.Contains(lines[0], "ready") || !strings.Contains(lines[1], "sync --import-only") ||
+		!strings.Contains(lines[2], "ready") || !strings.Contains(lines[3], "blocked") {
+		t.Errorf("want [ready, sync --import-only, ready, blocked], got %v", lines)
 	}
 }
 
