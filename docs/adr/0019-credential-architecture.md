@@ -16,7 +16,10 @@ Amended 2026-09-01 (ranger-base-v3qi4): darwin's store of record is the
 runtime's own `keychain-with-plaintext-fallback` composite, MEASURED in
 the release binary — store 3 is its fallback, not a byproduct, and the
 darwin adapter now mirrors the composite's read order (keychain item,
-then the file only on item-not-found).*
+then the file only on item-not-found). Amended 2026-09-02
+(ranger-base-ig4op): store 1's NAME is derived from the same two
+config-dir variables as the file's directory — the constant is the
+default case only; the adapter derives the name it reads.*
 
 ## Context
 
@@ -130,6 +133,10 @@ build tags, so `make test-linux` compiles and tests every branch:
   - *delete*: both.
   - the file's directory is `$CLAUDE_SECURESTORAGE_CONFIG_DIR`, else
     `$CLAUDE_CONFIG_DIR`, else `~/.claude` (ranger-base-wd4be).
+  - the keychain item's NAME follows the same two variables, one
+    statement later in the same module (ranger-base-ig4op): the
+    constant when neither names a directory, else the constant plus a
+    hash of the directory string — store 1 below spells the rule.
 
   So the file is the runtime's **live fallback store**, written by the
   same login/refresh loop and read by the runtime — not "some auth
@@ -154,8 +161,9 @@ build tags, so `make test-linux` compiles and tests every branch:
   observed on the reference box and its rate is unmeasured.
 
   **The adapter mirrors the composite's read order with one
-  narrowing**: keychain item first; the file only when `security`
-  exits 44 (item not found). Exit 36 and every other failure stay
+  narrowing**: keychain item first (under the name store 1 below
+  derives from the environment — ranger-base-ig4op); the file only
+  when `security` exits 44 (item not found). Exit 36 and every other failure stay
   `CredUnreadable` with the ACL fix text and never reach the file. The
   narrowing is deliberate: the keychain ACL is per binary, so posse's
   36 speaks about posse's binary, not about the keychain's contents —
@@ -182,7 +190,69 @@ build tags, so `make test-linux` compiles and tests every branch:
   ranger-base-1lza; recounted here):
 
   1. the keychain item — the composite's primary, and the store the
-     runtime reads whenever it holds an item;
+     runtime reads whenever it holds an item. **Its name is derived,
+     not constant** (amended 2026-09-02, ranger-base-ig4op; MEASURED
+     off the same darwin-arm64 2.1.258 bundle, one statement after the
+     directory resolver `credentialDir()` quotes). The name is
+     `Claude Code-credentials` exactly when the environment names no
+     directory: `CLAUDE_SECURESTORAGE_CONFIG_DIR` absent and
+     `CLAUDE_CONFIG_DIR` unset or empty, or
+     `CLAUDE_SECURESTORAGE_CONFIG_DIR` present-but-empty (which
+     shadows `CLAUDE_CONFIG_DIR`, as it does for the file). Otherwise
+     it is that name, `-`, and the first 8 hex digits of sha256 over
+     the directory string — the secure-storage variable's value (the
+     runtime NFC-normalizes it) when set and non-empty, else the
+     config-dir value. Three rules fall out and the adapter carries
+     all three:
+     - *Default-ness is an environment property, not a path property.*
+       `CLAUDE_CONFIG_DIR=$HOME/.claude` names the default directory
+       and still suffixes the item, because the runtime tests the
+       variable, never the path. So the resolver wd4be lands exposes
+       *whether a variable named the directory* beside the directory —
+       one function yields the file path and the item name, as the
+       runtime has it; a second derivation is how the two drift.
+     - *The hash is over the string as the variable spells it*, not a
+       cleaned path: a trailing slash hashes as typed. MEASURED for the
+       secure-storage arm (normalize on the raw value); ASSUMED for the
+       config-dir arm, which hashes whatever the runtime's config-dir
+       function returns — read as "the value verbatim", the reading
+       trust.go already makes; V13 checks it. The hash is Node's sha256
+       over the string's UTF-8 bytes, which is Go's
+       `sha256.Sum256([]byte(s))` — MEASURED 2026-09-02, node and
+       shasum agree on every V11 fixture.
+     - *posse does not normalize.* Go's standard library has no NFC,
+       the x/text module is priced below and not taken, and the wd4be
+       resolver normalizes nothing either. For an ASCII value NFC is
+       the identity (MEASURED), so the derived name is exact wherever
+       the operator typed an ASCII path. For a non-ASCII value posse
+       hashes the bytes as spelled and the store's name says so, so an
+       exit 44 there names its first suspect instead of reading as an
+       empty keychain (a decomposed `é` hashes differently from a
+       composed one — MEASURED, V11 carries the pair).
+
+     What the name inherits from the directory: posse must see the
+     same two variables the operator's `claude` sees. A launcher
+     started with a different environment (a LaunchAgent, say) derives
+     a different name and reads 44 on a healthy box — the divergence
+     the file path already has under wd4be, not a new one — and the
+     refresh verb's report (ranger-base-6kkrq) prints the name tried,
+     so it is diagnosable. posse sets neither variable for any runtime
+     (MEASURED 2026-09-02: no setter in the tree; seatbelt.go records
+     the refusal to point a caged launch at one), and since ADR 0042 no
+     crew runtime reads the keychain, so the operator's own shell is
+     the only environment in play. A non-production deployment (the
+     runtime's OAuth file suffix non-empty) is a third name and out of
+     scope, the stance trust.go takes for the staging config file.
+     `KeychainService` survives as the default spelling (build:
+     ranger-base-mx4q6, between wd4be and 5jdzh); every
+     sentence and the seam's `Source` print the derived name, so an
+     operator with a suffixed item sees the suffix to match in Keychain
+     Access. REACHABILITY, MEASURED 2026-09-02 on the reference box:
+     neither variable is set, so the constant is the live name today
+     and nothing here changes what the box reads until an operator sets
+     one — at which point, under the unamended design, every pass
+     would have said "the keychain is empty" about a keychain that
+     held the live item;
   2. `envs/<set>.env` mints — posse-owned, scoped, human-gated
      (unchanged, D1/D4);
   3. the credentials file under the runtime's config dir (the path
@@ -432,6 +502,37 @@ design puts more weight on files. What is actually traded:
   install` means posse's ACL is gone while the keychain holds the live
   item, and a literal mirror would read the frozen S2 file and 401
   with a sentence about staleness — the 08-24 misdiagnosis again.
+- **Keep the item name a constant and let a suffixed box read 44**
+  (2026-09-02, ranger-base-ig4op). Under the composite the 44 falls to
+  the file, the file is absent on a healthy S1 box, and the sentence
+  says the keychain is empty — the false-diagnosis class this page and
+  ADR 0018 exist to keep apart from blindness. Rejected on the ground
+  S3 was: the fix is one derivation in a resolver wd4be already
+  builds.
+- **Try the constant, then the derived name.** Two execs per pass, and
+  where both items exist (an operator who logged in once before setting
+  the variable) the constant hits an item the runtime no longer
+  presents — the inversion in a new costume. The runtime looks in one
+  place; the mirror does too.
+- **Enumerate the keychain for items under the prefix.** The keychain
+  CLI finds by exact attribute, not by prefix; a dump reads every item
+  on the box, and "which one is the runtime's" still needs the suffix.
+  Unmeasurable by any persona besides.
+- **Read the variables off the running `claude` process** (the
+  ranger-base-eje6d trick). Which claude: the crew runtimes hold
+  posse's mint and posse's environment, so the answer is posse's own
+  env with a process walk in the way. The environment is the rule;
+  hold the rule.
+- **A config key naming the item.** A fact belonging to no lever posse
+  holds: it drifts the day the operator changes a variable, silently,
+  and the runtime never consults it.
+- **`golang.org/x/text/unicode/norm` for NFC.** Priced: one pure-Go
+  module, holds no state hostage, exit hatch is deleting the import
+  and the arm. Not taken: no non-NFC config-dir value has been
+  observed, the file resolver of the same bead would need it too or
+  the two would disagree on one box, and the note on the store's name
+  covers the residual. Taken the day a non-ASCII value bites — in both
+  resolvers at once.
 - **Read both stores and present the fresher `expiresAt`.** Rejected:
   two reads per pass, and a tie-break the runtime does not use — its
   rule is order, not freshness — so wherever the two disagree posse
@@ -543,3 +644,30 @@ design puts more weight on files. What is actually traded:
   binary whose ACL was dropped, non-interactively. 36 confirms
   the narrowing's premise; 44 keeps the design and moves the residual
   in D2 from ASSUMED to MEASURED.
+- V11 (unit, added 2026-09-02 ranger-base-ig4op; either box, no build
+  tags): the item-name derivation. Both variables unset →
+  `Claude Code-credentials`; `CLAUDE_SECURESTORAGE_CONFIG_DIR`
+  present-but-empty beside `CLAUDE_CONFIG_DIR=/tmp/cfg` → the constant;
+  `CLAUDE_CONFIG_DIR=/tmp/cfg` → `Claude Code-credentials-519e587f`;
+  secure-storage `/tmp/cfg` beside `CLAUDE_CONFIG_DIR=/other` →
+  `-519e587f`; `CLAUDE_CONFIG_DIR=<home>/.claude` → suffixed. The NFC
+  pair: `/tmp/café` composed → `-0873cca0`, decomposed → `-16eb4464`,
+  and posse yields the latter for the latter (no normalization) with
+  the note on the store's name. Fixture digits MEASURED 2026-09-02 with
+  node's sha256 (the runtime's own function) and shasum, which agree.
+  Mutation checks, each must red a pin: 7 or 9 digits; hashing the
+  file path instead of the directory; hashing the config dir while the
+  secure-storage variable is set; testing the path instead of the
+  variable for default-ness.
+- V12 (unit, added 2026-09-02): `keychainCmd`'s argv carries the
+  derived name; the unreadable sentence, the seam's `Source` and the
+  44-and-no-file sentence print it; the runbook row keeps the default
+  spelling and says when it grows a suffix
+  (`credentialrunbook_qa_test.go` pins the sentence).
+- V13 (operator, added 2026-09-02; every crew PID denies the keychain
+  CLI): on a box with `CLAUDE_CONFIG_DIR` set, after a `claude` login,
+  the keychain holds an item under the derived name — moves "what the
+  runtime writes" from code-read to observed. Second arm: set the
+  variable with a trailing slash and log in; the item's suffix says
+  whether the config-dir arm hashes the value verbatim (ASSUMED in D2)
+  or a cleaned path.
