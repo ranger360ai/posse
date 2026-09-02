@@ -1,6 +1,6 @@
 package main
 
-// QA pin — ranger-base-inomb (laurie), verifying the closes of
+// QA pin — ranger-base-inomb, verifying the closes of
 // ranger-base-yt88 ("status BUILT, sweep and backup_dest CUT") and
 // ranger-base-ymec (§4's ticker) against the user-facing surface.
 //

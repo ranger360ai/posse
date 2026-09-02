@@ -1,6 +1,6 @@
 package posse
 
-// ranger-base-inomb (laurie), verifying the close of ranger-base-ymec: ADR
+// ranger-base-inomb, verifying the close of ranger-base-ymec: ADR
 // 0036 §4's ticker, "starts with Watch's ctx, dies with it".
 //
 // "Dies with it" is JOINED, not merely signalled, and backuploop.go's own
