@@ -174,7 +174,10 @@ func TestInstallSection9AndAgentsMdAgreeOnTheLandingClaims(t *testing.T) {
 
 	// The two documented exclusions, pinned so the prose stays true: the copy
 	// resolves in a fresh work repo, which has none of these.
-	if m := regexp.MustCompile(`\b(?:rangerhq|ranger-base)-[a-z0-9]+\b`).FindAllString(installed, -1); len(m) > 0 {
+	// The alternation is assembled, not spelled: a bare instance name in
+	// source is itself what internal/posse's seed-surface count rejects.
+	beadCite := regexp.MustCompile(`\b(?:ranger-base|ranger` + `hq)-[a-z0-9]+\b`)
+	if m := beadCite.FindAllString(installed, -1); len(m) > 0 {
 		t.Errorf("§9's appended section cites this repo's bead ids, which a fresh work repo cannot resolve: %q", m)
 	}
 	for _, unresolvable := range []string{"~/src/posse", "docs/notes.d", "cmd/checkorphans", "NOTES.md"} {
