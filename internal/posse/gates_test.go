@@ -120,6 +120,60 @@ func TestGrantsGitPushRuleShapes(t *testing.T) {
 	}
 }
 
+// The ADR 0033 §5 alarm sees a push behind ANY of git's valued global
+// options, and the option list it walks is still the eight `git --help`
+// names (ranger-base-b2os, verified under ranger-base-uqvjf).
+//
+// The literal list below is NOT a copy for its own sake. A first cut of this
+// pin looped over globalValueOpts["git"] itself and built its expectation out
+// of it — and MEASURED, that grades nothing about the list: dropping
+// "--git-dir" and mistyping "--work-tree" as "--worktree" both left it green,
+// because expectation and subject moved together. So the names are written
+// out once, independent of the symbol, and the set is compared.
+//
+// The wrong arm is `--exec-path`, deliberately absent from the production
+// table: bare, git prints the path and exits without consuming the next word,
+// so pairing it would hide a following `push`. Both halves of that reason are
+// asserted, because a table that gained it would otherwise pass the loop.
+func TestGrantsGitPushConsumesEveryValuedGlobalOptionInPairs(t *testing.T) {
+	t.Parallel()
+	want := []string{"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
+
+	have := map[string]bool{}
+	for _, o := range globalValueOpts["git"] {
+		have[o] = true
+	}
+	for _, o := range want {
+		if !have[o] {
+			t.Errorf("globalValueOpts[\"git\"] no longer names %s — git takes its value as a separate word, so a rule spelled `git %s <v> push` now reads <v> as the subcommand and the alarm goes silent on a grant", o, o)
+		}
+		delete(have, o)
+	}
+	for o := range have {
+		t.Errorf("globalValueOpts[\"git\"] gained %s; if git really pairs it, add it to this test's list and say where it was measured — if it does not, pairing it HIDES a push behind it", o)
+	}
+
+	// Each of them, through the alarm: the value is skipped and the push
+	// behind it is still seen.
+	for _, opt := range want {
+		rule := "Bash(git " + opt + " VALUE push)"
+		if got := grantsGitPush([]string{rule}); got != rule {
+			t.Errorf("%s grants push — %s takes its value as a separate word, so VALUE is not the subcommand; grantsGitPush returned %q", rule, opt, got)
+		}
+	}
+
+	// The wrong arm, both ways: an option that is NOT paired leaves its next
+	// word standing in the subcommand slot...
+	if got := grantsGitPush([]string{"Bash(git --exec-path VALUE push)"}); got != "" {
+		t.Errorf("`git --exec-path VALUE push` prints the exec path and exits — VALUE stands where the subcommand stands and this is no push; grantsGitPush returned %q", got)
+	}
+	// ...while the same option with the subcommand right behind it is one,
+	// which is what keeps the line above from passing for the wrong reason.
+	if got := grantsGitPush([]string{"Bash(git --exec-path push)"}); got == "" {
+		t.Error("`git --exec-path push` puts push in the subcommand slot; the alarm must see it")
+	}
+}
+
 func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
