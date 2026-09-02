@@ -76,6 +76,7 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"Unattended":         {fcConsumed, []string{"runtime.go", "agents.go"}, nil, "EnsureUnattended puts the flag back on a line a hand-written command: rendered without it"},
 	"PIDVoid":            {fcConsumed, []string{"runtime.go", "herdrback.go", "runtimeprobe.go"}, []string{"PIDVoided"}, "PIDVoided REFUSES a rendered line naming a flag that makes this CLI ignore the PID — what would open is a different session, not a degraded persona"},
 	"CageCred":           {fcConsumed, []string{"cage.go"}, nil, "the env var a containerised session authenticates with; absent refuses cage: container"},
+	"CredBin":            {fcConsumed, []string{"gates.go"}, nil, "the binary this CLI reads AND writes its own credential with: an L1 shim over it gates the runtime, not the persona, and the launch says so (ranger-base-eupf)"},
 	"Egress":             {fcConsumed, []string{"egress.go"}, nil, "always added to a caged PID's allowlist — a cage that cannot reach its model is not isolated, it is offline"},
 	"Prompt":             {fcConsumed, []string{"dispatch.go", "herdrback.go"}, nil, "argv vs typed work-prompt delivery"},
 	"StartupWait":        {fcConsumed, []string{"dispatch.go", "promptready.go", "runtimeprobe.go"}, []string{"Wait()"}, "agentWait's per-runtime detection patience (ranger-base-ze9p retired the p84 inertness)"},

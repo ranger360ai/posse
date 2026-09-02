@@ -830,6 +830,73 @@ func shQuote(s string) string { return shellQuote(s) }
 // entry, deliberately: each entry is a judgment someone made.
 var whereHints = map[string]bool{"security": true}
 
+// ─── The runtime's own credential binary (ranger-base-eupf) ─────────────────
+
+// CredGateCollision reports the PID deny rule that renders an L1 shim over
+// the RUNTIME's own credential binary, or "" when there is none.
+//
+// The wall is doing exactly what it says; the finding is its BLAST RADIUS.
+// The gates dir is prepended on the typed line (ADR 0002 §3), so it leads
+// the PATH of the runtime process itself, not only of the persona's shells
+// — and a runtime whose credential path execs its binary by BARE NAME
+// therefore reads its own credential through this persona's refusal shim.
+// MEASURED in a live session, 2026-08-29: `claude -p` under a PID denying
+// that binary answers "Not logged in", and the same line with the gates dir
+// stripped from PATH answers normally. The refusals were not a persona
+// reaching for keys — 875 of them across the crew's logs since 2026-08-24,
+// at a steady couple an hour, are the runtime asking for its own token and
+// being told no.
+//
+// Two things follow, and only the first has ever been seen. A session
+// starts on the token it already had, so the refusal shows up as a nested
+// `claude` reporting itself logged out; at token EXPIRY the same wall sits
+// in front of the refresh's write-back, which is the one moment this
+// matters and the one nobody has watched.
+//
+// Why a warning and not a carve-out. The obvious narrowing — let the
+// read-only forms through, refuse the rest — does not survive measurement
+// of what the runtime actually runs (see Runtime.CredBin): the credential
+// WRITE goes primarily through that binary's stdin batch mode, which takes
+// its commands on stdin. An argv matcher cannot see them. A shim that let
+// the batch mode through to keep refresh working would not be a narrowed
+// deny, it would be no deny at all — and one that let only the reads
+// through would fix the logged-out symptom while leaving expiry exactly
+// where it is. Whether the deny should stop covering this binary at all is
+// a decision about the wall, not a matcher detail, so this layer's job is
+// to make it a decision instead of a silent couple-an-hour.
+//
+// binDir is the persona's shim dir, used only to resolve the real binary
+// the way the shim would: a `security` deny on a box that has no such
+// binary shims nothing and collides with nothing, which is what keeps this
+// from warning on a platform where the runtime reads a file instead.
+func CredGateCollision(rt *Runtime, deny []string, binDir string) string {
+	if rt == nil || rt.CredBin == "" {
+		return ""
+	}
+	rules := ParseShimRules(deny)[rt.CredBin]
+	if len(rules) == 0 || resolveOutside(rt.CredBin, binDir) == "" {
+		return ""
+	}
+	// The whole-binary rule if the PID carries one — that is the rule that
+	// refuses every form — else the first, in the PID's own order.
+	for _, r := range rules {
+		if len(r.Words) == 0 {
+			return r.Rule
+		}
+	}
+	return rules[0].Rule
+}
+
+// CredGateWarning is the line a launch prints for that collision. It names
+// the runtime, the rule, and BOTH consequences: a reader who only hears
+// about the logged-out one will read a working session as the all-clear.
+func CredGateWarning(persona string, rt *Runtime, rule string) string {
+	return fmt.Sprintf("posse: %s launches on %s under %s, which shims `%s` — the binary %s reads AND WRITES its own credential with (ADR 0017 §3 CLI-own-state, ranger-base-eupf).\n"+
+		"  The wall is real and it is aimed at the runtime too: a nested `%s` in this session reports itself logged out, and at token expiry the refresh cannot write back either.\n"+
+		"  Drop %s from this PID, or accept that this session's runtime credential is frozen at whatever it started with.\n",
+		persona, rt.Name, rule, rt.CredBin, rt.Name, rt.Name, rule)
+}
+
 // whereHint is that line, or "" when cmd is not one a human types himself.
 // It names the pane rather than offering a way past — a persona has none,
 // and saying so is what keeps this from reading as an escape hatch.

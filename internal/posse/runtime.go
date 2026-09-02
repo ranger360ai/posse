@@ -306,6 +306,32 @@ type Runtime struct {
 	// cage.go. Empty falls back to the built-in table; a runtime in
 	// neither is one whose container credential nobody has decided yet.
 	CageCred string
+	// CredBin names the binary this runtime's OWN credential path execs BY
+	// BARE NAME — so an L1 shim over it stands in front of the RUNTIME, not
+	// only in front of the persona. That is not a hypothetical: the gates
+	// dir is prepended on the TYPED line (ADR 0002 §3), so it leads the PATH
+	// of the runtime process itself and of everything it spawns.
+	//
+	// A name-keyed fact and deliberately not declarable: which binary a CLI
+	// authenticates itself with is that CLI's own state, the class ADR 0017
+	// §3 names and accepts ("cage.go seeding, credential paths, trust.go's
+	// claude dialog"). Empty is the honest default — a runtime whose
+	// credential path nobody has measured claims nothing here, and the
+	// launch says nothing rather than guessing.
+	//
+	// MEASURED on the darwin release artifact, claude 2.1.258
+	// (ranger-base-eupf): the credential path execs `security` by bare name
+	// for the read, for the delete, and for the write — the write primarily
+	// through the stdin batch mode `security -i`, falling back to argv only
+	// when the payload exceeds that mode's stdin limit. Two consequences,
+	// and the second is the one that has never been watched: a session whose
+	// PID denies that binary reports "Not logged in" at once, and at token
+	// expiry the refresh has no way to write back either. The stdin mode is
+	// also why this is a WARNING and not a carve-out: `security -i` takes
+	// its commands on stdin, so an argv matcher cannot tell the runtime's
+	// own credential write from any other keychain command, and a shim that
+	// let it through would not be a narrowed deny — it would be no deny.
+	CredBin string
 	// Egress is what this runtime itself must reach for a session on it to
 	// be a session at all — its API, and the host its OAuth refresh goes
 	// to. ADR 0002 §4: the launcher ALWAYS adds these to the PID's
@@ -1142,6 +1168,10 @@ var (
 var builtinRuntimes = []Runtime{
 	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: []string{ClaudeProjectConfig, ClaudeProjectConfigLocal}, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
+		// CredBin: the binary this CLI reads and writes its own
+		// OAuth credential with on darwin — measured on the release artifact,
+		// ranger-base-eupf. A PID denying it gates the runtime, not the persona.
+		CredBin: "security",
 		// state_dir, declared rather than listed in the seatbelt builder:
 		// ~/.claude is the CLI's own tree and ~/.claude.json is a FILE, not a
 		// directory — the same grant either way, and both were literals in

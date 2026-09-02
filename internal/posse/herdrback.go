@@ -1667,6 +1667,19 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if err != nil {
 				return nil, err
 			}
+			// The one shim that is aimed at the RUNTIME as well as at the
+			// persona: the gates dir leads the PATH of the runtime process
+			// itself, so a deny over the binary this CLI reads and writes its
+			// own credential with gates its login and its refresh
+			// (ranger-base-eupf). Said out loud at every launch that carries
+			// it, so it is a decision rather than a couple of silent refusals
+			// an hour. A warning and not a refusal: every crew PID carries
+			// this deny today, and a launch that dies on it is a bigger
+			// outage than the one being named.
+			binDir := filepath.Join(gatesDir, "bin")
+			if rule := CredGateCollision(rt, ag.Deny, binDir); rule != "" {
+				b.warn("%s", CredGateWarning(o.Name, rt, rule))
+			}
 		} else {
 			// The cage renders its own inside, so the var the session's tools
 			// read — the pre-push hook above all, which appends its refusal to
