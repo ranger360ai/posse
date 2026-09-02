@@ -41,6 +41,10 @@ func fenceFixture(t *testing.T, target, persona, origin string) *App {
 		// from never having called t.Setenv at all — both read "" from
 		// os.Getenv, which is exactly the point of arm 3.
 		if origin == "" {
+			// t.Setenv first so the ambient value (a real persona session
+			// has one) is registered for restore; os.Unsetenv alone leaks
+			// the absence into every test that runs after this one.
+			t.Setenv(EnvLaunchHome, "")
 			os.Unsetenv(EnvLaunchHome)
 		} else {
 			t.Setenv(EnvLaunchHome, origin)
