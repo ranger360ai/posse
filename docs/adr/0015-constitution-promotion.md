@@ -26,7 +26,7 @@ shims, accepted with reasons; anchor-state line added
 promoted set gains `runtimes/` — the per-key runtime overlay of ADR 0021
 is read at every launch and was the one launch-read fact at the home no
 manifest attested to (ADR 0039 D2, built in ranger-base-ight8) · informs
-0002 §3, 0012 D3-C, 0014 §3, 0025*
+0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — every `rhq/<p>` spelling below reads `posse/<p>` once the cutover lands (ADR 0046, ranger-base-woox9; unbuilt until its cutover bead closes)*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -55,7 +55,7 @@ denying the write is prose for most of the fleet.
 
 The instance tree also mixes three write policies in one repo:
 
-1. **Constitution** — `rhq/agents`, `config.yaml`, `recipes/`,
+1. **Constitution** — `posse/agents` (`rhq/agents` until ADR 0046 lands), `config.yaml`, `recipes/`,
    `skills/`. Rare, deliberate, should be attributable. *(As first
    written this list included `envs/` — wrongly: the same repo's
    `.gitignore` line 3 forbids env values from ever being committed,
@@ -63,7 +63,7 @@ The instance tree also mixes three write policies in one repo:
    Found by ranger-base-h56a; ruled in §7.)*
 2. **Runtime state** — `.beads` (the queue, store of record for every
    repo the crew touches, reached by `.beads/redirect`) and
-   `rhq/state`. The write-hottest paths in the system; deniable to
+   `posse/state` (was `rhq/state`). The write-hottest paths in the system; deniable to
    no one. The seatbelt grant for the redirect target also grants the
    instance repo's *git dirs* to every session (**MEASURED**,
    `seatbelt.go` redirect grant, ranger-base-rhw).
@@ -378,8 +378,8 @@ the same way twice:
   `prepare-commit-msg` slot; mechanism record in
   `constitutionGuardBody`, `internal/rhq/gates.go`). When
   `RHQ_PERSONA` is set — the same marker promote's own refusal reads —
-  a commit whose to-be-committed set touches `rhq/<p>` for each §1
-  promoted-set entry plus `rhq/envs` (in the constitution repo), or
+  a commit whose to-be-committed set touches `posse/<p>` (`rhq/<p>` until ADR 0046 lands) for each §1
+  promoted-set entry plus `posse/envs` (in the constitution repo), or
   `.claude/settings.json` / `.claude/settings.local.json` (in every
   hooked repo — not this ADR's promoted set, but the same class by
   blast radius: az93's deny list lives there, and a persona that can
@@ -400,7 +400,7 @@ the same way twice:
   hooked repo. It needed no `git mv`; detection pairs any similar staged
   delete with a staged add. **And the class marker is no longer read
   from the persona's own working tree alone:** the detector stat'd
-  `rhq/agents` on disk, which a session owns, so `rm -rf` it — never
+  `posse/agents` on disk (the marker, ADR 0046), which a session owns, so `rm -rf` it — never
   staged, so nothing on the branch recorded it — and the promoted set
   dropped out of the class. It is now read from the working tree OR the
   base tree the commit is diffed against, which keeps repo genesis (no
