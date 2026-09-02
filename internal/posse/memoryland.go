@@ -290,6 +290,45 @@ var memoryCredShapes = []struct {
 	{"a private key", regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)},
 }
 
+// memoryDiff is a `git diff` argv with the FORMAT stated on it rather than
+// left to whatever configuration the box happens to carry. Both diff arms
+// of the scan below parse git's output, so every setting that changes what
+// a diff looks like is an input to a credential check — and each of these,
+// ALONE, empties the scan while the commit still reports success (measured
+// on git 2.50.1, ranger-base-r5wpk):
+//
+//	--no-color     color.ui / color.diff = always: every body line starts
+//	               with an SGR escape, so none of them starts with `+`.
+//	--no-ext-diff  diff.external, the GIT_EXTERNAL_DIFF env var, and a
+//	               diff.<driver>.command reached through a `diff=<driver>`
+//	               line in the memory dir's own .gitattributes: git prints
+//	               whatever that program prints, which is not a diff.
+//	--no-textconv  diff.<driver>.textconv through the same attribute.
+//	--no-relative  diff.relative = true: paths come out relative to the
+//	               memory dir, so the binary hold joins one under the
+//	               checkout ROOT, fails to stat it, reads a modification
+//	               as a deletion and commits it unscanned.
+//	--src-prefix   diff.noprefix / diff.mnemonicPrefix / diff.srcPrefix:
+//	--dst-prefix   the `+++ b/` header stops saying `b/`, so a refusal
+//	               names no file. Attribution only — but the refusal is
+//	               the whole product here.
+//
+// The realistic setter is the operator's global gitconfig, not an attacker:
+// a persona that wants a credential into a git object can commit one
+// directly. This is a guard against accident, and the accident's shape is
+// the worst one available — fail-open under a success line.
+//
+// One list for both arms on purpose. Only --no-relative is load-bearing for
+// numstat today (color, ext-diff and textconv leave it alone, measured);
+// the rest cost nothing there and keep the two arms from ever disagreeing
+// about which paths exist and which of them are binary.
+func memoryDiff(rest ...string) []string {
+	return append([]string{"diff",
+		"--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+		"--src-prefix=a/", "--dst-prefix=b/",
+	}, rest...)
+}
+
 // scanMemoryChanges looks at what this commit would ADD and nothing else,
 // and returns why it must not be made, or "".
 //
@@ -343,7 +382,7 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 	// itself performs — a path-limited commit takes the worktree version
 	// — and because nothing has been staged yet: the scan runs BEFORE the
 	// add, so a refusal leaves the index as untouched as the file.
-	out, err := gitRaw(dir, "diff", "HEAD", "--unified=0", "--", ".")
+	out, err := gitRaw(dir, memoryDiff("HEAD", "--unified=0", "--", ".")...)
 	if err != nil {
 		return fmt.Sprintf("the credential scan could not read the diff (%v)", err)
 	}
@@ -388,7 +427,7 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 // resolve holds rather than skips. A pure rename of a binary file holds too,
 // since nothing here can tell it from a rename that also edited the bytes.
 func memoryUnreadableChange(dir string) string {
-	out, err := gitRaw(dir, "diff", "HEAD", "--numstat", "-z", "--", ".")
+	out, err := gitRaw(dir, memoryDiff("HEAD", "--numstat", "-z", "--", ".")...)
 	if err != nil {
 		return fmt.Sprintf("the credential scan could not read the diff (%v)", err)
 	}
@@ -464,17 +503,32 @@ func firstCredShape(lines []string) (string, int) {
 // firstCredShapeInDiff walks a unified diff and scans only its `+` lines,
 // keeping the file and the NEW line number so the refusal points at
 // something an operator can open.
+//
+// `--- ` and `+++ ` are read as headers only where the format puts them:
+// between a `diff --git` line and the first `@@` hunk of that file. Prefix
+// alone is not enough, because a diff renders an added line by prepending
+// `+` — so a memory line that itself begins with `++ ` arrives here as
+// `+++ …`, and taking that for the header half meant the one line carrying
+// the credential was the one line never scanned (ranger-base-txd57).
 func firstCredShapeInDiff(diff string) (file string, line int, what string) {
 	hunk := regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)`)
 	var cur string
 	var n int
+	header := false // between `diff --git` and this file's first hunk
 	for _, ln := range strings.Split(diff, "\n") {
 		switch {
-		case strings.HasPrefix(ln, "+++ b/"):
+		case strings.HasPrefix(ln, "diff --git "):
+			// The one line the format puts a header after. `cur` and `n`
+			// are not reset here on purpose: every file whose diff carries
+			// a `+` line also carries the `+++ b/` and `@@` that set them,
+			// so a reset would be a line no fixture can reach.
+			header = true
+		case header && strings.HasPrefix(ln, "+++ b/"):
 			cur = strings.TrimPrefix(ln, "+++ b/")
-		case strings.HasPrefix(ln, "+++ "), strings.HasPrefix(ln, "--- "):
+		case header && (strings.HasPrefix(ln, "+++ ") || strings.HasPrefix(ln, "--- ")):
 			// the other header half, and /dev/null for a deletion
 		case strings.HasPrefix(ln, "@@ "):
+			header = false
 			if m := hunk.FindStringSubmatch(ln); m != nil {
 				n, _ = strconv.Atoi(m[1])
 			}

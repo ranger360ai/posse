@@ -770,3 +770,203 @@ func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
 		t.Errorf("the valid landing took the constitution:\n%s", got)
 	}
 }
+
+// ─── the diff the scan reads is git's, not the box's ─────────────────────────
+
+// ranger-base-r5wpk. Both diff arms of the scan PARSE git's output, so every
+// setting that changes what a diff looks like is an input to a credential
+// check. Measured on git 2.50.1, each of these ALONE empties the plus lines
+// while `--numstat` still counts `1 0`, so neither the scan nor the binary
+// hold fires and the landing commits under a success line:
+// diff.external, GIT_EXTERNAL_DIFF, a diff.<driver>.command or .textconv
+// reached through the memory dir's own .gitattributes, and color.ui=always.
+//
+// Nobody set any of them on the box this was filed from — the realistic
+// setter is the operator's global gitconfig, which is why this is a guard
+// against accident rather than against a persona (one that wants a secret in
+// a git object can commit it directly). The accident's shape is the worst
+// available: fail-open, silent, with a success line.
+//
+// All of them at once, plus diff.noprefix for the attribution half, because
+// a fix that answers all but one is the same hole. The fixture asserts the
+// bare argv really is emptied here first — otherwise this is green over a
+// git that ignores the whole lot.
+func TestTheCredentialScanReadsGitsDiffWhateverTheConfigurationSays(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	dev := filepath.Join(repo, "rhq", "personas", "dev")
+
+	// The .gitattributes driver, landed by hand: it is a tracked file of the
+	// memory dir like any other, and a persona's own dir always could carry
+	// one. Its textconv and command both point at a program that prints one
+	// fixed line, which is what any external differ looks like from here:
+	// output that is not a diff.
+	conv := filepath.Join(t.TempDir(), "conv.sh")
+	write(t, conv, "#!/bin/sh\nprintf 'converted\\n'\n")
+	if err := os.Chmod(conv, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dev, ".gitattributes"), "* diff=demo\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/.gitattributes")
+	mustGit(t, repo, "commit", "-q", "-m", "a diff driver on the memory dir", "--", "rhq/personas/dev/.gitattributes")
+	mustGit(t, repo, "config", "diff.demo.textconv", conv)
+	mustGit(t, repo, "config", "diff.demo.command", conv)
+	mustGit(t, repo, "config", "diff.external", conv)
+	mustGit(t, repo, "config", "color.ui", "always")
+	// Attribution: without a pinned prefix the `+++ b/` header stops saying
+	// `b/`, and the refusal then names no file at all.
+	mustGit(t, repo, "config", "diff.noprefix", "true")
+	t.Setenv("GIT_EXTERNAL_DIFF", conv)
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "sk-ant-api03-EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+	appendOrders(t, repo, "dev", "- the key that worked: "+leaked+"\n")
+	// The rig has to be shown able to fail: under this configuration the
+	// argv the scan used before this bead reads NO added lines at all. If
+	// this git honors none of it, the assertions below measure nothing.
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "."); strings.Contains(d, "\n+"+"sk-ant") {
+		t.Fatalf("this git ignores the configuration under test, so nothing here is pinned:\n%s", d)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a credential shape was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if !strings.Contains(line, "ORDERS.md:2") || !strings.Contains(line, "an Anthropic key") {
+		t.Errorf("the refusal must still name the file, the line and the shape: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+}
+
+// diff.relative is the one that defeats the binary hold specifically, and it
+// needs its own test because that hold runs BEFORE the plus-line scan and
+// would never be reached in the test above. Set, `--numstat` names
+// `capture.bin` where the hold joins it under the checkout ROOT — so the
+// stat fails, the modification is read as a deletion, and a binary file
+// carrying a credential lands with nothing scanned.
+func TestTheBinaryHoldSurvivesDiffRelative(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	write(t, blob, "harmless\x00bytes\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "config", "diff.relative", "true")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "sk-ant-api03-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+	write(t, blob, "harmless\x00bytes\n"+leaked+"\n")
+	// Two fixture guards. The file must be binary to git, and the setting
+	// must actually be moving the path — a numstat that still spells the
+	// full path here would make the hold below prove nothing.
+	dev := filepath.Join(repo, "rhq", "personas", "dev")
+	rel, err := gitRaw(dev, "diff", "HEAD", "--numstat", "-z", "--", ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rel), "-\t-\tcapture.bin\x00") {
+		t.Fatalf("this git does not honor diff.relative here, so nothing is pinned: %q", rel)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a file the scan cannot read was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	if line := landing.Memory.Line(); !strings.Contains(line, "capture.bin") || !strings.Contains(line, "not checked for credentials") {
+		t.Errorf("the hold must name the file and say it was not checked: %q", line)
+	}
+}
+
+// ranger-base-txd57, folded in here: a diff renders an ADDED line by
+// prepending `+`, so a memory line that itself begins with `++ ` arrives at
+// the parser as `+++ …` — and deciding "header" by prefix alone made the one
+// line carrying the credential the one line never scanned. Nothing in the
+// live ORDERS files starts that way, which is why it is a note and not an
+// incident, but it is git's own format ambiguity and the fix is a boolean.
+func TestTheDiffScanReadsAnAddedLineThatLooksLikeAFileHeader(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	// Both header spellings, in the order the format writes them, so the
+	// pin covers `+++ b/` as well as the bare `+++ ` — and a decoy line
+	// ahead of the hit, so a parser that swallowed it as a header would be
+	// caught by the LINE NUMBER too, not only by the file name.
+	const leaked = "sk-ant-api03-GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+	appendOrders(t, repo, "dev", "++ b/decoy.md\n++ "+leaked+"\n")
+	d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", ".")
+	if !strings.Contains(d, "\n+++ sk-ant") || !strings.Contains(d, "\n+++ b/decoy.md") {
+		t.Fatalf("the fixture does not render as header-shaped added lines, so this pins nothing:\n%s", d)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a header-shaped credential line was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	// Line 3: the seed line, the decoy, then the key.
+	if !strings.Contains(line, "ORDERS.md:3") || !strings.Contains(line, "an Anthropic key") {
+		t.Errorf("the refusal must name the file, the line and the shape: %q", line)
+	}
+	if strings.Contains(line, "decoy.md") {
+		t.Errorf("an added line was read as a file header: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+}
+
+// The other half of that boolean, and the one that keeps the fix from being
+// a wedge: the real header still has to be read as a header. A two-file diff
+// where the credential is in the SECOND file must name the second file — if
+// `+++ b/` stopped resolving, every refusal would name the wrong path or
+// none, which is a refusal an operator cannot act on.
+func TestTheDiffScanStillAttributesAHitToItsOwnFile(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	notes := filepath.Join(repo, "rhq", "personas", "dev", "notes.md")
+	write(t, notes, "# notes\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/notes.md")
+	mustGit(t, repo, "commit", "-q", "-m", "a second tracked memory file", "--", "rhq/personas/dev/notes.md")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	// ORDERS.md sorts first and is clean prose; the hit is in notes.md.
+	appendOrders(t, repo, "dev", "- an ordinary lesson.\n")
+	const leaked = "sk-ant-api03-HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+	write(t, notes, "# notes\n- the key that worked: "+leaked+"\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a credential shape was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if !strings.Contains(line, "notes.md:2") {
+		t.Errorf("the refusal must name the file the hit is IN, at its new line: %q", line)
+	}
+	if strings.Contains(line, "ORDERS.md") {
+		t.Errorf("the refusal named the wrong file: %q", line)
+	}
+}
