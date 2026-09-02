@@ -96,6 +96,21 @@ func bdCalls(t *testing.T, path string) int {
 
 const twoReady = `[{"id":"x-1","title":"one","status":"open"},{"id":"x-2","title":"two","status":"open"}]`
 
+// bdCallsPerScan is what ONE scan costs over the rig's single beads repo —
+// the number these tests count in, so that what they assert stays "one scan,
+// not two" rather than an arithmetic coupling to how Bd spends its calls
+// (ranger-base-lpz0o). It is one InProgressAll (`bd list --status
+// in_progress`) plus one ReadyAll, and ReadyAll is TWO subprocesses since
+// that bead: `bd ready` cross-checked against `bd blocked`, because a store
+// bd makes today answers both with the same bead and a cockpit that trusted
+// `bd ready` alone would show a blocked bead under READY WORK.
+//
+// It is a real cost on a real shop — the pair this file was filed over ran
+// 5.3s each — and it is paid off the event loop, on a cadence floored by the
+// scan's own cost, which is exactly what the tests below hold. If it grows
+// again, the thing to check is whether a scan still spends it ONCE.
+const bdCallsPerScan = 3
+
 // The defect in one assertion: refresh() must not sit inside the bd scans,
 // and a keystroke must not queue behind them.
 func TestCockpitRefreshDoesNotBlockOnTheBeadScan(t *testing.T) {
@@ -126,8 +141,8 @@ func TestCockpitRefreshDoesNotBlockOnTheBeadScan(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("the scan never landed on c.beads")
 	}
-	if n := bdCalls(t, calls); n != 2 {
-		t.Errorf("one scan is one InProgressAll and one ReadyAll: got %d bd calls", n)
+	if n := bdCalls(t, calls); n != bdCallsPerScan {
+		t.Errorf("one scan is one InProgressAll and one ReadyAll (%d bd calls): got %d", bdCallsPerScan, n)
 	}
 	if len(c.issues) != 2 {
 		t.Errorf("the landed scan must fill READY WORK, got %+v", c.issues)
@@ -181,16 +196,16 @@ func TestCockpitBeadKickHonoursTheFloorButNotTheOperator(t *testing.T) {
 	// taken while its goroutine is still starting measures the schedule,
 	// not the rule.
 	first := <-c.beads
-	if n := bdCalls(t, calls); n != 2 {
-		t.Errorf("%d bd calls — a forced kick must still refuse to start a second scan", n)
+	if n := bdCalls(t, calls); n != bdCallsPerScan {
+		t.Errorf("%d bd calls, want one scan's %d — a forced kick must still refuse to start a second scan", n, bdCallsPerScan)
 	}
 	c.applyBeads(first)
 	if !c.beadsIn {
 		t.Fatal("the remembered force must be spent when the stale scan lands")
 	}
 	<-c.beads
-	if n := bdCalls(t, calls); n != 4 {
-		t.Errorf("%d bd calls — the deferred force must rescan once, and once only", n)
+	if n := bdCalls(t, calls); n != 2*bdCallsPerScan {
+		t.Errorf("%d bd calls, want two scans' %d — the deferred force must rescan once, and once only", n, 2*bdCallsPerScan)
 	}
 	if c.beadsDirty {
 		t.Error("a spent force must not still be pending")
@@ -221,13 +236,13 @@ func TestCockpitDisplayFrameIsCompleteThenRateLimited(t *testing.T) {
 	if len(c.issues) != 2 {
 		t.Fatalf("the first non-tty frame must already carry the beads, got %+v", c.issues)
 	}
-	if n := bdCalls(t, calls); n != 2 {
-		t.Fatalf("first frame: %d bd calls, want 2", n)
+	if n := bdCalls(t, calls); n != bdCallsPerScan {
+		t.Fatalf("first frame: %d bd calls, want one scan's %d", n, bdCallsPerScan)
 	}
 	c.displayFrame()
 	c.displayFrame()
-	if n := bdCalls(t, calls); n != 2 {
-		t.Errorf("%d bd calls over three frames — the 2s frame loop is rescanning inside the %v floor", n, beadsEvery)
+	if n := bdCalls(t, calls); n != bdCallsPerScan {
+		t.Errorf("%d bd calls over three frames, want one scan's %d — the 2s frame loop is rescanning inside the %v floor", n, bdCallsPerScan, beadsEvery)
 	}
 }
 
