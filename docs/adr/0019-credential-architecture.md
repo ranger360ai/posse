@@ -217,13 +217,30 @@ build tags, so `make test-linux` compiles and tests every branch:
   blob is the same envelope, so ranger-base-okbr's shape diagnostics
   apply verbatim to both paths.
 
-ASSUMED, probe before trusting: current Linux Claude Code writes a live
-`claudeAiOauth.accessToken` there and it returns 200 on the usage
-endpoint. The instance ADR reserved exactly this probe when it rejected
-the file *on macOS* (there it is a stale leftover and reading it
-inverts the store of record; that rejection stands on darwin). If the
-probe fails, the adapter's honest error still beats today's
-"keychain unreadable" — and the guard-off path in D3 catches it.
+Two claims here, split 2026-09-02 (ranger-base-17rt4) because one is
+now measured and the other is not:
+
+- MEASURED 2026-09-01 from the linux-x64 2.1.258 release binary
+  (checksum `704f1334ac65d3e8…` equals the manifest's; recipe in
+  NOTES.md, "What the shipped artifact actually does", bead
+  ranger-base-ydjz): off darwin the secure-storage module defines
+  exactly one store, so the file is the whole store rather than a
+  fallback, and the login/refresh loop writes the `claudeAiOauth`
+  envelope with `accessToken` and seven siblings there — the same
+  envelope the darwin keychain item holds, so one parser covers both.
+  The directory follows the runtime's config-dir variables, not the
+  home directory by definition (ranger-base-wd4be, open).
+- ASSUMED, probe before trusting: that token returns 200 on the usage
+  endpoint. An artifact cannot answer liveness; this needs a real
+  login, and because the envelope is measured identical on both
+  platforms it needs a credentials-file token from *any* box, not a
+  Debian clean room. Held by ranger-base-au0o4 (open, operator-extended
+  2026-09-01 to cover exactly this token against that endpoint). If the
+  probe fails, the adapter's honest error still beats today's
+  "keychain unreadable" — and the guard-off path in D3 catches it.
+
+The instance ADR reserved this probe when it rejected the file *on
+macOS*; the darwin rule as measured is the composite above.
 
 **3. Structural absence is OFF, not blind.** A new read-outcome class,
 `NoSource`: this (runtime, purpose, platform) has no store — no meter
@@ -471,10 +488,21 @@ design puts more weight on files. What is actually traded:
 
 ## Verification (laurie's checklist)
 
-- V1 (probe, clean room): on Debian 13, after `claude` login,
-  `~/.claude/.credentials.json` holds `claudeAiOauth.accessToken` and
-  that token returns 200 on the usage endpoint. Until run, D2's linux
-  adapter is built-but-unconfirmed and says so in its error text.
+- V1 (split 2026-09-02, ranger-base-17rt4: half is measured, and the
+  remaining half no longer needs the clean room):
+  - V1a, MEASURED 2026-09-01 (ranger-base-ydjz) from the
+    checksum-verified linux-x64 2.1.258 release binary, no login: off
+    darwin the file `CredentialsFile()` names is the runtime's only
+    store, and the login loop writes the `claudeAiOauth` envelope with
+    `accessToken` there. Write-up: NOTES.md, "What the shipped artifact
+    actually does".
+  - V1b (probe, any box holding a credentials-file token — not Debian,
+    not a container): that token returns 200 on the usage endpoint. An
+    artifact cannot answer liveness. Held by ranger-base-au0o4 (open,
+    operator-extended 2026-09-01). Until it lands, D2's non-darwin
+    adapter is built-but-unconfirmed and `meterUnconfirmed` says so in
+    its error text; that wording stays true until the 200 is on the
+    bead.
 - V2 (unit): a non-darwin build never execs `security` — the GOOS
   switch is total, and no non-darwin error string contains "keychain".
 - V3 (unit): `NoSource` renders as guard-off/unconfigured in the
