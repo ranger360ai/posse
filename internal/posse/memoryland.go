@@ -40,6 +40,17 @@ package posse
 // gates behind `posse promote` and which no sweep may ever take. It scans
 // what it is about to add for credential shapes and refuses the commit
 // rather than publishing one. It never pushes: pushing stays the operator's.
+//
+// WHAT IT TAKES INSIDE THAT DIR is everything the dir holds, less what the
+// persona's own `.gitignore` there excludes — the one EnsureMemoryDir seeds
+// (see memoryIgnoreSeed). The memory dir is where a persona works and not
+// only where it writes prose, so evidence files accrete in it and were
+// landing as standing orders (ranger-base-c9m7). The filter is git's own
+// rather than a list of blessed names here, because an allowlist stops
+// landing a persona's real notes SILENTLY — measured: four of the 29 files
+// tracked under that instance's personas/ are deliberate work that an
+// ORDERS.md-and-pending allowlist would have dropped. An ignore is visible
+// in the dir it governs and the persona can edit it.
 
 import (
 	"fmt"
@@ -172,6 +183,19 @@ func porcelainZChanges(out []byte) []memoryChange {
 // destroyed by losing this race, only deferred. Serializing it under the
 // launcher lock would instead put every kill behind whatever pass holds it,
 // for a store the launcher lock says nothing about.
+//
+// THE OTHER RACE, which is the opposite shape and is not self-healing: this
+// landing SUCCEEDS and is then quietly un-recorded. Before this function
+// existed the shared checkout's HEAD moved only when a human or a persona
+// typed a commit; now every kill on the box appends one here, at a moment no
+// session can predict. So a history-rewriting git verb in that checkout —
+// `commit --amend`, `rebase`, `reset` — is unsafe for anyone: an amend
+// rebuilds whatever HEAD is NOW, and what is now may be another persona's
+// landing. Path-limiting does not save it, because a pathspec governs what
+// is ADDED from the working tree and never what the base tree already holds.
+// Nothing of the content is lost when that happens — the blob is identical
+// either way — but the commit that said which kill landed those lines is,
+// and `git log` then names the wrong persona and the wrong bead.
 func (a *App) LandPersonaMemory(persona, why, bead string) *MemoryLanding {
 	changes := a.memoryChanges(persona)
 	if len(changes) == 0 {
@@ -281,6 +305,12 @@ var memoryCredShapes = []struct {
 // It never echoes what it matched. The whole point is that the bytes are
 // suspected of being a credential, and a refusal that prints them has
 // published it into a terminal, a log and this process's own output.
+//
+// Three arms, and only one of them commits: read the untracked files whole,
+// hold on any tracked path whose added content git will not spell out, and
+// scan the diff of the rest. The middle arm is not an optimization — a diff
+// git declines to write is silently indistinguishable here from a diff with
+// nothing in it, and the file passes unscanned.
 func scanMemoryChanges(dir string, changes []memoryChange) string {
 	for _, c := range changes {
 		if !c.Untracked {
@@ -305,6 +335,9 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 			return fmt.Sprintf("%s:%d looks like %s", c.Path, n, what)
 		}
 	}
+	if held := memoryUnreadableChange(dir); held != "" {
+		return held
+	}
 	// One diff for every tracked path at once. Worktree against HEAD and
 	// not against the index, because that is the comparison the commit
 	// itself performs — a path-limited commit takes the worktree version
@@ -320,10 +353,94 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 	return ""
 }
 
+// memoryUnreadableChange names a tracked path whose added content the diff
+// scan below cannot read, or "". It is the tracked half of the arm the
+// memoryScanMax bound already gives untracked files: the safe answer to "I
+// cannot read it" is to hold the commit and say which file, never to commit
+// unscanned bytes.
+//
+// Git decides binary by CONTENT and not by name — a NUL byte in the first
+// 8000 is enough — and for such a path a diff carries no `+` lines at all,
+// only "Binary files a/x and b/x differ". So this is not a story about
+// `.bin` files: a persona pasting raw terminal capture into its own
+// ORDERS.md is one NUL from it, and from that commit on that file is diffed
+// as binary and never scanned again.
+//
+// CONTENT is not the only route, which is why this asks git rather than
+// reading the bytes itself. A `.gitattributes` line marking a path `-diff`
+// or `binary` gets the same treatment from an ordinary text file — measured
+// on git 2.50.1: an ORDERS.md with `-diff` set diffs as "Binary files …
+// differ" and counts `-` `-` here. An operator setting that to keep memory
+// out of conflict resolution would otherwise have silently turned the
+// credential scan off for the one file it exists for.
+//
+// `--numstat -z` is git saying it in the one form that needs no unquoting:
+// a binary path's two counts are both `-`, and `-z` emits the path raw
+// where the default format C-quotes an odd byte and spells a rename
+// `old => new`. A rename spends the two names on the NEXT two fields
+// instead, which have to be consumed whatever the counts say — left in
+// place they would be read as records of their own.
+//
+// A DELETION counts `-` `-` as well, and a deleted file adds nothing, so it
+// must not hold: what separates the two is the working tree, where the file
+// a deletion names is gone. That reading is the only thing standing between
+// this arm and passing every binary file, so a checkout root it cannot
+// resolve holds rather than skips. A pure rename of a binary file holds too,
+// since nothing here can tell it from a rename that also edited the bytes.
+func memoryUnreadableChange(dir string) string {
+	out, err := gitRaw(dir, "diff", "HEAD", "--numstat", "-z", "--", ".")
+	if err != nil {
+		return fmt.Sprintf("the credential scan could not read the diff (%v)", err)
+	}
+	// Resolved lazily: the overwhelming majority of memory dirs hold no
+	// binary change at all, and this would otherwise spend a git process on
+	// every kill to answer a question nothing asks.
+	root := ""
+	recs := strings.Split(string(out), "\x00")
+	for i := 0; i < len(recs); i++ {
+		f := strings.SplitN(recs[i], "\t", 3)
+		if len(f) != 3 {
+			continue // the empty tail the last NUL leaves
+		}
+		path := f[2]
+		if path == "" { // a rename or a copy: the source, then the target
+			if i+2 >= len(recs) {
+				break
+			}
+			path = recs[i+2]
+			i += 2
+		}
+		if f[0] != "-" || f[1] != "-" {
+			continue
+		}
+		if root == "" {
+			if root = memoryRepoRoot(dir); root == "" {
+				// Without the root, nothing below can tell a modification
+				// from a deletion — and of the two answers available then,
+				// the silent one is the one this bead is about.
+				return fmt.Sprintf("%s could not be located for the credential scan, so it was not checked for credentials", path)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
+			continue // it adds nothing because it is gone; git will say so
+		}
+		return fmt.Sprintf("%s is binary to git, so the scan could not read what it adds and it was not checked for credentials", path)
+	}
+	return ""
+}
+
 // memoryRepoRoot is the checkout the memory dir sits in, which is where
-// git's repo-relative paths are rooted. "" if it cannot be found, which
-// leaves the join above pointing at a relative path that will not stat —
-// and a path that does not stat is skipped, not committed unscanned.
+// git's repo-relative paths are rooted. "" if it cannot be found, and the
+// two callers answer that differently ON PURPOSE, so read this before
+// copying either: memoryUnreadableChange HOLDS, because it cannot otherwise
+// tell a binary modification from a deletion. The untracked arm above
+// CONTINUES — the relative path it is left with does not stat, and a path
+// that does not stat is skipped — and a skipped untracked file is then
+// committed with nothing scanned. That is a fail-open, it predates
+// ranger-base-38a1, and it is handed to the fleet's security persona rather
+// than widened into that bead. The window is narrow: memoryChanges has just
+// run a successful `git status` from the same dir, so a rev-parse that fails
+// here means the checkout went away mid-kill.
 func memoryRepoRoot(dir string) string {
 	root, err := git(dir, "rev-parse", "--show-toplevel")
 	if err != nil {

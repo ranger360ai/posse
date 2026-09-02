@@ -17,7 +17,6 @@ import (
 // memoryScanMax arm names the file and refuses). A binary tracked file
 // reaches no such arm: it is silently treated as containing no added lines.
 func TestQAProbeMemoryScanReadsATrackedBinaryFile(t *testing.T) {
-	t.Skip("ranger-base-38a1: fails at HEAD — un-skip UNCHANGED when a file the scan cannot read holds the commit")
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)

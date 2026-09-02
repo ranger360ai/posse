@@ -472,7 +472,10 @@ Not created, and you make them yourself when you need them:
 
 - `runtimes/` — instance launch profiles (step 8)
 - `personas/` — per-persona private memory; materialized at first launch,
-  each seeded with an `ORDERS.md`
+  each seeded with an `ORDERS.md` and a `.gitignore`. If this home is in git,
+  `posse kill` commits that directory on the persona's behalf, so the ignore
+  is where a persona says which of its files are working evidence rather than
+  memory; it is seeded with `*.out` and `*.log` and is the persona's to grow
 
 `init` **never overwrites**. Re-running it is safe and fills in anything
 missing; it will not undo your edits.
@@ -628,7 +631,7 @@ A **persona** is three things bound to one name:
 2. `$RHQ_HOME/agents/<name>.md`, its **Persona Intent Document** — flat-YAML
    frontmatter plus a markdown body that *is* the prompt (ADR 0001);
 3. `$RHQ_HOME/personas/<name>/` — private memory, seeded with `ORDERS.md`
-   at first launch.
+   and a `.gitignore` at first launch.
 
 `init` gave you **no personas**. `$RHQ_HOME/agents/` is empty and it is
 yours; what it seeded instead is `$RHQ_HOME/examples/agents/`, nine
@@ -1292,6 +1295,16 @@ $ cat >> AGENTS.md <<'EOF'
   already staged it; undo that path-limited with `git restore
   --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
+- **In the shared checkout, never `--amend`, `rebase` or `reset`.** HEAD there
+  moves under you between any two of your own commands — another persona's
+  commit, or posse landing a persona's memory at a kill nobody scheduled —
+  and an amend rebuilds whatever HEAD is NOW, taking that commit as its base
+  and reissuing it under your subject line. Path-limiting does not save you:
+  a pathspec governs what is ADDED from the working tree, never what the base
+  tree already holds. Nothing of the content is lost — the blob is identical
+  either way — but the commit that said who landed those lines is, and
+  `git log` then names the wrong persona and the wrong bead. Correct a bad
+  commit with a NEW one.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

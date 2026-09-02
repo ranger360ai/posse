@@ -49,6 +49,16 @@ bd sync               # Sync with git
   already staged it (rangerhq-lrnp); undo that path-limited with
   `git restore --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
+- **In the shared checkout, never `--amend`, `rebase` or `reset`.** HEAD there
+  moves under you between any two of your own commands — another persona's
+  commit, or posse landing a persona's memory at a kill nobody scheduled —
+  and an amend rebuilds whatever HEAD is NOW, taking that commit as its base
+  and reissuing it under your subject line. Path-limiting does not save you:
+  a pathspec governs what is ADDED from the working tree, never what the base
+  tree already holds. Nothing of the content is lost — the blob is identical
+  either way — but the commit that said who landed those lines is, and
+  `git log` then names the wrong persona and the wrong bead
+  (ranger-base-4bdo). Correct a bad commit with a NEW one.
 - **The bead id in the subject is this shop's provenance; the
   `Co-Authored-By` runtime trailer is the harness's** (ranger-base-5aks).
   599 of 608 commits on `main` name a bead, and everything that asks "why is

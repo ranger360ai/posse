@@ -32,6 +32,11 @@ func memoryRepo(t *testing.T, b *HerdrBackend, personas ...string) string {
 	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
 	for _, p := range append([]string{"dev"}, personas...) {
 		write(t, filepath.Join(repo, "rhq", "personas", p, "ORDERS.md"), "# Standing orders — "+p+"\n")
+		// The ignore EnsureMemoryDir seeds beside it, committed here for the
+		// same reason ORDERS.md is: a launch materializes both, and a fixture
+		// that omits one starts every test with a dirty memory dir. It is the
+		// production constant and not a copy, so the two cannot drift.
+		write(t, filepath.Join(repo, "rhq", "personas", p, ".gitignore"), memoryIgnoreSeed)
 	}
 	mustGit(t, repo, "add", "--", "rhq")
 	mustGit(t, repo, "commit", "-q", "-m", "seed the constitution", "--", "rhq")
@@ -284,6 +289,214 @@ func TestTheCredentialScanDoesNotFireOnProseAboutCredentials(t *testing.T) {
 	}
 	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
 		t.Fatalf("prose about credentials held the commit: %v", dirty)
+	}
+}
+
+// The tracked half of the scan's "I could not read it, so I hold" idiom
+// (ranger-base-38a1). Git decides binary by CONTENT and not by name — a NUL
+// byte in the first 8000 is enough — and writes no `+` lines for such a
+// file, only "Binary files a/x and b/x differ". So the diff scan walked an
+// empty diff and read it as a file that added nothing, which is what a file
+// that really added nothing looks like too. This is not a story about `.bin`
+// files: a persona pasting raw terminal capture into its own ORDERS.md is
+// one NUL byte from it, and from that commit on that file is never scanned.
+func TestKillHoldsATrackedFileTheScanCannotRead(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	// Landed by hand first, so at kill time it is a MODIFICATION of a
+	// tracked path — the untracked arm reads whole files off disk and would
+	// have caught it.
+	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	write(t, blob, "harmless\x00bytes\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "sk-ant-api03-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+	write(t, blob, "harmless\x00bytes\n"+leaked+"\n")
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "rhq/personas/dev/capture.bin"); !strings.Contains(d, "Binary files") {
+		t.Fatalf("fixture is not binary to git, so this test measures an ordinary text diff:\n%s", d)
+	}
+	// An ordinary lesson beside it. The hold is the whole commit's, so this
+	// must not slip through on the back of the file that held it.
+	appendOrders(t, repo, "dev", "- a lesson that has to wait for the operator.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a file the scan cannot read was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	// The same treatment the memoryScanMax arm gives an oversized file: name
+	// the file, and say what was not done rather than implying it was.
+	if !strings.Contains(line, "capture.bin") || !strings.Contains(line, "not checked for credentials") {
+		t.Errorf("the hold must name the file and say it was not checked: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+	if st := mustGit(t, repo, "diff", "--cached", "--name-only"); strings.TrimSpace(st) != "" {
+		t.Errorf("a held commit left paths staged: %q", st)
+	}
+	if _, ok := b.readMeta("s1"); ok {
+		t.Error("a held memory commit must not stop the kill")
+	}
+}
+
+// The other direction, and the one that decides whether that hold is a hold
+// or a wedge. `--numstat` spells a DELETION `-` `-` exactly as it spells a
+// binary modification, and a deleted file adds nothing to scan. If deletions
+// held, a persona that tidied one `.bin` out of its memory dir would stop
+// landing memory at every future kill until an operator intervened — which
+// is the backlog this whole feature exists to end, wearing a safety label.
+func TestRemovingABinaryMemoryFileDoesNotHoldTheCommit(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	write(t, blob, "harmless\x00bytes\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	if err := os.Remove(blob); err != nil {
+		t.Fatal(err)
+	}
+	appendOrders(t, repo, "dev", "- a lesson landed beside the tidy-up.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Memory == nil || landing.Memory.Held != "" {
+		t.Fatalf("deleting a binary file held the commit: %+v", landing.Memory)
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
+		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
+	}
+	if body := mustGit(t, repo, "show", "HEAD:rhq/personas/dev/ORDERS.md"); !strings.Contains(body, "beside the tidy-up") {
+		t.Errorf("the lesson is not in the commit:\n%s", body)
+	}
+	if out, err := gitRaw(repo, "cat-file", "-e", "HEAD:rhq/personas/dev/capture.bin"); err == nil {
+		t.Errorf("the deletion did not land: %s", out)
+	}
+}
+
+// The same escape reached the other way, and the worse one. Content is not
+// the only thing that makes git call a file binary: a `.gitattributes` line
+// marking a path `-diff` or `binary` does it to ordinary prose. An operator
+// setting that on ORDERS.md — a reasonable thing to want, to keep memory out
+// of conflict resolution — would have silently turned the credential scan
+// off for the one file the scan exists for. Asking git (`--numstat`) rather
+// than reading the bytes here is what covers both routes with one arm.
+func TestKillHoldsAMemoryFileGitAttributesCallBinary(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	write(t, filepath.Join(repo, "rhq", "personas", "dev", ".gitattributes"), "ORDERS.md -diff\n")
+	mustGit(t, repo, "add", "--", "rhq/personas/dev/.gitattributes")
+	mustGit(t, repo, "commit", "-q", "-m", "keep memory out of conflict resolution", "--", "rhq/personas/dev/.gitattributes")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "sk-ant-api03-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+	appendOrders(t, repo, "dev", "- the key that worked: "+leaked+"\n")
+	// The file is plain text — nothing here is about NUL bytes.
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "rhq/personas/dev/ORDERS.md"); !strings.Contains(d, "Binary files") {
+		t.Fatalf("this git does not honor `-diff` here, so the test measures an ordinary diff:\n%s", d)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("an unscannable ORDERS.md was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	if line := landing.Memory.Line(); !strings.Contains(line, "ORDERS.md") || !strings.Contains(line, "not checked for credentials") {
+		t.Errorf("the hold must name the file and say it was not checked: %q", line)
+	}
+}
+
+// ─── what the sweep takes ────────────────────────────────────────────────────
+
+// ranger-base-c9m7: the sweep takes the persona's whole memory dir, and that
+// dir is also where a persona WORKS — five `myai-suite*.out` captures of test
+// stdout were committed as one persona's standing orders. The answer is not
+// an allowlist of blessed names: of the 29 files tracked under `personas/` on
+// the instance that measured this, four are deliberate work an allowlist of
+// ORDERS.md-and-pending would have stopped landing SILENTLY. It is git's own
+// ignore instead, seeded per persona and in the persona's own hands.
+//
+// Two-way on purpose. A test that only asserted the `.out` stayed out would
+// be just as green over a sweep that had quietly stopped taking anything.
+func TestTheSweepHonorsThePersonasOwnIgnore(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	dir := filepath.Join(repo, "rhq", "personas", "dev")
+	write(t, filepath.Join(dir, "myai-suite.out"), "ok  \tgithub.com/x/y\t31.4s\n")
+	write(t, filepath.Join(dir, "notes", "probe.md"), "- what the probe measured, and why\n")
+	appendOrders(t, repo, "dev", "- a lesson.\n")
+
+	if _, err := b.KillSessionAndLandOpts("s1", KillOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	got := headFiles(t, repo)
+	if strings.Contains(got, "myai-suite.out") {
+		t.Errorf("an ignored evidence file was committed as standing orders:\n%s", got)
+	}
+	for _, want := range []string{"rhq/personas/dev/ORDERS.md", "rhq/personas/dev/notes/probe.md"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the sweep stopped taking %s, so the ignore is a mute and not a filter:\n%s", want, got)
+		}
+	}
+	// Not merely uncommitted: an ignored path is not dirty either, so it
+	// never costs a future kill a landing turn.
+	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
+		t.Errorf("the ignored file still reads as memory to land: %v", dirty)
+	}
+	// And the file is left where the persona put it. The sweep declines to
+	// commit it; it is not the sweep's to remove.
+	if _, err := os.Stat(filepath.Join(dir, "myai-suite.out")); err != nil {
+		t.Errorf("the sweep disturbed the persona's own file: %v", err)
+	}
+}
+
+// A persona only has an ignore because a launch seeded one, and it only
+// stays the persona's because nothing rewrites it afterwards. Both halves,
+// because a seed that overwrote would make the file useless the first time
+// anyone edited it.
+func TestEnsureMemoryDirSeedsTheIgnoreOnceAndLeavesItAlone(t *testing.T) {
+	t.Parallel()
+	ag := &AgentFile{Name: "dev", MemoryDir: filepath.Join(t.TempDir(), "dev")}
+	if err := ag.EnsureMemoryDir(); err != nil {
+		t.Fatal(err)
+	}
+	ignore := filepath.Join(ag.MemoryDir, ".gitignore")
+	body, err := os.ReadFile(ignore)
+	if err != nil {
+		t.Fatalf("a materialized memory dir has no ignore: %v", err)
+	}
+	if !strings.Contains(string(body), "*.out") {
+		t.Errorf("the seeded ignore does not cover the evidence files that motivated it:\n%s", body)
+	}
+
+	write(t, ignore, "*.json\n")
+	appendOrders := "# Standing orders — dev\n- a lesson the persona wrote.\n"
+	write(t, filepath.Join(ag.MemoryDir, "ORDERS.md"), appendOrders)
+	if err := ag.EnsureMemoryDir(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(ignore); string(b) != "*.json\n" {
+		t.Errorf("a launch overwrote the persona's own ignore: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(ag.MemoryDir, "ORDERS.md")); string(b) != appendOrders {
+		t.Errorf("a launch overwrote the persona's own orders: %q", b)
 	}
 }
 

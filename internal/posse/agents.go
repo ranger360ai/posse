@@ -227,8 +227,38 @@ func (a *App) LoadAgent(name string) (*AgentFile, error) {
 // the one memory kind posse owns; project memory belongs to beads.
 func (a *App) PersonasDir() string { return filepath.Join(a.Home, "personas") }
 
+// memoryIgnoreSeed is the per-persona ignore this dir is seeded with.
+//
+// The memory dir is where a persona works, not only where it writes prose,
+// and LandPersonaMemory sweeps ALL of it: five `*.out` captures of test
+// stdout were committed as one persona's standing orders before this file
+// existed. The sweep is deliberately not narrowed to a list of blessed
+// names: of the 29 files tracked under `personas/` on the instance that
+// measured this, nine are neither an ORDERS.md nor under a `pending/`, and
+// only five of those nine are the evidence — the other four are a rollback
+// patch and three deliberate notes and scripts. An allowlist drops those
+// four SILENTLY, which is the defect the landing exists to end reached from
+// the other side; an ignore leaves them and takes the five out by name.
+//
+// So the answer is git's own, per persona and in the persona's own hands:
+// `status` and `add` both honor this file, so a path named here never
+// reaches the change list and cannot reach the commit. The two patterns are
+// a starting list, not a ruling — a persona that wants a `.out` kept deletes
+// the line, and one whose evidence is `.json` adds it.
+const memoryIgnoreSeed = `# Not memory. posse commits this directory on the persona's behalf when a
+# session ends — path-limited, scanned for credential shapes, never pushed —
+# so a file here that belongs on a bead or in a scratch dir belongs on this
+# list instead. It is yours to grow; nothing rewrites it once it exists.
+*.out
+*.log
+`
+
 // EnsureMemoryDir materializes the persona's memory dir at launch time,
-// seeding an ORDERS.md the persona (or you) can grow.
+// seeding an ORDERS.md the persona (or you) can grow and the ignore that
+// keeps the rest of the dir from being committed as memory.
+//
+// Each file is seeded only when it is absent, so this is safe to run at
+// every launch and never touches what a persona has written.
 func (ag *AgentFile) EnsureMemoryDir() error {
 	if err := os.MkdirAll(ag.MemoryDir, 0o755); err != nil {
 		return err
@@ -236,7 +266,13 @@ func (ag *AgentFile) EnsureMemoryDir() error {
 	orders := filepath.Join(ag.MemoryDir, "ORDERS.md")
 	if _, err := os.Stat(orders); err != nil {
 		seed := "# Standing orders — " + ag.Name + "\n\n(persona-private memory; injected at every launch)\n"
-		return os.WriteFile(orders, []byte(seed), 0o644)
+		if err := os.WriteFile(orders, []byte(seed), 0o644); err != nil {
+			return err
+		}
+	}
+	ignore := filepath.Join(ag.MemoryDir, ".gitignore")
+	if _, err := os.Stat(ignore); err != nil {
+		return os.WriteFile(ignore, []byte(memoryIgnoreSeed), 0o644)
 	}
 	return nil
 }

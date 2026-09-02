@@ -2843,10 +2843,19 @@ repo's `issues.jsonl`) cannot be another persona's first instruction.
 **Memory.** `personas/<name>/` (under RHQ_HOME) is the persona-private
 memory dir — the one memory kind posse owns (project memory belongs to
 beads: `bd remember` / `bd prime`; runtime memory belongs to the agent
-CLI). It is materialized at launch, seeded with `ORDERS.md`, exposed to the
-process as `RHQ_PERSONA_DIR` and to the command template as `{memory}`
-(e.g. `--add-dir {memory}` for claude). `posse memory <persona>` opens the
-standing orders in $EDITOR.
+CLI). It is materialized at launch, seeded with `ORDERS.md` and a
+`.gitignore`, exposed to the process as `RHQ_PERSONA_DIR` and to the command
+template as `{memory}` (e.g. `--add-dir {memory}` for claude).
+`posse memory <persona>` opens the standing orders in $EDITOR.
+
+The `.gitignore` is there because the landing below sweeps the WHOLE dir and
+that dir is also where a persona works: five `myai-suite*.out` captures of
+test stdout were committed as one persona's standing orders (ranger-base-c9m7).
+The filter is git's own rather than a list of blessed filenames, because an
+allowlist stops landing a persona's real notes silently — four of the 29 files
+tracked under this instance's `personas/` are deliberate work that an
+ORDERS.md-and-`pending/` allowlist would have dropped. Seeded with `*.out` and
+`*.log`; it is the persona's to grow and nothing rewrites it.
 
 ## Fleet security posture (read this honestly)
 
