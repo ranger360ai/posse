@@ -124,11 +124,25 @@ No change to `sessionHooksDirs`, `recordBead`, or L1.
 shows the same write landing with the deny removed — the rig must be
 shown able to fail)
 
+One shape cannot have that control arm, and saying so is part of the
+claim (measured ranger-base-1fz21, 2026-09-02): in the **worktree**
+shape no grant reaches `<common>/config` at all, so the write is refused
+with the deny removed too. Items 1 and 2 there grade the omission wall
+this ADR's Context names, not the deny — `reachesConfig` in
+`seatbeltgitidentity_qa_test.go` asks the production grant which of the
+two a row is grading, and asserts it the other way round so the day a
+grant widens the row fails and goes back to grading the deny. The other
+three shapes carry the real control arm.
+
 1. Per session shape (main checkout · worktree · deniesFiles ·
    redirect): in-cage `git config core.hooksPath /tmp/x` → rc≠0,
    config byte-identical, **no stray `config.lock`**.
 2. Non-git spellings refused: shell redirect, python open, `mv` onto
-   `config`.
+   `config`. The `mv` stages its forged file in the persona's memory
+   dir, not the gates dir: `state/gates` is denied in both arms, and a
+   probe refused at its own setup exits like one refused at the wall —
+   which is how that row asserted nothing in all four shapes until
+   ranger-base-1fz21.
 3. Session life stays green under the deny: add/commit, checkout,
    bd claim/comment/close staging `.beads` — the zero-cost claim
    measured by execution, not asserted.

@@ -20,6 +20,17 @@ package posse
 // (giFixture.control) rather than assembled by hand: a control list written
 // out separately would be measuring two changes at once.
 //
+// One shape has no control, and the table says so rather than reading as a
+// failure: in a WORKTREE session no grant reaches `<common>/config` at all
+// (ranger-base-m2wf), so the control is refused there too and those rows
+// grade the omission wall the ADR's Context names instead of the deny.
+// giFixture.reachesConfig asks the production grant which of the two a row
+// is grading, and the row is asserted the other way round so a widened
+// grant fails it. Everything a probe needs BEFORE the write it is named for
+// is a giProbe.stage, run under the same profile and required to succeed —
+// a setup refused by an unrelated wall is a refusal that reads as a pass
+// (both measured, ranger-base-1fz21).
+//
 // Verification items 1-4 of the ADR, in order:
 //
 //	item 1 → TestQAGitConfigWriteRefusedUnderSandboxExec, per session shape
@@ -174,6 +185,29 @@ func (f giFixture) configOf(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return absResolve(p)
+}
+
+// forged is where a probe stages a file it will then rename over a denied
+// one. The persona's own memory dir, because that is what a caged session
+// really has to forge a file in: SeatbeltWritable grants ag.MemoryDir in
+// all four shapes, and `personas` is NotPromoted so no constitution deny
+// covers it. NOT the gates dir, which is where this started — the carve-out
+// denies `state/gates` whole in BOTH arms (seatbeltcarveout_qa_test.go pins
+// that as intended), so a probe staging there is refused before it begins
+// (ranger-base-1fz21).
+func (f giFixture) forged() string { return filepath.Join(f.ag.MemoryDir, "forged") }
+
+// reachesConfig asks the PRODUCTION grant whether a session of this shape
+// can write the config file at all. In the worktree shape the answer is no:
+// ranger-base-m2wf narrowed the common git dir out of the grant, so the
+// file is walled by omission and ADR 0038's deny sits on top of a wall that
+// was already there ("only by omission — no deny stands there if a grant
+// ever widens"). No control arm can succeed against that, which is why the
+// execution table below grades the omission wall in that shape and says so
+// instead of reporting an untested deny.
+func (f giFixture) reachesConfig(t *testing.T, s giShape) bool {
+	t.Helper()
+	return sbCovers(f.writable(t, s), f.configOf(t, s.cwd(f)))
 }
 
 // ─── the deny list ───────────────────────────────────────────────────────────
@@ -369,14 +403,28 @@ func TestQAGatesPrintsTheConfigDeny(t *testing.T) {
 // happen WITH this bead's denies in place; a refusal is then re-run on a
 // fresh fixture under the control profile, and the control MUST succeed or
 // the probe measured nothing.
+//
+// `stage` is the setup a multi-step probe needs. It runs under the SAME
+// profile as the write — the attacker is the caged session, so its staging
+// is caged too — and it is required to SUCCEED. That requirement is the
+// point: a probe refused at its first step exits non-zero exactly like one
+// refused at the wall, and under `want: false` that reads as a pass. The mv
+// probe below staged its forged config inside `state/gates`, which the
+// carve-out denies in every arm, so in all four shapes it never reached the
+// mv it is named for; the only symptom was its control arm failing, which
+// says "untested deny" and not "this probe never ran" (ranger-base-1fz21).
 type giProbe struct {
 	what    string
+	stage   func(f giFixture) string
 	sh      func(f giFixture, cwd string) string
 	want    bool
 	witness func(t *testing.T, f giFixture, cwd string) // run when the control succeeds
 }
 
-func giTry(t *testing.T, s giShape, p giProbe, walled bool) (bool, string) {
+// giTry runs one arm on a fresh fixture and hands that fixture back: the
+// reachability question the config table asks below has to be asked of the
+// same tree the refusal came from, not of another one built beside it.
+func giTry(t *testing.T, s giShape, p giProbe, walled bool) (giFixture, bool, string) {
 	t.Helper()
 	f := giNewFixture(t)
 	cwd := s.cwd(f)
@@ -386,11 +434,16 @@ func giTry(t *testing.T, s giShape, p giProbe, walled bool) (bool, string) {
 	}
 	w := f.writable(t, s)
 	prof := sbRenderProfile(t, name, SeatbeltProfile("developer", w, SeatbeltSiblings(nil, c), c, sessionRefDirs(cwd)...))
+	if p.stage != nil {
+		if ok, out := wgRun(t, prof, p.stage(f)); !ok {
+			t.Fatalf("the probe's own setup was refused under %s, so the write it is named for never ran and this arm measures nothing (ranger-base-1fz21):\n%s", name, out)
+		}
+	}
 	ok, out := wgRun(t, prof, p.sh(f, cwd))
 	if ok && !walled && p.witness != nil {
 		p.witness(t, f, cwd)
 	}
-	return ok, out
+	return f, ok, out
 }
 
 // ADR 0038 verification items 1 and 2: `git config` refused in every
@@ -408,56 +461,80 @@ func TestQAGitConfigWriteRefusedUnderSandboxExec(t *testing.T) {
 		// Item 1. The door ADR 0038 closes: not a bd verb, so no PID
 		// denies this spelling, and the value survives the invocation to
 		// be read by the operator's git and the launcher's rebase.
-		{"plant core.hooksPath with git config", func(f giFixture, cwd string) string {
+		{what: "plant core.hooksPath with git config", sh: func(f giFixture, cwd string) string {
 			return "git -C " + cwd + " config core.hooksPath /tmp/x"
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if !planted(f, cwd) {
 				t.Error("the control did not plant hooksPath — it witnesses nothing")
 			}
 		}},
-		{"plant a filter.*.clean command", func(f giFixture, cwd string) string {
+		{what: "plant a filter.*.clean command", sh: func(f giFixture, cwd string) string {
 			return "git -C " + cwd + " config filter.PWNED.clean 'sh -c id'"
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if !planted(f, cwd) {
 				t.Error("the control did not plant the filter — it witnesses nothing")
 			}
 		}},
-		{"plant an alias", func(f giFixture, cwd string) string {
+		{what: "plant an alias", sh: func(f giFixture, cwd string) string {
 			return "git -C " + cwd + " config alias.PWNED '!sh -c id'"
-		}, false, nil},
+		}, want: false},
 		// Item 2: the non-git spellings.
-		{"append to config with a shell redirect", func(f giFixture, cwd string) string {
+		{what: "append to config with a shell redirect", sh: func(f giFixture, cwd string) string {
 			return "printf '[core]\\n\\thooksPath = /tmp/x\\n' >> " + cfg(f, cwd)
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if !planted(f, cwd) {
 				t.Error("the control did not append to config — it witnesses nothing")
 			}
 		}},
-		{"rewrite config through python", func(f giFixture, cwd string) string {
+		{what: "rewrite config through python", sh: func(f giFixture, cwd string) string {
 			return "/usr/bin/python3 -c \"open('" + cfg(f, cwd) + "','a').write('[core]\\n\\thooksPath = /tmp/x\\n')\""
-		}, false, nil},
-		{"mv a forged config onto it", func(f giFixture, cwd string) string {
-			forged := filepath.Join(f.gates, "forged")
-			return "printf '[core]\\n\\thooksPath = /tmp/x\\n' > " + forged + " && mv " + forged + " " + cfg(f, cwd)
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false},
+		// The staging is its own step for a reason: see giProbe.stage.
+		{what: "mv a forged config onto it", stage: func(f giFixture) string {
+			return "printf '[core]\\n\\thooksPath = /tmp/x\\n' > " + f.forged()
+		}, sh: func(f giFixture, cwd string) string {
+			return "mv " + f.forged() + " " + cfg(f, cwd)
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if !planted(f, cwd) {
 				t.Error("the control did not move the forged config into place — it witnesses nothing")
 			}
 		}},
-		{"truncate config", func(f giFixture, cwd string) string { return ": > " + cfg(f, cwd) }, false, nil},
-		{"delete config", func(f giFixture, cwd string) string { return "rm " + cfg(f, cwd) }, false, nil},
+		{what: "truncate config", sh: func(f giFixture, cwd string) string { return ": > " + cfg(f, cwd) }, want: false},
+		{what: "delete config", sh: func(f giFixture, cwd string) string { return "rm " + cfg(f, cwd) }, want: false},
 	}
 	verb := map[bool]string{true: "ALLOWED", false: "REFUSED"}
 	for _, s := range giShapes() {
 		for _, p := range probes {
 			t.Run(s.name+"/"+p.what, func(t *testing.T) {
-				got, out := giTry(t, s, p, true)
+				f, got, out := giTry(t, s, p, true)
 				if got != p.want {
 					t.Errorf("%s under the deny, want %s:\n%s", verb[got], verb[p.want], out)
 				}
-				if ok, out := giTry(t, s, p, false); !ok {
-					t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny:\n%s", out)
+				_, ok, cout := giTry(t, s, p, false)
+				if f.reachesConfig(t, s) {
+					if !ok {
+						t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny:\n%s", cout)
+					}
+					return
 				}
+				// The shape whose grant does not reach this config at all
+				// (worktree, ranger-base-m2wf). Both arms are refused by
+				// the MISSING GRANT, so no control can succeed here and
+				// this row grades the omission wall — which is a real
+				// property, and the one ADR 0038 rests on in this shape —
+				// rather than the deny. Saying which is the whole fix:
+				// eight rows here reported "the CONTROL refused it too" and
+				// read as an untested deny (ranger-base-1fz21).
+				//
+				// The assertion runs the other way round, so the row is
+				// still falsifiable: the day a grant widens to cover this
+				// config, the control succeeds, this line fails, and the
+				// row has to go back to grading the deny.
+				if ok {
+					t.Errorf("the CONTROL was ALLOWED: a grant now reaches the %s shape's config, so the omission wall this row grades is gone and it must grade the DENY instead — require the control to succeed for this shape:\n%s", s.name, cout)
+					return
+				}
+				t.Logf("graded against the omission wall, not the deny: no grant of the %s shape reaches this config (ranger-base-m2wf), so no control can succeed and the refusal above is the missing grant's", s.name)
 			})
 		}
 	}
@@ -560,56 +637,66 @@ func TestQAWorktreeIdentityChainRefusedButTheLauncherIsUnaffected(t *testing.T) 
 	sbSkipUnlessSandboxable(t)
 	s := giShapes()[1] // worktree
 	probes := []giProbe{
-		{"repoint the .git pointer file at a forged git dir", func(f giFixture, cwd string) string {
+		// f.gates appears here only as CONTENT — the path a forged chain
+		// would point AT. Nothing below writes into it, which is why these
+		// rows were unaffected by the staging refusal the config table hit
+		// (ranger-base-1fz21).
+		{what: "repoint the .git pointer file at a forged git dir", sh: func(f giFixture, cwd string) string {
 			return "echo 'gitdir: " + filepath.Join(f.gates, "forged") + "' > " + filepath.Join(cwd, ".git")
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			b, _ := os.ReadFile(filepath.Join(cwd, ".git"))
 			if !strings.Contains(string(b), "forged") {
 				t.Errorf("the control did not repoint the pointer file: %q", b)
 			}
 		}},
-		{"repoint commondir at a writable dir", func(f giFixture, cwd string) string {
+		{what: "repoint commondir at a writable dir", sh: func(f giFixture, cwd string) string {
 			return "echo " + f.gates + " > " + filepath.Join(f.own, "commondir")
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			b, _ := os.ReadFile(filepath.Join(f.own, "commondir"))
 			if !strings.Contains(string(b), f.gates) {
 				t.Errorf("the control did not rewrite commondir: %q", b)
 			}
 		}},
-		{"repoint gitdir", func(f giFixture, cwd string) string {
+		{what: "repoint gitdir", sh: func(f giFixture, cwd string) string {
 			return "echo " + filepath.Join(f.gates, "elsewhere", ".git") + " > " + filepath.Join(f.own, "gitdir")
-		}, false, nil},
-		{"plant per-worktree config.worktree", func(f giFixture, cwd string) string {
+		}, want: false},
+		{what: "plant per-worktree config.worktree", sh: func(f giFixture, cwd string) string {
 			return "printf '[core]\\n\\thooksPath = /tmp/x\\n' > " + filepath.Join(f.own, "config.worktree")
-		}, false, func(t *testing.T, f giFixture, cwd string) {
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if _, err := os.Stat(filepath.Join(f.own, "config.worktree")); err != nil {
 				t.Errorf("the control did not create config.worktree: %v", err)
 			}
 		}},
-		{"delete commondir outright", func(f giFixture, cwd string) string {
+		{what: "delete commondir outright", sh: func(f giFixture, cwd string) string {
 			return "rm " + filepath.Join(f.own, "commondir")
-		}, false, nil},
+		}, want: false},
 
 		// And what the session keeps in the same directory — not controls,
 		// the cost check.
-		{"write its own index", func(f giFixture, cwd string) string {
+		{what: "write its own index", sh: func(f giFixture, cwd string) string {
 			return "touch " + filepath.Join(f.own, "index.lock")
-		}, true, nil},
-		{"move its own HEAD", func(f giFixture, cwd string) string {
+		}, want: true},
+		{what: "move its own HEAD", sh: func(f giFixture, cwd string) string {
 			return "git -C " + cwd + " checkout -q --detach"
-		}, true, nil},
+		}, want: true},
 	}
 	verb := map[bool]string{true: "ALLOWED", false: "REFUSED"}
 	for _, p := range probes {
 		t.Run(p.what, func(t *testing.T) {
-			got, out := giTry(t, s, p, true)
+			_, got, out := giTry(t, s, p, true)
 			if got != p.want {
 				t.Errorf("%s under the deny, want %s:\n%s", verb[got], verb[p.want], out)
 			}
 			if p.want {
 				return
 			}
-			if ok, out := giTry(t, s, p, false); !ok {
+			// No omission-wall branch here, and none is needed: the
+			// worktree's own git dir IS granted (that is what makes
+			// denying the chain inside it meaningful), and
+			// TestQAGrantStillReachesTheGitConfigInEveryShape asserts
+			// exactly that for these paths. So a control refusal here is
+			// the real reading it always was.
+			if _, ok, out := giTry(t, s, p, false); !ok {
 				t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny:\n%s", out)
 			}
 		})
