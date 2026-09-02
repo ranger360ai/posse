@@ -259,7 +259,7 @@ func TestAutoReapWillNotTakeResidueOverAnUncommittedTree(t *testing.T) {
 // working tree: a session worktree whose commits the base does not have is
 // the last copy of them, however finished the session looks.
 func TestAutoReapWillNotTakeResidueHoldingUnlandedCommits(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -287,7 +287,7 @@ func TestAutoReapWillNotTakeResidueHoldingUnlandedCommits(t *testing.T) {
 // session is taken. Without this the test above is satisfied by an arm that
 // refuses everything.
 func TestAutoReapTakesResidueOnceItsBranchHasLanded(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

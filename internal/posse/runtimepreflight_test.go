@@ -275,7 +275,6 @@ func TestBuiltinsDeclareTheirPreflight(t *testing.T) {
 // is a refusal at the top of the launch rather than a pane that opens,
 // fails to authenticate, and reads to herdr as an agent sitting idle.
 func TestLaunchRefusesWhenEnvRequiredIsMissing(t *testing.T) {
-	wtqaHome(t)
 	b, _ := newTestBackend(t)
 	a := b.App
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {

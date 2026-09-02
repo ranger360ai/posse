@@ -44,15 +44,22 @@ func wtqaRepo(t *testing.T, a *App, ready, show string) string {
 	return repo
 }
 
-// wtqaHome points $HOME at a temp dir so session worktrees land under it and
-// never in the operator's real ~/.posse. It must run before newTestBackend's
-// dirs are used for anything HOME-derived.
+// wtqaHome points $HOME at a temp dir. It used to be how every test in this
+// file kept session worktrees out of the operator's real ~/.posse, and it
+// held 137 tests serial for it; ADR 0047 now gives that guarantee twice over
+// without touching the environment — TestMain hands the binary a temp $HOME,
+// and hermetic() puts each App's default worktree root at
+// $HOME/worktrees/<t.Name()>. So 48 calls came out (ranger-base-pj87l) and
+// the two left are the ones that want a $HOME of their very own for a reason
+// the worktree root does not cover: sbRoot, whose sandbox pins create and
+// remove operator-owned paths OFF that home (~/.claude.json, ~/Library/...),
+// and one init test that is env-tainted anyway.
 func wtqaHome(t *testing.T) { t.Helper(); t.Setenv("HOME", t.TempDir()) }
 
 // ─── the first clause: two personas, one repo, two trees ─────────────────────
 
 func TestDispatchGivesEachPersonaItsOwnTree(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -133,7 +140,7 @@ func TestDispatchGivesEachPersonaItsOwnTree(t *testing.T) {
 // live (see worktree.go): without it bd builds a second database in the
 // worktree and the graph forks, silently.
 func TestDispatchedTreesShareOneBeadsDatabase(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -162,7 +169,6 @@ func TestDispatchedTreesShareOneBeadsDatabase(t *testing.T) {
 // idempotent and the pass lands in the tree that is already there.
 func wtqaPassWithWork(t *testing.T, extra func(repo, tree string)) (*Dispatcher, string, string) {
 	t.Helper()
-	wtqaHome(t)
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	// The merge-back rung says half of what it says on errw (a handoff that
@@ -190,6 +196,7 @@ func wtqaPassWithWork(t *testing.T, extra func(repo, tree string)) (*Dispatcher,
 }
 
 func TestClosedBeadLandsOnTheRepoBranch(t *testing.T) {
+	t.Parallel()
 	d, repo, tree := wtqaPassWithWork(t, nil)
 	out := dispatcherOut(d)
 
@@ -207,7 +214,7 @@ func TestClosedBeadLandsOnTheRepoBranch(t *testing.T) {
 }
 
 func TestClosedBeadWithNoCommitSaysSo(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -223,6 +230,7 @@ func TestClosedBeadWithNoCommitSaysSo(t *testing.T) {
 }
 
 func TestUncommittedWorkIsNamedAndNotLost(t *testing.T) {
+	t.Parallel()
 	d, _, tree := wtqaPassWithWork(t, func(_, tree string) {
 		write(t, filepath.Join(tree, "forgotten.txt"), "never committed\n")
 	})
@@ -239,6 +247,7 @@ func TestUncommittedWorkIsNamedAndNotLost(t *testing.T) {
 // is on a branch nobody is told about is the failure mode this whole path
 // exists to avoid (ADR 0006 §1: a handoff is a bead).
 func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
+	t.Parallel()
 	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
 		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
 	})
@@ -277,6 +286,7 @@ func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
 // the launcher threw it away — stays unnamed. So it has to reach the handoff.
 // The paired arm is the sibling above: a real conflict still says conflict.
 func TestMergeBlockedBeadNamesWhatGitSaidWhenNothingConflicted(t *testing.T) {
+	t.Parallel()
 	const hookSaid = "no space left on device (simulated)"
 	d, _, _ := wtqaPassWithWork(t, func(repo, _ string) {
 		// Main moves, so the ff refuses and the replay runs; the replay
@@ -318,6 +328,7 @@ func TestMergeBlockedBeadNamesWhatGitSaidWhenNothingConflicted(t *testing.T) {
 // reported as filed — by id — not as "could not file", or the operator goes
 // looking for a handoff that exists and nothing ever retries it.
 func TestMergeBlockedCreateThatCommittedTheIssueIsReportedFiledEdgeless(t *testing.T) {
+	t.Parallel()
 	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
 		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
 		write(t, filepath.Join(repo, "fake-create-fail"), "")
@@ -350,6 +361,7 @@ func TestMergeBlockedCreateThatCommittedTheIssueIsReportedFiledEdgeless(t *testi
 // committed NOTHING is still reported as not filed. A read-back that reports
 // "filed" off any failure would be worse than the bug it replaces.
 func TestMergeBlockedCreateThatLandedNothingStillSaysSo(t *testing.T) {
+	t.Parallel()
 	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
 		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
 		write(t, filepath.Join(repo, "fake-create-hard-fail"), "")
@@ -380,6 +392,7 @@ func TestMergeBlockedCreateThatLandedNothingStillSaysSo(t *testing.T) {
 // timed-out create is exactly what would otherwise be re-filed every pass
 // that judges the close (the muoo flood's shape).
 func TestMergeBlockedDoesNotFileASecondBeadForTheSameBranch(t *testing.T) {
+	t.Parallel()
 	d, _, _ := wtqaPassWithWork(t, func(repo, tree string) {
 		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
 		branch, err := git(tree, "rev-parse", "--abbrev-ref", "HEAD")
@@ -432,6 +445,7 @@ func mergeBlockedID(t *testing.T, repo string) string {
 // file the bead that says where it is — never land it on whatever the
 // operator is standing on.
 func TestMergeBackRefusesWhenTheOperatorLeftTheBase(t *testing.T) {
+	t.Parallel()
 	d, repo, tree := wtqaPassWithWork(t, func(repo, _ string) {
 		mustGit(t, repo, "checkout", "-q", "-b", "operator-side")
 	})
@@ -454,7 +468,7 @@ func TestMergeBackRefusesWhenTheOperatorLeftTheBase(t *testing.T) {
 // ─── the kill: land it, or keep it and say so ────────────────────────────────
 
 func TestKillLandsTheWorkAndRetiresTheTree(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -495,7 +509,7 @@ func TestKillLandsTheWorkAndRetiresTheTree(t *testing.T) {
 // every branch-shaped question with "nothing unlanded", so the kill used to
 // merge nothing, report a clean landing and then remove the only copy.
 func TestKillKeepsATreeWhoseWorkIsOnNoBranch(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -530,7 +544,7 @@ func TestKillKeepsATreeWhoseWorkIsOnNoBranch(t *testing.T) {
 }
 
 func TestKillKeepsATreeItCannotLand(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -571,7 +585,7 @@ func TestKillKeepsATreeItCannotLand(t *testing.T) {
 // A session that shares the checkout — every crew session, and every session
 // from before this landed — must kill exactly as it always did.
 func TestKillOfASharedCheckoutSessionIsUnchanged(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -598,6 +612,7 @@ func TestKillOfASharedCheckoutSessionIsUnchanged(t *testing.T) {
 // persona", which is exactly what a session worktree's index is not. The arm
 // now asks whether the index really is shared.
 func TestCommitGuardStandsDownInALinkedWorktree(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -642,6 +657,7 @@ func TestCommitGuardStandsDownInALinkedWorktree(t *testing.T) {
 // applies, so a launch into a session worktree is not degraded by a wall
 // that is right to be quiet there.
 func TestL3ProbeSeesTheWallFromInsideAWorktree(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -662,7 +678,7 @@ func TestL3ProbeSeesTheWallFromInsideAWorktree(t *testing.T) {
 // ─── what the persona is told ────────────────────────────────────────────────
 
 func TestWorkPromptNamesTheSessionTree(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
@@ -695,6 +711,7 @@ func TestWorkPromptNamesTheSessionTree(t *testing.T) {
 // tree, so a boundary drawn around the tree alone leaves a persona unable to
 // commit in it. Both boundaries posse draws must name those dirs.
 func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -761,6 +778,7 @@ func TestWriteBoundariesReachTheWorktreesGitDirs(t *testing.T) {
 // persona's commit on the operator's unrelated branch and report the
 // original base as merged.
 func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-branch-switch", nil)
@@ -792,7 +810,7 @@ func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
 // that would make later close/kill paths treat a private tree as shared and
 // silently skip its landing.
 func TestQARelaunchKeepsWorktreeProvenanceWhileOperatorHeadIsDetached(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -823,7 +841,7 @@ func TestQARelaunchKeepsWorktreeProvenanceWhileOperatorHeadIsDetached(t *testing
 // A kill while a launcher is firing must not freeze on the lock and must not
 // merge unserialized: it kills, keeps the tree, and names the way to finish.
 func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	write(t, b.App.ConfigPath, "")
@@ -887,7 +905,7 @@ func TestKillDefersTheLandingWhileALauncherRuns(t *testing.T) {
 // word. This drives the whole chain — relaunch under a detached checkout,
 // kill under it, catch-up after it — through the real paths.
 func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := wtRepo(t)
@@ -982,7 +1000,7 @@ func TestQADetachedRelaunchStillLandsTheSessionsWork(t *testing.T) {
 // already says "the branch it was cut from" there (orDetached); the prompt
 // says nothing at all, twice. ranger-base-nfgh.
 func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := wtRepo(t)
@@ -1065,8 +1083,16 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 // EvalSymlinks BEFORE validating. This is the same resolution step, and it is
 // the only thing standing between a persona's work and a reaper.
 func TestQAWorktreeRootRefusesASymlinkOutOfHome(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
-	home := os.Getenv("HOME")
+	// Under $HOME is what the rule is about, so the fixtures have to live
+	// there — but $HOME is the binary's now (ADR 0047 D1), so they take the
+	// test's own name under it rather than sharing "trees" and "scratch"
+	// with whatever else runs beside them (ranger-base-pj87l).
+	home := filepath.Join(os.Getenv("HOME"), t.Name())
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// The control: a real directory under $HOME is accepted, so a refusal
 	// below means "outside", not "unwritable" or "missing".

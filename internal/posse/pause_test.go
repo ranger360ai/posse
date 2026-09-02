@@ -418,6 +418,7 @@ func TestAPausedPassStillRunsTheEpilogue(t *testing.T) {
 // — so a paused pass over it is the whole claim in one assertion: finished
 // work does not sit in a worktree for the length of a pause.
 func TestAPausedPassStillLandsAClosedBeadsTree(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
 	pausedShop(t, d.App, "coordinator", "waiting on the operator")
 
@@ -473,6 +474,7 @@ func TestAPausedAndSaturatedBoxNamesTheHumanFirstAndStopsAtTheGuard(t *testing.T
 // blocked session still pulses her. The gate is in Run; the pulse goroutine
 // is started outside it and never consults the pause file.
 func TestAPausedShopStillPulses(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	// A blocked session (G1), and the coordinator's own idle one for the
 	// pulse to deliver into. Both statuses have to be in one agents.json —

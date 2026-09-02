@@ -15,19 +15,20 @@ import (
 	"testing"
 )
 
-// wtApp is an App whose $HOME is a temp dir, so the under-$HOME placement
-// rule is satisfied by the default worktree root and a test never writes
-// into the operator's real ~/.posse.
+// wtApp is an App whose default worktree root is this test's own, so the
+// under-$HOME placement rule is satisfied for real and a test never writes
+// into the operator's ~/.posse. It used to buy that with t.Setenv("HOME"),
+// which held 71 tests serial after ADR 0047 made the guarantee two cheaper
+// ways: TestMain gives the binary a temp $HOME, and hermetic puts the root
+// at $HOME/worktrees/<t.Name()> (ranger-base-pj87l).
 func wtApp(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
 	h := t.TempDir()
-	return &App{
+	return hermetic(t, &App{
 		Home: h, ConfigPath: filepath.Join(h, "config.yaml"),
 		RecipesDir: filepath.Join(h, "recipes"), EnvsDir: filepath.Join(h, "envs"),
 		StateDir: filepath.Join(h, "state"), AgentsDir: filepath.Join(h, "agents"),
-		ModelLister: &ModelLister{},
-	}
+	})
 }
 
 func mustGit(t *testing.T, dir string, args ...string) string {
@@ -85,6 +86,7 @@ func commitIn(t *testing.T, dir, path, body, msg string) {
 // not resolve), so nothing under us stops a session worktree landing in a
 // directory a reaper walks.
 func TestWorktreeRootMustBeUnderHome(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	if _, err := a.WorktreeRoot(); err != nil {
 		t.Fatalf("the default root is under $HOME and must be accepted: %v", err)
@@ -101,6 +103,7 @@ func TestWorktreeRootMustBeUnderHome(t *testing.T) {
 }
 
 func TestWorktreeRootHonoursConfig(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	want := filepath.Join(os.Getenv("HOME"), "trees")
 	write(t, a.ConfigPath, "worktrees: ~/trees\n")
@@ -152,6 +155,7 @@ func TestTheTestBinaryGetsATempHome(t *testing.T) {
 // ─── making the tree ─────────────────────────────────────────────────────────
 
 func TestEnsureSessionTreeIsPrivateAndIdempotent(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 
@@ -191,6 +195,7 @@ func TestEnsureSessionTreeIsPrivateAndIdempotent(t *testing.T) {
 // Two sessions in one repo are the incident's own shape (rangerhq-nyqj): two
 // trees, two indexes, and neither commit touching the other's staged work.
 func TestTwoSessionsGetSeparateTreesAndIndexes(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 
@@ -236,6 +241,7 @@ func TestTwoSessionsGetSeparateTreesAndIndexes(t *testing.T) {
 }
 
 func TestEnsureSessionTreeSkipsWhatItCannotIsolate(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 
 	if tr, err := a.EnsureSessionTree(t.TempDir(), "s-1", nil); err != nil || tr != nil {
@@ -260,6 +266,7 @@ func TestEnsureSessionTreeSkipsWhatItCannotIsolate(t *testing.T) {
 // answering "no worktree" would tell every later close and kill that a live
 // private tree is the shared checkout, with nothing to land (ranger-base-q5p1).
 func TestEnsureSessionTreeKeepsAnExistingTreeWhileHeadIsDetached(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	first, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -296,6 +303,7 @@ func TestEnsureSessionTreeKeepsAnExistingTreeWhileHeadIsDetached(t *testing.T) {
 // ─── the beads redirect: the graph must not fork ─────────────────────────────
 
 func TestSessionTreeSeedsAnAbsoluteBeadsRedirect(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, ".beads", "issues.jsonl"), "")
@@ -317,6 +325,7 @@ func TestSessionTreeSeedsAnAbsoluteBeadsRedirect(t *testing.T) {
 // serves ranger-base's database) must not get a CHAIN — the worktree points
 // at the real database directly.
 func TestSessionTreeResolvesAChainedRedirect(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	real := t.TempDir()
@@ -332,6 +341,7 @@ func TestSessionTreeResolvesAChainedRedirect(t *testing.T) {
 }
 
 func TestSessionTreeRedirectFollowsARelativeOne(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "elsewhere", "keep"), "")
@@ -347,6 +357,7 @@ func TestSessionTreeRedirectFollowsARelativeOne(t *testing.T) {
 }
 
 func TestNoBeadsInRepoSeedsNoRedirect(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	tr, err := a.EnsureSessionTree(wtRepo(t), "s-1", nil)
 	if err != nil {
@@ -369,6 +380,7 @@ func readRedirect(t *testing.T, tree string) string {
 // ─── the gitignored things a checkout does not carry ─────────────────────────
 
 func TestWorktreeLinkSeedsDeclaredPaths(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, "plugin", "bin", "posse"), "#!/bin/sh\n")
@@ -391,6 +403,7 @@ func TestWorktreeLinkSeedsDeclaredPaths(t *testing.T) {
 }
 
 func TestWorktreeLinkRefusesToEscapeTheRepo(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	write(t, a.ConfigPath, "worktree_link:\n  - ../../etc\n")
 	_, err := a.EnsureSessionTree(wtRepo(t), "s-1", nil)
@@ -402,6 +415,7 @@ func TestWorktreeLinkRefusesToEscapeTheRepo(t *testing.T) {
 // ─── merging back (option A, rangerhq-jbyr) ──────────────────────────────────
 
 func TestMergeSessionWorkFastForwards(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -429,6 +443,7 @@ func TestMergeSessionWorkFastForwards(t *testing.T) {
 }
 
 func TestMergeSessionWorkRebasesWhenTheBaseMoved(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -469,6 +484,7 @@ func TestMergeSessionWorkRebasesWhenTheBaseMoved(t *testing.T) {
 // Three arms, because the claim has three halves: it recovers, it does not
 // replay when nothing moved, and it stops.
 func TestMergeSessionWorkReplaysWhenTheBaseMovesUnderTheRebase(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		// moves is how many rebases the operator commits under. 0 is the
@@ -618,6 +634,7 @@ func countIn(t *testing.T, path string) int {
 // The failure that must never cost work: a conflict leaves the branch, the
 // tree and the repo exactly as they were, and says why.
 func TestMergeSessionWorkRefusesAConflictAndKeepsEverything(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -660,6 +677,7 @@ func TestMergeSessionWorkRefusesAConflictAndKeepsEverything(t *testing.T) {
 // same fixture WITHOUT the refusal lands — so the middle arm's failure is the
 // refusal and not a fixture that could never merge.
 func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) {
+	t.Parallel()
 	const hookSaid = "no space left on device (simulated)"
 	// A pre-rebase hook is the cheapest honest stand-in for the class the
 	// bead is about — a full disk, a lock, a bad object: git exits non-zero
@@ -756,6 +774,7 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 // is what tells the two apart, and it is gone after the abort — so reading it
 // even one line later answers "not a conflict" for every conflict there is.
 func TestRebaseStoppedIsTrueOnlyWhileTheMergeIsWaiting(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -793,6 +812,7 @@ func TestRebaseStoppedIsTrueOnlyWhileTheMergeIsWaiting(t *testing.T) {
 // have merged at all, and a shared prescription makes two reasons look like
 // one until something asks them apart.
 func TestMergeSessionWorkRefusesWorkTheBranchDoesNotReach(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		detach  bool
@@ -859,6 +879,7 @@ func TestMergeSessionWorkRefusesWorkTheBranchDoesNotReach(t *testing.T) {
 }
 
 func TestMergeSessionWorkReportsUncommittedWork(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	tr, err := a.EnsureSessionTree(wtRepo(t), "s-1", nil)
 	if err != nil {
@@ -880,6 +901,7 @@ func TestMergeSessionWorkReportsUncommittedWork(t *testing.T) {
 }
 
 func TestMergeSessionWorkSaysSoOnADetachedRepo(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -903,6 +925,7 @@ func TestMergeSessionWorkSaysSoOnADetachedRepo(t *testing.T) {
 // HEAD at merge time, which made an operator's `git checkout -b` redirect
 // the persona's commits onto the operator's own branch.
 func TestSessionTreeRemembersTheBaseItWasCutFrom(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -951,6 +974,7 @@ func TestSessionTreeRemembersTheBaseItWasCutFrom(t *testing.T) {
 // ─── retiring the tree ───────────────────────────────────────────────────────
 
 func TestRemoveSessionTreeRefusesWhileWorkWouldBeLost(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -1003,6 +1027,7 @@ func TestRemoveSessionTreeRefusesWhileWorkWouldBeLost(t *testing.T) {
 // words. The last two arms are the controls — without them "it retires" is
 // satisfied by a guard that was simply deleted.
 func TestRemoveSessionTreeRetiresOnlyWhatIsMeasuredOnTheBase(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		land func(t *testing.T, repo, sha string)
@@ -1102,6 +1127,7 @@ func TestRemoveSessionTreeRetiresOnlyWhatIsMeasuredOnTheBase(t *testing.T) {
 // The kill's whole path, not the guard alone: `posse kill` reported Merged
 // and then kept the tree anyway, which is the bug as the operator met it.
 func TestKillRetiresACherryPickedTree(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
@@ -1133,6 +1159,7 @@ func TestKillRetiresACherryPickedTree(t *testing.T) {
 // ─── the listing ─────────────────────────────────────────────────────────────
 
 func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -1170,6 +1197,7 @@ func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {
 // `--land` is the path that finishes the job. It merges and never removes:
 // it reads git, so it cannot tell a dead session's tree from a live one's.
 func TestLandSessionTreesFinishesWhatAKillDeferred(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -1215,6 +1243,7 @@ func TestLandSessionTreesFinishesWhatAKillDeferred(t *testing.T) {
 // tree with a bead lands untouched, a tree without one is reported and NOT
 // merged, and --force lands the second one anyway.
 func TestLandWillNotTakeWorkNoBeadRecordAccountsFor(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 
@@ -1283,6 +1312,7 @@ func TestLandWillNotTakeWorkNoBeadRecordAccountsFor(t *testing.T) {
 // "nothing here is unlanded" too, and only the record half tells the two
 // apart.
 func TestLandRefusalTellsAnAlreadyLandedTreeFromAStrand(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		land   func(t *testing.T, repo, sha string)
@@ -1358,6 +1388,7 @@ func TestLandRefusalTellsAnAlreadyLandedTreeFromAStrand(t *testing.T) {
 // of an already-landed duplicate alike; which bead the work belongs to is the
 // difference, and both answers have to be printable (ranger-base-atxe).
 func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -1392,6 +1423,7 @@ func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
 // The kill's non-blocking lock: with a launcher holding it, the session is
 // still killed, nothing is merged, and nothing is lost.
 func TestTryLockLaunchesDoesNotWait(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	held, err := lockLaunches(a, io.Discard)
 	if err != nil {
@@ -1422,6 +1454,7 @@ func TestTryLockLaunchesDoesNotWait(t *testing.T) {
 // unchanged words. Without the control an "is not a strand" assertion is
 // satisfied by a rig that could never have produced one.
 func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		// land replays the session's commit onto the repo's branch the way
@@ -1538,6 +1571,7 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 // hand-resolved arm is passing on the new evidence rather than on a rebase
 // that would have succeeded anyway.
 func TestHandResolvedPickReallyDoesConflictOnReplay(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
@@ -1567,6 +1601,7 @@ func TestHandResolvedPickReallyDoesConflictOnReplay(t *testing.T) {
 // equivalentOnBase's `return nil` into `continue` is invisible to every
 // single-commit arm; this is the one that sees it.)
 func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
@@ -1611,6 +1646,7 @@ func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
 // control, a listing that always said "nothing unlanded" would pass the first
 // two arms.
 func TestListSessionTreesTellsACherryPickedBranchFromAStrand(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		land   func(t *testing.T, repo, sha string) string

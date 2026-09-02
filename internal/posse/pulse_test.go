@@ -16,6 +16,7 @@ import (
 )
 
 func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("default_persona: coordinator\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
@@ -28,6 +29,7 @@ func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
 }
 
 func TestLoadPulseConfigArmed(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte(
 		"pulse_interval: 2m\npulse_persona: developer\npulse_renag: 30m\npulse_renag_max: 4h\n"), 0o644)
@@ -46,6 +48,7 @@ func TestLoadPulseConfigArmed(t *testing.T) {
 // App.Coordinator's rangerhq-gk4k rule). Both arms matter: the fallback that
 // fires, and the one that has nowhere to fall.
 func TestLoadPulseConfigDefaultPersonaIsTheCoordinator(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
@@ -58,6 +61,7 @@ func TestLoadPulseConfigDefaultPersonaIsTheCoordinator(t *testing.T) {
 }
 
 func TestLoadPulseConfigDefaultPersonaEmptyWithoutCoordinator(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
@@ -75,6 +79,7 @@ func TestLoadPulseConfigDefaultPersonaEmptyWithoutCoordinator(t *testing.T) {
 // pulse_persona: still wins over coordinator: — the fallback is a default,
 // not an override.
 func TestLoadPulseConfigPersonaBeatsCoordinator(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\npulse_persona: qa\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
@@ -87,6 +92,7 @@ func TestLoadPulseConfigPersonaBeatsCoordinator(t *testing.T) {
 }
 
 func TestLoadPulseConfigBadInterval(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: not-a-duration\n"), 0o644)
 	if _, err := LoadPulseConfig(a); err == nil {
@@ -128,11 +134,12 @@ func pulseIn(t *testing.T, b *HerdrBackend, dirs []string, persona string) GovIn
 	// empty rather than unknown, so these tests assert on the carry-overs
 	// alone. Without it BeadsDirs falls back to the process cwd and the
 	// real bd answers from the operator's own queue.
-	t.Setenv("RHQ_BD_BIN", fakeBinFor(t, "bd"))
-	return GovInputs{App: b.App, HB: b, Bd: NewBd(), PulsePersona: persona, Pulsing: true}
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
+	return GovInputs{App: b.App, HB: b, Bd: b.Bd, PulsePersona: persona, Pulsing: true}
 }
 
 func TestShopCheckBlockedSession(t *testing.T) {
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	blockedSession(t, b, fake, "coordinator-shop", "coordinator")
 
@@ -147,6 +154,7 @@ func TestShopCheckBlockedSession(t *testing.T) {
 }
 
 func TestShopCheckNoLivePersona(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	conditions := shopKeys(t, pulseIn(t, b, nil, "coordinator"))
 	if !containsStr(conditions, "no-live:coordinator") {
@@ -158,6 +166,7 @@ func TestShopCheckNoLivePersona(t *testing.T) {
 // not missing anything by it — and `posse status` must not go non-zero on
 // every box where the coordinator's session happens to be closed.
 func TestShopCheckNoLivePersonaOnlyWhenPulsing(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	in := pulseIn(t, b, nil, "coordinator")
 	in.Pulsing = false
@@ -167,6 +176,7 @@ func TestShopCheckNoLivePersonaOnlyWhenPulsing(t *testing.T) {
 }
 
 func TestShopCheckLivePersonaOtherAgentDoesNotCount(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	writePersona(t, b.App, "architect", "code")
 	mustCreate(t, b, NewSessionOpts{Name: "architect-work", Agent: "architect"})
@@ -177,6 +187,7 @@ func TestShopCheckLivePersonaOtherAgentDoesNotCount(t *testing.T) {
 }
 
 func TestShopCheckUnpushedCommits(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	bare := t.TempDir()
@@ -192,6 +203,7 @@ func TestShopCheckUnpushedCommits(t *testing.T) {
 }
 
 func TestShopCheckNoUpstreamIsNoCondition(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t) // one commit, no remote, no upstream configured
 

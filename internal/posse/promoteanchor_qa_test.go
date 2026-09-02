@@ -173,7 +173,7 @@ func TestQAEveryDispatchedLaunchDeclaresItsBead(t *testing.T) {
 // AllowDegraded false, and every --allow-degraded pin leaves the manifest
 // matching.
 func TestQAAllowDegradedDoesNotReachTheConstitutionRefusal(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	pid := promotedTestHome(t, b)
 	dir := t.TempDir()

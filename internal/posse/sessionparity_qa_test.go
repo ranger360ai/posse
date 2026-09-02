@@ -30,6 +30,7 @@ import (
 // read (ranger-base-ewq9). Pinned here so a change to it is noticed by the
 // side of the harness that will silently keep typing.
 func TestPromptDeliveryColumnIsWhatTheLandingTurnMustAsk(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	for name, want := range map[string]string{
 		"claude": PromptTyped, // works, and ADR 0013 left it alone
@@ -160,6 +161,7 @@ func TestDirtyPathsKeepsStagedAndUntrackedPathsWhole(t *testing.T) {
 // reason rather than start a session that cannot authenticate. Verified
 // here rather than by manufacturing a container run the bead forbids.
 func TestCageCredentialRefusesTheUndecidedRuntimes(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	for _, name := range []string{"codex", "grok"} {
 		rt, err := a.LoadRuntime(name)
@@ -226,9 +228,9 @@ func TestCageCredentialRefusesTheUndecidedRuntimes(t *testing.T) {
 // three, which is the control that says the pin measures this function and
 // not the fixture.)
 func TestMergeBackLandsEveryRuntimesSessionTheSameWay(t *testing.T) {
+	t.Parallel()
 	for _, rt := range parityRuntimes {
 		t.Run(rt.name, func(t *testing.T) {
-			wtqaHome(t)
 			b, fake := newTestBackend(t)
 			parityPersona(t, b.App, "ranger", "[go]", rt.name)
 			repo := wtqaRepo(t, b.App, `[]`, `[{"id":"a-1","status":"closed"}]`)

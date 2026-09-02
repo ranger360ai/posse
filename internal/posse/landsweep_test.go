@@ -22,7 +22,6 @@ import (
 // carries the record of which bead it is holding.
 func nurlStranded(t *testing.T, status string, stamp bool) (*Dispatcher, string, *SessionTree) {
 	t.Helper()
-	wtqaHome(t)
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -47,6 +46,7 @@ func nurlStranded(t *testing.T, status string, stamp bool) (*Dispatcher, string,
 // The headline: the pass lands it, and it is a PASS that does — not a human
 // running `posse worktrees --land`.
 func TestPassLandsABeadClosedAfterItsPassStoppedWatching(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
 
 	if _, err := d.Run("", "", 0); err != nil {
@@ -81,6 +81,7 @@ func TestPassLandsABeadClosedAfterItsPassStoppedWatching(t *testing.T) {
 // launcher's to land. Without this the sweep is just `--land`, which lands
 // everything and would take a persona's half-finished commits onto main.
 func TestSweepLeavesTheTreeOfABeadThatIsStillOpen(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "in_progress", true)
 
 	if _, err := d.Run("", "", 0); err != nil {
@@ -99,6 +100,7 @@ func TestSweepLeavesTheTreeOfABeadThatIsStillOpen(t *testing.T) {
 // and repo basenames both contain '-' — so the only two honest answers are
 // the recorded one and "I cannot tell", and the second one has to be loud.
 func TestSweepWillNotGuessWhichBeadATreeHolds(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", false)
 
 	if _, err := d.Run("", "", 0); err != nil {
@@ -126,7 +128,7 @@ func TestSweepWillNotGuessWhichBeadATreeHolds(t *testing.T) {
 // exactly when the work is stranded. This one goes through a real dispatch
 // pass, so it pins the launch's own stamping and not a helper.
 func TestTheBranchRecordsItsBeadAndSurvivesTheMetaGoingAway(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -164,6 +166,7 @@ func TestTheBranchRecordsItsBeadAndSurvivesTheMetaGoingAway(t *testing.T) {
 // land and lands nothing. Moving a repo's branch is exactly the kind of
 // acting the flag exists to withhold.
 func TestSweepUnderDryRunSaysWhatItWouldLandAndLandsNothing(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
 	d.DryRun = true
 
@@ -185,7 +188,7 @@ func TestSweepUnderDryRunSaysWhatItWouldLandAndLandsNothing(t *testing.T) {
 // about the wrong bead, and answering "closed" for a tree still being
 // worked in.
 func TestNoteBeadMovesTheBranchRecordToo(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
 	tr, err := b.App.EnsureSessionTree(repo, "ranger-repo", nil)
@@ -211,6 +214,7 @@ func TestNoteBeadMovesTheBranchRecordToo(t *testing.T) {
 // work, and writes the answer onto the branch so the next pass does not need
 // the meta at all.
 func TestSweepBackfillsTheBeadFromASurvivingMeta(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", false) // no branch stamp: a legacy tree
 	session := SessionForBead("ranger", repo, "a-1")
 	if err := d.HB.writeMeta(&HerdrMeta{Name: session, Dir: tr.Path, Repo: tr.Repo, Branch: tr.Branch, Bead: "a-1"}); err != nil {
@@ -233,6 +237,7 @@ func TestSweepBackfillsTheBeadFromASurvivingMeta(t *testing.T) {
 // was recreated against another tree is a different tree's record, and
 // landing on it would take one bead's close as another's.
 func TestSweepWillNotJoinAMetaThatNamesAnotherBranch(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", false)
 	session := SessionForBead("ranger", repo, "a-1")
 	if err := d.HB.writeMeta(&HerdrMeta{Name: session, Dir: tr.Path, Repo: tr.Repo, Branch: "posse/somewhere-else", Bead: "a-1"}); err != nil {
@@ -254,6 +259,7 @@ func TestSweepWillNotJoinAMetaThatNamesAnotherBranch(t *testing.T) {
 // --dry-run stamps nothing either: the backfill is a git config write, and
 // the flag's promise is that a diagnostic pass changes no state.
 func TestSweepUnderDryRunDoesNotBackfillTheStamp(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", false)
 	d.DryRun = true
 	session := SessionForBead("ranger", repo, "a-1")

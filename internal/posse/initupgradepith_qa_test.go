@@ -53,7 +53,7 @@ func newerSeed(t *testing.T) fs.FS {
 }
 
 func TestQAUpgradeInitDoesNotBreakTheLaunchVerifyItCannotSee(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 
@@ -110,7 +110,7 @@ func TestQAUpgradeInitDoesNotBreakTheLaunchVerifyItCannotSee(t *testing.T) {
 // the manifest untouched, every dispatched launch refusing from then on with
 // nothing connecting it back to this init.
 func TestQAUpgradeInitOnAPromotedHomeNamesPossePromote(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 

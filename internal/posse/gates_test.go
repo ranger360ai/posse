@@ -2050,6 +2050,7 @@ exit 1
 // too: they are what install-hooks prints, and a stamp the operator cannot
 // read back is not evidence.
 func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -2152,6 +2153,7 @@ func firstStampLine(body string) string {
 // still come back public (fail closed, the whole point of the default), and
 // the main checkout's own answer must not move.
 func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

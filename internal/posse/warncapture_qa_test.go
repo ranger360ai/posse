@@ -19,7 +19,7 @@ import (
 // failure: a detached checkout, which EnsureSessionTree fails open on with a
 // line naming the SHARED checkout.
 func TestQATestBackendCapturesTheLaunchWarningStream(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if b.Warn == nil || b.warnWriter() == os.Stderr {
 		t.Fatalf("a test backend's warnings go to the test binary's stderr: Warn = %v", b.Warn)

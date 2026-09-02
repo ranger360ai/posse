@@ -49,6 +49,9 @@ type fn struct {
 	calls   map[string]bool
 	idents  map[string]bool
 	envRoot bool
+	// envVars: the variables this function sets by literal name, for the
+	// `envroots` census. A setter whose name is computed shows as "?".
+	envVars map[string]bool
 	homeRd  bool
 	// claudeCfgLit: the function names the shared claude config file by
 	// literal rather than through the product helper.
@@ -154,7 +157,7 @@ func main() {
 				continue
 			}
 			g := &fn{name: fd.Name.Name, file: name, isTest: isTest,
-				calls: map[string]bool{}, idents: map[string]bool{}}
+				calls: map[string]bool{}, idents: map[string]bool{}, envVars: map[string]bool{}}
 			if isTest && strings.HasPrefix(fd.Name.Name, "Test") && fd.Recv == nil &&
 				len(fd.Type.Params.List) == 1 && isT(fd.Type.Params.List[0].Type) {
 				g.topTest = true
@@ -172,6 +175,13 @@ func main() {
 						// costs a test its t.Parallel, under-taint costs a panic.
 						if envSetter[c.Sel.Name] {
 							g.envRoot = true
+							name := "?" + c.Sel.Name
+							if len(x.Args) > 0 {
+								if bl, ok := x.Args[0].(*ast.BasicLit); ok {
+									name = strings.Trim(bl.Value, `"`)
+								}
+							}
+							g.envVars[name] = true
 						}
 						if c.Sel.Name == "UserHomeDir" {
 							g.homeRd = true
@@ -361,6 +371,65 @@ func main() {
 			if !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == "" {
 				fmt.Printf("%s\t%s\n", g.file, g.name)
 			}
+		}
+	case "envroots":
+		// The census the next round of this work needs: every function that
+		// writes the process environment, with the number of top-level tests
+		// it holds serial that NO OTHER root also holds. That second number
+		// is the one to sort by — a root sharing all its tests with another
+		// root buys nothing on its own.
+		var roots []string
+		rootVars := map[string]string{}
+		for n, gs := range funcs {
+			for _, g := range gs {
+				if !g.isTest || !g.envRoot {
+					continue
+				}
+				var vs []string
+				for v := range g.envVars {
+					vs = append(vs, v)
+				}
+				sort.Strings(vs)
+				if _, seen := rootVars[n]; !seen {
+					roots = append(roots, n)
+				}
+				rootVars[n] = strings.Join(vs, ",")
+			}
+		}
+		sort.Strings(roots)
+		countTests := func(t map[string]bool) int {
+			n := 0
+			for _, g := range tests {
+				if t[g.name] {
+					n++
+				}
+			}
+			return n
+		}
+		total := countTests(envTainted)
+		type row struct {
+			name, vars  string
+			alone, only int
+		}
+		var rows []row
+		for _, r := range roots {
+			one := propagateIn(funcs, func(g *fn) bool { return g.name == r && g.envRoot }, inTests)
+			rest := propagateIn(funcs, func(g *fn) bool { return g.envRoot && g.name != r }, inTests)
+			rows = append(rows, row{r, rootVars[r], countTests(one), total - countTests(rest)})
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].only != rows[j].only {
+				return rows[i].only > rows[j].only
+			}
+			return rows[i].alone > rows[j].alone
+		})
+		fmt.Printf("%d env roots hold %d of %d top-level tests serial\n", len(rows), total, len(tests))
+		fmt.Printf("%-6s %-6s %s\n", "ONLY", "REACH", "root / variables")
+		for _, r := range rows {
+			if r.alone == 0 {
+				continue
+			}
+			fmt.Printf("%-6d %-6d %s\t%s\n", r.only, r.alone, r.name, r.vars)
 		}
 	case "named-serial":
 		var ks []string

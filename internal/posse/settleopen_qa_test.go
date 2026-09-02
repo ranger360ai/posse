@@ -22,7 +22,6 @@ import (
 // on either. SessionTreeOf then answers Base == "" the way a pass reads it.
 func detachedLegacyTree(t *testing.T) (*HerdrBackend, string, *SessionTree) {
 	t.Helper()
-	wtqaHome(t)
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := wtRepo(t)
@@ -52,6 +51,7 @@ func detachedLegacyTree(t *testing.T) (*HerdrBackend, string, *SessionTree) {
 // what the operator reads when deciding whether it is safe to kill a
 // session, written into a bead, where the empty string outlives the pass.
 func TestQASettleTreeLinesNamesTheBaseItCannotKnow(t *testing.T) {
+	t.Parallel()
 	b, session, _ := detachedLegacyTree(t)
 	got := (&Dispatcher{App: b.App, HB: b}).settleTreeLines(session)
 	if strings.Contains(got, "merges to  at close") {
@@ -68,6 +68,7 @@ func TestQASettleTreeLinesNamesTheBaseItCannotKnow(t *testing.T) {
 // quietly undo it. Every one of these was measured on 2026-08-30 at 25503c1,
 // when the pin above was the only red this state produced.
 func TestQADetachedLegacyBaseIsSweptEverywhereElse(t *testing.T) {
+	t.Parallel()
 	_, _, tr := detachedLegacyTree(t)
 	said := orDetached("")
 

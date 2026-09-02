@@ -70,7 +70,7 @@ func stillAlive(t *testing.T, b *HerdrBackend, name string) {
 
 // The whole bead, in one board: open work, uncommitted tree, a reap.
 func TestReapGuardRefusesADirtyTreeUnderAnOpenBead(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -98,7 +98,7 @@ func TestReapGuardRefusesADirtyTreeUnderAnOpenBead(t *testing.T) {
 // skip is gather's line to print and --resume's to retry, not a reason to
 // keep a workspace alive forever.
 func TestReapGuardLetsACleanTreeGoWithAnOpenBead(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -116,7 +116,7 @@ func TestReapGuardLetsACleanTreeGoWithAnOpenBead(t *testing.T) {
 // operator's own scratch in their own checkout, and none of the harness's
 // business.
 func TestReapGuardLetsADirtyTreeGoWhenTheBeadIsClosed(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"closed","assignee":"ranger"}]`)
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -133,7 +133,7 @@ func TestReapGuardLetsADirtyTreeGoWhenTheBeadIsClosed(t *testing.T) {
 // No pointer, no question: an interactive session, a crew session, a recipe,
 // and every session from before the pointer existed kill exactly as they did.
 func TestReapGuardIsSilentOnASessionWithNoBead(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
 	if err := b.CreateSession(NewSessionOpts{Name: "crew", Dir: repo, Cmd: "true", Crew: true}); err != nil {
@@ -151,7 +151,7 @@ func TestReapGuardIsSilentOnASessionWithNoBead(t *testing.T) {
 // a kill must not resolve by guessing — the cost of a wrong refusal is one
 // --force, and of a wrong kill is work with no other copy.
 func TestReapGuardRefusesWhenBdCannotSayWhetherTheBeadIsFinished(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, "") // no canned answer: bd resolves nothing
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -170,7 +170,7 @@ func TestReapGuardRefusesWhenBdCannotSayWhetherTheBeadIsFinished(t *testing.T) {
 // --force is the operator saying they have read the refusal. It stands the
 // guard down and nothing else: the landing's own refusals are untouched.
 func TestForceKillTakesTheDirtyOpenSession(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -193,7 +193,7 @@ func TestForceKillTakesTheDirtyOpenSession(t *testing.T) {
 // as the agent left it, which is the reap the ADR names; the landing turn is
 // the cure, and a session that lands properly refreshes as it always did.
 func TestReapGuardRefusesARefreshThatWouldReapOpenWork(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := reapRepo(t, b, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
 	reapSession(t, b, "ranger-repo-a-1", repo, "a-1")
@@ -222,7 +222,7 @@ func TestReapGuardRefusesARefreshThatWouldReapOpenWork(t *testing.T) {
 // both halves may hold dashes, and a derivation that guesses is a store that
 // can disagree with the bead (ADR 0011).
 func TestDispatchRecordsTheBeadOnTheSessionItLaunches(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

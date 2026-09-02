@@ -52,7 +52,7 @@ func promotedTestHome(t *testing.T, b *HerdrBackend) string {
 }
 
 func TestQADispatchRefusesAConstitutionThatDoesNotMatchItsManifest(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	pid := promotedTestHome(t, b)
 	dir := t.TempDir()
@@ -78,7 +78,7 @@ func TestQADispatchRefusesAConstitutionThatDoesNotMatchItsManifest(t *testing.T)
 }
 
 func TestQAInteractiveLaunchWarnsDegradedAndComesUp(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	pid := promotedTestHome(t, b)
 	var warn bytes.Buffer
@@ -104,7 +104,7 @@ func TestQAInteractiveLaunchWarnsDegradedAndComesUp(t *testing.T) {
 // An env file must not reach this path at all — the launch it would refuse
 // is every dispatch after any routine credential edit (ADR 0015 §7).
 func TestQAALaunchIsNotRefusedByAnEnvSet(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	promotedTestHome(t, b)
 	if err := os.MkdirAll(b.App.EnvsDir, 0o700); err != nil {
@@ -121,7 +121,7 @@ func TestQAALaunchIsNotRefusedByAnEnvSet(t *testing.T) {
 // A home nobody ever promoted (every install predating ADR 0015, and every
 // test home) launches exactly as before.
 func TestQAUnpromotedHomeLaunchesUnchanged(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,6 @@ func TestQAUnpromotedHomeLaunchesUnchanged(t *testing.T) {
 // the env carry comes up warning, promote after it does not, and a launch
 // in between must not be refused for a reason that is not the constitution.
 func TestQAHomeCutoverRehearsal(t *testing.T) {
-	wtqaHome(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

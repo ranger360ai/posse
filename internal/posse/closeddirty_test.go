@@ -124,6 +124,7 @@ func closedDirtyStrand(t *testing.T) (*Dispatcher, string, string) {
 // next reader copies from — and it is there exactly once however many
 // launcher moments read that tree.
 func TestClosedDirtyIsWrittenOnTheBeadOnceAcrossTheSites(t *testing.T) {
+	t.Parallel()
 	d, repo, tree := closedDirtyStrand(t)
 
 	if n := closedDirtyMarkers(t, repo); n != 1 {
@@ -180,6 +181,7 @@ func TestClosedDirtyIsWrittenOnTheBeadOnceAcrossTheSites(t *testing.T) {
 // with the provenance that survives a create bd commits and then fails on
 // (verifyMarkerPrefix) — and a second pass over the same tree files none.
 func TestClosedDirtyFilesOneBeadForTheCloserAndOnlyOne(t *testing.T) {
+	t.Parallel()
 	d, repo, _ := closedDirtyStrand(t)
 
 	filed := closedDirtyBeads(t, repo, "a-1")
@@ -223,7 +225,7 @@ func TestClosedDirtyFilesOneBeadForTheCloserAndOnlyOne(t *testing.T) {
 // commit — so an empty branch is not a finding and a clean tree writes
 // nothing at all.
 func TestACleanCloseWritesNothingOnTheBead(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	dispatcherErr(t, d)
@@ -276,7 +278,6 @@ func TestNoteClosedDirtyAsksBdNothingOnACleanTree(t *testing.T) {
 // committed is finally read.
 func closedDirtyKillSession(t *testing.T, status string) (*HerdrBackend, string, string) {
 	t.Helper()
-	wtqaHome(t)
 	b, _ := newTestBackend(t)
 	exe, err := os.Executable()
 	if err != nil {
@@ -297,6 +298,7 @@ func closedDirtyKillSession(t *testing.T, status string) (*HerdrBackend, string,
 }
 
 func TestKillLandingWritesTheDirtySetOnAClosedBead(t *testing.T) {
+	t.Parallel()
 	b, repo, name := closedDirtyKillSession(t, "closed")
 
 	if _, err := b.ForceKillSessionAndLand(name); err != nil {
@@ -314,6 +316,7 @@ func TestKillLandingWritesTheDirtySetOnAClosedBead(t *testing.T) {
 // refuses that pair only as far as --force — and a persona's work in
 // progress is not a close that did not land. §1 is about a CLOSED bead.
 func TestKillLandingSaysNothingWhenTheBeadIsStillOpen(t *testing.T) {
+	t.Parallel()
 	b, repo, name := closedDirtyKillSession(t, "in_progress")
 
 	if _, err := b.ForceKillSessionAndLand(name); err != nil {
@@ -336,6 +339,7 @@ func TestKillLandingSaysNothingWhenTheBeadIsStillOpen(t *testing.T) {
 // watched, so mergeBack never ran on it at all) plus one uncommitted path.
 // If the sweep does not write it here, nothing ever does.
 func TestTheSweepWritesTheDirtySetOnACloseNobodyWatched(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
 	// The closer, in the store of record's own words: bd records no close
 	// actor, so the assignee that held the bead is the honest answer to who

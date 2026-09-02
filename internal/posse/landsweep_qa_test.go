@@ -22,6 +22,7 @@ import (
 )
 
 func TestSweepDoesNotReadAnUnanswerableCountAsNothingToLand(t *testing.T) {
+	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
 
 	// Make the count unanswerable, the way a repo does it in the field: the

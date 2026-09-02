@@ -46,6 +46,7 @@ func constitutionLandTree(t *testing.T, constitution bool) (*App, string, *Sessi
 // L3 pins use — so the two walls are measured against one list and cannot
 // drift into covering different sets.
 func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
+	t.Parallel()
 	for _, member := range constitutionClassSpec {
 		t.Run(member, func(t *testing.T) {
 			_, repo, tr := constitutionLandTree(t, true)
@@ -85,6 +86,7 @@ func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
 // ordinary work (ADR 0015 §2) and a launcher that stopped landing it would be
 // worked around within the day.
 func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
+	t.Parallel()
 	for _, rel := range []string{
 		"docs/notes.d/proposed-settings.json", // the prescribed route has to land
 		ConstitutionSourceDir + "/personas/developer/ORDERS.md",
@@ -110,6 +112,7 @@ func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 // law where a constitution lives; the settings file carries the session's own
 // deny list everywhere (ranger-base-az93).
 func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.T) {
+	t.Parallel()
 	t.Run("no marker: recipes lands", func(t *testing.T) {
 		_, _, tr := constitutionLandTree(t, false)
 		commitIn(t, tr.Path, ConstitutionSourceDir+"/recipes/thing.yaml", "not a constitution\n", "s-1: draft")
@@ -142,6 +145,7 @@ func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.
 // refused before this check by notOnBase and for a better reason: no merge
 // there can reach the work at all.
 func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
+	t.Parallel()
 	_, repo, tr := constitutionLandTree(t, true)
 	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
@@ -165,6 +169,7 @@ func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
 // holds under other shas has nothing left to land, so it must report as
 // already-landed and not as a refusal repeated on every pass forever.
 func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
+	t.Parallel()
 	_, repo, tr := constitutionLandTree(t, true)
 	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
@@ -256,6 +261,7 @@ func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 // would send the operator to run a command that does not touch what they just
 // read — the near-right instruction that teaches people to skim refusals.
 func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
+	t.Parallel()
 	t.Run("a promoted path names promote", func(t *testing.T) {
 		_, _, tr := constitutionLandTree(t, true)
 		commitIn(t, tr.Path, ConstitutionRepoMarker+"/developer.md", "rewritten\n", "s-1: edit the law")

@@ -30,7 +30,6 @@ import (
 )
 
 func TestQADeclaredStateDirReachesTheProfileALaunchRenders(t *testing.T) {
-	wtqaHome(t)
 	seatbeltForTest(t)
 	b, _ := newTestBackend(t)
 	a := b.App
@@ -77,7 +76,6 @@ func TestQADeclaredStateDirReachesTheProfileALaunchRenders(t *testing.T) {
 // pick the dir up, or the assertion above would pass against a profile that
 // grants it for some unrelated reason.
 func TestQAUndeclaredStateDirIsNotGrantedByALaunch(t *testing.T) {
-	wtqaHome(t)
 	seatbeltForTest(t)
 	b, _ := newTestBackend(t)
 	a := b.App

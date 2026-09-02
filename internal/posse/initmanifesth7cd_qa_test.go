@@ -63,7 +63,7 @@ func editConfig(t *testing.T, a *App) {
 }
 
 func TestQAInitDoesNotArmTheLaunchVerifyOnAHomeThatNeverPromoted(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 	preADR0015Home(t, a)
@@ -100,7 +100,7 @@ func TestQAInitDoesNotArmTheLaunchVerifyOnAHomeThatNeverPromoted(t *testing.T) {
 // install is its own anchor from the first launch, so §3 is live there and a
 // mismatch still refuses a dispatch.
 func TestQAInitStillStampsAFreshInstallAndSaysWhatThatArms(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
 

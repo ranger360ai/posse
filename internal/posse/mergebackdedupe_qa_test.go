@@ -22,6 +22,7 @@ import (
 )
 
 func TestQAMergeBlockedDedupeIsPerBranchNotPerLabel(t *testing.T) {
+	t.Parallel()
 	d, repo, _ := wtqaPassWithWork(t, func(repo, _ string) {
 		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
 		// Another seat's blocked merge, open, in the same lane and with the

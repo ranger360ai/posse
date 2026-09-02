@@ -120,7 +120,6 @@ func TestQANoRuntimeInHandGrantsNoRuntimeStateDir(t *testing.T) {
 // A claude persona is the whole crew today, so this is the arm that says
 // what actually changed on this box.
 func TestQARenderedProfileForAClaudeLaunchCarriesNoOtherRuntimesStateDir(t *testing.T) {
-	wtqaHome(t)
 	seatbeltForTest(t)
 	b, _ := newTestBackend(t)
 	a := b.App

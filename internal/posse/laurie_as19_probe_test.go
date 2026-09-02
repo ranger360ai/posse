@@ -27,6 +27,7 @@ import (
 // well, and the branch is KEPT. Un-skipped unchanged — it asserted the
 // keeping all along, so the fix is what turned it green.
 func TestRemoveSessionTreeDeletesABranchWhoseBytesAreNotOnTheBase(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
@@ -90,6 +91,7 @@ func TestRemoveSessionTreeDeletesABranchWhoseBytesAreNotOnTheBase(t *testing.T) 
 // kept. The existing arms are each pure, so nothing pinned the boundary
 // between them (ranger-base-nfmq).
 func TestRemoveSessionTreeKeepsAMixedPairing(t *testing.T) {
+	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")

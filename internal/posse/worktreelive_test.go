@@ -196,6 +196,7 @@ func settleMainCheckout(t *testing.T, bd func(string, ...string) (string, error)
 }
 
 func TestLiveWorktreeSharesOneGraph(t *testing.T) {
+	t.Parallel()
 	bd := liveBd(t)
 	a := wtApp(t)
 	repo := liveBeadsRepo(t, bd, "in the main checkout")
@@ -287,6 +288,7 @@ func TestLiveWorktreeSharesOneGraph(t *testing.T) {
 // If this ever goes red at the first arm, posse's redirect has become
 // load-bearing for the graph too, and worktree.go's note should say so.
 func TestLiveWorktreeBdResolvesTheWorktreeItself(t *testing.T) {
+	t.Parallel()
 	bd := liveBd(t)
 	a := wtApp(t)
 	repo := liveBeadsRepo(t, bd, "in the main checkout")

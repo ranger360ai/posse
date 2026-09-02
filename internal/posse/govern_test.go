@@ -77,7 +77,12 @@ func govRepo(t *testing.T, b *HerdrBackend) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeBeadsDirs(b.App, []string{dir})
-	t.Setenv("RHQ_BD_BIN", fakeBinFor(t, "bd"))
+	// On the backend's own field rather than RHQ_BD_BIN: the env var is
+	// process-wide, so a helper every govern test calls held 53 of them
+	// serial for a value the struct already carries (ranger-base-pj87l).
+	// GovInputs takes it from b.Bd below, and the reap guard reads the same
+	// field (herdrback.go), so nothing here resolves the ambient binary.
+	b.Bd = Bd{Bin: fakeBinFor(t, "bd")}
 	return dir
 }
 
@@ -135,7 +140,7 @@ func govIn(t *testing.T, b *HerdrBackend) GovInputs {
 	if !yamlHasKey(b.App.ConfigPath, "beads") {
 		govRepo(t, b)
 	}
-	return GovInputs{App: b.App, HB: b, Bd: NewBd(), Now: func() time.Time { return govNow }}
+	return GovInputs{App: b.App, HB: b, Bd: b.Bd, Now: func() time.Time { return govNow }}
 }
 
 // govNow is a fixed clock, so an age assertion is not a stopwatch race.

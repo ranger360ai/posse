@@ -68,7 +68,7 @@ func fakeBdInTree(t *testing.T, repo, tree, show string) {
 // tree and deletes the branch. Pass 1 dispatches and lands the closed
 // bead's commit; pass 2 is the one that reaps.
 func TestAutoReapRetiresAWorktreeSessionsTreeAndBranch(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -124,7 +124,7 @@ func TestAutoReapRetiresAWorktreeSessionsTreeAndBranch(t *testing.T) {
 // it. Uncommitted work in a session worktree is exactly that case, and the
 // one line naming it is the only notice the operator will ever get.
 func TestAutoReapNamesAWorktreeItCouldNotRetire(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")

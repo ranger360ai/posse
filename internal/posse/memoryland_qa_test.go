@@ -683,7 +683,7 @@ func TestPorcelainZKeepsRenamesAndOddPathsWhole(t *testing.T) {
 // persona already had its wrap-up, and N bounded turns in a row would stall
 // the pass this sweep is an epilogue to.
 func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
-	wtqaHome(t)
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
