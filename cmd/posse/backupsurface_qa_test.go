@@ -153,3 +153,79 @@ func TestCutDestinationKeysChangeNothing(t *testing.T) {
 		t.Errorf("backup_max_age: 30m is read and rendered, got %q", withMaxAge)
 	}
 }
+
+// plantArchive writes one archive into a scratch instance's directory and
+// hands back its NAME, which is the whole of what every reader here dates it
+// by. A negative ago is a stamp in the future, which is the state this pin
+// exists for; the byte of content is deliberate — `backup verify` opening
+// the file and refusing it as gzip is the proof that it CHOSE this one.
+func plantArchive(t *testing.T, home string, ago time.Duration) string {
+	t.Helper()
+	name := "posse-backup-" + time.Now().UTC().Add(-ago).Format("20060102T150405Z") + ".tar.gz"
+	if err := os.WriteFile(filepath.Join(home, "state", "backup", name), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+// `posse backup verify` with no --archive, filling the gap ranger-base-wxvd5
+// measured while verifying the close of ranger-base-rgv61: the fix taught
+// the verb that a stamp ahead of the clock is not a reading (cmd/posse
+// main.go, `if f.Future > 0`), the close measured it CLI to CLI by hand, and
+// nothing in the tree held it — the whole branch could be deleted, or its
+// condition inverted, with `go test ./...` green. Everything else about a
+// future stamp is pinned inside the package (internal/posse/
+// backupfuture_test.go); this is that fix where an operator meets it.
+//
+// The three rows are the states the verb can be handed, and the third is the
+// control arm without which the other two pass for the wrong reason: a
+// `verify` that refused EVERY directory would satisfy both refusals.
+func TestBackupVerifyNamesWhyItCannotPickAnArchive(t *testing.T) {
+	bin := buildRhq(t)
+	const armed = "runtime: claude\nbackup_interval: 1h\n"
+
+	t.Run("an empty directory has no archive at all", func(t *testing.T) {
+		code, out := runBackupPosse(t, bin, backupHome(t, armed), "backup", "verify")
+		if code != 1 || !strings.Contains(out, "no archive to verify") {
+			t.Errorf("exit %d, output %q; want exit 1 saying there is no archive to verify", code, out)
+		}
+		// The empty directory must not borrow the future-stamp wording:
+		// it has no files, so there is nothing to be undatable about.
+		if strings.Contains(out, "no datable archive") {
+			t.Errorf("an empty directory answered with the undatable wording: %q", out)
+		}
+	})
+
+	t.Run("a directory of future stamps has files but no reading", func(t *testing.T) {
+		home := backupHome(t, armed)
+		future := plantArchive(t, home, -72*time.Hour)
+		code, out := runBackupPosse(t, bin, home, "backup", "verify")
+		for _, want := range []string{"no datable archive to verify", future, "AHEAD of this box's clock", "name one with --archive"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output %q; want it to contain %q", out, want)
+			}
+		}
+		if code != 1 {
+			t.Errorf("exit %d; want 1", code)
+		}
+		// "no archive to verify" would be the second lie next to a
+		// directory that is not empty — and it is the arm this branch
+		// falls through to when the fix is removed.
+		if strings.Contains(out, "no archive to verify in") {
+			t.Errorf("a directory holding %s was reported as empty: %q", future, out)
+		}
+	})
+
+	t.Run("control: it follows through to the newest archive it CAN date", func(t *testing.T) {
+		home := backupHome(t, armed)
+		future := plantArchive(t, home, -72*time.Hour)
+		datable := plantArchive(t, home, 3*time.Hour)
+		_, out := runBackupPosse(t, bin, home, "backup", "verify")
+		if !strings.Contains(out, datable) {
+			t.Errorf("output %q; want it to open %s, the newest archive it can date", out, datable)
+		}
+		if strings.Contains(out, future) || strings.Contains(out, "no datable archive") {
+			t.Errorf("a datable archive was on the box and the verb still refused: %q", out)
+		}
+	})
+}
