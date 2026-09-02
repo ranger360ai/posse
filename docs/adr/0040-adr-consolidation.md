@@ -8,7 +8,12 @@ pricing (§4) stand on their own · the adherence audit
 amended 2026-09-01 (ranger-base-8uz2t): the four new records are
 0042–0045, not 0041–0044 — 0041 was claimed by the closed-dirty record
 (dd3c98e) before any of the four landed; §3.1 now says when a number is
-claimed*
+claimed · amended 2026-09-02 (ranger-base-eje6d): 0042 was claimed a second
+time, by the landed credential-binary record (1e21449, the L1 deny over
+the runtime's own credential read), so the four merge records are the
+slugs R-gates, R-runtime, R-dispatch and R-ledger with PROVISIONAL numbers —
+every 0042–0045 below reads that way, and each writer takes the next free
+number in docs/adr/ at commit*
 
 > The operator, 2026-09-01: "review the ADRs top to bottom … we are up to
 > 39 now, for simplification and consolidation." This is review 1 of 2:
