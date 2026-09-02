@@ -67,8 +67,12 @@ anywhere. All three checks run only in a **public**-stamped repo, on the
 stamp mechanism hrz already has (unmarked is public; refreshed at
 install and at every persona launch).
 
-1. **Docs-genre allowlist.** A staged **new** file under `docs/` must
-   sit in an allowlisted subdirectory — today `adr/`, `runbooks/`,
+1. **Docs-genre allowlist.** A staged **new** file under `docs/` — move
+   detection off, so a move INTO an unlisted genre is a new file like any
+   other (ranger-base-60azj: with detection on git pairs a `docs/` ->
+   `docs/` move into one `R100` entry that `^A` never matched, and the
+   public tree gained a `docs/rca/`) — must sit in an allowlisted
+   subdirectory — today `adr/`, `runbooks/`,
    `notes.d/` — a shipped constant beside `OpsPatterns`, not a config
    key: admitting a genre to the public tree is a reviewed code change,
    which is exactly the review the wall exists to force. An unknown
@@ -76,7 +80,10 @@ install and at every persona launch).
    instance tree, or add the genre deliberately. Fail closed, the same
    shape as unmarked-is-public.
 2. **Prose content scan.** `OpsPatterns` over the ADDED lines of every
-   staged `*.md`, any path — same list, same two readers, same
+   staged markdown file, any path — `.md` and `.markdown`, matched
+   case-insensitively (`MarkdownPathspecs`; git pathspecs are
+   case-sensitive, so the earlier bare `*.md` never saw `x.MD` at all,
+   ranger-base-4b1z4) — same list, same two readers, same
    ERE-dialect intersection the init-time panic already enforces. Not
    over code: the detector's own source and tests are byte-identical to
    hits (the assembled plan-brand names in `visibility.go` exist because
@@ -88,7 +95,13 @@ install and at every persona launch).
    instance repo path (dirname of the `.beads/redirect` target, rendered
    in both `~`-relative and absolute forms; the redirect is verified
    present and absolute in this tree). These are grepped over the ADDED
-   lines of **all** staged text files. The literals live only in the
+   lines of **all** staged text files, and over the ADDED staged paths,
+   move detection off so a move's destination counts as new (MEASURED: a
+   pure move yields no added lines at all, ranger-base-wlsv1). A
+   filename is exactly where an operator-shaped artifact puts the
+   operator; added ENTRIES is the path analogue of added lines, and it is
+   check 1's rule verbatim — a modified existing path cleared this the
+   day it was added, and a deletion carries a path away. The literals live only in the
    rendered hook under the repo's hooks dir — never in a commit, never
    in the shipped list. The renderer refuses a literal containing a
    single quote, the same init-panic class as the pattern list. The bead

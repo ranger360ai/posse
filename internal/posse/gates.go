@@ -2015,10 +2015,12 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // next-index the same way it is for the constitution arm. --no-renames is
 // load-bearing (ranger-base-x9xbk): with rename detection on — the default —
 // a detected move prints only its DESTINATION, so `git mv NOTES.md
-// ARCHIVE.md` walked straight through. That is why this reader and the
-// constitution arm's, which still reads without the flag and has the same
-// blind spot on its own class (ranger-base-qdxe), no longer spell the diff
-// identically. Unkeyed like the rest of this wall, for the same reason
+// ARCHIVE.md` walked straight through. The constitution arm had the same
+// blind spot on its own class and no longer has it (ranger-base-qdxe), so
+// every reader of the staged set in this file now spells the diff the same
+// way — that is a property with a pin on it, not a coincidence
+// (TestQAHookReadersAllDisableMoveDetection). Unkeyed like the rest of this
+// wall, for the same reason
 // (rangerhq-lt2w): the tree does not care who typed the commit. It runs
 // AFTER MERGE_HEAD/CHERRY_PICK_HEAD/rebase exit 0 above, so those three
 // exemptions stand exactly as they did — a NOTES.md change reached by one of
@@ -2312,6 +2314,18 @@ func publicDocsGenrePattern() string {
 	return strings.Join(PublicDocsGenres, "|")
 }
 
+// markdownPathspecArgs is MarkdownPathspecs rendered as the pathspec
+// operands of check 2's `git diff` — each single-quoted, because `:(icase)`
+// carries a `(` and a `*` that a shell would otherwise take for its own
+// (ranger-base-4b1z4). One Go list, one rendered arm.
+func markdownPathspecArgs() string {
+	out := make([]string, 0, len(MarkdownPathspecs))
+	for _, p := range MarkdownPathspecs {
+		out = append(out, shQuote(p))
+	}
+	return strings.Join(out, " ")
+}
+
 // visibilityGuardBody renders the first wall against a repo whose beads db
 // carries the given visibility. THE VERDICT IS STAMPED AT INSTALL TIME
 // rather than read at commit time, and that is a deliberate trade: the hook
@@ -2349,10 +2363,6 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 	var checks strings.Builder
 	for _, p := range set.All() {
 		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
-	}
-	var identityChecks strings.Builder
-	for _, lit := range identity {
-		fmt.Fprintf(&identityChecks, "    posse_check %s %s\n", shQuote(lit.Class), shQuote(identityLiteralERE(lit.Value)))
 	}
 	// A config pattern this instance asked for and did not get is recorded
 	// HERE, in the file, for the same reason the stamp is: a human reading
@@ -2444,7 +2454,19 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # tab-delimited form is what the cut below expects — a path carrying a
   # literal newline is the same residual constitutionGuardBody's -z form
   # already accepts elsewhere in this hook, just not paid for here.
-  posse_docs_hits=$(git diff --cached --name-status "$posse_base" -- 'docs/*' 2>/dev/null | grep -E '^A[[:space:]]')
+  # --no-renames (ranger-base-60azj), the same flag and the same reason the
+  # NOTES.md arm and the shared-index reader below carry it
+  # (ranger-base-x9xbk, gates.go ~2134 — cited, not re-explained): rename
+  # detection is ON by default and pairs a source and a destination that are
+  # BOTH inside this 'docs/*' pathspec into ONE R100 entry, which '^A' never
+  # matches. Without the flag 'git mv docs/adr/x.md docs/rca/x.md' committed
+  # clean and the public tree gained the docs/rca/ ADR 0024 D1 says it must
+  # never have. The asymmetry is what hid it: a source OUTSIDE docs/ is
+  # hidden by the pathspec, git degrades the pair to an A, and the wall
+  # fired correctly — only docs/ -> docs/ moves slipped. With the flag the
+  # removal and the add are reported separately and the destination is an A
+  # entry like any other new file (MEASURED, git 2.50.1).
+  posse_docs_hits=$(git diff --cached --name-status --no-renames "$posse_base" -- 'docs/*' 2>/dev/null | grep -E '^A[[:space:]]')
   if [ -n "$posse_docs_hits" ]; then
     posse_docs_bad=''
     posse_docs_ifs=$IFS
@@ -2498,11 +2520,16 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   fi
 
   # ─── check 2: OpsPatterns over staged markdown (ADR 0024 D2) ────────────
-  # Every staged *.md, any path — NOT code: the detector's own source and
-  # tests are byte-identical to hits (the assembled plan-brand names in
-  # visibility.go exist because of exactly this), and a wall carrying an
-  # allowlist of its own files is a wall with a hole list.
-  posse_added=$(git diff --cached -U0 "$posse_base" -- '*.md' 2>/dev/null |
+  # Every staged markdown file, any path — NOT code: the detector's own
+  # source and tests are byte-identical to hits (the assembled plan-brand
+  # names in visibility.go exist because of exactly this), and a wall
+  # carrying an allowlist of its own files is a wall with a hole list.
+  # WHICH SPELLINGS is MarkdownPathspecs (visibility.go), one Go list
+  # rendered here: git pathspec matching is case-sensitive, so the earlier
+  # bare '*.md' never saw docs/adr/x.MD or x.markdown at all and one
+  # character walked ops content into a public tree (ranger-base-4b1z4,
+  # measured). ':(icase)' is git's own magic for it.
+  posse_added=$(git diff --cached -U0 "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
@@ -2531,19 +2558,48 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
       fi
     fi
   fi
-` + identityGuardCheck(identityChecks.String()) + `fi
+` + identityGuardCheck(identity) + `fi
 `
 }
 
-// identityGuardCheck renders check 3's block (ADR 0024 D2): the ADDED lines
-// of every staged text file, code included, against this box's own identity
-// literals. "" when identityChecks is empty — a box that derived nothing
-// (no git email, no .beads/redirect, an unset $HOME) skips the block whole
-// rather than paying for a full `git diff` that can never find a match.
-func identityGuardCheck(identityChecks string) string {
-	if identityChecks == "" {
+// identityGuardCheck renders check 3's block (ADR 0024 D2): this box's own
+// identity literals against the ADDED LINES of every staged text file, code
+// included, AND against the ADDED staged PATHS. "" when identity is empty —
+// a box that derived nothing (no git email, no .beads/redirect, an unset
+// $HOME) skips the block whole rather than paying for a full `git diff` that
+// can never find a match.
+//
+// TWO ARMS, ONE LITERAL SET (ranger-base-dmsbu, from ranger-base-wlsv1).
+// "ADDED lines" was the mechanism, not the intent: a filename is exactly
+// where an operator-shaped artifact puts the operator, and two shapes
+// committed clean in a public-stamped repo with the content arm alone —
+// a new docs/runbooks/<username>.md whose CONTENT is spotless, and a pure
+// `git mv` of an already-clean file to <username>.txt, which yields no plus
+// lines at all, +++ header included. The path analogue of an added LINE is
+// an added ENTRY, which is check 1's rule for docs/ verbatim: a modified
+// existing path cleared this the day it was added, and a deletion carries a
+// path AWAY — refusing that is the wrong direction, and the lint is not a
+// purge.
+//
+// checks() is rendered at two indents rather than once into a variable
+// because the path arm needs it INSIDE a loop: posse_check accumulates the
+// class and the matched text but not the subject, so the only way to name
+// the offending path in the refusal — which is what distinguishes a path
+// hit from a content hit for the reader — is to run the same matcher over
+// one path at a time. Same rendered literal set, same posse_check, same
+// override, same refusals.log shape, public-stamped repositories only.
+func identityGuardCheck(identity []IdentityLiteral) string {
+	if len(identity) == 0 {
 		return ""
 	}
+	checks := func(indent string) string {
+		var b strings.Builder
+		for _, lit := range identity {
+			fmt.Fprintf(&b, "%sposse_check %s %s\n", indent, shQuote(lit.Class), shQuote(identityLiteralERE(lit.Value)))
+		}
+		return b.String()
+	}
+	identityChecks := checks("    ")
 	return `
   # ─── check 3: identity literals (ADR 0024 D2) ───────────────────────────
   # Derived from THIS box at render time — whoami, git config user.email,
@@ -2587,6 +2643,72 @@ func identityGuardCheck(identityChecks string) string {
       fi
     fi
   fi
+
+  # ─── check 3, second arm: the same literals over ADDED staged PATHS ─────
+  # Every flag below is load-bearing and measured (git 2.50.1):
+  #   --no-renames  with move detection ON — git's default since 2.9 —
+  #                 --diff-filter=A prints NOTHING for a pure move, so the
+  #                 destination of a git mv is only an added ENTRY with the
+  #                 flag. Same flag, same reason, as the NOTES.md arm and the
+  #                 shared-index reader (ranger-base-x9xbk, gates.go ~2134,
+  #                 which explains it once) and as check 1 above.
+  #   --diff-filter=A  added entries only: not deleted (a deletion carries a
+  #                 path away) and not modified (already in history, check
+  #                 1's precedent).
+  #   core.quotePath=false  so a literal carrying a non-ASCII byte is matched
+  #                 raw rather than against git's octal-escaped spelling —
+  #                 the same reason constitutionGuardBody reads paths
+  #                 unquoted. RESIDUAL, stated: git still C-quotes a path
+  #                 holding a double quote, a backslash or a control byte
+  #                 whatever quotePath says (ranger-base-qg0k8), so such a
+  #                 path is matched in its escaped spelling here. It can only
+  #                 mis-match a literal that itself carries one of those
+  #                 bytes; none of the three sources produces one.
+  # -f and IFS=newline: the loop splits an unquoted expansion, so a path with
+  # a glob character stays a path and a path with spaces stays one word —
+  # the constitution arm's spelling, for the same reason.
+  posse_ipaths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter=A "$posse_base" 2>/dev/null)
+  if [ -n "$posse_ipaths" ]; then
+    posse_ibad=''
+    set -f
+    posse_iifs=$IFS
+    IFS='
+'
+    for posse_ip in $posse_ipaths; do
+      posse_added=$posse_ip
+      posse_bad=''
+` + checks("      ") + `      if [ -n "$posse_bad" ]; then
+        posse_ibad="$posse_ibad  $posse_ip
+$posse_bad"
+      fi
+    done
+    IFS=$posse_iifs
+    set +f
+    if [ -n "$posse_ibad" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: identity literal scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — an operator identifier is going into a public repo in a staged PATH" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) identity literal scan OVERRIDDEN [prepare-commit-msg hook] (staged path)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: an operator identity literal in a staged PATH — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(IdentityRule) + `
+          echo "matched in the staged added path(s) — the FILENAME, not its content:"
+          printf '%s' "$posse_ibad"
+          echo ` + shQuote(IdentityWayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) identity literal scan [prepare-commit-msg hook] (public repo, staged path)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+  fi
 `
 }
 
@@ -2623,11 +2745,15 @@ func identityGuardCheck(identityChecks string) string {
 // to tell an operator shell from a persona's, so no third spelling of "is
 // this a persona" is being coined here.
 //
-// THE TO-BE-COMMITTED SET is `git diff --cached --name-only` under the hook's
+// THE TO-BE-COMMITTED SET is `git diff --cached --name-only --no-renames`
+// under the hook's
 // INHERITED GIT_INDEX_FILE, which is what makes it right for both forms this
 // wall leaves standing: a path-limited commit's temporary next-index IS the
 // index git hands the hook, so what that diff reports is what the commit will
-// take — not what the shared index happens to hold. `-z`, so a path with a
+// take — not what the shared index happens to hold. `--no-renames` because
+// with move detection on --name-only prints only a rename's destination, so
+// a move OUT of the class was invisible here and landed (ranger-base-qdxe);
+// the land belt already read its own diff that way. `-z`, so a path with a
 // quote or a space in it is not read through git's own path quoting, and the
 // base is the empty tree in a repo with no commit yet (a first commit is
 // exactly when a constitution arrives whole). `diff.relative` is pinned off:
@@ -2637,7 +2763,11 @@ func identityGuardCheck(identityChecks string) string {
 // THE CLASS is two lists, because the two have different reasons:
 //
 //	(a) in the CONSTITUTION repo only — a repo whose top level has
-//	    ConstitutionRepoMarker — every ConstitutionRepoPaths entry:
+//	    ConstitutionRepoMarker ON DISK **or** in the base tree the commit is
+//	    diffed against (ranger-base-jex3: a worktree-only detector is one the
+//	    persona owns, and `rm -rf rhq/agents` — never staged, so nothing on
+//	    the branch records it — stood the whole promoted set down) — every
+//	    ConstitutionRepoPaths entry:
 //	    `rhq/<p>` for each PromotedPaths entry, plus `rhq/envs`. This is the
 //	    prose that becomes law at the next `posse promote`, and it is
 //	    rendered FROM PromotedPaths at hook-render time so a path added to
@@ -2661,7 +2791,14 @@ func identityGuardCheck(identityChecks string) string {
 //
 // THE RESIDUAL, stated rather than discovered. This is L3, the shim tier:
 // `env -i` scrubs RHQ_PERSONA and the arm stands down, which is the exact
-// residual PrePushHook already documents for its own marker. Two things sit
+// residual PrePushHook already documents for its own marker; `core.hooksPath`
+// re-points the slot, the same tier of residual. A THIRD one was on this list
+// and has been closed rather than documented: removing the marker directory
+// from the session worktree before a path-limited commit stood the promoted
+// half of the class down (ranger-base-jex3, measured; the belt compensated,
+// which is why it was P2 and not P1). The marker is now read from the
+// worktree OR the base tree, so the route needs a marker removal the base
+// tree records — which is itself a class path, and refused. Two things sit
 // behind it and neither is claimed to be this: under `cage: seatbelt` the
 // constitution area is not writable at all (ConstitutionGrants, measured
 // empty), and the promote manifest is the DETECTOR at every tier — a
@@ -2701,15 +2838,38 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
   # (ranger-base-az93). Then, in the constitution repo only, the promoted set.
   posse_cls='` + class([]string{ClaudeProjectConfig, ClaudeProjectConfigLocal}) + `'
   posse_cls_top=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -n "$posse_cls_top" ] && [ -d "$posse_cls_top/` + ConstitutionRepoMarker + `" ]; then
-    posse_cls="${posse_cls}` + class(ConstitutionRepoPaths()) + `"
-  fi
   # The index the COMMIT will use, which is the one git handed this hook —
   # a path-limited commit's own next-index included. Empty tree when there is
-  # no HEAD yet.
+  # no HEAD yet. Read BEFORE the marker test below, which needs it.
   posse_cls_base=$(git hash-object -t tree /dev/null 2>/dev/null)
   if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_cls_base=HEAD; fi
-  posse_cls_staged=$(git -c diff.relative=false diff --cached --name-only -z "$posse_cls_base" 2>/dev/null | tr '\0' '\n')
+  # THE MARKER IS NOT THE PERSONA'S TO REMOVE (ranger-base-jex3). The
+  # worktree test alone was a detector a persona owns: ` + "`rm -rf " + ConstitutionRepoMarker + "`" + `
+  # in the session worktree — never staged, so nothing on the branch records
+  # it — dropped the whole promoted set out of the class and the identical
+  # refused commit landed (measured, control and attack). The base tree still
+  # carries the marker, so the OR closes it while keeping BOTH directions the
+  # worktree arm was there for: repo genesis (no HEAD, but the dir is on
+  # disk) and the deliberate "an unrelated repo can be made to answer this,
+  # and is then refused there". cat-file -t rather than -e so the base arm
+  # says exactly what [ -d ] says — a BLOB at that path is not a
+  # constitution, the same way replacing the dir with a file was not.
+  if [ -n "$posse_cls_top" ] && { [ -d "$posse_cls_top/` + ConstitutionRepoMarker + `" ] ||
+      [ "$(git cat-file -t "$posse_cls_base:` + ConstitutionRepoMarker + `" 2>/dev/null)" = tree ]; }; then
+    posse_cls="${posse_cls}` + class(ConstitutionRepoPaths()) + `"
+  fi
+  # --no-renames (ranger-base-qdxe), the flag the land belt (worktree.go) and
+  # the two arms below already carry and this one did not: rename detection
+  # is ON by default and --name-only prints only a rename's DESTINATION, so
+  # ` + "`git mv " + ConstitutionRepoMarker + "/x.md notes.md`" + ` showed this arm nothing in the
+  # class and committed at exit 0 — the PID gone from the constitution repo,
+  # and ` + "`git mv .claude/settings.json settings-draft.json`" + ` the same in EVERY
+  # hooked repo. It needs no git mv: detection pairs any staged delete with a
+  # similar staged add, so copy-then-remove did it too. A persona that can
+  # delete the file un-fences itself as surely as one that can edit it
+  # (ranger-base-az93). With the flag git reports the removal and the add
+  # separately and the class member is a staged path again.
+  posse_cls_staged=$(git -c diff.relative=false diff --cached --name-only --no-renames -z "$posse_cls_base" 2>/dev/null | tr '\0' '\n')
   posse_cls_hit=''
   if [ -n "$posse_cls_staged" ]; then
     # -f: both loops split an unquoted expansion, and a staged path with a

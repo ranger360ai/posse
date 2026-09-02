@@ -390,6 +390,24 @@ the same way twice:
   and the arm stands down, the same residual promote's own env check
   carries — it is a wall against the ordinary path, not a cage.
 
+  *Amended 2026-09-01 (ranger-base-dmsbu, from ranger-base-qdxe and
+  ranger-base-jex3, both measured).* Two ways the arm stood down that
+  were not residuals but defects, and are closed. **The staged set is
+  read with move detection off:** `--name-only` prints only a rename's
+  DESTINATION, so a move of a class path OUT of the class showed the arm
+  nothing and committed at exit 0 — the PID gone from the constitution
+  repo, and the same shape carried `.claude/settings.json` away in every
+  hooked repo. It needed no `git mv`; detection pairs any similar staged
+  delete with a staged add. **And the class marker is no longer read
+  from the persona's own working tree alone:** the detector stat'd
+  `rhq/agents` on disk, which a session owns, so `rm -rf` it — never
+  staged, so nothing on the branch recorded it — and the promoted set
+  dropped out of the class. It is now read from the working tree OR the
+  base tree the commit is diffed against, which keeps repo genesis (no
+  HEAD, marker on disk) working unchanged. The land-path belt below
+  compensated for both, which is why they were hardening and not a live
+  hole in the promoted constitution; the L3 arm now holds on its own.
+
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/rhq/worktree.go`). The launcher
   refuses to fast-forward a session branch whose merge-base..HEAD

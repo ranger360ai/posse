@@ -751,9 +751,14 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	}
 	// The list is stamped twice: once for the beads-jsonl arm (check 0), once
 	// for the markdown-prose arm (ADR 0024 D2 check 2) — same list, two
-	// call sites (visibilityGuardBody). Plus once per identity literal this
-	// box derives for pub (ADR 0024 D2 check 3), a single call site.
-	identityCalls := len(testIdentity(t, pub))
+	// call sites (visibilityGuardBody). The identity literals are stamped
+	// twice as well, once per check-3 arm: the ADDED LINES of every staged
+	// text file, and the ADDED staged PATHS (ranger-base-dmsbu). Same
+	// rendered literal set, same posse_check, two call sites — the path arm
+	// renders inside a per-path loop because posse_check keeps the class and
+	// the matched text but not the subject, and the refusal has to name the
+	// offending path.
+	identityCalls := 2 * len(testIdentity(t, pub))
 	if want, got := 2*(len(OpsPatterns)+1)+identityCalls, strings.Count(hook, "posse_check "); got != want {
 		t.Errorf("want shipped+1 checks stamped twice plus %d identity checks (%d), got %d", identityCalls, want, got)
 	}

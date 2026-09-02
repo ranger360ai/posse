@@ -98,6 +98,29 @@ could have written it. Instance-ops content — cost figures, plan names, live
 guard values, credential locations — belongs in the instance's private tree
 even in prose, even when the file it is written into is this repo's.`
 
+// MarkdownPathspecs is WHICH FILES check 2 owns, as git pathspecs, and it
+// is a list in one place for the reason OpsPatterns is (ranger-base-4b1z4):
+// the wall's markdown spellings are a decision, and a decision spelled
+// inline in the rendered hook is one nothing can measure or widen.
+//
+// Two facts it encodes, both measured (git 2.50.1, ranger-base-4b1z4):
+//
+//   - GIT PATHSPEC MATCHING IS CASE-SENSITIVE, so the earlier `*.md` did not
+//     match `docs/adr/x.MD` — `git diff --cached -U0 HEAD -- '*.md'` came
+//     back EMPTY for it and check 2 never saw the file at all. One character
+//     defeated the arm, and on macOS's default case-insensitive filesystem
+//     the two spellings are the same file to everything except git.
+//     `:(icase)` is git's own pathspec magic for exactly this.
+//   - `.markdown` IS markdown. It walked through for the same reason and is
+//     the same class of artifact; the wall owns both spellings and no
+//     others. A spelling nothing writes (`.mkd`, `.mdown`) is not added
+//     speculatively — widening this list is the same deliberate, reviewed
+//     edit PublicDocsGenres is.
+//
+// Check 3 is unaffected either way: it scans every staged text file
+// whatever it is named.
+var MarkdownPathspecs = []string{":(icase)*.md", ":(icase)*.markdown"}
+
 // OpsProseWayThrough is the remedy a check-2 refusal names: restate the
 // invariant rather than the measurement (ADR 0024 D3, restate-and-cite).
 const OpsProseWayThrough = `the way through (ADR 0024 D3, restate-and-cite): write the full account in
@@ -455,13 +478,21 @@ const IdentityRule = `ADR 0024 D2 check 3: the operator's identity has no legiti
 this repo — the box's own username, git email, and the instance repo's path
 are derived at hook-render time (never shipped, never committed) and refused
 wherever they appear in the ADDED lines of any staged text file, code
-included.`
+included, and in the ADDED staged paths (a filename is exactly where an
+operator-shaped artifact puts the operator; move detection off, so a move's
+destination counts as new).`
 
-// IdentityWayThrough is the remedy a check-3 refusal names.
+// IdentityWayThrough is the remedy a check-3 refusal names — both ways
+// through, since ranger-base-dmsbu gave check 3 a second arm: content is
+// generalized or restated, and a PATH is renamed or written in the instance
+// tree. Two constants, not three: the arms differ in what they matched, not
+// in what the writer should do about it.
 const IdentityWayThrough = `the way through: nothing that names this operator, this box, or this
 instance's path belongs in a public repo's history — generalize whatever
 carries it (a comment, a fixture, a hardcoded path), or move the content to
-the instance tree (ADR 0024 D3, restate-and-cite).`
+the instance tree (ADR 0024 D3, restate-and-cite). For a PATH: name the file
+without it, or write it in the instance tree — a rename is a fresh added
+entry and is scanned again, so the new name has to be clean too.`
 
 // identityLiteralMaxLen guards against a pathologically long identity value
 // rendering into the hook a pattern so long the hook file stops being
