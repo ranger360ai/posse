@@ -116,6 +116,26 @@ floor, per-bead beside the account stage. Three rules follow:
   drift (a reprice staling the estimate with nothing failing);
   mitigations are the factor logged on every reading, and the cap
   remaining available as a belt.
+
+  *(Built 2026-09-02, ranger-base-gxgc.)* `PlanGuardOverflow` asks the
+  target pool for its arming (`PoolMeterArming`, keyed on
+  `GrokPoolRuntime`) and `Overflow.On` is true on either brake;
+  `Overflow.Capped` is the cap's own half, so the cap fires only where it
+  was set. The arming test never takes a reading — it is three config
+  keys, and the reading stays where §2's placement above puts it. Two
+  consequences the sentences above did not spell out, decided here and
+  recorded rather than left to the code. A cap that is SET and unusable
+  is still named on stderr when the meter arms the move: the typo is a
+  brake the operator believes in and does not have, and it stays visible
+  whatever else is holding the pool. And a ledger fault — unreadable or
+  unappendable `overflow.log`, the ranger-base-2y96 / ranger-base-af98
+  refusals — now takes the CAP rather than the move, where the meter is
+  armed: the fault is in the cap's instrument, the meter is a config key
+  and a transcript scan that no unreadable file touches, and the ledger
+  is no longer the only record of what the pool was spent on. With no
+  meter armed it is the same whole refusal as before, unchanged. Pins:
+  `internal/posse/overflowarming_test.go` (eight mutants run, listed in
+  the file header).
 - **Two brakes on one pool both fire; deferral is a config edit, not a
   mechanism.** The shipped ordering is ratified: where a reading exists
   it is named first — the bead cap is the stand-in for the *absence* of
@@ -254,7 +274,10 @@ remote shape; its scope note points here.
   the condition is `Counted()` plus a set key, testable on a fixture
   runtime). Both cut as beads off ranger-base-qs0z. `overflow.log` is
   still written on every overflow launch, cap or no cap: it feeds the
-  metric, and the cap if one is later set.
+  metric, and the cap if one is later set. *(Built 2026-09-02: the
+  arming rule ranger-base-gxgc, the dead-key line ranger-base-2eeb. The
+  trip header names whichever brake armed the move, so a meter-armed
+  pass reports no bead count and invents no cap of zero.)*
 - *(2026-08-29)* The ledger's WRITABILITY is a precondition of the move,
   not a warning after it (ranger-base-2y96): a readable-but-unwritable
   `overflow.log` counted every pass at whatever it already said, so a cap

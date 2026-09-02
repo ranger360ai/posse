@@ -86,9 +86,11 @@ func TestOverflowUnsetSkipsOnMeterBead(t *testing.T) {
 	}
 }
 
-// §3: the cap is REQUIRED. An overflow runtime without one is overflow off
-// — the pass is skipped exactly as before, and the config error is named
-// once so it is not a pool that quietly never engages.
+// §3: with NEITHER brake armed, overflow is off. This fixture sets no cap
+// and no meter keys, so the target pool has nothing holding it — the pass is
+// skipped exactly as before, and the config error is named once so it is not
+// a pool that quietly never engages. (The meter as the other way to arm it:
+// overflowarming_test.go.)
 func TestOverflowWithoutCapIsOff(t *testing.T) {
 	f := overflowPass(t, "plan_guard_overflow: grok\n", overflowPID, `["go","tier:standard"]`)
 
@@ -98,8 +100,9 @@ func TestOverflowWithoutCapIsOff(t *testing.T) {
 		t.Fatalf("no cap must park the on-meter bead, got n=%d:\n%s", n, out)
 	}
 	lines := strings.Split(strings.TrimRight(f.errb.String(), "\n"), "\n")
-	if len(lines) != 1 || !strings.Contains(lines[0], "plan_guard_overflow_cap:") {
-		t.Errorf("want exactly one stderr line naming the missing cap, got: %q", f.errb.String())
+	if len(lines) != 1 || !strings.Contains(lines[0], "plan_guard_overflow_cap:") ||
+		!strings.Contains(lines[0], "pool meter fully armed") {
+		t.Errorf("want exactly one stderr line naming both ways to arm the move, got: %q", f.errb.String())
 	}
 	if strings.Contains(out, "overflow") {
 		t.Errorf("zero overflow launches, and nothing that reads like one:\n%s", out)
@@ -410,10 +413,17 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 		says string
 	}{
 		{"", Overflow{}, ""},
-		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: 20\n", Overflow{"grok", 20}, ""},
+		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: 20\n", Overflow{Runtime: "grok", Cap: 20}, ""},
 		{"plan_guard_overflow: grok\n", Overflow{}, "plan_guard_overflow_cap:"},
 		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: lots\n", Overflow{}, "plan_guard_overflow_cap:"},
 		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: 0\n", Overflow{}, "plan_guard_overflow_cap:"},
+		// §3 as amended: the cap is one of two ways to arm the move, and
+		// with the target's own meter armed it is no longer the required
+		// one. The meter's own arming edges are TestOverflowArmedByMeter*.
+		{"plan_guard_overflow: grok\ngrok_guard_week: 70\n" + grokPoolCfg,
+			Overflow{Runtime: "grok", Meter: true}, ""},
+		{"plan_guard_overflow: grok\nplan_guard_overflow_cap: 20\ngrok_guard_week: 70\n" + grokPoolCfg,
+			Overflow{Runtime: "grok", Cap: 20, Meter: true}, ""},
 		{"plan_guard_overflow_cap: 20\n", Overflow{}, "with no plan_guard_overflow:"},
 		// The guarded runtime is not a second pool: a target that spends the
 		// meter the trip was read off cancels the guard (ranger-base-ay0h).
@@ -438,9 +448,10 @@ func TestPlanGuardOverflowConfig(t *testing.T) {
 	}
 }
 
-// On() carries the same two invariants the config reader prints for, so an
-// Overflow built any other way cannot move a bead either: no cap is off, and
-// the guarded runtime as target is off (ranger-base-ay0h).
+// On() carries the same invariants the config reader prints for, so an
+// Overflow built any other way cannot move a bead either: no ARMED BRAKE is
+// off (§3 as amended — the cap, or the target's own pool meter), and the
+// guarded runtime as target is off (ranger-base-ay0h).
 func TestOverflowOn(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -448,10 +459,17 @@ func TestOverflowOn(t *testing.T) {
 		want bool
 	}{
 		{Overflow{}, false},
-		{Overflow{"grok", 1}, true},
-		{Overflow{"grok", 0}, false},
-		{Overflow{GuardedRuntime, 5}, false},
-		{Overflow{"", 5}, false},
+		{Overflow{Runtime: "grok", Cap: 1}, true},
+		{Overflow{Runtime: "grok"}, false},
+		{Overflow{Runtime: GuardedRuntime, Cap: 5}, false},
+		{Overflow{Cap: 5}, false},
+		// The second armed brake (§3, amended 2026-08-29): the target's own
+		// pool meter arms the move with no cap at all — and does not
+		// override the two invariants above.
+		{Overflow{Runtime: "grok", Meter: true}, true},
+		{Overflow{Runtime: "grok", Cap: 1, Meter: true}, true},
+		{Overflow{Runtime: GuardedRuntime, Meter: true}, false},
+		{Overflow{Meter: true}, false},
 	} {
 		if got := tc.ov.On(); got != tc.want {
 			t.Errorf("Overflow%+v.On() = %v, want %v", tc.ov, got, tc.want)

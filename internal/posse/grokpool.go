@@ -315,6 +315,64 @@ type grokPoolState struct {
 	Off string
 }
 
+// grokMeterInputs resolves the meter's three config inputs in one place, and
+// that place is the ONE definition of ARMED (ADR 0010 §6: a local meter is
+// armed or off, never blind). Armed means all three present and parsing:
+// `grok_guard_week:` for the threshold, `grok_pool_reset:` and
+// `grok_pool_usd_per_point:` for the reading it is compared against.
+//
+// off names the missing input, and is "" in the two cases that are not a
+// half-configured meter — fully armed, and not asked for at all
+// (`grok_guard_week:` unset, which is the default and silent).
+//
+// Two callers must never disagree about this: grokPoolGuard, which takes the
+// reading, and PoolMeterArming, on which ADR 0010 §3 arms an overflow move
+// with no bead cap. A meter that armed the move and then declined to read
+// would be a brake with no instrument.
+func (a *App) grokMeterInputs(errw io.Writer) (th float64, reset WeeklyReset, factor float64, armed bool, off string) {
+	th = a.GrokGuardWeek(errw)
+	if th == 0 {
+		return 0, WeeklyReset{}, 0, false, ""
+	}
+	reset, okR := a.GrokPoolReset(errw)
+	factor, okF := a.GrokPoolUSDPerPoint(errw)
+	switch {
+	case okR && okF:
+		return th, reset, factor, true, ""
+	case !okR && !okF:
+		return th, reset, factor, false, "grok_pool_reset: and grok_pool_usd_per_point: are both unset or unusable"
+	case !okR:
+		return th, reset, factor, false, "grok_pool_reset: is unset or unusable"
+	default:
+		return th, reset, factor, false, "grok_pool_usd_per_point: is unset or unusable"
+	}
+}
+
+// PoolMeterArming answers the ARMING question ADR 0010 §3 (amended
+// 2026-08-29) added: is this runtime's own pool meter fully armed, and if a
+// threshold is set but it is not, which input is missing.
+//
+// It is an arming test and never a reading — no transcript is scanned here.
+// That is the §3 wording ("the check keys on the meter's arming, not a
+// reading") and it is also what keeps the reading where grokPoolGuard puts
+// it: taken lazily, for a bead that is a candidate for the pool.
+//
+// Keyed on the one runtime that HAS a meter rather than a registry: ADR
+// 0010's tripwire says a registry of one is a name with no second member,
+// and waits for a second local meter.
+//
+// Silent by construction: the config diagnostics belong to the pass's own
+// pool guard, which prints each of them once, and to the overflow-off line,
+// which names what a half-armed meter is missing. Saying it here as well
+// would double every one of them.
+func (a *App) PoolMeterArming(runtime string) (armed bool, off string) {
+	if runtime != GrokPoolRuntime {
+		return false, ""
+	}
+	_, _, _, armed, off = a.grokMeterInputs(io.Discard)
+	return armed, off
+}
+
 // grokPoolGuard is the pass's memoized reading, taken lazily on the first
 // bead that resolves onto the metered runtime.
 func (d *Dispatcher) grokPoolGuard() *grokPoolState {
@@ -323,21 +381,13 @@ func (d *Dispatcher) grokPoolGuard() *grokPoolState {
 	}
 	st := &grokPoolState{}
 	d.grokPool = st
-	st.Threshold = d.App.GrokGuardWeek(d.errw())
+	th, reset, factor, armed, off := d.App.grokMeterInputs(d.errw())
+	st.Threshold = th
 	if st.Threshold == 0 {
 		return st // unarmed: today's behaviour, silently
 	}
-	reset, okR := d.App.GrokPoolReset(d.errw())
-	factor, okF := d.App.GrokPoolUSDPerPoint(d.errw())
-	switch {
-	case !okR && !okF:
-		st.Off = "grok_pool_reset: and grok_pool_usd_per_point: are both unset or unusable"
-	case !okR:
-		st.Off = "grok_pool_reset: is unset or unusable"
-	case !okF:
-		st.Off = "grok_pool_usd_per_point: is unset or unusable"
-	}
-	if st.Off != "" {
+	if !armed {
+		st.Off = off
 		d.eprintf("grok pool: grok_guard_week: %.0f%% is set but %s — no reading is possible, so the pool guard is OFF, not blind: nothing will park on this\n",
 			st.Threshold, st.Off)
 		return st

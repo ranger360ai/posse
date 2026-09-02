@@ -720,24 +720,38 @@ watching them is the operator's interactive headroom — a fleet that eats the
   `--runtime` (ADR 0002's precedence — the operator decided). Dial E is
   untouched: it still resolves the tier, and on a moved bead its step-down is
   judged against the pool the bead is actually going to.
-- **The cap is required, and it is the whole difference** (ADR 0010 §3).
-  `plan_guard_overflow_cap: N` — max beads sent to the overflow runtime in
-  any **rolling 7 days**. An overflow runtime *without* a cap is overflow
-  **off**: the pass is skipped as before and one stderr line says why, every
-  pass. Beads and not dollars because the second pool has no meter posse can
-  read and `posse cost` cannot see its spend; rolling and not calendar because
-  the pool's reset day is the provider's secret and a rolling window
-  upper-bounds every calendar week without knowing it. A weekly pool with no
-  intra-week reset is exactly the shape a per-pass trigger over-drains.
+- **The move needs an armed brake on the target pool, and there are two**
+  (ADR 0010 §3, amended 2026-08-29). `plan_guard_overflow_cap: N` — max
+  beads sent to the overflow runtime in any **rolling 7 days** — **or** the
+  target's own pool meter fully armed, which today means grok's
+  (`grok_guard_week:` + `grok_pool_reset:` + `grok_pool_usd_per_point:`, all
+  three; a half-armed meter is off and arms nothing). Either arms the move;
+  both set, both apply, and no warning is printed for it — an operator who
+  set both meant both. **Neither** is overflow **off**: the pass is skipped
+  as before and one stderr line names both ways to arm it, every pass. The
+  cap is beads and not dollars because a pool with no meter has no spend
+  posse can see, and rolling and not calendar because the pool's reset day is
+  the provider's secret and a rolling window upper-bounds every calendar week
+  without knowing it. A weekly pool with no intra-week reset is exactly the
+  shape a per-pass trigger over-drains — which is also why the meter alone
+  suffices where it exists: every overflow launch spends that pool from this
+  box, so the meter sees all of the drain overflow itself causes.
   - **Ledger** `$StateDir/overflow.log`, append-only, one line per overflow
-    launch: `RFC3339 runtime bead persona`. Read **once per pass** and only
-    on a trip; counted **per runtime**, so changing the overflow target does
-    not charge the new pool for the old one's week. Written **after** the
+    launch: `RFC3339 runtime bead persona`. Read **once per pass**, only on a
+    trip and only where the cap is one of the armed brakes — with the meter
+    alone holding the pool there is no number to compare a count against;
+    counted **per runtime**, so changing the overflow target does not charge
+    the new pool for the old one's week. Written **after** the
     launch, not after the decision — a bead that never reached its agent
-    spent nothing. Unreadable → overflow off for that pass (a skipped pass
-    heals itself; an uncounted week does not).
+    spent nothing, and it is written on every move whether a cap is set or
+    not (it feeds the metric, and a cap set later). Unreadable or
+    unappendable → the **cap** is off for that pass: where the target's own
+    meter is armed the move survives on it, and where it is not, overflow is
+    off (a skipped pass heals itself; an uncounted week does not).
   - Cap reached → the bead's line names it: `plan 5h at 78% > 70%, overflow
-    grok: 20/20 in 7d — skipped`. `--dry-run` shows a move as
+    grok: 20/20 in 7d — skipped`. The trip header names whichever brake armed
+    the move, so a meter-armed pass with no cap reports no bead count rather
+    than a cap of zero. `--dry-run` shows a move as
     `[grok ← overflow]`, and so does the prompted line of a real launch.
 - **A blind guard parks only the meter it guards; it never overflows** (ADR
   0010 §5, ADR 0013 §3). The blind state is not an over-threshold trip, so the

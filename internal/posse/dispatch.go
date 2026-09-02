@@ -588,17 +588,34 @@ func (d *Dispatcher) unmatchedThresholds(th map[string]float64, u PlanUsage) {
 // overThreshold is the fork ADR 0010 §1 adds to a tripped guard. With no
 // overflow runtime configured — the default — on-meter beads park on this
 // reason. With one, they face the per-bead ladder (overflowFor): the overflow
-// pool if eligible and the cap has room, and this same reason as their skip
-// line otherwise. Off-meter beads launch in both cases.
+// pool if eligible and its armed brakes have room, and this same reason as
+// their skip line otherwise. Off-meter beads launch in both cases.
 //
-// The ledger is read here once per pass, only on a threshold trip.
+// The ledger is read here once per pass, only on a threshold trip, and only
+// where the cap is one of the armed brakes: armed on the target's own meter
+// alone (§3 as amended), the rolling count is a metric with nothing to be
+// compared against, and the header says which brake is holding the pool
+// instead. Either way this line is the ARMING NOTICE — announced once,
+// before any bead is judged — and not a brake's verdict.
 func (d *Dispatcher) overThreshold(reason string) {
 	d.planTrip = reason
 	if !d.overflow.On() {
 		return
 	}
+	if !d.overflow.Capped() {
+		d.printf("%s — overflow %s, armed by %s's own pool meter (no bead cap set); eligible beads step over\n",
+			reason, d.overflow.Runtime, d.overflow.Runtime)
+		return
+	}
 	n, ok := d.readOverflowCount()
 	if !ok {
+		// The ledger fault line has already said what survived it. If the
+		// target's meter is still holding the pool the pass still steps
+		// over, and a pass that says it tripped owes the operator that.
+		if d.overflow.On() {
+			d.printf("%s — overflow %s, armed by %s's own pool meter; eligible beads step over\n",
+				reason, d.overflow.Runtime, d.overflow.Runtime)
+		}
 		return
 	}
 	d.overflowUsed = n

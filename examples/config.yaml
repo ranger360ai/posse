@@ -373,14 +373,27 @@ default_emoji: ⚙️
 # The target must be a SECOND pool: naming the runtime the guard meters
 # (claude) is overflow off with a stderr line — spending the hot meter through
 # the ladder built to spare it is the guard cancelling itself.
-# The cap is REQUIRED: a runtime here without one is overflow off, one
-# stderr line per pass. It counts beads sent to that runtime in a ROLLING 7
-# days, ledgered append-only in $RHQ_HOME/state/overflow.log — the second
-# pool has no meter to read, so the cap stands in for one. Start in single
-# digits for a calibration week and raise it only on the pool provider's own
-# usage display. A BLIND guard never overflows: no reading, no judgement.
+# The move needs an ARMED BRAKE on the target pool, and there are two:
+# `plan_guard_overflow_cap:` below, or the target's OWN pool meter fully
+# armed — today only grok has one (`grok_guard_week:` + `grok_pool_reset:` +
+# `grok_pool_usd_per_point:`, all three). Either arms it; both set, both
+# apply and no warning — belt and braces is a posture, not a smell; neither
+# is overflow off, one stderr line per pass naming both ways to arm it. A
+# HALF-armed meter is off and arms nothing (a meter over local files is
+# armed or off, never blind), and the off line says which input is missing.
+# The cap counts beads sent to that runtime in a ROLLING 7 days, ledgered
+# append-only in $RHQ_HOME/state/overflow.log — it stands in for a meter the
+# pool does not have, so where the pool HAS one the cap is optional rather
+# than required. Start a cap in single digits for a calibration week and
+# raise it only on the pool provider's own usage display. The ledger is
+# written on every move either way: it feeds the metric, and a cap set
+# later. An unreadable or unappendable ledger takes the CAP off for that
+# pass — where the target's meter is armed the move survives on it, and
+# where it is not, overflow is off and on-meter beads park.
+# A BLIND guard never overflows: no reading, no judgement.
 # plan_guard_overflow: codex      # runtime name; unset = skip the pass
-# plan_guard_overflow_cap: 5      # beads to that runtime per rolling 7 days
+# plan_guard_overflow_cap: 5      # beads per rolling 7d; optional where the
+#                                 # target pool has an armed meter of its own
 
 # ─── the dispatch epoch (ADR 0028 §2) ────────────────────────────────────────
 # The accounting window the two caps below and `autostart_max_beads:` are
@@ -523,6 +536,12 @@ default_emoji: ⚙️
 # — per BEAD, on the runtime the launch is actually going to, so a drained
 # grok pool never parks a claude lane and a bead `plan_guard_overflow:` moved
 # onto grok is judged by grok's pool. At the threshold exactly it still runs.
+#
+# Armed, these three keys are also a brake on the OVERFLOW move itself: with
+# `plan_guard_overflow: grok` they arm it with no `plan_guard_overflow_cap:`
+# set at all (ADR 0010 §3). Every overflow launch spends this pool from this
+# box, so this meter sees all of the drain the move itself causes — which the
+# bead cap, a count standing in for a meter, never could.
 #
 # grok_pool_usd_per_point: is YOUR calibration and posse ships no value for
 # it: derive it by reading xAI's own Settings -> Usage display across a

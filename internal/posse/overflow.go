@@ -13,15 +13,18 @@ package posse
 // So when the guard trips, the pass runs and the decision moves per bead:
 //
 //	resolved runtime not on the guarded meter  → launch as today, ungated
-//	eligible (§2) and cap not reached (§3)     → launch on `plan_guard_overflow:`
+//	eligible (§2), the pool's brakes have room → launch on `plan_guard_overflow:`
 //	otherwise                                  → the guard's skip line, per bead
 //
 // Two rules keep this from being a way to spend a pool nobody can meter.
-// `plan_guard_overflow_cap:` is REQUIRED — an overflow runtime with no cap is
-// overflow off, one stderr line, and on-meter beads park. And a *blind* guard
-// never overflows (§5): with no reading to judge on, guessing that the other
-// pool should pay is exactly the failure the cap exists to bound. Off-meter
-// beads still launch through either state (ADR 0013 §3).
+// The move needs an ARMED BRAKE on the target pool (§3, amended 2026-08-29):
+// `plan_guard_overflow_cap:`, a bead count standing in for a meter that does
+// not exist, or the target's own pool meter fully armed where it does exist —
+// either arms it, both apply where both are set, and neither is overflow off,
+// one stderr line, on-meter beads park. And a *blind* guard never overflows
+// (§5): with no reading to judge on, guessing that the other pool should pay
+// is exactly the failure these brakes exist to bound. Off-meter beads still
+// launch through either state (ADR 0013 §3).
 
 import (
 	"bufio"
@@ -66,26 +69,51 @@ func OnGuardedMeter(name string) bool {
 
 // Overflow is one pass's overflow configuration. The zero value is off, so
 // on-meter beads park on a threshold trip while off-meter beads still run.
+//
+// Meter is the target pool's own meter, ARMED — the arming test, taken at
+// config time and never a reading (PoolMeterArming). It is the second way to
+// arm the move under §3's amendment, and it is carried rather than re-asked
+// so one pass decides once.
 type Overflow struct {
 	Runtime string
 	Cap     int
+	Meter   bool
 }
 
-// On reports whether a tripped guard may move anything. A runtime without a
-// cap is deliberately NOT on: §3 makes the cap required, because the cap is
-// the entire difference between this and draining a weekly pool in an
-// afternoon. Neither is the guarded runtime itself on: the move's whole
-// premise is that the guard's reading does not apply to the target, and it
-// applies to that one by construction.
+// On reports whether a tripped guard may move anything. §3's requirement, as
+// amended 2026-08-29, is AT LEAST ONE ARMED BRAKE on the target pool: the
+// bead cap, or the target's own pool meter. A runtime with neither is
+// deliberately not on, because a brake is the entire difference between this
+// and draining a weekly pool in an afternoon. Neither is the guarded runtime
+// itself on: the move's whole premise is that the guard's reading does not
+// apply to the target, and it applies to that one by construction.
 func (o Overflow) On() bool {
-	return o.Runtime != "" && o.Runtime != GuardedRuntime && o.Cap > 0
+	return o.Runtime != "" && o.Runtime != GuardedRuntime && (o.Cap > 0 || o.Meter)
 }
+
+// Capped reports whether the bead cap is one of the armed brakes — i.e.
+// whether the ledger's rolling count is compared against anything. Overflow
+// armed by the meter alone still WRITES the ledger on every move (§3: it
+// feeds the metric, and a cap set later), it just has no number to park on.
+func (o Overflow) Capped() bool { return o.Cap > 0 }
 
 // PlanGuardOverflow reads config `plan_guard_overflow:` (a runtime name) and
-// `plan_guard_overflow_cap:` (beads per rolling 7 days). Unset — the default
+// `plan_guard_overflow_cap:` (beads per rolling 7 days), and asks the target
+// pool whether it has a meter of its own that is armed. Unset — the default
 // — is off and silent. Anything half-configured is named on errw and off:
 // a guard that quietly stopped guarding is the failure mode this whole file
 // is written against, and so is a pool that quietly started paying.
+//
+// §3 as amended 2026-08-29: the requirement is AT LEAST ONE ARMED BRAKE on
+// the target pool, not the cap specifically. Why the meter alone suffices
+// for overflow — the thing it did not suffice for when this was written —
+// is that every overflow launch spends the pool from THIS box, so a meter
+// reading local transcripts sees all of the drain overflow itself causes;
+// the floor's blind spot is other people's spend, which the threshold is
+// sized for. Where both are set both apply, and no warning is printed for
+// it: an operator who set both meant both (§3's rejected alternative), and
+// the two fail differently — a bead count needs no calibration, a
+// percentage needs the factor.
 func (a *App) PlanGuardOverflow(errw io.Writer) Overflow {
 	rt := strings.TrimSpace(YamlGet(a.ConfigPath, "plan_guard_overflow"))
 	raw := strings.TrimSpace(YamlGet(a.ConfigPath, "plan_guard_overflow_cap"))
@@ -104,12 +132,40 @@ func (a *App) PlanGuardOverflow(errw io.Writer) Overflow {
 		fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s is the runtime the guard meters — a hot pool cannot be its own overflow — overflow off, on-meter beads park on a tripped guard\n", rt)
 		return Overflow{}
 	}
+	// The arming test, never a reading: no transcript is scanned to decide
+	// whether a brake exists, and none is scanned at all until a bead §2
+	// would move actually asks the pool how full it is (overflowFor).
+	meter, meterOff := a.PoolMeterArming(rt)
 	n, err := strconv.Atoi(raw)
-	if raw == "" || err != nil || n <= 0 {
-		fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s needs plan_guard_overflow_cap: N (beads per rolling 7 days, %q is not one) — overflow off, on-meter beads park on a tripped guard\n", rt, raw)
-		return Overflow{}
+	if raw != "" && err == nil && n > 0 {
+		return Overflow{Runtime: rt, Cap: n, Meter: meter}
 	}
-	return Overflow{Runtime: rt, Cap: n}
+	if meter {
+		// A cap that is SET and unusable is a typo, and a typo must be
+		// visible whatever else is holding the pool — the alternative is a
+		// brake the operator believes in and does not have. Overflow stays
+		// armed on the brake that IS there, and the line says which.
+		if raw != "" {
+			fmt.Fprintf(errw, "plan guard: config plan_guard_overflow_cap: %q is not a bead count (N per rolling 7 days) — that cap is off; overflow stays armed on %s's own pool meter\n", raw, rt)
+		}
+		return Overflow{Runtime: rt, Meter: true}
+	}
+	// Neither brake. The line names BOTH ways to arm the move, because an
+	// operator who reads only "set a cap" cannot tell that the pool they
+	// pointed at has a meter that would have done — and where the target's
+	// meter is half-configured, which input is missing, since that is a
+	// three-key meter and the one that is set says nothing about the others.
+	var alt string
+	switch {
+	case rt != GrokPoolRuntime:
+		alt = fmt.Sprintf("; %s has no pool meter posse can read, so the cap is its only brake", rt)
+	case meterOff != "":
+		alt = fmt.Sprintf(", or %s's own pool meter fully armed — %s", rt, meterOff)
+	default:
+		alt = fmt.Sprintf(", or %s's own pool meter fully armed (grok_guard_week: + grok_pool_reset: + grok_pool_usd_per_point:)", rt)
+	}
+	fmt.Fprintf(errw, "plan guard: config plan_guard_overflow: %s needs an armed brake on the target pool: plan_guard_overflow_cap: N (beads per rolling 7 days, %q is not one)%s — overflow off, on-meter beads park on a tripped guard\n", rt, raw, alt)
+	return Overflow{}
 }
 
 // OverflowLogPath is the ledger: `$StateDir/overflow.log`, append-only, one
@@ -353,8 +409,13 @@ func (d *Dispatcher) overflowFor(is RepoIssue, persona string, ag *AgentFile, rt
 	if line := d.grokPoolSkip(ov.Runtime); line != "" {
 		return overflowDecision{Skip: line, SkipKind: skipRuntimeCap}
 	}
-	// §3: the cap stands in for the meter the pool does not have.
-	if d.overflowUsed >= ov.Cap {
+	// §3: the cap stands in for the meter the pool does not have — so where
+	// the pool DOES have one and the operator set no cap, there is nothing
+	// here to stand in for and nothing to compare against. What armed the
+	// move then is the meter, and what brakes it is the reading taken
+	// immediately above; the ledger line is still owed and still written on
+	// every move, it is simply not a brake.
+	if ov.Capped() && d.overflowUsed >= ov.Cap {
 		return skip("%d/%d in 7d", d.overflowUsed, ov.Cap)
 	}
 	return overflowDecision{Runtime: ov.Runtime, Moved: true}
@@ -386,18 +447,42 @@ func (d *Dispatcher) overflowFor(is RepoIssue, persona string, ag *AgentFile, rt
 func (d *Dispatcher) readOverflowCount() (int, bool) {
 	n, err := d.App.OverflowCount(d.overflow.Runtime, d.now())
 	if err != nil {
-		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — overflow off this pass\n",
-			AbbrevHome(d.App.OverflowLogPath()), err)
-		d.overflow = Overflow{}
+		left := d.dropCap()
+		d.eprintf("plan guard: overflow ledger %s unreadable (%v) — %s\n",
+			AbbrevHome(d.App.OverflowLogPath()), err, left)
 		return 0, false
 	}
 	if err := d.App.OverflowAppendable(); err != nil {
-		d.eprintf("plan guard: overflow ledger %s cannot be appended to (%v) — overflow off this pass, on-meter beads park\n",
-			AbbrevHome(d.App.OverflowLogPath()), err)
-		d.overflow = Overflow{}
+		left := d.dropCap()
+		d.eprintf("plan guard: overflow ledger %s cannot be appended to (%v) — %s\n",
+			AbbrevHome(d.App.OverflowLogPath()), err, left)
 		return 0, false
 	}
 	return n + d.overflowUnlogged, true
+}
+
+// dropCap disarms the bead cap for the rest of this pass and returns the
+// clause that says what that leaves, for the line naming the fault.
+//
+// A ledger fault is a fault in the CAP's instrument, and §3's rule is at
+// least one armed brake on the target pool. Where the pool's own meter is
+// armed, the brake that armed the move is a config key and a transcript
+// scan: neither is touched by a file this pass cannot read, and the ledger
+// is no longer the only record of what the pool was spent on — the meter
+// reads that spend at the source. So the cap goes and overflow stays.
+//
+// Where the meter is not armed, this is the pre-existing refusal unchanged
+// (ranger-base-2y96, ranger-base-af98): an unknown or unrecordable count is
+// not a licence to spend a pool with no meter, and overflow goes off for the
+// pass — the pre-overflow behaviour, which costs a skipped pass and heals
+// itself, rather than an uncounted week.
+func (d *Dispatcher) dropCap() string {
+	d.overflow.Cap = 0
+	if d.overflow.On() {
+		return fmt.Sprintf("the bead cap is off for this pass; overflow stays armed on %s's own pool meter, which reads the spend at the source", d.overflow.Runtime)
+	}
+	d.overflow = Overflow{}
+	return "overflow off this pass, on-meter beads park"
 }
 
 // refreshOverflowUsed re-takes the cap's reading inside the launcher critical
@@ -418,7 +503,11 @@ func (d *Dispatcher) readOverflowCount() (int, bool) {
 // per fireLoop call rather than per Run, so a refire (ADR 0028 §2) re-reads
 // too: it holds the lock separately, so it can go stale separately.
 func (d *Dispatcher) refreshOverflowUsed() {
-	if d.planTrip == "" || !d.overflow.On() {
+	// Capped, not On: with the meter as the only armed brake the count is a
+	// metric and not a number anything is compared against, so re-reading it
+	// under the lock would buy nothing and cost a scan. The meter itself is
+	// taken per bead inside the critical section already.
+	if d.planTrip == "" || !d.overflow.Capped() {
 		return
 	}
 	was := d.overflowUsed
