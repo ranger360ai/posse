@@ -28,15 +28,18 @@ package posse
 //	                                has. If an off-box destination is ever
 //	                                ruled back in, §5 comes back WITH it;
 //	                                that is the order the argument runs in.
-//	§4 the ticker                   scheduling was not in the sub-ruling's
-//	                                four items and is not built here. No
-//	                                `backup_interval:` key is defined, on
-//	                                purpose: a key that reads like a schedule
-//	                                and schedules nothing is the plist that
-//	                                was never installed, wearing a config
-//	                                key. The staleness threshold is its own
-//	                                key (`backup_max_age:`) and says only
-//	                                what it means.
+//	§4 the ticker                   BUILT, later and separately, by bead
+//	                                ranger-base-zv3y6 — see backuploop.go.
+//	                                a0ln0 defined no `backup_interval:` key
+//	                                on purpose: a key that reads like a
+//	                                schedule and schedules nothing is the
+//	                                plist that was never installed, wearing a
+//	                                config key, so the key and the loop
+//	                                landed together. The staleness threshold
+//	                                stays its own key (`backup_max_age:`) and
+//	                                says only what it means; what it now
+//	                                takes from the schedule is its DEFAULT,
+//	                                §6's 2x the interval.
 //
 // What did NOT change, and is enforced below: no remote (ADR 0036 §3, the
 // operator's 2c ruling, refused on the SOURCE as well — a queue repo that
@@ -86,10 +89,11 @@ const (
 	DefaultBackupMinFreeMB = 384
 
 	// DefaultBackupMaxAge is when the newest on-box archive becomes a
-	// governance condition. ADR 0036 §6 sets the threshold at 2x the
-	// backup interval; §4's interval is unbuilt (see the file header), so
-	// the default is 2x the cadence the predecessor actually ran at — a
-	// nightly 03:15 archive (hl2p) — which is 48h.
+	// governance condition on an instance with NO schedule. ADR 0036 §6
+	// sets the threshold at 2x the backup interval, which defaultBackupMaxAge
+	// now applies wherever `backup_interval:` is armed (backuploop.go); with
+	// no interval to double, the fallback is 2x the cadence the predecessor
+	// actually ran at — a nightly 03:15 archive (hl2p) — which is 48h.
 	DefaultBackupMaxAge = 48 * time.Hour
 
 	backupManifestName    = "MANIFEST.json"
@@ -130,7 +134,28 @@ func (a *App) BackupDir() string {
 // BackupMaxAge is how old the newest on-box archive may be before the
 // governance surface says so (config `backup_max_age:`).
 func (a *App) BackupMaxAge(errw io.Writer) time.Duration {
-	return a.attnAge("backup_max_age", DefaultBackupMaxAge, errw)
+	return a.attnAge("backup_max_age", a.defaultBackupMaxAge(), errw)
+}
+
+// defaultBackupMaxAge is what `backup_max_age:` means when the operator has
+// not written one, and it is ADR 0036 §6's rule rather than a number: 2x the
+// scheduled interval. An instance that arms the clock has said how often it
+// wants an archive, and having missed two of its own intervals is what
+// "stale" means there — no second number to keep in step with the first.
+//
+// DefaultBackupMaxAge (48h) survives as the fallback for the instance with
+// NO schedule, where §6 has no interval to double and 48h is 2x the cadence
+// the predecessor actually ran at (nightly 03:15, hl2p). A backup_interval:
+// that is present but unparseable falls back there too, and says nothing:
+// the watch loop is what complains about a broken cadence, once, and a
+// freshness reading that repeated it would print it on every `posse status`
+// and every pulse tick.
+func (a *App) defaultBackupMaxAge() time.Duration {
+	cfg, err := LoadBackupConfig(a)
+	if err != nil || !cfg.Armed {
+		return DefaultBackupMaxAge
+	}
+	return BackupMaxAgeFactor * cfg.Interval
 }
 
 // BackupKeep is the on-box retention count. Zero is refused rather than
@@ -166,7 +191,7 @@ func (a *App) BackupMinFree(errw io.Writer) uint64 {
 // nothing at all: installing a posse that knows how to back up must not
 // start telling an operator their backups are late (the same inertness rule
 // `queue_repo:` keeps — ADR 0015 §4).
-var backupKeys = []string{"backup_dir", "backup_max_age", "backup_keep", "backup_min_free_mb"}
+var backupKeys = []string{"backup_dir", "backup_interval", "backup_max_age", "backup_keep", "backup_min_free_mb"}
 
 // BackupConfigured reports whether the operator has written any backup key.
 // It is half of "armed" — the other half is an archive already on disk from

@@ -2,10 +2,11 @@
 
 *Status: accepted 2026-08-29 · bead ranger-base-nbcf · richard · **partly
 BUILT 2026-09-01, bead ranger-base-a0ln0** (gilfoyle), under the operator's
-sub-ruling of that date on ranger-base-ay3dr · §1's `sweep`, §5's identity
-and §4's ticker are NOT built and the first two are CUT, not deferred — see
-the sub-ruling section immediately below, which is what a reader should
-believe wherever it and a later section disagree*
+sub-ruling of that date on ranger-base-ay3dr · **§4's ticker BUILT
+2026-09-01, bead ranger-base-zv3y6** (gilfoyle) · §1's `sweep` and §5's
+identity are NOT built and are CUT, not deferred — see the sub-ruling
+section immediately below, which is what a reader should believe wherever it
+and a later section disagree*
 
 ## The 2026-09-01 sub-ruling — what is built, what is cut, what is deferred
 
@@ -29,7 +30,7 @@ outranks the section it describes:
 | §2 `filippo.io/age` in go.mod | **CUT** | see §5. posse still has no dependency outside `golang.org/x`. |
 | §2 gzip | **BUILT** — stdlib `compress/gzip`, and the archive is a plain `tar.gz` any box can open. |
 | §3 no remote, disk floor, single-flight, publish-by-rename, prune | **BUILT**, all five | and the no-remote refusal is enforced on the SOURCE (a queue repo that grew a remote) as well as on the target. |
-| §4 the ticker | **UNBUILT**, and deliberately not half-built | scheduling was not in the sub-ruling's four items. No `backup_interval:` key is defined either: a key that reads like a schedule and schedules nothing is this record's own Context — the plist nobody installed — wearing a config key. The staleness threshold is its own key, `backup_max_age:`, and it says only what it means. |
+| §4 the ticker | **BUILT** later and separately (`internal/posse/backuploop.go`, `watch.go`), bead ranger-base-zv3y6 | a0ln0 left it deliberately not half-built: scheduling was not in the sub-ruling's four items, and no `backup_interval:` key was defined either, because a key that reads like a schedule and schedules nothing is this record's own Context — the plist nobody installed — wearing a config key. So the key and the loop landed together. The staleness threshold stays its own key, `backup_max_age:`, and says only what it means; what it takes from the schedule is its DEFAULT — §6's 2x the interval, with 48h the fallback for an instance that has no schedule to double. |
 | §5 age identity and custody | **CUT** | §5's argument is, in its own words, that the asymmetry "protects the copies at the destination, which is where copies leave custody". Every copy is now on the box that already holds the plaintext store of record, so an identity stored beside its own ciphertext guards nothing and costs the first dependency outside `golang.org/x`. Archives are plaintext `tar.gz`, `0600` in a `0700` directory — the exposure the store already has, and no more. **If an off-box destination is ever ruled back in, §5 comes back with it**; that is the order the argument runs in, and it is not a licence to sweep an unencrypted archive anywhere. |
 | §6 on-box freshness | **BUILT** — see the tenth-row ruling in §6 below. |
 | §6 off-box recency, `state/backup/last-sweep.yaml` | **CUT** | no destination, no second clock. |
@@ -157,6 +158,17 @@ on-box retention, and the operator owns that disk's economics.
 
 ## §4 — The clock: a ticker goroutine in the watch loop
 
+*(BUILT 2026-09-01, bead ranger-base-zv3y6 — `internal/posse/backuploop.go`
+and the join in `watch.go`. This section is as-built except for its last
+paragraph's sweep clause, which went out with the destination. One thing the
+section did not say and the build decided: the loop reads the level ONCE at
+start, before its first tick, because a loop coming up next to a three-day-old
+archive under a one-day interval is looking at a duty that is already overdue,
+and waiting out a fresh interval before noticing would make it four days old.
+Level-triggering is what keeps that from being an eager start — a directory
+whose newest archive is younger than the interval is a start that does
+nothing.)*
+
 Scheduling rides the one standing process the harness already owns —
 `posse dispatch --watch` — as a **backupLoop goroutine on its own
 ticker**, the pulse pattern exactly (ADR 0027): starts with Watch's
@@ -176,7 +188,11 @@ never double-run: if the newest on-box archive is older than
 set *and mounted*, sweep opportunistically. That last clause is the
 cadence ruling made mechanical: the operator attaches the disk, and
 the next tick sweeps without anyone typing anything; detached is a
-silent skip, not a warning.
+silent skip, not a warning. *(The sweep clause is CUT with the
+destination — sub-ruling table. The durable state the level is read
+against is the archive DIRECTORY, which is §6's single owner of
+on-box freshness, so the clock and the freshness surface cannot
+disagree about whether an archive exists.)*
 
 launchd is rejected again, for backup's own reasons this time (the
 scheduled-dispatch rejection, rangerhq-snd, leaned on herdr, which
@@ -253,6 +269,18 @@ Two further decisions the build made inside this section:
   unbuilt — so the default is 2x the cadence the predecessor actually
   ran at (nightly, 03:15, hl2p). Defining `backup_interval:` as a
   threshold that schedules nothing was refused: see the sub-ruling table.
+
+  *(amended 2026-09-01, ranger-base-zv3y6 — §4 is built, so the interval
+  exists.)* The key stays its own and an explicit `backup_max_age:` still
+  outranks everything; what changed is its DEFAULT. With `backup_interval:`
+  armed the default is §6's rule applied literally — **2x the interval** —
+  so an operator who changes the cadence does not have to remember to move
+  the alarm with it. **48h survives as the fallback for the instance with no
+  schedule**, where there is no interval to double, and a `backup_interval:`
+  that is present but unparseable falls back there too and says nothing: the
+  watch loop is what complains about a broken cadence, once, and a freshness
+  reading that repeated it would print it on every `posse status` and every
+  pulse tick.
 - **Armed and EMPTY is stale.** An instance that has written a backup
   key and holds no archive reports the condition. That is not an edge
   case, it is this record's own Context — the arrangement that was
@@ -374,7 +402,24 @@ was run, and did.
    `TestVerifyCatchesAFlippedByte` plus its sidecar and missing-member
    siblings. The 8-arm drill verb is not built (see the sub-ruling
    table).
-4. **NOT BUILT.** §4's ticker; no `backup_interval:` exists to set.
+4. **MEASURED** *(2026-09-01, ranger-base-zv3y6)*. §4's ticker. A watch
+   loop with `backup_interval:` set writes an archive on a scratch queue
+   with nobody typing the command, and it verifies
+   (`TestWatchBackupClockWritesAnArchive`, `TestBackupLoopWritesTheFirstArchive`);
+   restarting the loop inside the interval makes no second archive, with the
+   control arm that moves the clock past the interval and watches the same
+   helper catch a write, so the silence is a loop that declined rather than a
+   loop nobody waited for
+   (`TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval`,
+   `TestBackupLoopIsLevelTriggeredNotEdgeTriggered`); `posse pause` does not
+   stop it, with the pause's own effect on the pass asserted in the same test
+   so it cannot go green over a pause that never took
+   (`TestBackupLoopRunsWhileThePassIsPaused`). No `backup_interval:` starts
+   no goroutine and does not so much as create the directory, and one posse
+   cannot parse disarms the clock and says so without wedging the loop
+   (`TestWatchBackupUnarmedStartsNoClock`,
+   `TestWatchBackupBadIntervalDisarmsRatherThanWedges`). The probes live in
+   `internal/posse/backuploop_test.go`.
 5. **CUT.** No sweep, no destination.
 6. `sqlite3` staging under a concurrent bd writer → restored db passes
    arms 5–7 (the §7 swap's reason, exercised). **PARTLY MEASURED:** the

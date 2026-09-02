@@ -77,12 +77,25 @@ copy on its way down, and a free-space floor (`backup_min_free_mb:`, default
 384) refuses rather than filling the disk.
 
 `posse status` grows a line with the age of the newest archive, and past
-`backup_max_age:` (default 48h) the shop check carries it as a condition —
-in the terminal and in the cockpit's governance block. An install that has
-never asked for backups says nothing at all; one that asked and has no
-archive says so loudly, which is the failure this is for.
+`backup_max_age:` (default 48h, or twice the interval below) the shop check
+carries it as a condition — in the terminal and in the cockpit's governance
+block. An install that has never asked for backups says nothing at all; one
+that asked and has no archive says so loudly, which is the failure this is
+for.
 
-Scheduling is not included: the verb runs when it is run.
+**And it runs on a clock, if you set one.** `backup_interval:` in
+config.yaml arms a ticker inside the `posse dispatch --watch` loop — the one
+standing process the harness already owns, so there is no plist to install
+and no second daemon to leave running. It is level-triggered against the
+archive directory rather than against its own tick: it asks how old the
+newest archive is, so a watch loop that restarts five times an hour under a
+daily interval still makes one archive a day, and a loop that comes up next
+to an overdue archive writes one at once instead of waiting out a fresh
+interval. `posse pause` does not stop it — pause stops dispatching, and the
+queue still mutates in a paused shop. With a schedule armed, `backup_max_age:`
+defaults to twice the interval instead of 48h, so changing the cadence moves
+the alarm with it. No `backup_interval:` starts no ticker at all, and
+`posse backup status` says which of the two you have.
 
 ### Security
 

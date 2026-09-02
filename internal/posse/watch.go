@@ -125,6 +125,34 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			d.pulseLoop(pulseCtx, cfg)
 		}()
 	}
+	// The backup clock (ADR 0036 §4, ranger-base-zv3y6): the same pulse
+	// shape, one file over — backuploop.go. Disarmed (no backup_interval:)
+	// starts nothing; a config error disarms this run rather than failing
+	// the watch loop over a backup cadence.
+	//
+	// Registered AFTER the pulse's defer so it runs BEFORE it (LIFO), for
+	// the reason the pulse's own comment gives: a tick inside RunBackup is
+	// staging tens of megabytes under this instance's state/, and every
+	// write it makes must land before the pid record and the lock say the
+	// loop is gone. The join is honest about its cost — a full archive is
+	// seconds, not milliseconds, so a ctrl-c during one is a ctrl-c that
+	// waits for it. That is the trade the pulse already made, and the
+	// alternative is a half-written staging tree and a `.part` file left by
+	// a process that no longer claims to be running.
+	if cfg, err := LoadBackupConfig(d.App); err != nil {
+		fmt.Fprintf(d.errw(), "backup: %v — the backup clock is disarmed for this loop\n", err)
+	} else if cfg.Armed {
+		backupCtx, backupCancel := context.WithCancel(ctx)
+		backupDone := make(chan struct{})
+		defer func() {
+			backupCancel()
+			<-backupDone
+		}()
+		go func() {
+			defer close(backupDone)
+			d.backupLoop(backupCtx, cfg)
+		}()
+	}
 	// The settle-event channel (ADR 0016 §1, ADR 0028 §1). One subscription
 	// for the life of this loop. A hint wakes the next pass immediately
 	// instead of waiting out the backoff (ADR 0028 §1's first trigger); the

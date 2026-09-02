@@ -887,6 +887,11 @@ func main() {
 			// owner), because an archive is only named after it verifies.
 			f := a.BackupFreshness(time.Now(), os.Stderr)
 			fmt.Fprintf(out, "%s\n", f.Line())
+			// The clock, always (ADR 0036 §4, bead ranger-base-zv3y6). An
+			// operator reading a stale age needs to know whether anything
+			// was ever supposed to write one, and "no schedule" is an
+			// answer, not an omission.
+			fmt.Fprintf(out, "%s\n", a.BackupScheduleLine())
 			if !f.Armed {
 				fmt.Fprintf(out, "  no backup key in %s and no archive on box — nothing is armed\n", posse.AbbrevHome(a.ConfigPath))
 			}
