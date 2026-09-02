@@ -2033,15 +2033,31 @@ const sharedIndexBody = `
 posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # ranger-base-58to: the two prescribed lines below are commands, meant to be
 # pasted into a shell — so the paths in them have to survive that paste.
-# 'git diff --name-only' C-quotes any path with a non-ASCII byte
-# (core.quotePath is on by default) and leaves a path with a space bare;
-# neither is what a shell will accept back. core.quotePath=false turns the
-# quoting off, and each path is then wrapped in single quotes with any
-# embedded quote escaped the POSIX way ('\'') — round-trips through a shell
-# byte-for-byte. Newline-delimited, like the code it replaces: a path with a
-# literal newline in it is already outside what --name-only can round-trip.
+# Each path is wrapped in single quotes with any embedded quote escaped the
+# POSIX way ('\'') — round-trips through a shell byte-for-byte, and a command
+# substitution planted in a filename stays inert.
+#
+# THE PATHS COME OUT OF git -z (ranger-base-qg0k8), not out of --name-only
+# with core.quotePath=false. core.quotePath ONLY governs non-ASCII bytes:
+# git C-quotes a path holding a double quote, a backslash or a control byte
+# whatever quotePath says, so the earlier reader wrapped git's ALREADY-QUOTED
+# spelling in single quotes and shipped the literal C-escape into the
+# pathspec. Measured on git 2.50.1, for files named q"uote.md, back\slash.md
+# and tab<TAB>here.md, the prescribed lines died with three "did not match any
+# file(s) known to git" — and because git validates pathspecs all-or-nothing,
+# the correctly-spelled paths on the same line were not committed or restored
+# either. --name-only -z emits the raw path bytes with no quoting at all, for
+# every byte class, and needs no quotePath override at all.
+#
+# tr '\0' '\n' turns the NUL-delimited list back into lines because POSIX sh
+# has no NUL-delimited read (-d is a bashism) and command substitution eats
+# NULs anyway. That is not a step backwards: newline-delimited is what the
+# code here has always been, and a path holding a literal newline is already
+# outside what a pasted one-line command can round-trip. tr is coreutils/base
+# on every box, the same tier as the sed below — not the diffutils tier that
+# made 'cmp' vanish silently (ranger-base-rmgz).
 posse_qcached() {
-  git -c core.quotePath=false diff --cached --name-only HEAD 2>/dev/null | while IFS= read -r posse_p; do
+  git diff --cached --name-only -z HEAD 2>/dev/null | tr '\0' '\n' | while IFS= read -r posse_p; do
     printf "'%s' " "$(printf '%s' "$posse_p" | sed "s/'/'\\\\''/g")"
   done
 }
