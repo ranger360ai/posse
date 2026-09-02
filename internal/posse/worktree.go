@@ -1508,6 +1508,20 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 // nothing to get wrong, and a base that cannot be read at all (detached HEAD,
 // unreadable count) lands nothing either — MergeSessionWork says why in
 // words, which is more use than this refusal would be.
+//
+// The GATE asks the record and the SENTENCE says what the branch holds, and
+// they are two questions (ranger-base-3nn9c). The refusal used to answer the
+// first and then assert the second from a sha count alone — "holds N
+// commit(s) not on main … NOT landed" — over a branch the listing beside it
+// called nothing unlanded, because ahead by sha is not ahead by work
+// (ranger-base-hk02). Both sentences were printed about the same tree by the
+// same pass, and the false one sent the operator to --force for work that
+// does not exist: --force there lands nothing either, because
+// MergeSessionWork answers the same equivalence and reports ≡ instead of
+// merging. So the gate still holds on every arm — no record accounts for this
+// tree and that is the whole of ADR 0006's rule — and equivalentOnBase, the
+// one call treeState already makes, says which of the three true things to
+// say about it.
 func unaccountedFor(t *SessionTree, force bool) string {
 	if force || t.Bead != "" {
 		return ""
@@ -1515,6 +1529,23 @@ func unaccountedFor(t *SessionTree, force bool) string {
 	n, ok := unlandedCount(t)
 	if !ok || n == 0 {
 		return ""
+	}
+	eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
+	switch {
+	case measuredOnBase(eq):
+		// Every commit is a measured patch-id match on the base: nothing is
+		// being lost, which is the only thing this gate protects. Refused
+		// still — the record is what it asked and the record is silent — but
+		// there is nothing here to land and nothing --force could add.
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded and a human can retire the tree",
+			t.Branch, n, t.Base, t.Base, strings.Join(equivNotes(eq), "; "))
+	case len(eq) > 0:
+		// The -x trailer alone: somebody's decision that this landed, not a
+		// measurement of what their resolution kept. Not landed and not
+		// settled either — the same answer RemoveSessionTree gives before it
+		// declines to delete this shape.
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — recorded as landed in %s, which is a decision and not a measurement of what the resolution kept; compare (`git log %s..%s`) before retiring the tree",
+			t.Branch, n, t.Base, strings.Join(trailerOnly(eq), "; "), t.Base, t.Branch)
 	}
 	return fmt.Sprintf("%s holds %d commit(s) not on %s and no record says which bead — NOT landed; look at it (`git log %s..%s`) and `posse worktrees --land --force` when you want it",
 		t.Branch, n, t.Base, t.Base, t.Branch)

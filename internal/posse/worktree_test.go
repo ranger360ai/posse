@@ -1132,6 +1132,91 @@ func TestLandWillNotTakeWorkNoBeadRecordAccountsFor(t *testing.T) {
 	}
 }
 
+// The refusal's own sentence, one function up from the listing hk02 fixed
+// (ranger-base-3nn9c). The gate is the record — no bead accounts for any of
+// these trees and none of them is landed here — but the sentence printed
+// beside the refusal used to assert "NOT landed" from a sha count alone, over
+// a branch the listing in the same pass called nothing unlanded, and pointed
+// at --force for work that does not exist.
+//
+// Same three arms and the same fixture premise as
+// TestListSessionTreesTellsACherryPickedBranchFromAStrand: the base moves
+// first, so a pick onto it is a new sha rather than the identical commit
+// object. Every arm asserts the gate STILL HOLDS ("no record says which
+// bead", nothing merged) — the ≡ line a dropped gate would print says
+// "nothing here is unlanded" too, and only the record half tells the two
+// apart.
+func TestLandRefusalTellsAnAlreadyLandedTreeFromAStrand(t *testing.T) {
+	cases := []struct {
+		name   string
+		land   func(t *testing.T, repo, sha string)
+		want   []string
+		unwant []string
+	}{{
+		name: "a clean cherry-pick is refused for the record, not as unlanded work",
+		land: func(t *testing.T, repo, sha string) {
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+		},
+		want:   []string{"no record says which bead", "equivalent patch on main", "nothing here is unlanded"},
+		unwant: []string{"NOT landed", "--force", "recorded as landed in"},
+	}, {
+		name: "a hand-resolved pick is refused as recorded but not measured",
+		land: func(t *testing.T, repo, sha string) {
+			commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
+				"s-1: the fix\n\n(cherry picked from commit "+sha+")")
+		},
+		want:   []string{"no record says which bead", "recorded as landed in", "not a measurement of what the resolution kept"},
+		unwant: []string{"NOT landed", "--force", "nothing here is unlanded"},
+	}, {
+		name: "real unlanded work still reads as a strand, unchanged",
+		land: func(t *testing.T, repo, sha string) {
+			commitIn(t, repo, "adr.md", "status: rejected\n", "main: the operator's own line")
+		},
+		want:   []string{"no record says which bead", "1 commit(s) not on main", "NOT landed", "--force"},
+		unwant: []string{"equivalent patch on main", "recorded as landed in"},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			c.land(t, repo, sha)
+			// No recordBead: every arm here is a tree the gate refuses.
+			was := mustGit(t, repo, "rev-parse", "main")
+
+			var out strings.Builder
+			if err := LandSessionTrees(&out, a, []string{repo}, false); err != nil {
+				t.Fatal(err)
+			}
+			got := out.String()
+			for _, want := range c.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("the refusal does not say %q:\n%s", want, got)
+				}
+			}
+			for _, unwant := range c.unwant {
+				if strings.Contains(got, unwant) {
+					t.Errorf("the refusal should not say %q:\n%s", unwant, got)
+				}
+			}
+			if now := mustGit(t, repo, "rev-parse", "main"); now != was {
+				t.Errorf("the gate did not hold: main moved %s → %s\n%s", was, now, got)
+			}
+			if !branchExists(repo, tr.Branch) {
+				t.Error("the refused tree's branch was deleted")
+			}
+		})
+	}
+}
+
 // The half an operator reads BEFORE they type --land. "1 commit(s) not on
 // main" was the whole basis for that decision and it is true of a strand and
 // of an already-landed duplicate alike; which bead the work belongs to is the
