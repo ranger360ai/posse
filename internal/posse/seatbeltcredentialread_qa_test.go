@@ -79,7 +79,7 @@ func TestEmptyCarveOutIsNotEmptyWithOnlyDenyRead(t *testing.T) {
 	if c.Empty() {
 		t.Fatal("Empty() reports true with a non-empty DenyRead — SeatbeltProfile would then render nothing and the deny would silently vanish")
 	}
-	prof := SeatbeltProfile("developer", nil, c)
+	prof := SeatbeltProfile("developer", nil, nil, c)
 	if !strings.Contains(prof, "(deny file-read*") {
 		t.Errorf("rendered profile carries no file-read* deny when Deny/Seal are both empty:\n%s", prof)
 	}
@@ -102,7 +102,7 @@ func TestCarveOutCarriesCredentialLiteralsIntoTheRenderedProfile(t *testing.T) {
 	if len(c.DenyRead) == 0 {
 		t.Fatal("SeatbeltCarveOut renders no credential read-deny for an ordinary project")
 	}
-	prof := SeatbeltProfile("developer", w, c)
+	prof := SeatbeltProfile("developer", w, nil, c)
 	if !strings.Contains(prof, "(deny file-read*") {
 		t.Errorf("rendered profile carries no file-read* deny:\n%s", prof)
 	}
@@ -170,8 +170,8 @@ func TestQACredentialReadDenyRefusesUnderSandboxExecAndTheControlDoesNot(t *test
 	writeOnlyControl := withCarve
 	writeOnlyControl.DenyRead = nil
 
-	walled := sbRenderProfile(t, "walled.sb", SeatbeltProfile("developer", w, withCarve))
-	control := sbRenderProfile(t, "control.sb", SeatbeltProfile("developer", w, writeOnlyControl))
+	walled := sbRenderProfile(t, "walled.sb", SeatbeltProfile("developer", w, nil, withCarve))
+	control := sbRenderProfile(t, "control.sb", SeatbeltProfile("developer", w, nil, writeOnlyControl))
 
 	denied := filepath.Join(claudeDir, ".credentials.json")
 	if crdRun(t, walled, denied) {

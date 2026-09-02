@@ -232,7 +232,7 @@ func wgTry(t *testing.T, p wgProbe, narrowed bool) (bool, string) {
 	if narrowed {
 		w, name = f.writable(t), "narrowed.sb"
 	}
-	prof := sbRenderProfile(t, name, SeatbeltProfile("developer-2", w, SeatbeltCarveOut{}))
+	prof := sbRenderProfile(t, name, SeatbeltProfile("developer-2", w, nil, SeatbeltCarveOut{}))
 	ok, out := wgRun(t, prof, p.sh(f))
 	if ok && p.witness != nil {
 		p.witness(t, f)
@@ -445,7 +445,7 @@ func TestQAWorktreeRefParentIsGrantedForCreationOnly(t *testing.T) {
 	// And it is spelled as a create, above the carve-out that must still
 	// outvote it — a literal allow BELOW the trailing deny would re-open
 	// whatever that deny closed.
-	prof := SeatbeltProfile("developer-2", w, SeatbeltCarveOut{Deny: []string{f.gates}}, got...)
+	prof := SeatbeltProfile("developer-2", w, nil, SeatbeltCarveOut{Deny: []string{f.gates}}, got...)
 	line := "  (literal " + sbQuote(absResolve(parent)) + ")\n"
 	create := strings.Index(prof, "(allow file-write-create\n")
 	if create < 0 || !strings.Contains(prof[create:], line) {
@@ -497,7 +497,7 @@ func TestQAWorktreeCommitStaysGreenAfterPackRefs(t *testing.T) {
 	wgPack(t, ctl)
 	gates := ctl.a.GatesDir(ctl.ag.Name)
 	w := ctl.writable(t)
-	shipped := sbRenderProfile(t, "shipped.sb", SeatbeltProfile(ctl.ag.Name, w, ctl.a.SeatbeltCarveOut(ctl.ag, ctl.tree, gates, w)))
+	shipped := sbRenderProfile(t, "shipped.sb", SeatbeltProfile(ctl.ag.Name, w, nil, ctl.a.SeatbeltCarveOut(ctl.ag, ctl.tree, gates, w)))
 	if ok, out := wgRun(t, shipped, commit(ctl)); ok {
 		t.Errorf("the pre-fix profile committed after a pack — the control proves nothing:\n%s", out)
 	} else if !strings.Contains(out, "unable to create directory") {
@@ -682,7 +682,7 @@ func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
 	lock := filepath.Join(f.common, "packed-refs.lock")
 	createOnly := append(append([]string{}, sessionRefDirs(f.tree)...), lock)
 	carve := f.a.SeatbeltCarveOut(f.ag, f.tree, f.gates, w)
-	candidate := sbRenderProfile(t, "candidate.sb", SeatbeltProfile(f.ag.Name, w, carve, createOnly...))
+	candidate := sbRenderProfile(t, "candidate.sb", SeatbeltProfile(f.ag.Name, w, nil, carve, createOnly...))
 	commit := func(name string) (bool, string) {
 		return wgRun(t, candidate, "echo "+name+" >> "+filepath.Join(f.tree, "work.txt")+
 			" && git -C "+f.tree+" add work.txt"+

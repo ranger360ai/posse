@@ -110,7 +110,7 @@ func TestQAPathScopedDenyLandsInTheTrailingBlockBelowTheAllow(t *testing.T) {
 		t.Errorf("docs/ can be renamed out from under the deny; the seal must cover it: %v", c.Seal)
 	}
 
-	prof := SeatbeltProfile(f.ag.Name, w, c)
+	prof := SeatbeltProfile(f.ag.Name, w, nil, c)
 	allow := strings.Index(prof, "(allow file-write*\n")
 	deny := strings.Index(prof, ";; the carve-out")
 	entry := strings.Index(prof, "(subpath "+sbQuote(adr)+")")
@@ -255,7 +255,7 @@ func psTry(t *testing.T, p psProbe, withRule bool) bool {
 	}
 	f := psNewFixture(t, front)
 	w := f.writable(t)
-	prof := sbRenderProfile(t, name, SeatbeltProfile(f.ag.Name, w, f.carve(t)))
+	prof := sbRenderProfile(t, name, SeatbeltProfile(f.ag.Name, w, nil, f.carve(t)))
 	return sbRun(t, prof, p.sh(f))
 }
 
@@ -334,7 +334,7 @@ func TestQAWritableExtraInsideADeniedSubtreeIsRefusedUnderSandboxExec(t *testing
 	run := func(front string) bool {
 		f := psNewFixture(t, front)
 		w := f.writable(t)
-		prof := sbRenderProfile(t, "extra.sb", SeatbeltProfile(f.ag.Name, w, f.carve(t)))
+		prof := sbRenderProfile(t, "extra.sb", SeatbeltProfile(f.ag.Name, w, nil, f.carve(t)))
 		return sbRun(t, prof, "touch "+filepath.Join(f.repo, "docs", "adr", "0002-new.md"))
 	}
 	// Bare Edit/Write take cwd out of the allow, so `writable: [docs/adr]`

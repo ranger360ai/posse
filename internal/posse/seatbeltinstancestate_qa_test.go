@@ -60,7 +60,7 @@ func TestQAKernelGrantsOwnInstanceStateAndRefusesTheOthers(t *testing.T) {
 	if !swapped {
 		t.Fatalf("control built nothing: %s is in no grant to swap:\n  %v", two.StateDir, pre)
 	}
-	ctrl := sbRenderProfile(t, "prefix.sb", SeatbeltProfile(ag.Name, pre, two.SeatbeltCarveOut(ag, cwd, gates, pre)))
+	ctrl := sbRenderProfile(t, "prefix.sb", SeatbeltProfile(ag.Name, pre, nil, two.SeatbeltCarveOut(ag, cwd, gates, pre)))
 	if sbRun(t, ctrl, "touch "+filepath.Join(two.StateDir, "probe-own-control")) {
 		t.Errorf("control: the state grant is not what makes %s writable — it is writable with the grant pointed elsewhere", two.StateDir)
 	}

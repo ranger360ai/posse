@@ -127,7 +127,7 @@ func TestQASandboxApplyProbeGrid(t *testing.T) {
 // for the word "sandbox-exec".
 func TestQASandboxApplyProbeAgreesWithARenderedProfile(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
-	rendered := SeatbeltProfile("developer", []string{t.TempDir()}, SeatbeltCarveOut{})
+	rendered := SeatbeltProfile("developer", []string{t.TempDir()}, nil, SeatbeltCarveOut{})
 	if !strings.Contains(rendered, "(deny file-write*)") {
 		t.Fatalf("a rendered profile no longer carries a blanket deny; the probe's shape needs rechecking:\n%s", rendered)
 	}

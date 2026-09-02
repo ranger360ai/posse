@@ -96,7 +96,7 @@ func TestQAGoTelemetryCounterWriteIsAllowedAndTheModeSwitchIsRefused(t *testing.
 	modeFile := filepath.Join(telDir, "mode")
 
 	w := a.SeatbeltWritable(ag, work, gates)
-	prof := sbRenderProfile(t, "telemetry.sb", SeatbeltProfile("developer", w, a.SeatbeltCarveOut(ag, work, gates, w)))
+	prof := sbRenderProfile(t, "telemetry.sb", SeatbeltProfile("developer", w, nil, a.SeatbeltCarveOut(ag, work, gates, w)))
 
 	// The control: the identical set with the telemetry grant taken out, so
 	// the wall is otherwise the same wall. If this arm ALLOWS the count
@@ -111,7 +111,7 @@ func TestQAGoTelemetryCounterWriteIsAllowedAndTheModeSwitchIsRefused(t *testing.
 	if len(without) == len(w) {
 		t.Fatalf("control arm removed nothing: the writable set does not name %s as its own entry, so this test would grade a grant it never held\n  set: %v", resolvedLocal, w)
 	}
-	ctrl := sbRenderProfile(t, "control.sb", SeatbeltProfile("developer", without, a.SeatbeltCarveOut(ag, work, gates, without)))
+	ctrl := sbRenderProfile(t, "control.sb", SeatbeltProfile("developer", without, nil, a.SeatbeltCarveOut(ag, work, gates, without)))
 
 	if sbRun(t, ctrl, "echo x > "+shellQuote(countFile)) {
 		t.Fatal("CONTROL FAILED: the counter write is allowed with the telemetry grant removed — something else in the profile already reaches it, so the pins below grade nothing")

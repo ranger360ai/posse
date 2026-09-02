@@ -8,7 +8,9 @@ package posse
 // runtime's own state and no other runtime's (state_dir:, ADR 0012 D4 —
 // narrowed from the union of all three built-ins by ranger-base-9fl),
 // posse's own state dir under the home it resolved, TMPDIR, the gates dir
-// (for refusals.log), /dev, and the PID's `writable:` extras. What it never grants is the rest of the home:
+// (for refusals.log), /dev, the atomic-write siblings of any grant that
+// names a FILE (SeatbeltSiblings, ranger-base-cypy1), and the PID's
+// `writable:` extras. What it never grants is the rest of the home:
 // after ADR 0015 §2 that is the promoted constitution, and a promoted copy
 // stays in force because no session can write it. This is the only
 // runtime-proof file gate: it realizes Edit/Write-class denies on any
@@ -22,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -128,6 +131,31 @@ func sbQuote(p string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(p) + `"`
 }
 
+// sbSiblingRegex renders the SBPL pattern matching every path that extends
+// p with a dot and something — `<p>.lock`, `<p>.tmp.<pid>.<hex>`,
+// `<p>.backup` — and nothing else. NOT p itself: the base is granted by its
+// own `(subpath …)` entry or it is not granted at all, so this adds
+// siblings and never a root (siblingBases, and the property
+// ConstitutionGrants below is extended to check).
+//
+// The dot is load-bearing and MEASURED (2026-09-02, darwin 25.4.0, four
+// arms on one fixture): a bare prefix `^<p>` also grants `<p>Xlock` and
+// `<p>` itself — the shape that would hand a `~/.codex` grant this box's
+// `~/.codexbar` and a `~/.grok` grant its `~/.grokbot`, both of which
+// exist. Anchored at `\.` those are refused and only the sibling
+// namespace is allowed.
+//
+// `#"…"` is NOT the same lexer as `"…"`, also measured: it passes
+// backslashes through raw to the regex engine (an sbQuote-style `\\.`
+// reaches it as an escaped backslash and matches nothing), and it has no
+// escape for a `"` at all — a quote in the path ends the literal and
+// sandbox-exec refuses the whole profile at parse time ("unbound
+// variable"). So the base is regexp-quoted, never sbQuote'd, and a path
+// carrying a `"` is dropped upstream rather than rendered here.
+func sbSiblingRegex(p string) string {
+	return `#"^` + regexp.QuoteMeta(p) + `\."`
+}
+
 // SeatbeltCarveOut is the profile's trailing block: what stays unwritable
 // however wide the allow block above it got (ranger-base-h15, and ADR 0014
 // §3's slot — a PID's path-scoped denies join Deny here).
@@ -202,7 +230,12 @@ func (c SeatbeltCarveOut) Empty() bool {
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
 // allow block, and then the carve-out the allow block cannot outvote.
-func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, createOnly ...string) string {
+//
+// `siblings` is the atomic-write sibling namespace of a grant that names a
+// FILE (SeatbeltSiblings, ranger-base-cypy1) — rendered as regexes inside
+// the same allow block, because a `(subpath …)` naming a file covers the
+// file and nothing beside it.
+func SeatbeltProfile(persona string, writable, siblings []string, carve SeatbeltCarveOut, createOnly ...string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, ";; posse seatbelt for %s — rendered from the PID at launch; do not edit (rangerhq-5vt)\n", persona)
 	b.WriteString("(version 1)\n(allow default)\n(deny file-write*)\n")
@@ -212,6 +245,15 @@ func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, 
 			continue
 		}
 		fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
+	}
+	// The scratch names beside a granted FILE: `<p>.lock`, `<p>.tmp.…`.
+	// Without these a CLI that replaces its config atomically loses every
+	// write and says nothing (ranger-base-cypy1).
+	for _, p := range siblings {
+		if p == "" {
+			continue
+		}
+		fmt.Fprintf(&b, "  (regex %s)   ; atomic-write siblings of %s\n", sbSiblingRegex(p), filepath.Base(p))
 	}
 	b.WriteString("  (regex #\"^/dev/\")\n")
 	b.WriteString("  (literal \"/dev/null\")\n")
@@ -271,6 +313,13 @@ func SeatbeltProfile(persona string, writable []string, carve SeatbeltCarveOut, 
 // stateDirs argument, and no other runtime's — ranger-base-9fl), posse's
 // own state dir, TMPDIR, the gates dir, plus the PID's writable: extras
 // (relative to cwd).
+//
+// What it does NOT return is the sibling namespace of an entry that names
+// a file: `~/.claude.json` is granted here, and `~/.claude.json.lock` and
+// `~/.claude.json.tmp.<pid>.<hex>` — the two paths claude actually writes —
+// are not, because `subpath` is component-aware. That is SeatbeltSiblings,
+// kept apart because it renders as a regex and not as a subpath, and
+// because every reader of this slice treats its elements as subpaths.
 //
 // It hangs off App because one of those paths is under the home, and after
 // ADR 0015 §2 the home is a real directory holding the promoted
@@ -409,6 +458,92 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	add("/private/tmp")
 	add("/tmp")
 	out = append(out, pidWritableExtras(ag, cwd)...)
+	return dedupeStrings(out)
+}
+
+// SeatbeltSiblings names the grants whose atomic-write SIBLINGS a caged
+// session must be able to create, and is the whole of ranger-base-cypy1.
+//
+// A `state_dir:` entry may name a FILE — `~/.claude.json` is one, and the
+// key has said "directories (and single files)" since ADR 0012 D4. The
+// writable set renders every entry as `(subpath …)`, and `subpath` is
+// component-aware: `(subpath "$HOME/.claude.json")` covers that path and
+// what is under it, which for a file is nothing. But claude does not WRITE
+// that file. It creates `$HOME/.claude.json.tmp.<pid>.<hex>` beside it,
+// holds `$HOME/.claude.json.lock`, and renames the temp into place — and
+// `$HOME` is granted by nothing, deliberately. So both siblings are refused
+// at the kernel, the rename never happens, and the CLI prints `Added stdio
+// MCP server …`, prints `File modified: <path>`, and exits 0 with the file
+// unchanged. Every in-session write from a caged session — MCP adds,
+// seenNotifications, tips, history, projects[<dir>] — has been lost this
+// way for as long as the tier has existed, silently.
+//
+// MEASURED on this box, 24h of `log show` (2026-09-02): the two sibling
+// paths are the #1 and #2 denials by volume, 97 `.claude.json.lock` and 88
+// `.claude.json.tmp.<pid>.<hex>`, ahead of everything else in $HOME
+// combined. The lock denials ranger-base-gr3ow asked about are the SYMPTOM,
+// not the cause: with the containing directory writable and the lock path
+// denied last-match-wins the write still lands (3/3), so a fix aimed at the
+// logged path would have fixed nothing.
+//
+// The namespace and not the two names, because the two names are the CLI's
+// to change: `~/.claude.json.backup` is already a third one on this box,
+// and a release that renames the temp scheme puts this bug back with no
+// line anywhere saying so. `<p>.` + anything is exactly the scratch space a
+// writer of `<p>` owns; nothing else can be spelled into it without also
+// being spelled into `<p>`.
+//
+// Three narrowings, each one measured rather than argued:
+//
+//   - the SEPARATOR dot. A bare `^<p>` prefix also grants `<p>` itself and
+//     `<p>Xanything`; on this box that is a `~/.codex` grant reaching
+//     `~/.codexbar` and a `~/.grok` grant reaching `~/.grokbot`, which are
+//     real directories belonging to other tools (sbSiblingRegex).
+//   - DIRECTORY entries get nothing. `~/.claude`, `~/.codex` and `~/.grok`
+//     are granted whole already and no CLI replaces a state TREE by rename,
+//     so a sibling grant there would be reach with no writer behind it —
+//     and it is the reach that ranger-base-9fl spent a bead removing. A
+//     path that does not exist yet gets the grant: it cannot be told apart
+//     from a file, the CLI is about to create it, and the alternative is a
+//     grant that appears only on boxes that have run the CLI before.
+//   - a base the carve-out DENIES gets nothing. The siblings sit in the
+//     base's own directory, so a deny covering that directory covers them
+//     too — but a deny naming the base FILE (a PID's `Edit(~/.claude.json)`,
+//     ADR 0014 §3) would not, and a wall that leaves the scratch namespace
+//     open is a wall with a note beside it. Dropped instead, which is the
+//     tier's own fail-closed direction.
+//
+// The rejected alternative, recorded because it is the obvious one: point
+// the caged launch at `CLAUDE_CONFIG_DIR=$HOME/.claude`, where the config
+// would sit inside an already-granted DIRECTORY and every sibling name the
+// CLI ever invents is covered for free. It is refused because it MOVES the
+// operator's file: an uncaged `claude` reads `~/.claude.json` and a caged
+// one would read another, so MCP servers, history and projects[] diverge
+// between the operator's own sessions and the fleet's, and posse's own
+// trust seeding writes the first path (trust.go). A grant is the change
+// that leaves the operator's config where the operator put it.
+func SeatbeltSiblings(stateDirs []string, carve SeatbeltCarveOut) []string {
+	var out []string
+	for _, d := range stateDirs {
+		p := absResolve(ExpandTilde(d))
+		if p == "" {
+			continue
+		}
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			continue
+		}
+		// `#"…"` has no escape for a quote: rendering one ends the literal
+		// and sandbox-exec refuses the whole profile, which would turn a
+		// lost config write into a dead pane. Drop it — the base keeps its
+		// own subpath grant and the behaviour is today's.
+		if strings.Contains(p, `"`) {
+			continue
+		}
+		if writeGranted(carve.Deny, p) {
+			continue
+		}
+		out = append(out, p)
+	}
 	return dedupeStrings(out)
 }
 
@@ -880,14 +1015,33 @@ func (a *App) HomeConstitutionPaths() []string {
 // Containment is tested both ways round. A grant that covers the area is
 // the obvious breach; a grant that lands INSIDE it (a PID's `writable:`
 // naming `~/.config/posse/agents/x`) is the same breach spelled smaller.
-func (a *App) ConstitutionGrants(writable []string) []string {
+// The sibling regexes are checked too, and by their own rule rather than
+// by underDir (ranger-base-cypy1). `<base>.<suffix>` is not UNDER `<base>`
+// — filepath.Rel says `../<base>.<suffix>` — so a base whose sibling
+// namespace happens to contain a constitution path would pass this check
+// while granting it. `~/.config/posse/config` as a `state_dir:` is the
+// shape: its siblings include `config.yaml`. Prefix-matched here, which is
+// exactly the reach sbSiblingRegex renders.
+func (a *App) ConstitutionGrants(writable []string, siblings ...string) []string {
 	var out []string
 	for _, p := range a.HomeConstitutionPaths() {
+		hit := false
 		for _, w := range writable {
 			if underDir(w, p) || underDir(p, w) {
-				out = append(out, p)
+				hit = true
 				break
 			}
+		}
+		for _, b := range siblings {
+			if hit {
+				break
+			}
+			if strings.HasPrefix(absResolve(p), absResolve(b)+".") {
+				hit = true
+			}
+		}
+		if hit {
+			out = append(out, p)
 		}
 	}
 	return out
@@ -949,7 +1103,8 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	}
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	prof := SeatbeltProfile(ag.Name, writable, a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...), sessionRefDirs(cwd)...)
+	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirs(cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -972,9 +1127,17 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	gatesDir := a.GatesDir(ag.Name)
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	siblings := SeatbeltSiblings(stateDirs, carve)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
+	}
+	// A sibling grant is a grant, and it is not a subpath — so it gets its
+	// own marker rather than a "w" line an operator would read as the
+	// directory being writable (ranger-base-cypy1, same reason as "+").
+	for _, b := range siblings {
+		fmt.Fprintf(out, "    ~ %s.* (atomic-write siblings only — the .lock and .tmp.<pid> names beside a granted FILE; %s itself is the w line above)\n",
+			AbbrevHome(b), AbbrevHome(b))
 	}
 	// Create-only grants are grants, so an operator reads them here too —
 	// under their own marker, because "w" would say the directory is
@@ -1020,7 +1183,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	// deny: the carve-out is a wall, not a licence to grant it. What the
 	// deny changes is the verdict — a grant it covers is refused at the
 	// kernel, so it is a PID to fix rather than a hole to close tonight.
-	if bad := a.ConstitutionGrants(writable); len(bad) > 0 {
+	if bad := a.ConstitutionGrants(writable, siblings...); len(bad) > 0 {
 		open := false
 		for _, p := range bad {
 			if writeGranted(carve.Deny, p) {

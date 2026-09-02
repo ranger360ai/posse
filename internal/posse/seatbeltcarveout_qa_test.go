@@ -145,7 +145,7 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 			t.Errorf("%s must stay writable — the deny is enumerated at the artifact level: %v", p, c.Deny)
 		}
 	}
-	prof := SeatbeltProfile("developer", f.writable(t), c)
+	prof := SeatbeltProfile("developer", f.writable(t), nil, c)
 	allow := strings.Index(prof, "(allow file-write*\n")
 	deny := strings.Index(prof, ";; the carve-out")
 	if allow < 0 || deny < allow {
@@ -313,7 +313,7 @@ func sbTry(t *testing.T, p sbProbe, withCarve bool) bool {
 	if withCarve {
 		carve, name = f.carve(t), "walled.sb"
 	}
-	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("developer", w, carve)), p.sh(f))
+	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("developer", w, nil, carve)), p.sh(f))
 }
 
 // The bead's own test shape, executed: render for a PID with cwd = the

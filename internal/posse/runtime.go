@@ -403,6 +403,13 @@ type Runtime struct {
 	// Paths are absolute or ~-prefixed; a relative one is refused at load,
 	// because the session cwd is already granted and "relative to the CLI's
 	// idea of home" is not a thing this can resolve.
+	//
+	// An entry that names a FILE also gets its atomic-write siblings —
+	// `<p>.lock`, `<p>.tmp.<pid>.<hex>` — because a CLI that replaces its
+	// config by rename writes those and not the file, and a grant on the
+	// file alone loses every write while the CLI reports success
+	// (SeatbeltSiblings, ranger-base-cypy1). Declared runtimes get that for
+	// free; it is not a claude special case.
 	StateDirs []string
 	// EnvRequired are the environment variable NAMES a session on this
 	// runtime cannot work without — the Bedrock/Vertex shape, where the CLI
