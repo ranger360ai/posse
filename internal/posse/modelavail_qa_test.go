@@ -162,7 +162,7 @@ func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
 // not running the pair its PID names — so it is carried only while that fact
 // holds. An operator who edits `tier:` down to what the session is really
 // running has made the substitute the asked-for pair, and the old line
-// ("tier strong wants claude-fable-5") is then false. It is dropped.
+// ("tier strong wants claude-fable-5-1") is then false. It is dropped.
 //
 // TestQA7vpFallbackMarkSurvivesPosseRelaunch is the control: the same
 // fixture, the same refresh, no PID edit, and the mark stays.
@@ -222,7 +222,7 @@ func TestQA7vpARuntimeHopLaunchesAndIsRecordedAsTheRuntimeItGot(t *testing.T) {
 	if !strings.Contains(log, "RHQ_RUNTIME=codex") {
 		t.Errorf("the session was not launched on the substitute runtime:\n%s", log)
 	}
-	if strings.Contains(log, "claude-fable-5") {
+	if strings.Contains(log, "claude-fable-5-1") {
 		t.Errorf("the typed line still names the unavailable model:\n%s", log)
 	}
 	// The wrong arm: with the strong model present the hop must not happen,
@@ -232,7 +232,7 @@ func TestQA7vpARuntimeHopLaunchesAndIsRecordedAsTheRuntimeItGot(t *testing.T) {
 	b2.Warn = &strings.Builder{}
 	qaPID(t, b2, "security", TierStrong)
 	writeCfg(t, b2.App, "tier_fallback:\n  security: codex\n")
-	seedCatalog(t, b2.App, time.Minute, "claude-fable-5", "claude-opus-5")
+	seedCatalog(t, b2.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
 	if err := b2.CreateSession(NewSessionOpts{Name: "nohop", Agent: "security", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestQA7vpTierFloorStillRefusesTheSubstitutedPair(t *testing.T) {
 	b2, _ := newTestBackend(t)
 	b2.Warn = &strings.Builder{}
 	qaPID(t, b2, "floored", TierStrong, "tier_floor: strong\n")
-	seedCatalog(t, b2.App, time.Minute, "claude-fable-5", "claude-opus-5")
+	seedCatalog(t, b2.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
 	if err := b2.CreateSession(NewSessionOpts{Name: "tf2", Agent: "floored", Dir: t.TempDir()}); err != nil {
 		t.Fatalf("control: an available strong model must launch under the same floor: %v", err)
 	}

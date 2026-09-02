@@ -45,6 +45,7 @@ type Price struct{ In, Out float64 }
 // we have not seen. Sonnet 5 at list ($3/$15; the intro $2/$10 through
 // 2026-08-31 is ignored — this is API-equivalent, not the invoice).
 var PriceTable = map[string]Price{
+	"claude-fable-5-1": {10, 50},
 	"claude-fable-5":   {10, 50},
 	"claude-mythos-5":  {10, 50},
 	"claude-opus-5":    {5, 25},

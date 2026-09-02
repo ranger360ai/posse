@@ -3,7 +3,7 @@ package posse
 // Tier availability preflight (rangerhq-oay).
 //
 // A tier is a NAME, not a model id (ADR 0003 §1), and the launch turns it
-// into one: `strong` on claude renders `--model claude-fable-5`. Nothing
+// into one: `strong` on claude renders `--model claude-fable-5-1`. Nothing
 // until now asked whether that id is one THIS ACCOUNT can actually run. On
 // 2026-08-20 the operator's own session lost access to the strong model
 // mid-day; a persona resolving `tier: strong` would have gone on launching,
@@ -514,7 +514,7 @@ func (a *App) ModelProbeTTL(errw io.Writer) time.Duration {
 // name (hop across at the same tier), or `none` for "there is no substitute
 // for this one".
 //
-// The default is `strong` → `standard`, which on claude is fable-5 →
+// The default is `strong` → `standard`, which on claude is fable-5-1 →
 // opus-5, and it is a floor rather than a seed: a map that names other keys
 // does NOT take it away. That is deliberately unlike `tier_by_label:`,
 // where a present key replaces the ADR default wholesale — here the

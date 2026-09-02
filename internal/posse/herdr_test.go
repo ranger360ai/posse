@@ -2183,7 +2183,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if !strings.Contains(log, "--env RHQ_LAUNCH_HOME="+b.App.Home) {
 		t.Errorf("RHQ_LAUNCH_HOME missing (ADR 0031 §1):\n%s", log)
 	}
-	if !strings.Contains(log, "GATES claude --model 'claude-fable-5' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -c model='gpt-5.6-sol' -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
+	if !strings.Contains(log, "GATES claude --model 'claude-fable-5-1' "+ClaudeFleetFlags+" --append-system-prompt") || !strings.Contains(log, "GATES codex -c model='gpt-5.6-sol' -s read-only -a never --disable hooks -c allow_login_shell=false -c \"projects=") {
 		t.Errorf("rendered commands:\n%s", log)
 	}
 	m1, _ := b.readMeta("h1")

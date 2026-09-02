@@ -793,7 +793,7 @@ func (rt *Runtime) RealizesSkills(names []string) bool {
 // Claude model ids per tier (ADR 0003 table; exact ids from the current
 // CLI/API naming).
 var claudeModels = map[string]string{
-	TierStrong:   "claude-fable-5",
+	TierStrong:   "claude-fable-5-1",
 	TierStandard: "claude-opus-5",
 	TierFast:     "claude-sonnet-5",
 }

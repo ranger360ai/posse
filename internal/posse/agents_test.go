@@ -527,7 +527,7 @@ func TestTiers(t *testing.T) {
 	claude, _ := a.LoadRuntime("claude")
 	codex, _ := a.LoadRuntime("codex")
 	grok, _ := a.LoadRuntime("grok")
-	if claude.Model(TierStrong) != "claude-fable-5" || claude.Model(TierStandard) != "claude-opus-5" || claude.Model(TierFast) != "claude-sonnet-5" {
+	if claude.Model(TierStrong) != "claude-fable-5-1" || claude.Model(TierStandard) != "claude-opus-5" || claude.Model(TierFast) != "claude-sonnet-5" {
 		t.Errorf("claude tier map: %v", claude.Models)
 	}
 	// codex maps all three (ranger-base-arm): sol is what a session there
@@ -564,7 +564,7 @@ func TestTiers(t *testing.T) {
 	// TierMap is the one rendering both `posse runtimes` and the runtime
 	// check grid read: mapped tiers in Tiers order, and the tiers that
 	// render NOTHING — a partial map may never be shown as a full one.
-	if m, u := claude.TierMap(); strings.Join(m, " ") != "strong=claude-fable-5 standard=claude-opus-5 fast=claude-sonnet-5" || len(u) != 0 {
+	if m, u := claude.TierMap(); strings.Join(m, " ") != "strong=claude-fable-5-1 standard=claude-opus-5 fast=claude-sonnet-5" || len(u) != 0 {
 		t.Errorf("TierMap claude: %v %v", m, u)
 	}
 	if m, u := grok.TierMap(); strings.Join(m, " ") != "strong=grok-4.6 standard=grok-4.6 fast=grok-4.5" || len(u) != 0 {
@@ -601,7 +601,7 @@ func TestTiers(t *testing.T) {
 		rt         *Runtime
 		tier, want string
 	}{
-		{claude, TierStrong, "claude --model 'claude-fable-5' " + ClaudeFleetFlags + " --append-system-prompt"},
+		{claude, TierStrong, "claude --model 'claude-fable-5-1' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{claude, TierStandard, "claude --model 'claude-opus-5' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " --append-system-prompt"},
 		{codex, TierFast, "codex -c model='gpt-5.6-luna' -s workspace-write --add-dir '"},

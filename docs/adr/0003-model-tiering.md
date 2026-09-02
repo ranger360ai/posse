@@ -6,7 +6,8 @@
 the mechanism, ranger-base-lzx writes it down) · amended 2026-08-28
 (§2: the mark survives a relaunch — ranger-base-twaq) · amended
 2026-08-29 (§1: the grok column — rangerhq-jp6, ruled in
-ranger-base-tg7c)*
+ranger-base-tg7c) · amended 2026-09-01 (§1: the claude `strong` cell
+reads `fable-5-1` — ADR 0039 D1, ranger-base-per37)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -39,9 +40,19 @@ in the built-in table (a `runtimes/<name>.yaml` may set `model_<tier>:`):
 
 | tier | claude | codex | grok | other runtimes | meant for |
 |---|---|---|---|---|---|
-| `strong` | fable-5 | gpt-5.6-sol | grok-4.6 | runtime default | design, audit, spec, anything judged |
+| `strong` | fable-5-1 | gpt-5.6-sol | grok-4.6 | runtime default | design, audit, spec, anything judged |
 | `standard` | opus-5 | gpt-5.6-sol | grok-4.6 | runtime default | building, testing, ops chores |
 | `fast` | sonnet-5 | gpt-5.6-luna | grok-4.5 | (unset → standard) | mechanical: scaffolds, doc moves, bd hygiene, groom |
+
+*(Amended 2026-09-01, ADR 0039 D1 — ranger-base-per37.)* The claude
+`strong` cell reads `fable-5-1`. The operator moved the dial on
+2026-09-01; ADR 0039 D1 makes the built-in follow it (`claudeModels`,
+runtime.go) and gives `PriceTable` an exact `claude-fable-5-1` row at
+the same `{10, 50}` the `fable` family fallback was already charging —
+the rate is the one Fable 5.1 lists at, so the row is exactness, not a
+price change. The standing rule for every bump after this one: the
+`runtimes/` overlay moves first, the built-in follows in the next posse
+release.
 
 *(Amended 2026-08-26, ranger-base-arm.)* The codex column is filled; grok
 is still runtime default. codex carried NO map at all until then, so
@@ -275,7 +286,7 @@ words:
    ADR 0013 §6's "no adapter → no preflight."
 2. **Unavailable is loud.** One line naming persona, asked-for tier,
    wanted model, and substitute (`richard: tier strong wants
-   claude-fable-5 — unavailable, falling back to claude-opus-5`).
+   claude-fable-5-1 — unavailable, falling back to claude-opus-5`).
    Session meta gains `fallback:` (the line); `tier:` / `runtime:`
    already name what actually launched, the way `cage:` names the cage
    it got. Listings wear `⤵️fallback` *beside* the `@runtime/tier` tag,

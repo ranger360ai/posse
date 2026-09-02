@@ -112,7 +112,7 @@ func TestRuntimesCatalogShowsEveryBuiltinTierMap(t *testing.T) {
 	}
 	got := string(out)
 	for _, want := range []string{
-		"claude   built-in · tiers: strong=claude-fable-5 standard=claude-opus-5 fast=claude-sonnet-5",
+		"claude   built-in · tiers: strong=claude-fable-5-1 standard=claude-opus-5 fast=claude-sonnet-5",
 		"codex    built-in · tiers: strong=gpt-5.6-sol standard=gpt-5.6-sol fast=gpt-5.6-luna",
 		"grok     built-in · tiers: strong=grok-4.6 standard=grok-4.6 fast=grok-4.5",
 	} {

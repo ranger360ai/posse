@@ -14,6 +14,19 @@ func TestPricesAndTiers(t *testing.T) {
 	if p, ok := PriceFor("claude-fable-5"); !ok || p != (Price{10, 50}) {
 		t.Errorf("fable: %+v %v", p, ok)
 	}
+	// ADR 0039 D1: the tier's built-in id is priced by an EXACT row, not by
+	// the family fallback, which is what ADR 0003's "exact ids" asks for.
+	// PriceFor cannot tell the two apart — both answer {10, 50} — so the
+	// exactness is asserted on the table, and the equality below is what
+	// makes the row a restatement rather than a price change.
+	strong := claudeModels[TierStrong]
+	row, exact := PriceTable[strong]
+	if !exact {
+		t.Errorf("the built-in strong id %q has no PriceTable row", strong)
+	}
+	if fam, _ := PriceFor("claude-fable-9-unseen"); row != fam {
+		t.Errorf("%q row %+v disagrees with the fable family rate %+v", strong, row, fam)
+	}
 	if p, _ := PriceFor("claude-opus-5"); p != (Price{5, 25}) {
 		t.Errorf("opus: %+v", p)
 	}
@@ -37,7 +50,8 @@ func TestPricesAndTiers(t *testing.T) {
 		t.Errorf("unpriced model must not invent a cost and must count as a gap: cost %v, Unpriced %d", c, s.Unpriced)
 	}
 	for m, want := range map[string]string{
-		"claude-fable-5": TierStrong, "claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?",
+		"claude-fable-5": TierStrong, "claude-fable-5-1": TierStrong,
+		"claude-opus-5": TierStandard, "claude-sonnet-5": TierFast, "": "?",
 		// grok-4.5 and gpt-5.6-luna are each named by exactly one tier
 		// (fast) in their runtime's built-in map, so they resolve. Their
 		// strong/standard twins (grok-4.6, gpt-5.6-sol) are each named by
