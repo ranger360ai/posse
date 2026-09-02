@@ -5843,7 +5843,11 @@ NO TEST through the house filter (`| grep -E '^(---|ok|FAIL)'` prints a bare
 `FAIL … 601.010s`). There is no long pole to cut instead — 1442 tests, none
 over 10.3s, the top ten only 14% of the run — and the one structural lever
 (`t.Parallel`; the package is a single serial stream at two-thirds of one
-core) is blocked by 55 test files calling `t.Setenv`/`t.Chdir`. 25m rather
+core) is blocked by 55 test files calling `t.Setenv`/`t.Chdir`. (Since
+lifted in two halves: ranger-base-i7fa put `t.Parallel` on 758 tests; ADR 0047
+decides the `newTestBackend` half — one HOME per binary, one worktrees root
+per test via an App field — and stamps the package split NO: the directed
+graph has a 67-file cycle and the serial time lives inside it.) 25m rather
 than 20m because `make test-linux` runs this same target and its
 `PLATFORM=linux/amd64` arm — emulated — is over 600s every time, while native
 linux/arm64 is 112.3s and nowhere near. `suitetimeout_qa_test.go` keeps the
