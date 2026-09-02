@@ -286,8 +286,11 @@ func TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval(t *testing.T) {
 
 	// Arm 3: the clock does not move, so the archive arm 2 just wrote is
 	// fresh — and two more whole loop lifetimes write nothing. The window
-	// each one gets is asserted below to be longer than arm 2 needed.
-	const grace = 5 * time.Second
+	// each one gets is a dead wait in a package that is already twenty
+	// minutes long, so it is set from the control rather than generously:
+	// arm 2's write became visible in `took`, and the assertion below is
+	// what refuses to let this shrink under it.
+	const grace = 2 * time.Second
 	for i := 0; i < 2; i++ {
 		runBackupLoop(t, d, a, cfg, 3, grace)
 	}
