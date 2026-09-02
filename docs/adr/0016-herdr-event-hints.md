@@ -2,8 +2,11 @@
 
 *Status: accepted 2026-08-26 · amended 2026-08-27 (ranger-base-7t1w: §1's
 selector shape was measured wrong against herdr 0.8.0; the pane registry §1
-rejected is now the decision) · owner: architect · follows ADR 0011 and
-ADR 0013 (monica pulse)*
+rejected is now the decision) · amended 2026-09-02 (ranger-base-u5rqp: §2's
+cockpit clause said "the existing full `refresh()`", which spends the
+bead-scan cadence floor on every event; the sessions are re-read at event
+latency, the bead lists stay on the floor) · owner: architect · follows
+ADR 0011 and ADR 0013 (monica pulse)*
 
 ## Context
 
@@ -137,13 +140,26 @@ judgement or fact is added to the event payload.
 
 **Cockpit.** The TTY and display-only loops select on the same hint channel in
 addition to their existing two-second tick. Any subscribed event — including a
-`blocked` status change, which the watch's settle filter drops — calls the
-existing full `refresh()` and redraws when the cockpit is in normal mode; while
-it is in prompt/confirm/peek mode, record one dirty bit and refresh on return to
-normal instead of drawing over operator input. The two-second refresh remains
-the completeness path for beads-only changes, unsupported Herdr event kinds,
-and subscriber failure. This bead is a latency change, not a promise to reduce
-poll traffic.
+`blocked` status change, which the watch's settle filter drops — re-reads the
+sessions and redraws when the cockpit is in normal mode; while it is in
+prompt/confirm/peek mode, record one dirty bit and refresh on return to normal
+instead of drawing over operator input. The two-second refresh remains the
+completeness path for beads-only changes, unsupported Herdr event kinds, and
+subscriber failure. This bead is a latency change, not a promise to reduce poll
+traffic.
+
+*(Amended 2026-09-02, ranger-base-u5rqp.)* The clause above read "calls the
+existing full `refresh()`", and the code took it literally. `refresh()` forces
+the bead scan past its cadence floor, because every other caller of it — `c`,
+`u`, `x`, `o`, `r`, a landed dispatch — just changed the bead lists itself. A
+herdr event changes no bead, so an external stream on that path drove `bd` at
+whatever rate herdr emits, past a floor whose stated job is to hold `bd` to at
+most half the wall clock wherever a cockpit is open; worse, a force arriving
+mid-scan is remembered and spent the moment that scan lands, so a sustained
+stream chained scans with no gap. The hint path therefore re-reads the sessions
+— the store the event is actually about, and the whole latency point — and
+kicks the bead scan **on the floor**, exactly as the two-second tick does. That
+is this section's own next sentence, not a new decision.
 
 Subscriber failure is non-fatal. Watch writes one `events unavailable — polling`
 line per outage and one recovery line; the cockpit uses its status area. Neither

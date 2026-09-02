@@ -1987,10 +1987,13 @@ exit 1
 	return &posse.HerdrBackend{App: &posse.App{Home: home}, H: posse.Herdr{Bin: herdr}, Warn: io.Discard}
 }
 
-// In normal mode a hint is a full refresh, same as `r` — any subscribed
+// In normal mode a hint re-reads the sessions at once — any subscribed
 // event, blocked included, which is the whole reason the cockpit carries
 // its own filter instead of the watch's settle gate (ADR 0016 §2).
 // sessions starting empty and landing non-empty is the refresh's evidence.
+// The bead half of that refresh stays on its cadence floor
+// (ranger-base-u5rqp); TestCockpitHintKeepsTheBeadScanFloor is where that
+// half is pinned.
 func TestCockpitApplyHintRefreshesInNormalMode(t *testing.T) {
 	home := t.TempDir()
 	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})

@@ -342,7 +342,10 @@ const (
 	//
 	// Nothing here is the operator's own latency. Every key that changes
 	// these lists — c, u, x, o, r, and a landed dispatch — rescans at once
-	// through refresh(), which ignores the floor.
+	// through refresh(), which ignores the floor. That list is closed on
+	// purpose: it is exactly the callers that just wrote to the bead store.
+	// A herdr event did not, so the hint path goes through refreshHint and
+	// waits like the tick (ranger-base-u5rqp).
 	beadsEvery = 5 * time.Second
 )
 
@@ -994,6 +997,26 @@ func (c *cockpit) refresh() {
 	c.kickBeads(true)
 }
 
+// refreshHint is refresh's cadenced twin, and what separates them is which
+// store the caller just wrote to. A herdr event changed the SESSIONS, so
+// those are re-read here and now — that latency is the whole point of ADR
+// 0016 §2 — but it changed nothing in bd, so the bead half goes through the
+// floor exactly as the 2s tick's kick does.
+//
+// refresh()'s force belongs to the callers that just changed the bead lists
+// themselves: c, u, x, o, r, a landed dispatch. Putting an external event
+// stream on that list drives bd at whatever rate herdr emits, past the floor
+// that exists to hold bd to at most half the wall clock (ranger-base-u5rqp)
+// — and worse than one scan per event, because a force arriving mid-scan is
+// remembered and spent the instant that scan lands, so a sustained stream
+// chains scans back to back with no gap at all. ADR 0016 §2's own "the
+// two-second refresh remains the completeness path for beads-only changes"
+// is this line.
+func (c *cockpit) refreshHint() {
+	c.refreshSessions()
+	c.kickBeads(false)
+}
+
 // refreshAll is refresh's synchronous twin: the bead scan runs here, on this
 // goroutine, and is applied before it returns. It is the non-tty loop's path
 // (nothing there to starve) and the one a test can call without an event
@@ -1074,12 +1097,16 @@ func (c *cockpit) startHints(ctx context.Context) {
 // dirty; drawing over operator input mid-keystroke is the one thing those
 // modes exist to prevent, so the deferred refresh happens in
 // consumeHintDirty instead, on the return to normal.
+//
+// Both halves go through refreshHint, not refresh: the sessions the event is
+// actually about are re-read now, and the bead lists — which no herdr event
+// changes — keep their cadence floor (ranger-base-u5rqp).
 func (c *cockpit) applyHint(posse.HerdrHint) {
 	if c.mode != modeNormal {
 		c.hintDirty = true
 		return
 	}
-	c.refresh()
+	c.refreshHint()
 }
 
 // consumeHintDirty is applyHint's other half: called after every key, it
@@ -1088,7 +1115,7 @@ func (c *cockpit) applyHint(posse.HerdrHint) {
 func (c *cockpit) consumeHintDirty() {
 	if c.mode == modeNormal && c.hintDirty {
 		c.hintDirty = false
-		c.refresh()
+		c.refreshHint()
 	}
 }
 

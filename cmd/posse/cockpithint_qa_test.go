@@ -12,10 +12,11 @@ package main
 //     mutant survives the whole cmd/posse suite. The pin below reads each
 //     loop's own body instead.
 //
-//  2. A hint in normal mode runs refresh(), which forces a bead scan past
-//     the cadence floor (ranger-base-u5rqp). The second pin is GREEN today
-//     asserting that hole, with the inversion in its failure message — it
-//     goes red the day the fix lands, which is the signal to flip it.
+//  2. A hint in normal mode ran refresh(), which forces a bead scan past the
+//     cadence floor (ranger-base-u5rqp). The second pin asserted that hole
+//     with the inversion in its failure message; the fix landed, the pin went
+//     red, and it is inverted below — it now asserts the floor holds under an
+//     event stream, over a rig shown able to start a scan.
 
 import (
 	"os"
@@ -73,15 +74,18 @@ func TestBothCockpitLoopsSubscribeAndSelectOnHints(t *testing.T) {
 	}
 }
 
-// LIVE DEFECT, ranger-base-u5rqp: a hint in normal mode calls refresh(),
-// which is refreshSessions + kickBeads(TRUE), and a forced kick ignores the
-// bead-scan cadence floor. So an external event stream now drives bd at
-// whatever rate herdr emits — the floor's own comment says it exists to hold
-// bd "to at most half the wall clock wherever the cockpit is opened", and
-// lists the callers allowed past it as operator keys and a landed dispatch.
+// ranger-base-u5rqp, FIXED: a hint reaches the bead lists the way the 2s tick
+// does — refreshHint is refreshSessions + kickBeads(FALSE) — so an external
+// event stream cannot drive bd past the cadence floor whose own comment says
+// it holds bd "to at most half the wall clock wherever the cockpit is
+// opened". The callers allowed past it stay what that comment lists: operator
+// keys and a landed dispatch, each of which just changed the bead lists.
 //
-// This pin asserts the hole, so it is green until the fix lands.
-func TestCockpitHintForcesABeadScanInsideTheFloor(t *testing.T) {
+// This pin is the inversion of the one that asserted the defect. It asserts
+// that nothing happened, so it carries the arm that shows the rig CAN make it
+// happen: refresh() on the same cockpit, at the same point in the same floor,
+// must still start a scan.
+func TestCockpitHintKeepsTheBeadScanFloor(t *testing.T) {
 	home := t.TempDir()
 	hb := fakeAgentBackend(t, home, [2]string{"w1", "w1:p1"})
 	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modeNormal,
@@ -99,23 +103,50 @@ func TestCockpitHintForcesABeadScanInsideTheFloor(t *testing.T) {
 	}
 
 	c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "blocked"})
-	if !c.beadsIn {
-		t.Fatal("a hint no longer starts a bead scan inside the floor: ranger-base-u5rqp is FIXED — invert this pin to assert the floor holds, and delete the chain arm below")
+	if c.beadsIn {
+		t.Fatal("a hint started a bead scan inside the floor: ranger-base-u5rqp is back — applyHint must reach the lists through refreshHint (kickBeads(false)), not refresh()")
+	}
+	// The session half is what the event is about, and it must NOT be on the
+	// floor: a pin that let both halves go quiet would be green on a hint
+	// path that had stopped working altogether.
+	if len(c.sessions) == 0 {
+		t.Fatal("a hint must still re-read the sessions at event latency (ADR 0016 §2) — refreshHint dropped the half it is for")
 	}
 
-	// And it chains: a force landing mid-scan is remembered and spent the
-	// moment the stale scan lands, on top of the floor that scan just set.
+	// And there is no force left over to chain with: a second event mid-floor
+	// remembers nothing, because it never forced in the first place.
 	c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "working"})
-	if !c.beadsDirty {
-		t.Fatal("a second hint mid-scan no longer remembers the force: ranger-base-u5rqp is partly fixed — re-read the chain in applyBeads")
+	if c.beadsIn || c.beadsDirty {
+		t.Fatalf("a second hint must neither start nor remember a scan: beadsIn=%v beadsDirty=%v", c.beadsIn, c.beadsDirty)
+	}
+
+	// consumeHintDirty is the same event arriving under a mode and spent on
+	// the return to normal — the other half of applyHint, and the other call
+	// site that used to force. A pin on one of them leaves the other free.
+	c.mode = modePrompt
+	c.applyHint(posse.HerdrHint{Kind: "workspace_closed", WorkspaceID: "w9"})
+	if !c.hintDirty {
+		t.Fatal("setup: a hint under a mode must defer, or the arm below spends nothing")
+	}
+	c.mode = modeNormal
+	c.consumeHintDirty()
+	if c.beadsIn || c.beadsDirty {
+		t.Fatalf("a deferred hint spent on the return to normal must keep the floor too: beadsIn=%v beadsDirty=%v", c.beadsIn, c.beadsDirty)
+	}
+
+	// The rig CAN start a scan from exactly here. Without this arm every
+	// assertion above is green on a cockpit that simply cannot scan.
+	c.refresh()
+	if !c.beadsIn {
+		t.Fatal("rig: an operator refresh must still force past the floor — if it does not, the arms above measured nothing")
 	}
 	r := <-c.beads
 	r.took = 10 * time.Second
 	c.applyBeads(r)
-	if !c.beadsIn {
-		t.Fatal("the remembered force no longer starts a scan inside the fresh floor: ranger-base-u5rqp is FIXED on the chain arm — invert this pin")
-	}
 	if time.Until(c.beadsNext) < 9*time.Second {
 		t.Fatalf("setup: the floor applyBeads just set should be ~10s away, is %v", time.Until(c.beadsNext))
+	}
+	if c.beadsIn {
+		t.Fatal("nothing forced a scan mid-flight, so none may start inside the fresh floor")
 	}
 }
