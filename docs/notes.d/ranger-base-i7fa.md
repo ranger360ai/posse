@@ -158,6 +158,11 @@ Priced in §2 at 1431 tests / 743.2s / 75% of the wall, and left undone. It
 is written out here because it is not a sketch — every unknown in it was
 resolved while measuring §2, and the edit inventory below is complete.
 
+> **Built since.** `ranger-base-aupee` landed this section at `b2f5b21`:
+> `newTestBackend` no longer touches the environment and `RHQ_FAKE_HERDR` is
+> set once in `TestMain` (`herdr_test.go:105`), process-wide. "Left undone"
+> above is the state this was written in, kept so the plan still reads as one.
+
 `newTestBackend` reaches for the process environment four times where it
 wants per-test state:
 
@@ -192,14 +197,37 @@ herdr_test.go  fakeDir()           argv[0] dir, $RHQ_FAKE_DIR still overriding
 herdr_test.go  newTestBackend      drop the four t.Setenv; link + register
 ~30 sites      Bd{Bin: exe}        -> Bd{Bin: fakeBinFor(t, "bd")}; t is in scope at every one
   9 sites      fakeDir()           parent-side reads -> fakeDirOf(t)
-  4 sites      exec.Command(exe, "-test.run=…")  must clear RHQ_FAKE_HERDR in the child's env
+  5 sites      exec.Command(exe|os.Args[0], "-test.run=…")  child env drops RHQ_FAKE_HERDR — done, 0410018
 ```
 
-That last row is the one trap worth naming: those four tests re-exec the
+That last row is the one trap worth naming: those five tests re-exec the
 binary to run a NAMED test in a child. With `RHQ_FAKE_HERDR=1` process-wide,
 `TestMain` would dispatch that child to `fakeBd` on its `-test.run=…` argv
-and exit before the test ran. They are `cagehomelock_qa_test.go:182`,
-`launchlock_qa_test.go:105`, `trustlock_qa_test.go:172` and `:261`.
+and exit before the test ran. They are `cagehomelock_qa_test.go`,
+`launchlock_qa_test.go`, `trustlock_qa_test.go` (two sites) and
+`watchlock_test.go`.
+
+The count read 4 here until `ranger-base-cecvu`. `watchlock_test.go` spells
+the binary `os.Args[0]` where the other four spell it `exe`, so a census
+grepping `exec.Command(exe` walked straight past it — and it was the one of
+the five carrying no filter at all. All five carry it as of `0410018`, so this
+row is an edit already made rather than one to make.
+
+Nor is it latent any more, now that `b2f5b21` has made the variable
+process-wide. Measured at HEAD: take the `watchlock_test.go` filter back out
+and `TestWatchLockDiesWithItsProcess` reds in 0.01s ("child never took the
+lock"), with the scanner naming the site in the same run, while
+`TestLaunchLockHoldsAcrossProcesses` — a site that does filter — stays green.
+The filter is what holds this up today, not a precaution.
+
+Do not re-derive the set from this paragraph: the census is now a pin.
+`internal/posse/reexecenv_qa_test.go` scans the package's own `*_test.go` for
+both spellings of the binary and fails on any site that hands its child a bare
+`os.Environ()`, with a floor of 5 rather than a list, so a sixth site added
+later is covered by it and by nothing else. The line numbers this paragraph
+used to carry are gone too: they were right when written — still exact at
+`0410018^` — and stale one commit later, because `b2f5b21` moved all four.
+That is the very commit a reader following this section is standing on.
 
 ### The one open design question: a shared $HOME
 
