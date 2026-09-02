@@ -11,7 +11,12 @@ D5/V6 split the expiry surfaces by purpose — the timer surfaces carry
 session mints only; the meter's expiry is report-only. Amended
 2026-08-29 (ranger-base-5fly): the "`secrets/` directory now"
 rejection is overturned by the instance page's acceptance — the dir is
-built as a store, empty; this page's seam stays the only acquirer.*
+built as a store, empty; this page's seam stays the only acquirer.
+Amended 2026-09-01 (ranger-base-v3qi4): darwin's store of record is the
+runtime's own `keychain-with-plaintext-fallback` composite, MEASURED in
+the release binary — store 3 is its fallback, not a byproduct, and the
+darwin adapter now mirrors the composite's read order (keychain item,
+then the file only on item-not-found).*
 
 ## Context
 
@@ -93,37 +98,112 @@ acquisition path.
 ("runtime store"), platform adapters chosen by `runtime.GOOS` — no
 build tags, so `make test-linux` compiles and tests every branch:
 
-- darwin: the keychain item, existing code moved verbatim. The
-  PATH-resolution and exfil concerns (ranger-base-ypf5 /
-  ranger-base-17i) ride with the adapter and keep their ordering; this
-  ADR does not change how `security` resolves. (Both have since landed
-  in that order: the adapter now execs `/usr/bin/security` absolutely.)
+- darwin: **the runtime's own composite store, mirrored** (amended
+  2026-09-01, ranger-base-v3qi4). The PATH-resolution and exfil concerns
+  (ranger-base-ypf5 / ranger-base-17i) ride with the adapter and keep
+  their ordering; the adapter execs `/usr/bin/security` absolutely.
 
-  **Darwin has three credential stores, not two** (amended 2026-08-28,
-  ranger-base-1lza):
+  MEASURED 2026-09-01 from the darwin-arm64 2.1.258 release binary
+  (its checksum `b63136194160791c…` equals the manifest's and the copy
+  installed on the reference box; recipe in NOTES.md, "What the shipped
+  artifact actually does", bead ranger-base-ydjz). Claude Code's darwin
+  secure-storage selector returns one store whose own name is
+  `keychain-with-plaintext-fallback`, and its rules, read from the
+  code, are:
 
-  1. the keychain — store of record, the meter adapter above
-     (unchanged);
+  - *read*: the keychain item first (`security`'s find verb on the
+    runtime's item, the same read `keychainCmd` makes), then the
+    credentials file — store 3 below — only when the keychain answered
+    null. Null is exit 0 with no output, exit 44 (item not found) or
+    exit 36 (user interaction not allowed); any other exit is a read
+    failure and the strict read does not fall through.
+  - *update*: write the keychain. On success, delete the file only if
+    the keychain read null just before the write. On a non-transient
+    failure (non-zero exit that is not a timeout) write the file, mode
+    0600, then delete the keychain item only if it read non-null before.
+  - *delete*: both.
+  - the file's directory is `$CLAUDE_SECURESTORAGE_CONFIG_DIR`, else
+    `$CLAUDE_CONFIG_DIR`, else `~/.claude` (ranger-base-wd4be).
+
+  So the file is the runtime's **live fallback store**, written by the
+  same login/refresh loop and read by the runtime — not "some auth
+  flow's byproduct". Four states follow; the table is the decision:
+
+  | state | keychain item | file | runtime reads | adapter before | adapter now |
+  |---|---|---|---|---|---|
+  | S1 healthy | live | absent | keychain | keychain | keychain |
+  | S2 frozen (MEASURED, ranger-base-1lza) | live | stale | keychain | keychain | keychain |
+  | S3 inverted | absent | live | file | `CredUnreadable` → blind → parks under 0018 while claude is authenticated, and the runbook move ("run claude once") writes nothing | file |
+  | S4 split (ASSUMED) | older | newer | keychain | keychain | keychain |
+
+  S2's mechanism, ASSUMED — consistent with the code and with both
+  1lza observations, not itself observed: a refresh landed on the file
+  while the keychain read null-but-present (a locked keychain answers
+  36), the keychain recovered, and every later keychain write found a
+  non-null item and so never deleted the file. That is why "delete
+  once" measured out a treadmill, and why the file's frozen mtime says
+  "S2", not "inert". S3 is reachable by the same code on a run of
+  non-transient keychain write failures (a keychain that will not
+  unlock, an ACL refusal on the runtime's binary); it has not been
+  observed on the reference box and its rate is unmeasured.
+
+  **The adapter mirrors the composite's read order with one
+  narrowing**: keychain item first; the file only when `security`
+  exits 44 (item not found). Exit 36 and every other failure stay
+  `CredUnreadable` with the ACL fix text and never reach the file. The
+  narrowing is deliberate: the keychain ACL is per binary, so posse's
+  36 speaks about posse's binary, not about the keychain's contents —
+  mirroring the runtime's 36-means-null rule literally would read a
+  frozen S2 file after every `make install` and re-create the 08-24
+  misdiagnosis with a new sentence. A read that fell through carries
+  `Source: "the Claude Code credentials file (keychain fallback)"`, so
+  a 401 from it names the store it came from, and both the 401 sentence
+  and the 44-and-no-file sentence name the two causes an operator must
+  tell apart: the keychain is empty (claude is running on the file), or
+  this binary's ACL was dropped. ASSUMED, operator-measurable only
+  (every crew PID denies `security`): a dropped posse ACL answers 36,
+  not 44. If it answers 44 the design degrades to S1 → the two-cause
+  unreadable sentence (today's class) and S2 → a 401 whose sentence
+  names the fallback; the sweep below exposes S2 either way.
+
+  Not changed: exit 44 with no file stays `CredUnreadable` (blind, with
+  0018's clock), not `NoSource`. The launcher box is a logged-in box by
+  construction; a vanished item there is an incident, not an
+  unconfigured platform. Also unchanged: D5 — an expired fallback
+  envelope is presented, not refused; the 401 stays the only actuator.
+
+  **Darwin has three credential stores** (counted 2026-08-28,
+  ranger-base-1lza; recounted here):
+
+  1. the keychain item — the composite's primary, and the store the
+     runtime reads whenever it holds an item;
   2. `envs/<set>.env` mints — posse-owned, scoped, human-gated
      (unchanged, D1/D4);
-  3. `~/.claude/.credentials.json` — a **recurring unowned byproduct**.
-     Some darwin auth flow writes a full `claudeAiOauth` envelope there
-     on its own schedule. MEASURED (ranger-base-xjj9/m6cm): the
-     operator deleted the file 2026-08-26, two sessions verified clean
-     by 03:40, and a fresh one (994 B, mode 600, new content) appeared
-     at 11:47:07 the same day — read once 101 s later, then frozen for
-     two days while claude wrote `~/.claude` continuously. The frozen
-     mtime is the discriminator that it is *not* the store of record;
-     the regeneration is the proof that it is not a one-off leftover
-     either. Posse never reads it, never wants it, and cannot delete it
-     away — "delete once" was the implicit model and it measured out a
-     treadmill. It is counted and compensated explicitly:
+  3. the credentials file under the runtime's config dir (the path
+     `CredentialsFile()` spells) — the composite's **fallback**, owned
+     by the runtime. Live in S3, stale in S2, absent in S1.
+     MEASURED (ranger-base-xjj9/m6cm): deleted 2026-08-26, regenerated
+     994 B mode 600 at 11:47:07 the same day, read once 101 s later,
+     then frozen two days while the keychain rotated — S2. Posse reads
+     it only in S3, exactly when the runtime does. The compensations
+     stand, with sharper meaning:
      - detective: the credential-path sweep — `make
        verify-credential-paths` + `docs/runbooks/credential-rotation.md`
-       (ranger-base-m6cm, shipped);
+       (ranger-base-m6cm). A file present now reads "the keychain
+       failed a write at some point: S2 or S3", and the operator's
+       move is the same in both: repair the keychain (unlock, ACL),
+       then `/login` in claude — a keychain write that succeeds while
+       the keychain reads null deletes the file, so S3 heals to S1 on
+       the next successful write. "Run claude once" does not: a run
+       with a live access token performs no write.
      - preventive: the seatbelt `file-read` deny on credential-file
-       literals, GOOS-shaped so the linux store of record stays
-       readable (ranger-base-hw18);
+       literals (ranger-base-hw18), GOOS-shaped so the linux store of
+       record stays readable. It protects the file exactly in the state
+       where it holds a live token (S3), at a cost accepted here: in S3
+       a seatbelt-caged claude session reads the same composite, hits
+       the deny on the fallback, and cannot authenticate until the
+       operator repairs the keychain — loud, correct, and the same
+       move as the meter's.
      - liveness/revocation of any current instance is the operator's
        call (ranger-base-tyne), independent of this model.
 - linux (and any non-darwin): `~/.claude/.credentials.json`, fed
@@ -241,12 +321,13 @@ design puts more weight on files. What is actually traded:
   file. A leaked session mint burns one revocable token, not the
   account. The blast-radius argument from the instance ADR's class
   split, kept. **But "posse-owned" is a narrower wall than it sounds
-  on darwin** (amended 2026-08-28): the rotating pair recurringly sits
-  in an *unowned* plain 600 file — `~/.claude/.credentials.json`, the
-  third store in D2 — below the container wall, written by the
-  runtime's own auth flow on its own schedule. Ownership hygiene does
-  not reach a file posse never writes; the comfort this bullet buys is
-  void in effect until the D2 compensations (sweep + read deny) hold.
+  on darwin** (amended 2026-08-28, recounted 2026-09-01): the rotating
+  pair sits in a plain 600 file — the credentials file, the
+  composite's fallback in D2 store 3 — below the container wall whenever the
+  runtime's keychain write fails, and a frozen copy of it stays behind
+  afterwards (S2). Ownership hygiene does not reach a file posse never
+  writes; the comfort this bullet buys is void in effect until the D2
+  compensations (sweep + read deny) hold.
 - **What the keychain was actually buying on darwin: less than it
   looked.** MEASURED 2026-08-24: the non-interactive same-user read
   succeeded — the keychain was not protecting this token from personas;
@@ -277,6 +358,12 @@ design puts more weight on files. What is actually traded:
 - `KeychainToken` disappears as a name; both callers go through the
   seam. The keychain read survives as the darwin adapter, exec path
   and all — ypf5/17i land on it exactly as scoped.
+- (2026-09-01) The darwin adapter agrees with the runtime about which
+  store is live in every state the composite can reach: S3 stops
+  parking an authenticated fleet, and the one new read (the file, on
+  exit 44 only) happens exactly when the runtime itself makes it. No
+  new store, no new writer; one exit-code discriminator and one
+  `Source` string.
 - The operator gets one verb: `posse refresh` reports every credential,
   its lifetime, and its fix; mints session tokens under the human gate;
   and refuses everyone else. The instance runbook (rangerhq-m10j)
@@ -300,16 +387,37 @@ design puts more weight on files. What is actually traded:
   direction is honored in intent (no OS-keychain dependency; everything
   posse *owns* under the home), amended in letter, and this paragraph
   is the plain statement of that amendment.
-- **Read `~/.claude/.credentials.json` on darwin too.** One adapter
-  instead of two. Rejection stands; the evidence clause is amended
-  (2026-08-28, ranger-base-1lza) — the original citation ("a stale
-  leftover of the keychain login, renamed `.stale-*` on the reference
-  box") described a state gone since 2026-08-26 and mischaracterized
-  the file: it self-renews (D2, store 3). The corrected evidence
-  argues the rejection *harder*: MEASURED, the regenerated file sat
-  two days unrefreshed while claude ran daily and the keychain
-  rotated. Making it the darwin source would invert the store of
-  record onto a snapshot that is provably stale within days.
+- **Read the credentials file (D2 store 3) first, or only, on darwin.**
+  One adapter instead of two. Rejected 2026-08-26; evidence amended
+  2026-08-28 (ranger-base-1lza: the file self-renews, and the
+  regenerated one sat two days unrefreshed while the keychain rotated);
+  narrowed 2026-09-01 (ranger-base-v3qi4) to exactly this: file-first
+  or file-only inverts the store of record in S2, the measured state.
+  Reading the file *second*, on item-not-found only, is not this
+  alternative — it is the runtime's own order, and D2 now adopts it.
+- **Keep the darwin adapter keychain-only and accept S3 as a named
+  risk** (the bead's other option, 2026-09-01). Rejected: S3 parks the
+  fleet under ADR 0018 on a state where the runtime is authenticated,
+  and the runbook's move for the unreadable class ("run claude once")
+  performs no keychain write and so cannot heal it. The fix is one
+  exit-code discriminator in an adapter whose `security` stubs already
+  exist (`credentialclass_test.go` exits 44 today), which is cheaper
+  than the paragraph that would have named the risk.
+- **Mirror the runtime's null set literally** — fall through to the
+  file on exit 36 as well as 44. Rejected: 36 is per binary. The
+  runtime's 36 means its keychain is locked; posse's 36 after `make
+  install` means posse's ACL is gone while the keychain holds the live
+  item, and a literal mirror would read the frozen S2 file and 401
+  with a sentence about staleness — the 08-24 misdiagnosis again.
+- **Read both stores and present the fresher `expiresAt`.** Rejected:
+  two reads per pass, and a tie-break the runtime does not use — its
+  rule is order, not freshness — so wherever the two disagree posse
+  would present a token the runtime is not presenting. The seam
+  mirrors the store of record; it does not improve on it.
+- **Refuse an expired fallback envelope locally instead of presenting
+  it.** Rejected on D5: expiry never gates, the read's outcome is the
+  only actuator, and the `Source` string already makes a 401 from the
+  fallback diagnosable without a second rule.
 - **OS keyring on Linux** (Secret Service / gnome-keyring) as the
   meter store. "Keychain, portably": re-imports the per-binary/unlock
   fragility that broke the guard three times in one day, needs a
@@ -382,3 +490,22 @@ design puts more weight on files. What is actually traded:
 - V7 (unit): one envelope fixture parses identically through the
   keychain-blob path and the file path — the okbr diagnostics are
   provably shared, not forked.
+- V8 (unit, added 2026-09-01 ranger-base-v3qi4): with a stubbed
+  `security` and a planted fallback file, the darwin adapter reads the
+  file on exit 44 only and its `Source` names the fallback; on exit 0
+  with an envelope the file is never opened even when present and
+  fresher; on exit 36, exit 1 and a gate refusal the file is never
+  opened and the class is today's (`CredUnreadable` / `GateRefusal`).
+  "Never opened" is pinned by a witness the read would trip, not by the
+  result — a fixture the adapter ignores is a pass that measured
+  nothing. On either box, no build tags.
+- V9 (unit, added 2026-09-01): the 401 sentence for a token read from
+  the fallback, and the unreadable sentence for exit 44 with no file,
+  each name both causes (keychain empty; this binary's ACL dropped),
+  and neither quotes a value.
+- V10 (operator, added 2026-09-01; unmeasurable by a persona — every
+  crew PID denies `security`): the exit code of the adapter's own
+  keychain read (`keychainCmd`, the find verb with `-w`) when run by a
+  binary whose ACL was dropped, non-interactively. 36 confirms
+  the narrowing's premise; 44 keeps the design and moves the residual
+  in D2 from ASSUMED to MEASURED.
