@@ -91,6 +91,57 @@ func TestFoldLeavesAPartialTrailingLineForTheNextFold(t *testing.T) {
 	}
 }
 
+// A single line longer than a bufio.Scanner's default 64KiB token cap must
+// not cost the trail the lines after it (bead ranger-base-flblx, escape of
+// ranger-base-l40c). The spool is the one file CageMounts binds rw, so this
+// is a write the caged persona controls: it appended one overlong line and
+// every refusal recorded after it vanished from the canonical log —
+// silently, and permanently, because the cursor advanced past them anyway.
+func TestFoldCarriesEveryLinePastAnOverlongOne(t *testing.T) {
+	a := cageApp(t)
+	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	spool := a.CageSpoolPath("p", "s1")
+	long := strings.Repeat("A", 70*1024) // past bufio.Scanner's 64KiB default
+	if err := os.WriteFile(spool, []byte("kept\n"+long+"\nswallowed refusal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.FoldRefusalsSpool("p", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(a.RefusalsLogPath("p"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "session=s1 kept\nsession=s1 " + long + "\nsession=s1 swallowed refusal\n"
+	if got := string(b); got != want {
+		t.Errorf("every complete line must fold, in order, however long one of them is:\ngot  %d bytes, ending %q\nwant %d bytes, ending %q",
+			len(got), tail(got), len(want), tail(want))
+	}
+
+	// And the long line is folded exactly once: the cursor is past it, so a
+	// re-fold over the unchanged spool still appends nothing.
+	if err := a.FoldRefusalsSpool("p", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	b2, err := os.ReadFile(a.RefusalsLogPath("p"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b2) != string(b) {
+		t.Errorf("a re-fold past an overlong line must append zero lines:\nbefore %d bytes, after %d bytes", len(b), len(b2))
+	}
+}
+
+// tail keeps a failure message readable when the fixture holds a 70KiB line.
+func tail(s string) string {
+	if len(s) > 60 {
+		return "..." + s[len(s)-60:]
+	}
+	return s
+}
+
 func TestFoldDetectsTruncationByOffset(t *testing.T) {
 	a := cageApp(t)
 	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {

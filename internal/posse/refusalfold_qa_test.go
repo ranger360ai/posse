@@ -1,8 +1,8 @@
 package posse
 
 // QA pins for the refusals fold (ADR 0025 §4, refusalfold.go), filed while
-// verifying the close of ranger-base-l40c under ranger-base-w7h58. Two
-// shapes the close's own pins do not reach:
+// verifying the close of ranger-base-l40c under ranger-base-w7h58. The
+// shape the close's own pins do not reach:
 //
 //   - the SIZE arm of the tamper switch. refusalfold_test.go's
 //     TestFoldDetectsTruncationByOffset uses a 24-byte spool, and
@@ -11,8 +11,12 @@ package posse
 //     the tamper line comes out of the HASH arm instead. Measured: with
 //     `case size < cur.Offset:` disabled, that test still passes. Below
 //     512 bytes the two arms cannot be told apart; above it they can.
-//   - the fold's line reader is a bufio.Scanner at its default token cap,
-//     which is the trail's own erasure hole (see the second pin).
+//
+// A third shape lived here too — the fold's line reader was a bufio.Scanner
+// at its default 64KiB token cap, which was the trail's own erasure hole.
+// That one is fixed (bead ranger-base-flblx); its pin left with it, and
+// refusalfold_test.go's TestFoldCarriesEveryLinePastAnOverlongOne holds the
+// behaviour that replaced it.
 //
 // The QA suffix is the file's, not the assertions': these run hermetically
 // with the rest of the package.
@@ -54,58 +58,6 @@ func TestQAFoldDetectsTruncationOfASpoolLargerThanReadFilesBuffer(t *testing.T) 
 	}
 	if !strings.Contains(string(b), "refusals spool tampered [fold] session=s1") {
 		t.Errorf("a spool emptied under a 1600-byte cursor must fold as tampered:\n%s", b)
-	}
-}
-
-// LIVE DEFECT, pinned GREEN: filed as its own bead from ranger-base-w7h58.
-//
-// foldedLines reads the spool with a bufio.Scanner at its default 64KiB
-// token cap and ignores sc.Err(). A line longer than that stops the scan:
-// the fold appends nothing further, and the cursor still advances past the
-// whole chunk — so every complete line AFTER the long one is dropped from
-// the canonical log permanently, with no tamper line. The spool is the one
-// file mounted rw into the cage, so the caged persona writes both.
-//
-// This asserts the hole, deliberately. When the fold learns to carry a long
-// line (or to refuse to advance past one), THIS TEST GOES RED — that is the
-// signal to delete it and pin the fixed behaviour instead.
-func TestQAFoldSilentlyDropsEveryLineAfterAnOverlongOne(t *testing.T) {
-	a := cageApp(t)
-	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
-		t.Fatal(err)
-	}
-	spool := a.CageSpoolPath("p", "s1")
-	body := "kept\n" + strings.Repeat("A", 70*1024) + "\n" + "swallowed refusal\n"
-	if err := os.WriteFile(spool, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.FoldRefusalsSpool("p", "s1"); err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(a.RefusalsLogPath("p"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	log := string(b)
-	if !strings.Contains(log, "session=s1 kept") {
-		t.Errorf("setup: the line before the overlong one must fold normally:\n%s", log)
-	}
-	if strings.Contains(log, "swallowed refusal") {
-		t.Errorf("FIXED: the fold now carries lines past an overlong one. Delete this pin and assert the new behaviour — the hole it documents is closed:\n%s", log)
-	}
-	if strings.Contains(log, "tampered") {
-		t.Errorf("FIXED: the fold now marks an overlong line rather than swallowing it silently. Delete this pin and assert the new behaviour:\n%s", log)
-	}
-	// And it is unrecoverable: a second fold has already advanced past it.
-	if err := a.FoldRefusalsSpool("p", "s1"); err != nil {
-		t.Fatal(err)
-	}
-	b2, err := os.ReadFile(a.RefusalsLogPath("p"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(b2), "swallowed refusal") {
-		t.Errorf("FIXED: a re-fold now recovers what the overlong line swallowed. Delete this pin:\n%s", b2)
 	}
 }
 

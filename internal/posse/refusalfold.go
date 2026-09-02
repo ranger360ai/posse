@@ -34,7 +34,7 @@ package posse
 // from zero — the erasure attempt becomes evidence instead of a gap, which
 // is the property ADR 0025 §4 is written around.
 import (
-	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -201,11 +201,34 @@ func lastCompleteLine(content []byte, from int64) int64 {
 // from — the canonical log mixes lines from every session a persona has
 // ever run caged, and this prefix is the only place that says which line is
 // whose.
+//
+// Split by hand rather than with a bufio.Scanner, which has a token cap
+// (64KiB by default) and stops at the first line longer than it. That cap
+// was this trail's erasure hole (bead ranger-base-flblx, escape of
+// ranger-base-l40c): the spool is the one file CageMounts binds rw, so a
+// caged persona could append one overlong line and every complete line
+// AFTER it was dropped — silently, since the scanner's error was ignored,
+// and permanently, since the cursor advanced past the whole chunk anyway.
+// There is no cap here: the chunk is already whole in memory (os.ReadFile
+// in FoldRefusalsSpool), so carrying a long line verbatim costs the fold
+// nothing a shorter one did not, and a line the persona wrote is exactly
+// what the audit trail is for. The bytes go over unaltered — no \r
+// stripping, no truncation — because a trail that edits what it records
+// cannot be quoted back.
+//
+// chunk always ends in '\n' when this is reached: the caller slices to
+// lastCompleteLine and folds nothing when that leaves the chunk empty. The
+// loop tolerates a trailing partial line anyway rather than dropping it.
 func foldedLines(chunk []byte, session string) string {
 	var b strings.Builder
-	sc := bufio.NewScanner(strings.NewReader(string(chunk)))
-	for sc.Scan() {
-		fmt.Fprintf(&b, "session=%s %s\n", session, sc.Text())
+	for len(chunk) > 0 {
+		line := chunk
+		if i := bytes.IndexByte(chunk, '\n'); i >= 0 {
+			line, chunk = chunk[:i], chunk[i+1:]
+		} else {
+			chunk = nil
+		}
+		fmt.Fprintf(&b, "session=%s %s\n", session, line)
 	}
 	return b.String()
 }
