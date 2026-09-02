@@ -47,6 +47,7 @@ func foreignSeedDir(t *testing.T) string {
 // again. EXPECTED is the row's own promise — a reader who follows it ends on
 // a home a dispatched launch will accept.
 func TestInstallSeedingRowLeavesAHomeADispatchWillLaunchOn(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, os.DirFS(foreignSeedDir(t)), "stale"); err != nil {
@@ -90,6 +91,7 @@ func TestInstallSeedingRowLeavesAHomeADispatchWillLaunchOn(t *testing.T) {
 // A promoted home takes no re-stamp from init — by design — and init prints
 // nothing about it, so the only warning the reader can get is the row.
 func TestInstallSeedingRowNamesPromoteForAPromotedHome(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, os.DirFS(foreignSeedDir(t)), "stale"); err != nil {
@@ -142,6 +144,7 @@ func TestInstallSeedingRowNamesPromoteForAPromotedHome(t *testing.T) {
 // prints, not by a position ("the re-run's second line") that
 // retireExamplePIDs can push around.
 func TestInstallSeedingRowNamesNothingMissingForASeededHomeWithNoGap(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, os.DirFS(fullForeignSeedDir(t)), "stale"); err != nil {

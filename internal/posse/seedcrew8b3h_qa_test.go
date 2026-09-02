@@ -31,7 +31,6 @@ import (
 func homeQA8b3h(t *testing.T) *App {
 	t.Helper()
 	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
-	t.Setenv(EnvPersona, "")
 	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 
@@ -224,6 +223,7 @@ them looking for a change they never made`, out.String())
 // asserts only that the bytes are still in the home afterwards, so it keeps
 // holding if the decision ever moves again.
 func TestRetirementNeverDestroysTheBytesItTakes(t *testing.T) {
+	t.Parallel()
 	a := preFixHome(t, posse.Seed)
 	names := exampleAgentNames(posse.Seed)
 	mine := names[0]
@@ -284,6 +284,7 @@ init said:
 // shelf — copied through the same helper but neither promoted nor part of
 // what the seeded manifest attests to).
 func TestRetirementRestampBlessesUnrelatedConstitutionDrift(t *testing.T) {
+	t.Parallel()
 	a := preFixHome(t, posse.Seed) // same-version home, so the retirement fires
 	recipe := filepath.Join(a.RecipesDir, "scratch.yaml")
 	if _, err := os.Stat(recipe); err != nil {

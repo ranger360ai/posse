@@ -19,13 +19,11 @@ import (
 
 func initTestApp(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
-	// Hermetic against the operator fence (ADR 0031 §2): a test process
-	// running inside a real persona session inherits RHQ_PERSONA from the
-	// ambient env, and initFrom now reads it. These callers are all driving
-	// init as the operator would, so the fence must not see a persona at all.
-	t.Setenv(EnvPersona, "")
-	return NewApp()
+	// NewAppAt is NewApp with the home named rather than read out of
+	// RHQ_HOME (ranger-base-pj87l). The operator fence (ADR 0031 §2) is
+	// still answered: a test process running inside a real persona session
+	// would inherit RHQ_PERSONA, and TestMain clears it once for the binary.
+	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 
 // The embed is a directory pattern, so it cannot drift file-by-file — but it
@@ -107,6 +105,7 @@ func TestSeedSourcePrefersExamplesBesideBinary(t *testing.T) {
 // The bead's acceptance criterion, hermetically: seed a scratch RHQ_HOME
 // from the embed alone and assert the instance is whole.
 func TestInitFromEmbeddedSeed(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
@@ -209,6 +208,7 @@ func TestInitFromEmbeddedSeed(t *testing.T) {
 // Skills are trees, not files. examples/skills is a later bead, so the
 // recursion is pinned against a synthetic seed rather than waiting for it.
 func TestInitCopiesSkillTrees(t *testing.T) {
+	t.Parallel()
 	seed := t.TempDir()
 	must := func(err error) {
 		t.Helper()

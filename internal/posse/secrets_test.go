@@ -88,6 +88,7 @@ func TestNoNameCanCrossBetweenTheTwoStores(t *testing.T) {
 // D1: init seeds the EMPTY directory. Not a seed file, and above all not
 // plan-guard.env — the plan guard is not a consumer.
 func TestInitSeedsAnEmptySecretsDir(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatal(err)

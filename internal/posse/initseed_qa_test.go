@@ -22,10 +22,9 @@ import (
 
 func seedQAHome(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
-	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
-	t.Setenv(EnvPersona, "")
-	return NewApp()
+	// The home named rather than read out of RHQ_HOME; the operator fence
+	// is TestMain's now — see initTestApp (ranger-base-pj87l).
+	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 
 // The reference PIDs a fresh public install actually receives. `posse init`
@@ -41,6 +40,7 @@ func seedQAHome(t *testing.T) *App {
 // unchanged and is checked against the shelf; what changed is that a fresh
 // install ships no crew, which the companion pin below states directly.
 func TestEmbeddedSeedShipsAContractValidCrew(t *testing.T) {
+	t.Parallel()
 	a := seedQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init from the embed: %v", err)
@@ -68,6 +68,7 @@ func TestEmbeddedSeedShipsAContractValidCrew(t *testing.T) {
 // and lays down a home with no crew, at exit 0. Re-running init repairs
 // nothing: the hijack is still in place and nothing is ever overwritten.
 func TestSeedOverrideThatIsNotASeedDoesNotHalfSeedSilently(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	bin := filepath.Join(tmp, "bin")
 	foreign := filepath.Join(tmp, "examples")

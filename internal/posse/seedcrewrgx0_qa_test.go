@@ -47,7 +47,6 @@ import (
 func olderHomeRgx0(t *testing.T, seed map[string][]byte) *App {
 	t.Helper()
 	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
-	t.Setenv(EnvPersona, "")
 	a := NewAppAt(filepath.Join(t.TempDir(), "home"))
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("seeding the fixture home: %v", err)
@@ -88,6 +87,7 @@ func embeddedNine(t *testing.T) map[string][]byte {
 // two-init reproduction. It fails if the retirement ever takes the home's own
 // manifest as evidence of who wrote a file again.
 func TestAPostHocSeededManifestNeverRetiresAnAdoptedPersona(t *testing.T) {
+	t.Parallel()
 	a := olderHomeRgx0(t, embeddedNine(t))
 	const mine = "qa"
 	live := filepath.Join(a.AgentsDir, mine+".md")
@@ -158,6 +158,7 @@ init #2 said:
 // needs the manifest again, this goes red — and if the table forgets that
 // release, so does it.
 func TestAnOlderReleaseRetiresOnTheShippedTableAlone(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on PATH")
 	}

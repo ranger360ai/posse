@@ -161,7 +161,6 @@ func TestQAUpgradeInitOnAPromotedHomeNamesPossePromote(t *testing.T) {
 func TestQAUpgradeInitOnUnreadableManifestNamesTheProblem(t *testing.T) {
 	wtqaHome(t)
 	// Hermetic against the operator fence (ADR 0031 §2): see newTestBackend.
-	t.Setenv(EnvPersona, "")
 	a := NewAppAt(filepath.Join(t.TempDir(), "home"))
 	if err := os.MkdirAll(a.Home, 0o755); err != nil {
 		t.Fatal(err)

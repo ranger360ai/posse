@@ -201,7 +201,6 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	gitIn("commit", "-qm", "the constitution")
 
 	t.Setenv("RHQ_HOME", home)
-	t.Setenv(EnvPersona, "")
 	a := NewApp()
 
 	// Step 1's precondition, as the runbook now words it: persona memory is

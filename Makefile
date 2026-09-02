@@ -28,7 +28,7 @@ BINDIR ?= $(HOME)/.local/bin
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test verify-test-times test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test verify-test-times verify-parallel test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -156,9 +156,22 @@ release-notes:
 # `-timeout 25m` stays the single source of truth and stays where the pin reads
 # it. It returns `go test`'s own exit status and never fails on a wall clock.
 # `make verify-test-times` (0.4s) pins the reporting and runs first here.
-test: verify-test-times
+test: verify-test-times verify-parallel
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
+
+# The other half of the ceiling story, and the half ranger-base-pj87l asked
+# for: the wall grew 2.4x in four days with test-times.sh warning correctly on
+# every run and nothing acting on the warning. The answer is NOT to make that
+# warning fatal — an elapsed-seconds red belongs to the box, which is the
+# charter test-times.sh argues for itself and this does not overturn. It is to
+# fail on the DETERMINISTIC half: a test that lands in internal/posse, could
+# take t.Parallel, and does not. That is the decay that made the package one
+# 1483-second binary; it reads the same files every time and never depends on
+# the machine's mood. ~1s, no suite, no go test. The tool prints the tests and
+# the two ways to satisfy it.
+verify-parallel:
+	@$(GOBIN) run ./cmd/testparallel ./internal/posse check
 
 # Prove the reporter still reports: that the budget column is read from the
 # command rather than kept here, that a timeout panic is called a timeout and

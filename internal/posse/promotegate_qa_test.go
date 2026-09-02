@@ -36,6 +36,7 @@ import (
 // "re-promoting the same commit", so the operator ratifies nothing while a
 // PID changes underneath them.
 func TestQAPromoteRefusesAnEditGitWasToldToStopWatching(t *testing.T) {
+	t.Parallel()
 	for _, flag := range []string{"--skip-worktree", "--assume-unchanged"} {
 		t.Run(strings.TrimPrefix(flag, "--"), func(t *testing.T) {
 			a, src, git := promoteFixture(t)
@@ -126,6 +127,7 @@ func assertManifestMatchesTheCommit(t *testing.T, a *App, git func(...string) (s
 // VerifyPromoted().OK(), which stays true across an overwrite (the new
 // manifest re-hashes disk). It cannot see this.
 func TestQASeededManifestIsNeverOverwritten(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 
@@ -171,6 +173,7 @@ func TestQASeededManifestIsNeverOverwritten(t *testing.T) {
 // `not-a-regular-file` and every launch would read whatever the link points
 // at. Promote refuses before writing anything; this keeps that true.
 func TestQAPromoteRefusesASymlinkInThePromotedSet(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 
@@ -223,6 +226,7 @@ func TestQAPromoteRefusesASymlinkInThePromotedSet(t *testing.T) {
 // but ratified prose taken OUT of force under a SHA that still attests to it.
 // `git sparse-checkout` reaches it with no adversary at all.
 func TestQAPromoteSetIsDecidedByTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	unwatch := func(t *testing.T, git func(...string) (string, error), src string) {
 		t.Helper()
 		if out, err := git("update-index", "--skip-worktree",
@@ -346,6 +350,7 @@ func assertManifestNamesEveryPathAtTheCommit(t *testing.T, a *App, git func(...s
 // archive`: archive applies export-subst and eol filters, so its bytes are
 // not the blob's bytes. This test is what makes that comment load-bearing.
 func TestQAPromotedBytesAreTheBlobsNotTheSmudgedWorkingTree(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	repo := filepath.Dir(src)
 

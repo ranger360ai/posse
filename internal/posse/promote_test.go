@@ -50,9 +50,10 @@ func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) 
 	repo := filepath.Join(root, "constitution")
 	src = filepath.Join(repo, ConstitutionSourceDir)
 	home := filepath.Join(root, "home")
-	t.Setenv("RHQ_HOME", home)
-	t.Setenv(EnvPersona, "")
-	a = NewApp()
+	// NewAppAt is NewApp with the home named rather than read out of
+	// RHQ_HOME: same App, and 28 tests stop being serial for it
+	// (ranger-base-pj87l).
+	a = NewAppAt(home)
 
 	mk := func(rel, body string, mode os.FileMode) {
 		t.Helper()
@@ -113,6 +114,7 @@ func promote(t *testing.T, a *App, o PromoteOpts) string {
 // Item 1: after the first promote the home is a real directory with the
 // promoted set and a manifest naming the promoted SHA — and nothing else.
 func TestPromoteWritesTheSetAndTheManifest(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	out := promote(t, a, PromoteOpts{Source: src})
 
@@ -158,6 +160,7 @@ func TestPromoteWritesTheSetAndTheManifest(t *testing.T) {
 // because both are the reading of `promotedAtCommit`'s output, not of the
 // tree beside it.
 func TestPromoteTakesModesAndOddNamesFromTheCommit(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	hook := filepath.Join(src, "skills", "thing", "run me.sh")
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho thing\n"), 0o755); err != nil {
@@ -197,6 +200,7 @@ func TestPromoteTakesModesAndOddNamesFromTheCommit(t *testing.T) {
 // once, without turning it into a gate: enumerating the ways git can be
 // told to look away is the game the commit read stops playing.
 func TestPromoteNotesAPathGitIsNotWatching(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if out, err := git("update-index", "--assume-unchanged", ConstitutionSourceDir+"/config.yaml"); err != nil {
@@ -220,6 +224,7 @@ func TestPromoteNotesAPathGitIsNotWatching(t *testing.T) {
 // path that widens 0600 publishes tokens, so the cheapest copy that cannot
 // widen modes is the one that does not exist.
 func TestPromoteNeverTouchesEnvsStateOrPersonas(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 
@@ -260,6 +265,7 @@ func TestPromoteNeverTouchesEnvsStateOrPersonas(t *testing.T) {
 // for is the state the cutover window passes through, and the one that
 // otherwise comes up silent. Names only, never values.
 func TestPromoteWarnsOnDanglingDefaultEnv(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	out := promote(t, a, PromoteOpts{Source: src})
 	if !strings.Contains(out, "default_env") || !strings.Contains(out, `"default"`) {
@@ -282,6 +288,7 @@ func TestPromoteWarnsOnDanglingDefaultEnv(t *testing.T) {
 
 // Item 4, half one: a dirty promoted path is a refusal that names it.
 func TestPromoteRefusesDirtyPromotedPath(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	if err := os.WriteFile(filepath.Join(src, "agents", "dev.md"), []byte("edited, uncommitted\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -304,6 +311,7 @@ func TestPromoteRefusesDirtyPromotedPath(t *testing.T) {
 // constitution repo essentially always, and must not block a promote. They
 // are reported instead.
 func TestPromoteReportsButAllowsDirtyOutsideThePromotedSet(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	if err := os.WriteFile(filepath.Join(src, "personas", "dev", "ORDERS.md"), []byte("a new lesson\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -334,6 +342,7 @@ func TestPromoteRefusesUnderThePersonaMarker(t *testing.T) {
 // ~/.config/rhq is a symlink onto the instance repo and "copy the source
 // over the home" would be a tree copying onto itself.
 func TestPromoteRefusesWhenTheHomeIsTheSource(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	a.Home = src
 	if err := a.CmdPromote(&bytes.Buffer{}, PromoteOpts{Source: src}); err == nil {
@@ -353,6 +362,7 @@ func TestPromoteRefusesWhenTheHomeIsTheSource(t *testing.T) {
 // cannot be promoted from one — the shape ranger-base-h56a found in envs/,
 // caught here for any path that grows the same problem.
 func TestPromoteRefusesAnIgnoredPromotedPath(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	repo := filepath.Dir(src)
 	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(ConstitutionSourceDir+"/envs/\n"+ConstitutionSourceDir+"/state/\n"+ConstitutionSourceDir+"/recipes/\n"), 0o644); err != nil {
@@ -374,6 +384,7 @@ func TestPromoteRefusesAnIgnoredPromotedPath(t *testing.T) {
 // diff between the commit in force and the one arriving — the thing being
 // ratified.
 func TestPromotePrintsTheDiffSinceTheLastPromote(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	first := promote(t, a, PromoteOpts{Source: src})
 	if !strings.Contains(first, "no previous promote") {
@@ -403,6 +414,7 @@ func TestPromotePrintsTheDiffSinceTheLastPromote(t *testing.T) {
 // A PID deleted in the constitution must leave the home, or a retired
 // persona stays in force forever. Bounded to the promoted set, and printed.
 func TestPromoteRemovesWhatTheConstitutionNoLongerHas(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if err := os.Remove(filepath.Join(src, "agents", "qa.md")); err != nil {
@@ -427,6 +439,7 @@ func TestPromoteRemovesWhatTheConstitutionNoLongerHas(t *testing.T) {
 // must not be the thing that stops it — by then the launch verify is
 // already refusing every dispatch.
 func TestPromoteWorksOverAnUnreadableManifest(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if err := os.WriteFile(a.PromoteManifestPath(), []byte("{ truncated"), 0o644); err != nil {
@@ -446,6 +459,7 @@ func TestPromoteWorksOverAnUnreadableManifest(t *testing.T) {
 
 // --dry-run is the ratification read with the act left out.
 func TestPromoteDryRunWritesNothing(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	out := promote(t, a, PromoteOpts{Source: src, DryRun: true})
 	if !strings.Contains(out, "dry run") {
@@ -462,6 +476,7 @@ func TestPromoteDryRunWritesNothing(t *testing.T) {
 // Item 3, the detection half: one changed byte, one added file and one
 // deleted file are each a mismatch the verdict names.
 func TestVerifyPromotedCatchesEveryClassOfDrift(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if v := a.VerifyPromoted(); !v.OK() {
@@ -515,6 +530,7 @@ func TestVerifyPromotedCatchesEveryClassOfDrift(t *testing.T) {
 // a verify that fired on it would refuse dispatch on routine correct
 // behaviour until a re-promote that cannot even see the values.
 func TestVerifyPromotedIgnoresEnvsEntirely(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
@@ -545,6 +561,7 @@ func TestVerifyPromotedIgnoresEnvsEntirely(t *testing.T) {
 // No manifest = nothing was ever promoted here = nothing to check. Every
 // home that predates ADR 0015 is in that state and must keep launching.
 func TestVerifyPromotedIsSilentWithNoManifest(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	_ = src
 	if v := a.VerifyPromoted(); !v.OK() || v.Manifest != nil {
@@ -567,6 +584,7 @@ func TestVerifyPromotedIsSilentWithNoManifest(t *testing.T) {
 // the launch verify never fires on an install nobody promoted — and it says
 // `seeded`, because there is no commit behind it.
 func TestInitSeedsAManifestMarkedSeeded(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	if err := a.CmdInit(&bytes.Buffer{}); err != nil {
 		t.Fatal(err)

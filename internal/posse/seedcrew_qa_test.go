@@ -34,7 +34,6 @@ func crewQAHome(t *testing.T) *App {
 	// Hermetic against the operator fence (ADR 0031 §2): these fixtures drive
 	// init as the operator, and a test process inside a real persona session
 	// otherwise inherits RHQ_PERSONA from the ambient env.
-	t.Setenv(EnvPersona, "")
 	return NewAppAt(filepath.Join(t.TempDir(), "home"))
 }
 
@@ -52,6 +51,7 @@ func seedNames(t *testing.T) []string {
 // A fresh install: no crew, and the examples readable where nothing loads
 // them. `posse agent new` and a copy are how a persona comes to exist.
 func TestFreshInitInstallsNoPersonas(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
@@ -76,6 +76,7 @@ func TestFreshInitInstallsNoPersonas(t *testing.T) {
 // The upgrade. A home seeded by an older binary has the generics in agents/;
 // re-running init retires the untouched ones and says so.
 func TestInitRetiresUnmodifiedExamplePIDsFromAnExistingHome(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)
@@ -120,6 +121,7 @@ func TestInitRetiresUnmodifiedExamplePIDsFromAnExistingHome(t *testing.T) {
 // The rule that keeps the upgrade from being worse than the bug: an example
 // the operator edited in place is not an example, it is their persona.
 func TestInitKeepsACustomisedExamplePID(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)
@@ -159,6 +161,7 @@ func TestInitKeepsACustomisedExamplePID(t *testing.T) {
 // `coordinator:` or `default_persona:` resolves to nothing is a home that
 // refuses or misroutes on the next pass.
 func TestInitKeepsExamplePIDsTheConfigDependsOn(t *testing.T) {
+	t.Parallel()
 	names := exampleAgentNames(posse.Seed)
 	for _, key := range []string{"coordinator", "default_persona", "verify_assignee"} {
 		t.Run(key, func(t *testing.T) {
@@ -189,6 +192,7 @@ func TestInitKeepsExamplePIDsTheConfigDependsOn(t *testing.T) {
 // verify into a MISSING, which refuses dispatch — so init does not, and says
 // where the retirement belongs instead.
 func TestInitDoesNotRetireUnderARealPromotion(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)
@@ -235,6 +239,7 @@ func TestInitDoesNotRetireUnderARealPromotion(t *testing.T) {
 // the upgrade traded a routing leak for a home that refuses to dispatch at
 // all — which is the "worse than the bug" the bead named.
 func TestRetirementReStampsASeededManifest(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)
@@ -276,6 +281,7 @@ func TestRetirementReStampsASeededManifest(t *testing.T) {
 // operator's that happens to sit in agents/ is never a candidate, whatever
 // it is named.
 func TestRetirementNeverTouchesAPersonaTheSeedDoesNotShip(t *testing.T) {
+	t.Parallel()
 	a := crewQAHome(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("init: %v", err)

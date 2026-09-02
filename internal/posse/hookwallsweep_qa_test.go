@@ -81,7 +81,6 @@ func hwsFixture(t *testing.T, vis map[string]string, order ...string) (*App, map
 		t.Fatal(err)
 	}
 	t.Setenv("RHQ_HOME", home)
-	t.Setenv(EnvPersona, "")
 
 	dirs := map[string]string{}
 	var cfg strings.Builder
@@ -354,6 +353,7 @@ func TestHookWallSweepIsSilentWhenConfigDeclaresNoRepo(t *testing.T) {
 // stale. A pin that only asserted the heading would pass over a sweep wired to
 // nothing; each verdict has to be the one the repo's state earns.
 func TestPromoteEpilogueSweepsTheHookWall(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	repo := hwsRepo(t, t.TempDir(), "declared")
 

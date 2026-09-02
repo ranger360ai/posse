@@ -271,6 +271,11 @@ EOF
     printf '%s' "$slow_msg" | while IFS= read -r line; do [ -n "$line" ] && warn "  $line"; done
     warn "  A package this big tests as one binary and one clock; it wants splitting,"
     warn "  not a bigger -timeout. Raising the -timeout hides this, it does not fix it."
+    warn "  What has actually moved the number twice is concurrency inside the one"
+    warn "  binary: \`go run ./cmd/testparallel <pkg>\` counts the tests that can take"
+    warn "  t.Parallel and \`envroots\` names the helpers holding the rest serial, worst"
+    warn "  first. \`make verify-parallel\` is the gate that keeps the marked set from"
+    warn "  decaying again (ranger-base-pj87l)."
   fi
   return 0
 }

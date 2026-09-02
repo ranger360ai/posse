@@ -49,6 +49,8 @@ type fn struct {
 	calls   map[string]bool
 	idents  map[string]bool
 	envRoot bool
+	// hasParallel: the body's first statement is t.Parallel().
+	hasParallel bool
 	// envVars: the variables this function sets by literal name, for the
 	// `envroots` census. A setter whose name is computed shows as "?".
 	envVars map[string]bool
@@ -158,6 +160,15 @@ func main() {
 			}
 			g := &fn{name: fd.Name.Name, file: name, isTest: isTest,
 				calls: map[string]bool{}, idents: map[string]bool{}, envVars: map[string]bool{}}
+			if len(fd.Body.List) > 0 {
+				if es, ok := fd.Body.List[0].(*ast.ExprStmt); ok {
+					if ce, ok := es.X.(*ast.CallExpr); ok {
+						if se, ok := ce.Fun.(*ast.SelectorExpr); ok && se.Sel.Name == "Parallel" {
+							g.hasParallel = true
+						}
+					}
+				}
+			}
 			if isTest && strings.HasPrefix(fd.Name.Name, "Test") && fd.Recv == nil &&
 				len(fd.Type.Params.List) == 1 && isT(fd.Type.Params.List[0].Type) {
 				g.topTest = true
@@ -372,6 +383,42 @@ func main() {
 				fmt.Printf("%s\t%s\n", g.file, g.name)
 			}
 		}
+	case "check":
+		// The gate `make test` runs (ranger-base-pj87l). It is deterministic
+		// — a static read of the same files, no clock and no box — which is
+		// the only kind of red this package's timing story can afford: see
+		// the charter in scripts/test-times.sh, which refuses to fail on a
+		// wall clock for exactly that reason. What it catches is the DECAY
+		// that produced the wall twice: a test lands, is eligible, carries
+		// no t.Parallel, and nothing says so until the package outruns its
+		// ceiling four days later.
+		var unmarked, extra []string
+		for _, g := range tests {
+			eligible := !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == ""
+			switch {
+			case eligible && !g.hasParallel:
+				unmarked = append(unmarked, g.file+"\t"+g.name)
+			case !eligible && g.hasParallel:
+				extra = append(extra, g.file+"\t"+g.name)
+			}
+		}
+		if len(extra) > 0 {
+			// Not a failure: these predate the filter (i7fa) and taking
+			// t.Parallel off a green test is a decision, not a sweep.
+			fmt.Printf("note: %d tests carry t.Parallel that this tool would not give it\n", len(extra))
+		}
+		if len(unmarked) == 0 {
+			fmt.Printf("testparallel: %s clean — every one of the %d eligible tests carries t.Parallel\n", dir, countEligible(tests, envTainted, varTainted, serial))
+			return
+		}
+		fmt.Fprintf(os.Stderr, "testparallel: %d tests in %s can take t.Parallel and do not:\n", len(unmarked), dir)
+		for _, u := range unmarked {
+			fmt.Fprintf(os.Stderr, "  %s\n", u)
+		}
+		fmt.Fprintf(os.Stderr, "\nAdd `t.Parallel()` as the first line of each, or give it a reason in the\n"+
+			"serial map in cmd/testparallel/main.go. This package is one test binary on\n"+
+			"one clock and has outrun that clock twice (ranger-base-2ggb, ranger-base-pj87l).\n")
+		os.Exit(1)
 	case "envroots":
 		// The census the next round of this work needs: every function that
 		// writes the process environment, with the number of top-level tests
@@ -531,6 +578,16 @@ func isT(e ast.Expr) bool {
 }
 
 // propagate marks every function that transitively calls a root.
+func countEligible(tests []*fn, envTainted, varTainted map[string]bool, serial map[string]string) int {
+	n := 0
+	for _, g := range tests {
+		if !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == "" {
+			n++
+		}
+	}
+	return n
+}
+
 func propagate(funcs map[string][]*fn, root func(*fn) bool) map[string]bool {
 	return propagateIn(funcs, root, func(*fn) bool { return true })
 }

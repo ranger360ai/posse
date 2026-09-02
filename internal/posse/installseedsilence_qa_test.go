@@ -52,6 +52,7 @@ func fullForeignSeedDir(t *testing.T) string {
 }
 
 func TestQAInitSilenceDoesNotMeanAPromotedHome(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	var out strings.Builder
 	if err := a.initFrom(&out, os.DirFS(fullForeignSeedDir(t)), "stale"); err != nil {

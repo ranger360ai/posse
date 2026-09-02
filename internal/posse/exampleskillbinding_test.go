@@ -175,6 +175,7 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 // launchable on the instance they ship to: agents/ arrives empty, so a
 // recipe naming a persona names one that does not exist.
 func TestExampleRecipesCoverNonClaudeRuntimes(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatal(err)

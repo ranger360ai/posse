@@ -149,7 +149,6 @@ func TestTheRunbookQuotesTheRefusalsRefreshActuallyGives(t *testing.T) {
 		t.Errorf("the runbook does not quote the persona refusal: %q", personaHead)
 	}
 
-	t.Setenv(EnvPersona, "")
 	ro := opts(RefreshOpts{}, "", nil)
 	ro.tty = func() bool { return false }
 	err = a.CmdRefresh(discard{}, ro)

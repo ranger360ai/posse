@@ -95,7 +95,6 @@ func TestCrewMarkedByOperatorPromptOnly(t *testing.T) {
 		t.Error("a persona's prompt must mark nothing")
 	}
 
-	t.Setenv(EnvPersona, "")
 	b.MarkCrewOnOperatorPrompt("fleet")
 	if m, _ := b.readMeta("fleet"); !m.Crew {
 		t.Error("the operator's prompt must mark the session crew")
@@ -164,7 +163,6 @@ func TestCrewMarkMissedIsReported(t *testing.T) {
 	if got := b.MarkCrewOnOperatorPrompt("handmade"); got != "" {
 		t.Errorf("a persona's prompt has no mark to miss, got %q", got)
 	}
-	t.Setenv(EnvPersona, "")
 	if got := b.MarkCrewOnOperatorPrompt("handmade"); got == "" {
 		t.Error("the operator's prompt on a meta-less session must report the missed mark")
 	}

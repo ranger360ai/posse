@@ -108,7 +108,6 @@ func fifoLaunchRig(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("RHQ_HOME", home)
-	t.Setenv(EnvPersona, "")
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("beads_visibility:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

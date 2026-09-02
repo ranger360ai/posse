@@ -67,6 +67,7 @@ func addRuntimeOverlayCommit(t *testing.T, src string, git func(args ...string) 
 // the pin has to be the SECOND promote — which is also the shape every real
 // dial bump has.
 func TestQAPromoteDryRunNamesTheArrivingRuntimeOverlay(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	addRuntimeOverlayCommit(t, src, git, "model_strong: claude-fable-5-1\n")
@@ -94,6 +95,7 @@ func TestQAPromoteDryRunNamesTheArrivingRuntimeOverlay(t *testing.T) {
 // And the act itself: the overlay lands, the manifest names it, and the home
 // verifies. This is verification item 1's `promoted.json` clause.
 func TestQAPromoteCarriesTheRuntimeOverlayIntoTheManifest(t *testing.T) {
+	t.Parallel()
 	a, src, git := promoteFixture(t)
 	addRuntimeOverlayCommit(t, src, git, "model_strong: claude-fable-5-1\n")
 	promote(t, a, PromoteOpts{Source: src})
@@ -120,6 +122,7 @@ func TestQAPromoteCarriesTheRuntimeOverlayIntoTheManifest(t *testing.T) {
 // `unpromoted runtimes/claude.yaml` and every dispatched session refuses
 // until the operator promotes.
 func TestQAVerifyPromotedCallsAnUnpromotedRuntimeOverlayUnpromoted(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src}) // a manifest with no runtimes entry
 	if v := a.VerifyPromoted(); !v.OK() {
@@ -157,6 +160,7 @@ func TestQAVerifyPromotedCallsAnUnpromotedRuntimeOverlayUnpromoted(t *testing.T)
 // instance is not marked missing. Adding a promoted path must not turn every
 // instance that has not got one into a refused launch.
 func TestQAAHomeWithNoRuntimesDirStillVerifies(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if _, err := os.Stat(a.RuntimesDir()); !os.IsNotExist(err) {
@@ -176,6 +180,7 @@ func TestQAAHomeWithNoRuntimesDirStillVerifies(t *testing.T) {
 // promoteRemovals bounded to PromotedPaths, which is why it could not reach
 // runtimes/ before D2 and can now.
 func TestQAPromoteRemovesAHomeOverlayTheConstitutionDoesNotCarry(t *testing.T) {
+	t.Parallel()
 	a, src, _ := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {

@@ -99,6 +99,7 @@ func mkdirT(t *testing.T, dir string) {
 // which directory init was reading — the one thing the old exit-0 line never
 // said.
 func TestInitRefusesASourceMissingASeedRootAndNamesIt(t *testing.T) {
+	t.Parallel()
 	foreign := t.TempDir()
 	if err := os.WriteFile(filepath.Join(foreign, "config.yaml"), []byte("default_dir: ~\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -122,6 +123,7 @@ func TestInitRefusesASourceMissingASeedRootAndNamesIt(t *testing.T) {
 // every dispatched launch refusing over the files the repair just restored:
 // a repair that trades a crewless home for a home that cannot launch.
 func TestInitRepairsAHalfSeededHomeAndRestampsItsSeededManifest(t *testing.T) {
+	t.Parallel()
 	a := initTestApp(t)
 	// Exactly what the bug left behind: config.yaml from a foreign examples/,
 	// the five roots, and a seeded manifest over the one file.

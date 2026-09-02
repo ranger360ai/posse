@@ -24,14 +24,16 @@ import (
 	"time"
 )
 
-// refreshApp is a posse home with an envs/ dir and nothing else live: $HOME
-// is redirected too, so the meter adapter's credentials-file lookup lands in
-// the fixture rather than in whoever is running the suite.
+// refreshApp is a posse home with an envs/ dir and nothing else live. It
+// used to redirect $HOME as well, so the meter adapter's credentials-file
+// lookup landed in a fixture rather than in whoever is running the suite;
+// TestMain gives the whole binary a temp $HOME now (ADR 0047 D1), which is
+// the same guarantee without holding 36 tests serial for it
+// (ranger-base-pj87l). Nothing here writes under $HOME, so one home shared
+// with the rest of the binary is a read of an empty directory.
 func refreshApp(t *testing.T) *App {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv(EnvPersona, "") // the suite may itself be running inside a persona session
 	cfg := filepath.Join(home, "config")
 	if err := os.MkdirAll(filepath.Join(cfg, "envs"), 0o700); err != nil {
 		t.Fatal(err)
@@ -97,6 +99,7 @@ func TestRefreshRefusesUnderThePersonaMarkerIncludingTheReport(t *testing.T) {
 // Without a terminal there is no human to be the gate, and the browser flow
 // is the whole reason this command may write at all.
 func TestRefreshRefusesWithoutATTYIncludingTheReport(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	for _, o := range []RefreshOpts{{}, {Runtime: "claude", EnvSet: "container"}} {
 		ro := opts(o, "tok", nil)
@@ -119,6 +122,7 @@ func TestRefreshRefusesWithoutATTYIncludingTheReport(t *testing.T) {
 // the two tests above pass on any refusal at all, including one from a
 // fixture that never worked.
 func TestRefreshRunsWhenTheGatesAreOpen(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	if err := a.CmdRefresh(&w, opts(RefreshOpts{}, "", nil)); err != nil {
@@ -132,6 +136,7 @@ func TestRefreshRunsWhenTheGatesAreOpen(t *testing.T) {
 // ─── V5: what the write does to the file, and to its mode ───────────────────
 
 func TestRefreshWritesTheMintIntoTheEnvSetStampedAt600Under700(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	if err := os.Chmod(a.EnvsDir, 0o755); err != nil { // drifted, as a hand-copied dir does
 		t.Fatal(err)
@@ -183,6 +188,7 @@ func TestRefreshWritesTheMintIntoTheEnvSetStampedAt600Under700(t *testing.T) {
 // opens is real even when a later pass closes it: the temp file holds the
 // credential for as long as it takes to rename.
 func TestTheEnvSetWriterItselfNeverWidensTheFile(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	writeEnvFile(t, a, "container", "OTHER=x\n", 0o644)
 	p, err := a.setEnvVarStamped("container", "CLAUDE_CODE_OAUTH_TOKEN", "tok",
@@ -204,6 +210,7 @@ func TestTheEnvSetWriterItselfNeverWidensTheFile(t *testing.T) {
 // not choose, and a directory there is a mistake worth a sentence rather than
 // an errno.
 func TestTheWriterRefusesADestinationThatIsNotARegularFile(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	if err := os.MkdirAll(filepath.Join(a.EnvsDir, "blocked.env"), 0o700); err != nil {
 		t.Fatal(err)
@@ -234,6 +241,7 @@ func TestTheWriterRefusesADestinationThatIsNotARegularFile(t *testing.T) {
 // standing rule is key names only — would print "# minted" as a key name and
 // the launch would inject it.
 func TestStampsAreCommentsAndNeverBecomeKeys(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	o := opts(RefreshOpts{Runtime: "claude", EnvSet: "container", Expires: "2026-12-01"}, "tok", nil)
@@ -261,6 +269,7 @@ func envKeyNames(vars []EnvVar) []string {
 // pair above the old — otherwise the file grows a history of dates and the
 // report reads whichever one happens to be nearest.
 func TestARemintReplacesItsOwnStampsAndKeepsTheOperatorsComments(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	writeEnvFile(t, a, "container", "# the operator's own note\n# minted=2020-01-01\n# expires=2020-02-01\nCLAUDE_CODE_OAUTH_TOKEN=old\nTAIL=still-here\n", 0o600)
 	var w bytes.Buffer
@@ -286,6 +295,7 @@ func TestARemintReplacesItsOwnStampsAndKeepsTheOperatorsComments(t *testing.T) {
 // The stamp written by the write is the date read back by the report. Both
 // halves in one test, because a stamp nothing reads is decoration.
 func TestTheStampsRoundTripIntoTheReport(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	o := opts(RefreshOpts{Runtime: "claude", EnvSet: "container", Expires: "2026-12-01"}, "tok", nil)
@@ -311,6 +321,7 @@ func TestTheStampsRoundTripIntoTheReport(t *testing.T) {
 // it warns nothing (ADR 0019 D5). This is the arm that makes the test above
 // discriminating: without it, "cannot tell" and a real date are both green.
 func TestAnUnstampedExpiryIsCannotTellAndNotFresh(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	if err := a.CmdRefresh(&w, opts(RefreshOpts{Runtime: "claude", EnvSet: "container"}, "tok", nil)); err != nil {
@@ -336,6 +347,7 @@ func TestAnUnstampedExpiryIsCannotTellAndNotFresh(t *testing.T) {
 // report says expired, and outside it says nothing. All three from the same
 // fixture so the boundary is the only thing that moves.
 func TestTheExpiryWindowHasThreeAnswers(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct{ expires, want string }{
@@ -371,6 +383,7 @@ func sessionRowFor(t *testing.T, a *App, o RefreshOpts, rt string) CredRow {
 // is refused rather than served. A persona is never the one who decides to
 // spend, and neither is a command writing a file at 2am.
 func TestRefreshWillNotWriteAMeteredCredentialByName(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -396,6 +409,7 @@ func TestRefreshWillNotWriteAMeteredCredentialByName(t *testing.T) {
 // money under a name that looks right. The refusal names the prefix it saw
 // and never the value.
 func TestRefreshWillNotWriteAMeteredCredentialByShape(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	err := a.CmdRefresh(&w, opts(RefreshOpts{Runtime: "claude", EnvSet: "container"}, "sk-ant-api03-secretsecret", nil))
@@ -416,6 +430,7 @@ func TestRefreshWillNotWriteAMeteredCredentialByShape(t *testing.T) {
 // A value that cannot BE an env set line is refused before it corrupts one:
 // a newline writes a second line the parser reads as another variable.
 func TestATokenWithALineBreakIsRefused(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	var w bytes.Buffer
 	err := a.CmdRefresh(&w, opts(RefreshOpts{Runtime: "claude", EnvSet: "container"}, "tok\nEXTRA=1", nil))
@@ -427,6 +442,12 @@ func TestATokenWithALineBreakIsRefused(t *testing.T) {
 // ─── the meter half: nothing is written, ever ───────────────────────────────
 
 func TestRefreshMeterWritesNothingAndNamesTheStoreOfRecord(t *testing.T) {
+	// The one test in this file that needs a $HOME of its own: it snapshots
+	// the home WHOLE and requires it unchanged, which is ADR 0047 D3's
+	// "asserts that file absent" class — a shared home would red it on
+	// whatever else wrote there. t.Setenv keeps it serial by the runtime's
+	// own rule, which is the point (ranger-base-pj87l).
+	t.Setenv("HOME", t.TempDir())
 	a := refreshApp(t)
 	writeEnvFile(t, a, "container", "CLAUDE_CODE_OAUTH_TOKEN=untouched\n", 0o600)
 	before, _ := os.ReadFile(filepath.Join(a.EnvsDir, "container.env"))
@@ -465,6 +486,7 @@ func TestRefreshMeterWritesNothingAndNamesTheStoreOfRecord(t *testing.T) {
 // an outage: the report says what would arm it, and never in the words of a
 // platform it is not on.
 func TestTheReportRendersStructuralAbsenceAsSomethingToDo(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	rows := a.CredReport(opts(RefreshOpts{}, "", nil))
 	var meter CredRow
@@ -494,6 +516,7 @@ func TestTheReportRendersStructuralAbsenceAsSomethingToDo(t *testing.T) {
 // report's job is to be complete rather than to be short: a credential
 // nobody listed is one nobody renews.
 func TestTheReportCoversEveryRuntimeAndBothPurposes(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	seen := map[string]bool{}
 	for _, r := range a.CredReport(opts(RefreshOpts{}, "", nil)) {
@@ -514,6 +537,7 @@ func TestTheReportCoversEveryRuntimeAndBothPurposes(t *testing.T) {
 // A runtime whose session credential nobody has decided says exactly that,
 // and offers the decision rather than a mint it cannot perform.
 func TestAnUndecidedSessionCredentialSaysSoRatherThanNothing(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	row := sessionRowFor(t, a, opts(RefreshOpts{}, "", nil), "grok")
 	if !strings.Contains(row.Source, "undecided") {
@@ -532,6 +556,7 @@ func TestAnUndecidedSessionCredentialSaysSoRatherThanNothing(t *testing.T) {
 // when there is exactly one, and ambiguity is refused BY NAME: a token
 // written into the set no launch reads is a failure that looks like success.
 func TestTheEnvSetIsResolvedOrRefusedByName(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	if _, err := a.resolveRefreshSet("", "CLAUDE_CODE_OAUTH_TOKEN"); err == nil {
 		t.Error("an empty envs/ resolved to a set")
@@ -579,6 +604,7 @@ func TestAStampBelongsToTheVariableItSitsAbove(t *testing.T) {
 // lands stamped. Without this the mint count in the write test proves only
 // that a mint happened, not that --paste is what suppresses it.
 func TestPasteSkipsTheMintAndStillWrites(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	mints := 0
 	var w bytes.Buffer
@@ -598,6 +624,7 @@ func TestPasteSkipsTheMintAndStillWrites(t *testing.T) {
 // A bad --expires is refused before anything is minted or written: a date
 // posse cannot read must not become a file it half-wrote.
 func TestABadExpiresIsRefusedBeforeTheMint(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	mints := 0
 	var w bytes.Buffer
@@ -613,6 +640,7 @@ func TestABadExpiresIsRefusedBeforeTheMint(t *testing.T) {
 // Nothing this command produces carries a credential — the same rule the
 // seam's errors keep, checked over the write path's own output.
 func TestNoRefreshOutputEverCarriesTheCredential(t *testing.T) {
+	t.Parallel()
 	a := refreshApp(t)
 	const secret = "sk-ant-oat01-do-not-print-me"
 	writeEnvFile(t, a, "container", "CLAUDE_CODE_OAUTH_TOKEN="+secret+"\n", 0o600)

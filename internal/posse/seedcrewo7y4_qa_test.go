@@ -114,7 +114,6 @@ func shipAsAReleaseO7y4(t *testing.T, rel string, b []byte) {
 func retiredNameHome(t *testing.T, name string, gonePID []byte) *App {
 	t.Helper()
 	// Hermetic against the operator fence (ADR 0031 §2): see initTestApp.
-	t.Setenv(EnvPersona, "")
 	a := NewAppAt(filepath.Join(t.TempDir(), "home"))
 	if err := a.initFrom(io.Discard, posse.Seed, "embedded"); err != nil {
 		t.Fatalf("seeding: %v", err)
