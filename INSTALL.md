@@ -1678,13 +1678,18 @@ and a session that does meet it fails by name.
 |---|---|---|---|
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |
 | grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
-| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin the only silence is picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin there are two silences and both expire: picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release, and simply being at the latest release already, which lasts until the next one ships. |
 | claude | `Quick safety check: Is this a project you created or one you trust?` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per session directory, because this one fires in every new directory and has no flag to answer it with. See below. |
 
 **The codex dismissal has a shelf life; the fleet pin does not.**
 `dismissed_version` silences one release — the menu returns as soon as
 `latest_version` moves past it, and `posse runtime check codex` prints both
-numbers so you can see when it is due again. The pin
+numbers so you can see when it is due again. Being **already at the latest
+release** silences it too, and for the same reason it expires: codex offers
+an update only when there is something newer than what you are running, so
+`runtime check` also reads your installed `codex --version` and names it in
+the verdict. If codex is not on `PATH`, or will not say what it is, that
+reads *unknown* and refuses nothing. The pin
 (`check_for_update_on_startup = false`) is the durable answer: the menu is
 never drawn. It exists because codex, unlike grok, has **no version-ceiling
 config key at all** — `required_maximum_version`, `maximum_version` and

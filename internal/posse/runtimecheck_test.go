@@ -917,6 +917,11 @@ func TestCodexUpdateProbeReadsTheInstalledVersion(t *testing.T) {
 			"codex-cli 0.150.1", false, true, "cannot be compared"},
 		{"no latest_version at all", `{"dismissed_version":"0.149.1"}`,
 			"codex-cli 0.150.1", false, true, "no latest_version"},
+		// Neither field. Comparing them without guarding the empty dismissal
+		// makes "" == "" a silence — a box declared safe off two fields that
+		// are not there.
+		{"a version.json with neither field", `{}`,
+			"codex-cli 0.150.1", false, true, "no latest_version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(vj, []byte(tc.version), 0o644); err != nil {

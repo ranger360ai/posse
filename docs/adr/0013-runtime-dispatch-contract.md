@@ -769,7 +769,15 @@ row).
 - Codex's update persist-skip is an instance-config write
   (`dismissed_version` in `~/.codex/version.json`), documented in
   NOTES/INSTALL; `runtime check` prints it against `latest_version`
-  because the dismissal expires per release.
+  because the dismissal expires per release. Amended
+  **2026-09-02 (ranger-base-cohw)**: those two fields alone are not a
+  reading about the screen. The menu draws only when a release newer
+  than the RUNNING one exists, so a box that updated instead of
+  dismissing read un-silenced forever and this section's refusal walled
+  the most up-to-date box (measured on codex-cli 0.150.1 against
+  `latest_version` 0.150.1, with two live witnesses that no menu drew).
+  The probe reads the installed `codex --version` as a third arm, and
+  reads UNKNOWN — which refuses nothing — when it cannot.
 
 - **The xaev placement probe, 2026-08-28** (codex 0.147.0, grok 1.0.5,
   no billed turn; trace `0013-rules-precedence-probe.md`): codex PID =

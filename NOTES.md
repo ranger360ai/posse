@@ -5006,7 +5006,7 @@ is the only thing posse does to these files.
 |---|---|---|---|
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner above the composer | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | the **operator**, clicking `[Opt out]` once in their own grok session. The value is an RFC3339 stamp, not a bool, and it records only *that* the banner was answered — never which way. In 1.0.5 the consent RPC has no server handler, so even an accidental `[Opt in]` cannot persist; that defense is version-verified and evaporates the day xAI ships the handler (`rangerhq-sz7u`). |
 | grok | New worktree / Resume session / Quit startup menu, plus the changelog line | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | **already applied** — the fleet pin, declared in `etc/grok/version-pin.toml`, kills the update check *and* the shared leader's mid-life self-update. `make verify-grok-pin`; runbook in *grok substrate* above. |
-| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin the only silence is picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release. |
+| codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin there are two silences and both expire: picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release, and being at the latest release already, which lasts until the next one ships (ranger-base-cohw). |
 | claude | `Quick safety check: Is this a project you created or one you trust?` — full screen, `1. Yes, I trust this folder / 2. No, exit`, footed `Enter to confirm · Esc to cancel` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`, or the config dir's `.config.json` where that exists) | **the LAUNCH**, per session directory — the one exception, below. |
 
 **The codex dismissal has a shelf life; the fleet pin does not
@@ -5020,6 +5020,22 @@ meet, and on 2026-08-30 the expired dismissal alone refused every codex
 dispatch on this box. codex has no version-ceiling key to pin with — the
 declaration, the measurement and the runbook for lifting it are in
 `docs/notes.d/ranger-base-poj5.md`.
+
+**A box already at the latest release is silenced too, and reading only
+`version.json` never noticed (ranger-base-cohw).** Those two fields answer
+*did the operator dismiss THIS release*, not *will the menu draw*: codex
+offers an update only when a release **newer than the running one** exists,
+so an operator who **updated** instead of dismissing read un-silenced
+forever. MEASURED 2026-08-29 on codex-cli 0.150.1 against
+`{"latest_version":"0.150.1","dismissed_version":"0.149.1"}` — the probe said
+"the menu is back" while a peeked launch pane carried no `Update available`
+and herdr read both live codex sessions `idle` rather than `blocked` on its
+own `update_menu` rule. ADR 0013 §2 turns that reading into a launch refuse,
+so the most up-to-date box was the one that could not launch. The probe now
+asks codex what it is running (`codex --version`, the same reader the parity
+drift check uses) as a **third** arm, after the two that cost no subprocess.
+It stays honest the other way too: a codex that is not there, or will not say
+what it is, reads UNKNOWN and refuses nothing.
 
 **The one key the launch writes, and why it is not the same kind of key
 (rangerhq-w4uf).** Claude's directory-trust dialog is not a first-*run*

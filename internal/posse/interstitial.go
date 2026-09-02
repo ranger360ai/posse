@@ -24,7 +24,8 @@ package posse
 // The probes below are READ-ONLY and best-effort: they answer "has the
 // operator already silenced this on this machine", so `posse runtime check`
 // can tell an onboarder what a launch would hit. An unreadable or absent
-// file is "unknown", never "no".
+// file — or, where a probe asks the CLI itself, a CLI that will not say what
+// it is — is "unknown", never "no".
 
 import (
 	"encoding/json"
@@ -330,7 +331,7 @@ var CodexInterstitials = []Interstitial{{
 	Screen:  `"Update available! → 1. Update now  2. Skip  3. Skip until next version", footed "Press enter to continue". herdr reads it blocked (update_menu, etc/herdr/agent-detection/codex.toml — before that rule it fell through to idle with no rule matched), so a launch fails by name instead of waiting it out. Text sent to the untouched menu is discarded, not buffered: nothing typed there reaches a composer.`,
 	Where:   "~/.codex/config.toml (declared in etc/codex/version-pin.toml), else ~/.codex/version.json",
 	Key:     "check_for_update_on_startup = false, else dismissed_version",
-	Silence: "already applied — the fleet pin sets check_for_update_on_startup = false and the menu is never drawn again. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes \"1. Update now\" fail instead of upgrade. Without the pin the only silence is the OPERATOR picking \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter), which lasts exactly one release.",
+	Silence: "already applied — the fleet pin sets check_for_update_on_startup = false and the menu is never drawn again. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes \"1. Update now\" fail instead of upgrade. Without the pin there are two silences and both expire: the OPERATOR picking \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter), which lasts exactly one release, and the box simply BEING at the latest release, since codex has nothing newer to offer than what is running — which lasts until the next one ships (ranger-base-cohw).",
 	Danger:  "the default-selected option is \"1. Update now\", which runs `brew upgrade --cask codex` — a pinned tool rolled forward with no decision, through a Homebrew this box has broken before (rangerhq-y5on). The cask pin makes that command exit 1 rather than upgrade, so the danger is what the screen ATTEMPTS, which is why it stays declared: the pin is a second thing that has to hold, not a reason to stop reading this one.",
 	Probe:   codexUpdateProbe,
 }}
