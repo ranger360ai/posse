@@ -618,7 +618,13 @@ type BdNew struct {
 	Labels      []string
 	Deps        []string // "type:id" — e.g. "discovered-from:rangerhq-8q3"
 	Priority    string   // "" = bd's default
-	Actor       string   // bd audit actor
+	// Type is bd's `-t`: bug | feature | task | epic | chore | decision
+	// (measured on bd 0.50.3's `bd create --help`). "" passes no flag and
+	// leaves bd's own default, which is `task` — and `task` with no `debt`
+	// label is the UNCLASSIFIED bucket ADR 0006 §1 reports rather than
+	// guesses at, so an empty Type is an answer here, not a gap.
+	Type  string
+	Actor string // bd audit actor
 }
 
 // Create files a bead and returns its id. bd --json answers with the created
@@ -640,6 +646,9 @@ func (b Bd) Create(dir string, n BdNew) (string, error) {
 	}
 	if n.Priority != "" {
 		args = append(args, "-p", n.Priority)
+	}
+	if n.Type != "" {
+		args = append(args, "-t", n.Type)
 	}
 	out, err := b.run(dir, bdArgs(n.Actor, args...)...)
 	if err != nil {

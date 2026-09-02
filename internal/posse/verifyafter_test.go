@@ -6,6 +6,7 @@ package posse
 // bd-calls.log.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,7 +255,13 @@ You are developer.
 		"- close_reason: fixed",
 		"done when (developer · fix-bugs): root cause named in the commit",
 		"VERIFIED:",
-		"-l code -a developer",
+		// The trailer as ADR 0006 §1 rules it since 2026-09-02: ONE
+		// findings bead in the close's lane, labelled debt. This line read
+		// `-l code -a developer` until ranger-base-ozzau retired it — see
+		// TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser for the
+		// half that pins the closer's name is GONE, which a missing-substring
+		// list cannot say.
+		"file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("description missing %q:\n%s", want, got)
@@ -1645,5 +1652,241 @@ func TestVerifyAfterFilesWhenGitCannotSayWhatACloseShipped(t *testing.T) {
 	}
 	if calls := bdCalls(t, fake); !strings.Contains(calls, "--deps discovered-from:a-1") {
 		t.Errorf("the filed bead does not answer a-1:\n%s", calls)
+	}
+}
+
+// ─── the findings bundle and the class (ADR 0006 §1/§3, amended 2026-09-02) ──
+//
+// Two rulings, one bead this rule mints: its TRAILER says file one findings
+// bundle in the close's own lane labelled `debt` (not "a bug bead per close
+// `-a <closer>`", which is what it said until ranger-base-ozzau), and the
+// bead itself CARRIES the class of the close it verifies. What these pin is
+// that both are exact — including the two negatives, which a
+// missing-substring list cannot say: the closer's name is gone from the
+// trailer, and a class the close did not carry is never manufactured.
+
+// vaClosedClassed is vaClosed with the class fields spelled out: bd's
+// `issue_type` and the label list, which are the two fields ADR 0006 §1's
+// rule reads and the only ones BeadClass looks at.
+func vaClosedClassed(id string, closedAt time.Time, prio int, issueType string, labels ...string) string {
+	ls, _ := json.Marshal(labels)
+	return fmt.Sprintf(`{"id":%q,"title":"gate shell %s","status":"closed","priority":%d,`+
+		`"assignee":"developer","issue_type":%q,"labels":%s,"closed_at":%q,"close_reason":"Closed"}`,
+		id, id, prio, issueType, ls, closedAt.Format(time.RFC3339Nano))
+}
+
+// The trailer, single close: ONE findings bead, in the close's lane, `-l
+// debt`, hung off THIS bead — and no closer named anywhere in it. The
+// closer's name left the trailer with the §1 amendment of 2026-09-01 and
+// the text kept it until now, so the absence is the whole point of the
+// second half here: `-a developer` is not a substring the positive list
+// above could have caught.
+func TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	is := BdIssue{ID: "a-1", Title: "gate shell", Assignee: "developer",
+		Labels: []string{"code"}, CloseReason: "fixed", ClosedAt: &closed}
+	got := a.verifyDescription(t.TempDir(), is, verifyCloser(is))
+
+	for _, want := range []string{
+		"file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
+		"one line per finding: file:line · what fails · the bead it escaped from · the repro or failing test",
+		"`-t bug` bead at P1/P2",
+		"close this one `escape`",
+		"No findings, no bead.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("trailer missing %q:\n%s", want, got)
+		}
+	}
+	// The retired shape, in every spelling it ever had. A trailer that still
+	// hands the fix to the closer by name is the defect this cut removed.
+	for _, gone := range []string{"-a developer", "file a bug bead", "-l code -a"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("trailer still carries the retired shape %q:\n%s", gone, got)
+		}
+	}
+}
+
+// The batch trailer says it ONCE for all N: the bundle is per VERIFY close,
+// not per close verified, which is the amplification the ruling cut. Same
+// two negatives.
+func TestVerifyBatchTrailerSaysTheBundleOnceForEveryClose(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	group := []BdIssue{
+		{ID: "a-1", Title: "one", Assignee: "developer", Labels: []string{"code"}, ClosedAt: &closed},
+		{ID: "a-2", Title: "two", Assignee: "ops", Labels: []string{"code"}, ClosedAt: &closed},
+		{ID: "a-3", Title: "three", Assignee: "developer", Labels: []string{"code"}, ClosedAt: &closed},
+	}
+	got := a.verifyGroupDescription(t.TempDir(), group)
+
+	if n := strings.Count(got, "file ONE findings bead"); n != 1 {
+		t.Errorf("batch trailer says the bundle %d times, want 1 (once for all N):\n%s", n, got)
+	}
+	if !strings.Contains(got, "`-l code -l debt --deps discovered-from:<this bead's id>`") {
+		t.Errorf("batch trailer does not carry the bundle shape:\n%s", got)
+	}
+	for _, gone := range []string{"-a developer", "-a ops", "file a bug bead", "<that close's closer>"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("batch trailer still carries the retired shape %q:\n%s", gone, got)
+		}
+	}
+}
+
+// The lane is the CLOSE's, not a compiled-in `code`: a `-l devops` close
+// sends its findings to the devops lane, and a batch spanning both goes to
+// `code` (ADR 0006 §1).
+func TestVerifyTrailerLaneFollowsTheClose(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	closed := time.Date(2026, 8, 18, 9, 20, 6, 0, time.UTC)
+	devops := BdIssue{ID: "a-1", Title: "one", Labels: []string{"devops"}, ClosedAt: &closed}
+	code := BdIssue{ID: "a-2", Title: "two", Labels: []string{"code"}, ClosedAt: &closed}
+
+	if got := a.verifyDescription(t.TempDir(), devops, ""); !strings.Contains(got, "`-l devops -l debt") {
+		t.Errorf("a -l devops close did not send its bundle to the devops lane:\n%s", got)
+	}
+	if got := a.verifyGroupDescription(t.TempDir(), []BdIssue{devops, code}); !strings.Contains(got, "`-l code -l debt") {
+		t.Errorf("a batch spanning both lanes did not fall to code:\n%s", got)
+	}
+	// And an instance that verifies some other lane gets that lane, not a
+	// name it does not have.
+	vaRepo(t, a, "[]", "verify_labels: [infra]")
+	infra := BdIssue{ID: "a-3", Title: "three", Labels: []string{"infra"}, ClosedAt: &closed}
+	if got := a.verifyDescription(t.TempDir(), infra, ""); !strings.Contains(got, "`-l infra -l debt") {
+		t.Errorf("a configured lane did not reach the trailer:\n%s", got)
+	}
+}
+
+// The class, single close: the verify bead IS the class of the close it
+// verifies. Type for feature and bug, the `debt` label for debt, and
+// nothing at all for a close that carried no class — never a fourth
+// "verify" bucket, and never a class manufactured here.
+func TestVerifyBeadInheritsTheCloseClass(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		issueType string
+		labels    []string
+		wantTail  string // the argv tail after -p, where Create renders -t
+		wantLabel string
+	}{
+		{"feature", "feature", []string{"code"}, "-p 1 -t feature", "-l qa "},
+		{"bug", "bug", []string{"code"}, "-p 1 -t bug", "-l qa "},
+		{"debt", "task", []string{"code", "debt"}, "-p 1", "-l qa,debt "},
+		{"unclassified", "task", []string{"code"}, "-p 1", "-l qa "},
+		{"type wins over the debt label", "bug", []string{"code", "debt"}, "-p 1 -t bug", "-l qa "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			a := b.App
+			t0 := time.Now().Add(-3 * time.Hour)
+			repo := vaRepo(t, a, vaList(vaClosedClassed("a-1", t0, 1, tc.issueType, tc.labels...)))
+			writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+			if n, _, errs := vaRun(t, a, testBd(t)); n != 1 {
+				t.Fatalf("filed %d, want 1 (stderr: %s)", n, errs)
+			}
+			calls := bdCalls(t, fake)
+			// Anchored on -p, which Create renders immediately before -t:
+			// the description itself quotes `-t bug` for the persona to
+			// type, so a bare substring search proves nothing about argv.
+			if !strings.Contains(calls, tc.wantTail) {
+				t.Errorf("create argv tail is not %q:\n%s", tc.wantTail, calls)
+			}
+			if !strings.Contains(calls, tc.wantLabel) {
+				t.Errorf("create argv labels are not %q:\n%s", tc.wantLabel, calls)
+			}
+			if tc.wantTail == "-p 1" && strings.Contains(calls, "-p 1 -t") {
+				t.Errorf("an unclassified close manufactured a class:\n%s", calls)
+			}
+		})
+	}
+}
+
+// The class, batched: the batch takes its MOST URGENT class in the order
+// bug › feature › debt › unclassified — the same loop that picks the
+// batch's priority, and deliberately not BeadClasses, which is the pulse
+// line's reporting order (beads.go).
+func TestVerifyBatchTakesTheMostUrgentClass(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		types    []string
+		wantTail string
+	}{
+		{"bug beats feature and debt", []string{"task", "feature", "bug"}, "-p 1 -t bug"},
+		{"feature beats debt and unclassified", []string{"task", "task", "feature"}, "-p 1 -t feature"},
+		{"debt beats unclassified", []string{"task", "task", "task"}, "-p 1"},
+		{"all unclassified stays unclassified", []string{"chore", "task", "epic"}, "-p 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			a := b.App
+			t0 := time.Now().Add(-3 * time.Hour)
+			var beads []string
+			for i, ty := range tc.types {
+				labels := []string{"code"}
+				// The debt arm: the FIRST close carries the label, so a
+				// batch that ends unclassified and one that ends debt
+				// differ by exactly the field under test.
+				if i == 0 && tc.name == "debt beats unclassified" {
+					labels = append(labels, "debt")
+				}
+				beads = append(beads, vaClosedClassed(fmt.Sprintf("a-%d", i+1), t0.Add(time.Duration(i)*time.Minute), 1, ty, labels...))
+			}
+			repo := vaRepo(t, a, vaList(beads...), "verify_batch: 3")
+			writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Hour))
+
+			if n, _, errs := vaRun(t, a, testBd(t)); n != 1 {
+				t.Fatalf("filed %d, want 1 (stderr: %s)", n, errs)
+			}
+			calls := bdCalls(t, fake)
+			if !strings.Contains(calls, tc.wantTail) {
+				t.Errorf("batch class argv tail is not %q:\n%s", tc.wantTail, calls)
+			}
+			switch tc.name {
+			case "debt beats unclassified":
+				if !strings.Contains(calls, "-l qa,debt ") {
+					t.Errorf("a batch holding one debt close did not take debt:\n%s", calls)
+				}
+			case "all unclassified stays unclassified":
+				if strings.Contains(calls, "-p 1 -t") || strings.Contains(calls, "-l qa,debt") {
+					t.Errorf("an all-unclassified batch manufactured a class:\n%s", calls)
+				}
+			}
+		})
+	}
+}
+
+// BdNew.Type is bd's own `-t`, and it is passed ONLY when set: an empty
+// Type leaves bd's default (`task`), which with no `debt` label is the
+// unclassified bucket ADR 0006 §1 reports rather than guesses at.
+func TestBdCreatePassesTypeOnlyWhenSet(t *testing.T) {
+	t.Parallel()
+	_, fake := newTestBackend(t)
+	bd := testBd(t)
+	dir := t.TempDir()
+
+	if _, err := bd.Create(dir, BdNew{Title: "typed", Type: "feature", Actor: "posse"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls := bdCalls(t, fake); !strings.Contains(calls, "create typed --json -t feature") {
+		t.Errorf("Type did not reach argv as -t:\n%s", calls)
+	}
+	os.Remove(filepath.Join(fakeDirOf(t), "bd-calls.log"))
+	if _, err := bd.Create(dir, BdNew{Title: "untyped", Actor: "posse"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "-t ") {
+		t.Errorf("an unset Type passed -t anyway:\n%s", calls)
 	}
 }

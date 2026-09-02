@@ -11,8 +11,11 @@ package posse
 // repo's watermark, if it has no `qa` dependent, file
 //
 //	verify: <title>   -l qa  [-a <verify_assignee>]  --deps discovered-from:<id>
+//	                  [-t feature|-t bug | -l debt]
 //
-// (`-a` only when `verify_assignee:` names one — unset files it unassigned)
+// (`-a` only when `verify_assignee:` names one — unset files it unassigned;
+// the class is the CLOSE's own, inherited through the one class helper —
+// ADR 0006 §1/§3, amended 2026-09-02, and verifyClassRank below)
 //
 // One close is exempt: one whose `close_reason` says it was REJECTED rather
 // than done (duplicate, invalid, wontfix — scorecard.go's rejectWords) AND
@@ -554,19 +557,25 @@ func (a *App) fileVerifyBead(bd Bd, dir string, group []BdIssue, already map[str
 	a.WarnOpsContent(errw, dir, "the verify bead for "+verifyIDList(group), title+"\n"+desc)
 	deps := make([]string, 0, len(group))
 	prio := group[0].Priority
+	class := BeadClass(group[0])
 	for _, is := range group {
 		deps = append(deps, "discovered-from:"+is.ID)
 		if is.Priority < prio {
 			prio = is.Priority // a batch is as urgent as its most urgent close
 		}
+		if c := BeadClass(is); verifyClassRank(c) < verifyClassRank(class) {
+			class = c // and takes as urgent a CLASS as its most urgent close
+		}
 	}
+	labels, beadType := verifyClassFields(class)
 	qid, err := bd.Create(dir, BdNew{
 		Title:       title,
 		Description: desc,
-		Labels:      []string{VerifyLabel},
+		Labels:      labels,
 		Assignee:    a.verifyAssignee(),
 		Deps:        deps,
 		Priority:    strconv.Itoa(prio),
+		Type:        beadType,
 		Actor:       VerifyActor,
 	})
 	if err != nil {
@@ -644,7 +653,8 @@ func (a *App) verifyGroupDescription(dir string, group []BdIssue) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("Read each bead itself (`bd show <id>`) and its comments (`bd comments <id>`).\n")
-	b.WriteString("Close this one with `VERIFIED: <how>` naming every close above. For any close that does NOT verify, file a bug bead `-l code -a <that close's closer>` with a repro first, and then close this one `escape` (ADR 0006 §2). A closed bead is never reopened by a persona — that is the operator's call.\n")
+	b.WriteString("Close this one with `VERIFIED: <how>` naming every close above. ")
+	b.WriteString(verifyTrailer(a.verifyLane(group)))
 	return b.String()
 }
 
@@ -655,16 +665,107 @@ func (a *App) verifyDescription(dir string, is BdIssue, closer string) string {
 	id := verifyOneLine(is.ID)
 	b.WriteString(a.verifySection(dir, is, closer))
 	fmt.Fprintf(&b, "\nRead the bead itself (`bd show %s`) and its comments (`bd comments %s`).\n", id, id)
-	b.WriteString("Close this one with `VERIFIED: <how>`")
-	// Flattened like every other field this file interpolates, and for the
-	// same reason: this one is a bead's assignee, and bd stores a newline in
-	// it verbatim (measured, bd 0.49.1). Raw, it forges a marker for another
-	// close and suppresses that close's handoff forever (ranger-base-j8qk).
-	if c := verifyOneLine(closer); c != "" {
-		fmt.Fprintf(&b, ", or file a bug bead `-l code -a %s` with a repro and close this one `escape`", c)
-	}
-	b.WriteString(" (ADR 0006 §2). The closed bead is never reopened by a persona — that is the operator's call.\n")
+	b.WriteString("Close this one with `VERIFIED: <how>`. ")
+	b.WriteString(verifyTrailer(a.verifyLane([]BdIssue{is})))
 	return b.String()
+}
+
+// ─── the findings bundle and the class (ADR 0006 §1/§3, amended 2026-09-02) ──
+
+// verifyTrailer is the closing instruction on every verify bead this rule
+// mints, single or batched. The ruling it spells: a verify close files ONE
+// findings bead carrying every finding, labelled with the close's own lane
+// and `debt`; only a LIVE defect in money, the constitution, or dispatch
+// correctness earns a bead of its own, and the bundle then names it by id.
+// It is one sentence for a batch as for a single close — the bundle is per
+// VERIFY close, not per close verified, which is the amplification the
+// ruling cut (a day that filed 111 beads against 86 closes, with QA's
+// per-finding filing the largest line).
+//
+// Two things it deliberately no longer says. The closer's NAME: the fix is
+// lane work and the closer is not on §1's five-item `-a` allowlist (§1
+// amendment of 2026-09-01, restated 2026-09-02) — this text read "file a
+// bug bead `-l code -a <closer>` with a repro" until the cut, with a pin
+// asserting that spelling, and both were retired together. And "a bug
+// bead": the bundle is `debt`, because that is what audit findings are.
+//
+// The `<this bead's id>` is written as a placeholder rather than filled in
+// because there is no id yet: the description is bd `create`'s argument, so
+// the bead it describes does not exist while this string is built.
+func verifyTrailer(lane string) string {
+	return "For any close that does NOT verify, file ONE findings bead `-l " + lane +
+		" -l debt --deps discovered-from:<this bead's id>` — one line per finding: file:line · what fails · the bead it escaped from · the repro or failing test. " +
+		"A LIVE money / constitution / dispatch-correctness defect alone gets its own `-t bug` bead at P1/P2 with the domain in the title, named in the bundle by id (ADR 0006 §1). " +
+		"Then close this one `escape` (ADR 0006 §2). No findings, no bead. The closed bead is never reopened by a persona — that is the operator's call.\n"
+}
+
+// verifyLane is the lane that bundle is filed in: the close's own. The ADR
+// says `code`, or `devops` when the close was `-l devops`, and `code` for a
+// batch spanning both — which is one rule once `verify_labels:` is allowed
+// to be anything: the FIRST configured verify label any close in the group
+// carries. Under the default `code, devops` that is the ADR's sentence
+// exactly, including the tie, and an instance that verifies `-l infra`
+// closes gets `-l infra` instead of a compiled-in `code` that names no lane
+// it has.
+//
+// A group always carries one — hasAnyLabel is what made it a candidate — so
+// the fallbacks below are for a direct caller only, and they answer with
+// the configured lane rather than inventing a name.
+func (a *App) verifyLane(group []BdIssue) string {
+	labels := a.verifyLabels()
+	for _, l := range labels {
+		for _, is := range group {
+			if hasLabel(is.Labels, l) {
+				return l
+			}
+		}
+	}
+	if len(labels) > 0 {
+		return labels[0]
+	}
+	return DefaultVerifyLabels[0]
+}
+
+// verifyClassRank orders the four classes by urgency, which is what a batch
+// inherits: bug › feature › debt › unclassified. An unverified feature is
+// still open feature work, so the verify bead is the class of the work it
+// answers for and never a fourth "verify" bucket of its own.
+//
+// It is NOT BeadClasses (beads.go). That is the REPORTING order the pulse
+// line spells, and a census printing in one order while a batch inherits in
+// another is not an inconsistency — they answer different questions, and
+// writing this order there would silently change the pulse line's columns.
+func verifyClassRank(class string) int {
+	switch class {
+	case ClassBug:
+		return 0
+	case ClassFeature:
+		return 1
+	case ClassDebt:
+		return 2
+	}
+	return 3
+}
+
+// verifyClassFields renders a class into the two fields bd actually stores
+// (ADR 0006 §1's table, whole and in one place): the `issue_type` for
+// feature and bug, and the `debt` LABEL for debt, because bd has no debt
+// type — which is the whole reason the class is two fields rather than one.
+//
+// Unclassified in, unclassified out: an empty type passes no `-t`, so bd's
+// own default (`task`) stands and the bead lands in the bucket the
+// scorecard REPORTS rather than one this filer manufactured. A guess here
+// would make the operator's numbers lie in exactly the direction they were
+// lying before.
+func verifyClassFields(class string) (labels []string, beadType string) {
+	labels = []string{VerifyLabel}
+	switch class {
+	case ClassFeature, ClassBug:
+		beadType = class
+	case ClassDebt:
+		labels = append(labels, ClassDebt)
+	}
+	return labels, beadType
 }
 
 // verifySection is one close's block, whether it stands alone or is one of N
