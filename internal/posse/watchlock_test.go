@@ -82,7 +82,22 @@ func TestWatchLockDiesWithItsProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestWatchLockHolderChild$", "-test.v")
-	child.Env = append(os.Environ(), "POSSE_WATCHLOCK_HOLD="+a.StateDir)
+	// The child must run as a test binary, not as the fake substrate TestMain
+	// turns it into whenever RHQ_FAKE_HERDR is set — the same filter the four
+	// other re-exec sites in this package carry (launchlock_qa_test.go by
+	// hand, cagehomelock and trustlock through qaSeederEnv). Today the
+	// variable is per-test, so this changes nothing; it is here because
+	// docs/notes.d/ranger-base-i7fa.md section 6 moves it to TestMain, where
+	// process-wide is exactly what this child would inherit, and because a
+	// site that spells the binary os.Args[0] rather than exe is the one a
+	// census keyed on the other spelling walks past (ranger-base-kcfhr).
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") {
+			env = append(env, kv)
+		}
+	}
+	child.Env = append(env, "POSSE_WATCHLOCK_HOLD="+a.StateDir)
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
