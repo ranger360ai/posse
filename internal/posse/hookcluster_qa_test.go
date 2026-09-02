@@ -63,7 +63,12 @@ type visWall struct {
 	identity               []IdentityLiteral
 }
 
-func newVisWall(t *testing.T) *visWall {
+func newVisWall(t *testing.T) *visWall { return newVisWallNamed(t, "instance") }
+
+// newVisWallNamed is newVisWall with the instance directory's NAME under the
+// caller's control, which is the only handle a test has on what the derived
+// literals actually contain — the username and the git email are the box's.
+func newVisWallNamed(t *testing.T, instanceDir string) *visWall {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
@@ -75,7 +80,7 @@ func newVisWall(t *testing.T) *visWall {
 		gates:    t.TempDir(),
 		pub:      filepath.Join(home, "pub"),
 		priv:     filepath.Join(home, "priv"),
-		instance: filepath.Join(home, "instance"),
+		instance: filepath.Join(home, instanceDir),
 	}
 	cfg := filepath.Join(home, "config.yaml")
 	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+w.pub+": public\n  "+w.priv+": private\n"), 0o644); err != nil {
@@ -158,9 +163,10 @@ func (w *visWall) log(t *testing.T) string {
 // source OUTSIDE docs/ is hidden by the pathspec, git degrades the pair to
 // an A, and the wall fired correctly.
 //
-// MUTATION-CHECKED: with --no-renames removed from check 1's listing the
-// move subtest goes RED (the commit lands) and every other subtest here
-// stays green — so this pin measures the flag and not the genre rule.
+// MUTATION-CHECKED: with --no-renames removed from check 1's listing this
+// pin goes RED (the commit lands), and so does the drift pin at the bottom
+// of this file; nothing else here moves — so it measures the flag and not
+// the genre rule.
 func TestQADocsGenreWallSeesAMoveIntoAnUnlistedGenre(t *testing.T) {
 	w := newVisWall(t)
 
@@ -323,7 +329,8 @@ func TestQAMarkdownPathspecsAreRenderedFromTheGoList(t *testing.T) {
 // yields no plus lines at all, +++ header included.
 //
 // MUTATION-CHECKED, per alternative:
-//   - drop the whole added-paths arm: both subtests go red.
+//   - drop the whole added-paths arm (posse_ipaths=”): both subtests go
+//     red, and so do the tilde and non-ASCII pins below.
 //   - drop --no-renames from its listing: the MOVE subtest goes red (the
 //     commit lands) and the new-file subtest stays green. That is the pin
 //     ranger-base-dmsbu names explicitly, because with detection ON
@@ -439,10 +446,11 @@ func TestQAIdentityPathArmIsAddedEntriesOnly(t *testing.T) {
 // — and the bead-id-prefix non-trip property (ranger-base-gk6e) has to hold
 // for paths too, not only for content.
 //
-// MUTATION-CHECKED: the tilde half reds when only the absolute instance-path
-// literal is rendered; the bead-id half reds if identityLiteralERE is
-// loosened to match a trailing segment.
-func TestQAIdentityPathArmSeesTheTildeFormAndNotABareBeadID(t *testing.T) {
+// MUTATION-CHECKED: with DeriveIdentityLiterals no longer adding the
+// AbbrevHome form — so only the absolute instance path is rendered — this
+// pin goes red, together with the non-ASCII pin below, which reads the same
+// literal.
+func TestQAIdentityPathArmSeesTheTildeForm(t *testing.T) {
 	w := newVisWall(t)
 	abbrev := w.literal(t, "instance-path")
 	if !strings.HasPrefix(abbrev, "~/") {
@@ -460,26 +468,71 @@ func TestQAIdentityPathArmSeesTheTildeFormAndNotABareBeadID(t *testing.T) {
 	if !strings.Contains(out, "instance-path:") || !strings.Contains(out, "an operator identity literal in a staged PATH") {
 		t.Errorf("the refusal must name the instance-path class:\n%s", out)
 	}
+}
 
-	// The non-trip: a path whose last segment is a bare bead id, on a box
-	// whose instance path ENDS in the same id. The literal is the whole
-	// path, slashes included, so a bare hyphenated id is a substring miss.
-	w2 := newVisWall(t)
-	beadInstance := filepath.Join(w2.home, "instance-ranger-base-gk6e")
-	for _, repo := range []string{w2.pub} {
-		write(t, filepath.Join(repo, ".beads", "redirect"), filepath.Join(beadInstance, ".beads")+"\n")
+// The other half of DONE WHEN (d), and a NEGATIVE control: the wall must not
+// over-fire. The rendered ERE is the WHOLE literal, slashes and tilde
+// included (identityLiteralERE), so a path that is nothing but a bead id is
+// a substring miss even on a box whose instance directory IS that bead id.
+// This is TestIdentityLiteralDoesNotTripOnABareBeadID's property, carried
+// over to the path arm ranger-base-dmsbu added.
+//
+// MUTATION-CHECKED: with identityLiteralERE loosened to the literal's last
+// path segment — the plausible wrong implementation, "match the instance
+// directory's name" — this pin goes red, and so does the content twin. The
+// fixture directory is named exactly the bead id for that reason: an
+// instance-<id> name would leave the mutant alive and the pin measuring
+// nothing.
+func TestQAIdentityPathArmDoesNotTripOnABareBeadID(t *testing.T) {
+	w := newVisWallNamed(t, "ranger-base-gk6e")
+	if abs := w.literal(t, "instance-path-abs"); !strings.HasSuffix(abs, "/ranger-base-gk6e") {
+		t.Fatalf("fixture premise: the instance path must END in the bead id, got %q", abs)
 	}
-	cfg := filepath.Join(w2.home, "config.yaml")
-	a := &App{ConfigPath: cfg}
-	if _, _, _, err := a.InstallCommitGuardHook(w2.pub); err != nil {
-		t.Fatal(err)
+	const rel = "docs/notes.d/ranger-base-gk6e.md"
+	w.stage(t, w.pub, rel, "a note about the bead\n")
+	if out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", rel); err != nil {
+		t.Errorf("a path that is a bare bead id must not trip the instance-path literal: %v\n%s", err, out)
 	}
-	if got := testIdentity(t, w2.pub); !strings.HasSuffix(got[len(got)-1].Value, "ranger-base-gk6e") {
-		t.Fatalf("fixture premise: the instance path must end in the bead id, got %+v", got)
+}
+
+// core.quotePath=false is load-bearing on the path arm and nothing else in
+// this file measures it: git's default C-quotes every non-ASCII byte in a
+// path as an octal escape, and the rendered literal is the raw UTF-8 the
+// derivation read off the box. The escaped spelling does not match it, so
+// with quotePath at its default an instance path carrying one non-ASCII
+// character walks a staged path straight past the wall.
+//
+// The instance directory's name is the only handle a test has on the CONTENT
+// of a derived literal — the username and the git email belong to the box.
+//
+// RESIDUAL, deliberately not pinned because it cannot be closed at this
+// layer: git C-quotes a path holding a double quote, a backslash or a
+// control byte whatever quotePath says (ranger-base-qg0k8). Only a literal
+// that itself carries one of those bytes could be missed that way, and none
+// of check 3's three sources produces one.
+//
+// MUTATION-CHECKED: dropping -c core.quotePath=false from the listing reds
+// this pin and nothing else in this file.
+func TestQAIdentityPathArmMatchesANonASCIILiteralRaw(t *testing.T) {
+	w := newVisWallNamed(t, "inst\u00e4nce")
+	w.plant(t, w.pub, "seed.txt", "seed\n") // a HEAD to diff the premise against
+	abbrev := w.literal(t, "instance-path")
+	if !strings.Contains(abbrev, "\u00e4") {
+		t.Fatalf("fixture premise: the instance path must carry a non-ASCII byte, got %q", abbrev)
 	}
-	w2.stage(t, w2.pub, "docs/notes.d/ranger-base-gk6e.md", "a note\n")
-	if out, err := w2.git(w2.pub, w2.persona, "commit", "-m", "x", "--", "docs/notes.d/ranger-base-gk6e.md"); err != nil {
-		t.Errorf("a path ending in a bare bead id must not trip the instance-path literal: %v\n%s", err, out)
+	rel := "backup/" + abbrev + "/notes.md"
+	w.stage(t, w.pub, rel, "clean content\n")
+	// The premise, asserted: git's DEFAULT really does escape this path, so
+	// the pin is measuring the flag and not a path git prints raw anyway.
+	if out, _ := w.git(w.pub, nil, "diff", "--cached", "--name-only", "--diff-filter=A", "HEAD"); !strings.Contains(out, "\\303\\244") {
+		t.Fatalf("fixture premise: git must octal-escape this path by default, got %q", out)
+	}
+	out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", rel)
+	if err == nil {
+		t.Fatalf("a non-ASCII identity literal in a staged path must be refused:\n%s", out)
+	}
+	if !strings.Contains(out, "an operator identity literal in a staged PATH") {
+		t.Errorf("the refusal must come from the path arm:\n%s", out)
 	}
 }
 

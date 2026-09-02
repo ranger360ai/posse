@@ -275,8 +275,10 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 	}
 
 	// A non-markdown file outside .beads is not this guard's business,
-	// whatever it says — check 2 (ADR 0024 D2) scans every staged *.md, not
-	// arbitrary text; TestDocsGenreAndProseGuardHook covers the *.md case.
+	// whatever it says — check 2 (ADR 0024 D2) scans staged MARKDOWN
+	// (MarkdownPathspecs), not arbitrary text; TestDocsGenreAndProseGuardHook
+	// covers the markdown case and TestQAMarkdownScanOwnsEveryMarkdownSpelling
+	// the spellings.
 	os.WriteFile(filepath.Join(pub, "notes.txt"), []byte("plan_guard_5h: 70 and $715/wk\n"), 0o644)
 	git(pub, nil, "add", "notes.txt")
 	if out, err := git(pub, persona, "commit", "-m", "docs", "--", "notes.txt"); err != nil {
