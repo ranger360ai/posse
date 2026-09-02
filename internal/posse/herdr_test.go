@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1451,17 +1452,27 @@ func fakeNextWSID() int {
 
 // ─── harness ─────────────────────────────────────────────────────────────────
 
-// fakeDirs is the per-test fake-substrate state directory, keyed on
-// t.Name(). It replaces the $RHQ_FAKE_DIR the parent used to read back out
-// of its own environment: nothing process-global, so the setter keeps
-// t.Parallel. A test that builds two backends gets the second one's
+// fakeDirs is the per-test fake-substrate state directory, keyed on the
+// *testing.T itself. It replaces the $RHQ_FAKE_DIR the parent used to read
+// back out of its own environment: nothing process-global, so the setter
+// keeps t.Parallel. A test that builds two backends gets the second one's
 // directory from fakeDirOf, which is what reading $RHQ_FAKE_DIR gave too.
+//
+// The KEY is the T and not t.Name() because `go test -count=2` runs the same
+// name twice, and with t.Parallel both copies are resumed together: two live
+// tests, one key, and each one's Cleanup deleting the other's entry. Measured
+// as five FAILs under -count=3 that were green at -count=1 (ranger-base-pj87l).
+// The pointer is unique per run by construction, so -count is a non-question.
 var fakeDirs sync.Map
+
+// hermeticRun numbers the calls to hermetic so each RUN of a test gets its
+// own worktree root — see the comment at the assignment.
+var hermeticRun atomic.Int64
 
 func setFakeDir(t *testing.T, dir string) {
 	t.Helper()
-	fakeDirs.Store(t.Name(), dir)
-	t.Cleanup(func() { fakeDirs.Delete(t.Name()) })
+	fakeDirs.Store(t, dir)
+	t.Cleanup(func() { fakeDirs.Delete(t) })
 }
 
 // fakeDirOf is this test's fake-substrate state directory — the one
@@ -1469,7 +1480,7 @@ func setFakeDir(t *testing.T, dir string) {
 // building a backend.
 func fakeDirOf(t *testing.T) string {
 	t.Helper()
-	if v, ok := fakeDirs.Load(t.Name()); ok {
+	if v, ok := fakeDirs.Load(t); ok {
 		return v.(string)
 	}
 	dir := t.TempDir()
@@ -1548,7 +1559,15 @@ func hermetic(t *testing.T, a *App) *App {
 	// every test, and a test that set its own (wtqaHome, wtApp) gets one
 	// under that instead — either way the under-$HOME rule holds by
 	// construction rather than by waiver.
-	a.WorktreeRootDefault = filepath.Join(os.Getenv("HOME"), "worktrees", t.Name())
+	// Per RUN and not per NAME: `go test -count=2` gives two live tests one
+	// name, and with t.Parallel they are resumed together — the second finds
+	// the first's session tree already cut and reports "exists and is not a
+	// git worktree", which is a fixture collision wearing a product refusal's
+	// clothes. Measured as five FAILs at -count=3 that were green at
+	// -count=1 (ranger-base-pj87l). Repeat runs are how this shop measures a
+	// flake rate, so the mode has to work.
+	a.WorktreeRootDefault = filepath.Join(os.Getenv("HOME"), "worktrees",
+		t.Name(), strconv.FormatInt(hermeticRun.Add(1), 10))
 	return a
 }
 

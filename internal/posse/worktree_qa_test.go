@@ -1086,10 +1086,12 @@ func TestQAWorktreeRootRefusesASymlinkOutOfHome(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	// Under $HOME is what the rule is about, so the fixtures have to live
-	// there — but $HOME is the binary's now (ADR 0047 D1), so they take the
-	// test's own name under it rather than sharing "trees" and "scratch"
-	// with whatever else runs beside them (ranger-base-pj87l).
-	home := filepath.Join(os.Getenv("HOME"), t.Name())
+	// there — but $HOME is the binary's now (ADR 0047 D1), so they go under
+	// this App's own worktree root rather than sharing "trees" and "scratch"
+	// with whatever else runs beside them. hermetic makes that root unique
+	// per RUN, so `go test -count=2` does not find its own symlink already
+	// there either (ranger-base-pj87l).
+	home := a.WorktreeRootDefault
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}

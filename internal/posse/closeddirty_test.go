@@ -164,7 +164,7 @@ func TestClosedDirtyIsWrittenOnTheBeadOnceAcrossTheSites(t *testing.T) {
 	// The argv shape only: the handoff's own description says the launcher
 	// does NOT reopen the bead, and a substring scan for the word would find
 	// that sentence and call the pin green over its own prose.
-	if log := bdCalls(t, fakeDir()); strings.Contains(log, "update a-1 --status open") {
+	if log := bdCalls(t, fakeDirOf(t)); strings.Contains(log, "update a-1 --status open") {
 		t.Errorf("the launcher reopened the bead:\n%s", log)
 	}
 	if st := mustGit(t, tree, "status", "--porcelain"); !strings.Contains(st, "forgotten.txt") {
@@ -197,7 +197,7 @@ func TestClosedDirtyFilesOneBeadForTheCloserAndOnlyOne(t *testing.T) {
 			t.Errorf("the handoff must name %q:\n%s", want, desc)
 		}
 	}
-	log := bdCalls(t, fakeDir())
+	log := bdCalls(t, fakeDirOf(t))
 	if !strings.Contains(log, "create "+closedDirtyTitlePrefix+"a-1 ") {
 		t.Fatalf("no closed-dirty create in the bd log:\n%s", log)
 	}
@@ -363,7 +363,7 @@ func TestTheSweepWritesTheDirtySetOnACloseNobodyWatched(t *testing.T) {
 	if filed := closedDirtyBeads(t, repo, "a-1"); len(filed) != 1 {
 		t.Fatalf("the sweep filed %d handoffs, want 1:\n%s", len(filed), out)
 	}
-	if !strings.Contains(bdCalls(t, fakeDir()), "-a ranger") {
+	if !strings.Contains(bdCalls(t, fakeDirOf(t)), "-a ranger") {
 		t.Errorf("the sweep filed the handoff at nobody — the closer is the bead's assignee")
 	}
 }

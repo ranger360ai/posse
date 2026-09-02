@@ -49,6 +49,9 @@ type fn struct {
 	calls   map[string]bool
 	idents  map[string]bool
 	envRoot bool
+	// bareFakeDir: calls fakeDir() with no argument — the binary-wide fake
+	// dir, not the per-test fakeDirOf(t).
+	bareFakeDir bool
 	// hasParallel: the body's first statement is t.Parallel().
 	hasParallel bool
 	// envVars: the variables this function sets by literal name, for the
@@ -179,6 +182,9 @@ func main() {
 					switch c := x.Fun.(type) {
 					case *ast.Ident:
 						g.calls[c.Name] = true
+						if c.Name == "fakeDir" && len(x.Args) == 0 {
+							g.bareFakeDir = true
+						}
 					case *ast.SelectorExpr:
 						g.calls[c.Sel.Name] = true
 						// Receiver-blind on purpose: t, tb, a *testing.TB
@@ -276,6 +282,19 @@ func main() {
 		}
 		return false
 	}, inTests)
+	// ── filter 2b: the PARENT-side fake dir ──────────────────────────────
+	// fakeDir() with no argument answers $RHQ_FAKE_DIR, and after ADR 0047
+	// D1 that variable is not set in the parent — so in a test it resolves
+	// to the binary's own directory, which every test in the binary shares.
+	// fakeDirOf(t) is the per-test one. This is not the fakeDirs exemption
+	// above: that map IS partitioned by t.Name(), and this call is the one
+	// way to read past the partition. MEASURED (ranger-base-pj87l): three
+	// sites in closeddirty_test.go read a bd call log this way, and two of
+	// them failed in two different full runs once the tests around them
+	// went parallel — "no closed-dirty create in the bd log" is a read of
+	// the wrong log, not a sweep that did not run.
+	fakeDirTainted := propagateIn(funcs, func(g *fn) bool { return g.bareFakeDir }, inTests)
+
 	// ── filter 3: $HOME readers outside the App, reached from a test ─────
 	homeRoots := map[string]bool{}
 	for n, gs := range funcs {
@@ -376,10 +395,17 @@ func main() {
 		fmt.Printf("    of those, reach SeedClaudeTrust/lock:%d\n", nWrite)
 		fmt.Printf("  D3 to read by hand (eligible AND touch the claude config in test code): %d\n", nD3)
 		fmt.Printf("  D3b eligible AND read $HOME from test code: %d\n", nHT)
+		nFake := 0
+		for _, g := range tests {
+			if !envTainted[g.name] && fakeDirTainted[g.name] {
+				nFake++
+			}
+		}
+		fmt.Printf("  reach the binary-wide fakeDir() rather than fakeDirOf(t): %d\n", nFake)
 		fmt.Printf("    named serial by hand (see the map): %d\n", nNamed)
 	case "eligible": // env-clean AND no written pkg var AND not named serial
 		for _, g := range tests {
-			if !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == "" {
+			if !envTainted[g.name] && !varTainted[g.name] && !fakeDirTainted[g.name] && serial[g.name] == "" {
 				fmt.Printf("%s\t%s\n", g.file, g.name)
 			}
 		}
@@ -392,12 +418,18 @@ func main() {
 		// that produced the wall twice: a test lands, is eligible, carries
 		// no t.Parallel, and nothing says so until the package outruns its
 		// ceiling four days later.
-		var unmarked, extra []string
+		var unmarked, extra, shared []string
 		for _, g := range tests {
-			eligible := !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == ""
+			eligible := !envTainted[g.name] && !varTainted[g.name] && !fakeDirTainted[g.name] && serial[g.name] == ""
 			switch {
 			case eligible && !g.hasParallel:
 				unmarked = append(unmarked, g.file+"\t"+g.name)
+			case fakeDirTainted[g.name] && g.hasParallel:
+				// This one IS a failure, unlike the note below: a parallel
+				// test reading the binary-wide fakeDir() reads a log every
+				// other test writes, and it fails as "the thing under test
+				// did not happen" (ranger-base-pj87l).
+				shared = append(shared, g.file+"\t"+g.name)
 			case !eligible && g.hasParallel:
 				extra = append(extra, g.file+"\t"+g.name)
 			}
@@ -407,8 +439,18 @@ func main() {
 			// t.Parallel off a green test is a decision, not a sweep.
 			fmt.Printf("note: %d tests carry t.Parallel that this tool would not give it\n", len(extra))
 		}
+		if len(shared) > 0 {
+			fmt.Fprintf(os.Stderr, "testparallel: %d parallel test(s) read the binary-wide fakeDir() instead of fakeDirOf(t):\n", len(shared))
+			for _, u := range shared {
+				fmt.Fprintf(os.Stderr, "  %s\n", u)
+			}
+			fmt.Fprintf(os.Stderr, "\nfakeDirOf(t) is the per-test one. fakeDir() answers the binary's own\n"+
+				"directory in the parent since ADR 0047 D1, so a parallel test reading a bd\n"+
+				"or herdr call log through it reads every other test's calls too.\n")
+			os.Exit(1)
+		}
 		if len(unmarked) == 0 {
-			fmt.Printf("testparallel: %s clean — every one of the %d eligible tests carries t.Parallel\n", dir, countEligible(tests, envTainted, varTainted, serial))
+			fmt.Printf("testparallel: %s clean — every one of the %d eligible tests carries t.Parallel\n", dir, countEligible(tests, envTainted, varTainted, fakeDirTainted, serial))
 			return
 		}
 		fmt.Fprintf(os.Stderr, "testparallel: %d tests in %s can take t.Parallel and do not:\n", len(unmarked), dir)
@@ -578,10 +620,10 @@ func isT(e ast.Expr) bool {
 }
 
 // propagate marks every function that transitively calls a root.
-func countEligible(tests []*fn, envTainted, varTainted map[string]bool, serial map[string]string) int {
+func countEligible(tests []*fn, envTainted, varTainted, fakeDirTainted map[string]bool, serial map[string]string) int {
 	n := 0
 	for _, g := range tests {
-		if !envTainted[g.name] && !varTainted[g.name] && serial[g.name] == "" {
+		if !envTainted[g.name] && !varTainted[g.name] && !fakeDirTainted[g.name] && serial[g.name] == "" {
 			n++
 		}
 	}
