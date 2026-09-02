@@ -26,7 +26,7 @@ package posse
 //
 // Same guard as the pin it shadows:
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestQALiveCage -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestQALiveCage -v
 //
 // Measured 2026-08-27, macOS 26.4.1 / Docker 29.0.1, image posse-cage:latest
 // built from this tree.

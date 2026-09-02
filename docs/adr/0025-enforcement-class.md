@@ -5,13 +5,16 @@
 §4's second bullet, its residual and Verification 2/3 corrected — a spool
 cut back to its cursor, above it, or before its first fold is NOT
 detected; what the fold guarantees is that the canonical log only grows
-(ranger-base-j3r6z, measured under ranger-base-w7h58)*
+(ranger-base-j3r6z, measured under ranger-base-w7h58) · amended
+2026-09-01: the Verification list now says which items were executed and
+which were only written — Verification 2 has never been run and cannot be
+run in this shop (ranger-base-dmrfh)*
 
 ## Context
 
 Live verification of the container tier (rangerhq-pafo, posse-cage:latest
 on Docker 29.0.1, pinned in
-`internal/rhq/cageinnerliveqa_test.go` `TestQALiveCageEscapeAttemptsOnAWritableRepo`)
+`internal/posse/cageinnerliveqa_test.go` `TestQALiveCageEscapeAttemptsOnAWritableRepo`)
 measured two things ADR 0002's parity table promises and the gates do not
 hold. Neither is an implementation defect — the code does what §3 says —
 but an operator reads that table as a guarantee.
@@ -189,21 +192,74 @@ before the next fold.
 
 ## Verification
 
+**Execution status, measured 2026-09-01 (ranger-base-dmrfh).** Items 2
+and 4's *pins* live in `internal/posse/cageinnerliveqa_test.go`, which
+runs only against a real engine and a built `posse-cage:latest`. This box
+has neither, and by the operator's ruling of 2026-08-30
+(ranger-base-6mz7) it never will until an off-laptop cleanroom exists —
+Docker was removed that day (3.8GB wired on a 16GB box) and no engine
+replaced it: no `docker` daemon, no colima/podman/lima/OrbStack/nerdctl,
+no Apple `container`. The `docker` CLI is still on PATH (Homebrew 29.1.1,
+client only), which is why the tier does not announce itself as absent —
+see the residual below. Run here, the whole file skips in ~0.1s per test:
+
+    RHQ_LIVE_DOCKER=1 go test -timeout 25m ./internal/posse/ -run TestQALiveCage -v
+    --- SKIP: TestQALiveCageEscapeAttemptsOnAWritableRepo (0.12s)
+
+So read the list as: 3 and 5 hold and were run; 1 was run at `shims` and
+not at `container`; 4's *measurement* stands but was made outside a cage;
+2 has never been run by anyone, on any box, and is written from the code.
+
 1. `posse gates <p>` prints the class per realized gate: at `shims`,
    `Bash(git push:*)` → cooperative; at `container` with a built image,
    `Edit` → enforced (L4 mount) while `Bash(git push:*)` stays
-   cooperative with the effect note.
-2. In the live cage QA: `: > "$RHQ_GATES_DIR/refusals.log"` inside no
-   longer shrinks the host canonical; the next fold appends a tamper
-   line naming the session — because the QA folded once before the
-   truncate. The same gesture before a spool's first fold folds as empty
-   and says nothing (ranger-base-j3r6z).
+   cooperative with the effect note. **The `shims` arm is executed. The
+   `container` arm is not executable here**: with no engine, `posse gates`
+   for a PID that declares `cage: container` prints no container row at
+   all — it renders `shims` and `seatbelt` and says `✗ cage: PID demands
+   container, launching at shims`.
+2. **NEVER EXECUTED — this is the claim, not a measurement.** In the live
+   cage QA: `: > "$RHQ_GATES_DIR/refusals.log"` inside no longer shrinks
+   the host canonical; the next fold appends a tamper line naming the
+   session — because the QA folded once before the truncate. The same
+   gesture before a spool's first fold folds as empty and says nothing
+   (ranger-base-j3r6z). Item 3's hermetic pins exercise
+   `FoldRefusalsSpool` directly and carry the fold half of this; what they
+   cannot reach is the half only a cage can answer — that the inner shims
+   write where `CageMounts` now points them, which is what §4 actually
+   claims. Settling it needs the off-laptop cleanroom of
+   ranger-base-6mz7 and then the command above; until then §4's
+   truncate behaviour is a design intention with hermetic support, not a
+   verified property, and nothing in this tree should be read as saying
+   otherwise.
 3. Two folds over an unchanged spool append zero new lines; a spool
    truncated below its cursor and refilled to the same size folds as
    tampered (the hash, not the offset, is what catches it). A spool
    truncated to or above its cursor and refilled folds as new lines,
-   untampered — the hash covers only the folded prefix.
+   untampered — the hash covers only the folded prefix. **Executed** —
+   hermetic, no engine needed; mutation-checked under ranger-base-w7h58.
 4. `/usr/bin/git push --no-verify` and `git -c core.hooksPath= push`
-   are measured and pinned either way in the same QA file.
+   are measured and pinned either way in the same QA file. **The
+   measurement is executed, the pin is not**: it was made in an ungated
+   non-container scratch (ranger-base-3csb, git 2.39.3), and that stands
+   on its own; the QA file that would re-measure it inside a cage skips
+   here with the rest.
 5. ADR 0002 §3's L3 row no longer claims `env -i`; a grep for the claim
-   finds only this history.
+   finds only this history. **Executed, re-run 2026-09-01** — zero hits
+   for the struck wording, and every surviving `env -i` in ADR 0002 either
+   says it *defeats* the arm or records the history.
+
+### Residual: the skip names the wrong reason
+
+`App.ContainerAvailable` is `exec.LookPath("docker")` — a PATH check, not
+a liveness check — and `App.CageImageBuilt` runs `docker image inspect
+{image}`, which against a dead daemon exits 1 with a socket-connect error
+rather than "no such image". A control arm settles it: `docker image
+inspect definitely-absent-xyzzy:latest` prints byte-identical output to
+the same call for `posse-cage:latest`. So on this box every reader of that
+pair reports the engine's absence as a missing image and gives advice that
+cannot be followed. Both the QA file's skip and `posse cage`'s status line
+read *image not built — run `posse cage build`*, and a build needs the
+same engine the box does not have. Neither hangs and both are honest about
+not running, so ranger-base-6mz7's done-when holds; what neither does is
+name the ruling. Filed as ranger-base-1mu9r.
