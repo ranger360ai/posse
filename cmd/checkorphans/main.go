@@ -40,5 +40,8 @@ func main() {
 		return
 	}
 	fmt.Println("checkorphans: " + posse.FormatSelfOrphans(leaks))
+	if note := posse.SelfOrphanKeepNote(leaks); note != "" {
+		fmt.Println("checkorphans: " + note)
+	}
 	os.Exit(1)
 }

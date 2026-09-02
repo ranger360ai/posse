@@ -1315,6 +1315,16 @@ $ cat >> AGENTS.md <<'EOF'
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
   landing. Work is complete when it is committed locally and the bead is
   closed; `posse worktrees` shows anything that has not landed.
+- **Something you MEANT to leave running: declare it.** Write
+  `POSSE_KEEP=<reason>` at the head of the Bash line that backgrounds it —
+  `POSSE_KEEP=<the bead id> nohup ./bench.sh &` — with the reason
+  conventionally the bead id that authorises it. It is a plain shell
+  assignment, so it is inert in every shell and lands in the argv either way,
+  which is all the load guard can read about a process it did not start.
+  **Undeclared is a leak**: the guard's kill arm ends an orphaned,
+  CPU-burning, gate-shell child that carries no marker, and nothing in the
+  process table separates your deliberate process from a leak by any other
+  means. A deliberate long-lived CPU process is meant to be rare and loud.
 EOF
 ```
 

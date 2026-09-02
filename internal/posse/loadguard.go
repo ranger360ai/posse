@@ -24,12 +24,19 @@ package posse
 //   - no launch — `posse new`, `posse relaunch`, a recipe, a cockpit key —
 //     starts a session while the box is over it.
 //
-// It gates LAUNCHING only. Nothing already running is touched: a saturated
-// box needs its sessions to finish, not to be interrupted. The orphan report
-// does not change that and is not allowed to (ranger-base-apwr): it names
-// leaks and kills none of them, because a persona's deliberate long-lived
-// background process has the same signature as a leak and choosing between
-// them is the operator's, behind an explicit exception.
+// It gates LAUNCHING, and NOTHING A SESSION OWNS IS EVER TOUCHED: a
+// saturated box needs its sessions to finish, not to be interrupted.
+//
+// The one exception is a process no session owns any more. Arm 1 of the
+// orphan report (ranger-base-apwr) names leaked gate-shell children and
+// kills none of them; arm 2 (ranger-base-gvp2p, loadguardkill.go) ends them,
+// where the operator has armed it with `load_guard_kill: true` and where the
+// process carries no declare-or-die marker. Everything else about the
+// paragraph above still holds: an orphan is by definition reparented to
+// init, so ending one interrupts no session, and a persona's DELIBERATE
+// long-lived background process is spared by the marker it wrote — which is
+// the explicit exception this comment used to say the operator owed us, and
+// he ruled on it on 2026-08-31.
 
 import (
 	"context"
@@ -466,29 +473,47 @@ func (a *App) LoadCulpritLine() string {
 		}
 		line += fmt.Sprintf(" — %d more orphaned process%s over %g%% CPU", rest, plural, LoadCulpritOrphanCPU)
 	}
-	return "\n  " + line + orphanReport(busy)
+	return "\n  " + line + a.orphanReport(busy)
 }
 
-// orphanReport is arm 1 of ranger-base-apwr: the leaked gate-shell children
-// this box is holding, named. It rides under the culprit line, off the same
-// single census, and it KILLS NOTHING.
+// leakRow is one leaked gate-shell child as the report has it: the census
+// row, the persona's own command with our preamble taken off, and — when
+// the declare-or-die marker was on the line — the reason it named.
+type leakRow struct {
+	p       Proc
+	payload string
+	reason  string
+}
+
+// orphanReport is the leaked gate-shell children this box is holding, named.
+// It rides under the culprit line, off the same single census.
 //
-// The report-only floor is deliberate and it is the operator's call to lift,
-// not ours. A persona that deliberately starts a long-lived process with a
-// trailing ampersand and lets the tool call return produces exactly this
-// signature, so a reaper that guessed would eventually kill something
-// somebody meant. What arm 1 buys is the 2.5 hours teau spent with sixteen
-// of these visible to any `ps` and named by nothing: the wedge becomes loud
-// without anything becoming destroyable.
+// ARM 1 (ranger-base-apwr) KILLS NOTHING and is still the shipped default.
+// The report-only floor was the operator's call to lift, not ours: a persona
+// that deliberately starts a long-lived process with a trailing ampersand
+// and lets the tool call return produces exactly this signature, so a reaper
+// that guessed would eventually kill something somebody meant. What arm 1
+// buys is the 2.5 hours teau spent with sixteen of these visible to any `ps`
+// and named by nothing: the wedge becomes loud without anything becoming
+// destroyable.
+//
+// ARM 2 (ranger-base-gvp2p, loadguardkill.go) is that lift, ruled on
+// 2026-08-31: a process is spared when it carries the declare-or-die marker
+// and ended when it does not — but only where `load_guard_kill: true` says
+// so, and the shipped default is false. Read loadguardkill.go for the
+// marker, the measured signal and the two directions this pair of predicates
+// is allowed to be wrong in.
+//
+// The DECLARATION is honoured in both modes and the sparing is printed in
+// both. While the arm is off that is not decoration: the ruling's first bar
+// for the live flip is arm-1 field data with no false positive in it, and a
+// declared process reported as a leak would be precisely that false
+// positive.
 //
 // It is "" whenever it has nothing to say, which is every healthy box and
 // every box whose orphans are not ours.
-func orphanReport(busy []Proc) string {
-	type leak struct {
-		p       Proc
-		payload string
-	}
-	var leaks []leak
+func (a *App) orphanReport(busy []Proc) string {
+	var leaks, spared []leakRow
 	for _, p := range busy {
 		if !p.orphanSuspect() {
 			continue
@@ -497,35 +522,56 @@ func orphanReport(busy []Proc) string {
 		if !ours {
 			continue
 		}
-		leaks = append(leaks, leak{p, payload})
+		if reason, declared := orphanDeclared(p.Args); declared {
+			spared = append(spared, leakRow{p, payload, reason})
+			continue
+		}
+		leaks = append(leaks, leakRow{p, payload, ""})
 	}
 	if len(leaks) == 0 {
-		return ""
+		return declaredLine(spared)
 	}
+	armed, warn := a.LoadGuardKill()
 	kids := "children"
 	if len(leaks) == 1 {
 		kids = "child"
 	}
-	out := fmt.Sprintf("\n  load guard: %d orphaned gate-shell %s (ppid 1, over %g%% CPU, over %s) — REPORT ONLY, nothing was killed:",
+	head := fmt.Sprintf("\n  load guard: %d orphaned gate-shell %s (ppid 1, over %g%% CPU, over %s)",
 		len(leaks), kids, LoadCulpritOrphanCPU, BlindFor(LoadOrphanMinAge))
-	shown := leaks
-	if len(shown) > loadOrphanTop {
-		shown = shown[:loadOrphanTop]
-	}
-	for _, l := range shown {
-		what := ellipsize(l.payload, loadOrphanPayload)
-		if what == "" {
-			// The head of our preamble matched and its tail did not, so
-			// where our text stops is unknown. Say so rather than print a
-			// slice of our own guard as if it were the persona's command.
-			what = "(command not readable behind the preamble)"
+	if !armed {
+		out := head + " — REPORT ONLY, nothing was killed:"
+		shown := leaks
+		if len(shown) > loadOrphanTop {
+			shown = shown[:loadOrphanTop]
 		}
-		out += fmt.Sprintf("\n    %.1f%% pid %d %s: %s", l.p.CPU, l.p.PID, BlindFor(l.p.Age), what)
+		for _, l := range shown {
+			out += fmt.Sprintf("\n    %.1f%% pid %d %s: %s", l.p.CPU, l.p.PID, BlindFor(l.p.Age), leakWhat(l))
+		}
+		if n := len(leaks) - len(shown); n > 0 {
+			out += fmt.Sprintf("\n    %d more like these", n)
+		}
+		if warn != "" {
+			out += "\n  " + warn
+		}
+		return out + declaredLine(spared)
 	}
-	if n := len(leaks) - len(shown); n > 0 {
-		out += fmt.Sprintf("\n    %d more like these", n)
+	targets := make([]Proc, 0, len(leaks))
+	for _, l := range leaks {
+		targets = append(targets, l.p)
 	}
-	return out
+	tail, body := killArmLine(leaks, a.reapOrphans(targets))
+	return head + tail + body + declaredLine(spared)
+}
+
+// leakWhat is the persona's command as a line can show it. The head of our
+// preamble matching with no tail behind it means where our text stops is
+// unknown, and saying so beats printing a slice of our own guard as if it
+// were the persona's command.
+func leakWhat(l leakRow) string {
+	if what := ellipsize(l.payload, loadOrphanPayload); what != "" {
+		return what
+	}
+	return "(command not readable behind the preamble)"
 }
 
 // ─── did *I* just leak (ranger-base-6mhxw) ──────────────────────────────────
@@ -641,7 +687,16 @@ func FormatSelfOrphans(leaks []Proc) string {
 		if what == "" {
 			what = "(command not readable behind the preamble)"
 		}
-		lines = append(lines, fmt.Sprintf("  pid %d, %s old: %s", p.PID, BlindFor(p.Age), ellipsize(what, loadOrphanPayload)))
+		// A DECLARED process is still listed — this is a census of what is
+		// still running under you, and you asked — but it is marked, so the
+		// caller does not tell a persona to declare what it already
+		// declared, and so the marker can be seen to have been READ rather
+		// than merely written (ranger-base-gvp2p).
+		mark := ""
+		if reason, ok := orphanDeclared(p.Args); ok {
+			mark = fmt.Sprintf(" [declared %s%s]", LoadOrphanKeepMarker, reason)
+		}
+		lines = append(lines, fmt.Sprintf("  pid %d, %s old%s: %s", p.PID, BlindFor(p.Age), mark, ellipsize(what, loadOrphanPayload)))
 	}
 	return strings.Join(lines, "\n")
 }

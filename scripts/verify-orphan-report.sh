@@ -20,6 +20,22 @@
 #   ungated + orphaned + burning   must be SILENT — a leak, but not ours
 #   gated + burning + parent alive must be SILENT — ordinary fleet work
 #
+# ARM 2, THE KILL (ranger-base-gvp2p). The same four planted processes are
+# then read a second time with `load_guard_kill: true` — the only thing that
+# changes between the two passes is the config key, which is what makes this
+# a measurement of the kill arm rather than of a second test setup:
+#
+#   gated + orphaned + burning              KILLED, and gone from the NEXT census
+#   ungated + orphaned + burning            SURVIVES
+#   gated + burning + parent alive          SURVIVES
+#   gated + orphaned + burning + POSSE_KEEP SURVIVES — declared, and named as spared
+#
+# The fourth arm is the one that carries the ruling. It is identical to the
+# first in every field the guard can read — same wrapper, same spinner, same
+# ppid, same CPU, same age — and separated from it by the declare-or-die
+# marker alone. Without it the control cannot tell a reaper that reads the
+# marker from a reaper that kills whatever it finds.
+#
 # It also waits out the real LoadOrphanMinAge rather than lowering it, so the
 # run takes a couple of minutes. That is the point: the age floor is one of
 # the things under test.
@@ -65,7 +81,7 @@ mkdir -p "$CACHE/build" "$CACHE/mod"
 # The repo is mounted read-only and the run is not root, the same as
 # test-linux.sh: a control that plants processes must not also be able to
 # leave anything in the working tree.
-echo "verify-orphan-report: $IMAGE ($PLATFORM), --cpus ${CPUS:-1} — planting a leak and reading it back"
+echo "verify-orphan-report: $IMAGE ($PLATFORM), --cpus ${CPUS:-1} — planting a leak, reading it back, then arming the kill"
 exec docker run --rm -i \
   --platform "$PLATFORM" \
   --cpus "${CPUS:-1}" \

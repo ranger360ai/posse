@@ -97,3 +97,15 @@ bd sync               # Sync with git
   instead — it reads the real process table (ppid 1, old enough not to be a
   fork/exec teardown window, argv matched against the ADR 0009 gate-shell
   preamble) and exits nonzero if anything of yours is still there.
+- **Something you MEANT to leave running: declare it** (ranger-base-gvp2p).
+  Write `POSSE_KEEP=<reason>` at the head of the Bash line that backgrounds
+  it — `POSSE_KEEP=ranger-base-abcd nohup ./bench.sh &` — with the reason
+  conventionally the bead id that authorises it. It is a plain shell
+  assignment, so it is inert in every shell and lands in the argv either
+  way, which is all the load guard can read about a process it did not
+  start. **Undeclared is a leak**: the guard's kill arm ends an orphaned,
+  CPU-burning, gate-shell child that carries no marker, and it cannot tell
+  your deliberate process from teau's sixteen spinners by any other means
+  (NOTES.md, "Leaked gate-shell children"). A deliberate long-lived CPU
+  process on this box is meant to be rare and loud — the standing ruling is
+  still no load testing here.

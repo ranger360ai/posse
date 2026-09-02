@@ -65,6 +65,14 @@ type App struct {
 	// per-commit — and it is read ONLY on a pass the guard is already
 	// skipping.
 	TopCPU func() ([]Proc, error)
+	// ReapOrphans ends the leaked gate-shell children the load guard's
+	// kill arm selected, and reports what happened to each pid
+	// (loadguardkill.go, ranger-base-gvp2p). nil = sysReapOrphans, the real
+	// TERM/grace/KILL on the real box. It is a seam for the reason TopCPU
+	// is one, and more urgently: this is the one arm of posse that signals
+	// a process it did not start, and no unit pin may be able to reach the
+	// machine the suite is running on.
+	ReapOrphans func(targets []Proc) map[int]string
 }
 
 var legacyHomeNotices sync.Map
