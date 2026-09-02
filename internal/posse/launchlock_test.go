@@ -167,6 +167,28 @@ func TestLaunchLockHolderUnknown(t *testing.T) {
 	}
 }
 
+// Our own pid gets its own phrasing. A wait on a lock this process holds is
+// legitimate — the cockpit lists on its select loop while LaunchBead
+// launches on its own goroutine — and it is also what a caller that should
+// have been handed the lock and was not looks like, forever. The line cannot
+// tell them apart, so it says the one thing it knows: the holder is us, and
+// not this goroutine (ranger-base-deaz).
+func TestLaunchLockHolderNamesOurOwnProcess(t *testing.T) {
+	b, _ := newTestBackend(t)
+	path := LaunchLockPath(b.App)
+	l := mustHoldLock(t, b.App) // stamps our pid
+	defer l.Release()
+
+	h := lockHolder(path)
+	if !strings.Contains(h, "this process") || !strings.Contains(h, "another goroutine") {
+		t.Errorf("holder %q — a lock held by this process on another goroutine must say so", h)
+	}
+	// Still names the pid: the waiting line's oldest job (rangerhq-9nso).
+	if want := strconv.Itoa(os.Getpid()); !strings.Contains(h, want) {
+		t.Errorf("holder %q does not name our pid %s", h, want)
+	}
+}
+
 // ─── Run: the fire loop is locked, the gather is not ─────────────────────────
 
 // A pass whose launcher lock is held launches nothing until it is free —

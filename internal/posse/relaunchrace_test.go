@@ -202,10 +202,22 @@ func TestRelaunchHoldsTheLaunchLockWhileItReplacesTheSession(t *testing.T) {
 	}
 }
 
-// And a relaunch INSIDE a launcher's lock must not wait on the lock its own
-// process holds: flock would block there forever, which is a pass that
-// hangs on its first refresh.
-func TestRelaunchInsideAHeldLaunchLockDoesNotDeadlock(t *testing.T) {
+// A relaunch started on a goroutine that holds NOTHING waits for the holder,
+// and its own nesting still does not deadlock once it gets the lock.
+//
+// Both halves live here because they used to be one wrong answer. This
+// pinned "a relaunch inside a launcher's lock must not wait on the lock its
+// own process holds", which read a lock held by ANY goroutine of this
+// process as this caller's — the caller-blind depth counter (ranger-base-deaz).
+// A relaunch reached that way is not inside anything: it holds no lock, so
+// its kill and its recreate would run beside the launcher that does.
+//
+// So: it must not finish while M holds the lock. And once M releases, it
+// must finish — which it can only do by nesting correctly, because
+// RelaunchSession takes the lock and then reaches clearDeadMeta, keepRecipe
+// and nameFree through it (replace hands each the lock it is inside). A
+// chain that re-took the lock anywhere would hang here forever.
+func TestRelaunchOnAnotherGoroutineWaitsForTheLauncherLock(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", raceSock)
 	b, _ := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "s1"})
@@ -215,21 +227,30 @@ func TestRelaunchInsideAHeldLaunchLockDoesNotDeadlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Release()
+	defer lock.Release() // idempotent; the release below is the real one
 
 	done := make(chan error, 1)
 	var out syncBuf
 	go func() { done <- b.RelaunchSession(&out, RelaunchOpts{Name: "s1", NoLand: true}) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("a relaunch on a goroutine holding NO lock ran to completion while another goroutine of this process held the launcher lock (err %v) — its kill and its recreate were unserialized (ranger-base-deaz)\n%s", err, out.String())
+	case <-time.After(2 * time.Second):
+		// Waiting, which is the claim.
+	}
+
+	lock.Release()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf("relaunch: %v\n%s", err, out.String())
 		}
 	case <-time.After(90 * time.Second):
-		t.Fatal("RelaunchSession blocked on the launcher lock its own process holds")
+		t.Fatal("the relaunch never finished after the launcher lock was released — a step inside its own critical section re-took the lock instead of being handed it")
 	}
 	if now := metaOf(t, b, "s1").Workspace; now == was || now == "" {
-		t.Errorf("the session was not replaced under the held lock: workspace %q, was %q", now, was)
+		t.Errorf("the session was not replaced: workspace %q, was %q", now, was)
 	}
 }
 
