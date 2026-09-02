@@ -498,24 +498,58 @@ func TestQABothGrokBrakesOnOnePoolFireCapFirstAndReadingSecond(t *testing.T) {
 //
 // MUTATION RUN: `func (grokCost) Prices() bool { return false }` → red.
 func TestQATheOrderedBrakePairCannotBothFire(t *testing.T) {
-	b, _ := newTestBackend(t)
-	d := newTestDispatcher(t, b)
+	// The meter armed and OVER threshold: 80% of the pool against 70%. That
+	// is the positive control the second half rests on — an unarmed meter
+	// returns "" for every runtime, and would let "answers for grok alone"
+	// pass while measuring nothing.
+	f := overflowPass(t, "grok_guard_week: 70\n"+grokPoolCfg+"uncounted_cap_"+GrokPoolRuntime+": 1\n",
+		overflowPID, `["go","tier:standard"]`)
+	d := f.d
+	d.Now = func() time.Time { return grokPoolNow }
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := grokPoolLastReset.Add(time.Hour)
+	grokPoolSession(t, home, "s1",
+		grokPoolUser(at, "Work beads issue ranger-base-esa0j (t)")+
+			grokPoolTurn(at, "p-s1", usdTicks(40)))
+	// The bead cap's own ledger, seeded PAST `uncounted_cap_grok: 1`. If the
+	// priced-runtime law ever stops short-circuiting, this is a cap with a
+	// count over it, and the brake fires.
+	if err := os.MkdirAll(f.b.App.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.b.App.UncountedLogPath(),
+		[]byte(LedgerEntry{grokPoolNow.Add(-2 * time.Hour), GrokPoolRuntime, "old", "ranger"}.line()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.b.App.UncountedCount(GrokPoolRuntime, grokPoolNow); err != nil || n != 1 {
+		t.Fatalf("fixture: the uncounted ledger must hold one grok launch in the window, got %d %v", n, err)
+	}
 
-	rt, err := b.App.LoadRuntime(GrokPoolRuntime)
+	rt, err := f.b.App.LoadRuntime(GrokPoolRuntime)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !rt.CostPriced() {
 		t.Fatalf("%s is no longer priced — uncounted_cap_%s is live again, and the two brakes dispatch.go orders can now both fire on one bead. Reinstate an ordering assertion here (ADR 0010 §3).", GrokPoolRuntime, GrokPoolRuntime)
 	}
-	// The consequence, measured rather than reasoned: with a cap set on grok,
-	// the brake that would fire second returns nothing to fire.
-	write(t, b.App.ConfigPath, "uncounted_cap_"+GrokPoolRuntime+": 1\n")
-	if line, kind := d.uncountedSkip(GrokPoolRuntime); line != "" || kind != "" {
-		t.Errorf("a priced runtime has no uncounted cap: %q / %q", line, kind)
+	// The mechanism: uncountedFor returns nil for a priced runtime BEFORE it
+	// reads the key (ADR 0013 §5's law), so the pool never gets an account
+	// state for the cap to be compared against.
+	if p := d.uncountedFor(GrokPoolRuntime); p != nil {
+		t.Errorf("a priced runtime gets no uncounted pool at all: %+v", p)
 	}
-	// And the first brake answers for grok only, so no other runtime can
-	// bring a reading to the pair either.
+	// …and the consequence, over a cap the ledger has already reached.
+	if line, kind := d.uncountedSkip(GrokPoolRuntime); line != "" || kind != "" {
+		t.Errorf("a priced runtime's uncounted cap cannot fire, cap reached or not: %q / %q", line, kind)
+	}
+	// The first brake, meanwhile, is live — and answers for grok alone, so no
+	// other runtime can bring a reading to the pair either.
+	if s := d.grokPoolSkip(GrokPoolRuntime); !strings.Contains(s, "grok_guard_week: 70%") {
+		t.Fatalf("fixture: the pool meter is not armed and over threshold, so the arms below measure nothing: %q", s)
+	}
 	for _, other := range []string{"claude", "codex"} {
 		if s := d.grokPoolSkip(other); s != "" {
 			t.Errorf("the pool meter answers for %s alone; %s got %q", GrokPoolRuntime, other, s)
