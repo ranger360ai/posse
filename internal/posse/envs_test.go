@@ -107,3 +107,70 @@ func TestEnvSetVarsAllowsASymlinkWithinTheStore(t *testing.T) {
 		t.Errorf("EnvSetVars(alias) = %v, %v — a symlink that stays inside envs/ is not the injection case", vars, err)
 	}
 }
+
+// A HARD link is the same invariant one mechanism over (ranger-base-9hfgb).
+// envs/hard.env IS a directory entry inside envs/, so it resolves inside
+// envs/ and underDir is right to say so — the file left the store when the
+// link was made, not when the name was resolved. Same repro as the symlink
+// above, same reader, and it must refuse the same way.
+func TestEnvSetVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
+	a := symlinkApp(t)
+	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "hard.env")); err != nil {
+		t.Fatal(err)
+	}
+	if vars, err := a.EnvSetVars("hard"); err == nil {
+		t.Errorf("EnvSetVars(\"hard\") = %v, want refusal — the entry shares its inode with secrets/harness.env", vars)
+	}
+	// The control: an ordinary set, one name and one inode, still resolves.
+	vars, err := a.EnvSetVars("default")
+	if err != nil || len(vars) != 1 || vars[0].Key != "SESSION_TOKEN" {
+		t.Errorf("EnvSetVars(default) = %v, %v — an ordinary set must still resolve", vars, err)
+	}
+}
+
+// The same shape one store over, for the same reason the symlink case is
+// pinned both ways: secrets/ is read by posse's own processes, and a second
+// name for a file outside it is the same escape whichever store it is in.
+func TestSecretVarsRefusesAHardLinkOutOfTheStore(t *testing.T) {
+	a := symlinkApp(t)
+	if err := os.Link(filepath.Join(a.EnvsDir, "default.env"), filepath.Join(a.SecretsDir, "escape.env")); err != nil {
+		t.Fatal(err)
+	}
+	if vars, err := a.SecretVars("escape"); err == nil {
+		t.Errorf("SecretVars(\"escape\") = %v, want refusal — the entry shares its inode with envs/default.env", vars)
+	}
+	vars, err := a.SecretVars("harness")
+	if err != nil || len(vars) != 1 || vars[0].Key != "HARNESS_TOKEN" {
+		t.Errorf("SecretVars(harness) = %v, %v — an ordinary secret must still resolve", vars, err)
+	}
+}
+
+// The lister is the second surface, exactly as it was for the symlink: a
+// hard link is a regular file, so ReadDir's type bits say yes and `posse
+// envs` would name it a set the operator wrote.
+func TestListEnvSetsSkipsAHardLink(t *testing.T) {
+	a := symlinkApp(t)
+	if err := os.Link(filepath.Join(a.SecretsDir, "harness.env"), filepath.Join(a.EnvsDir, "hard.env")); err != nil {
+		t.Fatal(err)
+	}
+	got := a.ListEnvSets()
+	if len(got) != 1 || got[0] != "default" {
+		t.Errorf("ListEnvSets() = %v, want [default] — a hard link is not a set the operator wrote", got)
+	}
+}
+
+// The deliberate cost, pinned so it is a decision and not an accident: the
+// rule is the LINK COUNT, not where the other name is. A second name inside
+// envs/ is refused too, because nothing short of walking the filesystem can
+// tell it from a second name in secrets/ — and a dev+ino comparison against
+// the sibling store, the only cheaper alternative, would leave every other
+// file on the box linkable into a set a session is handed.
+func TestEnvSetVarsRefusesAHardLinkWithinTheStore(t *testing.T) {
+	a := symlinkApp(t)
+	if err := os.Link(filepath.Join(a.EnvsDir, "default.env"), filepath.Join(a.EnvsDir, "alias.env")); err != nil {
+		t.Fatal(err)
+	}
+	if vars, err := a.EnvSetVars("alias"); err == nil {
+		t.Errorf("EnvSetVars(\"alias\") = %v, want refusal — the link count, not the target, is the rule", vars)
+	}
+}

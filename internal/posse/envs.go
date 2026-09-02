@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 type EnvVar struct{ Key, Value string }
@@ -41,7 +42,38 @@ func storeContained(dir, f, kind, name string) (string, error) {
 	if !underDir(dir, f) {
 		return "", Die("%s name resolves outside its store: %q", kind, name)
 	}
+	st, err := os.Stat(f)
+	if err != nil {
+		return "", Die("%s cannot be read: %q", kind, name)
+	}
+	if !storeSingleEntry(st) {
+		return "", Die("%s has a second name elsewhere on this box and cannot be certified inside its store: %q — copy the file instead of hard-linking it", kind, name)
+	}
 	return f, nil
+}
+
+// storeSingleEntry reports whether fi's inode is reachable by exactly one
+// directory entry — the half of containment a path comparison cannot see.
+// A hard link resolves to no other path: `envs/hard.env` linked to
+// `secrets/harness.env` IS an entry inside envs/, so underDir says contained
+// and is right; the file left the store when the link was made, not when the
+// name was resolved (ranger-base-9hfgb, the same invariant one mechanism
+// over from a7e4).
+//
+// The link count is the whole answer available at this price. WHERE the
+// other names are is not knowable without walking the filesystem, and the
+// cheaper-looking alternative — dev+ino against every entry of the sibling
+// store — closes secrets/ only, leaving every other file on the box
+// (~/.aws/credentials, an ssh key) linkable into a set a session is handed.
+// So the rule is the count, not the target, and it costs a legitimate hard
+// link in a credential store: posse writes these files, `posse init` copies
+// them, and a copy is what an operator wanting two names should make.
+//
+// Fails closed. An inode whose link count cannot be read is not certified
+// contained, and the guard that cannot read is not a guard.
+func storeSingleEntry(fi os.FileInfo) bool {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && st.Nlink == 1
 }
 
 // storeName reports whether name may be resolved inside a credential store
@@ -123,14 +155,22 @@ func tightenCredentialDir(w io.Writer, dir, why string) {
 // ListEnvSets returns env set names (envs/*.env, extension stripped), sorted.
 // A symlink is skipped, not followed: `posse envs` must not name a set the
 // operator did not write into envs/ as a file (ranger-base-a7e4, same
-// question one directory down as storeContained).
+// question one directory down as storeContained). A hard link is skipped
+// for the same reason and needs its own check — it IS a regular file, so
+// the type bits say yes, and only its link count says its bytes may also be
+// called secrets/harness.env (ranger-base-9hfgb).
 func (a *App) ListEnvSets() []string {
 	ents, _ := os.ReadDir(a.EnvsDir)
 	var out []string
 	for _, e := range ents {
-		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".env") {
-			out = append(out, strings.TrimSuffix(e.Name(), ".env"))
+		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".env") {
+			continue
 		}
+		fi, err := e.Info()
+		if err != nil || !storeSingleEntry(fi) {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(e.Name(), ".env"))
 	}
 	return out
 }
