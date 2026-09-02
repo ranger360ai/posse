@@ -739,3 +739,86 @@ func TestQACommitWallL1PatchDoesNotSweepRealIndex(t *testing.T) {
 		t.Errorf("safe form must commit only b.txt, got %q", now)
 	}
 }
+
+// The wall's long-option arms are GENERATED from one measurement per option
+// (spoiler.LongMin) by longArms, which walks min..full. Two pins stand
+// either side of that generation and neither watches the walk itself:
+// TestQASpoilerLongMinIsGitsBoundary checks the measurement against git,
+// and the shim pins spell endpoints — `--inc`/`--include`, `--patc`/
+// `--patch`, `--int`/`--interactive`. Only --include's ladder is walked in
+// full (TestQACommitWallL1IncludeAbbreviations), so the walk is pinned for
+// one option and inferred for the rest.
+//
+// MEASURED (ranger-base-4lwsh, mutating longArms in internal/posse/gates.go):
+// returning {min, long} for EVERY option reds TestQACommitWallL1Include-
+// Abbreviations; returning {min, long} for `--interactive` ALONE is green
+// across the whole package, and `--intera` then walks the wall and commits
+// the other persona's staged work. That is the hole this closes — a wall
+// narrowed one option at a time is invisible to a pin that spells its
+// endpoints.
+//
+// It asks the real parser for the prefixes rather than listing them, so a
+// git whose ambiguity boundary moves cannot shrink the pin quietly, and it
+// reads the option set out of qualifierSpoilers rather than a copy — a
+// spoiler added tomorrow is walked the same day.
+func TestQACommitWallL1RefusesEveryPrefixGitResolves(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	// Scoped to `git commit`: it is the rule the shim below renders. Another
+	// git key in the table would need its own rule and its own repro shape,
+	// so this fails rather than passing over a key it never measured.
+	const key = "git commit"
+	sp, ok := qualifierSpoilers[key]
+	if !ok {
+		t.Fatalf("qualifierSpoilers has no %q — this pin measures nothing", key)
+	}
+
+	// Asked BEFORE the shim is rendered: rendering puts a stub git on PATH,
+	// and a stub answers nothing about what the real parser resolves.
+	prefixes := map[string][]string{}
+	total := 0
+	for _, o := range sp.Opts {
+		if !strings.HasPrefix(o, "--") {
+			continue // short options have no abbreviations to walk
+		}
+		got := qaGitResolves(t, o)
+		// The option itself plus at least one abbreviation. A git that
+		// resolved nothing would leave every assertion below vacuous.
+		if len(got) < 2 {
+			t.Fatalf("git resolves %v for %s: fewer than the option itself plus one abbreviation, so this pin would measure nothing", got, o)
+		}
+		if got[len(got)-1] != o {
+			t.Fatalf("git does not resolve %s to itself (%v): the premise is broken", o, got)
+		}
+		prefixes[o] = got
+		total += len(got)
+	}
+	if total < 10 {
+		t.Fatalf("only %d spellings collected across %v — a ladder this short is not the ladder (%v)", total, sp.Opts, prefixes)
+	}
+
+	run := qaRenderCommitShim(t)
+	for _, o := range sp.Opts {
+		for _, p := range prefixes[o] {
+			argv := []string{"commit", "-m", "x", p, "--", "a.go"}
+			out, code := run(argv...)
+			if code != 1 || !strings.Contains(out, "refused by posse gate") {
+				t.Errorf("`git %s` — git resolves %s to %s, and %s takes the shared index while carrying a pathspec — must be refused at L1, got %d %s",
+					strings.Join(argv, " "), p, o, o, code, out)
+			}
+		}
+	}
+
+	// The control: a pin that refused everything would pass every line
+	// above. The safe form and a non-spoiler abbreviation still go through.
+	for _, argv := range [][]string{
+		{"commit", "-m", "x", "--", "a.go"},
+		{"commit", "-m", "x", "--am", "--", "a.go"},
+		{"commit", "-m", "x", "--sign", "--", "a.go"},
+	} {
+		if out, code := run(argv...); code != 0 {
+			t.Errorf("`git %s` is not a spoiler and must still pass: %d %s", strings.Join(argv, " "), code, out)
+		}
+	}
+}
