@@ -173,14 +173,14 @@ bead grain by 0013 §3 and its residue stays on its own beads
   pair above, on the ground that the caps are anomaly stops and the
   brake on a blind day is §1's headroom refusal (amended into §1 above,
   ranger-base-bp224), not the cap. So read the first bullet for the
-  SHAPE of the bound — a blind day is bounded in dollars, never in
-  clock — and read ranger-base-vi67 for the pair that bounds it here.
-  The figures themselves are a live guard value and stay in the
-  instance record: ADR 0024 D1 rules that class instance content, and
-  D3's restate-and-cite is what this line is. The bless on
-  ranger-base-axft licensed the pair the first bullet names, not
-  whichever pair is live, and this ADR does not read the config — so
-  citing beats quoting here twice over, once for visibility and once
+  SHAPE of the bound — two dollar ceilings, one over the pass and one
+  over the day, and never a clock — and read ranger-base-vi67 for the
+  pair that bounds it here. The figures themselves are a live guard
+  value and stay in the instance record: ADR 0024 D1 rules that class
+  instance content, and D3's restate-and-cite is what this line is. The
+  bless on ranger-base-axft licensed the pair the first bullet names,
+  not whichever pair is live, and this ADR does not read the config —
+  so citing beats quoting here twice over, once for visibility and once
   because a quoted pair goes stale the day the operator moves it.
 - *(rewritten 2026-09-01 — the sentence below as first written was the
   one the 2026-08-31 incident cashed in.)* A blind window risks the plan

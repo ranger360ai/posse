@@ -176,6 +176,18 @@ func TestADR0018ConsequencesRestatesTheBlindDayBoundAndCitesIt(t *testing.T) {
 		t.Errorf("%s: %s appears before the sentence it amends — amendments are appended, in date order", path, cite)
 	}
 
+	// The SHAPE is the other half of a restatement: "the pair above is not
+	// the bound, go read vi67" leaves a reader who cannot open the instance
+	// db knowing nothing about what bounds a blind day. The ruling on
+	// ranger-base-1gak4 names the shape it must state — dollars over a pass
+	// and over a day, never a clock — so that much stays in the public ADR.
+	for _, want := range []string{"over the pass", "over the day", "never a clock"} {
+		if !strings.Contains(flat(sec), want) {
+			t.Errorf("%s: Consequences does not state the SHAPE of the bound (%q missing) — "+
+				"a restatement that cites and says nothing is not ADR 0024 D3 (ranger-base-1gak4)", path, want)
+		}
+	}
+
 	// And it restates rather than quotes. A live cap is instance content
 	// (ADR 0024 D1); the 2026-08-26 pair the first bullet carries is blessed
 	// (ranger-base-axft) and is the ONLY currency figure Consequences may
