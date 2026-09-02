@@ -60,6 +60,35 @@ func wrapGrid(w io.Writer, lead, text string) {
 	fmt.Fprintln(w)
 }
 
+// wrapFooter emits a footer paragraph at the two-space indent the footer
+// already uses, wrapped at the width the rest of the screen keeps.
+//
+// The footer's overlay lists are RENDERED from the code that applies them
+// (builtinOverlayKeyList), so their length is not something this file can
+// spell around any more: printed straight, fourteen keys ran to 190
+// columns and the one-screen rule the grid keeps died two lines from the
+// bottom.
+func wrapFooter(w io.Writer, text string) {
+	const width = 96
+	n := 0
+	for i, word := range strings.Fields(text) {
+		switch {
+		case i == 0:
+			fmt.Fprint(w, "  ")
+			n = 2
+		case n+1+runeLen(word) > width:
+			fmt.Fprint(w, "\n  ")
+			n = 2
+		default:
+			fmt.Fprint(w, " ")
+			n++
+		}
+		fmt.Fprint(w, word)
+		n += runeLen(word)
+	}
+	fmt.Fprintln(w)
+}
+
 // runeLen: the wrap counts characters, not bytes. Every row here carries
 // §, →, — and ✓, so a byte count wraps the grid a third of a line early.
 func runeLen(s string) int { return len([]rune(s)) }
@@ -167,14 +196,20 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	// The onboarding footer is about a runtime you DECLARE. Printed under a
 	// built-in it names the ADR 0021 overlay instead: runtimes/<name>.yaml
 	// IS read there, but only for the keys that name a measured instance
-	// fact — command:/skills_flag: refuse, because those change the launch
-	// mechanism a built-in's realizer and verified skill surface already
-	// wear, not a number this box measured.
+	// fact — the mechanism keys refuse, because those change the launch a
+	// built-in's realizer and verified skill surface already wear, not a
+	// number this box measured.
+	//
+	// Both halves are RENDERED from the code that applies them
+	// (builtinOverlayKeyList/builtinMechanismKeyList) rather than spelled
+	// here. Spelled, this screen said "command: and skills_flag: REFUSE"
+	// while eight keys did and four more silently did nothing
+	// (ranger-base-otoq8) — the drift class TestOnboardingFooterNamesEvery-
+	// DeclarableKey already caught one surface over.
 	if rt.Builtin {
 		fmt.Fprintf(w, "\n  %s is a BUILT-IN: runtimes/%s.yaml is a per-key OVERLAY onto it (ADR 0021) — the yaml\n", rt.Name, rt.Name)
-		fmt.Fprintln(w, "  wins for a MEASURED fact (model_<tier>:, model_flag:, prompt:, startup_wait:, record: (+")
-		fmt.Fprintln(w, "  record_why:), native_rules:, egress:, cage_cred:, gate_shell:), the built-in supplies the")
-		fmt.Fprintln(w, "  rest; command: and skills_flag: REFUSE there — the launch mechanism, not a measured fact.")
+		wrapFooter(w, "wins for a MEASURED fact ("+builtinOverlayKeyList()+"), the built-in supplies the rest; "+
+			builtinMechanismKeyList()+" REFUSE there — the launch mechanism, not a measured fact.")
 		fmt.Fprintln(w, "  Onboarding your OWN CLI, by contrast, is filling this WHOLE grid: it takes command:, prompt:,")
 	} else {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)

@@ -1492,20 +1492,101 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 
 // builtinOverlayKeys are the ADR 0021 Decision 1 keys — the ONLY ones a
 // runtimes/<name>.yaml may overlay onto a built-in. Each names a MEASURED
-// instance fact (a model id, a wait, a promotion); nothing that changes the
-// launch MECHANISM is here (that split is Decision 2, refused below). Named
-// once so the refusal message and the overlay code cannot drift apart.
+// instance fact (a model id, a wait, a promotion, where this box's CLI
+// keeps its state); nothing that changes the launch MECHANISM is here
+// (that split is Decision 2, refused below). Named once so the refusal
+// message and the overlay code cannot drift apart.
+//
+// Spelled as KEYS rather than as display text, because the list now has a
+// second reader: a pin walks runtimeYamlKeys() and finds every declarable
+// key on exactly one side of the split, so the next key someone adds to
+// the declarable surface cannot arrive unclassified — which is how the
+// four below spent a release being read by nothing (ranger-base-otoq8).
+// model_<tier> is expanded from Tiers for the same reason it is in
+// runtimeYamlKeys(): a new tier is not a new decision.
 var builtinOverlayKeys = []string{
-	"model_<tier>:", "model_flag:", "prompt:", "startup_wait:",
-	"record: (+ record_why:)", "native_rules:", "egress:", "cage_cred:", "gate_shell:",
+	"model_flag", "prompt", "startup_wait", "record", "record_why",
+	"native_rules", "egress", "cage_cred", "gate_shell",
+	// Declarable since ADR 0012 D4, and until ranger-base-otoq8 dropped in
+	// silence here: warnUnknownRuntimeKeys knows them, so an overlay
+	// declaring one loaded clean and changed nothing. Each is an instance
+	// fact by D1's own line — which channel wins on THIS box's CLI, where
+	// that CLI keeps its state, what its session env must carry — so each
+	// overlays.
+	"rules_precedence", "rules_precedence_why", "state_dir", "env_required",
+}
+
+// builtinMechanismKeys are the ADR 0021 Decision 2 keys: declared in a
+// built-in's overlay they REFUSE the load, naming the fact/mechanism
+// split. Each changes what a launch DOES rather than naming something this
+// box measured, and the built-in's own answer is one posse measured and
+// pinned — a yaml that moves it is a launch nobody measured, which is the
+// whole of D2.
+//
+// The why travels with the key so the refusal says what the key would have
+// changed, not just that it is on a list.
+var builtinMechanismKeys = []struct{ key, why string }{
+	// A hand-written template wearing a built-in's measured realizer and
+	// EnsureUnattended is a launch nobody measured. The per-persona PID's
+	// own command: hatch already covers a hand-written line, visibly (ADR
+	// 0002 §1); this file is not a second one.
+	{"command", "a built-in's launch mechanism is not overlayable"},
+	// The built-ins' skill surfaces are verified mechanisms (skillsClaude,
+	// SkillsCwd materialization — rangerhq-1qd measured that codex and grok
+	// have no flag at all), so either key here declares something measured
+	// false and would run two half-bindings at once.
+	{"skills_flag", "a built-in's skill surface is a verified mechanism, not overlayable"},
+	{"skills_cwd", "a built-in's skill surface is a verified mechanism, not overlayable — declaring it here would point the links at the session dir while the built-in's flag points at the rendered tree, and no line could say which the CLI read"},
+	// Whether a CLI sandboxes its own children is a property of the engine,
+	// not of this box: declared here it would drop the seatbelt wrap posse
+	// measured this built-in needs (or add a nesting refusal it does not).
+	{"self_sandbox", "whether this CLI wraps its own children is a measured property of the engine, not an instance fact"},
+	// parity's ProjectConfigTrust is built on the built-in's measured list;
+	// a yaml one moves the guard rather than a number. project_config_keys:
+	// is the one declarable key that LOOSENS a safety check, which is a
+	// worse thing to do from a file to a guard posse measured.
+	{"project_config", "the session-dir files this CLI reads as configuration are a measured property of the engine; parity's trust check is built on the built-in's list"},
+	{"project_config_keys", "narrowing the project-config trust check is the one declaration that LOOSENS a guard — not something an instance fact may do to a built-in's measured list"},
+	// The flag that approves a tool call with nobody watching is posse's
+	// own measurement of this CLI's dialect; an overlay appends a different
+	// flag to every launch line, which is mechanism by any reading.
+	{"unattended", "the unattended flag is posse's measurement of this CLI's dialect, appended to every launch line here"},
+	// Which registered reader parses this CLI's first turn is Go code, not
+	// a reading of this box; the built-in's is the one measured against its
+	// transcript, and a wrong one misreads a settle in silence.
+	{"turn_outcome", "which registered reader parses this CLI's own first turn is code measured against its transcript, not an instance fact"},
+}
+
+// builtinOverlayKeyList renders the overlay set for a refusal message and
+// for `runtime check`'s built-in footer. Both used to spell it by hand;
+// rendering it means the screen an onboarder reads and the wall they hit
+// cannot disagree with the code that applies it.
+func builtinOverlayKeyList() string {
+	out := make([]string, 0, len(builtinOverlayKeys)+1)
+	out = append(out, "model_<tier>:")
+	for _, k := range builtinOverlayKeys {
+		out = append(out, k+":")
+	}
+	return strings.Join(out, ", ")
+}
+
+// builtinMechanismKeyList renders the refused set the same way, for the
+// same reason.
+func builtinMechanismKeyList() string {
+	out := make([]string, 0, len(builtinMechanismKeys))
+	for _, m := range builtinMechanismKeys {
+		out = append(out, m.key+":")
+	}
+	return strings.Join(out, ", ")
 }
 
 // overlayBuiltin applies runtimes/<name>.yaml as a per-key overlay onto a
 // built-in (ADR 0021): absent file, today's behaviour exactly — rt comes
 // back untouched; present, the yaml wins for the keys in
-// builtinOverlayKeys, everything else stays the built-in's. List-valued
-// keys (native_rules:, egress:) REPLACE rather than merge, same as the
-// template-only path — a merge rule would be a hidden one.
+// builtinOverlayKeys, everything else stays the built-in's, and a key in
+// builtinMechanismKeys refuses the load. List-valued keys (native_rules:,
+// egress:, state_dir:, env_required:) REPLACE rather than merge, same as
+// the template-only path — a merge rule would be a hidden one.
 //
 // rt.Models is cloned before any per-tier write: rt is a value copy of the
 // shared builtinRuntimes[i] entry, but its Models field is still the SAME
@@ -1517,20 +1598,15 @@ func (a *App) overlayBuiltin(rt *Runtime, name string) (*Runtime, error) {
 	if _, err := os.Stat(p); err != nil {
 		return rt, nil
 	}
-	// command:/skills_flag: change the launch MECHANISM a built-in's
-	// measured realizer and verified skill surface already wear (ADR 0021
-	// Decision 2) — a hand-written template wearing a realizer it did not
-	// render, or a flag on a runtime whose skills are materialized by
-	// links, is a launch nobody measured. The per-persona PID's own
-	// command: hatch already covers a hand-written line, visibly (ADR 0002
-	// §1); this file is not a second one.
-	if YamlGet(p, "command") != "" {
-		return nil, Die("runtime %s: %s declares command: — a built-in's launch mechanism is not overlayable (ADR 0021 Decision 2); a runtimes/%s.yaml may only overlay: %s",
-			name, AbbrevHome(p), name, strings.Join(builtinOverlayKeys, ", "))
-	}
-	if YamlGet(p, "skills_flag") != "" {
-		return nil, Die("runtime %s: %s declares skills_flag: — %s's skill surface is a verified mechanism, not overlayable (ADR 0021 Decision 2); a runtimes/%s.yaml may only overlay: %s",
-			name, AbbrevHome(p), name, name, strings.Join(builtinOverlayKeys, ", "))
+	// The MECHANISM keys refuse the load (ADR 0021 Decision 2). Read by
+	// presence, not by value: a bare `unattended:` is still a declaration
+	// that this file decides the launch mechanism, and answering it with
+	// silence is the reading this contract exists to remove.
+	for _, m := range builtinMechanismKeys {
+		if yamlHasKey(p, m.key) {
+			return nil, Die("runtime %s: %s declares %s: — %s (ADR 0021 Decision 2); a runtimes/%s.yaml may only overlay: %s",
+				name, AbbrevHome(p), m.key, m.why, name, builtinOverlayKeyList())
+		}
 	}
 	rt.Path = p
 	models := make(map[string]string, len(rt.Models))
@@ -1588,6 +1664,42 @@ func (a *App) overlayBuiltin(rt *Runtime, name string) (*Runtime, error) {
 	// shell ON, same as the template-only path (more wall, not less).
 	if YamlGet(p, "gate_shell") == "false" {
 		rt.NoGateShell = true
+	}
+	// rules_precedence: which channel wins a native-rulebook/PID collision
+	// on THIS box's CLI. The most instance-shaped key there is — it is a
+	// probe's answer, not a code branch (ADR 0017 §5), and a built-in's
+	// value is one release's measurement of one install.
+	if v := YamlGet(p, "rules_precedence"); v != "" {
+		if !ValidRulesPrecedence(v) {
+			return nil, Die("runtime %s: %s has rules_precedence: %q (want %s or %s — ADR 0017 §5)", name, AbbrevHome(p), v, RulesPrecedencePID, RulesPrecedenceNative)
+		}
+		rt.RulesPrecedence = v
+		rt.RulesPrecedenceWhy = YamlGet(p, "rules_precedence_why")
+	}
+	// state_dir:/env_required: REPLACE when present, keep the built-in's
+	// when absent — the native_rules:/egress: rule, and for the same
+	// reason: a merge would be a hidden rule, and a length check cannot
+	// tell `state_dir: []` (this install keeps no state where posse thinks)
+	// from the key being absent.
+	//
+	// Replacing state_dir: moves the seatbelt's writable grant, so an
+	// overlay naming the wrong path costs a first-run flow every launch.
+	// That is what an override is for and it is loud: the grid names the
+	// file per key, and the file is the promoted config root (ADR 0039 D2),
+	// not something a session can write.
+	if yamlHasKey(p, "state_dir") {
+		v, err := runtimeStateDirs(p)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.StateDirs = v
+	}
+	if yamlHasKey(p, "env_required") {
+		v, err := runtimeEnvRequired(p)
+		if err != nil {
+			return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
+		}
+		rt.EnvRequired = v
 	}
 	warnUnknownRuntimeKeys(runtimeNoticeWriter, name, p)
 	return rt, nil

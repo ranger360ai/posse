@@ -445,10 +445,16 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	// the first-run flow D4 already named rather than as a silent grant.
 	// Every production caller resolves the launch's runtime and passes
 	// rt.StateDirs (planLaunch and RelaunchAgent in herdrback.go, the reach
-	// probe in reachability.go, `posse gates` in cmd/posse/main.go); a
-	// built-in's declaration is not overlayable from runtimes/<name>.yaml
-	// (builtinOverlayKeys), so ~/.claude cannot go missing from a claude
-	// launch by configuration.
+	// probe in reachability.go, `posse gates` in cmd/posse/main.go). A
+	// built-in's declaration IS overlayable from runtimes/<name>.yaml since
+	// ranger-base-otoq8 (state_dir names where THIS box's CLI keeps its
+	// state, which is an instance fact by ADR 0021 D1), so ~/.claude can be
+	// moved — or, with an explicit empty list, removed — from a claude
+	// launch by configuration. Loudly: that file is the promoted config
+	// root (ADR 0039 D2), no session can write it, and `runtime check`
+	// credits the key to it by name. The failure it buys is the visible
+	// one D4 already named — a CLI re-running its first-run flow — not a
+	// silent grant.
 	for _, d := range stateDirs {
 		add(ExpandTilde(d))
 	}
