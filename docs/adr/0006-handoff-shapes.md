@@ -113,9 +113,9 @@ What follows from it, in this record and the ones it touches:
   assigned to.
 - **ADR 0005 §2's HANDOFF rung drops `-a <persona>`**, stamped in the
   same commit as this amendment. The ladder the harness renders
-  (`EscalationLadder`, `dispatch.go`) still says `-a <persona>` until
-  the code bead cut from this amendment lands; until then the prompt
-  contradicts the record, and the record is right. SPIKE already files
+  (`EscalationLadder`, `dispatch.go`) followed on the code bead cut
+  from this amendment — landed c067486 (ranger-base-uzw11), pinned by
+  `TestEscalationLadderHandoffFilesToTheLane`. SPIKE already files
   `-l <runner's lane>`; ASK keeps `-a <operator>` (case 4).
 - **Instance PIDs are the operator's to promote** (§4, unchanged). This
   crew's Hand-to rows move from `<developer> · -l code` to `the code
