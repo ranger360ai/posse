@@ -90,6 +90,12 @@ func TestAutoReapKeepsAnOpenIdleSession(t *testing.T) {
 	}
 }
 
+// ADR 0008's shield over the session the operator MADE — the half of it that
+// ranger-base-f6lk left untouched. The name is an operator's, not the one
+// dispatch would have rendered for this persona, dir and bead, so no grace
+// applies and no age reaches it: the crew arm added by f6lk takes only a
+// session dispatch itself created (reapresidue_test.go pins that arm and
+// this boundary from the other side).
 func TestAutoReapKeepsACrewSession(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -100,11 +106,14 @@ func TestAutoReapKeepsACrewSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	idleClaude(t, fake)
+	// Older than any grace in the file, so the pin is the SHAPE and not the
+	// clock: a fresh session would survive this sweep either way.
+	ageLaunch(t, b, "ranger-crew", 30*24*time.Hour)
 
 	d.autoReapPass()
 
 	if _, ok := b.readMeta("ranger-crew"); !ok {
-		t.Error("ADR 0008: a crew session is never reaped, closed bead or not")
+		t.Error("ADR 0008: a crew session the operator made is never reaped, closed bead or not, at any age")
 	}
 }
 

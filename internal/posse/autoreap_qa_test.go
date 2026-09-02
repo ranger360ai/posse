@@ -381,6 +381,15 @@ func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
 // `posse crew --off`. So the shape stands and this test with it — what
 // changed is that `posse ls` now says so out loud (NoBeadTag) instead of
 // leaving the operator to conclude the reaper broke.
+//
+// AMENDED by ranger-base-f6lk: "outside the sweep permanently" was the whole
+// complaint by 2026-08-29 — one such session sat idle twelve hours and was
+// hand-reaped, which is the mechanism the sweep exists to replace. The
+// pointer is still never inferred from the name, and this session is still
+// not reaped over a BEAD; what takes it now is its own arm, on age and a
+// provably empty tree (reapresidue_test.go). Inside `reap_unpointed_after:`
+// nothing has changed, and that is what this pins — the fixture is a
+// freshly-created session and stays one deliberately.
 func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -397,7 +406,7 @@ func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) 
 	d.autoReapPass()
 
 	if _, ok := b.readMeta(name); !ok {
-		t.Error("a session with no bead pointer must not be reaped on the strength of its name alone")
+		t.Error("a session with no bead pointer must not be reaped on the strength of its name alone — its own arm's grace has not passed and no bead has been read")
 	}
 }
 
@@ -472,15 +481,27 @@ func TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer(t *testing.
 	writePersona(t, b.App, "ranger", "[go]")
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "fake-show.json"), []byte(`[{"id":"a-1","status":"closed"}]`), 0o644)
-	name := SessionForBead("ranger", dir, "a-1")
-	// Exactly what `posse new <name> --agent ranger` builds, plus the pointer
-	// option (a) would add: still not reaped, and the pointer is why we know
-	// the crew mark is the arm that fires.
+	// Exactly what `posse new ranger-staffing --agent ranger` builds, plus
+	// the pointer option (a) would add: still not reaped, and the pointer is
+	// why we know the crew mark is the arm that fires.
+	//
+	// The NAME is the operator's, and since ranger-base-f6lk that is
+	// load-bearing rather than incidental. f6lk's crew arm reaps a
+	// crew-marked session whose name is the one dispatch would have rendered
+	// for this persona, dir and bead — the operator stepping into a FLEET
+	// session — so this fixture is the shape `posse new` actually produces
+	// (it has no --bead flag and cannot cut a worktree, so the pointer can
+	// only have arrived later, from `posse prompt`). What stays uncovered is
+	// small and stated on the record: an operator who types dispatch's exact
+	// name into `posse new` and is then hand-dispatched that same bead is
+	// indistinguishable from dispatch's own session.
+	name := "ranger-staffing"
 	if err := b.CreateSession(NewSessionOpts{Name: name, Dir: dir, Agent: "ranger", Bead: "a-1", Crew: true}); err != nil {
 		t.Fatal(err)
 	}
 	idleClaude(t, fake)
-	ageLaunch(t, b, name, d.RelaunchGrace+time.Minute)
+	// Far past every grace in the file: the pin is the shape, not the clock.
+	ageLaunch(t, b, name, 30*24*time.Hour)
 
 	d.autoReapPass()
 
