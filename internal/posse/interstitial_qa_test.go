@@ -16,12 +16,7 @@ func TestQADangerousCodexInterstitialRefusesDispatchUntilSilenced(t *testing.T) 
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 
-	codexHome := t.TempDir()
-	t.Setenv("CODEX_HOME", codexHome)
-	if err := os.WriteFile(filepath.Join(codexHome, "version.json"),
-		[]byte(`{"latest_version":"0.150.0","dismissed_version":"0.149.1"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	codexMenuBack(t)
 
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -61,12 +56,30 @@ func TestQADangerousCodexInterstitialRefusesDispatchUntilSilenced(t *testing.T) 
 // fact it turns on: the dismissal is good for ONE release.
 func codexMenuBack(t *testing.T) {
 	t.Helper()
+	stubCodexInstalled(t, "codex-cli 0.149.1")
 	writeCodexVersion(t, `{"latest_version":"0.150.0","dismissed_version":"0.149.1"}`)
 }
 
 func codexMenuSilenced(t *testing.T) {
 	t.Helper()
+	// The install stays BEHIND latest here too, so this fixture's silence is
+	// the operator's dismissal and nothing else. Letting it float up to
+	// latest would silence the box by the ranger-base-cohw arm instead, and
+	// the negative controls below would stop measuring the dismissal.
+	stubCodexInstalled(t, "codex-cli 0.149.1")
 	writeCodexVersion(t, `{"latest_version":"0.150.0","dismissed_version":"0.150.0"}`)
+}
+
+// stubCodexInstalled holds the installed-version reader still. Since
+// ranger-base-cohw the probe asks codex what it is actually running, so
+// without this every codex fixture in the package would read differently on
+// a box whose own codex has moved — and the arms that turn on
+// "installed < latest" would go vacuous the day it moves past the fixture.
+func stubCodexInstalled(t *testing.T, line string) {
+	t.Helper()
+	prev := codexInstalledVersion
+	codexInstalledVersion = func() string { return line }
+	t.Cleanup(func() { codexInstalledVersion = prev })
 }
 
 func writeCodexVersion(t *testing.T, body string) {

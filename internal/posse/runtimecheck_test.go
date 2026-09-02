@@ -300,6 +300,11 @@ func TestInterstitialProbesReadRealShapes(t *testing.T) {
 		t.Errorf("auto_update = false is the pin holding: %+v", sil)
 	}
 
+	// The box runs 0.149.1 for both arms below, so the difference between
+	// them is the dismissal and only the dismissal (ranger-base-cohw made
+	// the installed version a third input; an unheld one would silence the
+	// second arm here as soon as this box's codex passed 0.150.0).
+	stubCodexInstalled(t, "codex-cli 0.149.1")
 	vj := filepath.Join(home, ".codex", "version.json")
 	os.WriteFile(vj, []byte(`{"latest_version":"0.149.1","dismissed_version":"0.149.1"}`), 0o644)
 	if sil := codexUpdateProbe(); !sil.Silenced {
@@ -792,6 +797,11 @@ func TestCodexUpdateProbePrefersTheDurableSilence(t *testing.T) {
 	cfg := filepath.Join(home, ".codex", "config.toml")
 	vj := filepath.Join(home, ".codex", "version.json")
 
+	// This box runs 0.150.1 against a latest of 0.151.0 — behind, so the
+	// ranger-base-cohw arm cannot silence anything here either. Held rather
+	// than read off the machine for the same reason as the fixture below.
+	stubCodexInstalled(t, "codex-cli 0.150.1")
+
 	// A version.json that is DUE a menu, held constant across every arm: an
 	// arm that read as silenced because the dismissal happened to be current
 	// would prove nothing about the key under test.
@@ -834,5 +844,209 @@ func TestCodexUpdateProbePrefersTheDurableSilence(t *testing.T) {
 				t.Errorf("an armed box must fall through to the version.json reading: %+v", sil)
 			}
 		})
+	}
+}
+
+// ranger-base-cohw: the reading version.json alone cannot make.
+//
+// codex draws the menu when a release NEWER than the running one exists.
+// Comparing dismissed_version against latest_version answers a different
+// question — "did the operator dismiss THIS release" — and a box that
+// UPDATED instead of dismissing answers it "no" forever. MEASURED
+// 2026-08-29 on codex-cli 0.150.1 with latest_version 0.150.1 and
+// dismissed_version 0.149.1: the probe said "the menu is back" while a
+// peeked launch pane carried no "Update available" and herdr read both live
+// codex sessions idle rather than blocked on its own update_menu rule. ADR
+// 0013 §2 turns that reading into a LAUNCH REFUSE, so the most up-to-date
+// box was the one that could not launch.
+//
+// Every row that reads SILENCED here is paired with the row one version
+// apart that must not: a predicate that silenced on the installed version
+// alone would pass half this table and refuse nothing.
+func TestCodexUpdateProbeReadsTheInstalledVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	vj := filepath.Join(home, ".codex", "version.json")
+
+	for _, tc := range []struct {
+		name      string
+		version   string // ~/.codex/version.json
+		installed string // what `codex --version` prints
+		silenced  bool
+		unknown   bool
+		want      string // a substring of the reading
+	}{
+		// The bead's own box, and the arm that was wrong.
+		{"up to date behind a stale dismissal", `{"latest_version":"0.150.1","dismissed_version":"0.149.1"}`,
+			"codex-cli 0.150.1", true, false, "nothing newer to offer"},
+		// Its wrong arm: one release behind, same stale dismissal. Without
+		// this the fix could silence every box and still go green above.
+		{"behind, with a stale dismissal", `{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`,
+			"codex-cli 0.150.1", false, false, "the menu is back"},
+		{"ahead of latest_version", `{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`,
+			"codex-cli 0.152.0", true, false, "nothing newer to offer"},
+		// The same defect on the other branch of the old code: an operator
+		// who has NEVER dismissed anything and is at latest meets no menu.
+		{"up to date, never dismissed", `{"latest_version":"0.150.1"}`,
+			"codex-cli 0.150.1", true, false, "nothing newer to offer"},
+		{"behind, never dismissed", `{"latest_version":"0.151.0"}`,
+			"codex-cli 0.150.1", false, false, "the menu draws on next launch"},
+		// The dismissal still stands on its own — and it is read BEFORE the
+		// subprocess, which the call-count assertion below pins.
+		{"dismissed exactly this release", `{"latest_version":"0.151.0","dismissed_version":"0.151.0"}`,
+			"codex-cli 0.150.1", true, false, "silenced until the next release"},
+		// A trailing build suffix must not be read as the release number,
+		// and the numbers must not be compared as strings: "0.99.0" is an
+		// OLDER release than "0.150.1" and sorts after it as text.
+		{"version line with a build suffix", `{"latest_version":"0.150.1","dismissed_version":"0.149.1"}`,
+			"codex-cli 0.150.1 (3e1eaa3)", true, false, "nothing newer to offer"},
+		{"double-digit minor against a single-digit one", `{"latest_version":"0.99.0","dismissed_version":"0.98.0"}`,
+			"codex-cli 0.150.1", true, false, "nothing newer to offer"},
+		// The honest third arm. Neither of these is a "no": DangerUnsilenced
+		// refuses on a reading, and there is no reading about the menu here
+		// without the installed version (ranger-base-9r33).
+		{"codex not installed", `{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`,
+			"", false, true, "could not read the installed codex version"},
+		{"a version line with no number in it", `{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`,
+			"codex-cli nightly", false, true, `"codex-cli nightly"`},
+		{"a pre-release this must not order", `{"latest_version":"0.151.0-rc.1","dismissed_version":"0.149.1"}`,
+			"codex-cli 0.150.1", false, true, "cannot be compared"},
+		{"no latest_version at all", `{"dismissed_version":"0.149.1"}`,
+			"codex-cli 0.150.1", false, true, "no latest_version"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(vj, []byte(tc.version), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			stubCodexInstalled(t, tc.installed)
+			sil := codexUpdateProbe()
+			if sil.Silenced != tc.silenced || sil.Unknown != tc.unknown {
+				t.Fatalf("silenced=%v unknown=%v, want %v/%v: %+v", sil.Silenced, sil.Unknown, tc.silenced, tc.unknown, sil)
+			}
+			if !strings.Contains(sil.Why, tc.want) {
+				t.Errorf("the reading must say %q: %+v", tc.want, sil)
+			}
+			// The shelf life is still the reason this probe prints numbers
+			// instead of a bare yes, so every reading it can reach has to
+			// carry them.
+			if !tc.unknown && !strings.Contains(sil.Why, "0.1") {
+				t.Errorf("the reading must carry the versions it turned on: %+v", sil)
+			}
+		})
+	}
+}
+
+// The subprocess is the cost of the third arm, so the two arms that can
+// answer without one must not pay it. This is also the precedence pin with
+// teeth: the fleet pin means what version.json says is not a reading about
+// any screen, and asking codex its version there would be measuring a box
+// the operator has already taken out of the question.
+func TestCodexUpdateProbeAsksCodexOnlyWhenItHasTo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(home, ".codex", "config.toml")
+	vj := filepath.Join(home, ".codex", "version.json")
+
+	calls := 0
+	prev := codexInstalledVersion
+	codexInstalledVersion = func() string { calls++; return "codex-cli 0.150.1" }
+	t.Cleanup(func() { codexInstalledVersion = prev })
+
+	for _, tc := range []struct {
+		name    string
+		cfgBody string
+		version string
+		want    int
+	}{
+		{"the fleet pin answers first", "check_for_update_on_startup = false\n",
+			`{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`, 0},
+		{"an absent version.json is unknown before anything is asked", "", "", 0},
+		{"the operator's dismissal answers second", "",
+			`{"latest_version":"0.151.0","dismissed_version":"0.151.0"}`, 0},
+		{"and otherwise codex is asked", "",
+			`{"latest_version":"0.151.0","dismissed_version":"0.149.1"}`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Remove(cfg)
+			os.Remove(vj)
+			if tc.cfgBody != "" {
+				if err := os.WriteFile(cfg, []byte(tc.cfgBody), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.version != "" {
+				if err := os.WriteFile(vj, []byte(tc.version), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			calls = 0
+			codexUpdateProbe()
+			if calls != tc.want {
+				t.Errorf("asked codex its version %d time(s), want %d", calls, tc.want)
+			}
+		})
+	}
+}
+
+// The two helpers the third arm is made of, over the shapes that broke a
+// naive read: a version is not its version LINE, and dotted numbers do not
+// order as strings.
+func TestVersionNumberAndCompare(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want string
+	}{
+		{"codex-cli 0.150.1", "0.150.1"},
+		{"0.150.1", "0.150.1"},
+		{"v1.0.5", "1.0.5"},
+		{"codex-cli 0.150.1 (3e1eaa3)", "0.150.1"},
+		// The first dotted number wins, not the last: a build stamp trailing
+		// the release must not be taken for it.
+		{"codex-cli 0.150.1 built 2026.08.29", "0.150.1"},
+		{"grok 1.0", "1.0"},
+		// Nothing to read is "", never a guess. A lone integer is not a
+		// version here — a banner's "2" would otherwise become one.
+		{"", ""},
+		{"codex-cli nightly", ""},
+		{"codex 2 (beta)", ""},
+		{"0.151.0-rc.1", ""},
+	} {
+		if got := versionNumber(tc.line); got != tc.want {
+			t.Errorf("versionNumber(%q) = %q, want %q", tc.line, got, tc.want)
+		}
+	}
+
+	for _, tc := range []struct {
+		a, b string
+		want int
+		ok   bool
+	}{
+		{"0.150.1", "0.150.1", 0, true},
+		{"0.150.1", "0.151.0", -1, true},
+		{"0.151.0", "0.150.1", 1, true},
+		// As strings "0.150.1" < "0.99.0"; as releases it is the newer one.
+		{"0.150.1", "0.99.0", 1, true},
+		// A missing segment is a zero, so these are one release.
+		{"0.150", "0.150.0", 0, true},
+		{"0.150", "0.150.1", -1, true},
+		{"v0.150.1", "0.150.1", 0, true},
+		// Not comparable is not "equal" and not "older".
+		{"0.150.1", "0.151.0-rc.1", 0, false},
+		{"nightly", "0.151.0", 0, false},
+		{"", "0.151.0", 0, false},
+		{"0..1", "0.0.1", 0, false},
+	} {
+		got, ok := versionCmp(tc.a, tc.b)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("versionCmp(%q, %q) = %d, %v; want %d, %v", tc.a, tc.b, got, ok, tc.want, tc.ok)
+		}
 	}
 }

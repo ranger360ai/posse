@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -114,14 +115,14 @@ func grokAutoUpdateProbe() Silence {
 	return Silence{Silenced: v == "false", Why: "[cli] auto_update = " + v + " in " + AbbrevHome(p)}
 }
 
-// codexUpdateProbe: two silences, and only one of them expires.
+// codexUpdateProbe: three silences, and only one of them expires.
 //
 // The DURABLE one is the fleet pin (etc/codex/version-pin.toml,
 // ranger-base-poj5): check_for_update_on_startup = false in the operator's
 // ~/.codex/config.toml, and codex never draws the menu again. Measured in a
 // four-arm tmux rig against a version.json that was DUE a menu — key absent,
 // key true, and an unrelated key all drew it; only this key at false did
-// not. It is checked first because it outranks the other: with the startup
+// not. It is checked first because it outranks the others: with the startup
 // check off, what version.json happens to say is not a reading about any
 // screen the operator will see.
 //
@@ -131,7 +132,38 @@ func grokAutoUpdateProbe() Silence {
 // both numbers for, and on 2026-08-30 it is what walled every codex dispatch:
 // the tap moved to 0.151.0 against a dismissal of 0.149.1, and DangerUnsilenced
 // refuses on a reading of "no".
-func codexUpdateProbe() Silence {
+//
+// The third is the one this probe read past for its whole life
+// (ranger-base-cohw): THE BOX IS ALREADY AT THE LATEST RELEASE. codex draws
+// the menu when a release NEWER than the running one exists, so an operator
+// who UPDATED instead of dismissing has nothing to be offered — and comparing
+// only the two fields of version.json called that box un-silenced forever.
+// MEASURED 2026-08-29 on codex-cli 0.150.1 against
+// {"latest_version":"0.150.1","dismissed_version":"0.149.1"}: this probe said
+// "the menu is back" while two independent witnesses (a peeked launch pane
+// with no "Update available", and herdr reading both live codex sessions
+// idle rather than blocked on its own update_menu rule) said no menu drew.
+// ADR 0013 §2 makes that reading a LAUNCH REFUSE, so the box that is MOST
+// up to date was the one that could not launch.
+//
+// So the installed version is read — by the same reader the drift check uses,
+// and only when the two cheap arms above have not already answered, because
+// it costs a subprocess. If it cannot be read, or cannot be compared, the
+// answer is UNKNOWN and not "no": without it there is no reading about the
+// menu here at all, and posse refuses on a reading, never on ignorance
+// (ranger-base-9r33). The probe keeps printing its numbers rather than a bare
+// yes, because the dismissal arm still has a shelf life.
+func codexUpdateProbe() Silence { return codexUpdateSilence(codexInstalledVersion) }
+
+// codexInstalledVersion is the seam, and the seam is the READER — never the
+// permission to read (ranger-base-02zr). ProbeCLIVersion is the same reader
+// the parity drift check uses: resolved outside the gates dirs so a shim is
+// never measured, memoized per process, and "" when codex is not there or
+// will not answer. It returns codex's whole line ("codex-cli 0.150.1"), so
+// the parsing under test lives here rather than in whatever a test hands in.
+var codexInstalledVersion = func() string { return ProbeCLIVersion("codex") }
+
+func codexUpdateSilence(installed func() string) Silence {
 	// The pin is a value, not a presence: a key that is present and true is
 	// the menu ARMED, so this must never read as "someone mentioned it".
 	cp := filepath.Join(codexHome(), "config.toml")
@@ -156,13 +188,123 @@ func codexUpdateProbe() Silence {
 	if json.Unmarshal(b, &v) != nil {
 		return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"}
 	}
-	if v.Dismissed == "" {
-		return Silence{Why: "dismissed_version unset in " + AbbrevHome(p) + " (latest " + v.Latest + ") — the menu draws on next launch"}
-	}
-	if v.Dismissed == v.Latest {
+	// The operator's own answer, for exactly this release. First of the two
+	// version arms because it is free: it settles the box without asking
+	// codex anything.
+	if v.Dismissed != "" && v.Dismissed == v.Latest {
 		return Silence{Silenced: true, Why: "dismissed_version " + v.Dismissed + " = latest_version " + v.Latest + " — silenced until the next release"}
 	}
-	return Silence{Why: "dismissed_version " + v.Dismissed + " but latest_version " + v.Latest + " — the menu is back"}
+	if v.Latest == "" {
+		// Nothing to measure a dismissal or an install against. Reachable
+		// on a version.json codex has written some other shape into, and
+		// the old code read it as "the menu is back" — a refusal on a field
+		// that was not there.
+		return Silence{Unknown: true, Why: "no latest_version in " + AbbrevHome(p) + " — nothing to compare the installed codex against, so this cannot tell whether the update menu is silenced"}
+	}
+	line := installed()
+	inst := versionNumber(line)
+	if inst == "" {
+		why := "could not read the installed codex version"
+		if line != "" {
+			why += " out of " + strconv.Quote(line)
+		}
+		return Silence{Unknown: true, Why: why + " (dismissed_version " + dismissedOrUnset(v.Dismissed) + ", latest_version " + v.Latest + " in " + AbbrevHome(p) +
+			") — the menu draws only when a release NEWER than the running one exists, so this cannot tell whether it is silenced"}
+	}
+	cmp, ok := versionCmp(inst, v.Latest)
+	if !ok {
+		return Silence{Unknown: true, Why: "installed codex " + inst + " and latest_version " + v.Latest + " in " + AbbrevHome(p) +
+			" cannot be compared — cannot tell whether the update menu is silenced"}
+	}
+	if cmp >= 0 {
+		return Silence{Silenced: true, Why: "codex " + inst + " is installed and latest_version is " + v.Latest + " — there is nothing newer to offer, so the menu does not draw (dismissed_version " + dismissedOrUnset(v.Dismissed) + " is moot)"}
+	}
+	if v.Dismissed == "" {
+		return Silence{Why: "dismissed_version unset in " + AbbrevHome(p) + " (installed " + inst + ", latest " + v.Latest + ") — the menu draws on next launch"}
+	}
+	return Silence{Why: "dismissed_version " + v.Dismissed + " but latest_version " + v.Latest + " and codex " + inst + " is installed — the menu is back"}
+}
+
+// dismissedOrUnset keeps the two numbers this probe prints from rendering as
+// a blank where a version should be: an empty dismissal is a fact about the
+// box, and "dismissed_version  is moot" reads like a truncated line.
+func dismissedOrUnset(d string) string {
+	if d == "" {
+		return "unset"
+	}
+	return d
+}
+
+// versionNumber pulls the release number out of a CLI's own version line —
+// codex prints "codex-cli 0.150.1", and a bare "0.150.1" is what several
+// others print. The FIRST dotted-numeric field wins, not the last: a
+// trailing "(3e1eaa3)" or a build date must not be taken for the release.
+// Two segments minimum, so a stray "2" in a banner is not a version. "" when
+// the line carries no such field, which every caller reads as "cannot tell",
+// never as "old".
+func versionNumber(line string) string {
+	for _, f := range strings.Fields(line) {
+		f = strings.TrimPrefix(f, "v")
+		if parts, ok := versionParts(f); ok && len(parts) >= 2 {
+			return f
+		}
+	}
+	return ""
+}
+
+// versionParts splits a dotted numeric version. Digits only, and every
+// segment required: a pre-release tail ("0.151.0-rc.1") is deliberately NOT
+// comparable here, because guessing at its order is exactly the kind of
+// answer this probe must not invent.
+func versionParts(s string) ([]int, bool) {
+	if s == "" {
+		return nil, false
+	}
+	var out []int
+	for _, seg := range strings.Split(s, ".") {
+		if seg == "" {
+			return nil, false
+		}
+		for i := 0; i < len(seg); i++ {
+			if seg[i] < '0' || seg[i] > '9' {
+				return nil, false
+			}
+		}
+		n, err := strconv.Atoi(seg)
+		if err != nil {
+			return nil, false // a segment too long for an int
+		}
+		out = append(out, n)
+	}
+	return out, true
+}
+
+// versionCmp orders two dotted versions (-1, 0, 1), false when either is not
+// one. Segment-wise and numeric, because the strings do not order: "0.150.1"
+// sorts BEFORE "0.99.0" as text and after it as a release. A missing segment
+// is a zero, so "0.150" and "0.150.0" are the same release.
+func versionCmp(a, b string) (int, bool) {
+	pa, oka := versionParts(strings.TrimPrefix(a, "v"))
+	pb, okb := versionParts(strings.TrimPrefix(b, "v"))
+	if !oka || !okb {
+		return 0, false
+	}
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		x, y := 0, 0
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		switch {
+		case x < y:
+			return -1, true
+		case x > y:
+			return 1, true
+		}
+	}
+	return 0, true
 }
 
 // GrokInterstitials — measured on grok 1.0.5 (ranger-base-3j8,
