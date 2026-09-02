@@ -2,8 +2,8 @@
 
 *Status: accepted 2026-09-02 (ranger-base-zrkl6, from ranger-base-3i035 /
 ranger-base-w9jv (b)) · owner: architect · extends ADR 0024 D2 and ADR
-0048 D2 · builds in the code bead cut from zrkl6 (dinesh); the posture
-doc and the work-install runbook amend in the security bead (hoover) ·
+0048 D2 · builds in ranger-base-nfg8l (code, dinesh); the posture
+doc and the work-install runbook amend in ranger-base-83crg (security, hoover) ·
 number: 0043–0045 stay pre-named by ADR 0040 §2; per 0040 §3.1 this file
 takes the next number no bead has claimed.*
 
