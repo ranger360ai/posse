@@ -343,7 +343,22 @@ not a launch refusal.
 read and does not contain the model moves a launch. Unreadable
 credential, unreachable endpoint, 429, empty answer, runtime with no
 per-tier mapping, preflight off — all UNKNOWN, and unknown launches
-exactly what it was asked to, with no launch warning. The request
+exactly what it was asked to, with no launch warning.
+
+*(Amended 2026-09-02, ADR 0039 D3c per the operator's ruling on
+ranger-base-v1p66; built in ranger-base-ksmmz.)* "Actually read" is
+bounded by `model_probe_ttl`, which is the reading's LEASE. Past it,
+with the refresh failing, the retained reading is quoted and moves
+nothing: the verdict is UNKNOWN, the launch takes the tier as asked,
+and a line prints whenever the wanted id is absent from that stale
+list, so nobody is launched on an unlisted id in silence. Unbounded,
+the rule demoted the whole shop for as long as the probe stayed
+down — which on this instance is most hours, the credential rotting
+faster than the reading (ranger-base-wkai3) — and the only cure was a
+hand-edited state file. A rate-limit cooldown still governs whether
+posse re-ASKS, never whether it trusts. This is the one UNKNOWN above
+that is not silent, and the reason is that it is the only one where
+posse holds a fact it is declining to act on. The request
 outcome is recorded in `state/model-catalog.log` so UNKNOWN is
 diagnosable without changing that launch. A preflight that guessed
 "unavailable" would silently downgrade the whole shop, which is the
