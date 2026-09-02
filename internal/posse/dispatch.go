@@ -142,11 +142,22 @@ type Dispatcher struct {
 	// one-shot Run (cmd/posse's `dispatch`, every direct test call) never
 	// sets this and never refires.
 	Refill bool
-	// refillCtx is read only when Refill is set: once it ends, a settling
-	// seat is still judged and freed (mergeBack, commitQueue, the reap — all
-	// unchanged), but the freed seat is not fired into again. The loop is
-	// stopping, and ADR 0028 §1's cascade must not outlive it.
-	refillCtx context.Context
+	// stopCtx is the watch loop's own context — the one SIGTERM and SIGINT
+	// end (cmd/posse: signal.NotifyContext). Watch sets it; a one-shot Run
+	// leaves it nil, and nil means "no loop to stop", never "stopped".
+	//
+	// Two readers, one meaning — the loop is stopping:
+	//
+	//   - the refill (read only when Refill is set): a settling seat is
+	//     still judged and freed (mergeBack, commitQueue, the reap — all
+	//     unchanged), but the freed seat is not fired into again. ADR 0028
+	//     §1's cascade must not outlive the loop.
+	//   - the gather (ranger-base-e9d9): a wait leg still in flight is
+	//     abandoned rather than waited out, claim kept. A leg is
+	//     PromptWaitMS long — 15 minutes in production — and the ladder
+	//     above it runs to WaitCeiling, so a drain that waited for them
+	//     needed SIGKILL to end at all.
+	stopCtx context.Context
 	// Now is the clock the blind window is measured against; nil = time.Now.
 	// Tests age the clock instead of sleeping ten minutes.
 	Now func() time.Time
@@ -1771,7 +1782,11 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	//
 	// A pass IN FLIGHT is not this gate's business: the decline is taken at
 	// the fire loop's entry and never inside it, which is §3's "a pass in
-	// flight finishes first" — the same contract ctrl-c already keeps.
+	// flight finishes first". §3 calls that the same contract as ctrl-c, and
+	// since ranger-base-e9d9 the two differ in one place worth naming: a
+	// pause lets the gather run to its end, while a drain abandons the legs
+	// still in flight and keeps their claims (gather). Neither aborts a
+	// launch, which is what the sentence is about.
 	//
 	// --dry-run reports and gets out of the way, for the load guard's own
 	// reason: the diagnostic launches nothing, so hiding the routing behind
@@ -2027,7 +2042,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		if g.working {
 			continue
 		}
-		if d.refillCtx != nil && d.refillCtx.Err() != nil {
+		if d.stopping() {
 			// The loop is stopping: the seat this settle just freed is
 			// still recorded free (below), but nothing fires into it.
 			continue
@@ -2728,6 +2743,31 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	return p, nil
 }
 
+// stopping reports that the watch loop this Run belongs to has been asked to
+// end (SIGTERM/SIGINT). A one-shot Run has no loop and is never stopping.
+func (d *Dispatcher) stopping() bool { return d.stopCtx != nil && d.stopCtx.Err() != nil }
+
+// stopped is the same question as a channel, for a select that is already
+// blocking on something else. A one-shot Run's nil context yields a nil
+// channel, and a nil channel in a select blocks forever — which is exactly
+// "this Run has no loop to stop", not "this Run may not be interrupted".
+func (d *Dispatcher) stopped() <-chan struct{} {
+	if d.stopCtx == nil {
+		return nil
+	}
+	return d.stopCtx.Done()
+}
+
+// stopClaim is the verdict every wait path takes when the loop is stopping
+// (ranger-base-e9d9): the same one a leg that ran out over an unreadable
+// agent gets — the claim is kept and the bead is not judged this pass, so a
+// later pass sees it held, not free. Nothing is unclaimed on the way out: a
+// drain is not evidence about the agent, and the agent is still working.
+func (d *Dispatcher) stopClaim(p *pendingBead) (bool, error) {
+	d.printf("◷ %-14s watch loop stopping — claim kept, not judged this pass (posse peek %s)\n", p.is.ID, p.session)
+	return true, nil
+}
+
 // gather waits for one fired prompt to settle and judges the bead. It
 // returns inFlight=true when the wait gave up on an agent that is still
 // working, blocked, or that herdr cannot describe — the bead stays claimed
@@ -2746,7 +2786,27 @@ func (d *Dispatcher) gather(p *pendingBead) (inFlight bool, err error) {
 	var settledAt time.Time
 wait:
 	for {
-		r := <-p.result
+		var r promptResult
+		select {
+		case r = <-p.result:
+		default:
+			// A leg that has already landed is judged, stopping or not: the
+			// settle is in hand, dropping it would strand a bead whose agent
+			// is done, and a bare two-case select picks uniformly between a
+			// ready result and a closed stop channel.
+			select {
+			case r = <-p.result:
+			case <-d.stopped():
+				// The drain (ranger-base-e9d9). A --wait leg is PromptWaitMS
+				// long and the agent is under no obligation to settle inside
+				// it, so a gather that only checked the stop between legs
+				// held the whole loop open for up to fifteen minutes after
+				// the signal — which is why the 2026-08-30 drain needed
+				// SIGKILL. The leg is left in flight: its goroutine writes
+				// into a buffered channel nobody reads again, and exits.
+				return d.stopClaim(p)
+			}
+		}
 		if r.err == nil {
 			settled, settledAt = agentStatusFromResult(r.res), r.at
 			break
@@ -2762,6 +2822,15 @@ wait:
 		// never handed back on the answer "posse cannot tell".
 		if !IsHerdrCode(r.err, "timeout") && !p.delivered {
 			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.resumed, r.err)
+		}
+		if d.stopping() {
+			// The same verdict one rung earlier, and defensive rather than
+			// load-bearing: the select above is what GUARANTEES the exit.
+			// A leg that came back timed out into a stopping loop is not
+			// worth a status probe (StatusGrace) or a fresh leg — and the
+			// rewait below would leave an orphan `herdr agent wait` running
+			// PromptWaitMS past the process that started it.
+			return d.stopClaim(p)
 		}
 		waited := time.Since(p.prompted).Round(time.Second)
 		st, sterr := d.statusAfterTimeout(p.session)

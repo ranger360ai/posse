@@ -130,7 +130,7 @@ func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
 //
 // MUTATIONS RUN: add a second `d.Refill = true` in dispatch.go → census reds;
 // move `d.refire(` behind a second call site → census reds; delete the
-// `d.refillCtx != nil && d.refillCtx.Err() != nil` continue in Run's gather
+// `d.stopping()` continue in Run's gather
 // loop → the behavioural arm reds.
 func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
 	t.Parallel()
@@ -200,7 +200,7 @@ func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
 
 // The behavioural half: the loop is gone, so nothing fires. A settle that
 // would have refilled a freed seat instead leaves the queue alone — the
-// refillCtx is what carries "the watch process is stopping" into a Run that
+// stopCtx is what carries "the watch process is stopping" into a Run that
 // has already started, and it is the only thing that does.
 //
 // The control arm is the same fixture with a LIVE context: same two beads,
@@ -227,7 +227,7 @@ func TestQAOneThrottleADeadWatchLoopRefillsNothing(t *testing.T) {
 			d.Refill = true
 			d.PromptGrace = 0
 			ctx, cancel := context.WithCancel(context.Background())
-			d.refillCtx = ctx
+			d.stopCtx = ctx
 			if tc.dead {
 				cancel() // the watch loop is gone; this Run is its tail
 			} else {

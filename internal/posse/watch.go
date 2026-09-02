@@ -2,9 +2,17 @@ package posse
 
 // posse dispatch --watch: passes in a loop. Pass, sleep, repeat; a quiet
 // pass (nothing dispatched) doubles the sleep up to a cap, a busy one
-// snaps it back to the base interval. The context ends the loop between
-// passes — a pass in flight (prompt --wait) finishes first, so a persona
-// mid-turn is never left with a half-run pass.
+// snaps it back to the base interval. The context — SIGTERM or SIGINT, wired
+// in cmd/posse — ends the loop.
+//
+// "Between passes" is what that used to mean, and under a rolling Run (ADR
+// 0028 §1) it stopped being a bound at all: the Run does not return while a
+// bead is in flight, and a wait leg is fifteen minutes with a ladder above
+// it that runs for four hours. So the stop reaches the gather too
+// (ranger-base-e9d9): a leg already landed is judged, one still in flight is
+// abandoned with its claim KEPT, and the loop exits. Nothing is unclaimed
+// and nothing is killed — a persona mid-turn keeps working, and the next
+// loop finds its bead held, not free.
 //
 // The loop is also where "unattended" is defined: Watch is the only thing
 // that sets Dispatcher.Unattended, which is what lets the plan guard fail
@@ -85,10 +93,11 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	d.blindSince = d.now()
 	// ADR 0028 §1/§4: this loop's own long-lived Run may refire a seat the
 	// instant its bead settles, and nothing else may (Refill's own doc).
-	// refillCtx is what stops that cascade from outliving the loop; it is
-	// never consulted for anything else.
+	// stopCtx is what stops that cascade from outliving the loop — and, since
+	// ranger-base-e9d9, what carries the drain into the gather as well
+	// (stopCtx's own doc names both readers).
 	d.Refill = true
-	d.refillCtx = ctx
+	d.stopCtx = ctx
 	// Identity, not liveness: which pid, since when, under what argv. The
 	// lock above is what anything asking "is the loop running?" tests
 	// (rangerhq-gir5); this is what it quotes once the answer is yes.
