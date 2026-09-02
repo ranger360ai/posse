@@ -215,6 +215,20 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 		fmt.Fprintf(d.errw(), "pulse: cannot write %s: %v\n", AbbrevHome(path), err)
 	}
 	if len(conditions) > 0 {
+		// The shop pulse (ranger-base-dwlb1), on its OWN line above the
+		// conditions rather than appended to them: the condition line is
+		// the stable-token rendering a metric is greped out of, and a
+		// moving number on it would break every reader of that log.
+		//
+		// It is computed only on the passes that print — a healthy shop
+		// pays nothing, and a ticker that ran a `bd list --all` per repo
+		// every two minutes forever to say the same number would be the
+		// cost ADR 0027's boundary was protecting against.
+		p, failedPulse := d.App.ReadBeadPulse(d.Bd, d.now())
+		for _, ln := range PulseFailureLines(failedPulse) {
+			fmt.Fprintf(d.errw(), "%s\n", ln)
+		}
+		fmt.Fprintf(d.Out, "pulse: shop %s\n", p.Line())
 		// The watch-log rendering (the third of the three): the same stable
 		// tokens the prompt carries and the fingerprint is made of, so the
 		// blocked-time-to-intervention metric can be read straight out of

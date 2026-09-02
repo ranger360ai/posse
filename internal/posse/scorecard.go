@@ -396,6 +396,12 @@ func (a *App) Scorecard(bd Bd, w io.Writer, personaFilter string, now time.Time)
 		fmt.Fprintln(w, "\nreopened: ? — no git history of .beads/issues.jsonl to read transitions from")
 	}
 	writeHarnessRatios(w, allIssues, personas, now)
+	// The shop pulse (ranger-base-dwlb1), off the issues this command has
+	// already scanned — no second bd call, and by construction the same
+	// repos and the same caveat as every number above it.
+	p := FoldBeadPulse(allIssues, now)
+	p.Repos, p.Unread = repos, len(failed)
+	WriteBeadPulse(w, p)
 	return nil
 }
 

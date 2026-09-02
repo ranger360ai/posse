@@ -181,6 +181,61 @@ type BdIssue struct {
 	DeferUntil *time.Time `json:"defer_until"`
 }
 
+// ─── the work class (ADR 0006 §1, amended 2026-09-02) ────────────────────────
+//
+// One reader for one rule, because three surfaces answer with it and a
+// second derivation is a second answer: the scorecard's class census
+// (beadpulse.go), the shop pulse line `posse status`, the cockpit and the
+// watch log print, and verify-after's filer, which stamps the class it
+// inherits onto the bead it mints. Read through BeadClass; never re-derive
+// from a title, a graph, or any label but `debt`.
+//
+// The rule, in the ADR's order — issue_type wins, then the label, then
+// nothing:
+//
+//	issue_type feature -> feature
+//	issue_type bug     -> bug
+//	label debt         -> debt
+//	otherwise          -> unclassified
+//
+// Type wins over the label deliberately: `-t bug` carrying `-l debt` is a
+// filing error the groom clears, and until it does the bead is a bug. And
+// unclassified is a REPORTED bucket, never an inferred class — a shop where
+// most beads are unclassified must see that number, not a census quietly
+// rounded into feature/bug/debt (ranger-base-dwlb1; 0 of 153 open beads
+// carried `debt` on the day this was written, so the gap is the whole
+// point).
+const (
+	ClassFeature      = "feature"
+	ClassBug          = "bug"
+	ClassDebt         = "debt"
+	ClassUnclassified = "unclassified"
+)
+
+// BeadClasses is the REPORTING order, and it is the one the shop pulse line
+// spells (`open 19F/59B/52D/13U`), so an eye moving from the line to the
+// scorecard's table does not have to re-map the columns. It is deliberately
+// NOT a precedence: verify-after picks the most urgent class of a batch in
+// its own order (bug, feature, debt, unclassified — ADR 0006 §3), which is a
+// different question from what order a census prints in.
+var BeadClasses = []string{ClassFeature, ClassBug, ClassDebt, ClassUnclassified}
+
+// BeadClass is the one reader of the class rule above.
+func BeadClass(is BdIssue) string {
+	switch is.IssueType {
+	case ClassFeature:
+		return ClassFeature
+	case ClassBug:
+		return ClassBug
+	}
+	for _, l := range is.Labels {
+		if strings.TrimSpace(l) == ClassDebt {
+			return ClassDebt
+		}
+	}
+	return ClassUnclassified
+}
+
 // Flush exports the database to its JSONL projection and leaves git alone:
 // `bd sync --flush-only` is documented as "only export pending changes to
 // JSONL (skip git operations)", where a plain `bd sync` also skips them

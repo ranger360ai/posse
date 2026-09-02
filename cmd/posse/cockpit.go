@@ -192,6 +192,13 @@ type cockpit struct {
 	// in a header they would not.
 	planStale string
 
+	// pulse is the shop pulse line, or "" until the first governance scan
+	// lands (ranger-base-dwlb1). A row of its own, on planStale's reasoning:
+	// the header's flex column truncates from its tail and this line is the
+	// standing reading the operator was promised in place of a raw open
+	// count — it must survive an 80-column pane.
+	pulse string
+
 	// planHint is codex's on-disk plan meter, the newest reading this box
 	// has (ADR 0034 D1/D3) — a HINT and never a guard: it is a different Go
 	// type from the reading above precisely so nothing here can promote it,
@@ -376,6 +383,13 @@ const govEvery = 30 * time.Second
 type govRead struct {
 	set    posse.GovSet
 	failed int
+	// pulse is the shop pulse line (ranger-base-dwlb1), rendered by
+	// posse.BeadPulse.Line so this screen, `posse status` and the watch log
+	// print the same arithmetic. It rides the governance scan rather than
+	// the bead scan because it is a level reading on the same cadence and
+	// the bead scan already costs 10.6s of the shop it was measured on; one
+	// more `bd list --all` there would be a third process on that pair.
+	pulse string
 }
 
 // start runs one scan off the event loop, unless that scan is already
@@ -406,7 +420,12 @@ func (c *cockpit) startGov()  { c.start(&c.govBusy, c.scanGov) }
 // loop selects on this channel unconditionally.
 func (c *cockpit) scanGov() {
 	set, failed := posse.ShopCheck(c.govInputs())
-	c.govs <- govRead{set: set, failed: len(failed)}
+	// The scan errors are dropped for govRead.failed's reason — the cockpit
+	// owns the whole terminal and has nowhere to put them; the LINE carries
+	// its own "partial, N repo(s) unread" clause, which is the part that
+	// must not go missing.
+	pulse, _ := c.app.ReadBeadPulse(posse.NewBd(), time.Now())
+	c.govs <- govRead{set: set, failed: len(failed), pulse: pulse.Line()}
 }
 
 // govInputs is what the cockpit hands the shop check. Its own function so
@@ -2496,6 +2515,16 @@ func (c *cockpit) buildRows() {
 	// nine, and it is red because ten hours of a dim lower-case "guard
 	// blind" in the header read as furniture. Filler, like the rows below:
 	// not in cursor space, so tab and reselect are untouched.
+	// The shop pulse, above everything (ranger-base-dwlb1): closes today,
+	// the open pile by class and the urgent share, in place of the raw open
+	// count that moved the wrong way when the shop worked well. Dim and
+	// filler — it is a standing reading, not a condition, so it is not in
+	// cursor space and it does not shout.
+	if c.pulse != "" {
+		rows = append(rows, row{kind: rowFiller, sec: secSessions,
+			cols: []col{{kind: colFlex, text: c.pulse, ansi: aDim}}})
+		rows = append(rows, row{kind: rowFiller, sec: secSessions})
+	}
 	if c.planStale != "" {
 		rows = append(rows, row{kind: rowFiller, sec: secSessions,
 			cols: []col{{kind: colFlex, text: c.planStale, ansi: aRed}}})
@@ -3050,6 +3079,7 @@ func (c *cockpit) takeGov() bool {
 func (c *cockpit) applyGov(g govRead) {
 	c.govBusy = false
 	c.gov, c.govFailed, c.govAt = g.set, g.failed, time.Now()
+	c.pulse = g.pulse
 }
 
 func (c *cockpit) drawPlain() {

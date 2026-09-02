@@ -236,6 +236,13 @@ if [ "$cmd" = "ready" ] && [ -f fake-ready.json ]; then
   cat fake-ready.json
   exit 0
 fi
+# list --all is the shop pulse's scan (beadpulse.go). Its own fixture file,
+# because every other list this fake answers is a different query and a
+# shared one would grow beads no test declared.
+if [ "$cmd" = "list" ] && [ -f fake-list-all.json ]; then
+  cat fake-list-all.json
+  exit 0
+fi
 echo '[]'
 exit 0
 `

@@ -849,6 +849,18 @@ func main() {
 		need(args, 0, "posse status")
 		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
 		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))
+		// The shop pulse, on the header and in place of any raw open count
+		// (ranger-base-dwlb1, operator ruling 2026-09-02). One rendering,
+		// shared with the watch log and the cockpit (beadpulse.go), so the
+		// three surfaces cannot report different arithmetic. Its own line
+		// for the backup line's reason: a shop check prints CONDITIONS, and
+		// "86 closed today, 71 P2 open" is not one — it is the standing
+		// reading the conditions are judged against.
+		pulse, pulseFailed := a.ReadBeadPulse(posse.NewBd(), time.Now())
+		for _, ln := range posse.PulseFailureLines(pulseFailed) {
+			fmt.Fprintf(out, "%s\n", ln)
+		}
+		fmt.Fprintf(out, "shop pulse · %s\n", pulse.Line())
 		// The backup's age, always, on an instance that has asked for
 		// backups at all (ADR 0036 §6, bead ranger-base-a0ln0). The
 		// governance set below carries the LOUD half — a carry-over row
@@ -2209,7 +2221,10 @@ catalog:
   posse scorecard [<persona>]    per-persona outcome metrics from bd data
                                  (closed/reopened/held/blocked, age at close,
                                  filed/rejected; each PID metric id computed, or
-                                 declared with what bd would need)
+                                 declared with what bd would need), then the shop
+                                 pulse: closes/day against the 7d median, the open
+                                 pile by class (feature/bug/debt/unclassified) with
+                                 P1/P2 per class, and created-vs-closed per day
   posse scorecard --catalog      the derived metric catalog: every id the PIDs
                                  and config metric_ids: declare, computed or not
   posse cost [--since <date>] [--project <substr>]
@@ -2252,7 +2267,10 @@ governance:
                                  watch loop's flock, state/pause.yaml — so it depends
                                  on no loop and reports a dead one itself. Exit
                                  non-zero when the set is non-empty OR a store could
-                                 not be read (unknown is not an all-clear)
+                                 not be read (unknown is not an all-clear). Carries
+                                 the shop pulse under the header — closes today
+                                 against the 7d median, the open pile by class and
+                                 its P1/P2 share, in place of any raw open count
                                config attn_question_age: (4h) how long a
                                  -l question / -l risk bead may sit open
                                config attn_guard_stuck: (2h) how long the plan
