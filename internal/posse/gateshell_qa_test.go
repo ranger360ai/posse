@@ -35,6 +35,7 @@ import (
 //
 // Un-skip when ranger-base-o5fpa lands.
 func TestQAAFifoOnThePathMustNotWedgeTheGateShellRender(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-o5fpa: isGateWrapper opens a candidate shell before any type check")
 
 	dir := t.TempDir()

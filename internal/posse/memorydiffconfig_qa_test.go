@@ -34,6 +34,7 @@ import (
 // Fix is one flag on the same list: --inter-hunk-context=0, accepted by
 // git 2.50.1. Un-skip when ranger-base-p70ug lands.
 func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-p70ug: diff.interHunkContext moves the line number the refusal names")
 
 	b, fake := newTestBackend(t)
@@ -105,6 +106,7 @@ func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
 //
 // Un-skip when ranger-base-y7i7k lands.
 func TestTheDiffScanAttributesAHitInAQuotedPath(t *testing.T) {
+	t.Parallel()
 	t.Skip("ranger-base-y7i7k: a C-quoted header is missed and the hold names the previous file")
 
 	b, fake := newTestBackend(t)
