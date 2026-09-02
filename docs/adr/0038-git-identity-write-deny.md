@@ -1,8 +1,11 @@
 # ADR 0038 — The cage denies the repo's persistent git identity: `.git/config`, the hook slots, and a worktree's pointer files
 
-*Status: accepted 2026-08-31 · owner: architect · decides ADR 0023
-non-goal 3 (flz7 arm a) · extends ADR 0014 §3's trailing-deny slot ·
-from ranger-base-7w8g0, on ranger-base-j5s0's measured table*
+*Status: accepted 2026-08-31 · amended 2026-09-02 (ranger-base-xwepd:
+decision 1's "no stray lock" clause RETRACTED as measured false; the
+`config.worktree.lock` sibling added to decision 2) · owner: architect ·
+decides ADR 0023 non-goal 3 (flz7 arm a) · extends ADR 0014 §3's
+trailing-deny slot · from ranger-base-7w8g0, on ranger-base-j5s0's
+measured table*
 
 ## Context
 
@@ -52,13 +55,29 @@ run is no session's to write.** Enumerated, at the artifact level, in
    writes: cwd's, and the store of record's when a redirect points
    elsewhere. Deny that file **and its `config.lock` sibling** as
    subpaths (a subpath naming a file denies the file — MEASURED,
-   SeatbeltCarveOut doc). Denying the lock too makes the refusal land at
-   lock creation: no half-written attempt, and no stray lock in shared
-   state — the packed-refs.lock discipline (ranger-base-msex).
+   SeatbeltCarveOut doc). Denying the lock too moves the refusal to
+   **lock creation**: git says "could not lock config file" and nothing
+   of the attempted config reaches the disk. Without the sibling it says
+   "could not write config file" — it already holds the lock with the
+   whole new config in it and fails one step later. That word is the
+   difference the entry makes, and it is what the pin asserts.
+
+   This clause used to end "and no stray lock in shared state — the
+   packed-refs.lock discipline (ranger-base-msex)". **That half was
+   wrong** and is retracted (ranger-base-xwepd): `git config` on git
+   2.50.1 removes its own lock when the rename fails, so no stray lock
+   is left with the sibling denied *or* allowed — MEASURED in both arms.
+   The packed-refs.lock discipline is still why a stray lock would
+   matter; it is not what this entry buys.
 
 2. **A worktree's identity chain, by literal**: `<worktree>/.git` (the
-   pointer FILE), and `gitdir`, `commondir`, `config.worktree` in the
-   session's own git dir. Write-once at worktree creation; only
+   pointer FILE), and `gitdir`, `commondir`, `config.worktree` and its
+   `config.worktree.lock` sibling in the session's own git dir. The lock
+   sibling is decision 1's reasoning applied where it had been left out
+   (ranger-base-xwepd): git writes `config.worktree` through a lockfile
+   too, so without it a refused `git config --worktree` landed at "could
+   not write" with the attacker's whole file already on disk in the lock
+   (MEASURED, git 2.50.1). Write-once at worktree creation; only
    `git worktree move`/`repair` rewrite them, which no session
    legitimately runs. Cost **ASSUMED** zero — not in j5s0's table — so
    implementation measures by execution (a full commit/checkout cycle
@@ -136,7 +155,12 @@ three shapes carry the real control arm.
 
 1. Per session shape (main checkout · worktree · deniesFiles ·
    redirect): in-cage `git config core.hooksPath /tmp/x` → rc≠0,
-   config byte-identical, **no stray `config.lock`**.
+   config byte-identical, and the refusal's own words are **"could not
+   lock config file"** and not "could not write" — the difference the
+   `.lock` sibling makes, graded against a control that takes back out
+   only that sibling. "No stray `config.lock`" is asserted in BOTH arms
+   as a regression guard; it is NOT the deny's witness, because it is
+   green with the sibling gone (ranger-base-xwepd).
 2. Non-git spellings refused: shell redirect, python open, `mv` onto
    `config`. The `mv` stages its forged file in the persona's memory
    dir, not the gates dir: `state/gates` is denied in both arms, and a
@@ -147,7 +171,10 @@ three shapes carry the real control arm.
    bd claim/comment/close staging `.beads` — the zero-cost claim
    measured by execution, not asserted.
 4. Identity chain: writes to `<worktree>/.git`, `gitdir`, `commondir`,
-   `config.worktree` refused; launcher-side `git -C <worktree>
-   rev-parse`/`rebase` unaffected.
+   `config.worktree` and `config.worktree.lock` refused; launcher-side
+   `git -C <worktree> rev-parse`/`rebase` unaffected. The lock sibling's
+   cost is measured with the rest: it stays ABSENT across a whole
+   session's life and the launcher's rebase, which is the reading that
+   would have to change before the literal could be dropped.
 5. L4: the file `:ro` binds measured on the container engine — write
    through the rw common mount refused on exactly those two paths.

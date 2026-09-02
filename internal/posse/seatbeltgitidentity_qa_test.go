@@ -178,6 +178,41 @@ func (f giFixture) control(t *testing.T, s giShape) SeatbeltCarveOut {
 	return c
 }
 
+// lockControl is a NARROWER subtraction than control above: only the
+// `config.lock` siblings come back out, everything else — including the
+// config file itself — stays denied. It is the one arm that isolates what
+// the `.lock` entry buys on its own, which the wide control cannot: with
+// the config denied and the lock allowed, git takes the lock, writes the
+// whole new config into it and fails one step later at the rename. The
+// Fatal below is load-bearing: drop `c+".lock"` from sessionGitConfigFiles
+// and this arm has nothing to take out, which is the mutant the old
+// stray-lock assertion survived (ranger-base-xwepd).
+func (f giFixture) lockControl(t *testing.T, s giShape) SeatbeltCarveOut {
+	t.Helper()
+	drop := map[string]bool{}
+	for _, p := range sessionGitConfigFiles(s.cwd(f)) {
+		if strings.HasSuffix(p, ".lock") {
+			drop[absResolve(p)] = true
+		}
+	}
+	if len(drop) == 0 {
+		t.Fatalf("sessionGitConfigFiles(%s) names no .lock sibling, so the arm that grades one has nothing to take out — the deny it is named for is gone", s.cwd(f))
+	}
+	c := f.carve(t, s)
+	var keep []string
+	for _, p := range c.Deny {
+		if !drop[p] {
+			keep = append(keep, p)
+		}
+	}
+	if len(keep) == len(c.Deny) {
+		t.Fatalf("the %s shape's carve-out denies no %v — the lock control is identical to the real one and measures nothing: %v", s.name, drop, c.Deny)
+	}
+	c.Deny = keep
+	c.Seal = renameSeal(keep, f.writable(t, s))
+	return c
+}
+
 func (f giFixture) configOf(t *testing.T, dir string) string {
 	t.Helper()
 	p, err := gitPath(dir, "config")
@@ -323,6 +358,9 @@ func TestQACarveOutDeniesTheWorktreeIdentityChain(t *testing.T) {
 		filepath.Join(f.own, "gitdir"),
 		filepath.Join(f.own, "commondir"),
 		filepath.Join(f.own, "config.worktree"),
+		// The lock sibling decision 1 had and decision 2 did not
+		// (ranger-base-xwepd). Its execution row is below.
+		filepath.Join(f.own, "config.worktree.lock"),
 	} {
 		if !sbDenied(c, p) {
 			t.Errorf("%s is not in the carve-out: %v", p, c.Deny)
@@ -540,37 +578,94 @@ func TestQAGitConfigWriteRefusedUnderSandboxExec(t *testing.T) {
 	}
 }
 
-// The rest of item 1, which an exit code does not answer: the config file
-// is byte-identical afterwards, and no `config.lock` is left behind. The
-// lock is the half that matters in shared state — a stray one kills the
-// operator's own `git config` and `git gc` until a human removes it
-// (ranger-base-msex), and denying the lock as well is what makes the
-// refusal land before it is created rather than after.
-func TestQARefusedGitConfigLeavesNoStrayLockAndNoEdit(t *testing.T) {
+// The rest of item 1, and the sentence ADR 0038 decision 1 and the
+// sessionGitConfigFiles comment both used to close with. TWO claims lived
+// in that sentence and they are not both true (ranger-base-xwepd):
+//
+// TRUE, and exactly what the `config.lock` entry buys: the refusal lands
+// at LOCK CREATION. Under the deny git says "could not lock config file"
+// and nothing of the attempted config reaches the disk at all. With ONLY
+// the `.lock` siblings taken back out of the same carve-out (lockControl),
+// git gets the lock, writes the whole new config into it, and fails one
+// step later at "could not write config file". That word is the difference
+// the entry makes and the difference a MUTANT of the entry moves, which is
+// why this pin asserts the words.
+//
+// NOT TRUE: "no stray lock in shared state". `git config` on git 2.50.1
+// removes its own lock when the rename fails — MEASURED in the lock-control
+// arm below, where the entry is gone and no `config.lock` survives either.
+// So the stray-lock assertion this pin was named for was an "assert nothing
+// bad happened" over a rig that cannot produce the bad thing: it stayed
+// green with the entry deleted. It is still asserted here, in BOTH arms — a
+// stray lock kills the operator's own `git config` and `git gc` until a
+// human removes it (ranger-base-msex), and a killed git or a different
+// writer could still strand one — but it is a regression guard now, and the
+// control arm says so out loud rather than letting it read as the deny's
+// witness.
+//
+// The worktree shape grades the OMISSION wall, not the deny, for the same
+// reason the table above does (ranger-base-m2wf): no grant reaches that
+// config, so both arms are refused at lock creation by the missing grant
+// and no control can separate them. Asserted the other way round so a
+// widened grant fails the row instead of quietly weakening it.
+func TestQAConfigLockDenyMovesTheRefusalToLockCreation(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
+	// run performs the one write under a carve-out and reports what git
+	// said and whether a lock was stranded. Both arms go through it so the
+	// only difference between them is the deny list.
+	run := func(t *testing.T, f giFixture, s giShape, c SeatbeltCarveOut, name string) (out string, stray bool) {
+		t.Helper()
+		cwd := s.cwd(f)
+		cfg := f.configOf(t, cwd)
+		before, err := os.ReadFile(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prof := sbRenderProfile(t, name, SeatbeltProfile("developer", f.writable(t, s), nil, c, sessionRefDirs(cwd)...))
+		ok, out := wgRun(t, prof, "git -C "+cwd+" config core.hooksPath /tmp/x")
+		if ok {
+			t.Fatalf("git config was ALLOWED under %s — the config file is denied in BOTH arms, so this is not a lock question:\n%s", name, out)
+		}
+		after, err := os.ReadFile(cfg)
+		if err != nil {
+			t.Fatalf("under %s the refusal removed the config file: %v", name, err)
+		}
+		if string(before) != string(after) {
+			t.Errorf("under %s the config changed under a refused write:\nbefore:\n%s\nafter:\n%s", name, before, after)
+		}
+		_, err = os.Stat(cfg + ".lock")
+		return out, err == nil
+	}
 	for _, s := range giShapes() {
 		t.Run(s.name, func(t *testing.T) {
 			f := giNewFixture(t)
-			cwd := s.cwd(f)
-			cfg := f.configOf(t, cwd)
-			before, err := os.ReadFile(cfg)
-			if err != nil {
-				t.Fatal(err)
+			out, stray := run(t, f, s, f.carve(t, s), "walled.sb")
+			if stray {
+				t.Errorf("a stray config.lock survived the refusal under the deny — the operator's own git config and gc now die until a human removes it (ranger-base-msex)")
 			}
-			c := f.carve(t, s)
-			prof := sbRenderProfile(t, "walled.sb", SeatbeltProfile("developer", f.writable(t, s), nil, c, sessionRefDirs(cwd)...))
-			if ok, out := wgRun(t, prof, "git -C "+cwd+" config core.hooksPath /tmp/x"); ok {
-				t.Fatalf("git config was ALLOWED under the deny:\n%s", out)
+			if !strings.Contains(out, "could not lock config file") {
+				t.Errorf("the refusal does not land at LOCK CREATION, which is the whole claim of the `.lock` entry. git said:\n%s", out)
 			}
-			after, err := os.ReadFile(cfg)
-			if err != nil {
-				t.Fatalf("the refusal removed the config file: %v", err)
+			if strings.Contains(out, "could not write config file") {
+				t.Errorf("git reached the WRITE, so it had already taken the lock and put the whole new config in it — the `.lock` entry is not doing what decision 1 says. git said:\n%s", out)
 			}
-			if string(before) != string(after) {
-				t.Errorf("config changed under a refused write:\nbefore:\n%s\nafter:\n%s", before, after)
+
+			// The lock control, on its own fresh fixture: the config still
+			// denied, only its lock allowed.
+			cf := giNewFixture(t)
+			cout, cstray := run(t, cf, s, cf.lockControl(t, s), "nolock.sb")
+			if !cf.reachesConfig(t, s) {
+				t.Logf("graded against the omission wall, not the deny: no grant of the %s shape reaches this config (ranger-base-m2wf), so allowing the lock changes nothing and git said %q either way", s.name, strings.TrimSpace(cout))
+				if strings.Contains(cout, "could not write config file") {
+					t.Errorf("the lock control reached the WRITE in a shape whose grant does not reach this config — the omission wall this row grades is gone and it must grade the DENY instead:\n%s", cout)
+				}
+				return
 			}
-			if _, err := os.Stat(cfg + ".lock"); err == nil {
-				t.Errorf("a stray %s.lock survived the refusal — the operator's own git config and gc now die at rc=128 until a human removes it", cfg)
+			if !strings.Contains(cout, "could not write config file") {
+				t.Errorf("with the `.lock` sibling allowed the refusal did NOT move to the write — then the entry buys nothing measurable and decision 1 is asserting a difference that is not there. git said:\n%s", cout)
+			}
+			if cstray {
+				t.Errorf("the lock control stranded a config.lock — good news for the stray-lock claim and bad news for this comment: `git config` is no longer cleaning up after itself, so the assertion above is load-bearing again and decision 1's \"no stray lock\" clause is true after all. Re-word both.")
 			}
 		})
 	}
@@ -665,6 +760,19 @@ func TestQAWorktreeIdentityChainRefusedButTheLauncherIsUnaffected(t *testing.T) 
 		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
 			if _, err := os.Stat(filepath.Join(f.own, "config.worktree")); err != nil {
 				t.Errorf("the control did not create config.worktree: %v", err)
+			}
+		}},
+		// ranger-base-xwepd, the same sibling reasoning decision 1 already
+		// used. git writes config.worktree through a lockfile too, so a
+		// session that may create the lock gets the whole attacker-chosen
+		// config.worktree onto disk before the rename is refused — the
+		// refusal lands at "could not write" instead of "could not lock"
+		// (MEASURED, git 2.50.1).
+		{what: "plant the config.worktree lock sibling", sh: func(f giFixture, cwd string) string {
+			return "printf '[core]\\n\\thooksPath = /tmp/x\\n' > " + filepath.Join(f.own, "config.worktree.lock")
+		}, want: false, witness: func(t *testing.T, f giFixture, cwd string) {
+			if _, err := os.Stat(filepath.Join(f.own, "config.worktree.lock")); err != nil {
+				t.Errorf("the control did not create config.worktree.lock — the row witnesses nothing: %v", err)
 			}
 		}},
 		{what: "delete commondir outright", sh: func(f giFixture, cwd string) string {
@@ -798,6 +906,11 @@ func TestQANoLegitimateWriterTouchesTheConfigOrTheIdentityChain(t *testing.T) {
 		filepath.Join(f.own, "gitdir"),
 		filepath.Join(f.own, "commondir"),
 		filepath.Join(f.own, "config.worktree"),
+		// Absent throughout, which is itself the reading giSnap keeps:
+		// this file appearing at all would mean a legitimate writer takes
+		// the config.worktree lock, and the literal added for
+		// ranger-base-xwepd would have to be dropped and RECORDED.
+		filepath.Join(f.own, "config.worktree.lock"),
 	}
 
 	// A whole session's life, in the order a session lives it: work, stage,

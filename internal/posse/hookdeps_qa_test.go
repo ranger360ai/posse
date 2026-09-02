@@ -56,8 +56,24 @@ import (
 // kept the command position open. Nothing was missing from HOOK_DEPS at the
 // time, so the file was green while telling the next reader it was complete.
 //
-// The rule now is that every construct which runs a command this scanner cannot
-// name falls in exactly one of three buckets, and there is no fourth:
+// The absolute that used to close that paragraph — "exactly one of three
+// buckets, and there is no fourth" — was itself wrong, and ranger-base-xwepd is
+// what it cost the second time. There WAS a fourth bucket, SILENT, and eight
+// shapes sat in it: `cat f |\<newline> awk` and the same line continuation
+// after `&&`, after `then` and after `;`; `\awk`, the alias-bypass spelling;
+// `trap 'awk 1' EXIT`; `${x:-$(awk 1)}`; and `$(( $(awk 1) + 1 ))`. None was a
+// live miss over the three rendered hooks, exactly as with h6k2r — the
+// paragraph was the defect, not the census — and the sharpest of them, a
+// wrapped pipeline, is more ordinary than any of the ten h6k2r was filed over.
+// All eight are TAUGHT or REPORTED now, each with a row below and each row
+// mutation-checked.
+//
+// So the three buckets are a claim about what this file MEASURES, and the
+// residue is enumerated at the end instead of asserted away. Every shape named
+// in a bucket has a row in
+// TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt, every name in the two
+// report tables is swept for actually reaching a report, and every marker the
+// scanner can report is swept for having its own sentence:
 //
 // TAUGHT — grammar alone, no knowledge of any command's own options:
 //   - the command prefixes that ARE shell syntax: `VAR=v cmd`, `! cmd`,
@@ -94,6 +110,32 @@ import (
 //   - a HEREDOC operator. Its body is data, not code, so reading it as code
 //     both invents command words and can desync the lexer for everything after
 //     it — silence, not noise, which is the failure mode that matters here.
+//   - a STRING RUNNER: `eval`, and `trap` which is eval with the run deferred
+//     to a signal. Its argument is shell text that may not exist until runtime.
+//   - a command substitution written INSIDE a region this scan steps over
+//     unread — `${x:-$(awk 1)}` and `$(( $(awk 1) + 1 ))`. Not reading those
+//     regions is load-bearing (`$((i + 1))` otherwise opens a subshell and `i`
+//     is scanned as a command; `${rule#Bash(}` is a pattern, not syntax), so
+//     the skip looks for a `$(` or a backtick inside and reports rather than
+//     stepping over it in silence. See skipOver.
+//   - `. file` and `source file`: the commands are in another file, which this
+//     scan does not open. The hooks source nothing today; the entry costs
+//     nothing and turns a prose residual into a live guard.
+//
+// STILL SILENT, named rather than denied, because the last two versions of this
+// paragraph both proved that an absolute here is a claim the next reader stops
+// checking. None is a live miss over today's three rendered hooks; each is a
+// shape that would go quiet if a hook grew it:
+//   - an ALIAS, or a shell FUNCTION defined outside the text being scanned. A
+//     name resolved either way is not a PATH lookup, so the census erring
+//     toward a name HOOK_DEPS does not need is the safe direction here — and
+//     `posse_*`, the hooks' own functions, are filtered by hookCensus by name.
+//   - a command run through a VARIABLE other than the posse_stamp idiom
+//     shellExecProbeNames reads: `$CMD f`, or a name assembled at runtime.
+//   - a name spelled so that no literal of it survives: `aw\<newline>k 1`
+//     joins to `awk`, and this scan reads `aw` — which is loud (a name no
+//     HOOK_DEPS holds), not silent, but it is not `awk` either.
+//   - non-POSIX quoting a hook has no reason to grow, `$'...'` first among them.
 //
 // A report is not a bug in the hook. It is this file saying the census stopped
 // being derivable there, which is the finding ranger-base-lxkdi asked for.
@@ -102,6 +144,23 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 	seen := map[string]bool{}
 	report := func(name string, off int) {
 		blind = append(blind, shellCall{Name: name, Line: 1 + strings.Count(src[:off], "\n")})
+	}
+	// skipOver steps past a region the scan does not READ — a `$(( ))` or a
+	// `${ }` — and reports it when a command substitution is written inside.
+	// Not reading them is deliberate and load-bearing (`$((i + 1))` otherwise
+	// opens a subshell and `i` is scanned as a command; `${rule#Bash(}` is a
+	// pattern, not syntax), but a `$( )` or a backtick in either place runs a
+	// command the scan never enters. `${x:-$(awk 1)}` and `$(( $(awk 1) + 1 ))`
+	// were both silent (ranger-base-xwepd). end is the index after the region,
+	// body the first index of its insides, marker the name the reader gets.
+	skipOver := func(end, body int, marker string, off int) int {
+		if body > end {
+			body = end
+		}
+		if r := src[body:end]; strings.Contains(r, "$(") || strings.Contains(r, "`") {
+			report(marker, off)
+		}
+		return end
 	}
 	emit := func(w string, off int) {
 		if !seen[w] {
@@ -126,8 +185,9 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 		"fc": true, "fg": true, "getopts": true, "hash": true, "jobs": true,
 		"kill": true, "local": true, "newgrp": true, "printf": true, "pwd": true,
 		"read": true, "readonly": true, "return": true, "set": true, "shift": true,
-		"test": true, "times": true, "trap": true, "true": true, "type": true,
-		"ulimit": true, "umask": true, "unalias": true, "unset": true, "wait": true,
+		"source": true, "test": true, "times": true, "trap": true, "true": true,
+		"type": true, "ulimit": true, "umask": true, "unalias": true,
+		"unset": true, "wait": true,
 	}
 
 	// case-statement state, stacked because a case can nest inside one.
@@ -182,13 +242,13 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 				endWord()
 				i++
 			case c == '$' && i+2 < len(src) && src[i+1] == '(' && src[i+2] == '(':
-				i = skipArith(src, i)
+				i = skipOver(skipArith(src, i), i+3, "$((", i)
 			case c == '$' && i+1 < len(src) && src[i+1] == '(':
 				substStack = append(substStack, substFrame{inDouble: true, assignVal: assignVal})
 				inDouble, assignVal, cmdPos = false, false, true
 				i += 2
 			case c == '$' && i+1 < len(src) && src[i+1] == '{':
-				i = skipBraceExpansion(src, i)
+				i = skipOver(skipBraceExpansion(src, i), i+2, "${", i)
 			case c == '`':
 				// Substitution inside double quotes too, and here the scanner
 				// does not even open a command position for it.
@@ -197,6 +257,23 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			default:
 				i++
 			}
+		case c == '\\' && i+1 < len(src) && src[i+1] == '\n':
+			// A backslash-newline is a LINE JOINER, not a quoted character:
+			// POSIX says both bytes are removed and what follows continues the
+			// same line. So it must leave cmdPos and assignVal exactly as it
+			// found them — `cat f |\<newline>  awk 1` is `cat f | awk 1`, and
+			// closing the command position here lost the `awk` in silence
+			// (ranger-base-xwepd, four of its eight silent lines; `\awk` below is the
+			// fifth).
+			i += 2
+		case c == '\\' && i+1 < len(src) && cmdPos && isWord(src[i+1]):
+			// `\awk` is the command word `awk` with one character quoted — the
+			// idiom that bypasses an alias or a function of the same name. The
+			// name the shell then looks up through PATH is `awk`, so step over
+			// the backslash ALONE and let the word arm read it. Closing the
+			// command position here made the alias-bypass spelling of every
+			// dependency invisible.
+			i++
 		case c == '\\' && i+1 < len(src):
 			i += 2
 			endWord()
@@ -213,14 +290,14 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 				i++
 			}
 		case c == '$' && i+2 < len(src) && src[i+1] == '(' && src[i+2] == '(':
-			i = skipArith(src, i)
+			i = skipOver(skipArith(src, i), i+3, "$((", i)
 			endWord()
 		case c == '$' && i+1 < len(src) && src[i+1] == '(':
 			substStack = append(substStack, substFrame{assignVal: assignVal})
 			assignVal, cmdPos = false, true
 			i += 2
 		case c == '$' && i+1 < len(src) && src[i+1] == '{':
-			i = skipBraceExpansion(src, i)
+			i = skipOver(skipBraceExpansion(src, i), i+2, "${", i)
 			endWord()
 		case c == '>' || c == '<':
 			// A redirection and its target, wherever it appears in the simple
@@ -358,19 +435,28 @@ type substFrame struct {
 	assignVal bool
 }
 
-// runsAnotherCommand are the wrappers that take a command as an argument and
-// put their OWN options in front of it. Walking past `env -u NAME awk` or
-// `nice -n 5 awk` to reach `awk` needs a table of which of those options take a
-// value — a hand-maintained list of other commands' interfaces, which is the
-// species of thing this file exists to delete. So they are reported instead: a
-// hook that grows one is a finding, not a silence. Several of them are real
-// binaries and are emitted as commands too; being a dependency and hiding a
-// dependency are not the same claim.
+// runsAnotherCommand are the words that run a command this scan cannot reach.
+// Two kinds, reported the same way because the reader's next move is the same:
+//   - WRAPPERS that put their OWN options in front of the command. Walking past
+//     `env -u NAME awk` or `nice -n 5 awk` to reach `awk` needs a table of
+//     which of those options take a value — a hand-maintained list of other
+//     commands' interfaces, which is the species of thing this file exists to
+//     delete.
+//   - STRING RUNNERS, whose argument is shell text the shell parses later:
+//     `eval "awk 1"`, and `trap 'awk 1' EXIT` which is the same claim with the
+//     run deferred to a signal. Both were reachable only by re-entering the
+//     scanner on a string that may not exist until runtime.
+//
+// So they are reported instead: a hook that grows one is a finding, not a
+// silence. Several of them are real binaries and are emitted as commands too;
+// being a dependency and hiding a dependency are not the same claim, and the
+// builtins among them (eval, trap) are reported without being emitted at all.
 var runsAnotherCommand = map[string]bool{
 	"env": true, "xargs": true, "nice": true, "ionice": true, "timeout": true,
 	"nohup": true, "setsid": true, "chroot": true, "stdbuf": true, "flock": true,
 	"watch": true, "sudo": true, "doas": true, "su": true, "eval": true,
 	"sh": true, "bash": true, "dash": true, "ksh": true, "zsh": true,
+	"trap": true, ".": true, "source": true,
 }
 
 // allDigits reports whether w is a file-descriptor number.
@@ -396,6 +482,14 @@ func blindSiteDescription(name string) string {
 		return "a backtick command substitution in shell code"
 	case name == "<<":
 		return "a heredoc: its body is data, and this scanner is reading it as code"
+	case name == "$((":
+		return "a command substitution inside a $(( )) arithmetic expansion, which this scanner steps over unread"
+	case name == "${":
+		return "a command substitution inside a ${ } parameter expansion, which this scanner steps over unread"
+	case name == "trap":
+		return "trap: its handler is shell text the shell parses later, like eval"
+	case name == "." || name == "source":
+		return "`" + name + " file`: the commands are in another file, which this scanner does not open"
 	case findInlineCommand[name]:
 		return "find's " + name + ", whose argument is a command line"
 	default:
@@ -770,6 +864,31 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 		{"sh -c", "sh -c 'awk 1'", reported},
 		{"find -exec", "find . -exec awk {} ;", reported},
 		{"heredoc", "cat <<EOF\nawk\nEOF\n", reported},
+
+		// The FOURTH bucket ranger-base-xwepd found: eight shapes that ran a
+		// command and produced neither a word nor a report, under a paragraph
+		// asserting there was no fourth. The first five are one arm — a
+		// backslash used to close the command position, which is right for
+		// neither of the two things a backslash does at that spot.
+		{"continuation in a pipeline", "cat f |\\\n  awk 1", seen},
+		{"continuation after &&", "grep -q x f && \\\n awk 1", seen},
+		{"continuation after then", "if grep -q x f; then \\\n awk 1\nfi", seen},
+		{"continuation after ;", "true; \\\n awk 1", seen},
+		{"escaped command name", "\\awk 1", seen},
+		// The control the continuation rows are read against: one backslash is
+		// the whole difference, and this arm was always right.
+		{"pipeline across a plain newline", "cat f |\n  awk 1", seen},
+		// The other three: the string runner that is eval with the run
+		// deferred, and the two regions this scan steps OVER unread — one
+		// row each for the `$(` and the backtick spelling inside them,
+		// because the two are separate checks in skipOver.
+		{"trap handler", "trap 'awk 1' EXIT", reported},
+		{"substitution in a parameter expansion", "printf %s \"${x:-$(awk 1)}\"", reported},
+		{"backtick in a parameter expansion", "printf %s \"${x:-`awk 1`}\"", reported},
+		{"substitution in arithmetic", "n=$(( $(awk 1) + 1 ))", reported},
+		// Not one of the eight; the same reasoning applied while it was
+		// open, and free because no hook sources anything today.
+		{"dot script", ". lib.sh", reported},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			words, blind := shellCommandWords(tc.src)
@@ -824,6 +943,28 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 		}
 	}
 
+	// Every marker the scanner can report needs its OWN sentence.
+	// blindSiteDescription's default arm is prose about a WRAPPER's option
+	// grammar; a marker falling through to it sends the reader looking past
+	// options that do not exist. `${` and `$((` are reachable from neither
+	// report table, so this is the only sweep that reaches them.
+	//
+	// The default's text is read off a name that must hit it rather than
+	// copied here, so rewording that arm cannot leave this sweep green over
+	// a marker that still falls into it.
+	fallthroughText := strings.TrimPrefix(blindSiteDescription("env"), "env")
+	if fallthroughText == blindSiteDescription("env") {
+		t.Fatalf("`env` no longer reaches blindSiteDescription's default arm, so this sweep has no "+
+			"reference text and cannot tell a marker's own sentence from the wrapper default: %q",
+			blindSiteDescription("env"))
+	}
+	for _, marker := range []string{"`", "<<", "$((", "${", "trap", ".", "source", "-exec"} {
+		if d := blindSiteDescription(marker); d == marker+fallthroughText {
+			t.Errorf("blindSiteDescription(%q) = %q — that is the WRAPPER default, and %q is not a "+
+				"wrapper; the reader is told to look past options that do not exist", marker, d, marker)
+		}
+	}
+
 	// The live witness, and it goes through hookCensus rather than the scanner
 	// alone: a table over string literals is a scanner unit test no rendered
 	// hook has to keep satisfying, and a report the census does not act on is
@@ -842,6 +983,12 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 		"env -i awk '{print}' \"$f\"", // constitutionGuardBody's own residual paragraph names env -i
 		"timeout 5 awk '{print}' \"$f\"",
 		"! awk '{print}' \"$f\"",
+		// ranger-base-xwepd's shapes, spliced the same way: a table over string
+		// literals is a scanner unit test no rendered hook has to keep
+		// satisfying, and a wrapped pipeline is the most ordinary line here.
+		"cat \"$f\" |\\\n  awk '{print}'",
+		"trap 'awk 1' EXIT",
+		"printf %s \"${x:-$(awk 1)}\"",
 	} {
 		called, blind := hookCensus(map[string]string{"pre-push": PrePushHook + "\n" + line + "\n"}, nil)
 		_, named := called["awk"]

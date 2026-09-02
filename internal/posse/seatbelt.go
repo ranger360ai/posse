@@ -957,12 +957,23 @@ func sessionHooksDirs(cwd string) []string {
 // `config.lock` joins it as the SIBLING of the answered path, not as
 // another question put to git: the lock git takes is the lockfile beside
 // whatever config file it resolved, so the sibling is right by construction
-// at any git version. Denying it is what makes the refusal land at lock
-// creation — `git config` fails before it has written anything, so there is
-// no half-written config and no stray `config.lock` left in shared state
-// for the operator's next `git config` to trip over. That is the
-// packed-refs.lock discipline (ranger-base-msex) applied before the fact
-// rather than after.
+// at any git version. What denying it buys, stated as what a measurement
+// sees (ranger-base-xwepd): the refusal moves to LOCK CREATION. Under the
+// deny git says "could not lock config file" and nothing of the attempted
+// config reaches the disk at all; with the sibling allowed and the config
+// still denied it says "could not write config file", because it already
+// holds the lock with the whole new config written into it and fails one
+// step later at the rename. Both arms measured by execution in
+// seatbeltgitidentity_qa_test.go.
+//
+// This paragraph used to close "and no stray `config.lock` left in shared
+// state ... the packed-refs.lock discipline (ranger-base-msex) applied
+// before the fact". RETRACTED: `git config` removes its own lock when the
+// rename fails, so no stray lock is left with this entry or without it
+// (git 2.50.1, measured in both arms). The pin still asserts no stray lock,
+// in both arms, as a regression guard — a stray one really would kill the
+// operator's next `git config` and `git gc` — but it is not this entry's
+// witness and must not be read as one.
 //
 // The measured cost of all of it is nothing (ranger-base-j5s0's table): the
 // only in-cage-reachable config writers are bd verbs already denied at L1
@@ -1011,10 +1022,12 @@ func sessionGitConfigFiles(cwd string) []string {
 // seatbeltgitidentity_qa_test.go, and measured without a sandbox so the
 // reading holds in a caged session too: a whole session's life — add,
 // commit, checkout, status, rev-parse, the store of record's commit, and
-// the launcher's own land-time rebase in the tree — leaves all four files
-// byte-, inode- and mtime-identical, with a wrong arm showing the
-// instrument does see a write. Nothing was dropped. The sandbox arms that
-// grade the WALL are a separate question and skip inside a caged session
+// the launcher's own land-time rebase in the tree — leaves all five files
+// byte-, inode- and mtime-identical (`config.worktree.lock` absent
+// throughout, which is the reading that would have to change before that
+// literal could be dropped), with a wrong arm showing the instrument does
+// see a write. Nothing was dropped. The sandbox arms that grade the WALL
+// are a separate question and skip inside a caged session
 // (ranger-base-xjw9), which is why the cost half does not depend on them.
 //
 // Only a linked worktree has any of this. A main checkout's `.git` is a
@@ -1042,7 +1055,16 @@ func sessionWorktreeIdentityFiles(cwd string) []string {
 	if top := worktreeTop(cwd); top != "" {
 		out = append(out, filepath.Join(top, ".git"))
 	}
-	for _, n := range []string{"gitdir", "commondir", "config.worktree"} {
+	// `config.worktree.lock` is the same sibling reasoning as the config
+	// file's own lock above, applied in the one place it was not
+	// (ranger-base-xwepd). git writes config.worktree through a lockfile
+	// like any other config file, so without the sibling a refused
+	// `git config --worktree` lands at "could not write" with the whole
+	// attacker-chosen file already on disk in the lock, instead of at
+	// "could not lock" with nothing written (both MEASURED, git 2.50.1).
+	// Costs nothing: no legitimate writer of this file exists in a caged
+	// session, which is why the file itself is denied.
+	for _, n := range []string{"gitdir", "commondir", "config.worktree", "config.worktree.lock"} {
 		out = append(out, filepath.Join(dirs[0], n))
 	}
 	return dedupeStrings(out)
