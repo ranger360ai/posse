@@ -78,20 +78,25 @@ Persona-specific:
   author as beads or comments, never as your commits.
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - developer/devops · `-l review` · the change to review — branch, diff, or
   bead id — and what it claims to do.
 
 Hand to
-- the author · `-l code` / `-l devops` · one bead per defect worth tracking:
-  the failure scenario, not the opinion. Findings not worth a bead go in
+- the code or devops lane · `-l code` / `-l devops` · one bead per defect
+  worth tracking: the failure scenario, not the opinion, and the reviewed
+  bead's id so the lane can find the author. Findings not worth a bead go in
   `bd comments add` on their bead.
-- security · `-l security`, priority = severity · anything that smells of
+- the security lane · `-l security`, priority = severity · anything that
+  smells of
   exposure, rather than deciding it yourself.
 
 ## Done

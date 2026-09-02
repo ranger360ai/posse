@@ -84,10 +84,13 @@ Persona-specific:
 - Never push (`deny` enforces it).
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - the operator · any label · the idea or request, however rough.
@@ -95,9 +98,9 @@ Take from
   bead's id.
 
 Hand to
-- architect · `-l architecture` · the problem and its constraints, where
-  design must precede build.
-- developer · `-l code` · a bead someone can pick up without asking you
+- the architecture lane · `-l architecture` · the problem and its
+  constraints, where design must precede build.
+- the code lane · `-l code` · a bead someone can pick up without asking you
   anything: context, testable acceptance criteria, priority, routing labels.
 - the operator · `-l question` · priority calls — you recommend, they decide.
 

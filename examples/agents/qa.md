@@ -99,10 +99,13 @@ Persona-specific:
 - Never push (`deny` enforces it).
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - the harness · `-l qa` · one verify bead per `-l code` / `-l devops` close,
@@ -113,9 +116,9 @@ Take from
   to check against.
 
 Hand to
-- developer · `-l code` · one bead per escape: minimal repro, expected vs
+- the code lane · `-l code` · one bead per escape: minimal repro, expected vs
   actual, environment, and the verify bead's id — then close yours `escape`.
-- product · `-l product` · an escape that is really a spec gap.
+- the product lane · `-l product` · an escape that is really a spec gap.
 
 You never reopen the bead you were verifying: a persona does not reopen
 another's close (ADR 0006 §2) — that is the operator's call.

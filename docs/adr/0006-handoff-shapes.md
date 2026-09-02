@@ -1,6 +1,6 @@
 # ADR 0006 — Handoff shapes: collaboration as beads, nothing else
 
-*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47)*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47) · amended 2026-09-01 (§1: hand to the lane, not the person — `-a` only for the five-item allowlist; §2 rows and ADR 0005's HANDOFF rung follow, ranger-base-tpc41)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -35,7 +35,7 @@ Checked: `bd mail` delegates to an external provider (`mail.delegate`,
 | the message is… | goes to | why |
 |---|---|---|
 | about *this* bead (progress, a decision, `ASSUMED:` `BLOCKED:` `REFUSED:` `DIVERGED:`) | `bd comments add <id>` | stays with the work; ADR 0005 Context says "read the comments" |
-| *work for someone* (a fix, a verification, a design, a question) | a **new bead**, `-a <persona>`, their label, `--deps discovered-from:<id>` (+ `blocks:` when order matters) | the only thing dispatch routes and `bd ready` shows |
+| *work for someone* (a fix, a verification, a design, a question) | a **new bead**, the lane's label, `--deps discovered-from:<id>` (+ `blocks:` when order matters); **no `-a`** unless the work needs that person — the five cases in the §1 amendment below *(amended 2026-09-01, ranger-base-tpc41; the row read `-a <persona>, their label` before)* | the only thing dispatch routes and `bd ready` shows; dispatch seats it on whichever seat in the lane is free (ADR 0020 §2) |
 | a conversation | **nowhere** — `bd mail` is unused | no provider, and mail is invisible to dispatch and cockpit; a chat that matters becomes a comment or a bead |
 
 Collaboration state therefore lives entirely in beads: `discovered-from`
@@ -43,13 +43,121 @@ is the handoff edge, `blocks` is the ordering edge, labels route, and
 comment prefixes are the greppable events (the metrics catalog counts
 them).
 
+*(Amended 2026-09-01 from ranger-base-tpc41. Wording proposed by the
+coordinator on ranger-base-kcnc6 and confirmed by the operator on
+ranger-base-vzgk9; the rule below is that wording, verbatim.)* **Hand to
+the lane, not the person.**
+
+> Hand to the LANE, not the person. File `-l code` (or the lane's label)
+> WITHOUT `-a`; dispatch seats the bead on whichever seat in that lane is
+> free (ADR 0020, availability-first). Name a person with `-a` only when
+> the work needs THAT person: their own session tree, their own close,
+> their own ORDERS.md, a ruling they alone can make, or a skill only
+> their PID carries; and say which of those it is in the first line of
+> the description. A bead that names a person for any other reason is
+> re-filed to the lane by the coordinator.
+
+Why the row above had to change: ADR 0020 made a lane a set of seats
+and an explicit assignee "a lane of one that never falls through" (§2
+there). §1 as written filed every handoff `-a <persona>`, so every
+handoff was a lane of one — the second and third seats in a lane could
+receive only what the harness filed unassigned (verify-after, ADR 0020
+§3), and a named persona's backlog waited on that persona's
+availability while peers sat idle. The two ADRs were consistent only
+in a one-seat-per-lane shop. The fix is at the filer, because ADR 0020
+rejected the fix at dispatch on purpose: silent rerouting hands work to
+the wrong actor, and the five cases below are exactly the beads where
+rerouting is wrong.
+
+The allowlist, one line each on what "needs that person" means:
+
+1. **their own session tree** — the work is in a worktree, branch or
+   index only that persona's session holds (a stranded commit, a dirty
+   tree at close, ADR 0041); another seat cannot reach it.
+2. **their own close** — the bead is that persona's own bead to close,
+   reopen-and-close, or amend the close of (a settle-open, a close
+   reason only they can write); a second seat closing it signs a claim
+   it did not make.
+3. **their own ORDERS.md** — a persona's memory is single-writer, the
+   same fact that makes a persona one serial seat (ADR 0020 §4); an
+   append or a compaction is theirs.
+4. **a ruling they alone can make** — the ADR owner's amendment, the
+   coordinator's placement, the operator's decision (`-l question`,
+   ADR 0005's ASK rung keeps its `-a <operator>`: the operator is not a
+   seat); the deliverable is the judgement, and the judge is named.
+5. **a skill only their PID carries** — `skills:` are per PID, so the
+   lane's other seats would answer without the reference the work
+   needs.
+
+"Say which of those it is in the first line of the description" is
+what makes the rule checkable without a parser: the coordinator's groom
+(§2, last row) reads that line, and a person-named bead whose first
+line names no case is re-filed `-l <lane>` with the `-a` cleared. That
+check is a person reading a line, not code — stated as such.
+
+What follows from it, in this record and the ones it touches:
+
+- **§2 rows lose their `-a`s**, stamped in place: the design→build
+  beads are `-l code`; a `DIVERGED:` handoff is `-l architecture`, `-a`
+  the ADR's owner only when the divergence needs their ruling (case 4);
+  the verify bead is `-l qa`, assigned only when config
+  `verify_assignee:` pins a seat (ADR 0020 §3 — the code's default was
+  already nobody); QA's escape bug is `-l code` with the closed bead's
+  id in the description, because a fix is lane work and the closer is
+  not on the list; a finding is `-l security`.
+- **§4's example rows name lanes.** `examples/agents/*` Hand-to rows
+  read `the code lane · -l code · …` instead of a role, and the
+  template line reads `bd create "<title>" -l <label> --deps
+  discovered-from:<id>` — no `-a`. Take-from rows still name the
+  sender's role: they describe where a bead comes from, not who it is
+  assigned to.
+- **ADR 0005 §2's HANDOFF rung drops `-a <persona>`**, stamped in the
+  same commit as this amendment. The ladder the harness renders
+  (`EscalationLadder`, `dispatch.go`) still says `-a <persona>` until
+  the code bead cut from this amendment lands; until then the prompt
+  contradicts the record, and the record is right. SPIKE already files
+  `-l <runner's lane>`; ASK keeps `-a <operator>` (case 4).
+- **Instance PIDs are the operator's to promote** (§4, unchanged). This
+  crew's Hand-to rows move from `<developer> · -l code` to `the code
+  lane · -l code` when they do.
+
+Alternatives rejected:
+
+- *Keep `-a` and let dispatch fall through to the lane when the
+  assignee is busy.* ADR 0020 §2 chose the opposite and said why; a
+  bead naming a person for one of the five cases must not be reseated
+  on a free peer, and dispatch cannot tell the five from the rest.
+- *An assignee spelling for a lane (`-a code`).* bd's assignee is free
+  text, so it would parse, and the cockpit's holder join would show a
+  seat no persona has. Labels already are the lane (ADR 0020 §1); a
+  second vocabulary for the same set is triple-implementing the
+  substrate (ADR 0001).
+- *The harness strips `-a` at dispatch when the first line names no
+  allowlist case.* The clever one: it needs a parser for prose, and a
+  wrong strip unroutes one of the five real cases silently, at exactly
+  the beads where that is most expensive. The coordinator's groom is
+  one person reading one line; automate it when the count of re-files
+  says so, not before.
+- *Change the PIDs and leave §1 as written.* The record would keep
+  saying the thing the lanes contradict, and the PIDs cite this section
+  by number.
+
+Measured (live store, 2026-09-01, after the ranger-base-kcnc6 groom
+executed): 127 open beads, 100 in the code lane, 5 of those naming a
+person — all one developer, filed before the rule; 19 open beads name
+anyone at all. Assumed: that the coordinator's groom reads the first
+line (process, not code, and nobody has measured the re-file count yet);
+that the five cases are the whole list — the operator confirmed the
+wording, not a census of beads that needed a person; and the reading of
+"their own close" as the persona's own bead, not a bug found in it.
+
 **2. The four shapes.**
 
 | handoff | trigger | shape | closes when |
 |---|---|---|---|
-| **architect → developer** (design → build) | ADR committed | implementation beads `-l code -a <developer> --deps discovered-from:<design>`, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture -a <architect>` |
-| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa -a <config verify_assignee:> --deps discovered-from:<closed id>`, description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code -a <closer>` with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
-| **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security -a <security persona> --deps discovered-from:<id>`, **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
+| **architect → developer** (design → build) | ADR committed | implementation beads `-l code --deps discovered-from:<design>` *(no `-a`: §1 amendment of 2026-09-01)*, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture` (`-a` the ADR's owner only when their ruling is the deliverable — §1 case 4) |
+| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa --deps discovered-from:<closed id>` (unassigned unless config `verify_assignee:` pins a seat — ADR 0020 §3; §1 amendment of 2026-09-01), description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files a bug bead `-l code` (no `-a`; the closed bead's id in the description — §1 amendment of 2026-09-01) with a repro and closes theirs `escape` — the closed bead is never reopened by a persona (operator's call) |
+| **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security --deps discovered-from:<id>` (no `-a` — §1 amendment of 2026-09-01), **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
 | **operator/product grooming** (cadence) | one `-l groom` bead per week assigned to the product persona, filed by the operator or their scheduling automation (posse does not schedule; `--watch` dispatches, it doesn't create) | the product persona re-prioritises, splits, labels (`tier:` per ADR 0003), files `-l architecture` beads where design precedes build, closes with `bd comments add` listing what moved | close = queue is honest for the week; the `queue-honesty` metric reads it |
 
 **3. The one dispatch affordance: verify-after.** Convention alone would
@@ -213,8 +321,9 @@ their checklist, nobody has measured whether they read it — and that
 five rows is the ceiling any instance's table reaches.
 
 **4. PID `## Handoffs` sections say the shape, not just the name.** Each
-row becomes `who · label · what the bead must contain`, e.g. the
-developer's: *hand to QA — nothing to do: verify is filed on your close;
+row becomes `who · label · what the bead must contain` — *who* is a lane
+(`the code lane`), a person only for the §1 allowlist *(amended
+2026-09-01, ranger-base-tpc41)* — e.g. the developer's: *hand to QA — nothing to do: verify is filed on your close;
 hand to security `-l security` P≤1 when a change touches secrets, auth,
 or egress.* Recommended rows for the whole example crew ship in
 `examples/agents/*`; an instance's own PIDs are the operator's to update.

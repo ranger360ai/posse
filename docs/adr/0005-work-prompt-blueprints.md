@@ -2,7 +2,10 @@
 
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-30
 (§2: the SPIKE rung files no `discovered-from` edge — bd refuses the
-block it exists for as a cycle against that edge, ranger-base-rs8j)*
+block it exists for as a cycle against that edge, ranger-base-rs8j) ·
+amended 2026-09-01 (§2: the HANDOFF rung files `-l <their label>` with
+no `-a` — hand to the lane, ADR 0006 §1; the rendered ladder follows
+when its code bead lands, ranger-base-tpc41)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -94,7 +97,7 @@ behaviour, the ladder says which rung comes first:
 | **ASSUME** | a gap you can bridge without changing the deliverable's shape | comment `ASSUMED: <x> — <why>`; do the rest in full | continue |
 | **SPIKE** | the gap is knowledge, not permission — you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured | check the skills you carry first; on a shelf miss `bd create "spike: <question>" -t task -l <runner's lane>` with **no** `--deps`, `bd dep add <id> <sid>` so deciding waits on reading, `bd comments add <sid> "discovered-from: <id>"` for the provenance; comment `SPIKE: <question> → <sid>` | continue with whatever the answer can't change; else **stop** |
 | **ASK** | a gap only the operator can fill and the bead is useless if you guess | `bd create "<question>" -t task -l question -a <operator>` (config `operator:`; unassigned if unset), `bd dep add <id> <qid>` so the bead leaves `bd ready` until answered; comment `BLOCKED: <need> → <qid>` | **stop** |
-| **HANDOFF** | part of the work belongs to another persona | `bd create … -a <persona> -l <their label> --deps discovered-from:<id>`; comment it | continue with your part; if nothing is left, close yours |
+| **HANDOFF** | part of the work belongs to another lane | `bd create … -l <their label> --deps discovered-from:<id>`; comment it. No `-a` unless the work needs that person — ADR 0006 §1 lists the five cases, and the first line of the description says which *(amended 2026-09-01, ranger-base-tpc41; the rung read `-a <persona>` before, and `EscalationLadder` still renders that until its code bead lands)* | continue with your part; if nothing is left, close yours |
 | **REFUSE** | a hard risk line (money · publishing · deployed systems · visibility) or a gate you can't realize | comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk` | **stop** |
 
 The ladder's one trailing line, `Provenance:`, is a caveat on the rungs,

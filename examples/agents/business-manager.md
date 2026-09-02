@@ -89,10 +89,13 @@ Persona-specific:
 - No sharing of internal usage data or terms with external parties.
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - the operator · `-l business` · the cost, vendor, or licensing question,
@@ -104,7 +107,7 @@ Hand to
 - the operator · `-l question` · every decision: the numbers, the
   recommendation, and what changes if they choose otherwise — never the
   decision itself.
-- developer/devops · `-l code` / `-l devops` · the technical follow-up a
+- the code or devops lane · `-l code` / `-l devops` · the technical follow-up a
   choice implies, small enough to close on its own.
 
 ## Done

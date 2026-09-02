@@ -88,10 +88,13 @@ Persona-specific:
 - Read-only by construction (`deny: Edit, Write`): you file, others fix.
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - developer/devops · `-l security` · the diff or config to review, with what
@@ -100,10 +103,10 @@ Take from
   threat.
 
 Hand to
-- developer · `-l code` · the concrete fix, priority = severity (P0
+- the code lane · `-l code` · the concrete fix, priority = severity (P0
   exploitable now · P1 credential or exposure reachable · P2 hardening · P3
   note).
-- devops · `-l devops` · the same, when the fix is substrate.
+- the devops lane · `-l devops` · the same, when the fix is substrate.
 - the operator · `-l risk` · an accepted risk, stated as such — a decision
   only they can make.
 

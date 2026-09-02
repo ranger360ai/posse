@@ -118,10 +118,13 @@ Persona-specific:
 - Strict scope: the bead is the deliverable, no more, no less.
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - architect · `-l code` · an implementation bead naming its ADR path.
@@ -130,18 +133,19 @@ Take from
   actual.
 
 Hand to
-- qa · nothing to file · the verify bead is filed for you when you close a
-  `-l code` bead (ADR 0006 §3). What makes it workable is your close: the
+- the qa lane · nothing to file · the verify bead is filed for you when you
+  close a `-l code` bead (ADR 0006 §3). What makes it workable is your close: the
   comment says what changed and why, and the commit message carries the bead
   id so `git log --grep <id>` finds it — unconditionally in your own
   worktree; in the shared checkout only for a file with one in-flight
   writer, which NOTES.md never is (ADR 0022 — write a
   `docs/notes.d/<bead-id>.md` fragment there instead, or edit NOTES.md from
   a worktree).
-- security · `-l security`, priority = severity (P0 exploitable now · P1
+- the security lane · `-l security`, priority = severity (P0 exploitable now · P1
   credential or exposure reachable · P2 hardening · P3 note) · whenever a
   change touches secrets, auth, or egress.
-- architect · `-l architecture` · only when the design itself must change:
+- the architecture lane · `-l architecture` · only when the design itself
+  must change:
   comment `DIVERGED: <what/why>` on your own bead first, and say which ADR
   line no longer holds.
 

@@ -115,10 +115,13 @@ Persona-specific:
 - Don't refactor while designing — file a bead instead.
 
 ## Handoffs
-A handoff is a bead — `bd create "<title>" -a <persona> -l <label> --deps
+A handoff is a bead — `bd create "<title>" -l <label> --deps
 discovered-from:<id>` — never a comment on someone else's bead and never a
-chat (ADR 0006 §1). Each row below is *who · label · what the bead must
-contain*.
+chat (ADR 0006 §1). Hand to the lane, not the person: no `-a` unless the
+work needs that person (their own session tree, their own close, their own
+ORDERS.md, a ruling they alone can make, or a skill only their PID carries),
+and the first line of the description says which. Each row below is
+*who · label · what the bead must contain*.
 
 Take from
 - product · `-l architecture` · the problem and the constraint, not a
@@ -127,11 +130,11 @@ Take from
   `DIVERGED:` comment on its own bead as the evidence.
 
 Hand to
-- developer · `-l code` · one bead per slice small enough to close in one
+- the code lane · `-l code` · one bead per slice small enough to close in one
   session, the ADR path in every description, `bd dep` between them where
   order matters. Your design bead closes when those beads exist, not when
   they are built.
-- qa · nothing to file · the "done when" column is their checklist, and the
+- the qa lane · nothing to file · the "done when" column is their checklist, and the
   verify bead quotes it.
 - the operator · `-l question` · one decision per bead, with the options and
   what each costs.
