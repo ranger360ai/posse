@@ -1022,8 +1022,17 @@ func TestCockpitDispWidthUnicode16Gaps(t *testing.T) {
 // a rune that is wide by East_Asian_Width rather than by emoji presentation
 // are all drawn in full by the terminal and counted as folded here — two cells
 // of drift, worse than the one that opened rangerhq-53p.
+//
+// The park moved to ranger-base-7bdbb (ranger-base-z84xi). ranger-base-6889
+// was closed "folded into ranger-base-7bdbb: same function pair
+// (cellScan/wideRanges), same symptom" — the fold is right, but 6889's own
+// description says "remove the t.Skip when this closes", and it has closed
+// while the defect has not. Measured at 9761b7d with the skip lifted: all five
+// rows below still fail, dispWidth 0/0/1/1/1 against a terminal advance of
+// 2/2/3/2/2. So the id here is the OPEN bead that owns the fix; 6889 stays in
+// the prose above because that is where the measurements were made.
 func TestCockpitCellScanFoldGuards(t *testing.T) {
-	t.Skip("ranger-base-6889: lone skin tone, dangling ZWJ and VS15-on-wide fold when the terminal does not")
+	t.Skip("ranger-base-7bdbb (folded ranger-base-6889): lone skin tone, dangling ZWJ and VS15-on-wide fold when the terminal does not")
 	for _, c := range []struct {
 		in   string
 		want int
