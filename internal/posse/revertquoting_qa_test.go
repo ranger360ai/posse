@@ -264,9 +264,15 @@ func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 // Fixed by passing --no-renames, the same flag and the same reason as the
 // NOTES.md arm four lines up in gates.go (ranger-base-x9xbk).
 //
-// The fixture is a realistic 200-line file on purpose: git only pairs a
-// removal with an add at 50% similarity or better, so a one-byte file never
-// collapses into a rename and the pin would be green over the defect.
+// The fixture is the bead's own 200-line file, but its SIZE is not what
+// makes the defect visible and the pin does not lean on it. Measured on git
+// 2.50.1: the 50% similarity threshold gates a move that also EDITS the
+// file, and a revert of a `git mv` is byte-identical on both sides, so git's
+// exact-rename pass pairs it at any size — a one-line fixture collapses the
+// same way (mutation-checked: shrunk to one line with the fix removed, this
+// pin still fails on all three symptoms). What keeps it honest is the R100
+// assertion below: if a future edit ever stops git detecting the rename, the
+// pin stops rather than going green over a defect it is no longer reaching.
 func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")

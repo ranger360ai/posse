@@ -2059,9 +2059,14 @@ posse_gitdir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 # quoting defect above: that one exited 1 and said so, this one reports
 # success and leaves the persona believing the tree is clean, three lines
 # above the sentence telling them not to reach for a hard reset. The finish
-# line had the matching hole, committing one side of a rename. A small
-# fixture hides it — git only pairs a removal with an add at 50% similarity
-# or better — so the pin uses a realistic file.
+# line had the matching hole, committing one side of a rename.
+#
+# UNLIKE ranger-base-x9xbk, the fixture size is NOT what makes this visible
+# (measured, git 2.50.1): git's 50% similarity threshold gates a move that
+# also EDITS the file, and a revert of a 'git mv' is byte-identical on both
+# sides, so git's exact-rename pass pairs it at ANY size — a one-line file
+# collapses just as an 800-line one does. What the pin asserts instead is
+# that git actually reported the rename (R100) before it measures the lines.
 #
 # tr '\0' '\n' turns the NUL-delimited list back into lines because POSIX sh
 # has no NUL-delimited read (-d is a bashism) and command substitution eats
