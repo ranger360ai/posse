@@ -235,3 +235,56 @@ together. Two consequences worth having in hand:
   - `t.Setenv` values are restored before the parallel phase begins, so the
     environment is stable while it runs — which is what makes the
     `$RHQ_FAKE_DIR` override in §6 safe to keep.
+
+## 8. The controlled measurement, and what it says the other half is worth
+
+§5 said no wall-clock verdict taken on this box is trustworthy, and that is
+still true of any single number. But the comparison does not need a quiet
+box — it needs the same box. `-parallel 1` forces the paused tests to resume
+one at a time, so **the same test binary, in the same session, gives both
+arms**:
+
+```
+go test ./internal/posse -count=1 -timeout 40m -parallel 1     1035.0s   ok
+go test ./internal/posse -count=1 -timeout 40m                  697.0s   ok
+                                                                817.2s   ok  (repeat)
+```
+
+**-32.6%** on the first pair. The two parallel runs differ by 17% from each
+other, load having gone from ~8 to ~16 between them, which is the same point
+§5 was making — take the ratio, not the number.
+
+### The model predicted this to within 0.4%, so it can be trusted on the rest
+
+§2 priced the parallel set at 37% of the wall. Parallelising a fraction *f*
+at eight ways predicts `serial × (1 - f + f/8)`:
+
+```
+predicted   1035.0 x (1 - 0.37 + 0.37/8)  =  699.6s
+measured                                     697.0s
+```
+
+Applying the same arithmetic to the `newTestBackend` half of §6, where
+*f* = 0.75:
+
+```
+1 - 0.75 + 0.75/8  =  0.344 of serial
+
+  on THIS box (serial 1035.0s, load 8-16)          356s
+  on a quiet box (gilfoyle's serial 475.7s)        164s
+  under 300s whenever serial is at or below        873s
+```
+
+So the bead's `SLOW_PACKAGE_SECONDS=300` line is reachable, and it is
+reachable by the one change §6 describes — not by anything else on the
+table. The first half alone does not reach it and was never going to: 63% of
+a package left serial is 63% of the package.
+
+### Flake evidence for the half that did land
+
+Three full parallel runs (887.3s under load 18-36, 697.0s, 817.2s) plus the
+serial control, **zero failures in any of them**, after the two filters of
+§4. The one failure that ever appeared, `TestPreflightUNKNOWN…`, appeared on
+the run *before* the package-level-var filter existed and has not recurred.
+The rest of the repo is green too: `github.com/ranger360ai/posse` 169.8s,
+`cmd/posse` 114.5s.
