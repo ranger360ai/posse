@@ -341,6 +341,14 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		fmt.Fprintf(d.Out, "pulse: skipped (%s — herdr's listing said %q)\n", det.State, status)
 		return
 	}
+	// ranger-base-htafy, off the detection already in hand: a composer with
+	// text in it is a prompt somebody sent that never submitted, and a
+	// shop check typed after it makes one garbled message out of two. The
+	// tick comes round again; the stale text is the operator's to clear.
+	if hold := det.Hold(); hold.Typed != "" {
+		fmt.Fprintf(d.Out, "pulse: skipped (%s has %s)\n", name, hold.Why())
+		return
+	}
 
 	text := pulsePromptText(state.Conditions)
 	if _, err := d.HB.H.AgentPrompt(pane, text, false, 0); err != nil {

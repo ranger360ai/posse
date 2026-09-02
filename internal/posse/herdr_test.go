@@ -1223,10 +1223,11 @@ func fakeExplainErrorArmed() bool {
 //	                  A number counts down — that many guesses, then seen,
 //	                  which is the boot race. Empty means guess forever.
 //	explain-rules     a raw JSON array spliced in as `evaluated_rules` —
-//	                  herdr's own working, which the guess shape carries in
-//	                  the field and the seen shape does not need. Absent
-//	                  means the key is absent, which is what an older herdr
-//	                  emits and what WhatHerdrSaw must survive.
+//	                  herdr's own working, on BOTH shapes (a real herdr
+//	                  evaluates every rule whatever matched, and the region
+//	                  previews in those entries are what panework.go reads).
+//	                  Absent means the key is absent, which is what an older
+//	                  herdr emits and what WhatHerdrSaw must survive.
 //	explain-error     `explain` fails outright (see the fake's error lever)
 //	explain-error-after
 //	                  a countdown: that many explains are answered before
@@ -1247,13 +1248,9 @@ func fakeExplain() string {
 			if counted {
 				os.WriteFile(filepath.Join(fakeDir(), "explain-fallback"), []byte(strconv.Itoa(n-1)), 0o644)
 			}
-			rules := ""
-			if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-rules")); err == nil {
-				rules = `,"evaluated_rules":` + strings.TrimSpace(string(b))
-			}
 			return fmt.Sprintf(`{"state":%q,"matched_rule":null,"visible_idle":false,`+
 				`"visible_blocker":false,"visible_working":false,`+
-				`"fallback_reason":"default_known_agent_idle_fallback"%s}`, state, rules)
+				`"fallback_reason":"default_known_agent_idle_fallback"%s}`, state, fakeExplainRules())
 		}
 	}
 	rule := "fake_" + state
@@ -1262,8 +1259,23 @@ func fakeExplain() string {
 	}
 	return fmt.Sprintf(`{"state":%q,"matched_rule":{"id":%q,"state":%q},`+
 		`"visible_idle":%t,"visible_blocker":%t,"visible_working":%t,`+
-		`"fallback_reason":null}`,
-		state, rule, state, state == "idle", state == "blocked", state == "working")
+		`"fallback_reason":null%s}`,
+		state, rule, state, state == "idle", state == "blocked", state == "working", fakeExplainRules())
+}
+
+// fakeExplainRules splices the explain-rules lever in, as the `,"..."` tail
+// of either shape. It rides on BOTH of them since ranger-base-htafy: herdr
+// evaluates every manifest rule whatever matched, and the screen regions
+// those entries preview are what says whether a settled pane is waiting on
+// its own background work or holding an unsent prompt (panework.go). Absent
+// means the key is absent — an older herdr, and what the readings must
+// survive.
+func fakeExplainRules() string {
+	b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-rules"))
+	if err != nil {
+		return ""
+	}
+	return `,"evaluated_rules":` + strings.TrimSpace(string(b))
 }
 
 // fakeWaitStatus is the state the fake settles on: idle unless the

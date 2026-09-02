@@ -308,12 +308,21 @@ func main() {
 		// hand path (promptready.go). --now is the operator saying they
 		// mean this pane as it is.
 		if !now {
-			_, note, err := hb.AwaitPromptable(name, target)
+			det, note, err := hb.AwaitPromptable(name, target)
 			if err != nil {
 				die(err)
 			}
 			if note != "" {
 				fmt.Fprintf(out, "%s\n", note)
+			}
+			// ranger-base-htafy: text already in the composer is a prompt
+			// somebody sent that never submitted, and this one is about to
+			// be typed AFTER it — one garbled message rather than two.
+			// Said, not refused: the measured recovery for exactly this
+			// state was a hand `posse prompt`, and a gate that stood in
+			// front of it would block the fix as well as the mistake.
+			if typed := det.Composer(); typed != "" {
+				fmt.Fprintf(out, "warning: %s already has %s — this text is typed after it\n", name, det.Hold().Why())
 			}
 		}
 		res, err := hb.H.AgentPrompt(target, text, wait, timeout)
@@ -333,6 +342,17 @@ func main() {
 		// (ranger-base-v674). Only a work-prompt-shaped text matches.
 		hb.NoteBeadFromPrompt(name, text)
 		fmt.Fprintf(out, "%s\n", res)
+		// ...and last, the read-back the same bead asked for: herdr
+		// answers agent_prompted for a prompt it typed and did not submit,
+		// so the return value above is not evidence the turn started.
+		// AFTER the marks and the result, because it costs a second of
+		// waiting for the box to clear and nothing else here may be held
+		// behind that. Report only — posse never presses a key to recover,
+		// because the key was measured not to work (ConfirmSubmitted).
+		if left := hb.ConfirmSubmitted(target); left != "" {
+			fmt.Fprintf(out, "warning: %s is still holding %q in its prompt box — it was typed but not submitted; look (posse peek %s)\n",
+				name, left, name)
+		}
 
 	case "crew":
 		// ADR 0008: hand a session to the operator (dispatch skips it) or

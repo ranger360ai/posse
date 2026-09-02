@@ -41,6 +41,7 @@ const (
 	skipOrphaned   = "orphaned claim, assignee's crew session live"
 	skipForeign    = "held by another posse"
 	skipSettled    = "held, agent settled"
+	skipWaiting    = "held, agent waiting on its own background work"
 	skipGrace      = "inside another launcher's prompt grace"
 	skipBudget     = "budget window spent"
 	skipPlanGuard  = "plan guard"

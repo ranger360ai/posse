@@ -228,6 +228,56 @@ nothing.
 
 ### Fixed
 
+**An agent idle behind its own suite run was read as a persona that
+stopped — re-prompted, reported to the coordinator, and on the second pass
+escalated to a human.**
+
+*Affected: any session that finishes its edits and then waits on background
+work it started — a full-suite run behind a Monitor, a background shell, a
+subagent — which is what the shipped developer prompts ask for. Measured
+three times on one shop in one morning.*
+
+Nothing posse reads could tell that agent from one that gave up. herdr's
+`agent list` carries an agent's status and no word about what it is waiting
+on; `agent prompt --wait` returns the instant the turn ends; and claude's
+own detection manifest has no rule for a live shell or monitor, so the pane
+matches `live_prompt_box` and reports `idle`. Dispatch therefore judged a
+settle-without-close, `posse status` and the pulse carried a `settled:`
+condition for a session that was working as designed, and a second such
+pass would have filed a question bead for the operator about it.
+
+posse now reads the two screen regions herdr previews while evaluating its
+rules — claude's footer hint line and its prompt box — and treats an idle
+agent that is holding either as WAITING. A settle behind live background
+work is not judged and not counted: the claim is kept and the pass says
+what it is waiting on (`settled "idle" ... with 1 shell, 1 monitor still
+running — waiting, not judged this pass`). `--resume` does not re-prompt
+such a holder. The shop check drops the row rather than reporting a
+condition nobody earned. A herdr that cannot show a screen changes nothing:
+every one of those readings fails back to the behaviour above, because
+ignorance that an agent is waiting must never hold a genuinely stuck bead
+claimed forever.
+
+**A prompt could be typed into a session and never submitted, and every
+surface reported it as delivered.**
+
+*Affected: `posse prompt`, the pulse's shop check, and dispatch's
+`--resume`. Measured three times on 2026-09-02; on the last, the text sat
+in the composer for four hours.*
+
+herdr answers `agent_prompted` for a prompt it typed, whether or not the
+submit landed, so the return value was never evidence that a turn started —
+and an agent that was never spoken to settles exactly like one that
+finished. `posse prompt` now reads the composer back afterwards and says
+what is still in it, and warns before typing when the box already holds
+somebody's unsent prompt, since the two texts would otherwise go in as one
+garbled message. The pulse skips a pane in that state instead of typing
+after it, dispatch does not re-prompt one, and the shop check keeps the row
+and names it — nobody has actually spoken to that session, which is the one
+thing here a human has to fix. None of these is a refusal: the measured
+recovery from this state is a hand `posse prompt`, and a gate in front of
+it would block the fix along with the mistake.
+
 **One backup archive stamped in the future stopped the schedule, and the
 freshness surface called it fresh.**
 

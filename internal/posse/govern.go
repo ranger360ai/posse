@@ -563,7 +563,32 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 				// settled case needs a human.
 				continue
 			}
+			// ranger-base-htafy. An agent that went idle behind its own
+			// suite run is not settled-but-holding — nothing is stuck and
+			// nobody is needed — and this row said it was, to the
+			// coordinator, on every tick (measured twice on 2026-09-02,
+			// 08:08Z and 09:29Z, for two sessions that were working as
+			// designed). herdr's status cannot tell them apart; the screen
+			// can (panework.go). One `agent explain` per FINDING, which is
+			// the grain the ladderSubtype comments call below already works
+			// at, and a herdr that will not answer holds nothing — the row
+			// then stands exactly as it did before this bead.
+			//
+			// Unsent text is the other half and it does NOT drop the row:
+			// a prompt that never left the composer is a session nobody has
+			// actually spoken to, which is the one thing here a human has
+			// to fix. It keeps the row and says so instead.
+			hold := PaneHold{}
+			if in.HB != nil {
+				hold = in.HB.sessionHolding(s.Name)
+			}
+			if hold.Work != "" && hold.Typed == "" {
+				continue
+			}
 			sub, why := in.ladderSubtype(dir, is.ID)
+			if hold.Typed != "" {
+				sub, why = "-unsent", " — "+hold.Why()
+			}
 			add("G2", GovLane, "settled"+sub+":"+is.ID,
 				fmt.Sprintf("%s held by %s, %s settled %q%s", is.ID, is.Assignee, s.Name, s.Status, why))
 		}

@@ -2324,6 +2324,28 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			d.skipf(skipSettled, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, holder)
 			continue
 		}
+		// ranger-base-htafy. --resume overrides a persona that STOPPED, and
+		// a holder herdr calls idle is not always one: an agent waiting on
+		// its own suite run behind a Monitor reads idle in every store this
+		// pass has consulted, and so does an agent whose last prompt never
+		// left the composer. Re-prompting the first is the token loop
+		// rangerhq-zom's default was protecting against; re-prompting the
+		// second types a second prompt on top of the first, which is one
+		// garbled message rather than two (measured three times, 2026-09-02).
+		//
+		// Under --resume only, and only for a holder already reported
+		// settled: the skip above answers every pass that is not resuming
+		// without typing anything, so an ordinary pass pays nothing for
+		// this. What it costs a resuming pass is one `agent explain` per
+		// settled holder, which is the grain the skip above it already
+		// works at.
+		if d.Resume && holder != "" && isSettledStatus(holderStatus) {
+			if hold := d.HB.sessionHolding(holder); hold.Waiting() {
+				d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
+					is.ID, persona, holder, hold.Why())
+				continue
+			}
+		}
 		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
 		// §3) — the semantics the cockpit's `d` key realizes through
 		// LaunchBead. Re-prompt means THIS session, not a fresh Dial F one
@@ -2957,6 +2979,25 @@ wait:
 		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
 			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime, p.session, find, observed))
 	default:
+		// ranger-base-htafy, before any of this is called a settle-open. An
+		// agent that went idle behind its own suite run, and one whose
+		// re-prompt never left the composer, are both READ as settled by
+		// every store this function has consulted: herdr's `agent wait`
+		// returns the instant the turn ends and its agent JSON carries no
+		// task at all. The screen carries both (panework.go), and neither
+		// is a persona that stopped — one is waiting on work it started,
+		// the other was never prompted.
+		//
+		// Only this branch asks. A bead that CLOSED is closed whatever the
+		// pane is holding, and the two branches above are already
+		// not-settles. Same verdict a wait leg over an unreadable agent
+		// gets: the claim is kept and the bead is not judged this pass, so
+		// the seat is not refilled and the settle is not counted.
+		if hold := d.HB.PaneHolding(p.target); hold.Waiting() {
+			d.printf("◷ %-14s settled %q in %s with %s — waiting, not judged this pass (posse peek %s)\n",
+				p.is.ID, settled, p.session, hold.Why(), p.session)
+			return true, nil
+		}
 		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
 			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime, p.session, find, observed))
 		// The second time this exact disagreement happens, the re-prompt
