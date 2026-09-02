@@ -29,7 +29,7 @@ outranks the section it describes:
 | §2 the engine in Go, git + sqlite3 | **BUILT** | including the preflight and its own exit for a missing tool. |
 | §2 `filippo.io/age` in go.mod | **CUT** | see §5. posse still has no dependency outside `golang.org/x`. |
 | §2 gzip | **BUILT** — stdlib `compress/gzip`, and the archive is a plain `tar.gz` any box can open. |
-| §3 no remote, disk floor, single-flight, publish-by-rename, prune | **BUILT**, all five | and the no-remote refusal is enforced on the SOURCE (a queue repo that grew a remote) as well as on the target. |
+| §3 no remote, disk floor, single-flight, publish-by-rename, prune | **BUILT**, all five | and the no-remote refusal is enforced on the SOURCE (a queue repo that grew a remote) as well as on the target. *(amended 2026-09-02, ADR 0049: the SOURCE half is per-instance — `queue_remote:` names the one remote an instance sanctions, and every other still refuses; the target half is untouched.)* |
 | §4 the ticker | **BUILT** later and separately (`internal/posse/backuploop.go`, `watch.go`), bead ranger-base-zv3y6 | a0ln0 left it deliberately not half-built: scheduling was not in the sub-ruling's four items, and no `backup_interval:` key was defined either, because a key that reads like a schedule and schedules nothing is this record's own Context — the plist nobody installed — wearing a config key. So the key and the loop landed together. The staleness threshold stays its own key, `backup_max_age:`, and says only what it means; what it takes from the schedule is its DEFAULT — §6's 2x the interval, with 48h the fallback for an instance that has no schedule to double. |
 | §5 age identity and custody | **CUT** | §5's argument is, in its own words, that the asymmetry "protects the copies at the destination, which is where copies leave custody". Every copy is now on the box that already holds the plaintext store of record, so an identity stored beside its own ciphertext guards nothing and costs the first dependency outside `golang.org/x`. Archives are plaintext `tar.gz`, `0600` in a `0700` directory — the exposure the store already has, and no more. **If an off-box destination is ever ruled back in, §5 comes back with it**; that is the order the argument runs in, and it is not a licence to sweep an unencrypted archive anywhere. |
 | §6 on-box freshness | **BUILT** — see the tenth-row ruling in §6 below. |
@@ -43,7 +43,9 @@ The queue repo (`queue_repo:`, ADR 0015 §4) is the store of record for
 the whole work graph, and by the operator's 2c ruling (ranger-base-xhsb)
 it never grows a git remote — which makes "the launcher cannot push the
 queue" structural, and makes one disk failure the whole graph and its
-journal. A first mechanism shipped as instance ops scripts plus a
+journal. *(2026-09-02: that ruling is this instance's; ADR 0049 makes the
+remote an instance fact, `queue_remote:`, and §3 below carries the
+amendment.)* A first mechanism shipped as instance ops scripts plus a
 launchd plist (ranger-base-hl2p): age-encrypted archives, retention, a
 restore drill as the deliverable, a disk-pressure floor. It worked when
 run, and its scheduling never got armed — the plist was never installed
@@ -135,6 +137,23 @@ Carried from hl2p verbatim, now enforced by the binary:
   remote, refuse loudly (the 2c ruling as code). The drill asserts the
   restored tree has none — `git clone <bundle>` creates an origin and
   the engine removes it.
+
+  *(amended 2026-09-02, bead ranger-base-8e31g — **ADR 0049**.)* The 2c
+  ruling was this instance's answer about its own queue, and the build
+  shipped it as every instance's law: a queue repo with ANY remote
+  refused, which the work instance's ruling (ranger-base-w9jv (d), an
+  employer-approved internal remote) contradicts on its own box, and
+  which every deployer whose queue was `git clone`d hits on day one.
+  ADR 0049 makes the fact per-instance: `queue_remote:` in config names
+  the one URL an instance sanctions, a repo whose only remote's fetch and
+  push URLs both equal it passes, and everything else — unset key with
+  any remote, a second remote, a differing URL, a push URL elsewhere —
+  still refuses with the same words. The archive's queue half is
+  remote-free by construction on every instance (the bundle carries no
+  config and the queue's `.git` is never walked), so this bullet's drill
+  claim holds unchanged. "The
+  launcher cannot push the queue" reads "the harness never pushes it":
+  no `git push` call site in the binary, and every persona PID denies it.
 - **Disk floor**: refuse below `backup_min_free_mb:` free at the
   staging volume, saying why — degrade safely, never fill the disk.
 - **Unset `queue_repo:`** refuses with ADR 0015 §4's line: the store
