@@ -232,9 +232,14 @@ func main() {
 	// That is the same argument ADR 0047 D3 makes for SeedClaudeTrust's
 	// per-repo key. Left in, it taints 663 of the tests this bead exists to
 	// free, so it is named here rather than waived silently.
-	// operatorHome is the second and last: written once in TestMain, before
-	// m.Run, and read-only for the whole of the run.
-	exempt := map[string]bool{"fakeDirs": true, "operatorHome": true}
+	// operatorHome is the second: written once in TestMain, before m.Run,
+	// and read-only for the whole of the run.
+	// hermeticRun is the third: an atomic.Int64 that only ever takes Add(1),
+	// read once per call as the caller's own number. Concurrency is the
+	// type's whole job, and every test calls hermetic — left in, it taints
+	// 722 of the 1606 this bead just freed, which is the exact shape the
+	// fakeDirs note above warns about (ranger-base-pj87l).
+	exempt := map[string]bool{"fakeDirs": true, "operatorHome": true, "hermeticRun": true}
 	// Named serial, for reasons no static filter can see. Kept here rather
 	// than as a comment on each test so that `eligible` is the whole answer
 	// and a later pass cannot re-add t.Parallel by running this tool.
