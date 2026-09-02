@@ -98,6 +98,23 @@ import (
 // (ranger-base-t1aq). The window below is sized off that measurement — see
 // the WINDOW SIZING note over the twin in bootrace_qa_test.go, which carries
 // the runs and why 4s.
+//
+// AND VERIFIED AT HEAD — ranger-base-ci9e, the bead filed on this test's own
+// red, closed by measuring rather than by reading. 30 of 30 green here at
+// loadavg 8-14 against the 3 of 30 RED the timer fixture scored on this box;
+// and the mutation the pin exists to refuse — Die() swapped for a quiet
+// return at the end of awaitSettled's window — reds it 3 of 3 on the two
+// assertions below, not on the witness. The margin was measured too, since
+// it is all that is still time-driven: this window serves 30-35 explains
+// against the 3 the fixture needs, and 16 spinners on 8 cores cost it four
+// of them while costing the no-window sibling in this same -run set a factor
+// of 2.4. It would take ~11x to starve.
+//
+// ONE ARM OF THAT BEAD'S CONTROL DID NOT RUN: the linux one. Docker is
+// abandoned on this box (ranger-base-6mz7) and scripts/test-linux.sh refuses
+// rather than asking anyone to start it, so the emulated-amd64 repro is not
+// available here and the margin above stands in for it. Numbers, and the
+// class screen the bead also asked for, in docs/notes.d/ranger-base-ci9e.md.
 func TestQALateExplainErrorStillFailsLoudlyNamingTheGuess(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := raceRepo(t, b, fake)
