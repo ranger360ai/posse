@@ -194,7 +194,7 @@ carries the rest. Paths are `internal/posse/` unless prefixed.
 | 0015 §3 preconditions, blob-at-SHA read, manifest, launch verify, anchor walled | guard + wall | ADHERES | `promote.go:562-720,875-893`, `herdrback.go:1351-1356`, `seatbelt.go:829-836`; `promotelaunch_qa_test.go`, `promoteanchor_qa_test.go` (the "until 70ry lands" clause is stale, rowut) |
 | 0015 §3 anchor-state line on the watch preamble | guard | UNREALIZED — bead: ranger-base-xevp7 | no such string in non-test Go |
 | 0015 §3 the fence spelled four ways: PID deny, refusal under a persona, the commit-wall constitution arm, the land belt | wall + guard | ADHERES | 11 of 11 PIDs deny promote; `promote.go:421`; `gates.go:2623-2680`; `worktree.go:723-855`; `TestShippedPIDsDenyPromote`, `constitutionwall_qa_test.go`, `constitutionland_qa_test.go` |
-| 0015 §3 bd verbs denied option-aware; hook rules narrowed | wall | ADHERES (content) / **DRIFTED (the record claims a behaviour pin that never existed)** | `gates.go:166-175`, `bdshim_test.go`; 11 of 11 PIDs carry the 25 rules; `scripts/verify-pid-deny-set.sh` holds the content. The named `bdhookcommit_qa_test.go` has no commit in history. See finding 7 |
+| 0015 §3 bd verbs denied option-aware; hook rules narrowed | wall | ADHERES (content and behaviour) — **finding 7 was wrong; corrected 2026-09-01, ranger-base-efk14** | `gates.go:166-175`, `bdshim_test.go`; 11 of 11 PIDs carry the 25 rules; `scripts/verify-pid-deny-set.sh` holds the content. `bdhookcommit_qa_test.go` exists at the repo ROOT (d085a96, on main) and is green; four mutants killed. See the correction under finding 7 |
 | 0015 §4 queue repo reached by redirect; launcher commits path-limited, never pushes; no session holds a write grant into the constitution repo | guard + wall | ADHERES | `queuejsonl.go:65-82`, `seatbelt.go:322-324`; `TestQueueCommitNeverPushes`, `seatbeltconstitution_qa_test.go:87` |
 | 0024 D1 public iff any deployer could have written it: genre arm, content arm, identity derived on the box, unmarked is public | wall | ADHERES | `visibility.go:75,152-196,239-255,496`; `TestBeadsVisibilityFailsClosed`, `TestDeriveIdentityLiterals` |
 | 0024 D1 the genre allowlist covers every public docs dir | wall | DRIFTED, low | `docs/probes/` (one README, two days older than the check) is not in `PublicDocsGenres`; a new file there is refused today. See finding 10 |
@@ -296,6 +296,28 @@ the bead.
    commit in history ever carried that file. Only the content pin
    (`scripts/verify-pid-deny-set.sh`) holds the fleet-cannot-commit class,
    which was a P1 incident. Verify lane: laurie.
+
+   **CORRECTED 2026-09-01 (ranger-base-efk14). This finding was false.**
+   The file exists and always has: it landed 2026-08-29 in `d085a96`
+   (ranger-base-c7ek) at the **repo root**, not under a package directory,
+   and is on `main`. This audit located each pin by name (see the *Measured
+   at* preamble) and posse keeps 32 `*_qa_test.go` files beside `go.mod`,
+   so a search scoped to `internal/` and `cmd/` missed it. Measured at
+   `9b48166`: `go test ./` green in 158s, the three tests the record
+   describes all present and passing across all 9 shipped PIDs, and four
+   mutants killed — widening one PID's deny back to the whole verb, the
+   keeps-narrow-and-broad shape, dropping the gates dir from the child
+   `PATH`, and installing no hooks. **ADR 0015 §3 is accurate as written and
+   needs no edit on this account** (said on ranger-base-rowut). The rule is
+   ADHERES on both halves.
+
+   What this *did* expose is a real gap, now closed: the records name 36
+   test files and nothing resolved a single citation, so a renamed or moved
+   pin leaves every record still naming it and the next auditor resolving by
+   hand — which is how this finding was reached. `adrtestcitation_qa_test.go`
+   (repo root) now requires every cited pin to exist. It also surfaced 12
+   citations across 7 records still spelling the retired `internal/rhq/`
+   directory: ranger-base-1d8bk, architect lane.
 8. **The shop's only oversight delivery is disarmed on a comment that is
    no longer true** (ADR 0027, 0029 §2 and §4; convention, instance
    config). The live config's pulse block says "do not arm yet" because of
