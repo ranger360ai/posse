@@ -112,13 +112,25 @@ survives. ASK is untouched: its `bd dep add <id> <qid>` targets the
 question bead it just created, which has no outgoing edges.
 
 SPIKE files **no** `discovered-from` edge, and the caveat says why
-(ranger-base-rs8j, amending this section 2026-08-30). bd 0.49.1's cycle
-check spans *every* dependency type, not only `blocks`: a spike carrying
+(ranger-base-rs8j, amending this section 2026-08-30). bd's cycle check spans
+*every* dependency type, not only `blocks`: a spike carrying
 `discovered-from:<id>` makes the `bd dep add <id> <sid>` on the same rung
-close a cycle, and bd refuses it — `cannot add dependency: would create a
-cycle (<id> → <sid> → ... → <id>)`, exit 1, deterministically and in either
-order (measured against real bd on a copy of the queue db; the same pair at
-the harness's own settle-open escalation is ranger-base-23oo). The block is
+close a cycle, deterministically and in either order (measured against real
+bd on a copy of the queue db; the same pair at the harness's own settle-open
+escalation is ranger-base-23oo).
+
+What bd *does* about that cycle is a property of the store and not of the bd
+version, so neither this rung nor its caveat may reason from a refusal
+(ranger-base-lpz0o, amending this section 2026-09-01; measured with one bd
+0.50.3 binary against two stores). A SQLite `beads.db` — the operator's
+queue, and every repo an older bd inited — refuses the add: `cannot add
+dependency: would create a cycle (<id> → <sid> → ... → <id>)`, exit 1. A
+store `bd init` writes today — `.beads/config.yaml` carrying `no-db: true`,
+JSONL only, no `beads.db` at all — **accepts** it, and then answers
+`bd ready` with `<id>` while `bd blocked` also lists it. Loud or silent, the
+block does not take. The harness stopped relying on either answer at the same
+bead: `Bd.Ready` is now `bd ready` *minus* `bd blocked`, so a bead the store
+itself calls stuck is never dispatched however the edge got there. The block is
 what this rung is *for* — without it the deciding bead never leaves `bd
 ready` and the next pass dispatches it again with the spike unanswered — so
 the edge goes and the provenance becomes a comment on the spike, where

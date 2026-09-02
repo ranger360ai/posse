@@ -196,14 +196,18 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 }
 
 // ranger-base-23oo — the escalation is filed WITHOUT a `discovered-from`
-// edge, because bd 0.49.1's cycle check spans every dependency type and will
-// not carry that edge and the block together. The block is the deliverable,
-// so the provenance goes in the body and in a comment on the stuck bead,
-// which is fileMergeBlocked's idiom for the neighbouring reason.
+// edge, because bd will not carry that edge and the block between the same
+// pair. The block is the deliverable, so the provenance goes in the body and
+// in a comment on the stuck bead, which is fileMergeBlocked's idiom for the
+// neighbouring reason.
 //
-// The pin that matters is the ABSENCE of `--deps` on the create: with it,
-// real bd refuses the `dep add` and the stuck bead stays in `bd ready` — the
-// exact loop the rung exists to stop.
+// The pin that matters is the ABSENCE of `--deps` on the create: with it the
+// stuck bead stays in `bd ready` and --resume re-prompts it forever, which
+// is the exact loop the rung exists to stop. HOW bd fails to take the block
+// is a property of the store and not of its version (ranger-base-lpz0o) — a
+// SQLite beads.db refuses the `dep add`, a `no-db: true` store accepts it and
+// answers `bd ready` with the bead anyway — so this pins the absence, never
+// the refusal.
 func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d, errb := settleDispatcher(t, b)
@@ -221,7 +225,7 @@ func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *tes
 
 	for _, line := range strings.Split(bdCalls(t, fake), "\n") {
 		if strings.Contains(line, "create "+settleStuckPrefix) && strings.Contains(line, "--deps") {
-			t.Fatalf("the escalation was filed WITH an edge bd refuses the block against:\n%s", line)
+			t.Fatalf("the escalation was filed WITH the edge that costs it the block:\n%s", line)
 		}
 	}
 	if desc, _ := qs[0]["description"].(string); !strings.Contains(desc, discoveredFromMarkerPrefix+"a-1") {
@@ -249,10 +253,17 @@ func TestSettleEscalationCarriesProvenanceWithoutTheEdgeThatCostsTheBlock(t *tes
 
 // The fake bd's own pin, and the second half of ranger-base-23oo: ten green
 // pins missed the refusal because the fake granted every `dep add`. Real bd
+// on a SQLite beads.db — the operator's queue, and what this fake models —
 // refuses one whose blocker already carries an edge back to the issue — ANY
 // type, `discovered-from` included — and the control is the same add against
 // a blocker created without one. A fake that cannot fail this test cannot
 // pin escalateSettleOpen either.
+//
+// The refusal is the SQLite store's, not bd's (ranger-base-lpz0o): the same
+// 0.50.3 binary against a `no-db: true` store accepts the add and then
+// answers `bd ready` with the blocked bead. That is why nothing outside this
+// file asserts the refusal, and why Bd.Ready subtracts `bd blocked` instead
+// of trusting either store to have excluded it.
 func TestFakeBdRefusesTheDepAddCycleRealBdRefuses(t *testing.T) {
 	_, fake := newTestBackend(t)
 	_ = fake

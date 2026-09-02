@@ -211,6 +211,39 @@ func (b Bd) ListAll(dir string) ([]BdIssue, error) {
 // one assignee (persona) — the head of the dispatch loop. --limit 0 lifts
 // bd's default cap of 10 (rangerhq-47v): dispatch and the cockpit must see
 // every unblocked bead, not the first page.
+//
+// It is `bd ready` MINUS `bd blocked`, because `bd ready` alone does not
+// mean unblocked in every store bd makes (ranger-base-lpz0o). MEASURED
+// 2026-09-01, one bd 0.50.3 binary, two stores, the same argv:
+//
+//	a store `bd init` writes today — .beads/config.yaml carries
+//	`no-db: true`, JSONL only, no beads.db at all: `dep add <trigger>
+//	<blocker>` against a blocker already holding `discovered-from:<trigger>`
+//	is ACCEPTED, no cycle check, and <trigger> then comes back in `bd ready`
+//	AND in `bd blocked` at once.
+//
+//	a SQLite beads.db (the operator's queue, and every repo an older bd
+//	inited): the same add is REFUSED — "cannot add dependency: would create
+//	a cycle", exit 1 — so the edge never lands and <trigger> stays ready.
+//
+// Either way the block does not take. Only its loudness varies, and which
+// one a repo gets is a property of the store, not of the bd version — so no
+// caller of ours may reason from the refusal, and none may take `bd ready`
+// as the definition of unblocked. This asks the store its own "what is
+// stuck" question and subtracts the answer, which is right under both
+// shapes: on SQLite `bd blocked` lists nothing extra, and on the JSONL store
+// it lists exactly the bead `bd ready` should not have.
+//
+// It cannot hide work whose blocker is gone: closing the blocker takes the
+// bead out of `bd blocked` immediately — measured in both stores and both
+// arms, with `bd ready` returning it again in the same breath.
+//
+// A `bd blocked` that fails makes the repo's queue UNKNOWN, not ready
+// (rangerhq-llse), so the error is returned rather than swallowed: serving
+// the raw `bd ready` set on a failed cross-check would put the silent shape
+// back exactly when the store is least trustworthy. It costs one extra read
+// per call — `bd blocked --json` measured at 0.13-0.17s against the 1551-bead
+// queue db, the same as `bd ready` itself.
 func (b Bd) Ready(dir, assignee string) ([]BdIssue, error) {
 	args := []string{"ready", "--json", "--limit", "0"}
 	if assignee != "" {
@@ -220,7 +253,28 @@ func (b Bd) Ready(dir, assignee string) ([]BdIssue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseBdIssues(out)
+	issues, err := parseBdIssues(out)
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := b.Blocked(dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(blocked) == 0 {
+		return issues, nil
+	}
+	stuck := make(map[string]bool, len(blocked))
+	for _, r := range blocked {
+		stuck[r.ID] = true
+	}
+	kept := issues[:0]
+	for _, is := range issues {
+		if !stuck[is.ID] {
+			kept = append(kept, is)
+		}
+	}
+	return kept, nil
 }
 
 // InProgress lists the repo's claimed work — every bead somebody is holding

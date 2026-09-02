@@ -5,14 +5,20 @@ package posse
 //
 //	RHQ_LIVE_BD=1 go test ./internal/posse/ -run TestLiveSettleEscalationBlocksTheStuckBead -v
 //
-// The settle-open escalation has to do two things bd 0.49.1 will not do
-// together: record where the question came from, and BLOCK the bead it came
-// from. bd's cycle check spans every dependency type, not only `blocks`, so a
-// question carrying `discovered-from:<stuck>` makes `dep add <stuck> <qid>` a
-// cycle and bd refuses it, exit 1 — and the stuck bead stays in `bd ready`
-// and `--resume` re-prompts it forever, which is the loop the whole rung
-// exists to stop. Ten green pins missed that, because herdr_test.go's fake bd
-// granted every `dep add` and ignored `--deps` outright.
+// The settle-open escalation has to do two things bd will not do together:
+// record where the question came from, and BLOCK the bead it came from. A
+// question carrying `discovered-from:<stuck>` makes `dep add <stuck> <qid>`
+// a cycle, and however the store answers that, the stuck bead stays in
+// `bd ready` and `--resume` re-prompts it forever, which is the loop the
+// whole rung exists to stop. Ten green pins missed that, because
+// herdr_test.go's fake bd granted every `dep add` and ignored `--deps`
+// outright.
+//
+// The answer varies by store, not by bd version, which is why nothing here
+// asserts it (ranger-base-lpz0o, measured 2026-09-01 on one 0.50.3 binary):
+// a SQLite beads.db refuses the add, exit 1; a store `bd init` writes today
+// — `no-db: true`, JSONL only — accepts it and then lists the stuck bead in
+// `bd ready` AND in `bd blocked` at once.
 //
 // So this drives escalateSettleOpen itself — the shipped function, its real
 // argv — against real bd, and asserts the STOP: the edge is in the graph and

@@ -267,12 +267,18 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 
 // ranger-base-rs8j: the SPIKE rung must not file a `discovered-from` edge on
 // the spike it creates, because the `bd dep add <id> <sid>` on the same line
-// is what the rung is FOR and bd 0.49.1 refuses that add as a cycle when the
-// spike already reaches <id> over ANY edge type. Measured 2026-08-30 against
-// real bd on a copy of the queue db: with the edge, "cannot add dependency:
-// would create a cycle (<id> → <sid> → ... → <id>)", exit 1, <id> still in
+// is what the rung is FOR and bd will not carry that add when the spike
+// already reaches <id> over ANY edge type. Measured 2026-08-30 against real
+// bd on a copy of the queue db: with the edge, "cannot add dependency: would
+// create a cycle (<id> → <sid> → ... → <id>)", exit 1, <id> still in
 // `bd ready`; without it, "Added dependency ... (blocks)" and <id> gone from
 // ready. The sibling site is settleopen.go (ranger-base-23oo).
+//
+// The refusal belongs to that store, not to bd (ranger-base-lpz0o, measured
+// 2026-09-01): a store `bd init` writes today — `no-db: true`, JSONL only —
+// ACCEPTS the same add and then returns <id> from `bd ready` and from
+// `bd blocked` at once. The stop fails either way, so what this pins is the
+// absent flag, never the exit code.
 //
 // The rung is one long sentence, so this reads the SPIKE line alone rather
 // than the whole ladder: a `--deps` assertion over the ladder would pass on
@@ -297,7 +303,7 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	// rendered flag, not the word: the rung says "with NO `--deps`" in prose
 	// and that sentence is the fix, not the bug.
 	if strings.Contains(spike, "--deps discovered-from:") {
-		t.Errorf("SPIKE must file no dependency on the create — bd refuses the block that follows:\n%s", spike)
+		t.Errorf("SPIKE must file no dependency on the create — the block that follows never takes:\n%s", spike)
 	}
 	// And the block itself, which is the whole point of the rung.
 	if !strings.Contains(spike, "`bd dep add b-1 <sid>`") {

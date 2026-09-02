@@ -188,18 +188,26 @@ func (d *Dispatcher) escalateSettleOpen(p *pendingBead, settled, status string) 
 	}
 	if qid == "" {
 		// NO `Deps: discovered-from:<stuck>` here, and that absence is the
-		// whole of ranger-base-23oo. bd 0.49.1's cycle check spans EVERY
-		// dependency type, not only `blocks`: the create writes qid
-		// --discovered-from--> stuck, and the `dep add stuck qid` two lines
-		// below then closes a cycle and is refused, exit 1. Measured both
-		// orderings — the edges are mutually exclusive whichever lands
-		// first, so this is not a reordering. The block is the deliverable
-		// (without it the bead stays in `bd ready` and --resume re-prompts
-		// it forever, which is the loop this rung exists to stop), so the
-		// provenance moves to where nothing can refuse it: the
-		// discoveredFromMarkerPrefix line in the body, and a comment on the
-		// stuck bead naming the escalation — fileMergeBlocked's idiom, for
-		// the neighbouring reason.
+		// whole of ranger-base-23oo. bd will not carry a `discovered-from`
+		// edge and a `blocks` edge between the same pair: the create writes
+		// qid --discovered-from--> stuck, and the `dep add stuck qid` two
+		// lines below then closes a cycle. Measured both orderings — the
+		// edges are mutually exclusive whichever lands first, so this is not
+		// a reordering.
+		//
+		// What bd DOES about it is a property of the store, not of the bd
+		// version, so this comment states the outcome and not the mechanism
+		// (ranger-base-lpz0o, measured 2026-09-01 on one 0.50.3 binary): a
+		// SQLite beads.db refuses the add, "would create a cycle", exit 1;
+		// a store `bd init` writes today — `no-db: true`, JSONL only —
+		// accepts it and then answers `bd ready` with the stuck bead anyway.
+		// Loud or silent, the block does not land, --resume re-prompts the
+		// bead forever, and that loop is what this rung exists to stop.
+		//
+		// So the block is the deliverable and the provenance moves to where
+		// nothing can refuse it: the discoveredFromMarkerPrefix line in the
+		// body, and a comment on the stuck bead naming the escalation —
+		// fileMergeBlocked's idiom, for the neighbouring reason.
 		qid, err = d.Bd.Create(p.is.Dir, BdNew{
 			Title:       settleStuckTitle(p.is.ID, p.persona, status),
 			Assignee:    d.App.CfgGet("operator", ""),

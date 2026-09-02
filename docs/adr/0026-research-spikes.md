@@ -122,14 +122,23 @@ machinery:
 - Priority: inherit the priority of the bead it blocks — a spike on a
   P1's critical path is P1 work.
 - **The spike dep-blocks the bead it serves** (`bd dep add <deciding>
-  <spike>`), so `bd ready` itself enforces read-before-decide; nothing
-  relies on anyone remembering.
+  <spike>`), so the dispatch queue itself enforces read-before-decide;
+  nothing relies on anyone remembering. The queue, not `bd ready`: since
+  ranger-base-lpz0o (2026-09-01) `Bd.Ready` is `bd ready` *minus*
+  `bd blocked`, because a store bd makes today answers both with the same
+  bead. Nothing here may take `bd ready` alone as the definition of
+  unblocked.
 - Provenance is a **comment** on the spike, `discovered-from:
   <deciding>`, *not* a `--deps discovered-from:` on the create. This
   clause read the other way until 2026-08-30 (ranger-base-rs8j) and the
-  two halves cannot both exist: bd 0.49.1's cycle check spans every
-  dependency type, so a spike holding that edge makes the `bd dep add`
-  above a cycle and bd refuses it — exit 1, in either order, measured.
+  two halves cannot both exist: bd's cycle check spans every dependency
+  type, so a spike holding that edge makes the `bd dep add` above a
+  cycle, in either order, measured. What bd does about the cycle is a
+  property of the STORE, not of its version (ranger-base-lpz0o, measured
+  2026-09-01 on one 0.50.3 binary): a SQLite `beads.db` refuses the add,
+  exit 1, and a `no-db: true` store — what `bd init` writes today —
+  accepts it and leaves `<deciding>` in `bd ready` anyway. Either way the
+  block does not take, so state the outcome and never the refusal.
   The block is the mechanism this ADR rests on, so the block wins and
   the provenance goes where nothing can refuse it. Confirm the block
   (`bd dep list <deciding>`), not the edge: reading the spike back looks

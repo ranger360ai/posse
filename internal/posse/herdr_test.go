@@ -195,6 +195,13 @@ func fakeBd(args []string) int {
 		}
 		return 0
 	case "blocked": // blocked --json → fake-blocked.json (the whole graph, one call)
+		// The same shape fake-ready-fail gives `ready`, because Bd.Ready now
+		// asks both questions and a store that cannot answer the second has
+		// an unknown queue, not a ready one (ranger-base-lpz0o).
+		if _, err := os.Stat("fake-blocked-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "database is locked")
+			return 1
+		}
 		if b, err := os.ReadFile("fake-blocked.json"); err == nil {
 			fmt.Print(string(b))
 		} else {
@@ -209,15 +216,22 @@ func fakeBd(args []string) int {
 		for i, a := range args {
 			if a == "add" && i+2 < len(args) {
 				id, blocker := args[i+1], args[i+2]
-				// bd's cycle rule, which is UNCONDITIONAL and spans every
-				// dependency type rather than only `blocks`
-				// (ranger-base-23oo, measured against 0.49.1): if the
-				// blocker already carries an edge back to the issue — a
-				// `discovered-from` written by the create that filed it,
-				// say — this add closes a cycle and bd refuses it, exit 1.
-				// A fake that granted it would let the suite pin a block
-				// real bd will never make, which is exactly what ten green
-				// pins did.
+				// bd's cycle rule as a SQLite beads.db enforces it — the
+				// operator's queue, which is the store this fake models. It
+				// spans every dependency type rather than only `blocks`
+				// (ranger-base-23oo, measured): if the blocker already
+				// carries an edge back to the issue — a `discovered-from`
+				// written by the create that filed it, say — this add
+				// closes a cycle and that store refuses it, exit 1. A fake
+				// that granted it would let the suite pin a block real bd
+				// will never make, which is exactly what ten green pins did.
+				//
+				// A `no-db: true` store ACCEPTS the same add and then keeps
+				// the issue in `bd ready` while listing it in `bd blocked`
+				// (ranger-base-lpz0o). The fake stays on the loud shape
+				// because that is the live queue's, and the silent one is
+				// covered where it bites: Bd.Ready subtracts `bd blocked`,
+				// pinned in readyblocked_test.go off `fake-blocked.json`.
 				if fakeBdReaches(blocker, id) {
 					fmt.Fprintf(os.Stderr, "Error: cannot add dependency: would create a cycle (%s → %s → ... → %s)\n", id, blocker, id)
 					return 1

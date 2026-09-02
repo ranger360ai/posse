@@ -4169,16 +4169,43 @@ harness applying the same rule to itself.
 
 Since ranger-base-rs8j (2026-08-30) the SPIKE rung files **no**
 `discovered-from` edge at all, and that is a different bd defect from the one
-above rather than the same one. bd 0.49.1's cycle check spans *every*
-dependency type, so a spike carrying `discovered-from:<deciding>` makes the
-`bd dep add <deciding> <spike>` that rung exists for a cycle, and bd refuses
-it — exit 1, deterministically, in either order (measured against real bd on a
-copy of the queue db; the harness's own settle-open escalation had the
-identical pair, ranger-base-23oo). The block is the deliverable, so the
-provenance is a comment on the spike. Note which edge the caveat's check
-points at: reading the *spike* back shows a `discovered-from` edge and looks
-fine even when the block never landed, so SPIKE confirms `bd dep list
-<deciding>` and HANDOFF confirms `bd dep list <new-id>`.
+above rather than the same one. bd's cycle check spans *every* dependency
+type, so a spike carrying `discovered-from:<deciding>` makes the
+`bd dep add <deciding> <spike>` that rung exists for a cycle, in either
+order (measured against real bd on a copy of the queue db; the harness's own
+settle-open escalation had the identical pair, ranger-base-23oo). The block is
+the deliverable, so the provenance is a comment on the spike. Note which edge
+the caveat's check points at: reading the *spike* back shows a
+`discovered-from` edge and looks fine even when the block never landed, so
+SPIKE confirms `bd dep list <deciding>` and HANDOFF confirms `bd dep list
+<new-id>`.
+
+**The refusal belongs to the STORE, not to the bd version, and the silent
+shape is worse (ranger-base-lpz0o).** Measured 2026-09-01 with one bd 0.50.3
+binary against two stores, same argv, same process:
+
+| store | `dep add <trigger> <blocker>` over a `discovered-from` edge | `<trigger>` in `bd ready` | in `bd blocked` |
+|---|---|---|---|
+| SQLite `beads.db` (the operator's queue) | refused, `cannot add dependency: would create a cycle`, exit 1 | yes | no |
+| `bd init`'s store today (`.beads/config.yaml` → `no-db: true`, JSONL only, no `beads.db`) | **accepted**, err nil, edge in `dep list` | **yes** | **yes** |
+
+The control arm is the same pair with no `discovered-from` edge: accepted in
+both stores, `<trigger>` out of `bd ready` and in `bd blocked`, and back in
+`bd ready` the moment the blocker closes. So the block itself works — it is
+the mixed pair that does not, and the JSONL store fails it silently while the
+SQLite one fails it loudly. Every "bd refuses a cycle" line in this tree was
+written against the loud half and is now qualified in place; do not restore
+one.
+
+The harness stopped depending on either answer: **`Bd.Ready` is `bd ready`
+minus `bd blocked`** (`beads.go`), so nothing dispatches a bead the store
+itself calls stuck. That is safe against the obvious over-reach — closing the
+blocker takes the bead out of `bd blocked` at once, measured in both stores
+and both arms — and it costs one extra read, `bd blocked --json` at
+0.13–0.17s against the 1551-bead queue db, the same as `bd ready`. A
+`bd blocked` that fails makes the repo's queue *unknown*, not ready
+(rangerhq-llse), so `Bd.Ready` returns the error rather than serving the raw
+set.
 
 **There is no drop-in fix.** Upstream did fix it, but only past the end of the
 SQLite line:

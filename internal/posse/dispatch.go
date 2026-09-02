@@ -1520,18 +1520,26 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // than depending on a persona remembering to pull the cord.
 //
 // SPIKE files its bead with NO `--deps discovered-from:`, and that absence
-// is the whole of ranger-base-rs8j. bd 0.49.1's cycle check spans EVERY
-// dependency type, not only `blocks`: a spike carrying
-// `discovered-from:<id>` makes the `bd dep add <id> <sid>` on the same line
-// close a cycle, and bd refuses it — "cannot add dependency: would create a
-// cycle (<id> → <sid> → ... → <id>)", exit 1, deterministically and in
-// either order (measured 2026-08-30 against real bd on a copy of the queue
-// db; the sibling site is ranger-base-23oo/settleopen.go). The block is what
-// this rung is FOR — without it the deciding bead stays in `bd ready`, the
-// next pass dispatches it again, and "deciding waits on reading" never
-// happens — so the edge goes and the provenance moves to a comment on the
-// spike, where nothing can refuse it (discoveredFromMarkerPrefix is the same
-// idiom). That leaves HANDOFF as the only rung rendering the `--deps` form.
+// is the whole of ranger-base-rs8j. A spike carrying `discovered-from:<id>`
+// makes the `bd dep add <id> <sid>` on the same line close a cycle, and bd
+// will not carry both edges between one pair whichever lands first
+// (measured both orders 2026-08-30; the sibling site is
+// ranger-base-23oo/settleopen.go).
+//
+// What bd does about that depends on the store rather than on its version,
+// so the rung says the outcome and not the mechanism (ranger-base-lpz0o,
+// measured 2026-09-01 on one 0.50.3 binary): a SQLite beads.db refuses the
+// add — "cannot add dependency: would create a cycle (<id> → <sid> → ... →
+// <id>)", exit 1 — and a store `bd init` writes today (`no-db: true`, JSONL
+// only) accepts it and then answers `bd ready` with <id> anyway. Either way
+// the block does not take.
+//
+// The block is what this rung is FOR — without it the deciding bead stays in
+// `bd ready`, the next pass dispatches it again, and "deciding waits on
+// reading" never happens — so the edge goes and the provenance moves to a
+// comment on the spike, where nothing can refuse it
+// (discoveredFromMarkerPrefix is the same idiom). That leaves HANDOFF as the
+// only rung rendering the `--deps` form.
 //
 // The trailing `Provenance:` line is not a seventh rung — it is the caveat
 // on that one command. `bd create --deps discovered-from:<id>` is two writes
@@ -1576,7 +1584,7 @@ func EscalationLadder(id, operator string) string {
 		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
 		"- HANDOFF — part of the work belongs to another persona: `bd create \"<title>\" -a <persona> -l <their label> --deps discovered-from:" + id + "`; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n" +
-		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. SPIKE never files that edge, deliberately: bd's cycle check spans every dependency type, so a spike carrying it makes `bd dep add " + id + " <sid>` a cycle and bd refuses it in either order — check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
+		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. SPIKE never files that edge, deliberately: bd will not carry a `discovered-from` edge and a block between the same pair, so a spike carrying one makes `bd dep add " + id + " <sid>` a cycle in either order — refused outright by some stores and silently accepted by others, which leaves " + id + " in `bd ready` and dispatched anyway, so never read a zero exit as the stop. Check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
 }
 
 func fenceRefs(refs []BdRef) string {
@@ -4066,11 +4074,12 @@ const MergeBlockedLabel = "code"
 // provenance is a bead nobody can trace back to the work it is about.
 //
 // settleopen.go: the escalation must also BLOCK the bead it came out of, and
-// bd 0.49.1 will not carry both edges — its cycle check spans every
-// dependency type, not only `blocks`, so `dep add <stuck> <qid>` against a
-// qid holding `discovered-from:<stuck>` is refused as a cycle
-// (ranger-base-23oo, measured). The block is the deliverable there, so the
-// provenance goes where nothing can refuse it.
+// bd will not carry both edges between one pair — `dep add <stuck> <qid>`
+// against a qid holding `discovered-from:<stuck>` closes a cycle, which a
+// SQLite store refuses outright and a `no-db: true` store accepts while
+// leaving <stuck> in `bd ready` (ranger-base-23oo and ranger-base-lpz0o,
+// both measured). The block is the deliverable there, so the provenance goes
+// where nothing can refuse it.
 const discoveredFromMarkerPrefix = "discovered-from: "
 
 // fileMergeBlocked hands a stuck merge to the persona whose branch it is.
