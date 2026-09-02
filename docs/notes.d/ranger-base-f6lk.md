@@ -11,7 +11,7 @@ replace (operator, 2026-08-29 night; one session idle 12h+).
 | a crew mark on a session **dispatch** made | ADR 0008 §2 — a crew session is outside every sweep | closed bead + settled + empty tree + `reap_crew_after:` (4h) |
 | a crew session the **operator** made | the same | nothing, at any age |
 | `pulse_persona:`'s session | — | nothing (ADR 0027 has nowhere else to deliver) |
-| a per-bead-named session with no `bead:` pointer | ranger-base-kftx — nothing can ever supply the id | settled + empty tree + `reap_unpointed_after:` (1h) |
+| a per-bead-named session with no `bead:` pointer | ranger-base-kftx — nothing can ever supply the id | settled + empty tree + `reap_unpointed_after:` (1h), **past routing only** |
 | the persona's reusable `<persona>-<repo>` slot | it is what the next resume rejoins | nothing |
 
 ### The crew arm's discriminator: render the name, never invert it
@@ -38,6 +38,33 @@ settled test, and the empty-tree test for it.
 `TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer` used to
 construct exactly that shape as its fixture; it now constructs what `posse
 new` actually produces, with the residual written into its comment.
+
+### The unpointed arm waits for routing, and the crew arm does not
+
+The first draft reaped at pass start and **broke `TestDispatchRelaunchesDeadAgent`**
+(rangerhq-vk2). That test's fixture is the stampless shape exactly — a
+per-bead-named session, no pointer, no agent, an hour old — and it is not
+residue at all: it is the seat the pass was about to relaunch into and reuse.
+Dispatch reaches a session by NAME, pointer or no pointer, so "no pointer"
+does not mean "no bead wants it".
+
+The pass answers the question itself, so nothing new has to ask it. Anything a
+pass uses is either prompted (`promptedRecently` covers it, ADR 0028 §3) or
+resumed into — and a resume stamps the pointer (`NoteBead`), which takes the
+session out of this population. So a session still unpointed at a sweep that
+runs past routing is one no bead in that pass's queue claimed. `reapWhen`
+carries which site is calling; the pass-start sweep passes `beforeRouting` and
+the settle and epilogue sweeps pass `afterRouting`.
+
+What it costs: a pass that dies in gather — ranger-base-v674, the reason the
+pass-start sweep exists — sweeps no stampless residue. Passes with real beads
+are the ones that die in that window; a quiet pass reaches its epilogue in
+seconds, and quiet is the steady state this residue accumulates across.
+
+The crew arm keeps both sites and needs them: its bead is CLOSED, and a closed
+bead is never dispatched again, so nothing is coming for that session at any
+point in any pass. Giving both arms one rule would have cost the crew arm
+v674's starvation fix.
 
 ### A kill must take nothing (`residueHolds`)
 
@@ -104,6 +131,8 @@ amended pins in `autoreap_test.go`/`autoreap_qa_test.go`):
 | the unpointed arm goes | `…TakesAStamplessSessionPastItsGrace` + 4 |
 | `off`/`never` not honoured | `…OffRestoreThePermanentSkip` |
 | an undated record reads as infinitely old | `…UndatedResidueIsNotOldEnough` |
+| the routing gate is always satisfied | `…UnpointedArmHoldsUntilThePassHasRouted`, `TestDispatchRelaunchesDeadAgent` |
+| the pass-start call site claims `afterRouting` | `TestDispatchRelaunchesDeadAgent` |
 
 Deleting the grace check outright is a **[build failed]**, not a kill (`grace`
 goes unused) — hence the `grace-grace` spelling above.

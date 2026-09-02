@@ -1823,7 +1823,11 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// fresh (its own doc), so it is exactly as safe here as at the end — and
 	// since ADR 0028 §3 its prompt guard reads the session's own run record,
 	// so this call is guarded against another launcher's fresh prompt too.
-	d.autoReapPass()
+	//
+	// beforeRouting: this pass has not asked which beads want which sessions
+	// yet, so the unpointed arm holds here and fires at the two sites past
+	// routing below (autoreap.go).
+	d.autoReapPass(beforeRouting)
 
 	// And land what nobody watched close (landsweep.go). It runs next to the
 	// reap and for the same reason — a close this instance never judged is
@@ -2019,7 +2023,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		// not about this bead). The sweep reads every bead fresh and swallows
 		// its own read failures (autoreap.go), so a settle it cannot sweep
 		// after costs nothing but the next settle's sweep.
-		d.autoReapPass()
+		d.autoReapPass(afterRouting)
 		if g.working {
 			continue
 		}
@@ -2079,7 +2083,7 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// session it prompted seconds ago is covered, one it prompted an hour
 	// ago whose bead is closed and whose agent is idle is a session to reap,
 	// and so is one another launcher prompted that this pass never saw.
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 	return dispatched, nil
 }
 

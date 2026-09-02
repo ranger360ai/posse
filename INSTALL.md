@@ -1771,7 +1771,9 @@ its own grace and only when the session's tree holds nothing a kill would
 take: a session **dispatch made** that you later stepped into and so
 crew-marked (`reap_crew_after:`, default `4h`), and a per-bead-named session
 carrying no bead pointer at all (`reap_unpointed_after:`, default `1h`, tagged
-`🏷️no-bead` in `posse list` so you can see which rule is judging it). `off` on
+`🏷️no-bead` in `posse list` so you can see which rule is judging it — and only
+swept once a pass has finished routing, since such a session may be a seat the
+pass is about to reuse). `off` on
 either restores the permanent skip. A conversation *you* made with `posse new`
 is never swept at any age, and neither is your `pulse_persona:`. You can still
 reap by hand — `posse kill`, or `x` in the cockpit. Either way they cost

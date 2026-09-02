@@ -77,7 +77,7 @@ func TestAutoReapTakesACrewMarkedSessionDispatchMadePastItsGrace(t *testing.T) {
 		"closed", DefaultCrewReapAfter+time.Minute)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); ok {
 		t.Errorf("a crew mark on a session dispatch made is the operator stepping into a FLEET session — past its grace, over a closed bead and an empty tree, it is the sweep's:\n%s", dispatcherOut(d))
@@ -101,7 +101,7 @@ func TestAutoReapKeepsACrewMarkedSessionInsideItsGrace(t *testing.T) {
 		"closed", DefaultCrewReapAfter-time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("inside the grace a crew session is untouched — a conversation with a gap in it is not residue:\n%s", dispatcherOut(d))
@@ -128,7 +128,7 @@ func TestAutoReapNeverTakesACrewSessionTheOperatorMade(t *testing.T) {
 		"closed", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-staffing"); !ok {
 		t.Errorf("a session the operator made is theirs however old it gets — the crew arm takes only the name dispatch itself would have used:\n%s", dispatcherOut(d))
@@ -151,7 +151,7 @@ func TestAutoReapNeverTakesThePulsePersonasSession(t *testing.T) {
 		"closed", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("the pulse has nowhere to deliver once its target is reaped (ADR 0027):\n%s", dispatcherOut(d))
@@ -175,7 +175,7 @@ func TestAutoReapTakesAStamplessSessionPastItsGrace(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir}, "", DefaultUnpointedReapAfter+time.Minute)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); ok {
 		t.Errorf("a per-bead-named session with no pointer is outside the pointer sweep FOREVER — past its grace, over an empty tree, it is this arm's:\n%s", dispatcherOut(d))
@@ -194,7 +194,7 @@ func TestAutoReapKeepsAStamplessSessionInsideItsGrace(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir}, "", DefaultUnpointedReapAfter/2)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("inside the grace nothing changes — a session minutes old with no pointer yet is not residue:\n%s", dispatcherOut(d))
@@ -213,7 +213,7 @@ func TestAutoReapNeverTakesTheSlotForHavingNoPointer(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: slot, Dir: dir}, "", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(slot); !ok {
 		t.Errorf("the persona's repo slot is the session the next resume rejoins, and carries no pointer by design:\n%s", dispatcherOut(d))
@@ -236,7 +236,7 @@ func TestAutoReapWillNotTakeResidueOverAnUncommittedTree(t *testing.T) {
 	write(t, filepath.Join(repo, "unsaved.txt"), "353 lines nobody committed\n")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("a tree holding uncommitted work is never reaped by the widened arms — a kill would be the only copy's last moment:\n%s", dispatcherOut(d))
@@ -265,7 +265,7 @@ func TestAutoReapWillNotTakeResidueHoldingUnlandedCommits(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: name, Dir: repo, Worktree: true}, "", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("a branch holding commits main does not have is not residue, whatever the session looks like:\n%s", dispatcherOut(d))
@@ -294,7 +294,7 @@ func TestAutoReapTakesResidueOnceItsBranchHasLanded(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: name, Dir: repo, Worktree: true}, "", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); ok {
 		t.Errorf("a branch whose every commit the base holds is the last copy of nothing:\n%s", dispatcherOut(d))
@@ -319,7 +319,7 @@ func TestReapGracesOffRestoreThePermanentSkip(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: stampless, Dir: stampDir}, "", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(crew); !ok {
 		t.Error("reap_crew_after: off must restore ADR 0008 §2's permanent skip")
@@ -344,7 +344,7 @@ func TestUnreadableReapGraceIsNamedAndTheDefaultStands(t *testing.T) {
 		"closed", DefaultCrewReapAfter-time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("a config typo must not shorten the grace to nothing:\n%s", dispatcherOut(d))
@@ -377,7 +377,7 @@ func TestAutoReapKeepsWorkingResidueHoweverOld(t *testing.T) {
 		`[{"agent":"claude","agent_status":"working","pane_id":"w1:p1","workspace_id":"w1"},`+
 			`{"agent":"claude","agent_status":"working","pane_id":"w2:p1","workspace_id":"w2"}]`)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(crew); !ok {
 		t.Error("a session herdr calls working is somebody being in there — the age says nothing against it")
@@ -404,7 +404,7 @@ func TestUndatedResidueIsNotOldEnough(t *testing.T) {
 	}
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("a record that cannot be dated must fail closed, not read as infinitely old:\n%s", dispatcherOut(d))
@@ -423,12 +423,66 @@ func TestReapResidueDryRunOnlyLists(t *testing.T) {
 	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir}, "", 30*24*time.Hour)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Error("--dry-run must not kill residue either")
 	}
 	if !strings.Contains(dispatcherOut(d), "would reap "+name+" (no bead pointer, idle ") {
 		t.Errorf("--dry-run must say what it would take and why:\n%s", dispatcherOut(d))
+	}
+}
+
+// ─── the unpointed arm waits for routing ─────────────────────────────────────
+
+// A stampless session is not unambiguously residue: dispatch reaches a
+// session by NAME, pointer or no pointer, so one sitting at a live bead's
+// Dial F name is a SEAT this pass is about to relaunch into and reuse
+// (rangerhq-vk2), not a dead shell. The pass-start sweep cannot tell the two
+// apart — nobody has asked which beads want which sessions yet — so the arm
+// holds until a sweep that runs past routing, where anything the pass used
+// has either been prompted (promptedRecently) or been stamped with a pointer
+// by NoteBead and left this population.
+func TestUnpointedArmHoldsUntilThePassHasRouted(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	dir := t.TempDir()
+	name := SessionForBead("ranger", dir, "a-1")
+	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir}, "", DefaultUnpointedReapAfter+time.Minute)
+	idleClaude(t, fake)
+
+	d.autoReapPass(beforeRouting)
+
+	if _, ok := b.readMeta(name); !ok {
+		t.Fatalf("the pass-start sweep must not take a session this pass may be about to reuse:\n%s", dispatcherOut(d))
+	}
+
+	// The same session, the same sweep, past routing: now it is residue.
+	d.autoReapPass(afterRouting)
+
+	if _, ok := b.readMeta(name); ok {
+		t.Errorf("past routing, a session still carrying no pointer is one no bead in this pass's queue claimed:\n%s", dispatcherOut(d))
+	}
+}
+
+// The crew arm keeps BOTH sites, and must: its bead is closed, and a closed
+// bead is never dispatched again, so no pass is coming for that session at
+// any point. Making the two arms share one rule would cost the crew arm the
+// starvation fix ranger-base-v674 added the pass-start sweep for.
+func TestCrewArmSweepsBeforeRoutingToo(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	dir := t.TempDir()
+	name := SessionForBead("ranger", dir, "a-1")
+	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir, Bead: "a-1", Crew: true},
+		"closed", DefaultCrewReapAfter+time.Minute)
+	idleClaude(t, fake)
+
+	d.autoReapPass(beforeRouting)
+
+	if _, ok := b.readMeta(name); ok {
+		t.Errorf("a closed bead's crew-marked session is nobody's at pass start either:\n%s", dispatcherOut(d))
 	}
 }

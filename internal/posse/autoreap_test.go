@@ -35,7 +35,7 @@ func TestAutoReapKillsAClosedIdleSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Error("a session whose bead is closed and whose agent is idle must be reaped")
@@ -55,7 +55,7 @@ func TestAutoReapKillsAClosedDoneSession(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "agents.json"),
 		[]byte(`[{"agent":"claude","agent_status":"done","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Error("agent_status done is a settled state too — the session must be reaped")
@@ -69,7 +69,7 @@ func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	workingClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("a session herdr still calls working must not be reaped, however its bead reads")
@@ -83,7 +83,7 @@ func TestAutoReapKeepsAnOpenIdleSession(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "in_progress")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("an idle session whose bead is still open must not be reaped — the persona stopped on it, and gather's own line is what raises that, not the reaper")
@@ -110,7 +110,7 @@ func TestAutoReapKeepsACrewSession(t *testing.T) {
 	// clock: a fresh session would survive this sweep either way.
 	ageLaunch(t, b, "ranger-crew", 30*24*time.Hour)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-crew"); !ok {
 		t.Error("ADR 0008: a crew session the operator made is never reaped, closed bead or not, at any age")
@@ -132,7 +132,7 @@ func TestAutoReapKeepsTheNonPerBeadSlot(t *testing.T) {
 	}
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(slot); !ok {
 		t.Error("the persona's own repo slot (no bead suffix) must never be reaped")
@@ -147,7 +147,7 @@ func TestAutoReapDryRunOnlyLists(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("--dry-run must not actually kill anything")
@@ -165,7 +165,7 @@ func TestAutoReapOffByConfig(t *testing.T) {
 	idleClaude(t, fake)
 	os.WriteFile(b.App.ConfigPath, []byte("auto_reap: false\n"), 0o644)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("auto_reap: false must turn the sweep off entirely (today's behaviour)")
@@ -180,7 +180,7 @@ func TestAutoReapOffByFlag(t *testing.T) {
 	reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("--no-reap must turn the sweep off for this pass")

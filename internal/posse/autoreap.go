@@ -82,7 +82,11 @@ func (a *App) AutoReap() bool {
 // other what it fired. A read failure is this sweep's own to swallow: a pass
 // that dispatched real work does not fail because a reap sweep could not
 // list sessions.
-func (d *Dispatcher) autoReapPass() {
+//
+// `when` is the one thing the two sites do not share, and it gates exactly
+// one arm: a stampless session may be a seat this pass is about to reuse, and
+// only a sweep past routing can know it is not (ranger-base-f6lk, below).
+func (d *Dispatcher) autoReapPass(when reapWhen) {
 	// The refusals-spool fold (ADR 0025 §4, refusalfold.go) rides this sweep
 	// for the same reason the reap itself does: it is a host loop that
 	// already runs at pass start, mid-pass and pass epilogue, and every one
@@ -102,7 +106,7 @@ func (d *Dispatcher) autoReapPass() {
 	// populations and N sessions are answered by the same two graces, and a
 	// config typo is named once rather than once per session (verifyPolicy's
 	// own rule).
-	pol := d.reapPolicy()
+	pol := d.reapPolicy(when)
 	for _, s := range sessions {
 		class := reapClassOf(s, pol)
 		if class == reapNothing {
@@ -267,7 +271,7 @@ func (d *Dispatcher) foldRefusalSpools() {
 //     dispatch-watch.log: two of them — `<persona>-<repo>-ranger-base-3j3t`
 //     and `<persona>-<repo>-ranger-base-teau` — each skipped by the crew
 //     shield on hundreds of consecutive passes.
-//   - STAMPLESS (ranger-base-kftx). A per-bead-NAMED session carrying no
+//   - STAMPLESS (ranger-base-kftx), and ONLY PAST ROUTING. A per-bead-NAMED session carrying no
 //     `bead:` pointer — a meta written by a binary from before the pointer
 //     landed, or a `posse new` session later released with `posse crew
 //     --off`. kftx tagged them 🏷️no-bead so the boundary would be visible
@@ -291,6 +295,34 @@ func (d *Dispatcher) foldRefusalSpools() {
 // operator who types dispatch's exact name into `posse new` and is then
 // hand-dispatched that same bead is indistinguishable from dispatch's own
 // session, and pays the graces and the empty-tree test below for it.
+//
+// WHY THE UNPOINTED ARM WAITS FOR ROUTING. A stampless session is not
+// unambiguously residue, and this is the one place the two widened arms
+// differ in kind. Dispatch reaches a session by NAME — `SessionForBead` for
+// the bead it is about to work — whether or not that session carries a
+// pointer, so a stampless session at a live bead's name is a SEAT this pass
+// is about to relaunch into and reuse (rangerhq-vk2), not a dead shell.
+// MEASURED: TestDispatchRelaunchesDeadAgent is exactly that shape — a
+// per-bead-named session, no pointer, no agent, an hour old — and a
+// pass-start sweep took it out from under the relaunch that was coming for
+// it.
+//
+// The pass itself answers the question, so nothing new has to ask it. Any
+// session a pass uses is either prompted (promptedRecently covers it, ADR
+// 0028 §3) or resumed into, and a resume stamps the pointer (`NoteBead`) —
+// which takes it out of this population altogether. So a session still
+// unpointed at a sweep that runs PAST routing is one no bead in that pass's
+// queue claimed, which is the predicate "no bead can claim this name" answered
+// by the only thing that can answer it. Before routing the same session is a
+// question nobody has asked yet, and the sweep says nothing about it.
+//
+// What that costs, stated: a pass that dies in gather (ranger-base-v674 — the
+// reason the pass-START sweep exists at all) sweeps no stampless residue. It
+// is the passes with real beads that die in that window, and a QUIET pass —
+// the steady state, and the one this residue accumulates across — reaches its
+// epilogue in seconds. The crew arm keeps both sites and needs to: its bead is
+// CLOSED, and a closed bead is never dispatched again, so nothing is coming
+// for that session at any point in any pass.
 //
 // AND NEITHER ARM MAY TAKE THE PULSE'S TARGET. ADR 0027's carve-out delivers
 // the shop check into `pulse_persona:`'s live session; a sweep that reaps it
@@ -351,18 +383,30 @@ const (
 	DefaultUnpointedReapAfter = time.Hour
 )
 
+// reapWhen says whether this sweep is running BEFORE the pass has routed
+// anything or AFTER it has, and it decides exactly one thing: whether the
+// unpointed arm may fire (see reapClassOf).
+type reapWhen bool
+
+const (
+	beforeRouting reapWhen = false
+	afterRouting  reapWhen = true
+)
+
 // reapPolicy is one sweep's resolved policy.
 type reapPolicy struct {
 	crew      time.Duration // 0 = the crew arm is off
-	unpointed time.Duration // 0 = the unpointed arm is off
+	unpointed time.Duration // 0 = the unpointed arm is off (see reapClassOf)
 	pulse     string        // the persona ADR 0027's pulse delivers to ("" = none)
+	when      reapWhen
 }
 
-func (d *Dispatcher) reapPolicy() reapPolicy {
+func (d *Dispatcher) reapPolicy(when reapWhen) reapPolicy {
 	return reapPolicy{
 		crew:      d.App.reapAfter("reap_crew_after", DefaultCrewReapAfter, d.errw()),
 		unpointed: d.App.reapAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errw()),
 		pulse:     pulsePersona(d.App),
+		when:      when,
 	}
 }
 
@@ -414,7 +458,7 @@ func reapClassOf(s HerdrSession, pol reapPolicy) reapClass {
 		}
 		return reapCrewClosed
 	}
-	if pol.unpointed > 0 && UnpointedBeadSession(s) {
+	if pol.when == afterRouting && pol.unpointed > 0 && UnpointedBeadSession(s) {
 		return reapUnpointed
 	}
 	return reapNothing

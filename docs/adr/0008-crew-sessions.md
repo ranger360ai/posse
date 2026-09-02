@@ -115,6 +115,14 @@ the name from the record is the only inference here, and it goes from record
 to name, never the reverse — a name is a lossy encoding of a bead id
 (ranger-base-kftx) and is never read back into one.
 
+The sibling arm this landed with is not this ADR's — a per-bead-named session
+with no `bead:` pointer at all (ranger-base-kftx) — but one property of it
+belongs here for contrast: that arm fires only at a sweep running **past
+routing**, because dispatch reaches a session by name whether or not it
+carries a pointer, so an unpointed session at a live bead's name is a seat the
+pass is about to reuse. The crew arm needs no such wait: its bead is closed,
+and a closed bead is never dispatched again.
+
 What is unchanged is the part §1 argued for: a session the operator MADE is
 never swept, at any age, whatever pointer it later carries. That is stronger
 than the "longer grace" the bead asked for, and it is why this is not the

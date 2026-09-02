@@ -1816,7 +1816,7 @@ that the session is *finished*:
 |---|---|---|
 | pointer | dispatch's own per-bead session | its bead reads **closed** |
 | crew | a crew mark on a session **dispatch made** | closed bead + `reap_crew_after:` (4h) + a tree holding nothing |
-| unpointed | a per-bead-named session with **no** `bead:` pointer | `reap_unpointed_after:` (1h) + a tree holding nothing |
+| unpointed | a per-bead-named session with **no** `bead:` pointer | `reap_unpointed_after:` (1h) + a tree holding nothing, and only at a sweep **past routing** |
 
 Never taken, at any age: a conversation the operator MADE (`posse new` — the
 crew arm takes only the name `SessionForBead` renders from the session's own
@@ -1824,6 +1824,19 @@ crew arm takes only the name `SessionForBead` renders from the session's own
 `pulse_persona:`'s session (ADR 0027 has nowhere else to deliver); the
 persona's reusable `<persona>-<repo>` slot; a foreign row. `off` / `never` on
 either grace restores the permanent skip those two arms used to be.
+
+**The unpointed arm waits for routing**, and that is the one place the two
+widened arms differ in kind. Dispatch reaches a session by NAME —
+`SessionForBead` for the bead it is about to work — pointer or no pointer, so
+a stampless session at a live bead's Dial F name is a seat this pass is about
+to relaunch into and reuse (rangerhq-vk2), not a dead shell. The pass-start
+sweep cannot tell those apart; a sweep past routing does not have to, because
+anything the pass used was either prompted (`promptedRecently`) or resumed
+into, and a resume stamps the pointer (`NoteBead`) and takes the session out
+of the population. The cost is that a pass which dies in gather sweeps no
+stampless residue — but a quiet pass, which is the steady state this residue
+accumulates across, reaches its epilogue in seconds. The crew arm keeps both
+sites: its bead is closed, and a closed bead is never dispatched again.
 
 **"A tree holding nothing" is `RemoveSessionTree`'s refusal asked as a
 question** (`residueHolds`): no uncommitted paths in the session's cwd, and —

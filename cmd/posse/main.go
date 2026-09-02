@@ -1986,9 +1986,11 @@ dispatch (beads):
                                  on a session DISPATCH made goes after
                                  reap_crew_after: (4h), and a per-bead-named
                                  session with no bead pointer after
-                                 reap_unpointed_after: (1h) — both only over
-                                 a tree holding nothing, and "off" on either
-                                 restores the permanent skip)
+                                 reap_unpointed_after: (1h, and only at a
+                                 sweep past routing — an unpointed session may
+                                 be a seat this pass is about to reuse). Both
+                                 only over a tree holding nothing, and "off"
+                                 on either restores the permanent skip)
       --resume                 re-prompt in_progress beads whose persona
                                  session is alive and idle, and take them
                                  before fresh work (default: only interrupted

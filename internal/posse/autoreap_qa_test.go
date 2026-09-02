@@ -182,7 +182,7 @@ func TestAutoReapWarnsBeforeSweepingADirtySharedCheckout(t *testing.T) {
 	reapCandidateIn(t, b, dir, "ranger-repo-a-1", "a-1", `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Error("a dirty shared checkout under a CLOSED bead is the operator's own scratch — the kill still proceeds")
@@ -211,7 +211,7 @@ func TestAutoReapDryRunDoesNotWarnAboutADirtyCheckout(t *testing.T) {
 	reapCandidateIn(t, b, dir, "ranger-repo-a-1", "a-1", `[{"id":"a-1","status":"closed"}]`)
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if errs.String() != "" {
 		t.Errorf("--dry-run must not warn about a tree it is not going to touch:\n%s", errs.String())
@@ -232,7 +232,7 @@ func TestAutoReapKeepsASessionWhoseBeadBdCannotRead(t *testing.T) {
 	reapCandidateIn(t, b, dir, "ranger-repo-a-1", "a-1", "")
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("a bead whose status bd cannot answer for is not a closed bead — the sweep must fail closed")
@@ -274,7 +274,7 @@ func TestAutoReapSweepsASessionWithNoAgentLeftInIt(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace+time.Minute)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); ok {
 		t.Errorf("a bare shell over a closed bead is a dead shell — the sweep must claim it:\n%s", dispatcherOut(d))
@@ -301,7 +301,7 @@ func TestAutoReapKeepsASessionWhoseAgentMayStillBeStarting(t *testing.T) {
 	// agent-not-detected-YET are the same reading.
 	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace/2)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Errorf("inside the launch grace a missing agent is a starting one — the sweep must wait:\n%s", dispatcherOut(d))
@@ -321,7 +321,7 @@ func TestAutoReapKeepsABlockedSessionOverAClosedBead(t *testing.T) {
 		[]byte(`[{"agent":"claude","agent_status":"blocked","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
 	ageLaunch(t, b, "ranger-repo-a-1", d.RelaunchGrace+time.Minute)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Errorf("blocked is a persona waiting, not a session nobody is in:\n%s", dispatcherOut(d))
@@ -343,7 +343,7 @@ func TestAutoReapKeepsSweepingPastACandidateItMustSkip(t *testing.T) {
 		[]byte(`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"},`+
 			`{"agent":"claude","agent_status":"idle","pane_id":"w2:p1","workspace_id":"w2"}]`), 0o644)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
 		t.Error("the unanswerable candidate must be kept")
@@ -403,7 +403,7 @@ func TestAutoReapLeavesADialFNamedSessionThatCarriesNoBeadPointer(t *testing.T) 
 	}
 	idleClaude(t, fake)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Error("a session with no bead pointer must not be reaped on the strength of its name alone — its own arm's grace has not passed and no bead has been read")
@@ -503,7 +503,7 @@ func TestAutoReapSkipsAHandLaunchedSessionOnTheCrewMarkNotThePointer(t *testing.
 	// Far past every grace in the file: the pin is the shape, not the clock.
 	ageLaunch(t, b, name, 30*24*time.Hour)
 
-	d.autoReapPass()
+	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta(name); !ok {
 		t.Errorf("a hand-launched session is the operator's, however its name reads and whatever pointer it carries:\n%s", dispatcherOut(d))
