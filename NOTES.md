@@ -1347,6 +1347,59 @@ cockpit header and the dispatch skip line rather than left as archaeology in
 is the operator's page for all four rotation moves; its front door is `posse
 refresh` with no arguments.
 
+### The session credential answers the model list, and a 429 from the meter endpoint names nothing (ranger-base-au0o4)
+
+MEASURED 2026-09-02 against the live endpoints, from a `cage: seatbelt` session
+on darwin-arm64, presenting the **session credential from an env set** — the
+variable `CageCredential(claude)` names and a launch injects, not the meter
+token. The instance-side account, with the timings and this box's log, is in
+the private tree under the same bead id (ADR 0024 D3: the mechanism restated
+here, the measurement cited).
+
+`GET /v1/models?limit=100` on `api.anthropic.com`, with the header pair
+`modelavail.go`'s `getPage` sends — `Authorization: Bearer`,
+`anthropic-beta: oauth-2025-04-20`, `anthropic-version: 2023-06-01`:
+
+- **200**, one page, and the newest model id is in it. So ADR 0039 D3d's
+  premise holds: the availability probe can ride the credential the launch is
+  about to hand the session, instead of the meter token.
+- Three failing control arms are what make that 200 the credential's rather
+  than the endpoint's good mood: **no** `Authorization` header → 401
+  (`x-api-key header is required`); a synthetic bogus bearer → 401 (`OAuth
+  access token is invalid.`); the *same real* token moved to `x-api-key` → 401
+  (`API key is invalid.`). Bearer is load-bearing, and `getPage`'s comment that
+  a Code OAuth token never goes on `x-api-key` is now measured.
+- Header sensitivity, same token: dropping `anthropic-beta` still answers
+  **200** — the oauth beta header is not required on this endpoint, unlike on
+  the usage endpoint. Dropping `anthropic-version` answers **400**
+  (`anthropic-version: header is required`). Keep sending both; one shape for
+  both callers is deliberate, and only the version header is measured as
+  required.
+
+`GET /api/oauth/usage` with that same session credential is the other half of
+the question, and it came back **429** — which is not an answer about the
+credential, and this is the part worth carrying:
+
+- A request carrying **no `Authorization` header at all** gets 429 as well. The
+  rate limit sits in front of, or beside, the auth check, so a 429 there is not
+  evidence about the token presented. Do not read one as an entitlement
+  verdict.
+- A synthetic bogus bearer, by contrast, gets **401** immediately — the rate
+  limiter does not swallow it. That is the arm that discriminates: a credential
+  that gets 429 rather than 401 is at least not an *invalid* token. Whether it
+  is an *entitled* one — ADR 0019 D2's 403 half — that arm cannot say.
+- Every ask re-arms the window, including a probe's. Before asking this
+  endpoint by hand, read `$StateDir/plan-usage.log` (rangerhq-tdy8's shared
+  reading exists for exactly this): a live cooldown there means the ask will
+  429 and will push the window out another hour for every caller on the box.
+  The cooldown is one window with a fixed end, not a fresh hour per request —
+  `Retry-After` decrements by real elapsed time between two asks.
+
+So the practical rule for anything metering-shaped: **401 and 403 are about the
+credential, 429 is about the source.** posse's `planusage_anthropic.go` already
+splits them that way — `AuthFailure` for the first two, `RateLimit` for the
+third — and this measurement is why that split has to stay.
+
 ### The contract
 
 - **Writer: the operator**, by `$EDITOR` or the TUI. posse never mints,
