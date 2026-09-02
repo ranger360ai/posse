@@ -1272,6 +1272,73 @@ isn't the meter token (a second provider's meter, a webhook).
    the file was renamed rather than removed and the check as worded passed
    sitting beside a live credential.
 
+#### What the shipped artifact actually does (MEASURED 2026-09-01, 2.1.258)
+
+ADR 0019 V1 wanted a clean room and a login. Half of it needs neither: the
+credential store is *in the release binary*, and the binary is public and
+checksummed. Recipe, no container and no login —
+
+    curl -sS https://downloads.claude.ai/claude-code-releases/<ver>/manifest.json
+    curl -sS https://downloads.claude.ai/claude-code-releases/<ver>/linux-x64/claude -o claude-linux-x64
+    shasum -a 256 claude-linux-x64          # must equal platforms["linux-x64"].checksum
+
+`strings` emits nothing useful on a 200 MB binary (`grep -ac` / `grep -aob`
+instead — the same trap as the `ps` census); take byte offsets with `grep -aob`,
+`dd` a window out, and `tr ';' '\n'` it into readable minified JS. The control
+that says you read the shipped thing: the darwin-arm64 checksum in the manifest
+equals `shasum -a 256` of `~/.local/share/claude/versions/<ver>` on this box.
+It did (`b63136194160791c…`).
+
+MEASURED on linux-x64 2.1.258 (`704f1334ac65d3e8…`, verified):
+
+- The secure-storage module defines **one** store, `{name:"plaintext"}`, and the
+  store selector returns it unconditionally. No keychain store object and no
+  fallback composite exist in that module. So off darwin the runtime's own
+  credentials file — path (3) above — is not a fallback; it is the whole store.
+- The specialization is at **build time, not `process.platform`**: the linux
+  build's read-error mapper passes the constant `"linux"` where the darwin build
+  passes `"darwin"`. Do not reason about linux behaviour from the darwin binary;
+  the bundles differ.
+- Its **directory** is `$CLAUDE_SECURESTORAGE_CONFIG_DIR` when that variable is
+  present (present-but-empty means `~/.claude`), else the config dir —
+  `$CLAUDE_CONFIG_DIR`, else `~/.claude`; the basename is the one path (3)
+  already names. So the directory is **not** `$HOME/.claude` by definition,
+  which `CredentialsFile()` in `internal/posse/credential.go` currently assumes
+  (ranger-base-wd4be; `trust.go` already resolves the config dir the runtime's
+  way, so posse disagrees with itself).
+- The writer does `mkdir(dir)`, writes mode `384` (= 0600), then `chmod` 0600.
+- The envelope the login/refresh loop writes is
+  `{claudeAiOauth:{accessToken, refreshToken, expiresAt, refreshTokenExpiresAt,
+  scopes, subscriptionType, rateLimitTier, clientId}}` — so ADR 0019 D5's
+  ASSUMED `expiresAt` field name is confirmed present in the shipped envelope.
+
+MEASURED on darwin-arm64 2.1.258, and it changes path (1) and path (3) above:
+the darwin store is a **composite named `keychain-with-plaintext-fallback`**, not
+a keychain.
+
+- Its `read` returns the file's contents when the keychain read is null.
+- Its `update` writes the file when a keychain write fails **non**-transiently,
+  and then deletes the keychain item if one existed.
+- On a later keychain success it deletes the file only when the keychain was
+  previously *empty* — which is why the file appears and then sits frozen for
+  days (the ranger-base-1lza observation), and why "delete once" measured out a
+  treadmill.
+
+So the darwin file is not "some auth flow's byproduct on its own schedule". It is
+the runtime's own documented fallback, claude reads it, and a run of keychain
+write failures can move the record onto it *and delete the keychain item*. Posse
+declines to read it on the premise that reading it would invert the store of
+record; measured, the inversion runs both ways, and the failure mode is posse
+reading a keychain item claude has deleted while claude is authenticated fine.
+That premise is ADR 0019 D2's and is filed back to the ADR (ranger-base-v3qi4),
+not patched here.
+
+What this does **not** settle: liveness. An artifact cannot say whether a token
+written by a real login returns 200 from `/api/oauth/usage` — that is V1's other
+half, it still needs a login, and it stays with the off-laptop cleanroom and the
+spike that inherited it. `meterUnconfirmed` in `credential.go` stays true as
+worded.
+
 An operator who logs in has fixed (3) and believes he has fixed everything.
 On 2026-08-24 all three failed in one day. Which one broke is a named class
 now — `unreadable` / `401 stale` / `403 wrong kind` / `429` — carried in the
