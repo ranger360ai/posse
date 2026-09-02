@@ -16,6 +16,29 @@ import (
 	"time"
 )
 
+// TestQAConstitutionSourceDirIsPosse is the ONE value pin on the directory
+// name (ADR 0046 D2). Every other pin in this tree reads
+// ConstitutionSourceDir, ConstitutionRepoMarker or ConstitutionRepoPaths()
+// and so measures the derivation rather than the value — a coupling pinned
+// once instead of a claim pinned 165 times (version-literal:
+// claim-vs-coupling). If a second literal pin on the value appears, one of
+// them is a twin and the mutation reading below stops meaning anything.
+//
+// MUTATION READING: set the constant back to "rhq" and exactly this test
+// reds; every derived pin stays green, because they all follow the constant.
+// A derived pin that also reds under that mutant is a literal in disguise.
+//
+// The name is the tool's, on both sides of the promote copy: the manifest
+// key `agents/<role>.md` reads the same whichever tree you are standing in.
+func TestQAConstitutionSourceDirIsPosse(t *testing.T) {
+	t.Parallel()
+	if ConstitutionSourceDir != "posse" {
+		t.Errorf("ConstitutionSourceDir = %q, want %q (ADR 0046 D1) — the cutover "+
+			"moves ~/src/<instance>/rhq to .../posse and this constant with it",
+			ConstitutionSourceDir, "posse")
+	}
+}
+
 // promoteFixture builds a constitution repo with the promoted set plus each
 // of the three things promote must never touch, and a separate empty home.
 func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) (string, error)) {
@@ -25,7 +48,7 @@ func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) 
 	}
 	root := t.TempDir()
 	repo := filepath.Join(root, "constitution")
-	src = filepath.Join(repo, "rhq")
+	src = filepath.Join(repo, ConstitutionSourceDir)
 	home := filepath.Join(root, "home")
 	t.Setenv("RHQ_HOME", home)
 	t.Setenv(EnvPersona, "")
@@ -66,7 +89,7 @@ func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) 
 	}
 	// The constitution repo's own policy: secrets and machine-local state
 	// never enter git (the .gitignore line ADR 0015 §7 rests on).
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("rhq/envs/\nrhq/state/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(ConstitutionSourceDir+"/envs/\n"+ConstitutionSourceDir+"/state/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := git("add", "-A"); err != nil {
@@ -176,7 +199,7 @@ func TestPromoteTakesModesAndOddNamesFromTheCommit(t *testing.T) {
 func TestPromoteNotesAPathGitIsNotWatching(t *testing.T) {
 	a, src, git := promoteFixture(t)
 	promote(t, a, PromoteOpts{Source: src})
-	if out, err := git("update-index", "--assume-unchanged", "rhq/config.yaml"); err != nil {
+	if out, err := git("update-index", "--assume-unchanged", ConstitutionSourceDir+"/config.yaml"); err != nil {
 		t.Fatalf("update-index: %s", out)
 	}
 	if err := os.WriteFile(filepath.Join(src, "config.yaml"), []byte("default_env: private\n"), 0o644); err != nil {
@@ -332,10 +355,10 @@ func TestPromoteRefusesWhenTheHomeIsTheSource(t *testing.T) {
 func TestPromoteRefusesAnIgnoredPromotedPath(t *testing.T) {
 	a, src, git := promoteFixture(t)
 	repo := filepath.Dir(src)
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("rhq/envs/\nrhq/state/\nrhq/recipes/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(ConstitutionSourceDir+"/envs/\n"+ConstitutionSourceDir+"/state/\n"+ConstitutionSourceDir+"/recipes/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := git("rm", "-r", "-q", "--cached", "rhq/recipes"); err != nil {
+	if out, err := git("rm", "-r", "-q", "--cached", ConstitutionSourceDir+"/recipes"); err != nil {
 		t.Fatalf("git rm --cached: %s", out)
 	}
 	if out, err := git("commit", "-qam", "ignore recipes"); err != nil {

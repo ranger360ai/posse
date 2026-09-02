@@ -163,7 +163,7 @@ func sbSiblingRegex(p string) string {
 // It exists because the allow block cannot be made narrow enough. `cwd` is
 // granted whole to any PID that does not deny Edit/Write, and the home is a
 // symlink INTO the constitution repo — so a session dispatched into that
-// repo is handed `rhq/agents`, the PIDs every gate is rendered from, inside
+// repo is handed `posse/agents`, the PIDs every gate is rendered from, inside
 // an ordinary project grant (ranger-base-6ne, and measured again on
 // ranger-base-0djg). Narrowing the grant is not available: the session is
 // there to work in that tree.

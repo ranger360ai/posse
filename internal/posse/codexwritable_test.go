@@ -166,9 +166,9 @@ func TestCodexLaunchLineResolvesASymlinkedPersonasDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// ~/.config/posse/personas -> ~/src/ranger-base/rhq/personas, the shape
+	// ~/.config/posse/personas -> ~/src/ranger-base/<dir>/personas, the shape
 	// the constitution tree made on 2026-08-28.
-	constitution := filepath.Join(t.TempDir(), "rhq", "personas")
+	constitution := filepath.Join(t.TempDir(), ConstitutionSourceDir, "personas")
 	if err := os.MkdirAll(constitution, 0o755); err != nil {
 		t.Fatal(err)
 	}

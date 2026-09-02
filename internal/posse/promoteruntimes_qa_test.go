@@ -17,7 +17,7 @@ package posse
 //
 //	dry-run names the arriving file     — the ratification diff is scoped to
 //	                                      promotePathspecs, which omits
-//	                                      rhq/runtimes without the token, so
+//	                                      <dir>/runtimes without the token, so
 //	                                      the new file is invisible: RED.
 //	the verify calls a home file
 //	unpromoted                          — HashPromotedSet does not walk
@@ -25,7 +25,8 @@ package posse
 //	                                      hand-placed file is not Added and
 //	                                      the verdict is OK: RED.
 //	HomeConstitutionPaths / the grants  — the dir is in neither list: RED.
-//	the rendered wall names rhq/runtimes — ConstitutionRepoPaths omits it: RED.
+//	the rendered wall names the runtimes
+//	class member                        — ConstitutionRepoPaths omits it: RED.
 //
 // The fifth pin (a home with no runtimes/ still verifies) is the opposite
 // guard and passes in both arms on purpose: it is what keeps the fence from
@@ -40,7 +41,7 @@ import (
 )
 
 // addRuntimeOverlayCommit puts the ADR 0021 overlay into the constitution
-// repo the way 55c5581 put it into the live one: `rhq/runtimes/claude.yaml`,
+// repo the way 55c5581 put it into the live one: `<dir>/runtimes/claude.yaml`,
 // committed, nothing at the home.
 func addRuntimeOverlayCommit(t *testing.T, src string, git func(args ...string) (string, error), body string) {
 	t.Helper()
@@ -75,7 +76,7 @@ func TestQAPromoteDryRunNamesTheArrivingRuntimeOverlay(t *testing.T) {
 		t.Fatalf("promote --dry-run: %v\n%s", err, b.String())
 	}
 	out := b.String()
-	if !strings.Contains(out, "rhq/runtimes/claude.yaml") {
+	if !strings.Contains(out, ConstitutionSourceDir+"/runtimes/claude.yaml") {
 		t.Errorf("the ratification diff does not name the arriving overlay — "+
 			"promotePathspecs is not scoped to runtimes/ (ADR 0039 D2):\n%s", out)
 	}
@@ -231,14 +232,14 @@ func TestQAHomeConstitutionPathsIncludesTheRuntimesDir(t *testing.T) {
 // constitutionwall_qa_test.go's preamble records). This one names the string
 // ADR 0039 D2 decides on, end to end from PromotedPaths through
 // ConstitutionRepoPaths into the rendered sh.
-func TestQAConstitutionWallNamesRhqRuntimes(t *testing.T) {
+func TestQAConstitutionWallNamesTheRuntimesOverlay(t *testing.T) {
 	t.Parallel()
-	const want = "rhq/runtimes"
+	want := ConstitutionSourceDir + "/runtimes"
 	if !containsString(ConstitutionRepoPaths(), want) {
 		t.Errorf("ConstitutionRepoPaths() = %v, want it to name %s (ADR 0039 D2)", ConstitutionRepoPaths(), want)
 	}
-	if got := InConstitutionClass(ConstitutionClassIn(constitutionRepoTop(t)), "rhq/runtimes/claude.yaml"); got != want {
-		t.Errorf("a persona commit of rhq/runtimes/claude.yaml falls under class member %q, want %q", got, want)
+	if got := InConstitutionClass(ConstitutionClassIn(constitutionRepoTop(t)), want+"/claude.yaml"); got != want {
+		t.Errorf("a persona commit of %s/claude.yaml falls under class member %q, want %q", want, got, want)
 	}
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	if !strings.Contains(render, "\n"+want+"\n") {

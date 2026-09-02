@@ -35,8 +35,8 @@ package posse
 // is the whole mechanism.
 //
 // WHAT IT WILL NOT DO. It is path-limited to one persona's own memory dir,
-// which is narrower than the `rhq/personas` the parent bead requires and is
-// what keeps it clear of `rhq/agents` — the constitution, which ADR 0015
+// which is narrower than the `posse/personas` the parent bead requires and is
+// what keeps it clear of `posse/agents` — the constitution, which ADR 0015
 // gates behind `posse promote` and which no sweep may ever take. It scans
 // what it is about to add for credential shapes and refuses the commit
 // rather than publishing one. It never pushes: pushing stays the operator's.

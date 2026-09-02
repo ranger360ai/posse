@@ -132,7 +132,7 @@ func homeWithConstitution(t *testing.T, a *App, personas string) {
 func TestQAConstitutionAreaIsInNoWritableSet(t *testing.T) {
 	root := sbRoot(t)
 	a := NewAppAt(filepath.Join(root, "home"))
-	personas := sbMkdir(t, filepath.Join(root, "constitution", "rhq", "personas", "developer"))
+	personas := sbMkdir(t, filepath.Join(root, "constitution", ConstitutionSourceDir, "personas", "developer"))
 	homeWithConstitution(t, a, filepath.Dir(personas))
 
 	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
@@ -197,7 +197,7 @@ func TestQAOwnMemoryIsWritableThroughTheSymlinkAndNobodyElsesIs(t *testing.T) {
 	root := sbRoot(t)
 	a := NewAppAt(filepath.Join(root, "home"))
 	constitution := filepath.Join(root, "constitution")
-	personas := filepath.Join(constitution, "rhq", "personas")
+	personas := filepath.Join(constitution, ConstitutionSourceDir, "personas")
 	for _, p := range []string{"developer", "devops"} {
 		sbMkdir(t, filepath.Join(personas, p))
 	}

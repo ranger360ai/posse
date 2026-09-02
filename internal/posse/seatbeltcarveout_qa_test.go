@@ -26,9 +26,9 @@ import (
 )
 
 // sbFixture is the live shape in miniature: a constitution repo whose
-// `rhq/` holds the home, the home reached through a SYMLINK the way
-// ~/.config/rhq reaches it, a second repo as the store of record, and a
-// redirect from one to the other so the record stage is in the picture —
+// ConstitutionSourceDir holds the home, the home reached through a SYMLINK
+// the way ~/.config/rhq reaches it, a second repo as the store of record,
+// and a redirect from one to the other so the record stage is in the picture —
 // developer's constraint on this bead is that the deny must never cost it.
 type sbFixture struct {
 	a           *App
@@ -46,7 +46,7 @@ func sbNewFixture(t *testing.T) sbFixture {
 		sbGitInit(t, r)
 	}
 	// The home lives IN the repo and is reached through the link.
-	real := sbMkdir(t, filepath.Join(repo, "rhq"))
+	real := sbMkdir(t, filepath.Join(repo, ConstitutionSourceDir))
 	home := filepath.Join(root, "home")
 	if err := os.Symlink(real, home); err != nil {
 		t.Fatal(err)
@@ -317,8 +317,9 @@ func sbTry(t *testing.T, p sbProbe, withCarve bool) bool {
 }
 
 // The bead's own test shape, executed: render for a PID with cwd = the
-// constitution repo, and assert a write to rhq/agents/x is refused while a
-// write to rhq/README stays allowed — plus the gate artifacts, the hook
+// constitution repo, and assert a write to the constitution's `agents/x` is
+// refused while a write to its `README` stays allowed — plus the gate
+// artifacts, the hook
 // slots, the two escapes a subpath deny does not close by itself, and the
 // record stage developer's constraint protects.
 func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
@@ -360,22 +361,22 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 		// The home is reached through a symlink; what a rename would carry
 		// away is the REAL directory, which is what the seal names.
 		{"rename the home out from under the deny", func(f sbFixture) string {
-			return "mv " + filepath.Join(f.repo, "rhq") + " " + filepath.Join(f.repo, "rhq2")
+			return "mv " + filepath.Join(f.repo, ConstitutionSourceDir) + " " + filepath.Join(f.repo, ConstitutionSourceDir+"2")
 		}, false},
 		{"rename state/ out from under the gates deny", func(f sbFixture) string {
-			return "mv " + filepath.Join(f.repo, "rhq", "state") + " " + filepath.Join(f.repo, "rhq", "state2")
+			return "mv " + filepath.Join(f.repo, ConstitutionSourceDir, "state") + " " + filepath.Join(f.repo, ConstitutionSourceDir, "state2")
 		}, false},
 		{"hardlink a PID out and write through it", func(f sbFixture) string {
 			return "ln " + home(f, "agents", "developer.md") + " " + filepath.Join(f.repo, "hard.md") + " && echo pwn >> " + filepath.Join(f.repo, "hard.md")
 		}, false},
 		{"reach the constitution through the other spelling", func(f sbFixture) string {
-			return "touch " + filepath.Join(f.repo, "rhq", "agents", "PWNED2.md")
+			return "touch " + filepath.Join(f.repo, ConstitutionSourceDir, "agents", "PWNED2.md")
 		}, false},
 
 		// And what a session must keep. These are ALLOW under the carve-out
 		// too, so they are not controls — they are the cost check.
 		{"project work next to the constitution", func(f sbFixture) string {
-			return "touch " + filepath.Join(f.repo, "rhq", "NOTES-not-promoted.md")
+			return "touch " + filepath.Join(f.repo, ConstitutionSourceDir, "NOTES-not-promoted.md")
 		}, true},
 		{"the repo the session was dispatched into", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.repo, "README") }, true},
 		{"its own memory (§5)", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.ag.MemoryDir, "ORDERS.md") }, true},

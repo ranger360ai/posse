@@ -87,8 +87,8 @@ func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
 func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 	for _, rel := range []string{
 		"docs/notes.d/proposed-settings.json", // the prescribed route has to land
-		"rhq/personas/developer/ORDERS.md",
-		"rhq/state/gates/refusals.log",
+		ConstitutionSourceDir + "/personas/developer/ORDERS.md",
+		ConstitutionSourceDir + "/state/gates/refusals.log",
 		"scripts/thing.sh",
 	} {
 		t.Run(rel, func(t *testing.T) {
@@ -110,9 +110,9 @@ func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 // law where a constitution lives; the settings file carries the session's own
 // deny list everywhere (ranger-base-az93).
 func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.T) {
-	t.Run("no marker: rhq/recipes lands", func(t *testing.T) {
+	t.Run("no marker: recipes lands", func(t *testing.T) {
 		_, _, tr := constitutionLandTree(t, false)
-		commitIn(t, tr.Path, "rhq/recipes/thing.yaml", "not a constitution\n", "s-1: draft")
+		commitIn(t, tr.Path, ConstitutionSourceDir+"/recipes/thing.yaml", "not a constitution\n", "s-1: draft")
 		o, err := MergeSessionWork(tr)
 		if err != nil || !o.Merged {
 			t.Fatalf("must land in a repo that is not the constitution: %+v %v", o, err)
@@ -143,7 +143,7 @@ func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.
 // there can reach the work at all.
 func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
 	_, repo, tr := constitutionLandTree(t, true)
-	rel := "rhq/agents/developer.md"
+	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
 	if out, err := git(repo, "worktree", "remove", "--force", tr.Path); err != nil {
 		t.Skipf("git worktree remove: %v %s", err, out)
@@ -166,7 +166,7 @@ func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
 // already-landed and not as a refusal repeated on every pass forever.
 func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
 	_, repo, tr := constitutionLandTree(t, true)
-	rel := "rhq/agents/developer.md"
+	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
 	sha, err := git(tr.Path, "rev-parse", "HEAD")
 	if err != nil {
@@ -192,20 +192,21 @@ func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
 // the class, and a wall that used plain string prefixing would take it.
 func TestQAConstitutionClassMatchesExactlyOrAsAPrefix(t *testing.T) {
 	t.Parallel()
-	class := []string{"rhq/agents", "rhq/config.yaml", ClaudeProjectConfig}
+	cfg := ConstitutionSourceDir + "/config.yaml"
+	class := []string{ConstitutionRepoMarker, cfg, ClaudeProjectConfig}
 	for _, c := range []struct {
 		path string
 		want string
 	}{
-		{"rhq/agents", "rhq/agents"},
-		{"rhq/agents/developer.md", "rhq/agents"},
-		{"rhq/agents/nested/deep.md", "rhq/agents"},
-		{"rhq/config.yaml", "rhq/config.yaml"},
+		{ConstitutionRepoMarker, ConstitutionRepoMarker},
+		{ConstitutionRepoMarker + "/developer.md", ConstitutionRepoMarker},
+		{ConstitutionRepoMarker + "/nested/deep.md", ConstitutionRepoMarker},
+		{cfg, cfg},
 		{ClaudeProjectConfig, ClaudeProjectConfig},
-		{"rhq/agentsuary.md", ""},
-		{"rhq/config.yaml.bak", ""},
-		{"docs/rhq/agents/x.md", ""},
-		{"rhq", ""},
+		{ConstitutionRepoMarker + "uary.md", ""},
+		{cfg + ".bak", ""},
+		{"docs/" + ConstitutionRepoMarker + "/x.md", ""},
+		{ConstitutionSourceDir, ""},
 		{"", ""},
 	} {
 		if got := InConstitutionClass(class, c.path); got != c.want {
@@ -257,7 +258,7 @@ func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
 	t.Run("a promoted path names promote", func(t *testing.T) {
 		_, _, tr := constitutionLandTree(t, true)
-		commitIn(t, tr.Path, "rhq/agents/developer.md", "rewritten\n", "s-1: edit the law")
+		commitIn(t, tr.Path, ConstitutionRepoMarker+"/developer.md", "rewritten\n", "s-1: edit the law")
 		o, err := MergeSessionWork(tr)
 		if err != nil {
 			t.Fatal(err)

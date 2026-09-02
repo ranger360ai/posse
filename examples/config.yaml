@@ -183,7 +183,7 @@ default_emoji: ⚙️
 # values — there is no commit to promote them from, and a copy that widens
 # 0600 publishes tokens), state/ (machine-local runtime data), personas/
 # (persona memory, ADR 0015 §5).
-# constitution: ~/src/<your instance repo>/rhq
+# constitution: ~/src/<your instance repo>/posse
 
 # ─── the queue ───────────────────────────────────────────────────────────────
 # Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate

@@ -3046,10 +3046,10 @@ $posse_bad"
 //	(a) in the CONSTITUTION repo only — a repo whose top level has
 //	    ConstitutionRepoMarker ON DISK **or** in the base tree the commit is
 //	    diffed against (ranger-base-jex3: a worktree-only detector is one the
-//	    persona owns, and `rm -rf rhq/agents` — never staged, so nothing on
-//	    the branch records it — stood the whole promoted set down) — every
-//	    ConstitutionRepoPaths entry:
-//	    `rhq/<p>` for each PromotedPaths entry, plus `rhq/envs`. This is the
+//	    persona owns, and `rm -rf` on the marker dir — never staged, so
+//	    nothing on the branch records it — stood the whole promoted set
+//	    down) — every ConstitutionRepoPaths entry: `posse/<p>` for each
+//	    PromotedPaths entry, plus `posse/envs`. This is the
 //	    prose that becomes law at the next `posse promote`, and it is
 //	    rendered FROM PromotedPaths at hook-render time so a path added to
 //	    the promoted set widens this wall in the same edit rather than in a
@@ -3062,7 +3062,7 @@ $posse_bad"
 //	    thing by blast radius, which is what a wall is allowed to care about.
 //
 // A class member matches a staged path exactly or as a directory prefix, so
-// one rule covers `rhq/config.yaml` (a file) and `rhq/agents` (a tree).
+// one rule covers `posse/config.yaml` (a file) and `posse/agents` (a tree).
 //
 // WHAT IT DOES NOT DO: it does not reset, unstage or otherwise touch the
 // tree. The shared-index arm below already says why in its own words — a hook

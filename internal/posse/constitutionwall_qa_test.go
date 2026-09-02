@@ -47,15 +47,15 @@ import (
 // PromotedPaths widens the wall automatically and reds the spec pin below;
 // the fix is to add it here too, having decided it belongs.
 var constitutionClassSpec = []string{
-	"rhq/agents",
-	"rhq/config.yaml",
-	"rhq/recipes",
+	ConstitutionSourceDir + "/agents",
+	ConstitutionSourceDir + "/config.yaml",
+	ConstitutionSourceDir + "/recipes",
 	// Added 2026-09-01 by ADR 0039 D2 (ranger-base-ight8), which is the
 	// "having decided it belongs" this comment block asks for: the runtime
 	// overlay is read at every launch and is now promoted prose.
-	"rhq/runtimes",
-	"rhq/skills",
-	"rhq/envs",
+	ConstitutionSourceDir + "/runtimes",
+	ConstitutionSourceDir + "/skills",
+	ConstitutionSourceDir + "/envs",
 	".claude/settings.json",
 	".claude/settings.local.json",
 }
@@ -164,8 +164,8 @@ func gatesDirOf(env []string) string {
 // TestQAConstitutionWallRefusesEveryClassMemberUnderAPersona is the bead's
 // first DONE WHEN, one subtest per class member per shape. Each member is
 // probed BOTH ways — as a file at the exact path and as a file inside it —
-// because one rule in the hook covers `rhq/config.yaml` (a file) and
-// `rhq/agents` (a tree), and a rule that only handled one of them would look
+// because one rule in the hook covers `<dir>/config.yaml` (a file) and
+// `<dir>/agents` (a tree), and a rule that only handled one of them would look
 // identical from the source.
 //
 // ConstitutionRepoMarker is the one member with no "path itself" shape, and
@@ -220,8 +220,8 @@ func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
 	t.Parallel()
 	for _, rel := range []string{
 		"docs/notes.d/az93-settings.json", // the prescribed route itself has to work
-		"rhq/personas/developer/ORDERS.md",
-		"rhq/state/gates/refusals.log",
+		ConstitutionSourceDir + "/personas/developer/ORDERS.md",
+		ConstitutionSourceDir + "/state/gates/refusals.log",
 		"scripts/thing.sh",
 		"internal/posse/gates.go",
 	} {
@@ -236,12 +236,14 @@ func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
 }
 
 // TestQAConstitutionWallScopesThePromotedSetToTheConstitutionRepo pins the
-// two halves of the class apart. `rhq/recipes/…` is only the law in the repo
+// two halves of the class apart. `<ConstitutionSourceDir>/recipes/…` is only
+// the law in the repo
 // that HAS a constitution; `.claude/settings.json` carries this session's own
 // deny list in every repo it is dispatched into (ranger-base-az93).
 //
 // The third case is the detector's own edge, measured rather than assumed:
-// the marker is `rhq/agents` EXISTING, so a persona that creates that tree in
+// the marker is ConstitutionRepoMarker EXISTING, so a persona that creates
+// that tree in
 // an unrelated repo has made the repo answer to the detector and is refused
 // on the spot. That is the direction to be wrong in — a fake constitution
 // nobody promotes costs a persona one refusal and a differently-named
@@ -249,9 +251,9 @@ func TestQAConstitutionWallPassesAPersonaCommitOffTheClass(t *testing.T) {
 // class by choosing what to write first.
 func TestQAConstitutionWallScopesThePromotedSetToTheConstitutionRepo(t *testing.T) {
 	t.Parallel()
-	t.Run("no marker: rhq/recipes is ordinary work", func(t *testing.T) {
+	t.Run("no marker: recipes is ordinary work", func(t *testing.T) {
 		repo, git, persona := constitutionWallRepo(t, false)
-		rel := "rhq/recipes/thing.yaml"
+		rel := ConstitutionSourceDir + "/recipes/thing.yaml"
 		stageAt(t, repo, git, persona, rel, "not a constitution\n")
 		if out, err := git(persona, "commit", "-m", "draft", "--", rel); err != nil {
 			t.Fatalf("%s must pass in a repo that is not the constitution: %v\n%s", rel, err, out)
@@ -282,7 +284,7 @@ func TestQAConstitutionWallRefusesOnTheRootCommit(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repo, ConstitutionRepoMarker), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rel := "rhq/agents/developer.md"
+	rel := ConstitutionRepoMarker + "/developer.md"
 	stageAt(t, repo, git, persona, rel, "the whole law at once\n")
 	out, err := git(persona, "commit", "-m", "seed the constitution", "--", rel)
 	assertConstitutionRefusal(t, out, err, rel, gatesDirOf(persona))
@@ -296,7 +298,7 @@ func TestQAConstitutionWallRefusesOnTheRootCommit(t *testing.T) {
 func TestQAConstitutionWallRefusesADeletion(t *testing.T) {
 	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
-	rel := "rhq/agents/developer.md"
+	rel := ConstitutionRepoMarker + "/developer.md"
 	stageAt(t, repo, git, nil, rel, "the law\n")
 	if out, err := git(nil, "commit", "-qm", "operator installs it", "--", rel); err != nil {
 		t.Fatalf("fixture commit: %v %s", err, out)
@@ -369,7 +371,7 @@ func TestQAConstitutionWallRefusesInALinkedWorktree(t *testing.T) {
 	wt := func(env []string, args ...string) (string, error) {
 		return git(env, append([]string{"-C", tree}, args...)...)
 	}
-	rel := "rhq/agents/developer.md"
+	rel := ConstitutionRepoMarker + "/developer.md"
 	stageAt(t, tree, wt, persona, rel, "drafted in my own tree\n")
 	out, err := wt(persona, "commit", "-m", "edit the law", "--", rel)
 	assertConstitutionRefusal(t, out, err, rel, gatesDirOf(persona))
@@ -432,8 +434,8 @@ func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
 //	                       over-matching, which this class cannot turn into
 //	                       a hole.
 //	IFS narrowed to \n     not measured here either, and for the same
-//	                       reason: `rhq/agents/a b.md` split on the space
-//	                       leaves `rhq/agents/a`, which the prefix arm still
+//	                       reason: `<marker>/a b.md` split on the space
+//	                       leaves `<marker>/a`, which the prefix arm still
 //	                       catches.
 //
 // Both unmeasured defences stay. They are correct and they cost nothing, and
@@ -444,17 +446,17 @@ func TestQAConstitutionWallHoldsOverHostilePathShapes(t *testing.T) {
 	t.Parallel()
 	repo, git, persona := constitutionWallRepo(t, true)
 	for _, name := range []string{
-		"rhq/agents/a b.md",
-		"rhq/agents/a*c.md",
-		"rhq/agents/a[b].md",
-		"rhq/agents/a?b.md",
-		"rhq/agents/a\"b.md",
-		"rhq/agents/a\\b.md",
-		"rhq/agents/é—ü.md",
-		"rhq/agents/a$b.md",
-		"rhq/agents/-x.md",
-		"rhq/agents/a\nb.md",
-		"rhq/agents/nested/deep/x.md",
+		ConstitutionRepoMarker + "/a b.md",
+		ConstitutionRepoMarker + "/a*c.md",
+		ConstitutionRepoMarker + "/a[b].md",
+		ConstitutionRepoMarker + "/a?b.md",
+		ConstitutionRepoMarker + "/a\"b.md",
+		ConstitutionRepoMarker + "/a\\b.md",
+		ConstitutionRepoMarker + "/é—ü.md",
+		ConstitutionRepoMarker + "/a$b.md",
+		ConstitutionRepoMarker + "/-x.md",
+		ConstitutionRepoMarker + "/a\nb.md",
+		ConstitutionRepoMarker + "/nested/deep/x.md",
 	} {
 		t.Run(strings.ReplaceAll(name, "/", "_"), func(t *testing.T) {
 			full := filepath.Join(repo, filepath.FromSlash(name))

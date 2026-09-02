@@ -150,7 +150,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	}
 	root := t.TempDir()
 	repo := filepath.Join(root, "ranger-base")
-	src := filepath.Join(repo, "rhq")
+	src := filepath.Join(repo, ConstitutionSourceDir)
 	home := filepath.Join(root, ".config", "posse")
 
 	pidBody := "---\nname: %s\nlabels: [code]\ndeny:\n  - Bash(git push:*)\n  - Bash(posse promote:*)\n---\n" +
@@ -183,7 +183,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	write("envs/container.env", "OAUTH=live-secret\n", 0o600)
 	write("state/herdr/meta.json", "{}\n", 0o644)
 	write("personas/developer/ORDERS.md", "lessons\n", 0o644)
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("rhq/envs/\nrhq/state/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(ConstitutionSourceDir+"/envs/\n"+ConstitutionSourceDir+"/state/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	gitIn := func(args ...string) string {

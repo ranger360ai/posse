@@ -129,18 +129,18 @@ func TestQAVerifyH1RenamedBinaryWithACredentialHolds(t *testing.T) {
 	for i := 0; i < 300; i++ {
 		fmt.Fprintf(&body, "line %d filler content here\n", i)
 	}
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "capture.bin"), body.String())
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
-	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact", "--", "rhq/personas/dev/capture.bin")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "capture.bin"), body.String())
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	// STAGED, so `git diff HEAD` reports a rename rather than a delete plus
 	// an untracked file — the untracked arm reads whole files off disk and
 	// would catch that one before this walk is reached.
 	const leaked = "sk-ant-api03-HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
-	mustGit(t, repo, "mv", "--", "rhq/personas/dev/capture.bin", "rhq/personas/dev/renamed.bin")
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "renamed.bin"), body.String()+leaked+"\n")
-	if d := mustGit(t, repo, "diff", "HEAD", "--numstat", "--", "rhq/personas/dev"); !strings.Contains(d, "=>") {
+	mustGit(t, repo, "mv", "--", ConstitutionSourceDir+"/personas/dev/capture.bin", ConstitutionSourceDir+"/personas/dev/renamed.bin")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "renamed.bin"), body.String()+leaked+"\n")
+	if d := mustGit(t, repo, "diff", "HEAD", "--numstat", "--", ConstitutionSourceDir+"/personas/dev"); !strings.Contains(d, "=>") {
 		t.Fatalf("fixture is not one rename record to git, so the rename walk is not measured:\n%s", d)
 	}
 
@@ -168,12 +168,12 @@ func TestQAVerifyH2DeletionBeforeAModifiedBinaryStillHolds(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	gone := filepath.Join(repo, "rhq", "personas", "dev", "a-gone.bin")
-	kept := filepath.Join(repo, "rhq", "personas", "dev", "z-kept.bin")
+	gone := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "a-gone.bin")
+	kept := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "z-kept.bin")
 	write(t, gone, "one\x00two\n")
 	write(t, kept, "three\x00four\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev")
-	mustGit(t, repo, "commit", "-q", "-m", "two binary artefacts", "--", "rhq/personas/dev")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev")
+	mustGit(t, repo, "commit", "-q", "-m", "two binary artefacts", "--", ConstitutionSourceDir+"/personas/dev")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	if err := os.Remove(gone); err != nil {
@@ -202,14 +202,14 @@ func TestQAVerifyH3RenameThenModifiedBinaryBothReached(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	dir := filepath.Join(repo, "rhq", "personas", "dev")
+	dir := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
 	write(t, filepath.Join(dir, "a-moved.bin"), "aaa\x00bbb\n")
 	write(t, filepath.Join(dir, "z-kept.bin"), "ccc\x00ddd\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev")
-	mustGit(t, repo, "commit", "-q", "-m", "two binary artefacts", "--", "rhq/personas/dev")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev")
+	mustGit(t, repo, "commit", "-q", "-m", "two binary artefacts", "--", ConstitutionSourceDir+"/personas/dev")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
-	mustGit(t, repo, "mv", "--", "rhq/personas/dev/a-moved.bin", "rhq/personas/dev/a-newname.bin")
+	mustGit(t, repo, "mv", "--", ConstitutionSourceDir+"/personas/dev/a-moved.bin", ConstitutionSourceDir+"/personas/dev/a-newname.bin")
 	const leaked = "sk-ant-api03-JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ"
 	write(t, filepath.Join(dir, "z-kept.bin"), "ccc\x00ddd\n"+leaked+"\n")
 

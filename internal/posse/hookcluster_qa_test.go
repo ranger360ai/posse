@@ -582,7 +582,7 @@ func TestQAIdentityLiteralsNeverAppearInATrackedPath(t *testing.T) {
 // ranger-base-qdxe: the arm read `git diff --cached --name-only -z` with
 // rename detection ON, and --name-only prints only a rename's DESTINATION.
 // So a move of a class path to a NON-class path showed the wall nothing in
-// the class and committed at exit 0 — `git ls-tree -r HEAD -- rhq/` empty,
+// the class and committed at exit 0 — `git ls-tree -r HEAD -- <dir>/` empty,
 // the PID gone from the constitution repo. It needs no `git mv`: detection
 // pairs any staged delete with a similar staged add, so copy-then-remove
 // does it too.
@@ -653,16 +653,16 @@ func TestQAConstitutionWallRefusesAMoveOutOfTheClass(t *testing.T) {
 	})
 }
 
-// ranger-base-jex3: the class detector was `[ -d "$top/rhq/agents" ]`
+// ranger-base-jex3: the class detector was `[ -d "$top/<marker>" ]`
 // against the WORKING TREE, and a persona owns its own working tree. `rm -rf
-// rhq/agents` — never staged, so nothing on the branch records it — dropped
+// <marker>` — never staged, so nothing on the branch records it — dropped
 // the promoted set out of the class and the identical refused commit landed.
 // Replacing the directory with a FILE did the same, since -d is false either
 // way. The belt (MergeSessionWork, which reads the main checkout) held, which
 // is why it was P2; the L3 arm did not.
 //
 // The two beads compound, which is why they are fixed together: renaming the
-// LAST file out of rhq/agents removes the directory, so the marker defeat
+// LAST file out of the marker directory removes it, so the marker defeat
 // then holds for every later commit in that checkout with no rm -rf typed.
 //
 // MUTATION-CHECKED: with the base-tree arm removed from the OR both attack
@@ -684,9 +684,9 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 		repo, git, persona := constitutionWallRepo(t, true)
 		plantMarker(t, repo, git)
 		// The control first: with the marker on disk, this is refused.
-		stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-		out, err := git(persona, "commit", "-m", "edit the law", "--", "rhq/config.yaml")
-		assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+		out, err := git(persona, "commit", "-m", "edit the law", "--", ConstitutionSourceDir+"/config.yaml")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 
 		// The attack: remove the marker from the WORKING TREE only. Nothing
 		// is staged, so the branch records nothing — and the base tree still
@@ -697,8 +697,8 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 		if st, _ := git(nil, "status", "--porcelain", "--", ConstitutionRepoMarker); strings.Contains(st, "D  ") {
 			t.Fatalf("fixture premise: the removal must be unstaged, got %q", st)
 		}
-		out, err = git(persona, "commit", "-m", "edit the law", "--", "rhq/config.yaml")
-		assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+		out, err = git(persona, "commit", "-m", "edit the law", "--", ConstitutionSourceDir+"/config.yaml")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 	})
 
 	// -d is false for a FILE too, which is the second spelling of the same
@@ -711,9 +711,9 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 			t.Fatal(err)
 		}
 		write(t, marker, "not a directory\n")
-		stageAt(t, repo, git, nil, "rhq/recipes/x.md", "drafted\n")
-		out, err := git(persona, "commit", "-m", "edit the law", "--", "rhq/recipes/x.md")
-		assertConstitutionRefusal(t, out, err, "rhq/recipes/x.md", gatesDirOf(persona))
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/recipes/x.md", "drafted\n")
+		out, err := git(persona, "commit", "-m", "edit the law", "--", ConstitutionSourceDir+"/recipes/x.md")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/recipes/x.md", gatesDirOf(persona))
 	})
 
 	// The direction the worktree arm was there for, unchanged: at repo
@@ -724,9 +724,9 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(repo, ConstitutionRepoMarker), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-		out, err := git(persona, "commit", "-m", "first", "--", "rhq/config.yaml")
-		assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+		out, err := git(persona, "commit", "-m", "first", "--", ConstitutionSourceDir+"/config.yaml")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 	})
 
 	// And the negative arm, so the OR did not simply widen the class into
@@ -736,9 +736,9 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 	// owns it.)
 	t.Run("no marker anywhere", func(t *testing.T) {
 		repo, git, persona := constitutionWallRepo(t, false)
-		stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-		if out, err := git(persona, "commit", "-m", "not the law here", "--", "rhq/config.yaml"); err != nil {
-			t.Errorf("a repo that is not the constitution must take rhq/config.yaml: %v\n%s", err, out)
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+		if out, err := git(persona, "commit", "-m", "not the law here", "--", ConstitutionSourceDir+"/config.yaml"); err != nil {
+			t.Errorf("a repo that is not the constitution must take the constitution class spelling: %v\n%s", err, out)
 		}
 	})
 }

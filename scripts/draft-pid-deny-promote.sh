@@ -23,7 +23,7 @@ dir="${1:-}"
 if [ -z "$dir" ]; then
     if [ -d ./agents ]; then dir=./agents; else
         echo "usage: $0 <constitution agents dir>" >&2
-        echo "  the directory holding the crew PIDs, e.g. ~/src/<instance>/rhq/agents" >&2
+        echo "  the directory holding the crew PIDs, e.g. ~/src/<instance>/posse/agents" >&2
         exit 2
     fi
 fi

@@ -281,7 +281,7 @@ func TestQAHookFreshnessDoesNotCallTheSafeFormRefusedOverAClassPathInHEAD(t *tes
 	}
 	// .claude/settings.json is in the constitution class in EVERY hooked
 	// repo (ranger-base-az93: it carries the session's own deny list), so it
-	// is the whole trigger without needing an rhq/agents tree.
+	// is the whole trigger without needing a constitution-marker tree.
 	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

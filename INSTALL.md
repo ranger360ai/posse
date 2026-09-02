@@ -1407,9 +1407,9 @@ And a third wall in the same slot: the **constitution-path guard**. A
 commit made from a persona session — one carrying `RHQ_PERSONA`, which your
 own shell does not — is refused when it touches `.claude/settings.json` or
 `.claude/settings.local.json` in ANY hooked repo, and, in your constitution
-repo (the one whose top level has `rhq/agents`), when it touches `rhq/agents`,
-`rhq/config.yaml`, `rhq/recipes`, `rhq/runtimes`, `rhq/skills` or `rhq/envs`.
-ADR 0015 §2/§3
+repo (the one whose top level has `posse/agents`), when it touches
+`posse/agents`, `posse/config.yaml`, `posse/recipes`, `posse/runtimes`,
+`posse/skills` or `posse/envs`. ADR 0015 §2/§3
 is the rule: personas *draft* the constitution and you put it in force with
 `posse promote`, and the settings file is where the deny list fencing a
 persona's own destructive verbs lives (ranger-base-az93) — a session that can

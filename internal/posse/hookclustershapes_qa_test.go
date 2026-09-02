@@ -354,9 +354,9 @@ func TestQAConstitutionMarkerSurvivesAStagedRemoval(t *testing.T) {
 		if o, err := git(nil, "rm", "-rq", "--", ConstitutionRepoMarker); err != nil {
 			t.Fatalf("git rm -r: %v %s", err, o)
 		}
-		stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-		out, err := git(persona, "commit", "-m", "tidy", "--", ConstitutionRepoMarker, "rhq/config.yaml")
-		assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+		out, err := git(persona, "commit", "-m", "tidy", "--", ConstitutionRepoMarker, ConstitutionSourceDir+"/config.yaml")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 	})
 
 	// The two-commit version of the same idea — remove the marker first,
@@ -382,9 +382,9 @@ func TestQAConstitutionMarkerSurvivesAStagedRemoval(t *testing.T) {
 		if err := os.Symlink(t.TempDir(), marker); err != nil {
 			t.Fatal(err)
 		}
-		stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-		out, err := git(persona, "commit", "-m", "edit the law", "--", "rhq/config.yaml")
-		assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+		stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+		out, err := git(persona, "commit", "-m", "edit the law", "--", ConstitutionSourceDir+"/config.yaml")
+		assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 	})
 }
 
@@ -393,7 +393,7 @@ func TestQAConstitutionMarkerSurvivesAStagedRemoval(t *testing.T) {
 // same list — stated everywhere, measured nowhere until here.
 func TestQACommitWallIsNotSkippedByNoVerify(t *testing.T) {
 	repo, git, persona := constitutionWallRepo(t, true)
-	stageAt(t, repo, git, nil, "rhq/config.yaml", "drafted\n")
-	out, err := git(persona, "commit", "--no-verify", "-m", "edit the law", "--", "rhq/config.yaml")
-	assertConstitutionRefusal(t, out, err, "rhq/config.yaml", gatesDirOf(persona))
+	stageAt(t, repo, git, nil, ConstitutionSourceDir+"/config.yaml", "drafted\n")
+	out, err := git(persona, "commit", "--no-verify", "-m", "edit the law", "--", ConstitutionSourceDir+"/config.yaml")
+	assertConstitutionRefusal(t, out, err, ConstitutionSourceDir+"/config.yaml", gatesDirOf(persona))
 }

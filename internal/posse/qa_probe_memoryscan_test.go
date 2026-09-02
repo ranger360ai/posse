@@ -24,10 +24,10 @@ func TestQAProbeMemoryScanReadsATrackedBinaryFile(t *testing.T) {
 
 	// A tracked file git calls binary, landed by hand first — so at kill
 	// time it is a MODIFICATION of a tracked path and not an untracked file.
-	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	blob := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "capture.bin")
 	write(t, blob, "harmless\x00bytes\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
-	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
 	if strings.TrimSpace(mustGit(t, repo, "status", "--porcelain")) != "" {
 		t.Fatal("the fixture must start clean")
 	}
@@ -36,7 +36,7 @@ func TestQAProbeMemoryScanReadsATrackedBinaryFile(t *testing.T) {
 	write(t, blob, "harmless\x00bytes\n"+leaked+"\n")
 	// Witness that git really calls this binary — otherwise the probe is
 	// measuring an ordinary text diff and proves nothing.
-	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "rhq/personas/dev/capture.bin"); !strings.Contains(d, "Binary files") {
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", ConstitutionSourceDir+"/personas/dev/capture.bin"); !strings.Contains(d, "Binary files") {
 		t.Fatalf("fixture is not binary to git, so this probe measures nothing:\n%s", d)
 	}
 
@@ -48,7 +48,7 @@ func TestQAProbeMemoryScanReadsATrackedBinaryFile(t *testing.T) {
 	if landing.Memory != nil {
 		line = landing.Memory.Line()
 	}
-	body := mustGit(t, repo, "show", "HEAD:rhq/personas/dev/capture.bin")
+	body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/capture.bin")
 	if strings.Contains(body, leaked) {
 		t.Fatalf("the credential was committed unscanned; landing said %q", line)
 	}

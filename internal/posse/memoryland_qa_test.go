@@ -7,10 +7,10 @@ package posse
 // hanging the commit on.
 //
 // These tests stand up the shape the instance actually runs rather than a
-// convenient one: a constitution checkout with `rhq/agents` beside
-// `rhq/personas`, and the home's `personas/` a SYMLINK into it. Both halves
+// convenient one: a constitution checkout with `posse/agents` beside
+// `posse/personas`, and the home's `personas/` a SYMLINK into it. Both halves
 // are load-bearing — the symlink is how RHQ_HOME spells it on the box this
-// was measured on, and `rhq/agents` sitting one directory over is the thing
+// was measured on, and `posse/agents` sitting one directory over is the thing
 // no sweep may ever take (ADR 0015 gates the constitution behind promote).
 
 import (
@@ -22,28 +22,29 @@ import (
 )
 
 // memoryRepo is that shape. It returns the constitution checkout; each
-// persona's memory dir is repo/rhq/personas/<name>, reachable from the home
-// as b.App.PersonasDir()/<name>. Call it BEFORE anything creates a session:
+// persona's memory dir is <repo>/<ConstitutionSourceDir>/personas/<name>,
+// reachable from the home as b.App.PersonasDir()/<name>. Call it BEFORE
+// anything creates a session:
 // the launch materializes the memory dir, and a directory already standing
 // at PersonasDir is a symlink that cannot be made.
 func memoryRepo(t *testing.T, b *HerdrBackend, personas ...string) string {
 	t.Helper()
 	repo := wtRepo(t)
-	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "dev.md"), "the constitution\n")
 	for _, p := range append([]string{"dev"}, personas...) {
-		write(t, filepath.Join(repo, "rhq", "personas", p, "ORDERS.md"), "# Standing orders — "+p+"\n")
+		write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", p, "ORDERS.md"), "# Standing orders — "+p+"\n")
 		// The ignore EnsureMemoryDir seeds beside it, committed here for the
 		// same reason ORDERS.md is: a launch materializes both, and a fixture
 		// that omits one starts every test with a dirty memory dir. It is the
 		// production constant and not a copy, so the two cannot drift.
-		write(t, filepath.Join(repo, "rhq", "personas", p, ".gitignore"), memoryIgnoreSeed)
+		write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", p, ".gitignore"), memoryIgnoreSeed)
 	}
-	mustGit(t, repo, "add", "--", "rhq")
-	mustGit(t, repo, "commit", "-q", "-m", "seed the constitution", "--", "rhq")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir)
+	mustGit(t, repo, "commit", "-q", "-m", "seed the constitution", "--", ConstitutionSourceDir)
 	if err := os.MkdirAll(b.App.Home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(repo, "rhq", "personas"), b.App.PersonasDir()); err != nil {
+	if err := os.Symlink(filepath.Join(repo, ConstitutionSourceDir, "personas"), b.App.PersonasDir()); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -55,7 +56,7 @@ func memoryRepo(t *testing.T, b *HerdrBackend, personas ...string) string {
 // is why the launcher does it).
 func appendOrders(t *testing.T, repo, persona, text string) {
 	t.Helper()
-	p := filepath.Join(repo, "rhq", "personas", persona, "ORDERS.md")
+	p := filepath.Join(repo, ConstitutionSourceDir, "personas", persona, "ORDERS.md")
 	body, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
@@ -90,10 +91,10 @@ func TestKillCommitsThePersonaMemoryNothingElseWould(t *testing.T) {
 	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
 		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
 	}
-	if got := headFiles(t, repo); strings.TrimSpace(got) != "rhq/personas/dev/ORDERS.md" {
+	if got := headFiles(t, repo); strings.TrimSpace(got) != ConstitutionSourceDir+"/personas/dev/ORDERS.md" {
 		t.Fatalf("the commit took the wrong paths:\n%s", got)
 	}
-	if body := mustGit(t, repo, "show", "HEAD:rhq/personas/dev/ORDERS.md"); !strings.Contains(body, "leading space is data") {
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(body, "leading space is data") {
 		t.Errorf("the lesson is not in the commit:\n%s", body)
 	}
 	// The commit has to be traceable to why it happened: it is the launcher
@@ -109,7 +110,8 @@ func TestKillCommitsThePersonaMemoryNothingElseWould(t *testing.T) {
 	}
 }
 
-// The constraint the parent bead states in capitals: never `rhq/agents`.
+// The constraint the parent bead states in capitals: never
+// ConstitutionRepoMarker.
 // That is the constitution — the PIDs every future session runs under — and
 // ADR 0015 puts it behind `posse promote` on purpose. It sits one directory
 // from the memory this commits, which is exactly why a path-limited commit
@@ -122,20 +124,20 @@ func TestKillNeverCommitsTheConstitutionBesideTheMemory(t *testing.T) {
 	appendOrders(t, repo, "dev", "- a lesson.\n")
 	// A persona rewriting its own PID, and an untracked file beside it:
 	// both are the class the sweep must walk past.
-	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "deny: []\n")
-	write(t, filepath.Join(repo, "rhq", "agents", "new-persona.md"), "a persona nobody ratified\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "dev.md"), "deny: []\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "new-persona.md"), "a persona nobody ratified\n")
 
 	if _, err := b.KillSessionAndLandOpts("s1", KillOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if got := headFiles(t, repo); strings.Contains(got, "rhq/agents") {
+	if got := headFiles(t, repo); strings.Contains(got, ConstitutionRepoMarker) {
 		t.Fatalf("the kill committed the constitution:\n%s", got)
 	}
 	// And left it exactly as it found it, still there for the operator.
-	if body, _ := os.ReadFile(filepath.Join(repo, "rhq", "agents", "dev.md")); !strings.Contains(string(body), "deny: []") {
+	if body, _ := os.ReadFile(filepath.Join(repo, ConstitutionSourceDir, "agents", "dev.md")); !strings.Contains(string(body), "deny: []") {
 		t.Errorf("the constitution was not left alone: %q", body)
 	}
-	if st := mustGit(t, repo, "status", "--porcelain", "--", "rhq/agents"); !strings.Contains(st, "rhq/agents") {
+	if st := mustGit(t, repo, "status", "--porcelain", "--", ConstitutionRepoMarker); !strings.Contains(st, ConstitutionRepoMarker) {
 		t.Errorf("the constitution's own changes must still be uncommitted: %q", st)
 	}
 }
@@ -148,7 +150,7 @@ func TestKillCommitsOnlyTheKilledSessionsPersona(t *testing.T) {
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
-	write(t, filepath.Join(repo, "rhq", "personas", "other", "ORDERS.md"), "# Standing orders — other\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "other", "ORDERS.md"), "# Standing orders — other\n")
 	devSession(t, b, "s1")
 	appendOrders(t, repo, "dev", "- dev's lesson.\n")
 
@@ -158,7 +160,7 @@ func TestKillCommitsOnlyTheKilledSessionsPersona(t *testing.T) {
 	if got := headFiles(t, repo); strings.Contains(got, "other") {
 		t.Fatalf("dev's kill committed another persona's memory:\n%s", got)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "rhq", "personas", "other", "ORDERS.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(repo, ConstitutionSourceDir, "personas", "other", "ORDERS.md")); err != nil {
 		t.Errorf("the other persona's memory was disturbed: %v", err)
 	}
 }
@@ -175,7 +177,7 @@ func TestKillHoldsMemoryThatLooksLikeACredential(t *testing.T) {
 	devSession(t, b, "s1")
 	const leaked = "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	appendOrders(t, repo, "dev", "- the key that worked: "+leaked+"\n")
-	// The seed commit already touched rhq/personas, so what proves nothing
+	// The seed commit already touched the personas tree, so what proves nothing
 	// was committed is that the tip did not move at all.
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
@@ -224,7 +226,7 @@ func TestTheCredentialScanReadsOnlyWhatTheCommitAdds(t *testing.T) {
 	devSession(t, b, "s1")
 	// Already in git, and staying there.
 	appendOrders(t, repo, "dev", "- control pid ran `-H Authorization: Bearer CANARY_SETUP_TOKEN_0n6_DO_NOT_LEAK`\n")
-	mustGit(t, repo, "commit", "-q", "-m", "the canary, landed by hand", "--", "rhq/personas/dev/ORDERS.md")
+	mustGit(t, repo, "commit", "-q", "-m", "the canary, landed by hand", "--", ConstitutionSourceDir+"/personas/dev/ORDERS.md")
 	if strings.TrimSpace(mustGit(t, repo, "status", "--porcelain")) != "" {
 		t.Fatal("the fixture must start clean")
 	}
@@ -236,7 +238,7 @@ func TestTheCredentialScanReadsOnlyWhatTheCommitAdds(t *testing.T) {
 	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
 		t.Fatalf("a credential shape already IN git held a later commit: %v", dirty)
 	}
-	if body := mustGit(t, repo, "show", "HEAD:rhq/personas/dev/ORDERS.md"); !strings.Contains(body, "ordinary lesson") {
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(body, "ordinary lesson") {
 		t.Errorf("the new lesson did not land:\n%s", body)
 	}
 }
@@ -249,7 +251,7 @@ func TestTheCredentialScanReadsWholeUntrackedFiles(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "notes", "probe.md"),
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "notes", "probe.md"),
 		"curl -H 'Authorization: Bearer ya29.A0ARrdaM9xxxxxxxxxxxxxxxxxxxxxx' https://x\n")
 
 	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
@@ -308,15 +310,15 @@ func TestKillHoldsATrackedFileTheScanCannotRead(t *testing.T) {
 	// Landed by hand first, so at kill time it is a MODIFICATION of a
 	// tracked path — the untracked arm reads whole files off disk and would
 	// have caught it.
-	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	blob := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "capture.bin")
 	write(t, blob, "harmless\x00bytes\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
-	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	const leaked = "sk-ant-api03-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
 	write(t, blob, "harmless\x00bytes\n"+leaked+"\n")
-	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "rhq/personas/dev/capture.bin"); !strings.Contains(d, "Binary files") {
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", ConstitutionSourceDir+"/personas/dev/capture.bin"); !strings.Contains(d, "Binary files") {
 		t.Fatalf("fixture is not binary to git, so this test measures an ordinary text diff:\n%s", d)
 	}
 	// An ordinary lesson beside it. The hold is the whole commit's, so this
@@ -358,10 +360,10 @@ func TestRemovingABinaryMemoryFileDoesNotHoldTheCommit(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	blob := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "capture.bin")
 	write(t, blob, "harmless\x00bytes\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
-	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
 	if err := os.Remove(blob); err != nil {
 		t.Fatal(err)
 	}
@@ -377,10 +379,10 @@ func TestRemovingABinaryMemoryFileDoesNotHoldTheCommit(t *testing.T) {
 	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
 		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
 	}
-	if body := mustGit(t, repo, "show", "HEAD:rhq/personas/dev/ORDERS.md"); !strings.Contains(body, "beside the tidy-up") {
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(body, "beside the tidy-up") {
 		t.Errorf("the lesson is not in the commit:\n%s", body)
 	}
-	if out, err := gitRaw(repo, "cat-file", "-e", "HEAD:rhq/personas/dev/capture.bin"); err == nil {
+	if out, err := gitRaw(repo, "cat-file", "-e", "HEAD:"+ConstitutionSourceDir+"/personas/dev/capture.bin"); err == nil {
 		t.Errorf("the deletion did not land: %s", out)
 	}
 }
@@ -397,15 +399,15 @@ func TestKillHoldsAMemoryFileGitAttributesCallBinary(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", ".gitattributes"), "ORDERS.md -diff\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/.gitattributes")
-	mustGit(t, repo, "commit", "-q", "-m", "keep memory out of conflict resolution", "--", "rhq/personas/dev/.gitattributes")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", ".gitattributes"), "ORDERS.md -diff\n")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/.gitattributes")
+	mustGit(t, repo, "commit", "-q", "-m", "keep memory out of conflict resolution", "--", ConstitutionSourceDir+"/personas/dev/.gitattributes")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	const leaked = "sk-ant-api03-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
 	appendOrders(t, repo, "dev", "- the key that worked: "+leaked+"\n")
 	// The file is plain text — nothing here is about NUL bytes.
-	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", "rhq/personas/dev/ORDERS.md"); !strings.Contains(d, "Binary files") {
+	if d := mustGit(t, repo, "diff", "HEAD", "--unified=0", "--", ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(d, "Binary files") {
 		t.Fatalf("this git does not honor `-diff` here, so the test measures an ordinary diff:\n%s", d)
 	}
 
@@ -438,7 +440,7 @@ func TestTheSweepHonorsThePersonasOwnIgnore(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	dir := filepath.Join(repo, "rhq", "personas", "dev")
+	dir := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
 	write(t, filepath.Join(dir, "myai-suite.out"), "ok  \tgithub.com/x/y\t31.4s\n")
 	write(t, filepath.Join(dir, "notes", "probe.md"), "- what the probe measured, and why\n")
 	appendOrders(t, repo, "dev", "- a lesson.\n")
@@ -450,7 +452,7 @@ func TestTheSweepHonorsThePersonasOwnIgnore(t *testing.T) {
 	if strings.Contains(got, "myai-suite.out") {
 		t.Errorf("an ignored evidence file was committed as standing orders:\n%s", got)
 	}
-	for _, want := range []string{"rhq/personas/dev/ORDERS.md", "rhq/personas/dev/notes/probe.md"} {
+	for _, want := range []string{ConstitutionSourceDir + "/personas/dev/ORDERS.md", ConstitutionSourceDir + "/personas/dev/notes/probe.md"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the sweep stopped taking %s, so the ignore is a mute and not a filter:\n%s", want, got)
 		}
@@ -603,7 +605,7 @@ func TestKillRefusesWhileTheLandingTurnIsUnsettled(t *testing.T) {
 	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
 		t.Fatalf("--no-land dropped the memory instead of committing it: %v", dirty)
 	}
-	if got := headFiles(t, repo); strings.TrimSpace(got) != "rhq/personas/dev/ORDERS.md" {
+	if got := headFiles(t, repo); strings.TrimSpace(got) != ConstitutionSourceDir+"/personas/dev/ORDERS.md" {
 		t.Errorf("--no-land committed the wrong thing:\n%s", got)
 	}
 }
@@ -639,12 +641,13 @@ func TestKillSaysNothingWhenTheHomeKeepsMemoryOutsideGit(t *testing.T) {
 // at a filename made of somebody's directory name.
 func TestPorcelainZKeepsRenamesAndOddPathsWhole(t *testing.T) {
 	t.Parallel()
-	in := []byte("R  rhq/personas/dev/NEW.md\x00rhq/personas/dev/OLD.md\x00 M rhq/personas/dev/two words.md\x00?? rhq/personas/dev/plain.md\x00")
+	d := ConstitutionSourceDir + "/personas/dev/"
+	in := []byte("R  " + d + "NEW.md\x00" + d + "OLD.md\x00 M " + d + "two words.md\x00?? " + d + "plain.md\x00")
 	got := porcelainZChanges(in)
 	want := []memoryChange{
-		{Path: "rhq/personas/dev/NEW.md"},
-		{Path: "rhq/personas/dev/two words.md"},
-		{Path: "rhq/personas/dev/plain.md", Untracked: true},
+		{Path: d + "NEW.md"},
+		{Path: d + "two words.md"},
+		{Path: d + "plain.md", Untracked: true},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -703,7 +706,7 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 	if dirty := b.App.MemoryDirtyPaths("ranger"); len(dirty) != 0 {
 		t.Fatalf("the reap left the persona's memory uncommitted: %v\n%s", dirty, out)
 	}
-	if body := mustGit(t, con, "show", "HEAD:rhq/personas/ranger/ORDERS.md"); !strings.Contains(body, "must not lose") {
+	if body := mustGit(t, con, "show", "HEAD:"+ConstitutionSourceDir+"/personas/ranger/ORDERS.md"); !strings.Contains(body, "must not lose") {
 		t.Errorf("the lesson is not in the commit:\n%s", body)
 	}
 	if !strings.Contains(out, "ranger memory committed") {
@@ -723,27 +726,28 @@ func TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn(t *testing.T) {
 // one thing the parent bead states in capitals. LoadAgent does not check
 // names; this does.
 //
-// The home here is the constitution's own `rhq` directory, NOT the symlinked
-// shape the other tests use, and that is the whole point: filepath.Join
-// cleans `..` LEXICALLY, so through a symlinked `personas/` the climb lands
-// harmlessly back in the home. It is the plain-subdirectory home — rhq/agents
-// a real sibling of rhq/personas inside one checkout — where `../agents`
-// resolves to the constitution and the guard is the only thing in the way.
+// The home here is the constitution's own ConstitutionSourceDir directory,
+// NOT the symlinked shape the other tests use, and that is the whole point:
+// filepath.Join cleans `..` LEXICALLY, so through a symlinked `personas/`
+// the climb lands harmlessly back in the home. It is the plain-subdirectory
+// home — the constitution's `agents/` a real sibling of its `personas/`
+// inside one checkout — where `../agents` resolves to the constitution and
+// the guard is the only thing in the way.
 func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
 	t.Parallel()
 	repo := wtRepo(t)
-	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "the constitution\n")
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n")
-	mustGit(t, repo, "add", "--", "rhq")
-	mustGit(t, repo, "commit", "-q", "-m", "seed", "--", "rhq")
-	a := NewAppAt(filepath.Join(repo, "rhq"))
-	if a.PersonasDir() != filepath.Join(repo, "rhq", "personas") {
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "dev.md"), "the constitution\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir)
+	mustGit(t, repo, "commit", "-q", "-m", "seed", "--", ConstitutionSourceDir)
+	a := NewAppAt(filepath.Join(repo, ConstitutionSourceDir))
+	if a.PersonasDir() != filepath.Join(repo, ConstitutionSourceDir, "personas") {
 		t.Fatalf("fixture is not the shape under test: %s", a.PersonasDir())
 	}
 	// The constitution, dirty, one directory up from every memory dir — and
 	// reachable from it by name.
-	write(t, filepath.Join(repo, "rhq", "agents", "dev.md"), "rewritten\n")
-	write(t, filepath.Join(repo, "rhq", "agents", "new.md"), "unratified\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "dev.md"), "rewritten\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "agents", "new.md"), "unratified\n")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	for _, name := range []string{"../agents", "..", ".", "dev/../../agents", "/etc"} {
@@ -757,16 +761,16 @@ func TestMemoryLandingRefusesAPersonaNameThatClimbsOut(t *testing.T) {
 	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
 		t.Fatalf("a climbing persona name committed %s:\n%s", after, headFiles(t, repo))
 	}
-	if st := mustGit(t, repo, "status", "--porcelain", "--", "rhq/agents"); !strings.Contains(st, "rhq/agents") {
+	if st := mustGit(t, repo, "status", "--porcelain", "--", ConstitutionRepoMarker); !strings.Contains(st, ConstitutionRepoMarker) {
 		t.Errorf("the constitution's own change must still be uncommitted: %q", st)
 	}
 	// And the ordinary name still works in this shape, so the test above is
 	// about the CLIMB and not about a fixture nothing can reach.
-	write(t, filepath.Join(repo, "rhq", "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n- a lesson.\n")
+	write(t, filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "ORDERS.md"), "# Standing orders — dev\n- a lesson.\n")
 	if l := a.LandPersonaMemory("dev", "posse kill x", ""); l == nil || l.SHA == "" {
 		t.Fatalf("a valid persona must still land here: %+v", l)
 	}
-	if got := headFiles(t, repo); strings.Contains(got, "rhq/agents") {
+	if got := headFiles(t, repo); strings.Contains(got, ConstitutionRepoMarker) {
 		t.Errorf("the valid landing took the constitution:\n%s", got)
 	}
 }
@@ -796,7 +800,7 @@ func TestTheCredentialScanReadsGitsDiffWhateverTheConfigurationSays(t *testing.T
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	dev := filepath.Join(repo, "rhq", "personas", "dev")
+	dev := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
 
 	// The .gitattributes driver, landed by hand: it is a tracked file of the
 	// memory dir like any other, and a persona's own dir always could carry
@@ -809,8 +813,8 @@ func TestTheCredentialScanReadsGitsDiffWhateverTheConfigurationSays(t *testing.T
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(dev, ".gitattributes"), "* diff=demo\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/.gitattributes")
-	mustGit(t, repo, "commit", "-q", "-m", "a diff driver on the memory dir", "--", "rhq/personas/dev/.gitattributes")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/.gitattributes")
+	mustGit(t, repo, "commit", "-q", "-m", "a diff driver on the memory dir", "--", ConstitutionSourceDir+"/personas/dev/.gitattributes")
 	mustGit(t, repo, "config", "diff.demo.textconv", conv)
 	mustGit(t, repo, "config", "diff.demo.command", conv)
 	mustGit(t, repo, "config", "diff.external", conv)
@@ -857,10 +861,10 @@ func TestTheBinaryHoldSurvivesDiffRelative(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	blob := filepath.Join(repo, "rhq", "personas", "dev", "capture.bin")
+	blob := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "capture.bin")
 	write(t, blob, "harmless\x00bytes\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/capture.bin")
-	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", "rhq/personas/dev/capture.bin")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
+	mustGit(t, repo, "commit", "-q", "-m", "a binary artefact in the memory dir", "--", ConstitutionSourceDir+"/personas/dev/capture.bin")
 	mustGit(t, repo, "config", "diff.relative", "true")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
@@ -869,7 +873,7 @@ func TestTheBinaryHoldSurvivesDiffRelative(t *testing.T) {
 	// Two fixture guards. The file must be binary to git, and the setting
 	// must actually be moving the path — a numstat that still spells the
 	// full path here would make the hold below prove nothing.
-	dev := filepath.Join(repo, "rhq", "personas", "dev")
+	dev := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
 	rel, err := gitRaw(dev, "diff", "HEAD", "--numstat", "-z", "--", ".")
 	if err != nil {
 		t.Fatal(err)
@@ -944,10 +948,10 @@ func TestTheDiffScanStillAttributesAHitToItsOwnFile(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	notes := filepath.Join(repo, "rhq", "personas", "dev", "notes.md")
+	notes := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "notes.md")
 	write(t, notes, "# notes\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/notes.md")
-	mustGit(t, repo, "commit", "-q", "-m", "a second tracked memory file", "--", "rhq/personas/dev/notes.md")
+	mustGit(t, repo, "add", "--", ConstitutionSourceDir+"/personas/dev/notes.md")
+	mustGit(t, repo, "commit", "-q", "-m", "a second tracked memory file", "--", ConstitutionSourceDir+"/personas/dev/notes.md")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
 	// ORDERS.md sorts first and is clean prose; the hit is in notes.md.
