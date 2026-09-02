@@ -446,7 +446,7 @@ func claudeTrustProbe() Silence {
 //
 // and the dialog's own accept arm calls `Aqn`, whose whole body is
 // `hasSeenAutoModeOutsideReadPrompt: true`. So "1. Yes, keep allowing" —
-// what monica typed by hand into gilfoyle's pane at 07:02Z — writes this
+// what the coordinator typed by hand into the blocked pane — writes this
 // key and nothing else. Seeding it is therefore not a permission decision
 // at all: it reproduces, per launch, the answer the operator already gave,
 // and an outside read behaves exactly as it does on this box today.
@@ -463,8 +463,8 @@ func claudeTrustProbe() Silence {
 //     flag to disbelieve.
 //   - `true` does suppress the prompt, by REFUSING the read it was asking
 //     about — "the file tools refuse reads outside the working directories
-//     in every project", claude's own words. gilfoyle would not have been
-//     blocked on the runbook; gilfoyle would have been unable to read it.
+//     in every project", claude's own words. The blocked session would not
+//     have stopped on the runbook; it would have been unable to read it.
 //     It is also restrictive-wins across every settings source, so a
 //     session cannot take it back.
 //

@@ -3,9 +3,9 @@ package posse
 // What these pin (ranger-base-d3fwo): claude 2.1.258 asks, once per config
 // dir, "Allow reads outside the working directories?" — mid-turn, on the
 // first file-tool read past the working directories of a session already in
-// auto mode. A persona cannot answer it. gilfoyle-87qki sat blocked on it
-// reading a runbook out of the instance tree until the coordinator sent the
-// keystroke by hand.
+// auto mode. A persona cannot answer it. One sat blocked on it reading a
+// runbook out of the instance tree until the coordinator sent the keystroke
+// by hand.
 //
 // The launch answers it the way the accept arm of the dialog does: by
 // setting hasSeenAutoModeOutsideReadPrompt in the config claude reads.

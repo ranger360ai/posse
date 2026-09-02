@@ -355,7 +355,7 @@ var ClaudeInterstitials = []Interstitial{{
 	Seeded:  true,
 	Probe:   claudeTrustProbe,
 }, {
-	Screen:  `"Read outside the working directories … Allow reads outside the working directories? 1. Yes, keep allowing / 2. No, block … / 3. No, ask again next time" — an auto-mode session's FIRST file-tool read of a path outside its working directories, so it lands mid-turn on a session that already looked healthy. herdr reads it blocked; a persona cannot answer it, and gilfoyle-87qki sat on it until the coordinator sent the keystroke by hand (ranger-base-d3fwo).`,
+	Screen:  `"Read outside the working directories … Allow reads outside the working directories? 1. Yes, keep allowing / 2. No, block … / 3. No, ask again next time" — an auto-mode session's FIRST file-tool read of a path outside its working directories, so it lands mid-turn on a session that already looked healthy. herdr reads it blocked; a persona cannot answer it, and one sat on it until the coordinator sent the keystroke by hand (ranger-base-d3fwo).`,
 	Where:   "~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json) — top level, not per project",
 	Key:     `hasSeenAutoModeOutsideReadPrompt`,
 	Silence: "the LAUNCH seeds it (SeedClaudeTrust on the host, SeedCageHome in a cage), which is exactly what picking \"1. Yes, keep allowing\" writes and all it writes. The key the SCREEN names — permissions.blockReadsOutsideWorkingDirectories — is not the silence: false leaves the notice armed (the CLI's guard tests strictly true) and true silences it by refusing the read. See trust.go for the measurement.",
