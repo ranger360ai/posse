@@ -192,24 +192,36 @@ func TestQAInstallRefusalPrescriptionIsRunnable(t *testing.T) {
 // since rangerhq-mgdk one call reports both slots, so the operator is handed
 // both blocks at once and may paste either first. Pinning only A-then-B
 // would pin one half of the claim.
-// ranger-base-q32o — found verifying rangerhq-pon3's close (ranger-base-wst3).
-// The rendered prescription's first step is an unconditional
-// `mv <slot> theirs-<slot>`. That is right for a FOREIGN slot and wrong for a
-// slot posse has already chained: there `theirs-<slot>` already holds the
-// other tool's hook, so the mv destroys it and leaves the old dispatcher in
-// its place — a file whose last line is `exec "$d/theirs-<slot>" "$@"`, which
-// is now itself. Every push the gate PERMITS then spins forever; a refusal
-// exits before the exec, so the wall still looks correct.
+// ranger-base-q32o — found verifying rangerhq-pon3's close (ranger-base-wst3),
+// FIXED, and this pin is the fix's end-to-end arm (ranger-base-4gb9c). The
+// prescription's first step used to be an unconditional `mv <slot>
+// theirs-<slot>`. That is right for a FOREIGN slot and wrong for a slot posse
+// has already chained: there `theirs-<slot>` already holds the other tool's
+// hook, so the mv destroyed it and left the old dispatcher in its place — a
+// file whose last line is `exec "$d/theirs-<slot>" "$@"`, which is now itself.
+// Every push the gate PERMITTED then spun forever; a refusal exits before the
+// exec, so the wall still looked correct.
 //
-// Reached by posse's own instructions: chain a foreign hook, then remove
-// posse-<slot> (`remove this file to uninstall`, the line inside that very
-// file), then re-run install-hooks and follow what it prints.
+// The fix has two halves and this arm reaches the first: the operator never
+// gets a re-chain prescription here at all. Reached by posse's own
+// instructions — chain a foreign hook, then remove posse-<slot> (`remove this
+// file to uninstall`, the line inside that very file), then re-run
+// install-hooks. install-hooks now RESTORES the gate the intact dispatcher
+// already runs instead of refusing and prescribing a re-chain. The second
+// half — the block printed when a slot really must be re-chained never moves a
+// hook onto another hook — is pinned in internal/posse/chainrepair_qa_test.go,
+// which also runs the permitted push under a deadline.
 //
-// This asserts the STRUCTURE, never running the loop: a test that hangs when
-// it fails is worse than no test.
-func TestQAChainPrescriptionOnAnAlreadyChainedSlot(t *testing.T) {
-	t.Skip("ranger-base-q32o: the prescription clobbers theirs-<slot>; unskip with the fix")
-
+// This arm is the CLI one: the real binary, a repo under the HOME its
+// prescriptions are abbreviated against, and assertions on structure only —
+// a test that hangs when it fails is worse than no test, so the permitted
+// push that reaches the exec is left to the bounded pin next door.
+//
+// Until ranger-base-4gb9c this was TestQAChainPrescriptionOnAnAlreadyChainedSlot,
+// parked on q32o. The fix shipped; the park did not lift, and un-skipped it
+// failed on its own mechanism rather than on the defect — it demanded a
+// pre-push prescription that the fix's whole point is not to print.
+func TestQAReRunAtAnAlreadyChainedSlotRestoresRatherThanRePrescribing(t *testing.T) {
 	bin := buildRhq(t)
 	home, repo := qaForeignBoth(t)
 	hooks := filepath.Join(repo, ".git", "hooks")
@@ -219,30 +231,68 @@ func TestQAChainPrescriptionOnAnAlreadyChainedSlot(t *testing.T) {
 	if out, code := qaSh(t, home, qaPrescription(t, first, "pre-push", bin)); code != 0 {
 		t.Fatalf("the ordinary chain must land: %d\n%s", code, out)
 	}
-	theirs := filepath.Join(hooks, "theirs-pre-push")
-	want, err := os.ReadFile(theirs)
-	if err != nil {
-		t.Fatalf("theirs-pre-push must exist after chaining: %v", err)
+	read := func(name string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(hooks, name))
+		if err != nil {
+			t.Fatalf("%s must exist after chaining: %v", name, err)
+		}
+		return string(b)
 	}
+	theirs, dispatcher, gate := read("theirs-pre-push"), read("pre-push"), read("posse-pre-push")
 
-	// The documented uninstall, which is what makes the slot re-prescribable.
+	// The documented uninstall, which is what used to make the slot
+	// re-prescribable.
 	if err := os.Remove(filepath.Join(hooks, "posse-pre-push")); err != nil {
 		t.Fatal(err)
 	}
 
-	// Re-run and follow whatever it prints, exactly as an operator would.
+	// Re-run — the operator's natural repair — and read what it printed.
+	// The commit slot is still foreign and still refuses, so the report does
+	// carry a chain block; it must not be one for pre-push, and it must not
+	// contain the clobbering step at any slot.
 	second, _ := qaInstallHooks(t, bin, home, repo)
-	qaSh(t, home, qaPrescription(t, second, "pre-push", bin))
+	// The whole line, not two loose substrings: "installed" and the gate's
+	// path have to be the same sentence or the assertion is satisfied by a
+	// refusal that merely mentions the file. `~/` because the repo is under
+	// the HOME the binary printed against (qaForeignBoth).
+	restored := "installed ~/" + filepath.Join(filepath.Base(repo), ".git", "hooks", "posse-pre-push")
+	if !strings.Contains(second, restored) {
+		t.Errorf("the re-run must report %q:\n%s", restored, second)
+	}
+	if strings.Contains(second, "\nmv pre-push ") {
+		t.Errorf("the re-run still prescribes moving the chained pre-push slot aside:\n%s", second)
+	}
+	if strings.Contains(second, "\nchmod +x pre-push\n") {
+		t.Errorf("the re-run still prints a pre-push chain prescription:\n%s", second)
+	}
 
-	got, err := os.ReadFile(theirs)
+	// And the state it left. Nothing around the slot may have moved: the
+	// gate is back where the dispatcher looks for it, and both its
+	// neighbours are byte for byte what they were.
+	if got := read("posse-pre-push"); got != gate {
+		t.Errorf("the gate must be restored as itself.\nwas:\n%s\nnow:\n%s", gate, got)
+	}
+	if got := read("theirs-pre-push"); got != theirs {
+		t.Errorf("the other tool's hook must survive.\nwas:\n%s\nnow:\n%s", theirs, got)
+	}
+	if got := read("pre-push"); got != dispatcher {
+		t.Errorf("the dispatcher must survive.\nwas:\n%s\nnow:\n%s", dispatcher, got)
+	}
+
+	// The defect stated directly: no hook file may exec into itself.
+	ents, err := os.ReadDir(hooks)
 	if err != nil {
-		t.Fatalf("theirs-pre-push must survive: %v", err)
+		t.Fatal(err)
 	}
-	if string(got) != string(want) {
-		t.Errorf("the prescription overwrote the other tool's hook.\nwas:\n%s\nnow:\n%s", want, got)
-	}
-	if strings.Contains(string(got), `exec "$d/theirs-pre-push"`) {
-		t.Error("theirs-pre-push now execs itself: every permitted push hangs forever")
+	for _, e := range ents {
+		b, err := os.ReadFile(filepath.Join(hooks, e.Name()))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(b), `exec "$d/`+e.Name()+`" "$@"`) {
+			t.Errorf("%s execs into itself: every permitted run of it hangs forever", e.Name())
+		}
 	}
 }
 
