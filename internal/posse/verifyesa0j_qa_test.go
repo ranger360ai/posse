@@ -405,8 +405,8 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 // spend escapes — but the operator is told "2/2 beads in 7d" and never told
 // the pool is at 80%, which is the one thing dispatch.go's own comment says
 // the meter is kept for ("only one of them says how much of the pool is
-// left"). Filed against the record rather than fixed here; see the bead this
-// test's header names.
+// left"). Filed against the record rather than fixed here, because which of
+// the two is wrong is a call for the record's owner: ranger-base-dmzao.
 //
 // The pair dispatch.go DOES order the record's way — grokPoolSkip before
 // uncountedSkip — cannot both fire, and the second half of this test is why.
