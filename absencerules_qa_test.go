@@ -10,9 +10,11 @@ package posse
 //      on the runtime's NAME is allowed only where the behaviour is
 //      inherently that CLI's own state; five such sites are accepted and a
 //      sixth must go through the declaration.
-//   3. ADR 0013 §4 — "This is not 'monica closes the bead.'" The bead is the
-//      store of record and the harness is not its writer: no close verb of
-//      the Bd API is reachable from the dispatch path.
+//   3. ADR 0013 §4 — the section's closing line, which names a crew seat and
+//      reads here as its role (ADR 0012 D2): this is not "the harness closes
+//      the bead." The bead is the store of record and the harness is not its
+//      writer, so no close verb of the Bd API is reachable from the dispatch
+//      path.
 //
 // A grep is a measurement of one afternoon. Each of these is the same
 // measurement wired to the build, so the day somebody adds the sixth site
@@ -831,8 +833,10 @@ func TestShadowPredicateCensusCatchesEachShape(t *testing.T) {
 //
 // §4 makes the bead the store of record and the runtime a hint: "`record:
 // untrusted` — default for every other runtime ... Dispatch still launches.
-// Gather never prints ✓ on settle-without-close ... **This is not 'monica
-// closes the bead.'**" A dispatch pass that could close a bead itself would
+// Gather never prints ✓ on settle-without-close", and then the line this pin
+// is named for, whose subject is a crew seat read here as its role (ADR 0012
+// D2): **this is not "the harness closes the bead."** A dispatch pass that
+// could close a bead itself would
 // make the record stage unfalsifiable — every settle would look like a close
 // and the one signal the section nominates as truth would be written by the
 // thing it grades.
@@ -1294,12 +1298,13 @@ func TestNoBdCloseVerbReachableFromDispatch(t *testing.T) {
 	unregistered, stale := arCloseCallerGrade(sites, arCloseCallerAllowed)
 	for _, s := range unregistered {
 		t.Errorf("%s (in %s) calls %s and is not in the register.\n"+
-			"ADR 0013 §4 makes the bead the store of record and the harness a reader of it —\n"+
-			"\"This is not 'monica closes the bead.'\" The only registered caller is the\n"+
-			"operator verb `posse done <id>`, which a human types. A harness that can close\n"+
-			"the bead cannot then be graded by it: settle-without-close is the one signal\n"+
-			"§4 nominates as truth. If this caller is deliberate, add a row saying who types\n"+
-			"it and why they are not the harness.", s.where, s.in, s.verb)
+			"ADR 0013 §4 makes the bead the store of record and the harness a reader of it,\n"+
+			"and its closing line says in as many words that the harness is not what closes\n"+
+			"the bead. The only registered caller is the operator verb `posse done <id>`,\n"+
+			"which a human types. A harness that can close the bead cannot then be graded by\n"+
+			"it: settle-without-close is the one signal §4 nominates as truth. If this caller\n"+
+			"is deliberate, add a row saying who types it and why they are not the harness.",
+			s.where, s.in, s.verb)
 	}
 	for _, i := range stale {
 		a := arCloseCallerAllowed[i]
@@ -1381,7 +1386,7 @@ type Dispatcher struct{ Bd Bd }
 func NewDispatcher() *Dispatcher { return &Dispatcher{Bd: NewBd()} }
 
 func (d *Dispatcher) Run(dir string) error {
-	if err := d.Bd.Claim(dir, "x-1", "laurie"); err != nil {
+	if err := d.Bd.Claim(dir, "x-1", "qa"); err != nil {
 		return err
 	}
 	return d.settle(dir)
