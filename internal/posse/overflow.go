@@ -266,6 +266,19 @@ type overflowDecision struct {
 	Runtime string
 	Moved   bool
 	Skip    string
+	// SkipKind is the refill class Skip is counted under, "" meaning the
+	// ladder's own. Only the target pool's meter differs: that park is the
+	// pool's brake, not the plan guard's, and it counts where grokPoolSkip's
+	// other caller counts it.
+	SkipKind string
+}
+
+// kind is the class this decision's skip is counted under in a refill.
+func (o overflowDecision) kind() string {
+	if o.SkipKind != "" {
+		return o.SkipKind
+	}
+	return skipPlanGuard
 }
 
 // overflowFor walks ADR 0010 §1's ladder for one bead. rt is the runtime
@@ -319,6 +332,26 @@ func (d *Dispatcher) overflowFor(is RepoIssue, persona string, ag *AgentFile, rt
 	}
 	if p := d.App.CheckParityIn(ag, ort, ResolveCage(d.Cage, ag), tier, is.Dir); len(p.Degraded) > 0 {
 		return skip("%s", p.Degraded[0])
+	}
+	// §3, the ordering, ratified 2026-08-29 and realised here (ranger-base-v62hj):
+	// where the target pool HAS a reading, the reading is named first and the
+	// bead cap is the stand-in for the *absence* of one. The meter belongs at
+	// the move rather than after it, for two reasons. It decides whether this
+	// bead may move at all, so it is a rung of this ladder like the ones
+	// above. And the cap's line is a calibration prompt — §3 says raise the
+	// cap "only on that evidence", the pool's own usage — so the operator who
+	// reads "2/2 in 7d" must already have been told the pool is at 80%,
+	// which the shipped ordering hid on exactly that line.
+	//
+	// Placed after §2 deliberately: the reading is a transcript scan, taken
+	// lazily and memoised by grokPoolGuard, and a bead §2 already refused is
+	// no candidate for the pool — a pass whose only on-meter beads are
+	// ineligible prints no "! grok pool:" line at all.
+	//
+	// Keyed on the one runtime that has a meter; ADR 0010 §3's tripwire says
+	// a registry waits for a second one.
+	if line := d.grokPoolSkip(ov.Runtime); line != "" {
+		return overflowDecision{Skip: line, SkipKind: skipRuntimeCap}
 	}
 	// §3: the cap stands in for the meter the pool does not have.
 	if d.overflowUsed >= ov.Cap {

@@ -123,6 +123,34 @@ floor, per-bead beside the account stage. Three rules follow:
   warning: an operator who set both meant both, and the brakes fail
   differently (a bead count needs no calibration; a percentage needs the
   factor).
+
+  *(Amended 2026-09-02, ranger-base-dmzao / ranger-base-v62hj.)* The
+  sentence above was ratified against the wrong pair. It was written
+  over `grokPoolSkip`-before-`uncountedSkip` in the launch loop, which
+  ADR 0013 §5 had already made unable to both fire, so the ratification
+  measured nothing. The pair this bullet arms — the target's meter and
+  the bead cap — ran the other way round: measured at be5077c, the cap
+  was checked in `overflowFor` at the overflow **move** and the meter
+  only afterwards in the launch loop, so a bead with both brakes tripped
+  parked on the cap's bead count and the pool was never read. No spend
+  escaped; the reading did. Ruled a code defect rather than a record
+  defect, for three reasons — the code's own comment and this bullet
+  already agreed on the intent and differed only in placement; §3 tells
+  the operator to raise the cap "only on that evidence", the pool's own
+  usage, and the shipped ordering hid that reading on exactly the line
+  that prompts the calibration; and the meter is an *arming* brake for
+  the move (bullet 1), so it belongs in the move's ladder rather than
+  after it. The ordering is now realised at the move: `overflowFor`
+  consults the target pool's meter after §2's eligibility and before the
+  cap. A pool over threshold names its reading and the cap never speaks
+  on the bead's line — the pass's trip header still announces the cap's
+  count once, as the arming notice it always was — and a reached cap
+  fires only once the reading has been taken and reported.
+  Placement after §2 is load-bearing — a bead §2 refused is no candidate
+  for the pool, and takes no reading. Pins:
+  `TestQABothGrokBrakesOnOnePoolReadTheMeterThenTheCap` and
+  `TestQAOverflowMeterIsReadOnlyForABeadSection2WouldMove`
+  (`internal/posse/verifyesa0j_qa_test.go`).
 - **The bead cap's lifetime is the account-degraded column's** (ADR
   0013 §5). That day came (ranger-base-0lg6, ratified ranger-base-mykq):
   the column's predicate is now `Runtime.CostPriced()`, grok's adapter

@@ -39,7 +39,7 @@ import (
 // nothing said. The launch and the relaunch are asserted to render the SAME
 // prefix, which is the property that survives a refactor of either.
 //
-// MUTATIONS RUN (each reds this test): drop `GatePrefix(binDir, typed) +` in
+// MUTATIONS RUN (each reds one of the two tests here): drop `GatePrefix(binDir, typed) +` in
 // WrapWithGates; return `""` for `typed` unconditionally there (kills the
 // SHELL/GROK_SHELL half only); swap RelaunchAgent's `WrapWithGates` arm for a
 // bare `cmd = inner`.
@@ -293,7 +293,7 @@ func skillsApp(t *testing.T) *App {
 //     `.git/info/exclude` under it is a path git never reads, and every
 //     persona in this shop works from a linked worktree.
 //
-// MUTATIONS RUN (each reds this test): `--show-prefix` → `--show-toplevel`
+// MUTATIONS RUN (each reds one of the two tests here): `--show-prefix` → `--show-toplevel`
 // with a filepath.Rel; drop the prefix from the pattern entirely; drop the
 // leading "/" anchor; `--git-common-dir` → `--git-dir`.
 func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T) {
@@ -390,6 +390,21 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 
 // ─── arm 5: both brakes on one pool ──────────────────────────────────────────
 
+// beadLine is the one report line this pass printed for a bead, without the
+// pass-level lines around it. The trip header names the overflow cap's count
+// on every armed pass, so a "the cap did not speak" assertion has to be read
+// off the bead's own line or it measures the header instead.
+func beadLine(t *testing.T, out, id string) string {
+	t.Helper()
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.Contains(ln, " "+id+" ") || strings.HasSuffix(ln, " "+id) {
+			return ln
+		}
+	}
+	t.Fatalf("no report line for bead %s:\n%s", id, out)
+	return ""
+}
+
 // ADR 0010 §3 arms overflow on "at least one armed brake on the target pool"
 // and names two: `plan_guard_overflow_cap:` (beads per rolling 7d) and the
 // target's own pool meter (`grok_guard_week:` + reset + factor). "Both set =
@@ -398,25 +413,41 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 // and the cap still fires second."
 //
 // No test set both. This one does, over the four corners of the two brakes,
-// and pins the ordering that SHIPS. It ships green; it goes red the day the
-// behaviour moves, in either direction.
+// and pins the record's ordering.
 //
-// MEASURED at be5077c, and it is NOT the record's ordering: on the only
-// configuration where two brakes are live on one pool, the cap fires FIRST
-// and the meter is never read at all. Both brakes still stop the launch — no
-// spend escapes — but the operator is told "2/2 beads in 7d" and never told
-// the pool is at 80%, which is the one thing dispatch.go's own comment says
-// the meter is kept for ("only one of them says how much of the pool is
-// left"). Filed against the record rather than fixed here, because which of
-// the two is wrong is a call for the record's owner: ranger-base-dmzao.
+// It did not always hold. Measured at be5077c the pair ran the other way
+// round: the cap was checked in overflowFor at the overflow MOVE and the
+// meter only afterwards in the launch loop, so a bead with both brakes
+// tripped parked on "2/2 in 7d" and the pool was never read at all. No spend
+// escaped — both brakes stop the launch — but the operator was denied the one
+// number dispatch.go's own comment says the meter is kept for ("only one of
+// them says how much of the pool is left"), on exactly the line §3 tells them
+// to calibrate the cap from. Ruled a code defect, not a record defect
+// (ranger-base-dmzao); fixed on ranger-base-v62hj, which moved the meter
+// check into overflowFor after §2's eligibility and before the cap, and
+// amended §3 bullet 2 to say where the ordering now lives.
 //
-// The pair dispatch.go DOES order the record's way — grokPoolSkip before
-// uncountedSkip — cannot both fire, and the second half of this test is why.
+// So the reading is taken in all four corners, and it is taken only for a
+// bead that is a candidate for the pool. The companion test immediately below
+// is that second half: §2 refuses the only on-meter bead, nothing is routed
+// to the metered runtime statically, and no reading line is printed.
 //
-// MUTATIONS RUN (each reds this test): move the `d.overflowUsed >= ov.Cap`
-// check in overflowFor to after the move; make grokPoolSkip's runtime guard
-// accept everything; drop the `rt.CostPriced()` early return in uncountedFor.
-func TestQABothGrokBrakesOnOnePoolFireCapFirstAndReadingSecond(t *testing.T) {
+// The pair dispatch.go orders the record's way in the LAUNCH loop —
+// grokPoolSkip before uncountedSkip — cannot both fire, and the second half
+// of this file is why.
+//
+// MUTATIONS RUN (each reds one of the two tests here):
+//   - overflowFor's meter check moved to after the cap check → "both tripped"
+//     reds (the bead's line becomes the cap's "2/2 in 7d" again).
+//   - the meter check removed from overflowFor → "both tripped" and "cap
+//     alone" red (no reading taken before the cap parks the bead).
+//   - the meter check hoisted above §2's tier check → the companion test
+//     below reds (a reading taken for a bead that could never move).
+//
+// `grokPoolSkip`'s runtime guard made to accept everything survives both of
+// them — every corner here already runs on the metered runtime — and is held
+// by TestGrokPoolDoesNotGateAnotherRuntime, which is where it reds.
+func TestQABothGrokBrakesOnOnePoolReadTheMeterThenTheCap(t *testing.T) {
 	// $50 is the full pool at the fixture's $0.50/point, so $40 is 80% and
 	// $5 is 10% — either side of a 70% threshold.
 	for _, tc := range []struct {
@@ -425,12 +456,19 @@ func TestQABothGrokBrakesOnOnePoolFireCapFirstAndReadingSecond(t *testing.T) {
 		spend      float64
 		wantLaunch bool
 		wantLine   string
-		wantRead   bool // the pool reading was taken and reported
+		wantRead   string // the once-per-pass reading line, always taken
+		absent     string // what the bead's own line must NOT say
 	}{
-		{"both brakes tripped", 2, 40, false, "overflow grok: 2/2 in 7d — skipped", false},
-		{"cap alone", 2, 5, false, "overflow grok: 2/2 in 7d — skipped", false},
-		{"meter alone", 0, 40, false, "grok pool: estimated 80% of the weekly pool used > grok_guard_week: 70% — skipped", true},
-		{"neither", 0, 5, true, "", true},
+		{"both brakes tripped", 2, 40, false,
+			"grok pool: estimated 80% of the weekly pool used > grok_guard_week: 70% — skipped",
+			"! grok pool: estimated 80%", "2/2 in 7d"},
+		{"cap alone", 2, 5, false,
+			"overflow grok: 2/2 in 7d — skipped",
+			"! grok pool: estimated 10%", ""},
+		{"meter alone", 0, 40, false,
+			"grok pool: estimated 80% of the weekly pool used > grok_guard_week: 70% — skipped",
+			"! grok pool: estimated 80%", "in 7d"},
+		{"neither", 0, 5, true, "", "! grok pool: estimated 10%", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := overflowPass(t,
@@ -472,18 +510,65 @@ func TestQABothGrokBrakesOnOnePoolFireCapFirstAndReadingSecond(t *testing.T) {
 			if tc.wantLine != "" && !strings.Contains(out, tc.wantLine) {
 				t.Errorf("want the skip line %q:\n%s", tc.wantLine, out)
 			}
-			// The ordering, as shipped. The record (ADR 0010 §3) says the
-			// reading is named first and the cap second; on this pool the cap
-			// runs at the overflow MOVE and the meter only after it, so a
-			// reached cap parks the bead before the pool is ever read.
-			read := strings.Contains(out, "! grok pool: estimated")
-			if read != tc.wantRead {
-				t.Errorf("pool reading reported = %v, want %v — ADR 0010 §3 ratifies \"where a reading exists it is named first\"; if this arm flipped to true the code now matches the record and this pin is what should change:\n%s", read, tc.wantRead, out)
+			// The ordering, as the record has it and the code now does: the
+			// reading exists on this pool, so it is taken and named in every
+			// corner — including the two the cap would have parked first.
+			if !strings.Contains(out, tc.wantRead) {
+				t.Errorf("ADR 0010 §3: where a reading exists it is named first; want %q:\n%s", tc.wantRead, out)
 			}
-			if !tc.wantRead && strings.Contains(out, "grok_guard_week") {
-				t.Errorf("the cap parked this bead before the meter was consulted, so no threshold should be named:\n%s", out)
+			if !strings.Contains(out, "grok_guard_week: 70%") {
+				t.Errorf("the reading names the threshold it was judged against:\n%s", out)
+			}
+			// …and where the meter stopped the bead, the cap never speaks on
+			// the bead's own line: the operator gets the number that says how
+			// much pool is left, not a bead count that does not. Scoped to
+			// that line because the trip header announces the cap's count
+			// once per pass whenever overflow is armed, before any bead is
+			// judged — it is the arming notice, not a brake's verdict.
+			if tc.absent != "" && strings.Contains(beadLine(t, out, "a-1"), tc.absent) {
+				t.Errorf("the meter parked this bead, so its line must not say %q:\n%s", tc.absent, out)
 			}
 		})
+	}
+}
+
+// The other half of the ordering: the reading is taken only for a bead that
+// is a CANDIDATE for the pool. §2's eligibility runs first in overflowFor, so
+// a pass whose only on-meter bead is judged work — with nothing routed to the
+// metered runtime statically — scans no transcripts and prints no line. This
+// is uncountedReport's rule and grokPoolGuard's own contract ("nil until the
+// pass first resolves a bead onto the metered runtime"), and it is what makes
+// the meter check's placement AFTER §2 load-bearing rather than incidental.
+func TestQAOverflowMeterIsReadOnlyForABeadSection2WouldMove(t *testing.T) {
+	f := overflowPass(t,
+		"plan_guard_overflow: grok\nplan_guard_overflow_cap: 2\ngrok_guard_week: 70\n"+grokPoolCfg,
+		overflowPID, `["go","tier:strong"]`)
+	f.d.Now = func() time.Time { return grokPoolNow }
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := grokPoolLastReset.Add(time.Hour)
+	grokPoolSession(t, home, "s1",
+		grokPoolUser(at, "Work beads issue ranger-base-esa0j (t)")+
+			grokPoolTurn(at, "p-s1", usdTicks(40))) // 80%, over the threshold
+
+	n, err := f.d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(f.d)
+	if !strings.Contains(out, "plan 5h at 78% > 70% — overflow grok") {
+		t.Fatalf("fixture: the plan guard did not trip with overflow armed:\n%s", out)
+	}
+	if n != 0 {
+		t.Fatalf("§2(b) keeps judged work on the guarded runtime, got n=%d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "strong work stays on") {
+		t.Fatalf("fixture: §2(b) is not what refused this bead:\n%s", out)
+	}
+	if strings.Contains(out, "grok pool") || strings.Contains(f.errb.String(), "grok pool") {
+		t.Errorf("a bead §2 refused is no candidate for the pool, so no reading is taken:\n%s", out)
 	}
 }
 

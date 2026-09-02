@@ -2409,7 +2409,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			} else {
 				dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
 				if dec.Skip != "" {
-					d.skipf(skipPlanGuard, "– %-14s %s\n", is.ID, dec.Skip)
+					d.skipf(dec.kind(), "– %-14s %s\n", is.ID, dec.Skip)
 					continue
 				}
 				launchRT, moved = dec.Runtime, dec.Moved
@@ -2426,6 +2426,12 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// reading, the reading is what the operator wants named, and the
 		// bead cap below is the stand-in for the ABSENCE of one. Both skip;
 		// only one of them says how much of the pool is left.
+		//
+		// A bead the overflow MOVED had this pool read in overflowFor, ahead
+		// of its own cap (ADR 0010 §3, ranger-base-v62hj); the call here is
+		// for lanes routed to the metered runtime statically — rung 1's
+		// off-meter launches, and every pass with no trip at all — and is a
+		// memoised no-op on the moved ones.
 		if skip := d.grokPoolSkip(launchRT); skip != "" {
 			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
 			continue
