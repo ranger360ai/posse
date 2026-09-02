@@ -11,8 +11,9 @@ threshold or in the braking band parks with the caps armed; the
 exposure line in Consequences was the sentence the 2026-08-31 incident
 cashed in, and is rewritten · amended 2026-09-02 (ranger-base-jwcxu,
 folding ranger-base-ch6re): §1's rendered brake line carries the same
-placeholders NOTES.md's copy of it does, and Consequences names the
-blind-day pair actually in force (ranger-base-vi67)*
+placeholders NOTES.md's copy of it does, and Consequences says the
+blind-day bound is not the pair first written, citing where the pair in
+force is recorded (ranger-base-vi67) rather than quoting it*
 
 ## Context
 
@@ -167,15 +168,20 @@ bead grain by 0013 §3 and its residue stays on its own beads
   which halt it is.
 - *(amended 2026-09-02, ranger-base-ch6re, from ranger-base-vi67)* …and
   the pair the first bullet names is the pair armed on 2026-08-26, not
-  the pair in force. What bounds a degraded-loud day today is
-  `budget_pass` 150 / `budget_day` 3000, and on ranger-base-vi67 the
-  operator re-affirmed those rather than lowering them to the 2026-08-26
-  figures: the caps are anomaly stops, and the brake on a blind day is
-  §1's headroom refusal (amended into §1 above, ranger-base-bp224), not
-  the cap. Read the first bullet for the SHAPE of the bound — a blind
-  day is bounded in dollars, never in clock — and this line for the
-  bound itself. Both pairs are the operator's numbers to state in
-  public and theirs to change (ranger-base-axft).
+  the pair in force. On ranger-base-vi67 the operator re-affirmed the
+  caps this deployment carries rather than changing them to match the
+  pair above, on the ground that the caps are anomaly stops and the
+  brake on a blind day is §1's headroom refusal (amended into §1 above,
+  ranger-base-bp224), not the cap. So read the first bullet for the
+  SHAPE of the bound — a blind day is bounded in dollars, never in
+  clock — and read ranger-base-vi67 for the pair that bounds it here.
+  The figures themselves are a live guard value and stay in the
+  instance record: ADR 0024 D1 rules that class instance content, and
+  D3's restate-and-cite is what this line is. The bless on
+  ranger-base-axft licensed the pair the first bullet names, not
+  whichever pair is live, and this ADR does not read the config — so
+  citing beats quoting here twice over, once for visibility and once
+  because a quoted pair goes stale the day the operator moves it.
 - *(rewritten 2026-09-01 — the sentence below as first written was the
   one the 2026-08-31 incident cashed in.)* A blind window risks the plan
   windows only from a reading that showed room, and there the exposure
@@ -287,11 +293,17 @@ instance's own pass and day spend — the two halves before the slashes —
 and the shipped ops-pattern cost class saw them, which is why the same
 line in NOTES.md has always rendered placeholders instead; both copies
 of that render now agree, pinned at the repo root by
-`adr0018scrub_qa_test.go`. RULED, not measured: the pair Consequences
-now names is the operator's re-affirmation on ranger-base-vi67, read
-out of this instance's config at that time. This ADR does not read the
-config and cannot notice the pair moving; the citation is what dates
-the claim. LEFT UNDONE, deliberately: the ASSUMED line above still
-quotes the 2026-08-26 pair as the acceptable ceiling for a blind day.
-ranger-base-ch6re names the Consequences section only, so restating it
-there too is the operator's call and not this amendment's licence.
+`adr0018scrub_qa_test.go`. RULED, not measured: that the bound
+Consequences first stated is not the bound in force. That is the
+operator's re-affirmation on ranger-base-vi67, and the pair itself is
+NOT restated here — a live cap is instance content under ADR 0024 D1,
+the bless on ranger-base-axft covered the pair the first bullet names
+and not whichever pair is live, and this ADR cannot read the config, so
+a quoted pair would be both a disclosure and a staleness bug. D3's
+restate-and-cite is the shape (asked as ranger-base-1gak4, taken at its
+stated default rather than waiting on it, because not publishing is the
+reversible direction). LEFT UNDONE, deliberately: the ASSUMED line
+above still quotes the 2026-08-26 pair as the acceptable ceiling for a
+blind day. ranger-base-ch6re names the Consequences section only, so
+restating it there too is the operator's call and not this amendment's
+licence.

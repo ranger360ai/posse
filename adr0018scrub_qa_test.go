@@ -136,12 +136,21 @@ func TestTheRenderedBrakeLineMatchesTheCodeThatPrintsIt(t *testing.T) {
 }
 
 // ranger-base-ch6re (from ranger-base-vi67), folded into ranger-base-jwcxu.
-// The bless on the ceilings is a VISIBILITY ruling and the vi67 ruling is an
-// ACCURACY one; both hold at once, so Consequences keeps the pair it was
-// written with AND names the pair in force. This is a regression pin against
-// a silent deletion, not a measurement: the ADR does not read the live
-// config, which is exactly why its claim is dated and cited.
-func TestADR0018ConsequencesNamesTheReaffirmedBlindDayBound(t *testing.T) {
+// The bless on ranger-base-axft is a VISIBILITY ruling about ONE pair of
+// ceilings and the vi67 ruling is an ACCURACY one about which pair binds;
+// both hold at once, so Consequences keeps the pair it was written with AND
+// says that pair is not the bound, citing where the bound is recorded.
+//
+// The first cut of this amendment QUOTED the pair in force, reading the
+// bless as licence. It is not: it licensed one pair, not whichever pair is
+// live, and ADR 0024 D1 rules a live guard value instance content with
+// "when in doubt, instance" as the default (raised on ranger-base-1gak4).
+// So the shape is D3's restate-and-cite, and the second arm here is what
+// keeps it that shape — an amendment that grows a figure reds, whichever
+// direction the drift comes from. That arm is also why a currency figure is
+// the right thing to look for rather than the pair's digits: the digits
+// would have to be written here to be checked for, which is the disclosure.
+func TestADR0018ConsequencesRestatesTheBlindDayBoundAndCitesIt(t *testing.T) {
 	const path = "docs/adr/0018-blind-meter-armed-ledger.md"
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -157,18 +166,23 @@ func TestADR0018ConsequencesNamesTheReaffirmedBlindDayBound(t *testing.T) {
 	}
 	orig := strings.Index(flat(sec), original)
 
-	for _, want := range []string{
-		"ranger-base-vi67",
-		"`budget_pass` 150 / `budget_day` 3000",
-	} {
-		at := strings.Index(flat(sec), want)
-		if at < 0 {
-			t.Errorf("%s: Consequences does not carry %q — the blind-day bound the operator re-affirmed is unstated (ranger-base-ch6re)", path, want)
-			continue
-		}
-		if at < orig {
-			t.Errorf("%s: %q appears before the sentence it amends — amendments are appended, in date order", path, want)
-		}
+	// The citation is the restatement's other half: without it the amendment
+	// says the bound moved and gives the reader nowhere to go.
+	const cite = "ranger-base-vi67"
+	at := strings.Index(flat(sec), cite)
+	if at < 0 {
+		t.Errorf("%s: Consequences does not cite %s — the ruling that the first bullet's pair is not the bound is unstated (ranger-base-ch6re)", path, cite)
+	} else if at < orig {
+		t.Errorf("%s: %s appears before the sentence it amends — amendments are appended, in date order", path, cite)
+	}
+
+	// And it restates rather than quotes. A live cap is instance content
+	// (ADR 0024 D1); the 2026-08-26 pair the first bullet carries is blessed
+	// (ranger-base-axft) and is the ONLY currency figure Consequences may
+	// hold, so any second one is a pair that was quoted instead of cited.
+	if n := len(liveMoney.FindAllString(sec, -1)); n > 2 {
+		t.Errorf("%s: Consequences carries %d currency figures, want the 2 of the blessed 2026-08-26 pair — "+
+			"a later bound is restated and cited, never quoted (ADR 0024 D1/D3, ranger-base-1gak4)", path, n)
 	}
 }
 
