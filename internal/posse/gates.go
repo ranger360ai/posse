@@ -2670,7 +2670,10 @@ func identityGuardCheck(identity []IdentityLiteral) string {
   #                 bytes; none of the three sources produces one.
   # -f and IFS=newline: the loop splits an unquoted expansion, so a path with
   # a glob character stays a path and a path with spaces stays one word —
-  # the constitution arm's spelling, for the same reason.
+  # the constitution arm's spelling, for the same reason. A path holding a
+  # LITERAL newline splits into two subjects, which is check 1's accepted
+  # residual and fail-safe here: each half is still scanned, and no derived
+  # literal contains a newline, so the split can only over-match.
   posse_ipaths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter=A "$posse_base" 2>/dev/null)
   if [ -n "$posse_ipaths" ]; then
     posse_ibad=''
