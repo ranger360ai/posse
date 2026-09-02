@@ -26,10 +26,37 @@ package posse
 //
 // Same guard as the pin it shadows:
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestQALiveCage -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse \
+//	  -run 'TestQALive(Cage|Parity|UnknownSocket|RootInside)' -v
 //
-// Measured 2026-08-27, macOS 26.4.1 / Docker 29.0.1, image posse-cage:latest
-// built from this tree.
+// That regex selects this file's five tests and nothing else, checked by
+// running it on 2026-09-02. `-run TestQALiveCage` — the recipe this header
+// and ADR 0025 §4 both carried until then — reaches two of the five:
+// the other three are named for what they attack, not for the cage, and a
+// reader running it saw a green two-test file and called it the whole one.
+// A wider `-run TestQALive` overshoots into four live pins from other
+// files in this package.
+//
+// MEASURED PER ARM, NOT PER FILE (ranger-base-uuj27). One run, 2026-08-27
+// on macOS 26.4.1 / Docker 29.0.1 against an image posse-cage:latest built
+// from this tree (rangerhq-pafo), covers this file AS IT STOOD THAT DAY:
+// the mount boundary, the parity catch, the unknown-socket refusal, the
+// remount refusal, and the shim / hook / env-strip clauses of the escape
+// test. Everything added since has never executed, here or anywhere — the
+// engine left this box on 2026-08-30 and by the operator's ruling
+// (ranger-base-6mz7) does not come back until an off-laptop cleanroom
+// exists, so every test in this file currently ends as a skip. The three
+// post-dated additions carry a NEVER RUN note where they sit, all inside
+// TestQALiveCageEscapeAttemptsOnAWritableRepo: requireCurrentCageImage
+// (d695fa4, 2026-08-30), the --no-verify / core.hooksPath / combined
+// escape probes (044bed2, 2026-08-31), and the ADR 0025 §4 spool-truncate
+// arm (d67cad9, 2026-08-31). A fourth,
+// `t.Parallel()` on four of the five tests (793bf1c, 2026-09-02), has not
+// been run live either — no live arm has, since 2026-08-27.
+//
+// So: read the claim's own line for whether it was measured. This date is
+// not a warrant for the file. ADR 0025 §4 verification 2 says the same
+// thing from the other end, and sends its reader here.
 
 import (
 	"encoding/json"
@@ -317,6 +344,11 @@ func TestQALiveCageEscapeAttemptsOnAWritableRepo(t *testing.T) {
 	// image to be this source's — ranger-base-nwj7. The other three are
 	// about host-side mounts, the remount refusal and the parity wiring,
 	// and a staleness skip on those would cost more than it caught.
+	//
+	// NEVER RUN (d695fa4, 2026-08-30, added after the 2026-08-27 run in the
+	// file header): the staleness guard has never had an engine to be
+	// current or stale against, so which of its three states this test
+	// reaches — run, skip-absent, skip-stale — is unmeasured.
 	requireCurrentCageImage(t, a, e, qaLiveGuard(t, a, e))
 	dir := liveCageRepo(t, "")
 	probe := `
@@ -365,6 +397,15 @@ echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | gre
 	// comment thread: log the measured answer, do not assert the escape
 	// must keep working — the day one of these flips is the day someone
 	// notices (the ranger-base-6uq6 pattern).
+	//
+	// NEVER RUN HERE (044bed2, 2026-08-31, added after the 2026-08-27 run
+	// in the file header). The ranger-base-3csb measurement is real and
+	// stands on its own; it was made OUTSIDE a cage. These three clauses —
+	// the same gestures re-asked inside one — have never executed, so the
+	// `case "1"` arms in particular are written from the code, and only the
+	// cleanroom of ranger-base-6mz7 can say which way they go. ADR 0025 §4
+	// verification 4 records this split: the measurement executed, the pin
+	// did not.
 	switch got["noverify"] {
 	case "0":
 		t.Logf("MEASURED (ranger-base-3csb): `/usr/bin/git push --no-verify` is NOT refused — --no-verify skips pre-push outright, cooperative class (ADR 0025 §1)")
@@ -397,6 +438,19 @@ echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | gre
 	// holds this session's git-push refusal and the cursor holds a non-zero
 	// offset; only then does a truncate have a fold-recorded state to lie
 	// about.
+	//
+	// NEVER RUN (d67cad9, 2026-08-31, added after the 2026-08-27 run in the
+	// file header — that run measured the OPPOSITE arm this replaced, the
+	// rw-mounted canonical a caged persona could truncate). Everything from
+	// here to the end of the tamper check is the claim, not a measurement:
+	// ADR 0025 §4 verification 2, which sends its reader to this file, says
+	// so in those words. The hermetic pins on FoldRefusalsSpool carry the
+	// fold half; what only a cage can answer is that the inner shims write
+	// where CageMounts now points them, and no cage has been asked. It
+	// stays unasked until the off-laptop cleanroom of ranger-base-6mz7:
+	// there is no engine on this box (the `docker` CLI on PATH is a client
+	// with no daemon, which is why this file skips saying `image not built`
+	// instead of naming the ruling — ranger-base-1mu9r).
 	canonical := a.RefusalsLogPath("p")
 	if err := a.FoldRefusalsSpool("p", session); err != nil {
 		t.Fatalf("fold before truncate: %v", err)

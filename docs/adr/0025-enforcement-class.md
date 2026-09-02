@@ -201,10 +201,21 @@ Docker was removed that day (3.8GB wired on a 16GB box) and no engine
 replaced it: no `docker` daemon, no colima/podman/lima/OrbStack/nerdctl,
 no Apple `container`. The `docker` CLI is still on PATH (Homebrew 29.1.1,
 client only), which is why the tier does not announce itself as absent —
-see the residual below. Run here, the whole file skips in ~0.1s per test:
+see the residual below. Run here, the whole file skips in ~0.1s per test —
+all five tests, re-run 2026-09-02 under ranger-base-uuj27:
 
-    RHQ_LIVE_DOCKER=1 go test -timeout 25m ./internal/posse/ -run TestQALiveCage -v
-    --- SKIP: TestQALiveCageEscapeAttemptsOnAWritableRepo (0.12s)
+    RHQ_LIVE_DOCKER=1 go test -timeout 25m ./internal/posse/ \
+      -run 'TestQALive(Cage|Parity|UnknownSocket|RootInside)' -v
+    --- SKIP: TestQALiveUnknownSocketRefusesTheLaunchItself (0.13s)
+    --- SKIP: TestQALiveParityCatchesARealImageWithNoInnerPosse (0.13s)
+    --- SKIP: TestQALiveCageEscapeAttemptsOnAWritableRepo (0.13s)
+    --- SKIP: TestQALiveCageMountBoundaryIsDeepAndTheNotebookSurvives (0.13s)
+    --- SKIP: TestQALiveRootInsideCannotRemountTheBoundaryWritable (0.13s)
+
+The `-run TestQALiveCage` this paragraph carried on 2026-09-01 reaches two
+of those five; the other three are named for what they attack rather than
+for the cage. The conclusion is unchanged — every one of them skips — but
+the earlier command was never evidence about the whole file.
 
 So read the list as: 3 and 5 hold and were run; 1 was run at `shims` and
 not at `container`; 4's *measurement* stands but was made outside a cage;
@@ -231,7 +242,12 @@ not at `container`; 4's *measurement* stands but was made outside a cage;
    ranger-base-6mz7 and then the command above; until then §4's
    truncate behaviour is a design intention with hermetic support, not a
    verified property, and nothing in this tree should be read as saying
-   otherwise.
+   otherwise. The QA file said otherwise until 2026-09-02: its header
+   claimed one 2026-08-27 measurement for the whole file, over a §4 arm
+   written four days later by d67cad9. Fixed under ranger-base-uuj27 —
+   that header now qualifies per arm, and the truncate arm, the escape
+   probes (044bed2) and the staleness guard (d695fa4) each carry a NEVER
+   RUN line where they sit.
 3. Two folds over an unchanged spool append zero new lines; a spool
    truncated below its cursor and refilled to the same size folds as
    tampered (the hash, not the offset, is what catches it). A spool
