@@ -87,10 +87,19 @@ func TestInstanceTagPrefixesLabelOnlyNotSessionName(t *testing.T) {
 
 // The collision the bead exists for, from the second instance's side: the
 // other home's workspace is on this server under ITS tag, and this home's
-// create of the same name goes through. The control below it is the whole
-// point of "positive evidence only" — an untagged namesake still refuses,
-// exactly as it does today, because that one really might be a session
-// somebody can address by that name.
+// create of the same name goes through. The control below it is the guard
+// this must not cost — a workspace wearing the label THIS home would write
+// really is in the way, and still refuses.
+//
+// It used to be an UNTAGGED namesake there, asserted as designed on the
+// rationale that a bare row "really might be a session somebody can address
+// by that name". For a home with a tag set that rationale does not hold: a
+// bare foreign row carries no meta here, this home's create is labelled
+// <tag>/<name>, and afterwards Resolve prefers this home's own non-foreign
+// row. It was a conservative refusal, not a necessary one, and its cost was
+// that the second, TAGGED instance was the one that could not create
+// (ranger-base-rcwx). The untagged home's bare namesake still refuses, and
+// is pinned with the rest in instancecollide_qa_test.go.
 func TestInstanceTagFreesAForeignNamesake(t *testing.T) {
 	b, fake := newTestBackend(t)
 	hermeticGen(t)
@@ -130,12 +139,13 @@ func TestInstanceTagFreesAForeignNamesake(t *testing.T) {
 		t.Errorf("want one foreign row under its full label and one of ours, got %+v", sessions)
 	}
 
-	// The control: an UNTAGGED namesake is still in the way. The tag frees
-	// names from other instances, never from this server's plain rows.
+	// The control: a row wearing the label this home WRITES is still in the
+	// way. The tag frees names from other instances' labels, never from the
+	// one string this home's own create would ask herdr for.
 	saveWSTo(t, fake, append(fakeLoadWSFrom(t, fake),
-		fakeWS{WorkspaceID: "w8", Label: "dispatch"}))
+		fakeWS{WorkspaceID: "w8", Label: "fleet/dispatch"}))
 	if err := b.CreateSession(NewSessionOpts{Name: "dispatch", Dir: t.TempDir()}); err == nil {
-		t.Error("a bare foreign namesake should still refuse the create")
+		t.Error("a workspace already wearing this home's own label should refuse the create")
 	}
 }
 

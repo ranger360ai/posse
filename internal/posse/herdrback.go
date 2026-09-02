@@ -1274,10 +1274,58 @@ func (b *HerdrBackend) nameFree(name string) error {
 	if err := nameSyntax(name); err != nil {
 		return err
 	}
-	if b.HasSession(name) {
-		return Die("session '%s' already exists (try: posse attach %s)", name, name)
+	if err := b.nameNotTaken(name); err != nil {
+		return err
 	}
 	return b.mustNotOrphan(name)
+}
+
+// nameNotTaken is the middle guard: is there already a session, or a herdr
+// workspace, that this create would collide with?
+//
+// It asks about the LABEL this create would write, not about every string
+// that answers to <name> (ranger-base-rcwx). HasSession — which this used
+// to be — answers out of Resolve, and Resolve addresses a FOREIGN row by
+// its displayed label, which is the whole label, tag and all. That is right
+// for addressing and wrong for a create: under `instance:` a foreign
+// workspace labelled bare `smoke` cannot be in the way of a create this
+// home labels `work/smoke`, and refusing over it put the collision
+// rangerhq-ouf9 exists to remove back on the one ordering the fleet has —
+// the tagged home meeting an UNTAGGED one's bare row. It also refused the
+// symmetric case in only one direction: the untagged home met `work/smoke`
+// and created happily.
+//
+// So the question is asked as WorkspaceLabel asks it, on this home's own
+// rendering, and the answers line up with what herdr will actually hold:
+//
+//   - one of OUR sessions under this name — the ordinary "already exists";
+//   - a foreign row wearing the exact label this create would write — two
+//     homes sharing a tag, or a row of ours whose meta is gone. Today that
+//     one slipped through (its displayed name is `<tag>/<name>`, which is
+//     not <name>, so Resolve never matched it) and herdr took two
+//     workspaces under one label.
+//
+// The refusal names the collider by its DISPLAYED name, because that is
+// what `posse list` prints and what `posse attach` resolves: for a foreign
+// row under a tag the two differ from the session name, and pointing the
+// operator at the bare name would resolve to nothing.
+func (b *HerdrBackend) nameNotTaken(name string) error {
+	// A listing this pass cannot read decides nothing here — as before,
+	// when Sessions() errors the create goes on to mustNotOrphan, whose
+	// per-id query is the guard on the destructive half, and to a herdr
+	// call that will fail loudly on its own.
+	sessions, err := b.Sessions()
+	if err != nil {
+		return nil
+	}
+	label := b.App.WorkspaceLabel(name)
+	for _, s := range sessions {
+		taken := (!s.Foreign && s.Name == name) || (s.Foreign && s.Name == label)
+		if taken {
+			return Die("session '%s' already exists (try: posse attach %s)", name, s.Name)
+		}
+	}
+	return nil
 }
 
 // launchPlan is everything a launch resolves before herdr is touched: the

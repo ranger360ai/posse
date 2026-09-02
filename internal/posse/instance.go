@@ -102,8 +102,15 @@ func (a *App) WorkspaceLabel(name string) string {
 // running under it, and a home whose whole fleet suddenly failed this
 // predicate would have every session read as a stranger's at once — the
 // very reading notOurWorkspace's "positive evidence only" rule exists to
-// prevent. The cost is nil: this predicate is only ever reached for a
-// workspace whose id a meta of ours already records.
+// prevent. The cost is nil BECAUSE this predicate is only ever reached for
+// a workspace whose id a meta of ours already records — notOurWorkspace is
+// the only caller, and every one of its callers has matched ws.WorkspaceID
+// against m.Workspace first. That sentence used to be a claim rather than a
+// fact: nameWornElsewhere asked it about rows that are explicitly NOT ours
+// by id, so the bare arm read another instance's untagged namesake as this
+// home's own and blocked both a create and a relaunch nothing could
+// obstruct (ranger-base-rcwx). Ask WorkspaceLabel, not this, for any
+// question about a workspace that is not already known to be ours.
 func (a *App) labelWearsName(label, name string) bool {
 	if label == name {
 		return true

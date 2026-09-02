@@ -535,12 +535,24 @@ func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err er
 	if err != nil {
 		return "", "", err
 	}
+	// "Wears its name" is this home's rendering of it, and nothing else
+	// (rangerhq-ouf9, ranger-base-rcwx): the obstacle is a workspace that
+	// will still be holding the label the recreate is about to ask for, so
+	// the string to compare is the one startPlanned would write.
+	//
+	// It asks WorkspaceLabel rather than labelWearsName for the reason that
+	// predicate's own doc gives for its bare arm — "this predicate is only
+	// ever reached for a workspace whose id a meta of ours already records".
+	// That was false here and only here: this loop iterates rows that are
+	// NOT ours by id, so the bare arm read another instance's untagged
+	// namesake as ours, and a tagged home could not relaunch its own
+	// session while an untagged one held the bare name — with the refusal
+	// sending the operator to rename a workspace rangerhq-selx says is not
+	// theirs to touch. Our own pre-tag workspace is spared by the id skip
+	// below, which is what that tolerance was ever needed for here.
+	want := b.App.WorkspaceLabel(m.Name)
 	for _, ws := range wss {
-		// "Wears its name" is this home's rendering of it (rangerhq-ouf9):
-		// a workspace another instance labelled <their tag>/<name> is not
-		// in the way of a create this instance labels <our tag>/<name>, and
-		// refusing over it would block a relaunch nothing can obstruct.
-		if b.App.labelWearsName(ws.Label, m.Name) && ws.WorkspaceID != m.Workspace {
+		if ws.Label == want && ws.WorkspaceID != m.Workspace {
 			return ws.WorkspaceID, ws.Label, nil
 		}
 	}
