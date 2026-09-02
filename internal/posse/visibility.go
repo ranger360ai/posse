@@ -344,6 +344,33 @@ const OpsPatternsConfigKey = "beads_visibility_patterns"
 // than saying so.
 const opsPatternConfigWhy = "an instance-defined class (config " + OpsPatternsConfigKey + ":)"
 
+// OpsInstanceRule is what an instance-pattern refusal names (ADR 0048 D2),
+// and it is a SEPARATE rule from OpsProseRule because the scope is: the
+// shipped list is markdown-only because its own source and tests are
+// byte-identical to a hit, and a wall carrying an allowlist of its own files
+// is a wall with a hole list. That argument is about the shipped list. A
+// config pattern is never in source — it lives in the operator's config and
+// the rendered hook, both untracked — so it shares check 3's property, no
+// legitimate public use anywhere, and gets check 3's scope.
+const OpsInstanceRule = `ADR 0048 D2: an instance-defined visibility class (config ` + OpsPatternsConfigKey + `:)
+is ONE deployment's own confidential vocabulary, and it has no legitimate
+public use anywhere in this repo. Unlike the shipped ops-pattern list, which
+is markdown-only because its own source is byte-identical to a hit, an
+instance pattern is scanned over the ADDED lines of every staged text file,
+code included, and over the ADDED staged paths.`
+
+// OpsInstanceWayThrough is the remedy an instance-pattern refusal names. It
+// covers both arms for the reason IdentityWayThrough does — the arms differ
+// in what they matched, not in what the writer should do about it — and it
+// names the operator's config as the one place the pattern itself can
+// change, because a persona cannot edit it and should not try.
+const OpsInstanceWayThrough = `the way through: the class named above is this instance's vocabulary, not
+this repo's — generalize whatever carries it, or write the content in the
+instance tree and have the public artifact restate the mechanism and cite it
+(ADR 0024 D3, restate-and-cite). For a PATH: name the file without it. If the
+pattern itself is wrong, only the operator can change it (config ` + OpsPatternsConfigKey + `:)
+and re-run posse gates install-hooks.`
+
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so
 // it stays boring on purpose.

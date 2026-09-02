@@ -69,6 +69,15 @@ func newVisWall(t *testing.T) *visWall { return newVisWallNamed(t, "instance") }
 // caller's control, which is the only handle a test has on what the derived
 // literals actually contain — the username and the git email are the box's.
 func newVisWallNamed(t *testing.T, instanceDir string) *visWall {
+	return newVisWallCfg(t, instanceDir, "")
+}
+
+// newVisWallCfg appends extraConfig to the scratch config.yaml before the
+// hooks are stamped from it — the handle a test needs on the OTHER half of
+// what check 3 scans since ADR 0048 D2, this instance's own
+// beads_visibility_patterns:. It is appended, not merged: flat-YAML is
+// line-oriented and the caller writes whole top-level keys.
+func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
@@ -83,7 +92,7 @@ func newVisWallNamed(t *testing.T, instanceDir string) *visWall {
 		instance: filepath.Join(home, instanceDir),
 	}
 	cfg := filepath.Join(home, "config.yaml")
-	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+w.pub+": public\n  "+w.priv+": private\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+w.pub+": public\n  "+w.priv+": private\n"+extraConfig), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a := &App{ConfigPath: cfg}

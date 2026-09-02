@@ -2637,10 +2637,29 @@ func markdownPathspecArgs() string {
 // file, code included, AND over the ADDED staged paths (ranger-base-dmsbu:
 // a filename is where an operator-shaped artifact puts the operator, and a
 // pure move has no added lines at all).
+//
+// ADR 0048 D2 then MOVED this instance's own config patterns
+// (OpsPatternSet.Extra, config beads_visibility_patterns:) out of check 2
+// and into check 3's scope — both its arms — while the shipped OpsPatterns
+// stay markdown-only in check 2. The scope argument ADR 0024 D2 made is
+// about the SHIPPED list, whose own source and tests are byte-identical to
+// hits; a config pattern is never in source, so it has check 3's property
+// and gets check 3's reach. Check 0 still scans the effective list, shipped
+// and configured both: a mis-routed bead is what that arm is for.
 func visibilityGuardBody(visibility string, set OpsPatternSet, identity []IdentityLiteral) string {
-	var checks strings.Builder
+	// TWO LISTS, TWO SCOPES (ADR 0048 D2). Check 0 (the beads jsonl) scans
+	// the effective list — shipped plus this instance's own — because a
+	// mis-routed BEAD is what that arm exists for and its remedy is
+	// bead-shaped. Check 2 (markdown) scans the SHIPPED list alone: an
+	// instance pattern moved to check 3's scope, which already covers every
+	// staged text file including markdown, so leaving it here too would only
+	// scan the same line twice and refuse it with the wrong remedy.
+	var checks, shippedChecks strings.Builder
 	for _, p := range set.All() {
 		fmt.Fprintf(&checks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
+	}
+	for _, p := range OpsPatterns {
+		fmt.Fprintf(&shippedChecks, "    posse_check %s %s\n", shQuote(p.Class), shQuote(p.ERE))
 	}
 	// A config pattern this instance asked for and did not get is recorded
 	// HERE, in the file, for the same reason the stamp is: a human reading
@@ -2797,11 +2816,15 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
     fi
   fi
 
-  # ─── check 2: OpsPatterns over staged markdown (ADR 0024 D2) ────────────
+  # ─── check 2: the SHIPPED OpsPatterns over staged markdown (0024 D2) ────
   # Every staged markdown file, any path — NOT code: the detector's own
   # source and tests are byte-identical to hits (the assembled plan-brand
   # names in visibility.go exist because of exactly this), and a wall
   # carrying an allowlist of its own files is a wall with a hole list.
+  # The SHIPPED list only, since ADR 0048 D2: this instance's own config
+  # patterns are never in source, so they are scanned by check 3 below over
+  # every staged text file and path instead — markdown included, which is
+  # why they are not scanned twice here.
   # WHICH SPELLINGS is MarkdownPathspecs (visibility.go), one Go list
   # rendered here: git pathspec matching is case-sensitive, so the earlier
   # bare '*.md' never saw docs/adr/x.MD or x.markdown at all and one
@@ -2811,7 +2834,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
-` + checks.String() + `    if [ -n "$posse_bad" ]; then
+` + shippedChecks.String() + `    if [ -n "$posse_bad" ]; then
       if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
         echo "posse gate: markdown ops-content scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class prose is going into a public repo" >&2
         if [ -n "$RHQ_GATES_DIR" ]; then
@@ -2836,16 +2859,101 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
       fi
     fi
   fi
-` + identityGuardCheck(identity) + `fi
+` + identityGuardCheck(identity, set.Extra) + `fi
 `
 }
 
-// identityGuardCheck renders check 3's block (ADR 0024 D2): this box's own
-// identity literals against the ADDED LINES of every staged text file, code
-// included, AND against the ADDED staged PATHS. "" when identity is empty —
-// a box that derived nothing (no git email, no .beads/redirect, an unset
-// $HOME) skips the block whole rather than paying for a full `git diff` that
-// can never find a match.
+// visGuardRefusal is check 3's refusal shape, written once. Four call sites
+// — the CONTENT arm and the PATH arm, each for the derived identity
+// literals and for the instance patterns ADR 0048 D2 moved into this scope
+// — differ only in their words, and the words are the part a reader of a
+// refusal needs to be right; the shape (override branch, one refusals.log
+// line each way, exit 1) is the same wall every time.
+//
+// WHAT NEVER GOES IN: a pattern's VALUE. The header line and both
+// refusals.log lines name the CLASS only — an instance pattern IS this
+// deployment's confidential vocabulary (visibility.go, OpsPatternsConfigKey),
+// and refusals.log is a file that outlives the terminal it printed to. The
+// matched text still rides $posse_bad, which is what tells a writer WHICH
+// line to fix; that is the existing behaviour of every arm of this hook.
+type visGuardRefusal struct {
+	badVar       string // the shell variable this arm accumulated its hits in
+	label        string // what refusals.log calls this scan
+	logTail      string // what follows the label on the refusal's log line
+	overrideAt   string // "" or " (staged path)", on the OVERRIDDEN log line
+	overrideWhat string // the clause after the em dash in the override echo
+	header       string // the refusal's first line, after "refused by posse gate: "
+	rule         string // the rule it names — a refusal that names no rule is a regex saying no
+	matched      string // the line that introduces the matched text
+	wayThrough   string
+}
+
+func (r visGuardRefusal) render() string {
+	return `    if [ -n "$` + r.badVar + `" ]; then
+      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+        echo "posse gate: ` + r.label + ` OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ` + r.overrideWhat + `" >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) ` + r.label + ` OVERRIDDEN [prepare-commit-msg hook]` + r.overrideAt + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+      else
+        {
+          echo "refused by posse gate: ` + r.header + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+          echo ` + shQuote(r.rule) + `
+          echo "` + r.matched + `"
+          printf '%s' "$` + r.badVar + `"
+          echo ` + shQuote(r.wayThrough) + `
+          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
+          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
+          echo "  override, operator-typed, never passed by dispatch:"
+          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+        } >&2
+        if [ -n "$RHQ_GATES_DIR" ]; then
+          echo "$(posse_stamp) ` + r.label + ` [prepare-commit-msg hook] ` + r.logTail + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+        fi
+        exit 1
+      fi
+    fi
+`
+}
+
+// The four sets of words check 3's arms refuse in. Named rather than
+// inlined so the two SOURCES are visibly parallel: the same two arms, the
+// same override, the same log shape, a different rule and a different
+// remedy — which is the whole content of ADR 0048 D2.
+const (
+	identityScanLabel = "identity literal scan"
+	instanceScanLabel = "instance pattern scan"
+	stagedPathMatched = "matched in the staged added path(s) — the FILENAME, not its content:"
+	stagedLineMatched = "matched in the staged additions:"
+)
+
+// identityGuardCheck renders check 3's block: this box's own identity
+// literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
+// against the ADDED LINES of every staged text file, code included, AND
+// against the ADDED staged PATHS. "" only when BOTH lists are empty — a box
+// that derived nothing (no git email, no .beads/redirect, an unset $HOME)
+// and configured nothing skips the block whole rather than paying for a
+// full `git diff` that can never find a match. An empty identity with a
+// non-empty pattern list still renders (ADR 0048 D2): the two sources are
+// independent, and the derivation failing is not a reason to stand the
+// operator's own patterns down.
+//
+// WHY THE PATTERNS ARE HERE AND NOT IN CHECK 2 (ADR 0048 D2). ADR 0024 D2
+// kept check 2 off code because the SHIPPED list's own source and tests are
+// byte-identical to hits, and a wall carrying an allowlist of its own files
+// is a wall with a hole list. That argument is about the shipped list. A
+// config pattern is never in source — it lives in the operator's config and
+// in this rendered hook, both untracked — so it shares check 3's property,
+// no legitimate public use anywhere, and belongs in check 3's scope. Five
+// of the seven recurrences ADR 0048 measures were in .go files, which check
+// 2 does not read.
+//
+// TWO SOURCES, ONE SCAN, TWO REFUSALS. Both lists run over the SAME
+// $posse_added and the same per-path loop — one `git diff`, one listing —
+// but each accumulates into its own variable and refuses in its own words.
+// Merging them would be shorter and would tell a writer that an instance
+// codename in a comment is "an operator identity literal", which is a
+// refusal that names the wrong rule and sends them to the wrong remedy.
 //
 // TWO ARMS, ONE LITERAL SET (ranger-base-dmsbu, from ranger-base-wlsv1).
 // "ADDED lines" was the mechanism, not the intent: a filename is exactly
@@ -2866,63 +2974,114 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // hit from a content hit for the reader — is to run the same matcher over
 // one path at a time. Same rendered literal set, same posse_check, same
 // override, same refusals.log shape, public-stamped repositories only.
-func identityGuardCheck(identity []IdentityLiteral) string {
-	if len(identity) == 0 {
+func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
+	if len(identity) == 0 && len(extra) == 0 {
 		return ""
 	}
-	checks := func(indent string) string {
+	// Identity literals are regexp-ESCAPED fixed strings; an instance
+	// pattern is already an ERE in the two-reader dialect (validateOpsERE).
+	// Both end up as one posse_check call, which is why the same shell
+	// function serves checks 0, 2 and 3.
+	idChecks := func(indent string) string {
 		var b strings.Builder
 		for _, lit := range identity {
 			fmt.Fprintf(&b, "%sposse_check %s %s\n", indent, shQuote(lit.Class), shQuote(identityLiteralERE(lit.Value)))
 		}
 		return b.String()
 	}
-	identityChecks := checks("    ")
+	exChecks := func(indent string) string {
+		var b strings.Builder
+		for _, p := range extra {
+			fmt.Fprintf(&b, "%sposse_check %s %s\n", indent, shQuote(p.Class), shQuote(p.ERE))
+		}
+		return b.String()
+	}
+
+	identityContent := visGuardRefusal{
+		badVar:       "posse_bad",
+		label:        identityScanLabel,
+		logTail:      "(public repo)",
+		overrideWhat: "an operator identifier is going into a public repo",
+		header:       "an operator identity literal in a staged file",
+		rule:         IdentityRule,
+		matched:      stagedLineMatched,
+		wayThrough:   IdentityWayThrough,
+	}
+	identityPath := visGuardRefusal{
+		badVar:       "posse_ibad",
+		label:        identityScanLabel,
+		logTail:      "(public repo, staged path)",
+		overrideAt:   " (staged path)",
+		overrideWhat: "an operator identifier is going into a public repo in a staged PATH",
+		header:       "an operator identity literal in a staged PATH",
+		rule:         IdentityRule,
+		matched:      stagedPathMatched,
+		wayThrough:   IdentityWayThrough,
+	}
+	instanceContent := visGuardRefusal{
+		badVar:       "posse_bad",
+		label:        instanceScanLabel,
+		logTail:      "(public repo)",
+		overrideWhat: "instance-defined content is going into a public repo",
+		header:       "an instance-defined visibility class in a staged file",
+		rule:         OpsInstanceRule,
+		matched:      stagedLineMatched,
+		wayThrough:   OpsInstanceWayThrough,
+	}
+	instancePath := visGuardRefusal{
+		badVar:       "posse_cbad",
+		label:        instanceScanLabel,
+		logTail:      "(public repo, staged path)",
+		overrideAt:   " (staged path)",
+		overrideWhat: "instance-defined content is going into a public repo in a staged PATH",
+		header:       "an instance-defined visibility class in a staged PATH",
+		rule:         OpsInstanceRule,
+		matched:      stagedPathMatched,
+		wayThrough:   OpsInstanceWayThrough,
+	}
+
+	// The content arm: one diff, then each source's own reset, checks and
+	// refusal. The order is derived-then-configured, the order All() uses
+	// and the order a hook file reads in.
+	var content, loop, pathRefusals, pathInit strings.Builder
+	if len(identity) > 0 {
+		content.WriteString("    posse_bad=''\n" + idChecks("    ") + identityContent.render())
+		loop.WriteString("      posse_bad=''\n" + idChecks("      ") + pathAccum("posse_ibad"))
+		pathRefusals.WriteString(identityPath.render())
+		pathInit.WriteString("    posse_ibad=''\n")
+	}
+	if len(extra) > 0 {
+		content.WriteString("    posse_bad=''\n" + exChecks("    ") + instanceContent.render())
+		loop.WriteString("      posse_bad=''\n" + exChecks("      ") + pathAccum("posse_cbad"))
+		pathRefusals.WriteString(instancePath.render())
+		pathInit.WriteString("    posse_cbad=''\n")
+	}
+
 	return `
-  # ─── check 3: identity literals (ADR 0024 D2) ───────────────────────────
-  # Derived from THIS box at render time — whoami, git config user.email,
-  # and the instance repo path (dirname of .beads/redirect's target, both
-  # ~-relative and absolute) — never a shipped constant, never a commit:
-  # only this rendered hook file carries them (identityGuardCheck's own
-  # caller, DeriveIdentityLiterals, visibility.go). Rendered as
-  # regexp-escaped fixed strings, so the SAME matcher checks 0 and 2 already
-  # call below covers this too. Scanned over the ADDED lines of ALL
-  # staged TEXT files, any path, code included — unlike check 2, which is
-  # markdown-only: these literals have no legitimate public use anywhere,
-  # so the detector-source residual check 2 accepts does not apply here.
+  # ─── check 3: identity literals and instance patterns ───────────────────
+  # (ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones.)
+  # The literals are derived from THIS box at render time — whoami, git
+  # config user.email, and the instance repo path (dirname of
+  # .beads/redirect's target, both ~-relative and absolute) — never a
+  # shipped constant, never a commit: only this rendered hook file carries
+  # them (identityGuardCheck's own caller, DeriveIdentityLiterals,
+  # visibility.go). The instance patterns come from the operator's config
+  # (` + OpsPatternsConfigKey + `:) and are untracked for the same reason.
+  # Rendered as regexp-escaped fixed strings and as EREs respectively, so
+  # the SAME matcher checks 0 and 2 already call below covers this too.
+  # Scanned over the ADDED lines of ALL staged TEXT files, any path, code
+  # included — unlike check 2, which is markdown-only: neither an operator's
+  # identity nor one instance's confidential vocabulary has a legitimate
+  # public use anywhere, so the detector-source residual check 2 accepts
+  # does not apply here.
   # Binary files are already excluded: git diff with no --text emits
   # "Binary files ... differ" for them, never a '+' line.
   posse_added=$(git diff --cached -U0 "$posse_base" 2>/dev/null |
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
-    posse_bad=''
-` + identityChecks + `    if [ -n "$posse_bad" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: identity literal scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — an operator identifier is going into a public repo" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) identity literal scan OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: an operator identity literal in a staged file — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(IdentityRule) + `
-          echo "matched in the staged additions:"
-          printf '%s' "$posse_bad"
-          echo ` + shQuote(IdentityWayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) identity literal scan [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
-      fi
-    fi
-  fi
+` + content.String() + `  fi
 
-  # ─── check 3, second arm: the same literals over ADDED staged PATHS ─────
+  # ─── check 3, second arm: the same patterns over ADDED staged PATHS ─────
   # Every flag below is load-bearing and measured (git 2.50.1):
   #   --no-renames  with move detection ON — git's default since 2.9 —
   #                 --diff-filter=A prints NOTHING for a pure move, so the
@@ -2950,46 +3109,27 @@ func identityGuardCheck(identity []IdentityLiteral) string {
   # literal contains a newline, so the split can only over-match.
   posse_ipaths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter=A "$posse_base" 2>/dev/null)
   if [ -n "$posse_ipaths" ]; then
-    posse_ibad=''
-    set -f
+` + pathInit.String() + `    set -f
     posse_iifs=$IFS
     IFS='
 '
     for posse_ip in $posse_ipaths; do
       posse_added=$posse_ip
-      posse_bad=''
-` + checks("      ") + `      if [ -n "$posse_bad" ]; then
-        posse_ibad="$posse_ibad  $posse_ip
-$posse_bad"
-      fi
-    done
+` + loop.String() + `    done
     IFS=$posse_iifs
     set +f
-    if [ -n "$posse_ibad" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: identity literal scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — an operator identifier is going into a public repo in a staged PATH" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) identity literal scan OVERRIDDEN [prepare-commit-msg hook] (staged path)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: an operator identity literal in a staged PATH — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(IdentityRule) + `
-          echo "matched in the staged added path(s) — the FILENAME, not its content:"
-          printf '%s' "$posse_ibad"
-          echo ` + shQuote(IdentityWayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) identity literal scan [prepare-commit-msg hook] (public repo, staged path)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
+` + pathRefusals.String() + `  fi
+`
+}
+
+// pathAccum is how one path's hits are folded into an arm's accumulator:
+// posse_check keeps the class and the matched text but not the subject, so
+// the path is prepended here, once per source.
+func pathAccum(bad string) string {
+	return `      if [ -n "$posse_bad" ]; then
+        ` + bad + `="$` + bad + `  $posse_ip
+$posse_bad"
       fi
-    fi
-  fi
 `
 }
 

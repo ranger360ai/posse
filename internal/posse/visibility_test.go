@@ -759,18 +759,31 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	if strings.Contains(hook, "Northwind") {
 		t.Error("the hook recorded a REFUSED entry's value — the class is the record, the value is the secret")
 	}
-	// The list is stamped twice: once for the beads-jsonl arm (check 0), once
-	// for the markdown-prose arm (ADR 0024 D2 check 2) — same list, two
-	// call sites (visibilityGuardBody). The identity literals are stamped
-	// twice as well, once per check-3 arm: the ADDED LINES of every staged
-	// text file, and the ADDED staged PATHS (ranger-base-dmsbu). Same
-	// rendered literal set, same posse_check, two call sites — the path arm
-	// renders inside a per-path loop because posse_check keeps the class and
-	// the matched text but not the subject, and the refusal has to name the
-	// offending path.
+	// FOUR CALL SITES, AND WHICH LIST EACH ONE GETS (ADR 0048 D2, which
+	// moved the instance patterns and is what this count now measures):
+	//   check 0, the beads jsonl    shipped + this instance's (a mis-routed
+	//                               BEAD is what that arm is for)
+	//   check 2, staged markdown    the SHIPPED list alone
+	//   check 3, added LINES        identity literals + this instance's
+	//   check 3, added PATHS        identity literals + this instance's
+	// One accepted config pattern here, so: shipped twice, the instance's
+	// three times, the identity literals twice. The path arm renders inside
+	// a per-path loop because posse_check keeps the class and the matched
+	// text but not the subject, and the refusal has to name the path.
 	identityCalls := 2 * len(testIdentity(t, pub))
-	if want, got := 2*(len(OpsPatterns)+1)+identityCalls, strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want shipped+1 checks stamped twice plus %d identity checks (%d), got %d", identityCalls, want, got)
+	if want, got := 2*len(OpsPatterns)+3+identityCalls, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want the shipped list twice, the instance's pattern three times and %d identity checks (%d), got %d", identityCalls, want, got)
+	}
+	// And the instance's pattern is NOT stamped into check 2's markdown
+	// scan any more: check 3 below already reads every staged text file,
+	// markdown included, so a second stamp there would scan the same line
+	// twice and refuse it with check 2's remedy instead of ADR 0048's.
+	if md := strings.Index(hook, "check 2: the SHIPPED OpsPatterns"); md < 0 {
+		t.Error("check 2's header is gone — this count no longer knows what it is counting")
+	} else if c3 := strings.Index(hook, "check 3: identity literals and instance patterns"); c3 < md {
+		t.Error("fixture premise: check 2 must render before check 3")
+	} else if strings.Contains(hook[md:c3], "posse_check 'client-acme'") {
+		t.Error("the instance pattern is still stamped into check 2 (ADR 0048 D2 moved it to check 3)")
 	}
 
 	// And the launch-time identity probe must agree with the install, or an

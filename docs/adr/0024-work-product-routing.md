@@ -174,8 +174,11 @@ DIRECTION, AGENTS with the D1 content classes:
   by construction, mild friction accepted.
 - Residuals, stated: ops-class prose in code comments is unscanned
   (detector-source problem); non-markdown prose is unscanned by check 2
-  (check 3 still covers it); a determined paraphrase walks past any
-  regex. Check 3 gained a path arm and check 2 deliberately did not: a
+  (check 3 still covers it) — and since ADR 0048 D2 this instance's own
+  config patterns are scanned everywhere, moved out of check 2 into check
+  3's scope, because the detector-source argument is about the SHIPPED
+  list and a config pattern is never in source; a determined paraphrase
+  walks past any regex. Check 3 gained a path arm and check 2 deliberately did not: a
   runbook NAMED after a plan brand still passes, because that class has
   the detector-source residual check 3's literals do not, and its
   false-positive number over a path list is unmeasured. The boundary

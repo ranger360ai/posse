@@ -4092,7 +4092,11 @@ is not there is worse than no pattern. Rejection reasons never echo the
 value, only the class name, so keep the class name something you are willing
 to read in a terminal. The patterns live in the operator's config and get
 stamped into `.git/hooks/`, both untracked: the vocabulary never enters the
-public repo, which is the point of the key.
+public repo, which is the point of the key. Their SCOPE is wider than the
+shipped list's since ADR 0048: an instance pattern is scanned over the added
+lines of every staged text file, code included, and over every added staged
+path — the shipped list stays markdown-only, because its own source is
+byte-identical to a hit and a config pattern is never in source.
 
 **And it is still a lint, not a boundary** — same class as the allowlist,
 and the honesty is load-bearing here. An instance pattern is friction that

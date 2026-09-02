@@ -592,6 +592,17 @@ func TestSeedScriptPreflightPlantedBeadsIsRed(t *testing.T) {
 // surface. The seed preflight prints that as INFO, not a check, so a later
 // commit can put the name back and still print PREFLIGHT GREEN. This pin
 // is the check. Needle is assembled so this file is not itself a hit.
+//
+// AND IT IS THE BACKSTOP, NOT THE WALL (ADR 0048 D3). It walks the working
+// tree and it runs when someone runs this package — after the commit is on
+// public main, which is why seven recurrences each closed as a reword. The
+// commit-time arm is an instance pattern under config
+// beads_visibility_patterns:, scanned over every staged text file and every
+// added path (ADR 0048 D1/D2, built in ranger-base-uzgkz). This pin stays
+// because it is the only guard on a box whose config lacks that line, on a
+// commit made under the typed override, and on a re-render nobody ran — and
+// its failure text says so, so an eighth red is read as "the wall is not
+// stamped here" rather than as a reword ticket.
 func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 	t.Parallel()
 	if qspSeedScript(t) != "" {
@@ -639,7 +650,9 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(hits) > 0 {
-		t.Fatalf("%d real %s token(s) on the seed surface (7xpn AC7 is 0; markers of the form %s-<id> stay):\n  %s",
-			len(hits), needle, needle, strings.Join(hits, "\n  "))
+		t.Fatalf("%d real %s token(s) on the seed surface (7xpn AC7 is 0; markers of the form %s-<id> stay).\n"+
+			"The wall arm is an instance pattern under config %s: (ADR 0048); this pin is the post-landing backstop —\n"+
+			"a red here means the commit-time refusal did not fire (unstamped box, typed override, or a re-render nobody ran), not that this line needs an eighth rewording.\n  %s",
+			len(hits), needle, needle, OpsPatternsConfigKey, strings.Join(hits, "\n  "))
 	}
 }
