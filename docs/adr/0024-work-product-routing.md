@@ -175,10 +175,17 @@ DIRECTION, AGENTS with the D1 content classes:
 - Residuals, stated: ops-class prose in code comments is unscanned
   (detector-source problem); non-markdown prose is unscanned by check 2
   (check 3 still covers it); a determined paraphrase walks past any
-  regex. The boundary remains the routing rule plus repo visibility.
+  regex. Check 3 gained a path arm and check 2 deliberately did not: a
+  runbook NAMED after a plan brand still passes, because that class has
+  the detector-source residual check 3's literals do not, and its
+  false-positive number over a path list is unmeasured. The boundary
+  remains the routing rule plus repo visibility.
 - The identity-literal false-positive rate is ASSUMED low (the literals
   are paths and an e-mail); the build bead's done-when includes the hrz
   method — measure against the post-scrub tree and require zero hits.
+  MEASURED for the path arm at ranger-base-dmsbu: all four literal forms
+  over this repo's full tracked path list, zero hits, and kept as a
+  standing pin rather than a one-shot count.
 
 ## Alternatives rejected
 
