@@ -177,8 +177,20 @@ func TestCreateSessionHoldsTheLaunchLock(t *testing.T) {
 }
 
 // And a create INSIDE a launcher's lock — LaunchBead's own shape — must not
-// wait on the lock its own process holds. flock would block forever there,
-// which is a dispatch pass that hangs on its first launch.
+// wait on the lock it is already inside. flock is per open file description,
+// so re-taking it would block forever: a dispatch pass that hangs on its
+// first launch.
+//
+// What says it is inside is the lock itself, handed down (createSession's
+// held). This used to be a process-wide depth counter, which answered a
+// question about the PROCESS where the claim is about the CALLER — see the
+// sibling below, which is the case that told the two apart
+// (ranger-base-deaz).
+//
+// The goroutine and the select are a watchdog, so a regression is a named
+// failure rather than a suite that hangs to the CI timeout; production's
+// nested create runs on the goroutine that took the lock. The token is what
+// is under test, not the stack it arrives on.
 func TestCreateSessionInsideAHeldLaunchLockDoesNotDeadlock(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", raceSock)
 	b, _ := newTestBackend(t)
@@ -190,16 +202,67 @@ func TestCreateSessionInsideAHeldLaunchLockDoesNotDeadlock(t *testing.T) {
 	defer lock.Release()
 
 	done := make(chan error, 1)
-	go func() { done <- b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir()}) }()
+	go func() { done <- b.createSession(NewSessionOpts{Name: "s1", Dir: t.TempDir()}, lock) }()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-time.After(90 * time.Second):
-		t.Fatal("CreateSession blocked on the launcher lock its own process holds — a dispatch pass would hang on its first launch")
+		t.Fatal("a create handed the launcher lock it runs inside waited for that lock — a dispatch pass would hang on its first launch")
 	}
 	if _, ok := b.readMeta("s1"); !ok {
 		t.Error("no meta written for a session created under a held launcher lock")
+	}
+}
+
+// The other half of the same question, and the one the depth counter got
+// wrong: a create on a goroutine that holds NOTHING, in a process where
+// another goroutine holds the launcher lock, must WAIT.
+//
+// This is not hypothetical shape. cmd/posse/cockpit.go runs LaunchBead —
+// which holds the lock for its whole body — on its own goroutine, while the
+// cockpit's select loop lists on another. Under the process-wide depth the
+// listener's process "held the lock", so any create it grew would have read
+// a critical section it was not in as its own and run nameFree/writeMeta
+// inside it: rangerhq-3a5t's window, reopened (ranger-base-deaz).
+//
+// Discriminating in both directions: the create must not finish while the
+// lock is held, and it must finish once it is released. Pre-fix the first
+// arm failed in 0.03s.
+func TestCreateOnAnotherGoroutineWaitsForTheLauncherLock(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", raceSock)
+	b, _ := newTestBackend(t)
+
+	lock, err := lockLaunches(b.App, io.Discard) // goroutine M takes it
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release() // idempotent; the release below is the real one
+
+	done := make(chan error, 1)
+	// Goroutine B holds nothing. Nothing it can read tells it M's lock is
+	// not its own except that it was handed none.
+	go func() { done <- b.CreateSession(NewSessionOpts{Name: "b1", Dir: t.TempDir()}) }()
+
+	select {
+	case err := <-done:
+		_, wrote := b.readMeta("b1")
+		t.Fatalf("a create on a goroutine holding NO lock finished while another goroutine of this process held the launcher lock (err %v, meta written %v) — its nameFree and writeMeta ran inside a critical section it was not in (rangerhq-3a5t, ranger-base-deaz)", err, wrote)
+	case <-time.After(2 * time.Second):
+		// Waiting, which is the whole claim.
+	}
+
+	lock.Release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("the create never finished after the launcher lock was released — it is waiting on something else")
+	}
+	if _, ok := b.readMeta("b1"); !ok {
+		t.Error("no meta written by the create that waited for the lock")
 	}
 }

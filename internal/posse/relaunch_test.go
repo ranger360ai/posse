@@ -521,7 +521,7 @@ func TestRelaunchProvesDeathBeforeClearingAMeta(t *testing.T) {
 		b, fake, _ := setup(t)
 		m, _ := b.readMeta("s1")
 		saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "mine"}})
-		b.keepRecipe(m)
+		b.keepRecipe(m, nil)
 		os.Remove(filepath.Join(fake, "calls.log"))
 
 		var out strings.Builder
@@ -626,7 +626,7 @@ func TestKeepRecipeWillNotBlankARecordItCannotProveDead(t *testing.T) {
 	mustCreate(t, b, NewSessionOpts{Name: "s1", Cmd: "claude"})
 	m := metaOf(t, b, "s1")
 
-	if kept := b.keepRecipe(m); kept != m.Workspace {
+	if kept := b.keepRecipe(m, nil); kept != m.Workspace {
 		t.Errorf("the rollback did not report the live workspace it must not blank: %q, want %s", kept, m.Workspace)
 	}
 	if m2 := metaOf(t, b, "s1"); m2.Workspace != m.Workspace || m2.Pane != m.Pane {
@@ -642,7 +642,7 @@ func TestKeepRecipeWillNotBlankARecordItCannotProveDead(t *testing.T) {
 	if err := b.KillSession("s1"); err != nil {
 		t.Fatal(err)
 	}
-	if kept := b.keepRecipe(m); kept != "" {
+	if kept := b.keepRecipe(m, nil); kept != "" {
 		t.Fatalf("a rollback after a real kill must write the recipe, kept %q", kept)
 	}
 	m2 := metaOf(t, b, "s1")

@@ -220,7 +220,7 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 	// `prompt: argv` runtime, waits for a herdr state it can NAME, and
 	// claims the bead.
 	fired := time.Now()
-	p, err := d.fire(is, persona, session, name, "standard", "walk", false)
+	p, err := d.fire(is, persona, session, name, "standard", "walk", false, nil)
 	t.Logf("fire: %s\n%s", time.Since(fired).Round(time.Second), out.String())
 	if err != nil {
 		sheet.score("launch", walkBroken, "dispatch could not launch a %s session: %v", name, err)

@@ -153,15 +153,22 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	// is either finished before the kill (holdsRecorded and mustNotOrphan
 	// both read it) or has not begun.
 	//
-	// underLaunchLock and not lockLaunches: a relaunch reached from inside a
-	// pass that already holds the lock must run, not deadlock on its own
-	// open file description.
-	return underLaunchLock(b.App, w, func() error { return b.replace(w, m, recreate, plan) })
+	// underLaunchLock and not lockLaunches: this is the head of a nesting
+	// chain — replace's own steps each go through it again — and the lock
+	// taken here is handed down so every one of them runs under this one
+	// rather than deadlocking on its own open file description. This entry
+	// holds nothing itself (`posse relaunch` is its only caller), so it
+	// passes nil and takes it.
+	return underLaunchLock(b.App, w, nil, func(lock *LaunchLock) error { return b.replace(w, m, recreate, plan, lock) })
 }
 
 // replace is relaunch's destructive half — kill, recreate, and the rollback
-// between them — and it runs under the launcher lock its caller took.
-func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpts, plan *launchPlan) error {
+// between them — and it runs under the launcher lock its caller took, which
+// it is handed so it can hand it on: every step below that serializes
+// (closeRecorded, the recreate, keepRecipe) is inside this same critical
+// section, and each has to be told so rather than inferring it from the
+// process (ranger-base-deaz).
+func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpts, plan *launchPlan, held *LaunchLock) error {
 	name := m.Name
 	// The preflight's name proof, re-asked here — reclaim's and
 	// clearDeadMeta's pattern applied to the one obstacle that lives in
@@ -197,7 +204,7 @@ func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpt
 	// The kill's own unlink (closeRecorded: CloseWorkspace, then remove the
 	// meta) is a check-then-act over the meta dir too, and it is covered by
 	// being here: no create for this name can land between the two.
-	if err := b.closeRecorded(m); err != nil {
+	if err := b.closeRecorded(m, held); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "killed %s\n", name)
@@ -213,7 +220,7 @@ func (b *HerdrBackend) replace(w io.Writer, m *HerdrMeta, recreate NewSessionOpt
 				"  or rebuild it by hand:\n    %s",
 				name, ws, err, name, RecoverCommand(m))
 		}
-		if kept := b.keepRecipe(m); kept != "" {
+		if kept := b.keepRecipe(m, held); kept != "" {
 			// The record on disk still names a workspace this pass could not
 			// prove dead, so it was left as it stands rather than blanked —
 			// and the workspace id is the one thing the operator needs.
@@ -351,17 +358,19 @@ func (b *HerdrBackend) recreateSession(o NewSessionOpts, p *launchPlan) (string,
 // underLaunchLock and not tryLockLaunches, which is where this parts from
 // the prune: contention there means "spare the file", a safe answer a
 // listing can give. Here the caller is mid-relaunch and its own tail holds
-// the lock, so treating this process's lock as contention would refuse
-// every relaunch. Nesting runs the body directly.
+// the lock, so treating that lock as contention would refuse every
+// relaunch. The caller hands it down (held) and the body runs directly
+// under it; a caller that hands nothing down waits, because a lock this
+// call did not receive is not this call's.
 //
 // The outer proof is kept, and is not the guard: it is the fail-fast, so a
 // relaunch reached with the lock free is refused without first queueing
 // behind a firing pass. What decides is the one inside.
-func (b *HerdrBackend) clearDeadMeta(name string) error {
+func (b *HerdrBackend) clearDeadMeta(name string, held *LaunchLock) error {
 	if err := b.provenClearable(name); err != nil {
 		return err
 	}
-	return underLaunchLock(b.App, b.warnWriter(), func() error {
+	return underLaunchLock(b.App, b.warnWriter(), held, func(*LaunchLock) error {
 		if err := b.provenClearable(name); err != nil {
 			return err
 		}
@@ -409,14 +418,14 @@ func (b *HerdrBackend) provenClearable(name string) error {
 // is recorded. So it goes under the launcher lock with the proof re-asked
 // inside, the same shape as clearDeadMeta, and what it may not blank it
 // names to the caller instead.
-func (b *HerdrBackend) keepRecipe(m *HerdrMeta) (kept string) {
+func (b *HerdrBackend) keepRecipe(m *HerdrMeta, held *LaunchLock) (kept string) {
 	if err := b.mustNotOrphan(m.Name); err != nil {
 		return b.recordedWorkspace(m)
 	}
 	// Best effort to the end: a lock this pass cannot take is not a reason to
 	// replace the error the operator needs to read, and a recipe that was not
 	// written costs the retry `posse relaunch` already is.
-	_ = underLaunchLock(b.App, b.warnWriter(), func() error {
+	_ = underLaunchLock(b.App, b.warnWriter(), held, func(*LaunchLock) error {
 		if err := b.mustNotOrphan(m.Name); err != nil {
 			kept = b.recordedWorkspace(m)
 			return nil
@@ -462,12 +471,12 @@ func (b *HerdrBackend) recordedWorkspace(m *HerdrMeta) string {
 // it does not — genuinely gone, hidden behind the snapshot, held by a
 // stranger, or unlistable — nothing is closed by id, and what may be done
 // to the record is clearDeadMeta's call, which proves death or refuses.
-func (b *HerdrBackend) closeRecorded(m *HerdrMeta) error {
+func (b *HerdrBackend) closeRecorded(m *HerdrMeta, held *LaunchLock) error {
 	ours, err := b.holdsRecorded(m)
 	if err != nil || !ours {
 		// A listing this pass could not read decides nothing either: the
 		// guard asks again and turns it into the refusal that says so.
-		return b.clearDeadMeta(m.Name)
+		return b.clearDeadMeta(m.Name, held)
 	}
 	if err := b.H.CloseWorkspace(m.Workspace); err != nil {
 		return err

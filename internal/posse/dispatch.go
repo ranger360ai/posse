@@ -2105,8 +2105,14 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 // sessFail is its companion under ADR 0013 §2's ceiling — session failures
 // per slot, same instance, same lifetime, same lock.
 func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]bool, sessFail map[string]int) (int, []*pendingBead, int, error) {
+	// The lock this loop fires under, handed to every launch it makes: a
+	// create nested inside this critical section has to be told which lock
+	// it is in, not left to infer it from the process (ranger-base-deaz).
+	// A --dry-run pass has none and launches nothing.
+	var lock *LaunchLock
 	if !d.DryRun {
-		lock, err := lockLaunches(d.App, d.Out)
+		var err error
+		lock, err = lockLaunches(d.App, d.Out)
 		if err != nil {
 			return 0, nil, 0, err
 		}
@@ -2434,7 +2440,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			d.printf("· %-14s %s\n", is.ID, why)
 		}
 		attempts++
-		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved)
+		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved, lock)
 		if err != nil {
 			d.printf("✗ %-14s %v\n", is.ID, err)
 			// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
@@ -2647,7 +2653,10 @@ type promptResult struct {
 // overflowed says the plan guard moved this bead to a second pool (ADR
 // 0010) — passed rather than inferred from the runtime, because a session
 // found on the overflow pool is not a move THIS pass made.
-func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, overflowed bool) (*pendingBead, error) {
+//
+// held is fireLoop's launcher lock, carried down to the create (ADR 0011 §1,
+// ranger-base-deaz).
+func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, overflowed bool, held *LaunchLock) (*pendingBead, error) {
 	ag, _ := d.App.LoadAgent(persona)
 	// The work prompt, assembled lazily: on the argv path launchSession
 	// needs it BEFORE the session exists, and on the typed path it is built
@@ -2660,7 +2669,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	prompt := func() string {
 		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag))
 	}
-	l, err := d.launchSession(is, persona, session, runtime, tier, prompt)
+	l, err := d.launchSession(is, persona, session, runtime, tier, prompt, held)
 	if err != nil {
 		return nil, err
 	}
@@ -3274,7 +3283,7 @@ func (d *Dispatcher) launchTag(runtime, tier string) string {
 // moved this bead (ADR 0010). It is passed explicitly rather than resolved
 // here so that everything downstream of the decision — the meta, the prompt
 // header, the parity check — names the runtime the session actually got.
-func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string) (launched, error) {
+func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock) (launched, error) {
 	s, resolveErr := d.HB.Resolve(session)
 	// The backstop under every dispatch path (rangerhq-ynx8): a foreign row
 	// is not this persona's session, whatever it is labelled. Refused rather
@@ -3320,7 +3329,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// because the launch line has already been typed.
 	if resolveErr != nil && prompt != nil {
 		if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PromptMode() == PromptArgv {
-			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt)
+			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt, held)
 		}
 	}
 	if resolveErr == nil {
@@ -3332,8 +3341,8 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	}
 	if resolveErr != nil {
 		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
-		if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}); err != nil {
+		if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
+			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}, held); err != nil {
 			return launched{}, err
 		}
 		d.noteTree(is.ID, session)
@@ -3404,7 +3413,7 @@ type launched struct {
 // prompt gets on the typed path and for the same reason: the claim is made
 // before the risky step so the race loses cleanly, and the price of that is
 // handing the bead back when the risky step does not happen.
-func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, tier string, prompt func() string) (launched, error) {
+func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock) (launched, error) {
 	resumed, err := d.claim(is, persona)
 	if err != nil {
 		return launched{}, err
@@ -3414,8 +3423,8 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
-	if err := d.HB.CreateSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}); err != nil {
+	if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}, held); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)
@@ -3683,7 +3692,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	prompt := func() string {
 		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, session, ag))
 	}
-	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt)
+	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt, lock)
 	if err != nil {
 		return "", err
 	}

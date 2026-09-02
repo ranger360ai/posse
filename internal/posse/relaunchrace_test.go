@@ -134,7 +134,7 @@ func TestKeepRecipeDoesNotBlankAMetaACreateRewroteUnderIt(t *testing.T) {
 	m := metaOf(t, b, "s1")
 	armCreateInterleave(t, b, fake, "s1", "w404", "w9", dir)
 
-	kept := b.keepRecipe(m)
+	kept := b.keepRecipe(m, nil)
 
 	cur := metaOf(t, b, "s1")
 	if cur.Workspace != "w9" {
@@ -158,7 +158,7 @@ func TestKeepRecipeStillWritesTheRecipeBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if kept := b.keepRecipe(m); kept != "" {
+	if kept := b.keepRecipe(m, nil); kept != "" {
 		t.Fatalf("keepRecipe after a real kill must write, kept %q", kept)
 	}
 	cur := metaOf(t, b, "s1")

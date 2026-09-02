@@ -1880,7 +1880,9 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 
 // CreateSession mirrors the tmux CreateSession contract (defaults, env sets,
 // persona precedence) on the herdr backend: guard the name, resolve the
-// launch, start it.
+// launch, start it. This is the entry for a caller that holds no launcher
+// lock — `posse new`, LaunchRecipe, a relaunch's own tail; a launcher that
+// already holds one calls createSession and hands it over.
 // The whole body runs under the launcher lock (ADR 0011 §1). nameFree's
 // mustNotOrphan is the check and startPlanned's writeMeta is the act, and
 // mustNotOrphan's own doc named the gap between them as the hole it could
@@ -1892,6 +1894,14 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 // runs the body directly; from `posse new` it is taken here, which makes
 // `posse new` the launcher ADR 0011 §1 always said it was.
 func (b *HerdrBackend) CreateSession(o NewSessionOpts) error {
+	return b.createSession(o, nil)
+}
+
+// createSession is CreateSession told which lock it is inside. held is the
+// launcher lock the CALLER holds, or nil for one that holds none — including
+// a caller on a goroutine of a process whose lock is held somewhere else,
+// which waits for it rather than reading it as its own (ranger-base-deaz).
+func (b *HerdrBackend) createSession(o NewSessionOpts, held *LaunchLock) error {
 	// The name's SYNTAX is checked outside the lock, and it is the one
 	// check that can be: it reads no state, so no concurrent actor can
 	// change its answer. Taking the launcher lock to reject `posse new -x`
@@ -1901,7 +1911,7 @@ func (b *HerdrBackend) CreateSession(o NewSessionOpts) error {
 	if err := nameSyntax(o.Name); err != nil {
 		return err
 	}
-	return underLaunchLock(b.App, b.warnWriter(), func() error {
+	return underLaunchLock(b.App, b.warnWriter(), held, func(*LaunchLock) error {
 		if err := b.nameFree(o.Name); err != nil {
 			return err
 		}

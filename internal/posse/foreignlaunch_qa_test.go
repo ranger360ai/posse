@@ -122,7 +122,7 @@ func TestLaunchSessionRefusesAForeignRowRatherThanCreating(t *testing.T) {
 	foreignHolder(t, fake, "squatter")
 
 	prompt := func() string { return "work prompt" }
-	if _, err := d.launchSession(is, "ranger", "squatter", "", "fast", prompt); err == nil ||
+	if _, err := d.launchSession(is, "ranger", "squatter", "", "fast", prompt, nil); err == nil ||
 		!strings.Contains(err.Error(), "held by a foreign workspace squatter") {
 		t.Fatalf("want a foreign-hold refusal, got %v", err)
 	}

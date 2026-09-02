@@ -200,7 +200,7 @@ func TestQAKeptRecipeRefusesWhileAStrangerWearsTheName(t *testing.T) {
 	if err := b.KillSession("s1"); err != nil {
 		t.Fatal(err)
 	}
-	if kept := b.keepRecipe(m); kept != "" {
+	if kept := b.keepRecipe(m, nil); kept != "" {
 		t.Fatalf("keepRecipe after a real kill must write, kept %q", kept)
 	}
 	saveWSTo(t, fake, append(fakeLoadWSFrom(t, fake), fakeWS{WorkspaceID: "wForeign", Label: "s1"}))
