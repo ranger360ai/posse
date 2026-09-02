@@ -905,6 +905,14 @@ func main() {
 			if p == "" {
 				f := a.BackupFreshness(time.Now(), os.Stderr)
 				if f.Newest == "" {
+					// Newest is the newest DATABLE archive (ADR 0036 §6,
+					// bead ranger-base-rgv61), so an empty directory and a
+					// directory of future-stamped files both land here and
+					// must not read the same: the second one has files, and
+					// `--archive` is how an operator opens one anyway.
+					if f.Future > 0 {
+						die(posse.Die("no datable archive to verify in %s — %s; name one with --archive", posse.AbbrevHome(f.Dir), f.FutureClause()))
+					}
 					die(posse.Die("no archive to verify in %s", posse.AbbrevHome(f.Dir)))
 				}
 				p = filepath.Join(f.Dir, f.Newest)

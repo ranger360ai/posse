@@ -131,8 +131,23 @@ func (d *Dispatcher) backupTick(cfg BackupConfig) {
 		d.eprintf("backup: cannot read %s: %v — no archive this tick\n", AbbrevHome(dir), err)
 		return
 	}
-	if len(names) > 0 {
-		newest := names[len(names)-1]
+	// A stamp AFTER now is not a reading, and splitBackupsAt is where that
+	// is decided once for this loop and for §6's freshness surface both
+	// (bead ranger-base-rgv61). Before it, one archive stamped in the
+	// future stopped this schedule for as long as the stamp led the clock:
+	// the age below went negative, and a negative age is under every
+	// interval. It said nothing while it did it, and the freshness line
+	// reading the same stamp said "0s ago".
+	usable, future := splitBackupsAt(names, d.now())
+	if len(future) > 0 {
+		// Every tick, for as long as it stands. This is a level trigger and
+		// the condition is a level: a line printed once, hours ago, in a
+		// scrollback nobody is watching is the silence this bead was about.
+		newest := future[len(future)-1]
+		d.eprintf("backup: %s\n", backupFutureClause(len(future), newest, backupTimeOf(newest).Sub(d.now())))
+	}
+	if len(usable) > 0 {
+		newest := usable[len(usable)-1]
 		// backupTimeOf reads the archive's own stamp, which is the name it
 		// was published under; listBackups has already dropped anything
 		// whose stamp does not parse, so this age is never a zero time

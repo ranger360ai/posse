@@ -178,6 +178,38 @@ nothing.
 
 ### Fixed
 
+**One backup archive stamped in the future stopped the schedule, and the
+freshness surface called it fresh.**
+
+*Affected: any install with `backup_interval:` armed whose archive directory
+holds a file stamped ahead of the box's clock. Not exotic and needs nobody to
+do anything wrong: a box whose clock was ahead when an archive was published
+and then corrected, a restore or a hand copy of an archive from such a box, or
+a laptop whose clock jumped.*
+
+The watch loop's level trigger asked whether the newest archive was younger
+than the interval, and a stamp from the future makes that age NEGATIVE —
+under every interval there is. So the loop declined, every tick, for as long
+as the stamp led the clock, and being a level trigger that declines it said
+nothing while it did it. The freshness reading derived from the same stamp,
+where negative durations render as `0s`: `posse status` and `posse backup
+status` both answered `0s ago`, the freshest reading there is, and no shop
+check fired. Measured: a 72h-ahead stamp under a 6h interval is three days
+with no archive and no alarm — the exact failure the verb exists to prevent,
+with both of its surfaces agreeing that everything was fine.
+
+An archive that cannot be older than now is no longer treated as evidence the
+duty was done. Both readers now skip it as a clock and fall through to the
+newest archive they *can* date — or to none, which writes one, because an
+extra archive costs disk that `backup_keep:` already bounds and a missing one
+costs the store. The file itself is never deleted or renamed: it may well be a
+good archive wearing a bad time, and `posse backup verify --archive` still
+opens it. What changed is that nothing is silent any more. The watch loop
+names it on every tick; `posse status` and `posse backup status` name it on
+the freshness line beside the real age; an instance whose archives are *all*
+undatable reads `NO USABLE ARCHIVE`, is stale, and raises the same shop-check
+carry-over as an instance with no archive at all.
+
 **`instance:` freed a session name only from an instance that also set it.**
 
 *Affected: any machine running two posse homes on one herdr server where only

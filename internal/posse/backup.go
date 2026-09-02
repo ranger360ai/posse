@@ -866,6 +866,15 @@ type BackupFreshness struct {
 	MaxAge time.Duration
 	Stale  bool
 	Err    error
+
+	// The future-stamped archives, which are Count's but never Newest's
+	// (ADR 0036 §6, bead ranger-base-rgv61). An archive that cannot be
+	// older than now is not a reading, so it is reported and skipped
+	// rather than dated; FutureAhead is how far the newest of them leads
+	// the clock, which is roughly how long the fault has left to run.
+	Future       int
+	FutureNewest string
+	FutureAhead  time.Duration
 }
 
 // BackupFreshness reads the archive directory. It never creates it, never
@@ -887,14 +896,26 @@ func (a *App) BackupFreshness(now time.Time, errw io.Writer) BackupFreshness {
 	if !f.Armed {
 		return f
 	}
-	if len(names) == 0 {
-		// Armed with nothing on disk is the predecessor's exact failure —
-		// the arrangement that was configured and never ran (ADR 0036
-		// Context) — so it is stale, not silent.
+	// A stamp after now is not a reading (ADR 0036 §6, bead
+	// ranger-base-rgv61). Reported, never dated: BlindFor renders every
+	// negative age as "0s", so an archive from the future used to make
+	// this surface say "0s ago" — the freshest possible answer — for as
+	// long as the stamp led the clock.
+	usable, future := splitBackupsAt(names, now)
+	if f.Future = len(future); f.Future > 0 {
+		f.FutureNewest = future[len(future)-1]
+		f.FutureAhead = backupTimeOf(f.FutureNewest).Sub(now)
+	}
+	if len(usable) == 0 {
+		// Armed with nothing usable on disk is the predecessor's exact
+		// failure — the arrangement that was configured and never ran (ADR
+		// 0036 Context) — so it is stale, not silent. An empty directory
+		// and a directory holding only future stamps are the same fact
+		// here: no archive whose age can be believed.
 		f.Stale = true
 		return f
 	}
-	f.Newest = names[len(names)-1]
+	f.Newest = usable[len(usable)-1]
 	f.At = backupTimeOf(f.Newest)
 	if st, err := os.Stat(filepath.Join(f.Dir, f.Newest)); err == nil {
 		f.Bytes = st.Size()
@@ -912,26 +933,67 @@ func (f BackupFreshness) Line() string {
 		return fmt.Sprintf("backup · %s could not be read: %v", AbbrevHome(f.Dir), f.Err)
 	case f.Count == 0:
 		return fmt.Sprintf("backup · NONE on box · %s (max age %s)", AbbrevHome(f.Dir), BlindFor(f.MaxAge))
+	case f.Newest == "":
+		// Files on the box, none of them a reading. The count still goes
+		// out, because "NONE on box" would be a second lie next to a
+		// directory that is not empty.
+		return fmt.Sprintf("backup · NO USABLE ARCHIVE · %s · %d on box · %s (max age %s)",
+			f.FutureClause(), f.Count, AbbrevHome(f.Dir), BlindFor(f.MaxAge))
 	default:
 		stale := ""
 		if f.Stale {
 			stale = fmt.Sprintf(" · STALE, older than %s", BlindFor(f.MaxAge))
 		}
-		return fmt.Sprintf("backup · %s ago · %s (%s) · %d on box · %s%s",
-			BlindFor(f.Age), f.Newest, humanBytes(f.Bytes), f.Count, AbbrevHome(f.Dir), stale)
+		return fmt.Sprintf("backup · %s ago · %s (%s) · %d on box · %s%s%s",
+			BlindFor(f.Age), f.Newest, humanBytes(f.Bytes), f.Count, AbbrevHome(f.Dir), stale, f.futureSuffix())
 	}
+}
+
+// FutureClause is the one sentence both surfaces say about a stamp that
+// leads the clock — the watch loop's tick line (ADR 0036 §4) and this
+// reading's own Line and GovDetail (§6). One vocabulary, because the whole
+// defect was two readers of one stamp disagreeing about what it meant
+// (bead ranger-base-rgv61); it is empty when there is nothing to say.
+func (f BackupFreshness) FutureClause() string {
+	return backupFutureClause(f.Future, f.FutureNewest, f.FutureAhead)
+}
+
+// backupFutureClause is that sentence from the three facts alone, so the
+// watch loop can say it from the slice splitBackupsAt just handed it
+// without re-reading the directory it has already read.
+func backupFutureClause(n int, newest string, ahead time.Duration) string {
+	switch {
+	case n == 0:
+		return ""
+	case n == 1:
+		return fmt.Sprintf("%s is stamped %s AHEAD of this box's clock — not a usable reading, ignored", newest, BlindFor(ahead))
+	default:
+		return fmt.Sprintf("%d archives are stamped AHEAD of this box's clock (newest %s, by %s) — not usable readings, ignored",
+			n, newest, BlindFor(ahead))
+	}
+}
+
+func (f BackupFreshness) futureSuffix() string {
+	if f.Future == 0 {
+		return ""
+	}
+	return " · " + f.FutureClause()
 }
 
 // GovDetail is the governance surface's rendering of the same fact: one
 // line, and it names the threshold so the row can be acted on without a
 // second command.
 func (f BackupFreshness) GovDetail() string {
-	if f.Count == 0 {
+	switch {
+	case f.Count == 0:
 		return fmt.Sprintf("no backup of the store of record on this box — %s is empty (config backup_max_age: %s)",
 			AbbrevHome(f.Dir), BlindFor(f.MaxAge))
+	case f.Newest == "":
+		return fmt.Sprintf("no usable backup of the store of record on this box — every one of the %d archives in %s is stamped ahead of the clock (%s)",
+			f.Count, AbbrevHome(f.Dir), f.FutureClause())
 	}
-	return fmt.Sprintf("the newest backup of the store of record is %s old, past backup_max_age: %s — %s",
-		BlindFor(f.Age), BlindFor(f.MaxAge), AbbrevHome(f.Dir))
+	return fmt.Sprintf("the newest backup of the store of record is %s old, past backup_max_age: %s — %s%s",
+		BlindFor(f.Age), BlindFor(f.MaxAge), AbbrevHome(f.Dir), f.futureSuffix())
 }
 
 // ─── the directory ───────────────────────────────────────────────────────────
@@ -973,6 +1035,49 @@ func listBackups(dir string) ([]string, error) {
 		return backupSeqOf(out[i]) < backupSeqOf(out[j])
 	})
 	return out, nil
+}
+
+// splitBackupsAt divides a listBackups listing at now: usable is every
+// archive whose stamp is at or before now, future is every archive whose
+// stamp is after it. Both keep the listing's oldest-first order, so the
+// last element of either is its newest.
+//
+// This is the one place the harness decides what a stamp from the FUTURE
+// means, and both readers of the archive directory go through it — the
+// watch loop's level trigger (ADR 0036 §4) and BackupFreshness (§6). They
+// used not to, and that was bead ranger-base-rgv61: `now - stamp` is
+// NEGATIVE for a future stamp, a negative age is under every interval, so
+// one such file stopped the schedule for as long as the stamp led the
+// clock; and BlindFor renders every negative age as "0s", so the surface
+// that exists to catch a missing archive called it "0s ago" at the same
+// time. Both went quiet together, which is the one combination with no
+// witness left over.
+//
+// An archive that cannot be older than now is not evidence the duty was
+// done, so it is not a reading — but it is not a forgery either, and
+// nothing here deletes or renames it. A clock that was ahead when an
+// archive was published and then corrected, a restore from a box whose
+// clock was ahead, or a laptop clock jump all produce one; the file may
+// well be a perfectly good archive wearing a time nobody can trust. The
+// treatment is therefore: skip it as a reading, name it on every surface
+// that would otherwise have been silent, and let the level trigger fall
+// through to the next-newest archive it CAN date — or to none, which runs
+// the verb. That direction is the safe one by cost: an extra archive costs
+// disk that `backup_keep:` already bounds, and a missing one costs the
+// store.
+//
+// The stamp is written by Format at one-second granularity from the same
+// clock, so a freshly published archive is never ahead of its own writer
+// and needs no grace here; strictly After is the whole test.
+func splitBackupsAt(names []string, now time.Time) (usable, future []string) {
+	for _, n := range names {
+		if backupTimeOf(n).After(now) {
+			future = append(future, n)
+			continue
+		}
+		usable = append(usable, n)
+	}
+	return usable, future
 }
 
 // backupSeqOf is the same-second disambiguator in an archive's name: 1 for

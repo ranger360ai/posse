@@ -194,6 +194,51 @@ against is the archive DIRECTORY, which is §6's single owner of
 on-box freshness, so the clock and the freshness surface cannot
 disagree about whether an archive exists.)*
 
+*(amended 2026-09-02, bead ranger-base-rgv61 — **the newest on-box archive
+means the newest one whose stamp is not in the FUTURE.**)* The sentence
+above says "older than `backup_interval:`", and as built that was
+`now - stamp < interval`, returning when true. A negative age is under
+every interval, so one archive stamped ahead of the box's clock stopped
+the schedule for as long as the stamp led it — and said nothing while it
+did, because a level trigger that declines is silent by design. §6's
+reading derived from the same stamp and answered `0s ago` at the same
+time (its own amendment below). Both surfaces went quiet together, which
+is the one combination with no witness left over: three days with no
+archive and no alarm, under a 72h lead and a 6h interval, which is the
+failure this record exists to prevent.
+
+The rule now, in one place both readers share (`splitBackupsAt`): **an
+archive that cannot be older than now is not a reading.** It is skipped
+as a clock, NAMED on every tick for as long as it stands, and never
+deleted or renamed — a clock that was ahead when an archive was published
+and then corrected leaves a perfectly good archive wearing a time nobody
+can trust, and destroying it would cost more than ignoring it. The level
+then falls through to the newest archive it CAN date, or to none, which
+runs the verb. That direction is chosen on cost and not on symmetry: an
+extra archive costs disk that `backup_keep:` already bounds, a missing
+one costs the store. It does not turn the loop into a write-every-tick,
+because the archive it publishes is itself the next usable reading — one
+run, then the ordinary cadence resumes with the fault still on stderr.
+
+The boundary is strictly `After` and takes no grace window: the stamp is
+written by Format at one-second granularity from the same clock that is
+publishing, so an archive is never ahead of its own writer, and a grace
+here would only widen the blind spot. `listBackups` is not a second line
+of defence and is not asked to be — it filters on the prefix, the suffix
+and a parseable stamp, so any file named `posse-backup-<stamp>.tar.gz`
+counts as an archive whatever it holds. Pinned in
+`internal/posse/backupfuture_test.go`, every claim with a control arm.
+
+Two things left deliberately as they are. **Retention still counts it:**
+`pruneBackups` keeps the newest `backup_keep:` by stamp, and a future stamp
+sorts newest, so one such file holds a retention slot for as long as it
+stands — bounded, reported on every surface now, and cheaper than teaching
+the one code path that DELETES archives a second notion of which ones are
+real. **The rule is not new to this binary:** `plancache.go` and
+`modelavail.go` already refuse a cache entry stamped ahead of the clock
+(`now.Sub(e.At) >= 0`), which is the same guard on a cheaper fact; the
+backup readers were the pair that did not have it.
+
 launchd is rejected again, for backup's own reasons this time (the
 scheduled-dispatch rejection, rangerhq-snd, leaned on herdr, which
 backup does not need): the directive is *one* arrangement, not a verb
@@ -288,6 +333,23 @@ Two further decisions the build made inside this section:
   reading only ages would report as clear. An instance that has written
   no backup key and holds no archive reports nothing at all: installing
   posse arms nothing.
+
+  *(amended 2026-09-02, bead ranger-base-rgv61)* **Armed and UNDATABLE is
+  the same state, and reads the same.** An instance whose archives are all
+  stamped ahead of its clock has no backup whose age it can prove, so it is
+  stale — not `0s ago`, which is what it used to say, because `BlindFor`
+  renders every negative duration as `0s` and the freshest possible reading
+  was therefore the defect's own output. The reading now takes §4's split:
+  the age comes from the newest DATABLE archive, `Newest` names that one
+  (so `posse backup verify` with no `--archive` opens it, and points at
+  `--archive` when there is none), and the future-stamped files are
+  reported beside it — `Future`, `FutureNewest`, `FutureAhead`, rendered by
+  one shared clause the watch loop says too. Reported beside it and not
+  instead of it: an archive behind a future stamp still dates the instance,
+  so a box with a jumped clock and a good 3h-old archive reads fresh AND
+  flagged. The count stays the count — every file on the box, future stamps
+  included — because "NONE on box" next to a directory that is not empty
+  would be a second lie.
 - **Off-box recency** is owned by the on-box sweep stamp
   (`state/backup/last-sweep.yaml`: when, destination, archives, their
   hashes verified at the destination after copy). The sweep also drops
