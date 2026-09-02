@@ -1414,12 +1414,13 @@ func main() {
 			die(err)
 		}
 		image := a.CageImage()
-		state := "engine binary not on PATH — cage: container is unavailable on this host"
-		switch {
-		case a.ContainerAvailable() && a.CageImageBuilt(e, image):
-			state = "ready"
-		case a.ContainerAvailable():
-			state = "image not built — run `posse cage build`"
+		// One reading for the whole line, not the three the switch used to
+		// take: binary, image, and — when the image probe says no — whether
+		// anything was there to answer it at all (ranger-base-1mu9r).
+		why := a.CageNotReady(e, image)
+		state := "ready"
+		if why != "" {
+			state = why
 		}
 		fmt.Fprintf(out, "engine %s (%s) · image %s · %s\n", e.Name, e.Binary(), image, state)
 		fmt.Fprintf(out, "  %s\n", e.Command)
@@ -1429,7 +1430,7 @@ func main() {
 		// is not the one this tree describes — and until this line existed
 		// the only thing that ever said so was a live test's FAIL, which is
 		// read as a regression before it is read at all.
-		if a.ContainerAvailable() && a.CageImageBuilt(e, image) {
+		if why == "" {
 			cwd, _ := os.Getwd()
 			fmt.Fprintf(out, "  %s\n", a.CageAgeHere(e, image, cwd))
 		}

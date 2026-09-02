@@ -52,12 +52,9 @@ func TestLiveEgressBoundaryIsTheRouteNotTheEnvVar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !a.ContainerAvailable() {
-		t.Skipf("engine %s is not on this host", e.Name)
-	}
 	image := a.CageImage()
-	if !a.CageImageBuilt(e, image) {
-		t.Skipf("%s is not built — run `posse cage build`", image)
+	if why := a.CageNotReady(e, image); why != "" {
+		t.Skip(why) // engine binary, engine liveness, image — in that order
 	}
 	rt, _ := a.LoadRuntime("claude")
 	ag := cageAgent(t, a, "cage: container\negress: [api.anthropic.com]\n")

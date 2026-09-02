@@ -96,6 +96,16 @@ type Engine struct {
 	Home    string // HOME inside the image, where the persona's cage home mounts
 	Build   string // how `posse cage build` builds: {image} {context}
 	Probe   string // how the launch asks whether the image exists: {image}
+	// Live asks whether the ENGINE ANSWERS, which `probe:` cannot: an engine
+	// binary on PATH with nothing behind its socket fails `image inspect`
+	// with a connect error and not a no-such-image error, byte-identical for
+	// a name that certainly exists and one that certainly does not
+	// (measured, ranger-base-1mu9r) — so a reader of `probe:` alone reports
+	// a missing engine as a missing image and advises a build that needs the
+	// engine it does not have. Takes no {image}: it is a question about the
+	// host, not about a tag. Like `probe:`, an engine that cannot be asked
+	// answers YES — an unset `live:` is "no way to tell", never "dead".
+	Live string
 	// Inner runs ONE command in the image with nothing of the host mounted
 	// and nothing of the session forwarded: {image} {cmd}. It exists for a
 	// single question — can this image render the gates inside it
@@ -138,6 +148,11 @@ var builtinEngines = []Engine{{
 	Home:    "/root",
 	Build:   `docker build -t {image} {context}`,
 	Probe:   `docker image inspect {image}`,
+	// `version` and not `info`: it is the smallest call that has to reach
+	// the daemon, and the client half printing first costs nothing because
+	// the EXIT STATUS is the whole reading. Measured on a box with the CLI
+	// and no daemon: exit 1 in 0.118s (docker 29.1.1, ranger-base-1mu9r).
+	Live: `docker version`,
 	// No -i, no -t, no mounts, no env: this is asked from wherever posse
 	// happens to be running, which is not always a terminal.
 	Inner: `docker run --rm {image} {cmd}`,
@@ -211,6 +226,7 @@ func (a *App) LoadEngine(name string) (*Engine, error) {
 		{"mount", &e.Mount}, {"mount_ro", &e.MountRO}, {"env", &e.Env},
 		{"env_set", &e.EnvSet},
 		{"home", &e.Home}, {"build", &e.Build}, {"probe", &e.Probe},
+		{"live", &e.Live},
 		{"inner", &e.Inner},
 		{"net", &e.Net}, {"net_create", &e.NetCreate}, {"net_join", &e.NetJoin},
 		{"net_remove", &e.NetRemove}, {"proxy_up", &e.ProxyUp}, {"proxy_down", &e.ProxyDown},
@@ -237,6 +253,11 @@ func (e *Engine) Binary() string {
 // with a build instruction (WrapInCage), not a degraded launch, because
 // --allow-degraded past it would only produce a session that dies on
 // startup.
+//
+// Nor does it ask whether the engine ANSWERS — a PATH lookup is a fact
+// about a file, and an installed CLI whose daemon is not running satisfies
+// it (ranger-base-1mu9r). That is CageEngineLive's question, and no caller
+// should read this one as an answer to it.
 func (a *App) ContainerAvailable() bool {
 	e, err := a.LoadEngine(a.ResolveEngine())
 	if err != nil {
@@ -872,6 +893,89 @@ func (a *App) CageImageBuilt(e *Engine, image string) bool {
 	return exec.Command(f[0], f[1:]...).Run() == nil
 }
 
+// CageEngineLive reports whether the engine ANSWERS. It is the other half
+// of the question ContainerAvailable asks: that one looks the binary up on
+// PATH, this one runs `live:` and reads the exit status.
+//
+// An engine with no `live:` answers yes, on `probe:`'s precedent: it has no
+// way to be asked, and "could not ask" is not "the answer is no". The cost
+// of being wrong here is only ever a WORD — no caller lets this decide
+// whether a launch happens (CageNotReady, WrapInCage), so an engine that
+// answers `live:` badly mislabels a failure it did not cause and nothing
+// more.
+func (a *App) CageEngineLive(e *Engine) bool {
+	if e == nil || strings.TrimSpace(e.Live) == "" {
+		return true
+	}
+	f := strings.Fields(e.Live)
+	if len(f) == 0 {
+		return true
+	}
+	return exec.Command(f[0], f[1:]...).Run() == nil
+}
+
+// cageDeadEngine is the sentence for an engine that is installed and not
+// running, in ONE place because three surfaces say it: `posse cage`, the
+// launch refusal, and the skip of every test that needs a real container.
+// It must not advise a build — `posse cage build` runs through the same
+// engine that is not answering, and advice that cannot be followed is what
+// ranger-base-1mu9r was filed about (ranger-base-6mz7 requires the reason,
+// not just the refusal).
+func cageDeadEngine(e *Engine) string {
+	return fmt.Sprintf("engine %s is on PATH but nothing answers it (`%s` fails) — `cage: container` is unavailable on this host until the engine is running, and so is `posse cage build`",
+		e.Name, e.Live)
+}
+
+// CageNotReady names why `cage: container` cannot run here, or "" when it
+// can: the binary, then the image, and the engine's liveness only to
+// choose between the last two words.
+//
+// The ORDER is the design. Liveness is asked after the image probe, not
+// before it, for two reasons. An image the engine just described is proof
+// the engine answered, so asking first would buy nothing on a healthy host.
+// And asking first would make `live:` a GATE — an engine whose liveness
+// spelling is wrong (a client/server version quarrel, a `version` an engine
+// answers differently) would then refuse a launch that works today. Here it
+// can only relabel a failure that has already happened: WHY, never WHETHER.
+// That is the safe direction for a probe added to a working path.
+func (a *App) CageNotReady(e *Engine, image string) string {
+	if why := a.cageNoBinary(e); why != "" {
+		return why
+	}
+	if a.CageImageBuilt(e, image) {
+		return ""
+	}
+	if !a.CageEngineLive(e) {
+		return cageDeadEngine(e)
+	}
+	return fmt.Sprintf("image %s is not built — run `posse cage build`", image)
+}
+
+// CageEngineNotReady is CageNotReady for a caller with no image question —
+// a live test that runs the engine and builds nothing. With the image gone
+// there is nothing else to ask, so here liveness IS the verdict rather than
+// the wording: a caller of this one wants the engine, and an engine that
+// does not answer cannot give it.
+func (a *App) CageEngineNotReady(e *Engine) string {
+	if why := a.cageNoBinary(e); why != "" {
+		return why
+	}
+	if !a.CageEngineLive(e) {
+		return cageDeadEngine(e)
+	}
+	return ""
+}
+
+func (a *App) cageNoBinary(e *Engine) string {
+	if e == nil {
+		return "no cage engine resolves — `cage: container` is unavailable on this host"
+	}
+	if _, err := exec.LookPath(e.Binary()); err != nil {
+		return fmt.Sprintf("engine binary %s not on PATH — cage: container is unavailable on this host", e.Binary())
+	}
+	return ""
+}
+
 // WrapInCage renders the container launch and returns the line the pane
 // runs: the argv0 launcher, and the file holding the argv it execs.
 //
@@ -925,6 +1029,12 @@ func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string,
 	}
 	image := a.CageImage()
 	if !a.CageImageBuilt(e, image) {
+		// Same probe, two causes. The gate is still the image — this branch
+		// changes only which one the operator is told about, and it is
+		// reached after the refusal is already certain.
+		if !a.CageEngineLive(e) {
+			return "", Die("cage container: %s", cageDeadEngine(e))
+		}
 		return "", Die("cage container: image %s is not built — run `posse cage build` (it cross-builds Linux bd %s and posse into it; a caged persona cannot claim or close a bead without them)", image, CageBdVersion)
 	}
 	if _, err := a.SeedCageHome(ag, rt, dir); err != nil {

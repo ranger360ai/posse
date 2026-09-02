@@ -62,8 +62,8 @@ func TestLiveCageOverlayShapesHoldOnTheRealEngine(t *testing.T) {
 		AgentsDir: filepath.Join(home, "agents"),
 	}
 	e := liveOverlayEngine(t, a)
-	if !a.ContainerAvailable() {
-		t.Skipf("engine %s is not on this host", e.Name)
+	if why := a.CageEngineNotReady(e); why != "" {
+		t.Skip(why) // no image question here: the engine itself is the subject
 	}
 	// Short and resolved: mounts are same-path in and out, and a fixture
 	// mixing /var/folders with its /private real path would be testing the

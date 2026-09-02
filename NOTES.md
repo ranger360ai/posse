@@ -3430,8 +3430,15 @@ wrap`), the pre-push hook rides in on the repo mount, and the repo goes
 `internal/posse/cage.go`. The engine is a command template, never a
 hard-coded `docker run`: built-in `docker`, `RHQ_HOME/cages/<name>.yaml`
 for anything else (only `command:` is required — `mount:`/`mount_ro:`/
-`env:`/`home:`/`build:`/`probe:` default to docker's spellings, which is
-what makes OrbStack a swap), chosen by config `default_engine:`. `posse
+`env:`/`home:`/`build:`/`probe:`/`live:` default to docker's spellings,
+which is what makes OrbStack a swap), chosen by config `default_engine:`.
+`live:` (docker's `docker version`) is the engine's own liveness, asked
+apart from `probe:` because an installed CLI whose daemon is not running
+fails the image probe with a connect error and every reader used to call
+that a missing image and advise a build through the engine that is not
+answering (ranger-base-1mu9r). It is asked only once the image probe has
+already said no, so it chooses the wording of a refusal and never causes
+one; an engine that spells none answers yes, on `probe:`'s precedent. `posse
 cage` prints engine, image, readiness and the image's AGE; `posse cage
 <persona>` prints what would cross the boundary; `posse cage build [dir]`
 cross-builds a

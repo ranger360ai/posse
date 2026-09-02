@@ -471,3 +471,91 @@ func TestCagedLaunchTypesTheEngineLine(t *testing.T) {
 		t.Error("and must not have created the workspace first")
 	}
 }
+
+// Two facts, reported as one until ranger-base-1mu9r: `probe:` against an
+// engine that does not answer fails with a socket-connect error, and it
+// fails identically for a tag that certainly exists and one that certainly
+// cannot (measured), so every reader of the pair blamed a missing image for
+// a missing engine and advised a build that runs through the same engine.
+// This pins the three answers apart, and pins the ORDER that keeps liveness
+// out of the verdict.
+func TestCageNotReadyNamesTheEngineAndNotTheImage(t *testing.T) {
+	t.Parallel()
+	// `env` leads every command: on PATH, and it runs nothing.
+	load := func(t *testing.T, yaml string) (*App, *Engine) {
+		t.Helper()
+		a := cageApp(t)
+		if err := os.WriteFile(filepath.Join(a.CagesDir(), "fake.yaml"),
+			[]byte("command: env {image} {cmd}\n"+yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e, err := a.LoadEngine("fake")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a, e
+	}
+
+	// The engine that cannot be asked answers YES — `probe:`'s precedent.
+	// "Could not ask" is not "the answer is no", and an engine with no
+	// liveness spelling must behave exactly as it did before this existed.
+	if (&App{}).CageEngineLive(&Engine{Name: "mute", Command: "env {cmd}"}) != true {
+		t.Error("an engine with no live: must read as live, not as dead")
+	}
+	if (&App{}).CageEngineLive(nil) != true {
+		t.Error("no engine at all is not a dead engine")
+	}
+	// …and the built-in, plus every yaml engine that does not overrule it,
+	// CAN be asked: docker's spellings are the defaults here as they are for
+	// probe: and build:, because the engine a yaml swaps in is normally one
+	// answering the same CLI (OrbStack).
+	if d, err := (&App{}).LoadEngine("docker"); err != nil || d.Live != "docker version" {
+		t.Errorf("the built-in must carry a liveness spelling: %+v %v", d, err)
+	}
+	if _, e := load(t, ""); e.Live != "docker version" {
+		t.Errorf("an unset live: inherits docker's spelling: %q", e.Live)
+	}
+
+	// A live engine and a built image: ready, and nothing to say.
+	if a, e := load(t, "probe: true {image}\nlive: true\n"); a.CageNotReady(e, "img:1") != "" {
+		t.Errorf("engine answering + image present must be ready: %q", a.CageNotReady(e, "img:1"))
+	}
+	// The order, which is the design: an image the engine described is proof
+	// the engine answered, so a `live:` that says otherwise must not be able
+	// to refuse a launch that works. Liveness picks WORDS, never the verdict.
+	if a, e := load(t, "probe: true {image}\nlive: false\n"); a.CageNotReady(e, "img:1") != "" {
+		t.Errorf("a wrong live: must not gate a host whose image probe answers: %q", a.CageNotReady(e, "img:1"))
+	}
+
+	// The bug: probe fails and the engine is not there to have answered it.
+	a, e := load(t, "probe: false {image}\nlive: false\n")
+	dead := a.CageNotReady(e, "img:1")
+	if !strings.Contains(dead, "fake") || !strings.Contains(dead, "nothing answers it") {
+		t.Errorf("a dead engine must be named as the reason: %q", dead)
+	}
+	if strings.Contains(dead, "is not built") || strings.Contains(dead, "run `posse cage build`") {
+		t.Errorf("a dead engine must not be reported as a missing image, and must not advise a build that needs it: %q", dead)
+	}
+	if a.CageEngineNotReady(e) != dead {
+		t.Errorf("the image-free caller gets the same sentence: %q vs %q", a.CageEngineNotReady(e), dead)
+	}
+
+	// The other half still works: the engine answers and the image is absent.
+	a, e = load(t, "probe: false {image}\nlive: true\n")
+	if got, want := a.CageNotReady(e, "img:1"), "image img:1 is not built — run `posse cage build`"; got != want {
+		t.Errorf("a live engine with no image keeps its build instruction: %q", got)
+	}
+	if a.CageEngineNotReady(e) != "" {
+		t.Errorf("the engine is fine; only the image is missing: %q", a.CageEngineNotReady(e))
+	}
+
+	// And the first question of the three is still the binary: nothing is
+	// probed on a host where the engine is not installed at all.
+	a, e = load(t, "probe: false {image}\nlive: false\n")
+	e.Command = "no-such-engine-binary run {cmd}"
+	for _, got := range []string{a.CageNotReady(e, "img:1"), a.CageEngineNotReady(e)} {
+		if !strings.Contains(got, "not on PATH") || strings.Contains(got, "img:1") {
+			t.Errorf("a missing binary is neither a dead engine nor a missing image: %q", got)
+		}
+	}
+}

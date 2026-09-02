@@ -265,7 +265,7 @@ not at `container`; 4's *measurement* stands but was made outside a cage;
    for the struck wording, and every surviving `env -i` in ADR 0002 either
    says it *defeats* the arm or records the history.
 
-### Residual: the skip names the wrong reason
+### Residual (fixed, ranger-base-1mu9r): the skip named the wrong reason
 
 `App.ContainerAvailable` is `exec.LookPath("docker")` — a PATH check, not
 a liveness check — and `App.CageImageBuilt` runs `docker image inspect
@@ -277,5 +277,17 @@ pair reports the engine's absence as a missing image and gives advice that
 cannot be followed. Both the QA file's skip and `posse cage`'s status line
 read *image not built — run `posse cage build`*, and a build needs the
 same engine the box does not have. Neither hangs and both are honest about
-not running, so ranger-base-6mz7's done-when holds; what neither does is
-name the ruling. Filed as ranger-base-1mu9r.
+not running, so ranger-base-6mz7's done-when holds; what neither did is
+name the ruling.
+
+Fixed under ranger-base-1mu9r by splitting the question in two. The engine
+gains a `live:` template (`docker version` for the built-in) and
+`App.CageEngineLive` runs it; `App.CageNotReady` asks binary, then image,
+then — only once the image probe has said no — whether anything was there
+to answer it, and returns the first reason that is true. So the surfaces
+above now say that the engine is on PATH and nothing answers it, and that
+`posse cage build` is unavailable for the same reason rather than being
+the advice. The liveness probe deliberately cannot change *whether* a
+launch or a test proceeds, only *why* it did not: it runs after the verdict
+is already settled, so an engine that answers `live:` badly cannot refuse a
+host that works.

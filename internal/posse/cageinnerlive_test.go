@@ -124,12 +124,9 @@ func TestLiveInnerGatesHoldInsideTheCage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !a.ContainerAvailable() {
-		t.Skipf("engine %s is not on this host", e.Name)
-	}
 	image := a.CageImage()
-	if !a.CageImageBuilt(e, image) {
-		t.Skipf("%s is not built — run `posse cage build`", image)
+	if why := a.CageNotReady(e, image); why != "" {
+		t.Skip(why) // engine binary, engine liveness, image — in that order
 	}
 	// …and built from THIS source, which is the third state of a pin whose
 	// subject is a build artifact (ranger-base-nwj7). The inner render is

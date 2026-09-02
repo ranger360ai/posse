@@ -85,7 +85,7 @@ func qaLiveCageApp(t *testing.T) (*App, *Engine) {
 	if err := os.WriteFile(filepath.Join(a.CagesDir(), "notty.yaml"), []byte(strings.Join([]string{
 		"command: " + strings.Replace(d.Command, " -i -t", "", 1),
 		"mount: " + d.Mount, "mount_ro: " + d.MountRO, "env: " + d.Env, "env_set: " + d.EnvSet,
-		"home: " + d.Home, "probe: " + d.Probe, "inner: " + d.Inner,
+		"home: " + d.Home, "probe: " + d.Probe, "live: " + d.Live, "inner: " + d.Inner,
 		"net: " + d.Net, "net_create: " + d.NetCreate, "net_join: " + d.NetJoin,
 		"net_remove: " + d.NetRemove, "proxy_up: " + d.ProxyUp, "proxy_down: " + d.ProxyDown, "",
 	}, "\n")), 0o644); err != nil {
@@ -165,12 +165,13 @@ func qaLiveGuard(t *testing.T, a *App, e *Engine) string {
 	if os.Getenv("RHQ_LIVE_DOCKER") == "" {
 		t.Skip("set RHQ_LIVE_DOCKER=1 (needs docker and `posse cage build`)")
 	}
-	if !a.ContainerAvailable() {
-		t.Skipf("engine %s is not on this host", e.Name)
-	}
 	image := a.CageImage()
-	if !a.CageImageBuilt(e, image) {
-		t.Skipf("%s is not built — run `posse cage build`", image)
+	// One question, asked where the answer is made (cage.go): an engine on
+	// PATH with nothing behind its socket used to skip this file saying the
+	// image was not built, which is advice no reader of this box can follow
+	// (ranger-base-1mu9r, ranger-base-6mz7's reason clause).
+	if why := a.CageNotReady(e, image); why != "" {
+		t.Skip(why)
 	}
 	return image
 }
