@@ -651,7 +651,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    profile change — and on a fresh probe home outside every temp root,
    ranger-base-0djg, including §5's symlink shape under both
    spellings. Pinned hermetically in
-   `internal/rhq/seatbeltconstitution_qa_test.go`.)*
+   `internal/posse/seatbeltconstitution_qa_test.go`.)*
    **Boundary — "cwd elsewhere" is load-bearing, not incidental**: a
    `cage: seatbelt` PID that does *not* deny Edit/Write, dispatched
    with cwd = the repo the home is symlinked into, gets cwd whole and
@@ -683,7 +683,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    `Bash(bd <verb>:*)` rule renders `option-aware` (not
    `best-effort`), and `bd --db /tmp/x daemon stop` is refused the
    same as `bd daemon stop` — the reordered spelling and the plain one
-   resolve to the same verb. Pinned in `internal/rhq/bdshim_test.go`
+   resolve to the same verb. Pinned in `internal/posse/bdshim_test.go`
    (ranger-base-3bqn: emptying `globalValueOpts["bd"]` fails both the
    refuse arm and, separately, the `--actor daemon show x` pass arm).
 
@@ -736,7 +736,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/rhq/promote.go`, znma fix; runbook `docs/runbooks/home-cutover.md` agrees) |
 | the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
 | pre-ak3e, a persona session could commit the entire promoted set with nothing refusing (9dfbbd4: all eleven crew PIDs) | **MEASURED** 2026-08-29 (ranger-base-7pq0, verified at HEAD) |
-| the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/rhq/constitutionwall_qa_test.go`, `internal/rhq/constitutionland_qa_test.go`) |
+| the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/posse/constitutionwall_qa_test.go`, `internal/posse/constitutionland_qa_test.go`) |
 | a shims session silences the launch verify by deleting `promoted.json` or re-stamping it with its tampered file's sha256, no output on any surface; a truncated manifest is loud | **MEASURED** 2026-08-28 (ranger-base-bejb repro at 12ce5be, cases A–D) |
 | 10 of the 11 live PIDs declare no `cage:` and run at shims; only hoover declares `cage: seatbelt` | **MEASURED** 2026-08-28 (ranger-base-bejb, `~/.config/rhq/agents`) |
 | every same-uid location for a second anchor is session-writable at shims | by definition of the tier (ADR 0002 §3: shims applies no sandbox, so file access is the uid's); the exceptions are the out-of-uid shapes Alternatives rejects |

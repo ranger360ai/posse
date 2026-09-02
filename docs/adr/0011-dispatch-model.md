@@ -122,7 +122,7 @@ the label-matched workspace: a repair is only right if the session were
 alive under a different id, which cannot happen. "Not mine" never means
 "delete the meta" — kept, left out of the listing, reported with the
 repair recipe. `gen:` is stamped at create and backfilled only on
-positive identity. Tests: `internal/rhq/metaidentity_test.go`; promote
+positive identity. Tests: `internal/posse/metaidentity_test.go`; promote
 gate: `scripts/verify-prune-guard.sh`. This amendment was written
 2026-08-23 in the private instance and lost in the private→public
 restatement; restored 2026-08-26 from the closing record, mechanisms
@@ -170,7 +170,7 @@ retires.
   actor (the claim answers that, and must be allowed to fail), a session
   herdr reports `done` in, and one herdr detects no agent in at all, which
   is not a lagging status but a crashed CLI the relaunch answers. Pins:
-  `internal/rhq/runrecord_qa_test.go`, and laurie's pass↔pass repro in
+  `internal/posse/runrecord_qa_test.go`, and laurie's pass↔pass repro in
   `launchlock_qa_test.go`, whose skip is gone.)*
 - Handoffs: **security** — a pruned meta also deletes the crew mark, so
   a wipe can turn the operator's own conversation back into

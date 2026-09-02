@@ -60,7 +60,7 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   snapshot; the test is the living copy.
 
   **Shipped** as `TestEveryRuntimeFieldIsClassified`
-  (`internal/rhq/runtimefields_qa_test.go`, ranger-base-ncxa). Each row
+  (`internal/posse/runtimefields_qa_test.go`, ranger-base-ncxa). Each row
   also names the production files the classification rests on, and the test
   asserts each still mentions the field (or a named accessor) outside a
   comment — so deleting or renaming a consumer reds it without anyone
@@ -83,7 +83,7 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   `self_sandbox`; a `gate_shell: false` runtime), an unmeasured one as
   UNDECLARED / UNDECIDED, and the two are never spelled the same way.
   Pinned on the RENDERED row and not on the struct field (`gridRow`,
-  `internal/rhq/runtimecheck_test.go`): a substring assertion over the
+  `internal/posse/runtimecheck_test.go`): a substring assertion over the
   whole screen answers about whichever row said the word first, which is
   how the rulebooks line came to be pinned by nothing (ranger-base-qm6e).
 

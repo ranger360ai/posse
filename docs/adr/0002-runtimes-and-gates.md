@@ -861,14 +861,14 @@ backstop stated on the class line, never a computed claim.
 - Detection is unchanged and remains ADR 0015 §3's launch-verify manifest,
   at every tier, whoever changed the promoted copy and however.
 - Pins, all landed with ak3e: the wall in
-  `internal/rhq/constitutionwall_qa_test.go` (refuses every class member
+  `internal/posse/constitutionwall_qa_test.go` (refuses every class member
   persona-marked, passes the identical commit unmarked and a persona commit
   off the class, refuses on the root commit, on a deletion, and in a linked
   worktree, sits above the shared-index arm;
   `TestQAConstitutionWallRenderNamesEveryPromotedPath` fails the render if
   `PromotedPaths` widens without the wall; …`InstallDocNamesTheWholeClass`
   pins INSTALL.md against the class). The belt in
-  `internal/rhq/constitutionland_qa_test.go`, mutation-checked per class
+  `internal/posse/constitutionland_qa_test.go`, mutation-checked per class
   member, including that the refusal prescribes `posse promote` only where
   a promote applies.
 - ADR 0015 §3 carries the matching amendment: the fence is now spelled four

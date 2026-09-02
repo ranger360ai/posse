@@ -178,8 +178,8 @@ Done when hermetic tests prove:
   because the production adapter uses Unix sockets).
 
 The protocol facts in Context are pinned by a live control arm, skipped by
-default: `RHQ_LIVE_HERDR_EVENTS=1 go test ./internal/rhq -run
-TestLiveHerdrEvent` (`internal/rhq/herdrevents_live_test.go`). It goes red if
+default: `RHQ_LIVE_HERDR_EVENTS=1 go test ./internal/posse -run
+TestLiveHerdrEvent` (`internal/posse/herdrevents_live_test.go`). It goes red if
 a later herdr accepts the unscoped settle subscription — the signal to
 revisit this amendment, not to keep the registry out of loyalty.
 

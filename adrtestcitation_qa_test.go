@@ -19,13 +19,15 @@ package posse_test
 // deleted and every record still names it; an auditor then has to resolve the
 // name by hand, and a hand resolution can miss.
 //
-// WHAT THIS PINS. Every *_test.go the ADRs name must exist in the tree, by
-// base name. Base name and not full path deliberately: 12 citations across 7
-// records still spell the retired `internal/rhq/` directory (ranger-base-1d8bk,
-// the architect lane — this lane verifies against the records and does not
-// edit them), so a path-exact assertion is red on arrival for a reason that is
-// a record defect and not a missing pin. When 1d8bk lands, tighten
-// adrCiteResolves to compare the full path.
+// WHAT THIS PINS. Every *_test.go the ADRs name must exist in the tree, and
+// a citation that spells a directory must exist at THAT path. The first cut
+// (ranger-base-efk14) compared base names only, because 12 citations across 7
+// records still spelled the retired `internal/rhq/` directory and the QA lane
+// does not edit records. ranger-base-1d8bk rewrote those twelve and tightened
+// the rule here: a bare name (`runtimecheck_test.go`) is a claim that the file
+// exists somewhere in the tree; a prefixed one (`internal/posse/runtimecheck_
+// test.go`) is a claim about where, and a stale directory is exactly the
+// defect that made audit finding 7 — a hand resolution of a wrong path.
 //
 // The named regression is asserted directly as well: 0015 §3's own citation
 // must resolve, and the file it resolves to must still carry the three tests
@@ -101,9 +103,23 @@ func adrTestFileIndex(t *testing.T) map[string][]string {
 }
 
 // adrCiteResolves is the whole rule, isolated so the arm below can be shown
-// able to fail over a synthetic corpus.
+// able to fail over a synthetic corpus. A bare name resolves by base name; a
+// name carrying a directory resolves only if a file sits at that exact path.
+// The index is keyed by base name and holds the tree paths as WalkDir
+// reported them (relative, no leading "./"), so the citation is compared
+// cleaned.
 func adrCiteResolves(idx map[string][]string, c adrCite) bool {
-	return len(idx[filepath.Base(c.text)]) > 0
+	paths := idx[filepath.Base(c.text)]
+	if !strings.Contains(c.text, "/") {
+		return len(paths) > 0
+	}
+	want := filepath.Clean(c.text)
+	for _, p := range paths {
+		if filepath.Clean(p) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func adrUnresolved(idx map[string][]string, cites []adrCite) []adrCite {
@@ -152,6 +168,23 @@ func TestADRCitationCheckCanFail(t *testing.T) {
 	}
 	if got := adrUnresolved(idx, []adrCite{real}); len(got) != 0 {
 		t.Fatalf("the real citation was reported missing; the check refuses everything and separates nothing")
+	}
+
+	// The directory half (ranger-base-1d8bk). The base name exists in the
+	// tree in every one of these; only the directory differs, which is the
+	// shape of the twelve stale citations this arm exists to keep out.
+	realPath := adrCite{adr: "0002-runtimes-and-gates.md", line: 864, text: "internal/posse/constitutionwall_qa_test.go"}
+	stalePath := adrCite{adr: "0002-runtimes-and-gates.md", line: 864, text: "internal/rhq/constitutionwall_qa_test.go"}
+	rootedElsewhere := adrCite{adr: "0015-constitution-promotion.md", line: 341, text: "internal/posse/bdhookcommit_qa_test.go"}
+
+	if got := adrUnresolved(idx, []adrCite{realPath}); len(got) != 0 {
+		t.Fatalf("a citation spelling the path the file is at was reported missing")
+	}
+	if got := adrUnresolved(idx, []adrCite{stalePath}); len(got) != 1 {
+		t.Fatalf("a citation spelling a directory that does not exist resolved on its base name; the rule is still base-name-only")
+	}
+	if got := adrUnresolved(idx, []adrCite{rootedElsewhere}); len(got) != 1 {
+		t.Fatalf("a citation placing a root-level pin under a package resolved; the rule is still base-name-only")
 	}
 }
 

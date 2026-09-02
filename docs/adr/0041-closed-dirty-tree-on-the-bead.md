@@ -8,7 +8,8 @@
 > was committed: the branch's reflog is a single "Created from main". The
 > launcher saw it — the pass printed `4 uncommitted path(s) left in …
 > (NOTES.md bdpin_qa_test.go scripts/verify-bd-pin.sh
-> internal/rhq/bdflushdiscipline_qa_test.go) — not merged`, then `closed
+> internal/posse/bdflushdiscipline_qa_test.go [path as of the
+> 9c00e19 rename; the log spelled the pre-rename package]) — not merged`, then `closed
 > with no commit … nothing to merge`, and the reap `KEPT` the tree for the
 > same reason. Three lines, one log. A day later version-pin.toml carried
 > three claims copied from the close comment, all false at HEAD.

@@ -817,7 +817,7 @@ row).
   returning `402 Payment Required` while a pass would have called it an
   ordinary settle; codex's account served a turn. Pin:
   `TestQAParityAccountRefusalIsNamedOnEveryRuntime`
-  (internal/rhq/dispatchparity_qa_test.go).
+  (internal/posse/dispatchparity_qa_test.go).
 
 - Read from source, 2026-08-26 (ranger-base-8h5p): `-n` defaults to 0
   = unlimited (`cmd/posse/main.go`), and `fireLoop` counts a failed
