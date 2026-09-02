@@ -401,6 +401,29 @@ func TestAPausedPassStillRunsTheEpilogue(t *testing.T) {
 	}
 }
 
+// The land sweep is the third name in that list and the one the rig above
+// cannot show, because landing needs a real session tree with a real commit
+// on its branch. nurlStranded (landsweep_test.go) is exactly that incident —
+// a bead the store calls closed, a branch holding work, and nothing watching
+// — so a paused pass over it is the whole claim in one assertion: finished
+// work does not sit in a worktree for the length of a pause.
+func TestAPausedPassStillLandsAClosedBeadsTree(t *testing.T) {
+	d, repo, tr := nurlStranded(t, "closed", true)
+	pausedShop(t, d.App, "coordinator", "waiting on the operator")
+
+	n, err := d.Run("", "", 0)
+	out := dispatcherOut(d)
+	if err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v\n%s", n, err, out)
+	}
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+		t.Fatalf("a paused pass left a closed bead's work unlanded in %s: %v\n%s", tr.Branch, err, out)
+	}
+	if !strings.Contains(out, "1 commit(s) fast-forwarded") {
+		t.Errorf("the paused pass did not say what it landed:\n%s", out)
+	}
+}
+
 // The one reading that still returns from the WHOLE pass, epilogue and all,
 // and the ordering that decides which stop gets named. The load guard keeps
 // that power for the reason pause never had — on a fork-starved box the
