@@ -2350,15 +2350,19 @@ func markdownPathspecArgs() string {
 // ADR 0024 D2 adds three more checks to this same arm, same gate
 // (posse_beads_visibility = public), same reason for the slot: check 1 is
 // the docs-genre allowlist (a staged NEW file under docs/ must sit in an
-// allowlisted subdirectory); check 2 is OpsPatterns over the ADDED lines of
-// every staged *.md, any path — the same list and the same posse_check
+// allowlisted subdirectory, move detection off so a move into an unlisted
+// genre is a new file like any other); check 2 is OpsPatterns over the ADDED
+// lines of every staged markdown file — MarkdownPathspecs, .md and
+// .markdown, case-insensitive — any path, the same list and the same posse_check
 // function the beads-jsonl check above uses, just pointed at a different
 // staged set, which is what "same list, both readers" (visibility.go) means
 // here: one Go slice, one shell function, two call sites. Check 3 is the
 // identity literals this box's own render derived (DeriveIdentityLiterals)
 // — rendered as escaped EREs (identityLiteralERE) so the SAME posse_check
 // function serves all three, over the ADDED lines of every staged text
-// file, code included.
+// file, code included, AND over the ADDED staged paths (ranger-base-dmsbu:
+// a filename is where an operator-shaped artifact puts the operator, and a
+// pure move has no added lines at all).
 func visibilityGuardBody(visibility string, set OpsPatternSet, identity []IdentityLiteral) string {
 	var checks strings.Builder
 	for _, p := range set.All() {
@@ -2543,7 +2547,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
         {
           echo "refused by posse gate: ops-class content in staged markdown in a public repo — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
           echo ` + shQuote(OpsProseRule) + `
-          echo "matched in the staged *.md additions:"
+          echo "matched in the staged markdown additions:"
           printf '%s' "$posse_bad"
           echo ` + shQuote(OpsProseWayThrough) + `
           echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
