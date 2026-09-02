@@ -4109,9 +4109,9 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 		Description: fmt.Sprintf(
 			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n\n"+
 				"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
-				"Resolve it in the worktree (rebase onto %s and fix the conflicts), then a\n"+
-				"launcher pass or `posse kill` lands it. The branch is untouched and still\n"+
-				"holds every commit.",
+				"Fix what the reason above names — only a real conflict is resolved by\n"+
+				"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n"+
+				"The branch is untouched and still holds every commit.",
 			persona, is.ID, o.Commits, t.Branch, base, o.Reason,
 			discoveredFromMarkerPrefix, is.ID,
 			t.Path, t.Repo, base, base, base),

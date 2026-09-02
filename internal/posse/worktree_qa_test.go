@@ -270,6 +270,47 @@ func TestMergeBlockedKeepsTheWorkAndFilesABead(t *testing.T) {
 	}
 }
 
+// ranger-base-5hqa: the cost of calling every failed replay a conflict is the
+// BEAD, not the sentence. A P1 addressed to a persona that prescribes "fix
+// the conflicts" over a rebase that never merged spends a dispatch on a
+// problem that is not there, while the real cause — git said it on stderr and
+// the launcher threw it away — stays unnamed. So it has to reach the handoff.
+// The paired arm is the sibling above: a real conflict still says conflict.
+func TestMergeBlockedBeadNamesWhatGitSaidWhenNothingConflicted(t *testing.T) {
+	const hookSaid = "no space left on device (simulated)"
+	d, _, _ := wtqaPassWithWork(t, func(repo, _ string) {
+		// Main moves, so the ff refuses and the replay runs; the replay
+		// itself is refused before any merge, the way a full disk or a lock
+		// refuses one.
+		commitIn(t, repo, "moved.txt", "the operator's line\n", "main: moved on")
+		hooks := t.TempDir()
+		hook := filepath.Join(hooks, "pre-rebase")
+		write(t, hook, "#!/bin/sh\necho '"+hookSaid+"' >&2\nexit 1\n")
+		if err := os.Chmod(hook, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, repo, "config", "core.hooksPath", hooks)
+	})
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "did NOT reach main") {
+		t.Fatalf("the replay was refused and the pass did not report a blocked merge:\n%s", out)
+	}
+	bd := bdCalls(t, fakeDir())
+	i := strings.Index(bd, "create merge-back blocked")
+	if i < 0 {
+		t.Fatalf("no create call for the merge-back bead:\n%s", bd)
+	}
+	call := bd[i:]
+	if !strings.Contains(call, hookSaid) {
+		t.Errorf("the filed P1 does not say what git said (%q):\n%s", hookSaid, call)
+	}
+	for _, unwanted := range []string{"onto it conflicts", "fix the conflicts"} {
+		if strings.Contains(call, unwanted) {
+			t.Errorf("the filed P1 tells the persona to resolve conflicts that do not exist (%q):\n%s", unwanted, call)
+		}
+	}
+}
+
 // ranger-base-eul1: bd 0.49.1 can COMMIT the issue and fail on the `--deps`
 // edge alone (verifyMarkerPrefix has the measurement). The exit code cannot
 // tell that apart from a create that landed nothing, so the pass must read

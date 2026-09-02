@@ -788,8 +788,22 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	for attempt := 1; ; attempt++ {
 		wasAt := refSHA(t.Repo, t.Base)
 		if _, err := git(t.Path, "rebase", t.Base); err != nil {
+			// EVERY non-zero exit used to print as a conflict, and the P1
+			// under it told a persona to "fix the conflicts" — over a
+			// rebase that never reached a merge at all (ranger-base-5hqa:
+			// the box was at 100% disk, and the branch it named replayed
+			// onto every main tip in the range cleanly). Ask the rebase
+			// state, which only a stopped merge leaves behind, and say what
+			// git said either way: git's stderr is the one witness to the
+			// real cause and it was being thrown away.
+			stopped := rebaseStopped(t.Path)
+			said := gitSaid(err)
 			_, _ = git(t.Path, "rebase", "--abort")
-			o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the branch is untouched and still holds the work", t.Base, t.Branch)
+			if stopped {
+				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the branch is untouched and still holds the work (git: %s)", t.Base, t.Branch, said)
+			} else {
+				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it failed before any merge — git said: %s — so there are no conflicts to resolve, and the branch is untouched and still holds the work", t.Base, t.Branch, said)
+			}
 			return o, nil
 		}
 		o.Rebased = true
@@ -880,6 +894,55 @@ func constitutionLandRefusal(t *SessionTree, hit []string) string {
 		strings.Join(hit, ", "), t.Branch,
 		AbbrevHome(t.Repo), t.Base, t.Branch,
 		AbbrevHome(t.Repo), t.Branch, then)
+}
+
+// rebaseStopped answers whether a failed `git rebase` STOPPED — the merge
+// waiting for a hand resolution — rather than failing outright. The merge
+// backend (git's default since 2.26) leaves rebase-merge/ behind while it
+// waits and the apply backend leaves rebase-apply/; a rebase that never got
+// that far — a full disk, a pre-rebase hook, a lock, an unresolvable base —
+// leaves neither. Asked BEFORE `rebase --abort`, which is what removes the
+// directory, and asked of git rather than derived from .git, because a
+// linked worktree keeps its rebase state under the common dir's worktrees/
+// subtree and only git knows where (the same reason the hook probe asks for
+// --git-path rather than joining one).
+func rebaseStopped(dir string) bool {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		p, err := git(dir, "rev-parse", "--git-path", name)
+		if err != nil || p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// gitSaid renders git's own complaint for a bead a person reads: one line,
+// without the hint block git writes for a human sitting at a terminal, and
+// bounded — a description is a handoff, not a transcript.
+func gitSaid(err error) string {
+	var keep []string
+	for _, ln := range strings.Split(err.Error(), "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, "hint:") {
+			continue
+		}
+		keep = append(keep, ln)
+	}
+	said := strings.Join(keep, "; ")
+	if said == "" {
+		said = strings.TrimSpace(oneLine(err.Error()))
+	}
+	const most = 400
+	if r := []rune(said); len(r) > most {
+		said = strings.TrimSpace(string(r[:most])) + "…"
+	}
+	return said
 }
 
 // mergeRebaseAttempts bounds the replay loop in MergeSessionWork. It is a

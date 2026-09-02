@@ -646,6 +646,137 @@ func TestMergeSessionWorkRefusesAConflictAndKeepsEverything(t *testing.T) {
 	}
 }
 
+// ranger-base-5hqa: EVERY non-zero exit of the replay printed the conflict
+// sentence, and the P1 under it told a persona to go fix conflicts that were
+// not there — measured on a pass where the box was at 100% disk and the
+// branch it named replayed onto all 16 main tips in the range cleanly. The
+// three arms are the whole claim: a rebase that stops ON a merge still says
+// conflicts, one that never got that far says what git said instead, and the
+// same fixture WITHOUT the refusal lands — so the middle arm's failure is the
+// refusal and not a fixture that could never merge.
+func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) {
+	const hookSaid = "no space left on device (simulated)"
+	// A pre-rebase hook is the cheapest honest stand-in for the class the
+	// bead is about — a full disk, a lock, a bad object: git exits non-zero
+	// before any merge, and leaves no rebase state behind.
+	setup := func(t *testing.T, conflict, refuse bool) (*SessionTree, string) {
+		t.Helper()
+		a := wtApp(t)
+		repo := wtRepo(t)
+		tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitIn(t, tr.Path, "clash.txt", "the session's line\n", "s-1: mine")
+		if conflict {
+			commitIn(t, repo, "clash.txt", "the operator's line\n", "main: theirs")
+		} else {
+			// Main moved, so the ff refuses and the replay runs — but the
+			// replay itself has nothing to conflict over.
+			commitIn(t, repo, "elsewhere.txt", "the operator's line\n", "main: moved on")
+		}
+		if refuse {
+			hooks := t.TempDir()
+			hook := filepath.Join(hooks, "pre-rebase")
+			write(t, hook, "#!/bin/sh\necho '"+hookSaid+"' >&2\nexit 1\n")
+			if err := os.Chmod(hook, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			mustGit(t, repo, "config", "core.hooksPath", hooks)
+		}
+		return tr, repo
+	}
+
+	t.Run("a rebase that stopped on a merge still says conflicts", func(t *testing.T) {
+		tr, _ := setup(t, true, false)
+		o, err := MergeSessionWork(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Merged {
+			t.Fatal("a conflicting branch was reported merged")
+		}
+		if !strings.Contains(o.Reason, "conflicts — the branch is untouched and still holds the work") {
+			t.Errorf("reason = %q, want the conflict sentence", o.Reason)
+		}
+		// And git's own words are in it either way, which is the witness
+		// nobody had when the disk was the cause.
+		if !strings.Contains(o.Reason, "could not apply") {
+			t.Errorf("reason = %q, want git's own message in it", o.Reason)
+		}
+	})
+
+	t.Run("a rebase that never merged names what git said", func(t *testing.T) {
+		tr, repo := setup(t, false, true)
+		before := mustGit(t, repo, "rev-parse", tr.Branch)
+
+		o, err := MergeSessionWork(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.Merged {
+			t.Fatal("a branch whose replay failed was reported merged")
+		}
+		if strings.Contains(o.Reason, "onto it conflicts") {
+			t.Errorf("a rebase that never merged was reported as a conflict: %q", o.Reason)
+		}
+		if !strings.Contains(o.Reason, hookSaid) {
+			t.Errorf("reason = %q, want git's own message (%q) in it", o.Reason, hookSaid)
+		}
+		// The refusal costs nothing, the way the conflict one does not.
+		if after := mustGit(t, repo, "rev-parse", tr.Branch); after != before {
+			t.Errorf("the branch moved under a failed replay: %s → %s", before, after)
+		}
+		if st := mustGit(t, tr.Path, "status", "--porcelain"); st != "" {
+			t.Errorf("the session tree was left mid-rebase:\n%s", st)
+		}
+	})
+
+	t.Run("the same fixture lands without the refusal", func(t *testing.T) {
+		tr, repo := setup(t, false, false)
+		o, err := MergeSessionWork(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !o.Merged || !o.Rebased {
+			t.Fatalf("outcome = %+v, want the replay to land — the arm above is measuring its hook, not an unmergeable fixture", o)
+		}
+		if body, _ := os.ReadFile(filepath.Join(repo, "clash.txt")); string(body) != "the session's line\n" {
+			t.Errorf("the work did not reach the base: %q", body)
+		}
+	})
+}
+
+// The predicate the arms above rest on, asked directly: the state directory
+// is what tells the two apart, and it is gone after the abort — so reading it
+// even one line later answers "not a conflict" for every conflict there is.
+func TestRebaseStoppedIsTrueOnlyWhileTheMergeIsWaiting(t *testing.T) {
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "clash.txt", "the session's line\n", "s-1: mine")
+	commitIn(t, repo, "clash.txt", "the operator's line\n", "main: theirs")
+
+	if rebaseStopped(tr.Path) {
+		t.Fatal("rebaseStopped is true before any rebase ran")
+	}
+	if _, err := git(tr.Path, "rebase", "main"); err == nil {
+		t.Fatal("the fixture rebased cleanly — it is not the conflict shape")
+	}
+	if !rebaseStopped(tr.Path) {
+		t.Error("a rebase stopped on a conflict was not seen as stopped")
+	}
+	if _, err := git(tr.Path, "rebase", "--abort"); err != nil {
+		t.Fatal(err)
+	}
+	if rebaseStopped(tr.Path) {
+		t.Error("the rebase state outlived the abort")
+	}
+}
+
 // ranger-base-dybv, the shape that cost rangerhq-vojc a day: the persona's
 // commits are in the TREE and the branch does not reach them, so every
 // question asked of the branch answers "nothing to land" and the close
