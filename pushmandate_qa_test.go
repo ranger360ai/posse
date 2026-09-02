@@ -98,6 +98,15 @@ func readerDirectedPushOrders(doc string) []string {
 	return found
 }
 
+// namesWhoPushes is the positive half of the reconciliation: silence about
+// push is not an instruction, so the reconciled text has to say who does it.
+// Keyed on the two claims rather than on one sentence's punctuation — the
+// wording is shared with AGENTS.md and moves with it (ranger-base-wnsf),
+// while "who pushes" is the thing that must never stop being said.
+func namesWhoPushes(doc string) bool {
+	return strings.Contains(doc, "Never push") && strings.Contains(doc, "operator pushes")
+}
+
 // TestPushMandateCheckerDiscriminates is the control: without it the pins
 // below would pass on any text at all, the mandate included.
 func TestPushMandateCheckerDiscriminates(t *testing.T) {
@@ -108,6 +117,12 @@ func TestPushMandateCheckerDiscriminates(t *testing.T) {
 		"  `Bash(git push:*)` and this repo's `pre-push` gate refuses it.\n"
 	if got := readerDirectedPushOrders(reconciled); len(got) != 0 {
 		t.Errorf("checker fires on the reconciled wording — it would be red forever: %v", got)
+	}
+	if namesWhoPushes(bdPlantedAgentsMd) {
+		t.Error("namesWhoPushes accepts the file bd plants — it would pass on the bug")
+	}
+	if !namesWhoPushes(reconciled) {
+		t.Error("namesWhoPushes rejects the reconciled wording — it would be red forever")
 	}
 }
 
@@ -180,13 +195,15 @@ func TestInstallSection9ReconcilesThePlantedAgentsMd(t *testing.T) {
 	// The fix a cold installer copies, and the check that it worked.
 	for _, want := range []string{
 		"## Landing the plane",
-		"**Never push. The operator pushes.**",
 		`grep -n -i "push" AGENTS.md`,
 		"Every surviving mention must say the operator pushes",
 	} {
 		if !strings.Contains(sec, want) {
 			t.Errorf("INSTALL.md §9 no longer prescribes the reconciliation: missing %q (rangerhq-cmfj)", want)
 		}
+	}
+	if !namesWhoPushes(sec) {
+		t.Errorf("INSTALL.md §9's appended section no longer names who pushes (rangerhq-cmfj)")
 	}
 
 	// The second copy is not a file, so no repo edit reaches it.
@@ -269,7 +286,7 @@ func TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants(t *testing.T) {
 	if left := readerDirectedPushOrders(got); len(left) > 0 {
 		t.Errorf("§9's recipe leaves the mandate in place: %v\n---\n%s", left, got)
 	}
-	if !strings.Contains(got, "**Never push. The operator pushes.**") {
+	if !namesWhoPushes(got) {
 		t.Errorf("§9's recipe cut the mandate but named nobody in its place:\n%s", got)
 	}
 	// It cuts one section, not the file: everything above survives.
@@ -314,10 +331,10 @@ func TestInstallSection9RecipeIsSafeWithNothingToCut(t *testing.T) {
 			t.Errorf("§9's recipe damaged a file with no Landing section: %q missing\n%s", want, got)
 		}
 	}
-	if !strings.Contains(got, "**Never push. The operator pushes.**") {
+	if !namesWhoPushes(got) {
 		t.Errorf("§9's recipe appended nothing when there was nothing to cut:\n%s", got)
 	}
-	if twice := runSection9Recipe(t, got); strings.Count(twice, "**Never push. The operator pushes.**") != 2 {
+	if twice := runSection9Recipe(t, got); strings.Count(twice, "## Landing the plane") != 2 {
 		// Not a defect — §9 says to run it once — but if the append ever
 		// starts eating its own output, this is where it shows.
 		t.Errorf("§9's recipe is not additive on a second run:\n%s", twice)

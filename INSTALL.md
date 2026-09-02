@@ -1247,7 +1247,8 @@ theoretical: on the first dispatch of a cold instance a persona spent a turn
 pushing into the gate, logged at
 `$RHQ_HOME/state/gates/<persona>/refusals.log` (rangerhq-cmfj).
 
-Cut the section out and say who pushes instead:
+Cut the section out, and say who pushes and which tree the reader is
+standing in instead:
 
 ```sh
 $ grep -n "Landing the Plane" AGENTS.md
@@ -1258,26 +1259,42 @@ $ cat >> AGENTS.md <<'EOF'
 
 ## Landing the plane
 
+- **Know which tree you are in.** A dispatched session works in its OWN git
+  worktree of this repo (under `~/.posse/worktrees/`), on a branch
+  `posse/<session>` — its own index, its own HEAD, nobody else's. The work
+  prompt names it. An operator session, and any session in the checkout
+  itself, shares that checkout with everyone.
 - Close the bead, and commit **naming your own paths** (`git commit -F - --
-  <paths>`) — every persona shares this checkout and its index, so an
-  unqualified commit takes whatever another persona has staged.
-- **A new file needs two steps here** — `git add -- <the new paths>`, then
+  <paths>`). That form is unconditional: every crew PID carries
+  `deny: Bash(git commit unless --)`, a PID-level deny realized as a PATH
+  shim that reads argv and never the tree, so it refuses an unqualified
+  commit in your own worktree too. What differs between the trees is the
+  reason and the hook: in the shared checkout the index is shared, an
+  unqualified commit takes whatever another persona has staged, and the
+  `prepare-commit-msg` gate refuses it as well; in a session worktree
+  nothing is shared and that gate stands down — the PID does not.
+- **A NEW file needs two steps**: `git add -- <the new paths>`, then
   `git commit -F - -- <all your paths>`. A pathspec only matches a file git
-  already has an index entry for, so the path-limited form alone answers
-  `did not match any file(s) known to git`. Scope that add with `--`; never
-  `git add -A` or `git add .`, which stage every persona's file into the
-  shared index.
-- **A `git revert` is two steps here** — `git revert --no-commit <sha>`, then
-  `git commit -F - -- <the paths it touched>`. A plain `git revert` is refused
-  by the same gate (it names no paths), and it is refused only *after* git has
-  staged the revert, so undo that path-limited (`git restore --source=HEAD
-  --staged --worktree -- <those paths>`) rather than with `git reset --hard`,
-  which would take another persona's work with it.
-- `bd sync`, so `.beads/issues.jsonl` matches the database.
-- **Never push. The operator pushes.** Every persona's PID denies
-  `Bash(git push:*)` and this repo's `pre-push` gate refuses it, so a push
-  is a refused turn, not a landing. Work is complete when it is committed
-  locally and the bead is closed.
+  already has an index entry for, so the path-limited form on its own
+  answers `did not match any file(s) known to git`. Scope that add with
+  `--`; never `git add -A` or `git add .`, which stage every persona's file
+  into the shared index.
+- **In the shared checkout a revert is two steps**: `git revert --no-commit
+  <sha>`, then `git commit -F - -- <the paths it touched>`. A plain
+  `git revert` names no paths, so the same gate refuses it — after git has
+  already staged it; undo that path-limited with `git restore
+  --source=HEAD --staged --worktree -- <those paths>`, never
+  `git reset --hard`.
+- **Commit everything you want kept.** Only commits move: the launcher
+  fast-forwards your branch onto `main` when the bead closes, and uncommitted
+  files stay behind in a tree that is eventually retired.
+- `bd sync`, so `.beads/issues.jsonl` matches the database. All worktrees
+  share one beads database — the graph does not fork.
+- **Never push, and never merge to `main` yourself. The operator pushes and
+  the launcher merges.** Every persona's PID denies `Bash(git push:*)` and
+  this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
+  landing. Work is complete when it is committed locally and the bead is
+  closed; `posse worktrees` shows anything that has not landed.
 EOF
 ```
 
@@ -1286,6 +1303,21 @@ heading (or end of file), leaves the rest alone, and holds back blank lines
 until a non-blank follows one — so the cut leaves no trailing blank for the
 appended section to double up on. If `grep` found nothing, skip it and just
 append the section.
+
+**That block is a copy, and the original is this repo's own `AGENTS.md`.**
+Every bullet above is one of that file's, word for word, less two things a
+fresh work repo cannot resolve: this repo's bead ids, and its own checkout
+path. It also drops the bullets that are only about this repo — bd's
+`pre-commit` flush, the `docs/notes.d/` convention, `cmd/checkorphans`.
+Change a shared claim and change both files, or this recipe reinstates the
+older wording over an `AGENTS.md` someone already reconciled. That is not
+hypothetical — it is how this copy went stale the first time
+(ranger-base-wnsf). Written before per-session worktrees existed, it gave
+the shared index as the *only* reason to name your paths, and a session in
+its own worktree reads that as "not me" and gets its commit refused anyway:
+the reason that holds in every tree is the PID deny, which reads argv and
+never the tree. `TestInstallSection9AndAgentsMdAgreeOnTheLandingClaims`
+reads both files and goes red on the next drift.
 
 **Verify:**
 
