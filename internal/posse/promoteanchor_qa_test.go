@@ -115,7 +115,7 @@ func TestQASeededManifestNeverBlessesWhatItCouldNotHash(t *testing.T) {
 // the only thing separating ADR 0015 §3's refusal from its warning:
 // planLaunch reads `o.Bead != ""` and nothing else.
 //
-// dispatch.go has two CreateSession call sites — the typed launch and the
+// dispatch.go has two create call sites — the typed launch and the
 // argv/prompt-file one — and they are different code (ranger-base-unzn's
 // shape: a per-runtime split that every existing pin drove from one side).
 // A path that launches without it is an unwatched session coming up on a
@@ -139,19 +139,27 @@ func TestQAEveryDispatchedLaunchDeclaresItsBead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Each call site, from `CreateSession(NewSessionOpts{` to the closing
-	// `})` of the literal — the options are spread over several lines.
-	re := regexp.MustCompile(`(?s)CreateSession\(NewSessionOpts\{.*?\}\)`)
+	// Each call site, from `createSession(NewSessionOpts{` to the closing
+	// paren of the call — the options are spread over several lines, and the
+	// literal is followed by the caller's launcher lock (ranger-base-deaz).
+	//
+	// Both spellings: dispatch launches through the unexported createSession,
+	// which is handed the lock it is nested inside, but CreateSession is the
+	// same call for a caller that holds none and a third call site added
+	// later is as likely to be written that way. Matching only the one in the
+	// file today is how this sweep would go quietly empty — which it did,
+	// loudly, when the rename landed: the count guard below is what caught it.
+	re := regexp.MustCompile(`(?s)\b[Cc]reateSession\(NewSessionOpts\{.*?\}(?:,\s*\w+)?\)`)
 	sites := re.FindAllString(string(src), -1)
 	if len(sites) < 2 {
-		t.Fatalf("found %d CreateSession call sites in dispatch.go; the sweep is not reading the file it thinks it is", len(sites))
+		t.Fatalf("found %d create call sites in dispatch.go; the sweep is not reading the file it thinks it is", len(sites))
 	}
 	for i, s := range sites {
 		if !strings.Contains(s, "Bead:") {
 			t.Errorf("dispatch call site %d launches without Bead:, so ADR 0015 §3 warns instead of refusing:\n%s", i+1, s)
 		}
 	}
-	t.Logf("checked %d dispatched CreateSession call sites", len(sites))
+	t.Logf("checked %d dispatched create call sites", len(sites))
 }
 
 // --allow-degraded is the operator's escape hatch for gates the wall cannot
