@@ -28,7 +28,7 @@ BINDIR ?= $(HOME)/.local/bin
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test verify-test-times verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse verify-test-times verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -181,6 +181,18 @@ verify-parallel:
 verify-test-times:
 	@scripts/test-times.sh --self-test
 
+# The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
+# `make test` and not a replacement for it: measured on 40 invocations against
+# 40, it removes one Gatekeeper assessment per `go test` invocation and moves
+# the wall clock by nothing (1.10s/invocation before, 1.15s after; 0.912s vs
+# 0.907s over six interleaved pairs). It also does not route through
+# scripts/test-times.sh, so it reports no per-package seconds and no disk
+# preflight — `make test` remains the gate. Use this when a package is being
+# run over and over from a tight loop and the box is already assessment-bound.
+# docs/notes.d/ranger-base-nw9zg.md §5-6 has what it does and does not buy.
+test-reuse:
+	scripts/gotest.sh ./...
+
 # Prove scripts/gotest.sh still reuses the binary it says it reuses
 # (ranger-base-nw9zg). `go test <pkg>` copies the linked test binary into a
 # fresh work dir every invocation — two cached runs of the same command gave
@@ -188,7 +200,7 @@ verify-test-times:
 # new FILE: 0.806s/1.066s/1.059s against 0.030s/0.035s/0.039s for the second
 # exec of the same one. The path is not what is keyed: 200 execs of 200 hard
 # links to one inode cost 1 assessment, 200 execs of 200 byte-identical copies
-# cost 217. Seven arms, each with a control that must come out the other way.
+# cost 217. Eight arms, each with a control that must come out the other way.
 # ~4s, one throwaway module, no suite.
 verify-gotest:
 	@scripts/gotest.sh --self-test

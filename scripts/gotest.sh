@@ -197,13 +197,17 @@ run() {
 	fi
 	[ -n "$listing" ] || die "no packages matched: ${pkgs[*]}"
 
-	local rc=0 n=0 ip dir sl tmp bin
+	local rc=0 n=0 ip dir sl tmp bin buildout
 	while read -r ip dir; do
 		[ -n "$ip" ] || continue
 		n=$((n + 1))
 		sl=$(slug "$ip")
 		tmp=$(mktemp "$CACHE/.build.$sl.XXXXXX")
-		if ! go test -c -o "$tmp" "$ip"; then
+		# Hold the build's own chatter: on success it is the duplicate
+		# "[no test files]" line handled below, on failure it is the
+		# compile error and the only thing worth reading.
+		if ! buildout=$(go test -c -o "$tmp" "$ip" 2>&1); then
+			printf '%s\n' "$buildout" >&2
 			rm -f "$tmp"
 			rc=1
 			continue
@@ -324,7 +328,20 @@ self_test() {
 		fail "exit status: a green test greens the wrapper" "wrapper exited non-zero"
 	fi
 
-	# ARM 4: --prune keeps POSSE_TESTBIN_KEEP per package and no more.
+	# ARM 4: a package that does not COMPILE is a failure, not a skip. A
+	# wrapper that greens a compile error is worse than no wrapper: the
+	# build step is the one thing `go test` did for you that this script
+	# took over, and swallowing it means a broken tree reports clean.
+	cp "$pkg/a_test.go" "$pkg/a_test.go.bak"
+	printf 'package a\n\nfunc Broken() { this is not go }\n' >"$pkg/broken.go"
+	if ( cd "$pkg" && "$SELF" . -run TestAlpha >/dev/null 2>&1 ); then
+		fail "build failure: a package that will not compile reds" "wrapper exited 0"
+	else
+		say "build failure: a package that will not compile reds"
+	fi
+	rm -f "$pkg/broken.go" "$pkg/a_test.go.bak"
+
+	# ARM 5: --prune keeps POSSE_TESTBIN_KEEP per package and no more.
 	POSSE_TESTBIN_KEEP=1 "$SELF" --prune >/dev/null 2>&1
 	if [ "$(cachedcount)" = 1 ]; then
 		say "prune: keeps POSSE_TESTBIN_KEEP per package"

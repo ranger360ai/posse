@@ -117,6 +117,7 @@ func TestQATheWrapperStillProvesItReusesTheBinary(t *testing.T) {
 		"control: the new test actually ran",
 		"exit status: a red test reds the wrapper",
 		"exit status: a green test greens the wrapper",
+		"build failure: a package that will not compile reds",
 		"prune: keeps POSSE_TESTBIN_KEEP per package",
 	} {
 		if !strings.Contains(got, "ok    "+want) {
