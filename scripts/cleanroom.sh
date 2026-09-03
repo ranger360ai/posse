@@ -276,7 +276,7 @@ cmd_status() {
 #    finds (ranger-base-l97n), which `command -v date` answers faithfully.
 #  - `dirname` is the chain dispatcher's, not the two walls' — the third
 #    generated hook, written when another tool already owns the slot.
-HOOK_DEPS="${HOOK_DEPS:-cat cut date dirname grep head sed tr}"
+HOOK_DEPS="${HOOK_DEPS:-cat cut date dirname grep head sed sort tr}"
 
 cmd_hook_deps() {
   need_docker

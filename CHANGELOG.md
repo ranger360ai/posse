@@ -42,6 +42,30 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**The commit hook now refuses a sha in `docs/adr/` that is not on your main
+checkout's branch, and prints the token.**
+
+A record that says "landed `c067486`" can only ever name the writer's own
+session tree, and the launcher rebases a third of those trees before it
+lands them — 48 of 134 landings measured — which mints a new sha. Twelve of
+the thirty-two resolving shas in this repo's own `docs/adr` were ancestors
+of nothing by the time anyone looked. The `prepare-commit-msg` hook gains a
+fourth wall: every 7–40 hex token on a line a commit ADDS under `docs/adr/`
+that resolves here and is not an ancestor of the branch your main checkout
+has checked out is a refusal naming that token. Cite the bead id instead —
+`git log --grep <id>` survives the rebase. Tokens that resolve to nothing
+here are prose and are passed; with a detached main checkout the arm has no
+base, judges nothing, and says so rather than guessing a branch.
+
+No override env. The one exemption is a record whose subject IS the stale
+sha — a census, an incident writeup — which carries the landed twin in the
+same file; the arm admits a pair with the same patch-id when one half is on
+the base branch (ADR 0051 D5), and a sha minted in a session tree has no such
+twin until the launcher lands it. `sh scripts/adr-sha-census.sh <file>` is
+the same predicate over whole files, for checking a record before committing
+it. Needs `posse gates install-hooks` (or the next session launch) to reach a
+repo already hooked.
+
 **A blind plan meter now says how OLD the reading it is still ruling on
 is — loudly, in `posse status`, in every `--watch` pass, and in the
 cockpit.**

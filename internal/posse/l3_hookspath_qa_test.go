@@ -436,7 +436,7 @@ func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
 	joined := strings.Join(a.CheckParityIn(ag, claude, CageShims, TierStrong, repo).Degraded, "\n")
 	for _, want := range []string{
 		"L3 pre-push hook", "foreign hook, posse cannot vouch for a hook it did not write",
-		"L3 prepare-commit-msg hook", "beads visibility, constitution-path and shared-index guards are not realized",
+		"L3 prepare-commit-msg hook", "beads visibility, constitution-path, ADR sha-stamp and shared-index guards are not realized",
 		AbbrevHome(hooks),
 	} {
 		if !strings.Contains(joined, want) {

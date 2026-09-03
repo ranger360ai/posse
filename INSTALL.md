@@ -1444,6 +1444,32 @@ somewhere outside the class for you to apply. It is the shim tier, so `env -i`
 scrubs the marker; the launcher will not land a session branch touching those
 paths either, and that half runs in your process, not the session's.
 
+And a fourth: the **ADR sha-stamp guard** (ADR 0051 D4/D5). A commit that
+adds a line under `docs/adr/` naming a sha which resolves in this clone but
+is not an ancestor of the branch your MAIN checkout has checked out is
+refused, and the refusal prints the token. The reason is measured: the
+launcher lands a session tree with `merge --ff-only` and rebases first when
+the branch has moved, which mints a new sha — 48 of 134 landings — so a
+"landed `c067486`" written by a persona names an object on no ref about a
+third of the time. Cite the bead id instead (`git log --grep <id>` survives
+the rebase); a sha goes in only after `git merge-base --is-ancestor <sha>
+<branch>` has said yes. Unkeyed, like the visibility and shared-index arms —
+your own commits are measured too, and pass, because they never go through
+the launcher and so never re-sha. A token that resolves to nothing here is
+prose and is left alone; when your main checkout's HEAD is *detached* the arm
+has no base to measure against, judges nothing, and says so on stderr rather
+than guessing a branch name.
+
+There is no override env, and there is one exemption instead: a record whose
+SUBJECT is a stale sha — a census, an incident writeup, ADR 0051's own table
+of the twelve — carries the landed twin in the same file, and the arm admits
+the pair (D5: same patch-id, an ancestor of the base branch). That is a way
+through nothing minted in a session tree can take, because a sha has no twin
+on the base branch until the launcher has landed it. To check a record before
+you commit it, the same predicate runs over whole files:
+`sh scripts/adr-sha-census.sh docs/adr/<file>.md`, which prints how many
+tokens it judged, how many it admitted by twin, and how many it refused.
+
 If this instance holds someone else's data — a work laptop, a client
 engagement — read NOTES.md, *"When an instance holds someone else's data"*
 first: every one of its repos is marked `private`, and config

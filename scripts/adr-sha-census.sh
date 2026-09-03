@@ -18,6 +18,12 @@ set -u
 base=$(git --git-dir="$(git rev-parse --git-common-dir)" symbolic-ref -q HEAD) || {
   echo "adr-sha-census: main checkout is detached; judged nothing" >&2; exit 0; }
 [ $# -gt 0 ] || set -- docs/adr/*.md
+# AN EMPTY PATCH-ID IS NO ANSWER (ranger-base-glewr, measured on git 2.50.1).
+# git diff-tree -p prints nothing for a commit with no diff of its own — a
+# root commit, a merge, an --allow-empty commit — so patch-id prints nothing,
+# and two empties compare EQUAL. Without this the census admits an empty stale
+# commit beside any empty ancestor, and a repo's own ROOT commit is an empty
+# ancestor any record may legitimately cite. The caller tests for emptiness.
 pid() { git diff-tree -p "$1" | git patch-id --stable | cut -d' ' -f1; }
 out=$(for f in "$@"; do
   anc=""; non=""
@@ -28,7 +34,7 @@ out=$(for f in "$@"; do
   for a in $anc; do echo "JUDGED $f $a ancestor"; done
   for n in $non; do
     pn=$(pid "$n"); ok=""
-    for a in $anc; do [ "$(pid "$a")" = "$pn" ] && ok=$a && break; done
+    [ -n "$pn" ] && for a in $anc; do [ "$(pid "$a")" = "$pn" ] && ok=$a && break; done
     if [ -n "$ok" ]; then echo "ADMITTED $f $n twin $ok"
     else echo "REFUSE $f:$(grep -nE "\b$n\b" "$f" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//') $n resolves here but is not on ${base#refs/heads/} and no landed twin is in the record — cite the bead id (git log --grep), or put the twin beside it (ADR 0051 D2/D5)"; fi
   done

@@ -727,7 +727,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	write("prepare-commit-msg", "#!/bin/sh\nexit 1\n")
 	p = a.CheckParityIn(ag, claude, CageShims, TierStrong, repo)
 	joined := strings.Join(p.Degraded, "\n")
-	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "foreign hook", "beads visibility, constitution-path and shared-index guards are not realized", "posse gates install-hooks"} {
+	for _, want := range []string{"L3 pre-push hook", "L3 prepare-commit-msg hook", "foreign hook", "beads visibility, constitution-path, ADR sha-stamp and shared-index guards are not realized", "posse gates install-hooks"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("failed probe missing %q in:\n%s", want, joined)
 		}

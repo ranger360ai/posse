@@ -2295,10 +2295,10 @@ func reachesWord(tok, want string, partial bool) bool {
 // ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────
 
 // sharedIndexMarker identifies our prepare-commit-msg hook. The slot now
-// carries three walls — the beads visibility guard, the constitution-path
-// guard and the shared-index guard — and the marker still says
-// `shared-index` ON PURPOSE: ownership is a
-// question about a file an EARLIER binary wrote, and a repo hooked before
+// carries four walls — the beads visibility guard, the constitution-path
+// guard, the ADR sha-stamp guard and the shared-index guard — and the marker
+// still says `shared-index` ON PURPOSE: ownership is a question about a file
+// an EARLIER binary wrote, and a repo hooked before
 // this bead carries this exact string. Renaming the value would convert
 // every already-hooked repo into a repo we refuse to touch, which is the
 // rangerhq-tyay lesson learned twice. The name of the const may move; the
@@ -2746,12 +2746,13 @@ exit 1
 // commitGuardHead is the hook's shebang and its marker line — the two lines
 // that decide ownership, kept away from either wall's body.
 const commitGuardHead = `#!/bin/sh
-` + sharedIndexMarker + ` — installed by posse gates install-hooks. Three walls
+` + sharedIndexMarker + ` — installed by posse gates install-hooks. Four walls
 # in one slot: the beads visibility guard (rangerhq-hrz, extended by ADR 0024
 # D2 checks 1+2+3 to a docs-genre allowlist, an OpsPatterns scan over staged
 # markdown, and a scan for this box's own identity literals over every staged
-# text file), the constitution-path guard (ranger-base-ak3e) and the
-# shared-index commit guard (rangerhq-lmq9).
+# text file), the constitution-path guard (ranger-base-ak3e), the ADR
+# sha-stamp guard (ADR 0051 D4/D5, ranger-base-glewr) and the shared-index
+# commit guard (rangerhq-lmq9).
 # Foreign hooks are never overwritten; remove this file to uninstall.
 # ADR 0002 §3.
 `
@@ -3571,6 +3572,231 @@ fi
 `
 }
 
+// ─── the ADR sha-stamp guard (ADR 0051 D4/D5, ranger-base-glewr) ─────────────
+
+// AdrPathspec is WHICH FILES the sha-stamp arm owns, as a git pathspec, in
+// one place for the reason MarkdownPathspecs is (ranger-base-4b1z4): the
+// wall's scope is a decision, and a decision spelled inline in the rendered
+// hook is one nothing can measure or widen. `:(icase)` because git pathspec
+// matching is case-sensitive and `docs/ADR/` is a directory a private repo
+// can hold — the same one character that walked ops content into a public
+// tree the last time this hook trusted a literal.
+const AdrPathspec = ":(icase)docs/adr/*"
+
+// AdrShaRule is the rule the refusal names — the teaching, not the verdict.
+// A sentence in a record does not reach a writer at the moment they paste a
+// sha; a refusal does.
+const AdrShaRule = `ADR 0051 D1/D2: the citation of record for a landed change is the BEAD ID.
+The launcher lands a session tree with merge --ff-only and REBASES first when
+the base branch has moved, which mints a new sha — measured, 48 of 134
+landings. So the only sha a persona can copy is one that 36% of the time names
+an object on no ref, prunable by gc, and an ancestor of nothing. A bead id
+survives the rebase: git log --grep <id> answers on every clone, forever.`
+
+// AdrShaWayThrough is the remedy, and there are exactly two — the id, or the
+// twin (ADR 0051 D5). The second is what a record whose SUBJECT is a stale
+// sha uses; it cannot be typed by a build close, because a sha minted in a
+// session tree has no twin on the base branch until the launcher lands it.
+const AdrShaWayThrough = `the way through, either one: cite the bead id — "landed (ranger-base-xxxxx)",
+with the commit subject beside it when several commits carry the id — or, if
+this record's SUBJECT is the stale sha itself (a census, an incident writeup,
+a table of what went stale), put the landed twin beside it in the same file
+and the check admits the pair (ADR 0051 D5). A twin is a commit that IS on the
+base branch and carries the same patch-id; a sha your own session tree just
+minted has none until the launcher lands it, which is why a build close can
+only ever take the first route.`
+
+// adrShaGuardBody renders the arm ADR 0051 D4 specifies, as amended by D5
+// (ranger-base-mlfie, 2026-09-03): a commit that ADDS a line under docs/adr/
+// carrying a sha that resolves HERE and is not an ancestor of the base
+// branch is refused — unless an ancestor somewhere in the same STAGED FILE
+// is its patch-id twin. The refusal prints the token, because the token is
+// the remedy.
+//
+// A SIBLING OF THE VISIBILITY GUARD'S CHECK 2, NOT A MEMBER OF IT. It shares
+// that check's reader shape — the ADDED lines of a staged pathspec, -U0,
+// rename detection left ON so a pure move does not re-present a whole file
+// as additions — and nothing else. Its scope is narrower (docs/adr only),
+// its predicate is git object identity rather than a regex, it is not gated
+// on the repo's visibility mark (a stale stamp is wrong in a private tree
+// too), and it PRINTS what it matched, which posse_check exists to avoid
+// doing for an instance pattern. Folding it into posse_check would have made
+// it a regex saying no.
+//
+// TWO LINE SOURCES, ONE PREDICATE (D4 as amended). The non-ancestors come
+// from the ADDED lines — this arm judges what the commit is writing, not
+// what the file already said. The candidate twins come from the WHOLE STAGED
+// BLOB (`git show :<path>`), because the twin is usually already in the
+// record: re-flowing one row of a stale→landed table adds the stale sha and
+// adds nothing else. The radius is the FILE and not the line, and that was
+// measured rather than chosen — a line radius refused every bracketed prose
+// mention ADR 0051's own amendment wrote, because 76-column prose wraps the
+// bracket onto the next line, and a paragraph radius needs a markdown block
+// parser inside a shell hook. The radius carries no safety anyway: the
+// twin's NONEXISTENCE before landing is what carries it.
+//
+// `scripts/adr-sha-census.sh` is the same predicate over every line of every
+// docs/adr file instead of the staged added lines, and the two are pinned to
+// agree fixture for fixture (TestQAAdrShaStampAgreesWithTheCensusScript).
+// When the hook's own text can be run in census mode the script retires
+// (ranger-base-gyrko).
+//
+// AN EMPTY PATCH-ID IS NOT A TWIN, and this is the one place the reference
+// script and this arm both had to be told so. `git diff-tree -p` prints
+// nothing for a commit with no diff of its own — a root commit, a merge, an
+// `--allow-empty` commit — so `git patch-id` prints nothing, and two empty
+// patch-ids compare equal (MEASURED, git 2.50.1). Without the guard, an
+// empty stale commit is admitted beside any empty ancestor, and a repo's
+// ROOT commit is an empty ancestor that any ADR may legitimately cite. An
+// empty patch-id is no answer, not a match.
+//
+// THE BASE IS THE MAIN CHECKOUT'S BRANCH, ASKED OF GIT, NEVER GUESSED. From
+// a session worktree `git rev-parse --git-common-dir` is the main .git and
+// its HEAD is the branch the operator has checked out (measured:
+// refs/heads/main). When that HEAD is DETACHED the command answers nothing,
+// and the arm judges nothing and says so on stderr — ADR 0019's composite
+// rule, no fallthrough on a read failure: a gate that cannot find its base
+// does not fall through to a refusal it cannot justify. In a shared checkout
+// the same command returns that checkout's own branch, and a sha the
+// operator just made IS an ancestor of it — correct, since the operator's
+// commits never pass through the launcher and never re-sha.
+//
+// TOKENS THAT DO NOT RESOLVE ARE PASSED, deliberately: they are prose, or
+// another repo's, and this hook cannot judge them. That is the arm's whole
+// false-positive budget — `deadbee` in a sentence costs one cat-file.
+//
+// NO ESCAPES for a blockquote or a fenced block, and no override env either
+// (ADR 0051 Alternatives, and mlfie's ruling, which priced an explicit
+// marker and rejected it: free to type, and it teaches the override). D5 IS
+// the way through for the one record that needs one, and it is a way through
+// nothing minted in a session tree can take.
+//
+// COST, MEASURED: cat-file plus merge-base is ~50 ms per token; the patch-id
+// pair is ~60 ms and is computed only for a file that holds BOTH a
+// non-ancestor and an ancestor, so the common case pays nothing extra.
+func adrShaGuardBody() string {
+	return `
+# ─── the ADR sha-stamp guard (ADR 0051 D4/D5, ranger-base-glewr) ──────────
+# A record that stamps a landed sha can only ever name the writer's own
+# session tree, and the launcher rebases a third of those trees before it
+# lands them — measured, 48 of 134 — which mints a new sha and leaves the
+# record naming an object on no ref. 12 of 32 shas in this repo's own
+# docs/adr were unreachable when this was written. The citation of record is
+# the bead id; a sha is a MEASUREMENT against the base branch, or it sits
+# beside its landed twin in a record whose subject IS the staleness (D5).
+# Unkeyed and ungated: a stale stamp is wrong whoever typed it and whatever
+# the repo's visibility mark says.
+#
+# Same reader as the visibility guard's check 2 — ADDED lines, -U0, rename
+# detection left ON so a pure move of an ADR does not re-present every line
+# in it as an addition — pointed at this arm's own, narrower scope. The file
+# list comes out of that one reader's own +++ headers rather than a second
+# --name-only pass, which would need --no-renames and would then re-judge
+# every line of a moved record.
+posse_adr_head=$(git hash-object -t tree /dev/null 2>/dev/null)
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_adr_head=HEAD; fi
+posse_adr_files=$(git diff --cached -U0 "$posse_adr_head" -- ` + shQuote(AdrPathspec) + ` 2>/dev/null |
+  grep '^+++ b/' | cut -c7- | sort -u)
+if [ -n "$posse_adr_files" ]; then
+  # The branch the MAIN checkout has checked out, asked of git rather than
+  # guessed: --git-common-dir is the main .git from a session worktree and
+  # this repo's own .git in a shared checkout. Detached there and this
+  # answers nothing, which is the one arm below that judges nothing.
+  #
+  # Two statements and not one nested command substitution: the HOOK_DEPS
+  # scanner (hookdeps_qa_test.go) reads a command substitution inside an
+  # argument as closing the command it sits in, and named symbolic-ref as a
+  # PATH command the clean room must probe for. The shape below says the same
+  # thing to sh and the truth to the scanner. Filed as ranger-base-8lfbn;
+  # fold these two back into one when that lands.
+  posse_adr_common=$(git rev-parse --git-common-dir 2>/dev/null)
+  posse_adr_base=$(git --git-dir="$posse_adr_common" symbolic-ref -q HEAD 2>/dev/null)
+  if [ -z "$posse_adr_base" ]; then
+    echo "posse gate: ADR sha-stamp check judged nothing — the main checkout's HEAD is detached, so this hook has no base branch to measure ancestry against (ADR 0051 D4). Cite the bead id." >&2
+  else
+    # AN EMPTY PATCH-ID IS NO ANSWER. git diff-tree -p prints nothing for a
+    # commit with no diff of its own — a root commit, a merge, an empty
+    # commit — so patch-id prints nothing and two empties compare EQUAL,
+    # which would admit an empty stale commit beside the repo's own root
+    # (measured). The caller tests for emptiness; this just reports it.
+    posse_adr_pid() {
+      git diff-tree -p "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | cut -d' ' -f1
+    }
+    posse_adr_bad=''
+    # -f: the file loop splits an unquoted expansion and a staged path with
+    # a glob character in it has to stay a path. IFS is a newline only, so
+    # every list below — paths and tokens alike — is newline-separated and
+    # one split rule serves both.
+    set -f
+    posse_adr_ifs=$IFS
+    IFS='
+'
+    for posse_adr_f in $posse_adr_files; do
+      # The tokens this commit is WRITING. Deduplicated: an ADR quotes one
+      # sha many times and each judgement is ~50 ms.
+      posse_adr_non=''
+      for posse_adr_t in $(git diff --cached -U0 "$posse_adr_head" -- "$posse_adr_f" 2>/dev/null |
+          grep '^+' | grep -v '^+++' | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+        # Does not resolve to a commit HERE: prose, or another repo's. Not
+        # this hook's to judge, and passed.
+        git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
+        # Landed. This is the shape D2 blesses.
+        git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null && continue
+        posse_adr_non="$posse_adr_non$posse_adr_t
+"
+      done
+      [ -n "$posse_adr_non" ] || continue
+      # Only now, and only for this file: the candidate twins, from the
+      # WHOLE staged blob rather than the added lines, because a record
+      # about stale shas usually already carries them (D5).
+      posse_adr_anc=''
+      for posse_adr_t in $(git show ":$posse_adr_f" 2>/dev/null |
+          grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+        git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
+        git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null || continue
+        posse_adr_anc="$posse_adr_anc$posse_adr_t
+"
+      done
+      for posse_adr_t in $posse_adr_non; do
+        posse_adr_want=$(posse_adr_pid "$posse_adr_t")
+        posse_adr_twin=''
+        if [ -n "$posse_adr_want" ]; then
+          for posse_adr_a in $posse_adr_anc; do
+            if [ "$(posse_adr_pid "$posse_adr_a")" = "$posse_adr_want" ]; then
+              posse_adr_twin=$posse_adr_a
+              break
+            fi
+          done
+        fi
+        [ -z "$posse_adr_twin" ] || continue
+        posse_adr_bad="$posse_adr_bad  $posse_adr_t    in $posse_adr_f
+"
+      done
+    done
+    IFS=$posse_adr_ifs
+    set +f
+    if [ -n "$posse_adr_bad" ]; then
+      {
+        echo "refused by posse gate: a staged docs/adr line names a sha that is not on $posse_adr_base and has no landed twin in the record — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+        echo ` + shQuote(AdrShaRule) + `
+        echo "added under docs/adr, resolves in this clone, NOT an ancestor of $posse_adr_base:"
+        printf '%s' "$posse_adr_bad"
+        echo ` + shQuote(AdrShaWayThrough) + `
+        echo "the same predicate over whole files, to check a record before you commit it:"
+        echo "  sh scripts/adr-sha-census.sh <file>"
+        echo "Nothing here has been reset, unstaged or cleaned up: this hook does not"
+        echo "touch your tree, and what you staged is still exactly where you put it."
+      } >&2
+      if [ -n "$RHQ_GATES_DIR" ]; then
+        echo "$(posse_stamp) ADR sha-stamp guard [prepare-commit-msg hook] (base $posse_adr_base)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+      fi
+      exit 1
+    fi
+  fi
+fi
+`
+}
+
 // CommitGuardHook is the whole prepare-commit-msg hook for a repo whose
 // beads db carries the given visibility. Three arms, in this order and for
 // this reason:
@@ -3598,7 +3824,7 @@ fi
 // diverge on check 3 alone.
 func CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
 	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set, identity) +
-		constitutionGuardBody() + sharedIndexBody
+		constitutionGuardBody() + adrShaGuardBody() + sharedIndexBody
 }
 
 // hookRepo answers WHICH REPO the hook file belongs to — the question
@@ -4008,7 +4234,7 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 		r.PrePushDegraded = l3DegradeLineIn(red, hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path and shared-index guards are not realized", commitIdentity, commitStale)
+		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path, ADR sha-stamp and shared-index guards are not realized", commitIdentity, commitStale)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate
