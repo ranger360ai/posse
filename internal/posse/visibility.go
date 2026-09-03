@@ -605,8 +605,23 @@ func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 // (worktree.go) resolve it — relative against the repo root, not against
 // .beads/ itself. "" when dir has no .beads, or .beads has no redirect:
 // check 3 has nothing to derive from a repo with no instance to point at.
+//
+// The isRegularFile guard is the same one gates.go's readers carry
+// (ranger-base-gs9r, ranger-base-92n5p, ranger-base-fvfve): os.ReadFile on a
+// FIFO with no writer never returns, and this read is ABOVE both of theirs
+// on the launch path — DeriveIdentityLiterals is called by
+// InstallCommitGuardHook and the L3 probe alike — so one mkfifo at
+// .beads/redirect hung every launch into that checkout with nothing printed.
+// A special file is never a redirect posse wrote and cannot be one, and
+// unlike the hook slot there is nothing to refuse here: posse is not about
+// to write this path, and the contract already answers "" for every
+// unreadable redirect, so the quiet answer is the right one.
 func identityRedirectTarget(dir string) string {
-	b, err := os.ReadFile(filepath.Join(dir, beadsDirName, beadsRedirect))
+	p := filepath.Join(dir, beadsDirName, beadsRedirect)
+	if !isRegularFile(p) {
+		return ""
+	}
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return ""
 	}

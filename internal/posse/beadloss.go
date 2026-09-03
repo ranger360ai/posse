@@ -400,7 +400,19 @@ func beadsHome(dir string) string {
 		dir = "."
 	}
 	home := filepath.Join(dir, beadsDirName)
-	b, err := os.ReadFile(filepath.Join(home, beadsRedirect))
+	// isRegularFile (gates.go) before the open, the same guard the launch
+	// path's other readers carry (ranger-base-gs9r, ranger-base-92n5p,
+	// ranger-base-fvfve): os.ReadFile on a FIFO with no writer never returns,
+	// and this read is on the launch path too — CheckParityIn's
+	// applyRecordReach reaches it, measured blocking planLaunch past 60s. A
+	// special file is never a redirect bd wrote and cannot be one, so it gets
+	// the answer every other unreadable redirect already gets: the local
+	// .beads, reached without the open.
+	redirect := filepath.Join(home, beadsRedirect)
+	if !isRegularFile(redirect) {
+		return home
+	}
+	b, err := os.ReadFile(redirect)
 	if err != nil {
 		return home
 	}
