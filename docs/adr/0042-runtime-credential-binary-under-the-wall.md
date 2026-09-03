@@ -128,7 +128,10 @@ refused keychain write into a plaintext write of the fresh token
 (ASSUMED from the measured rule: non-transient write failure → write the
 file). Today the exit is 1 because every shim's is; after this page it is
 1 because a test execs the rendered shim with the runtime's read argv and
-reads the code.
+reads the code — `internal/posse/credgateexit_qa_test.go`, landed
+2026-09-02 (ranger-base-f5fkk). What it pins is the SET, not the value:
+the shipped 1 may become any other read-failure code without reddening
+it, and each of 0, 36 and 44 rendered in its place is red.
 
 **4. A third reader distinction for `refusals.log` (0009 §4).** A line
 whose argv is the runtime's own credential read is *the runtime asking
@@ -247,6 +250,10 @@ same. No runtime in the table needs it; claude has the mint.
    naming the rule, the binary and the key, and creates no session.
 3. The rendered `CredBin` shim, exec'd with the runtime's read argv, exits
    a code outside {0, 36, 44}; the mutant that exits 44 is red.
+   `internal/posse/credgateexit_qa_test.go`. MEASURED 2026-09-02 by
+   rendering `posse_refuse`'s exit as each code in turn: 44, 0 and 36 red
+   the pin with the fallthrough sentence, and 2 — a read failure that is
+   not the shipped 1 — leaves it green.
 4. Live, on any crew session: `ps -E` on the pane's runtime process shows
    the mint's name; the same persona's `refusals.log` carries the read
    refusals; the session is authenticated. The three together are the
@@ -263,7 +270,7 @@ same. No runtime in the table needs it; claude has the mint.
 | 10,279 refusal lines; ~4,600 runtime reads; <30 persona-shaped | MEASURED | thirteen gate dirs, 2026-09-02 |
 | the session runtime carries the mint; the tool shell does not | MEASURED | `ps -E` versus the Bash tool's `env`, this session, 2026-09-02 |
 | all eleven crew PIDs name an env set with the mint | MEASURED | `envs:` present in 11/11; ranger-base-wkai3 for the key's provenance |
-| a refused read is a read failure, not null; no fallthrough | MEASURED rule (0019 D2) + shim exit 1 read from the render; consequence observed as "Not logged in" (2026-08-29) | ADR 0019, ranger-base-eupf |
+| a refused read is a read failure, not null; no fallthrough | MEASURED rule (0019 D2) + the shim's exit read from an EXEC of the rendered gate with the runtime's read argv, not from the render (D3's pin, ranger-base-f5fkk); consequence observed as "Not logged in" (2026-08-29) | ADR 0019, ranger-base-eupf |
 | a refused keychain write relocates the token to the plaintext file | ASSUMED from the measured update rule; not observed | ADR 0019 D2 |
 | env mint wins over a readable keychain item | ASSUMED, unmeasured; irrelevant while the item is unreadable | this page, alt. 1 |
 | claude's Bash tool spawns `$SHELL` for every tool command | MEASURED | process ancestry of this tool shell, 2026-09-02 |
