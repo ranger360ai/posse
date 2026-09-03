@@ -665,6 +665,28 @@ func seedCatalogEntry(t *testing.T, a *App, e modelEntry) {
 	}
 }
 
+// catalogAt is the instant every frozen-clock catalog fixture was "read"
+// at. It is deliberately nowhere near the suite's wall clock: a pin seeded
+// here that renders "48h00m ago" can only have got there through App.Now,
+// so a constructor that stops threading the clock reds it instead of
+// passing by the grace of time.Now.
+var catalogAt = time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)
+
+// seedCatalogAged is seedCatalog for a pin that asserts the RENDERED age.
+// The preflight line dates its reading to the whole minute, so over a
+// wall-clock fixture the assertion holds only while under 60s pass between
+// the write and the render — and a loaded parallel run has been measured
+// past that (ranger-base-5hjyh). This form writes the reading at catalogAt
+// and pins the App's clock exactly `age` later, and returns that clock so
+// a caller can date a cooldown against it.
+func seedCatalogAged(t *testing.T, a *App, age time.Duration, ids ...string) time.Time {
+	t.Helper()
+	now := catalogAt.Add(age)
+	seedCatalogEntry(t, a, modelEntry{At: catalogAt, Models: ids})
+	a.Now = func() time.Time { return now }
+	return now
+}
+
 // failingLister is the probe this instance has actually had since
 // 2026-08-31: a 401 that leaves the retained reading ruling on every
 // launch. It counts its calls, because "how many times was the endpoint
@@ -696,7 +718,7 @@ func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
 	var hits atomic.Int64
 	a := preflightApp(t)
 	a.ModelLister = failingLister(&hits)
-	seedCatalogEntry(t, a, modelEntry{At: time.Now().Add(-48 * time.Hour), Models: []string{"claude-opus-5", "claude-sonnet-5"}})
+	seedCatalogAged(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // frozen: the line is pinned to the minute
 
 	// The launch's own loud line, in the ADR's shape (0039 D3c): what is
 	// absent, from a reading named and dated, then the verdict.
@@ -752,7 +774,7 @@ func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	// The same fixture, aged past the lease, stops demoting and starts
 	// dating itself — the arm that proves the assertions above are
 	// measuring the age of the reading and not something that never moves.
-	seedCatalog(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5")
+	seedCatalogAged(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // frozen: the clause is pinned to the minute
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
 	if pf.Fell() || pf.Tier != TierStrong {
 		t.Errorf("control: past the lease nothing may be substituted: %+v", pf)
@@ -811,10 +833,14 @@ func TestProbeHonoursALiveCooldown(t *testing.T) {
 	var hits atomic.Int64
 	a := preflightApp(t)
 	a.ModelLister = failingLister(&hits)
+	// Frozen: the line below is pinned to "48h00m ago", and the cooldown
+	// is dated against the same clock the preflight reads.
+	now := catalogAt.Add(48 * time.Hour)
+	a.Now = func() time.Time { return now }
 	seedCatalogEntry(t, a, modelEntry{
-		At:      time.Now().Add(-48 * time.Hour),
+		At:      catalogAt,
 		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
-		RetryAt: time.Now().Add(10 * time.Minute),
+		RetryAt: now.Add(10 * time.Minute),
 	})
 
 	cat := a.ProbeCatalog(nil)
@@ -839,18 +865,18 @@ func TestProbeHonoursALiveCooldown(t *testing.T) {
 	// refused; how long a reading may rule is the operator's number, not
 	// the caller's, so the report keeps printing what a launch would do.
 	seedCatalogEntry(t, a, modelEntry{
-		At:      time.Now().Add(-30 * time.Minute),
+		At:      now.Add(-30 * time.Minute),
 		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
-		RetryAt: time.Now().Add(10 * time.Minute),
+		RetryAt: now.Add(10 * time.Minute),
 	})
 	if got := a.PreflightReportOn(a.ProbeCatalog(nil), "architect", "claude", TierStrong); got != "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5" {
 		t.Errorf("a cooled-down reading inside its lease must still rule: %q", got)
 	}
 	// The control: with the cooldown expired, the same fixture DOES ask.
 	seedCatalogEntry(t, a, modelEntry{
-		At:      time.Now().Add(-48 * time.Hour),
+		At:      catalogAt,
 		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
-		RetryAt: time.Now().Add(-time.Minute),
+		RetryAt: now.Add(-time.Minute),
 	})
 	a.ProbeCatalog(nil).known()
 	if hits.Load() != 1 {

@@ -274,6 +274,7 @@ func (a *App) ModelCache() *ModelCache {
 	return &ModelCache{
 		Path: filepath.Join(a.StateDir, "model-catalog.json"),
 		Log:  filepath.Join(a.StateDir, "model-catalog.log"), Caller: "preflight", Lister: l,
+		Now: a.Now,
 	}
 }
 

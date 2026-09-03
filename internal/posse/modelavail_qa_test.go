@@ -346,7 +346,9 @@ func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
 	var hits atomic.Int64
 	b.App.ModelLister = failingLister(&hits)
 	qaPID(t, b, "architect", TierStrong)
-	seedCatalog(t, b.App, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // fable gone, read two days ago
+	// Frozen, not wall-clock: the line below is pinned to "48h00m ago", a
+	// whole-minute render (ranger-base-5hjyh).
+	seedCatalogAged(t, b.App, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // fable gone, read two days ago
 
 	if err := b.CreateSession(NewSessionOpts{Name: "st", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)

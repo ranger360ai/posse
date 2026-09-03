@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -51,6 +52,14 @@ type App struct {
 	// configured", which the preflight reads as UNKNOWN and launches on,
 	// so the hermetic default is also the fail-open one.
 	ModelLister *ModelLister
+	// Now is the clock the model-catalog preflight dates its reading by
+	// (ModelCache.Now). nil = time.Now, which is what every real launch
+	// uses. It is a field for the reason Dispatcher.Now is one: the
+	// preflight's line quotes the reading's age to the whole minute
+	// ("read 48h00m ago"), so a pin on that line over a wall-clock fixture
+	// tolerates under 60s between the write and the render — a window a
+	// loaded parallel run has been measured past (ranger-base-5hjyh).
+	Now func() time.Time
 	// Load1 reads the box's 1-minute load average for the load guard
 	// (loadguard.go). nil = SysLoad1, the real box, which is what every
 	// real launch uses. Tests set it for the reason newTestBackend sets
