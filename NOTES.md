@@ -4212,6 +4212,19 @@ lines of every staged text file, code included, and over every added staged
 path — the shipped list stays markdown-only, because its own source is
 byte-identical to a hit and a config pattern is never in source.
 
+**The data ceiling** (ADR 0050) is the second key, `data_ceiling_patterns:`,
+same shape and one class namespace with the first, and it answers a
+different question: visibility says where content may go, the ceiling says
+whether it may exist in a local file here at all. A visibility pattern is
+inert in a repo stamped `private` — on purpose, the stamp is the visibility
+record — which is exactly the repo an instance holding someone else's data
+keeps its beads in. So the ceiling is scanned in every repo this instance
+hooks whatever its stamp, above the visibility gate, over the same two arms
+(added lines of every staged text file, added staged paths), always by class
+alone — a refusal is itself a local file — and its remedy is not "re-file
+it in the private db" but remove the paste and keep the system of record's
+id. `install-hooks` prints the ceiling line for private-stamped repos too.
+
 **And it is still a lint, not a boundary** — same class as the allowlist,
 and the honesty is load-bearing here. An instance pattern is friction that
 turns one mis-routed bead into a refusal at commit time. What keeps a data

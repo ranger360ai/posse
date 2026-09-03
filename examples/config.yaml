@@ -245,6 +245,18 @@ default_emoji: ⚙️
 # beads_visibility_patterns:
 #   client-acme: Acme[[:space:]]*(Corp|Holdings)
 #   codename: (BLUEBIRD|REDSHIFT)
+#
+# The data ceiling (ADR 0050): the same shape, a different question.
+# Visibility says where content may go; the ceiling says whether it may
+# exist in a local file on this instance at all — a restricted-tier banner,
+# a restricted system's hostname, its export file-name shape — so it is
+# scanned in EVERY repo this instance hooks, whatever its `beads_visibility:`
+# stamp, above the visibility gate, and always refused by class alone. One
+# class namespace across the shipped list and both keys. The remedy is not
+# "re-file it": remove the paste, keep the system of record's id.
+# data_ceiling_patterns:
+#   restricted-banner: [[:upper:]]+-RESTRICTED
+#   export-name: export-[0-9]{8}\.(csv|xlsx)
 
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
 # The one handoff the harness files itself: a closed bead with one of these

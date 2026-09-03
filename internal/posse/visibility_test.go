@@ -672,6 +672,11 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 		OpsPatternsConfigKey + ":",
 		"  client-acme: " + secret + "[[:space:]]*(Corp|Holdings)",
 		"  bad-escape: Northwind" + `\d+`,
+		// One data-ceiling pattern too (ADR 0050), matching nothing staged
+		// here: it is what makes the stamped count below and the L3 probe
+		// at the end measure the ceiling's two call sites as well.
+		DataCeilingConfigKey + ":",
+		"  restricted-banner: QUOKKA[[:space:]]+RESTRICTED",
 	}, "\n")), 0o644)
 	// The control is a SEPARATE config with no patterns key at all: the same
 	// repo, the same line, the shipped list alone.
@@ -779,9 +784,17 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	// three times, the identity literals twice. The path arm renders inside
 	// a per-path loop because posse_check keeps the class and the matched
 	// text but not the subject, and the refusal has to name the path.
+	//
+	// PLUS TWO since ADR 0050 (ranger-base-nfg8l): the data ceiling renders
+	// its own block above the visibility gate with check 3's two arms —
+	// added LINES and added PATHS — so the one ceiling pattern configured
+	// above is stamped twice. Six call sites now, not four.
 	identityCalls := 2 * len(testIdentity(t, pub))
-	if want, got := 2*len(OpsPatterns)+3+identityCalls, strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want the shipped list twice, the instance's pattern three times and %d identity checks (%d), got %d", identityCalls, want, got)
+	if want, got := 2*len(OpsPatterns)+3+identityCalls+2, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want the shipped list twice, the instance's pattern three times, the ceiling's twice and %d identity checks (%d), got %d", identityCalls, want, got)
+	}
+	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 2 {
+		t.Errorf("the ceiling pattern must be stamped at exactly its two arms, got %d", n)
 	}
 	// And the instance's pattern is NOT stamped into check 2's markdown
 	// scan any more: check 3 below already reads every staged text file,
@@ -796,10 +809,13 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	}
 
 	// And the launch-time identity probe must agree with the install, or an
-	// instance that adds a pattern reads as "ours but stale" forever
-	// (ADR 0023 identity is byte-for-byte).
-	if p := a.probeL3Hooks(pub, false); !p.CommitGuard {
-		t.Errorf("L3 must vouch for the hook it just stamped: %s", p.CommitGuardDegraded)
+	// instance that adds a pattern — or a ceiling entry (ADR 0050 D3) —
+	// reads as "ours but stale" forever (ADR 0023 identity is
+	// byte-for-byte). Both stamps: the ceiling renders under both.
+	for _, repo := range []string{pub, priv} {
+		if p := a.probeL3Hooks(repo, false); !p.CommitGuard {
+			t.Errorf("L3 must vouch for the hook it just stamped (%s): %s", filepath.Base(repo), p.CommitGuardDegraded)
+		}
 	}
 }
 

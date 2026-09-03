@@ -296,22 +296,41 @@ func resolvedPath(p string) string {
 // warns and returns — the refusal lives in the commit hook, which catches
 // every entry path (bd create, comments, sync, hand edits) rather than the
 // one this process happens to own. Reports whether it warned.
+//
+// Two questions, in the order the hook asks them (ADR 0050 D4). The data
+// ceiling first, under EVERY stamp: a ceiling hit may not exist in a local
+// file at all, so the repo's visibility is not consulted and the word is
+// "ceiling", not "visibility". Then the visibility scan, public repos only.
 func (a *App) WarnOpsContent(w io.Writer, dir, what, text string) bool {
+	set := a.OpsPatternSet()
+	warned := false
+	if classes := opsClassesOf(text, set.Ceiling); len(classes) > 0 {
+		fmt.Fprintf(w, "ceiling: %s carries data-ceiling content (%s) — %s\n",
+			what, strings.Join(classes, ", "), "the commit hook will refuse it under every stamp; this content may not exist in a local file, cite the system of record's id instead (ADR 0050)")
+		warned = true
+	}
 	vis, _ := a.BeadsVisibility(dir)
 	if vis != VisibilityPublic {
-		return false
+		return warned
 	}
-	hits := ScanOps(text, a.OpsPatternSet())
-	if len(hits) == 0 {
-		return false
-	}
-	var classes []string
-	for _, h := range hits {
-		classes = append(classes, h.Class)
+	classes := opsClassesOf(text, set.All())
+	if len(classes) == 0 {
+		return warned
 	}
 	fmt.Fprintf(w, "visibility: %s carries ops-class content (%s) and %s is public — %s\n",
 		what, strings.Join(classes, ", "), AbbrevHome(dir), "the commit hook will refuse it; re-file it in the private db (NOTES.md, Privacy model)")
 	return true
+}
+
+// opsClassesOf is the classes in list that text carries, in list order.
+func opsClassesOf(text string, list []OpsPattern) []string {
+	var classes []string
+	for _, p := range list {
+		if p.Match(text) {
+			classes = append(classes, p.Class)
+		}
+	}
+	return classes
 }
 
 // ─── an instance's own vocabulary ────────────────────────────────────────────
@@ -380,6 +399,61 @@ diff for what the class names. If the pattern itself is wrong, only the
 operator can change it (config ` + OpsPatternsConfigKey + `:) and re-run
 posse gates install-hooks.`
 
+// ─── the data ceiling (ADR 0050) ────────────────────────────────────────────
+
+// DataCeilingConfigKey is the SECOND pattern key, and it answers a
+// different question from OpsPatternsConfigKey. Visibility asks "may this be
+// public?" and is inert in a repo stamped private — on purpose, the stamp is
+// the visibility record. A ceiling asks "may this exist in a local file at
+// all?": an instance that holds someone else's data (NOTES.md, "When an
+// instance holds someone else's data") has content — restricted-tier
+// banners, the hostnames of restricted systems, their export file-name
+// shapes — that never enters the bead db, transcripts or memory whatever
+// the repo's stamp, and the system of record's id is the sanctioned
+// citation.
+//
+//	data_ceiling_patterns:
+//	  restricted-banner: [[:upper:]]+-RESTRICTED
+//	  export-name: export-[0-9]{8}\.(csv|xlsx)
+//
+// Same dialect, same reader (YamlMapPairs), same validator (NewOpsPattern)
+// as its sibling, and ONE class namespace across the shipped list and both
+// keys — a refusal names a class, so a class has to mean one thing. The
+// list is instance-wide: one list, applied to every repo this instance
+// renders a commit hook into, whatever that repo's stamp (ADR 0050 D1).
+const DataCeilingConfigKey = "data_ceiling_patterns"
+
+// dataCeilingConfigWhy is the reason line a ceiling refusal carries — where
+// the pattern came from, nothing about what it is for.
+const dataCeilingConfigWhy = "a data-ceiling class (config " + DataCeilingConfigKey + ":)"
+
+// DataCeilingRule is what a ceiling refusal names. Its scope is check 3's
+// (the ADDED lines of every staged text file, and the ADDED staged paths)
+// and its gate is NONE: it runs above the visibility stamp, in every hooked
+// repo, because the question it asks is not about where the repo goes.
+const DataCeilingRule = `ADR 0050 D2: a data-ceiling class (config ` + DataCeilingConfigKey + `:) names content
+that may not exist in a local file on this instance at all — not in a bead,
+a doc, a memory file or a source comment, whatever the repo's visibility
+stamp. The system of record's id is the sanctioned citation. The ceiling is
+scanned over the ADDED lines of every staged text file, code included, and
+over the ADDED staged paths, in every repo this instance hooks.`
+
+// DataCeilingWayThrough is the ceiling's remedy, and it differs from every
+// visibility remedy at one point: there is no private db to re-file into.
+// Content above the ceiling does not move to a more private place, it goes
+// away, and the cite stays.
+const DataCeilingWayThrough = `the way through: remove the paste from the staged file and keep the cite —
+the system of record's id is what a bead, a doc or a comment may carry,
+never the content behind it. There is no private db to re-file this into:
+the ceiling is about whether it may exist here at all, not about where it
+may go. For a PATH: name the file without it. The refusal gives the class
+and a hit count and never the text it matched — a refusal is itself a local
+file (the terminal, the transcript, refusals.log), and printing the match
+would breach the ceiling by the wall's own hand; grep your own staged diff
+for what the class names. If the pattern itself is wrong, only the operator
+can change it (config ` + DataCeilingConfigKey + `:) and re-run
+posse gates install-hooks.`
+
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so
 // it stays boring on purpose.
@@ -441,41 +515,101 @@ func NewOpsPattern(class, ere string) (OpsPattern, error) {
 //
 // The zero value is the shipped list alone, which is what makes it safe to
 // pass from a caller that has no config to read.
+//
+// The data ceiling (ADR 0050 D1, DataCeilingConfigKey) rides in the SAME
+// value, deliberately: the three sites that render the commit hook (the
+// install, the chained install, the launcher's L3 probe) already pass one
+// OpsPatternSet, and a list carried beside it would be a second thing for
+// one of them to forget — which the byte-for-byte identity probe would read
+// as "ours but stale" on every launch (ADR 0050 D3). All() is still the
+// VISIBILITY list and nothing else; the ceiling is its own list with its
+// own scope, and no reader of All() scans it by accident.
 type OpsPatternSet struct {
 	Extra    []OpsPattern
 	Rejected []string // "class: reason", in config order
+
+	Ceiling         []OpsPattern // DataCeilingConfigKey's accepted entries, in config order
+	CeilingRejected []string     // "class: reason", in config order
 }
 
-// All is the effective list, shipped first: the order the hook renders its
-// checks in and the order a refusal names classes in.
+// All is the effective VISIBILITY list, shipped first: the order the hook
+// renders its checks in and the order a refusal names classes in. The
+// ceiling is not in it — see the type's comment.
 func (s OpsPatternSet) All() []OpsPattern {
 	out := make([]OpsPattern, 0, len(OpsPatterns)+len(s.Extra))
 	out = append(out, OpsPatterns...)
 	return append(out, s.Extra...)
 }
 
-// OpsPatternSet reads config beads_visibility_patterns:. A class that is
-// already shipped is refused rather than shadowing or duplicating it — the
-// refusal names the class, so it has to be one thing.
+// OpsPatternSet reads config beads_visibility_patterns: and
+// data_ceiling_patterns: through one class namespace. A class that is
+// already shipped, or already taken by the other key, is refused rather
+// than shadowing or duplicating it — the refusal names the class, so it
+// has to be one thing.
+//
+// THE CEILING IS READ FIRST, so a class present in both keys is refused on
+// the VISIBILITY side. That is the safe failure direction: a ceiling entry
+// scans every repo whatever its stamp, so keeping it and refusing its
+// visibility twin loses nothing; the other way round would demote the class
+// to visibility scope — inert in a private repo, which is exactly the repo
+// the ceiling exists for — with only a comment to say so.
 func (a *App) OpsPatternSet() OpsPatternSet {
 	var set OpsPatternSet
-	seen := map[string]bool{}
+	seen := map[string]string{} // class -> what took it
 	for _, p := range OpsPatterns {
-		seen[p.Class] = true
+		seen[p.Class] = "the shipped list"
 	}
-	for _, kv := range YamlMapPairs(a.ConfigPath, OpsPatternsConfigKey) {
-		p, err := NewOpsPattern(kv[0], kv[1])
-		if err == nil && seen[p.Class] {
-			err = fmt.Errorf("that class is already taken — the refusal names the class, so it has to be one")
+	read := func(key, owner string, accepted *[]OpsPattern, rejected *[]string) {
+		for _, kv := range YamlMapPairs(a.ConfigPath, key) {
+			p, err := NewOpsPattern(kv[0], kv[1])
+			if err == nil && seen[p.Class] != "" {
+				err = fmt.Errorf("that class is already taken by %s — the refusal names the class, so it has to be one", seen[p.Class])
+			}
+			if err != nil {
+				*rejected = append(*rejected, opsClassLabel(kv[0])+": "+err.Error())
+				continue
+			}
+			seen[p.Class] = owner
+			*accepted = append(*accepted, p)
 		}
-		if err != nil {
-			set.Rejected = append(set.Rejected, opsClassLabel(kv[0])+": "+err.Error())
-			continue
-		}
-		seen[p.Class] = true
-		set.Extra = append(set.Extra, p)
 	}
+	read(DataCeilingConfigKey, "config "+DataCeilingConfigKey+":", &set.Ceiling, &set.CeilingRejected)
+	for i := range set.Ceiling {
+		set.Ceiling[i].Why = dataCeilingConfigWhy
+	}
+	read(OpsPatternsConfigKey, "config "+OpsPatternsConfigKey+":", &set.Extra, &set.Rejected)
 	return set
+}
+
+// WriteStampReport is what `posse gates install-hooks` prints after the
+// stamp line, one repo at a time: what THIS instance added to each list,
+// and what it asked for and did not get. A refused pattern is said out loud
+// here and in the hook file — an operator who believes a name is guarded
+// and finds out at disclosure time is worse off than one who never added it
+// (ranger-base-4rbs). Class names only, never a value. The ceiling line is
+// printed for a private-stamped repo too (ADR 0050 D3): the ceiling runs
+// under every stamp, so every hooked repo owes the operator that line.
+func (s OpsPatternSet) WriteStampReport(w io.Writer) {
+	if n := len(s.Extra); n > 0 {
+		fmt.Fprintf(w, "  instance patterns stamped in (config %s:): %s\n", OpsPatternsConfigKey, strings.Join(opsClassNames(s.Extra), ", "))
+	}
+	for _, r := range s.Rejected {
+		fmt.Fprintf(w, "  instance pattern REFUSED, not in force: %s\n", r)
+	}
+	if n := len(s.Ceiling); n > 0 {
+		fmt.Fprintf(w, "  data ceiling stamped in (config %s:), scanned under every stamp: %s\n", DataCeilingConfigKey, strings.Join(opsClassNames(s.Ceiling), ", "))
+	}
+	for _, r := range s.CeilingRejected {
+		fmt.Fprintf(w, "  data ceiling pattern REFUSED, not in force: %s\n", r)
+	}
+}
+
+func opsClassNames(list []OpsPattern) []string {
+	names := make([]string, 0, len(list))
+	for _, p := range list {
+		names = append(names, p.Class)
+	}
+	return names
 }
 
 // opsClassLabel is how a REFUSED entry's class is displayed: a bad class

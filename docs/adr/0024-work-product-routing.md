@@ -218,6 +218,13 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   to set — which is why the e-mail literal is derived from EVERY config
   scope (ranger-base-yqstz), not the one the repo happens to resolve to,
   since a repo-local override is exactly how one box signs as two people.
+  Every check in this wall is inside the visibility gate, so a repo stamped
+  `private` runs none of them — by design for visibility, and a hole for an
+  instance holding someone else's data, whose bead repo is private on
+  purpose; ADR 0050 adds a second key, `data_ceiling_patterns:`, rendered
+  ABOVE the gate with check 3's two arms and refused by class alone in
+  every hooked repo: visibility says where content may go, the ceiling says
+  whether it may exist here at all (built in ranger-base-nfg8l).
   The boundary remains the routing rule plus repo visibility.
 - The identity-literal false-positive rate is ASSUMED low (the literals
   are paths and an e-mail); the build bead's done-when includes the hrz

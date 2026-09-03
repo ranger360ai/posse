@@ -2295,8 +2295,9 @@ func reachesWord(tok, want string, partial bool) bool {
 // ─── L3: the commit guard (prepare-commit-msg) ───────────────────────────────
 
 // sharedIndexMarker identifies our prepare-commit-msg hook. The slot now
-// carries four walls — the beads visibility guard, the constitution-path
-// guard, the ADR sha-stamp guard and the shared-index guard — and the marker
+// carries five walls — the data ceiling, the beads visibility guard, the
+// constitution-path guard, the ADR sha-stamp guard and the shared-index
+// guard — and the marker
 // still says `shared-index` ON PURPOSE: ownership is a question about a file
 // an EARLIER binary wrote, and a repo hooked before
 // this bead carries this exact string. Renaming the value would convert
@@ -2746,13 +2747,15 @@ exit 1
 // commitGuardHead is the hook's shebang and its marker line — the two lines
 // that decide ownership, kept away from either wall's body.
 const commitGuardHead = `#!/bin/sh
-` + sharedIndexMarker + ` — installed by posse gates install-hooks. Four walls
-# in one slot: the beads visibility guard (rangerhq-hrz, extended by ADR 0024
-# D2 checks 1+2+3 to a docs-genre allowlist, an OpsPatterns scan over staged
-# markdown, and a scan for this box's own identity literals over every staged
-# text file), the constitution-path guard (ranger-base-ak3e), the ADR
-# sha-stamp guard (ADR 0051 D4/D5, ranger-base-glewr) and the shared-index
-# commit guard (rangerhq-lmq9).
+` + sharedIndexMarker + ` — installed by posse gates install-hooks. Five walls
+# in one slot: the data ceiling (ADR 0050 — this instance's config
+# ` + DataCeilingConfigKey + `: over every staged text file and added path,
+# under EVERY visibility stamp), the beads visibility guard (rangerhq-hrz,
+# extended by ADR 0024 D2 checks 1+2+3 to a docs-genre allowlist, an
+# OpsPatterns scan over staged markdown, and a scan for this box's own
+# identity literals over every staged text file), the constitution-path
+# guard (ranger-base-ak3e), the ADR sha-stamp guard (ADR 0051 D4/D5,
+# ranger-base-glewr) and the shared-index commit guard (rangerhq-lmq9).
 # Foreign hooks are never overwritten; remove this file to uninstall.
 # ADR 0002 §3.
 `
@@ -2781,15 +2784,18 @@ func markdownPathspecArgs() string {
 // (ADR 0048 D2, ranger-base-8114t). It is a word rather than a flag because
 // the rendered hook is read by people: `posse_check 'client-acme' '<ere>'
 // class-only` says in the file itself what the refusal will and will not
-// print. Only an instance pattern gets it.
+// print. Only a CONFIGURED pattern gets it: an instance visibility pattern,
+// and — always, for the reason ADR 0050 gives — a data-ceiling pattern.
 const opsClassOnlyArg = "class-only"
 
 // opsCheckCall renders one posse_check call. classOnly is true for a pattern
 // that came from config beads_visibility_patterns:, whose value is one
-// deployment's confidential vocabulary: the refusal then names the class and
-// a hit count and never the ERE or the text it matched. A shipped
-// OpsPattern and a derived identity literal keep ADR 0024 D2's shape, where
-// the matched string is what makes the refusal actionable.
+// deployment's confidential vocabulary, and for every pattern from config
+// data_ceiling_patterns:, whose matched text may not exist in a local file
+// at all — a refusal is a local file (ADR 0050 Context). The refusal then
+// names the class and a hit count and never the ERE or the text it matched.
+// A shipped OpsPattern and a derived identity literal keep ADR 0024 D2's
+// shape, where the matched string is what makes the refusal actionable.
 func opsCheckCall(indent, class, ere string, classOnly bool) string {
 	line := indent + "posse_check " + shQuote(class) + " " + shQuote(ere)
 	if classOnly {
@@ -2871,12 +2877,27 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 	// meant it to check. Class names only — an instance's pattern IS its
 	// confidential vocabulary, and this file is generated, read and pasted.
 	var rejects strings.Builder
+	if len(set.CeilingRejected) > 0 {
+		fmt.Fprintf(&rejects, "# data ceiling patterns REFUSED at stamp time (config %s:), not in force below:\n", DataCeilingConfigKey)
+		for _, r := range set.CeilingRejected {
+			fmt.Fprintf(&rejects, "#   %s\n", r)
+		}
+	}
 	if len(set.Rejected) > 0 {
 		fmt.Fprintf(&rejects, "# instance patterns REFUSED at stamp time (config %s:), not in force below:\n", OpsPatternsConfigKey)
 		for _, r := range set.Rejected {
 			fmt.Fprintf(&rejects, "#   %s\n", r)
 		}
 	}
+	// THE CEILING RENDERS ABOVE THE STAMP GATE (ADR 0050 D2). The question
+	// it asks — may this content exist in a local file here at all? — is not
+	// about where the repo goes, so the stamp is not consulted: a private
+	// repo runs it, a public repo runs it FIRST, so a line that trips both
+	// the ceiling and a visibility list is refused with the stricter remedy.
+	// The helpers ($posse_base, posse_check) are defined above the gate for
+	// the same reason: both blocks read one definition. Nothing renders when
+	// the ceiling list is empty, which is every instance that has not
+	// configured one.
 	return `
 # ─── the beads visibility guard (rangerhq-hrz), extended by ADR 0024 D2 ───
 # A bead belongs in a public repo's db only when any deployer of this
@@ -2888,49 +2909,56 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 # visibility; the lint exists so a mis-routed artifact is a refusal at
 # commit time instead of a public one.
 #
+# The data ceiling (ADR 0050) sits ABOVE the visibility gate below and runs
+# under every stamp: visibility says where content may go, the ceiling says
+# whether it may exist in a local file here at all.
+#
 # The slot is prepare-commit-msg and not pre-commit for the reason the wall
 # below documents: pre-commit is bd's own flush hook, reinstalled silently
 # by bd, and a wall a third-party tool replaces on its next install is not
 # a wall. This one also survives --no-verify.
 ` + rejects.String() + `posse_beads_visibility=` + shQuote(visibility) + `
-if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
-  # Compare against HEAD, or against the empty tree in a repo with no
-  # commit yet — a first commit is exactly when a db (or a docs tree) arrives
-  # whole. Shared by all three checks below.
-  posse_base=$(git hash-object -t tree /dev/null 2>/dev/null)
-  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_base=HEAD; fi
 
-  # A function, not a 'while read' over a pipeline: the right side of a
-  # pipeline is a subshell and the assignment would not survive it — the
-  # rangerhq-kk6e lesson, which cost a push. Shared by every check below:
-  # each sets $posse_added and $posse_bad, then calls this over whichever
-  # list its scope gets — one Go slice per scope, one shell function.
-  #
-  # $3 IS THE DISCLOSURE SWITCH (ADR 0048 D2, ranger-base-8114t), and an
-  # instance pattern is the only thing that sets it. A shipped OpsPattern
-  # carries public text — it is in this repo's own source — so showing a
-  # writer the string they tripped on costs nothing, and a refusal that
-  # names only a class is a puzzle. An instance pattern is the opposite:
-  # the value IS one deployment's confidential vocabulary, kept out of the
-  # public tree on purpose, and a refusal is read in a terminal, pasted onto
-  # a bead and quoted in a transcript. So for those the wall says WHICH
-  # class was hit and HOW OFTEN and nothing else; the words that tripped it
-  # stay in the staged tree of whoever wrote them, where they already are.
-  posse_check() {
-    if [ -n "$3" ]; then
-      posse_n=$(printf '%s\n' "$posse_added" | grep -cE "$2" 2>/dev/null)
-      [ "${posse_n:-0}" -gt 0 ] || return 0
-      posse_bad="$posse_bad  $1: $posse_n hit(s) — pattern and matched text withheld: an instance class is this deployment's own vocabulary (ADR 0048 D2)
+# Compare against HEAD, or against the empty tree in a repo with no commit
+# yet — a first commit is exactly when a db (or a docs tree) arrives whole.
+# Shared by every check in both blocks below.
+posse_base=$(git hash-object -t tree /dev/null 2>/dev/null)
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_base=HEAD; fi
+
+# A function, not a 'while read' over a pipeline: the right side of a
+# pipeline is a subshell and the assignment would not survive it — the
+# rangerhq-kk6e lesson, which cost a push. Shared by every check below:
+# each sets $posse_added and $posse_bad, then calls this over whichever
+# list its scope gets — one Go slice per scope, one shell function.
+#
+# $3 IS THE DISCLOSURE SWITCH (ADR 0048 D2, ranger-base-8114t), and only a
+# CONFIGURED pattern sets it — an instance visibility pattern, and every
+# data-ceiling pattern (ADR 0050). A shipped OpsPattern carries public text
+# — it is in this repo's own source — so showing a writer the string they
+# tripped on costs nothing, and a refusal that names only a class is a
+# puzzle. A configured pattern is the opposite: the value IS the thing the
+# wall exists to keep out — one deployment's confidential vocabulary, or
+# content that may not exist in a local file at all — and a refusal is read
+# in a terminal, pasted onto a bead and quoted in a transcript. So for those
+# the wall says WHICH class was hit and HOW OFTEN and nothing else; the
+# words that tripped it stay in the staged tree of whoever wrote them, where
+# they already are.
+posse_check() {
+  if [ -n "$3" ]; then
+    posse_n=$(printf '%s\n' "$posse_added" | grep -cE "$2" 2>/dev/null)
+    [ "${posse_n:-0}" -gt 0 ] || return 0
+    posse_bad="$posse_bad  $1: $posse_n hit(s) — pattern and matched text withheld: a configured class's value is the thing being kept out, so the refusal carries the class alone (ADR 0048 D2, ADR 0050 D2)
 "
-      return 0
-    fi
-    posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
-    [ -n "$posse_m" ] || return 0
-    posse_bad="$posse_bad  $1: $2
+    return 0
+  fi
+  posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
+  [ -n "$posse_m" ] || return 0
+  posse_bad="$posse_bad  $1: $2
     matched: $posse_m
 "
-  }
-
+}
+` + dataCeilingCheck(set.Ceiling) + `
+if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # ─── check 0: the beads db (rangerhq-hrz) ───────────────────────────────
   # ADDED lines only, and every .beads jsonl: the db and the deletion ledger
   # beside it (rangerhq-fuom), which holds whole bead records and inherits
@@ -3116,46 +3144,250 @@ type visGuardRefusal struct {
 	rule         string // the rule it names — a refusal that names no rule is a regex saying no
 	matched      string // the line that introduces the matched text
 	wayThrough   string
+	// footer is the two lines after the remedy that say what this wall
+	// was stamped with. Empty means visPublicFooter — the stamp line the
+	// gated checks have always printed; the ceiling, which runs under every
+	// stamp, prints its own (ADR 0050 D2).
+	footer [2]string
 }
 
-func (r visGuardRefusal) render() string {
-	return `    if [ -n "$` + r.badVar + `" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: ` + r.label + ` OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ` + r.overrideWhat + `" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) ` + r.label + ` OVERRIDDEN [prepare-commit-msg hook]` + r.overrideAt + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: ` + r.header + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(r.rule) + `
-          echo "` + r.matched + `"
-          printf '%s' "$` + r.badVar + `"
-          echo ` + shQuote(r.wayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) ` + r.label + ` [prepare-commit-msg hook] ` + r.logTail + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
-      fi
-    fi
+// visPublicFooter is what every check INSIDE the visibility gate says
+// about the stamp it ran under: it is only ever reached when the repo is
+// stamped public.
+var visPublicFooter = [2]string{
+	"this repo's beads db is marked: public (stamped by posse gates install-hooks",
+	"from config beads_visibility:; an unmarked repo is treated as public)",
+}
+
+// render is the refusal at base indentation ind — the indent of its own
+// `if`. Check 3 renders inside the visibility gate (ind is four spaces);
+// the data ceiling renders above it (two).
+func (r visGuardRefusal) render(ind string) string {
+	footer := r.footer
+	if footer == [2]string{} {
+		footer = visPublicFooter
+	}
+	i1, i2, i3 := ind+"  ", ind+"    ", ind+"      "
+	return ind + `if [ -n "$` + r.badVar + `" ]; then
+` + i1 + `if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
+` + i2 + `echo "posse gate: ` + r.label + ` OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ` + r.overrideWhat + `" >&2
+` + i2 + `if [ -n "$RHQ_GATES_DIR" ]; then
+` + i3 + `echo "$(posse_stamp) ` + r.label + ` OVERRIDDEN [prepare-commit-msg hook]` + r.overrideAt + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+` + i2 + `fi
+` + i1 + `else
+` + i2 + `{
+` + i3 + `echo "refused by posse gate: ` + r.header + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+` + i3 + `echo ` + shQuote(r.rule) + `
+` + i3 + `echo "` + r.matched + `"
+` + i3 + `printf '%s' "$` + r.badVar + `"
+` + i3 + `echo ` + shQuote(r.wayThrough) + `
+` + i3 + `echo "  ` + footer[0] + `"
+` + i3 + `echo "  ` + footer[1] + `"
+` + i3 + `echo "  override, operator-typed, never passed by dispatch:"
+` + i3 + `echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
+` + i2 + `} >&2
+` + i2 + `if [ -n "$RHQ_GATES_DIR" ]; then
+` + i3 + `echo "$(posse_stamp) ` + r.label + ` [prepare-commit-msg hook] ` + r.logTail + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+` + i2 + `fi
+` + i2 + `exit 1
+` + i1 + `fi
+` + ind + `fi
 `
 }
 
-// The four sets of words check 3's arms refuse in. Named rather than
-// inlined so the two SOURCES are visibly parallel: the same two arms, the
-// same override, the same log shape, a different rule and a different
-// remedy — which is the whole content of ADR 0048 D2.
+// The sets of words the two-arm scans refuse in. Named rather than inlined
+// so the SOURCES are visibly parallel: the same two arms, the same
+// override, the same log shape, a different rule and a different remedy —
+// which is the whole content of ADR 0048 D2, and of ADR 0050 D2 again one
+// block up.
 const (
-	identityScanLabel = "identity literal scan"
-	instanceScanLabel = "instance pattern scan"
-	stagedPathMatched = "matched in the staged added path(s) — the FILENAME, not its content:"
-	stagedLineMatched = "matched in the staged additions:"
+	identityScanLabel    = "identity literal scan"
+	instanceScanLabel    = "instance pattern scan"
+	dataCeilingScanLabel = "data ceiling scan"
+	stagedPathMatched    = "matched in the staged added path(s) — the FILENAME, not its content:"
+	stagedLineMatched    = "matched in the staged additions:"
 )
+
+// dataCeilingStampTail is what the ceiling's refusals.log lines carry after
+// the label: the stamp the scan ran under, so a reader can tell a
+// private-repo ceiling hit from a public-repo one without opening the hook
+// (ADR 0050 D2). It is the shell variable, not the render-time value —
+// expanded inside the hook's own double-quoted echo, so the log line says
+// what the FILE was stamped with, which is the same thing.
+const dataCeilingStampTail = "stamp: $posse_beads_visibility"
+
+// visScanSource is one list the two-arm scan runs: how its checks render
+// at an indent, the accumulator its path arm folds into, and the two
+// refusals — content, path — it speaks in.
+type visScanSource struct {
+	checks  func(indent string) string
+	pathVar string
+	content visGuardRefusal
+	path    visGuardRefusal
+}
+
+// twoArmScan renders the shape ranger-base-uzgkz built for check 3 and ADR
+// 0050 D2 reuses for the ceiling, ONCE: the ADDED lines of every staged
+// text file, then the ADDED staged paths, each source accumulating into its
+// own variable and refusing in its own words. ind is the base indentation
+// of the block (check 3 sits inside the visibility gate; the ceiling sits
+// above it); title names the block in the second arm's banner; head is the
+// first arm's own comment, already rendered at ind.
+//
+// TWO SOURCES, ONE SCAN, TWO REFUSALS — the rule for check 3 and the
+// reason this is a list: every source runs over the SAME $posse_added and
+// the same per-path loop — one `git diff`, one listing — but each
+// accumulates into its own variable and refuses in its own words. Merging
+// them would be shorter and would tell a writer that an instance codename
+// in a comment is "an operator identity literal", which is a refusal that
+// names the wrong rule and sends them to the wrong remedy.
+//
+// checks() is rendered at two indents rather than once into a variable
+// because the path arm needs it INSIDE a loop: posse_check accumulates the
+// class and the matched text but not the subject, so the only way to name
+// the offending path in the refusal — which is what distinguishes a path
+// hit from a content hit for the reader — is to run the same matcher over
+// one path at a time.
+func twoArmScan(ind, title, head string, sources []visScanSource) string {
+	i1, i2 := ind+"  ", ind+"    "
+	var content, loop, pathRefusals, pathInit strings.Builder
+	for _, s := range sources {
+		content.WriteString(i1 + "posse_bad=''\n" + s.checks(i1) + s.content.render(i1))
+		loop.WriteString(i2 + "posse_bad=''\n" + s.checks(i2) + pathAccum(i2, s.pathVar))
+		pathRefusals.WriteString(s.path.render(i1))
+		pathInit.WriteString(i1 + s.pathVar + "=''\n")
+	}
+	return head + shComment(ind, `Binary files are already excluded: git diff with no --text emits
+"Binary files ... differ" for them, never a '+' line.`) +
+		ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
+` + i1 + `grep '^+' | grep -v '^+++')
+` + ind + `if [ -n "$posse_added" ]; then
+` + content.String() + ind + `fi
+
+` + shComment(ind, `─── `+title+`, second arm: the same patterns over ADDED staged PATHS ─────
+Every flag below is load-bearing and measured (git 2.50.1):
+  --no-renames  with move detection ON — git's default since 2.9 —
+                --diff-filter=A prints NOTHING for a pure move, so the
+                destination of a git mv is only an added ENTRY with the
+                flag. Same flag, same reason, as the NOTES.md arm and the
+                shared-index reader (ranger-base-x9xbk, gates.go ~2134,
+                which explains it once) and as check 1.
+  --diff-filter=A  added entries only: not deleted (a deletion carries a
+                path away) and not modified (already in history, check
+                1's precedent).
+  core.quotePath=false  so a literal carrying a non-ASCII byte is matched
+                raw rather than against git's octal-escaped spelling —
+                the same reason constitutionGuardBody reads paths
+                unquoted. RESIDUAL, stated: git still C-quotes a path
+                holding a double quote, a backslash or a control byte
+                whatever quotePath says (ranger-base-qg0k8), so such a
+                path is matched in its escaped spelling here. It can only
+                mis-match a literal that itself carries one of those
+                bytes; none of the sources produces one.
+-f and IFS=newline: the loop splits an unquoted expansion, so a path with
+a glob character stays a path and a path with spaces stays one word —
+the constitution arm's spelling, for the same reason. A path holding a
+LITERAL newline splits into two subjects, which is check 1's accepted
+residual and fail-safe here: each half is still scanned, and no derived
+literal contains a newline, so the split can only over-match.`) +
+		ind + `posse_ipaths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter=A "$posse_base" 2>/dev/null)
+` + ind + `if [ -n "$posse_ipaths" ]; then
+` + pathInit.String() + i1 + `set -f
+` + i1 + `posse_iifs=$IFS
+` + i1 + `IFS='
+'
+` + i1 + `for posse_ip in $posse_ipaths; do
+` + i2 + `posse_added=$posse_ip
+` + loop.String() + i1 + `done
+` + i1 + `IFS=$posse_iifs
+` + i1 + `set +f
+` + pathRefusals.String() + ind + `fi
+`
+}
+
+// shComment renders text as a shell comment block at ind, one `# ` per
+// line — so a block that is rendered at two indents carries its prose once.
+func shComment(ind, text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		b.WriteString(ind + "# " + line + "\n")
+	}
+	return b.String()
+}
+
+// dataCeilingCheck renders the data ceiling's block (ADR 0050 D2): this
+// instance's config data_ceiling_patterns: over the ADDED lines of every
+// staged text file and the ADDED staged paths — check 3's two arms, through
+// the same renderer — ABOVE the visibility gate, so it runs whatever the
+// repo's stamp. "" when the list is empty: an instance that configured no
+// ceiling pays for no diff.
+//
+// ALWAYS class-only, and not as a courtesy: a refusal is itself a local
+// file — the terminal, the transcript, the pane capture, refusals.log —
+// and a ceiling refusal that printed the matched text would breach the
+// ceiling by the wall's own hand (ADR 0050 Context). Its words are its own:
+// the rule says the content may not exist here, the remedy says remove the
+// paste and keep the cite (there is no private db to re-file into), and
+// the footer names the stamp this repo carries rather than asserting
+// "public", because the block did not read it.
+func dataCeilingCheck(ceiling []OpsPattern) string {
+	if len(ceiling) == 0 {
+		return ""
+	}
+	checks := func(indent string) string {
+		var b strings.Builder
+		for _, p := range ceiling {
+			b.WriteString(opsCheckCall(indent, p.Class, p.ERE, true))
+		}
+		return b.String()
+	}
+	footer := [2]string{
+		"this wall runs under every visibility stamp — this repo's beads db is stamped: $posse_beads_visibility",
+		"(stamped by posse gates install-hooks from config beads_visibility:; the ceiling did not read it)",
+	}
+	src := visScanSource{
+		checks:  checks,
+		pathVar: "posse_dbad",
+		content: visGuardRefusal{
+			badVar:       "posse_bad",
+			label:        dataCeilingScanLabel,
+			logTail:      "(" + dataCeilingStampTail + ")",
+			overrideAt:   " (" + dataCeilingStampTail + ")",
+			overrideWhat: "content above this instance's data ceiling is going into a local file",
+			header:       "data-ceiling content in a staged file",
+			rule:         DataCeilingRule,
+			matched:      stagedLineMatched,
+			wayThrough:   DataCeilingWayThrough,
+			footer:       footer,
+		},
+		path: visGuardRefusal{
+			badVar:       "posse_dbad",
+			label:        dataCeilingScanLabel,
+			logTail:      "(" + dataCeilingStampTail + ", staged path)",
+			overrideAt:   " (" + dataCeilingStampTail + ", staged path)",
+			overrideWhat: "content above this instance's data ceiling is going into a local file in a staged PATH",
+			header:       "data-ceiling content in a staged PATH",
+			rule:         DataCeilingRule,
+			matched:      stagedPathMatched,
+			wayThrough:   DataCeilingWayThrough,
+			footer:       footer,
+		},
+	}
+	head := "\n" + shComment("", `─── the data ceiling (ADR 0050): this instance's `+DataCeilingConfigKey+`: ────
+Runs under EVERY visibility stamp — it sits above the posse_beads_visibility
+gate on purpose. A visibility pattern asks whether content may be PUBLIC and
+is inert in a repo stamped private; a ceiling pattern asks whether content
+may exist in a local file on this instance AT ALL — a restricted-tier
+banner, a restricted system's hostname, its export file-name shape — and
+the answer does not depend on where the repo goes. The system of record's
+id is the sanctioned citation; the content behind it is not.
+Same two arms as check 3 below (ADDED lines of every staged text file, any
+path, code included; then ADDED staged paths), same matcher, same override,
+class-only ALWAYS: a refusal is itself a local file.
+Refused FIRST so a line that trips both this list and a visibility list is
+refused with the stricter remedy — there is no private db to re-file it in.`)
+	return twoArmScan("", "the data ceiling", head, []visScanSource{src})
+}
 
 // identityGuardCheck renders check 3's block: this box's own identity
 // literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
@@ -3227,139 +3459,93 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 		return b.String()
 	}
 
-	identityContent := visGuardRefusal{
-		badVar:       "posse_bad",
-		label:        identityScanLabel,
-		logTail:      "(public repo)",
-		overrideWhat: "an operator identifier is going into a public repo",
-		header:       "an operator identity literal in a staged file",
-		rule:         IdentityRule,
-		matched:      stagedLineMatched,
-		wayThrough:   IdentityWayThrough,
-	}
-	identityPath := visGuardRefusal{
-		badVar:       "posse_ibad",
-		label:        identityScanLabel,
-		logTail:      "(public repo, staged path)",
-		overrideAt:   " (staged path)",
-		overrideWhat: "an operator identifier is going into a public repo in a staged PATH",
-		header:       "an operator identity literal in a staged PATH",
-		rule:         IdentityRule,
-		matched:      stagedPathMatched,
-		wayThrough:   IdentityWayThrough,
-	}
-	instanceContent := visGuardRefusal{
-		badVar:       "posse_bad",
-		label:        instanceScanLabel,
-		logTail:      "(public repo)",
-		overrideWhat: "instance-defined content is going into a public repo",
-		header:       "an instance-defined visibility class in a staged file",
-		rule:         OpsInstanceRule,
-		matched:      stagedLineMatched,
-		wayThrough:   OpsInstanceWayThrough,
-	}
-	instancePath := visGuardRefusal{
-		badVar:       "posse_cbad",
-		label:        instanceScanLabel,
-		logTail:      "(public repo, staged path)",
-		overrideAt:   " (staged path)",
-		overrideWhat: "instance-defined content is going into a public repo in a staged PATH",
-		header:       "an instance-defined visibility class in a staged PATH",
-		rule:         OpsInstanceRule,
-		matched:      stagedPathMatched,
-		wayThrough:   OpsInstanceWayThrough,
-	}
-
-	// The content arm: one diff, then each source's own reset, checks and
-	// refusal. The order is derived-then-configured, the order All() uses
-	// and the order a hook file reads in.
-	var content, loop, pathRefusals, pathInit strings.Builder
+	// The sources, in the order derived-then-configured — the order All()
+	// uses and the order a hook file reads in. Each is skipped whole when
+	// its list is empty.
+	var sources []visScanSource
 	if len(identity) > 0 {
-		content.WriteString("    posse_bad=''\n" + idChecks("    ") + identityContent.render())
-		loop.WriteString("      posse_bad=''\n" + idChecks("      ") + pathAccum("posse_ibad"))
-		pathRefusals.WriteString(identityPath.render())
-		pathInit.WriteString("    posse_ibad=''\n")
+		sources = append(sources, visScanSource{
+			checks:  idChecks,
+			pathVar: "posse_ibad",
+			content: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        identityScanLabel,
+				logTail:      "(public repo)",
+				overrideWhat: "an operator identifier is going into a public repo",
+				header:       "an operator identity literal in a staged file",
+				rule:         IdentityRule,
+				matched:      stagedLineMatched,
+				wayThrough:   IdentityWayThrough,
+			},
+			path: visGuardRefusal{
+				badVar:       "posse_ibad",
+				label:        identityScanLabel,
+				logTail:      "(public repo, staged path)",
+				overrideAt:   " (staged path)",
+				overrideWhat: "an operator identifier is going into a public repo in a staged PATH",
+				header:       "an operator identity literal in a staged PATH",
+				rule:         IdentityRule,
+				matched:      stagedPathMatched,
+				wayThrough:   IdentityWayThrough,
+			},
+		})
 	}
 	if len(extra) > 0 {
-		content.WriteString("    posse_bad=''\n" + exChecks("    ") + instanceContent.render())
-		loop.WriteString("      posse_bad=''\n" + exChecks("      ") + pathAccum("posse_cbad"))
-		pathRefusals.WriteString(instancePath.render())
-		pathInit.WriteString("    posse_cbad=''\n")
+		sources = append(sources, visScanSource{
+			checks:  exChecks,
+			pathVar: "posse_cbad",
+			content: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        instanceScanLabel,
+				logTail:      "(public repo)",
+				overrideWhat: "instance-defined content is going into a public repo",
+				header:       "an instance-defined visibility class in a staged file",
+				rule:         OpsInstanceRule,
+				matched:      stagedLineMatched,
+				wayThrough:   OpsInstanceWayThrough,
+			},
+			path: visGuardRefusal{
+				badVar:       "posse_cbad",
+				label:        instanceScanLabel,
+				logTail:      "(public repo, staged path)",
+				overrideAt:   " (staged path)",
+				overrideWhat: "instance-defined content is going into a public repo in a staged PATH",
+				header:       "an instance-defined visibility class in a staged PATH",
+				rule:         OpsInstanceRule,
+				matched:      stagedPathMatched,
+				wayThrough:   OpsInstanceWayThrough,
+			},
+		})
 	}
 
-	return `
-  # ─── check 3: identity literals and instance patterns ───────────────────
-  # (ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones.)
-  # The literals are derived from THIS box at render time — whoami, git
-  # config user.email, and the instance repo path (dirname of
-  # .beads/redirect's target, both ~-relative and absolute) — never a
-  # shipped constant, never a commit: only this rendered hook file carries
-  # them (identityGuardCheck's own caller, DeriveIdentityLiterals,
-  # visibility.go). The instance patterns come from the operator's config
-  # (` + OpsPatternsConfigKey + `:) and are untracked for the same reason.
-  # Rendered as regexp-escaped fixed strings and as EREs respectively, so
-  # the SAME matcher checks 0 and 2 already call below covers this too.
-  # Scanned over the ADDED lines of ALL staged TEXT files, any path, code
-  # included — unlike check 2, which is markdown-only: neither an operator's
-  # identity nor one instance's confidential vocabulary has a legitimate
-  # public use anywhere, so the detector-source residual check 2 accepts
-  # does not apply here.
-  # Binary files are already excluded: git diff with no --text emits
-  # "Binary files ... differ" for them, never a '+' line.
-  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
-    grep '^+' | grep -v '^+++')
-  if [ -n "$posse_added" ]; then
-` + content.String() + `  fi
-
-  # ─── check 3, second arm: the same patterns over ADDED staged PATHS ─────
-  # Every flag below is load-bearing and measured (git 2.50.1):
-  #   --no-renames  with move detection ON — git's default since 2.9 —
-  #                 --diff-filter=A prints NOTHING for a pure move, so the
-  #                 destination of a git mv is only an added ENTRY with the
-  #                 flag. Same flag, same reason, as the NOTES.md arm and the
-  #                 shared-index reader (ranger-base-x9xbk, gates.go ~2134,
-  #                 which explains it once) and as check 1 above.
-  #   --diff-filter=A  added entries only: not deleted (a deletion carries a
-  #                 path away) and not modified (already in history, check
-  #                 1's precedent).
-  #   core.quotePath=false  so a literal carrying a non-ASCII byte is matched
-  #                 raw rather than against git's octal-escaped spelling —
-  #                 the same reason constitutionGuardBody reads paths
-  #                 unquoted. RESIDUAL, stated: git still C-quotes a path
-  #                 holding a double quote, a backslash or a control byte
-  #                 whatever quotePath says (ranger-base-qg0k8), so such a
-  #                 path is matched in its escaped spelling here. It can only
-  #                 mis-match a literal that itself carries one of those
-  #                 bytes; none of the three sources produces one.
-  # -f and IFS=newline: the loop splits an unquoted expansion, so a path with
-  # a glob character stays a path and a path with spaces stays one word —
-  # the constitution arm's spelling, for the same reason. A path holding a
-  # LITERAL newline splits into two subjects, which is check 1's accepted
-  # residual and fail-safe here: each half is still scanned, and no derived
-  # literal contains a newline, so the split can only over-match.
-  posse_ipaths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter=A "$posse_base" 2>/dev/null)
-  if [ -n "$posse_ipaths" ]; then
-` + pathInit.String() + `    set -f
-    posse_iifs=$IFS
-    IFS='
-'
-    for posse_ip in $posse_ipaths; do
-      posse_added=$posse_ip
-` + loop.String() + `    done
-    IFS=$posse_iifs
-    set +f
-` + pathRefusals.String() + `  fi
-`
+	head := "\n" + shComment("  ", `─── check 3: identity literals and instance patterns ───────────────────
+(ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones.)
+The literals are derived from THIS box at render time — whoami, git
+config user.email, and the instance repo path (dirname of
+.beads/redirect's target, both ~-relative and absolute) — never a
+shipped constant, never a commit: only this rendered hook file carries
+them (identityGuardCheck's own caller, DeriveIdentityLiterals,
+visibility.go). The instance patterns come from the operator's config
+(`+OpsPatternsConfigKey+`:) and are untracked for the same reason.
+Rendered as regexp-escaped fixed strings and as EREs respectively, so
+the SAME matcher checks 0 and 2 already call above covers this too.
+Scanned over the ADDED lines of ALL staged TEXT files, any path, code
+included — unlike check 2, which is markdown-only: neither an operator's
+identity nor one instance's confidential vocabulary has a legitimate
+public use anywhere, so the detector-source residual check 2 accepts
+does not apply here.`)
+	return twoArmScan("  ", "check 3", head, sources)
 }
 
 // pathAccum is how one path's hits are folded into an arm's accumulator:
 // posse_check keeps the class and the matched text but not the subject, so
-// the path is prepended here, once per source.
-func pathAccum(bad string) string {
-	return `      if [ -n "$posse_bad" ]; then
-        ` + bad + `="$` + bad + `  $posse_ip
+// the path is prepended here, once per source. ind is the loop body's
+// indent.
+func pathAccum(ind, bad string) string {
+	return ind + `if [ -n "$posse_bad" ]; then
+` + ind + `  ` + bad + `="$` + bad + `  $posse_ip
 $posse_bad"
-      fi
+` + ind + `fi
 `
 }
 
@@ -4455,7 +4641,7 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 		r.PrePushDegraded = l3DegradeLineIn(red, hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path, ADR sha-stamp and shared-index guards are not realized", commitIdentity, commitStale)
+		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the data ceiling, beads visibility, constitution-path, ADR sha-stamp and shared-index guards are not realized", commitIdentity, commitStale)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate
