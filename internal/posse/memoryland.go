@@ -59,6 +59,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // MemoryLanding is what a kill did with a persona's memory. Nil means there
@@ -539,6 +540,74 @@ func firstCredShape(lines []string) (string, int) {
 	return "", 0
 }
 
+// diffHeaderPath is the path a `--- `/`+++ ` header names, with git's
+// C-quoting undone and `prefix` (the `a/`/`b/` memoryDiff pins) stripped.
+// ok is false for `/dev/null`, for a quoting this cannot read, and for
+// anything else not carrying the prefix.
+//
+// The quoted spelling is NOT a misconfiguration to be turned off. git
+// C-quotes a path holding a double quote, a backslash or a control byte
+// whatever `core.quotePath` says, and quotePath — which governs the
+// non-ASCII bytes on top of that — defaults to TRUE. So `+++ b/` alone
+// misses `+++ "b/no\303\253l.md"` on a stock box (ranger-base-y7i7k).
+// `git diff --numstat -z` is the escape hatch that needs none of this and
+// is why memoryUnreadableChange has `-z` (see there), but a unified diff
+// has no `-z`: the line numbers this scan reports only exist in it.
+func diffHeaderPath(rest, prefix string) (string, bool) {
+	if p, ok := strings.CutPrefix(rest, prefix); ok {
+		return p, true
+	}
+	if !strings.HasPrefix(rest, `"`) {
+		return "", false
+	}
+	raw, ok := gitUnquoteCStyle(rest)
+	if !ok {
+		return "", false
+	}
+	// Not `return strings.CutPrefix(...)`: that hands back the whole
+	// unstripped string alongside its false, and a caller reading the path
+	// before the bool would get a `c/…` where it asked for `b/…`.
+	if p, ok := strings.CutPrefix(raw, prefix); ok {
+		return p, true
+	}
+	return "", false
+}
+
+// gitUnquoteCStyle undoes git's quote_c_style — a double-quoted string
+// whose odd bytes are C escapes: `\a \b \t \n \v \f \r \" \\` and a
+// three-digit octal `\nnn` for the rest.
+//
+// MEASURED, not assumed (git 2.50.1, go1.26.5): strconv.Unquote already
+// reads every one of those spellings byte-exactly, octal included — the
+// bead filing this said it did not, and that was the one factual error in
+// it. So this is a wrapper, not a reader.
+//
+// The one pre-pass it does need: with `core.quotePath=false` git still
+// quotes a path holding a `"`, a `\` or a control byte, but leaves that
+// path's non-ASCII bytes RAW inside the quotes — measured, the header for
+// `mé"x\.md` is `"b/mé\"x\\.md"`. strconv.Unquote decodes a raw byte
+// as a RUNE, so a name whose bytes are not valid UTF-8 (possible on ext4,
+// refused outright by APFS) would come back with U+FFFD where the byte
+// was. Escaping the high bytes first sidesteps it, and is safe blind: no
+// escape sequence git writes contains a byte >= 0x80, so no such byte can
+// be part of one.
+func gitUnquoteCStyle(q string) (string, bool) {
+	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
+		return "", false
+	}
+	var b strings.Builder
+	b.Grow(len(q))
+	for i := 0; i < len(q); i++ {
+		if c := q[i]; c >= utf8.RuneSelf {
+			fmt.Fprintf(&b, `\%03o`, c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	out, err := strconv.Unquote(b.String())
+	return out, err == nil
+}
+
 // firstCredShapeInDiff walks a unified diff and scans only its `+` lines,
 // keeping the file and the NEW line number so the refusal points at
 // something an operator can open.
@@ -557,15 +626,27 @@ func firstCredShapeInDiff(diff string) (file string, line int, what string) {
 	for _, ln := range strings.Split(diff, "\n") {
 		switch {
 		case strings.HasPrefix(ln, "diff --git "):
-			// The one line the format puts a header after. `cur` and `n`
-			// are not reset here on purpose: every file whose diff carries
-			// a `+` line also carries the `+++ b/` and `@@` that set them,
-			// so a reset would be a line no fixture can reach.
+			// The one line the format puts a header after, and the one
+			// place `cur` and `n` can be cleared. They ARE reset here, and
+			// the earlier reading that called the reset unreachable — every
+			// file whose diff carries a `+` line also carries the `+++ b/`
+			// and `@@` that set them — was wrong: a header this reader does
+			// not recognize is exactly such a file, and without the reset
+			// the hit is then attributed to the PREVIOUS file at a line
+			// number belonging to this one (ranger-base-y7i7k). Naming no
+			// file is a worse refusal than naming the right one and a much
+			// better one than naming an innocent file, so an unrecognized
+			// header can only ever cost the attribution of its own file.
 			header = true
-		case header && strings.HasPrefix(ln, "+++ b/"):
-			cur = strings.TrimPrefix(ln, "+++ b/")
-		case header && (strings.HasPrefix(ln, "+++ ") || strings.HasPrefix(ln, "--- ")):
-			// the other header half, and /dev/null for a deletion
+			cur, n = "", 0
+		case header && strings.HasPrefix(ln, "+++ "):
+			if p, ok := diffHeaderPath(strings.TrimPrefix(ln, "+++ "), "b/"); ok {
+				cur = p
+			}
+			// else /dev/null for a deletion, or a spelling this does not
+			// read — `cur` stays empty rather than holding a stale name.
+		case header && strings.HasPrefix(ln, "--- "):
+			// the other header half, which names the pre-image
 		case strings.HasPrefix(ln, "@@ "):
 			header = false
 			if m := hunk.FindStringSubmatch(ln); m != nil {
