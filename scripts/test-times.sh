@@ -7,6 +7,8 @@
 #
 # Environment:
 #   SLOW_PACKAGE_SECONDS=300   the line above which a package is called slow
+#   POSSE_TEST_SIGNAL_LOG=...  where the forensics of an outside signal go
+#                              (default $TMPDIR/posse-test-signal.log)
 #
 # THIS SCRIPT DOES NOT OWN THE TIMEOUT. ranger-base-2ggb put `-timeout 25m` in
 # the Makefile's `test` recipe and suitetimeout_qa_test.go pins it there — the
@@ -373,6 +375,196 @@ explain_std_break() {
   } >&2
 }
 
+# ─── the signal from outside (ranger-base-6nx72) ─────────────────────────────
+#
+# WHAT IT LOOKS LIKE, and why it is the worst shape in this file. Twice on
+# 2026-09-02 a full suite ended mid-package with nothing but
+#
+#     scripts/test-times.sh: line 621: 83846 Terminated: 15          "$@"
+#          83849 Done                    | tee "$log"
+#     make: *** [test] Terminated: 15
+#
+# No test is named. No package is red. The packages that DID finish are
+# printed by report() above it, in the same words they use on a green run.
+# Through the house filter it is a pass with a short tail — which is how one
+# of the two got read as a green suite and closed a bead on it. A run that
+# dies this way does not look like a red, and that is exactly the problem.
+#
+# WHO SENDS IT. Every occurrence traced so far — four suites across three
+# sessions on 2026-09-02 — was ANOTHER SEAT ON THIS BOX, and there is only the
+# one sender class. Reconstructed from the session transcripts to the
+# millisecond (ranger-base-6nx72):
+#
+#   21:28:34Z  one seat ran `pgrep -f 'test-times.sh|go test -timeout 25m'`,
+#              got back SIX pids, and ran `pkill -f test-times.sh` and
+#              `pkill -f "go test -timeout 25m"` over all of them. Two of the
+#              three pairs belonged to other sessions. Both of those suites
+#              reported completion 1.7s later, 3 MILLISECONDS APART, from
+#              launches 77 SECONDS apart — which is what one external kill
+#              looks like and what no per-run clock can look like.
+#   01:43:31Z  a seat ran `kill 83782 83846` on two pids read off the same
+#              kind of pgrep, believing both were its own. One was not.
+#
+# THERE IS NO 600s HARNESS CEILING, and two of the three readers above
+# concluded there was, because 598.6s of a suite that started 598.6s earlier
+# is a very convincing number. MEASURED here to settle it: a
+# `run_in_background` make → bash → child, output redirected to a file,
+# exactly the shape that "died at the ceiling", ran 900s and exited 0
+# untouched. A FOREGROUND Bash call is a different thing and really is capped
+# at 600s — so a run somebody waited on in the foreground can die of its own
+# caller's clock, and that is the only other sender this block admits to.
+#
+# Neither is the load guard, which is what both readers reached for first and
+# spent an hour eliminating. Nothing in the process table says "you were
+# killed"; the only witness is the process table at the instant it happened,
+# and by the time anyone asks, it is gone.
+#
+# SO TAKE THE WITNESS. Two arms, because the killers hit two different
+# processes and only one of them leaves a corpse this script can see:
+#
+#   - the CHILD arm: `go test` was signalled, the pipeline returns 128+N, and
+#     this script is alive to say so (the 21:43Z shape).
+#   - the WRAPPER arm: this script was signalled too, so there is no exit
+#     status to read and a trap is the only thing that runs (the ceiling
+#     shape, where the whole process group goes at once).
+#
+# Both write the same record and print the same block. TERM and HUP only: an
+# INT is a person pressing ^C, which is the one signal nobody needs explained.
+#
+# WHAT THE RECORD IS FOR. A `pkill` is gone in milliseconds, but the gate
+# shell that ran it is not — it holds the persona's whole Bash line in its
+# argv for as long as the line runs, and its PATH carries
+# `/state/gates/<persona>/bin`. So a process table taken at the signal names
+# the seat. That is the whole instrument: not a guess about who, a snapshot
+# of the room.
+SIGNAL_LOG=${POSSE_TEST_SIGNAL_LOG:-${TMPDIR:-/tmp}/posse-test-signal.log}
+
+# signal_name <number> — 15 -> SIGTERM. Only the ones a suite actually meets.
+signal_name() {
+  case $1 in
+    1) echo SIGHUP ;; 2) echo SIGINT ;; 9) echo SIGKILL ;;
+    15) echo SIGTERM ;; *) echo "signal $1" ;;
+  esac
+}
+
+# signal_suspects — reads a process table on STDIN (pid first, then argv) and
+# prints the lines that could have sent the signal. A gate shell holds the
+# whole persona Bash line, so the `pkill` that did this is quotable while it
+# runs, and the gate path in its PATH is the persona's name. Prints nothing
+# when the table holds nothing, which is itself the answer: the harness
+# ceiling kills from outside every seat and leaves no such line.
+#
+# It takes the table on stdin rather than running `ps` itself for two reasons
+# that are the same reason — a caged verify seat is refused `ps` outright and
+# has to fall back to `pgrep -fl`, and the self-test has to be able to hand it
+# a table with a known sender in it. A digest nobody can feed a fixture is a
+# digest nobody has ever seen name anybody.
+signal_suspects() {
+  local self=$1 who cmd
+  echo "-- possible senders (a live kill/pkill line, and whose seat it is)"
+  grep -E 'pkill|kill -|kill [0-9]' \
+    | grep -vF 'pkill|kill -|kill [0-9]' \
+    | while read -r pid rest; do
+        # Exclude THIS run by pid and nothing else. The first spelling of this
+        # excluded any row mentioning `test-times.sh`, which reads as "do not
+        # accuse yourself" and is exactly backwards: this run's own row never
+        # carries a kill word, while the killer's row usually names what it is
+        # killing — the real 2026-09-02 line was
+        # `pgrep -f 'test-times.sh|go test…'; pkill -f 'test-times.sh'`, and
+        # that filter would have dropped the one line worth printing. The one
+        # row that IS dropped by text is this digest's own `grep`, which `ps`
+        # catches in its own pipeline and which would otherwise be named as a
+        # suspect on every single event.
+        [ "$pid" = "$self" ] && continue
+        case $rest in
+          *"/state/gates/"*) who=${rest#*/state/gates/}; who=${who%%/*} ;;
+          *) who='(not a gate shell)' ;;
+        esac
+        # Quote the COMMAND, not the boilerplate. A gate shell's argv is a
+        # ~600-character PATH preamble with the persona's actual line inside
+        # `eval '…'`; printing the last 200 characters of that gives the
+        # trailing shell plumbing and never the `pkill` that did this.
+        cmd=$rest
+        case $cmd in *"eval '"*) cmd=${cmd#*eval \'} ;; esac
+        printf '      pid %s  seat %s\n        %s\n' "$pid" "$who" "${cmd:0:200}"
+      done
+}
+
+# signal_capture <what> <signal number> — the snapshot, taken NOW. Called from
+# the trap and from the child arm, both of which are milliseconds after the
+# signal landed and both of which must not block: everything here is best
+# effort and nothing here decides an exit status.
+# SIGNAL_LATE is the honest caveat on the wrapper arm's clock. Bash holds a
+# trap until the running command returns, so a wrapper signalled at 4s into a
+# 25m run does not run its handler until the run ends — MEASURED here: a
+# wrapper TERMed at 4s printed its block "120s in", which is the trap's clock
+# and not the signal's. Saying "120s" flat would send the next reader to the
+# wrong minute of the transcripts, which is the whole cost this block exists
+# to avoid.
+signal_capture() {
+  local what=$1 num=$2 elapsed
+  elapsed=$(( $(date +%s) - SIGNAL_START ))
+  SIGNAL_ELAPSED=$elapsed
+  SIGNAL_WHAT=$what
+  SIGNAL_NUM=$num
+  case $what in
+    wrapper) SIGNAL_LATE=' (when the trap RAN; bash holds a trap until the running command returns, so the signal landed at or before this)' ;;
+    *) SIGNAL_LATE='' ;;
+  esac
+  {
+    echo "=============================================================="
+    echo "$(date '+%Y-%m-%d %H:%M:%S %z')  $(signal_name "$num") to $what"
+    echo "run:     pid $$ , ${elapsed}s in${SIGNAL_LATE}"
+    echo "command: $SIGNAL_CMD"
+    echo "load:    $(uptime 2>/dev/null | sed 's/^.*load average/load average/')"
+    { ps -Awwo pid=,args= 2>/dev/null || pgrep -fl . 2>/dev/null; } | signal_suspects "$$"
+    echo "-- full process table"
+    ps -Awwo pid=,ppid=,pgid=,stat=,lstart=,args= 2>/dev/null \
+      || pgrep -fl . 2>/dev/null \
+      || echo "(no process listing from this seat: ps refused and pgrep is absent)"
+  } >> "$SIGNAL_LOG" 2>&1
+}
+
+# explain_signal — the block. Printed once, after the report, so the reader who
+# is looking at a wall of green package lines is told what they are not.
+explain_signal() {
+  [ -n "${SIGNAL_NUM:-}" ] || return 0
+  {
+    echo
+    echo '=============================================================='
+    echo "test-times: ENDED BY A SIGNAL FROM OUTSIDE — $(signal_name "$SIGNAL_NUM") to the $SIGNAL_WHAT, ${SIGNAL_ELAPSED}s in"
+    [ -n "$SIGNAL_LATE" ] && echo "            ${SIGNAL_ELAPSED}s is${SIGNAL_LATE}"
+    echo
+    echo '  THIS IS NOT A SUITE RESULT. The package lines above are the'
+    echo '  ones that had finished; every package after them was cut off'
+    echo '  without a verdict, and none of that is a red. Nobody may'
+    echo '  report "suite green" off this run.'
+    echo
+    echo '  WHO DID IT — the process table at the instant the signal'
+    echo '  landed was written to'
+    echo
+    echo "      $SIGNAL_LOG"
+    echo
+    echo '  Its "possible senders" section lists every live kill or pkill'
+    echo '  line on the box with the gate path that names the seat it was'
+    echo '  typed in. A pkill is gone in milliseconds but the gate shell'
+    echo '  that ran it holds the whole line while it runs, so the sender'
+    echo '  is usually still quotable there. Start with that file.'
+    echo
+    echo '  If it names nobody, ask whether this run was launched in a'
+    echo '  FOREGROUND Bash call: those are capped at 600s and end this'
+    echo '  way at their cap. A background one is not capped — measured'
+    echo "  900s untouched (ranger-base-6nx72). This run: ${SIGNAL_ELAPSED}s."
+    echo
+    echo '  AND WHEN YOU END A SUITE, END YOUR OWN. Every session on this'
+    echo '  box runs a byte-identical argv, so `pkill -f test-times.sh`'
+    echo '  and `pkill -f "go test -timeout 25m"` match all of them —'
+    echo '  2026-09-02, one such line took six pids across three sessions.'
+    echo '  Kill the pid the run printed when it started, and nothing else.'
+    echo '=============================================================='
+  } >&2
+}
+
 self_test() {
   # tmp is deliberately NOT local: the EXIT trap that cleans it up runs in
   # global scope, where a function-local name is unset and `set -u` aborts.
@@ -380,6 +572,10 @@ self_test() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-test-times.XXXXXX") || return 1
   trap 'rm -rf "${tmp:?}"' EXIT
   mkdir -p "$tmp/bin"
+  # Every arm below runs the REAL script, and one of them makes it record a
+  # signal. Point the record at the throwaway dir before any arm runs, or a
+  # self-test appends a process table to the box's own file.
+  export POSSE_TEST_SIGNAL_LOG="$tmp/signal.log"
 
   # A stub stands in for `go`, so every arm drives the REAL script end to end
   # — its exit status included — instead of only the report function.
@@ -387,6 +583,16 @@ self_test() {
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$STUB_ARGV"
 cat "$STUB_OUT"
+# The two shapes an outside kill takes (ranger-base-6nx72). `self` is the
+# 21:43Z occurrence: the child dies of TERM and the wrapper lives to read
+# 128+15 off the pipeline. `parent` is the ceiling shape: the wrapper is
+# signalled while the child is still running, so only a trap can fire — the
+# sleep holds the child open long enough that the trap is genuinely deferred,
+# which is what bash really does and what the arm has to survive.
+case ${STUB_SIGNAL:-} in
+  self)   kill -TERM $$; sleep 5 ;;
+  parent) kill -TERM "$PPID"; sleep 2 ;;
+esac
 exit "$STUB_RC"
 STUB
   chmod +x "$tmp/bin/faketest"
@@ -410,6 +616,7 @@ STUB
   run_arm() { # <fixture> <rc> [extra args to the fake command]
     local fixture=$1 code=$2; shift 2
     STUB_OUT="$tmp/$fixture" STUB_RC="$code" STUB_ARGV="$tmp/argv" \
+    STUB_SIGNAL="${STUB_SIGNAL:-}" \
       "$0" "$tmp/bin/faketest" test "$@" ./... > "$tmp/out" 2>&1
     rc=$?
     out=$(cat "$tmp/out")
@@ -602,6 +809,159 @@ STUB
     *) bad 'std break: no re-run advice' ;;
   esac
 
+  # S: the run announces its own pid, because the alternative to knowing it is
+  # a `pgrep` that lists every session's suite (which is how both 2026-09-02
+  # runs died). The arm requires the REAL pid of the run, not the word "pid":
+  # a line reading "$$" verbatim would satisfy any looser match.
+  run_arm clean.log 0 -timeout 25m
+  if printf '%s' "$out" | grep -qE 'this run is pid [0-9]+ — stop it with `kill [0-9]+`'; then
+    ok 'run line: names a real pid and how to stop this run'
+  else
+    bad "run line: no pid line — $(printf '%s' "$out" | grep -i 'this run' | head -1)"
+  fi
+  case $out in
+    *'never with a `pkill -f` pattern'*) ok 'run line: says why a pattern kill is wrong here' ;;
+    *) bad 'run line: does not warn off pkill' ;;
+  esac
+
+  # N: the outside signal, child arm (ranger-base-6nx72) — the 21:43Z shape,
+  # where `go test` is killed and this script lives to read 128+15 off the
+  # pipeline. The stub really signals itself: nothing here simulates a status.
+  local before after
+  # The record does not exist until something writes it, and `wc -c <` on a
+  # missing file is a redirection error the `|| echo 0` never sees.
+  record_size() { if [ -f "$tmp/signal.log" ]; then wc -c < "$tmp/signal.log"; else echo 0; fi; }
+  before=$(record_size)
+  STUB_SIGNAL=self run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'ENDED BY A SIGNAL FROM OUTSIDE'*'SIGTERM to the go test child'*) ok 'signal child: block printed and names the signal and what it hit' ;;
+    *) bad 'signal child: no block naming SIGTERM and the child' ;;
+  esac
+  case $out in
+    *'THIS IS NOT A SUITE RESULT'*) ok 'signal child: refuses the run as a suite result' ;;
+    *) bad 'signal child: does not say the run is not a result' ;;
+  esac
+  [ "$rc" = 143 ] && ok 'signal child: exit status 143 preserved' || bad "signal child: exit $rc, wanted 143"
+  case $out in
+    *'when the trap RAN'*) bad 'signal child: hedges a clock that is exact — the pipeline returned at the signal' ;;
+    *) ok 'signal child: reports its elapsed without the trap caveat' ;;
+  esac
+  after=$(record_size)
+  [ "$after" -gt "$before" ] && ok 'signal child: the record grew' || bad 'signal child: nothing was written to the record'
+  if grep -q 'full process table' "$tmp/signal.log" 2>/dev/null &&
+     grep -q 'possible senders' "$tmp/signal.log" 2>/dev/null; then
+    ok 'signal child: the record holds a process table and a suspect section'
+  else
+    bad 'signal child: the record has no process table'
+  fi
+
+  # O: the wrapper arm — the ceiling shape, where this script is signalled
+  # while the child runs on. Only the trap can fire, and it fires LATE by
+  # design; the arm proves it fires at all and that the signal is re-raised
+  # rather than swallowed (a wrapper that survived its own TERM would report a
+  # green suite to make, which is the whole failure this bead is about).
+  # The arm ends with a job dying of TERM, and this shell announces that on
+  # its own stderr ("… Terminated: 15 …"). The arm's own output already goes
+  # to $tmp/out, so nothing else can be lost in here.
+  { STUB_SIGNAL=parent run_arm clean.log 0 -timeout 25m; } 2>/dev/null
+  case $out in
+    *'ENDED BY A SIGNAL FROM OUTSIDE'*'SIGTERM to the wrapper'*) ok 'signal wrapper: block printed from the trap' ;;
+    *) bad 'signal wrapper: the trap printed no block' ;;
+  esac
+  case $out in
+    *'when the trap RAN'*) ok 'signal wrapper: the elapsed is flagged as the trap clock, not the signal clock' ;;
+    *) bad 'signal wrapper: reports a deferred trap clock as the time of death' ;;
+  esac
+  [ "$rc" = 143 ] && ok 'signal wrapper: the signal is re-raised, not swallowed' || bad "signal wrapper: exit $rc, wanted 143"
+
+  # P: the NEGATIVE control for both arms. A run nobody signalled must print no
+  # block and must not touch the record — "no block" is also what a broken
+  # detector looks like, so N above is its positive witness and this is the
+  # other half.
+  before=$(record_size)
+  run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'ENDED BY A SIGNAL FROM OUTSIDE'*) bad 'unsignalled run: signal block printed on a run nobody killed' ;;
+    *) ok 'unsignalled run: no signal block' ;;
+  esac
+  # And the arm that matters more, because it is the common case: a suite with
+  # REDS in it exits 1 and has not been signalled by anybody. A detector that
+  # fires on any nonzero status would call every failing run a kill.
+  run_arm enospc.log 1 -timeout 25m
+  case $out in
+    *'ENDED BY A SIGNAL FROM OUTSIDE'*) bad 'failing run: a red suite was reported as killed from outside' ;;
+    *) ok 'failing run: exit 1 is a red, not a signal' ;;
+  esac
+  after=$(record_size)
+  [ "$after" = "$before" ] && ok 'unsignalled run: the record was not touched' || bad 'unsignalled run: wrote a record with no signal'
+
+  # R: the digest that actually names a sender, fed a table with one in it.
+  # The fixture is the real 2026-09-02 shape: a sibling seat's gate shell
+  # holding the pkill line in its argv, its PATH naming the persona. Three
+  # things have to survive: the line is selected, the seat is read out of the
+  # gate path, and the innocent rows are left out.
+  local table suspects
+  # Verbatim shapes from 2026-09-02: jian-yang's line NAMES test-times.sh
+  # (it is what it is killing), dinesh's is a bare `kill <pid>` off a pgrep,
+  # 502 is an innocent bystander and 504 is this run itself.
+  table="  501 /bin/zsh -c _rgp=; PATH=/Users/x/.config/posse/state/gates/jian-yang/bin:\$PATH; eval 'pgrep -f test-times.sh; pkill -f test-times.sh; pkill -f \"go test -timeout 25m\"'
+  502 /Applications/Safari.app/Contents/MacOS/Safari
+  503 /bin/zsh -c PATH=/Users/x/.config/posse/state/gates/dinesh/bin; eval 'kill 83782 83846'
+  504 bash scripts/test-times.sh /opt/homebrew/bin/go test -timeout 25m ./...
+  505 /bin/zsh -c eval 'make test; kill -0 505'"
+  suspects=$(printf '%s\n' "$table" | signal_suspects 505)
+  case $suspects in
+    *'seat jian-yang'*) ok 'suspects: the pkill line is selected and its seat named' ;;
+    *) bad 'suspects: the pkill line did not name jian-yang' ;;
+  esac
+  case $suspects in
+    *'seat dinesh'*) ok 'suspects: a bare `kill <pid>` line is selected too' ;;
+    *) bad 'suspects: the bare kill line was missed' ;;
+  esac
+  case $suspects in
+    *Safari*) bad 'suspects: an unrelated process was listed as a sender' ;;
+    *) ok 'suspects: leaves the unrelated rows out' ;;
+  esac
+  # `ps` catches this digest's own grep in its own pipeline, and a suspect
+  # section that names itself on every event teaches the reader to skip it.
+  case $(printf '%s\n  506 grep -E pkill|kill -|kill [0-9]\n' "$table" | signal_suspects 505) in
+    *'506'*) bad 'suspects: the digest lists its own grep as a sender' ;;
+    *) ok 'suspects: does not name its own grep' ;;
+  esac
+  # The killer's line NAMES test-times.sh, so "mentions test-times.sh" can
+  # never be the exclusion — only this run's own pid can be.
+  case $suspects in
+    *'pkill -f test-times.sh'*) ok 'suspects: keeps a killer line that names the suite it killed' ;;
+    *) bad 'suspects: dropped the killer line because it mentioned test-times.sh' ;;
+  esac
+  # The command, not the 600 characters of PATH preamble it is buried in.
+  case $suspects in
+    *'PATH=/Users/x/.config'*) bad 'suspects: quotes the gate preamble instead of the command' ;;
+    *) ok 'suspects: quotes the command out of the gate shell, not its preamble' ;;
+  esac
+  case $suspects in
+    *'pid 505'*) bad 'suspects: lists the run itself as its own killer' ;;
+    *) ok 'suspects: excludes this run by pid' ;;
+  esac
+
+  # Q: the block has to be actionable, not just loud — the two things a
+  # reader does next are open the record and stop the run by pid. $out holds
+  # the LAST arm's output, so this arm signals a run of its own rather than
+  # reading a block that three arms ago left lying around.
+  STUB_SIGNAL=self run_arm clean.log 0 -timeout 25m
+  case $out in
+    *"$tmp/signal.log"*) ok 'signal block: names the record path to open' ;;
+    *) bad 'signal block: does not say where the process table went' ;;
+  esac
+  case $out in
+    *'END YOUR OWN'*'Kill the pid the run printed'*) ok 'signal block: says how to end a suite without hitting siblings' ;;
+    *) bad 'signal block: does not give the safe way to kill a run' ;;
+  esac
+  case $out in
+    *'A background one is not capped'*) ok 'signal block: does not sell the 600s ceiling that measurement killed' ;;
+    *) bad 'signal block: lost the measured statement about the cap' ;;
+  esac
+
   if [ "$fail" = 0 ]; then echo 'test-times --self-test: ok'; else echo 'test-times --self-test: FAILED' >&2; fi
   return "$fail"
 }
@@ -618,12 +978,39 @@ trap 'rm -f "$log"' EXIT
 
 disk_preflight "$1"
 
+# WHOSE RUN THIS IS (ranger-base-6nx72). Every session on this box runs a
+# suite with a byte-identical argv, so `pgrep -f test-times.sh` answers "which
+# suites are running" and NEVER "which one is mine" — on 2026-09-02 one
+# `pkill -f` line matched six pids across three sessions and ended all three,
+# and a `kill <pid>` off the same pgrep ended a fourth. The pid is printed
+# here so the session that started this run can stop THIS run later without
+# going back to the process table to guess.
+printf 'test-times: this run is pid %s — stop it with `kill %s`, never with a `pkill -f` pattern: every session on this box runs the same argv\n' "$$" "$$"
+
+# The witness for an outside signal (ranger-base-6nx72). SIGNAL_START and
+# SIGNAL_CMD are read by signal_capture from whichever arm fires; the traps
+# re-raise so that `make` still reports Terminated and the exit status is the
+# one it always was — this arm records, it does not swallow.
+SIGNAL_START=$(date +%s)
+SIGNAL_CMD="$*"
+SIGNAL_NUM=""
+SIGNAL_WHAT=""
+SIGNAL_ELAPSED=0
+SIGNAL_LATE=""
+trap 'signal_capture "wrapper" 15; explain_signal; trap - TERM; kill -TERM $$' TERM
+trap 'signal_capture "wrapper" 1;  explain_signal; trap - HUP;  kill -HUP  $$' HUP
+
 "$@" | tee "$log"
 status=${PIPESTATUS[0]}
+
+# 128+N is a child that died of signal N. `go test` exits 1 for reds and 2 for
+# a build error, so nothing in the normal range reaches here.
+if [ "$status" -gt 128 ]; then signal_capture "go test child" "$(( status - 128 ))"; fi
 
 report "$log" "$budget" "$explicit"
 explain_timeout "$log"
 explain_disk "$log"
 explain_std_break "$log"
+explain_signal
 
 exit "$status"
