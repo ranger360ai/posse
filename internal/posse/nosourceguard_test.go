@@ -43,6 +43,10 @@ func linuxNoSource() *NoSource {
 // It is the counterpart of planseam_test.go's noAdapters, and the pair is
 // the point: two adapters that both refuse, one whose refusal a login fixes
 // and one whose does not, and a guard that says which is which.
+//
+// Its callers must be SERIAL: this replaces the package-level slice
+// planAdapters, which PlanAdapter ranges over for every other test in the
+// binary (ranger-base-btdvw).
 func noSourceAdapter(t *testing.T, ns *NoSource) {
 	t.Helper()
 	saved := planAdapters
@@ -276,8 +280,8 @@ func TestNoSourceReasonReadsBothArrivalsAndRefusesTheMixedOne(t *testing.T) {
 // PlanAdapter keeps the adapters' reasons as values, not only as a
 // substring of Why. Without that, the availability arrival is unreadable and
 // the guard's answer depends on which code path noticed the absence.
+// Serial: noSourceAdapter replaces the planAdapters slice (ranger-base-btdvw).
 func TestPlanAdapterKeepsTheTypedReason(t *testing.T) {
-	t.Parallel()
 	ns := linuxNoSource()
 	noSourceAdapter(t, ns)
 

@@ -87,8 +87,8 @@ func TestPathScopedWriteGrammar(t *testing.T) {
 // ADR 0014 §2: the realization matrix — runtime × cage × glob shape. Before
 // this, a parametrized rule fell to parity's default arm and was classified
 // as a tool-name deny (at container, as a stdio MCP server).
+// Serial: seatbeltForTest writes the AvailableCages map (ranger-base-btdvw).
 func TestCheckParityPathScopedWrites(t *testing.T) {
-	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	codex, _ := a.LoadRuntime("codex")
@@ -186,8 +186,8 @@ func TestCheckParityPathScopedWrites(t *testing.T) {
 
 // The one thing this bead must not move: a PID with only bare Edit/Write
 // reads exactly as it did before path-scoping existed.
+// Serial: seatbeltForTest writes the AvailableCages map (ranger-base-btdvw).
 func TestBareFileWriteRowUnchangedByPathScoping(t *testing.T) {
-	t.Parallel()
 	a := cageApp(t)
 	claude, _ := a.LoadRuntime("claude")
 	codex, _ := a.LoadRuntime("codex")
@@ -230,6 +230,11 @@ func containsPath(set []string, p string) bool {
 
 // seatbeltForTest makes the tier available for the duration of a test
 // regardless of whether this host has sandbox-exec, and puts the flag back.
+//
+// Its callers must be SERIAL: this writes the package-level map
+// AvailableCages, which CheckParity and the launch read. Two callers side by
+// side are concurrent map writes even when both write the same key with the
+// same value (ranger-base-btdvw).
 func seatbeltForTest(t *testing.T) {
 	t.Helper()
 	had := AvailableCages[CageSeatbelt]

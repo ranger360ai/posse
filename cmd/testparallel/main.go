@@ -7,6 +7,7 @@
 //	go run ./cmd/testparallel ./internal/posse            # the counts
 //	go run ./cmd/testparallel ./internal/posse eligible   # the set to mark
 //	go run ./cmd/testparallel ./internal/posse d3         # the list to READ
+//	go run ./cmd/testparallel ./internal/posse extra      # parallel-but-ineligible
 //
 // Three filters, each catching what the last one does not:
 //
@@ -285,6 +286,79 @@ func main() {
 		"TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone": "asserts flock acquisition",
 		"TestWatchReleasesLockBetweenPasses":                   "asserts flock acquisition",
 	}
+	// Named parallel, and the counterpart of serial above: a test the three
+	// filters call ineligible, that a human has READ and cleared. These are
+	// the 45 ranger-base-btdvw went through one at a time; six of that 45 were
+	// real and lost their t.Parallel in the same pass (costProviders,
+	// AvailableCages x2, planAdapters, RHQ_PLAN_USAGE_URL x2). The rest are
+	// here, per test and never per file, because a clearance is an argument
+	// about ONE test's body and does not survive being generalised:
+	//
+	//   - "reads <clock>": blindT, lpouiT and pulseNow are package-level
+	//     time.Time fixtures declared once and never assigned. The only
+	//     "write" the filter sees is `.Add`, which on a time.Time returns a
+	//     new value and mutates nothing — the over-read the writeMeth comment
+	//     above describes. NOT fixed by exempting the three vars: MEASURED,
+	//     that frees 64 further tests, so `check` would then demand
+	//     t.Parallel on 64 tests nobody has read. That is a sweep, and this
+	//     is not it.
+	//   - "reads OpsPatterns": the shipped table is written once, by init(),
+	//     compiling each ERE — before any test runs. Every test here ranges
+	//     it read-only.
+	//   - "calls sandboxApplyRefusal": the seam is a func var, and its one
+	//     writer (rchFakeApplyRefusal in reachability_qa_test.go) is serial.
+	//     Go resumes paused parallel tests only after the whole sequential
+	//     pass is done, so a serial writer never overlaps a parallel reader.
+	//
+	// A clearance is not permanent: it says what the test's body did when it
+	// was read. Add a write to one of these and the reason above stops being
+	// true — which is why each line names the fact it rests on.
+	parallelOK := map[string]string{
+		// blindT (22)
+		"TestEpochStartIsWallClockAligned":             "reads blindT",
+		"TestHarnessRatios":                            "reads blindT",
+		"TestPlanCache429WithoutRetryAfter":            "reads blindT",
+		"TestPlanCacheCapsALongRetryAfter":             "reads blindT",
+		"TestPlanCacheCorruptSnapshotRefetches":        "reads blindT",
+		"TestPlanCacheHonoursRetryAfterAcrossCallers":  "reads blindT",
+		"TestPlanCacheLineRendersNothingOnAFailedRead": "reads blindT",
+		"TestPlanCacheLineSaysHowOldTheReadingIs":      "reads blindT",
+		"TestPlanCacheLogsAFailedRead":                 "reads blindT",
+		"TestPlanCacheRefetchesPastTheAgeAsked":        "reads blindT",
+		"TestPlanCacheSuccessClearsTheCooldown":        "reads blindT",
+		"TestPlanCacheWithoutAStateDirStillReads":      "reads blindT",
+		"TestPlanCacheZeroAgeAlwaysAsks":               "reads blindT",
+		"TestPlanSnapshotFromBeforeTheSeamIsAMiss":     "reads blindT",
+		"TestProbeStateDriftAndCurrency":               "reads blindT",
+		"TestQAPlan429BackoffAsksTheBoundaryOnce":      "reads blindT",
+		"TestQAPlan429BackoffEscalatesAcrossAStorm":    "reads blindT",
+		"TestQAPlan429BackoffLogStaysReadable":         "reads blindT",
+		"TestQAPlan429BackoffLogsTheRawRetryAfter":     "reads blindT",
+		"TestQAPlan429BackoffReadsAPreUpgradeSnapshot": "reads blindT",
+		"TestQAPlan429BackoffResetsOnSuccess":          "reads blindT",
+		"TestScoreIssues":                              "reads blindT",
+		// lpouiT (7)
+		"TestQAPlan429BackoffIsOnTheLoudLine":           "reads lpouiT",
+		"TestQAPlanStaleClassIgnoresABracketedSentence": "reads lpouiT",
+		"TestQAPlanStaleLineIsTheMeasuredHour":          "reads lpouiT",
+		"TestQAPlanStaleQuietWhereTheLineWouldLie":      "reads lpouiT",
+		"TestQAPlanStaleStreakAndClass":                 "reads lpouiT",
+		"TestQAPlanStaleStreakStopsAtATornLine":         "reads lpouiT",
+		"TestQAPlanStaleThresholdIsAnEdge":              "reads lpouiT",
+		// pulseNow (5)
+		"TestQAScorecardCarriesTheShopPulseSection":            "reads pulseNow",
+		"TestQAShopPulseArithmetic":                            "reads pulseNow",
+		"TestQAShopPulseCountsTheUnclassifiedBucketSeparately": "reads pulseNow",
+		"TestQAShopPulseLineReplacesTheRawOpenCount":           "reads pulseNow",
+		"TestQAShopPulseNamesARepoItCouldNotRead":              "reads pulseNow",
+		// OpsPatterns (2)
+		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
+		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",
+		// sandboxApplyRefusal (3)
+		"TestQASandboxApplyProbeAgreesWithARenderedProfile": "calls sandboxApplyRefusal",
+		"TestQASandboxApplyProbeGrid":                       "calls sandboxApplyRefusal",
+		"TestQASandboxExecStaysOnPathInsideTheCage":         "calls sandboxApplyRefusal",
+	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {
 		for id := range g.idents {
@@ -443,14 +517,29 @@ func main() {
 				// other test writes, and it fails as "the thing under test
 				// did not happen" (ranger-base-pj87l).
 				shared = append(shared, g.file+"\t"+g.name)
-			case !eligible && g.hasParallel:
+			case !eligible && g.hasParallel && parallelOK[g.name] == "":
 				extra = append(extra, g.file+"\t"+g.name)
 			}
 		}
 		if len(extra) > 0 {
-			// Not a failure: these predate the filter (i7fa) and taking
-			// t.Parallel off a green test is a decision, not a sweep.
-			fmt.Printf("note: %d tests carry t.Parallel that this tool would not give it\n", len(extra))
+			// This WAS a note, for as long as the set was a backlog nobody
+			// had read: taking t.Parallel off a green test is a decision, not
+			// a sweep, and the 45 that predated the filter (i7fa) were not
+			// this tool's to decide. ranger-base-btdvw read all 45 — six lost
+			// their t.Parallel, 39 are cleared in parallelOK above — so the
+			// backlog is gone and what is left is decay: a test arriving with
+			// t.Parallel over shared state and no argument for it. That is
+			// the same failure the unmarked list below catches, in the other
+			// direction, and it gets the same treatment.
+			fmt.Fprintf(os.Stderr, "testparallel: %d test(s) carry t.Parallel that this tool would not give:\n", len(extra))
+			for _, u := range extra {
+				fmt.Fprintf(os.Stderr, "  %s\n", u)
+			}
+			fmt.Fprintf(os.Stderr, "\nRun `go run ./cmd/testparallel %s extra` for the var or env root behind\n"+
+				"each. Then either drop t.Parallel and say why at the test, or — if the\n"+
+				"state is read-only, per-test-keyed, or written only by serial tests — add\n"+
+				"a line to parallelOK in cmd/testparallel/main.go naming that argument.\n", dir)
+			os.Exit(1)
 		}
 		if len(shared) > 0 {
 			fmt.Fprintf(os.Stderr, "testparallel: %d parallel test(s) read the binary-wide fakeDir() instead of fakeDirOf(t):\n", len(shared))
@@ -474,6 +563,56 @@ func main() {
 			"serial map in cmd/testparallel/main.go. This package is one test binary on\n"+
 			"one clock and has outrun that clock twice (ranger-base-2ggb, ranger-base-pj87l).\n")
 		os.Exit(1)
+	case "extra":
+		// Every test carrying t.Parallel the three filters would not give it,
+		// with what holds it back and whether a human has cleared it. The
+		// list `check` fails on is this one, minus the CLEARED rows.
+		for _, g := range tests {
+			if !g.hasParallel {
+				continue
+			}
+			var why []string
+			if envTainted[g.name] {
+				why = append(why, "env")
+			}
+			if varTainted[g.name] {
+				why = append(why, "pkgvar")
+			}
+			if fakeDirTainted[g.name] {
+				why = append(why, "fakeDir")
+			}
+			if serial[g.name] != "" {
+				why = append(why, "named-serial")
+			}
+			if len(why) == 0 {
+				continue
+			}
+			state := "UNCLEARED"
+			if ok := parallelOK[g.name]; ok != "" {
+				state = "cleared: " + ok
+			}
+			fmt.Printf("%-14s %s\t%s\t%s\n", strings.Join(why, ","), g.file, g.name, state)
+		}
+		// A clearance for a test that is no longer flagged is dead weight: it
+		// reads as an argument someone is relying on. Named, not fatal —
+		// removing a t.Parallel should not have to touch this file in the
+		// same commit.
+		flagged := map[string]bool{}
+		for _, g := range tests {
+			if g.hasParallel && (envTainted[g.name] || varTainted[g.name] || fakeDirTainted[g.name] || serial[g.name] != "") {
+				flagged[g.name] = true
+			}
+		}
+		var stale []string
+		for n := range parallelOK {
+			if !flagged[n] {
+				stale = append(stale, n)
+			}
+		}
+		sort.Strings(stale)
+		for _, n := range stale {
+			fmt.Printf("%-14s %s\t%s\n", "stale", "parallelOK", n)
+		}
 	case "envroots":
 		// The census the next round of this work needs: every function that
 		// writes the process environment, with the number of top-level tests

@@ -57,8 +57,13 @@ func (tablePricedCost) Decode(string, time.Time) ([]*Segment, error) { return ni
 // by THAT adapter (ranger-base-8tut: Segment.Total now resolves through
 // Segment.priceFor, which asks CostProviderFor(s.Runtime) before falling
 // back to claude's global table).
+//
+// SERIAL, and not by omission: RegisterCostProvider writes the package-level
+// map costProviders and the cleanup deletes from it. Every parallel test that
+// prices a Segment reads that map through Segment.priceFor -> CostProviderFor,
+// so one writer beside them is a concurrent map read/write — a fatal throw of
+// the whole binary, not a FAIL line (ranger-base-btdvw).
 func TestQACostAdapterPriceTableIsConsulted(t *testing.T) {
-	t.Parallel()
 	p := tablePricedCost{}
 	RegisterCostProvider(p)
 	t.Cleanup(func() { delete(costProviders, p.Runtime()) })

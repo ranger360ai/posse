@@ -605,9 +605,14 @@ func TestPlanReaderImplausibleValueIsNotAReading(t *testing.T) {
 // whose answer the fleet may believe. Nothing here dials: the assertion is
 // about how NewPlanReader is configured with no override in the
 // environment.
+//
+// Serial, and t.Setenv rather than os.Unsetenv: clearing the override is a
+// write to the process environment, which a parallel test may not do and
+// which os.Unsetenv would not put back afterwards. Empty reads the same as
+// unset — NewAnthropicPlanReader takes the override only when it is non-empty
+// (ranger-base-btdvw).
 func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
-	t.Parallel()
-	os.Unsetenv("RHQ_PLAN_USAGE_URL")
+	t.Setenv("RHQ_PLAN_USAGE_URL", "")
 	r := NewAnthropicPlanReader()
 	if r.URL != PlanUsageURL {
 		t.Fatalf("default URL = %s, want %s", r.URL, PlanUsageURL)
@@ -621,9 +626,9 @@ func TestPlanReaderCompiledInEndpointIsCredentialedAndShared(t *testing.T) {
 }
 
 // Default construction points at the real endpoint (no env override).
+// Serial, for the reason above: clearing the override writes the environment.
 func TestPlanReaderDefaultURL(t *testing.T) {
-	t.Parallel()
-	os.Unsetenv("RHQ_PLAN_USAGE_URL")
+	t.Setenv("RHQ_PLAN_USAGE_URL", "")
 	if r := NewAnthropicPlanReader(); r.URL != PlanUsageURL {
 		t.Errorf("default URL = %s, want %s", r.URL, PlanUsageURL)
 	}
