@@ -202,3 +202,53 @@ func TestQACostPlanServesTheSnapshotWhileQuiet(t *testing.T) {
 		t.Errorf("%d requests", n)
 	}
 }
+
+// A mute nobody can see is the failure this shop check exists to end: with
+// the flag set, `posse status` says so and names the last reading it is not
+// refreshing. The controls are the two states where the line would be
+// furniture or a lie — an unarmed guard (most shops, always silent about a
+// meter they do not have) and an armed one that is asking normally.
+func TestQAStatusSaysTheMeterIsQuiet(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cfg   string
+		wants bool
+	}{
+		{"quiet flag", "plan_guard_5h: 70\nplan_usage_quiet: true\n", true},
+		{"guard off", "", false},
+		{"armed and asking", "plan_guard_5h: 70\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := buildRhq(t)
+			srv, hits := quietServer(t)
+			home := t.TempDir()
+			repo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, "config.yaml"),
+				[]byte("beads:\n  - "+repo+"\n"+tc.cfg), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			seedQuietSnapshot(t, filepath.Join(home, "state"), time.Now().UTC().Add(-3*time.Hour))
+
+			out, _, _ := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "status")
+			if got := strings.Contains(out, "plan meter QUIET (plan_usage_quiet)"); got != tc.wants {
+				t.Errorf("%s: said = %v, want %v:\n%s", tc.name, got, tc.wants, out)
+			}
+			if tc.wants {
+				for _, want := range []string{"5h 46% · 7d 29%", "3h00m ago"} {
+					if !strings.Contains(out, want) {
+						t.Errorf("the line must carry the reading it is not refreshing (%q):\n%s", want, out)
+					}
+				}
+				if strings.Contains(out, "plan meter BLIND") {
+					t.Errorf("quiet is not blind — no headroom rule is ruling on anything:\n%s", out)
+				}
+			}
+			if n := hits.Load(); tc.wants && n != 0 {
+				t.Errorf("a shop check that reported the quiet gap by breaking it: %d requests", n)
+			}
+		})
+	}
+}

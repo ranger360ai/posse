@@ -886,6 +886,17 @@ func main() {
 		if st := a.PlanStaleness("status", time.Now(), os.Stderr); st.Stale {
 			fmt.Fprintf(out, "%s\n", st.Line())
 		}
+		// …and the other reason that reading may be old: the operator muted
+		// the meter (`plan_usage_quiet:`, ranger-base-4rfw1). Mutually
+		// exclusive with the line above, which is gated on the same flag —
+		// a quiet meter has no headroom rule ruling on anything, so "BLIND"
+		// would name a rule that is not running. Said here for the same
+		// reason that one is: the flag disarms a brake the operator asked
+		// for, and a mute nobody can see is the thing this shop check
+		// exists to end. Files only, no request.
+		if line := a.PlanQuietLine("status", time.Now()); line != "" {
+			fmt.Fprintf(out, "%s\n", line)
+		}
 		posse.GovReport(out, set, failed)
 		if len(set) > 0 || len(failed) > 0 {
 			os.Exit(1)

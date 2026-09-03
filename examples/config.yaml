@@ -383,7 +383,9 @@ default_emoji: ⚙️
 # nothing degrades. The last reading is still shown everywhere, always with
 # its age (`5h 46% · 7d 29% · guard off, last reading 3h27m ago`) — a
 # snapshot nobody is refreshing is exactly where a number shown without its
-# age starts lying. `posse cost --plan` serves that snapshot while it is
+# age starts lying. And while THIS FLAG is the reason, `posse status` says
+# so in a line of its own — it disarms a brake you asked for, and a mute
+# nobody can see is what that check exists to end. `posse cost --plan` serves that snapshot while it is
 # inside `plan_usage_ttl:` and fails loudly past it, rather than hand a
 # grepping persona a stale number as a fresh one. Default false.
 # plan_usage_quiet: false    # true = no surface asks the usage endpoint

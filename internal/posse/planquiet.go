@@ -50,6 +50,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // PlanQuiet is the refusal to ask the usage endpoint at all. It is an error
@@ -115,4 +116,32 @@ func (a *App) PlanMeterQuiet(errw io.Writer) *PlanQuiet {
 		return &PlanQuiet{}
 	}
 	return nil
+}
+
+// PlanQuietLine is the one line that says the meter has been muted on
+// purpose, and what the last reading was — or "" where there is nothing to
+// say.
+//
+// It fires only for the FLAG. An unarmed plan guard is the default on most
+// shops and has never said anything about a meter, and a permanent line on
+// every one of them is furniture — the failure `plan meter BLIND` was
+// written in upper case to escape (planstale.go). `plan_usage_quiet: true`
+// is different in the way that matters: it is a temporary ruling, it
+// disarms a brake the operator has otherwise asked for, and a mute nobody
+// can see is exactly what this file's own cooldown ceiling refuses.
+//
+// Files only. Like PlanStaleness it asks the endpoint nothing — a shop
+// check that reported a quiet gap by breaking it would be the joke this
+// bead is about.
+func (a *App) PlanQuietLine(caller string, now time.Time) string {
+	q := a.PlanMeterQuiet(io.Discard)
+	if q == nil || !q.Flag {
+		return ""
+	}
+	line := "plan meter QUIET (plan_usage_quiet): no surface is asking the endpoint, and the guard is off for the duration"
+	if u, at, ok := a.PlanCache(caller).LastReading(); ok {
+		line += fmt.Sprintf(" — last reading %s (%s), %s ago",
+			at.UTC().Format("2006-01-02T15:04Z"), u.Line(), BlindFor(now.Sub(at)))
+	}
+	return line
 }
