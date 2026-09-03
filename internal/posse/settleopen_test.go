@@ -201,7 +201,7 @@ func TestSecondSettleOpenEscalatesAndBlocksTheBead(t *testing.T) {
 // ranger-base-23oo — the escalation is filed WITHOUT a `discovered-from`
 // edge, because bd will not carry that edge and the block between the same
 // pair. The block is the deliverable, so the provenance goes in the body and
-// in a comment on the stuck bead, which is fileMergeBlocked's idiom for the
+// in a comment on the stuck bead, which is noteMergeBlocked's idiom for the
 // neighbouring reason.
 //
 // The pin that matters is the ABSENCE of `--deps` on the create: with it the

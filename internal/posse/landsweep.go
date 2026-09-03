@@ -39,23 +39,37 @@ package posse
 // nobody wrote down.
 //
 // What it does not do. It does not remove a tree (that is `posse kill`'s,
-// which refuses while anything would be lost), it does not touch a tree
-// whose bead is open (the persona is working in it), and it does not FILE a
-// bead when a merge is blocked. mergeBack files there because a judged close
-// happens once; this runs every pass, and a bead per pass over a permanently
-// conflicted branch is spam, not a handoff. The ⚠ line repeats instead — on
-// every pass, which is what "the shop can see it" means here.
+// which refuses while anything would be lost) and it does not touch a tree
+// whose bead is open (the persona is working in it).
 //
-// THE ONE BEAD IT DOES FILE, and why that is not the same objection (ADR
-// 0041 §2). A closed bead whose tree holds uncommitted paths is routed back
-// to its closer from here as well as from the judged close, because the
-// sweep exists precisely for the closes nobody watched and a close nobody
-// watched is exactly the one whose dirt nobody is going to notice. The spam
-// objection above is answered by the key, not by the site: closeddirty.go's
-// handoff dedupes on its OPEN title the way the merge-back handoff already
-// does, and its comment dedupes on the `closed dirty [` marker, so N passes
-// over one dirty tree still leave one bead and one comment. What the
-// paragraph above rules out is a bead per pass, and neither of these is one.
+// WHAT IT FILES, AND WHY THE SPAM OBJECTION WAS NEVER THE RIGHT ONE
+// (ranger-base-5nf8m). This paragraph used to refuse to file a merge-back
+// bead here at all: "mergeBack files there because a judged close happens
+// once; this runs every pass, and a bead per pass over a permanently
+// conflicted branch is spam, not a handoff. The ⚠ line repeats instead."
+// Fourteen lines below it, the same file already answered that objection for
+// the bead it DOES file — and the answer applies unchanged: the spam is
+// priced by the KEY, not by the site. Both handoffs dedupe on their OPEN title (the
+// merge-back's carries branch+base, which a branch cut per bead cannot move;
+// closeddirty's carries the bead id at a fixed offset) and the closed-dirty
+// comment dedupes on its `closed dirty [` marker, so N passes over one
+// blocked or dirty tree leave one bead and one comment, not N. A bead per
+// pass is what the paragraph ruled out and none of these is one.
+//
+// So both are filed from here, for the reason this file exists: the sweep is
+// the only site that sees a close nobody watched, which makes it the site
+// most likely to be a strand's ONLY reader, and a ⚠ line on a pass nobody
+// was watching is not a record. ranger-base-aupee is the measurement —
+// closed at 861b0e6, 134 files that never reached main, no merge-back bead
+// in the store, and a human finding it hours later by hand.
+//
+//   - a blocked merge → noteMergeBlocked (dispatch.go), the same handoff the
+//     judged close files. ranger-base-dybv fixed the inference in landed()
+//     and closed over the reporting on the stated assumption that this site
+//     already filed one. It did not; now it does.
+//   - uncommitted paths → noteClosedDirty (closeddirty.go, ADR 0041 §1–§2),
+//     routed back to the closer because a close nobody watched is exactly
+//     the one whose dirt nobody is going to notice.
 
 import (
 	"strconv"
@@ -144,6 +158,14 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				id, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
 		case !o.Merged:
 			d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", id, o.Commits, t.Branch, orDetached(t.Base), o.Reason)
+			// And on the bead, or the ⚠ line is the whole record again and
+			// this sweep repeats it every pass with nobody reading it — the
+			// half ranger-base-dybv's close assumed mergeBack covered and
+			// mergeBack cannot (see the header). Deduped on the handoff's
+			// own title, so a permanently blocked branch costs one bead.
+			// The closer is the bead's assignee, then whoever filed it — bd
+			// records no close actor (verifyCloser).
+			noteMergeBlocked(d.Bd, t.Repo, id, verifyCloser(is), t, o, d.printf, d.eprintf)
 		}
 		if len(o.Dirty) > 0 {
 			d.printf("◑ %-14s %d uncommitted path(s) left in %s — closed, and this part did not land\n",

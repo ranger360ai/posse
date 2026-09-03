@@ -655,6 +655,20 @@ func (o MergeOutcome) EquivalentNote() string {
 		len(o.Equivalent), o.Branch, o.Base, strings.Join(o.Equivalent, ", "))
 }
 
+// Blocked is "the merge was attempted, answered, and the answer was no" —
+// the one state that owes a human a handoff (noteMergeBlocked).
+//
+// Both halves are load-bearing. !Merged alone is also true of the ZERO
+// outcome a MergeSessionWork that returned an error leaves behind: no
+// branch was read, no obstacle was named, and a P1 whose whole body is
+// "reason: " helps nobody. Reason is the witness that the function got as
+// far as deciding — it is set on every nil-error return that did not merge
+// (landed(), and every early return above it) and cleared on every one that
+// did, which is the invariant MergeOutcome.Reason's own comment states.
+func (o MergeOutcome) Blocked() bool {
+	return !o.Merged && o.Reason != ""
+}
+
 // MergeSessionWork is the launcher's half of ADR-0011-§1-serialized option A
 // (rangerhq-jbyr): fast-forward the session branch onto the repo's own
 // branch, rebasing it first when the branch has moved underneath.
@@ -1526,6 +1540,20 @@ func ListSessionTrees(w io.Writer, dirs []string) error {
 // cut before the stamp landed. Both are legitimate and both still get the
 // refusal, because from git alone they are indistinguishable from the vojc
 // shape — force is the operator saying which one it is.
+//
+// IT IS THE ONE LANDING SITE THAT FILES NO BEAD, decided rather than
+// overlooked (ranger-base-5nf8m). The other three — the judged close
+// (mergeBack), the sweep (landsweep.go) and the kill (noteUnlandedOnKill) —
+// write a blocked merge and a dirty tree onto the bead because nobody is
+// watching them; this one is a command a HUMAN just ran and is reading the
+// output of, which is the whole thing a handoff bead exists to substitute
+// for. It also could not file honestly as it stands: it never asks bd for a
+// status — the gate reads the BRANCH record, and `--force` waives even that
+// — so it cannot tell a closed bead's strand from an open bead's branch that
+// simply will not fast-forward yet, and a P1 at a persona still working in
+// that tree is a false handoff. Filing here would mean a `bd show` per tree,
+// to tell the operator in a bead what the terminal in front of them already
+// says.
 func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 	trees, err := SessionTreesIn(dirs)
 	if err != nil {

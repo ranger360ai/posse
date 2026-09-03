@@ -207,7 +207,7 @@ func (d *Dispatcher) escalateSettleOpen(p *pendingBead, settled, status string) 
 		// So the block is the deliverable and the provenance moves to where
 		// nothing can refuse it: the discoveredFromMarkerPrefix line in the
 		// body, and a comment on the stuck bead naming the escalation —
-		// fileMergeBlocked's idiom, for the neighbouring reason.
+		// noteMergeBlocked's idiom, for the neighbouring reason.
 		qid, err = d.Bd.Create(p.is.Dir, BdNew{
 			Title:       settleStuckTitle(p.is.ID, p.persona, status),
 			Assignee:    d.App.CfgGet("operator", ""),

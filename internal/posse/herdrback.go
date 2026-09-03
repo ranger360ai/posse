@@ -2698,16 +2698,16 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	defer lock.Release()
 	o, err := MergeSessionWork(t)
 	l.Merge = o
-	// The third site of ADR 0041 §1–§2 (closeddirty.go), and the last chance
-	// anything has to write it: a close nobody watched whose branch carried
-	// no commits is invisible to the sweep, and this is where its tree is
-	// finally read. Before the returns below, because a merge that failed
-	// leaves the dirt exactly where it was — and after them the reading is
-	// gone. The bead is asked fresh, because a kill lands OPEN beads too
-	// (the reap guard refuses that pair only up to `--force`), and §1 is
-	// about a CLOSED bead's tree: a persona's work in progress is not a
-	// finding.
-	b.noteClosedDirtyOnKill(m, t, o)
+	// The third site of ADR 0041 §1–§2 (closeddirty.go) and of the merge-back
+	// handoff, and the last chance anything has to write either: a close
+	// nobody watched whose branch carried no commits is invisible to the
+	// sweep, and this is where its tree is finally read. Before the returns
+	// below, because a merge that failed leaves the dirt exactly where it was
+	// — and after them the reading is gone. The bead is asked fresh, because
+	// a kill lands OPEN beads too (the reap guard refuses that pair only up
+	// to `--force`), and both records are about a CLOSED bead's tree: a
+	// persona's work in progress is not a finding.
+	b.noteUnlandedOnKill(m, t, o)
 	if err != nil {
 		l.Kept = err.Error()
 		return l, nil

@@ -18,7 +18,7 @@ package posse
 // THE BEAD, so it is counted on the bead — settleopen.go's argument, and ADR
 // 0011's: a $StateDir ledger would be the fifth store, and the first one that
 // could disagree with bd about a bead. So §1 is a comment (`closed dirty [`)
-// and §2 is a handoff bead assigned to the closer, in fileMergeBlocked's
+// and §2 is a handoff bead assigned to the closer, in noteMergeBlocked's
 // exact shape.
 //
 // THE TRIGGER IS DIRTY ALONE (§5). Eight of the twelve commit-less closes
@@ -35,7 +35,7 @@ package posse
 // write, because bd's create is not atomic (ranger-base-muoo) and a dedupe
 // keyed on something a timeout can lose files again every pass — 33 duplicate
 // P1 beads is what that cost last time. It is the same trick settleopen.go
-// plays with `settled open [` and fileMergeBlocked with its title.
+// plays with `settled open [` and noteMergeBlocked with its title.
 //
 // A KNOWN GAP, stated rather than papered over: landClosedTrees skips a tree
 // with nothing ahead of its base BEFORE it reads the tree, so a close nobody
@@ -161,7 +161,7 @@ func commentClosedDirty(bd Bd, dir, id string, t *SessionTree, o MergeOutcome, w
 		// The read is the dedupe, not the record. A graph that will not
 		// answer must not cost a closed bead the correction that belongs
 		// under its close comment: say so and write, because a duplicate is
-		// visible and a missing one is not (fileMergeBlocked's rule).
+		// visible and a missing one is not (noteMergeBlocked's rule).
 		warn("posse: %s could not be checked for an existing `%s` comment (%v) — commenting anyway\n",
 			id, closedDirtyPrefix, err)
 	} else if closedDirtyNoted(cs) {
@@ -278,26 +278,38 @@ func openMatchedBead(bd Bd, dir, label string, match func(string) bool) (string,
 	return "", nil
 }
 
-// noteClosedDirtyOnKill is the kill's arm of §1–§2, and the last reading
-// anything gets of this tree: the sweep skips a branch with nothing ahead of
-// its base before it looks at the tree, so a close nobody watched that
-// committed nothing and left dirt reaches the bead HERE or nowhere.
+// noteUnlandedOnKill is the kill's arm of §1–§2 and of the merge-back
+// handoff, and the last reading anything gets of this tree: the sweep skips a
+// branch with nothing ahead of its base before it looks at the tree, so a
+// close nobody watched that committed nothing and left dirt reaches the bead
+// HERE or nowhere.
+//
+// THE BLOCKED MERGE IS FILED FROM HERE TOO (ranger-base-5nf8m), and for a
+// narrower reason than the dirt: a kill whose merge fails KEEPS the tree, so
+// the next launcher pass's sweep would reach the same branch and file the
+// same handoff. What it covers is the window where there is no next pass —
+// `posse kill` run by hand on a box where no launcher runs again — and it
+// costs nothing to cover, because the two sites dedupe on one title.
 //
 // It asks bd for the status rather than assuming one. A kill lands open beads
 // too — the reap guard refuses that pair only as far as `--force` — and a
 // persona's work in progress is not a close that did not land. Ignorance is
 // reported and never guessed past, in the direction that files nothing:
 // unlike the guard, nothing here is about to destroy anything, and the tree
-// (which a dirty status keeps) is still there for the next reader.
-func (b *HerdrBackend) noteClosedDirtyOnKill(m *HerdrMeta, t *SessionTree, o MergeOutcome) {
-	if m == nil || m.Bead == "" || t == nil || len(o.Dirty) == 0 {
+// (which a dirty status or a failed merge keeps) is still there for the next
+// reader.
+func (b *HerdrBackend) noteUnlandedOnKill(m *HerdrMeta, t *SessionTree, o MergeOutcome) {
+	if m == nil || m.Bead == "" || t == nil {
 		return
+	}
+	if len(o.Dirty) == 0 && !o.Blocked() {
+		return // the ordinary kill: it landed, and nothing was left behind
 	}
 	bd := b.bd()
 	is, err := bd.Show(t.Repo, m.Bead)
 	if err != nil {
-		b.warn("posse: %s left %d uncommitted path(s) in %s and bd could not say whether it is closed (%v) — not noted on the bead\n",
-			m.Bead, len(o.Dirty), AbbrevHome(t.Path), err)
+		b.warn("posse: %s left work unlanded in %s (%d uncommitted path(s)) and bd could not say whether it is closed (%v) — not noted on the bead\n",
+			m.Bead, AbbrevHome(t.Path), len(o.Dirty), err)
 		return
 	}
 	if is.Status != "closed" {
@@ -312,4 +324,5 @@ func (b *HerdrBackend) noteClosedDirtyOnKill(m *HerdrMeta, t *SessionTree, o Mer
 		persona = m.Agent
 	}
 	noteClosedDirty(bd, t.Repo, m.Bead, persona, t, o, b.warn, b.warn)
+	noteMergeBlocked(bd, t.Repo, m.Bead, persona, t, o, b.warn, b.warn)
 }

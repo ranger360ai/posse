@@ -340,7 +340,7 @@ func (d *Dispatcher) errw() io.Writer {
 // ...)/Fprintln(d.Out, ...), serialized by outMu — see its doc. Every write
 // this file makes to Out or errw() goes through one of these three instead
 // of the fmt functions directly, because gather() and everything it calls
-// (mergeBack, commitQueue, fileMergeBlocked, noteSeatSettle) now run
+// (mergeBack, commitQueue, noteMergeBlocked, noteSeatSettle) now run
 // concurrently with each other and with Run's own goroutine (ADR 0028 §1).
 func (d *Dispatcher) printf(format string, a ...any) {
 	d.outMu.Lock()
@@ -4384,7 +4384,7 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 			is.ID, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
 	default:
 		d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, orDetached(t.Base), o.Reason)
-		d.fileMergeBlocked(is, persona, t, o)
+		noteMergeBlocked(d.Bd, is.Dir, is.ID, persona, t, o, d.printf, d.eprintf)
 	}
 }
 
@@ -4450,28 +4450,54 @@ const MergeBlockedLabel = "code"
 // where nothing can refuse it.
 const discoveredFromMarkerPrefix = "discovered-from: "
 
-// fileMergeBlocked hands a stuck merge to the persona whose branch it is.
+// noteMergeBlocked hands a stuck merge to the persona whose branch it is.
 // ADR 0006 §1: a handoff is a bead, never a comment on someone else's and
 // never a chat — and a merge nobody is told about is how a closed bead's
 // code sits on a branch forever.
-func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTree, o MergeOutcome) {
+//
+// EVERY SITE THAT READS A CLOSED BEAD'S BLOCKED MERGE CALLS IT, which is why
+// it is a package function and not mergeBack's method any more
+// (ranger-base-5nf8m). ranger-base-dybv's close assumed the judged close was
+// the site that mattered — "the pass prints the warning and mergeBack files
+// the merge-blocked bead with no change to any of them" — and that was true
+// of mergeBack and of nothing else. The sweep is the site that sees the
+// closes mergeBack never judges (landsweep.go's header says why), so it is
+// the site most likely to be the ONLY reader of a strand, and it filed
+// nothing: measured on ranger-base-aupee, closed at 861b0e6 with 134 files
+// that never reached main and not one merge-back bead in the store.
+//
+// The every-pass cadence costs nothing, because the dedupe is the TITLE and
+// not the site: mergeBlockedTitle carries branch+base, a branch is cut per
+// bead (SessionForBead), and openMergeBlocked reads the OPEN ones back
+// before filing. N sweeps over one permanently blocked branch leave one
+// bead and one comment — the same answer closeddirty.go gives at this same
+// site, and the reason the sweep's old "a bead per pass is spam" paragraph
+// no longer describes anything.
+//
+// Best effort throughout and never quiet, on mergeBack's rule. say/warn are
+// the caller's own printf pair — the dispatcher's are serialized on its
+// output mutex and must not be bypassed.
+func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOutcome, say, warn func(string, ...any)) {
+	if !o.Blocked() {
+		return
+	}
 	base := orDetached(t.Base)
 	title := mergeBlockedTitle(t.Branch, base)
-	if id, err := d.openMergeBlocked(is.Dir, title); err != nil {
+	if open, err := openMergeBlocked(bd, dir, title); err != nil {
 		// The read is the dedupe, not the handoff: a graph that will not
 		// answer must not cost a blocked merge the bead that says where its
 		// code is. Say so and file — a duplicate is visible, a missing
 		// handoff is not.
-		d.eprintf("posse: %s could not be checked for an existing merge-back bead (%v) — filing one\n", is.ID, err)
-	} else if id != "" {
-		d.printf("  ↳ %s already filed for %s — not re-filed\n", id, persona)
+		warn("posse: %s could not be checked for an existing merge-back bead (%v) — filing one\n", id, err)
+	} else if open != "" {
+		say("  ↳ %s already filed for %s — not re-filed\n", open, persona)
 		return
 	}
-	id, err := d.Bd.Create(is.Dir, BdNew{
+	filed, err := bd.Create(dir, BdNew{
 		Title:    title,
 		Assignee: persona,
 		Labels:   []string{MergeBlockedLabel},
-		Deps:     []string{"discovered-from:" + is.ID},
+		Deps:     []string{"discovered-from:" + id},
 		Priority: "1",
 		Actor:    "posse",
 		Description: fmt.Sprintf(
@@ -4480,8 +4506,8 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 				"Fix what the reason above names — only a real conflict is resolved by\n"+
 				"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n"+
 				"The branch is untouched and still holds every commit.",
-			persona, is.ID, o.Commits, t.Branch, base, o.Reason,
-			discoveredFromMarkerPrefix, is.ID,
+			persona, id, o.Commits, t.Branch, base, o.Reason,
+			discoveredFromMarkerPrefix, id,
 			t.Path, t.Repo, base, base, base),
 	})
 	if err != nil {
@@ -4491,28 +4517,28 @@ func (d *Dispatcher) fileMergeBlocked(is RepoIssue, persona string, t *SessionTr
 		// reports: a bead that IS there is filed — edgeless, and named — not
 		// missing, or the operator goes looking for a handoff that exists
 		// and the persona holds a P1 nobody can trace.
-		filed, ferr := d.openMergeBlocked(is.Dir, title)
+		found, ferr := openMergeBlocked(bd, dir, title)
 		switch {
 		case ferr != nil:
-			d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work, and the graph would not say whether one landed anyway (%v)\n",
-				is.ID, err, t.Branch, ferr)
+			warn("posse: could not file the merge-back bead for %s (%v) — %s still holds the work, and the graph would not say whether one landed anyway (%v)\n",
+				id, err, t.Branch, ferr)
 			return
-		case filed == "":
-			d.eprintf("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", is.ID, err, t.Branch)
+		case found == "":
+			warn("posse: could not file the merge-back bead for %s (%v) — %s still holds the work\n", id, err, t.Branch)
 			return
 		}
-		id = filed
-		d.printf("  ↳ filed %s for %s WITHOUT its discovered-from:%s edge (%v) — its provenance is the description and a comment on %s\n",
-			id, persona, is.ID, err, is.ID)
+		filed = found
+		say("  ↳ filed %s for %s WITHOUT its discovered-from:%s edge (%v) — its provenance is the description and a comment on %s\n",
+			filed, persona, id, err, id)
 	} else {
-		d.printf("  ↳ filed %s for %s\n", id, persona)
+		say("  ↳ filed %s for %s\n", filed, persona)
 	}
 	// The breadcrumb that survives a lost edge, the way verify-after's does
 	// (fileVerifyBead): the bead exists either way, so a failed comment is a
 	// lost pointer, not lost work, and re-filing to get one would duplicate
 	// the handoff.
-	if err := d.Bd.Comment(is.Dir, is.ID, "merge-back blocked: filed "+id, "posse"); err != nil {
-		d.eprintf("posse: %s not commented with %s (%v) — the bead exists, the pointer back does not\n", is.ID, id, err)
+	if err := bd.Comment(dir, id, "merge-back blocked: filed "+filed, "posse"); err != nil {
+		warn("posse: %s not commented with %s (%v) — the bead exists, the pointer back does not\n", id, filed, err)
 	}
 }
 
@@ -4529,6 +4555,6 @@ func mergeBlockedTitle(branch, base string) string {
 // openMergeBlocked is the id of the OPEN merge-back bead already filed for
 // this branch, or "" for none. Closed does not count: a persona that
 // resolved one and the merge that is blocked again are two handoffs.
-func (d *Dispatcher) openMergeBlocked(dir, title string) (string, error) {
-	return openTitledBead(d.Bd, dir, MergeBlockedLabel, title)
+func openMergeBlocked(bd Bd, dir, title string) (string, error) {
+	return openTitledBead(bd, dir, MergeBlockedLabel, title)
 }
