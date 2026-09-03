@@ -708,6 +708,12 @@ func TestQAWatchStartsTheWatchdogAndItNamesAStalledPass(t *testing.T) {
 // clear the reading, and the next watchdog tick reports with the silence
 // grown.
 //
+// The shop pulse is the third clock (pulse.go, ranger-base-frqmn). Its
+// tick was quiet by accident — bare fmt.Fprintf, no stamp — which was the
+// right reading arrived at by omission, and one refactor to d.printf away
+// from re-opening this. Now it is quiet by the same pair the other two use,
+// and this arm is what keeps it so.
+//
 // Rig: the named stall from TestQAWatchdogNamesASilentLoopAndKeepsSaying,
 // then one tick of the clock under test, then the watchdog again. The
 // clock's line must be in the log (a quiet writer that also dropped the
@@ -740,6 +746,21 @@ func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
 			}
 			d.backupTick(cfg)
 		}, "backup · scheduled"},
+		{"shop pulse", func(t *testing.T) (*Dispatcher, *time.Time) {
+			// The own-line rig (TestQAPulseTickLogsTheShopPulseOnItsOwnLine):
+			// an unpushed repo makes the condition set non-empty, so the
+			// tick prints — an empty set writes nothing and would measure
+			// nothing here — and an idle coordinator makes it deliver, so
+			// the prompted line goes through the same writer.
+			b, fake := newTestBackend(t)
+			personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+			unpushedRepo(t, b)
+			at := time.Date(2026, 9, 3, 4, 53, 18, 0, time.UTC)
+			d := deliveryDispatcher(t, b, &at)
+			return d, &at
+		}, func(d *Dispatcher) {
+			d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+		}, "pulse: shop "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -776,4 +797,37 @@ func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The other half of ranger-base-frqmn, which the arm above cannot see: a
+// pulse line written with fmt.Fprintf(d.Out, ...) takes no outMu, and a
+// gather writes the same stream from one goroutine per pending bead (ADR
+// 0028 §1), so a pulse line could land half-way through a launch line. A
+// bare write is also quiet, so the LastWrite arm above stays green over it.
+// This is the source pin for the writer: every write pulse.go makes to Out
+// or errw() goes through quietf/equietf — never the fmt functions and never
+// the stamping three, which would feed the watchdog. It counts what it
+// found, so a sweep over the wrong file fails instead of passing.
+func TestQAPulseWritesGoThroughTheQuietPair(t *testing.T) {
+	t.Parallel()
+	src, err := os.ReadFile("pulse.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiet := strings.Count(string(src), "d.quietf(") + strings.Count(string(src), "d.equietf(")
+	if quiet < 5 {
+		t.Fatalf("found %d quiet writes in pulse.go; the sweep is not reading the file it thinks it is", quiet)
+	}
+	for i, ln := range strings.Split(string(src), "\n") {
+		for _, bad := range []string{
+			"Fprintf(d.Out", "Fprintln(d.Out", "Fprint(d.Out",
+			"Fprintf(d.errw()", "Fprintln(d.errw()", "Fprint(d.errw()",
+			"d.printf(", "d.eprintf(", "d.println(",
+		} {
+			if strings.Contains(ln, bad) {
+				t.Errorf("pulse.go:%d writes the watch stream with %s — outside outMu, or stamping LastWrite from a clock (ranger-base-frqmn):\n%s", i+1, bad, ln)
+			}
+		}
+	}
+	t.Logf("checked %d quiet writes in pulse.go", quiet)
 }

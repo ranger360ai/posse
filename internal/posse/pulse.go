@@ -191,7 +191,7 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	// never one that is empty. Off a timer that is a line in the log, not a
 	// halt: the tick delivers what it did see and says what it could not.
 	for _, err := range failed {
-		fmt.Fprintf(d.errw(), "pulse: shop check partial: %v\n", err)
+		d.equietf("pulse: shop check partial: %v\n", err)
 	}
 	conditions := set.Keys()
 	path := PulsePath(d.App)
@@ -212,7 +212,7 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	}
 
 	if err := WritePulseState(path, state); err != nil {
-		fmt.Fprintf(d.errw(), "pulse: cannot write %s: %v\n", AbbrevHome(path), err)
+		d.equietf("pulse: cannot write %s: %v\n", AbbrevHome(path), err)
 	}
 	if len(conditions) > 0 {
 		// The shop pulse (ranger-base-dwlb1), on its OWN line above the
@@ -226,14 +226,14 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 		// cost ADR 0027's boundary was protecting against.
 		p, failedPulse := d.App.ReadBeadPulse(d.Bd, d.now())
 		for _, ln := range PulseFailureLines(failedPulse) {
-			fmt.Fprintf(d.errw(), "%s\n", ln)
+			d.equietf("%s\n", ln)
 		}
-		fmt.Fprintf(d.Out, "pulse: shop %s\n", p.Line())
+		d.quietf("pulse: shop %s\n", p.Line())
 		// The watch-log rendering (the third of the three): the same stable
 		// tokens the prompt carries and the fingerprint is made of, so the
 		// blocked-time-to-intervention metric can be read straight out of
 		// this log against herdr's state changes.
-		fmt.Fprintf(d.Out, "pulse: %s\n", GovLines(set))
+		d.quietf("pulse: %s\n", GovLines(set))
 	}
 }
 
@@ -300,21 +300,21 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		// asleep, which is condition (c) and is sensed. Say so on the same
 		// line the no-live case uses: an armed pulse that reaches nobody
 		// must be visible in the watch log, not silent.
-		fmt.Fprintf(d.Out, "pulse: %s → undeliverable (no pulse_persona: and no coordinator:)\n",
+		d.quietf("pulse: %s → undeliverable (no pulse_persona: and no coordinator:)\n",
 			strings.Join(state.Conditions, "; "))
 		return
 	}
 
 	sessions, err := d.HB.Sessions()
 	if err != nil {
-		fmt.Fprintf(d.errw(), "pulse: cannot read sessions: %v\n", err)
+		d.equietf("pulse: cannot read sessions: %v\n", err)
 		return
 	}
 	name, pane, status, found := pulseTarget(sessions, cfg.Persona)
 	if !found {
 		// Condition (c) from the sensing bead — already in state.Conditions.
 		// Never create a session to deliver into; log and retry next tick.
-		fmt.Fprintf(d.Out, "pulse: %s → undeliverable (no live session for %s)\n",
+		d.quietf("pulse: %s → undeliverable (no live session for %s)\n",
 			strings.Join(state.Conditions, "; "), cfg.Persona)
 		return
 	}
@@ -323,7 +323,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		if reason == "" {
 			reason = "no agent"
 		}
-		fmt.Fprintf(d.Out, "pulse: skipped (%s)\n", reason)
+		d.quietf("pulse: skipped (%s)\n", reason)
 		return
 	}
 	// ...and now the same question again, of evidence rather than of the
@@ -345,14 +345,14 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 	// the shop check against an older herdr entirely.
 	det, note, err := d.HB.AwaitPromptable(name, pane)
 	if err != nil {
-		fmt.Fprintf(d.Out, "pulse: skipped (%s not promptable: %v)\n", name, err)
+		d.quietf("pulse: skipped (%s not promptable: %v)\n", name, err)
 		return
 	}
 	if note != "" {
-		fmt.Fprintf(d.Out, "pulse: %s\n", note)
+		d.quietf("pulse: %s\n", note)
 	}
 	if det.Seen() && !pulseTakesPrompt(det.State) {
-		fmt.Fprintf(d.Out, "pulse: skipped (%s — herdr's listing said %q)\n", det.State, status)
+		d.quietf("pulse: skipped (%s — herdr's listing said %q)\n", det.State, status)
 		return
 	}
 	// ranger-base-htafy, off the detection already in hand: a composer with
@@ -360,16 +360,16 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 	// shop check typed after it makes one garbled message out of two. The
 	// tick comes round again; the stale text is the operator's to clear.
 	if hold := det.Hold(); hold.Typed != "" {
-		fmt.Fprintf(d.Out, "pulse: skipped (%s has %s)\n", name, hold.Why())
+		d.quietf("pulse: skipped (%s has %s)\n", name, hold.Why())
 		return
 	}
 
 	text := pulsePromptText(state.Conditions)
 	if _, err := d.HB.H.AgentPrompt(pane, text, false, 0); err != nil {
-		fmt.Fprintf(d.errw(), "pulse: prompt failed for %s: %v\n", name, err)
+		d.equietf("pulse: prompt failed for %s: %v\n", name, err)
 		return
 	}
-	fmt.Fprintf(d.Out, "pulse: %s → prompted %s\n", strings.Join(state.Conditions, "; "), name)
+	d.quietf("pulse: %s → prompted %s\n", strings.Join(state.Conditions, "; "), name)
 
 	if changed {
 		state.RenagInterval = cfg.Renag
