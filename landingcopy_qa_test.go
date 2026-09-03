@@ -65,7 +65,7 @@ var sharedLandingClaims = []string{
 	"The operator pushes and the launcher merges.",
 	"Every persona's PID denies `Bash(git push:*)`",
 	"**Enforced, not advised**",
-	"every crew PID denies `Bash(pkill:*)` and `Bash(killall:*)` beside the git-push family",
+	"every crew PID denies `Bash(pkill:*)` and `Bash(killall:*)` beside `Bash(git push:*)`",
 	"`kill`, `kill -0` and `pgrep` still run",
 }
 

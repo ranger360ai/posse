@@ -1351,7 +1351,7 @@ $ cat >> AGENTS.md <<'EOF'
   session — your scratchpad path, your worktree path, `-P $$` — never a tool
   name.
   **Enforced, not advised** (operator ruling 2026-09-03): every crew PID denies
-  `Bash(pkill:*)` and `Bash(killall:*)` beside the git-push family, realized as
+  `Bash(pkill:*)` and `Bash(killall:*)` beside `Bash(git push:*)`, realized as
   PATH shims that refuse the whole verb, so a `pkill` or `killall` typed at a
   crew seat is refused by the gate whatever its pattern — the session-unique
   spellings above included, `-P $$` among them. Keep the pid the launcher
