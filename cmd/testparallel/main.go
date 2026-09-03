@@ -40,6 +40,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 type fn struct {
@@ -320,7 +321,14 @@ func main() {
 	//
 	// A clearance is not permanent: it says what the test's body did when it
 	// was read. Add a write to one of these and the reason above stops being
-	// true — which is why each line names the fact it rests on.
+	// true — which is why each line names the fact it rests on, and why the
+	// gate READS that fact rather than the test's name: a clearance covers
+	// exactly the written vars its reason names (clearanceCovers). A test
+	// that reaches a var nobody cleared is flagged again, with the same
+	// message as an uncleared one, however old its line here is. Before
+	// ranger-base-acvq3 the key was the name alone, so one clearance waived
+	// every future reason — measured: a costProviders write in a "reads
+	// blindT" test passed `check` clean.
 	parallelOK := map[string]string{
 		// blindT (23)
 		"TestEpochStartIsWallClockAligned":             "reads blindT",
@@ -439,11 +447,21 @@ func main() {
 	writeRoots := map[string]bool{"SeedClaudeTrust": true, "lockClaudeConfig": true}
 	writeTainted := propagate(funcs, func(g *fn) bool { return writeRoots[g.name] && !g.isTest })
 
+	// reached: per test, the written package vars it names anywhere in the
+	// test-file functions it calls — filter 2's verdict with the var kept,
+	// which is what a clearance has to be compared against.
+	reached := map[string][]string{}
+	// otherFlag: held back by something a parallelOK line cannot argue away
+	// — the environment, the binary-wide fakeDir(), or a serial entry.
+	otherFlag := func(name string) bool {
+		return envTainted[name] || fakeDirTainted[name] || serial[name] != ""
+	}
 	var tests []*fn
 	for _, gs := range funcs {
 		for _, g := range gs {
 			if g.topTest {
 				tests = append(tests, g)
+				reached[g.name] = reachedVars(funcs, g.name, writtenVars, exempt)
 			}
 		}
 	}
@@ -526,7 +544,7 @@ func main() {
 				// other test writes, and it fails as "the thing under test
 				// did not happen" (ranger-base-pj87l).
 				shared = append(shared, g.file+"\t"+g.name)
-			case !eligible && g.hasParallel && parallelOK[g.name] == "":
+			case !eligible && g.hasParallel && !clearanceCovers(parallelOK[g.name], reached[g.name], otherFlag(g.name)):
 				extra = append(extra, g.file+"\t"+g.name)
 			}
 		}
@@ -547,7 +565,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\nRun `go run ./cmd/testparallel %s extra` for the var or env root behind\n"+
 				"each. Then either drop t.Parallel and say why at the test, or — if the\n"+
 				"state is read-only, per-test-keyed, or written only by serial tests — add\n"+
-				"a line to parallelOK in cmd/testparallel/main.go naming that argument.\n", dir)
+				"a line to parallelOK in cmd/testparallel/main.go naming that argument. The\n"+
+				"line covers the vars its reason names and no other, so name every one.\n", dir)
 			os.Exit(1)
 		}
 		if len(shared) > 0 {
@@ -585,7 +604,9 @@ func main() {
 				why = append(why, "env")
 			}
 			if varTainted[g.name] {
-				why = append(why, "pkgvar")
+				// The MEASURED vars, not the class word: a clearance is an
+				// argument about these names, so the line has to carry them.
+				why = append(why, "pkgvar("+strings.Join(reached[g.name], " ")+")")
 			}
 			if fakeDirTainted[g.name] {
 				why = append(why, "fakeDir")
@@ -597,8 +618,14 @@ func main() {
 				continue
 			}
 			state := "UNCLEARED"
-			if ok := parallelOK[g.name]; ok != "" {
+			switch ok := parallelOK[g.name]; {
+			case ok == "":
+			case clearanceCovers(ok, reached[g.name], otherFlag(g.name)):
 				state = "cleared: " + ok
+			default:
+				// A clearance that no longer describes the test: the gate
+				// fails this row exactly as it fails an uncleared one.
+				state = "UNCLEARED (recorded \"" + ok + "\" does not cover it)"
 			}
 			fmt.Printf("%-14s %s\t%s\t%s\n", strings.Join(why, ","), g.file, g.name, state)
 		}
@@ -780,7 +807,69 @@ func isT(e ast.Expr) bool {
 	return ok && sel.Sel.Name == "T"
 }
 
-// propagate marks every function that transitively calls a root.
+// reachedVars answers the written, non-exempt package vars a test names in
+// its own body or in any test-file function it transitively calls. It is
+// filter 2 (varTainted) with the var kept: the same walk over the same
+// functions, so a test is in reached iff it is varTainted.
+func reachedVars(funcs map[string][]*fn, test string, writtenVars, exempt map[string]bool) []string {
+	seen := map[string]bool{test: true}
+	queue := []string{test}
+	vars := map[string]bool{}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, g := range funcs[n] {
+			if !g.isTest {
+				continue
+			}
+			for id := range g.idents {
+				if writtenVars[id] && !exempt[id] {
+					vars[id] = true
+				}
+			}
+			for c := range g.calls {
+				if !seen[c] {
+					seen[c] = true
+					queue = append(queue, c)
+				}
+			}
+		}
+	}
+	var out []string
+	for v := range vars {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// clearanceCovers answers whether a parallelOK reason waives a test AS IT IS
+// TODAY. A clearance is an argument about named state, so it covers a test
+// only when (a) written package vars are the whole of what holds the test
+// back — no reason string argues away the environment, the binary-wide
+// fakeDir() or a serial entry — and (b) every var the test reaches is named
+// in the reason, as a whole identifier. A cleared test that grows a write to
+// a var its line does not name is therefore a NEW finding, not a waived one
+// (ranger-base-acvq3). Matching is by identifier so "reads blindT" covers
+// blindT and nothing that merely contains it.
+func clearanceCovers(reason string, vars []string, otherFlag bool) bool {
+	if reason == "" || otherFlag || len(vars) == 0 {
+		return false
+	}
+	named := map[string]bool{}
+	for _, w := range strings.FieldsFunc(reason, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+	}) {
+		named[w] = true
+	}
+	for _, v := range vars {
+		if !named[v] {
+			return false
+		}
+	}
+	return true
+}
+
 func countEligible(tests []*fn, envTainted, varTainted, fakeDirTainted map[string]bool, serial map[string]string) int {
 	n := 0
 	for _, g := range tests {

@@ -1,29 +1,31 @@
 package posse
 
-// PARKED QA pin for ranger-base-acvq3 finding 1, found verifying
-// ranger-base-btdvw's close under ranger-base-4m5n6.
+// QA pin for ranger-base-acvq3 finding 1, found verifying ranger-base-btdvw's
+// close under ranger-base-4m5n6.
 //
-// THE DEFECT. cmd/testparallel's gate is
+// THE DEFECT, as it shipped. cmd/testparallel's gate was
 //
 //	case !eligible && g.hasParallel && parallelOK[g.name] == "":
 //
-// (main.go:521), so a clearance is keyed on the test NAME alone. The reason
+// so a clearance was keyed on the test NAME alone. The reason
 // recorded beside it — "reads blindT", "calls sandboxApplyRefusal" — is never
 // compared with the var that actually holds the test back. A test cleared
 // once is therefore waived for every FUTURE shared-state reason, including a
 // genuinely racy one, which is the defect btdvw exists to stop. `extra`
-// (main.go:592) prints the RECORDED reason rather than the measured one, so
-// the drift is invisible there too.
+// printed the RECORDED reason rather than the measured one, so the drift was
+// invisible there too.
 //
 // The 40 currently cleared tests are the blind spot. None of them is racy
 // today — the clearances were checked var by var on ranger-base-4m5n6 and are
 // factual — so nothing here is a live defect. This pin holds the gate to
 // catching the NEXT one.
 //
-// PARKED, not failing: the fix is the code lane's (ranger-base-acvq3), and a
-// red suite is not how a verifier hands work over. Un-skip it with the fix.
-// Verified before parking: un-skipped it FAILS on the clearance arm alone and
-// its control arm passes, on this tree.
+// THE FIX (ranger-base-acvq3): the gate compares the vars a clearance names
+// against the vars the test reaches (clearanceCovers over reachedVars), so a
+// cleared test that grows a write to a var its line does not name is flagged
+// like an uncleared one, and `extra` prints the measured var beside the
+// recorded reason. Parked with a t.Skip until then; un-skipped it FAILED on
+// the finding arm alone with the control arm passing, on the pre-fix tree.
 
 import (
 	"os"
@@ -75,6 +77,19 @@ func tpcCheck(t *testing.T, dir string) (string, int) {
 // it, which is a different finding wearing the same exit code.
 func tpcAddSharedWrite(t *testing.T, file, fn string) {
 	t.Helper()
+	tpcInsertAfterParallel(t, file, fn, "\tdelete(costProviders, \"acvq3-probe\")")
+}
+
+// tpcAddEnvWrite puts one process-environment write after fn's t.Parallel():
+// the flag no parallelOK reason can argue away, since t.Parallel panics over
+// a Setenv at run time whatever the clearance says about a var.
+func tpcAddEnvWrite(t *testing.T, file, fn string) {
+	t.Helper()
+	tpcInsertAfterParallel(t, file, fn, "\tos.Setenv(\"ACVQ3_PROBE\", \"1\")")
+}
+
+func tpcInsertAfterParallel(t *testing.T, file, fn, stmt string) {
+	t.Helper()
 	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
@@ -84,15 +99,13 @@ func tpcAddSharedWrite(t *testing.T, file, fn string) {
 	if !strings.Contains(s, head) {
 		t.Fatalf("%s: %s is not a parallel test with t.Parallel as its first line; this pin is measuring nothing", file, fn)
 	}
-	s = strings.Replace(s, head, head+"\n\tdelete(costProviders, \"acvq3-probe\")", 1)
+	s = strings.Replace(s, head, head+"\n"+stmt, 1)
 	if err := os.WriteFile(file, []byte(s), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared(t *testing.T) {
-	t.Skip("ranger-base-acvq3: parallelOK is keyed on the test name, so a cleared test is waived for every future shared-state reason")
-
 	gate, err := os.ReadFile("cmd/testparallel/main.go")
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +143,38 @@ func TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared(t *testing.T) {
 	fnd := tpcCopyPackage(t)
 	tpcAddSharedWrite(t, filepath.Join(fnd, "scorecard_test.go"), cleared)
 	out, code = tpcCheck(t, fnd)
-	if code == 0 {
-		t.Errorf("a costProviders write in %s is waived by a clearance recorded for an unrelated var: the gate exited 0.\nparallelOK is keyed on the test name (cmd/testparallel/main.go:521), so clearing a test once waives every future reason (ranger-base-acvq3).\n%s", cleared, out)
+	if code == 0 || !strings.Contains(out, cleared) {
+		t.Fatalf("a costProviders write in %s is waived by a clearance recorded for an unrelated var (exit %d).\nparallelOK must be keyed on the vars its reason names, not the test name alone (ranger-base-acvq3).\n%s", cleared, code, out)
+	}
+	// And `extra` has to say WHICH var, or the message above cannot be
+	// followed: the row for the cleared test names the measured var and
+	// reads UNCLEARED, not the recorded reason as if it still held.
+	ex := exec.Command("go", "run", "./cmd/testparallel", fnd, "extra")
+	exOut, err := ex.CombinedOutput()
+	if err != nil {
+		t.Fatalf("extra: %v\n%s", err, exOut)
+	}
+	var row string
+	for _, line := range strings.Split(string(exOut), "\n") {
+		if strings.Contains(line, "\t"+cleared+"\t") {
+			row = line
+		}
+	}
+	if row == "" {
+		t.Fatalf("extra has no row for %s after the write:\n%s", cleared, exOut)
+	}
+	if !strings.Contains(row, "costProviders") || !strings.Contains(row, "UNCLEARED") {
+		t.Errorf("extra still reports the recorded reason as the state of %s; want the measured var (costProviders) and UNCLEARED:\n  %s", cleared, row)
+	}
+
+	// The other half of the key: a clearance argues about VARS, so a flag of
+	// another kind on a cleared test — here an environment write, which
+	// t.Parallel panics over at run time — is not covered by "reads blindT"
+	// either. Same cleared test, same recorded reason, different hold.
+	env := tpcCopyPackage(t)
+	tpcAddEnvWrite(t, filepath.Join(env, "scorecard_test.go"), cleared)
+	out, code = tpcCheck(t, env)
+	if code == 0 || !strings.Contains(out, cleared) {
+		t.Errorf("an environment write in %s is waived by a clearance recorded for a package var (exit %d); a parallelOK reason covers the vars it names and nothing else (ranger-base-acvq3).\n%s", cleared, code, out)
 	}
 }

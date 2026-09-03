@@ -111,14 +111,16 @@ func fakeDirsExemptionProse(src string) string {
 // fakeDirsProseNamesKey answers which key a stretch of prose CLAIMS, so the
 // claim can be compared with the code. A stretch naming both, or neither, is
 // not an argument a reader can check.
+//
+// Both sides are read the same way (ranger-base-acvq3): every mention of a
+// key counts as a claim unless the words just before it deny it — "NOT
+// t.Name()" denies, "the key is t.Name()" claims. Before that the name side
+// was a four-spelling allowlist against a one-substring T side, so prose
+// that asserted t.Name() in a fifth spelling while still containing
+// "*testing.T" read as AGREEING with the code instead of as naming both.
 func fakeDirsProseNamesKey(prose string) string {
-	// "the key is the T and NOT t.Name()" names one key and denies the
-	// other; a bare mention of t.Name() is not a claim that it IS the key.
-	claimsName := strings.Contains(prose, "Store(t.Name()") ||
-		strings.Contains(prose, "Load(t.Name())") ||
-		strings.Contains(prose, "partitioned by the\n\t// test's own name") ||
-		strings.Contains(prose, "IS partitioned by t.Name()")
-	claimsT := strings.Contains(prose, "*testing.T")
+	claimsName := proseClaims(prose, "t.Name()") || proseClaims(prose, "test's own name")
+	claimsT := proseClaims(prose, "*testing.T")
 	switch {
 	case claimsT && !claimsName:
 		return fakeDirsKeyT
@@ -126,6 +128,34 @@ func fakeDirsProseNamesKey(prose string) string {
 		return fakeDirsKeyName
 	default:
 		return fakeDirsKeyUnknown
+	}
+}
+
+// proseClaims answers whether prose mentions needle anywhere as a claim: a
+// mention counts unless the few words before it deny it. Comment prefixes are
+// folded to spaces first so a line break inside a phrase is not a spelling.
+func proseClaims(prose, needle string) bool {
+	flat := strings.NewReplacer("\n\t// ", " ", "\n// ", " ", "\n", " ").Replace(prose)
+	denials := []string{"not ", "never ", "rather than ", "instead of "}
+	for rest := flat; ; {
+		i := strings.Index(rest, needle)
+		if i < 0 {
+			return false
+		}
+		before := strings.ToLower(rest[:i])
+		if len(before) > 16 {
+			before = before[len(before)-16:]
+		}
+		denied := false
+		for _, d := range denials {
+			if strings.Contains(before, d) {
+				denied = true
+			}
+		}
+		if !denied {
+			return true
+		}
+		rest = rest[i+len(needle):]
 	}
 }
 
@@ -228,6 +258,28 @@ func TestQAParallelGateExemptionCheckCanFail(t *testing.T) {
 	}
 	if got := fakeDirsProseNamesKey(fakeDirsExemptionProse(gate)); got != fakeDirsKeyT {
 		t.Fatalf("the real exemption prose was read as claiming %q, not %s; the check refuses everything and separates nothing", got, fakeDirsKeyT)
+	}
+
+	// Control E (ranger-base-acvq3): prose that contradicts ITSELF — the
+	// pointer sentence left standing, the key sentence inverted to claim
+	// t.Name() in a spelling no allowlist carried — names both keys and must
+	// land on unknown, not on the T side as agreeing with the code.
+	both := strings.Replace(gate,
+		"// The key is the T and NOT t.Name():",
+		"// The key is t.Name() and NOT the T:", 1)
+	if both == gate {
+		t.Fatalf("the key sentence this control inverts is not in cmd/testparallel/main.go in the shape the control expects")
+	}
+	if got := fakeDirsProseNamesKey(fakeDirsExemptionProse(both)); got != fakeDirsKeyUnknown {
+		t.Fatalf("prose asserting BOTH the pointer and t.Name() as the key was read as claiming %q; a stretch naming both is not an argument a reader can check", got)
+	}
+	// and the denial the real prose carries — "NOT t.Name()" — is read as a
+	// denial, or the real text itself would land on unknown above.
+	if proseClaims("the key is the T and NOT t.Name(): more", "t.Name()") {
+		t.Fatalf("a negated mention of t.Name() was read as a claim; every real exemption block would then read as naming both")
+	}
+	if !proseClaims("the key is\n\t// t.Name() here", "t.Name()") {
+		t.Fatalf("an unnegated mention of t.Name() across a comment line break was not read as a claim")
 	}
 
 	// Control D: a deleted exemption block reads as absent, not as agreeing.
