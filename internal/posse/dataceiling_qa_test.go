@@ -416,6 +416,16 @@ func TestQADataCeilingSharesOneClassNamespace(t *testing.T) {
 	if strings.Contains(report.String(), qaCeilingWord) {
 		t.Errorf("the stamp report echoed a value:\n%s", report.String())
 	}
+	// And the ceiling line does not ride on the instance list: a set with
+	// a ceiling and NO visibility patterns still prints it. This arm is
+	// what kills M8 — the fixture above has both keys, so a report gated
+	// on the instance list survived it (measured on ranger-base-nfg8l).
+	report.Reset()
+	OpsPatternSet{Ceiling: set.Ceiling}.WriteStampReport(&report)
+	if !strings.Contains(report.String(), "data ceiling stamped in (config "+DataCeilingConfigKey+":), scanned under every stamp: "+qaCeilingClass) ||
+		strings.Contains(report.String(), "instance pattern") {
+		t.Errorf("a ceiling-only set must report the ceiling line and nothing about instance patterns:\n%q", report.String())
+	}
 
 	// The PRIVATE repo's hook file is the record: the ceiling stamped in,
 	// class-only, and both refusals named in the comment — by class.
