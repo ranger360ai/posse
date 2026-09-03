@@ -232,3 +232,32 @@ func TestEligibleListsTheSetToMarkAndLeavesTheTaintedOut(t *testing.T) {
 		t.Errorf("eligible must not list a t.Setenv test — t.Parallel panics in one:\n%s", out)
 	}
 }
+
+// A parallelOK reason covers the vars it names as whole identifiers, and
+// nothing that merely contains one of them (ranger-base-acvq3). The scan pin
+// over internal/posse (testparallelclearancescope_qa_test.go at the repo
+// root) cannot see this edge — no cleared var there is a prefix of another —
+// so it is held here, against the function itself.
+func TestClearanceCoversMatchesIdentifiersNotSubstrings(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		reason string
+		vars   []string
+		other  bool
+		want   bool
+	}{
+		{"reads blindT", []string{"blindT"}, false, true},
+		{"reads blindT and pulseNow", []string{"blindT", "pulseNow"}, false, true},
+		{"reads blindT", []string{"blindT", "costProviders"}, false, false},
+		{"reads blindTX", []string{"blindT"}, false, false}, // substring, not the identifier
+		{"reads blindT", []string{"blind"}, false, false},
+		{"reads blindT", []string{"blindT"}, true, false}, // an env/fakeDir/serial hold is not a var
+		{"", []string{"blindT"}, false, false},
+		{"reads blindT", nil, false, false},
+	}
+	for _, c := range cases {
+		if got := clearanceCovers(c.reason, c.vars, c.other); got != c.want {
+			t.Errorf("clearanceCovers(%q, %v, %v) = %v, want %v", c.reason, c.vars, c.other, got, c.want)
+		}
+	}
+}
