@@ -1272,6 +1272,18 @@ func main() {
 				}
 				dir = posse.ExpandTilde(a2)
 			}
+			// ADR 0052 D1: a MANAGED hooks path is asked about before
+			// either slot is attempted, because both attempts are writes
+			// into somebody else's directory. Neither slot is installed,
+			// nothing is chained there, and the operator gets the
+			// classification instead of `open <dir>/pre-push: permission
+			// denied` — which is what this command said on the managed box
+			// it was run on (ranger-base-yt6m0). Exit 0: nothing failed.
+			if line, managed := posse.ManagedHooksPath(dir); managed {
+				fmt.Fprintln(out, line)
+				fmt.Fprintf(out, "  pre-push and prepare-commit-msg: nothing written there — the session hooks dir is rendered at launch (ADR 0052 D2)\n")
+				return
+			}
 			// Both slots are attempted and reported independently — a
 			// foreign hook taking one must not cost the other
 			// (rangerhq-mgdk; the comment used to claim this and only

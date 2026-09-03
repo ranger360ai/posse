@@ -1581,12 +1581,23 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// was actually on disk a moment earlier, so a real drift is a
 		// finding rather than a repair nobody heard about.
 		preHeal := a.probeL3Hooks(dir, deniesGitPush(ag.Deny))
-		if deniesGitPush(ag.Deny) {
-			InstallPrePushHook(dir)
+		// ADR 0052 D1: on a MANAGED hooks path the install step writes
+		// nothing at all — not the two renders, not a chain — and says so
+		// on the launch. The pre-heal comparison is skipped with it: the
+		// slots there are the employer's, so "the wall was WRONG before this
+		// launch re-stamped it" would name a drift nobody caused and a
+		// re-stamp that did not happen. The wall itself is bead 2's render.
+		mh, _ := managedHooksDir(dir)
+		if mh.Managed {
+			b.warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
+		} else {
+			if deniesGitPush(ag.Deny) {
+				InstallPrePushHook(dir)
+			}
+			a.InstallCommitGuardHook(dir)
 		}
-		a.InstallCommitGuardHook(dir)
 		parity := a.CheckParityIn(ag, rt, cage, tier, dir)
-		if preHeal.Repo && !preHeal.CommitGuard {
+		if !mh.Managed && preHeal.Repo && !preHeal.CommitGuard {
 			b.warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
 		if len(parity.Degraded) > 0 {

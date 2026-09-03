@@ -43,8 +43,13 @@ type HookWallRepo struct {
 	Config string
 	Dir    string
 	// Skip names why nothing was measured here ("absent", "not a git
-	// repository"), and is empty when the repo was measured.
+	// repository", or the managed-hooks line), and is empty when the repo
+	// was measured.
 	Skip string
+	// Managed is the one Skip the operator is meant to read rather than
+	// ignore: git dispatches this repo's hooks from a path posse may not
+	// write (ADR 0052 D1), so there is no copy here to be stale.
+	Managed bool
 	// Degraded holds ready-to-display lines, one per slot that does not
 	// count. Empty for a repo whose wall is this binary's render.
 	Degraded []string
@@ -56,6 +61,7 @@ type HookWallSweep struct {
 	Declared int // entries in beads_visibility:
 	Measured int // of those, present and git
 	Findings int // of those measured, carrying at least one degraded slot
+	Managed  int // of those present and git, dispatching from a managed path
 }
 
 // SweepHookWall asks the ADR 0023 question — identity at the dispatch path,
@@ -86,6 +92,21 @@ func (a *App) SweepHookWall() HookWallSweep {
 		r := HookWallRepo{Config: key, Dir: dir}
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 			r.Skip = "absent — no such directory"
+			s.Repos = append(s.Repos, r)
+			continue
+		}
+		// ADR 0052 D1, asked before the probe rather than after it: on a
+		// managed hooks path the two slots hold the employer's hooks, which
+		// the probe reads — correctly — as foreign, and would report as two
+		// degraded slots with `posse gates install-hooks` as the remedy. That
+		// remedy is a write posse refuses to attempt there, so the finding
+		// would be a standing instruction to do the one thing this ADR says
+		// not to do. A managed repo is a SKIP with the same line every other
+		// caller prints, and is not a stale wall: nothing of posse's is there
+		// to go stale.
+		if m, err := managedHooksDir(dir); err == nil && m.Managed {
+			r.Skip, r.Managed = m.line(), true
+			s.Managed++
 			s.Repos = append(s.Repos, r)
 			continue
 		}
@@ -142,25 +163,38 @@ func (a *App) ReportHookWall(w io.Writer, where string) bool {
 	if s.Declared == 0 {
 		return false
 	}
-	if s.Measured == 0 {
+	if s.Measured == 0 && s.Managed == 0 {
 		fmt.Fprintf(w, "hook wall (%s): 0 of %d repo(s) in config beads_visibility: are present and git — nothing measured\n", where, s.Declared)
 		return false
 	}
-	if s.Findings == 0 {
-		fmt.Fprintf(w, "hook wall (%s): %d repo(s) carry this binary's render\n", where, s.Measured)
-		return false
-	}
-	fmt.Fprintf(w, "hook wall (%s): %d of %d repo(s) do NOT carry this binary's render\n", where, s.Findings, s.Measured)
-	for _, r := range s.Repos {
-		if len(r.Degraded) == 0 {
-			continue
+	if s.Measured > 0 {
+		if s.Findings == 0 {
+			fmt.Fprintf(w, "hook wall (%s): %d repo(s) carry this binary's render\n", where, s.Measured)
+		} else {
+			fmt.Fprintf(w, "hook wall (%s): %d of %d repo(s) do NOT carry this binary's render\n", where, s.Findings, s.Measured)
+			for _, r := range s.Repos {
+				if len(r.Degraded) == 0 {
+					continue
+				}
+				fmt.Fprintf(w, "  %s\n", r.Config)
+				for _, d := range r.Degraded {
+					fmt.Fprintf(w, "    %s\n", d)
+				}
+			}
+			fmt.Fprint(w, "  nothing re-renders a repo that holds no session, so a stale wall there stays stale:\n"+
+				"  re-render each from this binary and re-run `make verify-hook-freshness` in the posse checkout.\n")
 		}
-		fmt.Fprintf(w, "  %s\n", r.Config)
-		for _, d := range r.Degraded {
-			fmt.Fprintf(w, "    %s\n", d)
+	}
+	// Printed rather than counted silently: a repo the operator declared and
+	// posse deliberately does not install into is exactly the thing a reader
+	// would otherwise go looking for a missing finding about.
+	if s.Managed > 0 {
+		fmt.Fprintf(w, "hook wall (%s): %d repo(s) dispatch from a managed hooks path — posse writes nothing there (ADR 0052)\n", where, s.Managed)
+		for _, r := range s.Repos {
+			if r.Managed {
+				fmt.Fprintf(w, "  %s\n    %s\n", r.Config, r.Skip)
+			}
 		}
 	}
-	fmt.Fprint(w, "  nothing re-renders a repo that holds no session, so a stale wall there stays stale:\n"+
-		"  re-render each from this binary and re-run `make verify-hook-freshness` in the posse checkout.\n")
-	return true
+	return s.Findings > 0
 }

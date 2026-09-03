@@ -60,13 +60,16 @@ package posse
 // name must be spelled for every name that resolves to it.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 // shimRule is one deny rule as the shim sees it: the words that must lead
@@ -1582,6 +1585,23 @@ func hooksDir(dir string) (string, error) { return gitPath(dir, "hooks") }
 // rewrites a relative value against the CWD it was asked from, so the join
 // is right at any depth.
 func gitPath(dir, name string) (string, error) {
+	p, err := gitPathRaw(dir, name)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(dir, p)
+	}
+	return p, nil
+}
+
+// gitPathRaw is gitPath before the join: git's answer exactly as git spelled
+// it. Only one question needs it — ADR 0052 D1 asks whether the dispatch path
+// is ABSOLUTE, and after the join every answer is (a relative `core.hooksPath`
+// comes back joined onto dir and is indistinguishable from a value the
+// operator wrote out in full). Everything else wants the joined form and
+// should keep calling gitPath.
+func gitPathRaw(dir, name string) (string, error) {
 	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", name).Output()
 	if err != nil {
 		return "", Die("%s is not a git repository", dir)
@@ -1590,10 +1610,147 @@ func gitPath(dir, name string) (string, error) {
 	if p == "" {
 		return "", Die("%s is not a git repository", dir)
 	}
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(dir, p)
-	}
 	return p, nil
+}
+
+// ─── a MANAGED hooks path (ADR 0052 D1) ──────────────────────────────────────
+//
+// A managed box points every git on it at one absolute, root-owned hooks
+// directory outside every repo — a secret-scanner integration owning
+// `core.hooksPath`. posse's answer there is to write NOTHING: `install-hooks`
+// used to reach os.WriteFile and hand the operator
+// `open <dir>/pre-push: permission denied`, because installHook swallows the
+// read error on a missing slot and falls straight through to the create
+// (ranger-base-yt6m0, the operator's cold install). The employer's control is
+// not fought, bypassed, or chained behind silently; the L3 wall is realized
+// instead by the per-session hooks dir the session env aims git at (ADR 0052
+// D2), and every caller that would write says so with managedHooks.line().
+
+// managedHooks is managedHooksDir's verdict about one repo's dispatch path,
+// carrying what the report line has to name: the directory, and the owner and
+// mode that say whose it is.
+type managedHooks struct {
+	// Dir is git's dispatch path, joined as gitPath would join it — the
+	// same string hooksDir(dir) returns, so a caller that has this verdict
+	// does not have to ask git twice.
+	Dir     string
+	Managed bool
+	Owner   string // the directory's owner uid, "?" when the stat cannot say
+	Mode    string // its permission bits, e.g. 0555
+}
+
+// line is the one thing posse prints about a managed path, identical from
+// install-hooks, the launcher and the hook-wall sweep. One line, on purpose:
+// Degraded and Skip values flow into flat-file session meta, where an embedded
+// newline truncates on read-back (ranger-base-ujdg).
+func (m managedHooks) line() string {
+	return fmt.Sprintf("L3: managed hooks path %s (owner %s, mode %s) — posse's wall is not installed there; realized by session redirect (ADR 0052)",
+		AbbrevHome(m.Dir), m.Owner, m.Mode)
+}
+
+// managedHooksError is the verdict installHook returns INSTEAD of attempting
+// the create, so a caller reading the error gets the classification rather
+// than errno's account of it.
+type managedHooksError struct{ m managedHooks }
+
+func (e managedHooksError) Error() string { return e.m.line() }
+
+// ManagedHooksPath is managedHooksDir for the CLI: the report line and
+// whether the repo at dir is managed. A directory git cannot answer for is
+// not managed — the caller's ordinary path reports that better than this can.
+func ManagedHooksPath(dir string) (string, bool) {
+	m, err := managedHooksDir(dir)
+	if err != nil || !m.Managed {
+		return "", false
+	}
+	return m.line(), true
+}
+
+// managedHooksDir classifies the repo at dir's hook dispatch path BEFORE
+// anything writes to it. MANAGED iff all three hold (ADR 0052 D1):
+//
+//   - git's `--git-path hooks` answer is ABSOLUTE. A relative
+//     `core.hooksPath` is a path inside the operator's own tree, resolved by
+//     git against the worktree top-level — nobody else's directory, whatever
+//     its mode. Asked of gitPathRaw, because the join makes every answer
+//     absolute.
+//   - it is NOT under the repo's common git dir, and not inside the worktree.
+//     `.git/hooks` with its write bit off is a repo the operator locked, not
+//     an employer's wall, and posse's refusal there should stay the one it
+//     has always given.
+//   - this uid cannot create a file in it — measured, by ONE create probe of
+//     a dot-file that is removed on success. Never by opening a slot: a slot
+//     may be a FIFO whose open never returns (ranger-base-92n5p), and a hook
+//     posse is refusing to touch is the last file to go poking at.
+//
+// Any subset keeps today's behaviour: the chain prescription and a degraded
+// launch. The probe's error is read narrowly — permission and a read-only
+// filesystem are "cannot create"; ENOENT, ENOSPC and the rest are not, so a
+// full disk does not silently reclassify every foreign hooks path on the box
+// as somebody's managed one.
+//
+// What the probe measures is "THIS process cannot create a file here", which
+// is the fact every caller acts on and is not always a mode bit: the same
+// answer comes back for a path a seatbelt profile denies (ADR 0025 §2). That
+// is the honest verdict for the write, and the line names the owner and mode
+// so a reader can see which it was.
+func managedHooksDir(dir string) (managedHooks, error) {
+	raw, err := gitPathRaw(dir, "hooks")
+	if err != nil {
+		return managedHooks{}, err
+	}
+	if !filepath.IsAbs(raw) {
+		return managedHooks{Dir: filepath.Join(dir, raw)}, nil
+	}
+	m := managedHooks{Dir: raw}
+	for _, flag := range []string{"--git-common-dir", "--show-toplevel"} {
+		// A bare repo has no top level and answers with an error; that is
+		// one leg not applying, not a failure to classify.
+		p, err := git(dir, "rev-parse", flag)
+		if err != nil || p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		if underDir(p, m.Dir) {
+			return m, nil
+		}
+	}
+	st, err := os.Stat(m.Dir)
+	if err != nil || !st.IsDir() {
+		// Nothing there to be managed by anyone. A hooks path that does not
+		// exist is today's MkdirAll's business, and it reports its own
+		// failure in its own words.
+		return m, nil
+	}
+	m.Owner, m.Mode = ownerAndMode(st)
+	f, err := os.CreateTemp(m.Dir, ".posse-write-probe-*")
+	if err == nil {
+		name := f.Name()
+		f.Close()
+		os.Remove(name)
+		return m, nil
+	}
+	m.Managed = cannotCreate(err)
+	return m, nil
+}
+
+// ownerAndMode is the pair the report line names, formatted once so every
+// caller says it the same way.
+func ownerAndMode(fi os.FileInfo) (owner, mode string) {
+	mode = fmt.Sprintf("%04o", fi.Mode().Perm())
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return strconv.FormatUint(uint64(st.Uid), 10), mode
+	}
+	return "?", mode
+}
+
+// cannotCreate reads the create probe's error as an answer about PERMISSION
+// rather than about the moment. EROFS is spelled out because it is not
+// os.ErrPermission and is the same fact — a mount posse may not write.
+func cannotCreate(err error) bool {
+	return errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EROFS)
 }
 
 // chainHookDispatcher is the dispatcher chainDispatcher tells the operator
@@ -1802,10 +1959,19 @@ func isBdShim(body string) bool {
 // moved aside and chained (see chainBdShim). A genuinely unknown hook is
 // still refused whether or not chain is set.
 func installHook(dir, slot, marker, legacy, script string, chain bool) (string, error) {
-	hooks, err := hooksDir(dir)
+	// ADR 0052 D1: classify before touching. On a managed hooks path every
+	// line below this is a write posse must not attempt — MkdirAll included —
+	// and the typed verdict is what the caller reports instead of the create's
+	// `permission denied`. m.Dir is git's dispatch path, so this replaces the
+	// hooksDir call rather than adding a question.
+	m, err := managedHooksDir(dir)
 	if err != nil {
 		return "", err
 	}
+	if m.Managed {
+		return "", managedHooksError{m}
+	}
+	hooks := m.Dir
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		return "", err
 	}
