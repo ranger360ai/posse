@@ -100,6 +100,12 @@ type PlanStale struct {
 	Windows PlanUsage     // that reading, quoted as the past fact it is
 	Fails   int           // requests that left the machine since the last one that worked
 	Class   string        // the newest of those, as a token ("429", "401"); "" = no class
+	// NextAsk is how long until any process may ask again, off the shared
+	// snapshot's live cooldown; 0 = nothing is holding a request back.
+	// It is the escalating 429 backoff said out loud (ranger-base-rwwp6):
+	// the wait doubles per consecutive 429, and a wait the shop chose for
+	// itself has to be visible to the operator whose fleet is blind for it.
+	NextAsk time.Duration
 }
 
 // Line is the one rendering — `posse status`, the watch pass preamble and
@@ -122,13 +128,24 @@ func (s PlanStale) Line() string {
 // it means nothing has ASKED, and an operator who reads "10 consecutive
 // 429" as the reason will go looking for the wrong outage.
 func (s PlanStale) streak() string {
+	var sentence string
 	switch {
 	case s.Fails == 0:
-		return "no request has left this machine since"
+		sentence = "no request has left this machine since"
 	case s.Class == "":
-		return fmt.Sprintf("%d consecutive failed reads", s.Fails)
+		sentence = fmt.Sprintf("%d consecutive failed reads", s.Fails)
+	default:
+		sentence = fmt.Sprintf("%d consecutive %s", s.Fails, s.Class)
 	}
-	return fmt.Sprintf("%d consecutive %s", s.Fails, s.Class)
+	// …and a fourth, when a cooldown is running: how long the box has
+	// decided to stay quiet. It is appended to all three rather than folded
+	// into the 429 one, because the two facts come from different stores and
+	// the log one can be missing — a live cooldown with an unreadable log
+	// still owes the reader the wait.
+	if s.NextAsk > 0 {
+		sentence += fmt.Sprintf(", next ask in %s", BlindFor(s.NextAsk))
+	}
+	return sentence
 }
 
 // PlanStaleness answers the question for one caller, from files only: no
@@ -168,7 +185,8 @@ func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanSt
 		return PlanStale{At: at, Age: age, After: after, Windows: last}
 	}
 	fails, class := planFailStreak(c.Log)
-	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class}
+	next, _ := c.Cooling(now)
+	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next}
 }
 
 // planFailStreak walks $StateDir/plan-usage.log backwards: how many

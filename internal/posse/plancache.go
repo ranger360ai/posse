@@ -24,7 +24,10 @@ package posse
 //   - Retry-After is honoured across processes. A 429 writes its cooldown
 //     into the same file, so the next asker — usually a different process —
 //     does not re-ask until it expires. Re-asking a rate limiter every two
-//     minutes is how a storm gets extended.
+//     minutes is how a storm gets extended — and honouring the header
+//     exactly and re-asking at the boundary is how one gets EXTENDED
+//     INDEFINITELY, which is why the wait doubles per consecutive 429 and
+//     resets on the first success (planCooldown, ranger-base-rwwp6).
 //   - Every request that actually leaves the machine is logged to
 //     `$StateDir/plan-usage.log` with who asked and what came back. The
 //     cadence is the evidence: next time the endpoint 429s for hours, that
@@ -67,6 +70,15 @@ const (
 	// (rangerhq-6h1) is the thing that must decide what to do about a long
 	// outage — not this file, silently.
 	planCooldownMax = time.Hour
+	// planCooldownCeiling caps the ESCALATION below: the longest this file
+	// will keep the instance quiet, however many 429s in a row it has seen.
+	//
+	// Eight hours is three asks a day at the worst, so the sentence above
+	// still holds — the guard never stops asking for a day, and the blind
+	// window still decides what to do about the outage. It is also the
+	// doubling the endpoint's own number lands on (1h → 2h → 4h → 8h), not
+	// a figure invented next to it.
+	planCooldownCeiling = 8 * time.Hour
 )
 
 // planEntry is the file: one snapshot, plus whatever cooldown the endpoint
@@ -80,6 +92,18 @@ type planEntry struct {
 	// below reads as a miss rather than as a plan with no limits.
 	Windows PlanUsage `json:"windows"`
 	RetryAt time.Time `json:"retry_at,omitempty"`
+	// Streak is how many 429s in a row this snapshot has seen and Wait is
+	// what the newest of them bought — the two facts planCooldown escalates
+	// from. They ride in the shared file for the reason the cooldown does:
+	// the Nth 429 is usually a different process from the first, and a
+	// streak each process counted for itself would escalate nowhere.
+	//
+	// A successful read replaces the whole entry, which is what resets both
+	// (Read's success branch), and a snapshot written before these fields
+	// existed decodes to zeroes — the first 429 after an upgrade is honoured
+	// verbatim, exactly as it was before.
+	Streak int           `json:"cooldown_streak,omitempty"`
+	Wait   time.Duration `json:"cooldown_wait,omitempty"`
 }
 
 // PlanCache is the shared reading as one caller sees it. Caller is the name
@@ -146,23 +170,43 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		return nil, time.Time{}, &planCooldownErr{Left: e.RetryAt.Sub(now)}
 	}
 	u, err := r.Read()
+	var rate planRate
+	var rl *RateLimit
+	if errors.As(err, &rl) {
+		// Keep the last reading and its age — only the cooldown moves. The
+		// reading is still the newest fact anyone has, and whether it is too
+		// old to act on is the caller's question, not ours.
+		e.Streak++
+		e.Wait = planCooldown(rl.RetryAfter, e.Wait)
+		rate = planRate{Asked: rl.RetryAfter, Wait: e.Wait, Streak: e.Streak}
+		e.RetryAt = now.Add(e.Wait)
+	}
 	// The read log is written either way. A request that left the machine is
 	// evidence whoever answered it, and an override that is refused a place
 	// in the snapshot should still be visible in the cadence file.
-	c.logRead(now, err)
+	c.logRead(now, err, rate)
 	if err != nil {
-		var rl *RateLimit
-		if errors.As(err, &rl) {
-			// Keep the last reading and its age — only the cooldown moves.
-			// The reading is still the newest fact anyone has, and whether
-			// it is too old to act on is the caller's question, not ours.
-			e.RetryAt = now.Add(planCooldown(rl.RetryAfter))
+		if rl != nil {
 			c.share(r, e)
 		}
 		return nil, time.Time{}, err
 	}
+	// A success replaces the entry, streak and all: proof the endpoint
+	// answers is proof the escalation has nothing left to escalate.
 	c.share(r, planEntry{At: now, Windows: u})
 	return u, now, nil
+}
+
+// planRate is what one 429 cost, carried from the branch that decides it to
+// the log line that records it: what the endpoint ASKED for, what this file
+// honoured, and which consecutive 429 it was. The three differ now that the
+// honoured wait escalates, and a log that shows only the third of them
+// cannot be read backwards into what the endpoint actually said
+// (ranger-base-rwwp6).
+type planRate struct {
+	Asked  time.Duration // the Retry-After header, 0 = the endpoint named none
+	Wait   time.Duration // what every process on this box will honour
+	Streak int           // 1 = the first 429 of this storm
 }
 
 // planCooldownErr is the refusal to ask again while a Retry-After the endpoint
@@ -241,6 +285,22 @@ func (c *PlanCache) LastReading() (PlanUsage, time.Time, bool) {
 	return e.Windows, e.At, true
 }
 
+// Cooling is the live cooldown off the shared snapshot: how long until any
+// process on this box may ask again. False once it has expired, and false
+// for a snapshot that never had one.
+//
+// Like LastReadAt it makes no request and reads nothing but the file — it
+// exists so the loud line (planstale.go) can say how long the shop has
+// chosen to stay quiet. An escalating wait that nothing printed would be the
+// silent mute planCooldownMax's comment refuses.
+func (c *PlanCache) Cooling(now time.Time) (time.Duration, bool) {
+	e, have := c.load()
+	if !have || e.RetryAt.IsZero() || !now.Before(e.RetryAt) {
+		return 0, false
+	}
+	return e.RetryAt.Sub(now), true
+}
+
 // Line is the reading as a person reads it: `plan windows: ` and whatever
 // the adapter's windows are called, plus how old the snapshot is once that
 // is worth saying. One
@@ -262,15 +322,66 @@ func (c *PlanCache) Line(maxAge time.Duration) (string, error) {
 	return fmt.Sprintf("plan windows: %s%s", u.Line(), age), nil
 }
 
-// planCooldown turns a Retry-After into how long every process waits.
-func planCooldown(d time.Duration) time.Duration {
+// planCooldown turns a Retry-After into how long every process waits: prev
+// is the wait already in force from the last 429, and 0 means this is the
+// first of a storm.
+//
+// The FIRST one is honoured exactly as it was before: the endpoint's own
+// number is the best information anybody has about the endpoint, and an
+// isolated 429 asking for sixty seconds should cost sixty seconds of
+// blindness, not two minutes. What changed is the REPEAT.
+//
+// Why the repeat cannot be honoured the same way (ranger-base-rwwp6, off
+// spike ranger-base-dvxac). On 2026-09-02 this instance drew fourteen
+// consecutive 429s between 03:30Z and 16:35Z, each naming Retry-After 3600,
+// and three of the asks that drew one were made AFTER the window the
+// previous 429 stated had ended — by 29s, by 28s, by 118s. Read with
+// ranger-base-au0o4, which watched the window END move when it asked, the
+// likely shape is that every ask re-arms the hour: a poller that waits
+// exactly one stated window and then asks is then a loop that cannot
+// terminate, and the plan guard stays blind for as long as it keeps trying.
+// It was blind for thirteen hours that day. The competing reading — that the
+// real window is simply longer than the header it sends — is not ruled out
+// (the clean experiment needs the poller stopped, ranger-base-uzyd2), and
+// gives the same instruction, which is why the fix does not depend on which
+// is true.
+//
+// So the honoured wait doubles per consecutive 429 and resets on the first
+// success: 1h, 2h, 4h, 8h. Two asks in, the cadence is no longer the
+// endpoint's window, which is the only property that matters — whatever is
+// re-arming an hour cannot be re-armed by a request that is not made.
+//
+// It does not lift planCooldownMax, and the ceiling is why. That constant
+// refuses "a guard that stops asking for a day", and this refuses it too:
+// the endpoint is never believed past an hour on any single 429, and the
+// escalation stops at planCooldownCeiling — three asks a day at its worst.
+// The other half of the answer is loudness, not arithmetic: the wait is on
+// the blind line (planstale.go) and the streak and the raw Retry-After are
+// in the cadence log, so an escalation an operator did not choose is one
+// they can still see.
+func planCooldown(d, prev time.Duration) time.Duration {
+	wait := d
 	switch {
-	case d <= 0:
-		return planCooldownDefault
-	case d > planCooldownMax:
-		return planCooldownMax
+	case wait <= 0:
+		wait = planCooldownDefault
+	case wait > planCooldownMax:
+		wait = planCooldownMax
 	}
-	return d
+	// The escalation doubles the wait IN FORCE, not the header — so a storm
+	// cannot walk backwards down its own schedule when one 429 in the middle
+	// of it names a shorter window or none at all. That is not a hypothetical
+	// tidy-up: two hours in, a 429 with no header would otherwise be honoured
+	// as the five-minute default, and re-asking five minutes into an hour the
+	// endpoint has already stated is the exact behaviour this bead is about.
+	// Within one storm the honoured wait only ever grows, and only a success
+	// takes it back to nothing.
+	if prev > 0 && prev*2 > wait {
+		wait = prev * 2
+	}
+	if wait > planCooldownCeiling {
+		return planCooldownCeiling
+	}
+	return wait
 }
 
 func (c *PlanCache) load() (planEntry, bool) {
@@ -341,7 +452,7 @@ const (
 // logRead records one request that actually went out — cache hits are not
 // requests and write nothing, which is the point of the file: its cadence
 // IS the endpoint's view of us.
-func (c *PlanCache) logRead(now time.Time, err error) {
+func (c *PlanCache) logRead(now time.Time, err error, rate planRate) {
 	if c.Log == "" {
 		return
 	}
@@ -353,7 +464,16 @@ func (c *PlanCache) logRead(now time.Time, err error) {
 	if err != nil {
 		var rl *RateLimit
 		if errors.As(err, &rl) {
-			outcome = fmt.Sprintf("%s cooldown=%s", statusCode(rl.Status), BlindFor(planCooldown(rl.RetryAfter)))
+			// `429 cooldown=2h00m retry-after=1h00m streak=2`. The first
+			// two fields are the bytes planLogClass and the 08-24 pins
+			// already read; the rest is what an escalating wait costs a
+			// reader who has only this file. cooldown= is what the box
+			// honoured, retry-after= is what the endpoint asked for — before
+			// this bead they were the same number and the log said the
+			// endpoint had asked for an hour when it may have asked for a
+			// day (rangerhq-tdy8 is reconstructed from exactly these lines).
+			outcome = fmt.Sprintf("%s cooldown=%s retry-after=%s streak=%d",
+				statusCode(rl.Status), BlindFor(rate.Wait), askedFor(rate.Asked), rate.Streak)
 		} else {
 			// planusage.go's errors are written to be quotable: generic by
 			// construction, never the token and never a header.
@@ -382,6 +502,17 @@ func (c *PlanCache) logRead(now time.Time, err error) {
 	f.WriteString(line)
 	f.Close()
 	trimReadLog(c.Log)
+}
+
+// askedFor renders a Retry-After the endpoint may not have sent. "none" and
+// not "0s": the difference between "the endpoint asked for nothing" and "the
+// endpoint asked for no time at all" is the difference between policy and
+// header, and the log is the instrument that has to keep them apart.
+func askedFor(d time.Duration) string {
+	if d <= 0 {
+		return "none"
+	}
+	return BlindFor(d)
 }
 
 // statusCode is "429" out of "429 Too Many Requests" — the log wants the

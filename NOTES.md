@@ -685,12 +685,36 @@ watching them is the operator's interactive headroom — a fleet that eats the
   processes** (the cooldown lives in the same file, capped at an hour — past
   that the blind window decides, not a silent mute), and **every request
   that actually leaves the machine is logged** to
-  `$RHQ_HOME/state/plan-usage.log` (`<RFC3339> <caller> ok|429 cooldown=…`,
-  trimmed to the newest 1000 lines) — cache hits write nothing, so that
+  `$RHQ_HOME/state/plan-usage.log`
+  (`<RFC3339> <caller> ok|429 cooldown=… retry-after=… streak=…`, trimmed to
+  the newest 1000 lines) — cache hits write nothing, so that
   file's cadence is exactly what the endpoint sees of us. No lock: writers
   only ever replace one snapshot with a newer one, and last-writer-wins is
   right for a snapshot — a success landing after a 429 clears the cooldown,
   which is what a success means.
+- **The Nth 429 in a row is not honoured like the first** (ranger-base-rwwp6,
+  off spike ranger-base-dvxac). Honouring `Retry-After` verbatim and asking
+  again at the boundary is a loop that need not terminate. On 2026-09-02 this
+  instance drew **fourteen consecutive 429s between 03:30Z and 16:35Z**, each
+  naming `Retry-After: 3600`, and three of the asks that drew one were made
+  *after* the window the previous 429 had stated: by 29s, by 28s, by 118s.
+  Read with ranger-base-au0o4 — which watched the window *end move* when it
+  asked — the likely shape is that **every ask re-arms the hour**, so the
+  poller kept its own window alive and the plan guard was blind for thirteen
+  hours. (Not proven: the competing reading is a real window longer than the
+  header it sends. The clean experiment needs the poller stopped. Both
+  readings give the same instruction.) So the honoured wait now **doubles per
+  consecutive 429 and resets on the first success** — 1h, 2h, 4h, 8h, six
+  requests in a day where the old cadence made twenty-four. The first 429 is
+  still honoured exactly (an isolated rate limit costs what it asked for);
+  the escalation doubles the wait *in force*, not the header, so a 429 that
+  names nothing mid-storm cannot walk the schedule back down. It does not
+  lift the hour cap — no single 429 is believed past `planCooldownMax`, the
+  ceiling is 8h (three asks a day, so the guard never "stops asking for a
+  day"), and the wait is on the blind line
+  (`… 10 consecutive 429, next ask in 3h12m`) and in the cadence log with the
+  raw header beside it, because a mute nobody can see is the thing that cap
+  exists to refuse.
 - **Overflow: a second pool instead of a skipped pass** (ADR 0010). The
   guard's meter belongs to *one* provider, so the whole-pass skip had two
   costs: a lane whose runtime is not on that meter was skipped because

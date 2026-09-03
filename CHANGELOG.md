@@ -263,6 +263,29 @@ nothing.
 
 ### Fixed
 
+**A 429 storm on the plan-usage endpoint could keep itself alive: posse
+honoured `Retry-After` exactly and asked again at the boundary, forever.**
+
+*Affected: any instance with the plan guard armed, during a rate limit that
+outlasts one window.* On 2026-09-02 this shop drew fourteen consecutive 429s
+between 03:30Z and 16:35Z, each naming `Retry-After: 3600`, and three of the
+asks that drew one were made *after* the window the previous 429 had stated
+had ended. Every ask plausibly re-arms the hour, so a poller that waits
+exactly one window and then asks is a loop that need not terminate — and the
+plan guard is blind, and an unattended `--watch` fails closed, for the whole
+of it. It was blind for thirteen hours that day.
+
+The honoured cooldown now **doubles per consecutive 429 and resets on the
+first success**: 1h, 2h, 4h, then a ceiling of 8h — six requests in a day
+where the old cadence made twenty-four. An isolated 429 still costs exactly
+what it asked for, and no single `Retry-After` is believed past an hour; what
+changed is only the repeat. Nothing is muted silently: the wait is on the
+blind line (`… 10 consecutive 429, next ask in 3h12m`), and
+`state/plan-usage.log` now carries the endpoint's raw `Retry-After` and the
+streak beside the honoured wait — so a reader can finally tell "the endpoint
+asked for an hour" from "the endpoint asked for a day and posse truncated
+it".
+
 **The load guard stopped being read at all while a `dispatch --watch` pass
 waited on its sessions, so nothing ended the leaked processes that were
 saturating the box.**
