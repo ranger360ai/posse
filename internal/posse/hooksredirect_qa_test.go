@@ -619,6 +619,67 @@ func TestQARedirectEnvIndexesFromWhatIsAlreadyThere(t *testing.T) {
 	}
 }
 
+// The count is taken from the launch vars ALONE, never from the launcher's
+// own environment (ranger-base-buvq4, escaped from ranger-base-6prtx). The
+// pane is the herdr daemon's child and the vars are the only channel from
+// the launcher into it (docs/notes.d/ranger-base-ok1x.md), so a count read
+// from os.Getenv names indices the session never receives: git there fails
+// on EVERY command — `missing config key GIT_CONFIG_KEY_0`, rc 128 — the
+// wall included. Measured by running git under what the session actually
+// gets, the launcher carrying a count of its own; and the wrong arm of the
+// same fact, a launcher count beside a vars count, indexes off the vars.
+//
+// Not parallel: t.Setenv is the fixture.
+func TestQARedirectEnvIgnoresTheLaunchersOwnGitConfigCount(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
+	t.Setenv("GIT_CONFIG_VALUE_0", "the-operator")
+
+	hooks := t.TempDir()
+	got := gitConfigHooksPathVars(nil, hooks)
+	if got[0].Value != "1" || got[1].Key != "GIT_CONFIG_KEY_0" {
+		t.Errorf("the launcher's own count leaked into the session's index: %v", got)
+	}
+
+	// What the session sees: no GIT_CONFIG_* of the launcher's, plus exactly
+	// the vars posse handed CreateWorkspace.
+	repo := t.TempDir()
+	run := func(env []string, args ...string) (string, error) {
+		cmd := exec.Command(gitBin, args...)
+		cmd.Dir = repo
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
+	base := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(),
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}
+	if out, err := run(base, "init", "-q", "."); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	session := append([]string{}, base...)
+	for _, v := range got {
+		session = append(session, v.Key+"="+v.Value)
+	}
+	out, err := run(session, "rev-parse", "--git-path", "hooks")
+	if err != nil {
+		t.Fatalf("git in the session is fatal, the wall included: %v\n%s", err, out)
+	}
+	if resolvedPath(out) != resolvedPath(hooks) {
+		t.Errorf("the redirect did not apply: git dispatches from %q, the render is at %q", out, hooks)
+	}
+
+	// A count that IS in the vars — an env set of the operator's own — is
+	// still what posse appends after, whatever the launcher carries.
+	vars := []EnvVar{{"GIT_CONFIG_COUNT", "2"}}
+	if got := gitConfigHooksPathVars(vars, hooks); got[0].Value != "3" || got[1].Key != "GIT_CONFIG_KEY_2" {
+		t.Errorf("a vars count did not win over the launcher's: %v", got)
+	}
+}
+
 // ─── the launch ──────────────────────────────────────────────────────────────
 
 // The launcher's half: a launch into a managed repo renders the dir, says
@@ -677,6 +738,48 @@ func TestQALaunchIntoAnOrdinaryRepoRendersNoRedirect(t *testing.T) {
 		if strings.HasPrefix(v.Key, "GIT_CONFIG_") {
 			t.Errorf("an ordinary repo's launch carries %s", v.Key)
 		}
+	}
+}
+
+// A managed path that is not one line is refused at the launch, before a
+// workspace, a render or a record exists (ranger-base-buvq4, escaped from
+// ranger-base-6kmkn). git accepts such a core.hooksPath and the dispatcher
+// would run it; what posse cannot do is RECORD it — the session meta is a
+// flat file whose reader stops at the first newline (ranger-base-ujdg), so
+// the path's tail would read back as meta fields of its own, `crew: true`
+// among them, on a session that was never crew. The control arm is
+// TestQALaunchIntoAManagedRepoRendersTheRedirectAndCarriesItInTheEnv: the
+// same launch over a one-line managed path goes through.
+func TestQALaunchRefusesAManagedHooksPathThatIsNotOneLine(t *testing.T) {
+	t.Parallel()
+	b, repo := lhpFixture(t, VisibilityPrivate)
+	managed := filepath.Join(t.TempDir(), "managed-hooks\ncrew: true")
+	if err := os.MkdirAll(managed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qaGit(t, repo, "config", "core.hooksPath", managed)
+	mhpLock(t, managed)
+	// The condition is staged, not assumed: git round-trips the path and
+	// posse classifies it managed.
+	if m := mustManaged(t, repo); m.Dir != managed {
+		t.Fatalf("git did not round-trip the path: %q, want %q", m.Dir, managed)
+	}
+
+	err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: repo, Agent: "ranger", AllowDegraded: true})
+	if err == nil || !strings.Contains(err.Error(), "not one line") {
+		t.Fatalf("CreateSession = %v, want a refusal naming the path", err)
+	}
+	if _, err := os.Stat(b.metaPath("s1")); !os.IsNotExist(err) {
+		t.Errorf("a refused launch wrote a record (%v)", err)
+	}
+	if _, err := os.Stat(b.App.SessionHooksDir("s1")); !os.IsNotExist(err) {
+		t.Errorf("a refused launch rendered a hooks dir (%v)", err)
+	}
+	if got, ok := b.readMeta("s1"); ok && got.Crew {
+		t.Errorf("the tail of the path became a meta field: crew: true on a session that was never crew")
 	}
 }
 

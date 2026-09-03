@@ -405,10 +405,12 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if m.Bead != "" {
 		fmt.Fprintf(&s, "bead: %s\n", m.Bead)
 	}
-	// ADR 0052 D3. One line each, and both are single-token values by
-	// construction — a mode word and an absolute path — so the flat-YAML
-	// reader that silently truncates an embedded newline (ranger-base-ujdg)
-	// has nothing to truncate.
+	// ADR 0052 D3. One line each. hooks_mode is a mode word; managed_hooks
+	// is a path, and an absolute path is NOT a single token — git accepts a
+	// core.hooksPath carrying a newline — so the flat-YAML reader that
+	// silently truncates one (ranger-base-ujdg) is guarded at the launch:
+	// planLaunch refuses a managed path that is not one line before any
+	// record is written (ranger-base-buvq4), and nothing else sets it.
 	if m.HooksMode != "" {
 		fmt.Fprintf(&s, "hooks_mode: %s\n", m.HooksMode)
 	}
@@ -1627,6 +1629,18 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// re-stamp that did not happen. The wall itself is bead 2's render.
 		mh, _ := managedHooksDir(dir)
 		if mh.Managed {
+			// ADR 0052 D3 records this path in the session meta, a flat file
+			// whose reader stops at the first newline (ranger-base-ujdg). git
+			// accepts a core.hooksPath that is not one line and the
+			// dispatcher would run it; what posse cannot do is RECORD it —
+			// the path's tail would read back as meta fields of its own,
+			// `crew: true` among them, on a session that was never crew
+			// (ranger-base-buvq4). Refused here, before a render, a workspace
+			// or a record exists. Only where the record would be written:
+			// the container tier below applies no redirect and records none.
+			if !caged && strings.ContainsAny(mh.Dir, "\n\r") {
+				return nil, Die("posse: %s — managed hooks path %q is not one line; the session record cannot carry it (ADR 0052 D3)", o.Name, mh.Dir)
+			}
 			b.warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
 			// ADR 0052 D2: the wall posse may not install THERE is rendered
 			// here instead — its own dir, per session, and the session's env

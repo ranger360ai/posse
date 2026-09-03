@@ -231,15 +231,21 @@ func (a *App) RemoveSessionHooks(session string) {
 // form (`GIT_CONFIG_COUNT` and an indexed key/value pair, git ≥ 2.31),
 // naming `core.hooksPath` = the session's rendered dir.
 //
-// APPENDED, never clobbering: the operator may already carry entries of
-// their own, and overwriting index 0 would drop a setting posse never read.
-// The count is taken from what this session will actually see — an env set
-// resolved into `vars` first, since those are applied over the inherited
-// environment, and the launcher's own env otherwise. A count that is not a
+// APPENDED, never clobbering: an env set may already carry entries of its
+// own (resolved into `vars` first), and overwriting index 0 would drop a
+// setting posse never read. The count is taken from `vars` ALONE, never
+// from this process's environment. The launcher's env is not the session's:
+// the pane is the herdr daemon's child and `vars` is the only channel from
+// here into it (docs/notes.d/ranger-base-ok1x.md), so a count read from
+// os.Getenv named indices the session never received, and git there failed
+// on EVERY command — `missing config key GIT_CONFIG_KEY_0`, rc 128 — the
+// wall included (ranger-base-buvq4). What the daemon's own environment
+// carries is not knowable from here and is not indexed; that is the residue
+// ADR 0052's "Measured versus assumed" names. A count that is not a
 // positive number is treated as none: git refuses to run at all on a bogus
 // one, so there is nothing there to preserve.
 func gitConfigHooksPathVars(vars []EnvVar, hooks string) []EnvVar {
-	count := os.Getenv("GIT_CONFIG_COUNT")
+	count := ""
 	for _, v := range vars {
 		if v.Key == "GIT_CONFIG_COUNT" {
 			count = v.Value
