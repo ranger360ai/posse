@@ -367,3 +367,84 @@ func TestTheSweepWritesTheDirtySetOnACloseNobodyWatched(t *testing.T) {
 		t.Errorf("the sweep filed the handoff at nobody — the closer is the bead's assignee")
 	}
 }
+
+// ─── §2's key: the count in the title must not be in the dedupe ──────────────
+
+// ranger-base-a3zvb, from the verify of tc2pp's close. The §2 handoff was
+// deduped on its EXACT title, and the title carries the dirty count — so a
+// tree whose dirty set moved between two readings had two titles and drew two
+// P1 beads at one closer for one tree.
+//
+// What moves it is the handoff's own description: "COMMIT them under <id> in
+// that worktree". A closer who commits one of two paths and stops IS the
+// repro, and that is the ordinary way this handoff ends. §1's comment never
+// had it — its key stops before the count — and the asymmetry was the
+// finding.
+func TestClosedDirtyDedupeSurvivesAPartialCommit(t *testing.T) {
+	t.Parallel()
+	d, repo, tree := wtqaPassWithWork(t, func(repo, tree string) {
+		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+		write(t, filepath.Join(tree, "forgotten.txt"), "never committed\n")
+		write(t, filepath.Join(tree, "half.txt"), "also never committed\n")
+	})
+	if n := len(closedDirtyBeads(t, repo, "a-1")); n != 1 {
+		t.Fatalf("pass 1 filed %d handoffs, want 1:\n%s", n, dispatcherOut(d))
+	}
+
+	// The closer does exactly what the handoff asks, for one of the two.
+	mustGit(t, tree, "add", "half.txt")
+	mustGit(t, tree, "-c", "user.email=a@b", "-c", "user.name=a",
+		"commit", "-m", "a-1: half of it")
+
+	write(t, filepath.Join(repo, "fake-ready.json"), `[]`)
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d2)
+	// The tree must actually have been read again with a SMALLER dirty set,
+	// or this pins the dedupe over a pass that never looked (the control the
+	// exact-title key was green over).
+	if !strings.Contains(out, "closed, and this part did not land") {
+		t.Fatalf("the sweep never reached this tree, so it pins nothing:\n%s", out)
+	}
+	if again := closedDirtyBeads(t, repo, "a-1"); len(again) != 1 {
+		t.Errorf("the closer holds %d P1 handoffs for one tree, want 1:\n%s\n%s",
+			len(again), out, bdCalls(t, fakeDirOf(t)))
+	}
+	if n := closedDirtyMarkers(t, repo); n != 1 {
+		t.Errorf("the bead carries %d `%s` comments, want 1:\n%s", n, closedDirtyPrefix, out)
+	}
+	if !strings.Contains(out, "already filed") {
+		t.Errorf("the second pass did not recognise the first pass's handoff:\n%s", out)
+	}
+}
+
+// The other side of the same key, and what keeps the prefix from being
+// mutation E6: the key terminates the bead id, so one bead's open handoff
+// never answers for another's — not for an id it is a prefix of, and not for
+// another seat's tree in the same lane.
+func TestClosedDirtyDedupeIsPerBeadNotPerPrefix(t *testing.T) {
+	t.Parallel()
+	d, repo, _ := wtqaPassWithWork(t, func(repo, tree string) {
+		commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+		write(t, filepath.Join(tree, "forgotten.txt"), "never committed\n")
+		// Another bead's closed-dirty handoff, open, in the same lane, whose
+		// id has this one's for a prefix.
+		write(t, filepath.Join(repo, "fake-list-labeled.json"), `[{"id":"m-8","title":`+
+			`"`+closedDirtyTitle("a-10", 4, "posse/someone-else-posse-a-10")+`",`+
+			`"status":"open","labels":["code"]}]`)
+	})
+	out := dispatcherOut(d)
+
+	if strings.Contains(out, "m-8 already filed") {
+		t.Errorf("a-10's handoff answered for a-1:\n%s", out)
+	}
+	if filed := closedDirtyBeads(t, repo, "a-1"); len(filed) != 1 {
+		t.Fatalf("a-1 got %d handoffs of its own, want 1:\n%s", len(filed), out)
+	}
+	if key := closedDirtyTitleKey("a-1"); strings.HasPrefix(closedDirtyTitle("a-10", 4, "b"), key) {
+		t.Errorf("%q is a prefix of a-10's title — the id is not terminated in the key", key)
+	}
+}

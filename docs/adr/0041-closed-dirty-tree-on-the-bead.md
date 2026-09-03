@@ -68,14 +68,22 @@ commits gets no comment.
 shape as the merge-back-blocked handoff (dispatch.go fileMergeBlocked):
 title `closed dirty: <id> — N uncommitted path(s) in <branch>`, label
 `code` (MergeBlockedLabel), P1, assigned to the closer, `discovered-from:
-<id>`, deduped by open title. The description names the tree, the paths,
-and the two resolutions — commit them under the bead id in that tree, or
-discard them — and says that `posse kill` retires the tree only after.
-Filed from the judged close and from the sweep both; the sweep's
-"a bead per pass is spam" objection is answered by the title dedupe the
-merge-back handoff already has. A stray log file costs the closer one
-`git clean`; that price is accepted, because the launcher cannot tell an
-814-line rewrite from a scratch file and must not guess (§4 below).
+<id>`, deduped over the OPEN titles in the lane on that title's fixed
+head — `closed dirty: <id> — `, the id terminated by the separator and
+nothing after it in the key. Not the exact title, which is what the
+merge-back handoff keys on: that title's tail is the branch, cut per
+bead and fixed, while this one's is a count the closer moves by doing
+what the handoff asks — commit some of the paths and stop, and the exact
+key files a second P1 bead at the same closer for the same tree
+(ranger-base-a3zvb, from the verify of this ADR's own close; §1 never
+had it, its key stopping before the count). The description names the
+tree, the paths, and the two resolutions — commit them under the bead id
+in that tree, or discard them — and says that `posse kill` retires the
+tree only after. Filed from the judged close and from the sweep both;
+the sweep's "a bead per pass is spam" objection is answered by that
+dedupe. A stray log file costs the closer one `git clean`; that price is
+accepted, because the launcher cannot tell an 814-line rewrite from a
+scratch file and must not guess (§4 below).
 
 **3. A cooperative pre-close refusal in the session.** The bd argv gate
 (scripts/bd-argv-gate.py) refuses `bd close` when the call's cwd is
@@ -158,7 +166,12 @@ alone.
    [` comment. Mutation: remove the prefix dedupe → two comments, red.
 3. §2 pin: the same close files one bead with the title above,
    `discovered-from`, assignee = closer; a second pass files none; a
-   clean close files none.
+   clean close files none. And the key, added ranger-base-a3zvb: a pass
+   that reads the tree after the closer committed SOME of the paths
+   files none either (mutation: key on the exact title → a second P1
+   bead, red), while another bead's open handoff whose id has this one's
+   for a prefix answers for neither (mutation: drop the separator from
+   the key → red).
 4. §3 probe (probe the gate directly, as bdargvgate_qa_test.go does):
    `bd close x` with cwd a dirty session worktree → deny JSON naming the
    path; cwd the shared checkout, dirty → silence; cwd a clean session

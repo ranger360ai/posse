@@ -114,7 +114,7 @@ What follows from it, in this record and the ones it touches:
 - **ADR 0005 §2's HANDOFF rung drops `-a <persona>`**, stamped in the
   same commit as this amendment. The ladder the harness renders
   (`EscalationLadder`, `dispatch.go`) followed on the code bead cut
-  from this amendment — landed c067486 (ranger-base-uzw11), pinned by
+  from this amendment — landed 37c1a5e (ranger-base-uzw11), pinned by
   `TestEscalationLadderHandoffFilesToTheLane`. SPIKE already files
   `-l <runner's lane>`; ASK keeps `-a <operator>` (case 4).
 - **Instance PIDs are the operator's to promote** (§4, unchanged). This

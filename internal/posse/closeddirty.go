@@ -71,11 +71,39 @@ const (
 	// about its own tree, which is a thing it can already do by committing.
 	closedDirtyPrefix = "closed dirty ["
 
-	// closedDirtyTitlePrefix opens the §2 handoff's title and is ITS dedupe
-	// key (openMergeBlocked reads it back), so the bead id follows
-	// immediately and a title scan needs no parser.
+	// closedDirtyTitlePrefix opens the §2 handoff's title, so the bead id
+	// follows immediately and a title scan needs no parser.
 	closedDirtyTitlePrefix = "closed dirty: "
+
+	// closedDirtyTitleSep closes the fixed head of the title — everything
+	// after it MOVES. See closedDirtyTitleKey.
+	closedDirtyTitleSep = " — "
 )
+
+// closedDirtyTitleKey is the §2 handoff's dedupe key: the fixed head of the
+// title, `closed dirty: <id> — `, and nothing after it.
+//
+// NOT the exact title, which is what openMergeBlocked keys on and what this
+// keyed on until ranger-base-a3zvb. The difference is what the two titles
+// carry after the id. The merge-back title carries the BRANCH, which is cut
+// per bead and cannot move; this one carries a COUNT, and the handoff's own
+// description is what moves it — "COMMIT them under <id> in that worktree"
+// invites a closer to commit some of the paths, and a closer who commits one
+// of two and stops has a tree whose next reading spells a different title.
+// The exact-title key then files a SECOND P1 bead at the same closer for the
+// same tree, which is the duplicate-handoff failure this file's header prices
+// at 33 beads (measured 2026-09-02 on the pass's own lines, verifying
+// ranger-base-tc2pp; pinned as TestClosedDirtyDedupeSurvivesAPartialCommit).
+// §1's comment never had the bug: its key is `closed dirty [` with the count
+// INSIDE the brackets, past the key.
+//
+// The id is terminated by the separator, so `a-1` cannot swallow `a-10` and
+// one seat's handoff cannot swallow another's: the bead id IS the tree and
+// the closer. Everything the operator's listing reads as a sentence — the
+// count, the branch — stays in the title and out of the key.
+func closedDirtyTitleKey(id string) string {
+	return closedDirtyTitlePrefix + id + closedDirtyTitleSep
+}
 
 // closedDirtyComment is the sentence ADR 0041 §1 specifies. `Commits` is
 // context inside it and never a trigger — see the header.
@@ -105,7 +133,7 @@ func closedDirtyNoted(cs []BdComment) bool {
 // and count are in it so the operator's listing reads as a sentence, and the
 // bead id is at a fixed offset so the dedupe needs no parser.
 func closedDirtyTitle(id string, n int, branch string) string {
-	return fmt.Sprintf("%s%s — %d uncommitted path(s) in %s", closedDirtyTitlePrefix, id, n, branch)
+	return fmt.Sprintf("%s%d uncommitted path(s) in %s", closedDirtyTitleKey(id), n, branch)
 }
 
 // noteClosedDirty is the whole of ADR 0041 §1 and §2 for one closed bead
@@ -145,9 +173,10 @@ func commentClosedDirty(bd Bd, dir, id string, t *SessionTree, o MergeOutcome, w
 }
 
 // fileClosedDirty is §2: the close goes back to the closer as a bead, in the
-// merge-back handoff's shape and deduped the same way — by its OPEN title,
-// which bd writes in the same breath as the issue and a timed-out create
-// therefore cannot lose.
+// merge-back handoff's shape and deduped over its OPEN titles, which bd
+// writes in the same breath as the issue and a timed-out create therefore
+// cannot lose — but on the title's fixed HEAD (closedDirtyTitleKey), because
+// this title's tail carries a count the closer can move.
 //
 // A scratch file files too. The launcher cannot tell an 814-line rewrite from
 // a stray `calls.log`, and §4 forbids it from guessing; the census says ~1 in
@@ -155,7 +184,8 @@ func commentClosedDirty(bd Bd, dir, id string, t *SessionTree, o MergeOutcome, w
 // the accepted cost of never quietly discarding the other three.
 func fileClosedDirty(bd Bd, dir, id, persona string, t *SessionTree, o MergeOutcome, say, warn func(string, ...any)) {
 	title := closedDirtyTitle(id, len(o.Dirty), t.Branch)
-	if open, err := openTitledBead(bd, dir, MergeBlockedLabel, title); err != nil {
+	key := closedDirtyTitleKey(id)
+	if open, err := openPrefixedBead(bd, dir, MergeBlockedLabel, key); err != nil {
 		warn("posse: %s could not be checked for an existing closed-dirty bead (%v) — filing one\n", id, err)
 	} else if open != "" {
 		say("  ↳ %s already filed for %s — not re-filed\n", open, persona)
@@ -192,7 +222,7 @@ func fileClosedDirty(bd Bd, dir, id, persona string, t *SessionTree, o MergeOutc
 		// cannot tell those apart, so the GRAPH decides what is reported. A
 		// bead that IS there is filed — edgeless, and named — not missing,
 		// or the operator goes looking for a handoff that exists.
-		found, ferr := openTitledBead(bd, dir, MergeBlockedLabel, title)
+		found, ferr := openPrefixedBead(bd, dir, MergeBlockedLabel, key)
 		switch {
 		case ferr != nil:
 			warn("posse: could not file the closed-dirty bead for %s (%v) — %s still holds the paths, and the graph would not say whether one landed anyway (%v)\n",
@@ -210,21 +240,38 @@ func fileClosedDirty(bd Bd, dir, id, persona string, t *SessionTree, o MergeOutc
 }
 
 // openTitledBead is the id of the OPEN bead in this lane with exactly this
-// title, or "" for none — the dedupe both handoffs in this shop are keyed on.
-// Closed does not count: a persona that resolved one and a tree that is dirty
-// again are two handoffs.
+// title, or "" for none — the merge-back handoff's dedupe. Closed does not
+// count, for both readers: a persona that resolved one and a tree that is
+// dirty again are two handoffs.
 //
-// EXACTLY, never a prefix: the title carries the branch (or the bead) the
-// handoff is about, and a prefix match would let one seat's open bead swallow
-// every other seat's silently — measured as mutation E6 in
-// mergebackdedupe_qa_test.go.
+// EXACTLY, never a prefix: that title carries the BRANCH the handoff is
+// about, a whole title of fixed parts, and a prefix match would let one
+// seat's open bead swallow every other seat's silently — measured as
+// mutation E6 in mergebackdedupe_qa_test.go. The closed-dirty title is not
+// that shape (closedDirtyTitleKey) and reads through openPrefixedBead.
 func openTitledBead(bd Bd, dir, label, title string) (string, error) {
+	return openMatchedBead(bd, dir, label, func(t string) bool { return t == title })
+}
+
+// openPrefixedBead is the same read for a handoff whose title has a moving
+// tail: the id of the OPEN bead in this lane whose title STARTS with prefix.
+//
+// Only ever called with a key that terminates the bead id
+// (closedDirtyTitleKey), which is what keeps this from being the E6 mutation
+// openTitledBead's comment refuses. A prefix that stopped short of the
+// separator would let `a-1` answer for `a-10`; a prefix that stopped at the
+// label would let one seat's handoff swallow every other seat's.
+func openPrefixedBead(bd Bd, dir, label, prefix string) (string, error) {
+	return openMatchedBead(bd, dir, label, func(t string) bool { return strings.HasPrefix(t, prefix) })
+}
+
+func openMatchedBead(bd Bd, dir, label string, match func(string) bool) (string, error) {
 	open, err := bd.OpenLabeledAny(dir, label)
 	if err != nil {
 		return "", err
 	}
 	for _, b := range open {
-		if b.Title == title {
+		if match(b.Title) {
 			return b.ID, nil
 		}
 	}
