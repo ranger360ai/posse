@@ -323,12 +323,17 @@ func TestBackupRefusesWithNoQueueRepo(t *testing.T) {
 // ADR 0036 §3 and verification observable 2: the 2c ruling enforced on the
 // SOURCE. A queue repo that grew a remote already has an off-box copy posse
 // did not sanction, and backup refuses over it rather than making a second.
+// ADR 0049 observable 1 widens it: with `queue_remote:` unset the refusal
+// stands, and the line names the key as the sanctioned way out.
 func TestBackupRefusesAQueueRepoWithARemote(t *testing.T) {
 	a, queue := backupRig(t)
 	mustGit(t, queue, "remote", "add", "origin", "https://example.com/queue.git")
 	_, err := a.RunBackup(BackupOpts{Out: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), "remote") {
 		t.Fatalf("err = %v, want a refusal naming the remote", err)
+	}
+	if !strings.Contains(err.Error(), "queue_remote:") {
+		t.Errorf("err = %v, want the refusal to name config queue_remote: as the way out (ADR 0049 D1)", err)
 	}
 	// And it heals: the refusal is about the repo's state, not a latch.
 	mustGit(t, queue, "remote", "remove", "origin")

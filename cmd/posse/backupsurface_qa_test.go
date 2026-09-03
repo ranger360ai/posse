@@ -99,6 +99,39 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 	}
 }
 
+// ADR 0049 D6 (observable 10, build bead ranger-base-ymgbo): `posse backup
+// status` prints the remote posture on one line, in both postures, beside
+// the schedule line. The URL is an example host; the declared row is also
+// observable 7's surface half — `queue_remote:` alone arms nothing, so the
+// same instance still says so.
+func TestBackupStatusPrintsTheRemotePosture(t *testing.T) {
+	bin := buildRhq(t)
+	const u = "https://example.invalid/org/queue.git"
+	for _, c := range []struct {
+		name, cfg, want, absent string
+	}{
+		{"unset key: any remote refuses", "runtime: claude\n",
+			"  remote · none declared (config queue_remote: unset) — any remote refuses\n", "(config queue_remote:) —"},
+		{"declared key: the operator pushes", "runtime: claude\nqueue_remote: " + u + "\n",
+			"  remote · " + u + " (config queue_remote:) — the operator pushes; posse never does\n", "none declared"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			code, out := runBackupPosse(t, bin, backupHome(t, c.cfg), "backup", "status")
+			if code != 0 || !strings.Contains(out, c.want) {
+				t.Errorf("exit %d, output %q; want exit 0 containing %q", code, out, c.want)
+			}
+			if strings.Contains(out, c.absent) {
+				t.Errorf("output %q carries the other posture's wording %q", out, c.absent)
+			}
+			// Neither posture is armed: the key is not a backup key
+			// (ADR 0049 D3), so the unarmed line survives beside it.
+			if !strings.Contains(out, "nothing is armed") {
+				t.Errorf("output %q; want the instance to say nothing is armed", out)
+			}
+		})
+	}
+}
+
 // The sub-ruling CUT `sweep`, `init`, `drill` and `restore`, and this is
 // that cut where an operator meets it: each one is refused, and the refusal
 // names the whole surviving surface. A verb that came back would land here

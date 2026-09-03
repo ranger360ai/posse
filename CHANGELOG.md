@@ -175,6 +175,23 @@ cannot be read at all, because a refusal that fails open is not a refusal.
 There is no flag that lifts it. The same rule runs on the source: a queue
 repo that has grown a git remote is refused rather than copied.
 
+**The source rule is yours to set, per instance: `queue_remote:`.** Every
+`git clone` mints an `origin`, so a verb that refuses any queue with a
+remote is a verb most deployments cannot run — and an instance whose queue
+lives on a sanctioned internal remote is refused on its own box. Set
+`queue_remote:` in config.yaml to the URL exactly as `git remote get-url`
+prints it, and a queue whose only remote's fetch and push URLs both equal
+that string is backed up; a second remote, a different URL, or a push URL
+that points elsewhere still refuses, printing what you declared beside what
+it found. A queue with no remote passes either way: the key sanctions, it
+does not require. Leave it unset and today's rule stands, with the refusal
+now naming the key as the way out. It is not a backup key — declaring your
+remote arms no schedule and starts no clock — and the archive is unchanged:
+the queue half carries no remote on any instance, and the declaration rides
+only in `home/config.yaml`, where a restore brings the sanction back with the
+line that made it. `posse backup status` prints which posture you are in
+(ADR 0049).
+
 Every archive is read back and checked against the manifest it carries
 BEFORE it is given its name, so an archive that is there is one that
 verified — which means the directory itself is the record, with no second

@@ -64,9 +64,12 @@ type QueueCommit struct {
 
 // CommitQueueJSONL flushes the database to its JSONL projection and commits
 // that projection in the queue repo. It NEVER pushes: nothing here runs
-// `git push`, and the queue repo is created with no remote at all (see
-// scripts/queue-cutover.sh), so the guarantee is structural rather than a
-// promise about this function's future.
+// `git push`. On the instance scripts/queue-cutover.sh cut, the queue repo
+// is created with no remote at all — but that is per-instance since ADR
+// 0049 D5 (config `queue_remote:` sanctions one). What holds on every
+// instance is that the harness never pushes: the binary invokes no `git
+// push` anywhere, every shipped PID denies it (TestExampleAgentsArePIDs),
+// and the push is the operator's, typed by hand. That is the guarantee.
 //
 // The commit is path-limited — `git commit -- <paths>` — for the reason
 // every commit in this codebase is: an unqualified commit takes whatever is
