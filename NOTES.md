@@ -126,7 +126,11 @@ variadic), a longer `--settings`, more mounts — and by 2026-08-31 it was
 gone: `ranger-base-u9ud`'s 23-verb `bd` deny-set widening (every crew PID's
 deny: list grows by 23 lines, each rendered through `--disallowedTools`'
 existing doubling) pushed every crew PID's line over 1023 B, and
-`state/launch/` held a spilled script per persona. A populated
+`state/launch/` held a spilled script per persona. `ranger-base-rq83c`
+spent ~110 B more on 2026-09-03 — the credential-dir pin, which travels
+inside the same `--settings` payload because a second one would replace
+the first rather than add to it — against slack that was already gone, so
+it changes which side of the cliff nobody is on. A populated
 `state/launch/` is not a healthy-fleet signal; it is this fallback working
 as designed — a line that outgrew the
 limit gets sourced from a script instead of typed. The container tier's
@@ -1423,6 +1427,61 @@ cockpit header and the dispatch skip line rather than left as archaeology in
 is the operator's page for all four rotation moves; its front door is `posse
 refresh` with no arguments.
 
+### A settings file beats an exported variable, so the launch pins the credential dirs in argv (ranger-base-rq83c)
+
+MEASURED 2026-09-03 on claude 2.1.259, against a scratch `HOME` and a
+**fake** envelope — never the operator's tree, never a live token. The
+readout is `claude auth status --json`, which runs with no login and no
+network turn: `loggedIn` is true exactly when the resolved credential
+directory holds an envelope, so it is a direct answer to "where does this
+process think its store is".
+
+| what set the config dirs | where the store resolved |
+|---|---|
+| nothing | `$HOME/.claude` |
+| the process environment | where the environment said |
+| `~/.claude/settings.json`'s `env` block | where the **file** said |
+| both, disagreeing | where the **file** said |
+| the file, against posse's `--settings` payload | where **posse** said |
+
+Row four is the one that decides a design: the runtime `Object.assign`s each
+settings scope's `env` over `process.env` at startup, so a launcher that
+merely exports `CLAUDE_CONFIG_DIR` has already lost to any file that names
+it. Row five is why the pin travels in `--settings`: the scopes are applied
+in the order `userSettings, projectSettings, localSettings, flagSettings,
+policySettings`, and `--settings` is `flagSettings` — after the user's file,
+and in argv, which is not a file. Two higher scopes were measured and are
+not available to a launcher: `--managed-settings` (the SDK parent tier)
+drops `env` through a restrictive-only filter, and
+`CLAUDE_CODE_MANAGED_SETTINGS_PATH` is inert in 2.1.259 — the resolver's
+override hook is a stub returning undefined, so only the root-owned OS path
+(`/Library/Application Support/ClaudeCode/managed-settings.json` on macOS,
+`/etc/claude-code/` elsewhere) feeds the policy tier.
+
+Three traps worth keeping:
+
+- **A second `--settings` REPLACES the first.** It is not an additional
+  source. So the pin merges into the one payload the launch already carries
+  (`ClaudeFleetSettingsJSON`), and `EnsureSettingsPin` appends only to a line
+  that has none.
+- **The value to pin is not "the safe path", it is "what this box already
+  resolves".** The keychain item's name carries a hash of the configured
+  directory, so pinning `CLAUDE_CONFIG_DIR=$HOME/.claude` on a box that set
+  neither variable RENAMES the item and strands the operator's login. The one
+  spelling that keeps it unsuffixed is a present-but-EMPTY
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR`, which the runtime reads as
+  `$HOME/.claude`. `credentialDirPin` carries the whole rule.
+- **`projectsDirectory` in that JSON is not a readout of the config dir.**
+  It reads `null` whenever a flag-scope settings source sets
+  `CLAUDE_CONFIG_DIR`, whatever the directory resolves to, so a pin written
+  against it measures the flag's presence rather than the directory. Only
+  `loggedIn` says what it means.
+
+The live pin is `internal/posse/credentialdirpin_live_test.go`
+(`RHQ_LIVE_CLAUDE=1`), and its first arm is a control: it asserts the
+redirect still HAPPENS without the pin, so the test cannot go green on a rig
+where nothing could have moved.
+
 ### The session credential answers the model list, and a 429 from the meter endpoint names nothing (ranger-base-au0o4)
 
 MEASURED 2026-09-02 against the live endpoints, from a `cage: seatbelt` session
@@ -1629,7 +1688,7 @@ pair into a false-positive generator there — see *Grok specifics*.
 Templates:
 
 ```
-claude: claude {model} --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '<fleet>' {skills} {allow} {deny}
+claude: claude {model} --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}
 codex:  codex {model} {skills} {deny} -a never --disable hooks -c allow_login_shell=false -c "projects={\"$PWD\"={trust_level=\"trusted\"}}" -c developer_instructions="$(cat {file})"
 grok:   grok {model} {skills} --permission-mode auto --rules="$(cat {file})" {allow} {deny}
 ```

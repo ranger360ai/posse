@@ -164,7 +164,7 @@ satisfy:
 
 1. **Launch**: one typed command line, rendered from a template over the
    closed placeholder set (`{file} {memory} {model} {skills} {allow}
-   {deny}`), that delivers the PID (system-prompt flag / config key /
+   {deny} {settings}`), that delivers the PID (system-prompt flag / config key /
    rules flag — template text either way) and, for interactive `posse
    new`, starts idle awaiting a typed prompt. **Dispatch** is a different
    delivery: when the runtime declares `prompt: argv` (ADR 0013 §2) the
@@ -194,7 +194,17 @@ two code tracks plus the two provider seams:
 - **yaml v2** — printf-shape `model_flag`/`skills_flag` (`-c model=%s`),
   `skills_cwd:`, `self_sandbox:`, `project_config:`, unknown-key warning,
   parity wired to each.
-- **runtime preflight** — `state_dir:` (feeds the seatbelt writable list),
+- **runtime preflight** — `state_dir:` (feeds the seatbelt writable list —
+  and note what that grant is, amended 2026-09-03 by ranger-base-rq83c:
+  claude's `state_dir:` is `~/.claude` whole, so every caged persona can
+  write `~/.claude/settings.json`, and a user-scope settings file's `env`
+  block is applied over `process.env` of every claude that starts on the
+  box afterwards, the operator's own uncaged session included. The grant is
+  not narrowable — sub-file granularity fails the self-sandbox runtimes —
+  so what answers it is a launch that pins the keys that matter at a scope
+  the persona cannot reach: `{settings}` above, ADR 0019 D2's second
+  preventive bullet. The credential dirs are pinned there today; whether
+  that pin should widen is open, and tracked in the private queue),
   `env_required:` (checked at launch), declarable startup-screen
   dismissals, and `posse runtime check <name>`: exe on PATH, herdr manifest
   present, plus a manifest-authoring doc.

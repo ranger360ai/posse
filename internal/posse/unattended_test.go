@@ -68,19 +68,28 @@ func TestRenderedPersonaCommandIsUnattended(t *testing.T) {
 // mode it said; one that starts something else is left alone, because posse
 // knows no dialect there and a flag typed at the wrong program is a launch
 // that does not start at all.
+//
+// `PIN` below is the OTHER guarantee that reaches this same template — the
+// credential-dir pin (ranger-base-rq83c), appended for the same reason and
+// under the same "only this runtime's CLI" condition, which is why the
+// foreign-program row does not have one. It is spelled through its renderer
+// rather than as a literal because its values are a property of the box;
+// what these rows pin is the POSITION and the fact that nothing else was
+// added.
 func TestOwnCommandStillLaunchesUnattended(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ name, command, want string }{
 		{"appended", `claude --append-system-prompt "$(cat {file})"`,
-			`claude --append-system-prompt "$(cat FILE)" --permission-mode auto`},
+			`claude --append-system-prompt "$(cat FILE)" PIN --permission-mode auto`},
 		{"explicit mode kept", `claude --permission-mode plan {allow}`,
-			`claude --permission-mode plan`},
+			`claude --permission-mode plan PIN`},
 		{"foreign program untouched", `run {file} {allow} {deny}`,
 			`run FILE`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ag := loadTestAgent(t, "---\nname: p\ncommand: "+c.command+"\n---\nYou are p.\n")
 			got := strings.ReplaceAll(ag.RenderCommand(), shellQuote(ag.Path), "FILE")
+			got = strings.ReplaceAll(got, "--settings "+shellQuote(credentialDirPinJSON()), "PIN")
 			if got != c.want {
 				t.Errorf("\n got %q\nwant %q", got, c.want)
 			}
@@ -119,7 +128,7 @@ func TestEveryLaunchPathTypesTheMode(t *testing.T) {
 		[]byte("---\nname: developer\ndeny: [Bash(git push:*)]\n---\nYou are developer.\n"), 0o644)
 
 	mustCreate(t, b, NewSessionOpts{Name: "d1", Agent: "developer", Dir: t.TempDir()})
-	if log := calls(t, fake); !strings.Contains(log, ClaudeFleetFlags) {
+	if log := launchLog(t, a, fake); !strings.Contains(log, ClaudeFleetFlags) {
 		t.Errorf("posse new typed no permission mode:\n%s", log)
 	}
 
@@ -130,7 +139,15 @@ func TestEveryLaunchPathTypesTheMode(t *testing.T) {
 	if ok, err := b.RelaunchAgent("d1", time.Second); err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, ClaudeFleetFlags) != 2 {
+	// The relaunch's line is read the same way, in two claims rather than
+	// one count. A spilled script is REWRITTEN at each launch rather than
+	// appended to, so "carried twice" is not a thing the text can say — but
+	// "the relaunch re-typed a line" and "the line it left carries the
+	// mode" are, and together they are what the count meant.
+	if n := strings.Count(calls(t, fake), "pane run "); n < 2 {
+		t.Fatalf("fixture: the relaunch typed no new line (%d), so the check below measures the launch again:\n%s", n, calls(t, fake))
+	}
+	if got := launchLog(t, a, fake); !strings.Contains(got, ClaudeFleetFlags) {
 		t.Errorf("a re-typed line must carry the mode too:\n%s", got)
 	}
 }

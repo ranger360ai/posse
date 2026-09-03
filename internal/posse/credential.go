@@ -1163,3 +1163,121 @@ func jsonKind(b []byte) string {
 		return "JSON null"
 	}
 }
+
+// credentialDirPin is the env block a launch hands the claude runtime so
+// that a ~/.claude/settings.json the persona can write cannot move where
+// that runtime reads and writes its OAuth credential (ranger-base-rq83c).
+//
+// WHY A PIN AND NOT AN EXPORT, measured on claude 2.1.259 in a scratch HOME
+// (never the operator's), with `claude auth status --json` as the readout:
+// its `projectsDirectory` is the resolved config dir, and `loggedIn` is
+// true exactly when the resolved credential dir holds an envelope — a
+// planted FAKE one here, never a live token.
+//
+//	arm                                            projectsDirectory  loggedIn
+//	nothing set                                    $HOME/.claude      false
+//	CLAUDE_CONFIG_DIR=<attacker> in process env    <attacker>         —
+//	the same key in ~/.claude/settings.json `env`  <attacker>         true
+//	both, fighting: process env vs settings.json   <attacker>         true
+//	settings.json attack + this pin via --settings $HOME/.claude      false
+//
+// Row four is why the launcher exporting these variables is not the fix:
+// the runtime Object.assign's each settings scope's `env` over process.env
+// at startup, so the settings value wins over anything the launcher put in
+// the child's environment. Row five is the fix: the scope order is
+// userSettings, projectSettings, localSettings, flagSettings,
+// policySettings, applied in that order, so `--settings` (flagSettings)
+// lands AFTER the user's file and a persona cannot reach it — argv is not
+// a file it can write. policySettings is higher still and would also cover
+// the operator's OWN uncaged claude, but its only live source is the
+// root-owned OS path; that half is the operator's and is filed separately.
+// Two dead ends, both measured rather than assumed: `--managed-settings`
+// (the SDK parent tier) does not carry `env` through its restrictive-only
+// filter, and CLAUDE_CODE_MANAGED_SETTINGS_PATH is inert in 2.1.259 — the
+// resolver's override hook is a stub that returns undefined.
+//
+// WHICH VALUES, and why not simply "$HOME/.claude" for both. The runtime
+// reads these two variables twice, for two different answers — the
+// credentials file's directory, and the KEYCHAIN ITEM'S NAME:
+//
+//	z_() = CLAUDE_SECURESTORAGE_CONFIG_DIR present ? (it || $HOME/.claude)
+//	                                               : the config dir
+//	Gx() = "Claude Code<suffix>" + (named ? "-"+sha256(dir)[:8] : ""), where
+//	       `named` is whether a VARIABLE named the directory, never whether
+//	       the path is the default one
+//
+// So a pin that merely names the right DIRECTORY can still rename the item
+// out from under the operator's login (ranger-base-ig4op / ranger-base-mx4q6).
+// The rule here is therefore not "the safe value" but "the value this
+// environment already resolves to", and it is spelled through
+// credentialDirNamed — the same function keychainItem derives that name
+// from. That is what makes the invariant structural rather than lucky:
+// pinning `dir` when a variable named it and EMPTY when none did leaves
+// `named` and `dir` where they were, so keychainItem answers the same name
+// before and after the pin, and CredentialsFile the same path. Written out,
+// the four arms it covers:
+//
+//   - SECURESTORAGE set to a directory: pinned verbatim (named, dir = it).
+//   - SECURESTORAGE set but EMPTY: pinned empty — presence, not truthiness;
+//     it means $HOME/.claude to the runtime and must not become a path.
+//   - SECURESTORAGE unset with CLAUDE_CONFIG_DIR set: pinned to the config
+//     dir, which is what z_() already falls back to and what Gx already
+//     hashes.
+//   - neither set: pinned EMPTY, the one value that keeps the item
+//     unsuffixed. Pinning $HOME/.claude here would add a hash suffix that
+//     is not there today.
+//
+// CLAUDE_CONFIG_DIR is pinned to ClaudeConfigDirIn's answer, which is an
+// absolute path or nothing: the runtime resolves that one with `??`, not
+// `||`, so an empty value there is a config dir of "" — relative to the
+// cwd — and is never a value to pin. On a box that exports it empty (a
+// broken state either way) the pin moves the runtime onto posse's answer,
+// $HOME/.claude, instead of "" — the divergence ranger-base-e9xba carries.
+//
+// Read from THIS process's environment, like credentialReadDenyLiterals
+// above it and for the same reason: the seatbelt's credential read-deny is
+// rendered from the launcher's env, so a pin taken from the same place
+// cannot leave the wall denying one path while the runtime writes another.
+// A launch whose env set carries either name is refused before it gets
+// here (credentialDirVarsIn), so the two can never disagree.
+//
+// No home is no pin, not an error — the same call credentialFileCandidates
+// makes: with no home there is no path to name and nothing to protect.
+func credentialDirPin() []EnvVar {
+	dir, named, err := credentialDirNamed()
+	if err != nil {
+		return nil
+	}
+	home, herr := os.UserHomeDir()
+	if herr != nil || home == "" {
+		return nil
+	}
+	sec := ""
+	if named {
+		sec = dir
+	}
+	return []EnvVar{
+		{Key: "CLAUDE_SECURESTORAGE_CONFIG_DIR", Value: sec},
+		{Key: "CLAUDE_CONFIG_DIR", Value: ClaudeConfigDirIn(home)},
+	}
+}
+
+// credentialDirPinJSON is that pin as a settings payload on its own — what
+// a launch line carrying no settings flag of its own gets appended
+// (EnsureSettingsPin). `{}` when there is no pin to make, which is a flag
+// the CLI accepts and a line that changes nothing.
+func credentialDirPinJSON() string {
+	pin := credentialDirPin()
+	if len(pin) == 0 {
+		return "{}"
+	}
+	env := make(map[string]string, len(pin))
+	for _, v := range pin {
+		env[v.Key] = v.Value
+	}
+	b, err := json.Marshal(map[string]any{"env": env})
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}

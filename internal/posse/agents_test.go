@@ -110,8 +110,12 @@ func TestLegacyAgentUnchanged(t *testing.T) {
 	// A pre-PID file (no new keys, own command without the placeholders)
 	// must render exactly as it always has — including the old default
 	// command, which ends in a double quote (rangerhq-nvq) — except for the
-	// unattended mode, which every claude launch now carries whoever wrote
-	// the template (rangerhq-qs5r).
+	// two launch GUARANTEES a claude line now carries whoever wrote the
+	// template: the unattended mode (rangerhq-qs5r) and the credential-dir
+	// pin (ranger-base-rq83c). The pin is spelled through its own renderer
+	// rather than as a literal, because its values are a property of the
+	// box; what this pin asserts is that nothing ELSE was added, and that
+	// the appended payload is the pin alone rather than the fleet's policy.
 	ag := loadTestAgent(t, `---
 name: p
 description: legacy
@@ -122,7 +126,8 @@ You are p.
 	if len(ag.Intents)+len(ag.Allow)+len(ag.Deny)+len(ag.Metrics) != 0 {
 		t.Errorf("legacy file grew lists: %+v", ag)
 	}
-	want := `claude --append-system-prompt "$(cat '` + ag.Path + `')" ` + ClaudeFleetFlags
+	want := `claude --append-system-prompt "$(cat '` + ag.Path + `')" --settings ` +
+		shellQuote(credentialDirPinJSON()) + " " + ClaudeFleetFlags
 	if got := ag.RenderCommand(); got != want {
 		t.Errorf("legacy rendering changed:\n got %q\nwant %q", got, want)
 	}
@@ -135,7 +140,12 @@ func TestFleetSettingsSurviveRendering(t *testing.T) {
 	// flat-YAML reader and the placeholder renderer must pass it through
 	// verbatim — quotes, colons and braces intact — both from the default
 	// and from an explicit command: line in a persona file.
-	want := "--settings '" + ClaudeFleetSettings + "'"
+	//
+	// The payload is now RENDERED rather than spelled in the template
+	// ({settings}, ranger-base-rq83c): it carries the credential-dir pin,
+	// whose values are a property of the box. What this pin is about is
+	// unchanged — whatever that payload is, it reaches the line whole.
+	want := "--settings " + shellQuote(ClaudeFleetSettingsJSON())
 	def := loadTestAgent(t, "---\nname: p\n---\nYou are p.\n")
 	if got := def.RenderCommand(); !strings.Contains(got, want) {
 		t.Errorf("default command lost fleet settings:\n got %q\nwant substring %q", got, want)

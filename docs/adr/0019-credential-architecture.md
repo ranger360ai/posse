@@ -236,11 +236,21 @@ build tags, so `make test-linux` compiles and tests every branch:
      a different name and reads 44 on a healthy box — the divergence
      the file path already has under wd4be, not a new one — and the
      refresh verb's report (ranger-base-6kkrq) prints the name tried,
-     so it is diagnosable. posse sets neither variable for any runtime
-     (MEASURED 2026-09-02: no setter in the tree; seatbelt.go records
-     the refusal to point a caged launch at one), and since ADR 0042 no
-     crew runtime reads the keychain, so the operator's own shell is
-     the only environment in play. A non-production deployment (the
+     so it is diagnosable. posse now PINS both variables on a claude
+     launch (amended 2026-09-03, ranger-base-rq83c — the preventive
+     bullet under store 3 says why), and the pin is derived from
+     `credentialDirNamed`, the same function `keychainItem` derives the
+     name from: it pins the directory when a VARIABLE named it and the
+     empty string when none did, so `named` and the directory are both
+     unchanged and this paragraph's rule still describes the box. That
+     makes the invariant structural rather than lucky, and it is
+     asserted as one — the pin's own test re-derives both
+     `CredentialsFile` and `keychainItem` with the pinned values in the
+     environment and refuses a difference. The arm it exists for is the
+     obvious wrong pin: naming `$HOME/.claude` where nothing was set
+     passes a path check and still suffixes the item. Since ADR 0042
+     no crew runtime reads the keychain either, so the operator's own
+     shell is the only environment in play. A non-production deployment (the
      runtime's OAuth file suffix non-empty) is a third name and out of
      scope, the stance trust.go takes for the staging config file.
      `KeychainService` survives as the default spelling (build:
@@ -286,6 +296,28 @@ build tags, so `make test-linux` compiles and tests every branch:
        the deny on the fallback, and cannot authenticate until the
        operator repairs the keychain — loud, correct, and the same
        move as the meter's.
+     - preventive, second layer: the launch PINS the two variables the
+       resolution above reads, in the one scope a persona cannot reach
+       (`credentialDirPin`, amended 2026-09-03, ranger-base-rq83c). The
+       deny above is rendered from the LAUNCHER's environment, and a
+       user-scope `~/.claude/settings.json` `env` block is applied over
+       `process.env` of every claude that starts afterwards — the cage
+       grants `~/.claude` whole (ADR 0012 D4), so a caged persona can
+       write one. MEASURED on claude 2.1.259 against a scratch HOME and
+       a fake envelope: with the launcher exporting the right directory
+       in the child's real environment, that settings file still moved
+       the store, so exporting is not the fix. The runtime applies each
+       settings scope's `env` in the order userSettings,
+       projectSettings, localSettings, flagSettings, policySettings, so
+       posse's own `--settings` payload (flagSettings) lands after the
+       user's file and argv is not a file a persona can write. Two
+       higher scopes were measured and are not available: the SDK
+       parent tier (`--managed-settings`) drops `env` through its
+       restrictive-only filter, and `CLAUDE_CODE_MANAGED_SETTINGS_PATH`
+       is inert in 2.1.259. The remaining gap is the operator's own
+       UNCAGED claude, which no launcher flag reaches: only a
+       root-owned OS `managed-settings.json` covers it, and that is
+       filed as an operator ask, not taken here.
      - liveness/revocation of any current instance is the operator's
        call (ranger-base-tyne), independent of this model.
 - linux (and any non-darwin): `~/.claude/.credentials.json`, fed

@@ -66,7 +66,15 @@ func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
 	if m.Cage == CageContainer {
 		t.Fatalf("fixture: this arm is about the shims tier, got cage %q", m.Cage)
 	}
-	launched := rawCalls(t, fake)
+	// The line lands in one of TWO places and which one is a fact about its
+	// LENGTH (paneline.go): over PaneLineMax it is spilled to
+	// state/launch/<session>.sh and the pane types `. <script>`, so the
+	// prefix this pin is about is IN THE SCRIPT rather than in calls.log.
+	// Both stages are therefore read as "what was typed, plus what the
+	// script held at that moment" — the script is rewritten at each launch,
+	// so it has to be captured before the relaunch overwrites it
+	// (ranger-base-rq83c moved this fixture across that cliff).
+	launched := rawCalls(t, fake) + spilled(t, a, "pl")
 
 	// Past the grace, and with no agent in the pane: the two guards
 	// RelaunchAgent refuses on.
@@ -76,9 +84,10 @@ func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
 	if ok, err := b.RelaunchAgent("pl", time.Second); err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	retyped := strings.TrimPrefix(rawCalls(t, fake), launched)
-	if retyped == "" || !strings.Contains(retyped, "pane run ") {
-		t.Fatalf("fixture: the relaunch typed nothing new:\n%s", rawCalls(t, fake))
+	typedNow := rawCalls(t, fake)
+	retyped := strings.TrimPrefix(typedNow, strings.TrimSuffix(launched, spilled(t, a, "pl"))) + spilled(t, a, "pl")
+	if !strings.Contains(typedNow, "pane run ") || strings.Count(typedNow, "pane run ") < 2 {
+		t.Fatalf("fixture: the relaunch typed nothing new:\n%s", typedNow)
 	}
 
 	// The prefix itself, on the retyped line — ADR 0002 §3's PATH= and ADR
@@ -638,4 +647,17 @@ func TestQATheOrderedBrakePairCannotBothFire(t *testing.T) {
 			t.Errorf("the pool meter answers for %s alone; %s got %q", GrokPoolRuntime, other, s)
 		}
 	}
+}
+
+// spilled is the launch script's body for a session, or "" when the line
+// fit and was typed instead. Which of the two happened is a length fact and
+// no pin here is about the length, so both readings are concatenated and
+// the assertions look at the text (ranger-base-rq83c).
+func spilled(t *testing.T, a *App, session string) string {
+	t.Helper()
+	body, err := os.ReadFile(a.LaunchScript(session))
+	if err != nil {
+		return ""
+	}
+	return string(body)
 }

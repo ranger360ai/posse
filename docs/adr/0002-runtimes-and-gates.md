@@ -90,7 +90,7 @@ Templates (initial; the developer verifies unattended-mode flags per
 runtime):
 
 ```
-claude: claude --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '<fleet>' {allow} {deny}
+claude: claude --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {allow} {deny}
 codex:  codex {deny} -a never --add-dir {memory} "$(cat {file})"
 grok:   grok --rules "$(cat {file})" {allow} {deny}
 ```

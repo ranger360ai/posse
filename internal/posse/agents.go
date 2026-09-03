@@ -33,6 +33,7 @@ package posse
 // command — posse never sits between the multiplexer and the process.
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,7 +85,49 @@ const ClaudeFleetSettings = `{"permissions":{"defaultMode":"auto"},"skillOverrid
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with
 // neither runtime: nor command: launches with.
-const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`
+const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
+
+// ClaudeFleetSettingsJSON is what {settings} carries: ClaudeFleetSettings
+// above, plus the credential-dir env pin this launch cannot express any
+// other way (credentialDirPin, ranger-base-rq83c).
+//
+// The pin has to travel INSIDE this payload rather than beside it. A second
+// `--settings` on the line does not add a source: measured on claude
+// 2.1.259, the last occurrence REPLACES the first, so an appended pin-only
+// flag would take the fleet's permission mode and skill override off the
+// line while it was busy fixing the credential dir.
+//
+// The const stays the readable half — it is what a reader of the launch
+// line is looking for, and outsideread_test.go pins what it must not carry.
+// This function only merges; key order is encoding/json's, which sorts, so
+// the rendered line is stable across launches. A const that stopped being
+// JSON, or a box with no home directory, renders the const alone: the
+// launch still carries its permission mode, and the pin's absence is what
+// TestQAClaudeFleetSettingsJSONCarriesTheCredentialDirPin refuses.
+func ClaudeFleetSettingsJSON() string {
+	pin := credentialDirPin()
+	if len(pin) == 0 {
+		return ClaudeFleetSettings
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(ClaudeFleetSettings), &m); err != nil {
+		return ClaudeFleetSettings
+	}
+	env := make(map[string]string, len(pin))
+	for _, v := range pin {
+		env[v.Key] = v.Value
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		return ClaudeFleetSettings
+	}
+	m["env"] = b
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ClaudeFleetSettings
+	}
+	return string(out)
+}
 
 type AgentFile struct {
 	Name        string
@@ -312,14 +355,16 @@ func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writ
 		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir, writable...)
 	}
 	skills, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills)
+	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText())
 	out = renderPlaceholder(out, "{skills}", skills)
 	out = renderPlaceholder(out, "{allow}", r.Allow)
 	out = renderPlaceholder(out, "{deny}", r.Deny)
 	// The unattended mode is a launch guarantee, not a template detail: a
 	// PID's own command: is the one template posse did not write, and a
 	// persona session that starts asking for approvals is a session nobody
-	// is watching (rangerhq-qs5r).
-	return rt.EnsureUnattended(out)
+	// is watching (rangerhq-qs5r). The credential-dir pin is the same kind
+	// of guarantee for the same kind of template (ranger-base-rq83c).
+	return rt.EnsureUnattended(rt.EnsureSettingsPin(out))
 }
 
 // RenderCommand renders on the PID's own runtime with claude's realizer
@@ -327,7 +372,7 @@ func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writ
 // (tests, tools that have no App at hand). Launch sites use
 // RenderCommandFor with a loaded runtime.
 func (ag *AgentFile) RenderCommand() string {
-	rt := &Runtime{Name: DefaultRuntime, Command: DefaultAgentCommand, Realize: realizeClaude, Skills: skillsClaude, Unattended: ClaudeFleetFlags}
+	rt := &Runtime{Name: DefaultRuntime, Command: DefaultAgentCommand, Realize: realizeClaude, Skills: skillsClaude, Unattended: ClaudeFleetFlags, FleetSettings: ClaudeFleetSettingsJSON, SettingsPin: credentialDirPinJSON}
 	own := ag.Runtime
 	if own == "" {
 		own = DefaultRuntime

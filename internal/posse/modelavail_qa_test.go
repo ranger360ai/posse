@@ -78,7 +78,7 @@ func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
 	if m2.Tier != TierStandard {
 		t.Errorf("meta tier = %q, want the tier that is really running", m2.Tier)
 	}
-	if log := calls(t, fake); !strings.Contains(log, "--model 'claude-opus-5'") {
+	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-opus-5'") {
 		t.Errorf("the re-typed line must still name the substitute:\n%s", log)
 	}
 }

@@ -496,7 +496,7 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)
 	}
 
-	log := calls(t, fake)
+	log := launchLog(t, b.App, fake)
 	if !strings.Contains(log, "--model 'claude-opus-5'") {
 		t.Errorf("the typed line must name the substitute:\n%s", log)
 	}
@@ -541,7 +541,7 @@ func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
 	if err := b.CreateSession(NewSessionOpts{Name: "r2", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
-	if log := calls(t, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
+	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
 		t.Errorf("available means launch it:\n%s", log)
 	}
 	if m, _ := b.readMeta("r2"); m.Fallback != "" || m.Tier != TierStrong {
@@ -558,7 +558,7 @@ func TestLaunchWithNoCatalogIsUnchanged(t *testing.T) {
 	if err := b.CreateSession(NewSessionOpts{Name: "r3", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
-	if log := calls(t, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
+	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
 		t.Errorf("unknown launches as asked:\n%s", log)
 	}
 	if m, _ := b.readMeta("r3"); m.Fallback != "" {

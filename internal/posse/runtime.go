@@ -264,6 +264,21 @@ type Runtime struct {
 	// spelling in a hand-written PID beats an implicit one from here, and
 	// it is visible in `ps` where a silent override would not be.
 	Unattended string
+	// FleetSettings renders the settings payload {settings} carries — the
+	// one flag whose VALUE posse computes at launch rather than spelling in
+	// the template, because it holds the credential-dir pin and that is a
+	// property of the box, not of the line (credentialDirPin,
+	// ranger-base-rq83c). Built-in only, and nil for every runtime but
+	// claude: no other CLI has a measured settings surface, and {settings}
+	// renders to nothing where it is nil.
+	FleetSettings func() string
+	// SettingsPin is the SMALLER payload — the credential-dir pin alone —
+	// that EnsureSettingsPin appends to a rendered line carrying no
+	// settings flag of its own. Deliberately not FleetSettings: a template
+	// posse did not write is owed the security guarantee, not posse's
+	// unattended policy, and the mode half of that policy already reaches
+	// it through EnsureUnattended.
+	SettingsPin func() string
 	// PIDVoid names the flags that make this runtime IGNORE the PID
 	// channel — the flag its own template delivers the persona identity
 	// document on. A rendered launch line naming one is REFUSED
@@ -587,6 +602,48 @@ func (rt *Runtime) EnsureUnattended(cmd string) string {
 		}
 	}
 	return cmd + " " + rt.Unattended
+}
+
+// FleetSettingsText renders {settings}: the whole flag, not just its value,
+// so a runtime with no settings surface renders nothing and the placeholder
+// costs its template nothing. Shell-quoted here rather than wrapped in
+// literal quotes in the template, because the payload now carries PATHS —
+// a home directory with an apostrophe in it would otherwise end the
+// literal and hand the shell the rest of the JSON as words.
+func (rt *Runtime) FleetSettingsText() string {
+	if rt.FleetSettings == nil {
+		return ""
+	}
+	return "--settings " + shellQuote(rt.FleetSettings())
+}
+
+// EnsureSettingsPin guarantees the rendered line carries the credential-dir
+// pin — a launch guarantee for the same reason the unattended mode is, and
+// reaching the same template posse did not write. The pin is what stops a
+// persona-writable ~/.claude/settings.json from moving where this session's
+// runtime reads and writes its credential (credentialDirPin,
+// ranger-base-rq83c).
+//
+// Appended only when the line names no `--settings` at all, and only when
+// it starts this runtime's CLI — EnsureUnattended's two conditions, plus
+// one this flag has of its own: a second `--settings` is not an addition.
+// Measured on claude 2.1.259, the last occurrence REPLACES the first, so
+// appending a payload beside an existing one would silently drop whatever
+// that template was passing. A `command:` that spells its own --settings
+// therefore owns its own pin; that is the residual, and it is a template
+// nobody on this box writes (the built-in claude runtime refuses
+// `command:` in its overlay, ADR 0021).
+func (rt *Runtime) EnsureSettingsPin(cmd string) string {
+	f := strings.Fields(cmd)
+	if rt.SettingsPin == nil || len(f) == 0 || filepath.Base(f[0]) != rt.Exe() {
+		return cmd
+	}
+	for _, w := range f {
+		if w == "--settings" || strings.HasPrefix(w, "--settings=") {
+			return cmd
+		}
+	}
+	return cmd + " --settings " + shellQuote(rt.SettingsPin())
 }
 
 // PIDVoided reports which of this runtime's PIDVoid flags a rendered launch
@@ -1190,13 +1247,14 @@ var builtinRuntimes = []Runtime{
 		// declaration (cost_claude.go), and claude is COUNTED because that
 		// adapter prices what it reads.
 		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
+		FleetSettings: ClaudeFleetSettingsJSON, SettingsPin: credentialDirPinJSON,
 		NativeRules: claudeNativeRules,
 		// turn_outcome: the same transcript, read for a different fact —
 		// claude writes an allotment refusal as a synthetic assistant
 		// message, so a pass can tell an exhausted account from a settle.
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
-		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} --settings '` + ClaudeFleetSettings + `' {skills} {allow} {deny}`},
+		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex

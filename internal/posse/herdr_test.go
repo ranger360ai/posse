@@ -1631,6 +1631,37 @@ func calls(t *testing.T, fake string) string {
 	return gatePrefixRe.ReplaceAllString(string(b), "GATES ")
 }
 
+// launchLog is the typed calls log PLUS every launch line that was spilled
+// rather than typed. The rendered line lands in one of TWO places and which
+// one is a fact about its LENGTH, not about the launch: over PaneLineMax it
+// is written to state/launch/<session>.sh and the pane types `. <script>`
+// instead (paneline.go). A pin that reads only calls.log therefore measures
+// how long the line is rather than what is on it — the trap
+// dispatchparity_qa_test.go already names, and the one ranger-base-rq83c
+// walked six fixtures into when ~110 bytes of credential-dir pin moved them
+// across the cliff.
+//
+// Every script in the dir, not a named session: the caller is asserting on
+// what a launch put on a line, and which session spilled is the accident
+// this helper exists to stop mattering.
+func launchLog(t *testing.T, a *App, fake string) string {
+	t.Helper()
+	out := calls(t, fake)
+	ents, err := os.ReadDir(a.LaunchDir())
+	if err != nil {
+		return out // nothing spilled: every line was typed
+	}
+	for _, e := range ents {
+		p := filepath.Join(a.LaunchDir(), e.Name())
+		body, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		out += "\n--- " + p + " ---\n" + string(body)
+	}
+	return out
+}
+
 // promptWindow is one held `agent prompt`: the interval it was in flight,
 // in nanoseconds, and how it was released — "gathered" when the prompt
 // barrier reached its count, "timeout" when that prompt was still the only
