@@ -159,7 +159,7 @@ func (b BudgetState) Line() string {
 }
 
 // Ledger names both cap windows and what has been spent against them —
-// "epoch $8.20/$30, day $146/$250". Unlike Line it does not pick the
+// "epoch $7.50/$30, day $120/$250". Unlike Line it does not pick the
 // tightest window: this is the receipt a degraded pass prints (ADR 0018
 // §1), and the operator reading it wants every number the brake has.
 func (b BudgetState) Ledger() string {

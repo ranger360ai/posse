@@ -66,7 +66,7 @@ func (r *blindRig) seedReading(t *testing.T, fiveH, sevenD float64) {
 func TestBlindParksWhenTheLastReadingLeftNoHeadroom(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) } // 27% of the pass cap — the ledger is happy
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) } // 25% of the pass cap — the ledger is happy
 	r.seedReading(t, 30, 89)
 	r.blind()
 	r.at(19 * time.Hour)
@@ -101,7 +101,7 @@ func TestBlindParksWhenTheLastReadingLeftNoHeadroom(t *testing.T) {
 func TestBlindStillDegradesWhenTheLastReadingHadHeadroom(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.seedReading(t, 30, 79) // one point under the rung
 	r.blind()
 	r.at(19 * time.Hour)
@@ -125,7 +125,7 @@ func TestBlindStillDegradesWhenTheLastReadingHadHeadroom(t *testing.T) {
 func TestBlindWithNoReadingEverIsUnchanged(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(19 * time.Hour)
 
@@ -146,7 +146,7 @@ func TestBlindWithNoReadingEverIsUnchanged(t *testing.T) {
 func TestBlindParksOverTheOperatorsOwnThreshold(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.seedReading(t, 30, 96)
 	r.blind()
 	r.at(19 * time.Hour)
@@ -166,7 +166,7 @@ func TestBlindParksOverTheOperatorsOwnThreshold(t *testing.T) {
 func TestBlindMaxZeroIsUntouchedByTheHeadroomRule(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg+"\nplan_guard_blind_max: 0")
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.seedReading(t, 30, 89)
 	r.blind()
 	r.at(19 * time.Hour)
@@ -184,7 +184,7 @@ func TestBlindMaxZeroIsUntouchedByTheHeadroomRule(t *testing.T) {
 // blind window is premised on.
 func TestHeadroomRuleIsUnattendedOnly(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.seedReading(t, 30, 89)
 	r.blind()
 	r.at(19 * time.Hour)
@@ -203,7 +203,7 @@ func TestHeadroomRuleIsUnattendedOnly(t *testing.T) {
 func TestHeadroomParkClearsOnTheFirstGoodReading(t *testing.T) {
 	r := newBlindRig(t, blindHeadroomCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.seedReading(t, 30, 89)
 	r.blind()
 	r.at(19 * time.Hour)

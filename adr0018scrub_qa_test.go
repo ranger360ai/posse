@@ -107,9 +107,17 @@ func TestTheRenderedBrakeLineCarriesNoLiveFigures(t *testing.T) {
 			"(NOTES.md and docs/adr/0018) — the scan above measured nothing", found)
 	}
 
-	// The control. Plant the line exactly as it stood before the scrub and
+	// The control. Plant the line in the SHAPE it had before the scrub and
 	// require the same matcher, over the same wrapping, to see it.
-	planted := "  `plan guard: blind 4h (…) — " + brakeRenderMarker + "\n  (pass $8.20/$30, day $146/$250)`.\n"
+	//
+	// The spend halves here are INVENTED — same shape, not this instance's
+	// (ranger-base-jwv9q, ranger-base-z11ea). The header above argues that a
+	// currency-figure check is the right shape rather than the pair's digits,
+	// and this arm used to carry the digits anyway; the matcher only needs a
+	// dollar followed by a digit, so nothing is lost. Do not "restore" them.
+	// The two ceilings are ADR 0018's published pair (ranger-base-axft), as
+	// internal/posse's ledgerCaps uses them.
+	planted := "  `plan guard: blind 4h (…) — " + brakeRenderMarker + "\n  (pass $7.50/$30, day $120/$250)`.\n"
 	m := brakeRender.FindStringSubmatch(flat(planted))
 	if m == nil {
 		t.Fatal("control: the matcher does not see the pre-scrub line at all — every clean verdict above is empty")

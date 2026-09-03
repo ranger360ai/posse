@@ -25,6 +25,11 @@ const ledgerArmedCfg = guardOn + "\nbudget_pass: 30\nbudget_day: 250"
 
 // spendReport is spendStub's shape as a value, so a test can hand back a
 // report that also carries a read failure.
+//
+// Every dollar figure handed to it in this package is INVENTED, like the
+// ledgerCaps pair and for the stronger reason: a spend figure is this
+// instance's and never public (ranger-base-z11ea, ADR 0024 D1). The
+// fixtures only have to sit under both caps and away from Dial E's rungs.
 func spendOf(usd float64, readErr error) *CostReport {
 	rep := &CostReport{Beads: []*Segment{{Bead: "spent", Start: time.Now(), CostUSD: usd}}}
 	if readErr != nil {
@@ -38,7 +43,7 @@ func spendOf(usd float64, readErr error) *CostReport {
 func TestBlindDegradesUnderArmedLedger(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(4 * time.Hour)
 
@@ -55,8 +60,8 @@ func TestBlindDegradesUnderArmedLedger(t *testing.T) {
 		"plan guard: blind 4h00m",
 		"usage endpoint unreachable",
 		"degraded, running under ledger brake",
-		"epoch $8.20/$30.00",
-		"day $8.20/$250.00",
+		"epoch $7.50/$30.00",
+		"day $7.50/$250.00",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the degraded line must carry %q, got:\n%s", want, out)
@@ -171,7 +176,7 @@ func TestBlindDegradeParksWhenTheLedgerCannotBeRead(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
 	r.d.Spend = func(time.Time) *CostReport {
-		return spendOf(8.20, fmt.Errorf("open transcripts: permission denied"))
+		return spendOf(7.50, fmt.Errorf("open transcripts: permission denied"))
 	}
 	r.blind()
 	r.at(4 * time.Hour)
@@ -235,7 +240,7 @@ func TestSightedPassNamesAnUnreadableLedgerOncePerPass(t *testing.T) {
 func TestBlindDegradeDoesNotForkOnFailureClass(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	keychainOnly(planReaderOf(r.d), func() (string, error) {
 		return "", Die("keychain item %q unreadable", KeychainService)
 	})
@@ -254,7 +259,7 @@ func TestBlindDegradeDoesNotForkOnFailureClass(t *testing.T) {
 func TestBlindDegradeIsLoudEveryPass(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 
 	for i, at := range []time.Duration{12 * time.Minute, 20 * time.Minute, 40 * time.Minute} {
@@ -280,7 +285,7 @@ func TestBlindDegradeIsUnattendedOnly(t *testing.T) {
 	// through to the real ScanCosts over the operator's own ~/.claude and
 	// ~/.grok, so what it asserts depends on how much was spent on the machine
 	// that day — it passed only while grok was invisible to the scanner.
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(4 * time.Hour)
 
@@ -301,7 +306,7 @@ func TestBlindDegradeIsUnattendedOnly(t *testing.T) {
 func TestBlindMaxZeroIsUntouchedByAnArmedLedger(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg+"\nplan_guard_blind_max: 0")
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(6 * time.Hour)
 
@@ -319,7 +324,7 @@ func TestBlindDegradeLeavesOffMeterBeadsAlone(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
 	r.d.Runtime = "grok"
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(4 * time.Hour)
 
@@ -336,7 +341,7 @@ func TestBlindDegradeLeavesOffMeterBeadsAlone(t *testing.T) {
 func TestBlindDegradeStopsOnTheFirstGoodReading(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.blind()
 	r.at(4 * time.Hour)
 	r.run(t)
@@ -436,8 +441,8 @@ func TestBudgetStateLedger(t *testing.T) {
 		st   BudgetState
 		want string
 	}{
-		{BudgetState{PassCap: 30, PassSpend: 8.2, DayCap: 250, DaySpend: 146}, "epoch $8.20/$30.00, day $146.00/$250.00"},
-		{BudgetState{DayCap: 250, DaySpend: 146}, "day $146.00/$250.00"},
+		{BudgetState{PassCap: 30, PassSpend: 7.5, DayCap: 250, DaySpend: 120}, "epoch $7.50/$30.00, day $120.00/$250.00"},
+		{BudgetState{DayCap: 250, DaySpend: 120}, "day $120.00/$250.00"},
 		{BudgetState{PassCap: 30}, "epoch $0.00/$30.00"},
 		{BudgetState{}, "no cap set"},
 	} {

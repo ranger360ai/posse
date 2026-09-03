@@ -46,7 +46,7 @@ import (
 func TestQABlindDegradeDoesNotForkOnTheCredentialClass(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
-	r.d.Spend = func(time.Time) *CostReport { return spendOf(8.20, nil) }
+	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
 	r.ps.status = http.StatusUnauthorized
 	r.ps.body = "unauthorized"
 	r.at(4 * time.Hour)
@@ -65,7 +65,7 @@ func TestQABlindDegradeDoesNotForkOnTheCredentialClass(t *testing.T) {
 		"degraded, running under ledger brake",
 		"401",
 		"credential stale",
-		"epoch $8.20/$30.00",
+		"epoch $7.50/$30.00",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the degraded line must carry %q, got:\n%s", want, out)
