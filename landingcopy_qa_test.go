@@ -64,6 +64,9 @@ var sharedLandingClaims = []string{
 	"Never push",
 	"The operator pushes and the launcher merges.",
 	"Every persona's PID denies `Bash(git push:*)`",
+	"**Enforced, not advised**",
+	"every crew PID denies `Bash(pkill:*)` and `Bash(killall:*)` beside the git-push family",
+	"`kill`, `kill -0` and `pgrep` still run",
 }
 
 var landingWS = regexp.MustCompile(`\s+`)

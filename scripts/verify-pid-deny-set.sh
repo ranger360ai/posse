@@ -86,6 +86,10 @@ REQUIRED=(
   'Bash(bd config set:*)' 'Bash(bd config unset:*)'
   'Bash(bd dep relate:*)' 'Bash(bd relate:*)' 'Bash(bd sync --full:*)'
   'Bash(bd jira:*)' 'Bash(bd linear:*)' 'Bash(bd setup:*)'
+  # pkill/killall: operator ruling 2026-09-03 (ranger-base-jjx19), staged as
+  # ranger-base docs/rca/jjx19-pkill-deny.diff. A pattern kill matches every
+  # seat's identical argv; the census confirmed 11 sibling suites ended that way.
+  'Bash(pkill:*)' 'Bash(killall:*)'
 )
 
 # Rules a PID must NOT carry. Presence-only would enforce half the ruling: a

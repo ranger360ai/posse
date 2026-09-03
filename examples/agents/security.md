@@ -18,6 +18,11 @@ deny:
   - Bash(git push:*)
   - Bash(git commit unless --)
   - Bash(posse promote:*)
+  # pkill/killall: a pattern kill matches every seat's byte-identical argv
+  # (AGENTS.md "Ending anything"). Kill the pid you launched, or `kill -- -$$`
+  # for your own process group; `kill`, `kill -0` and `pgrep` still run.
+  - Bash(pkill:*)
+  - Bash(killall:*)
   - Bash(posse refresh:*)
   - Bash(bd daemon:*)
   - Bash(bd daemons:*)

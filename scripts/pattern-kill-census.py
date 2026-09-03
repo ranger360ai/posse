@@ -106,6 +106,17 @@ DEFAULT_WINDOW = 10.0                  # seconds after a kill that count as a hi
 DEFAULT_JITTER = 3 * 3600              # the null's displacement, seconds
 DEFAULT_TRIALS = 400
 
+# A kill that was REFUSED ran nowhere and can have ended nothing. Since the
+# operator ruling of 2026-09-03 (ranger-base-jjx19) every crew PID denies
+# `pkill` and `killall`, realized as a PATH shim (L1, "refused by posse gate:
+# pkill ...") and as claude's own deny (L0, "Permission to use Bash with
+# command pkill ... has been denied"). Either text lands in the call's OWN
+# tool_result, and a call carrying one is counted as typed-and-refused, not
+# as a kill: the week-after verify reads "N refused, 0 ran", never "0 typed".
+REFUSED_RE = re.compile(r"refused by posse gate: (?:pkill|killall)\b|"
+                        r"Permission to use Bash with command .{0,400}?has been denied",
+                        re.S)
+
 # A kill only happens in command position. A bare `|` is NOT in the separator
 # set: `grep -rn 'pkill|killall'` is a census, not a kill, and admitting `|`
 # adds 11 such lines to this corpus and no real ones. See point 2 above.
@@ -186,7 +197,7 @@ def harvest(root):
                             if not isinstance(cmd, str) or not when:
                                 continue
                             c = {"proj": proj, "sess": fn[:-6], "t": when, "end": None,
-                                 "cmd": cmd,
+                                 "cmd": cmd, "refused": False,
                                  "bg": bool((blk.get("input") or {}).get("run_in_background"))}
                             calls.append(c)
                             if blk.get("id"):
@@ -194,6 +205,8 @@ def harvest(root):
                         elif blk.get("type") == "tool_result":
                             tid = blk.get("tool_use_id")
                             c = pending.get(tid)
+                            if c and REFUSED_RE.search(json.dumps(blk.get("content"))):
+                                c["refused"] = True
                             if c and c["bg"]:
                                 continue  # its end is the notification, not this
                             pending.pop(tid, None)
@@ -289,7 +302,9 @@ def report(args, out=sys.stdout):
     def nonunique(pats):
         return [p for p in pats if not UNIQUE_HINT.search(p[2])]
 
-    pop = [(c, nonunique(p)) for c, p in kills if nonunique(p)]
+    refused = [(c, p) for c, p in kills if c["refused"]]
+    ran = [(c, p) for c, p in kills if not c["refused"]]
+    pop = [(c, nonunique(p)) for c, p in ran if nonunique(p)]
     if args.suite:
         pop = [(c, [p for p in pats if SUITE_TARGET.search(p[2])])
                for c, pats in pop]
@@ -303,6 +318,8 @@ def report(args, out=sys.stdout):
           f"each over {MIN_RUN_SECONDS}s with a paired end", file=out)
     print(f"kills   {len(kills)} pkill/killall in command position "
           f"({prose} further lines only mention the word)", file=out)
+    print(f"        {len(refused)} of those were refused by a gate and ran nowhere "
+          f"(PID deny, ranger-base-jjx19); {len(ran)} ran", file=out)
     label = "can match a sibling's SUITE argv" if args.suite else "not unique to the typing session"
     print(f"        {len(pop)} whose target {label} — "
           f"{len({c['proj'] for c, _ in pop})} seats, "
@@ -467,8 +484,29 @@ def self_test():
     _write(os.path.join(root, "proj-victim-f", "sess-f.jsonl"), [
         _rec_use("t9", day % "11:00:00", "grep -rn 'go test -timeout 25m' Makefile scripts/"),
         _rec_result("t9", day % "12:05:02")])
+    # a REFUSED kill in yet another seat, in-window for both victims, once per
+    # refusal text: the L1 shim's line and claude's L0 denial. Neither ran.
+    _write(os.path.join(root, "proj-refused", "sess-r.jsonl"), [
+        _rec_use("t10", day % "12:05:00", "pkill -f 'go test -timeout 25m'"),
+        dict(_rec_result("t10", day % "12:05:01"), message={"content": [
+            {"type": "tool_result", "tool_use_id": "t10", "content":
+             "refused by posse gate: pkill -f go test -timeout 25m (deny: Bash(pkill:*))"}]}),
+        _rec_use("t11", day % "12:05:00", "killall yes"),
+        dict(_rec_result("t11", day % "12:05:01"), message={"content": [
+            {"type": "tool_result", "tool_use_id": "t11", "content": [{"type": "text", "text":
+             "Permission to use Bash with command killall yes has been denied."}]}]})])
     calls = harvest(root)
     runs = runs_of(calls)
+
+    refused = [c for c in calls if c["sess"] == "sess-r"]
+    check(len(refused) == 2 and all(c["refused"] for c in refused),
+          "a kill whose own tool_result carries the L1 shim text OR claude's L0 "
+          "denial is flagged refused (both spellings, string and block content)")
+    check(hits_for("proj-refused", refused[0]["t"], runs, DEFAULT_WINDOW),
+          "...and it IS in-window for the victims, so keeping it out of the "
+          "population is an exclusion the report has to make, not an absence")
+    check(not any(c["refused"] for c in calls if c["sess"] != "sess-r"),
+          "no other planted call reads as refused — the arm can say no")
 
     stale = [c for c in calls if c["sess"] == "sess-e"][0]
     check(stale["end"] is None,
