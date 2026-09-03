@@ -39,7 +39,7 @@ writable from a caged session (ranger-base-flz7). A caged session that
 writes a hook gets its code run outside the cage on a one-launch fuse.
 
 What is already closed and stays closed: escape A (dispatch directory —
-`hooksDir` asks `git rev-parse --git-path hooks`, b065c07) and the
+`hooksDir` asks `git rev-parse --git-path hooks`, 950c984) and the
 ranger-base-3c3 tamper forms (delete / chmod 644 / truncate /
 marker-bearing `exit 0`).
 
@@ -175,4 +175,4 @@ behavior instead of hinting at it.
    DEGRADED naming the foreign file and the chain remedy.
 5. Existing pins stay green: the four tamper forms, escape A's
    `TestL3ProbeFollowsCoreHooksPath` / `TestParityFollowsCoreHooksPath`
-   (on a tree carrying b065c07).
+   (on a tree carrying 950c984).

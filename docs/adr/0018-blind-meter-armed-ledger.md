@@ -277,7 +277,7 @@ at 96% when caught by hand (ranger-base-c3vqe, plan-usage.log); the
 2026-08-26 hour of zero dispatch that the no-reading arm protects; the
 rule's two boundaries pinned to the code that owns each (strictly-above
 matches `planGuard`, at-or-above matches `BudgetState.StepDown`); the
-incident replayed end to end under the fix parks (commit a98ed0e's
+incident replayed end to end under the fix parks (commit 521d3db's
 tests, mutation-checked 8/8); a 429 keeps the last reading and a
 cooldown-only snapshot is not a reading (`plancache.go`, pinned).
 ASSUMED: that a reading under the rung followed by a long blind window

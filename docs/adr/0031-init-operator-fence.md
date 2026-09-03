@@ -15,7 +15,7 @@ persona session running `posse init` — even with `HOME` sandboxed, even
 from a release tarball extracted outside any checkout — seeds recipes,
 skills and example PIDs into the live home, and `retireExamplePIDs`
 moves PIDs out of `agents/` — a routing change to the live crew — with
-no operator in the loop. h7cd (074f661) removed the manifest half: init
+no operator in the loop. h7cd (5fbb28c) removed the manifest half: init
 no longer arms §3's launch verify over a home nobody promoted. The
 writes themselves remain, and they are this ADR.
 

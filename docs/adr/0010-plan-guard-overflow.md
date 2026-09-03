@@ -289,7 +289,7 @@ remote shape; its scope note points here.
   meter exists" comes due for real.
 - *(2026-08-29)* Claims: MEASURED — grok per-turn cost on disk and the
   decoder's 2× trap (ranger-base-k7nb, 171/171 records); the shipped
-  guard and its mutation-checked pins (d9ed77c); `uncountedFor` nils out
+  guard and its mutation-checked pins (f746ba5); `uncountedFor` nils out
   on `Counted()` before reading the cap key (uncounted.go:112);
   overflow-spend-is-on-box is by construction (dispatch launches
   locally). ASSUMED — the conversion factor holds between calibrations

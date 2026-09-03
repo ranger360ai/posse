@@ -8,7 +8,7 @@ ranger-base-39jnl) ·
 amended 2026-08-28 (§1 the refill re-offers every free seat and the settle
 is the level-trigger, the reap rides it; §3 the busy map holds only this
 Run's fires, readings expire with the fire pass — ranger-base-t8tq, as
-built in b69c07a)*
+built in b58c957)*
 
 ## Context
 

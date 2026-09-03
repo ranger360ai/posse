@@ -36,8 +36,8 @@ takes the next number no bead has claimed.*
   file-name and attachment-marker patterns. Two of the three are content;
   the third is a PATH — which is why check 3's two-arm scope (added lines,
   added entries) is the right shape and check 2's markdown scope is not.
-- **The renderer already exists.** ranger-base-uzgkz (c9a4cdd, d6022fc)
-  and ranger-base-8114t (d505f2c) give check 3 one refusal shape with the
+- **The renderer already exists.** ranger-base-uzgkz (1e9b2ba) and
+  ranger-base-8114t (ae7b08f) give check 3 one refusal shape with the
   words as fields, a class-only matcher (class and hit count, never the ERE
   or the match), the instance-pattern arm rendering with an empty identity
   list, and the same override and refusals.log shape. At this writing both

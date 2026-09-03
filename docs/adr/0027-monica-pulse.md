@@ -2,7 +2,7 @@
 
 *Status: accepted 2026-08-21 (design on rangerhq-wxd) · owner: architect ·
 amends 0008 §2 (crew carve-out) · implemented rangerhq-4ish (sensing,
-d9fa52f) + rangerhq-44w1 (delivery, 18cb114) · amended 2026-08-28
+db1a042) + rangerhq-44w1 (delivery, 8a2a58a) · amended 2026-08-28
 (ranger-base-q3gp: the §3 default) · §1 superseded by ADR 0029 §1–2,
 recorded 2026-09-01 (ranger-base-38xp9)*
 
