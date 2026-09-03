@@ -314,7 +314,7 @@ func main() {
 	// was read. Add a write to one of these and the reason above stops being
 	// true — which is why each line names the fact it rests on.
 	parallelOK := map[string]string{
-		// blindT (22)
+		// blindT (23)
 		"TestEpochStartIsWallClockAligned":             "reads blindT",
 		"TestHarnessRatios":                            "reads blindT",
 		"TestPlanCache429WithoutRetryAfter":            "reads blindT",
@@ -336,6 +336,7 @@ func main() {
 		"TestQAPlan429BackoffLogsTheRawRetryAfter":     "reads blindT",
 		"TestQAPlan429BackoffReadsAPreUpgradeSnapshot": "reads blindT",
 		"TestQAPlan429BackoffResetsOnSuccess":          "reads blindT",
+		"TestQAQuiet429EscalationSpansCallers":         "reads blindT",
 		"TestScoreIssues":                              "reads blindT",
 		// lpouiT (7)
 		"TestQAPlan429BackoffIsOnTheLoudLine":           "reads lpouiT",
