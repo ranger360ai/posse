@@ -303,7 +303,7 @@ func main() {
 	// here, per test and never per file, because a clearance is an argument
 	// about ONE test's body and does not survive being generalised:
 	//
-	//   - "reads <clock>": blindT, lpouiT and pulseNow are package-level
+	//   - "reads <clock>": blindT, lpouiT, pulseNow and catalogAt are package-level
 	//     time.Time fixtures declared once and never assigned. The only
 	//     "write" the filter sees is `.Add`, which on a time.Time returns a
 	//     new value and mutates nothing — the over-read the writeMeth comment
@@ -368,6 +368,12 @@ func main() {
 		"TestQAShopPulseCountsTheUnclassifiedBucketSeparately": "reads pulseNow",
 		"TestQAShopPulseLineReplacesTheRawOpenCount":           "reads pulseNow",
 		"TestQAShopPulseNamesARepoItCouldNotRead":              "reads pulseNow",
+		// catalogAt (4): the frozen instant the catalog-age pins date their
+		// reading at, so a whole-minute render is exact (ranger-base-5hjyh).
+		"TestAReadingInsideItsLeaseCarriesNoAgeClause":               "reads catalogAt",
+		"TestProbeHonoursALiveCooldown":                              "reads catalogAt",
+		"TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing": "reads catalogAt",
+		"TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome":       "reads catalogAt",
 		// OpsPatterns (2)
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
 		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",
