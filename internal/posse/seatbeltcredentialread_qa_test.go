@@ -39,6 +39,15 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 	codexFile := filepath.Join(home, ".codex", "auth.json")
 	grokFile := filepath.Join(home, ".grok", "auth.json")
 	t.Setenv("HOME", home)
+	// ranger-base-x5f6p: the claude expectation below is the HOME spelling,
+	// and the deny now also follows CLAUDE_SECURESTORAGE_CONFIG_DIR /
+	// CLAUDE_CONFIG_DIR. Either one set on the box running the suite adds a
+	// second literal to every darwin arm — so this table states the
+	// no-variable case rather than inheriting whatever the operator
+	// exported. The arms where they ARE set are their own pins
+	// (credentialdenymove_qa_test.go).
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
 
 	for _, tc := range []struct {
 		name      string

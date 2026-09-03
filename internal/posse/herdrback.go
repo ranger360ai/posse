@@ -1734,7 +1734,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
 		// rendered from the PID; the outer shell expands $(cat {file}) first.
-		if cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
+		if seatbeltWallRendered(cage, rt) {
 			// state_dir: (ADR 0012 D4) — the runtime's own state tree joins
 			// the writable set. Without it a third-party CLI runs under a
 			// sandbox that makes its config read-only, which it reports as a
@@ -1816,6 +1816,42 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			return nil, err
 		}
 		vars = append(vars, vs...)
+	}
+
+	// The other half of the seatbelt's credential read-deny (ADR 0019 D2
+	// item 3, ranger-base-x5f6p). That deny names the file the runtime's
+	// own resolution points at — CLAUDE_SECURESTORAGE_CONFIG_DIR, then
+	// CLAUDE_CONFIG_DIR, then `~/.claude` (credentialDir) — read out of the
+	// LAUNCHER's environment, because the caged child inherits os.Environ()
+	// and the profile is rendered in this process. Env sets are not in that
+	// environment: they are overlaid on the child a hundred lines below,
+	// long after the profile is written. So a set exporting either name
+	// moves the in-cage runtime's credential write to a directory the wall
+	// never heard of, and every other layer reports a healthy launch.
+	//
+	// Refused rather than patched. Adding the set's directory to the deny
+	// would mean resolving the env sets before the profile is rendered,
+	// which reorders every refusal between here and there; refusing is
+	// additive, fail-closed, and it costs nothing measured — 0 env files
+	// carried either name when this was written. The remedy is in the
+	// message and it is a real one: exported where the launcher can see it,
+	// the variable moves the deny along with the write.
+	//
+	// Only where the wall exists. A shims-tier session has no file-read
+	// deny for a variable to walk past, and a caged one renders its own
+	// profile inside, so refusing either would be a wall over nothing.
+	//
+	// NAMES only. An env set naming the directory the launcher already
+	// resolved would change nothing and is refused anyway, and that is the
+	// deliberate half: telling those two cases apart means reading the
+	// set's VALUE on the launch path, and an env set's values are the one
+	// thing this path is careful never to learn (credentialDirVarsIn
+	// returns the name it looked for, never the key's value). A refusal an
+	// operator clears in one line is the cheaper mistake.
+	if seatbeltWallRendered(cage, rt) {
+		if names := credentialDirVarsIn(vars); len(names) > 0 {
+			return nil, Die("env set exports %s, and the seatbelt's credential read-deny for this launch was already rendered from the launcher's own environment — the session would write its credential to a directory the sandbox never walled (ADR 0019 D2, ranger-base-x5f6p). Export it in the launching shell instead, where the deny follows it, or drop it from the env set", strings.Join(names, " and "))
+		}
 	}
 
 	// env_required (ADR 0012 D4): the runtime declared variable NAMES a

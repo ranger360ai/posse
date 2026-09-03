@@ -163,19 +163,23 @@ var arCredIdents = []string{"KeychainService"}
 // looks.
 type arCredAllow struct{ file, lit, why string }
 
-// The register, measured 2026-09-01. Three mentions, none of them a read:
-// two of them are the CONTROLS on the rule, and naming the thing you refuse
-// is how a refusal is written.
+// The register, measured 2026-09-01, re-measured 2026-09-02. Two mentions,
+// neither of them a read: one is a CONTROL on the rule, and naming the thing
+// you refuse is how a refusal is written.
+//
+// A third row stood here until ranger-base-x5f6p: posse/seatbelt.go's
+// `~/.claude/.credentials.json`, the seatbelt read-deny. That literal is
+// gone — the deny follows the runtime's own directory resolution now, and
+// asks credentialFileCandidates for the paths — so seatbelt.go spells no
+// credential path at all and needs no pardon. The row was dropped in the
+// same commit as the literal, which is the rule this register runs on:
+// leave it and the "matched nothing" arm reds; keep the literal and the
+// unregistered arm reds. Either way somebody looks.
 var arCredAllowed = []arCredAllow{
 	{
 		file: "posse/visibility.go",
 		lit:  "find-generic-password|credentials",
 		why:  "the visibility scanner's ERE — the detective control that finds a credential token in a DIFF. It matches text; it never opens a store.",
-	},
-	{
-		file: "posse/seatbelt.go",
-		lit:  "~/.claude/.credentials.json",
-		why:  "the seatbelt DENY list. This is the path the sandbox refuses — the opposite of an acquisition, and deleting it would widen the cage, not narrow this rule.",
 	},
 	{
 		file: "posse/cage.go",

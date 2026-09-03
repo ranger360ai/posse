@@ -306,6 +306,24 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 	return b.String()
 }
 
+// seatbeltWallRendered reports whether this launch's L2 wall is a seatbelt
+// profile posse renders itself: the tier asked for it, the box has
+// sandbox-exec, and the runtime does not sandbox itself (in which case
+// posse renders nothing and wrapping it would be a second wall over a
+// first).
+//
+// One predicate, two call sites, and that is the whole reason it is a
+// function. The launcher renders the profile at one point in the launch and
+// asks a question ABOUT that profile at a much later one — whether an env
+// set is about to move the credential file out from behind its read-deny
+// (credentialDirVarsIn, ranger-base-x5f6p). Spelled twice, the second
+// spelling is a copy that can drift into asking about a wall this launch
+// never put up, and the failure is silent both ways: a refusal for a
+// session with no wall, or no refusal for one that has it.
+func seatbeltWallRendered(cage string, rt *Runtime) bool {
+	return cage == CageSeatbelt && AvailableCages[CageSeatbelt] && rt != nil && !rt.SelfSandbox
+}
+
 // SeatbeltWritable computes the writable set for a persona session:
 // cwd unless the PID denies Edit or Write (then only cwd/.beads so bd can
 // still claim/comment/close), the store of record when a redirect puts it
@@ -888,7 +906,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // credential cannot authenticate itself; every other runtime's credential
 // file is never this session's business, ADR 0019's own words for it.
 //
-// `~/.claude/.credentials.json` is the one exception denied even for a
+// Claude's own credentials file is the one exception denied even for a
 // claude-launched session, and only on darwin: D2 names it a recurring
 // UNOWNED byproduct there, never the store of record (the keychain is,
 // D2 store 1), and a caged claude session authenticates with
@@ -901,6 +919,32 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // `runtime.GOOS` read here directly, so the branch a linux box would take
 // is provable from a darwin one too (credential.go's meterStore made the
 // same call, for the same reason).
+//
+// WHICH file that is, this function does not spell: it asks
+// credentialFileCandidates. The deny was a home-shaped literal for as long
+// as it existed, and CLAUDE_SECURESTORAGE_CONFIG_DIR / CLAUDE_CONFIG_DIR
+// move where the runtime writes without moving the wall — a caged session
+// on a box with either variable set had a deny over a path the runtime no
+// longer uses and no deny over the one it does (ranger-base-x5f6p, off the
+// security review at ranger-base-7pf1h). The resolution is the runtime's own,
+// measured, and it lives in credential.go beside the reader that follows
+// it, so the wall and the reader cannot come to disagree about where the
+// file is. The literal lives there too: ADR 0019 D1 keeps credential
+// spellings in the seam, and a second one here was an unregistered
+// acquisition site by absencerules_qa_test.go's rule.
+//
+// The candidates are absResolve'd on the way in, like every other path in
+// this carve-out — an SBPL literal filter matches the CANONICAL path
+// (underDir's own note below), so a config dir reached through a symlink
+// would otherwise be walked straight past. Denying a path that is not
+// there costs nothing: the read is ENOENT either way.
+//
+// RESIDUAL, stated rather than closed here because it is not this
+// function's to close: these are read from the LAUNCHER's environment, and
+// the launcher overlays the session's env sets on the child after this
+// profile is rendered. The launch refuses when an env set carries either
+// name — credentialDirVarsIn, herdrback.go — which is the wall for that
+// hole; what this function cannot see, it does not pretend to.
 func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	own := func(dir string) bool {
 		for _, d := range stateDirs {
@@ -912,7 +956,7 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	}
 	var out []string
 	if goos == "darwin" {
-		out = append(out, ExpandTilde("~/.claude/.credentials.json"))
+		out = append(out, credentialFileCandidates()...)
 	}
 	if !own("~/.codex") {
 		out = append(out, ExpandTilde("~/.codex/auth.json"))

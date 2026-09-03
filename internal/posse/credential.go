@@ -598,6 +598,85 @@ func credentialDir() (string, error) {
 	return ClaudeConfigDirIn(home), nil
 }
 
+// credentialFileCandidates names every path this process's environment says
+// the runtime's credentials file could be sitting at: `~/.claude`'s, and
+// CredentialsFile's — the directory the runtime writes NEXT — when the two
+// differ. Deduped, home first, so a caller rendering a wall from it gets a
+// stable order.
+//
+// The home is in the list unconditionally, and it is not made redundant by
+// the resolver. Two reasons, and each one alone is enough:
+//
+//   - a PRESENT-BUT-EMPTY CLAUDE_SECURESTORAGE_CONFIG_DIR resolves to the
+//     home and shadows CLAUDE_CONFIG_DIR, so on that arm the home IS the
+//     answer and no variable says so.
+//   - whatever the runtime wrote in the home before a variable moved the
+//     write is still sitting there. ADR 0019 D2 calls that file a recurring
+//     unowned byproduct and ranger-base-xjj9 measured it regenerating 8h06m
+//     after a delete: it does not leave because the write moved on.
+//
+// This is the shape scripts/verify-credential-paths.sh scans in, one dir
+// short: the sweep also scans CLAUDE_CONFIG_DIR's when an empty
+// CLAUDE_SECURESTORAGE_CONFIG_DIR shadows it, because a DETECTIVE control
+// looks wherever a file could have been left. This list follows the
+// resolver instead, because its consumer is a wall on where the runtime
+// writes — and following the resolver is what keeps the wall and the reader
+// from ever disagreeing about that (ranger-base-x5f6p).
+//
+// A resolver error is not an error here: it means no home AND no
+// secure-storage override, so there is no path to name, and a caller
+// building a deny list from an empty answer denies nothing rather than
+// refusing a launch over a file that cannot exist.
+func credentialFileCandidates() []string {
+	var out []string
+	add := func(p string) {
+		if p == "" || strings.HasPrefix(p, "~") {
+			return // no home to expand against; naming `~/…` to a sandbox is naming a file in the cwd
+		}
+		for _, q := range out {
+			if q == p {
+				return
+			}
+		}
+		out = append(out, p)
+	}
+	add(ExpandTilde("~/.claude/.credentials.json"))
+	if p, err := CredentialsFile(); err == nil {
+		add(p)
+	}
+	return out
+}
+
+// credentialDirVars names the environment variables credentialDir's
+// resolution above reads. It exists for the one caller that has to ask
+// ABOUT the variables rather than read them: the launcher renders the
+// seatbelt's credential read-deny from THIS process's environment, and
+// overlays the session's env sets on the child afterwards, so a set
+// exporting either name would move the caged runtime's write past a wall
+// already written (ranger-base-x5f6p). Spelled a second time rather than
+// threaded through credentialDir, whose literals are the transcription of a
+// measured bundle and are worth reading as one — and pinned against the
+// resolver's behavior, so the copy cannot drift into a list of names
+// nothing honors.
+var credentialDirVars = []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"}
+
+// credentialDirVarsIn reports which of those an env set's variables carry,
+// in credentialDirVars order. Names only — no value is read, copied or
+// reported, which is what keeps this callable from a launch path that must
+// never learn what an env set holds.
+func credentialDirVarsIn(vars []EnvVar) []string {
+	var out []string
+	for _, name := range credentialDirVars {
+		for _, v := range vars {
+			if v.Key == name {
+				out = append(out, name)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // credentialsFileStore is the non-darwin adapter. A file that is not there
 // is NoSource — the runtime has never logged in here, which is a structural
 // condition an operator fixes with one command and no retry ever will. A

@@ -274,7 +274,13 @@ build tags, so `make test-linux` compiles and tests every branch:
        with a live access token performs no write.
      - preventive: the seatbelt `file-read` deny on credential-file
        literals (ranger-base-hw18), GOOS-shaped so the linux store of
-       record stays readable. It protects the file exactly in the state
+       record stays readable. Which literal that is for claude is the
+       RUNTIME's own directory resolution, not a fixed home path
+       (`credentialFileCandidates`, ranger-base-x5f6p): the deny names
+       `~/.claude`'s and, when `CLAUDE_SECURESTORAGE_CONFIG_DIR` or
+       `CLAUDE_CONFIG_DIR` moves the write, the moved one too. Spelled
+       as one home literal it was a wall over a path the runtime had
+       already stopped using. It protects the file exactly in the state
        where it holds a live token (S3), at a cost accepted here: in S3
        a seatbelt-caged claude session reads the same composite, hits
        the deny on the fallback, and cannot authenticate until the
