@@ -226,12 +226,19 @@ func main() {
 	inTests := func(g *fn) bool { return g.isTest }
 	envTainted := propagateIn(funcs, func(g *fn) bool { return g.envRoot }, inTests)
 	// The one exemption, and it is the harness's own: fakeDirs is written
-	// only by setFakeDir, only ever as Store(t.Name(), …)/Delete(t.Name()),
-	// and read only as Load(t.Name()) — a key space partitioned by the
-	// test's own name over a sync.Map, so no two tests touch one entry.
-	// That is the same argument ADR 0047 D3 makes for SeedClaudeTrust's
-	// per-repo key. Left in, it taints 663 of the tests this bead exists to
-	// free, so it is named here rather than waived silently.
+	// only by setFakeDir, only ever as Store(t, …)/Delete(t), and read only
+	// as Load(t) — a key space partitioned by the *testing.T POINTER over a
+	// sync.Map, so no two tests touch one entry. That is the same argument
+	// ADR 0047 D3 makes for SeedClaudeTrust's per-repo key.
+	// The key is the T and NOT t.Name(): `go test -count=N` gives N live
+	// copies of a test one name, and t.Parallel resumes them together — one
+	// key, N tests, each Cleanup deleting the others' entry. Measured as
+	// five FAILs at -count=3 that were green at -count=1 (ranger-base-pj87l,
+	// the same lesson that moved the key); a T pointer is unique per run by
+	// construction. internal/posse/herdr_test.go:1461 carries that argument
+	// at the declaration.
+	// Left in, it taints 663 of the tests this bead exists to free, so it is
+	// named here rather than waived silently.
 	// operatorHome is the second: written once in TestMain, before m.Run,
 	// and read-only for the whole of the run.
 	// hermeticRun is the third: an atomic.Int64 that only ever takes Add(1),
@@ -292,12 +299,13 @@ func main() {
 	// D1 that variable is not set in the parent — so in a test it resolves
 	// to the binary's own directory, which every test in the binary shares.
 	// fakeDirOf(t) is the per-test one. This is not the fakeDirs exemption
-	// above: that map IS partitioned by t.Name(), and this call is the one
-	// way to read past the partition. MEASURED (ranger-base-pj87l): three
-	// sites in closeddirty_test.go read a bd call log this way, and two of
-	// them failed in two different full runs once the tests around them
-	// went parallel — "no closed-dirty create in the bd log" is a read of
-	// the wrong log, not a sweep that did not run.
+	// above: that map IS partitioned per test (by the *testing.T — see the
+	// exemption note above), and this call is the one way to read past the
+	// partition. MEASURED (ranger-base-pj87l): three sites in
+	// closeddirty_test.go read a bd call log this way, and two of them
+	// failed in two different full runs once the tests around them went
+	// parallel — "no closed-dirty create in the bd log" is a read of the
+	// wrong log, not a sweep that did not run.
 	fakeDirTainted := propagateIn(funcs, func(g *fn) bool { return g.bareFakeDir }, inTests)
 
 	// ── filter 3: $HOME readers outside the App, reached from a test ─────
