@@ -1007,3 +1007,140 @@ func TestQABdArgvGateRefusalNamesWhatMatchedAndWhere(t *testing.T) {
 		t.Errorf("an elided segment must say so with an ellipsis: %s", reason)
 	}
 }
+
+// ranger-base-3sv0b (found verifying ranger-base-x3pmq): EVERY ARM OF THE
+// FAIL-CLOSED FALLBACK DECIDES SOMETHING, AND ONE OF THEM WAS PINNED BY
+// NOTHING.
+//
+// The fallback is a three-armed `if` (scripts/bd-argv-gate.sh — arms A, B and
+// C in the comment above it). For a disjunction the sharpest mutant is one
+// arm at a time, and MEASURED here: replacing arm B's or arm C's
+// `grep -Eq "$bd_word"` with a pattern that never matches reds a pin in this
+// file, while the same edit to arm A leaves every TestQABdArgvGate* test
+// green. Arm A is the arm the fix's own comment leads with.
+//
+// It is not an equivalent mutant. Over 14046 real Bash command lines
+// harvested from the fleet's transcripts — the corpus the arm was measured on
+// (ranger-base-1lvm) — arm A alone decides 67, and reading them says which
+// class they are: every one carries a regex like `grep -rn "bd\b" f`, where
+// the payload spells the escaped backslash `\\` right in front of `bd`. Arm A
+// turns it into a separator and sees the word; arms B and C delete it and see
+// `bdb`. So on real traffic arm A's unique contribution is the over-refusal
+// the fix priced at 0.59% and accepted (279 of 47275, and only while the
+// parser is down) rather than a caught escape — for an INVOCATION the
+// character in front of that backslash is a word character exactly when the
+// shell reads the run together as one word, which is not a bd call. That is a
+// reason to hold the arm, not to leave it unmeasured: an arm nothing measures
+// is one a later simplification deletes with the suite green, and the class of
+// payload it decides changes silently.
+//
+// The rig mutates a COPY under t.TempDir and never touches the shipped script.
+// Its control is that same copy unmutated: it must refuse all three payloads,
+// or "the mutant let it through" below is an artifact of a broken copy rather
+// than a measurement of the arm.
+func TestQABdArgvGateEveryFallbackArmDecidesSomething(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	shipped, err := os.ReadFile(filepath.Join("scripts", "bd-argv-gate.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each arm is anchored on its own spelling, not on a line number: the
+	// three greps differ by the pipeline in front of them.
+	arms := []struct {
+		name   string
+		anchor string // must appear exactly once in the shipped script
+		// payload the SHIPPED script refuses and this arm's mutant does not.
+		payload string
+		raw     bool // send payload as-is instead of as a Bash tool call
+	}{
+		{
+			name:    "A (decode, then a literal bd)",
+			anchor:  `sed -e 's/\\./ /g' | grep -Eq "$bd_word" ||`,
+			payload: `grep -rn "bd\b" internal/posse/dispatch.go`,
+		},
+		{
+			name:    "B (decode, then a bd the shell concatenates)",
+			anchor:  `tr -d '\\'\''"' | grep -Eq "$bd_word" ||`,
+			payload: "echo hi\nb\\d admin reset",
+		},
+		{
+			name:    "C (the text test, for a payload nobody encoded)",
+			anchor:  `tr -d '\\'\''"' | grep -Eq "$bd_word"; then`,
+			payload: `this is not json, b\d daemon stop`,
+			raw:     true,
+		},
+	}
+
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "not-a-parser.py")
+	env := []string{"BD_ARGV_GATE_PY=" + missing}
+	run := func(script, payload string, raw bool) gateResult {
+		t.Helper()
+		if !raw {
+			b, err := json.Marshal(map[string]any{
+				"session_id": "qa",
+				"tool_name":  "Bash",
+				"tool_input": map[string]any{"command": payload},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload = string(b)
+		}
+		cmd := exec.Command("sh", script)
+		cmd.Stdin = strings.NewReader(payload)
+		cmd.Env = append(os.Environ(), env...)
+		var out, errb strings.Builder
+		cmd.Stdout, cmd.Stderr = &out, &errb
+		code := 0
+		if err := cmd.Run(); err != nil {
+			ee, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("running %s: %v", script, err)
+			}
+			code = ee.ExitCode()
+		}
+		return gateResult{code: code, stdout: out.String(), stderr: errb.String()}
+	}
+
+	// The control: an unmutated copy, run the same way, refuses every row.
+	control := filepath.Join(dir, "control.sh")
+	if err := os.WriteFile(control, shipped, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range arms {
+		if r := run(control, a.payload, a.raw); r.code != 2 {
+			t.Fatalf("control: the unmutated copy must refuse %q (the row for arm %s), got code=%d err=%q — "+
+				"every mutant reading below would be an artifact", a.payload, a.name, r.code, r.stderr)
+		}
+	}
+
+	for _, a := range arms {
+		if n := strings.Count(string(shipped), a.anchor); n != 1 {
+			t.Fatalf("arm %s: its grep is spelled %q %d times in the shipped script, want 1 — "+
+				"the fallback was rewritten and this pin is aimed at nothing", a.name, a.anchor, n)
+		}
+		dead := strings.Replace(a.anchor, `"$bd_word"`, `'ZZ_NEVER_MATCHES_ZZ'`, 1)
+		script := filepath.Join(dir, "mutant.sh")
+		if err := os.WriteFile(script, []byte(strings.Replace(string(shipped), a.anchor, dead, 1)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if r := run(script, a.payload, a.raw); r.code != 0 {
+			t.Errorf("arm %s: with its grep dead, %q is still refused (code=%d) — the row does not "+
+				"discriminate this arm, so a deletion of it would go unnoticed", a.name, a.payload, r.code)
+		}
+		// And the OTHER arms still answer: a mutant that refuses nothing at
+		// all would pass the check above while saying nothing about this arm.
+		for _, other := range arms {
+			if other.name == a.name {
+				continue
+			}
+			if r := run(script, other.payload, other.raw); r.code != 2 {
+				t.Errorf("arm %s's mutant also stopped refusing %s's row (%q, code=%d) — the edit "+
+					"broke the script rather than disabling one arm", a.name, other.name, other.payload, r.code)
+			}
+		}
+	}
+}
