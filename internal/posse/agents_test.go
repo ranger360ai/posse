@@ -337,6 +337,27 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 		if r := ag.RenderCommand(); !strings.Contains(r, "--disallowedTools") || !strings.Contains(r, "'Bash(git push:*)'") || strings.Contains(r, "{deny}") {
 			t.Errorf("%s: render: %s", name, r)
 		}
+		// The bd verbs that push the queue — `bd sync --full` and `bd
+		// daemon` — are denied on every shipped PID (ADR 0015 §3's u9ud
+		// amendment). ADR 0049 D5 rests on it: with a queue remote
+		// declared, "cannot push" becomes "never pushes", and the three
+		// legs are the binary (no git push), the PIDs' git push deny
+		// (above), and these two. Observed 9/9 on 2026-09-02; this is the
+		// pin (observable 11, ranger-base-an4x3). Exact spellings, since a
+		// deny is matched as a rule: `Bash(bd sync:*)` would also cover the
+		// verb but is not what the PIDs carry, and a widened rule here
+		// would grade a wall nobody rendered.
+		for _, want := range []string{"Bash(bd sync --full:*)", "Bash(bd daemon:*)"} {
+			found := false
+			for _, r := range ag.Deny {
+				if r == want {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s: deny must include %s — the bd verb that pushes the queue (ADR 0049 D5, ADR 0015 §3)", name, want)
+			}
+		}
 		body := ag.Body
 		if !identityLineRe.MatchString(identityLine(body)) {
 			t.Errorf("%s: body must open with the identity line, got %q", name, identityLine(body))
