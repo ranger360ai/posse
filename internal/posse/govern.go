@@ -767,6 +767,16 @@ func (in GovInputs) planReading(now time.Time) (PlanUsage, error) {
 	if in.Plan != nil {
 		c.Reader, c.NoAdapter = in.Plan, nil
 	}
+	if c.Quiet != nil {
+		// `plan_usage_quiet:` with the guard armed — the operator has
+		// stopped the metering, not the shop (planquiet.go). Same answer as
+		// the unarmed guard above: no reading, and not blind either.
+		// `posse status` is a command a person runs repeatedly while
+		// waiting for a 429 window to drain, which makes it exactly the
+		// kind of reader that must not be the one re-arming it
+		// (ranger-base-4rfw1).
+		return nil, nil
+	}
 	if c.Reader == nil {
 		// Guard OFF, not guard blind: a meter that does not exist cannot be
 		// read, and failing closed against it would be a brake with no

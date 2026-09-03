@@ -68,6 +68,19 @@ func seedPlan(t *testing.T, home string, e map[string]any) {
 	}
 }
 
+// armGuard writes a config with a meter threshold in it, which is what
+// makes this home one that ASKS the endpoint at all: with no
+// `plan_guard_<window>:` set, the plan meter is quiet and no surface —
+// cockpit, status or cost — sends a request (planquiet.go,
+// ranger-base-4rfw1). Every test below whose subject is the request path or
+// the cooldown needs the guard armed to have a subject.
+func armGuard(t *testing.T, home string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("plan_guard_5h: 70\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // planEnv points the binary at a private RHQ_HOME and at an endpoint that
 // cannot answer: any test below that produces a reading proves it came off
 // the snapshot, and no request left the machine.
@@ -134,6 +147,7 @@ func TestCostPlanPrintsTheReadingAndNothingElse(t *testing.T) {
 func TestCostPlanFailsLoudWhenTheReadingIsUnavailable(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
+	armGuard(t, home)
 	now := time.Now().UTC()
 	seedPlan(t, home, map[string]any{
 		"at":       now.Add(-time.Hour).Format(time.RFC3339Nano),
@@ -213,6 +227,7 @@ func TestCostPlanAndTheCostFooterAreOneRendering(t *testing.T) {
 func TestCostPlanFetchesThroughTheSeamAndNamesItselfInTheReadLog(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
+	armGuard(t, home)
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -325,6 +340,7 @@ func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
 func TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
+	armGuard(t, home)
 	now := time.Now().UTC()
 	seedPlan(t, home, map[string]any{
 		"at":       now.Add(-time.Hour).Format(time.RFC3339Nano),

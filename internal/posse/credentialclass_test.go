@@ -350,6 +350,9 @@ func TestPlanCacheCooldownKeepsTheRateLimitClass(t *testing.T) {
 
 	c := b.App.PlanCache("test")
 	c.Reader, c.Now = ps.reader(), func() time.Time { return now }
+	// Armed: this test is about the hour a 429 buys, and a quiet cache
+	// never gets one (planquiet.go).
+	c.Quiet = nil
 	if _, _, err := c.Read(0); PlanFailureOf(err) != PlanFailRateLimited {
 		t.Fatalf("the 429 itself: %v (%q)", err, PlanFailureOf(err))
 	}

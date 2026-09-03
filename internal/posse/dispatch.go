@@ -417,6 +417,16 @@ func (d *Dispatcher) planGuard() {
 	if d.Plan != nil {
 		c.Reader, c.NoAdapter = d.Plan, nil
 	}
+	// The operator's own quiet, honoured by the guard before anything else
+	// (ranger-base-4rfw1). Reached only for `plan_usage_quiet: true` — the
+	// other half of quiet is the unarmed guard, and this function returned
+	// on it above — and it is the same state as that one: guard OFF, no
+	// clock, no park. A watch pass is the heaviest reader of this endpoint,
+	// so a quiet gap the watch does not honour is not a quiet gap.
+	if c.Quiet != nil {
+		d.planQuiet(c.Quiet)
+		return
+	}
 	// Guard-OFF, not guard-blind, and never a silent nil: an armed guard
 	// with no adapter to run is a state of its own (planusage.go's
 	// NoPlanAdapter), and this is where it is said.
@@ -499,6 +509,27 @@ func (d *Dispatcher) planNoAdapter(err error) {
 	}
 	d.planNoAdapterSaid = true
 	d.eprintf("plan guard: %v — thresholds are set, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", err)
+}
+
+// planQuiet is the third guard-off sentence: thresholds are set and the
+// operator has ruled that nothing on this box asks the meter
+// (`plan_usage_quiet: true`, planquiet.go).
+//
+// It says so once per process, for planNoAdapter's reason — the thresholds
+// are set, so the operator believes there is a brake, and a guard that is
+// off without saying so is the monitoring silence this whole file is built
+// against. It shares the once-per-process flag with its two siblings
+// because it is one sentence about one guard, and the states are mutually
+// exclusive.
+//
+// No clock, no park, no degrade: quiet is a decision, and a fleet parked on
+// the operator's own decision is a brake with no release.
+func (d *Dispatcher) planQuiet(q *PlanQuiet) {
+	if d.planNoAdapterSaid {
+		return
+	}
+	d.planNoAdapterSaid = true
+	d.eprintf("plan guard: %v, so the guard is OFF, not blind: no clock is running and no pass will park on this\n", q)
 }
 
 // planUnconfigured is planNoAdapter's sibling for the other structural

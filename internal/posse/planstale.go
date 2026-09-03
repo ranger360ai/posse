@@ -159,9 +159,13 @@ func (s PlanStale) streak() string {
 // lie:
 //
 //   - `plan_usage_stale_after: 0` — the operator turned it off.
-//   - No `plan_guard_<window>:` — there is no meter guard, so no headroom
-//     rule is ruling on anything and the snapshot gates nothing. A cockpit
-//     and `posse cost` still write one; that is a display, not a brake.
+//   - The meter is QUIET (planquiet.go) — no `plan_guard_<window>:`, so
+//     there is no meter guard and no headroom rule ruling on anything, or
+//     `plan_usage_quiet: true`, where the operator has stopped the asking
+//     on purpose and the guard is off for the duration. Either way the
+//     snapshot gates nothing, and "ruling on it under the headroom rule"
+//     would name a rule that is not running. A cockpit and `posse cost`
+//     still show the reading with its age; that is a display, not a brake.
 //   - No reading in the snapshot. A machine that has never had one is not
 //     ruling on a stale number, and ADR 0018's own reasoning parks nothing
 //     on ignorance.
@@ -172,7 +176,7 @@ func (s PlanStale) streak() string {
 // BlindFor would render it as "0s" while the sentence claimed hours.
 func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanStale {
 	after := a.PlanUsageStaleAfter(errw)
-	if after <= 0 || len(a.PlanGuardThresholds(io.Discard)) == 0 {
+	if after <= 0 || a.PlanMeterQuiet(io.Discard) != nil {
 		return PlanStale{After: after}
 	}
 	c := a.PlanCache(caller)

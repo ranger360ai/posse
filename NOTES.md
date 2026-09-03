@@ -715,6 +715,30 @@ watching them is the operator's interactive headroom — a fleet that eats the
   (`… 10 consecutive 429, next ask in 3h12m`) and in the cadence log with the
   raw header beside it, because a mute nobody can see is the thing that cap
   exists to refuse.
+- **A meter reader may not re-arm the window it is draining**
+  (ranger-base-4rfw1). The escalation above only helps if the box actually
+  goes quiet. On 2026-09-02 the operator commented out both thresholds and
+  restarted the watch to drain a re-arming 429 window; the box was silent
+  for **94 minutes** — and then `posse cockpit`, opened in a herdr pane,
+  asked the endpoint itself at 20:13:57Z and again at 21:15:39Z from a
+  second instance. Both drew `429 Retry-After: 3600` and re-armed the hour
+  (`plan-usage.log`, caller `cockpit`). The dispatcher and `posse status`
+  each checked the thresholds for themselves and stayed quiet; the cockpit
+  and `posse cost` never had that line — and a rule every caller must
+  remember is a rule the next caller forgets. So the refusal moved to the
+  **choke point**: `PlanCache` is the one path to the endpoint, and a quiet
+  cache does not ask, whoever is holding it. Two things make it quiet — the
+  guard being OFF (no `plan_guard_<window>:`: nothing is deciding anything
+  on the reading), and `plan_usage_quiet: true`, the flag the quiet gap
+  actually needed, since commenting out the thresholds also switches off the
+  brake. Quiet is **guard-off, not guard-blind**: no clock, no park, no
+  degrade — a fleet parked on the operator's own decision is a brake with no
+  release. The last reading is still served everywhere, always with its age
+  (`5h 46% · 7d 29% · guard off, last reading 3h27m ago`), and only while it
+  is inside `plan_usage_ttl:` for callers that go through `Read` — past that
+  the cache refuses rather than hand back a stale number as a fresh one
+  (ranger-base-c3vqe is what that costs), and a surface that wants the old
+  reading anyway asks for it by name with `LastReading`.
 - **Overflow: a second pool instead of a skipped pass** (ADR 0010). The
   guard's meter belongs to *one* provider, so the whole-pass skip had two
   costs: a lane whose runtime is not on that meter was skipped because

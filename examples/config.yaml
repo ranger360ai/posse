@@ -361,6 +361,33 @@ default_emoji: ⚙️
 # file is the evidence for whether a 429 storm is your own polling.
 # plan_usage_ttl: 5m         # 30s, 5m, bare seconds, or 0 to disable
 #
+# The quiet gap: nothing on this box asks that endpoint at all. `true` is an
+# operator ruling that every reader honours — the cockpit header, `posse
+# status`, `posse cost` and the dispatch pass alike — and it exists because
+# on 2026-09-02 the only way to stop the polling was to comment out the
+# thresholds above, which also switches off the brake. With the guard OFF
+# (no `plan_guard_<window>:` set) the meter is quiet anyway: nothing is
+# deciding anything on the reading, so no request it costs is one anybody
+# asked for.
+#
+# Why it is worth a setting. That day a 429 window had been re-arming since
+# 03:30Z; the thresholds were commented out and the watch restarted, and the
+# box went silent for 94 minutes — until `posse cockpit` was opened in a
+# pane. Its plan tick asked the endpoint itself at 20:13:57Z, a second
+# instance asked at 21:15:39Z, both drew `429 Retry-After: 3600`, and the
+# gap was over twice without anybody deciding it should be
+# (ranger-base-4rfw1). A meter reader must never be the thing that re-arms
+# the window it is waiting out.
+#
+# Quiet is guard-OFF, not guard-blind: no blind clock starts, nothing parks,
+# nothing degrades. The last reading is still shown everywhere, always with
+# its age (`5h 46% · 7d 29% · guard off, last reading 3h27m ago`) — a
+# snapshot nobody is refreshing is exactly where a number shown without its
+# age starts lying. `posse cost --plan` serves that snapshot while it is
+# inside `plan_usage_ttl:` and fails loudly past it, rather than hand a
+# grepping persona a stale number as a fresh one. Default false.
+# plan_usage_quiet: false    # true = no surface asks the usage endpoint
+#
 # How old that snapshot may get before every surface says so, LOUDLY. The
 # park above is measured in minutes; this is the other question, measured in
 # hours — the guard has stopped the on-meter lanes and the headroom rule

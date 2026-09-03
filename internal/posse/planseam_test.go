@@ -253,6 +253,11 @@ func TestPlanCacheWithNoAdapterRefusesEvenASnapshot(t *testing.T) {
 	b, _ := newTestBackend(t)
 	c := b.App.PlanCache("cost")
 	c.Path = ""
+	// A meter this instance may ask: the subject here is WHICH refusal a
+	// missing adapter produces, and a quiet cache (no thresholds in this
+	// backend's config, planquiet.go) would refuse one step earlier with a
+	// different type — correctly, and not the fact under test.
+	c.Quiet = nil
 	if _, _, err := c.Read(time.Hour); err == nil {
 		t.Fatal("want a refusal with no adapter")
 	} else if _, ok := err.(*NoPlanAdapter); !ok {

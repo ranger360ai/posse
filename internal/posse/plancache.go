@@ -120,6 +120,18 @@ type PlanCache struct {
 	// caller wants a cache, and the honest place to say "no reading, and
 	// why" is the one that would have made the request.
 	NoAdapter error
+	// Quiet is the instance's ruling that the endpoint is not to be asked
+	// at all — the guard is off, or `plan_usage_quiet: true`
+	// (planquiet.go). Nil is the normal state.
+	//
+	// It is a field on the CACHE and not a check in each caller because
+	// each caller is exactly what failed: on 2026-09-02 two cockpit ticks
+	// re-armed a 429 window an operator had spent 94 minutes draining, and
+	// they did it through this struct, past a dispatcher and a governance
+	// surface that were each checking the thresholds for themselves. One
+	// path to the endpoint, one place that can refuse it
+	// (ranger-base-4rfw1).
+	Quiet *PlanQuiet
 }
 
 // PlanCache builds the instance's cache for one caller. Every posse process
@@ -132,6 +144,12 @@ func (a *App) PlanCache(caller string) *PlanCache {
 		Caller:    caller,
 		Reader:    r,
 		NoAdapter: err,
+		// io.Discard: a malformed `plan_usage_quiet:` is named by the
+		// surfaces that own a stderr (dispatch's planGuard), once, and a
+		// cockpit tick owns the whole terminal and cannot write to one at
+		// all. The safe reading of a typo is "not quiet" either way
+		// (PlanMeterQuiet).
+		Quiet: a.PlanMeterQuiet(io.Discard),
 	}
 }
 
@@ -148,8 +166,33 @@ func (c *PlanCache) now() time.Time {
 //
 // maxAge 0 means "fresh only" and always makes a request. It does not mean
 // "ignore Retry-After": honouring a rate limiter is not caching, and no
-// setting turns it off.
+// setting turns it off. Nor does it outrank Quiet, for the same reason and
+// one more: a caller that asks for a fresh reading while the shop has
+// stopped metering is the caller this file exists to stop.
 func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
+	// Quiet first, ahead of every other question (ranger-base-4rfw1). Not
+	// even the adapter is consulted: whether this box HAS a meter is a
+	// question nobody asked, and answering it here would put a second
+	// sentence on a state that has one.
+	//
+	// A snapshot the caller would have accepted anyway is still served:
+	// quiet is "do not ask", not "forget", and refusing a reading this
+	// process would have taken as a cache hit a second earlier would make
+	// the flag a brake instead of a mute.
+	//
+	// Past that age it is a REFUSAL and not a stale number returned as a
+	// fresh one. Read's guarantee — what comes back is no older than
+	// maxAge — is the thing every caller has built on, and quietly widening
+	// it for one flag is how a guard ends up ruling on a nineteen-hour-old
+	// reading it thinks is current (ranger-base-c3vqe). Surfaces that want
+	// the old reading anyway ask for it by name, with its age, through
+	// LastReading.
+	if c.Quiet != nil {
+		if e, have := c.load(); have && planFresh(e, c.now(), maxAge) {
+			return e.Windows, e.At, nil
+		}
+		return nil, time.Time{}, c.Quiet
+	}
 	// No adapter, no reading — and not a stale one either. A snapshot on
 	// this machine was written by a posse that could reach a meter; an
 	// instance that cannot refresh it has no business acting on it, and
@@ -163,7 +206,7 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 	}
 	now := c.now()
 	e, have := c.load()
-	if have && maxAge > 0 && !e.At.IsZero() && now.Sub(e.At) < maxAge && now.Sub(e.At) >= 0 {
+	if have && planFresh(e, now, maxAge) {
 		return e.Windows, e.At, nil
 	}
 	if have && now.Before(e.RetryAt) {
@@ -382,6 +425,25 @@ func planCooldown(d, prev time.Duration) time.Duration {
 		return planCooldownCeiling
 	}
 	return wait
+}
+
+// planFresh is the one cache-hit test: is this snapshot young enough for a
+// caller that will act on readings no older than maxAge?
+//
+// maxAge 0 is "fresh only" and no stored entry satisfies it. A reading
+// stamped in the future is not fresh either — a clock that moved backwards
+// is a snapshot nobody can age, and treating it as new would pin the whole
+// instance on it.
+//
+// It is a function because two branches ask it now (the normal path and the
+// quiet one), and the failure mode of a second copy is a quiet reader
+// accepting a reading the guard beside it would refuse.
+func planFresh(e planEntry, now time.Time, maxAge time.Duration) bool {
+	if maxAge <= 0 || e.At.IsZero() {
+		return false
+	}
+	age := now.Sub(e.At)
+	return age >= 0 && age < maxAge
 }
 
 func (c *PlanCache) load() (planEntry, bool) {

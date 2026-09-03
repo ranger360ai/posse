@@ -502,6 +502,12 @@ type planRead struct {
 	guarded   bool      // any plan_guard_<window>: configured — then blindness is worth saying
 	noAdapter bool      // the guard is armed and nothing here can read a meter (ADR 0012 D4)
 	noSource  bool      // the guard is armed, an adapter ships, and this platform holds no credential (ADR 0019 D3)
+	// quiet is why this tick asked the endpoint nothing, in the two words
+	// the header has room for ("guard off", "meter quiet") — or "" when the
+	// meter is readable. It is not a failure and has no clock: nobody asked
+	// anybody anything (posse.PlanQuiet, ranger-base-4rfw1). Its whole job
+	// on screen is to keep the reading beside it from being read as now.
+	quiet string
 	// class is WHICH failure a blind read was, in the few words the header
 	// has room for (ADR 0019 D2's four classes, bead rangerhq-pwpx). Empty
 	// is every failure that is not a credential condition — a dead socket, a
@@ -574,8 +580,30 @@ func (c *cockpit) scanPlan() {
 	// and the 429s that bought cost the fleet a three-hour blind guard.
 	// Most of these ticks are now a file read, and the ones that are not
 	// are the whole instance's one request per TTL.
-	if u, at, err := c.app.PlanCache("cockpit").Read(c.app.PlanUsageTTL(io.Discard)); err == nil {
+	//
+	// …and NONE of them is a request when the cache is quiet
+	// (planquiet.go). That is the cache's rule and not this tick's — the
+	// two ticks that re-armed a 429 window on 2026-09-02 went out through
+	// this exact line — but the header has to say which state it is
+	// looking at, because a snapshot nobody is refreshing shown without its
+	// age is a number read as the present (ranger-base-4rfw1).
+	pc := c.app.PlanCache("cockpit")
+	if pc.Quiet != nil {
+		r.quiet = pc.Quiet.Why()
+	}
+	if u, at, err := pc.Read(c.app.PlanUsageTTL(io.Discard)); err == nil {
 		r.line, r.at = u.Line(), at
+	} else if r.quiet != "" {
+		// No request was made, so there is no failure to classify and no
+		// clock to start — everything in the else below would be a
+		// diagnosis of a read that never happened. What the header CAN
+		// still show is the last reading anybody took, asked for by name
+		// and rendered with its age (planSegment): a meter nobody is
+		// refreshing is exactly where a number shown without one starts
+		// lying.
+		if u, at, ok := pc.LastReading(); ok {
+			r.line, r.at = u.Line(), at
+		}
 	} else {
 		// The failures that are not blindness: no adapter (ADR 0012 D4) and
 		// no credential store on this platform (ADR 0019 D3). Neither has a
@@ -699,7 +727,36 @@ func (c *cockpit) planSegment(r planRead) string {
 		if !r.at.IsZero() && r.at.Before(now) {
 			c.planReadAt = r.at
 		}
+		if r.quiet != "" {
+			// A reading nothing is refreshing, and the age is the half that
+			// makes it honest: with the meter quiet this number only ever
+			// gets older, and `5h 46% · 7d 29%` on its own reads as now.
+			// The age is stated for every quiet reading, however fresh —
+			// "fresh enough not to mention" is a judgment the TTL makes
+			// about a snapshot somebody is still refreshing, and nobody is
+			// (ranger-base-4rfw1).
+			//
+			// Terse on purpose: this rides the header's flex column, which
+			// truncates from its TAIL, so every word spent here is one the
+			// reading itself loses first on a narrow pane.
+			return r.line + " · " + r.quiet + " · last reading " + posse.BlindFor(now.Sub(c.planReadAt))
+		}
 		return r.line
+	}
+	if r.quiet != "" {
+		if !r.guarded {
+			// The guard is off and this box has never taken a reading:
+			// there is nothing to show and nothing being metered. Same
+			// silence as an unguarded box has always had — a permanent
+			// "guard off" segment on every shop that never armed the guard
+			// is furniture, and furniture is what the header's own blind
+			// line became.
+			return ""
+		}
+		// Armed and quiet by the operator's flag, with no snapshot to
+		// serve. Said, because the thresholds are set and the operator
+		// believes there is a brake.
+		return "plan — · " + r.quiet + ", no reading"
 	}
 	if !r.guarded {
 		return "" // no guard: nothing to be blind about, nothing to say
