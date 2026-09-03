@@ -191,6 +191,11 @@ func TestInitKeepsExamplePIDsTheConfigDependsOn(t *testing.T) {
 // it (ADR 0015 §3). Moving a file out from under that turns the next launch's
 // verify into a MISSING, which refuses dispatch — so init does not, and says
 // where the retirement belongs instead.
+//
+// ranger-base-39jnl widened the answer without changing it: init no longer
+// declines the RETIREMENT on a promoted home, it declines the whole RUN.
+// Same rule, one level up — every path init would write here is `posse
+// promote`'s — so this now pins the refusal and the roster it left intact.
 func TestInitDoesNotRetireUnderARealPromotion(t *testing.T) {
 	t.Parallel()
 	a := crewQAHome(t)
@@ -220,14 +225,15 @@ func TestInitDoesNotRetireUnderARealPromotion(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
-		t.Fatalf("re-init: %v", err)
+	err = a.initFrom(&out, posse.Seed, "embedded")
+	if err == nil {
+		t.Fatalf("re-init on a promoted home returned nil — it must refuse (ranger-base-39jnl); it said %q", out.String())
+	}
+	if !strings.Contains(err.Error(), "posse promote") {
+		t.Errorf("refusal said %q — refusing without naming where the fix belongs is a silent no-op", err)
 	}
 	if got := a.ListAgents(); len(got) != 1 || got[0] != pinned {
 		t.Errorf("agents/ = %v — a promoted home's roster is the constitution's, not init's", got)
-	}
-	if !strings.Contains(out.String(), "constitution") {
-		t.Errorf("init said %q — refusing without naming where the fix belongs is a silent no-op", out.String())
 	}
 	if v := a.VerifyPromoted(); len(v.Missing) > 0 || len(v.Changed) > 0 || v.Err != nil {
 		t.Errorf("VerifyPromoted after init: missing=%v changed=%v err=%v — the launch verify must still pass", v.Missing, v.Changed, v.Err)

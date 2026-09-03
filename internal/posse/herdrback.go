@@ -1435,8 +1435,8 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// is what keeps every pre-0015 home launching.
 	if v := a.VerifyPromoted(); !v.OK() {
 		if o.Bead != "" {
-			return nil, Die("%s\n  dispatch refuses to launch on a constitution nobody promoted (ADR 0015 §3)\n"+
-				"  the operator clears it with: posse promote", v.Line())
+			return nil, constitutionRefusal{Die("%s\n  dispatch refuses to launch on a constitution nobody promoted (ADR 0015 §3)\n"+
+				"  the operator clears it with: posse promote", v.Line())}
 		}
 		b.warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)\n", v.Line())
 	}

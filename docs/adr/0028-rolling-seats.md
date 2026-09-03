@@ -3,6 +3,8 @@
 *Status: accepted 2026-08-27 (spike + decision on ranger-base-cpo9, crew
 session with the operator) · owner: richard · amends 0011 (kept-list) and
 0020 §5 · implements 0016 · supersedes the design ask on ranger-base-l8u7 ·
+amended 2026-09-02 (§2 a constitution refusal is not an attempt —
+ranger-base-39jnl) ·
 amended 2026-08-28 (§1 the refill re-offers every free seat and the settle
 is the level-trigger, the reap rides it; §3 the busy map holds only this
 Run's fires, readings expire with the fire pass — ranger-base-t8tq, as
@@ -83,6 +85,17 @@ denominates the epoch; `-n`/`autostart_max_beads` bound launch attempts per
 epoch, preserving their original intent (bound unattended launches per unit
 time). 0020 §5's width law re-denominates per-epoch and keeps its point: a
 hire must not silently raise spend authority.
+
+*(amended 2026-09-02, ranger-base-39jnl)* An **attempt** is a launch that
+reached a runtime — successes and failures alike, because a failure still
+cost the box a session and the persona a turn. ADR 0015 §3's launch verify
+is the one refusal that costs neither: it fires in `planLaunch` before a
+session is created, before the bead is claimed and before any prompt is
+sent. It is handed back to the epoch, and the fire pass stops rather than
+re-deciding one reading of one home once per seat. MEASURED 2026-09-02: an
+older posse on PATH made every launch refuse there, and a `-n 30` epoch
+was spent on thirty refusals that reached nothing — the fleet then sat out
+the hour with the operator's fix already in place.
 
 **§3 — Brakes stay exactly where they are.** Plan verdict per-bead, load
 guard per-launch, step-down/tier/uncounted per-bead, overflow's rolling-7d

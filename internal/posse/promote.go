@@ -190,12 +190,32 @@ const promoteManifestVersion = 1
 // an operator's persona out of routing in two inits (ranger-base-rgx0).
 type PromoteManifest struct {
 	Version    int               `json:"version"`
+	Posse      string            `json:"posse,omitempty"` // VersionString() of the binary that wrote this
+	Set        []string          `json:"set,omitempty"`   // PromotedPaths as that binary knew it
 	PromotedAt string            `json:"promoted_at"`
 	Seeded     bool              `json:"seeded,omitempty"`
 	Source     string            `json:"source,omitempty"` // constitution dir promoted from
 	Repo       string            `json:"repo,omitempty"`   // its git root
 	SHA        string            `json:"sha,omitempty"`    // the commit promoted
 	Files      map[string]string `json:"files"`            // slash path → sha256 hex
+}
+
+// stampWriter records WHICH posse wrote this manifest and WHAT SET it walked
+// while writing it (ranger-base-39jnl). Both writers call it, and neither
+// field is ever read as a permission — they exist so a mismatch can name its
+// cause instead of pointing at a file.
+//
+// The set is the load-bearing half. `Files` alone cannot distinguish "the
+// home has no runtimes/" from "the posse that wrote this did not know
+// runtimes/ existed", and that ambiguity is the whole of the 2026-09-02
+// outage: a 08-29 release binary shadowed the promoted one on PATH, its
+// PromotedPaths predated `runtimes` joining the set (ADR 0039 D2), so
+// HashPromotedSet never walked runtimes/ while the manifest named
+// runtimes/claude.yaml — and every dispatched launch was refused for ~90
+// minutes over a file that was present and hash-matched.
+func (m *PromoteManifest) stampWriter() {
+	m.Posse = VersionString()
+	m.Set = append([]string{}, PromotedPaths...)
 }
 
 // PromoteManifestPath is where the manifest sits.
@@ -324,6 +344,112 @@ type PromoteVerdict struct {
 	Added    []string      // the home has it; the manifest does not name it
 	Err      error         // the manifest or the home could not be read at all
 	Elapsed  time.Duration // what the check cost (ADR 0015 marks this ASSUMED-negligible)
+
+	// Drift is the promoted-set disagreement between the manifest's writer
+	// and this binary, rendered, or "" when the two walk the same set
+	// (ranger-base-39jnl). It is a DIAGNOSIS, never a verdict: it does not
+	// enter OK(), it only leads Line() when there is already a mismatch to
+	// explain — a newer posse reading an older manifest is the ordinary
+	// upgrade order, and refusing on the drift alone would take the fleet
+	// down on every release that widens PromotedPaths.
+	Drift string
+}
+
+// manifestRoots is the promoted set a manifest was written for: its own
+// `set` when it records one, else the top-level segment of every key in
+// Files — which is what makes this readable on the manifests already on
+// disk, written before the field existed.
+//
+// The derived form is one-directional by construction and says so: a home
+// with no skills/ contributes no `skills` key, so a derived set is a SUBSET
+// of what its writer walked. That is why setDrift below only ever concludes
+// "the manifest names a root this binary does not walk" from it, and needs
+// the recorded `set` for the other direction.
+func manifestRoots(m *PromoteManifest) (roots []string, recorded bool) {
+	if len(m.Set) > 0 {
+		return append([]string{}, m.Set...), true
+	}
+	seen := map[string]bool{}
+	for p := range m.Files {
+		root := p
+		if i := strings.Index(p, "/"); i >= 0 {
+			root = p[:i]
+		}
+		if !seen[root] {
+			seen[root] = true
+			roots = append(roots, root)
+		}
+	}
+	sort.Strings(roots)
+	return roots, false
+}
+
+// setDrift renders the promoted-set disagreement, or "" when there is none.
+//
+// This is the line the 2026-09-02 outage needed and did not get. `posse
+// promote` had written a manifest naming runtimes/claude.yaml; the binary
+// PATH then resolved was a release from three days earlier whose
+// PromotedPaths had no `runtimes` in it, so HashPromotedSet never walked the
+// directory and VerifyPromoted reported `missing runtimes/claude.yaml` —
+// about a file that was present, readable and hash-identical. The file was
+// never the fact. The two lists were.
+func setDrift(m *PromoteManifest) string {
+	theirs, recorded := manifestRoots(m)
+	mine := PromotedPaths
+	have := map[string]bool{}
+	for _, p := range mine {
+		have[p] = true
+	}
+	var onlyTheirs []string // in the manifest's set, not in this binary's
+	for _, p := range theirs {
+		if !have[p] {
+			onlyTheirs = append(onlyTheirs, p)
+		}
+	}
+	var onlyMine []string // in this binary's set, not in the manifest's
+	if recorded {
+		had := map[string]bool{}
+		for _, p := range theirs {
+			had[p] = true
+		}
+		for _, p := range mine {
+			if !had[p] {
+				onlyMine = append(onlyMine, p)
+			}
+		}
+	}
+	if len(onlyTheirs) == 0 && len(onlyMine) == 0 {
+		return ""
+	}
+	by := ""
+	if m.Posse != "" {
+		by = " by posse " + m.Posse
+	}
+	set := "promoted set"
+	if !recorded {
+		// Derived from the file keys, so say so: the manifest's writer may
+		// have walked more than this, and an operator comparing the two
+		// lists must not read a subset as the whole declaration.
+		set = "at least the promoted set"
+	}
+	// Which way the drift runs decides what to tell the operator, and the
+	// two are not the same finding.
+	//
+	// `onlyTheirs` — the manifest names a root this binary does not walk —
+	// can only mean an OLDER posse is reading a NEWER manifest, and the only
+	// ordinary way that happens is a second binary earlier on PATH. That is
+	// the outage, and it says so.
+	//
+	// `onlyMine` alone — this binary walks more than the manifest was
+	// written for — is the ORDINARY UPGRADE ORDER: a release that widens the
+	// promoted set, installed but not yet promoted. Calling that "a
+	// different posse is on PATH" would cry wolf on every such release.
+	tail := "the manifest predates this binary's promoted set — re-promote to bring it forward"
+	if len(onlyTheirs) > 0 {
+		tail = "a different, OLDER posse is answering here (`which -a posse` shows what PATH resolves first)"
+	}
+	return fmt.Sprintf("manifest written for %s [%s]%s; this binary (%s) walks [%s] — %s",
+		set, strings.Join(theirs, " "), by, VersionString(), strings.Join(mine, " "), tail)
 }
 
 // OK is whether the launch may proceed unmarked.
@@ -340,6 +466,18 @@ func (v PromoteVerdict) Line() string {
 	}
 	if v.OK() {
 		return "constitution matches its manifest"
+	}
+	// The promoted-set drift leads, when there is one (ranger-base-39jnl).
+	// Every path class below is downstream of it — a root this binary does
+	// not walk reports as `missing` for every file under it, and one it
+	// walks that the manifest never covered reports as `unpromoted` for
+	// every file under it — so naming the files first is naming the
+	// symptom. The classes still follow: a drifted binary can also be
+	// looking at genuinely changed prose, and that is the operator's next
+	// question.
+	lead := ""
+	if v.Drift != "" {
+		lead = v.Drift + "; "
 	}
 	var parts []string
 	for _, c := range []struct {
@@ -361,7 +499,7 @@ func (v PromoteVerdict) Line() string {
 		}
 		parts = append(parts, fmt.Sprintf("%s %s%s", c.label, strings.Join(shown, ", "), more))
 	}
-	return "constitution does not match its manifest: " + strings.Join(parts, "; ")
+	return lead + "constitution does not match its manifest: " + strings.Join(parts, "; ")
 }
 
 // VerifyPromoted hashes the home's promoted set and compares it with the
@@ -387,6 +525,7 @@ func (a *App) VerifyPromoted() PromoteVerdict {
 		return v
 	}
 	v.Manifest = m
+	v.Drift = setDrift(m)
 	have, err := HashPromotedSet(a.Home)
 	if err != nil {
 		v.Err, v.Elapsed = err, time.Since(start)
@@ -504,6 +643,7 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 		SHA:        sha,
 		Files:      files,
 	}
+	m.stampWriter()
 	if err := m.write(a.PromoteManifestPath()); err != nil {
 		return err
 	}
@@ -1024,6 +1164,7 @@ func (a *App) SeedPromoteManifest() error {
 		Seeded:     true,
 		Files:      files,
 	}
+	m.stampWriter()
 	return m.write(a.PromoteManifestPath())
 }
 

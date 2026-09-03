@@ -1091,7 +1091,7 @@ func quotedStamp(dateBin string) string {
 // renderShim writes the POSIX sh shim for one command.
 func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n", persona)
+	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — rendered from the PID's deny: at launch; do not edit (%s)\n", persona, gateShimMarker)
 	fmt.Fprintf(&b, "RHQ_GATE_LOG=%s\n", shQuote(log))
 	fmt.Fprintf(&b, "posse_refuse() {\n  echo \"refused by posse gate: %s $* (deny: $RHQ_GATE_RULE)\" >&2\n", cmd)
 	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && echo \"$RHQ_GATE_HINT\" >&2\n")

@@ -847,6 +847,15 @@ func main() {
 		// not be read": an unreadable store is not an all-clear, the same
 		// rule `posse beads check` keeps.
 		need(args, 0, "posse status")
+		// WHICH posse is answering, before anything it says about the shop
+		// (ranger-base-39jnl). Every other line here is a reading taken by
+		// this binary, and for ~90 minutes on 2026-09-02 the binary
+		// answering on this box was a release three days stale that a brew
+		// keg had put ahead of ~/.local/bin on PATH. A status surface that
+		// cannot name itself cannot be checked against the promoted set.
+		// Printed always, warned only on a disagreement — a box legitimately
+		// runs a posse that is not first on PATH.
+		posse.ReportPosseBinary(out)
 		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
 		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))
 		// The shop pulse, on the header and in place of any raw open count

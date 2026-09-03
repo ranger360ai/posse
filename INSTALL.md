@@ -539,6 +539,14 @@ later and with nothing naming the cause (`ranger-base-h7cd`). Arming §3 is a
 ratification, so `posse promote` is the only thing that does it. Init says
 which of the two happened on every run.
 
+On a **promoted** home `init` does not run at all — it refuses, naming the
+manifest and the commit behind it (`ranger-base-39jnl`). Every path it would
+copy there is `posse promote`'s, and only promote may restate a manifest that
+is a claim about a commit, so an `init` that filled a gap would leave the
+launch verify refusing every dispatched launch with no re-stamp available to
+fix it (`ranger-base-pith`). To look at what a seed lays down without
+touching this home: `RHQ_HOME=<scratch> posse init`.
+
 ---
 
 ## 5. config.yaml — the minimum that matters
@@ -657,10 +665,12 @@ moves each generic that is still byte-for-byte the shipped example out of
 arm the launch verify behind your back. It leaves alone —
 and names — any you edited in place (that one is your persona now, not an
 example), any named by `coordinator:`, `default_persona:` or
-`verify_assignee:`, and all of them on a home `posse promote` manages,
-where the retirement belongs in the constitution repo instead. Work
+`verify_assignee:`. Work
 already assigned to a retired name is not reassigned: check `bd list
 --assignee <name>` before you dispatch again.
+
+On a home `posse promote` manages, `init` refuses outright (§4) and the
+retirement belongs in the constitution repo instead.
 
 The frontmatter keys that do work:
 
@@ -1993,7 +2003,7 @@ one budget and the caps become conservative, not wrong.
 
 | symptom | cause | fix |
 |---|---|---|
-| `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a real seed tree — `config.yaml` with `agents/`, `recipes/` and `envs/` — sits one level above the binary and wins over the embed: right in a dev build, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in. Find the line that names what happened — not by position, `retireExamplePIDs` can print lines of its own first — and go by which sentence it is: `filled <n> missing seed file(s) and re-stamped ... (seeded)` means the manifest followed the fill-in and the home launches. `nothing missing: ... was already fully seeded ...` means the wrong seed had already written every filename the embed would have — this run changed nothing, and any file it wrote with the wrong content is still wrong; `copyIfMissing` never overwrites, so fix that file's content by hand (or delete it and re-run init to have the embed fill it in). If *neither* sentence appears, this home was **promoted**, not seeded — the filled-in files are outside `promoted.json` and every *dispatched* launch now refuses (ADR 0015 §3); `posse promote` again is what clears it (ranger-base-pith) |
+| `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a real seed tree — `config.yaml` with `agents/`, `recipes/` and `envs/` — sits one level above the binary and wins over the embed: right in a dev build, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in. Find the line that names what happened — not by position, `retireExamplePIDs` can print lines of its own first — and go by which sentence it is: `filled <n> missing seed file(s) and re-stamped ... (seeded)` means the manifest followed the fill-in and the home launches. `nothing missing: ... was already fully seeded ...` means the wrong seed had already written every filename the embed would have — this run changed nothing, and any file it wrote with the wrong content is still wrong; `copyIfMissing` never overwrites, so fix that file's content by hand (or delete it and re-run init to have the embed fill it in). If init **refused** instead — `refuses to write ...: it carries a promoted constitution` — this home is **promoted**, not seeded, and no seed may be laid over it: `posse promote` is the only thing that writes here (`ranger-base-39jnl`; before it, init copied the files, said nothing, and every *dispatched* launch refused from then on — `ranger-base-pith`) |
 | `posse init` prints `ignored <dir>: not a seed tree` | a directory named `examples/` sits one level above the binary — `~/go/bin/posse` reads `~/go/examples`, and a project with its own `bin/` reads its own `examples/` — so init looked at it, found it was not a seed, and used the embed | nothing: the embed seeded the instance and it is whole. If that directory *was* meant to be the seed, give it a `config.yaml` and `agents/`, `recipes/`, `envs/` |
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
 | `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH |

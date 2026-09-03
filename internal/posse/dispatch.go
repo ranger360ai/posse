@@ -2225,10 +2225,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 	// The Run's occupancy, plus this fire pass's own readings (seatMap).
 	seats := newSeatMap(busy)
 	dispatched, attempts := 0, 0
-	outside := 0 // beads whose lane does not contain --persona X
+	outside := 0            // beads whose lane does not contain --persona X
+	unratifiedHome := false // ADR 0015 §3 refused a launch: the whole pass is over
 	var pending []*pendingBead
 	for _, is := range beads {
 		if max > 0 && attempts >= max {
+			break
+		}
+		if unratifiedHome {
 			break
 		}
 		if !beadIDRe.MatchString(is.ID) {
@@ -2589,8 +2593,22 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			// (rangerhq-81d).
 			var lost claimLostError
 			var failed sessionFailure
+			var unratified constitutionRefusal
 			switch {
 			case errors.As(err, &lost):
+			case errors.As(err, &unratified):
+				// Nothing was attempted (constitutionRefusal's own doc): no
+				// session, no claim, no prompt. ADR 0028 §2's ration counts
+				// what was SENT, so this one is handed back — the epoch must
+				// still have its launches when the operator's `posse
+				// promote` lands.
+				attempts--
+				// And the fact is the box's, so there is nothing left for
+				// this pass to try: every remaining bead reads the same home
+				// against the same manifest with the same binary. Stop,
+				// rather than printing the identical refusal once per seat.
+				unratifiedHome = true
+				d.printf("◷ pass over: every launch on this home reads the same manifest, and this attempt cost no launch ration (ADR 0028 §2)\n")
 			case errors.As(err, &failed):
 				d.strand(session)
 				// ADR 0013 §2 "Ceiling" (ranger-base-8h5p): the pane-local
@@ -3675,6 +3693,28 @@ func (e claimLostError) Unwrap() error { return e.error }
 type sessionFailure struct{ error }
 
 func (e sessionFailure) Unwrap() error { return e.error }
+
+// constitutionRefusal marks the launch verify's refusal (ADR 0015 §3,
+// planLaunch): the home's promoted set does not match its manifest, so a
+// DISPATCHED launch is refused before a session is created, before the bead
+// is claimed and before any prompt is sent.
+//
+// It is its own type for the ration's sake (ranger-base-39jnl). ADR 0028 §2
+// denominates `-n`/`autostart_max_beads` in launch ATTEMPTS, failures
+// included, because a failure still cost the box a session and the persona a
+// turn. This one costs neither: nothing was created, nothing was claimed,
+// nothing was sent. On 2026-09-02 a stale posse on PATH made every launch
+// refuse here, and the pass spent the whole -n 30 ration on thirty refusals
+// that never reached a runtime — the fleet then sat out the epoch with the
+// operator's fix already in place.
+//
+// The fact is also the BOX's, not the bead's and not the slot's: it is one
+// reading of one home, identical for every bead the pass would walk. So the
+// arm that reads this stops the fire loop rather than benching a slot and
+// carrying on to print the same refusal once per seat.
+type constitutionRefusal struct{ error }
+
+func (e constitutionRefusal) Unwrap() error { return e.error }
 
 // unclaimAfterPromptFailure hands the bead back when the claim was made but
 // the prompt never reached the agent (stalled, agent_not_ready, and since

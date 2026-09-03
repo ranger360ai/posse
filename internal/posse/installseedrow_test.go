@@ -88,8 +88,10 @@ func TestInstallSeedingRowLeavesAHomeADispatchWillLaunchOn(t *testing.T) {
 	}
 }
 
-// A promoted home takes no re-stamp from init — by design — and init prints
-// nothing about it, so the only warning the reader can get is the row.
+// A promoted home takes no re-stamp from init — by design — and since
+// ranger-base-39jnl it takes no COPY from init either: the run refuses
+// before the first write. The row still has to name it, because "init
+// refused" is a symptom a reader following §14 has to be able to place.
 func TestInstallSeedingRowNamesPromoteForAPromotedHome(t *testing.T) {
 	t.Parallel()
 	a := initTestApp(t)
@@ -111,26 +113,32 @@ func TestInstallSeedingRowNamesPromoteForAPromotedHome(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := a.initFrom(&out, posse.Seed, "embedded"); err != nil {
-		t.Fatalf("the re-run: %v\n%s", err, out.String())
+	err = a.initFrom(&out, posse.Seed, "embedded")
+	if err == nil {
+		t.Fatalf("the re-run on a promoted home returned nil — it must refuse (ranger-base-39jnl):\n%s", out.String())
 	}
-	v := a.VerifyPromoted()
-	if v.OK() {
-		t.Skip("init now re-stamps a promoted manifest too (ranger-base-pith): the row's caveat is stale, rewrite it")
+	// The refusal has to say WHICH kind of home this is and where the write
+	// belongs, or the reader following the row cannot get from the message
+	// to the fix.
+	for _, want := range []string{"promoted constitution", "posse promote"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("init's refusal does not name %q:\n%v", want, err)
+		}
 	}
-	// Pinned because the outage is silent: nothing in the re-run's output
-	// connects exit 0 to a fleet that has stopped launching.
-	if strings.Contains(out.String(), "promoted.json") {
-		t.Errorf("init spoke about the manifest after all — the row says it does not:\n%s", out.String())
+	// And it refused BEFORE writing: the seed's files are what the launch
+	// verify would have reported as `unpromoted` for the rest of this home's
+	// life, and the whole point of refusing is that they never land.
+	if v := a.VerifyPromoted(); !v.OK() {
+		t.Errorf("the refused init still moved the home off its manifest: %s", v.Line())
 	}
 	body, err := os.ReadFile("../../INSTALL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	row := seedingRow(t, string(body))
-	for _, want := range []string{"posse promote", "promoted.json"} {
+	for _, want := range []string{"posse promote", "carries a promoted constitution"} {
 		if !strings.Contains(row, want) {
-			t.Errorf("INSTALL.md §14's seeding row does not name %q, and init will not tell the reader either:\n%s", want, row)
+			t.Errorf("INSTALL.md §14's seeding row does not name %q, so a reader who hits init's refusal cannot place it:\n%s", want, row)
 		}
 	}
 }

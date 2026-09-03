@@ -139,6 +139,35 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	man, manErr := ReadPromoteManifest(a.PromoteManifestPath())
 	fresh := manErr == nil && man == nil && len(before) == 0
 
+	// A PROMOTED home is not init's to write (ranger-base-39jnl). ADR 0031
+	// §2's fence keys on the persona marker and so covers only sessions; the
+	// operator typing `posse init` by hand walks straight past it, and on
+	// 2026-09-02 that is what happened — the work-laptop install steps run
+	// on the fleet box, which re-seeded examples/ and secrets/ under a
+	// constitution `posse promote` owns.
+	//
+	// The line is `seeded`, not "has a manifest", and it is drawn there on
+	// purpose. A SEEDED manifest is a fresh install's anchor with no commit
+	// behind it, and re-running init on one is the generics upgrade
+	// INSTALL.md §7 advertises: it fills gaps and re-stamps for exactly what
+	// it wrote (`repaired` below). A PROMOTED manifest is a claim about a
+	// commit that only `posse promote` may restate — so init has no re-stamp
+	// available to it there and cannot leave the home consistent even when
+	// it succeeds, which is the whole of ranger-base-pith. Refusing is the
+	// answer pith could not reach from inside init: the copy that breaks the
+	// launch verify simply does not happen.
+	//
+	// An UNREADABLE manifest keeps its old behaviour and is not covered
+	// here: posse cannot say whether that home was promoted or seeded, and
+	// the arm on the way out already names it.
+	if manErr == nil && man != nil && !man.Seeded {
+		return Die("posse init refuses to write %s: it carries a promoted constitution (%s, promoted %s%s)\n"+
+			"  `posse promote` owns every path init would copy here, and only promote may re-stamp the manifest — an init that adds a recipe or a skill leaves the launch verify refusing every dispatched launch (ADR 0015 §3, ranger-base-pith)\n"+
+			"  to update this home: posse promote <constitution dir>\n"+
+			"  to see what a seed would lay down: RHQ_HOME=<scratch> posse init",
+			AbbrevHome(a.Home), PromoteManifestFile, man.PromotedAt, promotedFrom(man))
+	}
+
 	for _, d := range []string{a.Home, a.RecipesDir, a.EnvsDir, a.SecretsDir, a.StateDir, a.AgentsDir, a.SkillsDir(), a.ExampleAgentsDir()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -312,6 +341,10 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			}
 			man.Files[rel] = sum
 		}
+		// This binary computed those hashes, walking ITS PromotedPaths — so
+		// it is this binary the manifest now attests for (ranger-base-39jnl,
+		// promote.go stampWriter).
+		man.stampWriter()
 		if err := man.write(a.PromoteManifestPath()); err != nil {
 			return err
 		}
@@ -563,4 +596,19 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 		fmt.Fprintf(w, "kept agents/%s\n", k)
 	}
 	return nil
+}
+
+// promotedFrom is the ", from <sha> in <repo>" clause a promoted manifest
+// can carry, or "" — a manifest written before those fields, or by a
+// promote that could not name the commit, still refuses; it just says less.
+func promotedFrom(m *PromoteManifest) string {
+	switch {
+	case m.SHA != "" && m.Repo != "":
+		return fmt.Sprintf(", from %s in %s", short(m.SHA), AbbrevHome(m.Repo))
+	case m.SHA != "":
+		return ", from " + short(m.SHA)
+	case m.Source != "":
+		return ", from " + AbbrevHome(m.Source)
+	}
+	return ""
 }

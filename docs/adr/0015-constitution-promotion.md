@@ -25,7 +25,11 @@ shims, accepted with reasons; anchor-state line added
 (ranger-base-zio33, from ranger-base-bejb) · amended 2026-09-01: the
 promoted set gains `runtimes/` — the per-key runtime overlay of ADR 0021
 is read at every launch and was the one launch-read fact at the home no
-manifest attested to (ADR 0039 D2, built in ranger-base-ight8) · informs
+manifest attested to (ADR 0039 D2, built in ranger-base-ight8) · amended 2026-09-02: the manifest records WHICH posse wrote it and
+WHAT SET that posse walked, and the launch verify leads with the
+promoted-set drift rather than a file — an older posse on PATH refused
+every dispatched launch for ~90 minutes naming a file that was present
+and hash-matched (ranger-base-39jnl) · informs
 0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — every `rhq/<p>` spelling below reads `posse/<p>` once the cutover lands (ADR 0046, ranger-base-woox9; unbuilt until its cutover bead closes)*
 
 > The operator asked for the constitution to be clearly separated from
@@ -177,6 +181,28 @@ the same way twice:
   under `state/`, which stays session-writable). It prints
   `git diff <last-promoted>..HEAD -- <constitution paths>` so the
   operator ratifies a diff, not a vibe.
+
+  **Plus its own writer** *(amended 2026-09-02, ranger-base-39jnl)*:
+  `posse` — `VersionString()` of the binary that wrote it — and `set`,
+  that binary's `PromotedPaths`. Both are additive at manifest version
+  1, so an older posse reads such a manifest exactly as before. They
+  exist because the file list alone cannot tell "the home has no
+  `runtimes/`" from "the posse that wrote this did not know `runtimes/`
+  existed", and that ambiguity is a 90-minute fleet outage: a brew keg
+  put a three-day-old release ahead of `~/.local/bin` on PATH, its
+  `PromotedPaths` predated `runtimes` joining the set, and the launch
+  verify refused every dispatched launch naming `missing
+  runtimes/claude.yaml` — a file that was present, readable and
+  hash-identical. `VerifyPromoted` now leads its line with the drift
+  ("manifest written for promoted set […] by posse X; this binary (Y)
+  walks […]") and the path classes follow it. The two directions are
+  different findings and read differently: a manifest naming a root
+  this binary does not walk can only be an OLDER posse answering, and
+  says so; this binary walking *more* than the manifest was written for
+  is the ordinary upgrade order and says *that*. The drift is a
+  **diagnosis, not a verdict** either way: it never enters `OK()`,
+  because refusing on the upgrade direction would take the fleet down
+  on every release that widens the set.
 - **Launch verify** (absorbs the shape of ranger-base-5na): every
   launch hashes the promoted set against the manifest. Dispatch
   **refuses** on mismatch; an interactive launch warns DEGRADED. The

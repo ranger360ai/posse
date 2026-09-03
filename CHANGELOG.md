@@ -263,6 +263,60 @@ nothing.
 
 ### Fixed
 
+**An older `posse` earlier on PATH refused every dispatched launch for 90
+minutes, pointing at a file that was present and hash-matched.**
+
+*Affected: any box where two posse binaries are installed — the classic one
+is `brew install ranger360ai/tap/posse` on a box whose promoted binary lives
+in `~/.local/bin`, since `/opt/homebrew/bin` precedes it.* The release binary
+was three days older than the promoted one, from before `runtimes/` joined
+the promoted set, so it never walked `runtimes/` while the manifest — written
+by the newer binary — named `runtimes/claude.yaml`. The launch verify said
+`missing runtimes/claude.yaml`, which was false in every ordinary reading of
+the word: the file was there, readable, and byte-identical to what the
+manifest recorded. Dispatch refused every launch behind that line for ninety
+minutes and burned an entire `-n 30` epoch on the refusals.
+
+Four things changed:
+
+- `promoted.json` now records **which posse wrote it** and **what promoted
+  set that posse walked** (`posse`, `set`). Both are additive; an older posse
+  reads the file exactly as before.
+- The launch verify leads with the disagreement instead of a filename:
+  `manifest written for promoted set [agents config.yaml recipes runtimes
+  skills] by posse 0.4.0+92da1bc; this binary (0.4.0+feaf301) walks [agents
+  config.yaml recipes skills] — a different, OLDER posse is answering here`.
+  The path classes still follow it. This also works on the manifests already
+  on disk, which record no `set`: the roots are read out of the file keys.
+  The other direction — this binary walks *more* than the manifest was
+  written for — is the ordinary upgrade order (a release that widens the set,
+  installed but not yet promoted), and says so instead: `the manifest
+  predates this binary's promoted set — re-promote`. The drift alone never
+  refuses a launch.
+- `posse status` and every `--watch` preamble now print **which posse binary
+  is running**, and warn when PATH would answer `posse` with a different one:
+  `warning: PATH resolves posse to /opt/homebrew/bin/posse, not the running
+  ~/.local/bin/posse`. A persona session's own gate shim is followed to what
+  it execs rather than counted as a shadow.
+- A launch refused by the constitution verify **no longer spends the `-n`
+  ration**. It creates no session, claims no bead and sends no prompt, so it
+  attempted nothing; and since the fact is one reading of one home, the fire
+  pass stops instead of reprinting the same refusal once per seat.
+
+**`posse init` now refuses a home that `posse promote` manages.**
+
+*Affected: anyone who runs the install steps on a box that already has a
+promoted instance.* Init's operator fence (ADR 0031 §2) keys on the persona
+marker, so it fences sessions and not the operator's own hands — and a
+by-hand `posse init` on the fleet box re-seeded `examples/` and `secrets/`
+under a promoted constitution. A promoted manifest is a claim about a commit
+that only `posse promote` may restate, so an init that fills a gap there
+leaves the launch verify refusing every dispatched launch with no re-stamp
+available to fix it. It now refuses before its first write, naming the
+manifest, the commit behind it, and `posse promote`. A **seeded** home is
+unchanged: re-running init on one is still the generics upgrade INSTALL.md §7
+advertises.
+
 **A 429 storm on the plan-usage endpoint could keep itself alive: posse
 honoured `Retry-After` exactly and asked again at the boundary, forever.**
 

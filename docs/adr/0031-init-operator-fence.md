@@ -1,7 +1,9 @@
 # ADR 0031 — `posse init` joins the operator fence, keyed on the target home, not the persona
 
 *Status: accepted 2026-08-28 · owner: richard · extends ADR 0015 §3
-(bead ranger-base-x26u, measured in ranger-base-h7cd)*
+(bead ranger-base-x26u, measured in ranger-base-h7cd) · amended
+2026-09-02: §6 — a PROMOTED home is nobody's to init, the operator's own
+hands included (ranger-base-39jnl)*
 
 ## Context
 
@@ -90,11 +92,42 @@ stand: a ratification act is the operator's whatever it points at, and
 presented. If one arrives, the origin stamp is sitting there; that is a
 one-line amendment, not a design.
 
+**6. A promoted home is refused whoever is typing** *(amended
+2026-09-02, ranger-base-39jnl)*. §2 keys on `EnvPersona`, so it is a
+fence around SESSIONS — and the leak it was written for arrived again
+through the door it does not cover. MEASURED 2026-09-02: the operator
+ran the work-laptop install steps on the fleet box by hand; `posse init`
+re-seeded `examples/` and `secrets/` under a constitution `posse
+promote` owns, in the same hour a shadowed binary took dispatch down.
+
+So `initFrom` refuses, before its first write, when the target home
+carries a manifest that is not `seeded`. The line is `seeded` and not
+"has a manifest" on purpose:
+
+- A **seeded** manifest is a fresh install's anchor with no commit
+  behind it, and re-running init on one is the generics upgrade
+  INSTALL.md §7 advertises: it fills gaps and re-stamps for exactly what
+  it wrote. Unchanged.
+- A **promoted** manifest is a claim about a commit that only `posse
+  promote` may restate. Init has no re-stamp available to it there, so
+  even a successful run leaves the launch verify refusing every
+  dispatched launch — which is `ranger-base-pith`, reached from inside
+  init and unfixable from there. Refusing is the fix pith could not
+  reach: the copy simply does not happen.
+- An **unreadable** manifest keeps its old behaviour. Posse cannot say
+  whether that home was promoted or seeded, and the existing arm on the
+  way out already names it.
+
+Same enforcement class as §2 (`cooperative`, ADR 0025) and the same
+shape of refusal: it names the manifest, the commit behind it, `posse
+promote`, and the working form `RHQ_HOME=<scratch> posse init`.
+
 ## Consequences
 
 - A persona's bare `posse init` becomes a loud refusal instead of a
   silent live-home write; scratch seeding is unchanged; the operator's
-  own init is unchanged.
+  own init is unchanged — except on a promoted home, which §6 refuses
+  for every caller (amended 2026-09-02, ranger-base-39jnl).
 - A session launched by a pre-0031 launcher and running a post-0031
   binary refuses *all* init until relaunch (origin absent, fail
   closed). The window is the hours between promoting the binary and the

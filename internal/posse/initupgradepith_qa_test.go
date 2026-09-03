@@ -100,16 +100,23 @@ func TestQAUpgradeInitDoesNotBreakTheLaunchVerifyItCannotSee(t *testing.T) {
 	}
 }
 
-// TestQAUpgradeInitOnAPromotedHomeNamesPossePromote is the same trap on the
-// OTHER kind of armed home. A `seeded` manifest gets re-stamped for exactly
-// what this run wrote (the case above); a genuinely PROMOTED one (Seeded ==
-// false) never may be — that manifest is a claim about a commit, and only
-// `posse promote` may restate it (init.go's comment on `repaired`). So an
-// upgrade init that adds recipes/ or skills/ files to a promoted home has no
-// re-stamp available to it at all, and used to say nothing either — exit 0,
-// the manifest untouched, every dispatched launch refusing from then on with
-// nothing connecting it back to this init.
-func TestQAUpgradeInitOnAPromotedHomeNamesPossePromote(t *testing.T) {
+// TestQAUpgradeInitOnAPromotedHomeRefuses is the same trap on the OTHER kind
+// of armed home. A `seeded` manifest gets re-stamped for exactly what this
+// run wrote (the case above); a genuinely PROMOTED one (Seeded == false)
+// never may be — that manifest is a claim about a commit, and only `posse
+// promote` may restate it (init.go's comment on `repaired`). So an upgrade
+// init that adds recipes/ or skills/ files to a promoted home has no
+// re-stamp available to it at all: it used to say nothing (exit 0, the
+// manifest untouched, every dispatched launch refusing from then on), then
+// under ranger-base-pith it said `posse promote` on the way out — and still
+// left the fleet refusing until somebody read the line.
+//
+// ranger-base-39jnl closes it at the source: a home carrying a PROMOTED
+// manifest is not init's to write at all, so the copy that breaks the launch
+// verify never happens. This pins the refusal AND what it protects — the
+// home still verifies, and a dispatched launch still goes — because a
+// refusal that merely trades one broken home for another is not the fix.
+func TestQAUpgradeInitOnAPromotedHomeRefuses(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
@@ -139,16 +146,22 @@ func TestQAUpgradeInitOnAPromotedHomeNamesPossePromote(t *testing.T) {
 
 	// THE UPGRADE, on the promoted home this time.
 	out.Reset()
-	if err := a.initFrom(&out, newerSeed(t), "newer"); err != nil {
-		t.Fatal(err)
+	err = a.initFrom(&out, newerSeed(t), "newer")
+	if err == nil {
+		t.Fatalf("init wrote a promoted home — it must refuse (ranger-base-39jnl):\n%s", out.String())
 	}
-	if v := a.VerifyPromoted(); v.OK() {
-		t.Fatal("fixture: the upgrade did not add anything the manifest doesn't already name")
-	} else if !strings.Contains(out.String(), "posse promote") {
-		t.Errorf("init broke the launch verify and said nothing about it:\n  verdict: %s\n  init said:\n%s", v.Line(), out.String())
+	if !strings.Contains(err.Error(), "posse promote") {
+		t.Errorf("the refusal does not name where the write belongs:\n%v", err)
 	}
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "architect", Bead: "x-1"}); err == nil {
-		t.Fatal("fixture: expected the upgrade to trip the launch verify on a promoted home")
+	// What the refusal is FOR: the home is untouched, so it still matches
+	// its manifest and still dispatches. Before 39jnl this same call landed
+	// newthing.yaml and newskill/ inside the promoted set, and every
+	// dispatched launch was refused from here on.
+	if v := a.VerifyPromoted(); !v.OK() {
+		t.Errorf("the refused init still moved the home off its manifest: %s", v.Line())
+	}
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "architect", Bead: "x-1"}); err != nil {
+		t.Errorf("a refused init still cost the fleet its dispatch: %v", err)
 	}
 }
 
