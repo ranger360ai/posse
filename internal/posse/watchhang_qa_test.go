@@ -33,10 +33,12 @@ package posse
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -458,24 +460,40 @@ func TestQABackupLevelIsSampledFasterThanItFires(t *testing.T) {
 // The sampler, running. Two arms, because a sampler that wrote on every tick
 // regardless of the level would pass the first one alone.
 func TestQABackupLoopSamplesTheLevelBetweenIntervals(t *testing.T) {
-	d, a, at := backupLoopRig(t, "60s")
+	d, a, _ := backupLoopRig(t, "16s")
+	// The rig's clock is a bare variable; this pin moves it WHILE the loop
+	// runs, so the reads and the write need a lock of their own.
+	var mu sync.Mutex
+	at := time.Date(2026, 9, 1, 3, 15, 0, 0, time.UTC)
+	d.Now = func() time.Time { mu.Lock(); defer mu.Unlock(); return at }
+	advance := func(by time.Duration) { mu.Lock(); at = at.Add(by); mu.Unlock() }
 	cfg, err := LoadBackupConfig(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The cold start writes one and sets the level.
-	runBackupLoop(t, d, a, cfg, 1, 60*time.Second)
+	runBackupLoop(t, d, a, cfg, 1, 16*time.Second)
 	if got := archives(t, a); len(got) != 1 {
 		t.Fatalf("the first loop wrote %v, want one archive", got)
 	}
 
-	// TREATMENT: the level comes up 70 seconds in. The sampler reads it at
-	// 7.5s; a ticker at cfg.Interval would not look until 60s, so a grace
-	// well under a minute is what separates the two.
-	*at = at.Add(70 * time.Second)
-	took := runBackupLoop(t, d, a, cfg, 2, 40*time.Second)
+	// TREATMENT: the loop starts with the level DOWN, and it comes up a
+	// second later, while the loop is running. That ordering is the whole
+	// pin: backupLoop evaluates the level once at start (the restart rule),
+	// so a level already up when the loop starts is written by that
+	// evaluation and proves nothing about the ticker — a ticker at the full
+	// interval passed the earlier form of this arm (ranger-base-iyg9w,
+	// mutation-checked). Sampling at interval/8 = 2s reads the level within
+	// a few seconds of it coming up; a ticker at the 16s interval would not
+	// look inside the 10s grace at all.
+	raise := time.AfterFunc(time.Second, func() { advance(20 * time.Second) })
+	defer raise.Stop()
+	took := runBackupLoop(t, d, a, cfg, 2, 10*time.Second)
 	if got := archives(t, a); len(got) != 2 {
-		t.Fatalf("the level was up and %s of sampling wrote %v, want two archives", took, got)
+		t.Fatalf("the level came up 1s in and %s of sampling wrote %v, want two archives — the level is read once per interval, not sampled", took, got)
+	}
+	if took < time.Second {
+		t.Fatalf("the second archive took %s, before the level was raised — the start evaluation wrote it and this arm measured nothing", took)
 	}
 	if took >= cfg.Interval {
 		t.Fatalf("the second archive took %s, which a ticker at the %s interval would also have managed — this measures nothing", took, cfg.Interval)
@@ -484,7 +502,7 @@ func TestQABackupLoopSamplesTheLevelBetweenIntervals(t *testing.T) {
 	// ABSENCE: the clock does not move, so the level is down. A sampler that
 	// fired on the tick rather than on the level would write a third here,
 	// and it is given longer than the treatment arm needed.
-	quiet := runBackupLoop(t, d, a, cfg, 3, 3*took+10*time.Second)
+	quiet := runBackupLoop(t, d, a, cfg, 3, 3*took+6*time.Second)
 	if got := archives(t, a); len(got) != 2 {
 		t.Fatalf("%s of sampling under a down level wrote %v, want the same two — the sampler is firing on its tick", quiet, got)
 	}
@@ -514,5 +532,165 @@ func TestQAWatchStartsAndJoinsTheWatchdog(t *testing.T) {
 	d.printf("after the loop\n")
 	if !strings.Contains(dispatcherOut(d), "after the loop") {
 		t.Fatal("the dispatcher is unusable after Watch returned")
+	}
+}
+
+// ─── the kill's second half, and the signal's first (ranger-base-iyg9w) ─────
+
+// hangingBinWith is hangingBin with a body of the pin's choosing after the
+// pid line and the warm exit. The shapes below need a grandchild, or a
+// trap, and the exec'd single-process shape above deliberately has neither.
+func hangingBinWith(t *testing.T, body string) (bin, pidFile string) {
+	t.Helper()
+	dir := t.TempDir()
+	bin = filepath.Join(dir, "hang")
+	pidFile = filepath.Join(dir, "pid")
+	script := fmt.Sprintf("#!/bin/sh\necho $$ > %q\n[ \"$1\" = --warm ] && exit 0\n%s\n", pidFile, body)
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command(bin, "--warm").Run(); err != nil {
+		t.Fatalf("the hanging child cannot be run at all (%v) — this test would measure nothing", err)
+	}
+	if err := os.Remove(pidFile); err != nil {
+		t.Fatal(err)
+	}
+	return bin, pidFile
+}
+
+// The grandchild on the pipe. herdr.go names this shape as the reason for
+// herdrWaitDelay: os/exec's Wait does not return until the stdout/stderr
+// copies are done, and a grandchild that inherited those pipes keeps them
+// open after the child is killed. Dropping WaitDelay survived every pin
+// above (ranger-base-iyg9w, mutation-checked), because hangingBin execs its
+// sleep on purpose. This child forks one instead.
+func TestQAHungHerdrChildWithAGrandchildOnThePipeStillReturns(t *testing.T) {
+	t.Parallel()
+	const sleep = 12 * time.Second
+	body := fmt.Sprintf("sleep %.0f &\nexec sleep %.0f", sleep.Seconds(), sleep.Seconds())
+	bin, pidFile := hangingBinWith(t, body)
+	var log strings.Builder
+	h := Herdr{Bin: bin, ControlTimeout: 250 * time.Millisecond, Hangw: &log}
+
+	started := time.Now()
+	_, err := h.Workspaces()
+	waited := time.Since(started)
+	pid := awaitPid(t, pidFile)
+
+	if !IsHerdrHang(err) {
+		t.Fatalf("a hung child with a grandchild on its pipes returned %v, want a HerdrHangError", err)
+	}
+	// The deadline plus WaitDelay, with room for a loaded box; well short of
+	// the grandchild's own sleep, which is when Wait returns without it.
+	if bound := herdrWaitDelay + 4*time.Second; waited > bound {
+		t.Fatalf("the call waited %s — past the %s deadline and the %s WaitDelay, so the grandchild's pipe held Wait until the grandchild finished",
+			waited, h.ControlTimeout, herdrWaitDelay)
+	}
+	assertReaped(t, pid)
+}
+
+// The bd child is TERMed first, and that is a claim beads.go makes for a
+// reason — bd writes SQLite, and a TERM is what lets it roll the WAL back —
+// which the pin above cannot see: a KILL reaps the child just as well.
+// Swapping the TERM for CommandContext's default KILL survived it
+// (ranger-base-iyg9w, mutation-checked). This child traps TERM and says so.
+func TestQAHungBdChildIsTERMedBeforeItIsKilled(t *testing.T) {
+	t.Parallel()
+	marker := filepath.Join(t.TempDir(), "term")
+	// The sleep is backgrounded with its pipes closed so nothing but the
+	// trap decides when the call returns; `wait` is what a TERM interrupts.
+	body := fmt.Sprintf("trap 'echo got > %q; exit 0' TERM\nsleep 12 >/dev/null 2>&1 &\nwait", marker)
+	bin, pidFile := hangingBinWith(t, body)
+	var log strings.Builder
+	b := Bd{Bin: bin, Timeout: 250 * time.Millisecond, Hangw: &log}
+
+	started := time.Now()
+	_, err := b.runOnce("", "ready", "--json")
+	waited := time.Since(started)
+	pid := awaitPid(t, pidFile)
+
+	if !IsBdHang(err) {
+		t.Fatalf("a hung bd returned %v, want a BdHangError", err)
+	}
+	if waited > bdKillGrace {
+		t.Fatalf("the call waited %s — past bdKillGrace, so the TERM was not delivered and the KILL is what ended it", waited)
+	}
+	if _, statErr := os.Stat(marker); statErr != nil {
+		t.Fatalf("the child's TERM trap never ran (%v) — bd was killed outright, and a SQLite writer killed outright is a WAL left open", statErr)
+	}
+	assertReaped(t, pid)
+}
+
+// ─── the busy seats, THROUGH seatFor (ranger-base-iyg9w) ────────────────────
+
+// The two busy-line pins above build their seatPass values by hand, so the
+// wiring between the seat walk and the refill summary was pinned by
+// nothing: dropping seatFor's noteBusy call, and dropping the bead from
+// seatMap.why, each survived every pin in this file (mutation-checked).
+// This one goes in at the front door — a lane whose seats this Run holds,
+// inside a refill — and reads the summary.
+func TestQASeatForCarriesTheBusySeatsToTheRefillSummary(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	const dir = "/repo/posse"
+	lane := routeLane{label: "code", seats: []routeMatch{{name: "developer"}, {name: "developer-2"}}}
+	// Both seats held by this Run: seatMap.why answers before any herdr
+	// read, so the summary must name the bead each holds.
+	seats := newSeatMap(map[string]string{
+		SessionFor("developer", dir):   "a-1",
+		SessionFor("developer-2", dir): "a-2",
+	})
+
+	d.beginRefill("developer-3-003", "a-9", 3)
+	idx, _, line := d.seatFor(lane, RepoIssue{Dir: dir}, "", seats)
+	if idx != -1 {
+		t.Fatalf("a lane whose every seat this Run holds seated the bead at index %d: %q", idx, line)
+	}
+	if want := "code lane busy: developer, developer-2"; !strings.Contains(line, want) {
+		t.Fatalf("the lane-busy line lost ADR 0020 §2's shape:\n got %s\nwant %s", line, want)
+	}
+	d.skipf(skipLaneBusy, "%s\n", line)
+	d.endRefill(0)
+
+	got := dispatcherOut(d)
+	if want := "busy: developer (busy: a-1), developer-2 (busy: a-2)"; !strings.Contains(got, want) {
+		t.Fatalf("the refill summary does not carry the seats seatFor stepped over, with the bead each holds:\nwant %s\n got:\n%s", want, got)
+	}
+}
+
+// ─── the watchdog, STARTED by Watch (ranger-base-iyg9w) ─────────────────────
+
+// TestQAWatchStartsAndJoinsTheWatchdog above pins the join; a Watch that
+// never started the watchdog at all passed it (mutation-checked). This one
+// needs the line: a pass that stalls in a bd child that never answers,
+// under a clock that runs fast enough for the budget to expire inside that
+// stall, and the watchdog's own line in the output. The clock lies only
+// about rate — every reader in the loop sees the same monotonic time, so
+// the loop is not confused, merely hurried.
+func TestQAWatchStartsTheWatchdogAndItNamesAStalledPass(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	write(t, b.App.ConfigPath, "beads:\n  - "+t.TempDir()+"\n")
+	// The stall: bd stops answering, for 2s of real time under its own
+	// deadline. That is the child the deadline above bounds, and the loop
+	// writes nothing while it waits on it.
+	bin, _ := hangingBin(t, 6*time.Second)
+	d.Bd = Bd{Bin: bin, Timeout: 2 * time.Second, Hangw: io.Discard}
+	// 10000x: a 32m production budget is ~200ms of real time, inside the
+	// 2s stall, and the watchdog ticks at the 20ms base.
+	epoch := time.Now()
+	t0 := time.Date(2026, 9, 3, 4, 53, 18, 0, time.UTC)
+	d.Now = func() time.Time { return t0.Add(time.Since(epoch) * 10000) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if _, err := d.Watch(ctx, "", "", 1, 20*time.Millisecond, 20*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	got := dispatcherOut(d)
+	if !strings.Contains(got, "watchdog: this loop has written nothing for") {
+		t.Fatalf("a pass stalled in a hung bd child past the budget was never named — Watch did not start the watchdog:\n%s", got)
 	}
 }
