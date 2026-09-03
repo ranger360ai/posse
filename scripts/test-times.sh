@@ -624,6 +624,54 @@ STUB
   ok()  { printf '  ok    %s\n' "$*"; }
   bad() { printf '  FAIL  %s\n' "$*"; fail=1; }
 
+  # AN ASSERTION THAT FORKS CAN REPORT THE PROPERTY FALSE BECAUSE THE APPARATUS
+  # FAILED (ranger-base-7hx87). Two arms below used to read
+  #
+  #     if printf '%s' "$out" | grep -qE '<pattern>'; then
+  #
+  # and under this script's `set -o pipefail` that pipeline returns non-zero in
+  # three ways that have nothing to do with $out: grep signalled (143/137),
+  # grep not exec'd (127, and a fork failure under load prints only to stderr),
+  # and — over a payload past the 64 KB pipe buffer — grep matching early while
+  # printf takes the EPIPE (141; measured here: 0/100 at 65000 bytes, 92/100 at
+  # 66000). All three print the arm's "no such line" text over an $out that
+  # plainly carries the line, which is the once-in-~30-runs shape seen on
+  # 2026-09-02 at load ~20 with three sessions on the box. Locale was the other
+  # reading and it is ruled out: the em dash is the same three bytes in the
+  # pattern and in the text, and it matched under en_US.UTF-8, C, POSIX,
+  # en_US.ISO8859-1, an invalid locale and no LANG at all.
+  #
+  # So these two arms match with bash's own `case` and `${...}`: no fork, no
+  # pipe, no temp file, nothing between the bytes and the verdict.
+
+  # line_after <needle> — sets $seen to the text following the first occurrence of
+  # <needle>, up to the end of that line; returns 1 when $out has no <needle>.
+  # It reads the FIRST such line, which is deliberately stricter than the ERE
+  # it replaces: a placeholder on the first DISK line no longer passes because
+  # a later line is well formed.
+  local seen=
+  line_after() {
+    local rest=${out#*"$1"}
+    if [ "$rest" = "$out" ]; then seen=; return 1; fi
+    seen=${rest%%$'\n'*}
+    return 0
+  }
+  # digits <s> — non-empty and all digits, so "$$" verbatim or a placeholder
+  # cannot stand in for a number the box produced.
+  digits() { case ${1:-} in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+  # dump_out — the whole of $out, verbatim and as bytes. The one 2026-09-02
+  # sighting was inconclusive because the arm printed a single grepped line;
+  # anything invisible in the text (an encoding artefact, a truncation) has to
+  # be in the record the next time this fails. Forks, but only on the way to a
+  # failure that has already been decided.
+  dump_out() {
+    printf '        --- $out verbatim (%s bytes) ---\n' "${#out}"
+    printf '%s\n' "$out" | sed 's/^/        | /'
+    printf '        --- $out as bytes ---\n'
+    printf '%s' "$out" | od -c 2>/dev/null | sed 's/^/        | /'
+    printf '        --- end ---\n'
+  }
+
   echo 'test-times --self-test'
 
   # A: a timeout panic must produce the block and NAME the package. This is
@@ -731,10 +779,19 @@ STUB
   # I: the DISK line is printed BEFORE the packages, on every run, and carries
   # a number df actually produced rather than a placeholder.
   run_arm clean.log 0 -timeout 25m
-  if printf '%s' "$out" | grep -qE 'DISK: [0-9]+ MB free on .+ — t\.TempDir'; then
+  local disk_ok=0 mb= rest=
+  if line_after 'test-times: DISK: '; then
+    mb=${seen%% *}
+    rest=${seen#* }
+    case $rest in
+      'MB free on '?*' — t.TempDir'*) digits "$mb" && disk_ok=1 ;;
+    esac
+  fi
+  if [ "$disk_ok" = 1 ]; then
     ok 'disk: the preflight line names free MB, the filesystem and what fills it'
   else
-    bad "disk: no DISK line — $(printf '%s' "$out" | grep -i disk | head -1)"
+    bad 'disk: no DISK line naming free MB, the filesystem and t.TempDir'
+    dump_out
   fi
 
   # …and it is df's reading, not a constant. Cross-checked on the MOUNT POINT
@@ -814,10 +871,22 @@ STUB
   # runs died). The arm requires the REAL pid of the run, not the word "pid":
   # a line reading "$$" verbatim would satisfy any looser match.
   run_arm clean.log 0 -timeout 25m
-  if printf '%s' "$out" | grep -qE 'this run is pid [0-9]+ — stop it with `kill [0-9]+`'; then
-    ok 'run line: names a real pid and how to stop this run'
+  local pid_ok=0 pid=
+  if line_after 'this run is pid '; then
+    pid=${seen%% *}
+    rest=${seen#* }
+    # The same pid twice: the line is useless if the number it tells you to
+    # kill is not the number it says the run is, and the ERE this replaces
+    # matched two unrelated integers.
+    case $rest in
+      "— stop it with \`kill $pid\`"*) digits "$pid" && pid_ok=1 ;;
+    esac
+  fi
+  if [ "$pid_ok" = 1 ]; then
+    ok 'run line: names a real pid, the same one, and how to stop this run'
   else
-    bad "run line: no pid line — $(printf '%s' "$out" | grep -i 'this run' | head -1)"
+    bad 'run line: no pid line naming one real pid and the kill for it'
+    dump_out
   fi
   case $out in
     *'never with a `pkill -f` pattern'*) ok 'run line: says why a pattern kill is wrong here' ;;
@@ -848,8 +917,21 @@ STUB
   esac
   after=$(record_size)
   [ "$after" -gt "$before" ] && ok 'signal child: the record grew' || bad 'signal child: nothing was written to the record'
-  if grep -q 'full process table' "$tmp/signal.log" 2>/dev/null &&
-     grep -q 'possible senders' "$tmp/signal.log" 2>/dev/null; then
+  # The last of the arms that forked to decide (ranger-base-7hx87): `read -d ''`
+  # slurps the record with a builtin, so a grep that is signalled or cannot be
+  # exec'd can no longer report the record empty. It returns 1 at EOF with the
+  # record read, which is why its status is not the test.
+  local record=
+  IFS= read -r -d '' record < "$tmp/signal.log" 2>/dev/null
+  # ANCHORED AT THE START OF A LINE, and that is the whole arm. The record's
+  # second half is `ps -Awwo args=` — every command line on the box — so a bare
+  # substring test is satisfied by any process whose argv happens to quote the
+  # marker, this arm's own reader included: deleting the `-- full process table`
+  # header left the arm green while a shell running `grep 'full process table'`
+  # sat in the dump (measured 2026-09-03). ps cannot put a newline in a row, so
+  # a line that STARTS with the header is one this script wrote.
+  if [[ $record == *$'\n''-- full process table'$'\n'* &&
+        $record == *$'\n''-- possible senders'* ]]; then
     ok 'signal child: the record holds a process table and a suspect section'
   else
     bad 'signal child: the record has no process table'
