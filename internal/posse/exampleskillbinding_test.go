@@ -73,9 +73,11 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 		// `Edit(docs/adr/**)`/`Write(docs/adr/**)`, ranger-base-ccd), then
 		// 30 → 32 when the two whole-verb bd hook rows became four narrowed
 		// install/uninstall ones (ranger-base-y5g7's ruling, carried into the
-		// seed on ranger-base-t2v2); what is pinned is that every list
-		// survives the key beside it, not the numbers themselves.
-		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 32 {
+		// seed on ranger-base-t2v2), then 32 → 34 when pkill/killall became
+		// enforced rather than advised (`Bash(pkill:*)`, `Bash(killall:*)`,
+		// ranger-base-jjx19); what is pinned is that every list survives the
+		// key beside it, not the numbers themselves.
+		if len(ag.Intents) != 3 || len(ag.Metrics) != 2 || len(ag.Deny) != 34 {
 			t.Errorf("%s frontmatter around skills:: intents %v metrics %v deny %v", name, ag.Intents, ag.Metrics, ag.Deny)
 		}
 	}
