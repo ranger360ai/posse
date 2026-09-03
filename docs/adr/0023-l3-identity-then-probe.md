@@ -76,6 +76,12 @@ construction, and the escalation in Context closes with it.
 **3. Foreign is degraded, said out loud.** Identity mismatch degrades
 the launch regardless of what the file would do:
 
+> *Amended 2026-09-02 (ADR 0052, ranger-base-yt6m0): a MANAGED hooks
+> path — absolute, outside the repo, unwritable by the uid — is not
+> foreign but untouchable. It is not degraded: L3 is realized by a
+> per-session hooks dir the session env aims git at, chained into the
+> managed one, and the launch line names it either way.*
+
 - no ownership marker → "foreign hook at `<path>` — posse cannot vouch
   for a hook it did not write", plus the chain prescription
   (`chainDispatcher`) as the remedy. This includes a foreign hook that
