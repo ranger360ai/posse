@@ -11,18 +11,27 @@ package posse
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 type Bd struct {
 	Bin string // bd binary; RHQ_BD_BIN overrides (testing)
+
+	// The child deadline (ranger-base-wj7e9), zero in production and set
+	// only by the pin — see BdTimeout and runOnce. Hangw takes the one line
+	// a blown deadline writes; nil = os.Stderr.
+	Timeout time.Duration // 0 = BdTimeout
+	Hangw   io.Writer
 }
 
 func NewBd() Bd {
@@ -111,15 +120,94 @@ func (b Bd) run(dir string, args ...string) ([]byte, error) {
 	return b.runOnce(dir, args...)
 }
 
+// ─── the child deadline (ranger-base-wj7e9) ──────────────────────────────────
+//
+// The bead was filed over a herdr child a --watch loop held for 7h11m on an
+// unbounded exec.Command — a sleep and not a hang, as herdr.go's block
+// records — and its ask is "every exec of herdr (and any other child) from
+// the watch loop". bd is the other one: a pass reads the
+// ready set, shows a bead, syncs and comments, all through this runner, and
+// a store that stops answering would wedge the loop in exactly the same way
+// and for exactly the same reason. No bd hang has been observed here; the
+// deadline is not a diagnosis, it is the same missing clock.
+//
+// MEASURED on this box 2026-09-03 against the fleet's own store: `bd
+// --no-daemon ready --json` answers in 177ms. BdTimeout is a thousand times
+// that, because it also has to cover the slowest thing this runner does —
+// `sync --import-only` over the whole JSONL, which `run` fires on its own
+// after a stale-db refusal.
+//
+// UNLIKE the herdr one, the cancel is a SIGTERM with a kill behind it. bd
+// writes SQLite, and half of these calls are writes: a TERM gives it the
+// chance to close the database and roll the WAL back cleanly, and WaitDelay
+// is what makes sure a bd that ignores the TERM is still not this loop's
+// problem.
+const BdTimeout = 3 * time.Minute
+
+// bdKillGrace is how long a TERMed bd has to exit before it is killed, and
+// how long os/exec will keep waiting on pipes a descendant still holds.
+const bdKillGrace = 10 * time.Second
+
+// BdHangError is a bd child that blew its deadline and was signalled. Typed
+// for the same reason HerdrHangError is: "bd said no" and "bd said nothing
+// at all" are different facts, and only the second one is about this box.
+type BdHangError struct {
+	Argv   []string
+	Dir    string
+	Limit  time.Duration
+	Waited time.Duration
+}
+
+func (e *BdHangError) Error() string {
+	where := e.Dir
+	if where == "" {
+		where = "."
+	}
+	return fmt.Sprintf("bd child hung: %s (in %s) — no answer in %s (deadline %s), signalled; the caller is not waiting on it",
+		strings.Join(e.Argv, " "), where, e.Waited.Round(time.Millisecond), e.Limit)
+}
+
+// IsBdHang reports whether err is a blown bd child deadline.
+func IsBdHang(err error) bool {
+	var be *BdHangError
+	return errors.As(err, &be)
+}
+
+func (b Bd) hangw() io.Writer {
+	if b.Hangw != nil {
+		return b.Hangw
+	}
+	return os.Stderr
+}
+
+func (b Bd) timeout() time.Duration {
+	if b.Timeout > 0 {
+		return b.Timeout
+	}
+	return BdTimeout
+}
+
 func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	argv := append(append([]string{}, bdGlobalFlags...), args...)
-	cmd := exec.Command(b.Bin, argv...)
+	limit := b.timeout()
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, b.Bin, argv...)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = bdKillGrace
 	if dir != "" {
 		cmd.Dir = dir
 	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
+	started := time.Now()
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		hang := &BdHangError{Argv: append([]string{b.Bin}, argv...), Dir: dir, Limit: limit, Waited: time.Since(started)}
+		fmt.Fprintf(b.hangw(), "◷ %s\n", hang.Error())
+		return nil, hang
+	}
+	if err != nil {
 		msg := strings.TrimSpace(errb.String())
 		if msg == "" {
 			msg = bdStdoutError(out.Bytes())

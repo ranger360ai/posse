@@ -357,7 +357,7 @@ func TestQAConstitutionRefusalCostsNoLaunchRation(t *testing.T) {
 		{BdIssue: BdIssue{ID: "c-1", Title: "t", Labels: []string{"rust"}}, Dir: repo},
 		{BdIssue: BdIssue{ID: "c-2", Title: "t", Labels: []string{"rust"}}, Dir: repo},
 	}
-	dispatched, pending, attempts, err := d.fireLoop(beads, "", 0, map[string]bool{}, map[string]int{})
+	dispatched, pending, attempts, err := d.fireLoop(beads, "", 0, map[string]string{}, map[string]int{})
 	if err != nil {
 		t.Fatal(err)
 	}

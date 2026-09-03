@@ -63,7 +63,7 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	t.Cleanup(func() { joinPrompts(t, inFlight) })
 
 	slot := SessionFor("hopper", repo)
-	busy := map[string]bool{}
+	busy := map[string]string{}
 	sessFail := map[string]int{}
 	first := []RepoIssue{{BdIssue: BdIssue{ID: "b-1", Title: "first", Labels: []string{"rust"}}, Dir: repo}}
 	second := []RepoIssue{{BdIssue: BdIssue{ID: "b-2", Title: "second", Labels: []string{"rust"}}, Dir: repo}}
@@ -79,8 +79,10 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	if log := calls(t, fake); !strings.Contains(log, "workspace create --label "+SessionForBead("hopper", repo, "b-1")) {
 		t.Fatalf("the first fire pass must launch b-1, or the second proves nothing:\n%s\n%s", dispatcherOut(d), log)
 	}
-	if !busy[slot] {
-		t.Fatalf("a seat this Run fired into is this Run's occupancy and must outlive the fire pass that took it (ADR 0028 §3):\n%s", dispatcherOut(d))
+	// The map now records WHICH bead holds the seat, not merely that one
+	// does (ranger-base-wj7e9): the busy line an operator reads names it.
+	if busy[slot] != "b-1" {
+		t.Fatalf("a seat this Run fired into is this Run's occupancy and must outlive the fire pass that took it, naming its bead (ADR 0028 §3); got %q:\n%s", busy[slot], dispatcherOut(d))
 	}
 
 	// Now the live read goes quiet — herdr lists no agent for hopper, which
@@ -97,7 +99,7 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	if log := calls(t, fake); strings.Contains(log, "workspace create --label "+SessionForBead("hopper", repo, "b-2")) {
 		t.Errorf("a second bead went onto a seat this Run already fired into and whose bead has not settled:\n%s\n%s", dispatcherOut(d), log)
 	}
-	if !busy[slot] {
-		t.Errorf("the hold must survive the second fire pass too — it is released at the settle, not at the end of a pass")
+	if busy[slot] != "b-1" {
+		t.Errorf("the hold must survive the second fire pass too, still naming b-1 — it is released at the settle, not at the end of a pass; got %q", busy[slot])
 	}
 }

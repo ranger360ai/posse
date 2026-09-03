@@ -10,17 +10,37 @@ package posse
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Herdr struct {
 	Bin string // herdr binary; RHQ_HERDR_BIN overrides (testing)
+
+	// The child deadline (ranger-base-wj7e9). Both zero in production and
+	// set only by the pins, which cannot afford the real numbers: they are
+	// a ceiling on a hang, not a latency budget, so the honest values are
+	// far larger than any real call and a test that waited them out would
+	// be the hang it is pinning. See capture and the two constants.
+	ControlTimeout time.Duration // 0 = HerdrControlTimeout
+	WaitGrace      time.Duration // 0 = HerdrWaitGrace
+
+	// Hangw takes the one line a blown deadline writes; nil = os.Stderr,
+	// which for the --watch loop IS its log (nothing sets Dispatcher.Err in
+	// production, so every other posse warning lands there too). It is
+	// written HERE rather than left to the caller because most callers of a
+	// herdr read swallow the error by design — personaActive answers
+	// ("","") on any error, and a hang that only ever became a seat reading
+	// nobody printed is the silence this bead is about.
+	Hangw io.Writer
 }
 
 func NewHerdr() Herdr {
@@ -160,11 +180,162 @@ type herdrEnvelope struct {
 	Error  *herdrError     `json:"error"`
 }
 
+// ─── the child deadline (ranger-base-wj7e9) ──────────────────────────────────
+//
+// FOUND 2026-09-03: `posse dispatch --watch` (pid 8861) had written nothing
+// since 04:53:18Z and held one child — `herdr agent wait w1NN:p1 --until
+// idle --until done --until blocked --timeout 900000`, etime 07:21:37,
+// state SN — with 132 ready beads waiting behind it.
+//
+// THE GAP WAS NOT A HANG, and the correction matters more than the fix. The
+// laptop was asleep from 04:53Z to 12:05Z with the lid closed. Uptime does
+// not reset on sleep, so a live process with a seven-hour etime and a
+// seven-hour-old last line is exactly what a slept box looks like, which is
+// why the first reading called it a hang and why the bead was retracted.
+// The child's 07:21:37 is the sleep plus the wall that remained. Nothing
+// here diagnoses a defect in herdr, and whether its `--timeout 900000`
+// counts a clock that pauses in sleep is a question for that lane, not an
+// answer this file has.
+//
+// What the sleep exposed is real, and is what this file fixes: posse held
+// that child on a bare exec.Command with NO CLOCK OF ITS OWN. Had the child
+// truly been wedged, the pass that started it would never have returned and
+// nothing in posse would ever have ended it — which is in fact how it ended,
+// by an operator's SIGTERM at 12:05Z. A deadline posse controls was missing
+// on 09-03 whether or not it was missed on 09-03.
+//
+// ADR 0011's loop must never depend on a child returning. Every herdr
+// invocation posse makes goes through capture, so the deadline goes here and
+// nowhere else: one choke point, no call site that can forget it.
+//
+// The size of the deadline is decided by the call, because posse makes two
+// shapes of call and they differ by four orders of magnitude:
+//
+//   - A CONTROL call (`workspace list|get|create|focus|close`, `pane
+//     run|read`, `agent list|explain|send-keys|start --help`) declares no
+//     timeout of its own and is answered out of the server's memory.
+//     MEASURED on this box 2026-09-03, `herdr workspace list`, five runs:
+//     30, 30, 30, 30, 29 ms. HerdrControlTimeout is four thousand times
+//     that.
+//   - A WAIT call (`agent wait`, `agent prompt --wait`) carries its own
+//     `--timeout <ms>`, which is a contract herdr wrote: it returns inside
+//     that window or it returns a timeout envelope. Such a call gets its own
+//     declared timeout plus HerdrWaitGrace, and no more — past that herdr is
+//     not keeping the contract and posse stops waiting on it.
+//
+// Neither number is a latency budget and neither should ever be reached by a
+// healthy server. They are the difference between a loop that reports a
+// wedged child and a loop that stops.
+
+// HerdrControlTimeout bounds a herdr call that declares no timeout of its
+// own. See the block above for the measurement it is sized against.
+const HerdrControlTimeout = 2 * time.Minute
+
+// HerdrWaitGrace is what a call carrying its own `--timeout <ms>` gets ON
+// TOP of it: slack for herdr to write the timeout envelope and exit, not a
+// second chance at the wait.
+const HerdrWaitGrace = time.Minute
+
+// herdrWaitDelay is the second half of the kill. os/exec's Wait does not
+// return until the goroutines copying the child's stdout and stderr are
+// done, and a grandchild that inherited those pipes keeps them open after
+// the child is killed — the same hang one layer down, and one no deadline on
+// the context alone can end. WaitDelay is what makes Wait give up on the
+// copy; it is generous because reaching it at all means a descendant
+// outlived the kill.
+const herdrWaitDelay = 5 * time.Second
+
+// HerdrHangError is a herdr child that blew its deadline and was killed. It
+// is a distinct type, not a Die, so a caller can tell "herdr said no" from
+// "herdr said nothing at all" — the second is a fact about this box, and
+// gather's unclaim rules already turn on exactly that distinction.
+type HerdrHangError struct {
+	Argv   []string      // the whole child argv, binary first
+	Limit  time.Duration // the deadline it blew
+	Waited time.Duration // how long posse actually waited before killing it
+}
+
+// Error is also the log line: the call, its argv and how long it hung, which
+// is what the bead asked for and what the 09-03 log had no line for.
+func (e *HerdrHangError) Error() string {
+	return fmt.Sprintf("herdr child hung: %s — no answer in %s (deadline %s), killed; the caller is not waiting on it",
+		strings.Join(e.Argv, " "), e.Waited.Round(time.Millisecond), e.Limit)
+}
+
+// IsHerdrHang reports whether err is a blown child deadline.
+func IsHerdrHang(err error) bool {
+	var he *HerdrHangError
+	return errors.As(err, &he)
+}
+
+func (h Herdr) hangw() io.Writer {
+	if h.Hangw != nil {
+		return h.Hangw
+	}
+	return os.Stderr
+}
+
+// callDeadline sizes one call's deadline from its own argv — see the block
+// above. A call whose `--timeout` cannot be read is treated as declaring
+// none, which is the safe direction: a control ceiling on a wait call ends
+// it early and says so, where trusting an unparseable number would be
+// trusting nothing at all.
+func (h Herdr) callDeadline(args []string) time.Duration {
+	if ms, ok := argvTimeoutMS(args); ok {
+		grace := h.WaitGrace
+		if grace <= 0 {
+			grace = HerdrWaitGrace
+		}
+		return time.Duration(ms)*time.Millisecond + grace
+	}
+	control := h.ControlTimeout
+	if control <= 0 {
+		control = HerdrControlTimeout
+	}
+	return control
+}
+
+// argvTimeoutMS finds the `--timeout` this call declares, in either spelling
+// herdr accepts. Posse only ever writes the separated form, and the joined
+// one is read anyway so that the deadline cannot be silently lost by a
+// caller that spells it the other way.
+func argvTimeoutMS(args []string) (int, bool) {
+	for i, a := range args {
+		switch {
+		case a == "--timeout" && i+1 < len(args):
+			if ms, err := strconv.Atoi(args[i+1]); err == nil && ms > 0 {
+				return ms, true
+			}
+		case strings.HasPrefix(a, "--timeout="):
+			if ms, err := strconv.Atoi(strings.TrimPrefix(a, "--timeout=")); err == nil && ms > 0 {
+				return ms, true
+			}
+		}
+	}
+	return 0, false
+}
+
 func (h Herdr) capture(args []string) (stdout []byte, stderr string, runErr error) {
-	cmd := exec.Command(h.Bin, args...)
+	limit := h.callDeadline(args)
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, h.Bin, args...)
+	// SIGKILL on expiry (CommandContext's default), deliberately: the
+	// deadline WAS the grace, and a child that has already ignored the
+	// timeout it was handed has not earned a politer one.
+	cmd.WaitDelay = herdrWaitDelay
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	started := time.Now()
 	runErr = cmd.Run()
+	if ctx.Err() != nil {
+		// The finding, written where it happened. Callers that swallow herdr
+		// errors are the rule and not the exception, so a hang that only
+		// became a returned error would still be a silent one.
+		hang := &HerdrHangError{Argv: append([]string{h.Bin}, args...), Limit: limit, Waited: time.Since(started)}
+		fmt.Fprintf(h.hangw(), "◷ %s\n", hang.Error())
+		return out.Bytes(), strings.TrimSpace(errb.String()), hang
+	}
 	return out.Bytes(), strings.TrimSpace(errb.String()), runErr
 }
 
@@ -174,6 +345,12 @@ func (h Herdr) capture(args []string) (stdout []byte, stderr string, runErr erro
 func (h Herdr) RunText(args ...string) (string, error) {
 	out, errb, runErr := h.capture(args)
 	if runErr != nil {
+		// A blown deadline travels unwrapped: it already names the argv and
+		// the wait, and IsHerdrHang is how a caller tells "herdr said no"
+		// from "herdr said nothing at all" (capture's own doc).
+		if IsHerdrHang(runErr) {
+			return "", runErr
+		}
 		if errb == "" {
 			errb = runErr.Error()
 		}
@@ -232,6 +409,11 @@ func (h Herdr) Run(args ...string) (json.RawMessage, error) {
 	if runErr != nil {
 		if env := errEnvelope(errb); env != nil {
 			return nil, HerdrAPIError{Code: env.Error.Code, Message: env.Error.Message}
+		}
+		// See RunText: unwrapped, ahead of the Die, and after the envelope
+		// check — a killed child can still have printed a real error first.
+		if IsHerdrHang(runErr) {
+			return nil, runErr
 		}
 		if errb == "" {
 			errb = runErr.Error()

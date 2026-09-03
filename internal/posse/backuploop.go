@@ -45,6 +45,31 @@ package posse
 // that restarts every five minutes under an interval of an hour therefore
 // makes one archive an hour, not one per restart — the directory is the
 // durable state, and it is the same single store §6 gives freshness.
+//
+// SAMPLED FASTER THAN IT FIRES (ranger-base-wj7e9). A level trigger read
+// once per interval is a level trigger with the interval's own drift built
+// into it, and this is the arithmetic that says so, from the box's own
+// records on 2026-09-03:
+//
+//	state/dispatch-watch.pid     started 2026-09-03T01:53:52Z
+//	state/backup/                newest  posse-backup-20260902T052114Z
+//	config.yaml                  backup_interval: 24h
+//
+// At the start evaluation the archive was 20h32m old — under 24h, so the
+// tick correctly did nothing. The next look was the ticker's, 24h later, at
+// 01:53Z on 09-04, by which time the archive would have been 44h32m old. The
+// duty due at 05:21Z was not late because the box slept through it: it was
+// never looked at. (It was reported on this bead as a symptom of a 7h11m
+// hang. There was no hang — that window was a sleep — and this is not a
+// symptom of the sleep either: no backup tick fell inside 04:53Z-12:05Z at
+// all. The sampling defect is the box's own arithmetic and would hold on a
+// machine that never slept.)
+//
+// The reading is a directory listing, so taking it often is free, and the
+// period it is taken at is the whole of the error: sampling every N makes
+// the archive at most interval+N old instead of at most 2x interval. So the
+// ticker runs at backupSampleEvery, and cfg.Interval decides only when the
+// LEVEL is up — which is what "level-triggered" was supposed to mean.
 
 import (
 	"context"
@@ -97,12 +122,42 @@ func LoadBackupConfig(a *App) (BackupConfig, error) {
 // make the archive four days old. The same reading is what makes a restart
 // cheap — a directory whose newest archive is younger than the interval is
 // a tick that does nothing at all.
+// The sampling cadence — see "SAMPLED FASTER THAN IT FIRES" above. The
+// divisor keeps a short interval's sampling proportional; the cap keeps a
+// long one's lateness bounded by a number an operator can name rather than
+// by a fraction of a day; the floor keeps a fast test from spinning, and the
+// clamp back to cfg.Interval keeps a sub-second interval behaving exactly as
+// it did before this bead.
+const (
+	BackupSampleDivisor = 8
+	BackupSampleMax     = 15 * time.Minute
+	BackupSampleMin     = time.Second
+)
+
+// backupSampleEvery is how often the level is READ, which is not how often
+// an archive is written: the write is still gated on cfg.Interval by
+// backupTick, and a sample that finds the newest archive young enough costs
+// one directory listing.
+func backupSampleEvery(interval time.Duration) time.Duration {
+	every := interval / BackupSampleDivisor
+	if every > BackupSampleMax {
+		every = BackupSampleMax
+	}
+	if every < BackupSampleMin {
+		every = BackupSampleMin
+	}
+	if every > interval {
+		every = interval
+	}
+	return every
+}
+
 func (d *Dispatcher) backupLoop(ctx context.Context, cfg BackupConfig) {
 	if ctx.Err() != nil {
 		return
 	}
 	d.backupTick(cfg)
-	ticker := time.NewTicker(cfg.Interval)
+	ticker := time.NewTicker(backupSampleEvery(cfg.Interval))
 	defer ticker.Stop()
 	for {
 		select {

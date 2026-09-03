@@ -256,6 +256,27 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		defer close(guardDone)
 		d.guardLoop(guardCtx, base)
 	}()
+	// The silence watchdog (ranger-base-wj7e9, watchdog.go). Fourth clock,
+	// same shape and same LIFO reasoning as the three above — registered
+	// last so it is joined first — and the only one whose reading is about
+	// this loop rather than about the shop. None of the three above reads
+	// whether this loop is still writing, which is why the 09-03 gap — a
+	// sleep and not a hang (watchdog.go) — was found by an operator reading
+	// the log and by no instrument at all. This is what says so next time.
+	//
+	// Seeded before it starts so its first tick measures from the loop's
+	// start: the header lines above write d.Out directly and stamp nothing.
+	d.noteWrite()
+	dogCtx, dogCancel := context.WithCancel(ctx)
+	dogDone := make(chan struct{})
+	defer func() {
+		dogCancel()
+		<-dogDone
+	}()
+	go func() {
+		defer close(dogDone)
+		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS))
+	}()
 	passes := 0
 	wait := base
 	for {

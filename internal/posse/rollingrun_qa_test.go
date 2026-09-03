@@ -120,7 +120,7 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	t.Cleanup(func() { joinPrompts(t, inFlight) })
 
 	beads := []RepoIssue{{BdIssue: BdIssue{ID: "b-1", Title: "t", Labels: []string{"rust"}}, Dir: repo}}
-	busy := map[string]bool{}
+	busy := map[string]string{}
 	sessFail := map[string]int{}
 	bead := SessionForBead("hopper", repo, "b-1")
 
@@ -135,7 +135,7 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	if !strings.Contains(dispatcherOut(d), "lane busy: hopper") {
 		t.Fatalf("the fixture must actually make hopper busy, or the second pass proves nothing:\n%s", dispatcherOut(d))
 	}
-	if busy[SessionFor("hopper", repo)] {
+	if busy[SessionFor("hopper", repo)] != "" {
 		t.Error("a seat this Run did not fire into may not be recorded as this Run's occupancy — that reading is the fire pass's")
 	}
 

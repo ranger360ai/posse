@@ -67,10 +67,49 @@ type refillFor struct {
 	bead    string // the bead that settled and freed it
 	skipped map[string]int
 	order   []string // reasons in first-seen order, to break count ties stably
+
+	// The busy seats this refill stepped over, deduped, first-seen order
+	// (ranger-base-wj7e9 ask 3). Inside a refill the per-bead lane-busy
+	// lines are COUNTED and not printed, so `123 lane busy` was the whole
+	// of what the log carried on 2026-09-03 — a number that says the shop
+	// is full and nothing about who is holding it or on what evidence. The
+	// seats are few and the beads are many, so naming them once per refill
+	// costs one clause and answers the question the count raised.
+	busy   map[string]string
+	busyAt []string
 }
 
 func newRefillFor(seat, bead string) *refillFor {
-	return &refillFor{seat: seat, bead: bead, skipped: map[string]int{}}
+	return &refillFor{seat: seat, bead: bead, skipped: map[string]int{}, busy: map[string]string{}}
+}
+
+// noteBusy records the seats one lane-busy verdict stepped over. First
+// reading wins: a seat read twice in one refill is the same seat, and the
+// first reading is the one taken closest to the settle this refill is for.
+func (r *refillFor) noteBusy(passed []seatPass) {
+	for _, p := range passed {
+		if _, seen := r.busy[p.name]; seen {
+			continue
+		}
+		r.busy[p.name] = p.clause()
+		r.busyAt = append(r.busyAt, p.name)
+	}
+}
+
+// busyClause is the summary's seat tail, or "" when nothing was busy.
+func (r *refillFor) busyClause() string {
+	if len(r.busyAt) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, routeMaxRoster+1)
+	for i, name := range r.busyAt {
+		if i == routeMaxRoster {
+			parts = append(parts, fmt.Sprintf("+%d more", len(r.busyAt)-routeMaxRoster))
+			break
+		}
+		parts = append(parts, r.busy[name])
+	}
+	return " — busy: " + strings.Join(parts, ", ")
 }
 
 func (r *refillFor) note(kind string, n int) {
@@ -133,7 +172,7 @@ func (d *Dispatcher) endRefill(fired int) {
 		d.printf("↻ refill for settled seat %s: %d launched\n", r.seat, fired)
 		return
 	}
-	d.printf("↻ refill for settled seat %s: %d launched, %d skipped (%s)\n", r.seat, fired, total, why)
+	d.printf("↻ refill for settled seat %s: %d launched, %d skipped (%s)%s\n", r.seat, fired, total, why, r.busyClause())
 }
 
 // skipf reports one bead this fire pass did not take: the line outside a

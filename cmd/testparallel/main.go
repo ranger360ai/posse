@@ -285,6 +285,14 @@ func main() {
 		"TestWatchRefusesWhenAnotherLoopHoldsTheLock":          "asserts flock acquisition",
 		"TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone": "asserts flock acquisition",
 		"TestWatchReleasesLockBetweenPasses":                   "asserts flock acquisition",
+		// Drives a REAL backupLoop goroutine and times it: its treatment arm
+		// asserts the second archive lands in under the 60s interval, and its
+		// absence arm waits 3x that measured time. Both readings are wall
+		// clock on a loop with its own ticker, so a parallel phase that
+		// stretches the run stretches what it measures (ranger-base-wj7e9;
+		// it takes ~11s serial). The pure-arithmetic half of the same fix,
+		// TestQABackupLevelIsSampledFasterThanItFires, is parallel.
+		"TestQABackupLoopSamplesTheLevelBetweenIntervals": "times a real loop against its own interval",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are
