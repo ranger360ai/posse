@@ -2936,7 +2936,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # beside it (rangerhq-fuom), which holds whole bead records and inherits
   # the repo's visibility exactly as the db does. GIT_INDEX_FILE is
   # inherited, so this reads the same index the commit will.
-  posse_added=$(git diff --cached -U0 "$posse_base" -- '.beads/*.jsonl' 2>/dev/null |
+  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- '.beads/*.jsonl' 2>/dev/null |
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
@@ -3052,7 +3052,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # bare '*.md' never saw docs/adr/x.MD or x.markdown at all and one
   # character walked ops content into a public tree (ranger-base-4b1z4,
   # measured). ':(icase)' is git's own magic for it.
-  posse_added=$(git diff --cached -U0 "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
+  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
@@ -3306,7 +3306,7 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
   # does not apply here.
   # Binary files are already excluded: git diff with no --text emits
   # "Binary files ... differ" for them, never a '+' line.
-  posse_added=$(git diff --cached -U0 "$posse_base" 2>/dev/null |
+  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
     grep '^+' | grep -v '^+++')
   if [ -n "$posse_added" ]; then
 ` + content.String() + `  fi
@@ -3732,10 +3732,16 @@ posse_adr_judge() {
 '
   for posse_adr_f in $posse_adr_files; do
     # The tokens being JUDGED. Deduplicated: an ADR quotes one sha many
-    # times and each judgement is ~50 ms.
+    # times and each judgement is ~50 ms. EITHER CASE of hex: git resolves
+    # a sha case-insensitively (cat-file -e and merge-base both take the
+    # uppercase spelling, measured), so a stale sha typed in capitals was a
+    # commit to git and prose to a lowercase-only class — in the hook and
+    # the census alike, which is why the two-way pin could not see it
+    # (ranger-base-0fz98). The token keeps its own spelling: the census
+    # greps the file for it.
     posse_adr_anc=''
     posse_adr_non=''
-    for posse_adr_t in $(posse_adr_judged "$posse_adr_f" | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+    for posse_adr_t in $(posse_adr_judged "$posse_adr_f" | grep -oE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
       # Does not resolve to a commit HERE: prose, or another repo's. Not
       # this predicate's to judge, and passed.
       git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
@@ -3755,7 +3761,7 @@ posse_adr_judge() {
     # RECORD rather than the judged lines, because a record about stale
     # shas usually already carries them (D5).
     posse_adr_anc=''
-    for posse_adr_t in $(posse_adr_record "$posse_adr_f" | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+    for posse_adr_t in $(posse_adr_record "$posse_adr_f" | grep -oE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
       git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
       git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null || continue
       posse_adr_anc="$posse_adr_anc$posse_adr_t
@@ -3786,6 +3792,27 @@ posse_adr_judge() {
 }
 `
 }
+
+// diffReaderShape pins the shape of every `git diff --cached -U0` the hook
+// reads ADDED lines out of, against the WRITER's git config — which the
+// hook inherits, and which `git -c` reaches it through (GIT_CONFIG_PARAMETERS
+// is exported to prepare-commit-msg, measured). Four ordinary settings each
+// blank a reader that greps for '+' lines and '+++ b/' headers, and every
+// one of them SILENTLY: the reader sees no files and judges nothing, with no
+// "judged nothing" line (ranger-base-0fz98, git 2.50.1):
+//
+//	diff.noprefix=true         the header is "+++ docs/adr/x.md"
+//	diff.mnemonicPrefix=true   the header is "+++ i/docs/adr/x.md"
+//	color.ui=always            every line opens with an escape sequence
+//	diff.external=CMD          no unified diff at all
+//
+// The prefix half is load-bearing for the ADR sha-stamp arm alone (its file
+// list is cut out of the '+++ b/' headers); the colour and external halves
+// are load-bearing for every reader — check 0, check 2, check 3 and the ADR
+// arm. One string for all of them, so the readers cannot drift on which
+// settings they survive. Rendered as flags rather than `-c` overrides so a
+// rendered command still reads as the one the comment beside it describes.
+const diffReaderShape = "--no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/"
 
 // adrShaGuardBody renders the hook's arm: adrShaPredicate with the hook's
 // two line sources — the ADDED lines of each staged docs/adr file are judged,
@@ -3835,13 +3862,13 @@ if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_adr_head=HEAD; fi
 # files): the lines this commit is WRITING are judged, and the whole staged
 # blob is the record a twin may sit in.
 posse_adr_judged() {
-  git diff --cached -U0 "$posse_adr_head" -- "$1" 2>/dev/null | grep '^+' | grep -v '^+++'
+  git diff --cached -U0 ` + diffReaderShape + ` "$posse_adr_head" -- "$1" 2>/dev/null | grep '^+' | grep -v '^+++'
 }
 posse_adr_record() {
   git show ":$1" 2>/dev/null
 }
 ` + adrShaPredicate() + `
-posse_adr_files=$(git diff --cached -U0 "$posse_adr_head" -- ` + shQuote(AdrPathspec) + ` 2>/dev/null |
+posse_adr_files=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_adr_head" -- ` + shQuote(AdrPathspec) + ` 2>/dev/null |
   grep '^+++ b/' | cut -c7- | sort -u)
 if [ -n "$posse_adr_files" ]; then
   posse_adr_judge

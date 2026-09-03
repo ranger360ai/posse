@@ -66,9 +66,13 @@ package posse
 // with the number grown, so a reader coming back to the log sees an
 // escalation rather than one stale sentence.
 //
-// It writes through sayQuietly, which deliberately does NOT stamp
-// LastWrite. A watchdog that reset its own clock would report a stall
-// exactly once and then fall silent with the loop.
+// It writes through quietf, which deliberately does NOT stamp LastWrite. A
+// watchdog that reset its own clock would report a stall exactly once and
+// then fall silent with the loop. The guard clock and the backup clock write
+// the same way, for the reason under LastWrite (dispatch.go): a line from a
+// clock on its own goroutine is not the loop writing, and one that stamped
+// the reading kept this budget unreachable for as long as the box was over
+// the load line (ranger-base-0fz98 finding 3).
 
 import (
 	"context"
@@ -131,7 +135,7 @@ func (d *Dispatcher) watchdogTick(budget time.Duration) {
 	if silent < budget {
 		return
 	}
-	d.sayQuietly("%s\n", WatchdogLine(silent, budget, last, os.Getpid()))
+	d.quietf("%s\n", WatchdogLine(silent, budget, last, os.Getpid()))
 }
 
 // WatchdogLine is the finding, rendered. It names the silence, the budget it

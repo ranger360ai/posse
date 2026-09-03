@@ -24,8 +24,19 @@ import (
 // script's own exit 1; anything else the script could not do is fatal here.
 func (r *adrRepo) census(t *testing.T, files ...string) (out, errOut string, refused bool) {
 	t.Helper()
+	return r.censusWith(t, "", files...)
+}
+
+// censusWith is census under one git setting of the writer's, handed to the
+// git the script drives the way `git -c` hands it to a hook: through
+// GIT_CONFIG_PARAMETERS, whose value is the setting single-quoted.
+func (r *adrRepo) censusWith(t *testing.T, cfg string, files ...string) (out, errOut string, refused bool) {
+	t.Helper()
 	var so, se bytes.Buffer
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + r.dir}
+	if cfg != "" {
+		env = append(env, "GIT_CONFIG_PARAMETERS='"+cfg+"'")
+	}
 	refused, err := runAdrCensus(r.dir, files, env, &so, &se)
 	if err != nil {
 		t.Fatalf("adr-census over %v: %v\nstdout:\n%s\nstderr:\n%s", files, err, so.String(), se.String())

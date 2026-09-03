@@ -68,13 +68,18 @@ func (d *Dispatcher) guardLoop(ctx context.Context, every time.Duration) {
 }
 
 // guardTick is one reading, printed only when it has something to say. It
-// goes through d.printf because Run's gather is writing the same stream from
-// one goroutine per pending bead (outMu's doc), and through d.errWriter for
-// the same reason: a reading LoadHigh could not take is a line, and a line
-// half-interleaved with a launch is worse than the reading it explains.
+// goes through d.quietf because Run's gather is writing the same stream from
+// one goroutine per pending bead (outMu's doc), and through d.quietErrWriter
+// for the same reason: a reading LoadHigh could not take is a line, and a
+// line half-interleaved with a launch is worse than the reading it explains.
+// The QUIET pair, not printf: this clock reports on the shop, not on the
+// loop keeping it, and a tick that stamped LastWrite fed the watchdog a
+// fresh reading every base interval for as long as the box stayed over the
+// line — the condition under which a stalled pass is most likely and least
+// visible (ranger-base-0fz98 finding 3; watchdog.go's head).
 func (d *Dispatcher) guardTick() {
-	if line := d.App.GuardTickLine(d.errWriter()); line != "" {
-		d.printf("%s\n", line)
+	if line := d.App.GuardTickLine(d.quietErrWriter()); line != "" {
+		d.quietf("%s\n", line)
 	}
 }
 

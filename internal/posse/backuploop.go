@@ -179,11 +179,15 @@ func (d *Dispatcher) backupLoop(ctx context.Context, cfg BackupConfig) {
 // path with the same name. A failure is a line and the next tick tries
 // again: this is a timer, and a store that could not be read at 03:15 is not
 // a reason to stop the fleet.
+//
+// It writes through the QUIET pair (dispatch.go, LastWrite): this is a clock
+// on its own goroutine, and its lines are not the loop writing
+// (ranger-base-0fz98 finding 3).
 func (d *Dispatcher) backupTick(cfg BackupConfig) {
 	dir := d.App.BackupDir()
 	names, err := listBackups(dir)
 	if err != nil {
-		d.eprintf("backup: cannot read %s: %v — no archive this tick\n", AbbrevHome(dir), err)
+		d.equietf("backup: cannot read %s: %v — no archive this tick\n", AbbrevHome(dir), err)
 		return
 	}
 	// A stamp AFTER now is not a reading, and splitBackupsAt is where that
@@ -199,7 +203,7 @@ func (d *Dispatcher) backupTick(cfg BackupConfig) {
 		// the condition is a level: a line printed once, hours ago, in a
 		// scrollback nobody is watching is the silence this bead was about.
 		newest := future[len(future)-1]
-		d.eprintf("backup: %s\n", backupFutureClause(len(future), newest, backupTimeOf(newest).Sub(d.now())))
+		d.equietf("backup: %s\n", backupFutureClause(len(future), newest, backupTimeOf(newest).Sub(d.now())))
 	}
 	if len(usable) > 0 {
 		newest := usable[len(usable)-1]
@@ -218,14 +222,14 @@ func (d *Dispatcher) backupTick(cfg BackupConfig) {
 	// on the error path is losing the reason.
 	for _, line := range strings.Split(strings.TrimSuffix(say.String(), "\n"), "\n") {
 		if line != "" {
-			d.printf("   %s\n", line)
+			d.quietf("   %s\n", line)
 		}
 	}
 	if err != nil {
-		d.eprintf("backup: scheduled archive failed: %v\n", err)
+		d.equietf("backup: scheduled archive failed: %v\n", err)
 		return
 	}
-	d.printf("backup · scheduled · %s · next in %s\n", AbbrevHome(res.Archive), cfg.Interval)
+	d.quietf("backup · scheduled · %s · next in %s\n", AbbrevHome(res.Archive), cfg.Interval)
 }
 
 // BackupScheduleLine is what `posse backup status` says about the clock: one

@@ -694,3 +694,86 @@ func TestQAWatchStartsTheWatchdogAndItNamesAStalledPass(t *testing.T) {
 		t.Fatalf("a pass stalled in a hung bd child past the budget was never named — Watch did not start the watchdog:\n%s", got)
 	}
 }
+
+// ─── the clocks are not the loop (ranger-base-0fz98 finding 3) ──────────────
+
+// The watchdog's only input is LastWrite, and the guard clock's tick wrote
+// through printf on its own goroutine every base interval for as long as
+// the box was over the load line — so under exactly the condition that
+// makes a stall likely, a stalled pass was never named: the reading was
+// refreshed every 3m and the 32m budget was unreachable. The backup clock
+// wrote the same way. Both are readings of the shop, not signs of life
+// from the loop, and this pin is the sentence watchdog.go's head already
+// carried made measurable: a line from a clock inside the budget does NOT
+// clear the reading, and the next watchdog tick reports with the silence
+// grown.
+//
+// Rig: the named stall from TestQAWatchdogNamesASilentLoopAndKeepsSaying,
+// then one tick of the clock under test, then the watchdog again. The
+// clock's line must be in the log (a quiet writer that also dropped the
+// line would pass a LastWrite check and lose the reading) and LastWrite
+// must still say the pass's own last line.
+func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		build func(t *testing.T) (*Dispatcher, *time.Time)
+		speak func(d *Dispatcher) // one tick of the clock under test
+		says  string              // what the clock's own line carries
+	}{
+		{"guard clock over the line", func(t *testing.T) (*Dispatcher, *time.Time) {
+			b, _ := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			d.App.Load1 = func() (float64, error) { return 85.5, nil }
+			d.App.TopCPU = func() ([]Proc, error) { return nil, nil }
+			at := time.Date(2026, 9, 3, 4, 53, 18, 0, time.UTC)
+			d.Now = func() time.Time { return at }
+			return d, &at
+		}, func(d *Dispatcher) { d.guardTick() }, "guard clock"},
+		{"backup clock", func(t *testing.T) (*Dispatcher, *time.Time) {
+			d, _, at := backupLoopRig(t, "50ms")
+			return d, at
+		}, func(d *Dispatcher) {
+			cfg, err := LoadBackupConfig(d.App)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d.backupTick(cfg)
+		}, "backup · scheduled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d, at := tc.build(t)
+			budget := 32 * time.Minute
+
+			d.printf("── pass 3 · %s\n", at.Format("15:04:05"))
+			passWrote := d.LastWrite()
+
+			*at = at.Add(40 * time.Minute)
+			d.watchdogTick(budget)
+			if !strings.Contains(dispatcherOut(d), "watchdog") {
+				t.Fatalf("a 40m silence past a 32m budget was not named:\n%s", dispatcherOut(d))
+			}
+
+			// The clock speaks, inside the budget of the NEXT reading.
+			*at = at.Add(3 * time.Minute)
+			before := len(dispatcherOut(d))
+			tc.speak(d)
+			if !strings.Contains(dispatcherOut(d)[before:], tc.says) {
+				t.Fatalf("the clock wrote no %q line, so this measures nothing:\n%s", tc.says, dispatcherOut(d)[before:])
+			}
+			if got := d.LastWrite(); !got.Equal(passWrote) {
+				t.Errorf("the clock's line moved LastWrite from %s to %s: a clock is not the loop writing (ranger-base-0fz98)",
+					passWrote.Format("15:04:05"), got.Format("15:04:05"))
+			}
+
+			// And the watchdog still counts from the pass's last line.
+			*at = at.Add(1 * time.Hour)
+			before = len(dispatcherOut(d))
+			d.watchdogTick(budget)
+			if got := dispatcherOut(d)[before:]; !strings.Contains(got, "1h43m") {
+				t.Errorf("after the clock's line the watchdog did not reprint with the silence grown to 1h43m:\n%q", got)
+			}
+		})
+	}
+}

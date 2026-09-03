@@ -368,6 +368,15 @@ func (d *Dispatcher) println(a ...any) {
 // (watchdog.go): under a rolling Run a pass is not a heartbeat, but a
 // healthy loop — gathering or idle — is never quiet for long, and "the log
 // stopped" is the observable the operator used to find ranger-base-wj7e9.
+//
+// So the three above are the PASS's writers, and a clock that runs on a
+// goroutine of its own — the guard clock, the backup clock, the watchdog
+// itself — writes through quietf/equietf below instead. A clock's line says
+// nothing about whether the loop is alive: the guard clock kept writing
+// every base interval while a pass stalled under exactly the load that made
+// the stall likely, and each of those lines refreshed this reading, so the
+// budget was unreachable for as long as the box stayed over the line
+// (ranger-base-0fz98 finding 3).
 func (d *Dispatcher) LastWrite() time.Time {
 	d.outMu.Lock()
 	defer d.outMu.Unlock()
@@ -383,28 +392,41 @@ func (d *Dispatcher) noteWrite() {
 	d.lastWrite = d.now()
 }
 
-// sayQuietly writes a line WITHOUT stamping LastWrite. It exists for the
-// watchdog and for nothing else: a silence report that reset the silence
-// clock would report a stall exactly once and then go quiet itself, which
-// is the shape of the failure rather than a report of it.
-func (d *Dispatcher) sayQuietly(format string, a ...any) {
+// quietf writes a line to Out WITHOUT stamping LastWrite — serialized by
+// outMu like printf, because the clocks that use it write the same stream a
+// gather is writing. It is for every writer that is NOT the pass: the
+// watchdog, whose own report resetting the silence clock would report a
+// stall exactly once and then go quiet itself; and the guard and backup
+// clocks, whose ticks are readings of the shop and not signs of life from
+// the loop (see LastWrite).
+func (d *Dispatcher) quietf(format string, a ...any) {
 	d.outMu.Lock()
 	defer d.outMu.Unlock()
 	fmt.Fprintf(d.Out, format, a...)
 }
 
-// errWriter is errw() as an io.Writer, serialized by outMu like the three
-// above. It is for the callee that takes a writer instead of printing —
-// App.LoadHigh — whose reading the guard clock (guardclock.go) now takes on
-// its own goroutine while a gather is writing this same stream.
+// equietf is quietf to errw().
+func (d *Dispatcher) equietf(format string, a ...any) {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	fmt.Fprintf(d.errw(), format, a...)
+}
+
+// quietErrWriter is errw() as an io.Writer, serialized by outMu like the
+// writers above and QUIET like equietf: it is for the callee that takes a
+// writer instead of printing — App.LoadHigh — whose reading the guard clock
+// (guardclock.go) takes on its own goroutine while a gather is writing this
+// same stream, and a reading a clock could not take is a line but not a
+// sign of life (see LastWrite). Its stamping twin had no caller once the
+// guard clock went quiet, so there is none.
 type dispatcherErrw struct{ d *Dispatcher }
 
 func (w dispatcherErrw) Write(p []byte) (int, error) {
-	w.d.eprintf("%s", p)
+	w.d.equietf("%s", p)
 	return len(p), nil
 }
 
-func (d *Dispatcher) errWriter() io.Writer { return dispatcherErrw{d} }
+func (d *Dispatcher) quietErrWriter() io.Writer { return dispatcherErrw{d} }
 
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are

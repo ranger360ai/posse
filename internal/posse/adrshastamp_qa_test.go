@@ -252,7 +252,19 @@ func (r *adrRepo) stage(t *testing.T, rel, body string) {
 
 func (r *adrRepo) commitPath(t *testing.T, rel string) (string, error) {
 	t.Helper()
-	return r.git(r.persona, "commit", "-m", "adr", "--", rel)
+	return r.commitPathWith(t, rel, "")
+}
+
+// commitPathWith is commitPath under one `git -c key=value` of the writer's,
+// or none when cfg is "". The setting need not be in any config file to
+// reach the hook: git exports it through GIT_CONFIG_PARAMETERS (measured).
+func (r *adrRepo) commitPathWith(t *testing.T, rel, cfg string) (string, error) {
+	t.Helper()
+	args := []string{"commit", "-m", "adr", "--", rel}
+	if cfg != "" {
+		args = append([]string{"-c", cfg}, args...)
+	}
+	return r.git(r.persona, args...)
 }
 
 // adrStage writes body at rel (creating parents) and stages exactly that
@@ -579,10 +591,10 @@ func TestQAAdrShaStampAgreesWithTheCensus(t *testing.T) {
 	for i, c := range adrTwoWayCases() {
 		rel := "docs/adr/09" + string(rune('a'+i)) + "-two-way.md"
 		r.stage(t, rel, c.body(r))
-		_, hookErr := r.commitPath(t, rel)
+		_, hookErr := r.commitPathWith(t, rel, c.cfg)
 		hookPassed := hookErr == nil
 
-		censusOut, _, censusRefused := r.census(t, rel)
+		censusOut, _, censusRefused := r.censusWith(t, c.cfg, rel)
 		censusPassed := !censusRefused
 
 		if hookPassed != censusPassed {
@@ -604,31 +616,50 @@ func TestQAAdrShaStampAgreesWithTheCensus(t *testing.T) {
 
 // adrTwoWayCases is the fixture set the hook and the census must agree on:
 // one cell per shape the predicate has to tell apart, half of them refused.
+//
+// cfg, where set, is a git setting of the WRITER's (`git -c`, which reaches
+// the hook through GIT_CONFIG_PARAMETERS and the census the same way). The
+// four settings cells are the ones that blanked the hook's diff reader
+// SILENTLY while the census refused the same file (ranger-base-0fz98): each
+// is stale-alone, the refused cell, so a reader that goes blind under the
+// setting commits it and disagrees with the census here.
 func adrTwoWayCases() []struct {
 	name string
 	body func(*adrRepo) string
 	pass bool
+	cfg  string
 } {
+	stale := func(r *adrRepo) string { return adrStamp(r.stale) }
 	return []struct {
 		name string
 		body func(*adrRepo) string
 		pass bool
+		cfg  string
 	}{
-		{"landed", func(r *adrRepo) string { return adrStamp(r.landed) }, true},
-		{"unresolvable", func(r *adrRepo) string { return adrStamp("deadbee") }, true},
-		{"stale-alone", func(r *adrRepo) string { return adrStamp(r.stale) }, false},
+		{"landed", func(r *adrRepo) string { return adrStamp(r.landed) }, true, ""},
+		{"unresolvable", func(r *adrRepo) string { return adrStamp("deadbee") }, true, ""},
+		{"stale-alone", stale, false, ""},
+		// git resolves hex either case; a lowercase-only token class made
+		// the capitals prose to both readers (ranger-base-0fz98 finding 1).
+		{"stale-uppercase", func(r *adrRepo) string { return adrStamp(strings.ToUpper(r.stale)) }, false, ""},
 		{"stale-beside-a-non-twin", func(r *adrRepo) string {
 			return "# x\n\nStale `" + r.stale + "`, landed `" + r.landed + "`.\n"
-		}, false},
+		}, false, ""},
 		{"stale-beside-its-twin", func(r *adrRepo) string {
 			return "# x\n\nStale `" + r.twinStale + "`.\n\nTwin `" + r.twinLanded + "`.\n"
-		}, true},
+		}, true, ""},
 		{"empty-beside-empty", func(r *adrRepo) string {
 			return "# x\n\nStale `" + r.emptyStale + "`, root `" + r.root + "`.\n"
-		}, false},
+		}, false, ""},
 		{"two-row-table", func(r *adrRepo) string {
 			return "| " + r.twinStale + " | " + r.twinLanded + " |\n| " + r.twin2Stale + " | " + r.twin2Landed + " |\n"
-		}, true},
+		}, true, ""},
+		// Finding 2: the writer's diff settings. `true` as the external
+		// diff prints no diff at all, which is the shape of any diff.external.
+		{"stale-under-diff.noprefix", stale, false, "diff.noprefix=true"},
+		{"stale-under-diff.mnemonicPrefix", stale, false, "diff.mnemonicPrefix=true"},
+		{"stale-under-color.ui", stale, false, "color.ui=always"},
+		{"stale-under-diff.external", stale, false, "diff.external=true"},
 	}
 }
 
