@@ -104,11 +104,13 @@ gate's demand.
 **D3 — the twelve are re-stamped from the table above, sha for sha,** the
 bead id kept where it already stands. One code-lane bead, closable in a
 session, verified by the census returning 0 refusals under the D5 predicate
-(`scripts/adr-sha-census.sh`, which prints judged / admitted-by-twin /
+(`posse gates adr-census`, which prints judged / admitted-by-twin /
 refused so that a zero over a pruned object store reads as "nothing
-judged", not as clean). This keeps `git show` working for the reader who has
-the record open; the alternative — strip the shas and leave the ids — throws
-away a resolver that works today for nothing. *(amended 2026-09-03: the
+judged", not as clean; *editorial, 2026-09-03, ranger-base-gyrko: the
+census was `scripts/adr-sha-census.sh` until the mode landed*). This keeps
+`git show` working for the reader who has the record open; the alternative
+— strip the shas and leave the ids — throws away a resolver that works
+today for nothing. *(amended 2026-09-03: the
 criterion read "0 non-ancestors", which this file makes unreachable by
 construction — the sweep landed at ranger-base-0ujt7 with the recipe still
 printing 12, all twelve sourced from the table above. Under D5, MEASURED at
@@ -134,7 +136,9 @@ the staged added lines — one predicate, two line sources, so the gate and
 the sweep's verify cannot disagree about what is exempt; a second copy of
 the rule in prose or in a script is the thing this amendment exists to
 prevent, and the reference script under `scripts/` is retired when the
-hook's own text can be run in census mode. The base is the branch the main
+hook's own text can be run in census mode *(done: `posse gates adr-census`
+renders the hook's predicate from the same Go function, ranger-base-gyrko,
+2026-09-03)*. The base is the branch the main
 checkout has checked out (`git --git-dir=$(git rev-parse --git-common-dir)
 symbolic-ref -q HEAD`); when that is detached the check judges nothing and
 says so — a gate that cannot find its base does not guess (0019's
@@ -208,12 +212,16 @@ lands, a sentence does not).
 
 ## Verification
 
-- *(amended 2026-09-03)* `sh scripts/adr-sha-census.sh` at the repo's
-  branch prints 0 refused, and its summary line shows a non-zero judged
-  count. MEASURED at 53e1bec under the old criterion: 12; at ffec279 under
-  D5: 0 refused with 58 distinct tokens judged, 12 of them admitted by
-  twin. The old criterion — 0 non-ancestors among resolving tokens —
-  is unreachable while this file states its evidence and is withdrawn.
+- *(amended 2026-09-03; editorial 2026-09-03, ranger-base-gyrko: the
+  recipe was `sh scripts/adr-sha-census.sh` until census mode landed)*
+  `posse gates adr-census` at the repo's branch prints 0 refused, and its
+  summary line shows a non-zero judged count. MEASURED at 53e1bec under the
+  old criterion: 12; at ffec279 under D5: 0 refused with 58 distinct tokens
+  judged, 12 of them admitted by twin; at 57f1185 the retired script and
+  the mode printed the same summary (58 judged, 46 ancestors, 12 admitted
+  by twin, 0 refused) and the same twelve ADMITTED lines. The old
+  criterion — 0 non-ancestors among resolving tokens — is unreachable while
+  this file states its evidence and is withdrawn.
 - The hook refuses a staged `docs/adr` line adding a sha that resolves and
   is not on main, and passes the same line with the sha replaced by its
   landed twin; passes a token that does not resolve; refuses nothing when
@@ -244,8 +252,9 @@ else, and under the record radius judges 58 distinct tokens, admits 12 and
 refuses 0, before and after the bracket edits; the fixture refuses a stale sha beside
 main's HEAD and admits it with its twin two paragraphs away; the line radius
 refused three freshly bracketed sentences; ~60 ms per patch-id pair; the
-whole census over docs/adr runs in ~7 s. ASSUMED: the reference script and
-the hook's predicate stay equal until census mode lands — the two-way pin in
-Verification is what turns that into MEASURED; a record that holds a twin
-table admits its twelve anywhere in itself, which is a reader's puzzle at
-worst, never a false citation.
+whole census over docs/adr runs in ~7 s. MEASURED (2026-09-03, ranger-base-gyrko): the census is the hook's own
+predicate text rendered from one Go function, and the two-way pin in
+Verification holds over the whole fixture set — what this sentence ASSUMED
+of the reference script until census mode landed; a record that holds a
+twin table admits its twelve anywhere in itself, which is a reader's puzzle
+at worst, never a false citation.

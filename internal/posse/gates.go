@@ -3606,12 +3606,191 @@ base branch and carries the same patch-id; a sha your own session tree just
 minted has none until the launcher lands it, which is why a build close can
 only ever take the first route.`
 
-// adrShaGuardBody renders the arm ADR 0051 D4 specifies, as amended by D5
-// (ranger-base-mlfie, 2026-09-03): a commit that ADDS a line under docs/adr/
-// carrying a sha that resolves HERE and is not an ancestor of the base
-// branch is refused — unless an ancestor somewhere in the same STAGED FILE
-// is its patch-id twin. The refusal prints the token, because the token is
-// the remedy.
+// adrShaPredicate is THE predicate ADR 0051 D4 specifies as amended by D5
+// (ranger-base-mlfie, 2026-09-03) — one shell text, rendered into TWO
+// places from this one function: the prepare-commit-msg hook's sha-stamp arm
+// (adrShaGuardBody) and `posse gates adr-census` (AdrCensusScript). D4 says
+// why there is one and not two: the hook and the census must not disagree
+// about what is exempt, and a second copy of the rule — in prose, in a
+// script — is the thing the amendment exists to prevent. The reference
+// script under scripts/ was that second copy and retired when this landed
+// (ranger-base-gyrko).
+//
+// ONE PREDICATE, TWO LINE SOURCES. The caller defines two shell functions
+// before this text runs, and they are the WHOLE difference between the modes:
+//
+//	posse_adr_judged FILE   the lines being judged — the hook: the ADDED lines
+//	                        of the staged file; the census: every line of it
+//	posse_adr_record FILE   the record a twin may sit in — the hook: the whole
+//	                        staged blob; the census: the same file
+//
+// and sets posse_adr_files (newline-separated). posse_adr_judge then reads
+// the base, classifies every token, and leaves three newline-separated
+// verdict lists for the caller to render as a refusal or as a census:
+//
+//	posse_adr_base       the base branch, or EMPTY when the main checkout is
+//	                     detached — it judged nothing and said so on stderr
+//	posse_adr_ancestors  "TOK FILE"       a judged token that IS on the base
+//	posse_adr_admitted   "TOK TWIN FILE"  a non-ancestor with a twin in the record
+//	posse_adr_refused    "TOK FILE"       a non-ancestor with no twin — the verdict
+//
+// The token comes first and the path last, so a path with a space in it
+// splits cleanly under ${l%% *} and ${l#* }.
+//
+// THE RADIUS IS THE FILE and not the line, and that was measured rather than
+// chosen — a line radius refused every bracketed prose mention ADR 0051's
+// own amendment wrote, because 76-column prose wraps the bracket onto the
+// next line, and a paragraph radius needs a markdown block parser inside a
+// shell hook. The radius carries no safety anyway: the twin's NONEXISTENCE
+// before landing is what carries it.
+//
+// AN EMPTY PATCH-ID IS NOT A TWIN. `git diff-tree -p` prints nothing for a
+// commit with no diff of its own — a root commit, a merge, an `--allow-empty`
+// commit — so `git patch-id` prints nothing, and two empty patch-ids compare
+// equal (MEASURED, git 2.50.1). Without the guard, an empty stale commit is
+// admitted beside any empty ancestor, and a repo's ROOT commit is an empty
+// ancestor that any ADR may legitimately cite. An empty patch-id is no
+// answer, not a match.
+//
+// THE BASE IS THE MAIN CHECKOUT'S BRANCH, ASKED OF GIT, NEVER GUESSED. From
+// a session worktree `git rev-parse --git-common-dir` is the main .git and
+// its HEAD is the branch the operator has checked out (measured:
+// refs/heads/main). When that HEAD is DETACHED the command answers nothing,
+// and the predicate judges nothing and says so on stderr — ADR 0019's
+// composite rule, no fallthrough on a read failure: a gate that cannot find
+// its base does not fall through to a refusal it cannot justify. In a shared
+// checkout the same command returns that checkout's own branch, and a sha
+// the operator just made IS an ancestor of it — correct, since the
+// operator's commits never pass through the launcher and never re-sha.
+//
+// TOKENS THAT DO NOT RESOLVE ARE PASSED, deliberately: they are prose, or
+// another repo's, and this predicate cannot judge them. That is its whole
+// false-positive budget — `deadbee` in a sentence costs one cat-file. A
+// census over a PRUNED object store therefore judges nothing and its
+// summary says "0 distinct tokens", never "clean" (ADR 0051 Consequences).
+//
+// NO ESCAPES for a blockquote or a fenced block, and no override env either
+// (ADR 0051 Alternatives, and mlfie's ruling, which priced an explicit
+// marker and rejected it: free to type, and it teaches the override). D5 IS
+// the way through for the one record that needs one, and it is a way through
+// nothing minted in a session tree can take.
+//
+// COST, MEASURED: cat-file plus merge-base is ~50 ms per token; the patch-id
+// pair is ~60 ms and is computed only for a file that holds BOTH a
+// non-ancestor and an ancestor, so the common case pays nothing extra. The
+// record scan runs only for a file with a non-ancestor, for the same reason.
+//
+// Every command here is in scripts/cleanroom.sh's HOOK_DEPS (git, grep, sort,
+// cut) — the hook is what the clean-room probe walks, and this text is in it.
+func adrShaPredicate() string {
+	return `
+# ─── the ADR sha-stamp predicate (ADR 0051 D4/D5) — ONE TEXT, TWO LINE SOURCES
+# This block is rendered from one Go function into the prepare-commit-msg
+# hook AND into posse gates adr-census, so the gate and the census cannot
+# disagree about what is exempt. The caller defined posse_adr_judged FILE
+# (the lines judged) and posse_adr_record FILE (the record a twin may sit
+# in) and set posse_adr_files; posse_adr_judge leaves posse_adr_base (empty:
+# detached, judged nothing) and three "TOK ... FILE" lists: posse_adr_ancestors,
+# posse_adr_admitted, posse_adr_refused.
+#
+# AN EMPTY PATCH-ID IS NO ANSWER. git diff-tree -p prints nothing for a
+# commit with no diff of its own — a root commit, a merge, an empty
+# commit — so patch-id prints nothing and two empties compare EQUAL,
+# which would admit an empty stale commit beside the repo's own root
+# (measured). The caller tests for emptiness; this just reports it.
+posse_adr_pid() {
+  git diff-tree -p "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | cut -d' ' -f1
+}
+posse_adr_judge() {
+  posse_adr_ancestors=''
+  posse_adr_admitted=''
+  posse_adr_refused=''
+  # The branch the MAIN checkout has checked out, asked of git rather than
+  # guessed: --git-common-dir is the main .git from a session worktree and
+  # this repo's own .git in a shared checkout. Detached there and this
+  # answers nothing, which is the one arm below that judges nothing.
+  #
+  # Two statements and not one nested command substitution: the HOOK_DEPS
+  # scanner (hookdeps_qa_test.go) reads a command substitution inside an
+  # argument as closing the command it sits in, and named symbolic-ref as a
+  # PATH command the clean room must probe for. The shape below says the same
+  # thing to sh and the truth to the scanner. Filed as ranger-base-8lfbn;
+  # fold these two back into one when that lands.
+  posse_adr_common=$(git rev-parse --git-common-dir 2>/dev/null)
+  posse_adr_base=$(git --git-dir="$posse_adr_common" symbolic-ref -q HEAD 2>/dev/null)
+  if [ -z "$posse_adr_base" ]; then
+    echo "posse gate: ADR sha-stamp check judged nothing — the main checkout's HEAD is detached, so this check has no base branch to measure ancestry against (ADR 0051 D4). Cite the bead id." >&2
+    return 0
+  fi
+  # -f: the file loop splits an unquoted expansion and a path with a glob
+  # character in it has to stay a path. IFS is a newline only, so every
+  # list below — paths and tokens alike — is newline-separated and one
+  # split rule serves both.
+  set -f
+  posse_adr_ifs=$IFS
+  IFS='
+'
+  for posse_adr_f in $posse_adr_files; do
+    # The tokens being JUDGED. Deduplicated: an ADR quotes one sha many
+    # times and each judgement is ~50 ms.
+    posse_adr_anc=''
+    posse_adr_non=''
+    for posse_adr_t in $(posse_adr_judged "$posse_adr_f" | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+      # Does not resolve to a commit HERE: prose, or another repo's. Not
+      # this predicate's to judge, and passed.
+      git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
+      if git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null; then
+        # Landed. This is the shape D2 blesses.
+        posse_adr_anc="$posse_adr_anc$posse_adr_t
+"
+        posse_adr_ancestors="$posse_adr_ancestors$posse_adr_t $posse_adr_f
+"
+      else
+        posse_adr_non="$posse_adr_non$posse_adr_t
+"
+      fi
+    done
+    [ -n "$posse_adr_non" ] || continue
+    # Only now, and only for this file: the candidate twins, from the whole
+    # RECORD rather than the judged lines, because a record about stale
+    # shas usually already carries them (D5).
+    posse_adr_anc=''
+    for posse_adr_t in $(posse_adr_record "$posse_adr_f" | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
+      git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
+      git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null || continue
+      posse_adr_anc="$posse_adr_anc$posse_adr_t
+"
+    done
+    for posse_adr_t in $posse_adr_non; do
+      posse_adr_want=$(posse_adr_pid "$posse_adr_t")
+      posse_adr_twin=''
+      if [ -n "$posse_adr_want" ]; then
+        for posse_adr_a in $posse_adr_anc; do
+          if [ "$(posse_adr_pid "$posse_adr_a")" = "$posse_adr_want" ]; then
+            posse_adr_twin=$posse_adr_a
+            break
+          fi
+        done
+      fi
+      if [ -n "$posse_adr_twin" ]; then
+        posse_adr_admitted="$posse_adr_admitted$posse_adr_t $posse_adr_twin $posse_adr_f
+"
+      else
+        posse_adr_refused="$posse_adr_refused$posse_adr_t $posse_adr_f
+"
+      fi
+    done
+  done
+  IFS=$posse_adr_ifs
+  set +f
+}
+`
+}
+
+// adrShaGuardBody renders the hook's arm: adrShaPredicate with the hook's
+// two line sources — the ADDED lines of each staged docs/adr file are judged,
+// the whole staged blob is the record — and the refusal that names the
+// token, because the token is the remedy.
 //
 // A SIBLING OF THE VISIBILITY GUARD'S CHECK 2, NOT A MEMBER OF IT. It shares
 // that check's reader shape — the ADDED lines of a staged pathspec, -U0,
@@ -3628,52 +3807,9 @@ only ever take the first route.`
 // what the file already said. The candidate twins come from the WHOLE STAGED
 // BLOB (`git show :<path>`), because the twin is usually already in the
 // record: re-flowing one row of a stale→landed table adds the stale sha and
-// adds nothing else. The radius is the FILE and not the line, and that was
-// measured rather than chosen — a line radius refused every bracketed prose
-// mention ADR 0051's own amendment wrote, because 76-column prose wraps the
-// bracket onto the next line, and a paragraph radius needs a markdown block
-// parser inside a shell hook. The radius carries no safety anyway: the
-// twin's NONEXISTENCE before landing is what carries it.
-//
-// `scripts/adr-sha-census.sh` is the same predicate over every line of every
-// docs/adr file instead of the staged added lines, and the two are pinned to
-// agree fixture for fixture (TestQAAdrShaStampAgreesWithTheCensusScript).
-// When the hook's own text can be run in census mode the script retires
-// (ranger-base-gyrko).
-//
-// AN EMPTY PATCH-ID IS NOT A TWIN, and this is the one place the reference
-// script and this arm both had to be told so. `git diff-tree -p` prints
-// nothing for a commit with no diff of its own — a root commit, a merge, an
-// `--allow-empty` commit — so `git patch-id` prints nothing, and two empty
-// patch-ids compare equal (MEASURED, git 2.50.1). Without the guard, an
-// empty stale commit is admitted beside any empty ancestor, and a repo's
-// ROOT commit is an empty ancestor that any ADR may legitimately cite. An
-// empty patch-id is no answer, not a match.
-//
-// THE BASE IS THE MAIN CHECKOUT'S BRANCH, ASKED OF GIT, NEVER GUESSED. From
-// a session worktree `git rev-parse --git-common-dir` is the main .git and
-// its HEAD is the branch the operator has checked out (measured:
-// refs/heads/main). When that HEAD is DETACHED the command answers nothing,
-// and the arm judges nothing and says so on stderr — ADR 0019's composite
-// rule, no fallthrough on a read failure: a gate that cannot find its base
-// does not fall through to a refusal it cannot justify. In a shared checkout
-// the same command returns that checkout's own branch, and a sha the
-// operator just made IS an ancestor of it — correct, since the operator's
-// commits never pass through the launcher and never re-sha.
-//
-// TOKENS THAT DO NOT RESOLVE ARE PASSED, deliberately: they are prose, or
-// another repo's, and this hook cannot judge them. That is the arm's whole
-// false-positive budget — `deadbee` in a sentence costs one cat-file.
-//
-// NO ESCAPES for a blockquote or a fenced block, and no override env either
-// (ADR 0051 Alternatives, and mlfie's ruling, which priced an explicit
-// marker and rejected it: free to type, and it teaches the override). D5 IS
-// the way through for the one record that needs one, and it is a way through
-// nothing minted in a session tree can take.
-//
-// COST, MEASURED: cat-file plus merge-base is ~50 ms per token; the patch-id
-// pair is ~60 ms and is computed only for a file that holds BOTH a
-// non-ancestor and an ancestor, so the common case pays nothing extra.
+// adds nothing else. `posse gates adr-census` is the same predicate text with
+// every line of the working-tree file as both sources, and the two are
+// pinned to agree fixture for fixture (TestQAAdrShaStampAgreesWithTheCensus).
 func adrShaGuardBody() string {
 	return `
 # ─── the ADR sha-stamp guard (ADR 0051 D4/D5, ranger-base-glewr) ──────────
@@ -3695,106 +3831,164 @@ func adrShaGuardBody() string {
 # every line of a moved record.
 posse_adr_head=$(git hash-object -t tree /dev/null 2>/dev/null)
 if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_adr_head=HEAD; fi
+# The hook's two line sources (the census defines the same two over whole
+# files): the lines this commit is WRITING are judged, and the whole staged
+# blob is the record a twin may sit in.
+posse_adr_judged() {
+  git diff --cached -U0 "$posse_adr_head" -- "$1" 2>/dev/null | grep '^+' | grep -v '^+++'
+}
+posse_adr_record() {
+  git show ":$1" 2>/dev/null
+}
+` + adrShaPredicate() + `
 posse_adr_files=$(git diff --cached -U0 "$posse_adr_head" -- ` + shQuote(AdrPathspec) + ` 2>/dev/null |
   grep '^+++ b/' | cut -c7- | sort -u)
 if [ -n "$posse_adr_files" ]; then
-  # The branch the MAIN checkout has checked out, asked of git rather than
-  # guessed: --git-common-dir is the main .git from a session worktree and
-  # this repo's own .git in a shared checkout. Detached there and this
-  # answers nothing, which is the one arm below that judges nothing.
-  #
-  # Two statements and not one nested command substitution: the HOOK_DEPS
-  # scanner (hookdeps_qa_test.go) reads a command substitution inside an
-  # argument as closing the command it sits in, and named symbolic-ref as a
-  # PATH command the clean room must probe for. The shape below says the same
-  # thing to sh and the truth to the scanner. Filed as ranger-base-8lfbn;
-  # fold these two back into one when that lands.
-  posse_adr_common=$(git rev-parse --git-common-dir 2>/dev/null)
-  posse_adr_base=$(git --git-dir="$posse_adr_common" symbolic-ref -q HEAD 2>/dev/null)
-  if [ -z "$posse_adr_base" ]; then
-    echo "posse gate: ADR sha-stamp check judged nothing — the main checkout's HEAD is detached, so this hook has no base branch to measure ancestry against (ADR 0051 D4). Cite the bead id." >&2
-  else
-    # AN EMPTY PATCH-ID IS NO ANSWER. git diff-tree -p prints nothing for a
-    # commit with no diff of its own — a root commit, a merge, an empty
-    # commit — so patch-id prints nothing and two empties compare EQUAL,
-    # which would admit an empty stale commit beside the repo's own root
-    # (measured). The caller tests for emptiness; this just reports it.
-    posse_adr_pid() {
-      git diff-tree -p "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | cut -d' ' -f1
-    }
+  posse_adr_judge
+  if [ -n "$posse_adr_refused" ]; then
     posse_adr_bad=''
-    # -f: the file loop splits an unquoted expansion and a staged path with
-    # a glob character in it has to stay a path. IFS is a newline only, so
-    # every list below — paths and tokens alike — is newline-separated and
-    # one split rule serves both.
     set -f
     posse_adr_ifs=$IFS
     IFS='
 '
-    for posse_adr_f in $posse_adr_files; do
-      # The tokens this commit is WRITING. Deduplicated: an ADR quotes one
-      # sha many times and each judgement is ~50 ms.
-      posse_adr_non=''
-      for posse_adr_t in $(git diff --cached -U0 "$posse_adr_head" -- "$posse_adr_f" 2>/dev/null |
-          grep '^+' | grep -v '^+++' | grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
-        # Does not resolve to a commit HERE: prose, or another repo's. Not
-        # this hook's to judge, and passed.
-        git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
-        # Landed. This is the shape D2 blesses.
-        git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null && continue
-        posse_adr_non="$posse_adr_non$posse_adr_t
+    for posse_adr_l in $posse_adr_refused; do
+      posse_adr_bad="$posse_adr_bad  ${posse_adr_l%% *}    in ${posse_adr_l#* }
 "
-      done
-      [ -n "$posse_adr_non" ] || continue
-      # Only now, and only for this file: the candidate twins, from the
-      # WHOLE staged blob rather than the added lines, because a record
-      # about stale shas usually already carries them (D5).
-      posse_adr_anc=''
-      for posse_adr_t in $(git show ":$posse_adr_f" 2>/dev/null |
-          grep -oE '\b[0-9a-f]{7,40}\b' | sort -u); do
-        git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
-        git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null || continue
-        posse_adr_anc="$posse_adr_anc$posse_adr_t
-"
-      done
-      for posse_adr_t in $posse_adr_non; do
-        posse_adr_want=$(posse_adr_pid "$posse_adr_t")
-        posse_adr_twin=''
-        if [ -n "$posse_adr_want" ]; then
-          for posse_adr_a in $posse_adr_anc; do
-            if [ "$(posse_adr_pid "$posse_adr_a")" = "$posse_adr_want" ]; then
-              posse_adr_twin=$posse_adr_a
-              break
-            fi
-          done
-        fi
-        [ -z "$posse_adr_twin" ] || continue
-        posse_adr_bad="$posse_adr_bad  $posse_adr_t    in $posse_adr_f
-"
-      done
     done
     IFS=$posse_adr_ifs
     set +f
-    if [ -n "$posse_adr_bad" ]; then
-      {
-        echo "refused by posse gate: a staged docs/adr line names a sha that is not on $posse_adr_base and has no landed twin in the record — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-        echo ` + shQuote(AdrShaRule) + `
-        echo "added under docs/adr, resolves in this clone, NOT an ancestor of $posse_adr_base:"
-        printf '%s' "$posse_adr_bad"
-        echo ` + shQuote(AdrShaWayThrough) + `
-        echo "the same predicate over whole files, to check a record before you commit it:"
-        echo "  sh scripts/adr-sha-census.sh <file>"
-        echo "Nothing here has been reset, unstaged or cleaned up: this hook does not"
-        echo "touch your tree, and what you staged is still exactly where you put it."
-      } >&2
-      if [ -n "$RHQ_GATES_DIR" ]; then
-        echo "$(posse_stamp) ADR sha-stamp guard [prepare-commit-msg hook] (base $posse_adr_base)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-      fi
-      exit 1
+    {
+      echo "refused by posse gate: a staged docs/adr line names a sha that is not on $posse_adr_base and has no landed twin in the record — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+      echo ` + shQuote(AdrShaRule) + `
+      echo "added under docs/adr, resolves in this clone, NOT an ancestor of $posse_adr_base:"
+      printf '%s' "$posse_adr_bad"
+      echo ` + shQuote(AdrShaWayThrough) + `
+      echo "the same predicate over whole files, to check a record before you commit it:"
+      echo "  posse gates adr-census <file>"
+      echo "Nothing here has been reset, unstaged or cleaned up: this hook does not"
+      echo "touch your tree, and what you staged is still exactly where you put it."
+    } >&2
+    if [ -n "$RHQ_GATES_DIR" ]; then
+      echo "$(posse_stamp) ADR sha-stamp guard [prepare-commit-msg hook] (base $posse_adr_base)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
     fi
+    exit 1
   fi
 fi
 `
+}
+
+// AdrCensusScript is `posse gates adr-census`: the hook's own predicate text
+// (adrShaPredicate, byte for byte) run over every line of every file it is
+// handed, as both line sources. It is ADR 0051 D3's verify and D4's census —
+// "one predicate, two line sources" — and it replaced scripts/adr-sha-census.sh,
+// which was a second copy of the rule (ranger-base-gyrko).
+//
+// Output, per file: ADMITTED and REFUSE lines (an ancestor is judged and
+// counted but not printed), then one summary line —
+//
+//	posse gates adr-census: base main judged N distinct tokens: A ancestors, T admitted by twin, R refused
+//
+// — and exit 1 when R > 0. The summary carries the judged count so that a
+// zero over a PRUNED object store reads as "judged 0", never as clean
+// (ADR 0051 Consequences, amended). When the main checkout is detached the
+// predicate judged nothing, said so on stderr, and the census exits 0 with
+// no verdict lines and no summary: there is nothing to summarize.
+func AdrCensusScript() string {
+	return `#!/bin/sh
+# posse gates adr-census — ADR 0051 D3's verify, rendered from the SAME Go
+# function as the prepare-commit-msg hook's sha-stamp arm (ranger-base-gyrko).
+# Both line sources are the whole file: every line is judged and every line
+# may hold a twin.
+set -u
+posse_adr_judged() {
+  cat "$1"
+}
+posse_adr_record() {
+  cat "$1"
+}
+posse_adr_files=$(printf '%s\n' "$@")
+` + adrShaPredicate() + `
+posse_adr_judge
+[ -n "$posse_adr_base" ] || exit 0
+posse_adr_branch=${posse_adr_base#refs/heads/}
+set -f
+IFS='
+'
+for posse_adr_l in $posse_adr_admitted; do
+  posse_adr_t=${posse_adr_l%% *}
+  posse_adr_l=${posse_adr_l#* }
+  echo "ADMITTED ${posse_adr_l#* } $posse_adr_t twin ${posse_adr_l%% *}"
+done
+for posse_adr_l in $posse_adr_refused; do
+  posse_adr_t=${posse_adr_l%% *}
+  posse_adr_f=${posse_adr_l#* }
+  posse_adr_lines=$(grep -nE "\b$posse_adr_t\b" "$posse_adr_f" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+  echo "REFUSE $posse_adr_f:$posse_adr_lines $posse_adr_t resolves here but is not on $posse_adr_branch and no landed twin is in the record — cite the bead id (git log --grep), or put the twin beside it (ADR 0051 D2/D5)"
+done
+posse_adr_j=$(printf '%s' "$posse_adr_ancestors" | grep -c .)
+posse_adr_a=$(printf '%s' "$posse_adr_admitted" | grep -c .)
+posse_adr_r=$(printf '%s' "$posse_adr_refused" | grep -c .)
+echo "posse gates adr-census: base $posse_adr_branch judged $((posse_adr_j+posse_adr_a+posse_adr_r)) distinct tokens: $posse_adr_j ancestors, $posse_adr_a admitted by twin, $posse_adr_r refused"
+[ "$posse_adr_r" -eq 0 ]
+`
+}
+
+// AdrCensusDefault is what the census walks when handed no files: the
+// records under the repo root, resolved from dir's toplevel.
+const AdrCensusDefault = "docs/adr/*.md"
+
+// RunAdrCensus runs AdrCensusScript over files, relative to dir, writing
+// the census to stdout and the predicate's own stderr (the detached
+// notice) to stderr. With no files it walks AdrCensusDefault from dir's git
+// toplevel, so `posse gates adr-census` answers the same from any directory
+// of the checkout; explicit paths are the caller's and are taken relative to
+// dir. refused is the script's own exit 1 — a census with at least one
+// REFUSE line — and is not an error: the census ran and said what it found.
+// err is everything else: no repo, no files, sh missing.
+func RunAdrCensus(dir string, files []string, stdout, stderr io.Writer) (refused bool, err error) {
+	return runAdrCensus(dir, files, nil, stdout, stderr)
+}
+
+// runAdrCensus is RunAdrCensus with the child's environment as a parameter:
+// nil inherits, which is what the command does; a fixture passes the same
+// walled PATH and HOME its git runner uses, so the census it measures reads
+// the fixture's config and not the box's.
+func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Writer) (refused bool, err error) {
+	if len(files) == 0 {
+		top, terr := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+		if terr != nil {
+			return false, fmt.Errorf("adr-census: %s is not inside a git repository", dir)
+		}
+		dir = strings.TrimSpace(string(top))
+		matches, gerr := filepath.Glob(filepath.Join(dir, filepath.FromSlash(AdrCensusDefault)))
+		if gerr != nil {
+			return false, gerr
+		}
+		if len(matches) == 0 {
+			return false, fmt.Errorf("adr-census: no %s under %s — nothing to judge", AdrCensusDefault, dir)
+		}
+		sort.Strings(matches)
+		for _, m := range matches {
+			rel, rerr := filepath.Rel(dir, m)
+			if rerr != nil {
+				return false, rerr
+			}
+			files = append(files, filepath.ToSlash(rel))
+		}
+	}
+	cmd := exec.Command("sh", append([]string{"-c", AdrCensusScript(), "posse-gates-adr-census"}, files...)...)
+	cmd.Dir = dir
+	cmd.Env = env
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return true, nil
+		}
+		return false, fmt.Errorf("adr-census: %w", err)
+	}
+	return false, nil
 }
 
 // CommitGuardHook is the whole prepare-commit-msg hook for a repo whose

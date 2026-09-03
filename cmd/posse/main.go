@@ -1272,7 +1272,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates wrap <persona> -- <cmd>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1284,6 +1284,24 @@ func main() {
 			// host's parity check reads.
 			if err := posse.RunGatesWrap(args[1:], out); err != nil {
 				die(err)
+			}
+			return
+		}
+		if args[0] == "adr-census" {
+			// ADR 0051 D3's verify: the prepare-commit-msg hook's own
+			// sha-stamp predicate, rendered from the same Go function, run
+			// over every line of every docs/adr record instead of a commit's
+			// added lines (D4: one predicate, two line sources;
+			// ranger-base-gyrko). Exit 1 is the census's own verdict — at
+			// least one REFUSE line — and the summary line has already said
+			// how many it judged, so a 0 over a pruned object store reads as
+			// "judged 0" rather than as clean.
+			refused, err := posse.RunAdrCensus(".", args[1:], out, os.Stderr)
+			if err != nil {
+				die(err)
+			}
+			if refused {
+				os.Exit(1)
 			}
 			return
 		}
@@ -2248,6 +2266,13 @@ catalog:
                                     bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
                                     real slot gets the process-and-status dispatcher (INSTALL.md §9).
                                     A hook that is neither ours nor bd's is still refused.
+  posse gates adr-census [files...]
+                                 ADR 0051's census: the prepare-commit-msg hook's own sha-stamp
+                                 predicate over every line of every docs/adr record (default
+                                 docs/adr/*.md at the repo root). Prints ADMITTED/REFUSE per file
+                                 and one summary — judged N distinct tokens: A ancestors, T admitted
+                                 by twin, R refused — exit 1 when R>0; judges nothing, and says so,
+                                 when the main checkout is detached.
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

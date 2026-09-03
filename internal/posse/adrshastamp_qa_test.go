@@ -558,28 +558,58 @@ func TestQAAdrShaStampRefusesTheWritersOwnSha(t *testing.T) {
 }
 
 // PIN 10 — one predicate, two line sources (ADR 0051 D4 as amended). The
-// hook judges a commit's ADDED lines; `scripts/adr-sha-census.sh` judges
-// every line of a whole record. They must not disagree about what is exempt,
-// or a writer passes one and fails the other — which is the second copy of
-// the rule the amendment exists to prevent.
+// hook judges a commit's ADDED lines; `posse gates adr-census` judges every
+// line of a whole record. They must not disagree about what is exempt, or a
+// writer passes one and fails the other — which is the second copy of the
+// rule the amendment exists to prevent. Both render adrShaPredicate, so
+// this pin is what turns "the same text" into "the same verdict" — a
+// caller-side seam (the two line-source functions, the file list, the
+// consumer of the verdict lists) can still diverge, and this is where it
+// would show.
 //
 // Every fixture below is a WHOLE NEW FILE, so the two line sources are the
 // same lines and a disagreement is a disagreement about the PREDICATE and
 // nothing else. The census reads the working tree and the hook reads the
 // staged blob; here they are byte-identical, which is what makes the
 // comparison fair.
-func TestQAAdrShaStampAgreesWithTheCensusScript(t *testing.T) {
+func TestQAAdrShaStampAgreesWithTheCensus(t *testing.T) {
 	t.Parallel()
-	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "adr-sha-census.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(script); err != nil {
-		t.Fatalf("the reference implementation must be in the tree: %v", err)
-	}
 	r := newAdrRepo(t)
 
-	cases := []struct {
+	for i, c := range adrTwoWayCases() {
+		rel := "docs/adr/09" + string(rune('a'+i)) + "-two-way.md"
+		r.stage(t, rel, c.body(r))
+		_, hookErr := r.commitPath(t, rel)
+		hookPassed := hookErr == nil
+
+		censusOut, _, censusRefused := r.census(t, rel)
+		censusPassed := !censusRefused
+
+		if hookPassed != censusPassed {
+			t.Errorf("%s: the hook %s and the census %s — one predicate, two line sources (ADR 0051 D4)\ncensus said:\n%s",
+				c.name, adrVerdict(hookPassed), adrVerdict(censusPassed), censusOut)
+		}
+		if hookPassed != c.pass {
+			t.Errorf("%s: the hook %s and this fixture must be %s", c.name, adrVerdict(hookPassed), adrVerdict(c.pass))
+		}
+		if !hookPassed {
+			// A refused file is still staged; unstage it so the next case's
+			// path-limited commit carries only its own path.
+			if out, err := r.git(nil, "rm", "-q", "--cached", "--", rel); err != nil {
+				t.Fatalf("git rm --cached %s: %v %s", rel, err, out)
+			}
+		}
+	}
+}
+
+// adrTwoWayCases is the fixture set the hook and the census must agree on:
+// one cell per shape the predicate has to tell apart, half of them refused.
+func adrTwoWayCases() []struct {
+	name string
+	body func(*adrRepo) string
+	pass bool
+} {
+	return []struct {
 		name string
 		body func(*adrRepo) string
 		pass bool
@@ -599,33 +629,6 @@ func TestQAAdrShaStampAgreesWithTheCensusScript(t *testing.T) {
 		{"two-row-table", func(r *adrRepo) string {
 			return "| " + r.twinStale + " | " + r.twinLanded + " |\n| " + r.twin2Stale + " | " + r.twin2Landed + " |\n"
 		}, true},
-	}
-	for i, c := range cases {
-		rel := "docs/adr/09" + string(rune('a'+i)) + "-two-way.md"
-		r.stage(t, rel, c.body(r))
-		_, hookErr := r.commitPath(t, rel)
-		hookPassed := hookErr == nil
-
-		cmd := exec.Command("sh", script, rel)
-		cmd.Dir = r.dir
-		cmd.Env = []string{"PATH=" + PathOutsideGates(""), "HOME=" + r.dir}
-		censusOut, censusErr := cmd.CombinedOutput()
-		censusPassed := censusErr == nil
-
-		if hookPassed != censusPassed {
-			t.Errorf("%s: the hook %s and the census %s — one predicate, two line sources (ADR 0051 D4)\ncensus said:\n%s",
-				c.name, adrVerdict(hookPassed), adrVerdict(censusPassed), censusOut)
-		}
-		if hookPassed != c.pass {
-			t.Errorf("%s: the hook %s and this fixture must be %s", c.name, adrVerdict(hookPassed), adrVerdict(c.pass))
-		}
-		if !hookPassed {
-			// A refused file is still staged; unstage it so the next case's
-			// path-limited commit carries only its own path.
-			if out, err := r.git(nil, "rm", "-q", "--cached", "--", rel); err != nil {
-				t.Fatalf("git rm --cached %s: %v %s", rel, err, out)
-			}
-		}
 	}
 }
 
@@ -658,7 +661,7 @@ func TestQAAdrPathspecIsRenderedFromTheGoConst(t *testing.T) {
 		`git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base"`,
 		`posse_adr_common=$(git rev-parse --git-common-dir`,
 		`git --git-dir="$posse_adr_common" symbolic-ref -q HEAD`,
-		`git show ":$posse_adr_f"`,
+		`git show ":$1"`,
 		`git patch-id --stable`,
 	} {
 		if !strings.Contains(render, want) {

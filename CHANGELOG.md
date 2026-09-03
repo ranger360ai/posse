@@ -61,10 +61,12 @@ No override env. The one exemption is a record whose subject IS the stale
 sha — a census, an incident writeup — which carries the landed twin in the
 same file; the arm admits a pair with the same patch-id when one half is on
 the base branch (ADR 0051 D5), and a sha minted in a session tree has no such
-twin until the launcher lands it. `sh scripts/adr-sha-census.sh <file>` is
-the same predicate over whole files, for checking a record before committing
-it. Needs `posse gates install-hooks` (or the next session launch) to reach a
-repo already hooked.
+twin until the launcher lands it. `posse gates adr-census [files...]` is
+the same predicate — the hook's own text, rendered from one place so the
+two cannot drift — over whole files, for checking a record before committing
+it; it replaces `scripts/adr-sha-census.sh`, which was a second copy of the
+rule. Needs `posse gates install-hooks` (or the next session launch) to reach
+a repo already hooked.
 
 **A blind plan meter now says how OLD the reading it is still ruling on
 is — loudly, in `posse status`, in every `--watch` pass, and in the

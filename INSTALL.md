@@ -1466,9 +1466,11 @@ of the twelve — carries the landed twin in the same file, and the arm admits
 the pair (D5: same patch-id, an ancestor of the base branch). That is a way
 through nothing minted in a session tree can take, because a sha has no twin
 on the base branch until the launcher has landed it. To check a record before
-you commit it, the same predicate runs over whole files:
-`sh scripts/adr-sha-census.sh docs/adr/<file>.md`, which prints how many
-tokens it judged, how many it admitted by twin, and how many it refused.
+you commit it, the same predicate — the hook's own text, rendered from the
+same place — runs over whole files: `posse gates adr-census
+docs/adr/<file>.md` (every record under `docs/adr/` when given no file),
+which prints how many tokens it judged, how many it admitted by twin, and
+how many it refused, and exits 1 on any refusal.
 
 If this instance holds someone else's data — a work laptop, a client
 engagement — read NOTES.md, *"When an instance holds someone else's data"*
