@@ -1,7 +1,9 @@
 # The other 96-99% of the Gatekeeper churn, named
 
 ranger-base-fq3hc, 2026-09-02. Follows ranger-base-nw9zg (`docs/notes.d/
-ranger-base-nw9zg.md`, commit df434d8), whose section 6 is a negative result:
+ranger-base-nw9zg.md`, on main since ranger-base-2yaud re-landed it; the
+`commit df434d8` this line used to cite is a branch-only sha that never
+reached main), whose section 6 is a negative result:
 a 120-second census over all of `$HOME` found ONE new executable file while
 syspolicyd assessed ~100. This bead was to name the source before anyone
 optimised the wrong thing. **It is our own `internal/posse` test suite.** And
