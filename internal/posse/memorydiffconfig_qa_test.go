@@ -42,13 +42,19 @@ func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
 	agentPerLaunch(t, fake)
 	repo := memoryRepo(t, b)
 	devSession(t, b, "s1")
-	dev := filepath.Join(repo, "rhq", "personas", "dev")
+	// ConstitutionSourceDir and not the literal it spells today: the parked
+	// form of this pin hard-coded the pre-rename `rhq/`, so it wrote its
+	// fixture outside the memory dir the scan reads. The guard below still
+	// passed — git sees a file the scan never looks at — and the refusal
+	// came back EMPTY, a failure naming nothing (ranger-base-32009).
+	dev := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
+	rel := path.Join(ConstitutionSourceDir, "personas", "dev", "ORDERS.md")
 	// Seven committed lines, so the two additions below are far enough apart
 	// to be separate hunks under --unified=0 and close enough to be merged
 	// by an interHunkContext of 5.
 	write(t, filepath.Join(dev, "ORDERS.md"), "# ORDERS\nl2\nl3\nl4\nl5\nl6\nl7\n")
-	mustGit(t, repo, "add", "--", "rhq/personas/dev/ORDERS.md")
-	mustGit(t, repo, "commit", "-q", "-m", "seed", "--", "rhq/personas/dev/ORDERS.md")
+	mustGit(t, repo, "add", "--", rel)
+	mustGit(t, repo, "commit", "-q", "-m", "seed", "--", rel)
 	mustGit(t, repo, "config", "diff.interHunkContext", "5")
 	before := mustGit(t, repo, "rev-parse", "HEAD")
 
