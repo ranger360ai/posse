@@ -1508,7 +1508,12 @@ the other. `posse gates install-hooks` (no `--chain`) still refuses either
 slot outright, same as always.
 
 A hook that is neither ours nor bd's `# bd-shim v1` shim is still refused,
-`--chain` or not — build the chain by hand instead:
+`--chain` or not. That refusal, and the hand-built chain below, are for a
+hooks dir this uid can **write** — a husky install, a pre-commit framework
+hook, a colleague's script in a slot. A hooks dir this uid cannot write at
+all — an employer-managed `core.hooksPath` — is a different case, handled
+without any write; see "A managed hooks path" at the end of this section.
+For the writable foreign hook, build the chain by hand instead:
 
 ```sh
 $ cd ~/src/<your-work-repo>
@@ -1673,6 +1678,112 @@ silent best-effort install should choose on its own), so this is
 still not optional for a repo you dispatch into: run `install-hooks --chain`
 by hand once — or the manual block above, if the occupying hook is not bd's
 shim — and run the three probes, in every clone.
+
+### A managed hooks path
+
+Some boxes point every git on them at one hooks directory the employer
+owns — a secret-scanner integration setting a global `core.hooksPath` to an
+absolute, root-owned directory outside every repo; `/opt/<scanner>/hooks`
+stands in for it below. Nothing in this section can be written there, and
+since ADR 0052 posse does not try. `posse gates install-hooks`, session
+create's install step and the hook-wall sweep each classify the dispatch
+path before touching a slot, and call it **managed** only when all three
+hold:
+
+1. git's answer to `git rev-parse --git-path hooks` is absolute;
+2. it is not under the repo's common git dir and not inside the worktree —
+   a `.git/hooks` whose write bit you turned off is a repo you locked, not
+   an employer's wall, and keeps the refusal it has always had;
+3. this uid cannot create a file in it — measured by one create probe of a
+   dot-file, removed on success, never by opening a slot.
+
+Any subset keeps everything above: the chain prescription and a degraded
+launch. All three, and `install-hooks` writes nothing, chains nothing there,
+and prints exactly this, exit **0**:
+
+```
+L3: managed hooks path /opt/<scanner>/hooks (owner 0, mode 0555) — posse's wall is not installed there; realized by session redirect (ADR 0052)
+  pre-push and prepare-commit-msg: nothing written there — the session hooks dir is rendered at launch (ADR 0052 D2)
+```
+
+**Verify:** the managed dir's listing and mtimes are identical before and
+after; no `permission denied` anywhere.
+
+The wall is realized at launch instead, in a directory posse owns. Every
+dispatched launch into a managed repo renders
+`$RHQ_HOME/state/hooks/<session>/` fresh and says so on the launch line:
+
+```
+posse: <session> in ~/src/<your-work-repo> — L3: managed hooks path /opt/<scanner>/hooks (owner 0, mode 0555) — posse's wall is not installed there; realized by session redirect (ADR 0052)
+posse: <session> — L3 rendered at <RHQ_HOME>/state/hooks/<session>: pre-commit, pre-push, prepare-commit-msg dispatched into /opt/<scanner>/hooks
+```
+
+That directory holds:
+
+- `posse-prepare-commit-msg` — byte for byte what `install-hooks` would
+  have written into `$h`, rendered for this repo's visibility class — and
+  `posse-pre-push` when the PID denies `git push`.
+- one dispatcher per slot in the **union** of posse's slots and every
+  executable regular file in the managed dir at render time. A slot with a
+  posse member gets exactly the chain from the block above, with the
+  neighbour spelled as the managed dir's absolute path
+  (`exec "/opt/<scanner>/hooks/prepare-commit-msg" "$@"`): ours runs first
+  as its own process, its exit is final, then the employer's hook runs with
+  git's own argv and stdin. A slot with no posse member — the employer's
+  `pre-commit`, say — gets the forward alone. The union is not decoration:
+  git dispatches only from the redirected dir, so a slot with no dispatcher
+  there is an employer hook that silently does not run (measured, ADR 0052
+  M4).
+- nothing for a managed entry that is not an executable regular file — a
+  directory, a dangling symlink, a `.sample` without `+x`. Each one is
+  printed on the launch, `not forwarded from /opt/<scanner>/hooks: <name>
+  (<why>)`, rather than swallowed.
+
+The session's environment carries the redirect as git's own config-in-env
+form — `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n=core.hooksPath`,
+`GIT_CONFIG_VALUE_n=<that dir>` — appended after any count the env set
+already carries. Nothing in the repo's `.git/config` changes; `git config
+core.hooksPath` in your own shell keeps answering the employer's value, and
+your own commits run the employer's hooks exactly as before. On every
+commit and push a session makes, the employer's hooks run **after ours**,
+with the argv and stdin git gave the slot — never fewer of them than today.
+
+The launch probe moves with the dispatch path: identity is checked at the
+session dir rather than `$h` — members and dispatchers byte-equal to the
+render, all `+x` — plus one arm the ordinary probe never needed, that every
+executable in the managed dir has a dispatcher. A missing one degrades the
+launch as `managed hook <slot> not forwarded — re-launch to re-render`. When
+it holds, the launch is not degraded, the L3 gates' parity detail reads
+`render probed, dispatch verified — session hooks dir, redirected by env;
+managed hooks /opt/<scanner>/hooks run after ours`, and the session's meta
+records `hooks_mode: redirect` and `managed_hooks: /opt/<scanner>/hooks`.
+The dir is removed when the session is retired. Two things stay as they
+were: `posse gates <persona>` run in a managed checkout with no session has
+no rendered dir to probe, so it reads git's dispatch path and reports both
+slots foreign; and at `cage: container` the redirect is not applied — the
+dir is not on the mount list, and a `core.hooksPath` naming a path the cage
+does not have would skip every hook there, the employer's included — the
+launch says so and keeps today's behaviour.
+
+**Reach, stated honestly.** The redirect is env-borne, which is the class
+ADR 0025 already assigns L3 (the hooks read `RHQ_PERSONA` from that same
+environment). It keeps the reach a file install had — `/usr/bin/git commit`
+by absolute path runs ours, then the employer's (measured, M2) — and it is
+shed by `env -i` (M3), which leaves the employer's hooks running alone. The
+one thing a persona can do here that it could not before is drop posse's
+hook by dropping the env; nothing it does drops the employer's. At
+`cage: seatbelt` the session hooks dir is on the L2 deny list beside
+`.git/hooks`, so the session cannot edit its own wall.
+
+Two residuals, both bounded by one session:
+
+- One render per session, keyed to the session's repo. The member carries
+  the session repo's visibility class and runs in every repo the session
+  touches, as the L1 shim does. On a private instance that is exact; on a
+  mixed-class instance a commit into a wider-class repo is over-refused,
+  never under.
+- A slot the managed tool adds mid-session has no dispatcher until the next
+  launch, which forwards it; the probe's completeness arm names it then.
 
 Health check, then wire it into the instance:
 
@@ -2061,6 +2172,7 @@ one budget and the caps become conservative, not wrong.
 | `bd list` → "no beads database found" | a bd ≥ 0.51 binary is on PATH | install 0.50.3; 0.51+ does not read `.beads/beads.db` |
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a herdr workspace already wears the label this home would create under. Between instances that only happens when neither sets `instance:`, or when both set the same one — a *differently* tagged home's row is no longer in the way (ranger-base-rcwx). The refusal names the row by the name `posse list` prints, which under a tag is `<instance>/<session>` | `posse list`; if the row is another home's, give one of them a distinct `instance:` (§13) |
+| `posse gates install-hooks` prints `open /opt/<scanner>/hooks/pre-push: permission denied`, or a dispatched launch into that repo refuses `DEGRADED` naming both slots foreign, and `core.hooksPath` is an absolute, root-owned directory outside every repo | an employer-managed hooks path. Before ADR 0052 `installHook` fell through to the create, which is the write the box refuses; session create swallowed the same error, installed nothing, and the probe read the employer's hooks as foreign (ranger-base-yt6m0) | nothing to install. Since ranger-base-mhrta the path is classified before any write and the same command prints `L3: managed hooks path <dir> (owner <uid>, mode <perm>) — posse's wall is not installed there; realized by session redirect (ADR 0052)` and exits 0; the wall is rendered per session at `$RHQ_HOME/state/hooks/<session>` and the launch line says so (§9, "A managed hooks path"). If `permission denied` is still what you see, the path is not managed by that classification — a relative `core.hooksPath`, or a `.git/hooks` inside the repo with its write bit off — and the chain block in §9 applies |
 | every dispatched launch refuses with `a constitution nobody promoted` right after an ordinary `config.yaml` or PID edit, on a home you never promoted | a `posse init` from a posse older than `ranger-base-h7cd` stamped `promoted.json` over the constitution it found, arming ADR 0015 §3 on files nobody ratified — the edit is the trigger, not the cause | `posse promote <your constitution repo>` makes the anchor true. If this home has no constitution repo yet, `rm $RHQ_HOME/promoted.json` puts it back to unwatched, which is where it was; today's `init` will not re-stamp it |
 
 ---

@@ -2648,6 +2648,25 @@ every `beads_visibility:` key from `posse promote`'s epilogue and the
 `dispatch --watch` preamble, and names the ones to re-render by hand
 (ranger-base-ixv4).
 
+**Gates L3 on a managed hooks path (ADR 0052).** An employer-managed
+`core.hooksPath` — absolute, outside every repo, and unwritable by this uid,
+all three measured before any write — is not foreign, it is a wall posse does
+not touch: `install-hooks`, session create and the hook-wall sweep write
+nothing there and print one line saying so. L3 is realized instead by a
+per-session hooks dir, `state/hooks/<session>/`, that the session env aims
+git at through `GIT_CONFIG_COUNT`/`_KEY_n`/`_VALUE_n` naming `core.hooksPath`:
+posse's members plus one dispatcher for every executable in the managed dir
+(the union, because a slot the redirect dir lacks is an employer hook git
+skips), ours first with its exit final, then the employer's with git's own
+argv and stdin. The identity probe moves to that dir and gains a
+forward-completeness arm; parity says so (`session hooks dir, redirected by
+env; managed hooks <dir> run after ours`); meta records `hooks_mode:
+redirect`. Env-borne, so the same class as the rest of L3: survives an
+absolute-path git, shed by `env -i`, which leaves the employer's hooks
+running alone — nothing a persona or posse does weakens the employer's
+control. Recipe and the two residuals: INSTALL.md §9, "A managed hooks
+path".
+
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
 `claude-fable-5` / `claude-opus-5` / `claude-sonnet-5`; codex
