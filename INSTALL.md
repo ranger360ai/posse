@@ -1335,16 +1335,21 @@ $ cat >> AGENTS.md <<'EOF'
   CPU-burning, gate-shell child that carries no marker, and nothing in the
   process table separates your deliberate process from a leak by any other
   means. A deliberate long-lived CPU process is meant to be rare and loud.
-- **Ending a test run: `kill` one pid, never a `pkill -f` pattern.** Every
-  session on the box runs the same test command, so a pattern that names the
-  tool — `pkill -f "go test"`, the test script, the make target — matches all
-  of them and not the one you started; reading pids off a `pgrep` of that
-  same pattern is the same mistake one step later. MEASURED on the fleet box:
-  one such line's own `pgrep` returned six pids across three sessions and
-  ended all six, and a run killed that way prints no red and names no test,
-  so it reads as a green run with a short tail. Keep the pid of what you
-  launched and kill that. A pattern is only safe when it can match nothing
-  but your own session — your scratchpad path, not a tool name.
+- **Ending anything: `kill` one pid, never a `pkill -f` pattern.** `pkill -f`
+  and `pgrep -f` match argv across every process on the box, and every session
+  runs the same commands from a different worktree, so a pattern that names a
+  tool — `pkill -f "go test"`, the test script, the make target, `killall
+  yes`, `pkill -f "python3 -"` — matches all of them and not the one you
+  started; reading pids off a `pgrep` of that same pattern is the same mistake
+  one step later. MEASURED over every session transcript on a fleet box, 74
+  days: 138 pattern kills named a target that was not unique to the typing
+  session, and 18 of them were followed within ten seconds by another
+  session's run ending — against 4.3 expected when the same kills are
+  displaced in time. Eleven of those ended a full test suite. A run killed that way prints no red and names no test, so
+  it reads as a green run with a short tail. Keep the pid of what you launched
+  and kill that. A pattern is only safe when it can match nothing but your own
+  session — your scratchpad path, your worktree path, `-P $$` — never a tool
+  name.
 EOF
 ```
 

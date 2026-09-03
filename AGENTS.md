@@ -111,19 +111,30 @@ bd sync               # Sync with git
   (NOTES.md, "Leaked gate-shell children"). A deliberate long-lived CPU
   process on this box is meant to be rare and loud — the standing ruling is
   still no load testing here.
-- **Ending a test run: `kill` one pid, never a `pkill -f` pattern**
-  (ranger-base-6nx72). Every session on this box runs a byte-identical
-  suite argv, so `pkill -f test-times.sh`, `pkill -f "go test -timeout
-  25m"` and `pkill -f "make test"` match ALL of them, and a `pgrep` you
-  read pids off does the same thing one step later. MEASURED 2026-09-02:
-  one such line's own `pgrep` returned six pids across three sessions and
-  killed all six; two of those sessions' suites reported completion three
-  milliseconds apart from launches seventy-seven seconds apart, and both
-  of those readers spent the next hour eliminating the load guard. A run
-  that dies this way prints no red and names no test — it looks like a
-  green suite with a short tail — so the cost lands on whoever reads it
-  next. `scripts/test-times.sh` now prints its own pid at the start (`kill
+- **Ending anything: `kill` one pid, never a `pkill -f` pattern**
+  (ranger-base-6nx72, ranger-base-y2esu). `pkill -f` and `pgrep -f` match
+  argv across EVERY process on the box, and every session here runs
+  byte-identical argv from a different worktree — same Makefile line, same
+  script, same interpreter. So `pkill -f test-times.sh`, `pkill -f "go test
+  -timeout 25m"` and `pkill -f "make test"` match all of them, and so do
+  `killall yes`, `pkill -f "python3 -"`, `pkill -f "sleep 300"` and `pkill
+  -f "dispatch --watch"`. Reading pids off a `pgrep` of the same pattern is
+  the same mistake one step later.
+  MEASURED 2026-09-03 over every session transcript on the box, 74 days,
+  by `scripts/pattern-kill-census.py` (re-run it; the corpus grows): 138
+  pattern kills from 64 seats named a target that was not unique to the
+  typing session, and **18 of them were followed within ten seconds by
+  another seat's run ending** — against 4.3 expected when the same kills
+  are displaced in time (p < 0.0025). Of the 35 whose pattern could match a
+  sibling's suite argv, **11 landed**: eleven seats, five personas, victim
+  runs up to 1,373s. One pair three minutes apart is a kill and a
+  counter-kill, each ending the other seat's suite. This is not one
+  persona's footgun and prose has not stopped it.
+  A run that dies this way prints no red and names no test — it looks like
+  a green suite with a short tail — so the cost lands on whoever reads it
+  next. `scripts/test-times.sh` prints its own pid at the start (`kill
   THAT`) and, if it is signalled anyway, writes the process table at that
-  instant to `$TMPDIR/posse-test-signal.log`, where the sender's gate
-  shell still names its seat. A pattern is only safe when it can match
-  nothing but your own session — your scratchpad path, not a tool name.
+  instant to `$TMPDIR/posse-test-signal.log`, where the sender's gate shell
+  still names its seat. A pattern is only safe when it can match nothing
+  but your own session — your scratchpad path, your worktree path, `-P $$`
+  — never a tool name.
