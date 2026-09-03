@@ -45,15 +45,41 @@ type reexecSite struct {
 // it.
 var reexecSiteRe = regexp.MustCompile(`exec\.Command\(\s*(?:exe|os\.Args\[0\])\s*,\s*"-test\.run=`)
 
+// reexecBareEnvRe is what the filter must NOT end in: the child handed the
+// parent's whole environment. Naming the variable somewhere in the window is
+// not the same as taking it out of what the child gets — a site that builds a
+// filtered slice and then assigns `os.Environ()` anyway reads as filtered to
+// a text scan and hands the fake substrate straight through
+// (ranger-base-5185i: measured, this exact shape left the scanner green while
+// TestWatchLockDiesWithItsProcess reds). The ASSIGNMENT is the thing that
+// decides, so it is the thing that is read.
+var reexecBareEnvRe = regexp.MustCompile(`\.Env\s*=\s*(?:append\(\s*)?os\.Environ\(\)`)
+
+// reexecWindowCap is the FALLBACK bound on a site's window — what is read
+// when no starter call is found — not the working bound. The five live sites
+// reach their starter at +211, +323, +463, +534 and +1011 bytes, so a cap
+// under about 1100 silently stops grading the last of them; this is several
+// times the widest, because a cap that is nearly the real distance is a cap
+// that a comment edit turns into a false verdict, in whichever direction the
+// truncated window happens to land.
+const reexecWindowCap = 4000
+
 // scanReExecSites reports every re-exec site in the *_test.go files under
 // root. It takes a root so the same function grades this package and a
 // hand-typed fixture — the fixture is what shows it can fail, and the live
 // pass is then only about the wiring.
 //
 // A site's environment is whatever is written between the exec.Command and
-// the call that starts the child; 800 bytes is the fallback bound for a shape
-// that starts it somewhere this cannot see, and a site whose window closes
-// early reads as unfiltered, which is the safe direction.
+// the call that starts the child. THE STARTER IS THE BOUND and the byte cap
+// is only the fallback for a shape that starts the child somewhere this
+// cannot see — that order matters, and it was the wrong way round until
+// ranger-base-5185i: with an 800-byte cap applied FIRST, watchlock_test.go's
+// filter sat at +812 of an 836-byte window with 24 bytes to spare and its
+// `child.Env =` assignment at +865, outside it entirely. One more line of
+// comment there and the live sweep would have failed a site that filters;
+// one more line and the assignment check below would have been blind to the
+// site the whole pin exists for. A window measured from the code's own shape
+// does not drift with the prose above it.
 func scanReExecSites(root string) ([]reexecSite, error) {
 	names, err := filepath.Glob(filepath.Join(root, "*_test.go"))
 	if err != nil {
@@ -68,8 +94,8 @@ func scanReExecSites(root string) ([]reexecSite, error) {
 		src := string(body)
 		for _, m := range reexecSiteRe.FindAllStringIndex(src, -1) {
 			end := len(src)
-			if m[1]+800 < end {
-				end = m[1] + 800
+			if m[1]+reexecWindowCap < end {
+				end = m[1] + reexecWindowCap
 			}
 			window := src[m[0]:end]
 			for _, starter := range []string{".Start()", ".CombinedOutput()", ".Output()", ".Run()"} {
@@ -78,9 +104,10 @@ func scanReExecSites(root string) ([]reexecSite, error) {
 				}
 			}
 			sites = append(sites, reexecSite{
-				File:    filepath.Base(name),
-				Line:    1 + strings.Count(src[:m[0]], "\n"),
-				Filters: strings.Contains(window, "qaSeederEnv(") || strings.Contains(window, "RHQ_FAKE_HERDR="),
+				File: filepath.Base(name),
+				Line: 1 + strings.Count(src[:m[0]], "\n"),
+				Filters: (strings.Contains(window, "qaSeederEnv(") || strings.Contains(window, "RHQ_FAKE_HERDR=")) &&
+					!reexecBareEnvRe.MatchString(window),
 			})
 		}
 	}
@@ -105,17 +132,32 @@ func TestQAEveryTestBinaryReExecKeepsTheChildATestBinary(t *testing.T) {
 		bad := "package p\n\nfunc b() {\n\tchild := exec.Command(os.Args[0], " +
 			"\"-test.run=^TestChild$\", \"-test.v\")\n" +
 			"\tchild.Env = append(os.Environ(), \"X=1\")\n\tchild.Start()\n}\n"
+		// The half-refactor: the filter is built and then not used. It names
+		// the variable, so a scan that reads the WINDOW passes it; the child
+		// still gets the parent's whole environment, so the fake substrate
+		// answers it. Measured on ranger-base-5185i against watchlock_test.go
+		// — this shape reds TestWatchLockDiesWithItsProcess and left the
+		// census green, which is a census that cannot see the defect it
+		// exists for.
+		halfway := "package p\n\nfunc c() {\n\tchild := exec.Command(exe, " +
+			"\"-test.run=^TestChild$\", \"-test.v\")\n" +
+			"\tvar env []string\n\tfor _, kv := range os.Environ() {\n" +
+			"\t\tif !strings.HasPrefix(kv, \"RHQ_FAKE_HERDR=\") {\n\t\t\tenv = append(env, kv)\n\t\t}\n\t}\n" +
+			"\tchild.Env = append(os.Environ(), \"X=1\")\n\tchild.Start()\n}\n"
 		if err := os.WriteFile(filepath.Join(dir, "good_test.go"), []byte(good), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "bad_test.go"), []byte(bad), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(dir, "halfway_test.go"), []byte(halfway), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		sites, err := scanReExecSites(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(sites) != 2 {
+		if len(sites) != 3 {
 			t.Fatalf("the scanner found %d sites in a fixture holding one of each: %+v", len(sites), sites)
 		}
 		byFile := map[string]bool{}
@@ -127,6 +169,10 @@ func TestQAEveryTestBinaryReExecKeepsTheChildATestBinary(t *testing.T) {
 		}
 		if byFile["bad_test.go"] {
 			t.Error("a site that hands the child a bare os.Environ() was read as filtered — the scan cannot fail anything")
+		}
+		if byFile["halfway_test.go"] {
+			t.Error("a site that BUILDS a filtered environment and then assigns os.Environ() anyway was read as filtered — " +
+				"naming the variable is not taking it out of what the child gets (ranger-base-5185i)")
 		}
 	})
 
