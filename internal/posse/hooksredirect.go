@@ -255,3 +255,116 @@ func gitConfigHooksPathVars(vars []EnvVar, hooks string) []EnvVar {
 		{fmt.Sprintf("GIT_CONFIG_VALUE_%d", n), hooks},
 	}
 }
+
+// ─── the probe moves with the dispatch path (ADR 0052 D3) ────────────────────
+
+// l3Redirect is what a launch tells probeL3HooksIn about the render above:
+// the session hooks dir this session's git is aimed at, and the managed dir
+// that dir forwards into. nil is every other launch, and every caller with
+// no session in hand — `posse gates` in a managed checkout has no rendered
+// dir to probe, so it keeps reading git's own dispatch path and reporting
+// what is honestly there.
+type l3Redirect struct {
+	Hooks   string
+	Managed string
+}
+
+// probe is the render's own answer to "what should the probe read" — the
+// two paths, taken from the thing that just wrote them, so a launch cannot
+// probe a directory it did not render.
+func (r *hooksRedirect) probe() *l3Redirect {
+	if r == nil {
+		return nil
+	}
+	return &l3Redirect{Hooks: r.Dir, Managed: r.Managed}
+}
+
+// l3IdentityIn is l3Identity, or its redirect-mode twin. Same shape so
+// probeL3HooksIn asks one question either way.
+func l3IdentityIn(red *l3Redirect, hooks, slot, render, marker, legacy string) (identity, stale bool, path string) {
+	if red == nil {
+		return l3Identity(hooks, slot, render, marker, legacy)
+	}
+	identity, path = l3RedirectIdentity(hooks, red.Managed, slot, render)
+	return identity, false, path
+}
+
+// l3RedirectIdentity is the identity half of ADR 0023 asked at the session
+// hooks dir. BOTH files must be byte-for-byte this launch's render, +x:
+// `posse-<slot>`, which is what actually guards, and `<slot>`, the
+// dispatcher git runs, which must be exactly redirectDispatcher's output
+// for THIS managed dir. That byte equality is why a relative-neighbour
+// dispatcher is not accepted here: the render only ever spells the
+// neighbour as the managed dir's absolute path, so a relative one is not a
+// chain posse wrote, and a chain posse did not write is one whose forward
+// target it cannot name.
+//
+// There is deliberately no `stale` verdict and no chain-shape fallback.
+// This directory is posse's own, rebuilt from nothing at every launch: a
+// file in it that is not this render is not a drifted install to reinstall
+// and not a foreign hook to chain behind — it is a dir that no longer
+// describes this launch, and the remedy is the launch.
+//
+// path names the file the verdict is about, member first: a member that
+// does not match is the failure whether or not the dispatcher does.
+func l3RedirectIdentity(hooks, managed, slot, render string) (identity bool, path string) {
+	member := filepath.Join(hooks, "posse-"+slot)
+	if !identityMatch(member, render) {
+		return false, member
+	}
+	dispatcher := filepath.Join(hooks, slot)
+	if !identityMatch(dispatcher, redirectDispatcher(slot, managed, true)) {
+		return false, dispatcher
+	}
+	return true, member
+}
+
+// l3DegradeLineIn is l3DegradeLine, with redirect mode's own wording for the
+// identity failures — `posse gates install-hooks` is not the remedy for a
+// per-session dir it does not write, and "foreign" describes nothing there.
+// A behavior failure (identity held, our own render did not refuse) is the
+// same renderer regression it always was, in the same words.
+func l3DegradeLineIn(red *l3Redirect, hooks, slot, path, consequence string, identity, stale bool) string {
+	if red == nil || identity {
+		return l3DegradeLine(hooks, slot, path, consequence, identity, stale)
+	}
+	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render; %s", slot, AbbrevHome(path), consequence)
+}
+
+// redirectForwardGaps is the completeness arm: every executable regular file
+// in the managed dir must have its dispatcher in the session dir, or this
+// session's git SKIPS that hook entirely (ADR 0052 M4) — the employer's
+// control silently reduced by posse's own redirect, which is the single
+// thing this ADR promises never to do. Measured against the render rather
+// than against mere presence, for the same reason the slots above are: a
+// dispatcher whose bytes are not the ones posse wrote is not a forward
+// anybody can vouch for.
+//
+// posse's own slots are not checked here — l3RedirectIdentity has already
+// asked a stricter question of both their files, and answering twice would
+// print one problem as two.
+//
+// A managed dir that cannot be listed is a gap too, and is said as one:
+// posse cannot claim completeness it did not measure.
+func redirectForwardGaps(hooks, managed string, wantPrePush bool) []string {
+	slots, _, err := forwardableSlots(managed)
+	if err != nil {
+		return []string{fmt.Sprintf("L3 managed hooks — %s — cannot be listed (%v) — posse cannot tell whether every managed hook is still forwarded; re-launch to re-render", AbbrevHome(managed), err)}
+	}
+	ours := map[string]bool{}
+	for _, s := range posseHookSlots(wantPrePush) {
+		ours[s] = true
+	}
+	var out []string
+	for _, slot := range slots {
+		// The render steps over these and prints that it did: they are a
+		// member's name, not a slot git dispatches under any spelling.
+		if ours[slot] || strings.HasPrefix(slot, "posse-") {
+			continue
+		}
+		if !identityMatch(filepath.Join(hooks, slot), redirectDispatcher(slot, managed, false)) {
+			out = append(out, fmt.Sprintf("L3 managed hooks — %s — managed hook %s not forwarded — re-launch to re-render; this session's git dispatches from %s and would skip it, so the employer's %s does not run here", AbbrevHome(filepath.Join(managed, slot)), slot, AbbrevHome(hooks), slot))
+		}
+	}
+	return out
+}

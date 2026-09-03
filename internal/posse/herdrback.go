@@ -147,6 +147,17 @@ type HerdrMeta struct {
 	// typed: a resumed session is prompted again without being launched
 	// again, and it is the prompt herdr's status lags behind.
 	Prompted time.Time
+
+	// How L3 was realized in this session's repo, and whose hooks run after
+	// ours (ADR 0052 D3). "redirect" = the per-session hooks dir posse
+	// rendered and the launch env aims git at, because the repo's dispatch
+	// path is employer-managed and posse writes nothing there; "" = the
+	// ordinary install into the repo's own .git/hooks. Recorded because the
+	// dir is per-session state that is removed with the session: after the
+	// kill nothing on the box can answer "was this session's wall the
+	// redirect, and what did it chain into" except the record.
+	HooksMode    string
+	ManagedHooks string
 }
 
 // SocketID names the herdr server a session belongs to: the resolved path of
@@ -288,29 +299,31 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		return nil, false
 	}
 	return &HerdrMeta{
-		Name:        name,
-		Workspace:   YamlGet(p, "workspace"),
-		Pane:        YamlGet(p, "pane"),
-		Emoji:       YamlGet(p, "emoji"),
-		Envs:        YamlGet(p, "envs"),
-		Agent:       YamlGet(p, "agent"),
-		Runtime:     YamlGet(p, "runtime"),
-		Tier:        YamlGet(p, "tier"),
-		Dir:         YamlGet(p, "dir"),
-		Repo:        YamlGet(p, "repo"),
-		Branch:      YamlGet(p, "branch"),
-		Cmd:         YamlGet(p, "cmd"),
-		Cage:        YamlGet(p, "cage"),
-		Sockets:     YamlGet(p, "sockets"),
-		Degraded:    YamlGet(p, "degraded"),
-		Fallback:    YamlGet(p, "fallback"),
-		TurnFailure: YamlGet(p, "turn_failure"),
-		Bead:        YamlGet(p, "bead"),
-		Crew:        YamlGet(p, "crew") == "true",
-		Socket:      YamlGet(p, "socket"),
-		Gen:         YamlGet(p, "gen"),
-		Launched:    parseLaunched(YamlGet(p, "launched")),
-		Prompted:    parseLaunched(YamlGet(p, "prompted")),
+		Name:         name,
+		Workspace:    YamlGet(p, "workspace"),
+		Pane:         YamlGet(p, "pane"),
+		Emoji:        YamlGet(p, "emoji"),
+		Envs:         YamlGet(p, "envs"),
+		Agent:        YamlGet(p, "agent"),
+		Runtime:      YamlGet(p, "runtime"),
+		Tier:         YamlGet(p, "tier"),
+		Dir:          YamlGet(p, "dir"),
+		Repo:         YamlGet(p, "repo"),
+		Branch:       YamlGet(p, "branch"),
+		Cmd:          YamlGet(p, "cmd"),
+		Cage:         YamlGet(p, "cage"),
+		Sockets:      YamlGet(p, "sockets"),
+		Degraded:     YamlGet(p, "degraded"),
+		Fallback:     YamlGet(p, "fallback"),
+		TurnFailure:  YamlGet(p, "turn_failure"),
+		Bead:         YamlGet(p, "bead"),
+		HooksMode:    YamlGet(p, "hooks_mode"),
+		ManagedHooks: YamlGet(p, "managed_hooks"),
+		Crew:         YamlGet(p, "crew") == "true",
+		Socket:       YamlGet(p, "socket"),
+		Gen:          YamlGet(p, "gen"),
+		Launched:     parseLaunched(YamlGet(p, "launched")),
+		Prompted:     parseLaunched(YamlGet(p, "prompted")),
 	}, true
 }
 
@@ -391,6 +404,16 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	// and an uncommitted tree (ranger-base-0fb).
 	if m.Bead != "" {
 		fmt.Fprintf(&s, "bead: %s\n", m.Bead)
+	}
+	// ADR 0052 D3. One line each, and both are single-token values by
+	// construction — a mode word and an absolute path — so the flat-YAML
+	// reader that silently truncates an embedded newline (ranger-base-ujdg)
+	// has nothing to truncate.
+	if m.HooksMode != "" {
+		fmt.Fprintf(&s, "hooks_mode: %s\n", m.HooksMode)
+	}
+	if m.ManagedHooks != "" {
+		fmt.Fprintf(&s, "managed_hooks: %s\n", m.ManagedHooks)
 	}
 	if m.Crew {
 		fmt.Fprintf(&s, "crew: true\n")
@@ -1358,6 +1381,11 @@ type launchPlan struct {
 	Sockets  string
 	Degraded string
 	Fallback string // the availability preflight's line ("" = the tier got the model it asked for)
+	// ADR 0052 D3, both "" on an ordinary launch: how L3 was realized
+	// ("redirect" = the per-session hooks dir the env aims git at) and the
+	// employer's hooks dir it forwards into.
+	HooksMode    string
+	ManagedHooks string
 }
 
 // planLaunch resolves a launch without touching herdr: persona, runtime,
@@ -1461,6 +1489,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// happens with the other L3 work and the env that aims git at it is
 	// assembled with the rest of the launch vars, far below.
 	hooksRedirectDir := ""
+	// ADR 0052 D3: what the render just built, handed to the probe that
+	// judges this launch. nil for every launch that rendered nothing, which
+	// is the probe reading git's own dispatch path as it always has.
+	var hooksProbe *l3Redirect
+	managedHooksPath := ""
 	runtime, tier, gatesDir, cage, degraded, fallback := "", "", "", "", "", ""
 	if o.Agent != "" {
 		var err error
@@ -1615,7 +1648,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				if err != nil {
 					return nil, err
 				}
-				hooksRedirectDir = red.Dir
+				hooksRedirectDir, hooksProbe, managedHooksPath = red.Dir, red.probe(), red.Managed
 				b.warn("posse: %s — L3 rendered at %s: %s dispatched into %s\n", o.Name, AbbrevHome(red.Dir), strings.Join(red.Slots, ", "), AbbrevHome(red.Managed))
 				for _, skip := range red.Skipped {
 					b.warn("posse: %s — not forwarded from %s: %s\n", o.Name, AbbrevHome(red.Managed), skip)
@@ -1627,7 +1660,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			}
 			a.InstallCommitGuardHook(dir)
 		}
-		parity := a.CheckParityIn(ag, rt, cage, tier, dir)
+		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe)
 		if !mh.Managed && preHeal.Repo && !preHeal.CommitGuard {
 			b.warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
@@ -1893,10 +1926,18 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	if ag != nil && caged {
 		sockets = CageSocketTag(ag)
 	}
+	// ADR 0052 D3: how L3 was realized here, on the record. "redirect" is
+	// the only value that is ever written — its absence is the ordinary
+	// `.git/hooks` install — so a reader can tell the two apart without
+	// re-classifying a dispatch path that may have changed since.
+	hooksMode := ""
+	if hooksRedirectDir != "" {
+		hooksMode = "redirect"
+	}
 	return &launchPlan{
 		Dir: dir, Repo: repo, Branch: branch, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
 		Runtime: runtime, Tier: tier, Cage: cage, Sockets: sockets, Degraded: degraded,
-		Fallback: fallback,
+		Fallback: fallback, HooksMode: hooksMode, ManagedHooks: managedHooksPath,
 	}, nil
 }
 
@@ -1925,6 +1966,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
 		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
 		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Bead: o.Bead, Crew: o.Crew,
+		HooksMode: p.HooksMode, ManagedHooks: p.ManagedHooks,
 		// Which server, and which generation of it, issued this workspace
 		// id — the id alone identifies nothing across a restart or a
 		// handoff (rangerhq-yt1p).

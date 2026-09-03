@@ -482,8 +482,18 @@ func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
 // stays the dir-independent matrix (a PID × runtime × cage × tier
 // statement) so nothing that only describes a persona has to invent a cwd.
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
+	return a.checkParityIn(ag, rt, cage, tier, dir, nil)
+}
+
+// checkParityIn is CheckParityIn with ADR 0052 D3's redirect in hand: the
+// launcher has just rendered the session hooks dir git will dispatch from,
+// and only the launcher knows it, so it is threaded here rather than
+// re-derived. Every other caller — `posse gates` in a cwd, the overflow
+// preflight — has no session and passes nil, which is the probe reading
+// git's own dispatch path exactly as it always has.
+func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, red *l3Redirect) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
-	a.applyL3Probe(&p, ag, rt, dir)
+	a.applyL3Probe(&p, ag, rt, dir, red)
 	applyPushEffectNote(&p, ag.Deny)
 	// ADR 0013 §4: the cage half of the record stage. Directory-aware for
 	// the same reason L3 is — which .beads bd opens is a fact about a
@@ -508,9 +518,9 @@ func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) 
 // with behavior of our own render (probeL3Hooks). Identity is not a marker:
 // it is the whole file, checked against the whole file we would have
 // written.
-func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
+func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string, red *l3Redirect) {
 	wantPrePush := deniesGitPush(ag.Deny)
-	probe := a.probeL3Hooks(dir, wantPrePush)
+	probe := a.probeL3HooksIn(dir, wantPrePush, red)
 	if !probe.Repo {
 		return
 	}
@@ -525,12 +535,22 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	if !rt.NoGateShell && a.assumedUntilProbed(rt) != "" {
 		noL1 = "L1 on " + rt.Name + " is assumed, not measured — `posse runtime probe " + rt.Name + "` (ADR 0032 §1)"
 	}
+	// What was probed, said in the line rather than left to be inferred.
+	// On a managed hooks path the dispatched file is not in the repo at all
+	// (ADR 0052 D2/D3) — it is the per-session dir the launch env aims git
+	// at — and the employer's hooks run after ours out of it. An operator
+	// reading `dispatch verified` in a checkout whose .git/hooks posse never
+	// wrote is owed both facts.
+	verified := "render probed, dispatch verified"
+	if probe.Managed != "" {
+		verified += fmt.Sprintf(" — session hooks dir, redirected by env; managed hooks %s run after ours", AbbrevHome(probe.Managed))
+	}
 	for _, rule := range ag.Deny {
 		switch {
 		case deniesGitPush([]string{rule}):
-			applyHookResult(p, rule, "L3 pre-push hook (render probed, dispatch verified)", probe.PrePush, noL1)
+			applyHookResult(p, rule, "L3 pre-push hook ("+verified+")", probe.PrePush, noL1)
 		case deniesUnqualifiedCommit([]string{rule}):
-			applyHookResult(p, rule, "L3 prepare-commit-msg hook (render probed, dispatch verified)", probe.CommitGuard, noL1)
+			applyHookResult(p, rule, "L3 prepare-commit-msg hook ("+verified+")", probe.CommitGuard, noL1)
 		}
 	}
 	if wantPrePush && !probe.PrePush {
@@ -539,6 +559,12 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
 	if !probe.CommitGuard {
 		p.Degraded = append(p.Degraded, probe.CommitGuardDegraded)
 	}
+	// A managed hook this session would skip degrades the launch, and it
+	// degrades it even when both of posse's own slots hold: the remedy is
+	// the re-render a launch does, so the refusal a degraded launch raises
+	// IS the fix being applied. Never a note — a silently skipped employer
+	// hook is the failure ADR 0052 exists to make impossible.
+	p.Degraded = append(p.Degraded, probe.Forward...)
 }
 
 // L3-observed merge (ADR 0025 §1): L3, like L1, is cooperative — held only

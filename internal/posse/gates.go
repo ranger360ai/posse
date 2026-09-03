@@ -3703,11 +3703,26 @@ type l3HookProbe struct {
 	CommitGuard bool
 	HooksDir    string
 
+	// Managed is the employer's hooks dir this launch forwards into, and
+	// is the flag for ADR 0052 D3's redirect mode: non-empty exactly when
+	// HooksDir is the SESSION hooks dir posse rendered rather than the path
+	// git dispatches from in the launcher's own environment. Parity reads
+	// it to say which dir was probed and whose hooks run after ours.
+	Managed string
+
 	// PrePushDegraded and CommitGuardDegraded are full, ready-to-display
 	// lines naming why the slot did not count. Empty when the slot counts
 	// (or, for PrePushDegraded, when the PID does not deny git push).
 	PrePushDegraded     string
 	CommitGuardDegraded string
+
+	// Forward carries redirect mode's own arm (ADR 0052 D3): one
+	// ready-to-display line per managed hook this session's git would
+	// SKIP, because the dir it dispatches from does not carry that slot's
+	// dispatcher (M4). Not a posse gate — the loss is the employer's hook,
+	// which is the one thing ADR 0052 promises never to cause — so it is
+	// its own list rather than either slot's Degraded line.
+	Forward []string
 }
 
 // l3Identity reports whether the file at hooks/slot is byte-for-byte render
@@ -3940,11 +3955,27 @@ func l3DegradeLine(hooks, slot, path, consequence string, identity, stale bool) 
 }
 
 func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
+	return a.probeL3HooksIn(dir, wantPrePush, nil)
+}
+
+// probeL3HooksIn is probeL3Hooks with ADR 0052 D3's redirect mode: red
+// non-nil says this launch's git does NOT dispatch from `git rev-parse
+// --git-path hooks` — the session env aims it at the dir posse rendered
+// (D2) — so identity is asked THERE, of files posse wrote, rather than at
+// the managed path, of files posse may not write and never will. The
+// behavior half (execOwnRenders) is unchanged: it execs our own render from
+// a private temp file and never the file at any dispatch path, so it has
+// nothing to learn from where git would have found one.
+func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3HookProbe {
 	hooks, err := hooksDir(dir)
 	if err != nil {
 		return l3HookProbe{}
 	}
 	r := l3HookProbe{Repo: true, PrePush: !wantPrePush, HooksDir: hooks}
+	if red != nil {
+		hooks = red.Hooks
+		r.HooksDir, r.Managed = red.Hooks, red.Managed
+	}
 
 	// hookRepo for the same reason the installers use it, doubled: identity
 	// is byte-for-byte, so a probe that resolves the mark differently from
@@ -3964,9 +3995,9 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	var prePushIdentity, prePushStale bool
 	var prePushPath string
 	if wantPrePush {
-		prePushIdentity, prePushStale, prePushPath = l3Identity(hooks, "pre-push", PrePushHook, prePushMarker, legacyPrePushMarker)
+		prePushIdentity, prePushStale, prePushPath = l3IdentityIn(red, hooks, "pre-push", PrePushHook, prePushMarker, legacyPrePushMarker)
 	}
-	commitIdentity, commitStale, commitPath := l3Identity(hooks, "prepare-commit-msg", commitRender, sharedIndexMarker, legacySharedIndexMarker)
+	commitIdentity, commitStale, commitPath := l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker, legacySharedIndexMarker)
 
 	prePushBehavior, commitBehavior := execOwnRenders(dir, wantPrePush, commitRender)
 
@@ -3974,10 +4005,17 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	r.CommitGuard = commitIdentity && commitBehavior
 
 	if wantPrePush && !r.PrePush {
-		r.PrePushDegraded = l3DegradeLine(hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
+		r.PrePushDegraded = l3DegradeLineIn(red, hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLine(hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path and shared-index guards are not realized", commitIdentity, commitStale)
+		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the beads visibility, constitution-path and shared-index guards are not realized", commitIdentity, commitStale)
+	}
+	// The forward-completeness arm, and the reason it is separate from the
+	// two slots above: what a missing dispatcher costs is not a posse gate
+	// but the EMPLOYER's hook (M4 — a slot the redirect dir lacks is
+	// skipped), so it can be true while both of posse's slots hold.
+	if red != nil {
+		r.Forward = redirectForwardGaps(red.Hooks, red.Managed, wantPrePush)
 	}
 	return r
 }
