@@ -1456,6 +1456,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	var ag *AgentFile
 	var rt *Runtime
 	caged := false // the session really runs inside the L4 cage (ADR 0002 §3)
+	// ADR 0052 D2: the session hooks dir a managed repo's L3 was rendered
+	// into, "" when this launch has none. Declared here because the render
+	// happens with the other L3 work and the env that aims git at it is
+	// assembled with the rest of the launch vars, far below.
+	hooksRedirectDir := ""
 	runtime, tier, gatesDir, cage, degraded, fallback := "", "", "", "", "", ""
 	if o.Agent != "" {
 		var err error
@@ -1590,6 +1595,32 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		mh, _ := managedHooksDir(dir)
 		if mh.Managed {
 			b.warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
+			// ADR 0052 D2: the wall posse may not install THERE is rendered
+			// here instead — its own dir, per session, and the session's env
+			// aims git at it. Rendered before CheckParityIn, so the probe
+			// that judges this launch reads the dir this launch just built.
+			//
+			// Not at the container tier. The env would cross the boundary
+			// (CageEnvNames forwards every var name shaped like one), and
+			// the dir it names is not on the mount list — a core.hooksPath
+			// pointing at a path that does not exist inside is not "ours
+			// missing", it is EVERY hook skipped, the employer's included,
+			// which is the one thing ADR 0052 promises never to do. So a
+			// caged launch on a managed repo keeps today's behaviour and
+			// says which half it did not get.
+			if caged {
+				b.warn("posse: %s — the session redirect is not applied at the container tier: %s is not inside the cage, and a core.hooksPath naming a path the cage does not have skips every hook there, the managed ones too (ADR 0052 D2)\n", o.Name, AbbrevHome(a.SessionHooksDir(o.Name)))
+			} else {
+				red, err := a.RenderSessionHooks(o.Name, dir, mh, deniesGitPush(ag.Deny))
+				if err != nil {
+					return nil, err
+				}
+				hooksRedirectDir = red.Dir
+				b.warn("posse: %s — L3 rendered at %s: %s dispatched into %s\n", o.Name, AbbrevHome(red.Dir), strings.Join(red.Slots, ", "), AbbrevHome(red.Managed))
+				for _, skip := range red.Skipped {
+					b.warn("posse: %s — not forwarded from %s: %s\n", o.Name, AbbrevHome(red.Managed), skip)
+				}
+			}
 		} else {
 			if deniesGitPush(ag.Deny) {
 				InstallPrePushHook(dir)
@@ -1795,6 +1826,16 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// so an installed L3 hook or shim reading the old name does not go quiet
 	// mid-transition. Drop POSSE_HOME's sibling read once the window closes.
 	vars = append(vars, EnvVar{"RHQ_HOME", a.Home}, EnvVar{"POSSE_HOME", a.Home})
+
+	// ADR 0052 D2, the other half of the render above: git's own
+	// config-in-env form, so every git in this session — including one
+	// invoked by absolute path (M2) — dispatches its hooks from the dir
+	// posse rendered, and runs the employer's after ours. Appended after
+	// the env sets so a count of the operator's own is read and extended
+	// rather than overwritten.
+	if hooksRedirectDir != "" {
+		vars = append(vars, gitConfigHooksPathVars(vars, hooksRedirectDir)...)
+	}
 
 	// RHQ_LAUNCH_HOME (ADR 0031 §1): the record of where this session was
 	// born, stamped alongside RHQ_HOME but never overridden by a persona's
@@ -2529,6 +2570,12 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	if !s.Foreign {
 		os.Remove(b.metaPath(name))
 		b.App.DropPaneLine(name)
+		// ADR 0052 D2: the session's rendered hooks dir goes with its other
+		// per-session records. Nothing outside the session ever reads it —
+		// only that session's env named it — and leaving it would leave a
+		// stale render of a wall no live session is behind. A foreign row is
+		// another home's session and its dir is that home's to remove.
+		b.App.RemoveSessionHooks(name)
 	}
 	l := &KillLanding{}
 	if !hadMeta || s.Foreign {

@@ -838,6 +838,14 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	}
 	if a.StateDir != "" {
 		add(&c.Deny, filepath.Join(a.StateDir, "gates"))
+		// ADR 0052 D2's redirect dir, denied for exactly the reason
+		// `.git/hooks` is below: on a managed hooks path that is where L3
+		// lives, so a session able to write it is a session able to disarm
+		// its own prepare-commit-msg — the same escape item 3 closes, one
+		// directory over. Denied whole and unconditionally: the deny costs
+		// a launch with no redirect nothing, and keying it on this launch
+		// having one would leave the hole open on the next.
+		add(&c.Deny, filepath.Join(a.StateDir, "hooks"))
 	}
 	for _, h := range sessionHooksDirs(cwd) {
 		add(&c.Deny, h)

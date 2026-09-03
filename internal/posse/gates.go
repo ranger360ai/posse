@@ -1802,6 +1802,16 @@ func legacyChainHookDispatcherWith(slot, neighbor string) string {
 // slot degrades to "gate only" — which is the whole of what posse promises
 // there anyway (rangerhq-xo65).
 func chainRender(slot, neighbor string, guard bool) string {
+	return chainRenderPath(slot, "$d/"+neighbor, guard)
+}
+
+// chainRenderPath is chainRender with the neighbour spelled OUT — the whole
+// word the body puts inside the double quotes, `$d/theirs-pre-push` for a
+// sibling and an absolute path for the redirect dispatcher ADR 0052 D2
+// renders, whose neighbour is the managed hooks dir's own slot and is not a
+// sibling of anything. Byte-identical to what this function always rendered
+// when the caller passes `$d/`+name, which is what chainRender is.
+func chainRenderPath(slot, neighbor string, guard bool) string {
 	stdin := ""
 	if slot == "pre-push" {
 		// git feeds pre-push the ref list on stdin. Ours does not read it;
@@ -1810,12 +1820,12 @@ func chainRender(slot, neighbor string, guard bool) string {
 	}
 	guarded := ""
 	if guard {
-		guarded = fmt.Sprintf("[ -x \"$d/%s\" ] || exit 0\n", neighbor)
+		guarded = fmt.Sprintf("[ -x \"%s\" ] || exit 0\n", neighbor)
 	}
 	return fmt.Sprintf(`#!/bin/sh
 d=$(dirname "$0")
 "$d/posse-%[1]s" "$@"%[2]s || exit $?
-%[4]sexec "$d/%[3]s" "$@"
+%[4]sexec "%[3]s" "$@"
 `, slot, stdin, neighbor, guarded)
 }
 
