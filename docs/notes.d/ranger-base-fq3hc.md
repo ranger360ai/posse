@@ -6,7 +6,8 @@ a 120-second census over all of `$HOME` found ONE new executable file while
 syspolicyd assessed ~100. This bead was to name the source before anyone
 optimised the wrong thing. **It is our own `internal/posse` test suite.** And
 the thing most visible to a naive census — `git init`'s 14 `.sample` hook
-scripts, 88% of every new executable file on this box — costs exactly zero.
+scripts, the large majority of every new executable file on this box — costs
+exactly zero.
 
 Everything below is passive log reading plus small local probes. Gatekeeper
 and `spctl` were not touched (operator ruling, nw9zg, still standing).
@@ -34,7 +35,8 @@ The replacement instrument is a **top-level poller**, not a recursive `find`:
 `os.listdir` the one directory (cheap, no `stat`), and the instant a new entry
 appears, walk *only that* new subtree. Shipped as
 `scripts/gk-inflight-census.py`; the reading below is 1041 polls in 30 s
-(~35 Hz):
+(~35 Hz), taken with the first version of that poller — read it with the
+caveat under the table:
 
 | | |
 |---|---|
@@ -47,6 +49,34 @@ appears, walk *only that* new subtree. Shipped as
 found one in 120 seconds. The rig plants its own transient exec dir halfway
 through and asserts it was caught — a poller that cannot be shown to detect is
 not evidence (ORDERS, "a rig must be shown able to fail").
+
+**What that control covered, and what it did not** — ranger-base-nunx9, and it
+is the caveat on every count in this note that came from the poller. The
+control was planted as an already-populated directory, so it graded the *walk*
+and never the *race*. The poller walked each top-level entry **once**, at the
+instant it was first listed, and was blind to every executable written into
+that entry afterwards. Measured on a four-file fixture — one directory that
+appears with its executable in it, one that appears empty and is populated 2 s
+later — it reported **2 new exec files against 4 on disk, control green, exit
+0**. The control could not fail on the bug.
+
+The script now re-walks the entries it has seen, round-robin, one full sweep
+every 2 s, deduping by `(st_dev, st_ino)` so a path `RenderGates` deletes and
+rewrites counts as the new file it is (measured: three inodes at one path,
+counted three times). It carries a **second** control, planted EMPTY and
+populated a second later; with the re-walk disabled that arm reads
+`control_late_seen=0` and exit 1, and the same fixture goes back to 2 of 4.
+
+So **605 is a floor, not a count**, and so is every poller-derived number
+below. How far below is measurable, and was: on the same real root on
+2026-09-03 the fixed poller found **46% (12 s) and 21% (30 s) of all new
+executable files by re-walk alone** — that fraction is what the reading above
+could not see. §3 has the per-class split, which does not go the way you would
+guess.
+
+It is still a floor after the fix: only entries that APPEAR during the run get
+re-walked, because the baseline here is 31,413 top-level entries and sweeping
+those is the 116-second `find` this instrument exists to replace.
 
 ## 2. Who was running
 
@@ -106,6 +136,31 @@ by correlation.
 | `git init`'s 14 `.sample` hooks (`commit-msg.sample`, `pre-push.sample`, …) | 535 | **no** |
 | gate-shim scripts + fake tool stubs the tests **exec** | 70 | yes |
 
+**Both counts are floors, by unknown and unequal amounts** — ranger-base-nunx9,
+see §1. They came from the single-walk poller, which never re-visited a
+directory it had listed. Two runs of the fixed poller over the same real root,
+2026-09-03:
+
+| run | new exec files | found only by re-walk | `.sample` late | other late |
+|---|---|---|---|---|
+| 12 s | 156 | 71 (46%) | 71 of 154 | 0 of 2 |
+| 30 s | 237 | 49 (21%) | 41 of 145 (28%) | 8 of 92 (9%) |
+
+**A fifth to a half of the population was invisible to the instrument that
+produced the table above**, so 535 : 70 — "88% of the files, 0% of the cost" —
+is not a ratio to quote. Nor is the direction of the error known: the obvious
+guess is that `git init` bursts its 14 hooks into a directory it has just made
+(caught) while `RenderGates` writes shims into a `t.TempDir()` that appeared
+seconds earlier (missed), which would flatter this table — but the 30 s run
+above missed the `.sample` class three times as often as the rest, because
+`git init` runs inside a temp tree that already existed. Neither direction is
+established; only the truncation is.
+
+What survives does not rest on the poller at all: §4 measures the `.sample`
+class at zero excess assessments across two flanked rounds, and §2a establishes
+who by removal. Re-run the fixed poller under three concurrent `internal/posse`
+suites to get a split that can be quoted.
+
 Captured leaf paths, non-`.sample`, verbatim from the poller:
 
 ```
@@ -139,9 +194,14 @@ scratch PATH per test.
 ## 4. `git init` costs nothing — measured, twice
 
 This is the trap the bead was filed to prevent. `git init` copies 14
-executable `.sample` hook scripts into every new repo. They are 88% of all new
-executable files on this box and **git never executes them**, so Gatekeeper —
-which assesses on exec — never sees them.
+executable `.sample` hook scripts into every new repo. They are the large
+majority of all new executable files on this box (§3 has the counts, and why
+they are floors rather than a ratio) and **git never executes them**, so
+Gatekeeper — which assesses on exec — never sees them.
+
+Nothing in this section depends on the poller. It is two flanked rounds of
+`git init` against idle controls, which is why it is the arm the §3 caveat
+sends you back to.
 
 Two rounds, each arm flanked by an idle control of the same wall length, per
 nw9zg discipline:
@@ -190,8 +250,9 @@ it, because the top-level poller gets the names directly.
 - `/opt`, `/Applications`, `/Library`, `/Volumes` were never censused and are
   now moot. The source is inside `$TMPDIR`, and it is ours.
 - **Do not "optimise" `git init`.** Suppressing hook samples
-  (`init.templateDir`) would remove 88% of the new executable files and 0% of
-  the assessments.
+  (`init.templateDir`) would remove most of the new executable files and 0% of
+  the assessments. The 0% is §4's, measured directly; the "most" is §3's floor
+  and does not need to be exact for this to hold.
 - The lever that would actually cut it is the one nw9zg measured: 200 execs of
   200 hard links to one inode = 1 assessment, 200 byte-identical copies = 217.
   A per-test gate-shim tree that is rebuilt from scratch pays per file; one
@@ -240,4 +301,8 @@ for k, v in c.most_common(20): print(v, k)'
 `log` is a zsh builtin — spell `/usr/bin/log` inside a Bash tool call.
 Never use a recursive `find` as a census over `$TMPDIR`; it is a 116-second
 pass over 291,907 files and it cannot see anything transient. Poll the top
-level and walk only what is new, and plant a control the poller must catch.
+level, walk what is new **and keep re-walking it**, and plant one control per
+thing the instrument claims to do — an already-populated directory grades the
+walk and is silent about the race (§1). Both `control_seen` and
+`control_late_seen` must read 1; the script exits 1 and says which arm missed
+if either does not.
