@@ -212,8 +212,13 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   walks past any regex. Check 3 gained a path arm and check 2 deliberately did not: a
   runbook NAMED after a plan brand still passes, because that class has
   the detector-source residual check 3's literals do not, and its
-  false-positive number over a path list is unmeasured. The boundary
-  remains the routing rule plus repo visibility.
+  false-positive number over a path list is unmeasured. The wall scans
+  added lines and added paths, never commit metadata: the author field is
+  whatever `user.email` resolves to for that commit and is the operator's
+  to set — which is why the e-mail literal is derived from EVERY config
+  scope (ranger-base-yqstz), not the one the repo happens to resolve to,
+  since a repo-local override is exactly how one box signs as two people.
+  The boundary remains the routing rule plus repo visibility.
 - The identity-literal false-positive rate is ASSUMED low (the literals
   are paths and an e-mail); the build bead's done-when includes the hrz
   method — measure against the post-scrub tree and require zero hits.

@@ -807,8 +807,9 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 
 // DeriveIdentityLiterals's three sources, each pinned against a fixture that
 // controls it: username always comes back (os/user basically never fails),
-// email is repo-config (git's own repo-then-global priority needs no help
-// from this code), and the instance path is the redirect target's DIRNAME,
+// email is every config scope's value (the multi-scope case has its own pin,
+// TestDeriveIdentityLiteralsWallsEveryScopesEmail; here there is only the
+// repo's), and the instance path is the redirect target's DIRNAME,
 // resolved the same way beadsHome and seedBeadsRedirect resolve it — both
 // forms, deduplicated when they coincide.
 func TestDeriveIdentityLiterals(t *testing.T) {
@@ -868,10 +869,81 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	}
 }
 
+// ranger-base-yqstz: the e-mail literal is EVERY scope's value, not the one
+// this repo resolves to. The setup that tripped it is the work-instance
+// flow-in path: a public checkout carrying a repo-local contribution-only
+// e-mail while the box's global identity is the work address. The bare
+// `git config user.email` answers with git's own priority — the local one —
+// and the work address went unwalled in every ADDED line of every staged
+// file. Both must derive, both must render into the hook, and a value set
+// identically at two scopes is still ONE literal (the seen-map, not a
+// second check line). The wrong arm — one value — is the pre-fix code,
+// restored and measured red at the close.
+func TestDeriveIdentityLiteralsWallsEveryScopesEmail(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	const local, global = "contrib@example.org", "box@work.example"
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// The box's own env may already point the global scope elsewhere
+	// (GIT_CONFIG_GLOBAL outranks $HOME/.gitconfig); pin the scratch file
+	// either way, and keep /etc/gitconfig out of the fixture.
+	gcfg := filepath.Join(home, ".gitconfig")
+	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	write(t, gcfg, "[user]\n\temail = "+global+"\n")
+	repo := filepath.Join(home, "repo")
+	os.MkdirAll(repo, 0o755)
+	mustGit(t, repo, "init", "-q", "-b", "main", ".")
+	mustGit(t, repo, "config", "--local", "user.email", local)
+
+	// Fixture premise: git itself resolves the LOCAL one for this repo. The
+	// defect was "derive what git resolves"; a fixture where git resolved
+	// the global would be staging a different bug.
+	if got := mustGit(t, repo, "config", "user.email"); got != local {
+		t.Fatalf("fixture premise: git resolves user.email to %q, want the repo-local %q", got, local)
+	}
+
+	emails := func(t *testing.T) []string {
+		t.Helper()
+		lits, err := DeriveIdentityLiterals(repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, l := range lits {
+			if l.Class == "email" {
+				out = append(out, l.Value)
+			}
+		}
+		// Render too: two literals are two check lines in the hook, and the
+		// hook is what refuses, not the slice.
+		hook := CommitGuardHook(VisibilityPublic, OpsPatternSet{}, lits...)
+		for _, e := range out {
+			if !strings.Contains(hook, identityLiteralERE(e)) {
+				t.Errorf("derived %q but the rendered hook does not carry it", e)
+			}
+		}
+		return out
+	}
+
+	got := emails(t)
+	if len(got) != 2 || !(got[0] == global && got[1] == local || got[0] == local && got[1] == global) {
+		t.Fatalf("email literals = %q, want both %q and %q — a repo-local override must not hide the global address", got, local, global)
+	}
+
+	// Same address at both scopes: one literal, not two check lines.
+	mustGit(t, repo, "config", "--local", "user.email", global)
+	if got := emails(t); len(got) != 1 || got[0] != global {
+		t.Fatalf("email literals = %q, want exactly one %q — the seen-map dedupes across scopes", got, global)
+	}
+}
+
 // A box with no git email configured anywhere derives none — `git config
-// user.email` reads the global layer even outside a repo, which is exactly
-// what "repo-then-global" means, so a bare non-repo dir is not by itself
-// what makes email absent; an empty ~/.gitconfig is. A repo with no
+// --get-all user.email` reads the global layer even outside a repo, so a
+// bare non-repo dir is not by itself what makes email absent; an empty
+// ~/.gitconfig is. A repo with no
 // .beads/redirect at all — or one naming no target — derives nothing from
 // THAT source, and does so silently: no error, just an absent class.
 // Skipped sources are check 3's normal case, not a failure of it.

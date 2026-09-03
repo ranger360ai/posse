@@ -547,8 +547,15 @@ const identityLiteralMaxLen = 4096
 //
 //   - username: os/user's Current().Username — not $USER, which a caller
 //     can set to anything.
-//   - email: `git config user.email`, read with no --local/--global flag,
-//     which is exactly repo-then-global (git's own config file priority).
+//   - email: `git config --get-all user.email` — EVERY scope's value
+//     (system, global, repo-local, worktree, command), one literal each,
+//     deduplicated. Not the bare read: that answers with git's own
+//     repo-then-global priority, ONE value, and on the work-instance
+//     flow-in setup (ranger-base-yqstz: a public checkout carrying a
+//     repo-local contribution-only e-mail over the box's global work
+//     e-mail) it derived the contribution address and left the work
+//     address unwalled. The box's identity is every address the box would
+//     sign with, not the one this repo happens to resolve to.
 //   - the instance repo path, when dir's .beads/redirect names one: the
 //     dirname of the redirect's target (the same resolution beadsHome and
 //     seedBeadsRedirect use — relative resolves against the repo root, not
@@ -581,9 +588,16 @@ func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 		}
 	}
 
-	if email, err := git(dir, "config", "user.email"); err == nil {
-		if err := add("email", email); err != nil {
-			return nil, err
+	// One spawn, every scope: `--get-all` walks system → global → local →
+	// worktree → command and prints each value on its own line, so a
+	// repo-local override does not hide the global address behind it
+	// (ranger-base-yqstz). Exit 1 when no scope sets it is the silent
+	// nothing-to-say case, like every other source here.
+	if emails, err := git(dir, "config", "--get-all", "user.email"); err == nil {
+		for _, email := range strings.Split(emails, "\n") {
+			if err := add("email", strings.TrimSpace(email)); err != nil {
+				return nil, err
+			}
 		}
 	}
 
