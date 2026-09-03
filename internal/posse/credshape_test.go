@@ -97,7 +97,13 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 				t.Fatalf("want a shape failure, got token %q in shape %q", tok, meta.Shape)
 			}
 			msg := err.Error()
-			if !strings.Contains(msg, KeychainService) || !strings.Contains(msg, "tried claudeAiOauth.accessToken") {
+			// The item the ADAPTER names, not the constant: under a set
+			// config-dir variable the store's name carries a hash suffix and
+			// this sentence must carry the same one (ADR 0019 D2 store 1,
+			// ranger-base-mx4q6). Asserting the constant here would pass on a
+			// box that never sets one and red on the box that does.
+			item, _ := keychainItem()
+			if !strings.Contains(msg, item) || !strings.Contains(msg, "tried claudeAiOauth.accessToken") {
 				t.Errorf("the error must name the item and the shapes tried: %q", msg)
 			}
 			for _, w := range tc.wants {

@@ -94,11 +94,19 @@ that cannot do anything.
 
 The plan guard's credential is the **runtime-owned** rotating OAuth token,
 and on darwin its store of record is the macOS keychain item
-`Claude Code-credentials`. posse is the second reader of somebody else's
-rotating credential. That is a known bad shape, taken deliberately: the
-operator-minted alternative was probed and measured **HTTP 403** — a
-setup-token is a valid credential that is not entitled to the usage endpoint.
-So the guard stays on the keychain, and the failures are named instead.
+`Claude Code-credentials`. That is the **default spelling** and the live name
+on this box today; the item grows a suffix — `-` and the first eight hex
+digits of a sha256 over the configuration directory — whenever
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` or `CLAUDE_CONFIG_DIR` names one, so on a
+box with either variable set, the item to match in Keychain Access is
+`Claude Code-credentials-<8 hex>` and every sentence below prints the name
+posse actually asked for (ADR 0019 D2 store 1, ranger-base-ig4op).
+
+posse is the second reader of somebody else's rotating credential. That is a
+known bad shape, taken deliberately: the operator-minted alternative was
+probed and measured **HTTP 403** — a setup-token is a valid credential that
+is not entitled to the usage endpoint. So the guard stays on the keychain,
+and the failures are named instead.
 
 Each class is a distinct sentence, and **the sentence is the diagnosis**.
 Read the one you got, not the one you expected.

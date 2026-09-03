@@ -394,7 +394,7 @@ func TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH(t *testing.T) {
 	// Half one: what the read resolves to, asked without running it.
 	// exec.Command records a bare name's LookPath answer in .Path, so a
 	// regression to `security` lands the shim's path here.
-	if got := keychainCmd(securityBin).Path; got != "/usr/bin/security" {
+	if got := keychainCmd(securityBin, KeychainService).Path; got != "/usr/bin/security" {
 		t.Errorf("the keychain read must exec /usr/bin/security absolutely, got %q", got)
 	}
 

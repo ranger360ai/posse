@@ -38,6 +38,8 @@ package posse
 // this file collected and is the reason those errors are the shape they are.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -467,9 +469,63 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 	return tok, meta, nil
 }
 
-// KeychainService is the macOS keychain item Claude Code stores its OAuth
-// credentials under.
+// KeychainService is the DEFAULT spelling of the macOS keychain item Claude
+// Code stores its OAuth credentials under — the whole name exactly when the
+// environment names no configuration directory, and the head of it when one
+// does. The item posse actually reads is keychainItem's answer, and every
+// sentence prints that (ADR 0019 D2 store 1, ranger-base-ig4op): the
+// constant survives as the spelling, not as the read.
 const KeychainService = "Claude Code-credentials"
+
+// keychainItem is the name posse asks the keychain for, and the one clause a
+// derived name may have to carry with it.
+//
+// MEASURED 2026-09-02 off the same darwin-arm64 2.1.258 bundle credentialDir
+// was transcribed from, one statement after it (ADR 0019 D2 store 1,
+// ranger-base-ig4op): the item is `Claude Code-credentials` exactly when the
+// environment names no directory, and otherwise that name, `-`, and the
+// first 8 hex digits of sha256 over the directory STRING. The runtime hashes
+// with node's sha256 over the string's UTF-8 bytes, which is this.
+//
+// Three rules ride here, and each one is a way this can be wrong:
+//
+//   - Default-ness is a property of the ENVIRONMENT, not of the path.
+//     `CLAUDE_CONFIG_DIR=$HOME/.claude` names the default directory and
+//     STILL suffixes the item, because the runtime tests the variable and
+//     never the path. So the answer is credentialDirNamed's bool, and never
+//     a comparison of dir against the home — that comparison is the mutant
+//     V11 exists to kill.
+//   - The hash is over the string as the variable SPELLS it: a trailing
+//     slash hashes as typed, and it is the DIRECTORY, never the file path
+//     CredentialsFile builds out of it (a different string, and a name no
+//     keychain ever held).
+//   - posse does not normalize. The runtime NFC-normalizes the value; Go's
+//     standard library has no NFC and ADR 0019 prices x/text and declines
+//     it. For an ASCII value NFC is the identity (MEASURED), so the derived
+//     name is exact wherever the operator typed an ASCII path. For anything
+//     else posse hashes the bytes as spelled and the note says so, so an
+//     item that is not found there names its first suspect instead of
+//     reading as an empty keychain.
+//
+// A resolver error is the constant: a box with no home and no secure-storage
+// override has no directory string to hash, and the default spelling is the
+// honest answer. That arm also swallows a CLAUDE_CONFIG_DIR set on a
+// homeless box — credentialDir already errors rather than answering there,
+// and this follows the resolver rather than growing a second one.
+func keychainItem() (name, note string) {
+	dir, named, err := credentialDirNamed()
+	if err != nil || !named {
+		return KeychainService, ""
+	}
+	sum := sha256.Sum256([]byte(dir))
+	name = KeychainService + "-" + hex.EncodeToString(sum[:])[:8]
+	for i := 0; i < len(dir); i++ {
+		if dir[i] >= 0x80 {
+			return name, " (non-ASCII directory: posse hashed it as spelled and the runtime hashes its NFC form, so an item not found here may be that difference rather than an empty keychain)"
+		}
+	}
+	return name, ""
+}
 
 // securityBin is macOS's `security`, named ABSOLUTELY and not looked up on
 // PATH (ranger-base-ypf5, part B of ranger-base-r64).
@@ -500,8 +556,15 @@ func keychainStore() runtimeStore { return keychainStoreAt(securityBin) }
 // shapes name their stub here instead of putting one on a PATH this code no
 // longer reads.
 func keychainStoreAt(bin string) runtimeStore {
+	// The name is derived once, here, and every sentence this store produces
+	// prints THAT — the store's own name, the seam's Source (credentialToken
+	// is handed this Name), the unreadable sentence and the refresh report's
+	// row. An operator with a suffixed item sees the suffix to match in
+	// Keychain Access, and a second derivation is how the read and the
+	// sentence about it would come to disagree (ADR 0019 D2 store 1).
+	item, note := keychainItem()
 	return runtimeStore{
-		Name: fmt.Sprintf("keychain item %q", KeychainService),
+		Name: fmt.Sprintf("keychain item %q", item) + note,
 		// ADR 0019 D2's unreadable row, in the operator's own verbs. The
 		// ACL is hypothetical on purpose — it is the cause that has
 		// actually bitten (three times on 2026-08-24, every one of them a
@@ -510,7 +573,7 @@ func keychainStoreAt(bin string) runtimeStore {
 		// fixed by the second half of the same line.
 		Fix: "this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once",
 		Read: func() ([]byte, error) {
-			out, err := keychainCmd(bin).Output()
+			out, err := keychainCmd(bin, item).Output()
 			if err != nil {
 				// GateRefusal stays after part B removed its cause: it is
 				// what stops the 08-24 misdiagnosis returning if this ever
@@ -519,7 +582,7 @@ func keychainStoreAt(bin string) runtimeStore {
 				if g := gateRefusal(filepath.Base(bin), err); g != nil {
 					return nil, g
 				}
-				return nil, Die("keychain item %q unreadable", KeychainService)
+				return nil, Die("keychain item %q unreadable", item)
 			}
 			return out, nil
 		},
@@ -532,8 +595,12 @@ func keychainStoreAt(bin string) runtimeStore {
 // .Path, so a regression to `security` shows up there as a shim's path
 // rather than /usr/bin/security — and the real keychain is never read to
 // find that out.
-func keychainCmd(bin string) *exec.Cmd {
-	return exec.Command(bin, "find-generic-password", "-s", KeychainService, "-w")
+//
+// The item is an ARGUMENT and not the constant: the name the environment
+// derives is the name the read must ask for, and this is the one argv that
+// carries it (ADR 0019 V12).
+func keychainCmd(bin, item string) *exec.Cmd {
+	return exec.Command(bin, "find-generic-password", "-s", item, "-w")
 }
 
 // CredentialsFile is where Claude Code keeps the same OAuth envelope on a
@@ -583,19 +650,59 @@ func CredentialsFile() (string, error) {
 // CLAUDE_SECURESTORAGE_CONFIG_DIR is an answer on a box with no home at all,
 // and reporting "no home directory" there would be a diagnosis of the wrong
 // thing.
+//
+// The resolution itself is credentialDirNamed's, which answers the same
+// directory plus whether a variable named it — the bit the keychain item's
+// name needs. This signature is unchanged because seatbelt.go's wall calls
+// it (ranger-base-7pf1h).
 func credentialDir() (string, error) {
+	dir, _, err := credentialDirNamed()
+	return dir, err
+}
+
+// credentialDirNamed is that same resolution with the one further bit the
+// item's NAME needs: whether a VARIABLE named the directory, which is what
+// decides the keychain item's spelling one statement later in the runtime's
+// own module (ADR 0019 D2 store 1, ranger-base-ig4op).
+//
+// It is one function and not two derivations on purpose. The file path and
+// the item name are the same resolution read twice by the runtime, and a
+// second copy here is how the wall, the reader and the sentence come to
+// disagree about which directory is in play — the class ranger-base-x5f6p
+// already paid for once.
+//
+// Named is an ENVIRONMENT property, never a path property:
+//
+//   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and non-empty — named, and the
+//     directory is that value verbatim.
+//   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and EMPTY — NOT named. It shadows
+//     CLAUDE_CONFIG_DIR for the name exactly as it does for the file, so an
+//     empty value beside a set config dir is the default item.
+//   - otherwise CLAUDE_CONFIG_DIR non-empty — named. The test is on the
+//     VARIABLE and not on the directory it yields: `CLAUDE_CONFIG_DIR` set
+//     to the home's own `.claude` names the default directory and still
+//     suffixes the item, because the runtime never looks at the path.
+//   - otherwise — not named, and the directory is the home's `.claude`.
+//
+// credentialDir keeps its signature (seatbelt.go calls it, ranger-base-7pf1h)
+// and derives from this, so there is exactly one resolver.
+func credentialDirNamed() (dir string, named bool, err error) {
 	sec, set := os.LookupEnv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	if set && sec != "" {
-		return sec, nil
+		return sec, true, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return "", Die("no home directory for this user, so the runtime's credentials file cannot be located")
+	home, herr := os.UserHomeDir()
+	if herr != nil || home == "" {
+		return "", false, Die("no home directory for this user, so the runtime's credentials file cannot be located")
 	}
 	if set {
-		return filepath.Join(home, ".claude"), nil
+		return filepath.Join(home, ".claude"), false, nil
 	}
-	return ClaudeConfigDirIn(home), nil
+	// The value comes from ClaudeConfigDirIn — one spelling of the config-dir
+	// rule, trust.go's — and only the named-ness reads the variable, because
+	// there is nothing in the directory it returns that says whether an
+	// operator typed it.
+	return ClaudeConfigDirIn(home), os.Getenv("CLAUDE_CONFIG_DIR") != "", nil
 }
 
 // credentialFileCandidates names every path this process's environment says

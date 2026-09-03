@@ -31,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,22 @@ type crQuote struct {
 	// runbook can carry the whole sentence, and the invariant part where it
 	// renders placeholders for the variable part.
 	fragment string
+	// pageAs is that same sentence as the PAGE spells it, for the one row
+	// where the two can honestly differ. The keychain item's name is derived
+	// from this process's environment (ADR 0019 D2 store 1,
+	// ranger-base-mx4q6), so the code side must be checked against the name
+	// THIS box would ask for, while the page quotes the default spelling —
+	// the name on a box with no config-dir variable set, and the one a reader
+	// matches the row by. Empty means the page quotes the fragment verbatim,
+	// which is every other row.
+	pageAs string
+}
+
+func (q crQuote) quoted() string {
+	if q.pageAs != "" {
+		return q.pageAs
+	}
+	return q.fragment
 }
 
 // TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits is the drift pin.
@@ -84,46 +101,106 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 		t.Fatal("the keychain adapter read something at a path that does not exist")
 	}
 
+	// The item name is the environment's and not the constant's: a suite run
+	// on a box that sets a config-dir variable reads a suffixed item and says
+	// so (ranger-base-mx4q6). This arm measures the sentence THAT box gets.
+	item, _ := keychainItem()
+	const unreadableTail = " unreadable — this binary's keychain ACL " +
+		"may have been dropped by `make install`; grant access when prompted, or run `claude` once"
+
 	for _, q := range []crQuote{
 		// The whole sentence since rangerhq-pwpx: the class carries its own
 		// one-line fix, so that the 80% of this section stands in the error
 		// itself whether or not the operator ever reaches this page.
-		{"unreadable", unreadable.Error(),
-			"keychain item \"Claude Code-credentials\" unreadable — this binary's keychain ACL " +
-				"may have been dropped by `make install`; grant access when prompted, or run `claude` once"},
+		{name: "unreadable", produced: unreadable.Error(),
+			fragment: "keychain item " + strconv.Quote(item) + unreadableTail,
+			pageAs:   "keychain item " + strconv.Quote(KeychainService) + unreadableTail},
 
-		{"401 stale",
-			(&AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}).Error(),
-			"usage endpoint returned 401 Unauthorized: credential stale — run `claude` once to refresh"},
+		{name: "401 stale",
+			produced: (&AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}).Error(),
+			fragment: "usage endpoint returned 401 Unauthorized: credential stale — run `claude` once to refresh"},
 
-		{"403 wrong kind",
-			(&AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden}).Error(),
-			"usage endpoint returned 403 Forbidden: this credential is not entitled to plan windows — " +
+		{name: "403 wrong kind",
+			produced: (&AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden}).Error(),
+			fragment: "usage endpoint returned 403 Forbidden: this credential is not entitled to plan windows — " +
 				"a setup-token never will be, and this is not a freshness problem"},
 
-		{"429 rate-limited",
-			(&RateLimit{Status: "429 Too Many Requests", RetryAfter: time.Hour}).Error(),
-			"usage endpoint returned 429 Too Many Requests, retry after 1h00m"},
+		{name: "429 rate-limited",
+			produced: (&RateLimit{Status: "429 Too Many Requests", RetryAfter: time.Hour}).Error(),
+			fragment: "usage endpoint returned 429 Too Many Requests, retry after 1h00m"},
 
-		{"gate shim refusal",
-			(&GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}).Error(),
-			"keychain read refused by a posse gate shim: security (deny: Bash(security:*)) — posse's own gate, not a credential outage"},
+		{name: "gate shim refusal",
+			produced: (&GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}).Error(),
+			fragment: "keychain read refused by a posse gate shim: security (deny: Bash(security:*)) — posse's own gate, not a credential outage"},
 
 		// Structural absence: the runbook renders the two variable parts as
 		// placeholders, so the fragment is the invariant head.
-		{"structural absence",
-			(&NoSource{Runtime: "grok", Purpose: CredMeter, GOOS: "darwin", Arm: "a meter adapter for grok"}).Error(),
-			"no meter credential source for"},
+		{name: "structural absence",
+			produced: (&NoSource{Runtime: "grok", Purpose: CredMeter, GOOS: "darwin", Arm: "a meter adapter for grok"}).Error(),
+			fragment: "no meter credential source for"},
 	} {
 		t.Run(q.name, func(t *testing.T) {
 			if !strings.Contains(crFlat(q.produced), crFlat(q.fragment)) {
 				t.Fatalf("the code no longer says this — the runbook's move-2 row for %s is now wrong.\n  code: %q\n  quoted: %q",
 					q.name, q.produced, q.fragment)
 			}
-			if !strings.Contains(page, crFlat(q.fragment)) {
-				t.Errorf("docs/runbooks/credential-rotation.md does not quote the %s sentence: %q", q.name, q.fragment)
+			if !strings.Contains(page, crFlat(q.quoted())) {
+				t.Errorf("docs/runbooks/credential-rotation.md does not quote the %s sentence: %q", q.name, q.quoted())
 			}
 		})
+	}
+}
+
+// The runbook's item-name sentence, both ways (ADR 0019 D2 store 1 / V12,
+// ranger-base-mx4q6).
+//
+// The row above quotes the DEFAULT spelling, and it has to keep doing that:
+// it is the name on a box with no config-dir variable, which is the reference
+// box today. What it must not do is leave a reader on a box that sets one
+// hunting Keychain Access for an item that is not there — so the page also
+// says when the name grows a suffix, and this holds that claim against the
+// derivation rather than against a literal.
+//
+// Not t.Parallel: it sets the environment the derivation reads.
+func TestTheRunbookSaysWhenTheKeychainItemNameGrowsASuffix(t *testing.T) {
+	page := crRunbook(t)
+
+	// The page keeps the default spelling.
+	if !strings.Contains(page, crFlat(strconv.Quote(KeychainService))) &&
+		!strings.Contains(page, crFlat("`"+KeychainService+"`")) {
+		t.Fatalf("the runbook no longer names the item's default spelling %q — every row of move 2 is matched by that name", KeychainService)
+	}
+
+	// And it names both variables that grow the suffix, because "a config
+	// directory is set" is not something an operator can check without them.
+	for _, v := range []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"} {
+		if !strings.Contains(page, v) {
+			t.Errorf("the runbook does not name %s — the reader cannot tell whether their item is suffixed", v)
+		}
+	}
+	if !strings.Contains(page, KeychainService+"-") {
+		t.Error("the runbook does not show the suffixed spelling, so a reader on a box with a config-dir variable set matches nothing in Keychain Access")
+	}
+
+	// The code half: under a set config-dir variable the derived name really
+	// is the default spelling plus `-` and eight hex digits, so the sentence
+	// above describes this binary and not a plan.
+	t.Setenv("HOME", "/tmp/home")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
+	name, _ := keychainItem()
+	if name != KeychainService+"-519e587f" {
+		t.Fatalf("keychainItem() = %q under a set CLAUDE_CONFIG_DIR — the runbook's suffix sentence describes something this code does not do", name)
+	}
+	suffix := strings.TrimPrefix(name, KeychainService+"-")
+	if len(suffix) != 8 {
+		t.Errorf("the suffix is %d hex digits, the page says eight", len(suffix))
+	}
+	// The control: with no variable set the page's "default spelling" claim
+	// has to be true too, or the row above is quoting a name nothing emits.
+	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+	if name, _ := keychainItem(); name != KeychainService {
+		t.Errorf("with neither variable set the item is %q — the runbook's rows all quote %q", name, KeychainService)
 	}
 }
 

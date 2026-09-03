@@ -191,6 +191,193 @@ func TestTheMeterStoreReadsTheFileTheRuntimeWouldHaveWritten(t *testing.T) {
 	}
 }
 
+// ─── what the keychain item is CALLED, ranger-base-mx4q6 ─────────────────────
+
+// The item-name derivation, one arm per input (ADR 0019 D2 store 1, V11).
+//
+// The digits are LITERALS, MEASURED 2026-09-02 with node's sha256 — the
+// runtime's own function — and with shasum, which agree, and re-measured
+// 2026-09-03 on this box. Computing the expectation here with the same
+// sha256 call the code makes would agree with a mutant that hashed the wrong
+// STRING, and hashing the wrong string is three of the four defects this
+// table exists to catch.
+//
+// A table and not eight tests because the arms only mean anything against
+// each other: "the config dir is hashed" is a claim about the arm where the
+// secure-storage variable is not there to shadow it, and `-519e587f` says
+// nothing next to an arm that does not also show what `/other` hashes to.
+func TestTheKeychainItemNameIsDerivedFromTheConfigDirEnvironment(t *testing.T) {
+	const (
+		// Literals, not t.TempDir(): every digit below is the hash of a
+		// fixed string, so the strings have to be fixed.
+		home = "/tmp/home"
+		cfg  = "/tmp/cfg"
+	)
+	for _, tc := range []struct {
+		name string
+		// nil = the variable is not in the environment at all, which is a
+		// different input from a pointer to "" (the shadow arm below).
+		secureStorage, configDir *string
+		want                     string
+		wantNote                 bool
+		why                      string
+	}{
+		{
+			name: "neither set",
+			want: KeychainService,
+			why:  "the default spelling, and the live name on the reference box today: no variable names a directory, so there is nothing to hash",
+		},
+		{
+			name:          "CLAUDE_SECURESTORAGE_CONFIG_DIR present but EMPTY, with a config dir set",
+			secureStorage: strPtr(""),
+			configDir:     strPtr(cfg),
+			want:          KeychainService,
+			why:           "present-but-empty SHADOWS CLAUDE_CONFIG_DIR for the name exactly as it does for the file: the runtime's presence test enters the branch and falls to the home, so no variable named this directory and the item keeps the default spelling",
+		},
+		{
+			name:      "CLAUDE_CONFIG_DIR alone",
+			configDir: strPtr(cfg),
+			want:      KeychainService + "-519e587f",
+			why:       "sha256(\"/tmp/cfg\"), first 8 hex. NOT the file path: sha256(\"/tmp/cfg/.credentials.json\") is 77513d2f, and an item under that name has never existed",
+		},
+		{
+			name:          "both set — secure storage wins the hash too",
+			secureStorage: strPtr(cfg),
+			configDir:     strPtr("/other"),
+			want:          KeychainService + "-519e587f",
+			why:           "the hashed string is the value the resolver RETURNED, and secure storage returned before the config dir was read. Hashing CLAUDE_CONFIG_DIR here would give -bf2faee2 and read the wrong keychain item on every box that sets both",
+		},
+		{
+			name:      "CLAUDE_CONFIG_DIR naming the home's own .claude",
+			configDir: strPtr(home + "/.claude"),
+			want:      KeychainService + "-c78bad33",
+			why:       "default-ness is an ENVIRONMENT property: this variable names the default directory and the item is STILL suffixed, because the runtime tests the variable and never the path. A resolver that decided by comparing the directory to the home would answer the bare constant here and read an item that is not there",
+		},
+		{
+			name:      "CLAUDE_CONFIG_DIR with a trailing slash",
+			configDir: strPtr(cfg + "/"),
+			want:      KeychainService + "-350d8e6a",
+			why:       "the hash is over the string as the variable SPELLS it, never a cleaned path — filepath.Clean would give -519e587f, a different item from the one the runtime wrote",
+		},
+		{
+			name:      "a non-ASCII directory, NFC composed",
+			configDir: strPtr("/tmp/caf\u00e9"),
+			want:      KeychainService + "-0873cca0",
+			wantNote:  true,
+			why:       "posse hashes the bytes as spelled. Composed is already NFC, so this digit is also what the runtime derives",
+		},
+		{
+			name:      "a non-ASCII directory, NFC decomposed",
+			configDir: strPtr("/tmp/cafe\u0301"),
+			want:      KeychainService + "-16eb4464",
+			wantNote:  true,
+			why:       "the same path to a human, a different string to sha256 — and posse does not normalize (Go's standard library has no NFC and ADR 0019 declines x/text), so it hashes what it was given and the note says so. This is the arm the note exists for: an item not found under -16eb4464 may be sitting under the composed -0873cca0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", home)
+			for k, v := range map[string]*string{
+				"CLAUDE_SECURESTORAGE_CONFIG_DIR": tc.secureStorage,
+				"CLAUDE_CONFIG_DIR":               tc.configDir,
+			} {
+				if v == nil {
+					unsetenvForTest(t, k)
+					continue
+				}
+				t.Setenv(k, *v)
+			}
+			got, note := keychainItem()
+			if got != tc.want {
+				t.Errorf("keychainItem() = %q, want %q — %s", got, tc.want, tc.why)
+			}
+			switch {
+			case tc.wantNote && note == "":
+				t.Errorf("a non-ASCII directory derived %q with no note — the operator who reads `item not found` there is owed its first suspect (%s)", got, tc.why)
+			case !tc.wantNote && note != "":
+				t.Errorf("an ASCII directory carried the normalization note %q, which is false here: NFC is the identity on ASCII", note)
+			case tc.wantNote && !(strings.Contains(note, "as spelled") && strings.Contains(note, "NFC")):
+				t.Errorf("the note must say both halves — posse hashed it as spelled, the runtime hashes its NFC form: %q", note)
+			}
+		})
+	}
+}
+
+// V12: the read asks for the DERIVED name, and every sentence an operator
+// can be handed prints that name.
+//
+// The argv is measured through production's own wiring — keychainStoreAt's
+// Read, which is the one place keychainCmd is called — and not by calling
+// keychainCmd with a name this test chose. A pin that hands the argv builder
+// its own expectation cannot tell whether the store derived anything at all.
+func TestTheKeychainReadAsksForTheDerivedItemAndTheSentencesNameIt(t *testing.T) {
+	const derived = KeychainService + "-519e587f"
+	t.Setenv("HOME", "/tmp/home")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
+
+	// The stub records the argv it was handed and answers an envelope, so one
+	// read measures both the name asked for and the name the seam reports.
+	argvLog := filepath.Join(t.TempDir(), "argv")
+	stub := keychainStub(t, "#!/bin/sh\nprintf '%s\\n' \"$*\" >>'"+argvLog+"'\ncat <<'JSON'\n"+envelope("derived-name-fixture", 0)+"\nJSON\n")
+
+	tok, meta, err := readStore(keychainStoreAt(stub))
+	if err != nil {
+		t.Fatalf("the stub must answer: %v", err)
+	}
+	if tok != "derived-name-fixture" {
+		t.Fatalf("read %q — the envelope this arm measures is not the one that answered", tok)
+	}
+	argv, rerr := os.ReadFile(argvLog)
+	if rerr != nil {
+		t.Fatalf("the stub recorded no argv, so nothing here measured the read: %v", rerr)
+	}
+	if !strings.Contains(string(argv), "-s "+derived+" -w") {
+		t.Errorf("the keychain read asked for %q — under a set CLAUDE_CONFIG_DIR the runtime's item is %q, and the constant reads an item that is not there (ADR 0019 V12)", strings.TrimSpace(string(argv)), derived)
+	}
+	if !strings.Contains(meta.Source, derived) {
+		t.Errorf("the seam's Source is %q — it must name the item the read actually asked for, so a 401 names a store the operator can go and look at", meta.Source)
+	}
+	// keychainStore(), not keychainStoreAt(stub): this is the wiring `posse
+	// refresh` prints as the meter row's source (refresh.go's meterRow takes
+	// store.Name), and the name tried is the whole diagnostic value of that
+	// row on a box where the item is not found.
+	if name := keychainStore().Name; !strings.Contains(name, derived) {
+		t.Errorf("the store names itself %q — the refresh report would print the default spelling for a read that asked for %q", name, derived)
+	}
+	// And the unreadable sentence: an absolute path that is not there fails
+	// to exec, is not a gate refusal, and lands on the class-1 error.
+	_, _, unreadable := readStore(keychainStoreAt(filepath.Join(t.TempDir(), "security")))
+	if unreadable == nil {
+		t.Fatal("the keychain adapter read something at a path that does not exist")
+	}
+	if !strings.Contains(unreadable.Error(), derived) {
+		t.Errorf("the unreadable sentence says %q — an operator matching it in Keychain Access needs the suffix that was tried", unreadable)
+	}
+}
+
+// The note rides on the STORE's name, which is where an operator meets it:
+// the refresh report's source column, the seam's Source and the shape
+// diagnosis all print that string (ADR 0019 D2 store 1).
+func TestTheStoreNameCarriesTheNormalizationNoteForANonASCIIDirectory(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
+	ascii := keychainStore().Name
+	if strings.Contains(ascii, "NFC") {
+		t.Errorf("an ASCII directory's store name carries the normalization note: %q — NFC is the identity here and the note would be false", ascii)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cafe\u0301")
+	name := keychainStore().Name
+	if !strings.Contains(name, KeychainService+"-16eb4464") {
+		t.Errorf("the store must name the item it will ask for: %q", name)
+	}
+	if !strings.Contains(name, "NFC") {
+		t.Errorf("the store name %q says nothing about normalization — this is the one arm where posse's name and the runtime's can differ, and the note is what keeps an `item not found` there from reading as an empty keychain", name)
+	}
+}
+
 // The switch is total and it is a switch: every platform that is not darwin
 // gets the file store, and darwin alone gets the keychain. No build tags, so
 // this is checkable from either box.
