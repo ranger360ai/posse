@@ -65,7 +65,7 @@ is context in the sentence, never a trigger: a clean tree with zero
 commits gets no comment.
 
 **2. The dirty close is routed back to the closer as a bead.** Same
-shape as the merge-back-blocked handoff (dispatch.go fileMergeBlocked):
+shape as the merge-back-blocked handoff (dispatch.go noteMergeBlocked):
 title `closed dirty: <id> — N uncommitted path(s) in <branch>`, label
 `code` (MergeBlockedLabel), P1, assigned to the closer, `discovered-from:
 <id>`, deduped over the OPEN titles in the lane on that title's fixed
