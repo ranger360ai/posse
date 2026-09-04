@@ -6,12 +6,21 @@ package posse
 // vzx2n's fix reads the comment character back off the template git already
 // wrote into "$1", because for `auto` the character is a decision git makes
 // per message and stripspace has no message to make it against. The read is
-// admitted by THREE conditions in messageArm's rendered block: the first
-// character of the LAST line is one git can choose, the file carries a BARE
-// line of it, and at least four lines start with it. The second and third
+// admitted by TWO conditions in messageArm's rendered block: the file
+// carries a BARE line of a character git can choose — the LAST such line is
+// the one taken — and at least four lines start with that character. Both
 // are what keep the detection from firing on a message that has no template
 // at all — and where it fires wrongly it strips lines git KEEPS, which is
 // the fail-open vzx2n exists to close, reopened.
+//
+// THAT FIRST CONDITION WAS TWO WHEN THIS FILE WAS WRITTEN (ranger-base-vl9g8,
+// ranger-base-dgh7y): vzx2n took the first character of the file's LAST line
+// and required a bare line of it as well, and under `commit -v` the last line
+// is a diff line, so no character was found at all. vl9g8 collapsed the pair
+// into the last BARE comment-character line. The arms below did not change
+// and neither did what they say — each still reds under exactly the mutant
+// that relaxes its OWN guard, re-measured against the new arm in the table
+// at the bottom of this comment.
 //
 // MEASURED on the close's own tree (2d2f139), `go test -overlay`: relax the
 // count to `-ge 1`, or drop the bare-line conjunct, and all four of vzx2n's
@@ -39,6 +48,27 @@ package posse
 // M-bareline every one of vzx2n's four pins and
 // TestQACeilingMessageArmFollowsTheWritersCommentChar stay GREEN, and only
 // the arm below reds.
+//
+// RE-MEASURED 2026-09-04 on 50af010, against the arm as vl9g8 left it, same
+// method (ranger-base-dgh7y). M-bareline has to be written against the new
+// selector to mean the same thing — the bare-line match relaxed to a line
+// that merely STARTS with a candidate, `grep -axE` -> `grep -aE '^...'`
+// plus `cut -c1`, which is vzx2n's shape generalized:
+//	M-count      `-ge 4` -> `-ge 1`      reds the bare-line arm ALONE
+//	M-bareline   bare line -> `^` match  reds the four-line arm, AND both
+//	                                     `commit -v` ceiling pins
+//	M-auto       the `auto` test disabled  reds every `auto` pin in both files,
+//	                                       while the explicit-character pin
+//	                                       TestQACeilingMessageArmFollowsThe-
+//	                                       WritersCommentChar stays green
+//
+// Run under M-count and M-bareline: vzx2n's four pins and both `commit -v`
+// ceiling pins, so each row above is a whole-set result and not one test's.
+// Each arm here is still the only thing that reds under the mutant of its
+// own guard, and the count guard is measured by exactly one arm.
+// M-bareline now reaching the `-v` pins as well is the change vl9g8 made:
+// the bare-line rule stopped being a second conjunct and became the selector
+// itself, so the ceiling's verbose pin measures it too.
 
 import (
 	"os"
@@ -126,74 +156,33 @@ func qaAutoDetectionArm(t *testing.T, body func(username string) string) {
 	}
 }
 
-// PARKED, AND RED TODAY: `commit.verbose` TAKES THE CHARACTER AWAY AGAIN
-// (ranger-base-n3s4s, verifying ranger-base-vzx2n; filed as its own bug bead
-// because the arm is a constitutional wall).
+// THE `commit.verbose` ARM THAT WAS PARKED HERE IS NOW ONE FILE OVER
+// (ranger-base-dgh7y, filed off ranger-base-n3s4s' verify of vzx2n).
 //
-// vzx2n reads the comment character off the LAST line of the file git handed
-// the hook, which under `auto` is git's status block. Set `commit.verbose`
-// and it is not: git appends its scissors line and then the whole staged
-// DIFF below it, so the last line of the file is a diff line — MEASURED,
-// git 2.50.1 (Apple Git-155), the hook was handed a file ending `+# third`.
-// A diff line starts with '+', ' ' or '-', none of which git can choose, so
-// the detection falls through to the whole-file read.
+// What it said: under `auto` vzx2n read the character off the LAST line of
+// "$1", and `commit.verbose=true` makes that a DIFF line — git appends its
+// scissors marker and the staged diff below its block — so no character was
+// detected, the file was read whole, and ranger-base-h3s6q's finding-2
+// over-refusal came back: one UNTRACKED path git listed in a block it
+// discards refuses an editor commit whose typed message is clean, under a
+// remedy ("rewrite the commit message") that clears nothing. Fail-CLOSED, so
+// nothing leaked; reachable from two ordinary keys in the writer's own
+// config with no intent.
 //
-// Fail-CLOSED, and that is the whole cost — nothing leaks. What returns is
-// ranger-base-h3s6q's finding 2, the over-refusal
-// TestQACeilingMessageArmUnderAnAutoCommentCharStillReadsGitsTemplate exists
-// to keep closed: everything git is about to throw away is scanned, which is
-// the ';'-prefixed status block AND everything below the scissors line. One
-// UNTRACKED file whose NAME carries a class, never staged and never typed,
-// refuses an editor commit whose typed message is clean, under the remedy
-// "rewrite the commit message" — which clears nothing, because the writer
-// did not write it. That pin does not see this: it leaves commit.verbose
-// unset, so its last line is a comment and the detection succeeds.
+// ranger-base-vl9g8 fixed it while this bead was open — the selector is now
+// the last BARE comment-character line, which a unified diff cannot contain
+// — and landed its own pin for the shape:
+// TestQACeilingMessageArmUnderAnAutoCommentCharWithAVerboseCommit, in
+// commentcharauto_qa_test.go. The parked pin here was the same wall, the
+// same two config keys and the same untracked probe, with a weaker fixture
+// premise (it did not assert that the diff was actually appended), so it is
+// retired rather than unparked and duplicated.
 //
-// Reachable from the WRITER's config alone, two ordinary keys in
-// ~/.gitconfig, no intent. RUN UNPARKED 2026-09-04 on 2d2f139, RED: refused
-// by the MESSAGE arm on the ceiling's export-name class, one hit, over the
-// untracked path in git's own listing.
-//
-// NOT A REGRESSION, measured rather than assumed: the same pin unparked
-// against the PRE-vzx2n arm (gates.go at 36efc82, `go test -overlay`) is red
-// too, on the same assertion. Plain stripspace answered '#' and never
-// stripped the ';' block either. vzx2n closed this over-refusal for the
-// ordinary case and left the verbose one open without saying so; its own
-// close states only the fail-OPEN residual.
-//
-// UNPARK BY REMOVING THE SKIP BELOW when the arm learns the character from
-// something the verbose diff cannot move — git's own answer for the file
-// rather than the file's last line.
-func TestQACeilingMessageArmUnderAutoWithCommitVerbose(t *testing.T) {
-	t.Skip("PARKED (ranger-base-n3s4s): red today — commit.verbose puts a diff line last, so the auto character detection falls through to the whole-file read and h3s6q finding 2 returns")
-
-	w := qaCeilingWall(t, "")
-	env := qaAutoCommentCharRepo(t, w, w.priv, "# notes\n")
-	if out, err := w.git(w.priv, nil, "config", "commit.verbose", "true"); err != nil {
-		t.Fatalf("git config commit.verbose: %v %s", err, out)
-	}
-
-	// CONTROL: nothing classed anywhere — the editor path must still land.
-	w.stage(t, w.priv, "internal/posse/ctl.go", "package posse\n")
-	if out, err := w.git(w.priv, env, "commit", "--", "internal/posse/ctl.go"); err != nil {
-		t.Fatalf("fixture premise: a clean editor commit must land: %v\n%s", err, out)
-	}
-	// PREMISE: git really did decline '#' and write its template with ';', or
-	// the two readers never disagreed here at all.
-	qaAutoSwitched(t, w, w.priv)
-
-	// PROBE: ONE untracked file, never staged, never typed. Its name reaches
-	// the file only because git listed it, and git throws that listing away.
-	write(t, filepath.Join(w.priv, qaExportStem+"42.csv"), "x\n")
-	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
-	out, err := w.git(w.priv, env, "commit", "--", "internal/posse/probe.go")
-	if err == nil {
-		return // the defect is gone; nothing else to say.
-	}
-	if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") {
-		t.Fatalf("fixture premise: the probe must be refused by the MESSAGE arm if it is refused at all:\n%s", out)
-	}
-	t.Errorf("commit.verbose put a diff line last, so the arm could not read the character git chose and "+
-		"scanned the file whole — an UNTRACKED path git listed in a block it discards refused an editor "+
-		"commit whose typed message is clean, and the remedy names a message the writer did not write:\n%s", out)
-}
+// MEASURED before retiring it, 2026-09-04 on 50af010, `go test -overlay`,
+// both pins run side by side: unparked, both GREEN; with vzx2n's selector
+// (`sed -n '$p' | cut -c1`) put back, both RED on their own assertion, each
+// naming the MESSAGE arm and the untracked path, while the three run beside
+// them — the detection arm above with both its subtests, and vzx2n's
+// TestQACeilingMessageArmUnderAnAutoCommentCharStillReadsGitsTemplate and
+// TestQACheckThreeMessageArmUnderAutoWithNoTemplateAppended — stayed green.
+// The surviving pin sees every mutant this one saw.

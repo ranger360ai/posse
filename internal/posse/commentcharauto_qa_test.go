@@ -320,6 +320,21 @@ func TestQACheckThreeMessageArmUnderAutoWithNoTemplateAppended(t *testing.T) {
 // RUN BEFORE THE FIX, RED: "data-ceiling content in the commit MESSAGE ...
 // export-name: 1 hit(s)". MUTATION: put the old `sed -n '$p' | cut -c1`
 // selector back and this reds while the other four stay green.
+//
+// IT ALSO CARRIES ranger-base-dgh7y, the bug bead the verify seat filed for
+// this from the other side (verifying vzx2n, ranger-base-n3s4s). Its repro
+// was a parked twin of this pin in commentcharautodetect_qa_test.go — same
+// wall, same two config keys, same untracked probe, no assertion that the
+// diff was really appended. Run side by side on 50af010 the two are green
+// together and, with vzx2n's selector put back by `go test -overlay`, red
+// together on their own assertions, so the twin was retired there rather
+// than kept as a second copy of this one.
+//
+// NOT A REGRESSION vzx2n introduced, measured on that bead: the same shape
+// unparked against the PRE-vzx2n arm (gates.go at 36efc82) is red too, on
+// the same assertion — plain stripspace answered '#' and never stripped the
+// ';' block either. vzx2n closed the over-refusal for the ordinary case and
+// left the verbose one open; vl9g8 closed that one.
 func TestQACeilingMessageArmUnderAnAutoCommentCharWithAVerboseCommit(t *testing.T) {
 	w := qaCeilingWall(t, "")
 	env := qaAutoCommentCharRepo(t, w, w.priv, "# notes\n")
