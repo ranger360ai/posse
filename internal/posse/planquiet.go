@@ -25,9 +25,17 @@ package posse
 // Two things make a cache quiet, and they are the same state seen from two
 // sides:
 //
-//   - The plan guard is OFF — no `plan_guard_<window>:` is set. Nothing on
-//     this box is deciding anything on the reading, so no request it costs
-//     is one anybody asked for. This is the state the incident was in.
+//   - The plan guard is OFF — no `plan_guard_<window>:` is set — AND
+//     nothing on this box is spending (PlanMeterSpender). Nothing is
+//     deciding anything on the reading and nothing is burning the window it
+//     measures, so no request it costs is one anybody asked for. This is
+//     the state the 09-02 incident was in.
+//
+//     The second half of that sentence is ranger-base-ddivo's, bought on
+//     2026-09-03: without it an unarmed guard muted the METER as well as
+//     the guard, and the shop spent two days of `--watch` under dollar caps
+//     against a weekly window nobody had read since 09-01. Guard-off is a
+//     ruling about the brake; it was never a ruling about the number.
 //   - `plan_usage_quiet: true` — the operator's own ruling, which holds
 //     with the guard armed. It is the flag the quiet gap actually needed:
 //     commenting out two thresholds to stop the polling also switches off
@@ -112,10 +120,70 @@ func (a *App) PlanMeterQuiet(errw io.Writer) *PlanQuiet {
 		// can parse must not be able to switch off the shop's only meter.
 		fmt.Fprintf(errw, "plan guard: config plan_usage_quiet: %q is not true or false — the meter stays readable\n", raw)
 	}
-	if len(a.PlanGuardThresholds(io.Discard)) == 0 {
+	if len(a.PlanGuardThresholds(io.Discard)) == 0 && a.PlanMeterSpender() == "" {
 		return &PlanQuiet{}
 	}
 	return nil
+}
+
+// PlanMeterSpender is why this box is SPENDING while its plan guard is
+// unarmed, or "" when nothing is. It is the whole of what keeps an unarmed
+// guard from muting the meter (ranger-base-ddivo).
+//
+// MEASURED 2026-09-03. `plan_guard_5h:`/`plan_guard_7d:` had been commented
+// out since 09-01 under the operator's full-speed ruling, so every
+// PlanCache on the box was quiet by the arm above; `budget_pass:` and
+// `budget_day:` were set and `dispatch --watch` hired for two days against
+// it. The last reading this box took is stamped 2026-09-01T23:23 local, two
+// cockpit opens made no request, and the weekly window was found exhausted
+// by hand.
+//
+// The defect is the COUPLING, not the quiet rule. "Nobody armed the guard,
+// so nobody needs the number" is true only when nothing is spending;
+// unarming the guard is a ruling about the BRAKE and has never been a
+// ruling about the METER, and the two were one sentence. So an unarmed
+// guard mutes the guard, and `plan_usage_quiet: true` stays the only full
+// mute — that one is a ruling somebody typed.
+//
+// Two spenders, cheapest question first:
+//
+//   - A dollar cap is written. ADR 0018's ledger brake knows dollars and
+//     knows nothing about the weekly window (ranger-base-c3vqe,
+//     ranger-base-wkai3), so a cap is precisely the shape where the meter
+//     nobody is reading is the one that runs out first.
+//   - A `posse dispatch --watch` loop is running — the unattended hiring
+//     the incident spent two days doing. Liveness is the kernel's
+//     (WatchLoopRunning's flock, ADR 0011 §1): release IS process death, so
+//     there is no staleness class and no pidfile to misread.
+//
+// A probe that cannot be ANSWERED reads as spending, the same way a
+// malformed `plan_usage_quiet:` reads as readable above. Wrong that way
+// costs one request per TTL on an idle shop; wrong the other way is this
+// bead.
+//
+// It is a snapshot and it decays — a watch can start the instant after this
+// returns "" — and nothing here locks against that. The answer is recomputed
+// on every PlanCache construction, so a stale reading costs one skipped
+// refresh that the next tick takes, which is the harmless end of the
+// check-then-act class rather than a race worth a lock.
+//
+// What it does NOT do is decide anything. The guard is still off: no
+// threshold to trip, no blind clock, no park, and the reading it keeps
+// alive joins no comparison it did not join before (budget.go's Dial E
+// reads the plan windows only where the guard armed them). This changes who
+// ASKS, never what the answer rules on.
+func (a *App) PlanMeterSpender() string {
+	if a.BudgetCapsConfigured() {
+		return "budget_pass:/budget_day: is set"
+	}
+	running, err := WatchLoopRunning(a)
+	if err != nil {
+		return "the watch-loop lock could not be read"
+	}
+	if running {
+		return "a dispatch --watch loop is running"
+	}
+	return ""
 }
 
 // PlanQuietLine is the one line that says the meter has been muted on

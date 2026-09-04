@@ -386,6 +386,12 @@ func main() {
 		"TestProbeHonoursALiveCooldown":                              "reads catalogAt",
 		"TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing": "reads catalogAt",
 		"TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome":       "reads catalogAt",
+		// ddivoT (3): the frozen instant ranger-base-ddivo's pins date the
+		// incident's reading at — read only, and the reading itself is
+		// seeded per test under a t.TempDir.
+		"TestQAStaleLineNamesTheUnarmedGuardInsteadOfTheHeadroomRule": "reads ddivoT",
+		"TestQAUnarmedGuardStillAsksWhileTheShopSpends":               "reads ddivoT",
+		"TestQAWatchLoopRunningUnmutesTheMeter":                       "reads ddivoT",
 		// OpsPatterns (2)
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
 		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",

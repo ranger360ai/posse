@@ -64,6 +64,30 @@ func (a *App) BudgetCaps(errw io.Writer) (pass, day float64) {
 	return a.budgetDollars("budget_pass", errw), a.budgetDollars("budget_day", errw)
 }
 
+// BudgetCapsConfigured is whether the operator has WRITTEN either cap —
+// which is a different question from BudgetCaps, and deliberately so.
+//
+// BudgetCaps answers "what does Dial E brake at", so a value it cannot
+// parse is no cap. This answers "does this shop spend enough to have asked
+// for a brake", and there a typo'd cap is the MOST exposed state there is:
+// the operator believes there is a brake, the arithmetic above has silently
+// dropped it, and the one caller of this is the rule that decides whether
+// the plan meter is worth reading at all (planquiet.go PlanMeterSpender). A
+// setting nobody can parse must not be able to switch off the shop's only
+// meter — the same rule PlanMeterQuiet applies to its own flag.
+//
+// The two readers of these keys stay apart for that reason, and neither is
+// derived from the other: one is parsed dollars, this is the operator's
+// intent, and folding them would hand the meter's mute switch to a typo.
+func (a *App) BudgetCapsConfigured() bool {
+	for _, key := range []string{"budget_pass", "budget_day"} {
+		if strings.TrimSpace(YamlGet(a.ConfigPath, key)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) budgetDollars(key string, errw io.Writer) float64 {
 	raw := strings.TrimSpace(YamlGet(a.ConfigPath, key))
 	if raw == "" {

@@ -743,6 +743,32 @@ watching them is the operator's interactive headroom — a fleet that eats the
   the cache refuses rather than hand back a stale number as a fresh one
   (ranger-base-c3vqe is what that costs), and a surface that wants the old
   reading anyway asks for it by name with `LastReading`.
+- **An unarmed guard mutes the guard, not the meter** (ranger-base-ddivo).
+  The rule above is right and its guard-OFF arm was half a sentence too
+  wide. "Nobody armed the guard, so nobody needs the number" holds only
+  while nothing is spending, and measured 2026-09-03 this shop was the other
+  case: thresholds commented out since 09-01 under a full-speed ruling,
+  `budget_pass:`/`budget_day:` set, `dispatch --watch` hiring — so every
+  `PlanCache` on the box was quiet, the last reading stayed stamped
+  2026-09-01T23:23, two cockpit opens made **no request**, and the operator
+  found the weekly window exhausted by hand. ADR 0018's ledger brake knows
+  dollars and knows nothing about that window (ranger-base-c3vqe,
+  ranger-base-wkai3 carry the other half); this is the half that made the
+  blindness **invisible**. So the guard-off arm now asks one more question —
+  is anything spending? — and quiet needs BOTH: no `plan_guard_<window>:`
+  **and** no `budget_pass:`/`budget_day:` written **and** no
+  `dispatch --watch` loop holding `state/dispatch-watch.lock`. A cap that
+  will not parse counts as written (a typo must not mute the shop's only
+  meter) and a lock that cannot be read counts as running. The
+  `plan_usage_quiet:` flag stays the only full mute, because that one is a
+  ruling somebody typed. Nothing is decided on the reading either way — the pass keeps it
+  warm on `plan_usage_ttl:` and rules on nothing — and the loudness follows
+  for free: `plan_usage_stale_after:` was gated on the same quiet rule, so
+  the stale line now fires in exactly the exposed shape, with its middle
+  clause forked because no headroom rule is running there:
+  `plan meter BLIND 46h00m: last reading 2026-09-01T23:23Z (5h 46% · 7d 29%)
+  — the plan guard is UNARMED (budget_pass:/budget_day: is set), so nothing
+  is ruling on it; no request has left this machine since`.
 - **Overflow: a second pool instead of a skipped pass** (ADR 0010). The
   guard's meter belongs to *one* provider, so the whole-pass skip had two
   costs: a lane whose runtime is not on that meter was skipped because

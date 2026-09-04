@@ -462,8 +462,10 @@ func (d *Dispatcher) errWriter() io.Writer { return dispatcherStampErrw{d} }
 
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
-// the thresholds and none is set by default — with none set, no request is
-// made at all, no clock runs, and this is exactly today's behaviour.
+// the thresholds and none is set by default — with none set the guard
+// decides nothing, no clock runs, and this is exactly today's behaviour. It
+// keeps the METER alive anyway while this box is spending, which is
+// planMeter's line and not the guard's (ranger-base-ddivo).
 //
 // Which windows exist is the provider adapter's answer, never this
 // function's (ADR 0012 D4): the thresholds are matched to the reading BY
@@ -484,6 +486,7 @@ func (d *Dispatcher) errWriter() io.Writer { return dispatcherStampErrw{d} }
 func (d *Dispatcher) planGuard() {
 	th := d.App.PlanGuardThresholds(d.errw())
 	if len(th) == 0 {
+		d.planMeter()
 		return
 	}
 	// ADR 0010: the second pool's config is read once per pass, and only
@@ -563,6 +566,49 @@ func (d *Dispatcher) planGuard() {
 			return
 		}
 	}
+}
+
+// planMeter keeps the shared reading alive on a pass whose GUARD is off
+// (ranger-base-ddivo). It is the pass's whole contribution to the meter and
+// it rules on nothing: no threshold, no blind clock, no park, no step-down —
+// the reading is not even kept on the Dispatcher, so Dial E's comparison
+// still sees plan windows only where the guard armed them (budget.go).
+//
+// Why the pass and not a surface. Every other reader of this cache is
+// somebody watching: a cockpit that is open, a `posse cost` somebody ran.
+// The shape the incident had was nobody watching — two days of `--watch`
+// under dollar caps, with the last reading stamped 2026-09-01T23:23 and no
+// request since. A meter that only refreshes when a human opens a TUI is a
+// meter for the hours a human is there, and those are the hours the fleet
+// is least exposed.
+//
+// The cache is what makes it cheap and what makes it safe: quiet still
+// refuses (an idle shop with an unarmed guard asks nothing, exactly as
+// before), the TTL still holds the whole instance to one request per five
+// minutes however many passes run, and a 429's cooldown still parks every
+// asker on this box. So the most this adds to a spending shop is one
+// request per TTL — the request whose absence is the bead.
+//
+// The result is dropped on purpose. Failures are already recorded where a
+// reader can find them (plan-usage.log's cadence, and the age in
+// plan-usage.json that planstale.go reads back out loud on this same
+// pass's preamble); a second sentence here would be a per-pass line about
+// a guard that is off, which is the furniture ranger-base-4rfw1 spent its
+// close refusing to add.
+func (d *Dispatcher) planMeter() {
+	c := d.App.PlanCache("dispatch")
+	c.Now = d.now
+	if d.Plan != nil {
+		c.Reader, c.NoAdapter = d.Plan, nil
+	}
+	// Quiet is the operator's ruling or an idle shop, and no adapter is a
+	// box with no meter at all (ADR 0012 D4 / 0019 D3) — both are states
+	// the guard's own path says out loud when it is armed, and neither is
+	// a thing to say on a pass that is only keeping a number warm.
+	if c.Quiet != nil || c.Reader == nil {
+		return
+	}
+	c.Read(d.App.PlanUsageTTL(d.errw()))
 }
 
 // planNoAdapter is a guard the operator armed that no shipped adapter can

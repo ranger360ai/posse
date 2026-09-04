@@ -378,9 +378,22 @@ default_emoji: ⚙️
 # status`, `posse cost` and the dispatch pass alike — and it exists because
 # on 2026-09-02 the only way to stop the polling was to comment out the
 # thresholds above, which also switches off the brake. With the guard OFF
-# (no `plan_guard_<window>:` set) the meter is quiet anyway: nothing is
-# deciding anything on the reading, so no request it costs is one anybody
-# asked for.
+# (no `plan_guard_<window>:` set) the meter is quiet anyway — but ONLY while
+# nothing is spending: no `budget_pass:`/`budget_day:` written and no
+# `dispatch --watch` loop running. Nothing is deciding anything on the
+# reading and nothing is burning the window it measures, so no request it
+# costs is one anybody asked for.
+#
+# The exception is the whole of ranger-base-ddivo, measured 2026-09-03: with
+# the thresholds commented out since 09-01 and the dollar caps set, the box
+# asked NOTHING for two days while `--watch` hired against a weekly window
+# last read on 09-01 — and the operator found it exhausted by hand. An
+# unarmed guard is a ruling about the BRAKE and never was one about the
+# METER, so a spending shop keeps refreshing on `plan_usage_ttl:` and says
+# the reading's age out loud (`plan meter BLIND 46h00m … the plan guard is
+# UNARMED (budget_pass:/budget_day: is set), so nothing is ruling on it`).
+# This flag stays the only full mute, because this flag is a ruling somebody
+# typed.
 #
 # Why it is worth a setting. That day a 429 window had been re-arming since
 # 03:30Z; the thresholds were commented out and the watch restarted, and the

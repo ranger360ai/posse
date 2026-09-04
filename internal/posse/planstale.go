@@ -106,6 +106,15 @@ type PlanStale struct {
 	// the wait doubles per consecutive 429, and a wait the shop chose for
 	// itself has to be visible to the operator whose fleet is blind for it.
 	NextAsk time.Duration
+	// Spender is why the meter is being read at all while the plan guard is
+	// UNARMED (planquiet.go PlanMeterSpender); "" = the guard is armed, the
+	// state this file was written for. Non-empty is ranger-base-ddivo's
+	// state and it changes the SENTENCE, because in it no headroom rule is
+	// ruling on anything — there is no threshold to trip and no park. What
+	// is true is worse and has to be the words: the shop is spending, the
+	// number it is spending against is this old, and nothing is braking on
+	// it.
+	Spender string
 }
 
 // Line is the one rendering — `posse status`, the watch pass preamble and
@@ -117,8 +126,12 @@ type PlanStale struct {
 // lower case beside a dim clock since rangerhq-6h1, and ten hours of that
 // read as furniture.
 func (s PlanStale) Line() string {
-	return fmt.Sprintf("plan meter BLIND %s: last reading %s (%s) — ruling on it under the headroom rule; %s",
-		BlindFor(s.Age), s.At.UTC().Format("2006-01-02T15:04Z"), s.Windows.Line(), s.streak())
+	rule := "ruling on it under the headroom rule"
+	if s.Spender != "" {
+		rule = fmt.Sprintf("the plan guard is UNARMED (%s), so nothing is ruling on it", s.Spender)
+	}
+	return fmt.Sprintf("plan meter BLIND %s: last reading %s (%s) — %s; %s",
+		BlindFor(s.Age), s.At.UTC().Format("2006-01-02T15:04Z"), s.Windows.Line(), rule, s.streak())
 }
 
 // streak is the tail clause: what the meter has been answering since. Three
@@ -159,16 +172,26 @@ func (s PlanStale) streak() string {
 // lie:
 //
 //   - `plan_usage_stale_after: 0` — the operator turned it off.
-//   - The meter is QUIET (planquiet.go) — no `plan_guard_<window>:`, so
-//     there is no meter guard and no headroom rule ruling on anything, or
-//     `plan_usage_quiet: true`, where the operator has stopped the asking
-//     on purpose and the guard is off for the duration. Either way the
-//     snapshot gates nothing, and "ruling on it under the headroom rule"
-//     would name a rule that is not running. A cockpit and `posse cost`
-//     still show the reading with its age; that is a display, not a brake.
+//
+//   - The meter is QUIET (planquiet.go) — no `plan_guard_<window>:` AND
+//     nothing spending, so there is no meter guard, no headroom rule ruling
+//     on anything and no window being burnt; or `plan_usage_quiet: true`,
+//     where the operator has stopped the asking on purpose and the guard is
+//     off for the duration. Either way the snapshot gates nothing, and
+//     "ruling on it under the headroom rule" would name a rule that is not
+//     running. A cockpit and `posse cost` still show the reading with its
+//     age; that is a display, not a brake.
+//
+//     An unarmed guard on a SPENDING box is not one of the four: the meter
+//     is read there (ranger-base-ddivo) and an old reading is exactly the
+//     thing that has to be loud, so it is stale like any other — with the
+//     clause Line() forks on, because the sentence about the headroom rule
+//     is the half that would be untrue.
+//
 //   - No reading in the snapshot. A machine that has never had one is not
 //     ruling on a stale number, and ADR 0018's own reasoning parks nothing
 //     on ignorance.
+//
 //   - The reading is inside the threshold, which is every healthy day.
 //
 // A snapshot stamped in the FUTURE (a clock step, a copied state dir) has a
@@ -179,6 +202,17 @@ func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanSt
 	if after <= 0 || a.PlanMeterQuiet(io.Discard) != nil {
 		return PlanStale{After: after}
 	}
+	// Past that gate an UNARMED guard means the meter is being read for the
+	// spending, not for a threshold (ranger-base-ddivo) — the one state
+	// where "ruling on it under the headroom rule" would name a rule that is
+	// not running while the line is otherwise exactly right. Asked only
+	// where it can be true: an armed guard never reaches PlanMeterSpender,
+	// and an unarmed one that reaches here was let past the gate above by
+	// it, so this is a second call and never a second opinion.
+	spender := ""
+	if len(a.PlanGuardThresholds(io.Discard)) == 0 {
+		spender = a.PlanMeterSpender()
+	}
 	c := a.PlanCache(caller)
 	last, at, ok := c.LastReading()
 	if !ok {
@@ -186,11 +220,11 @@ func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanSt
 	}
 	age := now.Sub(at)
 	if age <= after {
-		return PlanStale{At: at, Age: age, After: after, Windows: last}
+		return PlanStale{At: at, Age: age, After: after, Windows: last, Spender: spender}
 	}
 	fails, class := planFailStreak(c.Log)
 	next, _ := c.Cooling(now)
-	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next}
+	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next, Spender: spender}
 }
 
 // planFailStreak walks $StateDir/plan-usage.log backwards: how many
