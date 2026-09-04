@@ -169,6 +169,13 @@ type Dispatcher struct {
 	// because every writer already holds it. See LastWrite and watchdog.go.
 	lastWrite time.Time
 
+	// rawOut is Out as the caller handed it in, kept when Watch tees this
+	// loop's own log over it (watchlog.go: d.Out becomes a MultiWriter of
+	// the caller's writer and the log). Nothing in production reads it; it
+	// exists so a test helper that knows what it passed in — a
+	// *strings.Builder — can still get its own writer back out.
+	rawOut io.Writer
+
 	// outMu serializes every write to Out/errw() against every other one.
 	// Until ADR 0028 §1, exactly one goroutine ever called into a
 	// Dispatcher's print path (Run's own). Now gather() runs on one
@@ -288,10 +295,19 @@ type Dispatcher struct {
 // invisible to detection, not how long dispatch waits for one.
 const DefaultRelaunchGrace = 45 * time.Second
 
+// DefaultPromptWaitMS is one --wait leg when nothing said otherwise: fifteen
+// minutes. Named rather than inline because it is not only this
+// constructor's default any more — WatchLogStaleAfter (watchlog.go) computes
+// how long an ARMED loop may legitimately write nothing, and the answer
+// depends on this leg. plugin/autostart.sh passes no --timeout, so the loop
+// on the box has exactly this value, and a reading derived from a different
+// one would be a threshold about a loop nobody is running.
+const DefaultPromptWaitMS = 15 * 60 * 1000
+
 func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 	return &Dispatcher{
 		App: a, HB: hb, Bd: NewBd(), Out: out,
-		PromptWaitMS:  15 * 60 * 1000,
+		PromptWaitMS:  DefaultPromptWaitMS,
 		WaitCeiling:   4 * time.Hour,
 		StartupWait:   DefaultStartupWait,
 		RelaunchGrace: DefaultRelaunchGrace,
@@ -4671,4 +4687,13 @@ func mergeBlockedTitle(branch, base string) string {
 // resolved one and the merge that is blocked again are two handoffs.
 func openMergeBlocked(bd Bd, dir, title string) (string, error) {
 	return openTitledBead(bd, dir, MergeBlockedLabel, title)
+}
+
+// baseOut is Out as the caller handed it in, before Watch teed the loop's
+// log over it. Test helpers read it; production never does.
+func (d *Dispatcher) baseOut() io.Writer {
+	if d.rawOut != nil {
+		return d.rawOut
+	}
+	return d.Out
 }

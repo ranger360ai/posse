@@ -2064,7 +2064,12 @@ pool spent from your phone or the web — so set the threshold below where you
 would set a real meter's. See `examples/config.yaml`.
 
 Restart the herdr server (or run `plugin/autostart.sh` by hand) to arm.
-Log: `$RHQ_HOME/state/dispatch-watch.log`.
+Log: `$RHQ_HOME/state/dispatch-watch.log`, written by the loop itself and
+rotated to one `.1` generation past 5 MiB. **Relaunching the loop by hand
+needs no redirect and must not tee into that file** — the loop opens it,
+and a pipe on top of it doubles every line (ranger-base-n00wn).
+`posse dispatch --watch-status` names the file and how long ago it was
+written.
 
 A by-hand run never kills anything. If a workspace already wears the session
 name with no loop in it — a husk herdr restored without its command, wearing
@@ -2072,7 +2077,12 @@ your crew mark 👤 because `posse new` stamps it, so no sweep will clear it —
 the hook says exactly that and exits nonzero rather than reporting a loop it
 just measured as absent. `posse kill dispatch`, then run the hook again; a
 herdr server start (`--startup`) replaces a husk by itself. `posse status`
-reports the same fact from the other side, as G7 `loop-dead`.
+reports the same fact from the other side, as G7 `loop-dead`. The same row's
+`loop-mute` is its twin one shape over: the loop IS running and its log
+stopped, so nothing is being recorded even though everything is being
+delivered. The threshold is the watchdog's own budget — the longest a healthy
+loop can write nothing — read from `autostart_interval:` and
+`autostart_max_interval:`.
 
 ---
 

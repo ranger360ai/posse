@@ -1156,9 +1156,19 @@ for a fleet: no herdr, no fleet.
   enough not to hold the lock reads as dead and is replaced once, at the next
   server start — both halves come from the same promoted `./bin/posse`, so
   that window is the one start after an upgrade.
-- **Logs** `$RHQ_HOME/state/dispatch-watch.log`, tee'd from the pane and
-  rotated to `.1` past 5 MiB; the pane's own scrollback is the live view
-  (`posse peek dispatch`). The session wears 🛰️ and, being made by `posse new`,
+- **Logs** `$RHQ_HOME/state/dispatch-watch.log`, written by the loop itself
+  and rotated to `.1` past 5 MiB; the pane's own scrollback is the live view
+  (`posse peek dispatch`). It used to be tee'd from the pane, which made the
+  record a property of the command line somebody typed: a loop restarted by
+  hand wrote to wherever that terminal pointed, and the fleet's log sat
+  frozen at 2026-08-31 18:08 for three days with a live loop holding the
+  lock and nothing red anywhere (ranger-base-n00wn). The loop now opens the
+  file and tees its own stdout and stderr into it, so no pipe and no hand
+  restart can end the record — and **nothing should tee into it**, or every
+  line lands twice. `posse dispatch --watch-status` names the file and its
+  age, which is both the operator's reading and the token
+  `plugin/autostart.sh` matches on to decide whether the posse it is arming
+  is old enough to still need the tee. The session wears 🛰️ and, being made by `posse new`,
   the crew mark — dispatch will never reach into its own engine.
 - The manifest is read from disk at every server start (the cached
   `plugins.json` entry carries only the registration), so a manifest edit is

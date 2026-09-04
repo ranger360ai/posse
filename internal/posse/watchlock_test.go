@@ -189,7 +189,7 @@ func TestWatchStatusReadsLockThenPidfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line != "watch-loop: running (holder unrecorded)" {
+	if !strings.HasPrefix(line, "watch-loop: running (holder unrecorded)") {
 		t.Errorf("a held lock with no pidfile is still a running loop, got %q", line)
 	}
 
@@ -201,9 +201,12 @@ func TestWatchStatusReadsLockThenPidfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line != "watch-loop: running (pid 4242, since 2026-08-26T09:30:00Z)" {
+	if !strings.HasPrefix(line, "watch-loop: running (pid 4242, since 2026-08-26T09:30:00Z)") {
 		t.Errorf("the pidfile is what names the holder, got %q", line)
 	}
+	// A PREFIX and not the whole line since ranger-base-n00wn: the evidence
+	// half — ` · log <path>, written <age> ago` — is appended to every arm,
+	// and TestWatchStatusNamesTheLogAndItsAge is what pins it.
 
 	// And the identity half decides nothing: a stale record whose pid the
 	// kernel has handed to somebody else does not make a free lock look

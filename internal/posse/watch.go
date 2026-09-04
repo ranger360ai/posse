@@ -91,6 +91,19 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// reads this loop as no loop and may replace it.
 		fmt.Fprintf(d.errw(), "warning: cannot hold the watch lock at %s: %v — the autostart hook cannot see this loop\n", AbbrevHome(WatchLockPath(d.App)), err)
 	}
+	// The record this loop keeps of itself (ranger-base-n00wn, watchlog.go).
+	// Opened BEFORE the lock's own defer so its Close is registered first
+	// and therefore runs LAST (LIFO), after every clock below has been
+	// joined: a watchdog line or a backup tick written while the loop is
+	// shutting down belongs in the record like any other.
+	//
+	// Until this call the log existed only because plugin/autostart.sh piped
+	// the pane into it, so a loop restarted by hand wrote its output
+	// somewhere else and the fleet's retrospective record silently stopped —
+	// three days of it, with nothing red anywhere (this file's bead).
+	if lg := d.teeWatchLog(); lg != nil {
+		defer lg.Close()
+	}
 	defer lock.Release()
 	// A timer typed this command, not a human: the plan guard's fail-open
 	// line has no witness from here on, so blindness gets a clock
@@ -356,3 +369,34 @@ func (d *Dispatcher) stampWatchPid() {
 }
 
 func (d *Dispatcher) dropWatchPid() { RemoveWatchPid(WatchPidPath(d.App), os.Getpid()) }
+
+// teeWatchLog opens $RHQ_HOME/state/dispatch-watch.log and tees this loop's
+// Out and Err into it for the rest of the loop's life (ranger-base-n00wn).
+// nil means the file could not be opened at all, which costs the record and
+// never the loop — the rule lockWatch and stampWatchPid already follow.
+//
+// The tee is a MultiWriter with the caller's own writer FIRST: the pane an
+// operator is watching is the live view and must never wait on, or be
+// silenced by, a file. watchLog.Write is what makes the second leg safe —
+// it reports success unconditionally, so a MultiWriter cannot stop at it.
+//
+// It writes ONE line of its own, the generation banner the hook used to
+// print through the tee. Everything else in the log is the loop's ordinary
+// output: the launch ration, the binary, the hook wall, every pass.
+func (d *Dispatcher) teeWatchLog() *watchLog {
+	path := WatchLogPath(d.App)
+	// d.errw() is read here, while it is still the operator's stderr and
+	// not the tee: watchLog reports its own failures through it, and
+	// reporting them through a writer that contains the failing log would
+	// recurse into the write that failed.
+	lg, err := openWatchLog(path, WatchLogMax, d.errw())
+	if err != nil {
+		fmt.Fprintf(d.errw(), "warning: cannot open the watch log %s: %v — this loop keeps no record of its own\n", AbbrevHome(path), err)
+		return nil
+	}
+	fmt.Fprintf(lg, "\n== dispatch --watch armed %s · pid %d ==\n", d.now().Format("2006-01-02 15:04:05"), os.Getpid())
+	d.rawOut = d.Out
+	d.Out = io.MultiWriter(d.Out, lg)
+	d.Err = io.MultiWriter(d.errw(), lg)
+	return lg
+}

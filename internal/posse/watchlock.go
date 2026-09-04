@@ -143,21 +143,36 @@ const WatchStatusPrefix = "watch-loop: "
 // WatchStatus is that line. Liveness comes from the lock; the parenthetical
 // comes from dispatch-watch.pid and is for the operator's eyes — an absent
 // or stale record loses a pid, never the answer.
+//
+// The ` · log <path>, written <age> ago` tail is the EVIDENCE half
+// (ranger-base-n00wn): where this instance's record is and whether it is
+// still arriving. It is on this line because this line is the one thing
+// asked at every herdr start and by every operator wondering about the loop,
+// and because the outage it exists to expose — a live loop whose output
+// stopped reaching the log three days ago — looked exactly like health from
+// every surface that only asked whether something was running.
+//
+// It is also the CONTRACT plugin/autostart.sh reads to decide whether to
+// tee: a posse that names its log writes its log, and a hook that teed on
+// top of it would double every line. A posse too old to name one gets the
+// tee it has always had. Neither half may change spelling without the other
+// (autostart_test.go pins the pair).
 func WatchStatus(a *App) (string, error) {
 	running, err := WatchLoopRunning(a)
 	if err != nil {
 		return "", Die("watch-loop lock %s: %v", AbbrevHome(WatchLockPath(a)), err)
 	}
+	log := WatchLogNote(a, a.nowOr())
 	if !running {
-		return WatchStatusPrefix + "none (" + AbbrevHome(WatchLockPath(a)) + " is free)", nil
+		return WatchStatusPrefix + "none (" + AbbrevHome(WatchLockPath(a)) + " is free)" + log, nil
 	}
 	w, ok := ReadWatchPid(WatchPidPath(a))
 	if !ok {
-		return WatchStatusPrefix + "running (holder unrecorded)", nil
+		return WatchStatusPrefix + "running (holder unrecorded)" + log, nil
 	}
 	who := "pid " + strconv.Itoa(w.Pid)
 	if !w.Started.IsZero() {
 		who += ", since " + w.Started.UTC().Format(time.RFC3339)
 	}
-	return WatchStatusPrefix + "running (" + who + ")", nil
+	return WatchStatusPrefix + "running (" + who + ")" + log, nil
 }

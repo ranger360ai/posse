@@ -277,7 +277,7 @@ func ReadPause(path string) Pause {
 //	G4 plan guard skipping past attn_guard_stuck  the guard + clock  URGENT
 //	G5 guard blind past plan_guard_blind_max      the plan endpoint  URGENT
 //	G6 Dial E stop / budget >= 100%               cost scan vs caps  URGENT
-//	G7 watch loop dead while autostart armed      the loop's flock   URGENT
+//	G7 watch loop dead, or mute, while armed      flock + its log    URGENT
 //	G8 paused                                     state/pause.yaml   URGENT
 //	G9 ready bead routed to the coordinator       bd + config        LANE
 //
@@ -433,6 +433,22 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 				add("G7", GovUrgent, "loop-dead",
 					fmt.Sprintf("autostart is armed and no watch loop holds %s — nothing is being delivered",
 						AbbrevHome(WatchLockPath(in.App))))
+			default:
+				// The loop is alive. Is its RECORD (ranger-base-n00wn)?
+				//
+				// A third key on the same row, for the reason the two
+				// arm-broken keys above give: ADR 0029's table is closed at
+				// nine, the fact is G7's own — the fleet's one instrument is
+				// not working — and only the cause differs, so it differs by
+				// KEY. It is URGENT because it is silent by construction:
+				// the log stopped on 2026-08-31 18:08 and was found on 09-02
+				// with a live loop holding the lock, three days of passes,
+				// seats, kills and load readings unreconstructable, and
+				// every surface that asked only "is it running" reporting
+				// health the whole time.
+				if key, detail := watchLogRow(in.App, interval, now); key != "" {
+					add("G7", GovUrgent, key, detail)
+				}
 			}
 		}
 	}
@@ -993,4 +1009,42 @@ func GovSummary(s GovSet) string {
 		return fmt.Sprintf("%d URGENT", urgent)
 	}
 	return fmt.Sprintf("%d URGENT · %d LANE", urgent, lane)
+}
+
+// watchLogRow is G7's third key: a live loop whose log is not being written
+// (ranger-base-n00wn). Empty key means the record is arriving.
+//
+// The cadence comes from the config that ARMED the loop, because that is the
+// launch this row is about — `autostart_interval:` is the base and
+// `autostart_max_interval:` the backed-off cap, defaulting to 8x the base
+// exactly as cmd/posse does when the flag is absent, and an unreadable cap
+// takes the default the way plugin/autostart.sh takes it rather than
+// standing the reading down. WatchLogStaleAfter turns the pair into the
+// longest silence a healthy loop can have, and names what that reading
+// cannot see.
+func watchLogRow(a *App, interval string, now time.Time) (string, string) {
+	base, err := ParseInterval(interval)
+	if err != nil {
+		// Unreachable from ShopCheck (the arm-broken arm above caught it),
+		// but a threshold derived from a zero would call every loop mute.
+		return "", ""
+	}
+	maxInterval := 8 * base
+	if s := a.CfgGet("autostart_max_interval", ""); s != "" {
+		if d, err := ParseInterval(s); err == nil {
+			maxInterval = d
+		}
+	}
+	path := WatchLogPath(a)
+	mt, ok := WatchLogMtime(path)
+	if !ok {
+		return "loop-mute", fmt.Sprintf("a watch loop holds %s but there is no log at %s — the fleet's retrospective record is not being written",
+			AbbrevHome(WatchLockPath(a)), AbbrevHome(path))
+	}
+	after := WatchLogStaleAfter(base, maxInterval)
+	if age := now.Sub(mt); age > after {
+		return "loop-mute", fmt.Sprintf("a watch loop is running but %s was last written %s ago, past the %s a live loop can be quiet — its output is going somewhere else and no window can be reconstructed",
+			AbbrevHome(path), BlindFor(age), BlindFor(after))
+	}
+	return "", ""
 }

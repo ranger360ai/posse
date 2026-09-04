@@ -370,13 +370,6 @@ watch="$watch -n $maxbeads"
 [ "$resume" = true ] && watch="$watch --resume"
 case "$dry" in true|yes|1) watch="$watch --dry-run" ;; esac
 
-mkdir -p "$(dirname "$LOG")"
-if [ -f "$LOG" ] && [ "$(wc -c <"$LOG")" -gt "$MAXLOG" ]; then
-	mv -f "$LOG" "$LOG.1"
-fi
-banner="printf '\\n== dispatch --watch armed %s ==\\n' \"\$(date '+%Y-%m-%d %H:%M:%S')\" | tee -a $LOG"
-cmd="$banner; $watch 2>&1 | tee -a $LOG"
-
 start() {
 	if out=$("$RHQ" new "$session" --dir "$dir" --emoji 🛰️ --cmd "$cmd" 2>&1); then
 		say "$session started — $watch"
@@ -405,6 +398,43 @@ if loop_alive; then
 		say "if this posse predates 'dispatch --watch-status', run 'make link-plugin'" >&2
 	fi
 	exit 0
+fi
+
+# THE LOG, and who writes it (ranger-base-n00wn). Built here rather than
+# above because it reads `$loopsaid` — the answer the probe just gave.
+#
+# A posse whose `--watch-status` line NAMES its log writes that log itself:
+# it opens $RHQ_HOME/state/dispatch-watch.log at the top of the loop, tees
+# its own stdout and stderr into it, and rotates it at 5 MiB. Then this hook
+# must not tee, or every line lands twice.
+#
+# A posse too old to name one keeps the tee it has always had, rotation
+# included. That is the whole reason this is a probe and not a version
+# check: the hook is read fresh from the checkout at every herdr start while
+# the binary is whatever was last promoted, so the two are routinely out of
+# step in both directions. The probe gets each of them right — an old binary
+# keeps its record, a new one is not written twice.
+#
+# WHAT IT DOES NOT FIX is a by-hand relaunch that still types the old
+# `| tee -a $LOG` pipeline at a new binary: that doubles lines until the
+# habit changes. Doubling is a readable record; the failure this replaces
+# was no record at all.
+case "$loopsaid" in
+*" · log "*) selflog=true ;;
+*) selflog=false ;;
+esac
+mkdir -p "$(dirname "$LOG")"
+if $selflog; then
+	# The loop owns the file: no pipe, no banner, no rotation here. Its argv
+	# is then the posse command itself rather than the left half of a
+	# pipeline, which is what every reader of the process table wanted anyway.
+	cmd="$watch"
+else
+	if [ -f "$LOG" ] && [ "$(wc -c <"$LOG")" -gt "$MAXLOG" ]; then
+		mv -f "$LOG" "$LOG.1"
+	fi
+	banner="printf '\\n== dispatch --watch armed %s ==\\n' \"\$(date '+%Y-%m-%d %H:%M:%S')\" | tee -a $LOG"
+	cmd="$banner; $watch 2>&1 | tee -a $LOG"
 fi
 
 # No live loop. `posse new` refuses a name that already resolves to a live

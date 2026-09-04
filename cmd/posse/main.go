@@ -2138,10 +2138,16 @@ dispatch (beads):
                                  state/dispatch-watch.pid — which pid, since
                                  when, under what argv, for the operator and
                                  never as evidence
+                                 the loop WRITES state/dispatch-watch.log
+                                 itself, one .1 generation past 5 MiB: the
+                                 fleet's retrospective record is a property of
+                                 the process, not of whoever piped into it, so
+                                 do not tee into that file
       --watch-status           is a --watch loop of this RHQ_HOME running?
-                                 one line, read from the lock:
-                                   watch-loop: running (pid N, since T)
-                                   watch-loop: none (<lock> is free)
+                                 one line, read from the lock, naming the log
+                                 and how long ago it was written:
+                                   watch-loop: running (pid N, since T) · log <p>, written 12m ago
+                                   watch-loop: none (<lock> is free) · log <p>, absent
                                  The LINE is the answer; the exit status says
                                  only whether the question could be asked.
                                  Reads no bd and no herdr —

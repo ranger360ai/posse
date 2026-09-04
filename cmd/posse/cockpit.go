@@ -2484,15 +2484,20 @@ func (c *cockpit) govSegment() string {
 		if g.ID != "G7" {
 			continue
 		}
-		// One row, two causes: a loop that died, and an arm the hook
-		// refuses outright (a bare `autostart_interval:`). The header must
-		// not call the second one a dead loop — the block below it names
-		// the empty key, and a header disagreeing with its own block is
-		// the diagnostic pointing away from the cause again
-		// (ranger-base-i6h).
-		if g.Key == "arm-broken" {
+		// One row, three causes: a loop that died, an arm the hook refuses
+		// outright (a bare `autostart_interval:`), and a loop that is alive
+		// while its log stopped (ranger-base-n00wn). The header must name
+		// the one it HAS — the block below it names the empty key or the
+		// stale file, and a header disagreeing with its own block is the
+		// diagnostic pointing away from the cause again (ranger-base-i6h).
+		// A default of "loop dead" is why this is a switch: the mute row's
+		// whole content is that the loop is NOT dead.
+		switch g.Key {
+		case "arm-broken":
 			seg += " · arm broken"
-		} else {
+		case "loop-mute":
+			seg += " · loop mute"
+		default:
 			seg += " · loop dead"
 		}
 		break

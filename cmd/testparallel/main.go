@@ -285,6 +285,7 @@ func main() {
 		"TestWatchHoldsTheLockForItsWholeLife":                 "asserts flock acquisition",
 		"TestWatchRefusesWhenAnotherLoopHoldsTheLock":          "asserts flock acquisition",
 		"TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone": "asserts flock acquisition",
+		"TestWatchStatusNamesTheLogAndItsAge":                  "asserts flock acquisition",
 		"TestWatchReleasesLockBetweenPasses":                   "asserts flock acquisition",
 		// Drives a REAL backupLoop goroutine and times it: its treatment arm
 		// asserts the second archive lands in under the 60s interval, and its

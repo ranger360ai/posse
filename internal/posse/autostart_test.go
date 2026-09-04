@@ -36,6 +36,7 @@ type hookWorld struct {
 	herdrSession string // HERDR_SESSION; empty is the default herdr server
 	deaf         string // touched to make the fake posse fail --watch-status
 	noisy        string // touched to make it print an unrelated stderr notice first
+	plain        string // touched to make it answer with the pre-n00wn line, naming no log
 	killRefused  string // touched to make `kill` refuse the way the reap guard does
 }
 
@@ -47,6 +48,7 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 		exists: filepath.Join(home, "session-exists"),
 		deaf:   filepath.Join(home, "probe-deaf"),
 		noisy:  filepath.Join(home, "probe-noisy"),
+		plain:  filepath.Join(home, "probe-plain"),
 
 		killRefused: filepath.Join(home, "kill-refused"),
 	}
@@ -67,6 +69,7 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 		"if [ \"$1 $2\" = 'dispatch --watch-status' ]; then\n" +
 		"  if [ -e " + shq(w.deaf) + " ]; then echo 'posse: unknown flag: --watch-status' >&2; exit 1; fi\n" +
 		"  if [ -e " + shq(w.noisy) + " ]; then echo 'posse: ~/.config/posse does not exist; using existing home ~/.config/rhq (nothing moved)' >&2; fi\n" +
+		"  if [ -e " + shq(w.plain) + " ]; then echo 'watch-loop: none (~/.config/posse/state/dispatch-watch.lock is free)'; exit 0; fi\n" +
 		"  RHQ_FAKE_POSSE=1 exec " + shq(self) + " dispatch --watch-status\n" +
 		"fi\n" +
 		"case \"$1\" in\n" +
@@ -1575,4 +1578,89 @@ func TestAutostartHomeStatEdgesMatchNewApp(t *testing.T) {
 			t.Errorf("a posse *file* must not fall back to the legacy home:\n%s", r.out)
 		}
 	})
+}
+
+// ─── who writes the log (ranger-base-n00wn) ──────────────────────────────────
+
+// plainProbe is a posse from before the loop wrote its own log: its
+// `--watch-status` line names no log, which is the hook's signal that the
+// record still depends on the tee.
+func (w *hookWorld) plainProbe(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(w.plain, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A posse that NAMES its log writes its log, so the hook must not pipe into
+// the same file — every line would land twice, in the one file every
+// retrospective question is answered from.
+//
+// The fake posse here answers `--watch-status` by re-execing the real
+// WatchStatus (newHookWorld's own comment), so the token the hook matches on
+// is produced by the code that has to keep producing it.
+func TestAutostartDoesNotTeeAPosseThatWritesItsOwnLog(t *testing.T) {
+	t.Parallel()
+	w := newHookWorld(t, armed)
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "dispatch --watch 30s -n 3 --resume") {
+		t.Fatalf("nothing was armed:\n%s", r.calls)
+	}
+	if strings.Contains(r.calls, "tee -a") {
+		t.Errorf("the loop writes its own log; a tee on top doubles every line:\n%s", r.calls)
+	}
+	// And nothing else of the old pipeline survives either: no banner
+	// subshell, and no stderr fold, because the loop tees its own Err.
+	if strings.Contains(r.calls, "dispatch --watch armed") || strings.Contains(r.calls, "2>&1") {
+		t.Errorf("the hook still builds the piped command:\n%s", r.calls)
+	}
+}
+
+// The other direction, and the reason this is a probe and not a version
+// check: the hook is read fresh from the checkout at every herdr start while
+// the binary is whatever was last promoted, so a new hook routinely runs an
+// old posse. That posse keeps no log of its own, so the tee is the record
+// and the hook must still build it.
+func TestAutostartTeesAPosseTooOldToNameItsLog(t *testing.T) {
+	t.Parallel()
+	w := newHookWorld(t, armed)
+	w.plainProbe(t)
+
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if !strings.Contains(r.calls, "tee -a") {
+		t.Errorf("a posse with no log of its own must keep its tee, or the record stops:\n%s", r.calls)
+	}
+	if !strings.Contains(r.calls, filepath.Join(w.home, "state", "dispatch-watch.log")) {
+		t.Errorf("the tee must name this instance's log:\n%s", r.calls)
+	}
+}
+
+// The rotation the tee arm depends on is the hook's, and it only ever ran at
+// arm time — which is the whole reason the loop now rotates its own. Pinned
+// on the legacy arm so the fallback keeps the bound it always had.
+func TestAutostartRotatesTheLogItTeesInto(t *testing.T) {
+	t.Parallel()
+	w := newHookWorld(t, armed)
+	w.plainProbe(t)
+	log := filepath.Join(w.home, "state", "dispatch-watch.log")
+	if err := os.MkdirAll(filepath.Dir(log), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(log, []byte(strings.Repeat("x", 6<<20)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := w.run(t, "--startup")
+	if r.code != 0 {
+		t.Fatalf("exit %d:\n%s", r.code, r.out)
+	}
+	if _, err := os.Stat(log + ".1"); err != nil {
+		t.Errorf("a log past 5 MiB was not rotated: %v", err)
+	}
 }

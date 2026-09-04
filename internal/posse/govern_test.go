@@ -715,7 +715,9 @@ func TestGovG7BrokenArmSurvivesALiveLoop(t *testing.T) {
 }
 
 // And a loop that IS running clears it — the same lock a second --watch
-// refuses on.
+// refuses on. A live loop writes its own log (watchlog.go), so a fixture
+// that holds the lock and writes nothing is not one: that is the loop-mute
+// arm below, and the rig has to plant what a real loop plants.
 func TestGovG7LiveLoopClearsIt(t *testing.T) {
 	b, _ := newTestBackend(t)
 	appendConfig(t, b.App, "autostart_interval: 5m\n")
@@ -724,8 +726,146 @@ func TestGovG7LiveLoopClearsIt(t *testing.T) {
 		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
 	}
 	defer lock.Release()
+	writeWatchLog(t, b.App, govNow)
 	if g := find(shopSet(t, govIn(t, b)), "G7"); g != nil {
 		t.Errorf("a live loop must clear G7: %+v", *g)
+	}
+}
+
+// ─── G7 · the loop is alive and its record is not (ranger-base-n00wn) ────────
+
+// writeWatchLog plants the log a live loop keeps, dated `at`. Dated against
+// govNow and never the wall: the row reads this file's AGE, and a fixture
+// stamped with the real clock is a fixture in the future of the frozen one.
+func writeWatchLog(t *testing.T, a *App, at time.Time) string {
+	t.Helper()
+	path := WatchLogPath(a)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("── pass 1 · 09:00:00\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// THE BEAD ITSELF, from the other side. On 2026-08-31 18:08 the fleet's log
+// stopped and the loop did not: the lock was held, `--watch-status` said
+// running, and every surface reported health for three days while every
+// retrospective question went unanswerable. Nothing was red because nothing
+// read the file's age. This is the row that does.
+func TestGovG7LiveLoopWithAStaleLogIsMute(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	// Three days, the outage's own number — and well past the 85m a 5m/40m
+	// loop can legitimately be quiet.
+	writeWatchLog(t, b.App, govNow.Add(-72*time.Hour))
+	g := find(shopSet(t, govIn(t, b)), "G7")
+	if g == nil || g.Key != "loop-mute" || g.Class != GovUrgent {
+		t.Fatalf("G7 = %+v, want loop-mute URGENT", g)
+	}
+	// The line has to name the file, or the operator is told a loop is
+	// mute and not where to look.
+	if !strings.Contains(g.Detail, "dispatch-watch.log") {
+		t.Errorf("the mute row must name the log: %q", g.Detail)
+	}
+	if !strings.Contains(g.Detail, "72h00m ago") {
+		t.Errorf("the mute row must say how stale: %q", g.Detail)
+	}
+}
+
+// A log that is not there at all is the same fact one shape over: the record
+// is not being written. Named separately because the sentence differs — an
+// absent file is not a stale one, and telling an operator their log was
+// "last written 0s ago" about a file that does not exist would be the
+// unreadable-store-reads-as-clear mistake this surface exists to end.
+func TestGovG7LiveLoopWithNoLogAtAllIsMute(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	g := find(shopSet(t, govIn(t, b)), "G7")
+	if g == nil || g.Key != "loop-mute" {
+		t.Fatalf("G7 = %+v, want loop-mute for a loop with no log", g)
+	}
+	if !strings.Contains(g.Detail, "no log at") {
+		t.Errorf("the row must say the log is absent, not stale: %q", g.Detail)
+	}
+}
+
+// A DEAD loop is loop-dead and not loop-mute, however old the log is. The
+// keys are the two halves of one row and they must not race: a fleet with no
+// loop at all has a stale log by definition, and reporting the symptom over
+// the cause would point the operator at a file instead of at the arm.
+func TestGovG7DeadLoopIsNotMute(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\n")
+	writeWatchLog(t, b.App, govNow.Add(-72*time.Hour))
+	g := find(shopSet(t, govIn(t, b)), "G7")
+	if g == nil || g.Key != "loop-dead" {
+		t.Fatalf("G7 = %+v, want loop-dead — the lock is free", g)
+	}
+}
+
+// A loop QUIET inside its budget is not mute. The threshold is the
+// watchdog's own guarantee (WatchLogStaleAfter), so a log written one
+// backed-off interval ago — an ordinary idle loop — must clear the row, or
+// the fleet's most-believed surface cries wolf every backoff.
+func TestGovG7QuietLoopInsideTheBudgetIsNotMute(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	writeWatchLog(t, b.App, govNow.Add(-41*time.Minute))
+	if g := find(shopSet(t, govIn(t, b)), "G7"); g != nil {
+		t.Errorf("a loop one backed-off interval quiet is not mute: %+v", *g)
+	}
+}
+
+// The threshold reads the config that ARMED the loop, both keys. A shop with
+// a tight cap is mute sooner than one with a loose cap, and a pin that only
+// ever asked the default would stay green if the max-interval term were
+// dropped entirely.
+func TestGovG7MuteThresholdFollowsTheConfiguredCap(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\nautostart_max_interval: 3h\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	// 2h is the discriminating age: inside the 6h05m a 5m/3h loop is
+	// allowed, past the 85m a 5m/40m default loop is.
+	writeWatchLog(t, b.App, govNow.Add(-2*time.Hour))
+	if g := find(shopSet(t, govIn(t, b)), "G7"); g != nil {
+		t.Errorf("a 3h cap tolerates a 2h quiet: %+v", *g)
+	}
+	// The control: the same age under the default cap IS mute, so the arm
+	// above is the cap doing the work and not the age being small.
+	c, _ := newTestBackend(t)
+	appendConfig(t, c.App, "autostart_interval: 5m\n")
+	lock2, held2, err := lockWatch(c.App)
+	if err != nil || held2 {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held2, err)
+	}
+	defer lock2.Release()
+	writeWatchLog(t, c.App, govNow.Add(-2*time.Hour))
+	if g := find(shopSet(t, govIn(t, c)), "G7"); g == nil || g.Key != "loop-mute" {
+		t.Fatalf("the same 2h quiet under the default cap must be mute, got %+v", g)
 	}
 }
 

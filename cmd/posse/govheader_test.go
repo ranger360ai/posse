@@ -110,6 +110,27 @@ func TestCockpitGovHeaderNamesABrokenArmNotADeadLoop(t *testing.T) {
 	}
 }
 
+// The third cause, and the one that is not a dead loop at all: the loop is
+// running and its log stopped (ranger-base-n00wn). "loop dead" over that
+// block would tell the operator to restart something that is already up, and
+// send them looking for a process instead of at the file.
+func TestCockpitGovHeaderNamesAMuteLoopNotADeadOne(t *testing.T) {
+	c := fixture()
+	c.govAt = c.clock()
+	c.gov = posse.GovSet{
+		{ID: "G7", Class: posse.GovUrgent, Key: "loop-mute",
+			Detail: "a watch loop is running but ~/.config/posse/state/dispatch-watch.log was last written 53h37m ago"},
+	}
+	c.buildRows()
+	got := headerOf(c, 140, 40)
+	if !strings.Contains(got, "loop mute") {
+		t.Errorf("G7 must be named for what it is, got %q", got)
+	}
+	if strings.Contains(got, "loop dead") {
+		t.Errorf("a mute loop is a LIVE loop: %q", got)
+	}
+}
+
 // An unreadable store is not an all-clear in the header either.
 func TestCockpitGovHeaderSaysPartial(t *testing.T) {
 	c := fixture()

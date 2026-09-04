@@ -2080,7 +2080,11 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	return d
 }
 
-func dispatcherOut(d *Dispatcher) string { return d.Out.(*strings.Builder).String() }
+// The BASE writer, not d.Out: Watch tees the loop's own log over Out for the
+// life of the loop (watchlog.go), so after a Watch call d.Out is a
+// MultiWriter and this helper's whole job is to hand back the builder the
+// test passed in.
+func dispatcherOut(d *Dispatcher) string { return d.baseOut().(*strings.Builder).String() }
 
 func writePersona(t *testing.T, a *App, name, labels string) {
 	t.Helper()

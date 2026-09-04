@@ -150,6 +150,20 @@ moves on. Decided in code on ranger-base-i6h; the same amendment retires
 the row's pidfile+argv husk parenthetical, the flock probe having
 shipped (rangerhq-mgvx).
 
+*(amended 2026-09-03, bead ranger-base-n00wn — descriptive accuracy, not a
+design change)* **G7 has a third key, `loop-mute`: the loop is alive and its
+log is not being written.** MEASURED: from 2026-08-31 18:08 the fleet's
+`state/dispatch-watch.log` stopped growing while the loop held the flock, and
+was found three days later with every retrospective window unreconstructable
+and every surface reporting health — because each of them asked whether
+something was RUNNING and none asked whether anything was being RECORDED. The
+loop now writes that file itself rather than depending on a tee, and this row
+reads its age: past the watchdog's own budget (the longest silence a healthy
+loop can have, watchdog.go) with the lock still held, the record is broken.
+The table stays closed at nine on the rule the `arm-broken` amendment above
+set — the fact is G7's own, the fleet's one instrument is not working, and
+only the cause differs, so it differs by KEY.
+
 **2. The surface is a computed view, rendered three ways — not a store.**
 Every G-row above is a fact already owned by exactly one store (herdr,
 bd, the plan endpoint, the kernel's flock, the pause file). A durable
