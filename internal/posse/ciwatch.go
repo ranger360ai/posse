@@ -555,7 +555,11 @@ func (a *App) ciWorkflow() string {
 
 // CIWatch is the whole mechanism, once per dispatch pass: read the gate in
 // every configured repo, file one bead where it is red and has none, and
-// close the one it filed where it is green again.
+// COMMENT on the one it filed where it is green again — naming the run that
+// cleared the gate. It does not close that bead and must not: ADR 0013 §4
+// makes the close the persona's, this file's header says why at length, and
+// absencerules_qa_test.go's TestNoBdCloseVerbReachableFromDispatch enforces
+// it by reachability.
 //
 // The PASS and not `posse ready`, which is the other place verify-after runs
 // from. Two reasons, and they are the same two that keep this out of `posse

@@ -27,9 +27,11 @@ to warn") is false. Nothing is built: the at-the-bite line
 (ranger-base-4poib, ranger-base-ddivo) is the smallest shape and no
 measured failure of it survives their promotion; a gauge, a
 once-per-token alarm and a fifth 401 class are priced and parked. D4
-keeps posse off the refreshToken; wkai3 option B is ordered first, and
-"ask the owner to refresh" waits behind its number as
-ranger-base-jefo0. Corrected 2026-09-04 (ranger-base-vxbfm, from the
+keeps posse off the refreshToken; option B (ranger-base-wkai3) was
+ordered first and measured dead, and "ask the owner to refresh" (D4
+§1b, ranger-base-jefo0) was ruled option 0 and stays parked — both
+closed 2026-09-04; the correction at the end of this block has the
+detail. Corrected 2026-09-04 (ranger-base-vxbfm, from the
 verify bundle ranger-base-9mys1): six passages elsewhere on this page
 read as if the parked gauge and alarm were built, or still carried the
 08-28 weighting D5 as amended had struck, and option 0's ground was
@@ -46,7 +48,15 @@ answering it, and nothing has held that probe since; D2's MEASURED
 half called ranger-base-wd4be open after it landed. V1b now states the
 probe is UNHELD, why the three beads that touched it did not answer
 it, and what the unbounded built-but-unconfirmed state costs D2's
-non-darwin adapter. No decision moved.*
+non-darwin adapter. No decision moved. Corrected 2026-09-04
+(ranger-base-ur2eo, from the verify bundle ranger-base-2fl9a): five
+passages still gated the option-B/1b thread on a measurement and a
+ruling it had already had. ranger-base-hs0dl ran twice on 2026-09-04
+and option B is dead on that measurement; ranger-base-wkai3 closed the
+same day on the operator's ruling "not B"; ranger-base-jefo0 closed on
+option 0, do nothing. The gating clauses are past tense now, at D4's B
+and §1b bullets and at V17. No decision moved: D4 §1b stays parked,
+priced-not-built, which is what the operator's own close says.*
 
 ## Context
 
@@ -442,14 +452,21 @@ refresh`:
     58ac284. The sentence is a fact as of this line, and this line is
     the record of the check; the next option that leans on an unlanded
     bead gets a dep on the landing bead, not a sentence.
-  - **B — the meter reads the mint** (ranger-base-wkai3 option B, the
-    operator's own "measure first" ruling of 2026-09-01; the number is
-    ranger-base-hs0dl, a P4 one-shot for an uncaged shell). One
-    env-set override in front of the store read; the mint has no 8h
-    clock and its `# expires=` stamp already rides the session
-    surfaces, so the whole question dissolves. This is the smallest
-    shape that removes the clock rather than announcing it, and every
-    larger one below waits on its number.
+  - **B — the meter reads the mint.** MEASURED, AND DEAD
+    (ranger-base-wkai3 option B, ordered first by the operator's own
+    "measure first" ruling of 2026-09-01; the number was
+    ranger-base-hs0dl, a P4 one-shot for an uncaged shell). The shape
+    was one env-set override in front of the store read — the mint has
+    no 8h clock and its `# expires=` stamp already rides the session
+    surfaces, so the whole question would have dissolved, and it was
+    the smallest shape that removes the clock rather than announcing
+    it. It does not dissolve. hs0dl ran twice, 2026-09-04 03:20Z and
+    11:09Z, and the env-set key drew an hour-long 429 on its first call
+    to the meter endpoint both times while the keychain token read 200
+    in the same minute: option B cannot drive a guard. wkai3 closed the
+    same day on the operator's ruling, "not B" — the meter stays on the
+    keychain OAuth token, and nothing below waits on this number any
+    more.
   - **1a — posse performs the OAuth refresh itself.** REJECTED, and
     the rejection is the architecture's, not a permission the operator
     could grant: (i) it makes posse a second writer of a rotating pair,
@@ -465,9 +482,15 @@ refresh`:
     (iv) it voids the property ADR 0042 measured and keeps: the pair
     has one writer *program*, and posse's shim is what holds eleven
     runtimes to it.
-  - **1b — posse asks the owner.** Priced and parked as
-    ranger-base-jefo0, blocked on hs0dl: it is asked only if B measures
-    dead, and no build bead exists for it. The shape: the watch loop execs the operator's
+  - **1b — posse asks the owner.** PRICED AND PARKED, and the parking
+    is a ruling now rather than a queue position: B did measure dead
+    (above), so the question was put, and ranger-base-jefo0 closed
+    2026-09-04 on the operator's option 0, do nothing — posse never
+    runs the operator's runtime unattended, the meter stays on the
+    keychain token, and the 401 that names its expiry is the whole
+    alarm. §1b stays parked, priced-not-built; no build bead exists for
+    it and none is to be filed unless the ruling is revisited. The
+    shape, kept for that day: the watch loop execs the operator's
     own runtime binary — uncaged, unshimmed, no mint in its
     environment, the two config-dir variables pinned as the launch pins
     them — with the cheapest invocation that makes the runtime's own
@@ -998,7 +1021,7 @@ design puts more weight on files. What is actually traded:
 - V14–V16 are PARKED with the shapes they pin (D5 as amended: nothing
   built; the beads cut for them were closed not-doing the same day,
   ranger-base-z0gkm / m6y0v / zxpcz, and a future build re-files
-  against these rows). V17 runs only after ranger-base-hs0dl.
+  against these rows). V17 is PARKED with D4 §1b, below.
 - V14 (unit, parked 2026-09-03 ranger-base-z089h; either box): the snapshot written by a successful
   read carries the presented credential's `ExpiresAt` and `Source`;
   the four surfaces that print the shared reading print the death time
@@ -1028,9 +1051,14 @@ design puts more weight on files. What is actually traded:
   differ between the two; `PlanFailureOf` still returns exactly one
   class for every error fixture in the table. Mutation check: collapse
   the two keys.
-- V17 (operator, added 2026-09-03; uncaged shell only; after hs0dl
-  measures B dead): the probe on ranger-base-jefo0 — which runtime
-  verb performs the refresh write non-interactively, what an open
-  interactive window does across it, and the keychain's lock state
-  during the run. Its answer is 1b's build-or-refuse; the build bead
-  is filed then, not before.
+- V17 (operator, added 2026-09-03; uncaged shell only) — PARKED, NOT
+  RUN. This row's trigger did fire: ranger-base-hs0dl measured option B
+  dead on 2026-09-04. But the question it fed was ruled before the
+  probe could inform it — ranger-base-jefo0 closed the same day on
+  option 0, do nothing — so D4 §1b is parked and there is no
+  build-or-refuse left here to answer. The shape, kept against the day
+  that ruling is revisited: which runtime verb performs the refresh
+  write non-interactively, what an open interactive window does across
+  it, and the keychain's lock state during the run. If it is ever run
+  it is the operator's and an uncaged shell's, and the build bead is
+  filed after it, not before.
