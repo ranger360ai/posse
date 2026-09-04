@@ -4962,6 +4962,14 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 	case prior.ID == "":
 		// Nothing has ever been filed for this branch. The ordinary path.
 	case prior.Open:
+		// The pin is refreshed here and not only at the filing, so that
+		// every OPEN block is protected and not merely the ones filed since
+		// pinBlockedWork existed — a block filed before it has the same
+		// branch and the same shelf life, and it is the older ones that are
+		// closest to being reaped. Refreshed to the tree's head rather than
+		// left where it was: what this block is about is what the branch
+		// holds now.
+		pinBlockedWork(t)
 		say("  ↳ %s already filed for %s — not re-filed\n", prior.ID, persona)
 		return
 	default:
@@ -4984,6 +4992,10 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 			return
 		}
 	}
+	// The pin, BEFORE the create, because the description names it: a bead
+	// that promised a ref nothing wrote would be the same lie in a new
+	// spelling (ranger-base-m3195, pinBlockedWork).
+	sha, pin := pinBlockedWork(t)
 	filed, err := bd.Create(dir, BdNew{
 		Title:    title,
 		Assignee: persona,
@@ -4992,14 +5004,14 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 		Priority: "1",
 		Actor:    "posse",
 		Description: fmt.Sprintf(
-			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n\n"+
+			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n%s\n"+
 				"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
 				"Fix what the reason above names — only a real conflict is resolved by\n"+
-				"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n"+
-				"The branch is untouched and still holds every commit.",
+				"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n\n%s",
 			persona, id, o.Commits, t.Branch, base, o.Reason,
 			discoveredFromMarkerPrefix, id,
-			t.Path, t.Repo, base, base, base),
+			t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base, base,
+			mergeBlockedShelfLife(t, base, sha, pin)),
 	})
 	if err != nil {
 		// bd may have committed the issue and failed on the `--deps` edge
@@ -5033,6 +5045,130 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 	}
 }
 
+// mergeBlockedWhere is the handoff's durable half of "where the work is":
+// the sha, and the ref posse pinned it under. It renders whole lines (each
+// newline-terminated) so that a filing with nothing to add renders exactly
+// the block that was there before the pin existed.
+//
+// The sha is printed even when the pin failed. It is still the handle a
+// human can use TODAY — what the pin buys is tomorrow — and a bead that
+// names it lets a reader who arrives after a `gc` at least say what was
+// lost, which is more than the branch name can do once the branch is gone.
+func mergeBlockedWhere(sha, pin string) string {
+	var b strings.Builder
+	if sha != "" {
+		fmt.Fprintf(&b, "work:     %s\n", sha)
+	}
+	if pin != "" {
+		fmt.Fprintf(&b, "pin:      %s\n", pin)
+	}
+	return b.String()
+}
+
+// mergeBlockedShelfLife is the paragraph that replaced "The branch is
+// untouched and still holds every commit" (ranger-base-m3195).
+//
+// That sentence was an assertion about the future, filed by a pass and read
+// by a seat some unbounded time later, and it was FALSE at dispatch twice on
+// record: ranger-base-g7br6 and ranger-base-nr3eq were both worked against a
+// branch that had already been deleted and a worktree path that no longer
+// existed. A seat that follows a false instruction literally either fails or
+// invents a recovery out of a sha it scraped from the block reason.
+//
+// So the description stops asserting anything it cannot keep true and hands
+// the seat the check instead, plus the one handle that survives every way a
+// branch can go: the pinned sha. Three arms, because "no pin" is two
+// different situations and only one of them is recoverable — a reader who is
+// told which one they are in can act, and a reader who is told nothing
+// cannot.
+func mergeBlockedShelfLife(t *SessionTree, base, sha, pin string) string {
+	head := fmt.Sprintf(
+		"CHECK THE BRANCH BEFORE YOU BELIEVE ANY OF THE ABOVE. A block outlives the\n"+
+			"branch it is about: the tree is retired and the branch deleted as soon as its\n"+
+			"merge stops being refused, and posse's own refusals hand an operator a\n"+
+			"`worktree remove && branch -D` to run by hand. Both paths above were already\n"+
+			"gone at dispatch on ranger-base-g7br6 and ranger-base-nr3eq.\n"+
+			"  git -C %s rev-parse --verify %s\n",
+		t.Repo, t.Branch)
+	switch {
+	case pin != "":
+		return head + fmt.Sprintf(
+			"The work is %s whichever way that answers: posse pinned it at %s, which no\n"+
+				"gc can prune and no `branch -D` can take, so `git -C %s diff %s %s` is the\n"+
+				"reading in both worlds. A launcher pass drops the pin once this bead closes.",
+			sha, pin, t.Repo, base, sha)
+	case sha != "":
+		return head + fmt.Sprintf(
+			"The work is %s, and NOTHING PINNED IT — the ref posse writes for this could not\n"+
+				"be written in %s — so if the branch is gone that commit is reachable from no\n"+
+				"ref and one `git gc` from unrecoverable. Read `git -C %s diff %s %s` FIRST.",
+			sha, t.Repo, t.Repo, base, sha)
+	default:
+		return head + fmt.Sprintf(
+			"This filing could not read a head for %s at all, so it has no sha to fall back\n"+
+				"on: if the branch is gone, the reason above is the only record of what was\n"+
+				"on it.", t.Branch)
+	}
+}
+
+// prunePinnedBlocks drops every pin whose block has been ANSWERED, and is
+// why pinning a branch's work does not mean posse stops collecting garbage
+// for it forever. Called at pass start (landsweep.go), because that is the
+// only site that runs when the pin's whole point has come true: the tree is
+// gone, so nothing that walks session worktrees reaches this branch again.
+//
+// The rule is one fact and it is the pin's own reason for existing: a pin
+// serves an OPEN merge-back block. No open bead names this branch, no pin.
+// It is never "the branch went away" — that is the case the pin is for — and
+// never "the base holds the sha now", because a do-not-land verdict is the
+// correct end for a branch whose content reached the base under other shas
+// (priorMergeBlocked) and leaves the sha unreachable forever.
+//
+// The match is on the branch inside the title and not on the whole title,
+// deliberately: mergeBlockedTitle carries branch+base, and reconstructing
+// the base here would mean guessing the repo's CURRENT branch was the one
+// the block was filed against. Guessing wrong deletes a live pin, which is
+// the one outcome this function must not have; the branch alone is already
+// unique (a branch is cut per bead, SessionForBead), and the " does not land
+// on " that follows it keeps a name from matching a longer one's prefix.
+//
+// Best effort and silent in the safe direction: a store that will not answer
+// leaves every pin standing, because "bd is down" is not evidence that
+// somebody's only copy can go.
+func prunePinnedBlocks(bd Bd, repo string, warn func(string, ...any)) {
+	branches := pinnedBlockedBranches(repo)
+	if len(branches) == 0 {
+		return
+	}
+	all, err := bd.AllLabeledAny(repo, MergeBlockedLabel)
+	if err != nil {
+		warn("posse: merge-back pins in %s not checked (%v) — every pin stands\n", AbbrevHome(repo), err)
+		return
+	}
+	for _, branch := range branches {
+		owed := false
+		for _, b := range all {
+			if b.Status != "closed" && strings.Contains(b.Title, mergeBlockedTitlePrefix(branch)) {
+				owed = true
+				break
+			}
+		}
+		if owed {
+			continue
+		}
+		if err := unpinBlockedWork(repo, branch); err != nil {
+			warn("posse: the merge-back pin for %s could not be dropped (%v)\n", branch, err)
+		}
+	}
+}
+
+// mergeBlockedTitlePrefix is mergeBlockedTitle up to the base — everything
+// of the title that identifies the BRANCH. The trailing " does not land on "
+// is load-bearing: without it `posse/p-r-a-1` matches `posse/p-r-a-10`.
+func mergeBlockedTitlePrefix(branch string) string {
+	return fmt.Sprintf("merge-back blocked: %s does not land on ", branch)
+}
+
 // mergeBlockedTitle is the handoff's title and its dedupe key in one. The
 // branch is cut per bead (SessionForBead), so branch+base names exactly the
 // merge this bead is about — the same trick escalateSettleOpen plays with
@@ -5040,7 +5176,10 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 // the one field of a create bd can commit the issue without
 // (verifyMarkerPrefix), so nothing that must be found again may live there.
 func mergeBlockedTitle(branch, base string) string {
-	return fmt.Sprintf("merge-back blocked: %s does not land on %s", branch, base)
+	// Built from the prefix the pin prune matches on, so the two cannot
+	// drift: a prune that no longer recognises a live block's title would
+	// delete the pin it is standing guard over.
+	return mergeBlockedTitlePrefix(branch) + base
 }
 
 // openMergeBlocked is the id of the OPEN merge-back bead with this title, or

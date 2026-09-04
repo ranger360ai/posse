@@ -5911,6 +5911,23 @@ once the base is checked out again. Git keeps the record rather than the run
 record, for the reason `posse worktrees` reads git: a kill that could not land
 removes the meta and leaves the tree standing.
 
+A blocked merge's work is **pinned under `refs/posse/merge-blocked/<branch>`**
+(ranger-base-m3195). A merge-back block is a bead that outlives the reading it
+was filed from: the tree is retired as soon as the merge stops being refused,
+and `RemoveSessionTree`'s refusals hand the operator a `worktree remove &&
+branch -D` to run by hand — so the branch can go between the filing and the
+dispatch. It did, twice: `ranger-base-g7br6` and `ranger-base-nr3eq` were both
+worked against a deleted branch and a worktree path that no longer existed,
+with their beads still saying *"The branch is untouched and still holds every
+commit."* The commits survived as objects reachable from **no ref**, alive only
+because nothing on this box runs `gc --prune` on a schedule. A ref is the fix
+rather than a re-check at dispatch, because a re-check only narrows the window
+where a ref closes it. The bead names the pin and the sha and tells the seat to
+read the branch before believing anything above it; the pass drops the pin once
+no OPEN block names that branch (`prunePinnedBlocks`, run at pass start off the
+repo — by then the tree is gone and the session walk cannot reach it), and a
+store that will not answer leaves every pin standing.
+
 Config: `worktrees:` (default `~/.posse/worktrees`, and it **must** be under
 `$HOME`) and `worktree_link:`, a declared list of repo-relative gitignored
 paths symlinked from the main checkout into each fresh tree (`plugin/bin`,

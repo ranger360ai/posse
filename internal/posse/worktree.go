@@ -853,10 +853,19 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 			stopped := rebaseStopped(t.Path)
 			said := gitSaid(err)
 			_, _ = git(t.Path, "rebase", "--abort")
+			// "the rebase was aborted" and not "the branch is untouched and
+			// still holds the work" (ranger-base-m3195). The reason is
+			// printed once by the pass, where either reading is true, and
+			// then embedded VERBATIM in a merge-back bead that a seat opens
+			// some unbounded time later — by which point the branch may have
+			// been retired out from under it, and the old wording was a
+			// promise about that future rather than a report of what this
+			// attempt did. What this attempt did is abort, and that stays
+			// true forever.
 			if stopped {
-				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the branch is untouched and still holds the work (git: %s)", t.Base, t.Branch, said)
+				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the rebase was aborted, so this attempt changed nothing (git: %s)", t.Base, t.Branch, said)
 			} else {
-				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it failed before any merge — git said: %s — so there are no conflicts to resolve, and the branch is untouched and still holds the work", t.Base, t.Branch, said)
+				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it failed before any merge — git said: %s — so there are no conflicts to resolve, and the rebase was aborted", t.Base, t.Branch, said)
 			}
 			return o, nil
 		}
@@ -1088,6 +1097,87 @@ func workHead(t *SessionTree) (string, bool) {
 		return sha, true
 	}
 	return "", false
+}
+
+// ─── pinning a blocked branch's work (ranger-base-m3195) ────────────────────
+
+// blockedPinPrefix is the namespace posse pins a BLOCKED branch's work
+// under. A merge-back block is a bead that outlives the reading it was
+// filed from: the tree it names is retired the moment its merge is no
+// longer refused, and every one of RemoveSessionTree's refusals hands the
+// operator `git -C … worktree remove … && git -C … branch -D …` to run by
+// hand — so the branch can go between the filing and the dispatch and
+// nothing in posse is watching when it does.
+//
+// MEASURED, twice. ranger-base-g7br6's branch was gone at dispatch and its
+// only commit survived as an unreachable object — no ref, no reflog, alive
+// only because nothing on this box runs `gc --prune` on a schedule.
+// ranger-base-nr3eq's went the same way, and its bead was still telling a
+// seat the branch "is untouched and still holds every commit".
+//
+// A ref is the fix rather than a re-check at dispatch, because a re-check
+// only narrows the window — the branch can be deleted between the check and
+// the seat's first command — where a ref posse owns closes it: `gc` never
+// prunes what a ref reaches, and `branch -D` cannot take work a second ref
+// names. refs/posse/ and not refs/heads/: this is not a branch, nothing
+// should check it out, and `git branch -a` must not grow a row per block.
+const blockedPinPrefix = "refs/posse/merge-blocked/"
+
+// blockedPinRef is where THIS branch's work is pinned. The branch name is
+// the key and it needs no escaping: it is already a ref path (refs/heads/ +
+// branch), so anything git accepted there it accepts here, and the D/F
+// conflict a nested name could cause is one refs/heads/ would have had
+// first.
+func blockedPinRef(branch string) string { return blockedPinPrefix + branch }
+
+// pinBlockedWork makes a blocked branch's work reachable from a ref posse
+// owns, and returns the sha it pinned and the ref it pinned it under. The
+// sha comes back even when the pin does not, because a sha in the bead is
+// still a handle a human can use today — it is only tomorrow it may be gone.
+// ("", "") is a session with no head at all, which is nothing to pin.
+//
+// Best effort, on noteMergeBlocked's rule: a repo that will not take the ref
+// must not cost a blocked merge the bead that says where its code is.
+func pinBlockedWork(t *SessionTree) (sha, ref string) {
+	sha, ok := workHead(t)
+	if !ok {
+		return "", ""
+	}
+	ref = blockedPinRef(t.Branch)
+	// Asked of the REPO and not the tree, for workHeadTime's reason: the
+	// tree may already be retired, and the object store both share outlives
+	// it. The ref lives in the repo either way — a worktree-local ref would
+	// be pruned with the worktree that held it, which is the exact failure.
+	if _, err := git(t.Repo, "update-ref", ref, sha); err != nil {
+		return sha, ""
+	}
+	return sha, ref
+}
+
+// unpinBlockedWork drops the pin for a branch. Its callers are the prune
+// (prunePinnedBlocks) and nothing else: a pin is deleted when the block it
+// serves has been ANSWERED, never because the branch it names went away —
+// that is the case it exists for.
+func unpinBlockedWork(repo, branch string) error {
+	_, err := git(repo, "update-ref", "-d", blockedPinRef(branch))
+	return err
+}
+
+// pinnedBlockedBranches is every branch this repo currently holds a pin for,
+// read off git rather than off any record posse keeps: the pin is the record.
+func pinnedBlockedBranches(repo string) []string {
+	out, err := git(repo, "for-each-ref", "--format=%(refname)", blockedPinPrefix)
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, ln := range strings.Split(strings.TrimSpace(out), "\n") {
+		ln = strings.TrimSpace(ln)
+		if b := strings.TrimPrefix(ln, blockedPinPrefix); b != ln && b != "" {
+			branches = append(branches, b)
+		}
+	}
+	return branches
 }
 
 // workHeadTime is WHEN this session's work last moved: the committer date of
@@ -1658,12 +1748,13 @@ func warnw(w io.Writer) io.Writer {
 
 // ─── seeing what has not landed, and finishing it ───────────────────────────
 
-// SessionTreesIn finds every session worktree of the given repos. It reads
-// GIT, not the meta dir, on purpose: a kill that could not land its work
-// removes the session's meta and leaves the tree standing, so the one record
-// that survives every path is the one git keeps.
-func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
-	var out []*SessionTree
+// mainCheckoutsOf is every distinct main checkout the given dirs name, in
+// the order they name them. Shared by the two readers that need repos and
+// not trees: the session walk below, and the merge-back pin prune, which
+// must reach a repo whose session trees have all been retired
+// (ranger-base-m3195) and so cannot derive its repos from them.
+func mainCheckoutsOf(dirs []string) []string {
+	var out []string
 	seen := map[string]bool{}
 	for _, dir := range dirs {
 		repo, ok := MainCheckout(ExpandTilde(dir))
@@ -1671,6 +1762,18 @@ func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 			continue
 		}
 		seen[repo] = true
+		out = append(out, repo)
+	}
+	return out
+}
+
+// SessionTreesIn finds every session worktree of the given repos. It reads
+// GIT, not the meta dir, on purpose: a kill that could not land its work
+// removes the session's meta and leaves the tree standing, so the one record
+// that survives every path is the one git keeps.
+func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
+	var out []*SessionTree
+	for _, repo := range mainCheckoutsOf(dirs) {
 		base := repoBranch(repo)
 		list, err := git(repo, "worktree", "list", "--porcelain")
 		if err != nil {

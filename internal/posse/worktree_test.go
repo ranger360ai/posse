@@ -719,7 +719,7 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 		if o.Merged {
 			t.Fatal("a conflicting branch was reported merged")
 		}
-		if !strings.Contains(o.Reason, "conflicts — the branch is untouched and still holds the work") {
+		if !strings.Contains(o.Reason, "conflicts — the rebase was aborted, so this attempt changed nothing") {
 			t.Errorf("reason = %q, want the conflict sentence", o.Reason)
 		}
 		// And git's own words are in it either way, which is the witness
@@ -1517,7 +1517,7 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 				}
 				// Unchanged words, so a genuine strand still reads the way
 				// every runbook says it does.
-				if !strings.Contains(o.Reason, "conflicts — the branch is untouched and still holds the work") {
+				if !strings.Contains(o.Reason, "conflicts — the rebase was aborted, so this attempt changed nothing") {
 					t.Errorf("the strand's reason changed: %q", o.Reason)
 				}
 				return
@@ -1621,8 +1621,15 @@ func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
 	if o.Merged || len(o.Equivalent) > 0 {
 		t.Fatalf("a branch still holding one unlanded commit was called landed: %+v", o)
 	}
-	if !strings.Contains(o.Reason, "still holds the work") {
-		t.Errorf("outcome = %+v, want the unchanged strand reason", o)
+	// The reason names the REPLAY as what refused. It used to assert "still
+	// holds the work", which ranger-base-m3195 took out of this sentence:
+	// the reason is embedded verbatim in a merge-back bead a seat opens some
+	// unbounded time later, by which point the branch may have been retired
+	// out from under it, so the wording reports what the attempt did rather
+	// than promising what will still be true. What this test is about is
+	// unchanged and is asserted above — !Merged with nothing accounted for.
+	if !strings.Contains(o.Reason, "onto it conflicts") {
+		t.Errorf("outcome = %+v, want the strand reason naming the failed replay", o)
 	}
 	// And the part that IS unlanded is still in the tree afterwards.
 	if _, err := os.Stat(filepath.Join(tr.Path, "later.txt")); err != nil {

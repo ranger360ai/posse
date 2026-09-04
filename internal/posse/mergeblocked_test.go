@@ -25,6 +25,7 @@ package posse
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -449,5 +450,314 @@ func TestPriorMergeBlockedPrefersOpenThenTheLatestVerdict(t *testing.T) {
 	}
 	if got.ID != "open-1" || !got.Open {
 		t.Errorf("an open handoff beside a closed verdict read as %+v, want open-1 open", got)
+	}
+}
+
+// ─── the block outlives its branch (ranger-base-m3195) ──────────────────────
+//
+// The defect these pin: the handoff's description asserted "The branch is
+// untouched and still holds every commit", which is a claim about the FUTURE
+// filed by a pass and read by a seat some unbounded time later. It was false
+// at dispatch twice on record — ranger-base-g7br6 and ranger-base-nr3eq were
+// both worked against a branch already deleted and a worktree path that no
+// longer existed, and in both cases the only commit survived as an object
+// reachable from no ref, alive only until the next `gc`. A seat that follows
+// a false instruction literally either fails or invents a recovery out of a
+// sha it scraped from the block reason.
+//
+// So the bead stops asserting what it cannot keep true, and posse pins the
+// work under a ref of its own so the sha it DOES name is still there when
+// the seat arrives.
+
+// mergeBlockedDescription is the one filed handoff's body, read out of the
+// store the fake keeps (mergeBlockedBeads' reason: what the graph HOLDS is
+// the fact, not what an exit code said).
+func mergeBlockedDescription(t *testing.T, repo string) string {
+	t.Helper()
+	filed := mergeBlockedBeads(t, repo)
+	if len(filed) != 1 {
+		t.Fatalf("fixture: %d merge-back handoffs filed, want 1 — there is no description to read", len(filed))
+	}
+	desc, _ := filed[0]["description"].(string)
+	if desc == "" {
+		t.Fatalf("the filed handoff carries no description at all: %v", filed[0])
+	}
+	return desc
+}
+
+// refsNaming is every ref in the repo that reaches sha — git's own answer to
+// "would a gc keep this". Empty is the incident: an object alive only until
+// the next prune, with a bead telling a seat to go and get it.
+func refsNaming(t *testing.T, repo, sha string) string {
+	t.Helper()
+	out, err := git(repo, "for-each-ref", "--format=%(refname)", "--contains", sha)
+	if err != nil {
+		t.Fatalf("for-each-ref --contains %s: %v", sha, err)
+	}
+	return strings.TrimSpace(out)
+}
+
+// retireTreeAndBranch is what took ranger-base-nr3eq's work between the block
+// being filed and the bead being worked: the worktree reaped and the branch
+// deleted while the handoff stood open. It is written as the two git commands
+// rather than through RemoveSessionTree on purpose — every one of that
+// function's refusals hands an operator these exact two to run by hand, so
+// this is the shape that must survive, whoever typed it.
+func retireTreeAndBranch(t *testing.T, tr *SessionTree) {
+	t.Helper()
+	if _, err := git(tr.Repo, "worktree", "remove", "--force", tr.Path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(tr.Repo, "branch", "-D", tr.Branch); err != nil {
+		t.Fatal(err)
+	}
+	if branchExists(tr.Repo, tr.Branch) {
+		t.Fatalf("fixture: %s survived its own deletion", tr.Branch)
+	}
+}
+
+// The headline. The sentence that was false at dispatch is gone, and what
+// replaces it is the check plus the two facts that stay true either way.
+func TestMergeBackHandoffNeverPromisesTheBranchWillStillBeThere(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlBlocked(t)
+
+	sha, err := git(tr.Repo, "rev-parse", tr.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	desc := mergeBlockedDescription(t, repo)
+
+	if strings.Contains(desc, "untouched") {
+		t.Errorf("the handoff still asserts the branch is untouched — the claim that was false at dispatch on g7br6 and nr3eq:\n%s", desc)
+	}
+	if !strings.Contains(desc, "CHECK THE BRANCH") || !strings.Contains(desc, "rev-parse --verify "+tr.Branch) {
+		t.Errorf("the handoff does not tell the seat to read the branch before believing it:\n%s", desc)
+	}
+	// The handle that survives every way a branch can go, and the ref that
+	// keeps it: a sha with no ref on it is the incident, not the fix.
+	if !strings.Contains(desc, sha) {
+		t.Errorf("the handoff never names %s, so a seat whose branch is gone has nothing to read:\n%s", sha, desc)
+	}
+	if !strings.Contains(desc, blockedPinRef(tr.Branch)) {
+		t.Errorf("the handoff never names the pin %s:\n%s", blockedPinRef(tr.Branch), desc)
+	}
+}
+
+// And the pin is real, measured the only way that matters: retire the tree
+// and delete the branch exactly as the field did, then ask git whether
+// anything still reaches the commit.
+func TestMergeBackPinKeepsTheWorkReachableAfterTheBranchIsDeleted(t *testing.T) {
+	t.Parallel()
+	d, _, tr := nurlBlocked(t)
+
+	sha, err := git(tr.Repo, "rev-parse", tr.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := git(tr.Repo, "rev-parse", "--verify", blockedPinRef(tr.Branch)); err != nil || got != sha {
+		t.Fatalf("the pass filed a block and pinned %q at %s, want %s (%v)", got, blockedPinRef(tr.Branch), sha, err)
+	}
+	retireTreeAndBranch(t, tr)
+
+	if refs := refsNaming(t, tr.Repo, sha); refs != blockedPinRef(tr.Branch) {
+		t.Fatalf("after the tree and branch went, %s is reached by %q, want only the pin", sha, refs)
+	}
+	// THE FAILING WRONG ARM. Drop the pin and the same repo, the same two
+	// commands and the same commit leave nothing at all — which is the state
+	// ranger-base-g7br6 and ranger-base-nr3eq were both worked in, and the
+	// proof that the arm above measured the pin and not the fixture.
+	if err := unpinBlockedWork(tr.Repo, tr.Branch); err != nil {
+		t.Fatal(err)
+	}
+	if refs := refsNaming(t, tr.Repo, sha); refs != "" {
+		t.Fatalf("without the pin %s is still reached by %q, so the arm above proved nothing", sha, refs)
+	}
+}
+
+// closeTheBlock marks every merge-back handoff in the labeled listing closed
+// — the seat read it, reached a verdict and closed it, which is the moment
+// the pin stops being owed to anybody.
+func closeTheBlock(t *testing.T, repo string) {
+	t.Helper()
+	var labeled []map[string]any
+	b, err := os.ReadFile(filepath.Join(repo, "fake-list-labeled.json"))
+	if err != nil {
+		t.Fatalf("fixture: the pass filed nothing into the labeled listing: %v", err)
+	}
+	if err := json.Unmarshal(b, &labeled); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, row := range labeled {
+		if title, _ := row["title"].(string); strings.HasPrefix(title, "merge-back blocked: ") {
+			row["status"] = "closed"
+			row["closed_at"] = time.Now().Format(time.RFC3339)
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("fixture: no merge-back handoff in the labeled listing to close")
+	}
+	writeJSON(t, repo, "fake-list-labeled.json", labeled)
+}
+
+// The pin is not forever: a block that has been ANSWERED has no work owed to
+// it, so the next pass drops the ref and git can collect again. It has to
+// happen at pass start and off the REPO, because by now the tree this branch
+// had is gone and nothing that walks session worktrees reaches it.
+func TestPassDropsTheMergeBackPinOnceTheBlockIsAnswered(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlBlocked(t)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	pin := blockedPinRef(tr.Branch)
+	if _, err := git(tr.Repo, "rev-parse", "--verify", pin); err != nil {
+		t.Fatalf("fixture: the first pass left no pin, so the prune below measures nothing: %v", err)
+	}
+	retireTreeAndBranch(t, tr)
+	closeTheBlock(t, repo)
+
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(tr.Repo, "rev-parse", "--verify", pin); err == nil {
+		t.Errorf("%s still stands after the block was answered — posse has stopped collecting garbage for a branch nobody is owed", pin)
+	}
+}
+
+// The wrong arm, and the one that makes the prune safe to have: while the
+// block is still OPEN the pin is the only copy of somebody's work, and a
+// pass that dropped it would be the incident with an extra step.
+func TestPassKeepsTheMergeBackPinWhileTheBlockIsOpen(t *testing.T) {
+	t.Parallel()
+	d, _, tr := nurlBlocked(t)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := git(tr.Repo, "rev-parse", tr.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retireTreeAndBranch(t, tr)
+
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	pin := blockedPinRef(tr.Branch)
+	if got, err := git(tr.Repo, "rev-parse", "--verify", pin); err != nil || got != sha {
+		t.Fatalf("a pass dropped %s while its block was still open — %s is now reached by %q (%v)",
+			pin, sha, refsNaming(t, tr.Repo, sha), err)
+	}
+}
+
+// The store's own worst answer: bd will not say. Every pin stands, because
+// "the graph is down" is not evidence that somebody's only copy can go.
+func TestPinsStandWhenTheStoreWillNotSayWhichBlocksAreOpen(t *testing.T) {
+	t.Parallel()
+	newTestBackend(t)
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"config", "user.email", "p@example.com"}, {"config", "user.name", "p"}} {
+		if _, err := git(repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commitIn(t, repo, "fix.txt", "one\n", "root")
+	tr := &SessionTree{Repo: repo, Path: repo, Branch: "posse/ranger-r-a-1", Base: "main"}
+	sha, pin := pinBlockedWork(tr)
+	if sha == "" || pin == "" {
+		t.Fatalf("fixture: nothing was pinned (%q, %q), so the prune below measures nothing", sha, pin)
+	}
+	// The fake's hard-fail marker: `list` exits non-zero, which is what
+	// AllLabeledAny hands the prune.
+	write(t, filepath.Join(repo, "fake-list-fail"), "")
+
+	var said strings.Builder
+	prunePinnedBlocks(bd, repo, func(f string, a ...any) { fmt.Fprintf(&said, f, a...) })
+	if _, err := git(repo, "rev-parse", "--verify", pin); err != nil {
+		t.Errorf("a store that would not answer cost a live pin its ref: %v\n%s", err, said.String())
+	}
+	if !strings.Contains(said.String(), "not checked") {
+		t.Errorf("the pass said nothing about the pins it could not check: %q", said.String())
+	}
+}
+
+// The three arms in one place, including the one no fixture above reaches:
+// a filing that could not read a head at all. Each says something DIFFERENT
+// about how recoverable the work is, and a seat that is told the wrong one
+// either hunts for a ref that was never written or walks past a commit it
+// still had time to save.
+func TestMergeBlockedShelfLifeSaysWhichRecoveryTheSeatHas(t *testing.T) {
+	t.Parallel()
+	tr := &SessionTree{Repo: "/r", Path: "/w/t", Branch: "posse/ranger-r-a-1", Base: "main"}
+	for _, c := range []struct {
+		what, sha, pin string
+		want, notWant  string
+	}{
+		{"pinned", "abc123", blockedPinRef(tr.Branch), "pinned it at " + blockedPinRef(tr.Branch), "NOTHING PINNED IT"},
+		{"a sha and no pin", "abc123", "", "NOTHING PINNED IT", "pinned it at"},
+		{"no head at all", "", "", "no sha to fall back", "NOTHING PINNED IT"},
+	} {
+		got := mergeBlockedShelfLife(tr, "main", c.sha, c.pin)
+		if !strings.Contains(got, "rev-parse --verify "+tr.Branch) {
+			t.Errorf("%s: the seat is never told to read the branch:\n%s", c.what, got)
+		}
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: want %q in:\n%s", c.what, c.want, got)
+		}
+		if strings.Contains(got, c.notWant) {
+			t.Errorf("%s: says %q, which is another arm's recovery:\n%s", c.what, c.notWant, got)
+		}
+	}
+}
+
+// The migration case, and the one the filing alone does not cover: a block
+// filed BEFORE posse pinned anything has the same branch and the same shelf
+// life, and it is the oldest open blocks that are nearest to being reaped.
+// So the pass pins on the arm that recognises an open handoff too, not only
+// on the arm that files one.
+func TestPassPinsABlockItAlreadyFiledAndDidNotRefile(t *testing.T) {
+	t.Parallel()
+	d, _, tr := nurlBlocked(t)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	// The pre-pin world: an open handoff whose branch nothing names but
+	// refs/heads.
+	if err := unpinBlockedWork(tr.Repo, tr.Branch); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := git(tr.Repo, "rev-parse", tr.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	// The positive witness: an assertion about the not-re-filed arm is worth
+	// nothing if the pass took the filing arm instead and pinned there.
+	if out := dispatcherOut(d2); !strings.Contains(out, "already filed") {
+		t.Fatalf("fixture: the second pass re-filed rather than recognising the open handoff, so this measures the wrong arm:\n%s", out)
+	}
+	if got, err := git(tr.Repo, "rev-parse", "--verify", blockedPinRef(tr.Branch)); err != nil || got != sha {
+		t.Errorf("a pass that read an open block left its work at %q, want %s pinned (%v)", got, sha, err)
 	}
 }

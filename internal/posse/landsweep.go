@@ -91,6 +91,16 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 	if dirFilter != "" {
 		dirs = []string{dirFilter}
 	}
+	// The pins first, and OUTSIDE the tree walk, because a pin outlives the
+	// tree that earned it: by the time a block's pin is droppable its
+	// worktree is gone, so SessionTreesIn no longer reaches that branch at
+	// all and nothing below this line would ever see it again
+	// (ranger-base-m3195). A dry run reads and reports; it does not delete.
+	if !d.DryRun {
+		for _, repo := range mainCheckoutsOf(dirs) {
+			prunePinnedBlocks(d.Bd, repo, d.eprintf)
+		}
+	}
 	trees, err := SessionTreesIn(dirs)
 	if err != nil {
 		d.eprintf("posse: session worktrees could not be listed (%v) — unlanded work is not being checked this pass\n", err)
