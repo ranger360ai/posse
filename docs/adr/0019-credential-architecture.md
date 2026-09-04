@@ -806,7 +806,7 @@ design puts more weight on files. What is actually traded:
   is ranger-base-mc66k's streak reset, and — *corrected 2026-09-04
   (ranger-base-vxbfm); this bullet read "the gauge's dated read time
   already keeps it honest", a fifth instance of the same present-tense
-  slip the four above fix* — the gauge's dated read time WOULD keep it
+  slip this pass fixes in four other bullets and rows on this page* — the gauge's dated read time WOULD keep it
   honest without it, if D5 shape 1 is ever built. Nothing here is
   built, so this bullet rejects a refresh for a surface that does not
   exist yet; the mc66k ground stands on its own either way.
