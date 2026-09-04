@@ -75,8 +75,24 @@ func TestMergeBackPairsACommitReplayedOntoTheBaseByRebase(t *testing.T) {
 	if !o.Merged || len(o.Equivalent) != 1 {
 		t.Errorf("the outcome must say the base already holds this work: %+v", o)
 	}
-	if !strings.Contains(o.EquivalentNote(), "nothing here is unlanded") {
-		t.Errorf("the operator-facing sentence must say nothing is unlanded, got: %q", o.EquivalentNote())
+	// The sentence, on the evidence this arm actually has. It may say the
+	// commit is accounted for — that is the whole fix above — and it may not
+	// say it MEASURED that, because an identity match is not a measurement
+	// of what the replay kept (ranger-base-dmzk7). The words are
+	// unaccountedFor's, which is the other surface answering the same
+	// question about the same tree in the same pass.
+	note := o.EquivalentNote()
+	for _, want := range []string{
+		"accounted for on main",
+		"an identity match and not a measurement of what the replay kept",
+		"compare (`git log main.." + tr.Branch + "`) before retiring the tree",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the operator-facing sentence does not say %q, got: %q", want, note)
+		}
+	}
+	if strings.Contains(note, "nothing here is unlanded") {
+		t.Errorf("an identity match claimed a measurement it does not have: %q", note)
 	}
 	if !branchExists(repo, tr.Branch) {
 		t.Error("the branch was moved or deleted by a read-only equivalence check")

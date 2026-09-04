@@ -642,18 +642,51 @@ type MergeOutcome struct {
 	// it, and the difference between "already landed, retire freely" and
 	// "this tree is the only copy".
 	Equivalent []string
+
+	// Unmeasured is what that pairing rests on for the commits no
+	// measurement of CONTENT accounts for — git's `-x` trailer, an identity
+	// match on a replay, or both — in the words the two other surfaces
+	// already use for it (unmeasuredClause). "" says every commit's account
+	// is a patch-id measurement, which is the only evidence that can say
+	// nothing here is unlanded.
+	Unmeasured string
 }
 
 // EquivalentNote is the sentence that tells an already-landed branch apart
 // from a stranded one. Before it, both printed the same words (the strand's)
 // and only a hand measurement could say which was which — ranger-base-g2xf.
 // "" when there is nothing to tell apart.
+//
+// It asks the evidence, because "nothing here is unlanded" is a measurement
+// claim and two of the three kinds of pairing are not measurements
+// (ranger-base-dmzk7). This is the surface that decides whether a human is
+// told at all — Blocked() is false on every equivalence and no
+// merge-back-blocked bead is filed — and over an identity match it was
+// asserting the confident sentence while unaccountedFor, on the same tree in
+// the same pass, said "compare before retiring the tree". Two confidences,
+// one piece of evidence, and the confident one won where it cost the most:
+// a session that AMENDS a commit the launcher already landed keeps the
+// author, author date and subject, so the pairing still matches and the new
+// bytes are on no ref but this branch.
+//
+// The unmeasured arm says what unaccountedFor and treeState say, and only
+// that. It does NOT report a strand: contentNotOnBase cannot tell the amend
+// above from the case this whole arm exists for — a rebase whose conflict a
+// human resolved by keeping both sides, where the branch's bytes are on main
+// nowhere and the work is nevertheless entirely landed (ranger-base-nw9zg,
+// ranger-base-emgdb). Only a person reading the two can say which, so the
+// sentence sends them to read it rather than guessing for them in either
+// direction.
 func (o MergeOutcome) EquivalentNote() string {
 	if len(o.Equivalent) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%d commit(s) on %s are already on %s under other sha(s) (%s) — nothing here is unlanded",
-		len(o.Equivalent), o.Branch, o.Base, strings.Join(o.Equivalent, ", "))
+	if o.Unmeasured == "" {
+		return fmt.Sprintf("%d commit(s) on %s are already on %s under other sha(s) (%s) — nothing here is unlanded",
+			len(o.Equivalent), o.Branch, o.Base, strings.Join(o.Equivalent, ", "))
+	}
+	return fmt.Sprintf("%d commit(s) on %s are accounted for on %s under other sha(s), %s; compare (`git log %s..%s`) before retiring the tree",
+		len(o.Equivalent), o.Branch, o.Base, o.Unmeasured, o.Base, o.Branch)
 }
 
 // Blocked is "the merge was attempted, answered, and the answer was no" —
@@ -749,7 +782,8 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		// a different sentence.
 		if head, ok := workHead(t); ok {
 			if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
-				o.Equivalent, o.Merged, o.Reason = equivNotes(eq), true, ""
+				o.Equivalent, o.Unmeasured = equivNotes(eq), unmeasuredNote(eq, t.Base)
+				o.Merged, o.Reason = true, ""
 				return o, nil
 			}
 		}
@@ -772,7 +806,8 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	// sits.
 	if head, ok := workHead(t); ok {
 		if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
-			o.Equivalent, o.Merged, o.Reason = equivNotes(eq), true, ""
+			o.Equivalent, o.Unmeasured = equivNotes(eq), unmeasuredNote(eq, t.Base)
+			o.Merged, o.Reason = true, ""
 			return o, nil
 		}
 	}
@@ -1315,6 +1350,19 @@ func unmeasuredClause(eqs []equiv, base string) string {
 		return fmt.Sprintf("recorded as landed in %s, which is a decision and not a measurement of what the resolution kept",
 			strings.Join(trailer, "; "))
 	}
+}
+
+// unmeasuredNote is unmeasuredClause for a pairing that may be wholly
+// measured: "" says every commit's account is a patch-id measurement of
+// content, and it is the only answer that licenses the confident sentence
+// (MergeOutcome.Unmeasured, EquivalentNote). Empty in, empty out — nothing
+// accounted for has nothing to say about its evidence, and unmeasuredClause
+// would render its trailer default over an empty list.
+func unmeasuredNote(eqs []equiv, base string) string {
+	if len(eqs) == 0 || measuredOnBase(eqs) {
+		return ""
+	}
+	return unmeasuredClause(eqs, base)
 }
 
 // contentNotOnBase names the paths the branch touched whose BYTES the base

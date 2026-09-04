@@ -1442,6 +1442,10 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 		// landed at all.
 		land       func(t *testing.T, repo, sha string) string
 		equivalent bool
+		// measured says the pairing is a patch-id measurement of content
+		// and so may print the confident sentence. The trailer arm is not
+		// one, and saying so is ranger-base-dmzk7.
+		measured bool
 	}{{
 		name: "a hand-resolved cherry-pick is not a strand",
 		land: func(t *testing.T, repo, sha string) string {
@@ -1460,6 +1464,7 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 			return mustGit(t, repo, "rev-parse", "HEAD")
 		},
 		equivalent: true,
+		measured:   true,
 	}, {
 		// The other half of equivalentOnBase, alone: no trailer at all, so
 		// only patch-id can see it. Without this arm the `git cherry` half
@@ -1471,6 +1476,7 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 			return mustGit(t, repo, "rev-parse", "HEAD")
 		},
 		equivalent: true,
+		measured:   true,
 	}, {
 		name: "real unlanded work still is",
 		land: func(t *testing.T, repo, sha string) string {
@@ -1527,10 +1533,21 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 				t.Errorf("Equivalent %q does not name the session's commit %s", o.Equivalent[0], abbrevSHA(sha))
 			}
 			note := o.EquivalentNote()
-			for _, want := range []string{"1 commit(s)", tr.Branch, tr.Base, "nothing here is unlanded"} {
+			// "nothing here is unlanded" is a measurement claim, so only
+			// the arms that MEASURED get to make it: the hand-resolved
+			// pick's whole evidence is a trailer somebody wrote, which
+			// cannot say what the resolution kept (ranger-base-dmzk7).
+			last := "nothing here is unlanded"
+			if !c.measured {
+				last = "not a measurement of what the resolution kept"
+			}
+			for _, want := range []string{"1 commit(s)", tr.Branch, tr.Base, last} {
 				if !strings.Contains(note, want) {
 					t.Errorf("EquivalentNote() = %q, missing %q", note, want)
 				}
+			}
+			if !c.measured && strings.Contains(note, "nothing here is unlanded") {
+				t.Errorf("evidence that is not a measurement claimed one: %q", note)
 			}
 			// Nothing was touched to reach that answer: this is a read.
 			if after := mustGit(t, repo, "rev-parse", tr.Branch); after != before {
