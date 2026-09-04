@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// PARKED (laurie, ranger-base-vtyst verifying ranger-base-ymgbo). ADR 0049 D2
+// PARKED (ranger-base-vtyst verifying ranger-base-ymgbo). ADR 0049 D2
 // says the queue may hold exactly one remote whose fetch URL and push URL
 // both equal the declared string. checkQueueRemote reads `git remote
 // get-url` and `get-url --push`, and git-remote(1) says of get-url: "By
@@ -46,7 +46,7 @@ func TestQAQueueRemoteRefusesASecondURLOnTheSanctionedRemote(t *testing.T) {
 	}
 }
 
-// PARKED (laurie, ranger-base-vtyst verifying ranger-base-buvq4). The launch
+// PARKED (ranger-base-vtyst verifying ranger-base-buvq4). The launch
 // refuses a managed hooks path carrying \n or \r before the record is
 // written, and writeMeta's comment now says the flat reader's truncation "is
 // guarded at the launch". The reader truncates more than a newline: yamlClean
