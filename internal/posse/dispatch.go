@@ -1410,6 +1410,82 @@ func (m seatMap) note(slot string) { m.pass[slot] = true }
 // hold records that this Run put a bead on the slot: busy until it settles.
 func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 
+// reconcileSeats is the Run map's OTHER release, and the one that closes
+// ranger-base-ifjgm. The gather loop deletes a seat's hold when it judges
+// that seat's bead settled-and-done; every other way a hold can stop being
+// true has no event at all, and under a long-lived Run there is nothing
+// after the gather to notice:
+//
+//   - the settle came back `working` (a bead still with its agent). The
+//     gather counts it, drops it from `active`, and never looks at that bead
+//     again — so the hold outlives the session by the whole life of the Run.
+//   - the session was reaped, killed by hand, or lost with its herdr server
+//     between one refill and the next.
+//
+// MEASURED 2026-09-03 (state/dispatch-watch.log): a code-lane bead settled
+// "done with 1 shell, 1 monitor still running — waiting, not judged this
+// pass", was reaped on a later pass ("bead closed, 1 commit rebased and
+// fast-forwarded onto main; worktree removed"), and for the 2h12m until the
+// watch was bounced every refill still named all three code seats busy and
+// hired into 2 of 3, while `posse list` showed no pane for the reaped seat at
+// all and seat-cadence recorded no later launch on it. The same shape ran
+// 04:53Z-12:05Z the same morning (ranger-base-wj7e9, unexplained then). Only
+// a new process — a new busy map — ever cleared it.
+//
+// So occupancy is reconciled against herdr at the head of every fire pass
+// and every refill: a hold whose seat has NO live session under it is not
+// occupancy, it is a fact about an earlier hour, and it is released with a
+// line saying so. The evidence is the seat's PREFIX, not one derived name,
+// because a hold's session is not always the Dial F name — an in_progress
+// bead retargets onto its live holder, which may be the pre-Dial-F slot
+// itself (fireLoop's `session = holder`). Any live session in the seat keeps
+// the hold; the seat is occupied whichever bead is on it.
+//
+// Two abstentions, both fail-closed — a hold is only ever released on
+// evidence, never on the absence of a reading:
+//
+//   - a session listing that failed to read. An unreadable herd is not an
+//     empty one (the same rule Sessions() itself applies to its metas).
+//   - --dry-run, which holds seats it never launched into, so every one of
+//     its holds would reconcile away and the dry pass would report firing
+//     the same seat twice.
+//
+// Sessions() leaves a meta whose workspace it cannot prove dead OUT of its
+// listing (rangerhq-9nso), so a spared session reads as absent here — and
+// as absent to personaActive, the other half of the same seat walk, which
+// has always decided occupancy off exactly this listing. This releases a
+// seat no fresh Run would have found busy either; it does not widen what
+// dispatch treats as evidence.
+func (d *Dispatcher) reconcileSeats(busy map[string]string) {
+	if d.DryRun || len(busy) == 0 {
+		return
+	}
+	sessions, err := d.HB.Sessions()
+	if err != nil {
+		return
+	}
+	slots := make([]string, 0, len(busy))
+	for slot := range busy {
+		slots = append(slots, slot)
+	}
+	sort.Strings(slots) // one release order for one reading, whatever the map's
+	for _, slot := range slots {
+		live := false
+		for _, s := range sessions {
+			if s.Name == slot || strings.HasPrefix(s.Name, slot+"-") {
+				live = true
+				break
+			}
+		}
+		if live {
+			continue
+		}
+		bead := busy[slot]
+		delete(busy, slot)
+		d.printf("↺ seat %s released: no session (held %s) — reaped or gone since this Run fired it\n", slot, bead)
+	}
+}
+
 // seatFor answers ADR 0020 §2's second question — WHICH SEAT — for a lane
 // whose first question is already answered. It walks the lane in routing
 // order and takes the first candidate that is actually free: not made busy
@@ -1548,7 +1624,16 @@ var beadIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 // the end-of-pass auto-reap (autoreap.go, rangerhq-us8) kills it on a later
 // pass — `auto_reap: false` or --no-reap falls back to `posse kill` by hand.
 func SessionForBead(persona, dir, id string) string {
-	return SessionFor(persona, dir) + "-" + sessionSanitizeRe.ReplaceAllString(id, "-")
+	return seatSession(SessionFor(persona, dir), id)
+}
+
+// seatSession is SessionForBead from the SEAT's side: the seat map is keyed
+// by slot (SessionFor's <persona>-<repobase>) and holds a bead id, and the
+// reconcile below has to name the session that hold belongs to without the
+// (persona, dir) pair that made the slot. Both spellings go through here so
+// the two can never drift into naming different sessions for one hold.
+func seatSession(slot, id string) string {
+	return slot + "-" + sessionSanitizeRe.ReplaceAllString(id, "-")
 }
 
 // DefaultTierByLabel is ADR 0003 Dial B: the bead's shape says more than
@@ -2336,6 +2421,13 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// reading went stale while it waited.
 		d.refreshOverflowUsed()
 	}
+
+	// Before anything is offered a seat: this Run's holds are only occupancy
+	// while the sessions behind them are alive (reconcileSeats,
+	// ranger-base-ifjgm). Held here rather than at the settle because a hold
+	// can go stale with no settle to hang the release on, and this is the one
+	// place every fire pass and every refill passes through.
+	d.reconcileSeats(busy)
 
 	// The Run's occupancy, plus this fire pass's own readings (seatMap).
 	seats := newSeatMap(busy)

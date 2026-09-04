@@ -120,6 +120,22 @@ coincided, so the distinction was invisible; under a rolling Run, caching
 a reading for the life of the process locked seats out on facts about the
 morning — the other half of the t8tq starvation.
 
+*(amended 2026-09-03, ranger-base-ifjgm)* "Released at that seat's settle"
+is the release, not the only one. A settle is an event, and a hold can stop
+being true with no event to hang a release on: a settle that came back
+`working` is counted, dropped from the gather, and never looked at again, and
+a session can be reaped, killed or lost with its herdr server between one
+refill and the next. MEASURED 2026-09-03: a seat held on a bead whose session
+had been reaped read busy for 2h12m and every refill hired into 2 of 3 seats,
+released only by bouncing the watch. So occupancy is also **reconciled
+against herdr at the head of every fire pass and every refill**
+(`reconcileSeats`): a hold with no live session under its seat is released,
+with a line naming the seat and the bead it was holding. The reconcile is
+evidence-only and fails closed — a session listing that could not be read is
+not an empty herd, and `--dry-run`, which holds seats it never launched into,
+is not reconciled at all. This narrows the map to what §3 already says it
+holds; it widens nothing.
+
 **§4 — One throttle, preserved.** All refills originate in the one watch
 process. Killing it stops the shop inviting work; no agent-initiated launch
 path exists. This property is load-bearing for the operator and is a
