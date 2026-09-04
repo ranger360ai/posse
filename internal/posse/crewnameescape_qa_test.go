@@ -8,9 +8,14 @@ package posse
 // — the shape is a literal whose escape runs straight into the name, as in
 // "base" + backslash-n + a crew name + " HALF-WRITTEN". They were renamed by
 // hand, and the close said plainly that the sweep AND the pin walk straight
-// past that spelling: in the source text the escape's `n` and the name's
-// first letter are both word characters, so qibCrewPattern's `\b` never
-// fires between them. Nothing was left holding it.
+// past that spelling: in the source text nothing separates the escape's `n`
+// from the name's first letter. Nothing was left holding it.
+//
+// HALF of that class closed under ranger-base-jhyiv, and this pin holds the
+// other half. The line reader now treats a change of case as a boundary, so
+// the UPPERCASE spelling — `n` running into `M` — is visible to the raw walk
+// and is asserted below to be. The lowercase spelling has no boundary of any
+// kind, before or after the fix, and it is the one the fixture here uses.
 //
 // The two pins that exist each cover one half and neither covers this:
 //
@@ -126,7 +131,13 @@ func TestCrewNameEscapePinSeesWhatTheRawWalkCannot(t *testing.T) {
 	t.Parallel()
 	// Assembled, never spelled: this file is inside the walk above and is
 	// not on its exception list. Same trick qibCrewPattern uses.
-	name := strings.ToUpper("mon" + "ica")
+	//
+	// LOWERCASE on purpose (ranger-base-jhyiv). The escape's `n` running
+	// into an uppercase name is a change of case, and the line reader calls
+	// that a boundary now — asserted at the bottom of this test, so the
+	// halving of this class is a measurement here and not a claim in a
+	// comment. Lowercase is what nothing separates and nothing else holds.
+	name := "mon" + "ica"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fixture_test.go")
 	src := "package p\n\nvar x = \"base\\n" + name + " HALF-WRITTEN\"\n"
@@ -157,5 +168,17 @@ func TestCrewNameEscapePinSeesWhatTheRawWalkCannot(t *testing.T) {
 	}
 	if h := qceHidden(t, plain, strings.Split(psrc, "\n")); len(h) != 0 {
 		t.Errorf("a name visible on its own source line is the raw walk's to report, got %v", h)
+	}
+
+	// The half this pin no longer has to cover, stated as a measurement: the
+	// same fixture spelled with an uppercase name IS a boundary to the line
+	// reader (`n` to `M` is a change of case), so the raw walk reports it and
+	// the scope of this file is the lowercase spelling above. If this stops
+	// holding, the line reader has gone back to `\b` and the class is whole
+	// again — which is a bigger finding than this pin.
+	upper := "var x = \"base\\n" + strings.ToUpper(name) + " HALF-WRITTEN\""
+	if !re.MatchString(upper) {
+		t.Errorf("the raw-line reader no longer sees the uppercase spelling in %q — "+
+			"the case-change boundary is gone and this pin is covering half a class it was told was covered", upper)
 	}
 }

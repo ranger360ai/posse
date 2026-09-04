@@ -109,21 +109,86 @@ func qibCrewNames() []string {
 	}
 }
 
-// qibCrewPattern reads LINES, where \b is right: prose puts spaces and
-// punctuation around a name, and requiring them is what keeps the pin off
-// every word that merely contains one.
-func qibCrewPattern() *regexp.Regexp {
-	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(qibCrewNames(), "|") + `)\b`)
+// qibCrewPattern reads LINES. It still requires a boundary — prose is full of
+// words that merely contain a name ("beholden"), and a pin that reds on those
+// is a pin somebody turns off — but the boundary is the one CODE uses, not
+// the one `\b` knows.
+//
+// `\b` fires between a word character and a non-word one, and `_` is a word
+// character, so it never fires beside Go's own separator. Neither does it
+// fire inside camelCase, where the case change is the whole separator. That
+// left an entire class invisible: `<seat>_probe`, `<seat>Probe`, `fake<Seat>`
+// and a path quoted in a comment were all read straight past by this pattern
+// while the very same strings in a FILE NAME were caught by the path pattern
+// below. Code is the likelier way for a name to reach cmd/ or internal/, and
+// that was the half nothing could see (ranger-base-o3g6a's residue, measured
+// and pinned green under ranger-base-han3i, fixed here under
+// ranger-base-jhyiv). Censused at the fix: a case-insensitive SUBSTRING sweep
+// of qibCrewNames over the four roots returned zero hits, so widening the
+// reader cost the tree nothing.
+//
+// So the match is found by substring and then asked where it sits, which is
+// a thing a regexp with no lookaround cannot do on its own.
+func qibCrewPattern() qibLineReader {
+	return qibLineReader{re: qibCrewPathPattern()}
 }
 
-// qibCrewPathPattern reads PATHS, and deliberately drops \b. A path is not
-// prose and has none of prose's boundaries: in Go's own file-naming
-// convention the separator is `_`, which is a word character, so \b never
-// fires beside it. Measured (ranger-base-o3g6a): the line pattern does NOT
-// match `internal/posse/<a QA seat>_as19_probe_test.go`, which is the exact
-// file this arm was written for. Requiring a boundary here would be a path
-// arm blind to the one hit that motivated it — asserted, not just said, in
-// TestShippedPinsSeeACrewNameInAPath.
+// qibLineReader is a substring match plus the boundary question, with the two
+// methods every reader in this file already calls on a regexp — so a scanner
+// cannot be handed one and quietly get the other's answer.
+type qibLineReader struct{ re *regexp.Regexp }
+
+// FindIndex returns the first match that sits at a name edge. A rejected
+// match does not end the search: `beholden` must not hide a later `holden`
+// on the same line, so the scan resumes one byte past the start it refused.
+func (r qibLineReader) FindIndex(b []byte) []int {
+	for off := 0; off < len(b); {
+		loc := r.re.FindIndex(b[off:])
+		if loc == nil {
+			return nil
+		}
+		i, j := off+loc[0], off+loc[1]
+		if qibAtNameEdge(b, i, j) {
+			return []int{i, j}
+		}
+		off = i + 1
+	}
+	return nil
+}
+
+func (r qibLineReader) MatchString(s string) bool { return r.FindIndex([]byte(s)) != nil }
+
+// qibNameByte reports whether b is what a longer WORD is made of. `_` is
+// deliberately absent: it is a separator in every identifier convention Go
+// has, so a name beside one is a name and not a syllable of something else.
+func qibNameByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
+}
+
+func qibUpperByte(b byte) bool { return b >= 'A' && b <= 'Z' }
+
+// qibAtNameEdge reports whether b[i:j] is a name rather than a piece of a
+// longer word. Three things are an edge on either side: the end of the line,
+// a byte no word is made of (`_`, `/`, a quote, a space), and a change of
+// case — `fake` to `Gwart`, `gwart` to `Probe`. The case rule is deliberately
+// the narrow one: the byte on the prose side must NOT already be uppercase,
+// so `BEHOLDEN` is one word and `fakeHolden` is two.
+func qibAtNameEdge(b []byte, i, j int) bool {
+	left := i == 0 || !qibNameByte(b[i-1]) || (!qibUpperByte(b[i-1]) && qibUpperByte(b[i]))
+	right := j == len(b) || !qibNameByte(b[j]) || (!qibUpperByte(b[j-1]) && qibUpperByte(b[j]))
+	return left && right
+}
+
+// qibCrewPathPattern reads PATHS, and asks for no boundary at all. A path is
+// not prose: it has none of prose's spacing, it is short, and it is chosen
+// rather than written, so a name that merely appears inside a longer word in
+// a FILE NAME is a name that was put there. `<a QA seat>_as19_probe_test.go`
+// is the file this arm was written for (ranger-base-o3g6a).
+//
+// It is also what the line reader above searches with before asking where the
+// match sits — one list, one substring pattern, two questions. The line
+// reader's extra question is the whole difference between them, and
+// TestShippedPinsSeeACrewNameInAPath holds it in both directions.
 //
 // The cost is a substring match: a file named after something that merely
 // CONTAINS a crew name would fail this pin. Nothing in the shipped tree does
@@ -135,11 +200,14 @@ func qibCrewPathPattern() *regexp.Regexp {
 	return regexp.MustCompile(`(?i)(?:` + strings.Join(qibCrewNames(), "|") + `)`)
 }
 
-// qibReaders is the pair of patterns every scan needs: one for lines, one for
-// paths. They are different regexps for the reason qibCrewPathPattern gives,
-// and they travel together so no scanner can be handed one and quietly use it
-// for both — which is how a path arm would come out blind to `_`.
-type qibReaders struct{ line, path *regexp.Regexp }
+// qibReaders is the pair of readers every scan needs: one for lines, one for
+// paths. They ask different questions for the reason qibCrewPathPattern
+// gives, and they travel together so no scanner can be handed one and quietly
+// use it for both — which is how a line arm would come out reading a path.
+type qibReaders struct {
+	line qibLineReader
+	path *regexp.Regexp
+}
 
 func qibCrewReaders() qibReaders {
 	return qibReaders{line: qibCrewPattern(), path: qibCrewPathPattern()}
@@ -312,11 +380,14 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 //  1. **The repo root.** Its fourth root (below) reads root non-test .go —
 //     embed.go and its neighbours — which is outside the three trees.
 //  2. **A name split by an escape.** It unquotes before matching, so
-//     "base\nMONICA" is two lines to the regexp and the name is at a line
-//     start. In the raw source `n` and `M` are adjacent word characters and
-//     \b never fires between them, so the line walk above reads straight
-//     past it — the h6fx trap, and the reason deleting this test as
-//     redundant would quietly reopen it.
+//     "base\nmonica" is two lines to the reader and the name is at a line
+//     start. In the raw source the escape's `n` runs straight into the name
+//     with no boundary of any kind between them — not a separator, not a
+//     change of case — so the line walk above reads past it. (The UPPERCASE
+//     spelling of the same trap, "base\nMONICA", is a case change and IS
+//     seen by the line reader since ranger-base-jhyiv; the lowercase one is
+//     the half still hidden.) The h6fx trap, and the reason deleting this
+//     test as redundant would quietly reopen it.
 //
 // What NEITHER sees, stated rather than implied: a name assembled from
 // fragments ("mon"+"ica") is two literals to the parser and two word-parts to
@@ -348,9 +419,9 @@ func qibShippedStrings(t *testing.T, path string) []struct {
 			return true
 		}
 		text := lit.Value
-		// Unquote so a name split by an escape ("base\nMONICA") is one
-		// string to the regexp: in the raw source `n` and `M` are adjacent
-		// word characters and \b never fires between them (the h6fx trap).
+		// Unquote so a name split by an escape ("base\nmonica") is one
+		// string to the reader: in the raw source nothing separates the
+		// escape's `n` from the name at all (the h6fx trap).
 		if s, err := strconv.Unquote(lit.Value); err == nil {
 			text = s
 		}
@@ -485,16 +556,30 @@ func TestShippedPinsSeeACrewNameInAPath(t *testing.T) {
 		}
 	}
 
-	// The reason the two patterns are not one pattern, asserted rather than
-	// left in a comment: `\b` does not fire before `_`, so the LINE pattern
-	// cannot see the planted path. Anyone who "simplifies" qibCrewPathPattern
-	// back to the line pattern fails here instead of shipping a blind arm.
+	// The shape that motivated the path arm, now seen by BOTH readers: the
+	// path arm never needed a boundary, and the line reader learned the one
+	// `_` makes under ranger-base-jhyiv. A line reader that goes back to
+	// `\b` fails here.
 	planted := "cmd/" + crew + "_probe.go"
-	if re.line.MatchString(planted) {
-		t.Fatalf("the line pattern now matches %q — this fixture no longer measures the boundary trap that motivated the path arm", planted)
+	if !re.line.MatchString(planted) {
+		t.Fatalf("the line reader does not match %q — it is back to a boundary that cannot fire beside `_`, and a crew name arriving as code is invisible again", planted)
 	}
 	if !re.path.MatchString(planted) {
 		t.Fatalf("the path pattern does not match %q — the path arm is blind to the very shape it was written for", planted)
+	}
+
+	// And the reason the two are still not one reader, asserted rather than
+	// left in a comment: the path arm matches a name that is merely a
+	// SUBSTRING of a longer word, and the line arm must not — prose is full
+	// of words that contain a name, and a pin that reds on those is a pin
+	// somebody turns off. Anyone who "simplifies" the line reader into
+	// qibCrewPathPattern fails here instead of shipping that.
+	glued := "cmd/x" + crew + "_probe.go"
+	if re.line.MatchString(glued) {
+		t.Fatalf("the line reader matches %q — a name glued inside a longer word is not a name, and this reader now reds on prose", glued)
+	}
+	if !re.path.MatchString(glued) {
+		t.Fatalf("the path pattern does not match %q — the two arms no longer differ, and one of them is redundant", glued)
 	}
 
 	// file [kind], so the assertion reads on the two things that matter: which
@@ -559,5 +644,67 @@ func TestShippedPinsSeeACrewNameInAPath(t *testing.T) {
 	}
 	if scanned != 5 {
 		t.Errorf("literal scanner parsed %d files; want 5 — a control that read the wrong files proves nothing", scanned)
+	}
+}
+
+// ─── the boundary the line reader has to know (ranger-base-jhyiv) ────────────
+//
+// The residue ranger-base-o3g6a left: it gave PATHS their own pattern
+// precisely because `\b` never fires beside `_`, and the identical argument
+// was never made for the LINE pattern that both pins run over file CONTENTS.
+// A crew name inside a Go IDENTIFIER was therefore invisible to the content
+// arm while the same string in a path was caught — and code is the likelier
+// way for a name to arrive in cmd/ or internal/.
+//
+// This is that gap inverted: the four shapes were measured blind (censused at
+// zero live hits, so it was a pin gap and not an escape) and each must now be
+// seen. The control on the other side is the last row: a name glued inside a
+// longer lowercase word is still NOT a hit, because a reader that matches
+// everything is not a boundary, it is a substring — that is the path arm's
+// job and its cost is argued at qibCrewPathPattern.
+func TestCrewLineReaderSeesANameInsideAnIdentifier(t *testing.T) {
+	t.Parallel()
+	re := qibCrewReaders()
+	names := qibCrewNames()
+	if len(names) < 5 {
+		t.Fatalf("qibCrewNames returned %d names — this pin would measure almost nothing", len(names))
+	}
+	for _, c := range []struct {
+		label string
+		// tmpl takes the name as it is spelled in qibCrewNames; capital
+		// says the shape needs it capitalized first (camelCase's boundary
+		// IS the capital, so a lower-case fixture would measure nothing).
+		tmpl    string
+		capital bool
+		want    bool
+	}{
+		{"prose, the shape \\b already held", "// measured by %s on a Tuesday", false, true},
+		{"a lower-snake identifier", "const x = \"%s_probe\"", false, true},
+		{"an exported camel identifier", "func %sProbe() {}", true, true},
+		{"a camel suffix", "var fake%s = 1", true, true},
+		{"a path quoted in a comment", "// see internal/posse/%s_as19_probe_test.go", false, true},
+		{"a name glued in front of a longer word", "// nothing here is be%s to the launcher", false, false},
+		{"a name glued behind a longer word", "// the %sport terminal is not a seat", false, false},
+		// A refused match must not end the search: the reader resumes past
+		// the start it refused, or one glued spelling hides every real one
+		// after it on the same line.
+		{"a glued spelling ahead of a real one", "// be%s, and then %s on a Tuesday", false, true},
+	} {
+		for _, n := range names {
+			name := n
+			if c.capital {
+				name = strings.ToUpper(n[:1]) + n[1:]
+			}
+			line := strings.ReplaceAll(c.tmpl, "%s", name)
+			if got := re.line.MatchString(line); got != c.want {
+				t.Errorf("%s: the line reader saw %v, want %v, in %q", c.label, got, c.want, line)
+			}
+			// The path pattern sees every one of them, glued included:
+			// that is the difference between the two arms, and it is what
+			// makes the last row a boundary result and not a name-list one.
+			if !re.path.MatchString(line) {
+				t.Errorf("%s: the path pattern does not see %q — the fixture stopped naming a seat and measures nothing", c.label, line)
+			}
+		}
 	}
 }
