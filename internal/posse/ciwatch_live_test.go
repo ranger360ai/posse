@@ -215,14 +215,19 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 
 	// ── the persona's close, and the dedupe blind to it ──────────────────
 	// The dedupe must step over a bead a persona closed. Whether `bd list
-	// --label-any` still ANSWERS with it is the store class's business and
-	// not this mechanism's: measured 2026-09-04, the shop's SQLite store
-	// drops closed rows here and the `no-db: true` JSONL store `bd init`
-	// writes on bd 0.50.3 — which is the store THIS rig has — keeps them.
-	// ciOpenBeads asserts open itself for that reason, and this is the arm
-	// that found it.
+	// --label-any` still ANSWERS with it is the store class's business:
+	// measured 2026-09-04, the shop's SQLite store drops closed rows here
+	// and the `no-db: true` JSONL store `bd init` writes on bd 0.50.3 —
+	// which is the store THIS rig has — keeps them. This is the arm that
+	// found it, so it is also the live pin of the fix: OpenLabeledAny drops
+	// them itself (ranger-base-bwrp8), which is asserted here against real
+	// bd on the store class that does not.
 	if out, err := sh("close", id, "-r", "the gate cleared itself"); err != nil {
 		t.Fatalf("bd close %s: %v %s", id, err, out)
+	}
+	if is := openCiRed(); len(is) != 0 {
+		t.Fatalf("OpenLabeledAny answered with %d bead(s) after the only one was closed (%s) — "+
+			"open is this query's promise, not the store's", len(is), is[0].Status)
 	}
 	if is := ciOpenAdopted(t, bd, repo); is != nil {
 		t.Fatalf("the dedupe adopted %s (%s) after a persona closed it — the next red would never be filed", is.ID, is.Status)

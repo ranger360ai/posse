@@ -440,8 +440,29 @@ func (b Bd) InProgress(dir string) ([]BdIssue, error) {
 // and unlike Ready they are wanted whether or not they are unblocked — a
 // question that is itself dep-blocked is still a question nobody answered.
 //
+// OPEN IS THIS FUNCTION'S PROMISE, NOT bd's. `bd list --label-any` drops
+// closed rows on the shop's SQLite store (391 of 396 `-l qa` beads are
+// closed and 5 come back) and KEEPS them on the `no-db: true` JSONL store
+// `bd init` writes on bd 0.50.3 — both measured 2026-09-04 (ranger-base-
+// bwrp8, found by ciwatch_live_test.go, which runs against a store of the
+// second class and failed on it). Every reader here is asking what is still
+// WAITING, and a closed bead is answered: G3 would count answered questions
+// into a gate it is holding open, and the closed-dirty handoff's dedupe
+// would adopt a handoff somebody already finished and never file the next
+// one. So the closed rows are dropped HERE, where the doc comment promises
+// it, on both store classes.
+//
+// The drop is a filter and not `--status open`, which would be a narrowing:
+// bd's statuses are open, in_progress, blocked, deferred and closed, and
+// `--status open` answers with only the first — measured on the shop store,
+// `--label-any qa` is 3 open and 2 in_progress, and a held question is
+// still unanswered. Only `closed` is an answer.
+//
 // --limit 0 for the same reason Ready carries it (rangerhq-47v): a capped
-// page of a set the caller is counting is a silent undercount.
+// page of a set the caller is counting is a silent undercount. A cap would
+// apply BEFORE this filter runs, so on the keep-closed store it would be
+// spent on rows about to be dropped — the reason this stays uncapped rather
+// than merely paged.
 func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	if len(labels) == 0 {
 		return nil, nil
@@ -450,11 +471,23 @@ func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseBdIssues(out)
+	issues, err := parseBdIssues(out)
+	if err != nil {
+		return nil, err
+	}
+	open := issues[:0]
+	for _, is := range issues {
+		if is.Status == "closed" {
+			continue
+		}
+		open = append(open, is)
+	}
+	return open, nil
 }
 
-// AllLabeledAny is OpenLabeledAny with `--all`: every issue carrying one of
-// the labels, CLOSED ONES INCLUDED.
+// AllLabeledAny is the same query with `--all` and no open filter: every
+// issue carrying one of the labels, CLOSED ONES INCLUDED — and included on
+// both store classes, where OpenLabeledAny excludes them on both.
 //
 // It exists for one reader — the merge-back handoff's dedupe
 // (priorMergeBlocked) — and the two queries are kept apart rather than

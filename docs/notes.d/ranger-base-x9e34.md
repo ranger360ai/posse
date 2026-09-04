@@ -76,6 +76,10 @@ listing the other gate's dedupe reads, and label-only dedupe would let the
 first red gate silence every other one for as long as it stayed red.
 
 **`ciOpenBead` asserts OPEN itself** rather than leaving it to the query.
+(SUPERSEDED by `ranger-base-bwrp8`: the assertion moved into
+`Bd.OpenLabeledAny`, where the promise is made, and the local guard came out
+— a duplicate would have hidden a regression of the general one from the very
+test that found this. The measurement below still stands.)
 Measured 2026-09-04 on bd 0.50.3: `bd list --label-any <l> --json` drops
 closed rows on the shop's SQLite store (391 of 396 `-l qa` beads are closed,
 5 come back) and KEEPS them on the `no-db: true` JSONL store `bd init` writes

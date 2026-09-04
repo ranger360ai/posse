@@ -723,19 +723,15 @@ func ciOpenBeads(bd Bd, dir string, st CIState) ([]BdIssue, error) {
 	marker := ciMarker(st)
 	var found []BdIssue
 	for i := range issues {
-		// OPEN is asserted here rather than left to the query, and that is
-		// measured rather than defensive. `bd list --label-any` drops closed
-		// rows on the shop's SQLite store (391 of 396 `-l qa` beads are
-		// closed and 5 come back) and KEEPS them on the `no-db: true` JSONL
-		// store `bd init` writes on bd 0.50.3 — both measured 2026-09-04,
-		// the second by ciwatch_live_test.go, which failed on exactly this
-		// before the line existed. A dedupe that adopted a closed bead would
-		// never file again: the gate would go red for five days and this
-		// mechanism would sit there holding a bead that says the last one is
-		// over.
-		if issues[i].Status == "closed" {
-			continue
-		}
+		// No `Status != "closed"` guard here: OpenLabeledAny drops closed
+		// rows itself, on both of bd 0.50.3's store classes and not just
+		// the one that happens to be underneath (ranger-base-bwrp8). This
+		// mechanism needs it more sharply than most — a dedupe that adopted
+		// a closed bead would never file again, so the gate would go red for
+		// five days while this sat holding a bead that says the last episode
+		// is over — and a duplicated guard here is exactly what would hide a
+		// regression of the general one from ciwatch_live_test.go, the arm
+		// that found it.
 		if !strings.Contains(issues[i].Description, marker) {
 			continue
 		}

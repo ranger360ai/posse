@@ -223,13 +223,16 @@ func fakeBd(args []string) int {
 			fmt.Fprint(os.Stderr, "database is locked")
 			return 1
 		}
-		file, want := "fake-list.json", ""
+		file, want, status := "fake-list.json", "", ""
 		for i, a := range args {
 			if a == "--label-any" {
 				file = "fake-list-labeled.json"
 				if i+1 < len(args) {
 					want = args[i+1]
 				}
+			}
+			if (a == "--status" || a == "-s") && i+1 < len(args) {
+				status = args[i+1]
 			}
 		}
 		body := "[]"
@@ -238,6 +241,16 @@ func fakeBd(args []string) int {
 		}
 		if want != "" {
 			body = fakeBdFilterLabels(body, want)
+		}
+		// `--status` is honoured rather than ignored, because a caller that
+		// reaches for it is NARROWING and a fake that serves the same rows
+		// either way cannot show the narrowing (ranger-base-bwrp8). bd's
+		// statuses are open, in_progress, blocked, deferred and closed, so
+		// `--status open` is not "not closed": it drops the in_progress row
+		// too, which is the wrong fix for a store class that lists closed
+		// beads and the mutant OpenLabeledAny's pin has to kill.
+		if status != "" {
+			body = fakeBdFilterStatus(body, status)
 		}
 		// `--all` is real bd's own switch — "Show all issues including
 		// closed (overrides default filter)" — and WITHOUT it a closed row
@@ -255,7 +268,11 @@ func fakeBd(args []string) int {
 		// closed and the SQLite store answers with 5. A dedupe that adopts
 		// a closed bead never files again, and without this marker that
 		// mutant survives every hermetic pin in the package.
-		if !hasArg(args, "--all") {
+		// An explicit `--status` is its own filter and overrides the
+		// default one, `--all`'s way: measured on bd 0.50.3, `list
+		// --label-any qa --status closed` answers with 397 closed rows on a
+		// store whose bare `--label-any qa` answers with 5.
+		if !hasArg(args, "--all") && status == "" {
 			if _, err := os.Stat("fake-list-keep-closed"); err != nil {
 				body = fakeBdDropClosed(body)
 			}
@@ -627,6 +644,30 @@ func fakeBdDropClosed(body string) string {
 			continue
 		}
 		kept = append(kept, is)
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// fakeBdFilterStatus keeps the rows whose own status field is exactly this
+// one — `bd list --status <s>`'s contract, and the reason it is EXACT rather
+// than "not closed" is the whole point of having it: a caller that reaches
+// for `--status open` on a store that lists closed rows loses the
+// in_progress and deferred ones as well, and a fake that ignored the flag
+// would serve that mutant the right answer (ranger-base-bwrp8).
+func fakeBdFilterStatus(body, status string) string {
+	var list []map[string]any
+	if json.Unmarshal([]byte(body), &list) != nil {
+		return body
+	}
+	kept := []map[string]any{}
+	for _, is := range list {
+		if st, _ := is["status"].(string); st == status {
+			kept = append(kept, is)
+		}
 	}
 	b, err := json.Marshal(kept)
 	if err != nil {
