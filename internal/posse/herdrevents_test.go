@@ -854,9 +854,14 @@ func TestWatchDegradesToTheTickWithNoHerdr(t *testing.T) {
 // redials as fast as the box will go, so this test is shown able to fail.
 func TestHerdrHintsRedialFloorBoundsAStorm(t *testing.T) {
 	t.Parallel()
+	// stormWindow is not a budget and must never become one: nothing here
+	// waits for an event to arrive, it counts how many dials the adapter
+	// gets out in a fixed stretch of unbroken churn. The named-budget guard
+	// in hintbudget_qa_test.go knows it by that name and holds it under a
+	// second so it cannot quietly turn into patience.
 	const (
-		floor  = 50 * time.Millisecond
-		window = 400 * time.Millisecond
+		floor       = 50 * time.Millisecond
+		stormWindow = 400 * time.Millisecond
 	)
 	// dials counts the subscribe requests a shop that never stops churning
 	// gets out of the adapter in one window: every connection that comes up
@@ -874,7 +879,7 @@ func TestHerdrHintsRedialFloorBoundsAStorm(t *testing.T) {
 		herdrHints(ctx, s.path, time.Hour, floor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 		s.subscribed()
 		n := 1
-		deadline := time.After(window)
+		deadline := time.After(stormWindow)
 		for {
 			select {
 			case c := <-s.ready:
@@ -891,9 +896,9 @@ func TestHerdrHintsRedialFloorBoundsAStorm(t *testing.T) {
 	}
 
 	floored, said := dials(t, floor)
-	if cap := int(window/floor) + 2; floored > cap {
+	if cap := int(stormWindow/floor) + 2; floored > cap {
 		t.Errorf("%s of unbroken churn drove %d dials with a %s floor; the floor caps it at %d",
-			window, floored, floor, cap)
+			stormWindow, floored, floor, cap)
 	}
 	if floored < 2 {
 		t.Errorf("%d dials — the floor is a rate, not a stop: the storm must still be redialled", floored)
@@ -908,7 +913,7 @@ func TestHerdrHintsRedialFloorBoundsAStorm(t *testing.T) {
 			"if those are the same number this test is measuring the harness, not the floor",
 			unfloored, floored)
 	}
-	t.Logf("%s of churn: %d dials floored at %s, %d unfloored", window, floored, floor, unfloored)
+	t.Logf("%s of churn: %d dials floored at %s, %d unfloored", stormWindow, floored, floor, unfloored)
 }
 
 // The half of ADR 0016 §1's "immediate" the floor does NOT bend. The floor

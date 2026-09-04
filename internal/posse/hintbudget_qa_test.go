@@ -23,6 +23,7 @@ package posse
 import (
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,15 @@ func TestQAHintBudgetClearsTheAdapterRetry(t *testing.T) {
 // Every wait in herdrevents_test.go spends the one named budget. A literal
 // here is how the flake got in: four separate 5s deadlines, none of them
 // reading as a decision.
+//
+// One exemption, added with ranger-base-7hjy4 and deliberately narrow.
+// TestHerdrHintsRedialFloorBoundsAStorm does not wait for anything: it runs
+// unbroken churn for a fixed stretch and COUNTS the dials the adapter gets
+// out in it, so its deadline is the instrument, not patience, and spending
+// hintWait on it would make the test a minute long and measure nothing new.
+// The exemption is by name and the name is checked below — `stormWindow`
+// must be declared under a second, so nobody can grow it back into the
+// patience budget this guard exists to forbid.
 func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile("herdrevents_test.go")
@@ -64,7 +74,10 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	for _, re := range budgets {
 		for _, m := range re.FindAllStringSubmatch(string(src), -1) {
 			found++
-			if arg := strings.TrimSpace(m[1]); arg != "hintWait" && arg != "within" {
+			switch arg := strings.TrimSpace(m[1]); arg {
+			case "hintWait", "within":
+			case "stormWindow": // a measurement window, not a budget; bounded below
+			default:
 				t.Errorf("a wait spends %q instead of hintWait: %s", arg, strings.TrimSpace(m[0]))
 			}
 		}
@@ -75,5 +88,22 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	if found < 12 {
 		t.Errorf("only %d waits found in herdrevents_test.go; this guard has lost "+
 			"its subject and needs to follow it", found)
+	}
+
+	// The exemption's own fence. `stormWindow` is allowed above only as a
+	// stretch of churn to count dials in; a patience budget wearing the name
+	// would be the exact defect this file was written for, so it has to
+	// declare itself and it has to be short.
+	decl := regexp.MustCompile(`stormWindow\s*=\s*(\d+)\s*\*\s*time\.(Millisecond|Second|Minute)`).FindStringSubmatch(string(src))
+	if decl == nil {
+		t.Fatal("stormWindow is exempted from the named budget but herdrevents_test.go does not declare it")
+	}
+	n, _ := strconv.Atoi(decl[1])
+	unit := map[string]time.Duration{
+		"Millisecond": time.Millisecond, "Second": time.Second, "Minute": time.Minute,
+	}[decl[2]]
+	if got := time.Duration(n) * unit; got > time.Second {
+		t.Errorf("stormWindow is %s: the exemption is for a window a test COUNTS in, "+
+			"and anything a second or longer is patience wearing its name — spend hintWait", got)
 	}
 }
