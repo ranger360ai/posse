@@ -85,6 +85,25 @@
 # same class of red DISK and CLOCK are here to explain rather than to throw.
 set -uo pipefail
 
+# The box-wide suite queue (ranger-base-uvzjk). Sourced, not exec'd: the slot
+# is an flock held on a file descriptor of THIS shell, so nothing new appears
+# between this wrapper and `go test` — the pid this script prints below is
+# still the one to kill, and the signal forensics still see the child they
+# were written for.
+#
+# Guarded for the reason scripts/gotest.sh is: a wrapper that refuses to run
+# because its QUEUE is missing is worse than one that runs unqueued and says
+# so, and the loud failure for a genuinely missing file is
+# `make verify-suite-lock`, a prerequisite of `make test`.
+SUITE_LOCK_SIBLING=$(cd "$(dirname "$0")" && pwd)/suite-lock.sh
+if [ -r "$SUITE_LOCK_SIBLING" ]; then
+  . "$SUITE_LOCK_SIBLING"
+else
+  printf 'test-times: %s is missing — running unqueued (ranger-base-uvzjk)\n' "$SUITE_LOCK_SIBLING" >&2
+  suite_lock_acquire() { :; }
+  suite_lock_release() { :; }
+fi
+
 SLOW=${SLOW_PACKAGE_SECONDS:-300}
 
 # The floor below which the DISK line becomes a warning. MEASURED, not picked:
@@ -577,6 +596,15 @@ self_test() {
   # self-test appends a process table to the box's own file.
   export POSSE_TEST_SIGNAL_LOG="$tmp/signal.log"
 
+  # Every arm below hands the real script a `./...` command, which is a full
+  # suite by the queue's own reading of the argv — so the arms would take and
+  # release the BOX's slots, a dozen times, while a real suite waited behind
+  # them. Point the queue at the throwaway dir instead, and clear any slot
+  # this process inherited (arm 2 of suitelock_qa_test.go runs this from
+  # inside a suite that holds one).
+  export POSSE_SUITE_LOCK_DIR="$tmp/locks"
+  unset POSSE_SUITE_LOCK_HELD
+
   # A stub stands in for `go`, so every arm drives the REAL script end to end
   # — its exit status included — instead of only the report function.
   cat > "$tmp/bin/faketest" <<'STUB'
@@ -1058,8 +1086,6 @@ budget=$(budget_of "$@") && explicit=1 || { budget=600; explicit=0; }
 log=$(mktemp "${TMPDIR:-/tmp}/posse-test-times.XXXXXX") || { warn 'could not create a log file'; exit 1; }
 trap 'rm -f "$log"' EXIT
 
-disk_preflight "$1"
-
 # WHOSE RUN THIS IS (ranger-base-6nx72). Every session on this box runs a
 # suite with a byte-identical argv, so `pgrep -f test-times.sh` answers "which
 # suites are running" and NEVER "which one is mine" — on 2026-09-02 one
@@ -1082,8 +1108,24 @@ SIGNAL_LATE=""
 trap 'signal_capture "wrapper" 15; explain_signal; trap - TERM; kill -TERM $$' TERM
 trap 'signal_capture "wrapper" 1;  explain_signal; trap - HUP;  kill -HUP  $$' HUP
 
+# THE QUEUE (ranger-base-uvzjk), after the pid line and after the traps: a run
+# that waits ten minutes for a slot must already have said which pid it is and
+# must already be able to record a signal, or the wait is indistinguishable
+# from a hang and the forensics have a window with nothing in them. A run that
+# is not a full suite is not queued and does not notice this line.
+suite_lock_acquire "$@"
+
+# ...and the DISK line AFTER the queue, so its number describes the run that
+# is about to start rather than the box as it was when this run got in line.
+disk_preflight "$1"
+
 "$@" | tee "$log"
 status=${PIPESTATUS[0]}
+
+# The slot goes back the moment `go test` is done. The reporting below reads a
+# log file and costs milliseconds, but a slot is a slot: the next suite in the
+# queue should not wait on it.
+suite_lock_release
 
 # 128+N is a child that died of signal N. `go test` exits 1 for reds and 2 for
 # a build error, so nothing in the normal range reaches here.

@@ -300,6 +300,10 @@ var landingDropRegister = []landingDrop{
 		match: "background process actually died",
 		why:   "ends in `go run ./cmd/checkorphans`, a command that lives only in this repo",
 	},
+	{
+		match: "The full suite: `make test`, never a bare",
+		why:   "the box-wide suite queue is scripts/suite-lock.sh, its self-test and its census — three files that live only in this repo, and a fresh work repo has neither them nor a `make test` to hang them off (ranger-base-uvzjk)",
+	},
 }
 
 // landingParityFaults reports, for one pair of sections, the AGENTS.md bullets

@@ -1370,7 +1370,9 @@ append the section.
 Every bullet above is one of that file's, word for word, less two things a
 fresh work repo cannot resolve: this repo's bead ids, and its own checkout
 path. It also drops the bullets that are only about this repo — bd's
-`pre-commit` flush, the `docs/notes.d/` convention, `cmd/checkorphans`.
+`pre-commit` flush, the `docs/notes.d/` convention, `cmd/checkorphans`, and
+the box-wide suite queue, whose whole mechanism is three scripts that live
+here and nowhere else.
 Change a shared claim and change both files, or this recipe reinstates the
 older wording over an `AGENTS.md` someone already reconciled. That is not
 hypothetical — it is how this copy went stale the first time

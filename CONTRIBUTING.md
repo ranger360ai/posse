@@ -18,6 +18,14 @@ as an ordinary test failure once per test that wanted a temp dir, and ~80
 unrelated-looking reds naming worktree, watch and dispatch are the box, not
 your change (ranger-base-krra).
 
+The target also queues. On a machine running several checkouts of this repo,
+one full suite is already sized to the machine and two are deliberate
+over-subscription, so `make test` takes one of `POSSE_SUITE_SLOTS` (2)
+box-wide slots before it starts and a third full run waits, saying which
+checkout it is waiting on. Filtered and single-package runs are never queued.
+`POSSE_SUITE_LOCK=0` opts a run out; `scripts/suite-lock.sh --status` says
+who holds the slots.
+
 If you develop on macOS, run `make test-linux` too. It runs the same
 `go vet ./... && make test` inside a throwaway Linux container (docker
 required, ~35s cold and a couple of seconds after that, and it mounts the

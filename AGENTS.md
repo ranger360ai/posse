@@ -145,3 +145,29 @@ bd sync               # Sync with git
   its pattern — the session-unique spellings above included, `-P $$` among
   them. Keep the pid the launcher printed and `kill` that, or `kill -- -$$`
   for your own process group; `kill`, `kill -0` and `pgrep` still run.
+- **The full suite: `make test`, never a bare `go test ./...`**
+  (ranger-base-uvzjk). Five crew worktrees ran `go test ./...` at the same
+  moment on 2026-09-04, on a box with eight cores. `go run
+  ./cmd/checkorphans` was clean, so none of it was a leak — five legitimate
+  suites, each running at 2-3x its solo time, and the aggregate load tripped
+  the fleet load guard's ceiling for as long as they overlapped, so the shop
+  stopped hiring at exactly the moment five seats were about to free.
+  `make test`, `scripts/test-times.sh` and `scripts/gotest.sh` now take one
+  of two box-wide slots (`scripts/suite-lock.sh`, an flock under
+  `~/.cache/posse`) before they start: a third full run waits, and its first
+  line names the worktree it is waiting on. A `-run` filter or a named
+  package takes no slot — type those as freely as you ever did.
+  `scripts/suite-lock.sh --status` says who holds the slots;
+  `POSSE_SUITE_SLOTS` changes how many there are and `POSSE_SUITE_LOCK=0`
+  opts a run out loudly.
+  **A bare `go test ./...` takes no slot and is invisible to the runs that
+  do** — it is not queued, and it does not make anyone else queue.
+  MEASURED 2026-09-04 by `scripts/suite-entry-census.py` over every session
+  transcript on the box (re-run it; the corpus grows): of 1,851 unfiltered
+  package-tree runs, 78% were typed as a bare `go test` — and over the last
+  three days, since `make test` became the house command, 25% still are.
+  Nothing enforces this and nothing can: no argv deny distinguishes
+  `go test ./...` from `go test -run TestFoo ./...`, and the seats that most
+  often type the bare form strip the gates dir out of `PATH` first. It is a
+  rule you keep, and the only one of these whose cost lands entirely on
+  other people.

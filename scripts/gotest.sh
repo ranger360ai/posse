@@ -109,6 +109,24 @@ set -euo pipefail
 # it to an absolute path once, here, rather than in each arm.
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 
+# The box-wide suite queue (ranger-base-uvzjk). `make test-reuse` runs this
+# wrapper over `./...`, which is a full suite by any measure that matters to
+# the box, so it queues on the same slots scripts/test-times.sh does.
+#
+# Guarded, because this file gets COPIED away from its siblings — arm 3 of
+# gotestreuse_qa_test.go writes a mutated copy into a temp dir and runs it —
+# and because a wrapper that refuses to run at all when its QUEUE is missing
+# is worse than one that runs unqueued and says so. The loud failure for a
+# genuinely missing file is `make verify-suite-lock`, which is a prerequisite
+# of `make test`.
+if [ -r "$(dirname "$SELF")/suite-lock.sh" ]; then
+	. "$(dirname "$SELF")/suite-lock.sh"
+else
+	printf 'gotest.sh: scripts/suite-lock.sh is missing — running unqueued (ranger-base-uvzjk)\n' >&2
+	suite_lock_acquire() { :; }
+	suite_lock_release() { :; }
+fi
+
 CACHE=${POSSE_TESTBIN_CACHE:-$HOME/.cache/posse/testbin}
 KEEP=${POSSE_TESTBIN_KEEP:-3}
 
@@ -197,6 +215,12 @@ run() {
 	fi
 	[ -n "$listing" ] || die "no packages matched: ${pkgs[*]}"
 
+	# Queue AFTER `go list` has agreed the packages exist: waiting twenty
+	# minutes for a slot and then dying on a typo'd package is the one
+	# ordering this must not have. A `-run` filter or a named package is
+	# not queued at all (scripts/suite-lock.sh says why).
+	suite_lock_acquire "$@"
+
 	local rc=0 n=0 ip dir sl tmp bin buildout
 	while read -r ip dir; do
 		[ -n "$ip" ] || continue
@@ -232,6 +256,7 @@ run() {
 		fi
 	done <<<"$listing"
 
+	suite_lock_release
 	[ "$n" -gt 0 ] || die "no packages built"
 	return "$rc"
 }
@@ -249,6 +274,13 @@ self_test() {
 	SELFTEST_TMP=$(mktemp -d)
 	trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
 	local tmp=$SELFTEST_TMP
+
+	# The arms below run single packages, which the queue leaves alone, but
+	# an arm added later may not — point it at the throwaway dir so no
+	# self-test can ever take a slot a real suite is waiting for, and clear
+	# any slot this process inherited from the suite running it.
+	export POSSE_SUITE_LOCK_DIR="$tmp/locks"
+	unset POSSE_SUITE_LOCK_HELD
 
 	export POSSE_TESTBIN_CACHE="$tmp/cache"
 	pkg="$tmp/src"

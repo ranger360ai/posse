@@ -28,7 +28,7 @@ BINDIR ?= $(HOME)/.local/bin
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse verify-test-times verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -156,7 +156,17 @@ release-notes:
 # `-timeout 25m` stays the single source of truth and stays where the pin reads
 # it. It returns `go test`'s own exit status and never fails on a wall clock.
 # `make verify-test-times` (0.4s) pins the reporting and runs first here.
-test: verify-test-times verify-parallel
+#
+# AND IT QUEUES (ranger-base-uvzjk). The wrapper takes one of
+# POSSE_SUITE_SLOTS (2) box-wide flocks before it starts, so at most two full
+# suites run on this machine at once and the rest wait with a line naming the
+# worktree they are waiting on. On 2026-09-04 this box carried FIVE concurrent
+# `go test ./...` runs from five crew worktrees on eight cores, at 14% free
+# memory: each suite was 2-3x its solo time and the 1-minute loadavg was 899
+# against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
+# the moment five seats were about to free. A `-run` filter or a named package
+# is NOT queued. `make verify-suite-lock` (~5s) pins the slots.
+test: verify-test-times verify-parallel verify-suite-lock
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -180,6 +190,18 @@ verify-parallel:
 # back. 0.4s, no go build, no suite.
 verify-test-times:
 	@scripts/test-times.sh --self-test
+
+# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Eleven
+# arms, each driving REAL concurrent processes against a scratch lock dir,
+# because the only thing worth knowing about a lock is what a SECOND process
+# sees: two full suites run at once and a third waits; the waiting line names
+# the worktree it is waiting on; a `-run` filter and a single package are not
+# queued at all; a freed slot is taken by the waiter; the slot of a `kill -9`
+# run is reclaimed with no reaper (which is why it is an flock and not a
+# pidfile); an explicit release frees a slot before its process exits; and a
+# wrapper under `set -e` survives being queued. ~5s, no go build, no suite.
+verify-suite-lock:
+	@scripts/suite-lock.sh --self-test
 
 # The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
 # `make test` and not a replacement for it: measured on 40 invocations against
