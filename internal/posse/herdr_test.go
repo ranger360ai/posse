@@ -603,10 +603,14 @@ func fakeBdMarkClosed(id string) {
 // ONE of a NAMED PAIR: fakeBdReadyDropClosed below is `ready`, and it is not
 // a superset of this one to be consolidated into — see its comment for why
 // the two questions are separate (ranger-base-pju9t). Deleting either leaves
-// the other's call site undefined and the package unbuildable, which is what
-// 5b4e686 did to :245 — restored by 6ecb521 (ranger-base-jzoci); this comment
-// is the half of ranger-base-tenf5's fix that 6ecb521 did not carry, re-landed
-// under ranger-base-d91mf.
+// ITS OWN call site undefined and the package unbuildable — never the other's.
+// Each name has exactly one caller (`grep -n fakeBd.*DropClosed` finds both),
+// so there is no cross-reference to go looking for: cut this function and vet
+// reports the `list` call site undefined; cut fakeBdReadyDropClosed and it
+// reports the `ready` one. That is what 5b4e686 did to the `list` call site
+// (`:245` at that commit) — restored by 6ecb521 (ranger-base-jzoci); this
+// comment is the half of ranger-base-tenf5's fix that 6ecb521 did not carry,
+// re-landed under ranger-base-d91mf and corrected under ranger-base-3fgmo.
 //
 // A comment is not a reader, and the FOLD this one argues against compiles:
 // point `list` at fakeBdReadyDropClosed and the whole package still passed

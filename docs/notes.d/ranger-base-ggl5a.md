@@ -240,13 +240,42 @@ trailer to find and there never will be. The fix stops the bead, not the
 warning.
 
 **What is new and operational: retiring the tree starts a clock on the
-evidence.** `a07bc2d` and `34a27b4` are now unreferenced loose objects — no ref
-contains them (`git for-each-ref --contains`, empty) and no reflog names them
-(`git reflog --all`, 0 hits) — with mtimes 2026-09-02 16:20:13 and 15:27:00.
-`gc.pruneExpire` is unset, so the default `2.weeks` applies and a `git gc` on or
-after roughly **2026-09-16** removes them. Every `git show <sha>` arm in this
-note stops working that day. What survives is what `main` holds — `a5a7cbc` and
-`6a230eb` — and this file. So a merge-back verdict closed by retirement must be
+evidence.** `a07bc2d` — the sha that carries the deliverable, and the only one
+this branch alone held — is now an unreferenced loose object: no ref contains
+it (`git for-each-ref --contains a07bc2d`, empty), no reflog names it
+(`git reflog --all | grep -c a07bc2d`, 0), and `git fsck --unreachable` names
+it, mtime 2026-09-02 16:20:13. `gc.pruneExpire` is unset, so the default
+`2.weeks` applies and a `git gc` on or after roughly **2026-09-16** removes it.
+Every `git show a07bc2d` arm in this note stops working that day.
+
+**`34a27b4` is NOT in that class, and an earlier reading of this paragraph
+said it was.** It is the branch's *inherited* base commit — another bead's —
+and that other bead's branch is still live, so no `gc` will touch it. Measured
+at `main` `46d9ec3` and again at `e266cbe`:
+
+```
+git for-each-ref --contains 34a27b4       -> refs/heads/posse/dinesh-posse-ranger-base-uzgkz
+git merge-base --is-ancestor 34a27b4 posse/dinesh-posse-ranger-base-uzgkz -> rc 0
+git reflog --all | grep -c 34a27b4        -> 4
+git fsck --unreachable | grep 34a27b4     -> no hit
+```
+
+That ref was created from `main` 2026-09-02 15:33:58 and last moved
+2026-09-02 16:17:25 (tip `c9a4cdd`) — two days *before* this note landed
+(`c08e3fb`, 2026-09-04 09:08), so the original claim was a wrong reading when
+it was written, not drift that overtook it. `34a27b4` left `main`'s history in
+the re-land (it is not an ancestor of `main` today) but did not become
+unreachable, because a second branch inherited the same base.
+
+The rule survives the correction with a narrower edge: **the clock starts on
+the commits a retired branch ALONE carries**, not on every sha the retired tree
+could `git show`. An inherited sha is retired by the branch it was inherited
+FROM. Check which you have before trusting a date: `git fsck --unreachable` is
+the arm that separates them, and `git for-each-ref --contains` is the one that
+was misread here.
+
+What survives unconditionally is what `main` holds — `a5a7cbc` and `6a230eb` —
+and this file. So a merge-back verdict closed by retirement must be
 self-contained in its note: the branch shas are a citation, not a source, and
 the landed counterpart sha is the only durable one.
 
