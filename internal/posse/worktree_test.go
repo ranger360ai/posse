@@ -1714,3 +1714,74 @@ func TestListSessionTreesTellsACherryPickedBranchFromAStrand(t *testing.T) {
 		})
 	}
 }
+
+// TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded is the
+// other side of TestListSessionTreesTellsACherryPickedBranchFromAStrand,
+// added verifying ranger-base-hk02's close (verify bead ranger-base-pqc4v).
+//
+// hk02's fix taught the listing to say "nothing unlanded" — the one phrase
+// that tells the operator a tree is safe to retire. The three arms that pin
+// it all start from a branch every commit of which is a measured patch-id
+// match. These two are the ways a branch is PARTLY on the base: half its
+// commits picked, or all its content squashed into one commit whose
+// per-commit patch-id matches nothing. Both must keep reading as a strand —
+// widening the equivalence claim to cover either is how the listing starts
+// inviting the operator to delete work that only LOOKS landed.
+func TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded(t *testing.T) {
+	t.Parallel()
+	listing := func(t *testing.T, repo string) string {
+		t.Helper()
+		var out strings.Builder
+		if err := ListSessionTrees(&out, []string{repo}); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+
+	t.Run("half the commits picked", func(t *testing.T) {
+		a := wtApp(t)
+		repo := wtRepo(t)
+		commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+		tr, err := a.EnsureSessionTree(repo, "s-half", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-half: first")
+		first := mustGit(t, tr.Path, "rev-parse", "HEAD")
+		commitIn(t, tr.Path, "other.md", "second\n", "s-half: second, never landed")
+		commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+		mustGit(t, repo, "cherry-pick", "-x", first)
+
+		got := listing(t, repo)
+		if strings.Contains(got, "nothing unlanded") {
+			t.Errorf("a branch with one commit still off %s must not read as settled:\n%s", "main", got)
+		}
+		if !strings.Contains(got, "2 commit(s) not on main") {
+			t.Errorf("the listing must still count what is off main:\n%s", got)
+		}
+	})
+
+	t.Run("squashed onto the base", func(t *testing.T) {
+		a := wtApp(t)
+		repo := wtRepo(t)
+		commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+		tr, err := a.EnsureSessionTree(repo, "s-squash", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-squash: first")
+		commitIn(t, tr.Path, "other.md", "second\n", "s-squash: second")
+		commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+		// One commit on the base carrying BOTH changes: the content is
+		// there, no per-commit patch-id is.
+		write(t, filepath.Join(repo, "adr.md"), "status: accepted\n")
+		write(t, filepath.Join(repo, "other.md"), "second\n")
+		mustGit(t, repo, "add", "adr.md", "other.md")
+		mustGit(t, repo, "commit", "-q", "-m", "squash of s-squash", "--", "adr.md", "other.md")
+
+		got := listing(t, repo)
+		if strings.Contains(got, "nothing unlanded") {
+			t.Errorf("a squash matches no per-commit patch-id and must not read as settled:\n%s", got)
+		}
+	})
+}
