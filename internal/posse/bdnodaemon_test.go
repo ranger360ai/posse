@@ -5,7 +5,11 @@ package posse
 // The number that earns this: ~5.3s of every ~5.6s bd call was the daemon
 // dial, flat across result size, in a store where bd cannot start a daemon
 // at all and says so (`Mode: direct, Connected: no`). Bd.run's doc comment
-// carries the full sweep. What is pinned here is that the flag is on the
+// carries the full sweep. That number is bd 0.49.1's: on the pinned 0.50.3
+// the daemon class is gone and the flag is deprecated, so it buys nothing
+// and half 2 below no longer times anything — ranger-base-a67nu holds what
+// that means for the flag and for the doc comment. What is pinned here is
+// unchanged by any of it, because it was never the seconds: the flag is on the
 // RUNNER — one seam, every verb, reads and writes alike — because the way
 // this regresses is somebody adding a method that builds its own argv, or a
 // refactor that drops the prefix from a `run` nobody re-measured.
@@ -15,10 +19,12 @@ package posse
 //  1. TestBdRunCarriesNoDaemonOnEveryVerb — a recording fake, in the
 //     ordinary suite. Ours to keep: the flag is there, first, ahead of the
 //     verb, for every method a caller can reach.
-//  2. TestLiveBdRunSkipsTheDialTheDaemonArmPays — the real binary,
-//     env-gated. bd's to keep: the flag still buys the seconds and still
-//     answers with the same rows. It runs both arms, so the box calibrates
-//     itself — see the test for the observable that did NOT work.
+//  2. TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows — the real binary,
+//     env-gated. bd's to keep: the shipped bd still accepts the flag and
+//     still answers with the same rows either way. It ran both arms for the
+//     seconds too until bd 0.50.x retired the daemon class and the gap it
+//     was measuring went with it — see the test for that measurement, and
+//     for the two observables before it that did NOT work.
 
 import (
 	"os"
@@ -114,26 +120,52 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 	}
 }
 
-// TestLiveBdRunSkipsTheDialTheDaemonArmPays asks the real binary the two
-// things the fake cannot: that the flag still buys the seconds, and that it
-// does not change the answer.
+// TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows asks the real binary the
+// thing the fake cannot: that the flag Bd.run puts in front of every verb is
+// still one the shipped bd accepts, and that carrying it does not change the
+// answer.
 //
-// The rig is a `.beads/issues.jsonl` and nothing else: bd materialises a
-// full database from the seed row on the first ordinary command, so this
-// needs neither `bd init` (which personas' PIDs deny, and which installs
-// bd's own pre-commit hook — a second daemon vector) nor a cleanup for a
-// daemon. Measured 2026-08-30 on this rig, bd 0.49.1: ONE plain `bd list`
-// costs 5.77s and leaves no daemon.log, daemon.pid, daemon.lock or
-// daemon-error behind — the client pays a dial for a daemon that never gets
-// as far as writing a file. That is why this pin is not a stat() on those
-// names: written that way it passed with bdGlobalFlags emptied, measuring
-// nothing at all.
+// The rig is a no-db (JSONL-only) store asked for BY NAME — a
+// `.beads/config.yaml` holding `no-db: true` beside the seed row — and the
+// class bd actually built is CHECKED below rather than trusted to the config.
+// It used to be a `.beads/issues.jsonl` and nothing else, on the strength of
+// bd 0.49.1 materialising a full database from the seed row on the first
+// ordinary command. Measured 2026-09-04 on bd 0.50.3 (ranger-base-c201c):
+// that same bare rig now builds a SQLite store — beads.db and metadata.json
+// appear — which answers `[]`, so both arms came back empty and every
+// assertion below it was vacuous. Naming the class keeps what the bare rig
+// was standing in for: still no `bd init` (which personas' PIDs deny, and
+// which installs bd's own pre-commit hook), and still no database for the
+// seed row to fall out of sync with.
 //
-// So the observable is the cost itself, and it is a COMPARISON rather than a
-// threshold — the daemon arm runs here too and calibrates the box. Empty
-// bdGlobalFlags and both arms become the same arm, the gap collapses, and
-// this goes red.
-func TestLiveBdRunSkipsTheDialTheDaemonArmPays(t *testing.T) {
+// WHAT THIS PIN NO LONGER CLAIMS, and why. It used to time both arms and
+// require the direct one to cost under half the daemon arm — the dial being
+// ~5.3s of a ~5.6s call, measured 2026-08-30 on bd 0.49.1 (ranger-base-cwu7;
+// bdGlobalFlags' doc comment carries the sweep). That gap is gone with the
+// daemon class, which went in 0.50.x (posse 291523c), and `bd --help` on
+// 0.50.3 documents the flag as "(deprecated) All operations use direct mode".
+// Measured 2026-09-04 on 0.50.3, five runs per arm, `bd list --all --json`
+// with and without the flag: in this no-db rig 0.46-0.58s against
+// 0.42-0.58s, and against the fleet's own SQLite store 0.45-0.66s against
+// 0.48-0.59s. The same arm twice, in either store class. So the two arms are
+// logged and NOT compared — a threshold either way would be measuring the
+// box. Whether posse keeps carrying the flag, and the doc comment that still
+// argues from the 0.49.1 seconds, are ranger-base-a67nu.
+//
+// What is left can still fail, and ranger-base-c201c is the witness that it
+// does: a bd that stops accepting the deprecated flag fatals in the direct
+// arm, a bd whose default store class drifts again is named at the class
+// check before either answer is read, and a bd that answers the two arms
+// differently fails the comparison that was always the point. Mutation-
+// checked 2026-09-04 on 0.50.3: dropping the config.yaml fatals at the class
+// check, emptying the seed fatals at the row comparison.
+//
+// And one thing this half no longer catches, said out loud rather than left
+// to be discovered: emptying bdGlobalFlags now SURVIVES here (checked, same
+// pass). With the flag a no-op both arms are the same command either way, so
+// half 1's recording fake — which does kill that mutant — is the only thing
+// holding the flag on the runner. Do not read a green here as covering it.
+func TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("RHQ_LIVE_BD") == "" {
 		t.Skip("set RHQ_LIVE_BD=1 (shells out to the real bd)")
@@ -146,6 +178,11 @@ func TestLiveBdRunSkipsTheDialTheDaemonArmPays(t *testing.T) {
 	if err := os.MkdirAll(beads, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The store class, spelled out. The issue prefix stays bd's to infer from
+	// the seed row — the config names the class and nothing else.
+	if err := os.WriteFile(filepath.Join(beads, "config.yaml"), []byte("no-db: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	const seed = `{"id":"cwu7-1","title":"seed row","status":"open","priority":2,` +
 		`"issue_type":"task","created_at":"2026-08-30T00:00:00Z","updated_at":"2026-08-30T00:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(beads, "issues.jsonl"), []byte(seed+"\n"), 0o644); err != nil {
@@ -153,17 +190,27 @@ func TestLiveBdRunSkipsTheDialTheDaemonArmPays(t *testing.T) {
 	}
 	mustGit(t, repo, "init", "-q", ".")
 
-	// The daemon arm first, so it is the one that pays for materialising the
-	// database — otherwise the direct arm carries that cost and the gap is
-	// measured against the wrong baseline.
+	// The daemon arm first and the direct arm second, in the order the header
+	// describes them. Neither materialises anything now, so the order buys
+	// nothing and neither reading is a baseline for the other.
 	cmd := exec.Command("bd", "list", "--all", "--json", "--limit", "0")
 	cmd.Dir = repo
 	daemonArm := time.Now()
 	raw, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("the daemon arm did not run, so there is no baseline: %v", err)
+		t.Fatalf("the daemon arm did not run, so there is nothing to compare against: %v", err)
 	}
-	dialed := time.Since(daemonArm)
+	plain := time.Since(daemonArm)
+
+	// The class bd built, read after the first command that could have built
+	// one and before either answer is trusted: an empty arm below is then a
+	// disagreement about rows, never a rig that quietly became a different
+	// store. Without the config.yaml above, this is exactly what fires.
+	if _, err := os.Stat(filepath.Join(beads, "beads.db")); err == nil {
+		t.Fatalf("the rig asked for a no-db store and bd built a sqlite one (%s exists): the class this pin was measured on is gone, and both arms would be reading a database the seed row never reached",
+			filepath.Join(beads, "beads.db"))
+	}
+
 	want, err := parseBdIssues(raw)
 	if err != nil {
 		t.Fatalf("the daemon arm answered nothing parseable: %v\n%s", err, raw)
@@ -172,22 +219,17 @@ func TestLiveBdRunSkipsTheDialTheDaemonArmPays(t *testing.T) {
 	directArm := time.Now()
 	got, err := Bd{Bin: "bd"}.ListAll(repo)
 	if err != nil {
-		t.Fatalf("ListAll against a jsonl-only rig: %v", err)
+		t.Fatalf("ListAll against a no-db rig — bdGlobalFlags carries %v, and a bd that stopped accepting one of them fails here: %v",
+			bdGlobalFlags, err)
 	}
 	direct := time.Since(directArm)
 
-	// Same store, same rows. The seconds are worth nothing if the answer
-	// moved, and a rig that resolved to no rows would make the timing arm
-	// vacuous too.
+	// Same store, same rows, with the flag and without it. This is the whole
+	// live claim now, and the seeded row is named so a rig that resolves to
+	// nothing fails here rather than passing on two empty answers.
 	if len(want) != 1 || len(got) != len(want) || got[0].ID != want[0].ID {
 		t.Fatalf("direct and daemon arms disagree: direct=%+v daemon=%+v", got, want)
 	}
 
-	// A comparison, not a stopwatch: the claim is that the dial is most of
-	// the call, so half the daemon arm is a floor no loaded box crosses by
-	// accident and no reverted fix clears.
-	if direct > dialed/2 {
-		t.Errorf("the direct read cost %v against the daemon arm's %v — the dial is not being skipped", direct, dialed)
-	}
-	t.Logf("direct %v, daemon arm %v", direct, dialed)
+	t.Logf("direct %v, plain %v — logged, not compared: the daemon class is gone on bd 0.50.x (see the header)", direct, plain)
 }
