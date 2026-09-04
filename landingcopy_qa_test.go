@@ -304,6 +304,10 @@ var landingDropRegister = []landingDrop{
 		match: "The full suite: `make test`, never a bare",
 		why:   "the box-wide suite queue is scripts/suite-lock.sh, its self-test and its census — three files that live only in this repo, and a fresh work repo has neither them nor a `make test` to hang them off (ranger-base-uvzjk)",
 	},
+	{
+		match: "cannot reach a tree-wide pin",
+		why:   "`make fmt-check` is a target in this repo's Makefile and the five pins the bullet censuses are tests in this repo's internal/posse — a fresh work repo has no Makefile to hang the door off and none of the tests to name (ranger-base-rulbl)",
+	},
 }
 
 // landingParityFaults reports, for one pair of sections, the AGENTS.md bullets

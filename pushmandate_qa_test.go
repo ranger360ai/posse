@@ -26,6 +26,7 @@ package posse
 // it quotes in internal/posse/pushmandate_qa_test.go.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,6 +108,58 @@ func namesWhoPushes(doc string) bool {
 	return strings.Contains(doc, "Never push") && strings.Contains(doc, "operator pushes")
 }
 
+// pushMentionFaults is §9's own Verify, in code: every line of an orientation
+// file that mentions push and does not say the operator pushes. Returned as
+// `line:text` so a caller can name where.
+//
+// The match is on push as a WORD, not as a substring, and that distinction is
+// load-bearing rather than tidy (ranger-base-rulbl). The substring form fired
+// on `TestTestCorpusHidesNoCrewNameBehindAnEscape` — "cor-PUSH-ides" — a test
+// name AGENTS.md has every reason to write down, and a fence that reds on
+// correct documentation is one people learn to route around. Narrowed to a
+// non-letter before the match, so `push`, `pushes`, `pushed`, `pushing`,
+// `git push` and `PUSH TO REMOTE` all still land; only a push buried inside a
+// longer word is let go.
+//
+// INSTALL.md §9 still prescribes the human form, `grep -n -i "push"`, and
+// that is deliberate: a person reading a grep hit can tell a test name from a
+// mandate in one glance, and a wider net is the right one when a person is
+// the filter. This is the automated half, where a false positive costs a red
+// suite instead of a second of attention.
+func pushMentionFaults(doc string) []string {
+	var faults []string
+	for i, line := range strings.Split(doc, "\n") {
+		if !mentionsPushAsAWord(line) {
+			continue
+		}
+		if strings.Contains(line, "Never push") || strings.Contains(line, "operator pushes") ||
+			strings.Contains(line, "pre-push") || strings.Contains(line, "git push:*") {
+			continue
+		}
+		faults = append(faults, fmt.Sprintf("%d:%s", i+1, line))
+	}
+	return faults
+}
+
+// mentionsPushAsAWord reports whether the line names push, case-insensitively,
+// at a position no letter precedes.
+func mentionsPushAsAWord(line string) bool {
+	low := strings.ToLower(line)
+	for at := 0; ; {
+		i := strings.Index(low[at:], "push")
+		if i < 0 {
+			return false
+		}
+		i += at
+		if i == 0 || !isASCIILetter(low[i-1]) {
+			return true
+		}
+		at = i + len("push")
+	}
+}
+
+func isASCIILetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
+
 // TestPushMandateCheckerDiscriminates is the control: without it the pins
 // below would pass on any text at all, the mandate included.
 func TestPushMandateCheckerDiscriminates(t *testing.T) {
@@ -123,6 +176,32 @@ func TestPushMandateCheckerDiscriminates(t *testing.T) {
 	}
 	if !namesWhoPushes(reconciled) {
 		t.Error("namesWhoPushes rejects the reconciled wording — it would be red forever")
+	}
+
+	// The line scanner, both ways. A narrowing is only worth having if it
+	// still catches what it was narrowed from (ranger-base-rulbl).
+	for _, order := range []string{
+		"- Work is NOT complete until `git push` succeeds",
+		"- NEVER stop before pushing - that leaves work stranded locally",
+		"you must push it yourself when the branch is ready",
+		"6. **Verify** - All changes committed AND pushed",
+		"PUSH TO REMOTE",
+	} {
+		if got := pushMentionFaults(order); len(got) != 1 {
+			t.Errorf("the line scanner misses a reader-directed push order — the narrowing went too far: %q", order)
+		}
+	}
+	for _, fine := range []string{
+		"- **Never push.** The operator pushes.",
+		"every crew PID denies `Bash(git push:*)`",
+		"this repo's `pre-push` gate refuses it",
+		// The collision that made the narrowing necessary: a real test
+		// name, written down in a real table in AGENTS.md.
+		"  TestTestCorpusHidesNoCrewNameBehindAnEscape  no fast door yet",
+	} {
+		if got := pushMentionFaults(fine); len(got) != 0 {
+			t.Errorf("the line scanner reds a line that orders nobody to push: %q -> %v", fine, got)
+		}
 	}
 }
 
@@ -146,15 +225,8 @@ func TestRepoAgentsMdCarriesNoPushMandate(t *testing.T) {
 	}
 	// §9's own Verify, run here: every surviving mention says the operator
 	// pushes, or explains the wall — never orders the reader.
-	for i, line := range strings.Split(doc, "\n") {
-		if !strings.Contains(strings.ToLower(line), "push") {
-			continue
-		}
-		if strings.Contains(line, "Never push") || strings.Contains(line, "operator pushes") ||
-			strings.Contains(line, "pre-push") || strings.Contains(line, "git push:*") {
-			continue
-		}
-		t.Errorf("AGENTS.md:%d mentions push without saying the operator pushes: %q", i+1, line)
+	for _, f := range pushMentionFaults(doc) {
+		t.Errorf("AGENTS.md:%s — mentions push without saying the operator pushes", f)
 	}
 }
 
