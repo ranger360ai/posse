@@ -29,14 +29,33 @@ package posse
 //     ranger-base-o3g6a: the line pattern does not match the file that got
 //     through). PIN (b) stages exactly that shape.
 //
+// A FOURTH DECISION, and cdxpf did not make it (ranger-base-p7e0z, found by
+// the four-close verify ranger-base-krjdz):
+//
+//  4. WHICH TREE — the ones ADR 0012 D6 puts INSIDE App.A 5. D6's edge is
+//     "the tree, not the syntax", and it names the other side in as many
+//     words: "docs/ and the root narrative files are the development
+//     record, where the crew are historical actors." cdxpf's arm had no
+//     root filter at all, so it refused a path the constitution lets stand
+//     and sent the writer to rename it. PIN (f) is that decision, and PIN
+//     (b)'s capitalized case moved INTO the governed tree to make room for
+//     it.
+//
 // THE MEASUREMENT BEHIND DECISION 1, and it is what makes the exclusion the
 // load-bearing half rather than a nicety (censused at the fix over this
 // repo's 830 tracked paths): the 11 PID names this instance staffs hit ONE
-// path — the ADR named for a seat, the real hit. The 9 names the seed ships
-// hit 285, one of them 273 on its own: every *_qa_test.go in the tree. A wall
-// built from the seed's roles would refuse a new test file on a fresh
-// install, which is the "refuses honest commits" failure the bead was filed
-// against. PIN (d) is that census as a pin.
+// path. The 9 names the seed ships hit 285, one of them 273 on its own:
+// every *_qa_test.go in the tree. A wall built from the seed's roles would
+// refuse a new test file on a fresh install, which is the "refuses honest
+// commits" failure the bead was filed against. PIN (d) is that census as a
+// pin.
+//
+// THAT ONE PATH IS THE MEASUREMENT BEHIND DECISION 4. cdxpf's close called
+// it "the real hit"; it is an ADR under docs/, which D6 excludes, so it is
+// the ONLY thing the census found and the only thing the rule does not
+// reach. Re-censused at p7e0z over 841 tracked paths: same one path, and
+// ZERO under the trees App.A 5 governs. A wall whose entire live catch is
+// outside its own rule is a wall that has only ever been wrong.
 //
 // The fixture crew is invented here and is neither this instance's nor the
 // seed's — this file ships, and a pin that named a real seat would be the
@@ -58,6 +77,12 @@ const (
 	qaCrewName   = "zephyrina"
 	qaCrewHyphen = "quint-us"
 )
+
+// qaCrewCap is the capitalized spelling, which two pins stage: the match is
+// case-insensitive, and a capitalized file name is where a name survives a
+// lower-case convention. Built here rather than written out so the fixture
+// name has exactly one spelling in this file.
+var qaCrewCap = strings.ToUpper(qaCrewName[:1]) + qaCrewName[1:]
 
 // crewWall is a visWall whose home staffs PIDs, with the hook re-stamped from
 // an App that can see them. Re-stamped rather than built that way because the
@@ -140,8 +165,14 @@ roles hit 285 of this repo's paths where this instance's crew hit 1.`, role)
 // instance the name belongs to and the remedy is a rename they have to be
 // able to make. Three shapes, all of them the ones that got through
 // something: the underscore-separated Go test file (no word boundary ever
-// fires beside `_`), a capitalized spelling under docs/ (the match is
-// case-insensitive), and the joined spelling of a hyphenated PID.
+// fires beside `_`), a capitalized spelling (the match is case-insensitive),
+// and the joined spelling of a hyphenated PID.
+//
+// ALL THREE ARE UNDER internal/, and that is load-bearing since
+// ranger-base-p7e0z: the capitalized case used to be an ADR under docs/,
+// which is outside the tree App.A 5 governs — it now COMMITS, and PIN (f)
+// is where it went. What survives here is the property it was staged for,
+// the case fold, tested where the rule actually reaches.
 //
 // THE CONTROL: the same path in the PRIVATE-stamped repo of the same wall
 // commits clean and logs nothing. This arm is inside the visibility gate with
@@ -161,7 +192,7 @@ func TestQACrewNameInAStagedPathIsRefused(t *testing.T) {
 
 	for _, c := range []struct{ rel, matched string }{
 		{"internal/posse/" + qaCrewName + "_as19_probe_test.go", qaCrewName},
-		{"docs/adr/0099-" + strings.ToUpper(qaCrewName[:1]) + qaCrewName[1:] + "-pulse.md", strings.ToUpper(qaCrewName[:1]) + qaCrewName[1:]},
+		{"internal/posse/" + qaCrewCap + "_pulse_test.go", qaCrewCap},
 		{"internal/posse/quintus_probe_test.go", "quintus"},
 	} {
 		t.Run(c.rel, func(t *testing.T) {
@@ -309,6 +340,93 @@ func TestQAEveryCommitGuardRendererDerivesTheCrewNames(t *testing.T) {
 	}
 	if idOnly := CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), identity...); installed == idOnly {
 		t.Error("the wrong arm: a render from the identity literals ALONE must differ from the installed hook, or this pin measured nothing")
+	}
+}
+
+// PIN (f): the TREE filter (ranger-base-p7e0z). A staged path App.A 5 does
+// not reach COMMITS with the crew name in it, and logs nothing; a path the
+// rule does reach is still refused. Both halves in one pin, because either
+// alone is green over a wall that has stopped working: an all-commit wall
+// passes the first, the wall cdxpf shipped passes the second.
+//
+// THE DEFECT. cdxpf's crew arm had no root filter, and ADR 0012 D6 says the
+// edge is the TREE: "docs/ and the root narrative files are the development
+// record, where the crew are historical actors." Measured on the box the
+// bead was filed from — the staffed PIDs matched exactly one tracked path,
+// docs/adr/00NN-<seat>-pulse.md, standing on main — so adding, renaming or
+// re-adding that ADR was refused with only the override as the way through,
+// and the refusal cited the very rule that permits it. Worse, it was PINNED
+// as intended: PIN (b)'s second case staged that shape and asserted the
+// refusal, so a later reader would have read the defect as the decision.
+//
+// THE CASES. Two committed shapes, three refused ones, and every refused
+// one is a boundary of the filter rather than a repeat of PIN (b):
+//
+//   - www/<name>.md — markdown, but NOT at the repo root. This is what
+//     makes the `*/*` arm in crewPathSkip load-bearing: drop it and `*.md`
+//     matches markdown anywhere in the tree.
+//   - docsomething/<name>.go — `docs/*` is a component and not a prefix.
+//   - internal/posse/<name>_probe_test.go — the shape ranger-base-o3g6a
+//     found riding main, and the control the bead names.
+//
+// MUTATION-CHECKED (go test -overlay, tree untouched):
+//   - pathSkip dropped from the crew source (the cdxpf wall): the two
+//     committed cases red, the three refused ones stay green, and PIN (b)
+//     does not move.
+//   - the filter applied to every source instead of the crew one:
+//     TestQAIdentityLiteralGuardScansAddedPaths reds on its
+//     docs/runbooks/<username>.md subtest — an identity literal is refused
+//     in EVERY tree, which is the "this source only" half of the claim, and
+//     it is pinned there rather than restaged here.
+//   - the `*/*` arm removed from the case: the www/ case alone reds.
+//   - `docs/*` written as `docs*`: the docsomething/ case alone reds.
+func TestQACrewArmSkipsTheTreesAppA5DoesNotReach(t *testing.T) {
+	w, _ := crewWall(t, qaCrewName)
+	const clean = "package posse\n\n// nothing here names anybody.\n"
+
+	// COMMITS: the development record ADR 0012 D6 names. The ADR shape is
+	// the live path the census found; the root file is the "root narrative
+	// files" half of the same sentence.
+	for _, rel := range []string{
+		"docs/adr/0099-" + qaCrewCap + "-pulse.md",
+		qaCrewName + "-handover.md",
+	} {
+		t.Run("commits/"+rel, func(t *testing.T) {
+			if out, err := qaMsgCommit(t, w, w.pub, rel, "# the development record\n\nnothing else.\n", "-m", "the record names who wrote it", w.persona); err != nil {
+				t.Fatalf(`ADR 0012 D6 puts this path OUTSIDE App.A 5 — "the edge is the tree, not the
+syntax" — so the crew arm must let it stand: %v
+%s`, err, out)
+			}
+			if l := w.log(t); l != "" {
+				t.Errorf("nothing may be refused or logged for a path outside the rule:\n%s", l)
+			}
+		})
+	}
+
+	// STILL REFUSED: inside the tree, and the two shapes that say the
+	// filter reads a path COMPONENT rather than a prefix or a suffix.
+	for _, rel := range []string{
+		"www/" + qaCrewName + ".md",
+		"docsomething/" + qaCrewName + ".go",
+		"internal/posse/" + qaCrewName + "_probe_test.go",
+	} {
+		t.Run("refused/"+rel, func(t *testing.T) {
+			w.stage(t, w.pub, rel, clean)
+			out, err := w.git(w.pub, w.persona, "commit", "-m", "a message that names nobody", "--", rel)
+			if err == nil {
+				t.Fatalf("this path is inside the tree App.A 5 reaches and must still be refused:\n%s", out)
+			}
+			for _, want := range []string{
+				"refused by posse gate: a crew persona name in a staged PATH",
+				"  " + rel,
+				"matched: " + qaCrewName,
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("the refusal must carry %q:\n%s", want, out)
+				}
+			}
+			w.unstage(t, w.pub, rel)
+		})
 	}
 }
 

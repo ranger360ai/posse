@@ -707,8 +707,12 @@ type IdentityLiteral struct {
 	// shipped trees and D6 grandfathers ids, docs/ and the root narrative
 	// keep the crew as historical actors, and a commit message names the
 	// persona that wrote it. A content arm over these would refuse text the
-	// constitution allows; a PATH ships in every clone under a name nothing
-	// exempts.
+	// constitution allows; a PATH under a tree that ships as CODE has
+	// nothing to exempt it. The subject is narrowed here; the TREE is
+	// narrowed in the render (crewPathSkip, ranger-base-p7e0z), because
+	// D6's edge is the tree whatever the subject — docs/ and the root
+	// narrative are outside the path arm for the same reason they are
+	// outside the content one.
 	PathsOnly bool
 }
 
@@ -919,7 +923,10 @@ example role), never shipped and never committed. ONE subject, not check 3's
 three: the ADDED staged PATHS, move detection off so a move's destination
 counts as new. A crew name in a staged LINE is a different question — docs/
 and the root narrative keep the crew as historical actors and D6 grandfathers
-ids — so this arm reads file NAMES and nothing else.`
+ids — so this arm reads file NAMES and nothing else. ONE TREE, too: D6's edge
+is the tree and not the syntax, so it bounds the NAMES as well. This arm
+reads the paths that ship as code and skips docs/ and the repo root's
+narrative files, where the development record may name whoever wrote it.`
 
 // CrewWayThrough is the remedy. One arm, one remedy: there is no content to
 // generalize here, only a name to change.
@@ -957,12 +964,22 @@ this arm.`
 // exactly the depersonalized vocabulary ADR 0012 D2 tells a writer to rename
 // TO — and a wall that refused those would refuse its own remedy. MEASURED
 // over this repo's 830 tracked paths at the fix: the 11 PID names this
-// instance staffs hit 1 path (the ADR named for a seat, which is the real
-// hit); the 9 names the seed ships hit 285, `qa` alone 273 — every
-// *_qa_test.go in the tree. So the set is ListAgents minus every name posse
-// has ever shipped an example under (retirableExampleNames over the EMBED,
-// not a seed directory on disk: the exclusion is the wall's, and examples/
-// beside a dev binary is the operator's to edit).
+// instance staffs hit 1 path; the 9 names the seed ships hit 285, `qa`
+// alone 273 — every *_qa_test.go in the tree. So the set is ListAgents
+// minus every name posse has ever shipped an example under
+// (retirableExampleNames over the EMBED, not a seed directory on disk: the
+// exclusion is the wall's, and examples/ beside a dev binary is the
+// operator's to edit).
+//
+// THAT ONE HIT WAS NOT A HIT, and cdxpf's close called it "the real hit"
+// (ranger-base-p7e0z corrects it here and in ADR 0024): the path is
+// docs/adr/00NN-<seat>-pulse.md, which ADR 0012 D6 puts OUTSIDE App.A 5 —
+// docs/ is the development record, where the crew are historical actors.
+// Re-censused at the correction over 841 tracked paths: the staffed PIDs
+// hit that same one path and ZERO under the trees the rule governs. The
+// wall skips it now (crewPathSkip); the derivation is unchanged, because
+// where a literal may be refused is the render's question and not this
+// list's.
 //
 // The residual, stated: a PID named for a common word is still a substring
 // match over every path, and would refuse honest commits until it is

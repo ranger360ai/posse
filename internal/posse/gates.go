@@ -3238,6 +3238,16 @@ type visScanSource struct {
 	content visGuardRefusal
 	path    visGuardRefusal
 	message visGuardRefusal
+	// pathSkip narrows this source's PATH arm to the paths its own rule
+	// reaches, and nil — the zero — is "every staged path", which is what
+	// three of the four sources want. It renders inside the per-path loop,
+	// ahead of this source's checks, and sets $posse_skip; the source's
+	// block then runs only for a path the filter leaves standing. Per
+	// SOURCE and not per scan, because the exemption belongs to one rule:
+	// the crew names reach only the trees ADR 0012 D6 puts inside App.A 5
+	// (crewPathSkip), while an operator identity literal in the same path
+	// is refused exactly as it always was.
+	pathSkip func(indent string) string
 }
 
 // twoArmScan renders the shape ranger-base-uzgkz built for check 3 and ADR
@@ -3275,7 +3285,20 @@ func twoArmScan(ind, title, head string, sources []visScanSource) string {
 		if s.content.badVar != "" {
 			content.WriteString(i1 + "posse_bad=''\n" + s.checks(i1) + s.content.render(i1))
 		}
-		loop.WriteString(i2 + "posse_bad=''\n" + s.checks(i2) + pathAccum(i2, s.pathVar))
+		// A source may govern a SUBSET of the staged paths (pathSkip), and
+		// one does. The filter renders INSIDE the loop and ahead of this
+		// source's own checks, so the listing, the loop and every other
+		// source still see every path — what is narrowed is one rule's
+		// reach, not the scan's.
+		bi := i2
+		if s.pathSkip != nil {
+			loop.WriteString(s.pathSkip(i2) + i2 + `if [ -z "$posse_skip" ]; then` + "\n")
+			bi = i2 + "  "
+		}
+		loop.WriteString(bi + "posse_bad=''\n" + s.checks(bi) + pathAccum(bi, s.pathVar))
+		if s.pathSkip != nil {
+			loop.WriteString(i2 + "fi\n")
+		}
 		pathRefusals.WriteString(s.path.render(i1))
 		pathInit.WriteString(i1 + s.pathVar + "=''\n")
 	}
@@ -3547,9 +3570,11 @@ already; the second layer for it is a commit-msg hook.`)
 // literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
 // against the ADDED LINES of every staged text file, code included, AND
 // against the ADDED staged PATHS — plus this box's crew names (ADR 0012 D2
-// and App.A 5, ranger-base-cdxpf) against the ADDED staged PATHS ALONE. The
-// crew names arrive in the same `identity` slice, flagged PathsOnly, and
-// are partitioned out below. "" only when BOTH lists are empty — a box
+// and App.A 5, ranger-base-cdxpf) against the ADDED staged PATHS ALONE, and
+// only under the trees ADR 0012 D6 puts INSIDE App.A 5 (crewPathSkip,
+// ranger-base-p7e0z). The crew names arrive in the same `identity` slice,
+// flagged PathsOnly, and are partitioned out below. "" only when BOTH
+// lists are empty — a box
 // that derived nothing (no git email, no .beads/redirect, an unset $HOME)
 // and configured nothing skips the block whole rather than paying for a
 // full `git diff` that can never find a match. An empty identity with a
@@ -3725,18 +3750,20 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 		})
 	}
 
-	// The crew names, PATHS ONLY (ranger-base-cdxpf). Third source, third
-	// set of words: a persona name is not an operator identity literal and
-	// not an instance-defined class, and a writer refused here is sent to
-	// ADR 0012 D2's remedy — name the file for the role — not to
-	// restate-and-cite. It renders LAST of the three so a path tripping
-	// more than one is refused in the operator's words first; those are the
-	// stricter rule (an identity literal is refused in a line as well) and
-	// this one is a rename.
+	// The crew names, PATHS ONLY (ranger-base-cdxpf) and ONE TREE
+	// (crewPathSkip, ranger-base-p7e0z). Third source, third set of words:
+	// a persona name is not an operator identity literal and not an
+	// instance-defined class, and a writer refused here is sent to ADR 0012
+	// D2's remedy — name the file for the role — not to restate-and-cite.
+	// It renders LAST of the three so a path tripping more than one is
+	// refused in the operator's words first; those are the stricter rule
+	// (an identity literal is refused in a line as well, and in every tree)
+	// and this one is a rename.
 	if len(crew) > 0 {
 		sources = append(sources, visScanSource{
-			checks:  crewChecks,
-			pathVar: "posse_nbad",
+			checks:   crewChecks,
+			pathVar:  "posse_nbad",
+			pathSkip: crewPathSkip,
 			path: visGuardRefusal{
 				badVar:       "posse_nbad",
 				label:        crewScanLabel,
@@ -3767,8 +3794,13 @@ does NOT scan all three subjects: PATHS ONLY, case-insensitively and
 with no word boundary. A persona name in a staged LINE or in a commit
 message is legitimate in the places ADR 0012 D2 leaves it (docs/, the
 root narrative, a D6-grandfathered id, the message naming who wrote
-it); a file NAME ships in every clone with nothing to exempt it, which
-is the shape that rode main for a day (ranger-base-o3g6a).
+it); a file NAME under a tree that ships as CODE has nothing to exempt
+it, which is the shape that rode main for a day (ranger-base-o3g6a).
+D6's edge is the TREE and not the syntax, so it bounds this arm's
+subject as well as the other two: docs/ and the repo root's narrative
+files are skipped here too (the filter is rendered inside the loop
+below, ranger-base-p7e0z), because a path there is the development
+record and refusing it would refuse what the constitution allows.
 Rendered as regexp-escaped fixed strings and as EREs respectively, so
 the SAME matcher checks 0 and 2 already call above covers this too.
 THREE SUBJECTS for those two, in this order: the ADDED lines of ALL
@@ -3794,6 +3826,59 @@ and a message has no shape table to disposition the residue by
 Message).`)
 	return twoArmScan("  ", "check 3", head, sources) +
 		messageArm("  ", checkThreeMessageHead, sources)
+}
+
+// crewPathSkip is the crew arm's TREE filter (ranger-base-p7e0z, fixing what
+// ranger-base-cdxpf landed): the staged paths ADR 0012 D6 puts OUTSIDE
+// App.A 5 are skipped before this source's checks run.
+//
+// THE DEFECT IT FIXES. cdxpf gave check 3 a crew source with no root filter
+// at all, so the wall enforced App.A 5 past that rule's own stated edge and
+// its refusal told the writer to rename a file the constitution lets stand.
+// MEASURED on the box it was filed from: over 841 tracked paths the staffed
+// PIDs hit exactly ONE — docs/adr/00NN-<seat>-pulse.md, tracked on main and
+// standing — and ZERO under the trees the rule governs. Adding, renaming or
+// re-adding that ADR was refused, with only the override as the way through.
+//
+// WHY A DENYLIST, where the shipped pin (qibShippedRoots) is an allowlist.
+// The asymmetry is deliberate and it is about which way each one fails: a
+// WALK must enumerate what to read, so a root it forgets is merely unread
+// and a later pin can widen it; a WALL that enumerated what to refuse would
+// leave a NEW top-level tree unguarded until somebody remembered to add it,
+// which is the failure this whole check exists against. So this skips what
+// D6 excludes by name and guards everything else — .github/, plugin/,
+// scripts/, www/ and any tree added tomorrow included.
+//
+// THE `*/*` ARM IS LOAD-BEARING and sits BETWEEN the other two on purpose:
+// without it `*.md` matches every markdown file in the tree, and what D6
+// exempts is the repo ROOT's narrative, not markdown anywhere. RESIDUAL,
+// stated: every root .md is exempt, not a fixed list of today's names — D6
+// enumerates none, and "the root narrative files" is what a root .md is.
+// `case` still matches under `set -f`, which disables pathname expansion
+// and not pattern matching (measured).
+func crewPathSkip(ind string) string {
+	return shComment(ind, `─── the crew arm's tree filter (ADR 0012 D6) ───────────────────────────
+App.A 5 reaches the trees that SHIP AS CODE: "every line cmd/, internal/,
+and etc/ ship", plus examples/, which embed.go carries into the binary.
+D6 names the other side in as many words -- "The edge is the tree, not
+the syntax: docs/ and the root narrative files are the development
+record, where the crew are historical actors and the no-mass-sweep
+convention above governs them as it governs ids." A path under those is
+outside this rule, and refusing it would send a writer to rename a file
+the constitution lets stand.
+A DENYLIST, unlike the shipped pin's allowlist: a new top-level tree is
+guarded the day it appears rather than the day somebody remembers it.
+The `+"`*/*`"+` arm sits between the other two so that `+"`*.md`"+` reaches the repo
+ROOT only -- the exemption is the root narrative, not markdown anywhere.
+THIS SOURCE ONLY: an operator identity literal or an instance class in
+the same path is refused exactly as before.`) +
+		ind + `posse_skip=''
+` + ind + `case $posse_ip in
+` + ind + `  docs/*) posse_skip=1 ;;
+` + ind + `  */*) ;;
+` + ind + `  *.md) posse_skip=1 ;;
+` + ind + `esac
+`
 }
 
 // checkThreeMessageHead is check 3's message-arm banner (ADR 0024 D2 check

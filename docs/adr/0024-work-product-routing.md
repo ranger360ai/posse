@@ -148,21 +148,32 @@ install and at every persona launch).
    Its refusal is its own: ADR 0012 D2's remedy is to name the file for
    the ROLE, not ADR 0024 D3's restate-and-cite.
 
-   THE TWO DECISIONS this carries, both measured over this repo's 830
-   tracked paths at the fix. **Paths only**, not check 3's three
-   subjects: a crew name in a staged LINE is legitimate where ADR 0012
-   D2 leaves it — `docs/`, the root narrative, a D6-grandfathered id —
-   and a commit message names the persona who wrote it, so a content or
-   message arm would refuse what this constitution allows. **Derived,
-   less the shipped roles**: a hardcoded crew list in the tree would BE
-   what App.A 5 forbids, and the seed staffs a fresh home with ROLE
-   names — the depersonalized vocabulary D2 tells a writer to rename TO
-   — so a wall built from those would refuse its own remedy. The census
-   is one-sided enough to decide it: this instance's 11 PID names hit 1
-   path (the ADR named for a seat, the real hit); the 9 names the seed
-   ships hit 285, one of them 273 on its own — every QA test file in
-   the tree. The residual, stated: a PID named for a common word is a
-   substring match over every path and refuses honest commits until the
+   THE THREE DECISIONS this carries, all measured over this repo's
+   tracked paths. **Paths only**, not check 3's three subjects: a crew
+   name in a staged LINE is legitimate where ADR 0012 D2 leaves it —
+   `docs/`, the root narrative, a D6-grandfathered id — and a commit
+   message names the persona who wrote it, so a content or message arm
+   would refuse what this constitution allows. **One tree**, and this
+   arm alone is narrowed that way (amended 2026-09-04,
+   ranger-base-p7e0z): ADR 0012 D6's edge is "the tree, not the syntax",
+   so it bounds the NAMES as well as the lines — the arm reads the paths
+   that ship as code and skips `docs/` and the repo root's narrative
+   files. As landed it had no root filter, refused an ADR standing on
+   main today, and cited the very rule that permits it; an operator
+   identity literal in that same path is still refused, because App.A 5
+   is what has a tree and D3 does not. **Derived, less the shipped
+   roles**: a hardcoded crew list in the tree would BE what App.A 5
+   forbids, and the seed staffs a fresh home with ROLE names — the
+   depersonalized vocabulary D2 tells a writer to rename TO — so a wall
+   built from those would refuse its own remedy. The census is
+   one-sided enough to decide it: over 830 paths at the fix this
+   instance's 11 PID names hit 1 path and the 9 names the seed ships
+   hit 285, one of them 273 on its own — every QA test file in the
+   tree. That single hit was an ADR under `docs/`, which is why the
+   third decision exists: re-censused over 841 paths, the staffed PIDs
+   still hit only it, and ZERO inside the tree the rule governs. The
+   residual, stated: a PID named for a common word is a substring match
+   over every path in that tree and refuses honest commits until the
    lane is renamed. It cannot be silent — the refusal names the path and
    the persona, and the override is one env var.
 
