@@ -11,6 +11,7 @@ package posse
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -327,15 +328,33 @@ func TestTheReaperEndsATermIgnoringChildToo(t *testing.T) {
 	// one does not, and this is the one arm where the box is really touched.
 	const bound = `n=0; while [ $n -lt 40000000 ]; do n=$((n+1)); done`
 	for _, tc := range []struct {
-		name string
-		body string
-		want string
+		name  string
+		setup string
+		want  string
 	}{
-		{"default disposition", bound, killedByTERM},
-		{"a payload that ignores TERM", `trap "" TERM; ` + bound, killedByKILL},
+		// setup is what the payload does BEFORE it announces itself, so an
+		// arm's disposition is always installed before this test is allowed
+		// to signal it. Everything after the announcement is the same loop.
+		{"default disposition", "", killedByTERM},
+		{"a payload that ignores TERM", `trap "" TERM; `, killedByKILL},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := exec.Command("/bin/sh", "-c", "("+tc.body+") >/dev/null 2>&1 & echo $!").Output()
+			// The payload says when it is ready; the test never guesses.
+			// `echo $!` prints the pid the instant sh FORKS the subshell,
+			// before the child has run a single builtin, so the TERM-ignoring
+			// arm still carried the DEFAULT disposition for a window that the
+			// very next act here — signalPID(TERM) — could land in. Under
+			// fleet load that window is wide enough to hit, and the arm whose
+			// whole job is to survive TERM died to it (ranger-base-85scr).
+			// procAlive cannot close the window: the pid exists from the fork
+			// onward and answers "there is a process", never "the trap is
+			// installed". A poll on the trap from outside is not portable and
+			// a fixed sleep only buys the same race at a different width, so
+			// the readiness edge has to come from the payload: it creates the
+			// marker as its first act AFTER its setup, and this waits on that.
+			ready := filepath.Join(t.TempDir(), "ready")
+			body := tc.setup + ": > '" + ready + "'; " + bound
+			out, err := exec.Command("/bin/sh", "-c", "("+body+") >/dev/null 2>&1 & echo $!").Output()
 			if err != nil {
 				t.Fatalf("plant: %v", err)
 			}
@@ -346,6 +365,22 @@ func TestTheReaperEndsATermIgnoringChildToo(t *testing.T) {
 			defer syscall.Kill(pid, syscall.SIGKILL)
 			if !procAlive(pid) {
 				t.Fatalf("the planted control was gone before it was signalled — nothing was measured")
+			}
+			// Bounded, and generous: this is a wait for one shell builtin and
+			// one redirect on a box that may be running several suites, not a
+			// measurement of anything. Blowing it means the plant never ran,
+			// which is a broken control, not a broken ladder.
+			for deadline := time.Now().Add(30 * time.Second); ; {
+				if _, err := os.Stat(ready); err == nil {
+					break
+				}
+				if !procAlive(pid) {
+					t.Fatalf("the planted control died before it was ready — nothing was measured")
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("the planted control never announced it was ready — nothing was measured")
+				}
+				time.Sleep(time.Millisecond)
 			}
 			// sysReapOrphans' own re-verify would refuse this pid (its argv
 			// is not a gate shell's), which is the point of that half; the
