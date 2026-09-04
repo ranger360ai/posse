@@ -769,6 +769,19 @@ watching them is the operator's interactive headroom — a fleet that eats the
   `plan meter BLIND 46h00m: last reading 2026-09-01T23:23Z (5h 46% · 7d 29%)
   — the plan guard is UNARMED (budget_pass:/budget_day: is set), so nothing
   is ruling on it; no request has left this machine since`.
+  *Amended 2026-09-03 (ranger-base-67mdf, from the verify batch
+  ranger-base-s5j1t):* the first build asked the spending question three
+  times per `PlanStaleness` call — once in the quiet gate, once again for
+  the string the line prints, and a third time inside the `PlanCache` it
+  then built (MEASURED: `PlanMeterSpender` ×3, `PlanMeterQuiet` ×2 per
+  call, each a config re-read and, capless, a re-open of the watch lock).
+  Two readings of a decaying state inside one call can disagree, and the
+  disagreeing shape renders the exact sentence this entry exists to
+  forbid. So the verdict is computed ONCE and carried: the quiet decision
+  and the spender it turned on are one function, `PlanCache` carries both
+  (it already carried `Quiet`), and `PlanStaleness` reads the cache it
+  builds instead of asking again. Nothing about the rule above changed —
+  only how many times it is asked.
 - **Overflow: a second pool instead of a skipped pass** (ADR 0010). The
   guard's meter belongs to *one* provider, so the whole-pass skip had two
   costs: a lane whose runtime is not on that meter was skipped because
