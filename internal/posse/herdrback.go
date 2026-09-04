@@ -3145,11 +3145,14 @@ func (l *KillLanding) Line() string {
 	switch {
 	case l.Kept != "" && len(l.Merge.Equivalent) > 0:
 		// The merge found nothing to land and RemoveSessionTree still
-		// refused. Since ranger-base-as19 that is one case only: the
-		// equivalence rests on git's `-x` trailer, which records a human's
-		// decision and cannot say what the resolution kept, so the branch
-		// stays the last copy of its patches. Both facts, in that order, so
-		// the refusal reads as the belt it is rather than as lost work
+		// refused. Since ranger-base-as19 that is every equivalence whose
+		// evidence is not a measurement of CONTENT (measuredOnBase), and
+		// there are two of those: git's `-x` trailer, which records a
+		// human's decision, and a replay paired by author identity, author
+		// date and subject (ranger-base-emgdb), which is an identity match.
+		// Neither can say what the landing kept, so the branch stays the
+		// last copy of its patches. Both facts, in that order, so the
+		// refusal reads as the belt it is rather than as lost work
 		// (ranger-base-g2xf).
 		return fmt.Sprintf("%s KEPT: %s; %s", AbbrevHome(t.Path), l.Merge.EquivalentNote(), l.Kept)
 	case l.Kept != "":
