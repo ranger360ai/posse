@@ -1,6 +1,6 @@
 # ADR 0006 — Handoff shapes: collaboration as beads, nothing else
 
-*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47) · amended 2026-09-01 (§1: hand to the lane, not the person — `-a` only for the five-item allowlist; §2 rows and ADR 0005's HANDOFF rung follow, ranger-base-tpc41) · amended 2026-09-02 (§1–§4: every bead carries a class — feature / bug / debt — and a verify close files ONE findings bead; operator ruling, ranger-base-zbd51)*
+*Status: accepted 2026-08-18 · owner: architect · amended 2026-09-01 (§2/§3: the "done when" row is best-effort, ranger-base-ziy47) · amended 2026-09-01 (§1: hand to the lane, not the person — `-a` only for the five-item allowlist; §2 rows and ADR 0005's HANDOFF rung follow, ranger-base-tpc41) · amended 2026-09-02 (§1–§4: every bead carries a class — feature / bug / debt — and a verify close files ONE findings bead; operator ruling, ranger-base-zbd51) · amended 2026-09-03 (§2/§3: the verify bead carries a landing block beside the commit trail — the trail says what CITES the id, the branch record says whether the work got home; ranger-base-3atc9 from ranger-base-hl0sp)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -293,7 +293,7 @@ was a fourth bucket he did not ask for).
 | handoff | trigger | shape | closes when |
 |---|---|---|---|
 | **architect → developer** (design → build) | ADR committed | implementation beads `-l code --deps discovered-from:<design>` *(no `-a`: §1 amendment of 2026-09-01)*, `blocks:` between them for order, ADR path in each description; the design bead closes when the beads exist (not when they're built) | each build bead: on the closer's word + the verify bead (below). A build that must diverge: comment `DIVERGED: <what/why>` on the *build* bead; if it changes the design, HANDOFF `-l architecture` (`-a` the ADR's owner only when their ruling is the deliverable — §1 case 4) |
-| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa --deps discovered-from:<closed id>` (unassigned unless config `verify_assignee:` pins a seat — ADR 0020 §3; §1 amendment of 2026-09-01), description = closer, `close_reason`, commits (`git log --grep <id>`), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files **one** findings bead — `-l <the close's lane> -l debt --deps discovered-from:<verify id>`, one line per finding with file:line, the escaped-from id and the repro; a live money / constitution / dispatch-correctness defect alone gets its own `-t bug` P1/P2 bead (§1 amendment of 2026-09-02, ranger-base-zbd51; the row read "a bug bead `-l code` per close" before) — and closes theirs `escape`; the closed bead is never reopened by a persona (operator's call) |
+| **developer/ops → QA** (build → verify) | a bead with a label in config `verify_labels:` (default `code, devops`) is **closed** | one verify bead `verify: <title>` `-l qa --deps discovered-from:<closed id>` (unassigned unless config `verify_assignee:` pins a seat — ADR 0020 §3; §1 amendment of 2026-09-01), description = closer, `close_reason`, commits naming the id (`git log --grep <id>` — a commit may merely *cite* the bead), the session branches cut for the id and whether each tip has reached its base (`branch.<b>.posseBead`; a MISSING record prints nothing and claims nothing — §3 amendment of 2026-09-03), and the closer's PID "done when" row where one matches — otherwise the whole `## Intents` table, marked unmatched *(§3 amendment of 2026-09-01)* *(at `verify_batch:` N > 1: one bead per N closes — shape in the §3 amendment)* | QA closes it "verified" (comment `VERIFIED: <how>`), or files **one** findings bead — `-l <the close's lane> -l debt --deps discovered-from:<verify id>`, one line per finding with file:line, the escaped-from id and the repro; a live money / constitution / dispatch-correctness defect alone gets its own `-t bug` P1/P2 bead (§1 amendment of 2026-09-02, ranger-base-zbd51; the row read "a bug bead `-l code` per close" before) — and closes theirs `escape`; the closed bead is never reopened by a persona (operator's call) |
 | **anyone → security** (finding → triage) | anything that smells like exposure, at any time | bead `-l security --deps discovered-from:<id>` (no `-a` — §1 amendment of 2026-09-01), **priority = severity**: P0 exploitable now · P1 credential/exposure reachable · P2 hardening · P3 note; the security persona never edits — its output is beads: fixes `-l code` / `-l devops`, accepted-risk decisions ASK the operator (`-l risk`, ADR 0005) | fix bead closes → verify shape applies (it's `-l code`); a P0/P1 finding also comments `SECURITY:` on the origin bead so its holder sees it |
 | **operator/product grooming** (cadence) | one `-l groom` bead per week assigned to the product persona, filed by the operator or their scheduling automation (posse does not schedule; `--watch` dispatches, it doesn't create) | the product persona re-prioritises, splits, labels (`tier:` per ADR 0003), files `-l architecture` beads where design precedes build, closes with `bd comments add` listing what moved | close = queue is honest for the week; the `queue-honesty` metric reads it |
 
@@ -488,6 +488,100 @@ Hatch: both are text and one field on a bead the harness already
 files; nothing new is read, and no state is added. The `-t` flag is
 `bd create`'s own (`bug|feature|task|epic|chore|decision`), measured
 on bd 0.50.3's `--help`.
+
+*(Amended 2026-09-03 from ranger-base-3atc9; the finding is
+ranger-base-hl0sp's, the build is its `-l code` bead.)* **The commit
+trail says what cites the id; the landing block says whether the work
+got home. The description carries both, and a missing landing record
+prints nothing.** The row above listed *commits (`git log --grep <id>`)*
+as if that were a landing. It is not: `--grep` names every commit in the
+checkout's ancestry whose MESSAGE mentions the id, so a commit that
+merely cites a bead is indistinguishable there from the commit that
+shipped it. MEASURED (the sweep on ranger-base-2dzsm): ranger-base-5jdzh
+closed "DONE at <sha> (branch posse/dinesh-…)" naming a sha that was
+never on main, its verify bead's
+commit row listed d309e2b — ranger-base-wd4be's commit, whose message
+names 5jdzh — and the verifier read the row as proof of a landing while
+5jdzh's own tip sat off main with a merge conflict against it. Nothing
+in the bead said so, because nothing in the bead could.
+
+Decided:
+
+1. **The trail keeps its place and loses its claim.** The commit lines
+   stay, under a header that says what they are: `commits naming <id>
+   (git log --grep; a commit may merely CITE the bead)`, one `<short>
+   <subject>` per line. The trail is still the exemption signal (the
+   2026-08-28 amendment) and still the verifier's first pointer; it
+   just no longer reads as a verdict.
+2. **A landing block beside it, from the record that knows.** The
+   branch stamp `branch.<b>.posseBead` (ADR 0022's `beadKey`, written
+   at every launch into a tree) names the bead a session branch was cut
+   for; the filer asks it, and for each branch so stamped writes one
+   line: `<branch> tip <short> has reached <base>` or `has NOT reached
+   <base>`, the base being `branch.<b>.posseBase` with the launcher's
+   own fallback where the stamp predates that key. Header: `session
+   branches cut for <id> (branch.<b>.posseBead)`. Three edge lines say
+   why no verdict is possible rather than guessing one — a branch that
+   IS its base (worked in the shared checkout: no merge-back to wait
+   on), a base that is not a branch here, a record whose branch is gone
+   ("the record outlived it"). Bounded to a few lines per close, the
+   rest counted.
+3. **Silence is not a landing.** `git branch -d` takes the branch's
+   config with it, so a session that landed and was tidied up leaves
+   exactly what a branch cut before the stamp existed leaves: nothing.
+   The block therefore prints only the records it FOUND and states a
+   strand positively; an empty block is the same silence the commit
+   trail already has for a commitless close, and the verifier reads it
+   as "no record", never as "reached". No line anywhere infers a
+   landing from an absence.
+4. **A reading, not a status.** Both blocks are taken at filing time and
+   say so by naming the record; a strand re-landed an hour later leaves
+   the line stale in a stored document, exactly as the trail goes stale.
+   The filer never rewrites a description after the fact — the batch
+   dedupe marker (2026-08-27 amendment) depends on descriptions being
+   written once — so the verifier's first act is to re-run the two
+   commands the lines name, and a line that was true when written is
+   what sends them to look.
+
+Hatch: one function beside `gitCommitsFor`, same best-effort shape (no
+repo, no git, no record → no lines, never a failed filing); it reads a
+stamp the launcher already writes and holds no state. Deleting it
+returns the description to the 2026-09-02 shape byte for byte.
+
+Alternatives rejected:
+
+- *Make `--grep` exact — keep only commits whose message names the id
+  in the trailer position, or whose author is the closer.* Neither is
+  the question. The shipping commit is on the session branch whether or
+  not main has it, and a re-land carries another bead's id in the
+  subject by design (ranger-base-0qiny "carries ranger-base-5jdzh"); a
+  stricter trail would have listed nothing for 5jdzh and still not said
+  the branch was stranded.
+- *Print the strand from the absence — "no branch record: assume
+  landed or never cut".* The clever one, and the one the record above
+  says why not: `branch -d` erases the evidence on the happy path, so
+  the inference is right exactly when it is not needed and wrong
+  silently when it is. A verifier judging against a fabricated "reached"
+  is the escape this amendment exists to close.
+- *Have the filer refuse to file, or hold the verify bead, on a
+  stranded tip.* §5: the verify bead never holds a close, and a strand is
+  a finding for QA to bundle (ranger-base-hl0sp finding 1 was filed in
+  exactly that shape), not a gate for the harness to run.
+- *Fix the launcher so a close cannot strand.* Wanted, and not this
+  bead: the landing is ADR 0022's and the launcher's, and a filer that
+  reports what the tree says stays correct whatever the launcher does
+  next. The record that made this block possible is the same stamp that
+  landing fix will read.
+
+Measured: the 5jdzh instance above (`git merge-base --is-ancestor
+posse/dinesh-posse-ranger-base-5jdzh main` → no at the time of the
+sweep; the tip was on that branch alone), and that git lowercases the KEY it prints for
+`--get-regexp` while preserving the subsection, so the reader matches
+the stamp case-insensitively (the code's own comment records it).
+Assumed: that the verifier re-runs the two commands rather than
+trusting a stored line — nobody has measured whether they do — and that
+a landing-time cleanup which prunes `branch.<b>.*` by hand is rare;
+where it happens the block is silent, which is the honest failure.
 
 **4. PID `## Handoffs` sections say the shape, not just the name.** Each
 row becomes `who · label · what the bead must contain` — *who* is a lane
