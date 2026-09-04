@@ -74,6 +74,20 @@ type NewSessionOpts struct {
 	// dispatch leaves it alone (ADR 0008). `posse new` and recipes set it;
 	// dispatch's own CreateSession never does.
 	Crew bool
+	// ByHand says the OPERATOR asked for this one launch, at the keyboard,
+	// naming what to launch: `posse new`, `posse up`, `posse recipe`, and
+	// the cockpit's `d`. It is the launch's provenance, not the session's —
+	// Crew is who the session BELONGS to afterwards, and the two differ in
+	// both directions: `d` dispatches fleet work (Crew false) that a human
+	// nonetheless typed, and a relaunch reads Crew back off a meta nobody
+	// is standing at.
+	//
+	// The load guard in planLaunch is its only reader (ranger-base-jfe5z):
+	// the guard exists so an UNATTENDED loop cannot pile work onto a box
+	// that can no longer fork, and an operator typing one command has
+	// already made that judgement himself. A pass, its refills and the
+	// pulse leave this false and are refused exactly as before.
+	ByHand bool
 	// Worktree asks for the session's own git worktree, index and HEAD
 	// instead of the shared checkout at Dir (rangerhq-09o2, worktree.go).
 	// Dispatch sets it for every fleet launch; `posse new` and recipes do
@@ -1407,9 +1421,26 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// before it kills (rangerhq-v52t) and so refuses with the old session
 	// still alive rather than losing it to a box that cannot start the
 	// replacement.
+	//
+	// It applies to the FLEET, never to the crew (ranger-base-jfe5z,
+	// operator ruling 2026-09-04): the guard exists so an unattended loop
+	// cannot pile work onto a box that can no longer fork, and it has no
+	// standing to overrule an operator who typed one command having seen
+	// the box himself. o.ByHand is that fact, carried down the launch path
+	// from the four entry points a human types at. The reading is still
+	// TAKEN on both arms — silence would trade one bad behaviour for
+	// another — so an interactive launch prints the same witness and the
+	// same culprits as a WARNING and proceeds, marking nothing degraded.
+	// The refusal below is what a dispatch pass, its refills and the pulse
+	// still get, unchanged; `load_guard: 0` still turns the whole thing off.
 	if why := a.LoadHigh(b.warnWriter()); why != "" {
-		return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or set config load_guard: 0 to launch anyway%s",
-			why, o.Name, a.LoadCulpritLine())
+		if o.ByHand {
+			b.warn("posse: %s — launching %s anyway: this guard holds the FLEET back, not a launch you typed (ranger-base-jfe5z)%s\n",
+				why, o.Name, a.LoadCulpritLine())
+		} else {
+			return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or set config load_guard: 0 to launch anyway%s",
+				why, o.Name, a.LoadCulpritLine())
+		}
 	}
 	a.TightenEnvPerms(os.Stderr)    // every launch re-asserts 700/600 on envs/
 	a.TightenSecretPerms(os.Stderr) // and on secrets/, which no launch reads
@@ -2897,8 +2928,9 @@ func (b *HerdrBackend) LaunchRecipe(w interface{ Write([]byte) (int, error) }, r
 	err = b.CreateSession(NewSessionOpts{
 		Name: r.Name, Dir: r.Dir, Cmd: r.Command,
 		Emoji: r.Emoji, Envs: r.EnvFiles, Agent: r.Agent, Runtime: r.Runtime, Tier: r.Tier,
-		// A recipe is the operator launching something to sit in (ADR 0008).
-		Crew: true,
+		// A recipe is the operator launching something to sit in (ADR 0008),
+		// and one they typed just now (ranger-base-jfe5z).
+		Crew: true, ByHand: true,
 	})
 	if err != nil {
 		return err

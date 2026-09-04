@@ -238,7 +238,10 @@ func TestDryRunSaysTheGuardWouldFireAndShowsRoutingAnyway(t *testing.T) {
 	}
 }
 
-// The launch half: every path into planLaunch, which is all of them.
+// The launch half, FLEET arm: a launch nobody typed — ByHand unset, which
+// is what a dispatch pass, a refill and the pulse all hand planLaunch —
+// is refused on a saturated box exactly as it was before ranger-base-jfe5z,
+// with the same sentence and the same advice.
 func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -246,7 +249,7 @@ func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
 
 	err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir()})
 	if err == nil {
-		t.Fatal("posse new must not launch into a saturated box")
+		t.Fatal("a launch the fleet decided on must not reach a saturated box")
 	}
 	for _, want := range []string{"load guard", "263.00", "load_guard: 0"} {
 		if !strings.Contains(err.Error(), want) {
@@ -255,6 +258,172 @@ func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
 	}
 	if log := calls(t, fake); strings.Contains(log, "workspace create") {
 		t.Errorf("a refused launch must not reach herdr:\n%s", log)
+	}
+}
+
+// ─── the fleet/crew split (ranger-base-jfe5z) ───────────────────────────────
+//
+// OPERATOR RULING 2026-09-04: "the load guard should apply to fleet, never
+// crew, assuming crew is always interactive command from operator". The
+// guard exists so an UNATTENDED loop cannot pile work onto a box that can no
+// longer fork; an operator typing one command has already made that
+// judgement himself, and the guard has no standing to overrule him. What
+// carries the fact is NewSessionOpts.ByHand, set by the four entry points a
+// human types at: `posse new`, `posse up`, `posse recipe`, the cockpit `d`.
+//
+// The refusal's disappearance is only safe because the WITNESS stays, so
+// every test below asserts the line as hard as the launch.
+
+// `posse new` on a box over load_guard: launches, says so, degrades nothing.
+func TestByHandLaunchWarnsOverTheLoadGuardAndProceeds(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+	// The operator should see loadavg AND the top three culprits — the
+	// second line is what makes a launch into a saturated box an informed
+	// one rather than a blind one.
+	b.App.TopCPU = func() ([]Proc, error) { return procRows(), nil }
+
+	if err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Crew: true, ByHand: true}); err != nil {
+		t.Fatalf("the operator typed this launch; the fleet's guard must not refuse it: %v", err)
+	}
+	if !b.HasSession("s1") {
+		t.Fatal("no session behind a launch that returned no error")
+	}
+	if log := calls(t, fake); !strings.Contains(log, "workspace create") {
+		t.Errorf("the launch never reached herdr:\n%s", log)
+	}
+	warn := warnBuf(t, b).String()
+	for _, want := range []string{"load guard", "263.00", "anyway", "top CPU", "49235"} {
+		if !strings.Contains(warn, want) {
+			t.Errorf("the warning must carry %q, said:\n%s", want, warn)
+		}
+	}
+	// The one word that must NOT be there: a warning that still reads like
+	// a refusal is the bug wearing a different exit code.
+	if strings.Contains(warn, "refusing to launch") {
+		t.Errorf("the crew arm must not print the fleet's refusal:\n%s", warn)
+	}
+	// "marking nothing degraded": DEGRADED is the operator's consent
+	// record for a session the wall cannot fully realize (ADR 0002 §4). A
+	// loaded box is not that, and stamping it here would follow the session
+	// through `posse list`, the receipt and dispatch's effectiveTier.
+	if m, ok := b.readMeta("s1"); !ok || m.Degraded != "" {
+		t.Errorf("a loaded box must not degrade the session: %q", m.Degraded)
+	}
+}
+
+// The knob keeps its meaning on the crew half too: `load_guard: 0` is off
+// EVERYWHERE, which here means the witness is not printed either. A warning
+// on a box the operator disabled the guard for is noise he cannot silence.
+func TestByHandLaunchIsSilentWhenTheGuardIsOff(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	os.WriteFile(b.App.ConfigPath, []byte("load_guard: 0\n"), 0o644)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+	b.App.TopCPU = func() ([]Proc, error) { return procRows(), nil }
+
+	if err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Crew: true, ByHand: true}); err != nil {
+		t.Fatalf("load_guard: 0 launches into anything: %v", err)
+	}
+	if warn := warnBuf(t, b).String(); strings.Contains(warn, "load guard") {
+		t.Errorf("a guard turned off says nothing on either arm:\n%s", warn)
+	}
+}
+
+// The arm most likely to be missed: the cockpit's `d`. It is fleet WORK —
+// a bead, a worktree, Crew false — launched by a human hand, so it takes
+// the crew side of this split while every other ceiling above it (pause,
+// budget, crew/foreign holds, the tier refusal) still bites.
+func TestCockpitDLaunchesOverTheLoadGuard(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","priority":1,"labels":["go"]}]`, "")
+	idleClaude(t, fake)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+	b.App.TopCPU = func() ([]Proc, error) { return procRows(), nil }
+
+	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"go"}}, Dir: repo}
+	session, err := d.LaunchBead(is)
+	if err != nil {
+		t.Fatalf("the operator pressed the key; `d` must launch: %v\n%s", err, dispatcherOut(d))
+	}
+	if session == "" || !b.HasSession(session) {
+		t.Fatalf("no session behind a `d` that returned none: %q", session)
+	}
+	warn := warnBuf(t, b).String()
+	if !strings.Contains(warn, "load guard") || !strings.Contains(warn, "263.00") {
+		t.Errorf("`d` over the guard must still say what it launched into:\n%s", warn)
+	}
+	if strings.Contains(warn, "refusing to launch") {
+		t.Errorf("`d` must not print the fleet's refusal:\n%s", warn)
+	}
+	// The session `d` made is still the FLEET's: dispatch has to be able to
+	// judge, reap and merge it. Crew here would take it out of the pass's
+	// hands (ADR 0008) — the split is about who ASKED, not who owns it.
+	m, ok := b.readMeta(session)
+	if !ok || m.Crew {
+		t.Errorf("`d` launched a crew session: %+v", m)
+	}
+	if m.Bead != "a-1" {
+		t.Errorf("`d` lost the bead pointer: %q", m.Bead)
+	}
+}
+
+// `posse recipe`: the operator launching something to sit in, which is the
+// crew half by the same reading, and the one entry point whose opts are
+// built inside the package rather than in cmd/posse.
+func TestRecipeLaunchesOverTheLoadGuard(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	os.MkdirAll(b.App.RecipesDir, 0o755)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(b.App.RecipesDir, "qa-load.yaml"),
+		[]byte("name: qa-load\ndir: "+dir+"\ncommand: claude\nemoji: 🧪\n"), 0o644)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+
+	if err := b.LaunchRecipe(io.Discard, "qa-load"); err != nil {
+		t.Fatalf("a recipe the operator ran must launch: %v", err)
+	}
+	if !b.HasSession("qa-load") {
+		t.Fatal("no session behind the recipe")
+	}
+	if warn := warnBuf(t, b).String(); !strings.Contains(warn, "load guard") || strings.Contains(warn, "refusing to launch") {
+		t.Errorf("a recipe over the guard warns and does not refuse:\n%s", warn)
+	}
+}
+
+// The other half of the same box, in one test so the two readings cannot
+// drift apart: over the SAME ceiling with the SAME load, a pass skips with
+// today's line while the hand-typed launch beside it goes through.
+func TestOneSaturatedBoxRefusesTheFleetAndLaunchesTheCrew(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","priority":1,"labels":["go"]}]`, "")
+	idleClaude(t, fake)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+
+	n, err := d.Run("", "", 0)
+	if err != nil || n != 0 {
+		t.Fatalf("the fleet arm must still skip: n=%d err=%v\n%s", n, err, dispatcherOut(d))
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "pass skipped") {
+		t.Errorf("today's line, unchanged:\n%s", out)
+	}
+	if err := b.CreateSession(NewSessionOpts{Name: "crew1", Dir: t.TempDir(), Crew: true, ByHand: true}); err != nil {
+		t.Fatalf("same box, same reading, operator's own hand: %v", err)
+	}
+	if !b.HasSession("crew1") {
+		t.Error("the crew launch was swallowed")
 	}
 }
 

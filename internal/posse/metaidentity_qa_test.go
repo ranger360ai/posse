@@ -183,7 +183,7 @@ func TestDispatchRelaunchOnNamesakeBoardDoesNotTypeIntoZulu(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.StartupWait = 50 * time.Millisecond
 	d.Poll = 5 * time.Millisecond
-	_, err := d.launchSession(RepoIssue{Dir: t.TempDir(), BdIssue: BdIssue{ID: "b-1"}}, "ranger", "foo", "", "fast", nil, nil)
+	_, err := d.launchSession(RepoIssue{Dir: t.TempDir(), BdIssue: BdIssue{ID: "b-1"}}, "ranger", "foo", "", "fast", nil, nil, false)
 	log := calls(t, fake)
 	if strings.Contains(log, "pane run") {
 		t.Errorf("dispatch typed a persona command on the namesake board — %s is zulu's:\n%s", m.Pane, log)
