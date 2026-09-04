@@ -175,3 +175,47 @@ it discovers the same break at once. Checking the open list first is
 necessary and was done here (122 open beads scanned, no hit for this symbol in
 this direction), and it is still not sufficient, because the duplicate had not
 been filed yet at the time of the scan.
+
+### The third run: every test green, one gate red, and the gate is not this diff either
+
+`main` moved twice more while this was being written — `607fc32` to `6ecb521`
+(the restore above) — so the branch was fast-forwarded again and `make test`
+re-run a third time. Every Go package is **green** on the tree this note
+actually lands on:
+
+| package | |
+|---|---|
+| `github.com/ranger360ai/posse` | ok 283.2s |
+| `github.com/ranger360ai/posse/cmd/posse` | ok 235.5s |
+| `github.com/ranger360ai/posse/internal/posse` | **ok 845.3s** |
+
+The run still exits non-zero, at the **silent-revert audit**, and the flagged
+commit is again not this one:
+
+```
+6ecb521  1 path(s) went backwards
+  internal/posse/herdr_test.go  -> content of 455d344, undoing 5b4e686
+  UNTRIAGED: 6ecb521 — a silent revert nobody has explained.
+scanned 1178 commits; 1 untriaged silent revert(s)
+```
+
+That is correct behaviour, not a second defect: `6ecb521` genuinely puts a
+file back to an older content, and the detector cannot tell a repair from a
+stale-index rollback — the reason every line already in
+`scripts/silent-reverts.allow` exists. The remedy is one line in that file.
+
+**Not written here on purpose.** The allow file's own convention (the
+`c578cb8` line, ranger-base-u20t) is that a triage line is written by the
+persona that made the commit, because it is a statement of intent; a line
+written by anyone else signs a claim they did not make. So it went to gwart as
+**ranger-base-lew6u**, `-a` under ADR 0006 §1 case 4 with the case named in
+its first line, carrying the count table and the format so the fix is one
+sentence.
+
+**The shape worth keeping.** Three suite runs, three different verdicts, none
+of them about the diff under test: a 600.8s timeout panic (my apparatus), a
+build break from another seat's stale fix, and a gate that correctly flags
+that fix's repair. A docs-only commit cannot cause any of them. When a long
+suite reds under you on a busy queue, the first question is not what did I
+break — it is **which commit does the failure name**, and the answer was
+legible in one line every time.
