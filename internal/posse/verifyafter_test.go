@@ -1362,7 +1362,7 @@ func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T
 			tc.poison(&is)
 			one := b.App.verifyDescription(repo, is, verifyCloser(is))
 			batch := b.App.verifyGroupDescription(repo, []BdIssue{is, {ID: "a-3", Title: "third", ClosedAt: &closed}})
-			if !strings.Contains(one, "- commits (git log --grep a-1):") {
+			if !strings.Contains(one, "- commits naming a-1 (git log --grep") {
 				t.Fatalf("the commit trail never ran — this test is pinning nothing:\n%s", one)
 			}
 			for _, w := range []struct {
@@ -1385,7 +1385,7 @@ func TestVerifyDescriptionFlattensEveryFieldWithACommitTrailPresent(t *testing.T
 // The gate that makes the id safe, pinned where it is enforced
 // (ranger-base-rugy). j8qk flattened is.ID in two of the three places
 // verifySection and verifyDescription interpolate it; the third — the
-// commits header, `- commits (git log --grep <id>):` — is still raw, and
+// commits header, `- commits naming <id> (git log --grep...):` — is still raw, and
 // with a real repo behind it a newline there forges a marker exactly the
 // way the assignee did (measured: verifySourceIDs returns [a-2]).
 //
@@ -1888,5 +1888,106 @@ func TestBdCreatePassesTypeOnlyWhenSet(t *testing.T) {
 	}
 	if calls := bdCalls(t, fake); strings.Contains(calls, "-t ") {
 		t.Errorf("an unset Type passed -t anyway:\n%s", calls)
+	}
+}
+
+// The strand a `git log --grep` trail cannot see (ranger-base-hl0sp, found
+// by the sweep on ranger-base-2dzsm).
+//
+// The instance, verbatim: ranger-base-5jdzh's verify bead carried
+// "commits (git log --grep ranger-base-5jdzh): d309e2b ...", and d309e2b is
+// ranger-base-wd4be's commit — it merely NAMES 5jdzh in its message. 5jdzh's
+// own work was on a session branch whose tip was not an ancestor of main,
+// and nothing in the bead said so, so the verifier read the trail as proof
+// the close had landed and unblocked two beads on a premise main did not
+// carry.
+//
+// Both arms run against the same repo shape and differ only in whether the
+// session branch was merged, which is what makes this a measurement rather
+// than a restatement: the trail line is IDENTICAL in both (the foreign
+// commit is on main either way), so a landing block that always printed the
+// same sentence — or that read the trail instead of the branch record —
+// fails the arm it does not describe. The strand arm additionally pins that
+// the foreign commit is still listed: this is a line BESIDE the trail, and
+// suppressing the trail would hide evidence the verifier wants.
+func TestVerifySectionSaysWhetherTheSessionBranchReachedItsBase(t *testing.T) {
+	t.Parallel()
+	closed := time.Date(2026, 9, 3, 9, 20, 6, 0, time.UTC)
+	// A ROLE, not a crew name: ADR 0012 App.A 5 keeps this instance's
+	// personas out of the shipped tree, and a session branch is exactly the
+	// place a real name wants to be pasted in from the incident.
+	const branch = "posse/developer-posse-a-1"
+	for _, tc := range []struct {
+		name       string
+		merge      bool
+		want, deny string
+	}{
+		{"stranded", false, "has NOT reached main", "has reached main"},
+		{"landed", true, "has reached main", "has NOT reached main"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			repo := t.TempDir()
+			// main carries a FOREIGN commit that names a-1 — another bead's
+			// work citing this one, which is all --grep can see.
+			vaGitRepo(t, repo, "qa: park the flake (a-2, red from a-1)")
+			qblGit(t, repo, "checkout", "-q", "-b", branch)
+			if err := os.WriteFile(filepath.Join(repo, "shipped.txt"), []byte("the deliverable"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			qblGit(t, repo, "add", "-A")
+			qblGit(t, repo, "commit", "-q", "-m", "feat: the thing a-1 was cut for (a-1)")
+			qblGit(t, repo, "config", "branch."+branch+".posseBead", "a-1")
+			qblGit(t, repo, "config", "branch."+branch+".posseBase", "main")
+			qblGit(t, repo, "checkout", "-q", "main")
+			if tc.merge {
+				qblGit(t, repo, "merge", "-q", "--no-ff", "-m", "merge "+branch, branch)
+			}
+
+			is := BdIssue{ID: "a-1", Title: "t", Assignee: "developer", CloseReason: "DONE",
+				Labels: []string{"code"}, ClosedAt: &closed}
+			sec := b.App.verifySection(repo, is, verifyCloser(is))
+			if !strings.Contains(sec, "- session branches cut for a-1 (branch.<b>.posseBead):") {
+				t.Fatalf("no landing block — the branch record was never read:\n%s", sec)
+			}
+			if !strings.Contains(sec, branch+" tip ") {
+				t.Errorf("the landing block never named the branch:\n%s", sec)
+			}
+			if !strings.Contains(sec, tc.want) {
+				t.Errorf("landing block does not say %q:\n%s", tc.want, sec)
+			}
+			if strings.Contains(sec, tc.deny) {
+				t.Errorf("landing block says %q for the %s arm:\n%s", tc.deny, tc.name, sec)
+			}
+			// Beside, never instead of: the foreign commit stays listed in
+			// both arms, and its presence is exactly why the block is needed.
+			if !strings.Contains(sec, "- commits naming a-1 (git log --grep") ||
+				!strings.Contains(sec, "qa: park the flake (a-2, red from a-1)") {
+				t.Errorf("the commit trail was lost — the landing block replaced evidence instead of adding to it:\n%s", sec)
+			}
+		})
+	}
+}
+
+// No branch record, no verdict (ranger-base-hl0sp). `git branch -d` takes
+// the branch's config with it, so a session that landed and was tidied up is
+// byte-identical from git to a branch cut before the stamp existed and to a
+// close with no session at all. Printing "not landed" for any of those would
+// be the same defect this block was built to fix, pointed the other way.
+func TestVerifySectionSaysNothingAboutLandingWithoutABranchRecord(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	repo := t.TempDir()
+	vaGitRepo(t, repo, "feat: the thing (a-1)")
+	closed := time.Date(2026, 9, 3, 9, 20, 6, 0, time.UTC)
+	is := BdIssue{ID: "a-1", Title: "t", CloseReason: "DONE", ClosedAt: &closed}
+	sec := b.App.verifySection(repo, is, verifyCloser(is))
+	if strings.Contains(sec, "session branches cut for") {
+		t.Errorf("a landing block appeared with no branch record behind it:\n%s", sec)
+	}
+	// The control: the section IS being built and the trail did run, so the
+	// absence above is the record's, not an empty section's.
+	if !strings.Contains(sec, "- commits naming a-1 (git log --grep") {
+		t.Fatalf("the section carried no trail either — this test pins nothing:\n%s", sec)
 	}
 }

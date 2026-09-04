@@ -1010,9 +1010,26 @@ config `verify_labels:`. Each one without a `qa` dependent earns
 discovered-from:<id>`, and `verify filed: <qid>` goes back as a comment on
 the close (or one bead per N closes — `verify_batch:`, below). The verify
 bead's description is what makes it workable: the closer, the
-`close_reason`, the commits `git log --grep <id>` finds in that repo, and the closer PID's `## Intents` "done when" row for the bead's
+`close_reason`, the commits `git log --grep <id>` finds in that repo, whether
+the session branches cut FOR that bead reached their base, and the closer PID's `## Intents` "done when" row for the bead's
 labels (`IntentDoneWhen` — a label matches an intent slug word, plural or
 not, so `bug` finds `fix-bugs`; no match is an absent line).
+
+  The landing block is beside the trail, never instead of it, because the
+  trail cannot answer the question it looks like it answers
+  (ranger-base-hl0sp): `--grep` names every commit in the checkout's
+  ancestry whose MESSAGE mentions the id, so a commit that merely CITES a
+  bead is indistinguishable there from the commit that shipped it, and a
+  close whose own work never left its session branch reads as landed. The
+  record that knows is `branch.<b>.posseBead` (`beadKey`, written at every
+  launch into the tree), and `gitBranchLandingFor` asks it: for each branch
+  cut for the bead, has its tip reached the base `branch.<b>.posseBase`
+  names? A MISSING record says nothing either way and prints nothing —
+  `git branch -d` takes the branch's config with it, so a session that
+  landed and was tidied up looks exactly like one cut before the stamp
+  existed. The instance: ranger-base-5jdzh's verify bead listed d309e2b,
+  which is ranger-base-wd4be's commit naming 5jdzh, while 5jdzh's own
+  411e54f sat on `posse/dinesh-posse-ranger-base-5jdzh` off main.
 
 - **Config** `verify_labels:` (absent → `code, devops`; present but empty →
   off, and then bd is not even asked) and `verify_assignee:` (the persona

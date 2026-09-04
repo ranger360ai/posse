@@ -103,6 +103,12 @@ const (
 
 	verifyCommitLimit = 10
 	verifyTitleMax    = 200
+	// verifyBranchLimit caps how many session branches one close's landing
+	// block names, for the reason verifyCommitLimit exists: this is a
+	// description bd has to store. A bead is normally cut for one session,
+	// so more than one is already the interesting case (a relaunch under a
+	// second persona, a hand-made branch) and the first few carry it.
+	verifyBranchLimit = 5
 
 	// verifyMarkerPrefix opens every verify bead's description, and is the
 	// dedupe of record: which close this bead answers, written by bd in the
@@ -799,7 +805,18 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 		fmt.Fprintf(&b, "- done when (%s · %s): %s\n", verifyOneLine(closer), verifyOneLine(intent), verifyOneLine(done))
 	}
 	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
-		fmt.Fprintf(&b, "- commits (git log --grep %s):\n", is.ID)
+		fmt.Fprintf(&b, "- commits naming %s (git log --grep; a commit may merely CITE the bead):\n", is.ID)
+		for _, l := range lines {
+			fmt.Fprintf(&b, "    %s\n", l)
+		}
+	}
+	// Beside the trail, never instead of it: the trail says what mentions
+	// the bead, this says whether the session cut for it got its work home
+	// (ranger-base-hl0sp). Silence here means no branch record named this
+	// bead, which is not a claim either way — gitBranchLandingFor's comment
+	// says why that is the honest shape.
+	if lines := gitBranchLandingFor(dir, is.ID); len(lines) > 0 {
+		fmt.Fprintf(&b, "- session branches cut for %s (branch.<b>.posseBead):\n", is.ID)
 		for _, l := range lines {
 			fmt.Fprintf(&b, "    %s\n", l)
 		}
@@ -870,6 +887,118 @@ func gitCommitsFor(dir, id string) ([]string, error) {
 		}
 	}
 	return lines, nil
+}
+
+// gitBranchLandingFor answers the question `git log --grep` cannot ask, and
+// whose absence let a stranded close read as a landed one (ranger-base-hl0sp,
+// found by the sweep on ranger-base-2dzsm). --grep names every commit in the
+// checkout's ancestry whose MESSAGE mentions the id, and there a commit that
+// merely CITES a bead is indistinguishable from the commit that shipped it.
+// The instance: ranger-base-5jdzh's verify bead listed d309e2b — which is
+// ranger-base-wd4be's commit, whose message happens to name 5jdzh — while
+// 5jdzh's own work sat on a session branch whose tip (411e54f) was not an
+// ancestor of main, and no line in the bead said so.
+//
+// The record that does know is branch.<b>.posseBead (beadKey), written at
+// every launch into the tree and outliving the session meta by design. So:
+// find the branches cut FOR this bead and say, for each, whether its tip has
+// reached the base it was cut from (baseKey, with the same fallback baseOf
+// gives a branch cut before that stamp existed).
+//
+// A MISSING record is not evidence of a landing, and nothing here may be
+// read as one: `git branch -d` takes the branch's config with it, so a
+// session that landed and was tidied up leaves nothing behind, exactly like
+// a branch cut before the stamp. That is why this returns lines only for the
+// records it FOUND and states a strand positively ("has NOT reached main")
+// rather than inferring one from an empty list — the empty case is the
+// silence gitCommitsFor already gives, not a verdict.
+//
+// What it writes is a READING TAKEN AT FILING TIME and the description says
+// so by naming the record, not a status the bead then owns: a strand that is
+// re-landed an hour later leaves this line stale in a stored document, the
+// same way the commit trail goes stale. That is the right trade here — the
+// verifier's first act is to re-run the two commands the line names, and a
+// line that was true when written is what sends them to look. A live status
+// would mean the filer re-writing descriptions after the fact, which is the
+// one thing the dedupe-of-record marker must be able to rely on not happening.
+//
+// Best effort in the same shape as gitCommitsFor: no repo, no git, no record
+// for this id, no lines. It never fails the filing.
+func gitBranchLandingFor(dir, id string) []string {
+	if dir == "" {
+		dir = "."
+	}
+	// The whole branch section, filtered in Go rather than by a tighter
+	// regexp, because git config is only half case-preserving and the half
+	// that matters here is the wrong one: it lowercases the section and
+	// VARIABLE names it prints (the subsection — the branch — keeps its
+	// case), so the key comes back as `branch.<b>.possebead` however it was
+	// written. Matching that in the pattern would mean encoding git's
+	// case-folding rules for `--get-regexp` in a string literal; EqualFold
+	// below says the same thing where it can be read.
+	out, err := git(dir, "config", "--get-regexp", `^branch\.`)
+	if err != nil {
+		return nil
+	}
+	// The spelling comes from beadKey itself (beadKey("") is
+	// "branch.<>.posseBead"), so renaming the key cannot leave this reader
+	// silently matching nothing.
+	const branchPrefix = "branch."
+	beadSuffix := strings.TrimPrefix(beadKey(""), branchPrefix)
+	var branches []string
+	for _, l := range strings.Split(out, "\n") {
+		key, val, ok := strings.Cut(strings.TrimSpace(l), " ")
+		if !ok || strings.TrimSpace(val) != id {
+			continue
+		}
+		if !strings.HasPrefix(key, branchPrefix) || len(key) <= len(branchPrefix)+len(beadSuffix) {
+			continue
+		}
+		if !strings.EqualFold(key[len(key)-len(beadSuffix):], beadSuffix) {
+			continue
+		}
+		branches = append(branches, key[len(branchPrefix):len(key)-len(beadSuffix)])
+	}
+	// git prints config in file order; the description is a stored document
+	// and a re-file must not shuffle its lines.
+	sort.Strings(branches)
+	fallback := repoBranch(dir)
+	var lines []string
+	for _, b := range branches {
+		if len(lines) == verifyBranchLimit {
+			lines = append(lines, fmt.Sprintf("(%d more branch record(s) name this bead)", len(branches)-len(lines)))
+			break
+		}
+		tip, err := git(dir, "rev-parse", "--short", "refs/heads/"+b)
+		if err != nil {
+			// The record outlives the branch only until someone prunes the
+			// config by hand; say which, rather than dropping the row.
+			lines = append(lines, fmt.Sprintf("%s: no such branch here (the record outlived it)", verifyOneLine(b)))
+			continue
+		}
+		base := baseOf(dir, b, fallback)
+		switch {
+		case base == "":
+			lines = append(lines, fmt.Sprintf("%s tip %s — no base recorded and the checkout is detached, so nothing here can say where it lands",
+				verifyOneLine(b), verifyOneLine(tip)))
+		case b == base:
+			// The bead was worked in the shared checkout, on the base itself
+			// (a crew session, or dispatch onto a detached HEAD). There is no
+			// merge-back to be waiting on and no strand to report.
+			lines = append(lines, fmt.Sprintf("%s tip %s IS %s — worked in the checkout, no merge-back",
+				verifyOneLine(b), verifyOneLine(tip), verifyOneLine(base)))
+		case !branchExists(dir, base):
+			lines = append(lines, fmt.Sprintf("%s tip %s — %s is not a branch here, so nothing can say whether it reached",
+				verifyOneLine(b), verifyOneLine(tip), verifyOneLine(base)))
+		default:
+			reached := "has NOT reached"
+			if _, err := git(dir, "merge-base", "--is-ancestor", "refs/heads/"+b, "refs/heads/"+base); err == nil {
+				reached = "has reached"
+			}
+			lines = append(lines, fmt.Sprintf("%s tip %s %s %s", verifyOneLine(b), verifyOneLine(tip), reached, verifyOneLine(base)))
+		}
+	}
+	return lines
 }
 
 func hasAnyLabel(labels, want []string) bool {
