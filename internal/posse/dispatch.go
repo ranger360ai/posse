@@ -4832,11 +4832,19 @@ const discoveredFromMarkerPrefix = "discovered-from: "
 //
 // The every-pass cadence costs nothing, because the dedupe is the TITLE and
 // not the site: mergeBlockedTitle carries branch+base, a branch is cut per
-// bead (SessionForBead), and openMergeBlocked reads the OPEN ones back
-// before filing. N sweeps over one permanently blocked branch leave one
-// bead and one comment — the same answer closeddirty.go gives at this same
-// site, and the reason the sweep's old "a bead per pass is spam" paragraph
-// no longer describes anything.
+// bead (SessionForBead), and priorMergeBlocked reads back what the store
+// already holds under that title before filing. N sweeps over one
+// permanently blocked branch leave one bead and one comment — the same
+// answer closeddirty.go gives at this same site, and the reason the sweep's
+// old "a bead per pass is spam" paragraph no longer describes anything.
+//
+// AND THAT HELD ONLY WHILE THE BEAD STAYED OPEN (ranger-base-j8qmj). The
+// read was open-only, so a block CLOSED with a do-not-land verdict — the
+// correct end for a branch whose content is already on the base, merge-back
+// being ff-only — destroyed its own dedupe and drew a byte-identical P1 on
+// the next pass, at a dispatched seat, over and over. priorMergeBlocked
+// reads the closed ones too; the arms below are what it costs to do that
+// without silencing a branch that has since moved.
 //
 // Best effort throughout and never quiet, on mergeBack's rule. say/warn are
 // the caller's own printf pair — the dispatcher's are serialized on its
@@ -4847,15 +4855,38 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 	}
 	base := orDetached(t.Base)
 	title := mergeBlockedTitle(t.Branch, base)
-	if open, err := openMergeBlocked(bd, dir, title); err != nil {
+	prior, err := priorMergeBlocked(bd, dir, title)
+	switch {
+	case err != nil:
 		// The read is the dedupe, not the handoff: a graph that will not
 		// answer must not cost a blocked merge the bead that says where its
 		// code is. Say so and file — a duplicate is visible, a missing
 		// handoff is not.
 		warn("posse: %s could not be checked for an existing merge-back bead (%v) — filing one\n", id, err)
-	} else if open != "" {
-		say("  ↳ %s already filed for %s — not re-filed\n", open, persona)
+	case prior.ID == "":
+		// Nothing has ever been filed for this branch. The ordinary path.
+	case prior.Open:
+		say("  ↳ %s already filed for %s — not re-filed\n", prior.ID, persona)
 		return
+	default:
+		// A CLOSED block is a verdict somebody reached about this branch,
+		// and the question is only whether it still describes it. Every
+		// arm below that cannot say so files, on the same rule as the
+		// failed read: a duplicate is visible, a missing handoff is not.
+		tip, ok := workHeadTime(t)
+		switch {
+		case prior.Verdict.IsZero():
+			say("  ↳ %s answered this block for %s and is closed, but the store did not say when — filing again\n", prior.ID, persona)
+		case !ok:
+			say("  ↳ %s answered this block for %s and is closed, but %s's tip cannot be read — filing again\n", prior.ID, persona, t.Branch)
+		case tip.After(prior.Verdict):
+			say("  ↳ %s answered this block for %s and is closed, but %s has moved since (%s) — filing again\n",
+				prior.ID, persona, t.Branch, tip.Format(time.RFC3339))
+		default:
+			say("  ↳ %s already answered this block for %s and closed it — not re-filed (%s has not moved since)\n",
+				prior.ID, persona, t.Branch)
+			return
+		}
 	}
 	filed, err := bd.Create(dir, BdNew{
 		Title:    title,
@@ -4916,11 +4947,83 @@ func mergeBlockedTitle(branch, base string) string {
 	return fmt.Sprintf("merge-back blocked: %s does not land on %s", branch, base)
 }
 
-// openMergeBlocked is the id of the OPEN merge-back bead already filed for
-// this branch, or "" for none. Closed does not count: a persona that
-// resolved one and the merge that is blocked again are two handoffs.
+// openMergeBlocked is the id of the OPEN merge-back bead with this title, or
+// "" for none. Its one caller left is the recovery read after a create that
+// reported failure: the question there is "did the bead I just tried to file
+// land anyway", and only an open one can be that bead.
 func openMergeBlocked(bd Bd, dir, title string) (string, error) {
 	return openTitledBead(bd, dir, MergeBlockedLabel, title)
+}
+
+// priorBlock is what the store already holds about this branch's merge:
+// nothing (ID ""), an open handoff, or a verdict that was reached and
+// closed, with the moment it was recorded.
+type priorBlock struct {
+	ID      string
+	Open    bool
+	Verdict time.Time // when the close was recorded; zero = the store did not say
+}
+
+// priorMergeBlocked is the dedupe, and it reads CLOSED beads too
+// (ranger-base-j8qmj). Open-only was the defect: it made closing a block the
+// act that destroyed its own dedupe, so a branch answered do-not-land drew a
+// byte-identical P1 on the very next pass and a dispatched seat re-derived
+// the same verdict. MEASURED 2026-09-04 over all 1921 beads: 23 merge-back
+// filings across 15 branches, 8 of them re-files on 5 branches — nw9zg,
+// nr3eq and 9a53x at three each.
+//
+// AND WHY CLOSED IS NOT SIMPLY THE END OF IT. A closed block is a verdict
+// about a branch AS IT STOOD, and openTitledBead's old comment names the
+// case that is really out there: a persona that resolved one and a merge
+// that is blocked again are two handoffs. EnsureSessionTree is idempotent by
+// design — "a relaunch, a resume, or a second pass over the same bead lands
+// in the tree that already exists" — so a reopened bead re-dispatched into
+// its old tree commits onto the same branch, and a dedupe that stopped at
+// "closed exists" would swallow that handoff forever. So the verdict is
+// taken as standing only while the branch has not MOVED since it was
+// recorded (workHeadTime); a branch that gained a commit afterwards is a new
+// question and gets a new bead.
+//
+// The comparison is sound because the ordering is causal, not lucky: the
+// block cannot be filed before the merge was attempted, the merge cannot
+// precede the commit it failed to land, and the verdict closes after the
+// bead exists. Measured on the five re-filed branches, every tip predates
+// its first close — by 49 minutes on 9a53x and by 2 on nr3eq, which is
+// tight and still on the right side, because it is the same causal chain
+// and not a coincidence of clocks.
+//
+// An OPEN row wins over a closed one whatever the dates say: it is a handoff
+// still owed, and the say line for it is the one the pass has always
+// printed. Among closed rows the LATEST verdict is the one that answers —
+// re-files leave several, and the freshest is the one that read the branch
+// as it now stands.
+func priorMergeBlocked(bd Bd, dir, title string) (priorBlock, error) {
+	all, err := bd.AllLabeledAny(dir, MergeBlockedLabel)
+	if err != nil {
+		return priorBlock{}, err
+	}
+	var p priorBlock
+	for _, b := range all {
+		if b.Title != title {
+			continue // EXACTLY, never a prefix — openTitledBead's E6
+		}
+		if b.Status != "closed" {
+			return priorBlock{ID: b.ID, Open: true}, nil
+		}
+		// ClosedAt is what bd records for a close; Updated is the fallback
+		// for a store that did not, and a zero verdict is reported as
+		// unknown rather than treated as the epoch — the epoch would make
+		// every branch look moved and file every pass, which is the bug
+		// this function exists to stop.
+		when := b.Updated
+		if b.ClosedAt != nil {
+			when = *b.ClosedAt
+		}
+		if p.ID == "" || when.After(p.Verdict) {
+			p = priorBlock{ID: b.ID, Verdict: when}
+		}
+	}
+	return p, nil
 }
 
 // baseOut is Out as the caller handed it in, before Watch teed the loop's

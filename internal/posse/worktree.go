@@ -96,6 +96,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // SessionTree is one dispatched session's private checkout: its own working
@@ -1052,6 +1053,36 @@ func workHead(t *SessionTree) (string, bool) {
 		return sha, true
 	}
 	return "", false
+}
+
+// workHeadTime is WHEN this session's work last moved: the committer date of
+// the commit workHead names, in the same order and for the same reason.
+//
+// The committer date and not the author's, because it is the one a REPLAY
+// updates — a rebase, a cherry-pick or an amend rewrites it and keeps the
+// author date — so "the branch is the same branch it was" is what this
+// measures, not "the same patch was written".
+//
+// Its one reader is the merge-back dedupe (priorMergeBlocked), which needs
+// to know whether a branch has moved since a verdict was recorded about it,
+// and (zero, false) is the honest "cannot say" that reader files on.
+func workHeadTime(t *SessionTree) (time.Time, bool) {
+	sha, ok := workHead(t)
+	if !ok {
+		return time.Time{}, false
+	}
+	// Asked of the REPO and not the tree: a retired worktree is exactly the
+	// state workHead's second arm covers, and the object store both share
+	// outlives it.
+	out, err := git(t.Repo, "show", "-s", "--format=%cI", sha)
+	if err != nil {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
 }
 
 // equivalentOnBase answers whether base ALREADY HOLDS the work of every

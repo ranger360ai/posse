@@ -453,6 +453,32 @@ func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	return parseBdIssues(out)
 }
 
+// AllLabeledAny is OpenLabeledAny with `--all`: every issue carrying one of
+// the labels, CLOSED ONES INCLUDED.
+//
+// It exists for one reader — the merge-back handoff's dedupe
+// (priorMergeBlocked) — and the two queries are kept apart rather than
+// merged because the callers want opposite things from a closed row.
+// OpenLabeledAny's readers (governance G3, the closed-dirty handoff) are
+// asking what is still WAITING, and a closed bead is answered. This one is
+// asking what has already been ANSWERED, and the answer is the whole point:
+// a merge-back block closed do-not-land is a verdict, and re-asking costs a
+// dispatched seat (ranger-base-j8qmj).
+//
+// --limit 0 for the reason Ready carries it and for a sharper one here:
+// bd's default cap is 50 and the closed rows are the old ones, so a capped
+// page of `--all` is exactly the page with the verdicts missing.
+func (b Bd) AllLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	out, err := b.run(dir, "list", "--all", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
+	if err != nil {
+		return nil, err
+	}
+	return parseBdIssues(out)
+}
+
 // BdBlocked is one row of `bd blocked --json`: an issue that is not in
 // `bd ready` because something else is holding it, and the ids doing the
 // holding.

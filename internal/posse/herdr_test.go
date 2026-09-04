@@ -226,15 +226,25 @@ func fakeBd(args []string) int {
 				}
 			}
 		}
+		body := "[]"
 		if b, err := os.ReadFile(file); err == nil {
-			if want == "" {
-				fmt.Print(string(b))
-			} else {
-				fmt.Print(fakeBdFilterLabels(string(b), want))
-			}
-		} else {
-			fmt.Print("[]")
+			body = string(b)
 		}
+		if want != "" {
+			body = fakeBdFilterLabels(body, want)
+		}
+		// `--all` is real bd's own switch — "Show all issues including
+		// closed (overrides default filter)" — and WITHOUT it a closed row
+		// is not in the answer. The fake used to serve its files whole,
+		// which made every open-vs-all distinction untestable: a dedupe
+		// that reads only open beads and one that reads closed ones too
+		// behaved identically against it, and that is exactly the defect
+		// ranger-base-j8qmj is about (the merge-back handoff re-filed a
+		// block that was closed do-not-land, every pass).
+		if !hasArg(args, "--all") {
+			body = fakeBdDropClosed(body)
+		}
+		fmt.Print(body)
 		return 0
 	case "blocked": // blocked --json → fake-blocked.json (the whole graph, one call)
 		// The same shape fake-ready-fail gives `ready`, because Bd.Ready now
@@ -505,6 +515,28 @@ func fakeBdFilterLabels(body, labels string) string {
 				break
 			}
 		}
+	}
+	b, err := json.Marshal(kept)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// fakeBdDropClosed is `bd list` WITHOUT `--all`: the closed rows are gone.
+// Anything the fixture did not give a status is kept — a row that never
+// said it was closed is not.
+func fakeBdDropClosed(body string) string {
+	var list []map[string]any
+	if json.Unmarshal([]byte(body), &list) != nil {
+		return body
+	}
+	kept := []map[string]any{}
+	for _, is := range list {
+		if st, _ := is["status"].(string); st == "closed" {
+			continue
+		}
+		kept = append(kept, is)
 	}
 	b, err := json.Marshal(kept)
 	if err != nil {
