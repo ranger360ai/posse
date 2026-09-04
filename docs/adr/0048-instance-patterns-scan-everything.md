@@ -1,10 +1,14 @@
-# ADR 0048 — Instance-defined visibility patterns scan every staged text file and added path; the pre-publication name is one of them
+# ADR 0048 — Instance-defined visibility patterns scan every staged file and added path; the pre-publication name is one of them
 
 *Status: accepted 2026-09-02 (ranger-base-9ubk6, from ranger-base-n8shu) ·
 owner: architect · extends ADR 0024 D2 · builds in ranger-base-uzgkz
 (code) and ranger-base-856sv (the operator's one config line) · number: 0043–0045
 stay pre-named by ADR 0040 §2 with live build beads; per 0040 §3.1 this file
-takes the next number no bead has claimed.*
+takes the next number no bead has claimed · amended 2026-09-04 (title, Context,
+D2, Consequences, Alternatives: the scope is every staged FILE, not every
+staged "text" file — "text" was the reader's mechanism written down as the
+rule, and git's text/binary call is a guess on the file's own bytes that one
+NUL flips; ranger-base-9307c, from ranger-base-h137b).*
 
 > The seed surface must carry zero bare occurrences of the harness's
 > pre-publication name (rangerhq-7xpn AC7; the marker form `<name>-<id>`
@@ -21,7 +25,7 @@ takes the next number no bead has claimed.*
   dir), before anything reaches main. Check 2 scans the shipped
   `OpsPatterns` over ADDED lines of staged **markdown only**; check 3 scans
   this box's derived identity literals over ADDED lines of **every** staged
-  text file and over ADDED staged paths. Config `beads_visibility_patterns:`
+  file and over ADDED staged paths. Config `beads_visibility_patterns:`
   (NOTES.md, "Instance-defined patterns") appends an instance's own
   vocabulary to the list — and today that list is rendered into check 0
   (the beads jsonl) and check 2, so a config pattern inherits check 2's
@@ -65,10 +69,31 @@ vocabulary and a `PromotedPath` edit, so the operator writes it
 (ranger-base-856sv); a persona cannot.
 
 **D2 — instance patterns get check 3's scope, not check 2's.** A config
-pattern is scanned over the ADDED lines of every staged text file, code
+pattern is scanned over the ADDED lines of every staged file, code
 included, and over the ADDED staged paths — the two arms
 `identityGuardCheck` already renders — while the shipped `OpsPatterns`
-stay markdown-only in check 2. ADR 0024 D2 kept check 2 off code because
+stay markdown-only in check 2. *Every staged file, not every staged "text"
+file (amended 2026-09-04, ranger-base-9307c, from ranger-base-h137b).* The
+reader is `git diff --cached -U0 --text`, and the scope IS that reader's
+output: the ADDED lines of whatever is staged, bytes as they are. "Text"
+was never a rule — it was the reader's silent classification written down
+as one. Git calls a file binary on its own bytes (one NUL is enough), and a
+binary file yields no `+` lines at all, so under the old wording a markdown
+file with one NUL in it committed its ops prose into the public tree with
+no refusal and no "judged nothing" line (MEASURED, h137b). The wall cannot
+tell that file from a real blob without guessing, and that guess was the
+hole, so it no longer guesses: a real blob whose BYTES carry a class is
+refused like any other file (MEASURED and pinned, h137b: a blob carrying the
+class is refused; the same blob without it commits). That is the rule's
+own reading, not a widening — an identity literal in a PNG's metadata or
+an instance name inside a tarball has no legitimate public use either, and
+is the leak nobody reads. The way through for a genuine asset is the
+existing override, typed by the operator; there is no allowlist of "real"
+binaries, by path, extension, attribute or heuristic, because each of those
+is a hole list the writer controls (a `.gitattributes` line saying `-diff`
+reached the same silence, MEASURED, h137b). Check 2 keeps its markdown
+pathspec and gains nothing but the same `--text`: a NUL in a `.md` file no
+longer exempts it. ADR 0024 D2 kept check 2 off code because
 the shipped list's *own source and tests* are byte-identical to hits, and a
 wall carrying an allowlist of its own files is a wall with a hole list.
 That argument is about the shipped list. A config pattern is never in
@@ -108,6 +133,16 @@ is what the wall does today.
   false-positive count over code and paths is 0 today. ASSUMED: it stays
   near 0, because the bare name has no legitimate use the pin would not
   already have refused.
+- *(2026-09-04)* Every ERE and every identity literal now scans a blob's
+  bytes too. MEASURED: this repo tracks zero files git classifies binary
+  (`git diff --numstat <empty tree> HEAD` has no `-` rows), so the
+  false-positive count over the tracked tree is 0 by construction. ASSUMED:
+  a future genuine asset that trips a class is a leak, not a false positive
+  — the classes are defined as "no legitimate public use anywhere", and
+  bytes are somewhere. The hook's own head comment and check 3's rendered
+  prose say "text file" today; the sweep re-renders the hook, so the L3
+  probe reads every hooked repo as "ours but stale" until `posse gates
+  install-hooks` runs — expected once, as ADR 0050 already paid.
 - ADR 0024's "Residuals" bullet ("non-markdown prose is unscanned by
   check 2") gains one clause: config patterns are scanned everywhere since
   this ADR. NOTES.md's "Instance-defined patterns" gains one sentence on
@@ -137,6 +172,26 @@ is what the wall does today.
 - **Widen shipped check 2 to code.** Rejected by ADR 0024 D2's own
   argument, which still holds for the shipped list.
 - **An eighth reword.** The seven closes are the measurement.
+- **Keep "text" and carve real binaries out (2026-09-04, priced three
+  ways).** *By git's own heuristic* — that is the wording this amendment
+  retires: the heuristic flips on one NUL, and a NUL is what pasted
+  terminal output carries. *By `.gitattributes` / `binary` or `-diff`* —
+  writer-controlled, and the writer's `core.attributesFile` was one of the
+  two measured ways to blank the reader; an exemption the writer can set
+  is not an exemption, it is the override without the log line. *By
+  extension allowlist* — ADR 0024 D2's hole-list argument verbatim: a file
+  named `x.png` with NOTES prose in it commits clean, and the list needs a
+  reviewed code change per asset type in a repo with no assets. All three
+  buy a false-negative to avoid a false-positive the override already
+  handles at the cost of one typed line.
+- **Scan a blob whole rather than its added "lines" (the clever one).** A
+  blob has no lines, so scanning its ADDED lines under `--text` is
+  scanning newline-delimited chunks of it; a whole-blob arm would be
+  "more honest". Rejected: the added-line rule already covers every byte a
+  new blob brings and every changed chunk of a modified one; a modified
+  path's untouched bytes cleared the wall the day they were added, which
+  is check 1's and check 3's path rule verbatim. A second reader shape for
+  one file class is a third attempt at one invariant.
 
 ## Operator steps (ranger-base-856sv)
 

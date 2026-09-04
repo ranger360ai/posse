@@ -5,7 +5,9 @@ ranger-base-w9jv (b)) · owner: architect · extends ADR 0024 D2 and ADR
 0048 D2 · builds in ranger-base-nfg8l (code, dinesh); the posture
 doc and the work-install runbook amend in ranger-base-83crg (security, hoover) ·
 number: 0043–0045 stay pre-named by ADR 0040 §2; per 0040 §3.1 this file
-takes the next number no bead has claimed.*
+takes the next number no bead has claimed · amended 2026-09-04 (Context,
+D2: the two arms read every staged FILE, not every staged "text" file —
+ADR 0048 D2 as amended; ranger-base-9307c, from ranger-base-h137b).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -20,7 +22,7 @@ takes the next number no bead has claimed.*
 - **Every check is inside the stamp gate.** `visibilityGuardBody` renders
   checks 0–3 — the beads jsonl, the docs-genre allowlist, shipped patterns
   over markdown, identity literals and (since ADR 0048 D2) instance
-  patterns over every staged text file and added path — under one shell
+  patterns over every staged file and added path — under one shell
   `if`: the stamped visibility equals `public`. A repo stamped `private`
   runs none of them. So `beads_visibility_patterns:` is inert in exactly
   the repo the ceiling is about: the work instance's own bead repo, which
@@ -64,7 +66,10 @@ refuses is carried and named (class only), in the hook file and in
 **D2 — the ceiling is its own block in the same hook, above the stamp
 gate, with check 3's two arms.** The `prepare-commit-msg` hook renders the
 ceiling scan FIRST — before `posse_beads_visibility` is tested — over the
-ADDED lines of every staged text file and the ADDED staged paths, using
+ADDED lines of every staged file and the ADDED staged paths (every file,
+whatever its bytes — the reader carries `--text`, ADR 0048 D2 as amended
+2026-09-04; a restricted system's export is a blob with a banner in it, and
+that is the ceiling's own case), using
 the two-arm renderer uzgkz built, with its own words: rule (this content
 may not exist in a local file; cite the system of record's id), remedy
 (remove the paste from the staged file, keep the cite; there is no private

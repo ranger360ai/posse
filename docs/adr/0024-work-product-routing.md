@@ -2,7 +2,11 @@
 
 *Status: accepted 2026-08-27 (operator ratified; the D4 ceilings blessed
 as shipped example defaults) · owner: architect ·
-extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz)*
+extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz) · amended
+2026-09-04 (D2 check 3 and Residuals: the identity literals are grepped over
+ALL staged files, not all staged "text" files — the reader carries `--text`
+because git's binary call flips on one NUL; ADR 0048 D2 as amended,
+ranger-base-9307c, from ranger-base-h137b)*
 
 ## Context
 
@@ -95,7 +99,9 @@ install and at every persona launch).
    instance repo path (dirname of the `.beads/redirect` target, rendered
    in both `~`-relative and absolute forms; the redirect is verified
    present and absolute in this tree). These are grepped over the ADDED
-   lines of **all** staged text files, and over the ADDED staged paths,
+   lines of **all** staged files — whatever their bytes: the reader
+   carries `--text`, so a NUL neither exempts a markdown file nor a real
+   blob (ADR 0048 D2 as amended 2026-09-04) — and over the ADDED staged paths,
    move detection off so a move's destination counts as new (MEASURED: a
    pure move yields no added lines at all, ranger-base-wlsv1). A
    filename is exactly where an operator-shaped artifact puts the
@@ -205,7 +211,11 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   by construction, mild friction accepted.
 - Residuals, stated: ops-class prose in code comments is unscanned
   (detector-source problem); non-markdown prose is unscanned by check 2
-  (check 3 still covers it) — and since ADR 0048 D2 this instance's own
+  (check 3 still covers it); a real blob's bytes ARE scanned by check 3 and
+  by every instance pattern since ranger-base-h137b, and a genuine asset
+  that trips a class goes through on the typed override, never on an
+  exemption (ADR 0048 D2 as amended: the exemptions were each priced and
+  each is a hole the writer controls) — and since ADR 0048 D2 this instance's own
   config patterns are scanned everywhere, moved out of check 2 into check
   3's scope, because the detector-source argument is about the SHIPPED
   list and a config pattern is never in source; a determined paraphrase
