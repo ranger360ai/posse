@@ -35,12 +35,12 @@ func TestNewModelFlagRefusals(t *testing.T) {
 		{[]string{"new", "--help"}, 0, "--model <id>"},
 		// D1's companions, one refusal each.
 		{[]string{"new", "s", "--model", "gpt-6-astra"}, 1, "needs --agent"},
-		{[]string{"new", "s", "--agent", "richard", "--model", "gpt-6-astra"}, 1, "needs an explicit --runtime"},
-		{[]string{"new", "s", "--agent", "richard", "--runtime", "codex", "--model", "gpt-6-astra"}, 1, "needs an explicit --tier"},
+		{[]string{"new", "s", "--agent", "architect", "--model", "gpt-6-astra"}, 1, "needs an explicit --runtime"},
+		{[]string{"new", "s", "--agent", "architect", "--runtime", "codex", "--model", "gpt-6-astra"}, 1, "needs an explicit --tier"},
 		// D1's id rule.
-		{[]string{"new", "s", "--agent", "richard", "--runtime", "codex", "--tier", "strong", "--model", "gpt 6"}, 1, "is not one token"},
-		{[]string{"new", "s", "--agent", "richard", "--runtime", "codex", "--tier", "strong", "--model", "gpt\x1b6"}, 1, "control character"},
-		{[]string{"new", "s", "--agent", "richard", "--runtime", "codex", "--tier", "strong", "--model"}, 1, "flag --model needs a value"},
+		{[]string{"new", "s", "--agent", "architect", "--runtime", "codex", "--tier", "strong", "--model", "gpt 6"}, 1, "is not one token"},
+		{[]string{"new", "s", "--agent", "architect", "--runtime", "codex", "--tier", "strong", "--model", "gpt\x1b6"}, 1, "control character"},
+		{[]string{"new", "s", "--agent", "architect", "--runtime", "codex", "--tier", "strong", "--model"}, 1, "flag --model needs a value"},
 	} {
 		out, code := runRhq(t, bin, env, c.args...)
 		if code != c.code || !strings.Contains(out, c.want) {

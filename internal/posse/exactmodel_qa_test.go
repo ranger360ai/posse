@@ -40,7 +40,7 @@ func canaryOpts(name, agent string) NewSessionOpts {
 func TestExactModelCompanionRefusals(t *testing.T) {
 	t.Parallel()
 	full := func(mut func(*NewSessionOpts)) NewSessionOpts {
-		o := canaryOpts("c", "richard")
+		o := canaryOpts("c", "architect")
 		mut(&o)
 		return o
 	}
@@ -49,7 +49,7 @@ func TestExactModelCompanionRefusals(t *testing.T) {
 		o    NewSessionOpts
 		want string // "" = must be accepted
 	}{
-		{"the ADR's own invocation", canaryOpts("c", "richard"), ""},
+		{"the ADR's own invocation", canaryOpts("c", "architect"), ""},
 		{"no model at all is every other launch", NewSessionOpts{Name: "c"}, ""},
 		{"no --agent", full(func(o *NewSessionOpts) { o.Agent = "" }), "needs --agent"},
 		{"no --runtime", full(func(o *NewSessionOpts) { o.Runtime = "" }), "needs an explicit --runtime"},
@@ -85,8 +85,8 @@ func TestExactModelCompanionRefusals(t *testing.T) {
 func TestExactModelRefusesBeforeAnythingExists(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
-	canaryPersona(t, b, "richard")
-	o := canaryOpts("bad", "richard")
+	canaryPersona(t, b, "architect")
+	o := canaryOpts("bad", "architect")
 	o.Runtime = "" // the companion the launch itself must miss
 	o.Dir = t.TempDir()
 
@@ -107,7 +107,7 @@ func TestExactModelRefusesBeforeAnythingExists(t *testing.T) {
 func TestExactModelRefusesATemplateWithNoModelSlot(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	canaryPersona(t, b, "richard")
+	canaryPersona(t, b, "architect")
 	os.MkdirAll(b.App.RuntimesDir(), 0o755)
 	// A template-only runtime that takes a prompt and nothing else. It gets
 	// the default model_flag (--model %s) — so this is exactly the case the
@@ -115,7 +115,7 @@ func TestExactModelRefusesATemplateWithNoModelSlot(t *testing.T) {
 	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "slotless.yaml"),
 		[]byte("command: slotless --rules \"$(cat {file})\"\nmodel_strong: slot-1\n"), 0o644)
 
-	o := canaryOpts("nc", "richard")
+	o := canaryOpts("nc", "architect")
 	o.Runtime, o.Dir = "slotless", t.TempDir()
 	// A template-only runtime has no probe record, so ADR 0002 §4 refuses
 	// the launch for parity long before the render. Waiving that is what
@@ -134,7 +134,7 @@ func TestExactModelRefusesATemplateWithNoModelSlot(t *testing.T) {
 	// the runtime being a template one.
 	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "slotted.yaml"),
 		[]byte("command: slotted {model} --rules \"$(cat {file})\"\nmodel_strong: slot-1\n"), 0o644)
-	ok := canaryOpts("yc", "richard")
+	ok := canaryOpts("yc", "architect")
 	ok.Runtime, ok.Dir = "slotted", t.TempDir()
 	ok.AllowDegraded = true
 	if err := b.CreateSession(ok); err != nil {
@@ -150,10 +150,10 @@ func TestExactModelRefusesATemplateWithNoModelSlot(t *testing.T) {
 func TestExactModelRendersTheCodexLine(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
-	canaryPersona(t, b, "richard")
+	canaryPersona(t, b, "architect")
 	dir := t.TempDir()
 
-	o := canaryOpts("richard-astra", "richard")
+	o := canaryOpts("architect-astra", "architect")
 	o.Dir = dir
 	if err := b.CreateSession(o); err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -245,9 +245,9 @@ func TestExactModelSkipsTierSubstitution(t *testing.T) {
 func TestExactModelRecordListingAndRecovery(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
-	canaryPersona(t, b, "richard")
+	canaryPersona(t, b, "architect")
 
-	o := canaryOpts("richard-astra", "richard")
+	o := canaryOpts("architect-astra", "architect")
 	o.Dir = t.TempDir()
 	if err := b.CreateSession(o); err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -255,18 +255,18 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 	// An ordinary session beside it, from the same binary and the same
 	// backend: every "unchanged" claim below is measured against this row
 	// rather than against a remembered shape.
-	if err := b.CreateSession(NewSessionOpts{Name: "plain", Agent: "richard", Dir: t.TempDir(), Crew: true}); err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: "plain", Agent: "architect", Dir: t.TempDir(), Crew: true}); err != nil {
 		t.Fatalf("ordinary launch: %v", err)
 	}
 
-	m, ok := b.readMeta("richard-astra")
+	m, ok := b.readMeta("architect-astra")
 	if !ok {
 		t.Fatal("no meta")
 	}
 	if m.Model != astraID {
 		t.Errorf("meta model = %q, want %q", m.Model, astraID)
 	}
-	raw, err := os.ReadFile(b.metaPath("richard-astra"))
+	raw, err := os.ReadFile(b.metaPath("architect-astra"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,10 +307,10 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 	if err := b.CmdList(&list); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(list.String(), "🎭richard@codex/strong="+astraID) {
+	if !strings.Contains(list.String(), "🎭architect@codex/strong="+astraID) {
 		t.Errorf("posse list does not show the canary:\n%s", list.String())
 	}
-	if !strings.Contains(list.String(), "🎭richard  ") {
+	if !strings.Contains(list.String(), "🎭architect  ") {
 		t.Errorf("the ordinary session's line changed:\n%s", list.String())
 	}
 
@@ -338,7 +338,7 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 	// The recovery line has to be pasteable, which under D1 means it carries
 	// --runtime and --tier beside --model.
 	rc := RecoverCommand(m)
-	for _, want := range []string{"--agent richard", "--runtime codex", "--tier strong", "--model " + astraID} {
+	for _, want := range []string{"--agent architect", "--runtime codex", "--tier strong", "--model " + astraID} {
 		if !strings.Contains(rc, want) {
 			t.Errorf("RecoverCommand missing %q: %s", want, rc)
 		}
@@ -349,7 +349,7 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 
 	// Relaunch retypes the canary, not the tier's model (D4: killing is what
 	// ends the override, not a crash).
-	if _, err := b.RelaunchAgent("richard-astra", 0); err != nil {
+	if _, err := b.RelaunchAgent("architect-astra", 0); err != nil {
 		t.Fatalf("RelaunchAgent: %v", err)
 	}
 	log := launchLog(t, b.App, fake)
@@ -366,10 +366,10 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 func TestLegacyRecordWithoutModelIsUnchanged(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	canaryPersona(t, b, "richard")
+	canaryPersona(t, b, "architect")
 	dir := t.TempDir()
 	os.MkdirAll(b.metaDir(), 0o755)
-	legacy := "name: old\nworkspace: w1\npane: p1\nemoji: 🪢\nagent: richard\nruntime: codex\ntier: strong\ndir: " + dir + "\ncrew: true\n"
+	legacy := "name: old\nworkspace: w1\npane: p1\nemoji: 🪢\nagent: architect\nruntime: codex\ntier: strong\ndir: " + dir + "\ncrew: true\n"
 	if err := os.WriteFile(b.metaPath("old"), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
