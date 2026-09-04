@@ -135,3 +135,52 @@ as **ranger-base-s0ih6** with the exact commands and the zero-line blast
 radius, beside `ranger-base-s0eo2` for nw9zg. `ranger-base-j8qmj` (the
 closed-aware dedupe in `noteMergeBlocked`) is the systemic fix; until it
 lands, this branch re-files a P1 every pass exactly as nw9zg did.
+
+### Second pass: the exit was already filed, and the loop fired anyway (ranger-base-77e3h)
+
+2026-09-04. The same block was filed a second time against the same untouched
+branch (`ranger-base-ggl5a` → `ranger-base-77e3h`), exactly as this note
+predicted it would. Re-confirmed at `main` `f3ad166`, **15 commits** after the
+first reading at `0e78fae`. The branch is untouched (`a07bc2d`, tree clean),
+and every arm above reproduces unchanged:
+
+| arm | first pass (`0e78fae`) | this pass (`f3ad166`) |
+|---|---|---|
+| `go build -overlay` (branch .go onto main) | rc 0, zero bytes | rc 0, zero bytes |
+| `go vet -overlay ./internal/posse/` | rc 1, `undefined: diffHeaderPath` | rc 1, same symbol, same line 280 |
+| control, `B=main` | rc 0 / rc 0, zero bytes | rc 0 / rc 0, zero bytes |
+| both pins with only `exampledigests.go` overlaid | FAIL, nine files | FAIL, nine files, both pins named |
+| both pins unoverlaid at `main` | ok | ok 2.769s |
+| `git cherry main <B>` · `-x` trailers on `main` | `+ +` · none | `+ +` · none |
+
+`ranger-base-avq12` claimed the verdict is monotone in `main`'s advance. That
+was one branch read twice; this is a second branch, 15 commits of drift, and
+the same six answers. Nothing here is worth re-deriving a third time.
+
+**What is new is about the exit, and it bounds `ranger-base-ygp08`'s lesson.**
+ygp08 concluded that the second close of a merge-back block is not "comment the
+verdict again", it is *file the operator ask*. This branch's ask was already
+filed — `ranger-base-s0ih6`, 00:41; `ggl5a` closed 00:51 — and the block
+re-filed at **03:56**, three hours later, with the exit open the whole time.
+So filing the ask is **necessary and not sufficient**: nothing in
+`noteMergeBlocked` reads it, and the only two things that end the loop are the
+operator removing the tree or `ranger-base-j8qmj` landing. The ask is what
+makes the loop legible to a human, not what stops it.
+
+And do **not** raise the ask's priority to match the P1 it would silence. An
+operator bead sitting in `bd ready` is dispatchable to a persona — status,
+assignee and label do not gate readiness, only a blocking dep or `--defer` do
+(ranger-base-6y83) — so promoting `s0ih6` from P2 buys a session burned on a
+bead no persona can execute. It sits at #13 in `bd ready` today. Leave it.
+
+Census, `main` `f3ad166`, over all 1921 beads: **23 filings across 15
+branches, 8 of them re-files on 5 branches** (`nr3eq`, `9a53x`, `nw9zg` three
+each; `4ts30`, `ifiz5` two). `j8qmj` was filed on "four branches carry two
+each" one day earlier; it is now five, three of them at three. Four
+`OPERATOR: retire` asks, all P2 and all open. The one repeat-branch with no
+ask is `dinesh-posse-ranger-base-ifiz5`; `ranger-base-17ui3` is live on it, so
+this pass names it rather than filing into that lane.
+
+One trap while counting: `bd list --all --limit 300` returns 302 rows and
+silently drops all four retire asks. The census above is at `--limit 5000`,
+which returns 1921 and is therefore complete.
