@@ -179,7 +179,7 @@ release-notes:
 # memory: each suite was 2-3x its solo time and the 1-minute loadavg was 899
 # against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
 # the moment five seats were about to free. A `-run` filter or a named package
-# is NOT queued. `make verify-suite-lock` (~5s) pins the slots.
+# is NOT queued. `make verify-suite-lock` (~17s) pins the slots.
 test: fmt-check verify-test-times verify-parallel verify-suite-lock tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
@@ -205,15 +205,19 @@ verify-parallel:
 verify-test-times:
 	@scripts/test-times.sh --self-test
 
-# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Eleven
+# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Fourteen
 # arms, each driving REAL concurrent processes against a scratch lock dir,
 # because the only thing worth knowing about a lock is what a SECOND process
 # sees: two full suites run at once and a third waits; the waiting line names
 # the worktree it is waiting on; a `-run` filter and a single package are not
 # queued at all; a freed slot is taken by the waiter; the slot of a `kill -9`
 # run is reclaimed with no reaper (which is why it is an flock and not a
-# pidfile); an explicit release frees a slot before its process exits; and a
-# wrapper under `set -e` survives being queued. ~5s, no go build, no suite.
+# pidfile); an explicit release frees a slot before its process exits; a
+# wrapper under `set -e` survives being queued; a bad POSSE_SUITE_SLOTS runs
+# on the default without widening the queue; and a wrapper that dies leaving a
+# CHILD behind keeps the slot — held on the inherited fd, by design — while
+# `--status` says the acquiring pid is gone and names the survivor
+# (ranger-base-2fgu4). ~17s, no go build, no suite.
 verify-suite-lock:
 	@scripts/suite-lock.sh --self-test
 

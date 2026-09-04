@@ -56,11 +56,13 @@
 # flock(2), and never a pidfile or a lock DIRECTORY. This is the launcher
 # lock's argument (internal/posse/launchlock.go, ADR 0011 §1) applied to a
 # second resource: an flock is held by the open file description, so the
-# kernel drops it when the holder dies — crash, kill -9, closed pane alike.
-# Release *is* process death, which leaves no staleness class to detect and
-# nothing to reap. A `mkdir` lock or a pidfile would need a reaper, and a
-# suite that dies under a full disk at 02:00 would wedge the queue for
-# everybody until somebody noticed. The self-test's kill arm is that claim.
+# kernel drops it when the LAST holder of that description dies — crash,
+# kill -9, closed pane alike. Release *is* process death, which leaves no
+# staleness class to detect and nothing to reap (the LAST holder is not the
+# wrapper, and that distinction is the paragraph two below). A `mkdir` lock or
+# a pidfile would need a reaper, and a suite that dies under a full disk at
+# 02:00 would wedge the queue for everybody until somebody noticed. The
+# self-test's kill arm is that claim.
 #
 # WHY THE LOCK IS TAKEN BY A CHILD AND HELD BY THE SHELL. flock(1) is
 # util-linux and absent on macOS, where this runs; python3 is already a
@@ -75,6 +77,34 @@
 # The fd is inherited by `go test` and its children too, on purpose. A run
 # whose wrapper is killed but whose test tree keeps running is still spending
 # the box, and the slot should stay spent until the last of it is gone.
+#
+# WHICH BUYS LIVENESS AND NOT IDENTITY, and the paragraphs above are about
+# the first only (ranger-base-2fgu4). flock has no staleness class: the
+# kernel revokes the lock when the last inheritor of the description dies,
+# and no snapshot of that decays. But it answers "SOME process holds this",
+# never "the process the stamp names holds this" — a separate question, for
+# which the stamp is an ordinary pidfile and decays exactly as one. The two
+# come apart the moment the wrapper dies before its children do:
+#
+#   MEASURED 2026-09-04 19:11-19:32Z. A `make test` wrapper (pid 58268) took
+#   slot 2 and was SIGKILLed at 19:17Z. `--status` read "slot 2: HELD by pid
+#   58268" at 19:26Z and again at 19:32Z. The HELD was true and kernel-owned
+#   — a child that inherited fd 9 had outlived the wrapper. The pid printed
+#   beside it had been dead for fifteen minutes, and nothing on the box said
+#   so, so a slot nobody was using printed the same line as a live suite. On
+#   a two-slot box that is half the capacity; and `ps` is denied inside the
+#   seatbelt cage (the refusal exits 0), so a seat that noticed could not
+#   name what was holding it either.
+#
+# So the two answers are printed apart now. The kernel's HELD stays the only
+# evidence. The stamp's pid is then asked `kill -0`, and the ONE definite
+# direction is reported: ESRCH, there is no such process. A pid that answers
+# is NOT reported as alive — pid numbers are recycled, so answering proves
+# something is alive and never that the holder is (_suite_lock_gone carries
+# the rest of that argument). Nothing is reclaimed on the strength of it: the
+# paragraph above still governs, the slot stays spent until the last
+# inheritor is gone, and what changed is only that the operator can tell
+# which of the two they are looking at.
 #
 # IT NEVER MAKES THE SUITE UNRUNNABLE. No python3 and no flock(1) means one
 # warning line and an unserialized run. That is the opposite of the launcher
@@ -185,12 +215,74 @@ suite_lock_wanted() {
 	[ "$tree" = 1 ]
 }
 
+# _suite_lock_gone <pid> — 0 when the kernel says there is NO process with
+# this pid. One direction, on purpose (ranger-base-2fgu4). `kill -0` has three
+# answers and only one of them is worth printing:
+#
+#   rc 0                      something has this pid. NOT reported, because
+#                             pids are recycled: this is liveness of some
+#                             process, never identity of the holder, and a
+#                             line saying "alive" would be the pidfile
+#                             mistake the header rejects.
+#   rc 1, "No such process"   ESRCH. Nothing has this pid. Definite, and the
+#                             only thing this function says yes to.
+#   rc 1, anything else       EPERM, usually — something HAS the pid and it
+#                             is not ours. Alive, so: not gone.
+#
+# The message is bash's own, and an unrecognised one falls through to "not
+# gone", which prints exactly what this file printed before the check
+# existed. `ps` would answer identity too (argv, start time, the way NOTES's
+# husk check does it for dispatch-watch.pid) but it is denied inside the
+# seatbelt cage AND its refusal exits 0, so a seat asking it would read the
+# empty output as "no such process" — the one wrong answer this must not give.
+_suite_lock_gone() {
+	local pid=${1:-} err
+	case $pid in '' | *[!0-9]*) return 1 ;; esac
+	# 0 is "every process in my group" to kill(2), which is not a question
+	# about a holder; a stamp can only say 0 if it was written by something
+	# that is not this file.
+	[ "$pid" -gt 0 ] || return 1
+	# `err=$(...)` carries the command's own status, and the `&&` keeps a
+	# wrapper under `set -e` alive through the ordinary failing case.
+	err=$(kill -0 "$pid" 2>&1) && return 1
+	case $err in *'No such process'*) return 0 ;; esac
+	return 1
+}
+
+# _suite_lock_who_holds <slotfile> — the processes with this file OPEN, as
+# "pid comm" pairs, or nothing. The identity answer the stamp cannot give:
+# lsof lists the actual holders of the open file description, which after the
+# wrapper dies is the only way to find out what the slot is still spent on.
+# `ps` is the obvious tool and is denied inside the seatbelt cage; lsof was
+# measured working there (ranger-base-2fgu4, 2026-09-04).
+#
+# EMPTY IS SILENCE, never "nobody". A denied lsof exits 0 with no output —
+# the same shape as ps's refusal — so an empty answer prints no line at all
+# and --status degrades to exactly what it said before this existed. The one
+# thing it must never do is turn a refusal into "no process holds this".
+#
+# Capped, because a live suite has a test binary per package and the list is
+# a hint for a human, not a census.
+_suite_lock_who_holds() {
+	command -v lsof >/dev/null 2>&1 || return 1
+	local out
+	out=$(lsof -F pc "$1" 2>/dev/null | awk '
+/^p/ { p = substr($0, 2); next }
+/^c/ { if (!(p in seen)) { seen[p] = 1
+		if (n < 8) { out = out (n ? ", " : "") p " " substr($0, 2) }
+		n++ } }
+END { if (n > 8) { out = out ", and " (n - 8) " more" }
+	print out }')
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}
+
 # _suite_lock_holders — one line per slot that somebody holds, worktree first.
 # A hint for the waiting line and for --status, never evidence: the kernel
 # holds the lock and these bytes are a courtesy, exactly as launchlock.go's
 # stamp is. A slot whose stamp cannot be read still counts as held.
 _suite_lock_holders() {
-	local dir i f who
+	local dir i f who pid gone
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
@@ -198,8 +290,14 @@ _suite_lock_holders() {
 		[ -f "$f" ] || continue
 		who=$(sed -n 's/^worktree: //p' "$f" 2>/dev/null | head -1)
 		[ -n "$who" ] || who="another worktree"
-		printf '%s (pid %s, since %s)\n' "$who" \
-			"$(sed -n 's/^pid: //p' "$f" 2>/dev/null | head -1)" \
+		pid=$(sed -n 's/^pid: //p' "$f" 2>/dev/null | head -1)
+		# " gone" and nothing more. This function reads STAMPS and does
+		# not ask the kernel which slots are held, so it cannot say what
+		# is holding one — only --status, which has just been refused
+		# the lock, has standing for that sentence.
+		gone=''
+		_suite_lock_gone "$pid" && gone=' gone'
+		printf '%s (pid %s%s, since %s)\n' "$who" "$pid" "$gone" \
 			"$(sed -n 's/^since: //p' "$f" 2>/dev/null | head -1)"
 	done
 }
@@ -340,7 +438,7 @@ suite_lock_release() {
 }
 
 suite_lock_status() {
-	local dir held
+	local dir held who
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
 	held=$(_suite_lock_holders)
@@ -360,6 +458,23 @@ suite_lock_status() {
 		else
 			printf '  slot %s: HELD by %s\n' "$i" \
 				"$(sed -n 's/^worktree: //p;s/^pid: /pid /p' "$f" 2>/dev/null | paste -sd ' ' -)"
+			# Two answers, printed apart. HELD is the kernel's and is
+			# evidence; the pid is the stamp's and decays. When the
+			# stamp's pid is DEFINITELY gone, the lock is being held
+			# by something that inherited fd 9 from it — by design
+			# (the header), and indistinguishable from a live suite
+			# until this line existed. It is a diagnosis, not a
+			# reclamation: nothing here frees the slot.
+			if _suite_lock_gone "$(sed -n 's/^pid: //p' "$f" 2>/dev/null | head -1)"; then
+				printf '          that pid is GONE — a process it forked inherited the slot; it frees when the last of them exits\n'
+				# And WHICH processes, when the box will say. This
+				# is the half a seat could not get at all: the
+				# stamp names the dead acquirer and `ps` is denied
+				# in the cage, so before this the only way to find
+				# the survivor was to go and look by hand.
+				who=$(_suite_lock_who_holds "$f") &&
+					printf '          still holding it: %s\n' "$who"
+			fi
 		fi
 	done
 }
@@ -418,6 +533,24 @@ printf 'released\n' >"$marker.released"
 while [ -e "$hold" ]; do sleep 0.05; done
 RELEASER
 	chmod +x "$tmp/releaser.sh"
+
+	# The same again, except it forks a child that OUTLIVES it and then
+	# waits to be killed. `go test`, the compilers it runs and the test
+	# binaries gotest.sh execs are exactly this to a wrapper: they inherit
+	# fd 9 and they do not die when it does. Arm 14 is that case.
+	cat >"$tmp/orphaner.sh" <<'ORPHANER'
+#!/usr/bin/env bash
+set -u
+lib=$1; marker=$2; hold=$3; shift 3
+. "$lib"
+suite_lock_acquire "$@" 2>"$marker.log"
+# The child acquires nothing and opens nothing. All it has is the INHERITED
+# fd 9, which is the entire point of the arm.
+( while [ -e "$hold" ]; do sleep 0.05; done ) &
+printf 'slot:%s\npid:%s\nchild:%s\n' "${_SUITE_LOCK_SLOT:-none}" "$$" "$!" >"$marker"
+while :; do sleep 0.05; done
+ORPHANER
+	chmod +x "$tmp/orphaner.sh"
 
 	# House form, the same one scripts/gotest.sh and scripts/test-times.sh
 	# print and the same one the QA pin requires by arm name.
@@ -679,6 +812,106 @@ STRICT
 	# queue that never opens, and it is not coming back on its own.
 	kill "$h15" "$h16" "$h17" 2>/dev/null
 	wait "$h15" "$h16" "$h17" 2>/dev/null
+
+	# ARM 14: the wrapper dies and a child of it does not. Arm 7 kills a
+	# holder that has no children and watches the slot come back; this is
+	# the case it cannot reach, and it is the one that cost this box half
+	# its suite capacity for fifteen minutes (ranger-base-2fgu4). fd 9 is
+	# inherited, so SIGKILL on the wrapper drops the wrapper's COPY of the
+	# open file description and not the description itself.
+	#
+	# Three things have to hold at once, and the first two pull opposite
+	# ways — which is why one arm and not two:
+	#
+	#   the slot stays HELD, because the header says it should: a test tree
+	#   that outlives its wrapper is still spending the box. Without this
+	#   half the arm goes green over a "fix" that gave fd 9 close-on-exec
+	#   and silently reversed that decision.
+	#
+	#   --status NAMES the case, because until it did, a slot nobody was
+	#   using and a live suite printed the same line.
+	#
+	#   and it names the SURVIVOR, because `ps` is denied in the cage, so
+	#   the pid list from lsof is the only handle a seat has on what is
+	#   still spending the slot.
+	#
+	# Its own lock dir at POSSE_SUITE_SLOTS=1, or "still held" is not
+	# provable: with two slots a second suite takes the other one and the
+	# arm measures nothing.
+	local od=$tmp/orphan-locks arm14='orphan: a dead wrapper leaves the slot held by its child, and says so'
+	local opid ochild before after queued=0 drained=0 named=0 h18 h19 n
+	mkdir -p "$od"
+	orphan_status() { ( export POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1; suite_lock_status ); }
+	touch "$tmp/hold18"
+	POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1 \
+		"$tmp/orphaner.sh" "$SUITE_LOCK_LIB" "$tmp/m18" "$tmp/hold18" go test -timeout 25m ./... &
+	h18=$!
+	if ! wait_file "$tmp/m18" 10 || [ "$(slot_of "$tmp/m18")" = none ]; then
+		bad "$arm14" "the orphaning holder never acquired: $(tr '\n' '|' <"$tmp/m18.log" 2>/dev/null)"
+		kill "$h18" 2>/dev/null
+	else
+		opid=$(sed -n 's/^pid://p' "$tmp/m18" | head -1)
+		# The control, and it must be taken BEFORE the kill: a --status
+		# that printed the GONE line over every held slot would satisfy
+		# the other half of this arm exactly as well as a working one.
+		before=$(orphan_status)
+		kill -9 "$h18" 2>/dev/null
+		wait "$h18" 2>/dev/null
+		# The kernel has to agree the acquirer is gone, or what follows
+		# is a race and not a leak. Its own pid, never a pattern.
+		n=0
+		while kill -0 "$opid" 2>/dev/null && [ "$n" -lt 50 ]; do
+			sleep 0.1
+			n=$((n + 1))
+		done
+		after=$(orphan_status)
+
+		# ...and a real queued suite still cannot have it. This is the
+		# half that would catch a fix that freed the slot.
+		touch "$tmp/hold19"
+		POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1 \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m19" "$tmp/hold19" go test -timeout 25m ./... &
+		h19=$!
+		sleep 2
+		[ -e "$tmp/m19" ] || queued=1
+		# Let the child go. The slot must drain to the waiter — which is
+		# also the proof that the child was what held it, and that this
+		# is a slot spent by a survivor and not a permanent wedge.
+		rm -f "$tmp/hold18"
+		if wait_file "$tmp/m19" 15 && [ "$(slot_of "$tmp/m19")" = "$(slot_of "$tmp/m18")" ]; then
+			drained=1
+		fi
+		rm -f "$tmp/hold19"
+		kill "$h19" 2>/dev/null
+		wait "$h19" 2>/dev/null
+
+		# ...and, where the box has an lsof, the SURVIVOR is named. That
+		# is the half a seat cannot get any other way, so it is required
+		# whenever it is available and said out loud when it is not — a
+		# quietly skipped assertion is how a pin stops measuring.
+		named=1
+		if command -v lsof >/dev/null 2>&1; then
+			ochild=$(sed -n 's/^child://p' "$tmp/m18" | head -1)
+			# Whole-pid, without \b: BSD grep and GNU grep do not
+			# agree on it, and 5933 must not match 59330. Every entry
+			# in the list is "<pid> <comm>", after ": " or ", ".
+			printf '%s' "$after" | grep -qE "still holding it: (.*, )?$ochild " || named=0
+		else
+			printf 'note  %s: no lsof on this box, so the survivor is not named\n' "$arm14"
+		fi
+
+		if [ "$queued" = 1 ] && [ "$drained" = 1 ] && [ "$named" = 1 ] &&
+			printf '%s' "$before" | grep -q 'slot 1: HELD' &&
+			! printf '%s' "$before" | grep -q 'GONE' &&
+			printf '%s' "$after" | grep -q 'slot 1: HELD' &&
+			printf '%s' "$after" | grep -q "pid $opid" &&
+			printf '%s' "$after" | grep -q 'that pid is GONE'; then
+			ok "$arm14"
+		else
+			bad "$arm14" \
+				"queued=$queued drained=$drained named=$named; alive: $(printf '%s' "$before" | tr '\n' '|'); dead: $(printf '%s' "$after" | tr '\n' '|')"
+		fi
+	fi
 
 	wait 2>/dev/null
 

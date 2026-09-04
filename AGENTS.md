@@ -159,7 +159,13 @@ bd sync               # Sync with git
   package takes no slot — type those as freely as you ever did.
   `scripts/suite-lock.sh --status` says who holds the slots;
   `POSSE_SUITE_SLOTS` changes how many there are and `POSSE_SUITE_LOCK=0`
-  opts a run out loudly.
+  opts a run out loudly. A held slot whose line also reads **`that pid is
+  GONE`** is not a live suite: the wrapper that took it has died and something
+  it forked inherited the lock (fd 9 is inherited on purpose — a test tree
+  that outlives its wrapper is still spending the box). It frees itself when
+  the last of that tree exits; nothing reaps it, and until this line existed a
+  slot in that state printed exactly what a running suite printed
+  (ranger-base-2fgu4).
   **A bare `go test ./...` takes no slot and is invisible to the runs that
   do** — it is not queued, and it does not make anyone else queue.
   MEASURED 2026-09-04 by `scripts/suite-entry-census.py` over every session

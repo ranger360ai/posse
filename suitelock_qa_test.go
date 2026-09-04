@@ -77,6 +77,14 @@ var suiteLockArms = []string{
 	// counts down.
 	"slots: a bad POSSE_SUITE_SLOTS runs on the default and says so",
 	"slots: a negative POSSE_SUITE_SLOTS does not widen the queue",
+	// ranger-base-2fgu4: fd 9 is inherited, so a wrapper that dies leaving a
+	// child behind leaves the slot held on that child's copy of the open file
+	// description. The arm holds BOTH halves at once — the slot stays held
+	// (which is the design: a test tree outliving its wrapper is still
+	// spending the box) and `--status` says the acquiring pid is gone (which
+	// it did not, so a leaked slot and a live suite printed the same line for
+	// fifteen minutes on a two-slot box).
+	"orphan: a dead wrapper leaves the slot held by its child, and says so",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make
