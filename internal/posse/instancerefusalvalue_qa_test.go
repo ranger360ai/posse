@@ -223,12 +223,18 @@ func TestQAInstanceRefusalWithholdsTheValueInTheBeadsDb(t *testing.T) {
 }
 
 // PIN 4: the render itself, which is what every hooked repo on this box
-// carries. Exactly the three instance call sites are class-only; no shipped
+// carries. Exactly the four instance call sites are class-only; no shipped
 // pattern and no derived identity literal is. Reading it off the stamped
 // FILE rather than off a Go value is the point — the file is what runs.
 //
+// FOUR, not three, since ranger-base-qk8i9 gave check 3 a commit-MESSAGE
+// arm (ADR 0024 D2 check 3 / ADR 0048 D2 as amended 2026-09-03): check 0,
+// then check 3's content, path and message arms. The number is a census of
+// the sites, so it moves whenever a site is added — what this pin is about
+// is WHICH calls are muted, which the per-line check below owns.
+//
 // MUTATION-CHECKED: M1 drops the count to 1 and M2 to 2; M5 drops it to 0;
-// M4 raises it past 3 and trips the per-line check, which is what makes
+// M4 raises it past 4 and trips the per-line check, which is what makes
 // this a claim about WHICH entries rather than about how many. M3 leaves it
 // green — it changes what the shell function prints, not what is stamped —
 // and that is the pin split this file is built on.
@@ -251,9 +257,9 @@ func TestQAOnlyInstancePatternsAreClassOnlyInTheRender(t *testing.T) {
 			t.Errorf("a call that is not this instance's pattern was rendered class-only:\n\t%s", trimmed)
 		}
 	}
-	// check 0, check 3's content arm, check 3's path arm.
-	if classOnly != 3 {
-		t.Errorf("want the instance pattern class-only at its 3 call sites, got %d of %d posse_check calls:\n%s", classOnly, calls, hook)
+	// check 0, then check 3's content, path and message arms.
+	if classOnly != 4 {
+		t.Errorf("want the instance pattern class-only at its 4 call sites, got %d of %d posse_check calls:\n%s", classOnly, calls, hook)
 	}
 	// FIXTURE PREMISE: there are plain calls too, or the count above is
 	// green over a hook that renders one list and nothing else.
