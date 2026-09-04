@@ -852,6 +852,16 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},
 		{"watch.go", "d.App.PlanUsageStaleAfter(d.errw())", "the stale-after TYPO line, said once"},
 		{"watch.go", `"warning: cannot record the watch loop at %s`, "stampWatchPid, called from the header at Watch's head"},
+		{"watch.go", `"warning: cannot open the watch log %s`, "teeWatchLog, called from the header at Watch's head"},
+		// teeWatchLog is where Out and Err BECOME the tee (ranger-base-n00wn).
+		// Plumbing, not writing: three of these four do not print at all, and
+		// the fourth deliberately hands over the operator's raw stderr —
+		// reporting the log's own failure through a writer containing the
+		// failing log would recurse into the write that failed.
+		{"watch.go", "openWatchLog(path, WatchLogMax, d.errw())", "raw stderr on purpose; see teeWatchLog's doc"},
+		{"watch.go", "d.rawOut = d.Out", "installing the tee, not writing"},
+		{"watch.go", "d.Out = io.MultiWriter(d.Out, lg)", "installing the tee, not writing"},
+		{"watch.go", "d.Err = io.MultiWriter(d.errw(), lg)", "installing the tee, not writing"},
 		// Writer handoffs still outstanding — the same defect one call
 		// deep. Filed, not excused: when ranger-base-9jojv routes them
 		// through d.errWriter(), the site stops matching and the entry
