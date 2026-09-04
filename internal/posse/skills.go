@@ -24,7 +24,9 @@ package posse
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,7 +186,10 @@ func AgentsSkillsDir(cwd string) string {
 //   - Never clobber. An entry we did not write — the repo's own skill of
 //     that name, or anything not a symlink into RHQ_HOME/skills — refuses
 //     the launch instead of being replaced. posse writes into the
-//     operator's repo here; it may only ever write its own links.
+//     operator's repo here; it may only ever write its own links. The one
+//     exception is a DANGLING symlink: a link resolving to nothing binds
+//     nothing, so it is a relic rather than the operator's work and the
+//     launch replaces it (ranger-base-f6hiy).
 //   - Union, not replacement. The dir belongs to the *repo*, not to the
 //     persona (claude's tree is per-persona; this one cannot be), so a
 //     launch adds its own names and leaves other personas' links alone.
@@ -212,7 +217,7 @@ func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, e
 		switch target, ours := a.boundSkillLink(link); {
 		case target == paths[i]:
 			// already bound to the same skill — leave it as it is
-		case ours:
+		case ours, danglingSkillLink(link):
 			if err := os.Remove(link); err != nil {
 				return "", err
 			}
@@ -244,6 +249,26 @@ func (a *App) boundSkillLink(link string) (target string, ours bool) {
 		return link, false // a real dir, or a symlink that is not ours
 	}
 	return t, true
+}
+
+// danglingSkillLink reports whether link is a symlink whose target does not
+// exist. Such an entry binds nothing, so it is a post-cutover relic and not
+// the operator's own file: the one this was filed for pointed into
+// ~/.config/rhq — the home retired days earlier (ADR 0015) — and its only
+// effect was to refuse every launch of the persona that named that skill,
+// until it was removed by hand (ranger-base-f6hiy).
+//
+// Only "does not exist" counts. A link into a directory this uid cannot
+// traverse, or a symlink loop, resolves to an error that is not
+// fs.ErrNotExist, is not evidence that the target is gone, and still
+// refuses — the never-clobber rule holds everywhere it can still be wrong.
+func danglingSkillLink(link string) bool {
+	fi, err := os.Lstat(link)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	_, err = os.Stat(link)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // sweepDeadSkillLinks removes our links whose skill has left

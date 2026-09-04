@@ -93,7 +93,13 @@ Two consequences of the cwd shape, both accepted: `{skills}` renders
 and the dir belongs to the **repo**, not to the persona — so the launch
 adds its own links, never removes another persona's, and refuses rather
 than overwrite an entry posse did not write. Union semantics is what §4
-already licenses: posse guarantees presence, not absence.
+already licenses: posse guarantees presence, not absence. One entry is
+exempt from the refusal: a **dangling** symlink — a link whose target does
+not exist — binds nothing and is a relic of a moved or retired home rather
+than the operator's work, so the launch replaces it (ranger-base-f6hiy: a
+link into the pre-ADR-0015 `~/.config/rhq` survived the cutover and refused
+every launch of the persona binding that skill until it was removed by
+hand).
 
 Empty `skills:` renders nothing (the placeholder vanishes with its
 space, like `{allow}`). Env always carries `RHQ_SKILLS_DIR`
