@@ -199,32 +199,29 @@ func (s PlanStale) streak() string {
 // BlindFor would render it as "0s" while the sentence claimed hours.
 func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanStale {
 	after := a.PlanUsageStaleAfter(errw)
-	if after <= 0 || a.PlanMeterQuiet(io.Discard) != nil {
+	if after <= 0 {
 		return PlanStale{After: after}
 	}
-	// Past that gate an UNARMED guard means the meter is being read for the
-	// spending, not for a threshold (ranger-base-ddivo) — the one state
-	// where "ruling on it under the headroom rule" would name a rule that is
-	// not running while the line is otherwise exactly right. Asked only
-	// where it can be true: an armed guard never reaches PlanMeterSpender,
-	// and an unarmed one that reaches here was let past the gate above by
-	// it, so this is a second call and never a second opinion.
-	spender := ""
-	if len(a.PlanGuardThresholds(io.Discard)) == 0 {
-		spender = a.PlanMeterSpender()
-	}
+	// The cache carries both halves of the meter state from one read — the
+	// verdict this gates on, and the spender the sentence names when the
+	// guard is unarmed (plancache.go, ranger-base-67mdf). Asking for either
+	// separately would be a second read of a state that decays, and the two
+	// answers that disagree are exactly the wrong line.
 	c := a.PlanCache(caller)
+	if c.Quiet != nil {
+		return PlanStale{After: after}
+	}
 	last, at, ok := c.LastReading()
 	if !ok {
 		return PlanStale{After: after}
 	}
 	age := now.Sub(at)
 	if age <= after {
-		return PlanStale{At: at, Age: age, After: after, Windows: last, Spender: spender}
+		return PlanStale{At: at, Age: age, After: after, Windows: last, Spender: c.Spender}
 	}
 	fails, class := planFailStreak(c.Log)
 	next, _ := c.Cooling(now)
-	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next, Spender: spender}
+	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next, Spender: c.Spender}
 }
 
 // planFailStreak walks $StateDir/plan-usage.log backwards: how many

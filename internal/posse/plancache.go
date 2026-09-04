@@ -132,24 +132,33 @@ type PlanCache struct {
 	// path to the endpoint, one place that can refuse it
 	// (ranger-base-4rfw1).
 	Quiet *PlanQuiet
+	// Spender is why the meter is awake while the guard is UNARMED
+	// (planquiet.go PlanMeterSpender); "" = armed, or quiet. Read by
+	// PlanStaleness for the middle clause of its line. It comes from the
+	// same planMeterState call as Quiet, so the two cannot disagree —
+	// which is the whole of ranger-base-67mdf: the spend state decays, and
+	// a caller holding a verdict from one read and a spender from another
+	// can print a sentence neither read supports.
+	Spender string
 }
 
 // PlanCache builds the instance's cache for one caller. Every posse process
 // that reads the usage endpoint goes through this.
 func (a *App) PlanCache(caller string) *PlanCache {
 	r, err := PlanAdapter()
+	// io.Discard: a malformed `plan_usage_quiet:` is named by the surfaces
+	// that own a stderr (dispatch's planGuard), once, and a cockpit tick
+	// owns the whole terminal and cannot write to one at all. The safe
+	// reading of a typo is "not quiet" either way (planquiet.go).
+	q, s := a.planMeterState(io.Discard)
 	return &PlanCache{
 		Path:      filepath.Join(a.StateDir, "plan-usage.json"),
 		Log:       filepath.Join(a.StateDir, "plan-usage.log"),
 		Caller:    caller,
 		Reader:    r,
 		NoAdapter: err,
-		// io.Discard: a malformed `plan_usage_quiet:` is named by the
-		// surfaces that own a stderr (dispatch's planGuard), once, and a
-		// cockpit tick owns the whole terminal and cannot write to one at
-		// all. The safe reading of a typo is "not quiet" either way
-		// (PlanMeterQuiet).
-		Quiet: a.PlanMeterQuiet(io.Discard),
+		Quiet:     q,
+		Spender:   s,
 	}
 }
 

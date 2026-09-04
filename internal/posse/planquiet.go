@@ -101,16 +101,39 @@ func PlanQuietReason(err error) *PlanQuiet {
 // PlanMeterQuiet is whether this instance may ask the usage endpoint at
 // all, and why not. Nil = ask, under the TTL and the cooldown as before.
 //
+// It is planMeterState's first answer, kept under its own name because five
+// callers fork on nothing else (plancache.go Read, dispatch.go, govern.go,
+// cockpit.go) and a caller that wants only the verdict should not have to
+// name the second value to get it.
+func (a *App) PlanMeterQuiet(errw io.Writer) *PlanQuiet {
+	q, _ := a.planMeterState(errw)
+	return q
+}
+
+// planMeterState is the one place the quiet verdict is computed: whether the
+// endpoint may be asked, and — when the guard is unarmed — the spender that
+// keeps it awake. Both come from one read so no caller can hold two
+// opinions.
+//
+// ONE read is the whole of ranger-base-67mdf. The spend state decays (a
+// watch loop can start the instant after PlanMeterSpender returns "") and
+// PlanStaleness used to ask it twice: once through this verdict for the
+// quiet gate, once again for the sentence. Two reads of a decaying state can
+// disagree, and the disagreeing shape is the loud one — let past the gate by
+// a spender the second read no longer sees, the line then says "ruling on it
+// under the headroom rule" over a box where no rule is running. Two
+// questions with one answer have no window between them to disagree in.
+//
 // Read on every PlanCache construction, which is once per caller per tick —
 // two YamlGets over a file the process has already read. The alternative is
 // a cached decision, and a cached decision is one an operator's edit does
 // not reach until something restarts: the whole point of the flag is that
 // it takes effect on the next tick of a cockpit that is already open.
-func (a *App) PlanMeterQuiet(errw io.Writer) *PlanQuiet {
+func (a *App) planMeterState(errw io.Writer) (quiet *PlanQuiet, spender string) {
 	switch raw := strings.TrimSpace(a.CfgGet("plan_usage_quiet", "")); raw {
 	case "":
 	case "true":
-		return &PlanQuiet{Flag: true}
+		return &PlanQuiet{Flag: true}, ""
 	case "false":
 		// Said explicitly: the guard-off arm below still applies. `false`
 		// turns off the flag, not the meter's other reasons for silence.
@@ -120,10 +143,17 @@ func (a *App) PlanMeterQuiet(errw io.Writer) *PlanQuiet {
 		// can parse must not be able to switch off the shop's only meter.
 		fmt.Fprintf(errw, "plan guard: config plan_usage_quiet: %q is not true or false — the meter stays readable\n", raw)
 	}
-	if len(a.PlanGuardThresholds(io.Discard)) == 0 && a.PlanMeterSpender() == "" {
-		return &PlanQuiet{}
+	if len(a.PlanGuardThresholds(io.Discard)) == 0 {
+		// The unarmed arm, and the only one with a second answer: a spender
+		// is what keeps the meter awake with no guard on it
+		// (ranger-base-ddivo), so it is both the reason this is not quiet
+		// and the words the stale line says.
+		if s := a.PlanMeterSpender(); s != "" {
+			return nil, s
+		}
+		return &PlanQuiet{}, ""
 	}
-	return nil
+	return nil, ""
 }
 
 // PlanMeterSpender is why this box is SPENDING while its plan guard is
@@ -202,12 +232,15 @@ func (a *App) PlanMeterSpender() string {
 // check that reported a quiet gap by breaking it would be the joke this
 // bead is about.
 func (a *App) PlanQuietLine(caller string, now time.Time) string {
-	q := a.PlanMeterQuiet(io.Discard)
-	if q == nil || !q.Flag {
+	// The cache first, and the verdict off the cache: it carries the one
+	// planMeterState this line needs (plancache.go), and asking for the
+	// verdict separately would compute it twice for the same tick.
+	c := a.PlanCache(caller)
+	if c.Quiet == nil || !c.Quiet.Flag {
 		return ""
 	}
 	line := "plan meter QUIET (plan_usage_quiet): no surface is asking the endpoint, and the guard is off for the duration"
-	if u, at, ok := a.PlanCache(caller).LastReading(); ok {
+	if u, at, ok := c.LastReading(); ok {
 		line += fmt.Sprintf(" — last reading %s (%s), %s ago",
 			at.UTC().Format("2006-01-02T15:04Z"), u.Line(), BlindFor(now.Sub(at)))
 	}
