@@ -10,7 +10,7 @@ package posse
 // list. A config pattern is never in source — it lives in the operator's
 // config and in the rendered hook, both untracked — so it has check 3's
 // property, no legitimate public use anywhere, and ADR 0048 gives it check
-// 3's reach: the ADDED lines of every staged text file, code included, and
+// 3's reach: the ADDED lines of every staged file, code included, and
 // the ADDED staged paths.
 //
 // WHY IT MATTERS, measured on ranger-base-9ubk6: seven recurrences of a bare

@@ -4311,13 +4311,16 @@ artifact and the only thing that says which file. The patterns live in the opera
 stamped into `.git/hooks/`, both untracked: the vocabulary never enters the
 public repo, which is the point of the key. Their SCOPE is wider than the
 shipped list's since ADR 0048: an instance pattern is scanned over the added
-lines of every staged text file, code included, over every added staged
-path, and — since ADR 0024 D2 check 3 and ADR 0048 D2 as amended 2026-09-03
-— over every line of the COMMIT MESSAGE, which replicates with the branch
-exactly as a staged line does; the remedy there is to rewrite the message,
-and what you typed is still in `.git/COMMIT_EDITMSG` until the next commit
-overwrites it. The derived identity literals of check 3 get the same three
-subjects. Check 3 derives one more set with a scope of its own: this box's
+lines of every staged file, code included (and a real blob's BYTES: the
+reader carries `--text`, so a file git calls binary is scanned like any
+other, and a genuine asset that trips a class goes through on the typed
+override), over every added staged path, and — since ADR 0024 D2 check 3 and
+ADR 0048 D2 as amended 2026-09-03 — over every line of the COMMIT MESSAGE,
+which replicates with the branch exactly as a staged line does; the remedy
+there is to rewrite the message, and what you typed is still in
+`.git/COMMIT_EDITMSG` until the next commit overwrites it. The derived
+identity literals of check 3 get the same three subjects. Check 3 derives one
+more set with a scope of its own: this box's
 CREW NAMES — the PIDs in your `agents/`, less every name posse itself ships
 as an example role — matched over ADDED STAGED PATHS ALONE, case-insensitively
 and with no word boundary (ADR 0012 D2 and App.A 5 at commit time,
@@ -4341,10 +4344,12 @@ inert in a repo stamped `private` — on purpose, the stamp is the visibility
 record — which is exactly the repo an instance holding someone else's data
 keeps its beads in. So the ceiling is scanned in every repo this instance
 hooks whatever its stamp, above the visibility gate, over the same three
-arms as check 3 — added lines of every staged text file, added staged
-paths, and every line of the COMMIT MESSAGE (ADR 0050 D2 as amended
-2026-09-03: the message lands in the commit object and replicates with the
-branch, and the hook is already holding it as its first argument — check 3
+arms as check 3 — added lines of every staged file (a real blob's BYTES
+included: the reader carries `--text`, and a genuine asset that trips a
+class goes through on the typed override), added staged paths, and every
+line of the COMMIT MESSAGE (ADR 0050 D2 as amended 2026-09-03: the message
+lands in the commit object and replicates with the branch, and the hook is
+already holding it as its first argument — check 3
 gained the same subject the same day and reads it through the same
 renderer, so what separates the two walls there is the gate and the remedy,
 not the subject) — always by class alone, a refusal being itself a local

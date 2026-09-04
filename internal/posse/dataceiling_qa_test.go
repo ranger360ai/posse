@@ -8,7 +8,7 @@ package posse
 // for an instance holding someone else's data, whose bead repo is private on
 // purpose. The ceiling asks a different question of a staged line — may this
 // exist in a local file at all? — so it renders ABOVE the gate, with check
-// 3's two arms (ADDED lines of every staged text file, ADDED staged paths)
+// 3's two arms (ADDED lines of every staged file, ADDED staged paths)
 // through the same renderer ranger-base-uzgkz built, plus a THIRD arm check
 // 3 does not have — every line of the commit MESSAGE (ADR 0050 D2 as
 // amended 2026-09-03, ranger-base-pqlxr, built in ranger-base-o2v6n) —

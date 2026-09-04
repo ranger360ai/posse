@@ -2749,12 +2749,12 @@ exit 1
 const commitGuardHead = `#!/bin/sh
 ` + sharedIndexMarker + ` — installed by posse gates install-hooks. Five walls
 # in one slot: the data ceiling (ADR 0050 — this instance's config
-# ` + DataCeilingConfigKey + `: over every staged text file, every added path
+# ` + DataCeilingConfigKey + `: over every staged file, every added path
 # and the commit message, under EVERY visibility stamp), the beads
 # visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3 to a
 # docs-genre allowlist, an OpsPatterns scan over staged markdown, and a scan
 # for this box's own identity literals and this instance's config patterns
-# over every staged text file, every added path and the commit message), the
+# over every staged file, every added path and the commit message), the
 # constitution-path guard (ranger-base-ak3e), the ADR sha-stamp guard
 # (ADR 0051 D4/D5, ranger-base-glewr) and the shared-index commit guard
 # (rangerhq-lmq9).
@@ -2839,8 +2839,8 @@ func opsCheckCall(indent, class, ere string, classOnly bool) string {
 // here: one Go slice, one shell function, two call sites. Check 3 is the
 // identity literals this box's own render derived (DeriveIdentityLiterals)
 // — rendered as escaped EREs (identityLiteralERE) so the SAME posse_check
-// function serves all three, over the ADDED lines of every staged text
-// file, code included, AND over the ADDED staged paths (ranger-base-dmsbu:
+// function serves all three, over the ADDED lines of every staged file,
+// code included, AND over the ADDED staged paths (ranger-base-dmsbu:
 // a filename is where an operator-shaped artifact puts the operator, and a
 // pure move has no added lines at all) — and, over those staged paths
 // ALONE, this box's crew names (DeriveCrewLiterals, ranger-base-cdxpf: a
@@ -2861,7 +2861,7 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 	// mis-routed BEAD is what that arm exists for and its remedy is
 	// bead-shaped. Check 2 (markdown) scans the SHIPPED list alone: an
 	// instance pattern moved to check 3's scope, which already covers every
-	// staged text file including markdown, so leaving it here too would only
+	// staged file including markdown, so leaving it here too would only
 	// scan the same line twice and refuse it with the wrong remedy.
 	//
 	// The instance entries in check 0's list are rendered CLASS-ONLY
@@ -3078,7 +3078,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # carrying an allowlist of its own files is a wall with a hole list.
   # The SHIPPED list only, since ADR 0048 D2: this instance's own config
   # patterns are never in source, so they are scanned by check 3 below over
-  # every staged text file and path instead — markdown included, which is
+  # every staged file and path instead — markdown included, which is
   # why they are not scanned twice here.
   # WHICH SPELLINGS is MarkdownPathspecs (visibility.go), one Go list
   # rendered here: git pathspec matching is case-sensitive, so the earlier
@@ -3252,7 +3252,7 @@ type visScanSource struct {
 
 // twoArmScan renders the shape ranger-base-uzgkz built for check 3 and ADR
 // 0050 D2 reuses for the ceiling, ONCE: the ADDED lines of every staged
-// text file, then the ADDED staged paths, each source accumulating into its
+// file, then the ADDED staged paths, each source accumulating into its
 // own variable and refusing in its own words. ind is the base indentation
 // of the block (check 3 sits inside the visibility gate; the ceiling sits
 // above it); title names the block in the second arm's banner; head is the
@@ -3374,7 +3374,7 @@ func shComment(ind, text string) string {
 
 // dataCeilingCheck renders the data ceiling's block (ADR 0050 D2): this
 // instance's config data_ceiling_patterns: over the ADDED lines of every
-// staged text file and the ADDED staged paths — check 3's two arms, through
+// staged file and the ADDED staged paths — check 3's two arms, through
 // the same renderer — and then over every line of the commit MESSAGE, which
 // is the ceiling's own third arm and check 3 does not have it (ADR 0050 D2
 // as amended 2026-09-03; ceilingMessageArm below carries the reasons). All
@@ -3442,7 +3442,7 @@ banner, a restricted system's hostname, its export file-name shape — and
 the answer does not depend on where the repo goes. The system of record's
 id is the sanctioned citation; the content behind it is not.
 THREE ARMS. The first two are check 3's below (ADDED lines of every staged
-text file, any path, code included; then ADDED staged paths). The third is
+file, any path, code included; then ADDED staged paths). The third is
 the ceiling's own and check 3 does not have it: every line of the commit
 MESSAGE, which this hook is already holding in "$1" (ADR 0050 D2 as amended
 2026-09-03, ranger-base-pqlxr). Same matcher, same override, class-only
@@ -3618,7 +3618,7 @@ already; the second layer for it is a commit-msg hook.`)
 
 // identityGuardCheck renders check 3's block: this box's own identity
 // literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
-// against the ADDED LINES of every staged text file, code included, AND
+// against the ADDED LINES of every staged file, code included, AND
 // against the ADDED staged PATHS — plus this box's crew names (ADR 0012 D2
 // and App.A 5, ranger-base-cdxpf) against the ADDED staged PATHS ALONE, and
 // only under the trees ADR 0012 D6 puts INSIDE App.A 5 (crewPathSkip,
@@ -3854,7 +3854,7 @@ record and refusing it would refuse what the constitution allows.
 Rendered as regexp-escaped fixed strings and as EREs respectively, so
 the SAME matcher checks 0 and 2 already call above covers this too.
 THREE SUBJECTS for those two, in this order: the ADDED lines of ALL
-staged TEXT files, any path, code included — unlike check 2, which is
+staged files, any path, code included — unlike check 2, which is
 markdown-only; then the ADDED staged PATHS; then every line of the
 commit MESSAGE (ADR 0024 D2 / ADR 0048 D2 as amended 2026-09-03,
 ranger-base-1nbtn). A source with nothing to say about a subject

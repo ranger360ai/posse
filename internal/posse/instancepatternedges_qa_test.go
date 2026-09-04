@@ -9,7 +9,7 @@ package posse
 // instancepatternscope_qa_test.go pins the mechanism: a NEW .go file's added
 // line, a NEW path, the marker exception, the shipped list staying markdown-
 // only, and the empty-identity render. The close's claim is wider than those
-// fixtures — "the ADDED lines of EVERY staged text file and EVERY added
+// fixtures — "the ADDED lines of EVERY staged file and EVERY added
 // path" — and this file is the rest of that claim, measured rather than
 // read: a file already in history, four other text types, a removal, a
 // binary in the same commit, and three path shapes (a directory component, a
@@ -48,8 +48,8 @@ func TestQAInstancePatternEdgeRefusesAnAddedLineInAModifiedFile(t *testing.T) {
 	}
 }
 
-// P2: a staged text file that is neither markdown nor Go — the claim is
-// "every staged text file".
+// P2: a staged file that is neither markdown nor Go — the claim is
+// "every staged file".
 func TestQAInstancePatternEdgeRefusesOtherTextTypes(t *testing.T) {
 	for _, rel := range []string{"data/thing.json", "etc/thing.yaml", "notes.txt", "Makefile", "scripts/run.sh"} {
 		t.Run(rel, func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestQAInstancePatternEdgeRefusesOtherTextTypes(t *testing.T) {
 			w.stage(t, w.pub, rel, "a line about "+qaInstanceName+" here\n")
 			out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", rel)
 			if err == nil {
-				t.Errorf("%s: an added line in a staged text file must be refused:\n%s", rel, out)
+				t.Errorf("%s: an added line in a staged file must be refused:\n%s", rel, out)
 			}
 		})
 	}

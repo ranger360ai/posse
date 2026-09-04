@@ -120,7 +120,7 @@ even in prose, even when the file it is written into is this repo's.`
 //     speculatively — widening this list is the same deliberate, reviewed
 //     edit PublicDocsGenres is.
 //
-// Check 3 is unaffected either way: it scans every staged text file
+// Check 3 is unaffected either way: it scans every staged file
 // whatever it is named.
 var MarkdownPathspecs = []string{":(icase)*.md", ":(icase)*.markdown"}
 
@@ -378,7 +378,7 @@ const OpsInstanceRule = `ADR 0048 D2: an instance-defined visibility class (conf
 is ONE deployment's own confidential vocabulary, and it has no legitimate
 public use anywhere in this repo. Unlike the shipped ops-pattern list, which
 is markdown-only because its own source is byte-identical to a hit, an
-instance pattern is scanned over the ADDED lines of every staged text file,
+instance pattern is scanned over the ADDED lines of every staged file,
 code included, over the ADDED staged paths, and over every line of the
 COMMIT MESSAGE.`
 
@@ -724,7 +724,7 @@ type IdentityLiteral struct {
 const IdentityRule = `ADR 0024 D2 check 3: the operator's identity has no legitimate public use in
 this repo — the box's own username, git email, and the instance repo's path
 are derived at hook-render time (never shipped, never committed) and refused
-wherever they appear in the ADDED lines of any staged text file, code
+wherever they appear in the ADDED lines of any staged file, code
 included, in the ADDED staged paths (a filename is exactly where an
 operator-shaped artifact puts the operator; move detection off, so a move's
 destination counts as new), and in every line of the COMMIT MESSAGE, which

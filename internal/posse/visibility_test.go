@@ -808,7 +808,7 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 		t.Errorf("the ceiling pattern must be stamped at exactly its three arms, got %d", n)
 	}
 	// And the instance's pattern is NOT stamped into check 2's markdown
-	// scan any more: check 3 below already reads every staged text file,
+	// scan any more: check 3 below already reads every staged file,
 	// markdown included, so a second stamp there would scan the same line
 	// twice and refuse it with check 2's remedy instead of ADR 0048's.
 	if md := strings.Index(hook, "check 2: the SHIPPED OpsPatterns"); md < 0 {

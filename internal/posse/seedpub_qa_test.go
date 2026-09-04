@@ -597,7 +597,7 @@ func TestSeedScriptPreflightPlantedBeadsIsRed(t *testing.T) {
 // tree and it runs when someone runs this package — after the commit is on
 // public main, which is why seven recurrences each closed as a reword. The
 // commit-time arm is an instance pattern under config
-// beads_visibility_patterns:, scanned over every staged text file and every
+// beads_visibility_patterns:, scanned over every staged file and every
 // added path (ADR 0048 D1/D2, built in ranger-base-uzgkz). This pin stays
 // because it is the only guard on a box whose config lacks that line, on a
 // commit made under the typed override, and on a re-render nobody ran — and

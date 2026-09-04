@@ -12,7 +12,7 @@ package posse
 //
 //	check 0   the .beads/*.jsonl reader
 //	check 2   the shipped OpsPatterns over staged markdown
-//	check 3   the identity literals and instance patterns over staged text
+//	check 3   the identity literals and instance patterns over staged files
 //	ceiling   ADR 0050's data ceiling, which renders through check 3's
 //	          renderer and is the ONLY wall standing in a private repo
 //
@@ -175,7 +175,7 @@ func TestQABinaryClassifiedBeadsDbIsStillScannedByCheck0(t *testing.T) {
 	})
 }
 
-// ─── check 3: the identity literals over every staged text file ───────────
+// ─── check 3: the identity literals over every staged file ───────────
 
 func TestQABinaryClassifiedTextIsStillScannedByCheck3(t *testing.T) {
 	t.Run("control", func(t *testing.T) {
@@ -264,5 +264,61 @@ func TestQADiffReadersCarryTextAndBinarySafeGreps(t *testing.T) {
 	}
 	if strings.Contains(render, "Binary files are already excluded") {
 		t.Errorf("the rendered hook still claims binary files are excluded — ranger-base-h137b")
+	}
+}
+
+// AND NO SCOPE CLAIM SAYS "TEXT" ANY MORE (ranger-base-z771z, asked for on
+// that bead by the security lane). Until the sweep, the hook's head
+// comment, check 2's and check 3's rendered headers, the ceiling's THREE
+// ARMS paragraph and three of the refusal RULE strings all scoped a wall to
+// "every staged text file" — the reader's mechanism written down as if it
+// were the rule, and once --text landed it was a hole the words invented:
+// there is no such thing as an unscanned staged file. The hook body is what
+// a refused writer reads and what the launcher's L3 probe hashes, so the
+// claim is pinned where it is RENDERED and not only in source.
+//
+// FLATTENED WITH THE COMMENT PREFIX STRIPPED, not scanned per line: in the
+// ceiling's head the claim wrapped as "...every staged\ntext file, any
+// path..." (gates.go before this sweep), which a per-line grep reads as two
+// innocent lines — and shComment renders each of those lines with its own
+// "# ", so joining them is not enough either: the marker sits BETWEEN the
+// wrapped words. Measured: a flatten that only collapsed whitespace left
+// the wrapped mutant green.
+//
+// NOT "the render contains no 'text file'", which is what the ask said and
+// would be wrong: the --text comment legitimately says git "classifies a
+// text file carrying one NUL byte as BINARY". That sentence is this pin's
+// CONTROL — without it, a hook that rendered no prose at all would satisfy
+// the absence assertion above.
+//
+// MUTATION-CHECKED, one per rendered prose source (runs on
+// ranger-base-z771z): M-A restores "every staged text file" in the head
+// comment (gates.go commitGuardHead), M-B restores it WRAPPED in the
+// ceiling's THREE ARMS paragraph, M-D restores it in a refusal RULE string
+// (visibility.go IdentityRule) — each reds the absence arm alone. M-C
+// rewrites the --text sentence and reds the control alone.
+func TestQARenderedHookMakesNoTextFileScopeClaim(t *testing.T) {
+	t.Parallel()
+	// Every prose source at once: the head comment, check 2, check 3 with
+	// both its sources, and the ceiling with all three arms. A claim in a
+	// block this render omits is a claim this pin cannot see.
+	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{
+		Extra:   []OpsPattern{{Class: "e", ERE: "zzz"}},
+		Ceiling: []OpsPattern{{Class: "c", ERE: "yyy"}},
+	}, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})
+
+	var prose strings.Builder
+	for _, line := range strings.Split(render, "\n") {
+		prose.WriteString(strings.TrimPrefix(strings.TrimSpace(line), "#"))
+		prose.WriteString(" ")
+	}
+	flat := strings.Join(strings.Fields(strings.ToLower(prose.String())), " ")
+	if i := strings.Index(flat, "staged text file"); i >= 0 {
+		t.Errorf("the rendered hook still scopes a wall to TEXT files (ADR 0048 D2 as amended 2026-09-04):\n\t...%s...", flat[max(0, i-80):min(len(flat), i+80)])
+	}
+	// CONTROL: the --text mechanism prose is still rendered, so the absence
+	// above is a swept claim and not an empty hook.
+	if !strings.Contains(render, "classifies a text file carrying one NUL byte as BINARY") {
+		t.Error("the --text mechanism comment is gone from the render — the assertion above now measures nothing (ranger-base-h137b)")
 	}
 }
