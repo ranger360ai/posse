@@ -62,6 +62,12 @@ func TestMain(m *testing.M) {
 		switch {
 		case len(args) > 0 && (args[0] == "workspace" || args[0] == "pane" || args[0] == "agent"):
 			os.Exit(fakeHerdr(args))
+		// …and the third substrate, on the same rule: the VERB, not
+		// argv[0]. `run` is gh's (ci-watch's only network call is `gh run
+		// list`, ciwatch.go) and bd has no such verb, so the three fakes
+		// stay disjoint without anyone reading a link name.
+		case len(args) > 0 && args[0] == "run":
+			os.Exit(fakeGh(args))
 		default:
 			os.Exit(fakeBd(args))
 		}
@@ -241,8 +247,18 @@ func fakeBd(args []string) int {
 		// behaved identically against it, and that is exactly the defect
 		// ranger-base-j8qmj is about (the merge-back handoff re-filed a
 		// block that was closed do-not-land, every pass).
+		// …unless a `fake-list-keep-closed` marker says this store is the
+		// OTHER class. Measured 2026-09-04 on bd 0.50.3 (ranger-base-x9e34,
+		// ciwatch_live_test.go): the shop's SQLite store drops closed rows
+		// from `list --label-any` and the `no-db: true` JSONL store
+		// `bd init` writes today keeps them — 391 of 396 `-l qa` beads are
+		// closed and the SQLite store answers with 5. A dedupe that adopts
+		// a closed bead never files again, and without this marker that
+		// mutant survives every hermetic pin in the package.
 		if !hasArg(args, "--all") {
-			body = fakeBdDropClosed(body)
+			if _, err := os.Stat("fake-list-keep-closed"); err != nil {
+				body = fakeBdDropClosed(body)
+			}
 		}
 		fmt.Print(body)
 		return 0
@@ -353,6 +369,18 @@ func fakeBd(args []string) int {
 		fmt.Printf(`{"id":%q,"title":"created"}`, id)
 		return 0
 	case "comments": // comments <id> --json → fake-comments.json; comments add appends to it
+		// `comments add` carries no --json, so neither failure marker above
+		// reaches it — and a caller that must not act on a comment it could
+		// not write (ci-watch closes a bead only after saying why,
+		// ciwatch.go) is untestable without one of its own.
+		if b, err := os.ReadFile("fake-comment-fail"); err == nil && hasArg(args, "add") {
+			msg := strings.TrimSpace(string(b))
+			if msg == "" {
+				msg = "database is locked"
+			}
+			fmt.Fprint(os.Stderr, msg)
+			return 1
+		}
 		// An added comment is READ BACK, because the settle-open count is a
 		// comment the harness wrote on an earlier pass (settleopen.go) and
 		// a fake that dropped it would make every pass look like the first.
@@ -381,6 +409,15 @@ func fakeBd(args []string) int {
 	case "update":
 		return fakeBdUpdate(args)
 	case "close":
+		// A closed bead LEAVES the open listings, because that is what real
+		// bd does and because a dedupe that reads `bd list --label-any`
+		// back is only pinnable against a fake that does (the rule
+		// fakeBdAppendCreated already keeps for create). Without it a
+		// mechanism that closes its own bead and one that merely says it
+		// did are indistinguishable — and ci-watch closes the bead it filed
+		// (ciwatch.go), so the file-close-file cycle would have been
+		// untestable.
+		fakeBdMarkClosed(fakeBdID(args, "close"))
 		fmt.Print("{}")
 		return 0
 	case "sync":
@@ -474,6 +511,15 @@ func fakeBdAppendCreated(id string, args []string) {
 	row := map[string]any{
 		"id": id, "title": title, "description": flag("-d"),
 		"status": "open", "labels": strings.Split(flag("-l"), ","),
+		// created_at, because real bd stamps one and a caller that ORDERS
+		// the beads it reads back cannot be pinned against a fake that
+		// leaves them all at the zero time — every such row sorts equal, so
+		// the assertion holds whichever way the comparison points
+		// (ranger-base-x9e34: ci-watch walks its candidates newest first,
+		// and a green pass stops at the newest). Nanoseconds, so two
+		// creates inside one test are ordered rather than tied; real bd's
+		// own stamp is microseconds.
+		"created_at": time.Now().Format(time.RFC3339Nano),
 	}
 	list = append(list, row)
 	if b, err := json.Marshal(list); err == nil {
@@ -521,6 +567,33 @@ func fakeBdFilterLabels(body, labels string) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// fakeBdMarkClosed sets a row's status to closed in both listings the fake
+// serves, so `bd list` without `--all` stops answering with it.
+func fakeBdMarkClosed(id string) {
+	if id == "" {
+		return
+	}
+	for _, f := range []string{"fake-list.json", "fake-list-labeled.json"} {
+		var list []map[string]any
+		b, err := os.ReadFile(f)
+		if err != nil || json.Unmarshal(b, &list) != nil {
+			continue
+		}
+		hit := false
+		for _, is := range list {
+			if s, _ := is["id"].(string); s == id {
+				is["status"], hit = "closed", true
+			}
+		}
+		if !hit {
+			continue
+		}
+		if nb, err := json.Marshal(list); err == nil {
+			os.WriteFile(f, nb, 0o644)
+		}
+	}
 }
 
 // fakeBdDropClosed is `bd list` WITHOUT `--all`: the closed rows are gone.

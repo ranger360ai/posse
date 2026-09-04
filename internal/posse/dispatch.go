@@ -2364,6 +2364,30 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		d.App.VerifyAfter(d.Bd, dirs, d.Out, d.errw())
 	}
 
+	// ci-watch (ranger-base-x9e34, ciwatch.go): is the gate red on the
+	// branch merge-back fast-forwards into, and does the crew know?
+	//
+	// Here, beside verify-after, because it is the same kind of thing —
+	// the harness filing the one handoff a convention cannot be trusted
+	// with — and for the same placement reason: a bead filed by this pass
+	// is dispatched by this pass. ci.yml went red on 2026-08-30 and stayed
+	// red for five days and 191 runs with nothing anywhere saying so,
+	// which made every red on main unattributable and hid two real breaks.
+	//
+	// --dry-run is excluded on verify-after's rule: filing a bead is
+	// acting. It takes the launcher lock itself, for the WRITES only and
+	// never across its `gh` child — a green pass must not park the fire
+	// loop for the 2.8-4.2s that reading costs. It is read-only over the
+	// network, it never reruns a workflow, it never touches the gate, and
+	// it never CLOSES the bead it files (ADR 0013 §4, ciwatch.go).
+	if !d.DryRun {
+		dirs := d.App.BeadsDirs()
+		if dirFilter != "" {
+			dirs = []string{dirFilter}
+		}
+		d.App.CIWatch(d.Bd, dirs, d.Out, d.errw())
+	}
+
 	// The bead-loss alarm (rangerhq-fuom): bd's auto-import can delete rows
 	// and logs nothing when it does, so a pass says out loud what the git
 	// census says is missing. Read-only, so it runs under --dry-run too and

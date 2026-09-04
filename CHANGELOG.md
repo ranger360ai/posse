@@ -42,6 +42,63 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**A dispatch pass now files a bead when CI is red on `main`, and says on
+that bead when `main` is green again (`ci_workflow:`, on by default where
+there is a GitHub gate to read).**
+
+Merge-back fast-forwards a bead branch onto `main` and opens no pull request,
+so the repo's CI workflow is the only gate a commit on `main` ever passes and
+nothing runs before it lands. Nothing said so anywhere. Measured on this
+repo's own `ci.yml` over its whole 300-run history: green at 01:23Z on
+2026-08-30, red at 01:53Z, and then **191 consecutive failed runs over five
+days and ~120 commits** with nobody noticing. What that costs is not the reds
+— it is attribution: for five days a red run said nothing about the commit it
+was attached to, so a genuine break (the package not building at all, twice,
+for over an hour each) was indistinguishable from the standing noise.
+`gh run list` is a command a human has to remember, which is the same reason
+the workflow exists at all.
+
+So a pass reads the gate and files ONE bead — `-l ci-red,devops`, P1, `-t
+bug` — carrying the streak, both ends of the episode and the two commands
+that reproduce the reading. One bead per episode, never one per push: the
+dedupe is an open bead carrying that gate's marker, read out of the store
+rather than kept in the launcher, and a `cancelled` run is treated as no
+verdict at all rather than as red or green. Over the same 300-run history
+that files **7 beads in 6.6 days** against 196 red runs; counting cancelled
+runs as red would file 16, as green 13. While it stays red the bead's number
+is re-said on a doubling cadence — 1, 2, 4, 8, … — so a five-day red earns
+eight comments and not 191. When the next verdict-bearing run on the branch
+is a success, the bead is told which run cleared the gate — including when
+the fix landed under some other bead entirely.
+
+**It does not close the bead**, and that is ADR 0013 §4 rather than an
+omission: the harness never closes on a persona's behalf, and the tree
+enforces it by reachability. So a self-healing red leaves a bead carrying a
+"the gate is green, close this" comment for whoever picks it up — six of the
+seven episodes measured above would have been that. Whether §4 should admit a
+narrow exception for a bead the harness itself filed about a condition is
+asked rather than assumed. A cleared bead does not suppress the next red: the
+dedupe reads that comment back and steps over it.
+
+It abstains wherever it cannot read, and never renders as green. A repo that
+has **no gate** — not a git checkout, no such workflow file, no `github.com`
+origin — is silent about it, so a shop whose repos have no CI never hears
+from this at all. A repo that **has** a gate this pass could not read — no
+`gh`, an unauthenticated `gh`, a network that does not answer, no
+verdict-bearing run — says so once per process, because that one reads as an
+all-clear if it reads as silence. The
+branch is the one `origin/HEAD` names (`ci_branch:` overrides), and
+`ci_workflow:` present-but-empty turns the whole thing off, the way an empty
+`verify_labels:` turns verify-after off. The reading happens OUTSIDE the
+launcher lock and only the writes inside it, so a green pass never parks the
+fire loop behind a network call.
+
+One interaction worth knowing: verify-after does not file a QA bead for a
+`ci-red` bead closed with no commits naming it — closing a bead because the
+gate cleared itself built nothing for a session to verify. A `ci-red` bead
+that commits DO name is verified like any other close, so a persona who
+actually fixed CI still gets the gate.
+
 **A watch pass now says when the launcher binary running it is behind its
 own repo, and `posse status` answers the same question on demand.**
 

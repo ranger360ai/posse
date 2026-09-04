@@ -66,6 +66,15 @@ type App struct {
 	// ModelLister: a guard whose reading comes from the machine the suite
 	// happens to be running on is red per-day, not per-commit.
 	Load1 func() (float64, error)
+	// CIRead takes the ci-watch reading — is the gate red on the branch
+	// dispatch merges into (ciwatch.go, ranger-base-x9e34). nil = ReadCI,
+	// which forks `gh` against the real GitHub, and is what every real pass
+	// uses. It is a seam for the reason Load1 is one, and for a sharper one:
+	// a reading whose answer comes from whatever GitHub says at the moment
+	// the suite runs is red per-day, not per-commit — and this reading FILES
+	// AND CLOSES BEADS, so a pin that could not fix it would be writing into
+	// the live store.
+	CIRead func(CIQuery) CIState
 	// TopCPU reads the box's process table for the load guard's culprit
 	// line (loadguard.go). nil = SysTopCPU, one bounded `ps` on the real
 	// box, which is what every real refusal uses. It is a field for the

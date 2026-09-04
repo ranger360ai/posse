@@ -296,6 +296,43 @@ default_emoji: ⚙️
 # verify_batch: 4
 # verify_batch_age: 24h
 
+# ─── ci-watch ────────────────────────────────────────────────────────────────
+# A dispatch pass reads your repo's CI gate on the branch it merges into and
+# files ONE bead when it is red — `-l ci-red,devops`, P1, `-t bug` — then
+# COMMENTS on that bead, naming the run that cleared the gate, when it is
+# green again. It does not close it: ADR 0013 §4 makes the close the
+# persona's, so a self-healing red leaves a bead saying "the gate is green,
+# close this" for whoever picks it up. It exists because a red gate is
+# otherwise silent: `gh run list` is a command somebody has to remember, and
+# this repo's own ci.yml sat red for five days and 191 runs before anyone
+# looked.
+#
+# It needs three things: the workflow FILE in the checkout
+# (`.github/workflows/<ci_workflow>`), an `origin` on github.com, and an
+# authenticated `gh` on PATH. Missing either of the first two means there is
+# no gate here and it says NOTHING — a repo with no GitHub CI never hears
+# from this. A `gh` that cannot answer means there IS a gate and this pass
+# could not read it, which is said once per process, because that one reads
+# as an all-clear if it reads as silence. Either way it abstains: it can
+# never read a red as a green. Nothing here reruns a workflow or touches the
+# gate — one `gh run list` per configured repo per pass, outside the
+# launcher lock.
+#
+# `ci_workflow:` is the workflow file name; unset means ci.yml, and PRESENT
+# BUT EMPTY turns ci-watch off entirely (the verify_labels: convention).
+# `ci_branch:` overrides the branch, which otherwise is whatever
+# origin/HEAD names, then main.
+# ci_workflow: ci.yml
+# ci_branch: main
+#
+# ONE BEAD PER EPISODE, never one per push — a red that stays red must not
+# become the thing that floods your queue. The dedupe is the open bead
+# itself (one that has already been told its gate cleared is stepped over, so
+# the next red still gets a bead), and a `cancelled` run counts as no verdict
+# rather than as red or green. Measured over this repo's own 300-run history: 7 beads in 6.6 days
+# against 196 red runs. While it stays red the bead's streak is re-said on a
+# doubling cadence (1, 2, 4, 8, …), so five days of red earn eight comments.
+
 # ─── plan-utilization guard ──────────────────────────────────────────────────
 # Percent of the subscription plan's rolling rate windows above which `posse
 # dispatch` skips the whole pass, so the fleet leaves headroom for the person

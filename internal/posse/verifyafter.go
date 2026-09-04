@@ -386,6 +386,37 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 		// Emptiness alone is not the test either — a doc-only or
 		// already-working close has no commits and still earns verification;
 		// it is only exempt when the reason ALSO says it was rejected.
+
+		// THE OTHER CLOSE THAT BUILT NOTHING (ranger-base-x9e34,
+		// ciwatch.go): a `ci-red` bead — the harness files those when the
+		// repo's gate goes red on main — closed with no commit naming it.
+		// ci-watch comments on that bead when the gate goes green and never
+		// closes it (ADR 0013 §4), so such a close is a persona reading
+		// "the gate is green, close this" and doing so. The CONDITION
+		// ended; nobody wrote anything for a QA session to look at. Sending
+		// one anyway costs a seat per red episode, and 7 of them fell in
+		// the 6.6 days ci-watch was measured over.
+		//
+		// The second signal is the SAME ONE the rejection exemption below
+		// uses, and for the same reason — a label alone must never suppress
+		// a control. It is also what makes this correct in the case that
+		// matters: a persona who actually FIXED ci under this bead leaves
+		// commits naming it, and the verify bead is filed exactly as for
+		// any other close. Label first, then the git call, so only a ci-red
+		// bead pays for it.
+		if hasLabel(is.Labels, CIRedLabel) {
+			trail, err := gitCommitsFor(dir, is.ID)
+			switch {
+			case err != nil:
+				fmt.Fprintf(out, "- %-14s ci-red, not exempt: git could not say what this close shipped\n", is.ID)
+			case len(trail) == 0:
+				fmt.Fprintf(out, "- %-14s no verify bead: a ci-red close no commit names (the gate cleared, nobody built anything)\n", is.ID)
+				continue
+			default:
+				fmt.Fprintf(out, "- %-14s ci-red, not exempt: %d commit(s) name it\n", is.ID, len(trail))
+			}
+		}
+
 		if isRejectedClose(is.CloseReason) {
 			trail, err := gitCommitsFor(dir, is.ID)
 			switch {
