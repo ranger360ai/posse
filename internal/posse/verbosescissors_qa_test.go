@@ -45,6 +45,7 @@ package posse
 // predates vzx2n and vl9g8 alike and neither introduced it.
 //
 // PARKED, because the fix is the code lane's and the suite stays green.
+// THE FINDING IS ranger-base-xfgcn, filed off ranger-base-6sw5a's verify.
 // UNPARK: delete the t.Skip line in each pin below.
 // RUN UNPARKED 2026-09-04 at main c68431d, git 2.50.1 (Apple Git-155),
 // darwin 25.4.0: BOTH RED, each on its own assertion, each refused by the
@@ -96,7 +97,7 @@ func qaVerboseWallIsAwake(t *testing.T, w *visWall, env []string, rel string) {
 // what the ADDED-line arm reads, never shows it; the `-v` diff's three
 // lines of context do.
 func TestQACeilingMessageArmReadsBelowTheScissorsUnderCommitVerbose(t *testing.T) {
-	t.Skip("PARKED: ranger-base-dgh7y's other half — unpark by deleting this line")
+	t.Skip("PARKED: ranger-base-xfgcn — unpark by deleting this line")
 	for _, tc := range []struct {
 		name string
 		auto bool
@@ -173,7 +174,7 @@ func TestQACeilingMessageArmReadsBelowTheScissorsUnderCommitVerbose(t *testing.T
 // to keep that class out of every local file refuses the commit that
 // removes it.
 func TestQACeilingMessageArmRefusesRemovingClassedContentUnderCommitVerbose(t *testing.T) {
-	t.Skip("PARKED: ranger-base-dgh7y's other half — unpark by deleting this line")
+	t.Skip("PARKED: ranger-base-xfgcn — unpark by deleting this line")
 	w := qaCeilingWall(t, "")
 	env := append(append([]string(nil), w.persona...), "GIT_EDITOR="+qaVerboseEditor(t, "take it out"))
 	qaVerboseWallIsAwake(t, w, env, "internal/posse/ctl.go")
