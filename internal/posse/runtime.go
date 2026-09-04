@@ -678,7 +678,20 @@ func (rt *Runtime) PIDVoided(cmd string) string {
 // ModelText is what {model} renders to for a tier: the runtime's flag with
 // the id, or nothing when the tier has no mapping.
 func (rt *Runtime) ModelText(tier string) string {
-	id := rt.Model(tier)
+	return rt.ExactModelText(rt.Model(tier))
+}
+
+// ExactModelText renders one model id through this runtime's own model flag
+// and the same shell quoting the tier map's id gets. It is what ADR 0053 D2
+// means by "the runtime's model flag and the existing shell quoting carry
+// the id": a canary launch introduces no second rendering and no raw
+// command — it substitutes the id and nothing else.
+//
+// "" when the runtime declares no model flag, which is the launch's own
+// refusal one layer up (planLaunch): there is nowhere for a typed id to go,
+// and a launch that silently dropped it would open on the tier's model
+// while the record said otherwise.
+func (rt *Runtime) ExactModelText(id string) string {
 	if id == "" || rt.ModelFlag == "" {
 		return ""
 	}

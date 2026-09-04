@@ -65,6 +65,18 @@ type NewSessionOpts struct {
 	Agent   string   // persona name; its command wins over Cmd
 	Runtime string   // launch profile override (CLI --runtime / recipe runtime:) — over the PID's own
 	Tier    string   // model tier override (CLI --tier / dispatch) — over the PID's tier: (ADR 0003)
+	// Model is an EXACT model id typed on `posse new --model` (ADR 0053).
+	// It is the operator's canary: the id replaces only what {model}
+	// renders, and everything else — PID, gates, skills, cage, env sets,
+	// reasoning effort — is the ordinary persona launch. Accepted only with
+	// Agent, an explicitly typed Runtime and an explicitly typed Tier
+	// (CheckExactModel), and it makes the launch skip tier availability
+	// substitution, because asking the provider whether this id is
+	// available is the whole point of the session (D3).
+	//
+	// "" for every other launch, and dispatch never sets it: a pass-wide
+	// model experiment is a different risk boundary (D5).
+	Model string
 	// AllowDegraded launches even when the parity check finds gates no wall
 	// layer realizes on this runtime × cage; the session is marked degraded.
 	// Never set by dispatch on its own (ADR 0002 §4).
@@ -136,6 +148,7 @@ type HerdrMeta struct {
 	Agent       string
 	Runtime     string    // launch profile the persona command was rendered for (ADR 0002)
 	Tier        string    // model tier it was rendered at (ADR 0003)
+	Model       string    // the EXACT model id this canary session was launched on ("" = the tier's own, ADR 0053 D4)
 	Dir         string    // working directory the session was created in (seatbelt re-render on relaunch)
 	Repo        string    // the main checkout Dir is a session worktree of ("" = Dir IS the checkout)
 	Branch      string    // the session branch the launcher merges back (rangerhq-09o2; "" = no worktree)
@@ -321,6 +334,7 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Agent:        YamlGet(p, "agent"),
 		Runtime:      YamlGet(p, "runtime"),
 		Tier:         YamlGet(p, "tier"),
+		Model:        YamlGet(p, "model"),
 		Dir:          YamlGet(p, "dir"),
 		Repo:         YamlGet(p, "repo"),
 		Branch:       YamlGet(p, "branch"),
@@ -369,6 +383,13 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	}
 	if m.Tier != "" {
 		fmt.Fprintf(&s, "tier: %s\n", m.Tier)
+	}
+	// ADR 0053 D4: the store of record for an exact-model canary. Written
+	// only when one was typed, so an ordinary session's record — and every
+	// record written before this field existed — is byte-for-byte what it
+	// was, and reads back as a session running its tier's own model.
+	if m.Model != "" {
+		fmt.Fprintf(&s, "model: %s\n", m.Model)
 	}
 	if m.Dir != "" {
 		fmt.Fprintf(&s, "dir: %s\n", m.Dir)
@@ -638,6 +659,7 @@ type HerdrSession struct {
 	Envs        string
 	Runtime     string // persona sessions: the launch profile (ADR 0002)
 	Tier        string // persona sessions: the model tier (ADR 0003)
+	Model       string // persona sessions: the exact model id the operator named ("" = the tier's own; ADR 0053)
 	Cage        string // persona sessions: cage tier
 	Sockets     string // persona sessions: host sockets the cage mounted ("" = none)
 	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
@@ -779,7 +801,7 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 		b.backfillServer(m, ws, sock, gen)
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
-			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier,
+			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier, Model: m.Model,
 			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
 			Repo: m.Repo, Status: status(ws), Focused: ws.Focused,
 		})
@@ -1393,6 +1415,7 @@ type launchPlan struct {
 	Vars     []EnvVar
 	Runtime  string
 	Tier     string
+	Model    string // the exact model id this launch rendered ("" = the tier's own; ADR 0053)
 	Cage     string
 	Sockets  string
 	Degraded string
@@ -1412,6 +1435,16 @@ type launchPlan struct {
 // design, so planning twice costs nothing and changes nothing.
 func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
+
+	// ADR 0053 D1, first because it is pure: an exact model with a missing
+	// companion, or an id posse cannot render as one token, is a refusal
+	// that reads no state at all. Asking it here — above the load guard,
+	// the worktree, the gates and the skills render — is what makes "refuse
+	// before a workspace or session record exists" true by construction on
+	// every launch path rather than on the one the flag is typed at.
+	if err := CheckExactModel(o); err != nil {
+		return nil, err
+	}
 
 	// The load guard (ranger-base-innx) is first, before this function's
 	// renders and before anything is asserted about the home, because the
@@ -1544,6 +1577,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if err != nil {
 			return nil, err
 		}
+		// ADR 0053 D1's last precondition, asked at the first line where the
+		// runtime is loaded: a runtime with no model flag has nowhere to put
+		// the typed id. Dropping it would open the session on the tier map's
+		// own model while `model:` said otherwise — the silent substitution
+		// D3 exists to refuse, one layer down.
+		if o.Model != "" && rt.ModelFlag == "" {
+			return nil, Die("%s declares no model flag, so --model %s cannot be rendered onto its launch line — the session would open on the tier's own model with nothing saying so (ADR 0053 D1)", rt.Name, o.Model)
+		}
 		ownTier := a.ResolveTier("", ag)
 		tier = a.ResolveTier(o.Tier, ag)
 		if !ValidTier(tier) {
@@ -1556,7 +1597,22 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// own (rule 3). It runs BEFORE the parity check on purpose: what
 		// the wall and the PID's tier_floor: must rule on is the pair that
 		// would really launch, not the one that was asked for.
-		pf := a.TierPreflight(o.Agent, runtime, tier, b.warnWriter())
+		//
+		// ADR 0053 D3 is the one exception, and it is above the call rather
+		// than inside it: an exact-model launch is not running the tier's
+		// model, so a verdict about the tier's model would describe a launch
+		// nobody made — and a FALL would turn the canary into a successful
+		// launch on the very model the operator was trying to get past,
+		// which is the whole failure this decision names. The line printed
+		// instead says what is being asked and that nothing will substitute.
+		// Nothing else about the preflight changes: every launch that names
+		// no exact model asks it exactly as it did before.
+		pf := Preflight{}
+		if o.Model != "" {
+			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model))
+		} else {
+			pf = a.TierPreflight(o.Agent, runtime, tier, b.warnWriter())
+		}
 		if pf.Line != "" {
 			// Printed whether or not anything fell: an UNKNOWN verdict over
 			// a reading past its lease launches the asked-for id and says so
@@ -1752,7 +1808,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// own git dirs (rangerhq-09o2) — and it is the SAME function ADR
 		// 0013 §4's reachability row judges this line with, so the row and
 		// the launch cannot disagree about what "writable" meant.
-		cmd = ag.RenderCommandFor(rt, own, tier, launchWritableRoots(dir)...)
+		cmd = ag.RenderCommandForModel(rt, own, tier, o.Model, launchWritableRoots(dir)...)
 		// The PID channel is a launch guarantee too, and this is the one
 		// place it can be checked: the line exists now, and nothing after
 		// this point can put back what a voiding flag discards
@@ -1761,6 +1817,24 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// and no persona, so it is refused rather than launched marked —
 		// `degraded` is for a gate the wall could not realize, and a
 		// persona that is not in the session is not a weaker persona.
+		// ADR 0053 D1's refusal, asked where it can be MEASURED rather than
+		// assumed: the id is on the line, or the launch does not happen.
+		// rt.ModelFlag above says the runtime has somewhere to put it; this
+		// says the rendered template actually did. The two are different
+		// questions because {model} is a PLACEHOLDER — a template that never
+		// mentions it renders a perfectly good launch line with the operator's
+		// canary silently missing, and the PID's own command: is exactly such
+		// a template when the launch is on the persona's own runtime.
+		//
+		// Refused, not patched: appending the flag ourselves would build the
+		// second, drifting runtime template ADR 0053 rejects --cmd for.
+		if o.Model != "" {
+			if want := rt.ExactModelText(o.Model); want == "" || !strings.Contains(cmd, want) {
+				return nil, Die("%s: the rendered %s launch line does not carry --model %s — the template it was rendered from has no {model} for the id to land in, so the session would open on the tier's own model with the record saying otherwise (ADR 0053 D1)\n"+
+					"  add {model} to that command: template, or launch this canary on a runtime whose template has one",
+					o.Agent, rt.Name, o.Model)
+			}
+		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
 				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",
@@ -2017,7 +2091,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	}
 	return &launchPlan{
 		Dir: dir, Repo: repo, Branch: branch, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
-		Runtime: runtime, Tier: tier, Cage: cage, Sockets: sockets, Degraded: degraded,
+		Runtime: runtime, Tier: tier, Model: o.Model, Cage: cage, Sockets: sockets, Degraded: degraded,
 		Fallback: fallback, HooksMode: hooksMode, ManagedHooks: managedHooksPath,
 	}, nil
 }
@@ -2044,7 +2118,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 	}
 	meta := &HerdrMeta{
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
-		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier,
+		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier, Model: p.Model,
 		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
 		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Bead: o.Bead, Crew: o.Crew,
 		HooksMode: p.HooksMode, ManagedHooks: p.ManagedHooks,
@@ -2231,7 +2305,12 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// cover it: the row runs at CheckParity time against the LAUNCH line,
 	// and a relaunch renders its own. Two spellings of "writable" is a
 	// crashed CLI coming back degraded with nothing saying so.
-	inner := ag.RenderCommandFor(rt, b.App.ResolveRuntime("", ag), tier, launchWritableRoots(m.Dir)...)
+	// m.Model rides through for the same reason the runtime and tier do: a
+	// relaunch revives THE SAME session, and an exact-model canary that came
+	// back on its tier's model would be a launch the operator never asked
+	// for wearing a record that says otherwise (ADR 0053 D4). "" on every
+	// ordinary session renders what it always did.
+	inner := ag.RenderCommandForModel(rt, b.App.ResolveRuntime("", ag), tier, m.Model, launchWritableRoots(m.Dir)...)
 	// Same refusal as planLaunch's, on the one other path that renders a
 	// persona line (ranger-base-64qx). It is reachable even though the
 	// create was refused: a PID edited after its session opened is
@@ -2239,6 +2318,17 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// it a crashed CLI comes back as a session with no persona in it.
 	if f := rt.PIDVoided(inner); f != "" {
 		return false, Die("%s: the rendered %s line names %s, which makes %s discard the PID — refusing to retype a persona session that would carry none (ranger-base-64qx)", m.Agent, rt.Name, f, rt.Name)
+	}
+	// The same measured guarantee as the launch's (ADR 0053 D1), on the one
+	// other path that renders a persona line. Reachable for the same reason
+	// PIDVoided is: the PID and the runtime file are re-read from disk, so a
+	// {model} edited out of either since the session opened arrives here —
+	// and this path retypes into a LIVE pane, where the alternative is a
+	// canary silently coming back on its tier's model.
+	if m.Model != "" {
+		if want := rt.ExactModelText(m.Model); want == "" || !strings.Contains(inner, want) {
+			return false, Die("%s: the rendered %s line does not carry --model %s — refusing to retype the canary session %s on its tier's own model (ADR 0053 D1)", m.Agent, rt.Name, m.Model, m.Name)
+		}
 	}
 	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
 		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
@@ -2325,6 +2415,34 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 // `strong` on claude renders "" here; a default tier that stopped being
 // mapped would surface as a tag rather than vanish into the empty string,
 // which is the direction this section exists to protect.
+// RuntimeTierModelTag is RuntimeTierTag for a session that named an EXACT
+// model (ADR 0053 D4): "@<runtime>/<tier>=<model>". A record with no
+// `model:` — an ordinary session, or one written before the field existed —
+// falls through to RuntimeTierTag and renders exactly as it always has.
+//
+// Two things the tag does differently when a model is named, both because
+// the model is the fact on display:
+//
+//   - it is never suppressed. The default pair renders "" precisely because
+//     it says nothing; "@claude/strong=some-id" says the one thing an
+//     operator needs to see, so hiding it would hide the canary.
+//   - the tier is the operator's own word, not DisplayTier's. §6 rewrites an
+//     unmapped tier to `default` so a tier name is not read as a guarantee
+//     about a model — here the model is named outright, so there is no
+//     guarantee to protect and rewriting would only hide what was typed.
+func (a *App) RuntimeTierModelTag(runtime, tier, model string) string {
+	if model == "" {
+		return a.RuntimeTierTag(runtime, tier)
+	}
+	if runtime == "" {
+		runtime = DefaultRuntime
+	}
+	if tier == "" {
+		tier = DefaultTier
+	}
+	return "@" + runtime + "/" + tier + ModelTag(model)
+}
+
 func (a *App) RuntimeTierTag(runtime, tier string) string {
 	if runtime == "" {
 		runtime = DefaultRuntime
@@ -2883,7 +3001,7 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 		}
 		line := fmt.Sprintf("  %s %s %s  %s", mark, s.Emoji, s.Name, status)
 		if s.Agent != "" {
-			line += "  🎭" + s.Agent + b.App.RuntimeTierTag(s.Runtime, s.Tier)
+			line += "  🎭" + s.Agent + b.App.RuntimeTierModelTag(s.Runtime, s.Tier, s.Model)
 			if tag := CageTag(s.Cage, s.Sockets); tag != "" {
 				line += "  " + tag
 			}

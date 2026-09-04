@@ -157,7 +157,8 @@ func main() {
 		}
 
 	case "new":
-		args = need(args, 1, `posse new <name> [--dir <path>] [--env-file <name>]... [--cmd "..."] [--emoji <e>] [--agent <name>]`)
+		args = need(args, 1, `posse new <name> [--dir <path>] [--env-file <name>]... [--cmd "..."] [--emoji <e>] [--agent <name>]`+"\n"+
+			`  a canary on one exact model (ADR 0053): posse new <name> --agent <p> --runtime <r> --tier <t> --model <id>`)
 		o := parseNewFlags(args)
 		// ADR 0008: a session the operator made by hand is one they made to
 		// talk to — dispatch leaves it alone until they release it. And it
@@ -1919,6 +1920,8 @@ func parseNewFlags(args []string) posse.NewSessionOpts {
 			if !posse.ValidTier(o.Tier) {
 				die(posse.Die("--tier must be strong, standard, or fast"))
 			}
+		case "--model":
+			o.Model = flagArg()
 		case "--allow-degraded":
 			o.AllowDegraded = true
 			rest = rest[1:]
@@ -1930,6 +1933,13 @@ func parseNewFlags(args []string) posse.NewSessionOpts {
 		default:
 			die(posse.Die("unknown flag: %s", rest[0]))
 		}
+	}
+	// ADR 0053 D1's companions and the id's own shape, asked here so the
+	// operator gets the refusal at the point of the typo. planLaunch asks
+	// the same function again — that is the wall for every launch path,
+	// this is the one that can name the flag they just typed.
+	if err := posse.CheckExactModel(o); err != nil {
+		die(err)
 	}
 	return o
 }
@@ -2016,6 +2026,9 @@ sessions (herdr workspaces):
       --dir <path>  --env-file <name> (repeatable)  --cmd "..."  --agent <name>  --emoji <e>
       --runtime <claude|codex|grok|name>   launch profile for the persona (over its PID runtime:)
       --tier <strong|standard|fast>        model tier for the persona (over its PID tier:)
+      --model <id>                         EXACT model for this session only (ADR 0053) — needs --agent,
+                                           --runtime and --tier; skips tier availability substitution, so a
+                                           provider refusal is the answer rather than a quiet fallback
       --allow-degraded                     launch even if the wall cannot realize every PID gate here (marked)
       --cage <shims|seatbelt|container>    wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
   posse attach <name>            focus its workspace in herdr (alias: focus)

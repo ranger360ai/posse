@@ -343,13 +343,30 @@ func renderPlaceholder(cmd, placeholder, text string) string {
 // runtime has no surface — the parity check has already ruled on that).
 // ownRuntime is what the PID would run on with no override (ADR 0002 §1).
 func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writable ...string) string {
+	return ag.RenderCommandForModel(rt, ownRuntime, tier, "", writable...)
+}
+
+// RenderCommandForModel is RenderCommandFor with an EXACT model id (ADR
+// 0053): when model is not empty it is what {model} renders, in place of
+// the id the runtime's tier map would have named. Everything else about the
+// render is identical — the PID's own command:, the gates, the skills, the
+// settings pin and the unattended mode — which is what keeps a canary
+// launch a persona launch (D2).
+//
+// model == "" is every ordinary launch and renders byte-for-byte what it
+// rendered before this existed.
+func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model string, writable ...string) string {
 	tmpl := rt.Command
 	if rt.Name == ownRuntime && ag.Command != "" {
 		tmpl = ag.Command
 	}
 	out := strings.ReplaceAll(tmpl, "{file}", shellQuote(ag.Path))
 	out = strings.ReplaceAll(out, "{memory}", shellQuote(ag.MemoryDir))
-	out = renderPlaceholder(out, "{model}", rt.ModelText(tier))
+	modelText := rt.ModelText(tier)
+	if model != "" {
+		modelText = rt.ExactModelText(model)
+	}
+	out = renderPlaceholder(out, "{model}", modelText)
 	var r Realized
 	if rt.Realize != nil {
 		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir, writable...)

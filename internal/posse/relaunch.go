@@ -246,6 +246,11 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		Name: m.Name, Dir: m.Dir, Cmd: m.Cmd, Emoji: m.Emoji,
 		Envs: splitEnvNames(m.Envs), Agent: m.Agent,
 		Runtime: m.Runtime, Tier: m.Tier, Cage: m.Cage,
+		// The exact model the operator named (ADR 0053 D4). A refresh is the
+		// same session, so the canary survives it — and because the recreate
+		// re-enters planLaunch, it re-asks D1's companions against a record
+		// that names all three.
+		Model: m.Model,
 		// The operator consented to this session's degradation when it was
 		// created; relaunching the same session is not a new decision.
 		AllowDegraded: m.Degraded != "",
@@ -597,7 +602,11 @@ func (b *HerdrBackend) provenNameTakeable(m *HerdrMeta) error {
 func describePlan(o NewSessionOpts, p *launchPlan) string {
 	var parts []string
 	if o.Agent != "" {
-		parts = append(parts, fmt.Sprintf("%s on %s @ %s", o.Agent, p.Runtime, p.Tier))
+		at := fmt.Sprintf("%s on %s @ %s", o.Agent, p.Runtime, p.Tier)
+		if p.Model != "" {
+			at += " model " + p.Model
+		}
+		parts = append(parts, at)
 		parts = append(parts, "cage "+p.Cage)
 	} else if p.Cmd != "" {
 		parts = append(parts, "command "+p.Cmd)
@@ -636,6 +645,10 @@ func RecoverCommand(m *HerdrMeta) string {
 	}
 	add("--runtime", m.Runtime)
 	add("--tier", m.Tier)
+	// After --runtime and --tier, which ADR 0053 D1 requires beside it: the
+	// line this prints has to be one the operator can paste back, and
+	// `posse new --model` refuses without both.
+	add("--model", m.Model)
 	add("--cage", m.Cage)
 	add("--emoji", m.Emoji)
 	add("--cmd", m.Cmd)
