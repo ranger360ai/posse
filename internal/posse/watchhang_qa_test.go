@@ -957,7 +957,11 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 // must never stamp LastWrite (see LastWrite's doc, and ranger-base-0fz98
 // finding 3 for what a clock that does stamp costs — a stall the budget can
 // never reach). d.quietf/d.equietf hold outMu and stamp nothing; the
-// stamping three are the pass's.
+// stamping five are the pass's — the three print helpers, and the two
+// io.Writer adapters a callee is handed, which stamp one call deep and so
+// are banned here for the same reason (ranger-base-z0x7y). d.quietErrWriter()
+// is the handoff a clock may use: it holds outMu, stamps nothing, and its
+// line does not contain "d.errWriter(".
 //
 // One file per clock, and each must have quiet writes to prove the sweep
 // read it, so a file renamed out from under this list fails rather than
@@ -979,9 +983,9 @@ func TestQAClockFilesUseOnlyTheQuietPair(t *testing.T) {
 				if strings.HasPrefix(strings.TrimSpace(ln), "//") {
 					continue
 				}
-				for _, bad := range []string{"d.printf(", "d.eprintf(", "d.println("} {
+				for _, bad := range []string{"d.printf(", "d.eprintf(", "d.println(", "d.errWriter(", "d.outWriter("} {
 					if strings.Contains(ln, bad) {
-						t.Errorf("%s:%d writes through %s — a clock on its own goroutine stamping LastWrite reports a stall exactly once and then feeds its own silence clock (ranger-base-0fz98 finding 3, ranger-base-frqmn):\n\t%s", file, i+1, bad, strings.TrimSpace(ln))
+						t.Errorf("%s:%d writes through %s — a clock on its own goroutine stamping LastWrite reports a stall exactly once and then feeds its own silence clock (ranger-base-0fz98 finding 3, ranger-base-frqmn); use d.quietf/d.equietf, or d.quietErrWriter() for a callee that takes a writer:\n\t%s", file, i+1, bad, strings.TrimSpace(ln))
 					}
 				}
 			}
